@@ -179,6 +179,7 @@ public:
 	static void removeFile(const std::string &path);
 	static bool runningInContainer();
 	static bool ensureSystemRoot();
+	static int random(int min = 0, int max = 999999);
 
 	// String functions
 	static bool isNumber(const std::string &str);

@@ -16,49 +16,49 @@ class ACE_Sig_Action;
 //////////////////////////////////////////////////////////////////////////
 // Command Line arguments parse and request/print
 //////////////////////////////////////////////////////////////////////////
-class ArgumentParser
+class CommandDispatcher
 {
 public:
-	explicit ArgumentParser(int argc, char *argv[]);
-	virtual ~ArgumentParser();
+	explicit CommandDispatcher(int argc, char *argv[]);
+	virtual ~CommandDispatcher();
 
-	int parse();
+	int execute();
 
 private:
-	void initCommandMap();
-
-	void initArgs();
 	void printMainHelp();
-	void processLogon();
-	void processLogoff();
-	void processLoginfo();
-	std::string getLoginUser();
+	void initCommandMap();
+	void initArgs();
 
-	void processAppAdd();
-	void processAppDel();
-	void processAppView();
-	void processAppControl(bool start);
-	int processAppRun();
-	int processShell();
+	int cmdLogin();
+	int cmdLogoff();
+	int cmdLoginUserInfo();
 
-	void processFileDownload();
-	void processFileUpload();
+	int cmdAppAdd();
+	int cmdAppDelete();
+	int cmdAppView();
+	int cmdAppControlState(bool start);
+	int cmdAppRun();
+	int cmdExecuteShell();
 
-	void processLoglevel();
-	void processResource();
-	void processTags();
-	void processConfigView();
+	int cmdDownloadFile();
+	int cmdUploadFile();
 
-	void processUserChangePwd();
-	void processUserLock();
-	void processUserManage();
-	void processUserPwdEncrypt();
-	void processUserMfa();
-	void initRadomPassword();
+	int cmdLogLevel();
+	int cmdHostResources();
+	int cmdLabelManage();
+	int cmdConfigView();
+
+	int cmdChangePwd();
+	int cmdUserLock();
+	int cmdUserManage();
+	int cmdEncryptPassword();
+	int cmdUserMFA();
+	int cmdInitRandomPassword();
 
 public:
 	std::shared_ptr<CurlResponse> requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
+	std::string getLoginUser();
 	std::string acquireAuthToken();
 	std::string getAuthenUser();
 	std::string getAuthToken();

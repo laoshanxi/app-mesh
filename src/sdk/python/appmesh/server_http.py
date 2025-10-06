@@ -1,12 +1,15 @@
 # server_http.py
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
+# Standard library imports
 import abc
 import logging
 import os
 import time
-from typing import Optional, Tuple, Union
 from http import HTTPStatus
+from typing import Optional, Tuple, Union
+
+# Local imports
 from .client_http import AppMeshClient
 
 logger = logging.getLogger(__name__)

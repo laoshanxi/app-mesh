@@ -3,6 +3,7 @@
 #include <fstream>
 #include <list>
 #include <locale>
+#include <random>
 #include <string>
 #include <vector>
 #if !defined(_WIN32)
@@ -17,6 +18,7 @@
 #include <windows.h>
 #endif
 
+#include "ace/UUID.h"
 #include <ace/OS.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
@@ -370,6 +372,13 @@ bool Utility::ensureSystemRoot()
 
 #endif
 	return true;
+}
+
+int Utility::random(int min, int max)
+{
+	static thread_local std::mt19937 gen(std::random_device{}() ^ static_cast<unsigned long>(std::chrono::steady_clock::now().time_since_epoch().count()));
+	std::uniform_int_distribution<int> dist(min, max);
+	return dist(gen);
 }
 
 void Utility::initLogging(const std::string &name)
@@ -1028,7 +1037,25 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 
 std::string Utility::createUUID()
 {
-	return hashId();
+	const static char fname[] = "Utility::createUUID() ";
+
+	// Generate UUID
+	ACE_Utils::UUID uuid;
+	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
+
+	// Convert to string
+	const auto *uuid_str = uuid.to_string();
+	if (uuid_str == nullptr)
+	{
+		LOG_WAR << fname << "Failed to convert UUID to string, using hashId() instead";
+		return hashId();
+	}
+
+	// Remove hyphens
+	std::string result = uuid_str->c_str();
+	result.erase(std::remove(result.begin(), result.end(), '-'), result.end());
+
+	return result;
 }
 
 bool Utility::createPidFile()

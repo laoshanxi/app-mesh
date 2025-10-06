@@ -218,6 +218,13 @@ private:
 	 */
 	static std::map<std::string, Cookie> readCookiesFromFile();
 
+	/**
+	 * @brief Checks if a cookie is expired
+	 * @param cookie The cookie to check
+	 * @return true if expired, false otherwise
+	 */
+	static bool isCookieExpired(const Cookie &cookie);
+
 private:
 	static ClientSSLConfig m_sslConfig;
 	static SessionConfig m_sessionConfig;

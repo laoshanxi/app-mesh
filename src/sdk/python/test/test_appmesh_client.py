@@ -2,6 +2,7 @@
 
 import sys
 import os
+import stat
 import json
 import unittest
 import tempfile
@@ -249,6 +250,96 @@ class TestAppMeshClient(TestCase):
         print(totp_code)
         self.assertIsNotNone(client.login("admin", "admin123", totp_code))
         self.assertTrue(client.disable_totp())
+
+    def read_file_content(self, file_path):
+        """read file content"""
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_11_cookies(self):
+        """Test cookie creation, persistence, and reuse"""
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            cookie_path = tmp.name
+
+        try:
+            # init empty cookie file
+            os.remove(cookie_path) if os.path.exists(cookie_path) else None
+            client = AppMeshClient(rest_cookie_file=cookie_path)
+            self.assertTrue(os.path.exists(cookie_path))
+
+            # permission check (Unix only)
+            if os.name == "posix":
+                mode = stat.S_IMODE(os.stat(cookie_path).st_mode)
+                self.assertEqual(mode, 0o600)
+
+            # cookie set
+            client.login("admin", "admin123")
+            content = self.read_file_content(cookie_path)
+            self.assertIn("appmesh_auth_token", content)
+            self.assertIn("appmesh_csrf_token", content)
+
+            # cookie cleared on logoff
+            client.logoff()
+            content_after = self.read_file_content(cookie_path)
+            self.assertNotIn("appmesh_auth_token", content_after)
+            self.assertNotIn("appmesh_csrf_token", content_after)
+
+            # re-use cookie: should require login again
+            client = AppMeshClient(rest_cookie_file=cookie_path)
+            with self.assertRaises(Exception):
+                client.view_all_apps()
+
+            # re-login and verify user info
+            token = client.login("admin", "admin123")
+            client = AppMeshClient(rest_cookie_file=cookie_path)
+            user_info = client.view_self()
+            self.assertIn("name", user_info)
+            self.assertEqual(user_info["name"], "admin")
+
+            # TOTP setup should update cookie file
+            content_before_totp = self.read_file_content(cookie_path)
+
+            # get totp secret
+            totp_secret = client.get_totp_secret()
+            # generate totp code
+            totp = TOTP(totp_secret)
+            totp_code = totp.now()
+            # setup totp
+            self.assertNotEqual(token, client.setup_totp(totp_code))
+
+            content_after_totp = self.read_file_content(cookie_path)
+
+            self.assertIn("appmesh_auth_token", content_after_totp)
+            self.assertIn("appmesh_csrf_token", content_after_totp)
+            self.assertNotEqual(content_before_totp, content_after_totp)
+
+            # Use totp code to login
+            content_before_totp = self.read_file_content(cookie_path)
+
+            client = AppMeshClient(rest_cookie_file=cookie_path)
+            self.assertTrue(client.logoff())
+            totp_code = totp.now()
+            print(totp_code)
+            self.assertIsNotNone(client.login("admin", "admin123", totp_code))
+            self.assertIn("appmesh_auth_token", content_after_totp)
+            self.assertIn("appmesh_csrf_token", content_after_totp)
+
+            content_after_totp = self.read_file_content(cookie_path)
+
+            self.assertIn("appmesh_auth_token", content_after_totp)
+            self.assertIn("appmesh_csrf_token", content_after_totp)
+            self.assertNotEqual(content_before_totp, content_after_totp)
+
+            self.assertTrue(client.disable_totp())
+
+        finally:
+            try:
+                client = AppMeshClient(rest_cookie_file=cookie_path)
+                client.disable_totp()
+            except Exception:
+                pass
+            os.remove(cookie_path) if os.path.exists(cookie_path) else None
 
 
 if __name__ == "__main__":

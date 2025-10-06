@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <functional>
 #include <thread>
 
 #include <ace/Signal.h>
@@ -34,7 +35,7 @@
 #include "../common/Utility.h"
 #include "../common/json.h"
 #include "../common/os/linux.h"
-#include "ArgumentParser.h"
+#include "CommandDispatcher.h"
 #include "cmd_args.h"
 
 #define CONNECTION_OPTIONS                                                      \
@@ -61,7 +62,7 @@
 		}																	\
 		else																\
 		{																	\
-			m_userpwd = inputPasswd(m_username);										\
+			m_userpwd = inputPasswd(m_username);							\
 		}																	\
 	}                                                                    	\
 	log4cpp::Category::getRoot().setPriority(m_commandLineVariables.count(VERBOSE) ? log4cpp::Priority::DEBUG : log4cpp::Priority::INFO);
@@ -71,7 +72,7 @@
 	if (m_commandLineVariables.count(HELP) > 0)                                                                                     \
 	{                                                                                                                               \
 		std::cout << desc << std::endl;                                                                                             \
-		return;                                                                                                                     \
+		return 0;                                                                                                                   \
 	}                                                                                                                               \
 	setCurrentUrl(m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>()); \
 	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
@@ -85,8 +86,8 @@
 	setCurrentUrl(m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>()); \
 	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
 // Each user should have its own token path
-static std::string m_configFile = ArgumentParser::getAndCreateConfigDir() + "/.appmesh.config";
-const static std::string m_shellHistoryFile = ArgumentParser::getAndCreateConfigDir() + "/.appmesh.shell.history";
+static std::string m_configFile = CommandDispatcher::getAndCreateConfigDir() + "/.appmesh.config";
+const static std::string m_shellHistoryFile = CommandDispatcher::getAndCreateConfigDir() + "/.appmesh.shell.history";
 extern char **environ;
 
 const std::string HTTP_HEADER_JWT_set_cookie = "X-Set-Cookie";
@@ -96,62 +97,72 @@ const std::string COOKIE_CSRF_TOKEN = "appmesh_csrf_token";
 const std::string COOKIE_FILE = ".cookies";
 
 // Global variable for appc exec
-static std::atomic_bool g_interrupt(false);
-static std::string APPC_EXEC_APP_NAME;
-static ArgumentParser *WORK_PARSE = nullptr;
+static std::atomic_bool G_INTERRUPT(false);
+static std::string G_PENDING_CLEAN_APP_NAME;
+static CommandDispatcher *G_WORKING_PTR = nullptr;
 // command line help width
 static size_t BOOST_DESC_WIDTH = 130;
 
-ArgumentParser::ArgumentParser(int argc, char *argv[])
+CommandDispatcher::CommandDispatcher(int argc, char *argv[])
 	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(DEFAULT_TOKEN_EXPIRE_SECONDS)
 {
 	const std::string posixTimeZone = Utility::getenv(ENV_APPMESH_POSIX_TIMEZONE, getPosixTimezone());
 	Utility::initDateTimeZone(posixTimeZone, false);
 }
 
-void ArgumentParser::initCommandMap()
+void CommandDispatcher::initCommandMap()
 {
-	// Map commands to handlers
-	m_commandMap["logon"] = [this]() { processLogon(); return 0; };
-	m_commandMap["logoff"] = [this]() { processLogoff(); return 0; };
-	m_commandMap["loginfo"] = [this]() { processLoginfo(); return 0; };
-	m_commandMap["add"] = [this]() { processAppAdd(); return 0; };
-	m_commandMap["reg"] = [this]() { processAppAdd(); return 0; };
-	m_commandMap["rm"] = [this]() { processAppDel(); return 0; };
-	m_commandMap["remove"] = [this]() { processAppDel(); return 0; };
-	m_commandMap["unreg"] = [this]() { processAppDel(); return 0; };
-	m_commandMap["view"] = [this]() { processAppView(); return 0; };
-	m_commandMap["list"] = [this]() { processAppView(); return 0; };
-	m_commandMap["ls"] = [this]() { processAppView(); return 0; };
-	m_commandMap["resource"] = [this]() { processResource(); return 0; };
-	m_commandMap["enable"] = [this]() { processAppControl(true); return 0; };
-	m_commandMap["disable"] = [this]() { processAppControl(false); return 0; };
-	m_commandMap["restart"] = [this]() {
+	m_commandMap["logon"] = std::bind(&CommandDispatcher::cmdLogin, this);
+	m_commandMap["logoff"] = std::bind(&CommandDispatcher::cmdLogoff, this);
+	m_commandMap["loginfo"] = std::bind(&CommandDispatcher::cmdLoginUserInfo, this);
+
+	m_commandMap["add"] = std::bind(&CommandDispatcher::cmdAppAdd, this);
+	m_commandMap["reg"] = std::bind(&CommandDispatcher::cmdAppAdd, this);
+
+	m_commandMap["rm"] = std::bind(&CommandDispatcher::cmdAppDelete, this);
+	m_commandMap["remove"] = std::bind(&CommandDispatcher::cmdAppDelete, this);
+	m_commandMap["unreg"] = std::bind(&CommandDispatcher::cmdAppDelete, this);
+
+	m_commandMap["view"] = std::bind(&CommandDispatcher::cmdAppView, this);
+	m_commandMap["list"] = std::bind(&CommandDispatcher::cmdAppView, this);
+	m_commandMap["ls"] = std::bind(&CommandDispatcher::cmdAppView, this);
+
+	m_commandMap["resource"] = std::bind(&CommandDispatcher::cmdHostResources, this);
+
+	m_commandMap["enable"] = std::bind(&CommandDispatcher::cmdAppControlState, this, true);
+	m_commandMap["disable"] = std::bind(&CommandDispatcher::cmdAppControlState, this, false);
+
+	m_commandMap["restart"] = [this]()
+	{
 		auto tmpOpts = m_parsedOptions;
-		processAppControl(false);
+		cmdAppControlState(false);
 		m_parsedOptions = tmpOpts;
-		processAppControl(true);
-		return 0; 
+		return cmdAppControlState(true);
 	};
-	m_commandMap["run"] = [this]() { return processAppRun(); };
-	m_commandMap["exec"] = [this]() { return processShell(); };
-	m_commandMap["shell"] = [this]() { return processShell(); };
-	m_commandMap["get"] = [this]() { processFileDownload(); return 0; };
-	m_commandMap["put"] = [this]() { processFileUpload(); return 0; };
-	m_commandMap["label"] = [this]() { processTags(); return 0; };
-	m_commandMap["log"] = [this]() { processLoglevel(); return 0; };
-	m_commandMap["config"] = [this]() { processConfigView(); return 0; };
-	m_commandMap["passwd"] = [this]() { processUserChangePwd(); return 0; };
-	m_commandMap["mfa"] = [this]() { processUserMfa(); return 0; };
-	m_commandMap["lock"] = [this]() { processUserLock(); return 0; };
-	m_commandMap["user"] = [this]() { processUserManage(); return 0; };
-	m_commandMap["appmgpwd"] = [this]() { processUserPwdEncrypt(); return 0; };
-	m_commandMap["appmginit"] = [this]() { initRadomPassword(); return 0; };
+
+	m_commandMap["run"] = std::bind(&CommandDispatcher::cmdAppRun, this);
+	m_commandMap["exec"] = std::bind(&CommandDispatcher::cmdExecuteShell, this);
+	m_commandMap["shell"] = std::bind(&CommandDispatcher::cmdExecuteShell, this);
+
+	m_commandMap["get"] = std::bind(&CommandDispatcher::cmdDownloadFile, this);
+	m_commandMap["put"] = std::bind(&CommandDispatcher::cmdUploadFile, this);
+
+	m_commandMap["label"] = std::bind(&CommandDispatcher::cmdLabelManage, this);
+	m_commandMap["log"] = std::bind(&CommandDispatcher::cmdLogLevel, this);
+	m_commandMap["config"] = std::bind(&CommandDispatcher::cmdConfigView, this);
+
+	m_commandMap["passwd"] = std::bind(&CommandDispatcher::cmdChangePwd, this);
+	m_commandMap["mfa"] = std::bind(&CommandDispatcher::cmdUserMFA, this);
+	m_commandMap["lock"] = std::bind(&CommandDispatcher::cmdUserLock, this);
+	m_commandMap["user"] = std::bind(&CommandDispatcher::cmdUserManage, this);
+
+	m_commandMap["appmgpwd"] = std::bind(&CommandDispatcher::cmdEncryptPassword, this);
+	m_commandMap["appmginit"] = std::bind(&CommandDispatcher::cmdInitRandomPassword, this);
 }
 
-void ArgumentParser::initArgs()
+void CommandDispatcher::initArgs()
 {
-	WORK_PARSE = this;
+	G_WORKING_PTR = this;
 	m_defaultUrl = this->getAppMeshUrl();
 #if !defined(_WIN32)
 	const auto sudo_user = Utility::getenv("SUDO_USER");
@@ -183,13 +194,13 @@ void ArgumentParser::initArgs()
 	po::notify(m_commandLineVariables);
 }
 
-ArgumentParser::~ArgumentParser()
+CommandDispatcher::~CommandDispatcher()
 {
 	teardownInterruptHandler();
-	WORK_PARSE = nullptr;
+	G_WORKING_PTR = nullptr;
 }
 
-int ArgumentParser::parse()
+int CommandDispatcher::execute()
 {
 	initArgs();
 	initCommandMap();
@@ -214,7 +225,7 @@ int ArgumentParser::parse()
 	}
 }
 
-void ArgumentParser::printMainHelp()
+void CommandDispatcher::printMainHelp()
 {
 	std::cout << "App Mesh CLI - Command Line Interface" << std::endl;
 	std::cout << "Usage: appc [COMMAND] [ARG...] [flags]" << std::endl
@@ -262,7 +273,7 @@ void ArgumentParser::printMainHelp()
 			  << std::endl;
 }
 
-void ArgumentParser::processLogon()
+int CommandDispatcher::cmdLogin()
 {
 	po::options_description desc("Login to App Mesh \nUsage: appc logon [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -282,7 +293,10 @@ void ArgumentParser::processLogon()
 		while (m_username.length() == 0)
 		{
 			std::cout << "User: ";
-			std::cin >> m_username;
+			if (!(std::cin >> m_username))
+			{
+				exit(1);
+			}
 			m_username = Utility::stdStringTrim(m_username);
 		}
 	}
@@ -312,9 +326,10 @@ void ArgumentParser::processLogon()
 		persistUserConfig(parseUrlHost(m_currentUrl));
 		std::cout << "User <" << m_username << "> logon to <" << m_currentUrl << "> success." << std::endl;
 	}
+	return 0;
 }
 
-void ArgumentParser::processLogoff()
+int CommandDispatcher::cmdLogoff()
 {
 	po::options_description desc("Logoff to App Mesh \nUsage: appc logoff [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -331,9 +346,10 @@ void ArgumentParser::processLogoff()
 		RestClient::clearSession();
 		std::cout << "User logoff from " << m_currentUrl << " success." << std::endl;
 	}
+	return 0;
 }
 
-void ArgumentParser::processLoginfo()
+int CommandDispatcher::cmdLoginUserInfo()
 {
 	po::options_description desc("Print current login user \nUsage: appc loginfo [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -343,9 +359,10 @@ void ArgumentParser::processLoginfo()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::cout << getLoginUser() << std::endl;
+	return 0;
 }
 
-std::string ArgumentParser::getLoginUser()
+std::string CommandDispatcher::getLoginUser()
 {
 	std::string userName;
 	auto token = acquireAuthToken();
@@ -362,7 +379,7 @@ std::string ArgumentParser::getLoginUser()
 }
 
 // appName is null means this is a normal application (not a shell application)
-void ArgumentParser::processAppAdd()
+int CommandDispatcher::cmdAppAdd()
 {
 	po::options_description desc("Register a new application \nUsage: appc add [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -415,7 +432,7 @@ void ArgumentParser::processAppAdd()
 													 (m_commandLineVariables.count(DOCKER_IMAGE) == 0 && m_commandLineVariables.count(COMMAND) == 0)))
 	{
 		std::cout << desc << std::endl;
-		return;
+		return 0;
 	}
 
 	if (m_commandLineVariables.count(INTERVAL) > 0 && m_commandLineVariables.count(STOP_TIMEOUT) > 0)
@@ -424,7 +441,7 @@ void ArgumentParser::processAppAdd()
 			DurationParse::parse(m_commandLineVariables[STOP_TIMEOUT].as<std::string>()))
 		{
 			std::cout << "The stop-timeout seconds must less than interval." << std::endl;
-			return;
+			return 0;
 		}
 	}
 	nlohmann::json jsonObj;
@@ -446,7 +463,7 @@ void ArgumentParser::processAppAdd()
 		if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_name))
 		{
 			std::cout << "Can not find application name" << std::endl;
-			return;
+			return 0;
 		}
 		appName = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
 	}
@@ -455,7 +472,7 @@ void ArgumentParser::processAppAdd()
 		if (m_commandLineVariables.count(APP) == 0)
 		{
 			std::cout << "Can not find application name" << std::endl;
-			return;
+			return 0;
 		}
 		appName = m_commandLineVariables[APP].as<std::string>();
 	}
@@ -467,7 +484,7 @@ void ArgumentParser::processAppAdd()
 			std::cout << "Application already exist, are you sure you want to update the application <" << appName << ">?" << std::endl;
 			if (!confirmInput("[y/n]:"))
 			{
-				return;
+				return 0;
 			}
 		}
 	}
@@ -642,9 +659,10 @@ void ArgumentParser::processAppAdd()
 	std::string restPath = std::string("/appmesh/app/") + appName;
 	auto resp = requestHttp(true, web::http::methods::PUT, restPath, &jsonObj);
 	std::cout << Utility::jsonToYaml(nlohmann::json::parse(resp->text)) << std::endl;
+	return 0;
 }
 
-void ArgumentParser::processAppDel()
+int CommandDispatcher::cmdAppDelete()
 {
 	po::options_description desc("Remove an application \nUsage: appc rm [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -661,7 +679,7 @@ void ArgumentParser::processAppDel()
 	if (m_commandLineVariables.count(APP) == 0)
 	{
 		std::cout << desc << std::endl;
-		return;
+		return 0;
 	}
 
 	auto appNames = m_commandLineVariables[APP].as<std::vector<std::string>>();
@@ -685,9 +703,10 @@ void ArgumentParser::processAppDel()
 			throw std::invalid_argument(Utility::stringFormat("No such application <%s>", appName.c_str()));
 		}
 	}
+	return 0;
 }
 
-void ArgumentParser::processAppView()
+int CommandDispatcher::cmdAppView()
 {
 	po::options_description desc("List applications \nUsage: appc ls [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -766,9 +785,10 @@ void ArgumentParser::processAppView()
 		auto response = requestHttp(true, web::http::methods::GET, restPath);
 		printApps(nlohmann::json::parse(response->text), reduce);
 	}
+	return 0;
 }
 
-void ArgumentParser::processResource()
+int CommandDispatcher::cmdHostResources()
 {
 	po::options_description desc("View host resource \nUsage: appc resource [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -780,9 +800,10 @@ void ArgumentParser::processResource()
 	std::string restPath = "/appmesh/resources";
 	auto resp = requestHttp(true, web::http::methods::GET, restPath);
 	std::cout << JSON::dumpToLocalEncoding(nlohmann::json::parse(resp->text), 2) << std::endl;
+	return 0;
 }
 
-void ArgumentParser::processAppControl(bool start)
+int CommandDispatcher::cmdAppControlState(bool start)
 {
 	std::string action = start ? "Enable" : "Disable";
 	po::options_description desc(action + " applications \nUsage: appc enable/disable [options]", BOOST_DESC_WIDTH);
@@ -798,7 +819,7 @@ void ArgumentParser::processAppControl(bool start)
 	if (m_commandLineVariables.empty() || (!m_commandLineVariables.count(ALL) && !m_commandLineVariables.count(APP)))
 	{
 		std::cout << desc << std::endl;
-		return;
+		return 0;
 	}
 	std::vector<std::string> appList;
 	bool all = m_commandLineVariables.count(ALL);
@@ -834,9 +855,10 @@ void ArgumentParser::processAppControl(bool start)
 	{
 		std::cout << "No application processed." << std::endl;
 	}
+	return 0;
 }
 
-int ArgumentParser::processAppRun()
+int CommandDispatcher::cmdAppRun()
 {
 	po::options_description desc("Run commands or applications \nUsage: appc run [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -951,7 +973,7 @@ int ArgumentParser::processAppRun()
 	return returnCode;
 }
 
-int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds)
+int CommandDispatcher::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds)
 {
 	std::map<std::string, std::string> query;
 	query[HTTP_QUERY_KEY_timeout] = std::to_string(timeoutSeconds);
@@ -993,7 +1015,7 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 	return returnCode;
 }
 
-std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
+std::string CommandDispatcher::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
 {
 	if (!resp)
 	{
@@ -1032,10 +1054,10 @@ void CrossPlatformSignalHandler(int signo)
 	if (signo == SIGINT)
 #endif
 	{
-		if (!g_interrupt.exchange(true) && !APPC_EXEC_APP_NAME.empty())
+		if (!G_INTERRUPT.exchange(true) && !G_PENDING_CLEAN_APP_NAME.empty() && G_WORKING_PTR)
 		{
-			const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
-			WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
+			const auto restPath = std::string("/appmesh/app/").append(G_PENDING_CLEAN_APP_NAME);
+			G_WORKING_PTR->requestHttp(false, web::http::methods::DEL, restPath);
 		}
 #if defined(_WIN32)
 		return TRUE;
@@ -1046,18 +1068,22 @@ void CrossPlatformSignalHandler(int signo)
 #endif
 }
 
-void ArgumentParser::setupInterruptHandler(const std::string &appName)
+void CommandDispatcher::setupInterruptHandler(const std::string &appName)
 {
-	APPC_EXEC_APP_NAME = appName;
-	g_interrupt = false; // if ctrl + c is triggered, stop run and start read input from stdin
+	G_PENDING_CLEAN_APP_NAME = appName;
+	G_INTERRUPT = false; // if ctrl + c is triggered, stop run and start read input from stdin
 #if defined(_WIN32)
-	SetConsoleCtrlHandler(CrossPlatformSignalHandler, TRUE);
+	static std::atomic_flag windowsRegisterOnlyOnce{false};
+	if (!windowsRegisterOnlyOnce.test_and_set())
+	{
+		SetConsoleCtrlHandler(CrossPlatformSignalHandler, TRUE);
+	}
 #else
 	std::signal(SIGINT, CrossPlatformSignalHandler);
 #endif
 }
 
-void ArgumentParser::teardownInterruptHandler()
+void CommandDispatcher::teardownInterruptHandler()
 {
 #if defined(_WIN32)
 	SetConsoleCtrlHandler(NULL, FALSE);
@@ -1169,7 +1195,7 @@ pid_t get_bash_pid()
 #endif
 }
 
-int ArgumentParser::processShell()
+int CommandDispatcher::cmdExecuteShell()
 {
 	po::options_description desc("Remote Shell Execution \nUsage: appc shell [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1219,7 +1245,7 @@ int ArgumentParser::processShell()
 	char buff[MAX_COMMAND_LINE_LENGTH] = {0};
 	char *cwd = ACE_OS::getcwd(buff, sizeof(buff));
 	nlohmann::json jsonObj;
-	jsonObj[JSON_KEY_APP_name] = std::string(APPC_EXEC_APP_NAME);
+	jsonObj[JSON_KEY_APP_name] = std::string(G_PENDING_CLEAN_APP_NAME);
 	jsonObj[JSON_KEY_APP_shell_mode] = (true);
 	jsonObj[JSON_KEY_APP_session_login] = m_commandLineVariables.count(SESSION_LOGIN) > 0;
 	jsonObj[JSON_KEY_APP_command] = std::string(initialCmd);
@@ -1238,14 +1264,14 @@ int ArgumentParser::processShell()
 	{ACE_OS::sleep(sec);	return true; };
 	setupInterruptHandler(appName);
 	// clean
-	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
+	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(G_PENDING_CLEAN_APP_NAME));
 	if (unrecognized.size())
 	{
 		// run once
 		do
 		{
 			returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
-		} while (retry && returnCode != 0 && !g_interrupt.load() && sleepSeconds(1));
+		} while (retry && returnCode != 0 && !G_INTERRUPT.load() && sleepSeconds(1));
 	}
 	else
 	{
@@ -1290,12 +1316,12 @@ int ArgumentParser::processShell()
 					linenoiseClearScreen();
 					continue;
 				}
-				g_interrupt = false;
+				G_INTERRUPT = false;
 				jsonObj[JSON_KEY_APP_command] = cmd;
 				do
 				{
 					returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
-				} while (retry && !g_interrupt && sleepSeconds(1));
+				} while (retry && !G_INTERRUPT && sleepSeconds(1));
 			}
 		}
 	}
@@ -1303,7 +1329,7 @@ int ArgumentParser::processShell()
 	return returnCode;
 }
 
-void ArgumentParser::processFileDownload()
+int CommandDispatcher::cmdDownloadFile()
 {
 	po::options_description desc("Download file \nUsage: appc get [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1320,7 +1346,7 @@ void ArgumentParser::processFileDownload()
 	if (m_commandLineVariables.count(REMOTE) == 0 || m_commandLineVariables.count(LOCAL) == 0)
 	{
 		std::cout << desc << std::endl;
-		return;
+		return 0;
 	}
 
 	std::string restPath = REST_PATH_DOWNLOAD;
@@ -1338,9 +1364,10 @@ void ArgumentParser::processFileDownload()
 		std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
 	else
 		throw std::invalid_argument(parseOutputMessage(response));
+	return 0;
 }
 
-void ArgumentParser::processFileUpload()
+int CommandDispatcher::cmdUploadFile()
 {
 	po::options_description desc("Upload file \nUsage: appc put [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1357,7 +1384,7 @@ void ArgumentParser::processFileUpload()
 	if (m_commandLineVariables.count(REMOTE) == 0 || m_commandLineVariables.count(LOCAL) == 0)
 	{
 		std::cout << desc << std::endl;
-		return;
+		return 0;
 	}
 
 	auto file = m_commandLineVariables[REMOTE].as<std::string>();
@@ -1366,7 +1393,7 @@ void ArgumentParser::processFileUpload()
 	if (!Utility::isFileExist(local))
 	{
 		std::cout << "local file not exist" << std::endl;
-		return;
+		return 0;
 	}
 	local = boost::filesystem::canonical(local).string();
 	std::string restPath = REST_PATH_UPLOAD;
@@ -1387,9 +1414,10 @@ void ArgumentParser::processFileUpload()
 		std::cout << "Uploaded file <" << local << ">" << std::endl;
 	else
 		throw std::invalid_argument(parseOutputMessage(response));
+	return 0;
 }
 
-void ArgumentParser::processTags()
+int CommandDispatcher::cmdLabelManage()
 {
 	po::options_description desc("Manage labels \nUsage: appc label [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1415,7 +1443,7 @@ void ArgumentParser::processTags()
 		if (inputTags.empty())
 		{
 			std::cout << "No label specified" << std::endl;
-			return;
+			return 0;
 		}
 		for (auto &str : inputTags)
 		{
@@ -1435,7 +1463,7 @@ void ArgumentParser::processTags()
 		if (inputTags.empty())
 		{
 			std::cout << "No label specified" << std::endl;
-			return;
+			return 0;
 		}
 		for (auto &str : inputTags)
 		{
@@ -1452,7 +1480,7 @@ void ArgumentParser::processTags()
 	else
 	{
 		std::cout << desc << std::endl;
-		return;
+		return 0;
 	}
 
 	std::string restPath = "/appmesh/labels";
@@ -1463,9 +1491,10 @@ void ArgumentParser::processTags()
 	{
 		std::cout << tag.key() << "=" << tag.value().get<std::string>() << std::endl;
 	}
+	return 0;
 }
 
-void ArgumentParser::processLoglevel()
+int CommandDispatcher::cmdLogLevel()
 {
 	po::options_description desc("Set log level \nUsage: appc log [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1480,7 +1509,7 @@ void ArgumentParser::processLoglevel()
 	if (m_commandLineVariables.size() == 0 || m_commandLineVariables.count(LEVEL) == 0)
 	{
 		std::cout << desc << std::endl;
-		return;
+		return 0;
 	}
 
 	auto level = m_commandLineVariables[LEVEL].as<std::string>();
@@ -1491,9 +1520,10 @@ void ArgumentParser::processLoglevel()
 	auto restPath = std::string("/appmesh/config");
 	auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
 	std::cout << "Log level set to: " << nlohmann::json::parse(response->text).at(JSON_KEY_BaseConfig).at(JSON_KEY_LogLevel).get<std::string>() << std::endl;
+	return 0;
 }
 
-void ArgumentParser::processConfigView()
+int CommandDispatcher::cmdConfigView()
 {
 	po::options_description desc("View configurations \nUsage: appc config [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1508,9 +1538,10 @@ void ArgumentParser::processConfigView()
 	std::string restPath = "/appmesh/config";
 	auto resp = requestHttp(true, web::http::methods::GET, restPath);
 	std::cout << JSON::dumpToLocalEncoding(nlohmann::json::parse(resp->text), 2) << std::endl;
+	return 0;
 }
 
-void ArgumentParser::processUserChangePwd()
+int CommandDispatcher::cmdChangePwd()
 {
 	po::options_description desc("Change password \nUsage: appc passwd [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1534,9 +1565,10 @@ void ArgumentParser::processUserChangePwd()
 	jsonObj[HTTP_BODY_KEY_NEW_PASSWORD] = Utility::encode64(inputPasswd("new password for " + user));
 	auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
 	std::cout << parseOutputMessage(response) << std::endl;
+	return 0;
 }
 
-void ArgumentParser::processUserLock()
+int CommandDispatcher::cmdUserLock()
 {
 	po::options_description desc("Control user \nUsage: appc lock [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1552,7 +1584,7 @@ void ArgumentParser::processUserLock()
 	if (!m_commandLineVariables.count(TARGET) || !m_commandLineVariables.count(LOCK))
 	{
 		std::cout << desc << std::endl;
-		return;
+		return 0;
 	}
 
 	auto user = m_commandLineVariables[TARGET].as<std::string>();
@@ -1561,9 +1593,10 @@ void ArgumentParser::processUserLock()
 	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
 	auto response = requestHttp(true, web::http::methods::POST, restPath);
 	std::cout << parseOutputMessage(response) << std::endl;
+	return 0;
 }
 
-void ArgumentParser::processUserManage()
+int CommandDispatcher::cmdUserManage()
 {
 	po::options_description desc("View/Add users \nUsage: appc user [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1602,7 +1635,7 @@ void ArgumentParser::processUserManage()
 			std::string msg = std::string("Confirm to register user <") + userName + "> ? [y/n]";
 			if (!confirmInput(msg.c_str()))
 			{
-				return;
+				return 0;
 			}
 		}
 
@@ -1615,9 +1648,10 @@ void ArgumentParser::processUserManage()
 		auto response = requestHttp(true, web::http::methods::PUT, restPath, &jsonObj);
 		std::cout << parseOutputMessage(response) << std::endl;
 	}
+	return 0;
 }
 
-void ArgumentParser::processUserPwdEncrypt()
+int CommandDispatcher::cmdEncryptPassword()
 {
 	std::vector<std::string> opts = po::collect_unrecognized(m_parsedOptions, po::include_positional);
 	if (opts.size())
@@ -1640,9 +1674,10 @@ void ArgumentParser::processUserPwdEncrypt()
 			std::cout << Utility::hash(optStr) << std::endl;
 		}
 	}
+	return 0;
 }
 
-void ArgumentParser::processUserMfa()
+int CommandDispatcher::cmdUserMFA()
 {
 	po::options_description desc("Manage multi-factor authentication \nUsage: appc mfa [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
@@ -1663,7 +1698,7 @@ void ArgumentParser::processUserMfa()
 	if (userName.empty())
 	{
 		std::cout << "No user name specified" << std::endl;
-		return;
+		return 0;
 	}
 
 	if (m_commandLineVariables.count(ADD))
@@ -1726,22 +1761,23 @@ void ArgumentParser::processUserMfa()
 	{
 		std::cout << desc << std::endl;
 	}
+	return 0;
 }
 
-void ArgumentParser::initRadomPassword()
+int CommandDispatcher::cmdInitRandomPassword()
 {
 	// only for root user generate password for admin user after installation
 	if (ACE_OS::geteuid() != 0 && !Utility::runningInContainer())
 	{
 		std::cerr << "only root user can generate a initial password" << std::endl;
-		return;
+		return 0;
 	}
 
 	const auto flagFile = fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPMG_INIT_FLAG_FILE;
 	if (Utility::isFileExist(flagFile.string()))
 	{
 		std::cerr << "The 'appc appmginit' should only run once." << std::endl;
-		return;
+		return 0;
 	}
 	std::ofstream(flagFile.string(), std::ios::trunc).close();
 
@@ -1781,9 +1817,10 @@ void ArgumentParser::initRadomPassword()
 			}
 		}
 	}
+	return 0;
 }
 
-bool ArgumentParser::confirmInput(const char *msg)
+bool CommandDispatcher::confirmInput(const char *msg)
 {
 	std::cout << msg;
 	std::string result;
@@ -1791,7 +1828,7 @@ bool ArgumentParser::confirmInput(const char *msg)
 	return result == "y";
 }
 
-std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
+std::shared_ptr<CurlResponse> CommandDispatcher::requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
 	// default simulate mesh user login
 	if (getAuthToken().empty())
@@ -1833,13 +1870,13 @@ std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool shouldThrow, cons
 	return resp;
 }
 
-bool ArgumentParser::isAppExist(const std::string &appName)
+bool CommandDispatcher::isAppExist(const std::string &appName)
 {
 	static auto apps = getAppList();
 	return apps.find(appName) != apps.end();
 }
 
-std::map<std::string, bool> ArgumentParser::getAppList()
+std::map<std::string, bool> CommandDispatcher::getAppList()
 {
 	std::map<std::string, bool> apps;
 	std::string restPath = "/appmesh/applications";
@@ -1853,7 +1890,7 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	return apps;
 }
 
-std::string ArgumentParser::acquireAuthToken()
+std::string CommandDispatcher::acquireAuthToken()
 {
 	std::string token;
 	// 1. try to get from REST
@@ -1875,7 +1912,7 @@ std::string ArgumentParser::acquireAuthToken()
 	return token;
 }
 
-std::string ArgumentParser::getAuthenUser()
+std::string CommandDispatcher::getAuthenUser()
 {
 	std::string token;
 	// 1. try to get from REST
@@ -1903,12 +1940,12 @@ std::string ArgumentParser::getAuthenUser()
 	}
 }
 
-std::string ArgumentParser::getAuthToken()
+std::string CommandDispatcher::getAuthToken()
 {
 	return RestClient::getCookie(COOKIE_TOKEN);
 }
 
-std::string ArgumentParser::readPersistLastHost(const std::string &defaultAddress)
+std::string CommandDispatcher::readPersistLastHost(const std::string &defaultAddress)
 {
 	if (Utility::isFileExist(m_configFile))
 	{
@@ -1932,7 +1969,7 @@ std::string ArgumentParser::readPersistLastHost(const std::string &defaultAddres
 	return defaultAddress;
 }
 
-void ArgumentParser::persistUserConfig(const std::string &hostName)
+void CommandDispatcher::persistUserConfig(const std::string &hostName)
 {
 	nlohmann::json config;
 	try
@@ -1969,7 +2006,7 @@ void ArgumentParser::persistUserConfig(const std::string &hostName)
 	}
 }
 
-std::string ArgumentParser::login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience)
+std::string CommandDispatcher::login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience)
 {
 	auto url = Utility::stdStringTrim(targetHost, '/');
 
@@ -2002,7 +2039,8 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 			body[HTTP_BODY_KEY_JWT_totp] = totp;
 			body[HTTP_BODY_KEY_JWT_totp_challenge] = totpChallenge;
 			body[HTTP_BODY_KEY_JWT_expire_seconds] = m_tokenTimeoutSeconds;
-			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", body.dump(), {}, {});
+			header = {{HTTP_HEADER_JWT_set_cookie, std::to_string(true)}};
+			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", body.dump(), header, {});
 			if (response->status_code == web::http::status_codes::OK)
 			{
 				setCurrentUrl(url);
@@ -2015,7 +2053,7 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 	throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(response).c_str()));
 }
 
-void ArgumentParser::printApps(const nlohmann::json &json, bool reduce)
+void CommandDispatcher::printApps(const nlohmann::json &json, bool reduce)
 {
 	const int COLUMN_PADDING = 2;
 
@@ -2214,7 +2252,7 @@ void ArgumentParser::printApps(const nlohmann::json &json, bool reduce)
 	}
 }
 
-void ArgumentParser::shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered)
+void CommandDispatcher::shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered)
 {
 	m_commandLineVariables.clear();
 	std::vector<std::string> opts = po::collect_unrecognized(m_parsedOptions, po::include_positional);
@@ -2228,7 +2266,7 @@ void ArgumentParser::shiftCommandLineArgs(po::options_description &desc, bool al
 	po::notify(m_commandLineVariables);
 }
 
-std::string ArgumentParser::reduceStr(std::string source, size_t limit)
+std::string CommandDispatcher::reduceStr(std::string source, size_t limit)
 {
 	if (source.length() >= limit)
 	{
@@ -2247,7 +2285,7 @@ std::string ArgumentParser::reduceStr(std::string source, size_t limit)
 	return source;
 }
 
-std::string ArgumentParser::inputPasswd(const std::string &userNameDesc)
+std::string CommandDispatcher::inputPasswd(const std::string &userNameDesc)
 {
 	std::string passwd;
 	while (passwd.empty())
@@ -2263,7 +2301,7 @@ std::string ArgumentParser::inputPasswd(const std::string &userNameDesc)
 	return passwd;
 }
 
-int ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mask, FILE *fp)
+int CommandDispatcher::inputSecurePasswd(char **pw, std::size_t sz, int mask, FILE *fp)
 {
 	if (!pw || !sz || !fp)
 		return -1; /* validate input   */
@@ -2303,6 +2341,7 @@ int ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mask, FILE 
 		{
 			/* emulate interruption: return 0 length */
 			idx = 0;
+			exit(1);
 			break;
 		}
 		if (ch == 8 || ch == 127) // Backspace / Delete
@@ -2401,7 +2440,7 @@ int ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mask, FILE 
 	return static_cast<int>(idx); /* return number of chars read */
 }
 
-const std::string ArgumentParser::getAppMeshUrl()
+const std::string CommandDispatcher::getAppMeshUrl()
 {
 	std::string url = APPMESH_LOCAL_HOST_URL;
 	auto file = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE);
@@ -2436,7 +2475,7 @@ const std::string ArgumentParser::getAppMeshUrl()
 	return Utility::stringReplace(url, "0.0.0.0", "127.0.0.1");
 }
 
-const std::string ArgumentParser::getPosixTimezone()
+const std::string CommandDispatcher::getPosixTimezone()
 {
 	const auto file = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE);
 	if (Utility::isFileExist(file))
@@ -2446,7 +2485,7 @@ const std::string ArgumentParser::getPosixTimezone()
 	return "";
 }
 
-const std::string ArgumentParser::parseUrlHost(const std::string &url)
+const std::string CommandDispatcher::parseUrlHost(const std::string &url)
 {
 	// https://stackoverflow.com/questions/2616011/easy-way-to-parse-a-url-in-c-cross-platform
 	std::string domain;
@@ -2463,7 +2502,7 @@ const std::string ArgumentParser::parseUrlHost(const std::string &url)
 	return domain;
 }
 
-const std::string ArgumentParser::parseUrlPort(const std::string &url)
+const std::string CommandDispatcher::parseUrlPort(const std::string &url)
 {
 	// https://stackoverflow.com/questions/2616011/easy-way-to-parse-a-url-in-c-cross-platform
 	std::string port;
@@ -2476,7 +2515,7 @@ const std::string ArgumentParser::parseUrlPort(const std::string &url)
 	return port;
 }
 
-void ArgumentParser::setCurrentUrl(const std::string &url)
+void CommandDispatcher::setCurrentUrl(const std::string &url)
 {
 	m_currentUrl = url;
 	const auto cookieDomain = parseUrlHost(m_currentUrl);
@@ -2487,7 +2526,7 @@ void ArgumentParser::setCurrentUrl(const std::string &url)
 	}
 }
 
-std::string ArgumentParser::getAndCreateConfigDir()
+std::string CommandDispatcher::getAndCreateConfigDir()
 {
 	boost::filesystem::path dir;
 
@@ -2574,7 +2613,7 @@ std::string ArgumentParser::getAndCreateConfigDir()
  *
  * @return Cookie directory path, or empty string on failure
  */
-std::string ArgumentParser::getAndCreateCookieDirectory(const std::string &host)
+std::string CommandDispatcher::getAndCreateCookieDirectory(const std::string &host)
 {
 	boost::filesystem::path cookieDir;
 

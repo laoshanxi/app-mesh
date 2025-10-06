@@ -1,6 +1,9 @@
 # tcp_messages.py
 
+# Standard library imports
 from typing import get_type_hints
+
+# Third-party imports
 import msgpack
 
 

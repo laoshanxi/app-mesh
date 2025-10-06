@@ -1,25 +1,32 @@
 # client_http.py
 # pylint: disable=broad-exception-raised,line-too-long,broad-exception-caught,too-many-lines,import-outside-toplevel
+
+# Standard library imports
 import abc
 import base64
+import http.cookiejar as cookiejar
 import json
 import locale
 import logging
 import os
 import sys
+import threading
 import time
 from datetime import datetime
 from enum import Enum, unique
 from http import HTTPStatus
-import threading
 from typing import Optional, Tuple, Union
 from urllib import parse
+
+# Third-party imports
 import aniso8601
 import jwt
 import requests
+
+# Local imports
 from .app import App
-from .app_run import AppRun
 from .app_output import AppOutput
+from .app_run import AppRun
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -127,6 +134,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     HTTP_HEADER_KEY_USER_AGENT = "User-Agent"
     HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
     HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
+    HTTP_HEADER_JWT_set_cookie = "X-Set-Cookie"
+    HTTP_HEADER_NAME_CSRF_TOKEN = "X-CSRF-Token"
+    COOKIE_TOKEN = "appmesh_auth_token"
+    COOKIE_CSRF_TOKEN = "appmesh_csrf_token"
 
     @unique
     class Method(Enum):
@@ -191,7 +202,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_ssl_verify=DEFAULT_SSL_CA_CERT_PATH if os.path.exists(DEFAULT_SSL_CA_CERT_PATH) else False,
         rest_ssl_client_cert=(DEFAULT_SSL_CLIENT_CERT_PATH, DEFAULT_SSL_CLIENT_KEY_PATH) if os.path.exists(DEFAULT_SSL_CLIENT_CERT_PATH) else None,
         rest_timeout=(60, 300),
-        jwt_token=None,
+        jwt_token: Optional[str] = None,
+        rest_cookie_file: Optional[str] = None,
         auto_refresh_token=False,
     ):
         """Initialize an App Mesh HTTP client for interacting with the App Mesh server via secure HTTPS.
@@ -213,13 +225,15 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             rest_timeout (tuple, optional): HTTP connection timeouts for API requests, as `(connect_timeout, read_timeout)`.
                 The default is `(60, 300)`, where `60` seconds is the maximum time to establish a connection and `300` seconds for the maximum read duration.
 
+            rest_cookie_file (str, optional): Path to a file for storing session cookies.
+                If provided, cookies will be saved to and loaded from this file to maintain session state across client instances instead of keep jwt_token.
+
             jwt_token (str, optional): JWT token for API authentication, used in headers to authorize requests where required.
             auto_refresh_token (bool, optional): Enable automatic token refresh before expiration.
                 When enabled, a background timer will monitor token expiration and attempt to refresh
                 the token before it expires. This works with both native App Mesh tokens and Keycloak tokens.
         """
         self._ensure_logging_configured()
-        self.session = requests.Session()
         self.auth_server_url = rest_url
         self._jwt_token = jwt_token
         self.ssl_verify = rest_ssl_verify
@@ -232,6 +246,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self._auto_refresh_token = auto_refresh_token
         self.jwt_token = jwt_token  # Set property last after all dependencies are initialized to setup refresh timer
 
+        # Session and cookie management
+        self._lock = threading.Lock()
+        self.session = requests.Session()
+        self.cookie_file = self._load_cookies(rest_cookie_file)
+
     @staticmethod
     def _ensure_logging_configured():
         """Ensure logging is configured. If no handlers are configured, add a default console handler."""
@@ -240,6 +259,45 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def _get_access_token(self) -> str:
         return self.jwt_token
+
+    def _load_cookies(self, cookie_file: Optional[str]) -> str:
+        """Load cookies from the cookie file and return the file path ."""
+        if not cookie_file:
+            return ""
+
+        self.session.cookies = cookiejar.MozillaCookieJar(cookie_file)
+        if os.path.exists(cookie_file):
+            self.session.cookies.load(ignore_discard=True, ignore_expires=True)
+            self.jwt_token = self._get_cookie_value(self.session.cookies, self.COOKIE_TOKEN)
+        else:
+            os.makedirs(os.path.dirname(cookie_file), exist_ok=True)
+            self.session.cookies.save(ignore_discard=True, ignore_expires=True)
+            if os.name == "posix":
+                os.chmod(cookie_file, 0o600)  # User read/write only
+        return cookie_file
+
+    @staticmethod
+    def _get_cookie_value(cookies, name, check_expiry=True) -> Optional[str]:
+        """Get cookie value by name, checking expiry if requested."""
+        # If it's a RequestsCookieJar, use .get() but check expiry manually if requested
+        if hasattr(cookies, "get") and not isinstance(cookies, list):
+            cookie = cookies.get(name)
+            if cookie is None:
+                return None
+            if check_expiry and getattr(cookie, "expires", None):
+                if cookie.expires < time.time():
+                    return None  # expired
+            return cookie.value if hasattr(cookie, "value") else cookie
+
+        # Otherwise, assume it's a MozillaCookieJar — iterate manually
+        for c in cookies:
+            if c.name == name:
+                if check_expiry and getattr(c, "expires", None):
+                    if c.expires < time.time():
+                        return None  # expired
+                return c.value
+
+        return None
 
     def _check_and_refresh_token(self):
         """Check and refresh token if needed, then schedule next check.
@@ -389,6 +447,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             - Refresh tokens before expiration
             - Validate token format before setting
         """
+        if self._jwt_token == token:
+            return  # No change
         self._jwt_token = token
 
         # handle refresh
@@ -397,6 +457,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         elif self._token_refresh_timer:
             self._token_refresh_timer.cancel()
             self._token_refresh_timer = None
+
+        # handle session
+        with self._lock:
+            if hasattr(self, "cookie_file") and self.cookie_file:
+                self.session.cookies.save(ignore_discard=True, ignore_expires=True)
 
     @property
     def forward_to(self) -> str:
@@ -476,6 +541,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 self.HTTP_HEADER_KEY_AUTH: "Basic " + base64.b64encode(f"{user_name}:{user_pwd}".encode()).decode(),
                 "X-Expire-Seconds": str(self._parse_duration(timeout_seconds)),
                 **({"X-Audience": audience} if audience else {}),
+                **({self.HTTP_HEADER_JWT_set_cookie: "true"} if self.cookie_file else {}),
                 # **({"X-Totp-Code": totp_code} if totp_code else {}),
             },
         )
@@ -516,6 +582,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 "totp_challenge": challenge,
                 "expire_seconds": self._parse_duration(timeout),
             },
+            header={self.HTTP_HEADER_JWT_set_cookie: "true"} if self.cookie_file else {},
         )
         if resp.status_code == HTTPStatus.OK and "access_token" in resp.json():
             self.jwt_token = resp.json()["access_token"]
@@ -1399,9 +1466,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         # Prepare headers
         header = {} if header is None else header
-        token = self._get_access_token()
-        if token:
-            header[self.HTTP_HEADER_KEY_AUTH] = f"Bearer {token}"
+
+        # JWT or Cookie token
+        if self.cookie_file and self._get_cookie_value(self.session.cookies, self.COOKIE_CSRF_TOKEN):
+            header[self.HTTP_HEADER_NAME_CSRF_TOKEN] = self._get_cookie_value(self.session.cookies, self.COOKIE_CSRF_TOKEN)
+        elif self._get_access_token():
+            header[self.HTTP_HEADER_KEY_AUTH] = f"Bearer {self._get_access_token()}"
+
         if self.forward_to and len(self.forward_to) > 0:
             if ":" in self.forward_to:
                 header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
