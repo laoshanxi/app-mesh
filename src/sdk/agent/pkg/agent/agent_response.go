@@ -255,7 +255,7 @@ func (r *Response) clearAuthCookie(w http.ResponseWriter, req *http.Request) {
 func (r *Response) clearCSRFToken(w http.ResponseWriter, req *http.Request) {
 	logger.Debugf("Clearing CSRF token for %s", r.Uuid)
 	http.SetCookie(w, &http.Cookie{
-		Name:     COOKIE_TOKEN,
+		Name:     COOKIE_CSRF_TOKEN,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,

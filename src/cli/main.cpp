@@ -3,7 +3,7 @@
 #include <boost/filesystem/operations.hpp>
 
 #include "../common/Utility.h"
-#include "ArgumentParser.h"
+#include "CommandDispatcher.h"
 
 /// <summary>
 /// Command line entrypoint
@@ -14,8 +14,8 @@ int main(int argc, char *argv[])
 	try
 	{
 		Utility::initLogging(std::string());
-		ArgumentParser parser(argc, argv);
-		return parser.parse();
+		CommandDispatcher arg(argc, argv);
+		return arg.execute();
 	}
 	catch (const std::exception &e)
 	{

@@ -192,12 +192,14 @@ const std::string RestBase::generateJwtToken(const std::string &userName, const 
     const static std::string ecPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PRIVATE_KEY_FILE).string());
 
     // Create token with standard claims
+    const auto now = std::chrono::system_clock::now();
     const auto jwt = jwt::create()
                          .set_issuer(Configuration::instance()->getRestJwtIssuer()) // Issuer: identifies token creator
                          .set_subject(userName)                                     // Subject: user ID
                          .set_audience(std::move(targetAudience))                   // Audience: intended recipient
-                         .set_issued_at(jwt::date(std::chrono::system_clock::now()))
-                         .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
+                         .set_issued_at(jwt::date(now))                             // Issued at: token creation time
+                         .set_expires_at(jwt::date(now + std::chrono::seconds{timeoutSeconds}))
+                         .set_id(Utility::createUUID())                                     // JWT ID: unique identifier for the token
                          .set_payload_claim("resource_access", jwt::claim(resourceAccess)); // Custom claim for permissions
 
     // Sign token with appropriate algorithm

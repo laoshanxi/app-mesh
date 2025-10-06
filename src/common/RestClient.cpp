@@ -4,6 +4,7 @@
 #include <mutex>
 #include <openssl/ssl.h>
 #include <sstream>
+#include <ctime>
 
 #include "RestClient.h"
 #include "Utility.h"
@@ -629,6 +630,22 @@ namespace curlpp
 	}
 }
 
+// Helper function to check if a cookie is expired
+bool RestClient::isCookieExpired(const Cookie &cookie)
+{
+	// A cookie with expiration of 0 is a session cookie (never expires until session ends)
+	if (cookie.expiration == 0)
+	{
+		return false;
+	}
+
+	// Get current timestamp
+	std::time_t now = std::time(nullptr);
+
+	// Check if cookie has expired
+	return cookie.expiration < now;
+}
+
 // Parse Netscape cookie format line
 // Format: domain flag path secure expiration name value
 // Example: .example.com	TRUE	/	FALSE	0	token_name	token_value
@@ -705,7 +722,11 @@ std::map<std::string, Cookie> RestClient::readCookiesFromMemory()
 		Cookie cookie;
 		if (parseNetscapeCookie(line, cookie))
 		{
-			cookies[cookie.name] = cookie;
+			// Skip expired cookies
+			if (!isCookieExpired(cookie))
+			{
+				cookies[cookie.name] = cookie;
+			}
 		}
 	}
 
@@ -736,7 +757,11 @@ std::map<std::string, Cookie> RestClient::readCookiesFromFile()
 		Cookie cookie;
 		if (parseNetscapeCookie(line, cookie))
 		{
-			cookies[cookie.name] = cookie;
+			// Skip expired cookies
+			if (!isCookieExpired(cookie))
+			{
+				cookies[cookie.name] = cookie;
+			}
 		}
 	}
 

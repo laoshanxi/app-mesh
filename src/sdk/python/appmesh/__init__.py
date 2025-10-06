@@ -11,6 +11,7 @@ Example:
 
 import sys
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 __all__ = ["App", "AppMeshClient", "AppMeshClientTCP", "AppMeshClientOAuth", "AppMeshServer", "AppMeshServerTCP"]
 
@@ -22,6 +23,17 @@ _LAZY_IMPORTS = {
     "AppMeshServer": ("server_http", "AppMeshServer"),  # from .server_http import AppMeshServer
     "AppMeshServerTCP": ("server_tcp", "AppMeshServerTCP"),  # from .server_tcp import AppMeshServerTCP
 }
+
+
+if TYPE_CHECKING:
+    # Provide explicit imports for static analyzers and type checkers
+    # These imports are only executed during type checking and won't affect runtime.
+    from .app import App  # noqa: F401
+    from .client_http import AppMeshClient  # noqa: F401
+    from .client_tcp import AppMeshClientTCP  # noqa: F401
+    from .client_http_oauth import AppMeshClientOAuth  # noqa: F401
+    from .server_http import AppMeshServer  # noqa: F401
+    from .server_tcp import AppMeshServerTCP  # noqa: F401
 
 
 def _lazy_import(name):

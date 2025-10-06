@@ -1,10 +1,10 @@
 # app_output.py
+# pylint: disable=line-too-long
 """Application output information"""
 
+# Standard library imports
 from http import HTTPStatus
 from typing import Optional
-
-# pylint: disable=line-too-long
 
 
 class AppOutput(object):
