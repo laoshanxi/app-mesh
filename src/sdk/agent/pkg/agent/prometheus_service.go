@@ -3,6 +3,8 @@ package agent
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 )
 
 const (
@@ -32,14 +34,14 @@ func (s *PrometheusServer) RootHandler(w http.ResponseWriter, r *http.Request) {
 // MetricsHandler handles the metrics path request
 func (s *PrometheusServer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		utils.HttpError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	// Create a new request for the Appmesh metrics
 	appmeshReq, err := http.NewRequest(http.MethodGet, appmeshMetricPath, nil)
 	if err != nil {
-		http.Error(w, "Failed to create Appmesh request", http.StatusInternalServerError)
+		utils.HttpError(w, "Failed to create Appmesh request", http.StatusInternalServerError)
 		return
 	}
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
@@ -122,7 +123,7 @@ func (r *Response) ApplyResponse(w http.ResponseWriter, req *http.Request, reque
 	// Handle the response body based on the path
 	if r.RequestUri == REST_PATH_DOWNLOAD || r.RequestUri == REST_PATH_UPLOAD {
 		if err := HandleRESTFile(w, req, r); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			utils.HttpError(w, err.Error(), http.StatusInternalServerError)
 		}
 		logger.Debugf("File REST call Finished %s", r.Uuid)
 	} else {

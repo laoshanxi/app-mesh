@@ -3,6 +3,7 @@
 #include <log4cpp/Priority.hh>
 #include <mutex>
 #include <openssl/ssl.h>
+#include <sstream>
 
 #include "RestClient.h"
 #include "Utility.h"
@@ -201,27 +202,11 @@ void RestClient::clearSession()
 {
 	std::lock_guard<std::mutex> lock(m_sessionMutex);
 
-	if (m_sessionConfig.use_memory_cookies)
-	{
-		// Clear memory cookies
-		m_memoryCookies.clear();
-		LOG_INF << "Memory session cookies cleared";
-	}
-	else if (!m_sessionConfig.cookie_file.empty())
-	{
-		// Delete cookie file
-		if (Utility::isFileExist(m_sessionConfig.cookie_file))
-		{
-			if (std::remove(m_sessionConfig.cookie_file.c_str()) == 0)
-			{
-				LOG_INF << "Cookie file deleted: " << m_sessionConfig.cookie_file;
-			}
-			else
-			{
-				LOG_ERR << "Failed to delete cookie file: " << m_sessionConfig.cookie_file;
-			}
-		}
-	}
+	// Clear memory cookies
+	m_memoryCookies.clear();
+
+	// Delete cookie file
+	Utility::removeFile(m_sessionConfig.cookie_file);
 }
 
 void RestClient::setSessionConfig(CURL *curl)
@@ -642,4 +627,175 @@ namespace curlpp
 		}
 		return buffer;
 	}
+}
+
+// Parse Netscape cookie format line
+// Format: domain flag path secure expiration name value
+// Example: .example.com	TRUE	/	FALSE	0	token_name	token_value
+// HttpOnly cookies have #HttpOnly_ prefix in domain
+bool RestClient::parseNetscapeCookie(const std::string &line, Cookie &cookie)
+{
+	// Skip comments and empty lines
+	if (line.empty() || line[0] == '#')
+	{
+		// Check for HttpOnly format: #HttpOnly_domain
+		if (line.find("#HttpOnly_") == 0)
+		{
+			cookie.httponly = true;
+			// Continue parsing the rest without the prefix
+			std::string modifiedLine = line.substr(10); // Remove "#HttpOnly_"
+			std::istringstream iss(modifiedLine);
+
+			std::string flag_str, secure_str, expiration_str;
+
+			if (!(iss >> cookie.domain >> flag_str >> cookie.path >> secure_str >> expiration_str >> cookie.name))
+			{
+				return false;
+			}
+
+			// Read the rest as value (may contain spaces)
+			std::getline(iss, cookie.value);
+			cookie.value = Utility::stdStringTrim(cookie.value);
+
+			cookie.include_subdomains = (flag_str == "TRUE");
+			cookie.secure = (secure_str == "TRUE");
+			cookie.expiration = std::stoll(expiration_str);
+
+			return true;
+		}
+		return false;
+	}
+
+	std::istringstream iss(line);
+	std::string flag_str, secure_str, expiration_str;
+
+	if (!(iss >> cookie.domain >> flag_str >> cookie.path >> secure_str >> expiration_str >> cookie.name))
+	{
+		return false;
+	}
+
+	// Read the rest as value (may contain spaces)
+	std::getline(iss, cookie.value);
+	cookie.value = Utility::stdStringTrim(cookie.value);
+
+	cookie.include_subdomains = (flag_str == "TRUE");
+	cookie.secure = (secure_str == "TRUE");
+	cookie.expiration = std::stoll(expiration_str);
+	cookie.httponly = false;
+
+	return true;
+}
+
+// Read cookies from memory storage
+std::map<std::string, Cookie> RestClient::readCookiesFromMemory()
+{
+	std::map<std::string, Cookie> cookies;
+	std::lock_guard<std::mutex> lock(m_sessionMutex);
+
+	if (m_memoryCookies.empty())
+	{
+		return cookies;
+	}
+
+	std::istringstream stream(m_memoryCookies);
+	std::string line;
+
+	while (std::getline(stream, line))
+	{
+		Cookie cookie;
+		if (parseNetscapeCookie(line, cookie))
+		{
+			cookies[cookie.name] = cookie;
+		}
+	}
+
+	return cookies;
+}
+
+// Read cookies from file storage
+std::map<std::string, Cookie> RestClient::readCookiesFromFile()
+{
+	std::map<std::string, Cookie> cookies;
+	std::lock_guard<std::mutex> lock(m_sessionMutex);
+
+	if (m_sessionConfig.cookie_file.empty() || !Utility::isFileExist(m_sessionConfig.cookie_file))
+	{
+		return cookies;
+	}
+
+	std::ifstream file(m_sessionConfig.cookie_file);
+	if (!file.is_open())
+	{
+		LOG_ERR << "Failed to open cookie file: " << m_sessionConfig.cookie_file;
+		return cookies;
+	}
+
+	std::string line;
+	while (std::getline(file, line))
+	{
+		Cookie cookie;
+		if (parseNetscapeCookie(line, cookie))
+		{
+			cookies[cookie.name] = cookie;
+		}
+	}
+
+	file.close();
+	return cookies;
+}
+
+// Get all cookies
+std::map<std::string, Cookie> RestClient::getAllCookies()
+{
+	std::lock_guard<std::mutex> lock(m_sessionMutex);
+
+	if (!m_sessionConfig.enable_session)
+	{
+		return {};
+	}
+
+	if (m_sessionConfig.use_memory_cookies)
+	{
+		// Need to unlock before calling readCookiesFromMemory which also locks
+		m_sessionMutex.unlock();
+		auto result = readCookiesFromMemory();
+		m_sessionMutex.lock();
+		return result;
+	}
+	else
+	{
+		m_sessionMutex.unlock();
+		auto result = readCookiesFromFile();
+		m_sessionMutex.lock();
+		return result;
+	}
+}
+
+// Get specific cookie value by name
+std::string RestClient::getCookie(const std::string &cookieName)
+{
+	auto cookies = getAllCookies();
+	auto it = cookies.find(cookieName);
+
+	if (it != cookies.end())
+	{
+		return it->second.value;
+	}
+
+	return "";
+}
+
+// Get specific cookie with full details
+bool RestClient::getCookieDetails(const std::string &cookieName, Cookie &cookie)
+{
+	auto cookies = getAllCookies();
+	auto it = cookies.find(cookieName);
+
+	if (it != cookies.end())
+	{
+		cookie = it->second;
+		return true;
+	}
+
+	return false;
 }

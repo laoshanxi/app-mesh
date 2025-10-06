@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -159,4 +160,22 @@ func MaskSecret(secret string, visibleChars int, mask string) string {
 	result = append(result, secret[length-visibleChars:]...)
 
 	return string(result)
+}
+
+// HttpError replies to the request with the specified error message and HTTP code.
+// Unlike http.Error, this does NOT append a newline to the error message.
+func HttpError(w http.ResponseWriter, error string, code int) {
+	h := w.Header()
+
+	// Delete the Content-Length header, which might be for some other content.
+	// We don't delete Content-Encoding to support gzip middleware.
+	h.Del("Content-Length")
+
+	// Reset to text/plain for the error message.
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+
+	// Use Fprint instead of Fprintln to avoid appending a newline
+	fmt.Fprint(w, error)
 }
