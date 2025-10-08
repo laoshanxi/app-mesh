@@ -1,5 +1,6 @@
 import io
 import os
+import sys
 import setuptools
 
 readme_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../../../README.md")
@@ -9,8 +10,18 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 def get_version():
     """PyPI package version"""
-    return "1.6.11"
+    return "1.6.13"
 
+
+# Dependencies
+install_requires = [
+    "requests",
+    "msgpack",
+    "requests_toolbelt",
+    "aniso8601",
+    "PyJWT",
+    "dataclasses; python_version < '3.7'",
+]
 
 setuptools.setup(
     name="appmesh",
@@ -25,14 +36,10 @@ setuptools.setup(
     keywords="appmesh AppMesh app-mesh",
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3.6",
         "Operating System :: OS Independent",
     ],
     packages=setuptools.find_packages(exclude=["test*"]),
-    # requests for REST call
-    # msgpack for TCP serialization
-    # requests_toolbelt for MultipartEncoder
-    # aniso8601 for ISO8601 duration parse
-    install_requires=["requests", "msgpack", "requests_toolbelt", "aniso8601", "PyJWT"],
+    install_requires=install_requires,
     python_requires=">=3",
 )

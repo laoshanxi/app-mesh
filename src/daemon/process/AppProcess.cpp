@@ -39,7 +39,7 @@ AppProcess::AppProcess(void *owner)
 #endif
 	  m_lastProcCpuTime(0),
 	  m_lastSysCpuTime(0),
-	  m_uuid(Utility::createUUID()),
+	  m_uuid(Utility::shortID()),
 	  m_key(generatePassword(10, true, true, true, false)),
 	  m_pid(ACE_INVALID_PID),
 	  m_returnValue(-1)

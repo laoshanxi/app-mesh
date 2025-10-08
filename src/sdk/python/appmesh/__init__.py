@@ -1,8 +1,6 @@
 # __init__.py
 """
-App Mesh SDK package initializer.
-
-This module exports the main client classes used to interact with the App Mesh API.
+App Mesh SDK package initializer with lazy loading support.
 
 Example:
     from appmesh import AppMeshClient
@@ -12,9 +10,18 @@ Example:
 import sys
 from types import ModuleType
 from typing import TYPE_CHECKING
+from importlib import import_module
 
-__all__ = ["App", "AppMeshClient", "AppMeshClientTCP", "AppMeshClientOAuth", "AppMeshServer", "AppMeshServerTCP"]
+__all__ = [
+    "App",
+    "AppMeshClient",
+    "AppMeshClientTCP",
+    "AppMeshClientOAuth",
+    "AppMeshServer",
+    "AppMeshServerTCP",
+]
 
+# Lazy import configuration
 _LAZY_IMPORTS = {
     "App": ("app", "App"),  # from .app import App
     "AppMeshClient": ("client_http", "AppMeshClient"),  # from .client_http import AppMeshClient
@@ -24,10 +31,8 @@ _LAZY_IMPORTS = {
     "AppMeshServerTCP": ("server_tcp", "AppMeshServerTCP"),  # from .server_tcp import AppMeshServerTCP
 }
 
-
 if TYPE_CHECKING:
-    # Provide explicit imports for static analyzers and type checkers
-    # These imports are only executed during type checking and won't affect runtime.
+    # Type checking imports (not executed at runtime)
     from .app import App  # noqa: F401
     from .client_http import AppMeshClient  # noqa: F401
     from .client_tcp import AppMeshClientTCP  # noqa: F401
@@ -36,25 +41,34 @@ if TYPE_CHECKING:
     from .server_tcp import AppMeshServerTCP  # noqa: F401
 
 
-def _lazy_import(name):
-    """Helper function for lazy importing."""
+def _lazy_import(name: str):
+    """
+    Internal helper for lazy import resolution using PEP 562.
+    Only imports modules when accessed, improving startup time.
+    """
     if name in _LAZY_IMPORTS:
         module_name, attr_name = _LAZY_IMPORTS[name]
-        module = __import__(f"{__name__}.{module_name}", fromlist=[attr_name])
-        return getattr(module, attr_name)
+        module = import_module(f".{module_name}", __name__)
+        globals()[name] = getattr(module, attr_name)
+        return globals()[name]
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
+def __dir__():
+    """Provide tab-completion support for lazy-loaded attributes."""
+    return sorted(__all__ + list(globals().keys()))
+
+
 if sys.version_info >= (3, 7):
-
-    def __getattr__(name):
-        return _lazy_import(name)
-
+    __getattr__ = _lazy_import
 else:
-    # Python 3.6 compatibility
+    # Python 3.6 compatibility via module replacement
     class _LazyModule(ModuleType):
         def __getattr__(self, name):
             return _lazy_import(name)
+
+        def __dir__(self):
+            return sorted(__all__ + list(globals().keys()))
 
     sys.modules[__name__] = _LazyModule(__name__)
     sys.modules[__name__].__dict__.update(globals())

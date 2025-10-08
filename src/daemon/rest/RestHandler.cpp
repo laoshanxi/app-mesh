@@ -1018,7 +1018,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 	else
 	{
 		// CASE: new a application and run, client did not provide app name
-		jsonApp[JSON_KEY_APP_name] = Utility::createUUID(); // specify a UUID app name
+		jsonApp[JSON_KEY_APP_name] = Utility::shortID(); // specify a UUID app name
 		if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
 		{
 			LOG_WAR << fname << "Missing required command field in application JSON";

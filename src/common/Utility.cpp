@@ -18,8 +18,8 @@
 #include <windows.h>
 #endif
 
-#include "ace/UUID.h"
 #include <ace/OS.h>
+#include <ace/UUID.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
@@ -372,13 +372,6 @@ bool Utility::ensureSystemRoot()
 
 #endif
 	return true;
-}
-
-int Utility::random(int min, int max)
-{
-	static thread_local std::mt19937 gen(std::random_device{}() ^ static_cast<unsigned long>(std::chrono::steady_clock::now().time_since_epoch().count()));
-	std::uniform_int_distribution<int> dist(min, max);
-	return dist(gen);
 }
 
 void Utility::initLogging(const std::string &name)
@@ -1035,10 +1028,31 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 	return fileBytesToUtf8(result);
 }
 
-std::string Utility::createUUID()
+std::string Utility::shortID()
 {
-	const static char fname[] = "Utility::createUUID() ";
+	static std::atomic<uint16_t> counter{0};
+	static const uint16_t salt = std::random_device{}() & 0xFFFF; // process unique salt
 
+	const auto now = std::chrono::system_clock::now().time_since_epoch();
+	uint64_t millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+
+	// 64-bit: time(42) + salt(16) + counter(6)
+	uint64_t id = (millis << 22) | (uint64_t(salt) << 6) | (counter++ & 0x3F);
+
+	// base62 encode
+	static const char alphabet[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+	std::string out;
+	while (id > 0)
+	{
+		out.push_back(alphabet[id % 62]);
+		id /= 62;
+	}
+	std::reverse(out.begin(), out.end());
+	return out;
+}
+
+std::string Utility::uuid()
+{
 	// Generate UUID
 	ACE_Utils::UUID uuid;
 	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
@@ -1047,8 +1061,7 @@ std::string Utility::createUUID()
 	const auto *uuid_str = uuid.to_string();
 	if (uuid_str == nullptr)
 	{
-		LOG_WAR << fname << "Failed to convert UUID to string, using hashId() instead";
-		return hashId();
+		return shortID();
 	}
 
 	// Remove hyphens
@@ -1428,16 +1441,6 @@ std::string Utility::hash(const std::string &str)
 	}
 
 	return std::string("H") + std::to_string(hash);
-}
-
-std::string Utility::hashId()
-{
-	// https://github.com/schoentoon/hashidsxx
-	static const auto salt = generatePassword(6, true, true, false, false);
-	static hashidsxx::Hashids hash(salt, 10);
-	static std::atomic_int index(1000);
-	int value = ++index;
-	return hash.encode(&value, &value + 1);
 }
 
 std::string Utility::stringFormat(const std::string fmt_str, ...)

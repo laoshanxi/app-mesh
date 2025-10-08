@@ -1,107 +1,81 @@
 # tcp_transport.py
+"""TCP Transport layer handling socket connections."""
 
-# Standard library imports
-import os
 import socket
 import ssl
 import struct
-from typing import Optional, Tuple, Union
+from pathlib import Path
+from typing import Optional, Union, Tuple
 
 
 class TCPTransport:
-    """TCP Transport layer handling socket connections"""
+    """TCP Transport layer with TLS support."""
 
     # Number of bytes used for the message length header
     # Must match the C++ service implementation which uses uint32_t (4 bytes)
     # Format: Big-endian unsigned 32-bit integer
     TCP_MESSAGE_HEADER_LENGTH = 8
     TCP_MESSAGE_MAGIC = 0x07C707F8  # Magic number
-    TCP_MAX_BLOCK_SIZE = 1024 * 1024 * 100  # 100 MB message size limit
+    TCP_MAX_BLOCK_SIZE = 100 * 1024 * 1024  # 100 MB
 
-    def __init__(self, address: Tuple[str, int], ssl_verify: Union[bool, str], ssl_client_cert: Union[str, Tuple[str, str]]):
-        """Construct an TCPTransport object to send and recieve TCP data.
+    def __init__(
+        self,
+        address: Tuple[str, int],
+        ssl_verify: Union[bool, str],
+        ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+    ):
+        """
+        Initialize TCP transport with TLS configuration.
 
         Args:
-            ssl_verify (Union[bool, str], optional): Specifies SSL certificate verification behavior. Can be:
-                - `True`: Uses the system's default CA certificates to verify the server's identity.
-                - `False`: Disables SSL certificate verification (insecure, intended for development).
-                - `str`: Specifies a custom CA bundle or directory for server certificate verification. If a string is provided,
-                it should either be a file path to a custom CA certificate (CA bundle) or a directory path containing multiple
-                certificates (CA directory).
+            address: Server address as (host, port) tuple.
 
-                **Note**: Unlike HTTP requests, TCP connections cannot automatically retrieve intermediate or public CA certificates.
-                When `rest_ssl_verify` is a path, it explicitly identifies a CA issuer to ensure certificate validation.
+            ssl_verify: SSL server verification mode:
+                - True: Use system CA certificates
+                - False:  Disable verification (insecure)
+                - str: Path to custom CA bundle or directory
 
-            ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. Can be:
-                - `str`: A path to a single PEM file containing both the client certificate and private key.
-                - `tuple`: A pair of paths (`cert_file`, `key_file`), where `cert_file` is the client certificate file path and `key_file` is the private key file path.
+            ssl_client_cert: SSL client certificate:
+                - str: Path to PEM file with cert and key
+                - tuple: (cert_path, key_path)
 
-            tcp_address (Tuple[str, int], optional): Address and port for establishing a TCP connection to the server.
-                Defaults to `("127.0.0.1", 6059)`.
+        Note:
+            TCP connections require an explicit full-chain CA specification for certificate validation,
+            unlike HTTP, which can retrieve intermediate certificates automatically.
         """
-        self.tcp_address = address
+        self.address = address
         self.ssl_verify = ssl_verify
         self.ssl_client_cert = ssl_client_cert
-        self._socket = None
+        self._socket: Optional[ssl.SSLSocket] = None
 
     def __enter__(self):
-        """Context manager entry"""
+        """Context manager entry."""
         if not self.connected():
             self.connect()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit"""
+        """Context manager exit."""
         self.close()
 
-    def __del__(self) -> None:
-        """De-construction"""
-        self.close()
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass  # suppress all exceptions
 
     def connect(self) -> None:
-        """Establish tcp connection"""
-        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        # Set minimum TLS version
-        if hasattr(context, "minimum_version"):
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-        else:
-            context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-        # Configure SSL verification
-        if not self.ssl_verify:
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-        else:
-            context.verify_mode = ssl.CERT_REQUIRED  # Require certificate verification
-            context.load_default_certs()  # Load system's default CA certificates
-            if isinstance(self.ssl_verify, str):
-                if os.path.isfile(self.ssl_verify):
-                    # Load custom CA certificate file
-                    context.load_verify_locations(cafile=self.ssl_verify)
-                elif os.path.isdir(self.ssl_verify):
-                    # Load CA certificates from directory
-                    context.load_verify_locations(capath=self.ssl_verify)
-                else:
-                    raise ValueError(f"ssl_verify path '{self.ssl_verify}' is neither a file nor a directory")
-
-        if self.ssl_client_cert is not None:
-            # Load client-side certificate and private key
-            if isinstance(self.ssl_client_cert, tuple) and len(self.ssl_client_cert) == 2:
-                context.load_cert_chain(certfile=self.ssl_client_cert[0], keyfile=self.ssl_client_cert[1])
-            elif isinstance(self.ssl_client_cert, str):
-                # Handle case where cert and key are in the same file
-                context.load_cert_chain(certfile=self.ssl_client_cert)
-            else:
-                raise ValueError("ssl_client_cert must be a string filepath or a tuple of (cert_file, key_file)")
-
+        """Establish TLS connection to server."""
+        context = self._create_ssl_context()
         # Create a TCP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(True)
         # sock.settimeout(30)  # Connection timeout set to 30 seconds
+
         try:
             # Wrap the socket with SSL/TLS
-            ssl_socket = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
-            # Connect to the server
-            ssl_socket.connect(self.tcp_address)
+            ssl_socket = context.wrap_socket(sock, server_hostname=self.address[0])
+            ssl_socket.connect(self.address)
             # Disable Nagle's algorithm
             ssl_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             # After connecting, set separate timeout for recv/send
@@ -109,10 +83,49 @@ class TCPTransport:
             self._socket = ssl_socket
         except (socket.error, ssl.SSLError) as e:
             sock.close()
-            raise RuntimeError(f"Failed to connect to {self.tcp_address}: {e}") from e
+            raise RuntimeError(f"Failed to connect to {self.address}: {e}") from e
+
+    def _create_ssl_context(self) -> ssl.SSLContext:
+        """Create and configure SSL context."""
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
+        # Set minimum TLS version
+        if hasattr(context, "minimum_version"):
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+        else:
+            context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+
+        # Configure SSL verification
+        if not self.ssl_verify:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+        else:
+            context.verify_mode = ssl.CERT_REQUIRED  # Require certificate verification
+            context.load_default_certs()  # Load system's default CA certificates
+
+            if isinstance(self.ssl_verify, str):
+                path = Path(self.ssl_verify)
+                if path.is_file():
+                    # Load custom CA certificate file
+                    context.load_verify_locations(cafile=str(path))
+                elif path.is_dir():
+                    # Load CA certificates from directory
+                    context.load_verify_locations(capath=str(path))
+                else:
+                    raise ValueError(f"ssl_verify path '{self.ssl_verify}' is invalid")
+
+        # Load client certificate if provided
+        if self.ssl_client_cert:
+            if isinstance(self.ssl_client_cert, tuple):
+                # Separate cert and key files
+                context.load_cert_chain(certfile=self.ssl_client_cert[0], keyfile=self.ssl_client_cert[1])
+            else:
+                # Cert and key in the same PEM file
+                context.load_cert_chain(certfile=self.ssl_client_cert)
+
+        return context
 
     def close(self) -> None:
-        """Close socket connection"""
         if self._socket:
             try:
                 self._socket.close()
@@ -122,18 +135,24 @@ class TCPTransport:
                 self._socket = None
 
     def connected(self) -> bool:
-        """Check whether socket is connected"""
         return self._socket is not None
 
-    def send_message(self, data) -> None:
-        """Send a message with a prefixed header indicating its length"""
-        if self._socket is None:
+    def send_message(self, data: Union[bytes, bytearray, list]) -> None:
+        """
+        Send a message with prefixed header.
+
+        Args:
+            data: Message data to send, or empty list for EOF signal.
+        """
+        if not self._socket:
             raise RuntimeError("Cannot send message: not connected")
 
         try:
-            length = len(data)
+            length = len(data) if data else 0
             # Pack the header into 8 bytes using big-endian format
-            self._socket.sendall(struct.pack("!II", self.TCP_MESSAGE_MAGIC, length))
+            header = struct.pack("!II", self.TCP_MESSAGE_MAGIC, length)
+            self._socket.sendall(header)
+
             if length > 0:
                 self._socket.sendall(data)
         except (socket.error, ssl.SSLError) as e:
@@ -141,62 +160,69 @@ class TCPTransport:
             raise RuntimeError(f"Error sending message: {e}") from e
 
     def receive_message(self) -> Optional[bytearray]:
-        """Receive a message with a prefixed header indicating its length and validate it"""
-        if self._socket is None:
+        """
+        Receive a message with prefixed header.
+
+        Returns:
+            Message data, or None for EOF signal.
+        """
+        if not self._socket:
             raise RuntimeError("Cannot receive message: not connected")
 
         try:
             # Unpack the data (big-endian format)
             magic, length = struct.unpack("!II", self._recvall(self.TCP_MESSAGE_HEADER_LENGTH))
+
             if magic != self.TCP_MESSAGE_MAGIC:
-                raise ValueError(f"Invalid message: incorrect magic number 0x{magic:X}.")
+                raise ValueError(f"Invalid magic number: 0x{magic:X}")
+
             if length > self.TCP_MAX_BLOCK_SIZE:
-                raise ValueError(f"Message size {length} exceeds the maximum allowed size of {self.TCP_MAX_BLOCK_SIZE} bytes.")
-            if length > 0:
-                return self._recvall(length)
-            return None
+                raise ValueError(f"Message size {length} exceeds maximum {self.TCP_MAX_BLOCK_SIZE}")
+
+            return self._recvall(length) if length > 0 else None
+
         except (socket.error, ssl.SSLError) as e:
             self.close()
             raise RuntimeError(f"Error receiving message: {e}") from e
 
     def _recvall(self, length: int) -> bytes:
-        """Receive exactly `length` bytes from the socket.
-           https://stackoverflow.com/questions/64466530/using-a-custom-socket-recvall-function-works-only-if-thread-is-put-to-sleep
+        """
+        Receive exactly `length` bytes from socket.
+        https://stackoverflow.com/questions/64466530/using-a-custom-socket-recvall-function-works-only-if-thread-is-put-to-sleep
 
         Args:
-            length (int): Number of bytes to receive.
+            length: Number of bytes to receive.
 
         Returns:
-            bytes: Received data.
+            Received data.
 
         Raises:
             EOFError: If connection closes before receiving all data.
             ValueError: If length is not positive.
-            socket.timeout: If socket operation times out.
         """
         if length <= 0:
             raise ValueError(f"Invalid length: {length}")
 
         # Pre-allocate buffer
         buffer = bytearray(length)
-        mv = memoryview(buffer)
+        view = memoryview(buffer)
         bytes_received = 0
 
         while bytes_received < length:
             try:
                 # Receive directly into buffer
                 remaining = length - bytes_received
-                chunk_size = self._socket.recv_into(mv, remaining)
+                chunk_size = self._socket.recv_into(view, remaining)
 
                 if chunk_size == 0:
                     raise EOFError("Connection closed by peer")
 
-                mv = mv[chunk_size:]  # advance memoryview
+                view = view[chunk_size:]  # advance memoryview
                 bytes_received += chunk_size
 
             except InterruptedError:
                 continue
             except socket.timeout as e:
-                raise socket.timeout(f"Socket operation timed out after receiving {bytes_received}/{length} bytes") from e
+                raise socket.timeout(f"Socket timed out after receiving {bytes_received}/{length} bytes") from e
 
-        return bytes(buffer)  # safer than bytearray
+        return bytes(buffer)

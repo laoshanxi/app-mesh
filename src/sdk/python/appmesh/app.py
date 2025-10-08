@@ -3,49 +3,55 @@
 
 import json
 import copy
-
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from enum import Enum, unique
 
-# pylint: disable=line-too-long
+
+def _get_str(data: Optional[dict], key: str) -> Optional[str]:
+    """Retrieve a string value from a dictionary by key, if it exists and is a valid string."""
+    if not data or key not in data:
+        return None
+    value = data[key]
+    return value if value and isinstance(value, str) else None
+
+
+def _get_int(data: Optional[dict], key: str) -> Optional[int]:
+    """Retrieve an integer value from a dictionary by key, if it exists and is a valid integer."""
+    if not data or key not in data or data[key] is None:
+        return None
+
+    value = data[key]
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _get_bool(data: Optional[dict], key: str) -> Optional[bool]:
+    """Retrieve a boolean value from a dictionary by key, if it exists and is boolean-like."""
+    if not data or key not in data or data[key] is None:
+        return None
+    return bool(data[key])
+
+
+def _get_item(data: Optional[dict], key: str) -> Optional[Any]:
+    """Retrieve a deep copy of a value from a dictionary by key, if it exists."""
+    if not data or key not in data or data[key] is None:
+        return None
+    return copy.deepcopy(data[key])
 
 
 class App:
     """
-    An application in App Mesh, include all the process attributes, resource limitations, behaviors, and permissions.
+    An application in App Mesh, include all the process attributes,
+    resource limitations, behaviors, and permissions.
     """
-
-    @staticmethod
-    def _get_str_item(data: dict, key: str) -> Optional[str]:
-        """Retrieve a string value from a dictionary by key, if it exists and is a valid string."""
-        return data[key] if (data and key in data and data[key] and isinstance(data[key], str)) else None
-
-    @staticmethod
-    def _get_int_item(data: dict, key: str) -> Optional[int]:
-        """Retrieve an integer value from a dictionary by key, if it exists and is a valid integer."""
-        if data and key in data and data[key] is not None:
-            if isinstance(data[key], int):
-                return data[key]
-            elif isinstance(data[key], str) and data[key].isdigit():
-                return int(data[key])
-        return None
-
-    @staticmethod
-    def _get_bool_item(data: dict, key: str) -> Optional[bool]:
-        """Retrieve a boolean value from a dictionary by key, if it exists and is boolean-like."""
-        if data and key in data and data[key] is not None:
-            return bool(data[key])
-        return None
-
-    @staticmethod
-    def _get_native_item(data: dict, key: str) -> Optional[Any]:
-        """Retrieve a deep copy of a value from a dictionary by key, if it exists."""
-        return copy.deepcopy(data[key]) if (data and key in data and data[key] is not None) else None
 
     @unique
     class Permission(Enum):
-        """Defines application permission levels."""
+        """Application permission levels."""
 
         DENY = "1"
         READ = "2"
@@ -53,26 +59,26 @@ class App:
 
     class Behavior:
         """
-        Manages application error handling behavior, including exit and control behaviors.
+        Application error handling behavior, including exit and control behaviors.
         """
 
         @unique
         class Action(Enum):
-            """Defines actions for application exit behaviors."""
+            """Actions for application exit behaviors."""
 
             RESTART = "restart"
             STANDBY = "standby"
             KEEPALIVE = "keepalive"
             REMOVE = "remove"
 
-        def __init__(self, data=None) -> None:
+        def __init__(self, data: Optional[dict] = None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
 
-            self.exit = App._get_str_item(data, "exit")
+            self.exit = _get_str(data, "exit")
             """Default exit behavior, options: 'restart', 'standby', 'keepalive', 'remove'."""
 
-            self.control = App._get_native_item(data, "control") or {}
+            self.control = _get_item(data, "control") or {}
             """Exit code specific behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior"""
 
         def set_exit_behavior(self, action: "App.Behavior.Action") -> None:
@@ -85,17 +91,17 @@ class App:
 
     class DailyLimitation:
         """
-        Defines application availability within a daily time range.
+        Application availability within a daily time range.
         """
 
-        def __init__(self, data=None) -> None:
+        def __init__(self, data: Optional[dict] = None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
 
-            self.daily_start = App._get_int_item(data, "daily_start")
+            self.daily_start = _get_int(data, "daily_start")
             """Start time for application availability (e.g., 09:00:00+08)."""
 
-            self.daily_end = App._get_int_item(data, "daily_end")
+            self.daily_end = _get_int(data, "daily_end")
             """End time for application availability (e.g., 09:00:00+08)."""
 
         def set_daily_range(self, start: datetime, end: datetime) -> None:
@@ -105,106 +111,112 @@ class App:
 
     class ResourceLimitation:
         """
-        Defines application resource limits, such as CPU and memory usage.
+        Application resource limits, such as CPU and memory usage.
         """
 
-        def __init__(self, data=None) -> None:
+        def __init__(self, data: Optional[dict] = None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
 
-            self.cpu_shares = App._get_int_item(data, "cpu_shares")
+            self.cpu_shares = _get_int(data, "cpu_shares")
             """CPU shares, relative weight of CPU usage."""
 
-            self.memory_mb = App._get_int_item(data, "memory_mb")
+            self.memory_mb = _get_int(data, "memory_mb")
             """Physical memory limit in MB."""
 
-            self.memory_virt_mb = App._get_int_item(data, "memory_virt_mb")
+            self.memory_virt_mb = _get_int(data, "memory_virt_mb")
             """Virtual memory limit in MB."""
 
-    def __init__(self, data=None) -> None:
+    def __init__(self, data: Optional[dict] = None) -> None:
         """Initialize an App instance with optional configuration data."""
         if isinstance(data, (str, bytes, bytearray)):
             data = json.loads(data)
 
-        self.name = App._get_str_item(data, "name")
+        # Application configuration
+        self.name = _get_str(data, "name")
         """application name (unique)"""
-        self.command = App._get_str_item(data, "command")
+        self.command = _get_str(data, "command")
         """full command line with arguments"""
-        self.shell = App._get_bool_item(data, "shell")
+        self.shell = _get_bool(data, "shell")
         """use shell mode, cmd can be more shell commands with string format"""
-        self.session_login = App._get_bool_item(data, "session_login")
+        self.session_login = _get_bool(data, "session_login")
         """app run in session login mode"""
-        self.description = App._get_str_item(data, "description")
+        self.description = _get_str(data, "description")
         """application description string"""
-        self.metadata = App._get_native_item(data, "metadata")
+        self.metadata = _get_item(data, "metadata")
         """metadata string/JSON (input for application, pass to process stdin)"""
-        self.working_dir = App._get_str_item(data, "working_dir")
+        self.working_dir = _get_str(data, "working_dir")
         """working directory"""
-        self.status = App._get_int_item(data, "status")
+        self.status = _get_int(data, "status")
         """initial application status (true is enable, false is disabled)"""
-        self.docker_image = App._get_str_item(data, "docker_image")
+        self.docker_image = _get_str(data, "docker_image")
         """docker image which used to run command line (for docker container application)"""
-        self.stdout_cache_num = App._get_int_item(data, "stdout_cache_num")
+        self.stdout_cache_num = _get_int(data, "stdout_cache_num")
         """stdout file cache number"""
-        self.start_time = App._get_int_item(data, "start_time")
+        self.start_time = _get_int(data, "start_time")
         """start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')"""
-        self.end_time = App._get_int_item(data, "end_time")
+        self.end_time = _get_int(data, "end_time")
         """end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')"""
-        self.interval = App._get_int_item(data, "interval")
+        self.interval = _get_int(data, "interval")
         """start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')"""
-        self.cron = App._get_bool_item(data, "cron")
+        self.cron = _get_bool(data, "cron")
         """indicate interval parameter use cron expression or not"""
-        self.daily_limitation = App.DailyLimitation(App._get_native_item(data, "daily_limitation"))
-        self.retention = App._get_str_item(data, "retention")
+        self.daily_limitation = App.DailyLimitation(_get_item(data, "daily_limitation"))
+        self.retention = _get_str(data, "retention")
         """extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')."""
-        self.health_check_cmd = App._get_str_item(data, "health_check_cmd")
+        self.health_check_cmd = _get_str(data, "health_check_cmd")
         """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
-        self.permission = App._get_int_item(data, "permission")
+        self.permission = _get_int(data, "permission")
         """application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3."""
-        self.behavior = App.Behavior(App._get_native_item(data, "behavior"))
+        self.behavior = App.Behavior(_get_item(data, "behavior"))
 
         self.env = data.get("env", {}) if data else {}
         """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)"""
         self.sec_env = data.get("sec_env", {}) if data else {}
         """security environment variables, encrypt in server side with application owner's cipher"""
-        self.pid = App._get_int_item(data, "pid")
+        self.pid = _get_int(data, "pid")
         """process id used to attach to the running process"""
-        self.resource_limit = App.ResourceLimitation(App._get_native_item(data, "resource_limit"))
+        self.resource_limit = App.ResourceLimitation(_get_item(data, "resource_limit"))
 
         # Read-only attributes
-        self.owner = App._get_str_item(data, "owner")
+        self.owner = _get_str(data, "owner")
         """owner name"""
-        self.user = App._get_str_item(data, "pid_user")
+        self.user = _get_str(data, "pid_user")
         """process user name"""
-        self.pstree = App._get_str_item(data, "pstree")
+        self.pstree = _get_str(data, "pstree")
         """process tree"""
-        self.container_id = App._get_str_item(data, "container_id")
+        self.container_id = _get_str(data, "container_id")
         """container id"""
-        self.memory = App._get_int_item(data, "memory")
+        self.memory = _get_int(data, "memory")
         """memory usage"""
-        self.cpu = App._get_int_item(data, "cpu")
+        self.cpu = _get_int(data, "cpu")
         """cpu usage"""
-        self.fd = App._get_int_item(data, "fd")
+        self.fd = _get_int(data, "fd")
         """file descriptor usage"""
-        self.last_start_time = App._get_int_item(data, "last_start_time")
+        self.last_start_time = _get_int(data, "last_start_time")
         """last start time"""
-        self.last_exit_time = App._get_int_item(data, "last_exit_time")
+        self.last_exit_time = _get_int(data, "last_exit_time")
         """last exit time"""
-        self.health = App._get_int_item(data, "health")
+        self.health = _get_int(data, "health")
         """health status"""
-        self.version = App._get_int_item(data, "version")
+        self.version = _get_int(data, "version")
         """version number"""
-        self.return_code = App._get_int_item(data, "return_code")
+        self.return_code = _get_int(data, "return_code")
         """last exit code"""
+        self.task_id = _get_int(data, "task_id")
+        """current task id"""
+        self.task_status = _get_str(data, "task_status")
+        """task status"""
 
-    def set_valid_time(self, start: datetime, end: datetime) -> None:
+    def set_valid_time(self, start: Optional[datetime], end: Optional[datetime]) -> None:
         """Define the valid time window for the application."""
         self.start_time = int(start.timestamp()) if start else None
         self.end_time = int(end.timestamp()) if end else None
 
     def set_env(self, key: str, value: str, secure: bool = False) -> None:
         """Set an environment variable, marking it secure if specified."""
-        (self.sec_env if secure else self.env)[key] = value
+        target = self.sec_env if secure else self.env
+        target[key] = value
 
     def set_permission(self, group_user: Permission, others_user: Permission) -> None:
         """Define application permissions based on user roles."""
@@ -214,23 +226,27 @@ class App:
         """Return a JSON string representation of the application."""
         return json.dumps(self.json())
 
-    def json(self) -> dict:
+    def json(self) -> Dict[str, Any]:
         """Convert the application data into a JSON-compatible dictionary, removing empty items."""
         output = copy.deepcopy(self.__dict__)
         output["behavior"] = self.behavior.__dict__
         output["daily_limitation"] = self.daily_limitation.__dict__
         output["resource_limit"] = self.resource_limit.__dict__
 
-        def clean_empty(data: dict) -> None:
-            keys_to_delete = []
-            for key, value in data.items():
-                if isinstance(value, dict) and key != "metadata":
-                    clean_empty(value)  # Recursive call (without checking user metadata)
-                if data[key] in [None, "", {}]:
-                    keys_to_delete.append(key)  # Mark keys for deletion
-
-            for key in keys_to_delete:  # Delete keys after the loop to avoid modifying dict during iteration
-                del data[key]
-
-        clean_empty(output)
+        self._clean_empty(output)
         return output
+
+    @staticmethod
+    def _clean_empty(data: dict) -> None:
+        """Recursively remove None, empty string, and empty dict values from nested dictionaries (except 'metadata')."""
+        keys_to_delete = []
+        for key, value in data.items():
+            if isinstance(value, dict) and key != "metadata":
+                App._clean_empty(value)
+                if not value:
+                    keys_to_delete.append(key)
+            elif value in (None, "", {}):
+                keys_to_delete.append(key)
+
+        for key in keys_to_delete:
+            del data[key]

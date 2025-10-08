@@ -771,7 +771,7 @@ std::string Configuration::generateRunAppName(const std::string &provideAppName)
 {
 	if (provideAppName.empty())
 	{
-		return Utility::createUUID();
+		return Utility::shortID();
 	}
 	else
 	{

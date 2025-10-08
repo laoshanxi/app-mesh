@@ -1,72 +1,69 @@
-# tcp_messages.py
+"""TCP message classes for HTTP-like communication."""
 
 # Standard library imports
-from typing import get_type_hints
+from dataclasses import dataclass, field
+from typing import Any, Dict, Type, get_type_hints
 
 # Third-party imports
 import msgpack
 
 
+@dataclass
 class RequestMessage:
-    """TCP request message for HTTP-like communication"""
+    """TCP request message for HTTP-like communication."""
 
-    def __init__(self):
-        self.uuid: str = ""
-        self.request_uri: str = ""
-        self.http_method: str = ""
-        self.client_addr: str = ""
-        self.body: bytes = b""
-        self.headers: dict = {}
-        self.query: dict = {}
+    uuid: str = ""
+    request_uri: str = ""
+    http_method: str = ""
+    client_addr: str = ""
+    body: bytes = b""
+    headers: Dict[str, str] = field(default_factory=dict)
+    query: Dict[str, str] = field(default_factory=dict)
 
     def serialize(self) -> bytes:
-        """Serialize request message to bytes"""
-        return msgpack.dumps(vars(self), use_bin_type=True)
+        """Serialize request message to bytes."""
+        return msgpack.packb(self.__dict__, use_bin_type=True)
 
 
+@dataclass
 class ResponseMessage:
-    """TCP response message for HTTP-like communication"""
+    """TCP response message for HTTP-like communication."""
 
-    uuid: str
-    request_uri: str
-    http_status: int
-    body_msg_type: str
-    body: bytes
-    headers: dict
+    uuid: str = ""
+    request_uri: str = ""
+    http_status: int = 0
+    body_msg_type: str = ""
+    body: bytes = b""
+    headers: Dict[str, str] = field(default_factory=dict)
 
-    def __init__(self):
-        self.uuid = ""
-        self.request_uri = ""
-        self.http_status = 0
-        self.body_msg_type = ""
-        self.body = b""
-        self.headers = {}
-
-    def deserialize(self, buf: bytes):
+    def deserialize(self, buf: bytes) -> "ResponseMessage":
         """Deserialize TCP msgpack buffer with proper type conversion."""
-        dic = msgpack.unpackb(buf, raw=False)
+        data = msgpack.unpackb(buf, raw=False)
         hints = get_type_hints(self.__class__)
 
-        for k, v in dic.items():
-            if k not in hints:
-                continue  # Skip unknown fields
-
-            # handle all types (int, bytes, dict, str)
-            t = hints[k]
-            if t is str:
-                if isinstance(v, bytes):
-                    v = v.decode("utf-8", errors="replace")
-                elif v is None:
-                    v = ""
-                else:
-                    v = str(v)
-            elif t is bytes:
-                if isinstance(v, str):
-                    v = v.encode("utf-8")  # handle accidental str
-                elif v is None:
-                    v = b""
-            elif t is int:
-                v = int(v or 0)
-            setattr(self, k, v)
+        for key, value in data.items():
+            if key in hints:
+                setattr(self, key, self._convert_type(value, hints[key]))
 
         return self
+
+    @staticmethod
+    def _convert_type(value: Any, expected_type: Type) -> Any:
+        """Convert value to expected type."""
+        if value is None:
+            return {
+                str: "",
+                bytes: b"",
+                int: 0,
+            }.get(expected_type, None)
+
+        if expected_type is str:
+            return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+
+        if expected_type is bytes:
+            return value.encode("utf-8") if isinstance(value, str) else value
+
+        if expected_type is int:
+            return int(value or 0)
+
+        return value
