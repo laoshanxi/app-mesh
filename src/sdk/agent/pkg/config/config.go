@@ -22,6 +22,7 @@ type (
 		PrometheusExporterListenPort int    `yaml:"PrometheusExporterListenPort"`
 
 		SSL appmesh.SSLConfig `yaml:"SSL"`
+		JWT appmesh.JWTConfig `yaml:"JWT"`
 	}
 
 	Configuration struct {
@@ -49,6 +50,9 @@ var ConfigData = Configuration{
 			VerifyClient:                false,
 			VerifyServer:                true,
 			VerifyServerDelegate:        true,
+		},
+		JWT: appmesh.JWTConfig{
+			JWTSalt: "",
 		},
 	},
 }

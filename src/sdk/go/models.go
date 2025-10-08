@@ -106,6 +106,9 @@ type Application struct {
 	ResourceLimit *ResourceLimitation `json:"resource_limit"`
 	Env           *Environments       `json:"env"`
 	SecEnv        *Environments       `json:"sec_env"`
+
+	TaskId     *string `json:"task_id"`
+	TaskStatus *string `json:"task_status"`
 }
 
 // AppRun represents the state of an asynchronous application run.
@@ -173,6 +176,11 @@ type SSLConfig struct {
 	SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`
 	SSLClientCertificateFile    string `yaml:"SSLClientCertificateFile"`
 	SSLClientCertificateKeyFile string `yaml:"SSLClientCertificateKeyFile"`
+}
+
+// JWT Config
+type JWTConfig struct {
+	JWTSalt string `yaml:"JWTSalt"`
 }
 
 // Request represents the message sent over TCP.

@@ -2,18 +2,19 @@
 """Application run object for remote application execution."""
 
 from contextlib import contextmanager
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-# pylint: disable=line-too-long
+if TYPE_CHECKING:
+    from .client_http import AppMeshClient
 
 
 class AppRun:
     """
-    Represents an application run object initiated by `run_async()` for monitoring and retrieving
-    the result of a remote application run.
+    Application run object for monitoring and retrieving results
+    of a remote application run initiated by `run_async()`.
     """
 
-    def __init__(self, client, app_name: str, process_id: str):
+    def __init__(self, client: "AppMeshClient", app_name: str, process_id: str):
         self.app_name = app_name
         """Name of the application associated with this run."""
 
@@ -21,20 +22,15 @@ class AppRun:
         """Unique process ID from `run_async()`."""
 
         self._client = client
-        """Instance of `AppMeshClient` used to manage this application run."""
-
         self._forward_to = client.forward_to
-        """Target server for the application run, used for forwarding."""
 
     @contextmanager
     def forward_to(self):
-        """Context manager to temporarily override the client's `forward_to` setting.
+        """
+        Context manager to temporarily override the client's `forward_to` setting.
 
-        This ensures that operations during this run use the correct target server,
-        then restores the original setting when done.
-
-        Yields:
-            None: Context for the overridden forward_to setting.
+        Ensures operations during this run use the correct target server,
+        then restores the original setting.
         """
         original_value = self._client.forward_to
         self._client.forward_to = self._forward_to
@@ -44,15 +40,15 @@ class AppRun:
             self._client.forward_to = original_value
 
     def wait(self, stdout_print: bool = True, timeout: int = 0) -> Optional[int]:
-        """Wait for the asynchronous run to complete.
+        """
+        Wait for the asynchronous run to complete.
 
         Args:
-            stdout_print: If `True`, prints remote stdout to local console. Defaults to `True`.
-            timeout: Maximum time to wait in seconds. If `0`, waits indefinitely until completion.
-                    Defaults to `0`.
+            stdout_print: If True, prints remote stdout to local console.
+            timeout: Maximum time to wait in seconds. 0 means wait indefinitely.
 
         Returns:
-            Exit code if the process finishes successfully, or `None` on timeout or exception.
+            Exit code if the process finishes successfully, or None on timeout.
         """
         with self.forward_to():
             return self._client.wait_for_async_run(self, stdout_print, timeout)

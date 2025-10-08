@@ -39,7 +39,7 @@ Application::Application()
 	  m_startTime(AppTimer::EPOCH_ZERO_TIME), m_endTime(std::chrono::system_clock::time_point::max()),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false),
 	  m_nextStartTimerId(INVALID_TIMER_ID), m_regTime(std::chrono::system_clock::now()),
-	  m_appId(Utility::createUUID()), m_version(0), m_timerRemoveId(INVALID_TIMER_ID),
+	  m_appId(Utility::shortID()), m_version(0), m_timerRemoveId(INVALID_TIMER_ID),
 	  m_pid(ACE_INVALID_PID), m_return(INVALID_RETURN_CODE), m_health(true),
 	  m_status(STATUS::ENABLED), m_starts(std::make_shared<prometheus::Counter>())
 {

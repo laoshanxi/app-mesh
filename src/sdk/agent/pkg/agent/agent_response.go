@@ -269,7 +269,7 @@ func (r *Response) clearCSRFToken(w http.ResponseWriter, req *http.Request) {
 func (r *Response) createCSRFToken(w http.ResponseWriter, req *http.Request, maxAge int, hmacMessage string) {
 	logger.Debugf("Creating CSRF token for %s", r.Uuid)
 
-	token := cloud.HMAC.GenerateHMAC(hmacMessage)
+	token := cloud.HMAC_SDKToAgent.GenerateHMAC(hmacMessage)
 
 	cookie := &http.Cookie{
 		Name:     COOKIE_CSRF_TOKEN,

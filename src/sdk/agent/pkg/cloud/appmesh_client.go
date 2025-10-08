@@ -29,10 +29,10 @@ var logger *zap.SugaredLogger = utils.GetLogger()
 
 // SetHMACVerify sets the HMAC header for the request if HMAC is initialized
 func (r *Request) SetHMACVerify() error {
-	if HMAC == nil {
+	if HMAC_AgentToCPP == nil {
 		return fmt.Errorf("HMAC not initialized")
 	}
-	r.Headers[HTTP_HEADER_HMAC] = HMAC.GenerateHMAC(r.Uuid)
+	r.Headers[HTTP_HEADER_HMAC] = HMAC_AgentToCPP.GenerateHMAC(r.Uuid)
 	return nil
 }
 

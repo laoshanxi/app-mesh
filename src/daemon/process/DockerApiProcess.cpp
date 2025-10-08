@@ -290,7 +290,7 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 
 	auto restURL = std::string("https://") + Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
 	auto wrapperPath = std::string("/appmesh/docker") + path;
-	auto uuid = Utility::createUUID();
+	auto uuid = Utility::shortID();
 	header[DOCKER_REQUEST_ID_HEADER] = uuid;
 	header[HMAC_HTTP_HEADER] = HMACVerifierSingleton::instance()->generateHMAC(uuid);
 

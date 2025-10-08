@@ -5,31 +5,34 @@
 import traceback
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
+from typing import Optional, Union
 
 from appmesh import AppMeshServerTCP
 
 
-def exec_with_output(code_string, exec_globals=None):
-    """Execute Python code and capture stdout/stderr."""
-    output = StringIO()
-    # Redirect both stdout and stderr into the same buffer.
-    with redirect_stdout(output), redirect_stderr(output):
+def exec_with_output(code: Union[str, bytes], exec_globals: Optional[dict] = None) -> str:
+    """Execute Python code and capture all output."""
+    output_buffer = StringIO()
+    namespace = exec_globals or {}
+    if isinstance(code, bytes):
+        code = code.decode("utf-8", errors="replace")
+    with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
         try:
-            # Execute using the provided globals mapping or a new empty mapping.
-            exec(code_string, exec_globals if exec_globals is not None else {})
+            exec(code, namespace)
         except Exception:
-            # Print the full traceback into the same buffer.
             traceback.print_exc()
-    return output.getvalue()
+
+    return output_buffer.getvalue()
+
+
+def main():
+    """Minimal server loop: fetch a payload, execute it, return the output."""
+    context = AppMeshServerTCP()
+    while True:
+        payload = context.task_fetch()  # Wait and fetch a payload
+        output = exec_with_output(payload)  # Execute the payload
+        context.task_return(output)  # Return the output back to the client
 
 
 if __name__ == "__main__":
-    # Minimal server loop: fetch a payload, execute it, return the output.
-    context = AppMeshServerTCP()
-    while True:
-        # Block fetch invocation payload.
-        payload = context.task_fetch()
-        # Execute with payload and capture prints.
-        output = exec_with_output(payload)
-        # Return the result to the client
-        context.task_return(output)
+    main()

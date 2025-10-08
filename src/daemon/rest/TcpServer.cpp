@@ -253,16 +253,37 @@ void TcpHandler::handleTcpRest()
 					RESTHANDLER::instance()->handle_head(message);
 				else
 				{
+					closeTcpHandler(entity->m_tcpHanlerId);
 					LOG_ERR << fname << "no such method " << message.m_method
 							<< " from " << message.m_remote_address
 							<< " with path " << message.m_relative_uri;
 				}
-				// TODO: check request without reply
 			}
-			// TODO: check request without reply
+			else
+			{
+				closeTcpHandler(entity->m_tcpHanlerId);
+				LOG_WAR << fname << "Failed to parse request, closing connection with TcpHandler <" << entity->m_tcpHanlerId << ">";
+			}
 		}
 	}
 	LOG_WAR << fname << "Exit";
+}
+
+void TcpHandler::closeTcpHandler(int tcpHandlerId)
+{
+	const static char fname[] = "TcpHandler::closeTcpHandler() ";
+
+	ACE_GUARD(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex());
+	TcpHandler *client = NULL;
+	if (m_handlers.find(tcpHandlerId, client) == 0 && client)
+	{
+		LOG_INF << fname << "Closing TcpHandler id=" << tcpHandlerId;
+		client->peer().close();
+	}
+	else
+	{
+		LOG_WAR << fname << "No such TcpHandler id=" << tcpHandlerId;
+	}
 }
 
 void TcpHandler::closeMsgQueue()

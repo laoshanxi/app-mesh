@@ -1,0 +1,6 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# Minimal metadata can be kept in setup.py; pyproject declares build system only.

@@ -1,6 +1,8 @@
 # server_http.py
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
+"""HTTP server SDK implementation for App Mesh."""
+
 # Standard library imports
 import abc
 import logging
@@ -16,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class AppMeshServer(metaclass=abc.ABCMeta):
-    """
-    Server SDK for App Mesh application interacting with the local App Mesh REST service over HTTPS.
+    """Server SDK for App Mesh application interacting with the local App Mesh REST service over HTTPS.
 
     Build-in runtime environment variables required:
       - APP_MESH_PROCESS_KEY
@@ -34,18 +35,13 @@ class AppMeshServer(metaclass=abc.ABCMeta):
         context.task_return(result)
     """
 
+    _RETRY_DELAY_SECONDS = 0.1
+
     def __init__(
         self,
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify=AppMeshClient.DEFAULT_SSL_CA_CERT_PATH if os.path.exists(AppMeshClient.DEFAULT_SSL_CA_CERT_PATH) else False,
-        rest_ssl_client_cert=(
-            (
-                AppMeshClient.DEFAULT_SSL_CLIENT_CERT_PATH,
-                AppMeshClient.DEFAULT_SSL_CLIENT_KEY_PATH,
-            )
-            if os.path.exists(AppMeshClient.DEFAULT_SSL_CLIENT_CERT_PATH)
-            else None
-        ),
+        rest_ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         rest_timeout: Tuple[float, float] = (60, 300),
         *,
         logger_: Optional[logging.Logger] = None,
@@ -63,6 +59,7 @@ class AppMeshServer(metaclass=abc.ABCMeta):
         """Read and validate required runtime environment variables."""
         process_key = os.getenv("APP_MESH_PROCESS_KEY")
         app_name = os.getenv("APP_MESH_APPLICATION_NAME")
+
         if not process_key:
             raise Exception("Missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service.")
         if not app_name:
@@ -75,43 +72,43 @@ class AppMeshServer(metaclass=abc.ABCMeta):
         Used by App Mesh application process to obtain the payload from App Mesh service
         that a client pushed to it.
 
-
         Returns:
-            Union[str, bytes]: The payload provided by the client as returned by the service.
+            The payload provided by the client as returned by the service.
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
+        query_params = {"process_key": pkey}
 
         while True:
             resp = self._client._request_http(
-                AppMeshClient.Method.GET,
+                AppMeshClient._Method.GET,
                 path=path,
-                query={"process_key": pkey},
+                query=query_params,
             )
 
-            if resp.status_code != HTTPStatus.OK:
-                self._logger.warning(f"task_fetch failed with status {resp.status_code}: {resp.text}, retrying...")
-                time.sleep(0.1)
-                continue
+            if resp.status_code == HTTPStatus.OK:
+                return resp.content
 
-            return resp.content
+            self._logger.warning("task_fetch failed with status %d: %s, retrying...", resp.status_code, resp.text)
+            time.sleep(self._RETRY_DELAY_SECONDS)
 
     def task_return(self, result: Union[str, bytes]) -> None:
         """Return the result of a server-side invocation back to the original client.
 
-        Used by App Mesh application process to posts the `result` to App Mesh service
-        after processed payload data so the invoking client can retrieve it.
+        Used by App Mesh application process to post the `result` to App Mesh service
+        after processing payload data so the invoking client can retrieve it.
 
         Args:
-            result (Union[str, bytes]): Result payload to be delivered back to the client.
+            result: Result payload to be delivered back to the client.
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
+        query_params = {"process_key": pkey}
 
         resp = self._client._request_http(
-            AppMeshClient.Method.PUT,
+            AppMeshClient._Method.PUT,
             path=path,
-            query={"process_key": pkey},
+            query=query_params,
             body=result,
         )
 

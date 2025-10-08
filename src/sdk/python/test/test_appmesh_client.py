@@ -138,9 +138,9 @@ class TestAppMeshClient(TestCase):
         """test tag"""
         client = AppMeshClient()
         client.login("admin", "admin123")
-        self.assertTrue(client.add_tag("MyTag", "TagValue"))
+        self.assertIsNone(client.add_tag("MyTag", "TagValue"))
         self.assertIn("MyTag", client.view_tags())
-        self.assertTrue(client.delete_tag("MyTag"))
+        self.assertIsNone(client.delete_tag("MyTag"))
         self.assertNotIn("MyTag", client.view_tags())
 
     def test_06_app(self):
@@ -164,8 +164,8 @@ class TestAppMeshClient(TestCase):
 
         self.assertTrue(client.delete_app("SDK"))
         self.assertFalse(client.delete_app("SDK"))
-        self.assertTrue(client.disable_app("ping"))
-        self.assertTrue(client.enable_app("ping"))
+        self.assertIsNone(client.disable_app("ping"))
+        self.assertIsNone(client.enable_app("ping"))
 
     def test_01_auth(self):
         """test authentication"""
@@ -203,12 +203,12 @@ class TestAppMeshClient(TestCase):
             client.update_user_password("admin123", "admin")
         with self.assertRaises(Exception):
             client.update_user_password("admin", "admin123")
-        self.assertTrue(client.update_user_password("admin123", "admin1234"))
+        self.assertIsNone(client.update_user_password("admin123", "admin1234"))
 
         with self.assertRaises(Exception):
             self.assertIsNone(client.login("admin", "admin123"))
         self.assertIsNotNone(client.login("admin", "admin1234"))
-        self.assertTrue(client.update_user_password("admin1234", "admin123"))
+        self.assertIsNone(client.update_user_password("admin1234", "admin123"))
 
         self.assertIn("permission-list", client.view_permissions())
         self.assertIn("permission-list", client.view_user_permissions())
@@ -218,10 +218,10 @@ class TestAppMeshClient(TestCase):
         with self.assertRaises(Exception):
             self.assertFalse(client.authenticate(client.jwt_token, "app-view2"))
 
-        self.assertTrue(client.lock_user("mesh"))
-        self.assertTrue(client.unlock_user("mesh"))
+        self.assertIsNone(client.lock_user("mesh"))
+        self.assertIsNone(client.unlock_user("mesh"))
 
-        self.assertTrue(client.update_role("manage", ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"]))
+        self.assertIsNone(client.update_role("manage", ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"]))
 
         self.assertIn("manage", client.view_roles())
         self.assertIn("admin", client.view_groups())
@@ -249,7 +249,7 @@ class TestAppMeshClient(TestCase):
         totp_code = totp.now()
         print(totp_code)
         self.assertIsNotNone(client.login("admin", "admin123", totp_code))
-        self.assertTrue(client.disable_totp())
+        self.assertIsNone(client.disable_totp())
 
     def read_file_content(self, file_path):
         """read file content"""
@@ -331,7 +331,7 @@ class TestAppMeshClient(TestCase):
             self.assertIn("appmesh_csrf_token", content_after_totp)
             self.assertNotEqual(content_before_totp, content_after_totp)
 
-            self.assertTrue(client.disable_totp())
+            self.assertIsNone(client.disable_totp())
 
         finally:
             try:

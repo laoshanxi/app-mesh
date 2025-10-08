@@ -189,5 +189,5 @@ void SharedMemory::cleanup()
 
 std::string SharedMemory::GenerateSharedMemoryName()
 {
-    return "appmesh_shm_" + Utility::createUUID() + "_" + std::to_string(ACE_OS::getpid());
+    return "appmesh_shm_" + Utility::shortID() + "_" + std::to_string(ACE_OS::getpid());
 }

@@ -179,7 +179,6 @@ public:
 	static void removeFile(const std::string &path);
 	static bool runningInContainer();
 	static bool ensureSystemRoot();
-	static int random(int min = 0, int max = 999999);
 
 	// String functions
 	static bool isNumber(const std::string &str);
@@ -195,7 +194,8 @@ public:
 	static std::string humanReadableSize(long double bytesSize);
 	static std::string humanReadableDuration(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime = std::chrono::system_clock::now());
 	static std::string hash(const std::string &str);
-	static std::string hashId();
+	static std::string shortID();
+	static std::string uuid();
 	static std::string stringFormat(const std::string fmt_str, ...);
 	static std::string strToupper(std::string s);
 	static std::string strTolower(std::string s);
@@ -236,7 +236,6 @@ public:
 	static bool isValidUTF8(const std::string &str);
 	static std::string convertToUTF8(const std::string &input, unsigned int codepage);
 
-	static std::string createUUID();
 	static bool createPidFile();
 	static void appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key);
 	static void appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key);

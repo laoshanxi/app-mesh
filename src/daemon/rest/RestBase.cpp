@@ -199,7 +199,7 @@ const std::string RestBase::generateJwtToken(const std::string &userName, const 
                          .set_audience(std::move(targetAudience))                   // Audience: intended recipient
                          .set_issued_at(jwt::date(now))                             // Issued at: token creation time
                          .set_expires_at(jwt::date(now + std::chrono::seconds{timeoutSeconds}))
-                         .set_id(Utility::createUUID())                                     // JWT ID: unique identifier for the token
+                         .set_id(Utility::shortID())                                     // JWT ID: unique identifier for the token
                          .set_payload_claim("resource_access", jwt::claim(resourceAccess)); // Custom claim for permissions
 
     // Sign token with appropriate algorithm

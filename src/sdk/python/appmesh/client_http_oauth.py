@@ -1,8 +1,7 @@
 # client_http_oauth.py
 # pylint: disable=line-too-long,broad-exception-caught,too-many-lines, import-outside-toplevel, protected-access
-import os
 import logging
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 from keycloak import KeycloakOpenID
 from .client_http import AppMeshClient
 
@@ -18,10 +17,10 @@ class AppMeshClientOAuth(AppMeshClient):
         self,
         oauth2: dict,  # Required for Keycloak
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify=AppMeshClient.DEFAULT_SSL_CA_CERT_PATH if os.path.exists(AppMeshClient.DEFAULT_SSL_CA_CERT_PATH) else False,
-        rest_ssl_client_cert=(AppMeshClient.DEFAULT_SSL_CLIENT_CERT_PATH, AppMeshClient.DEFAULT_SSL_CLIENT_KEY_PATH) if os.path.exists(AppMeshClient.DEFAULT_SSL_CLIENT_CERT_PATH) else None,
-        rest_timeout=(60, 300),
-        jwt_token=None,  # Keycloak dict
+        rest_ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+        rest_timeout: Tuple[float, float] = (60, 300),
+        jwt_token: Optional[dict] = None,  # Keycloak dict
         auto_refresh_token: bool = True,  # Default to True for Keycloak
     ):
         """Initialize an App Mesh HTTP client with Keycloak support.
@@ -63,7 +62,6 @@ class AppMeshClientOAuth(AppMeshClient):
         user_name: str,
         user_pwd: str,
         totp_code: Optional[str] = "",
-        timeout_seconds: Union[str, int] = AppMeshClient.DURATION_ONE_WEEK_ISO,
     ) -> dict:
         """Login with user name and password using Keycloak.
         Args:
@@ -124,7 +122,7 @@ class AppMeshClientOAuth(AppMeshClient):
         """
         return self._keycloak_openid.userinfo(self._get_access_token())
 
-    def close(self):
+    def close(self) -> None:
         """Close the session and release resources, including Keycloak logout."""
         # Logout from Keycloak if needed
         if hasattr(self, "_keycloak_openid") and self._keycloak_openid and hasattr(self, "_jwt_token") and self._jwt_token and isinstance(self._jwt_token, dict) and "refresh_token" in self._jwt_token:

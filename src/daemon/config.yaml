@@ -47,7 +47,7 @@ REST:
   # JWT Authentication Configuration
   JWT:
     # Salt for JWT token generation. IMPORTANT: Change this in production.
-    JWTSalt: HelloAppMesh
+    JWTSalt: How_AreU!ApPMEsh
 
     # JWT sign algorithm (HS256,RS256).
     # - HS256 use JWTSalt as secret

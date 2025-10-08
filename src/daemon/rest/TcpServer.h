@@ -54,6 +54,7 @@ public:
 	/// Process TCP request
 	/// </summary>
 	static void handleTcpRest();
+	static void closeTcpHandler(int tcpHandlerId);
 	static void closeMsgQueue();
 	const int &id();
 
