@@ -4,23 +4,13 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
-	"fmt"
 )
 
-const (
-	HTTP_HEADER_HMAC = "X-Request-HMAC"
-	ENV_PSK_SHM      = "PSK_SHM_NAME"
-
-	PSK_MSG_LENGTH     = 32
-	PSK_FLAG_OFFSET    = 64
-	PSK_SHM_TOTAL_SIZE = 128
-)
+const HTTP_HEADER_HMAC = "X-Request-HMAC"
 
 var (
-	errNoSHMName      = errors.New("no PSK_SHM_NAME env found")
-	errPSKAlreadyRead = errors.New("PSK has already been read")
-	HMAC              *HMACVerify
+	HMAC_SDKToAgent *HMACVerify // HMAC key for SDK-to-agent (CSRF) communication; derived from config to ensure CSRF token validity
+	HMAC_AgentToCPP *HMACVerify // HMAC key for agent-to-C++-service communication; inherited from parent C++ process
 )
 
 // Hash-based Message Authentication Code
@@ -30,12 +20,8 @@ type HMACVerify struct {
 }
 
 // NewHMACVerify creates and initializes a new HMACVerifier.
-func NewHMACVerify() (*HMACVerify, error) {
-	psk, err := readPSKFromSHM()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize HMACVerifier: %w", err)
-	}
-	return &HMACVerify{psk: psk}, nil
+func NewHMACVerify(key string) *HMACVerify {
+	return &HMACVerify{psk: []byte(key)}
 }
 
 // GenerateHMAC generates an HMAC for the given message.

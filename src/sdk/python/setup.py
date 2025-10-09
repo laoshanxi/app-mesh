@@ -1,6 +1,5 @@
 import io
 import os
-import sys
 import setuptools
 
 readme_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../../../README.md")
@@ -10,7 +9,7 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 def get_version():
     """PyPI package version"""
-    return "1.6.13"
+    return "1.6.17"
 
 
 # Dependencies

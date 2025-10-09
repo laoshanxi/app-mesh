@@ -1,5 +1,6 @@
 # tcp_transport.py
 """TCP Transport layer handling socket connections."""
+__all__ = []
 
 import socket
 import ssl
@@ -29,12 +30,10 @@ class TCPTransport:
 
         Args:
             address: Server address as (host, port) tuple.
-
             ssl_verify: SSL server verification mode:
                 - True: Use system CA certificates
                 - False:  Disable verification (insecure)
                 - str: Path to custom CA bundle or directory
-
             ssl_client_cert: SSL client certificate:
                 - str: Path to PEM file with cert and key
                 - tuple: (cert_path, key_path)
