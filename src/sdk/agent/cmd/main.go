@@ -121,12 +121,21 @@ func main() {
 	// Handle graceful shutdown
 	setupGracefulShutdown(cancel)
 
-	// HMAC initialization
-	if hmac, err := cloud.NewHMACVerify(); err != nil {
-		logger.Fatalf("HMAC Verifier initialization failed: %v", err)
-	} else {
-		cloud.HMAC = hmac
+	// Read PSK from shared memory
+	psk, err := readPSKFromSHM()
+	if err != nil {
+		logger.Fatalf("failed to read PSK from shared memory: %v", err)
 	}
+	if len(psk) == 0 {
+		logger.Fatal("PSK read from shared memory is empty")
+	}
+
+	// Initialize HMAC (use configured salt for cluster-shared tokens)
+	salt := config.ConfigData.REST.JWT.JWTSalt
+	if salt == "" {
+		logger.Fatal("JWT salt is missing in configuration")
+	}
+	cloud.HMAC = cloud.NewHMACVerify(salt)
 
 	// Start all services
 	initializeServices(ctx)

@@ -18,8 +18,8 @@ class AppMeshClientOAuth(AppMeshClient):
         self,
         oauth2: dict,  # Required for Keycloak
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify=AppMeshClient.DEFAULT_SSL_CA_CERT_PATH if os.path.exists(AppMeshClient.DEFAULT_SSL_CA_CERT_PATH) else False,
-        rest_ssl_client_cert=(AppMeshClient.DEFAULT_SSL_CLIENT_CERT_PATH, AppMeshClient.DEFAULT_SSL_CLIENT_KEY_PATH) if os.path.exists(AppMeshClient.DEFAULT_SSL_CLIENT_CERT_PATH) else None,
+        rest_ssl_verify=AppMeshClient.DEFAULT_SSL_CA_CERT_PATH,
+        rest_ssl_client_cert=AppMeshClient.DEFAULT_SSL_CLIENT_CERT_PATH,
         rest_timeout=(60, 300),
         jwt_token=None,  # Keycloak dict
         auto_refresh_token: bool = True,  # Default to True for Keycloak

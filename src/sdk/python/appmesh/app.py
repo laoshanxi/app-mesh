@@ -134,75 +134,85 @@ class App:
 
         # Application configuration
         self.name = _get_str(data, "name")
-        """application name (unique)"""
+        """app name (unique)"""
         self.command = _get_str(data, "command")
         """full command line with arguments"""
         self.shell = _get_bool(data, "shell")
-        """use shell mode, cmd can be more shell commands with string format"""
+        """Whether run command in shell mode (enables shell syntax such as pipes and compound commands)"""
         self.session_login = _get_bool(data, "session_login")
-        """app run in session login mode"""
+        """Whether to run the app in session login mode (inheriting the user's full login environment)"""
         self.description = _get_str(data, "description")
-        """application description string"""
+        """app description string"""
         self.metadata = _get_item(data, "metadata")
-        """metadata string/JSON (input for application, pass to process stdin)"""
+        """metadata string/JSON (input for app, pass to process stdin)"""
         self.working_dir = _get_str(data, "working_dir")
         """working directory"""
         self.status = _get_int(data, "status")
-        """initial application status (true is enable, false is disabled)"""
+        """app status: 1 for enabled, 0 for disabled"""
         self.docker_image = _get_str(data, "docker_image")
-        """docker image which used to run command line (for docker container application)"""
+        """Docker image for containerized execution"""
         self.stdout_cache_num = _get_int(data, "stdout_cache_num")
-        """stdout file cache number"""
+        """maximum number of stdout log files to retain"""
         self.start_time = _get_int(data, "start_time")
         """start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')"""
         self.end_time = _get_int(data, "end_time")
         """end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')"""
-        self.interval = _get_int(data, "interval")
+        self.start_interval_seconds = _get_int(data, "start_interval_seconds")
         """start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')"""
         self.cron = _get_bool(data, "cron")
-        """indicate interval parameter use cron expression or not"""
+        """Whether the interval is specified as a cron expression"""
         self.daily_limitation = App.DailyLimitation(_get_item(data, "daily_limitation"))
         self.retention = _get_str(data, "retention")
         """extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')."""
         self.health_check_cmd = _get_str(data, "health_check_cmd")
         """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
         self.permission = _get_int(data, "permission")
-        """application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3."""
+        """app user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3."""
         self.behavior = App.Behavior(_get_item(data, "behavior"))
 
         self.env = data.get("env", {}) if data else {}
         """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)"""
         self.sec_env = data.get("sec_env", {}) if data else {}
-        """security environment variables, encrypt in server side with application owner's cipher"""
+        """security environment variables, encrypt in server side with app owner's cipher"""
         self.pid = _get_int(data, "pid")
         """process id used to attach to the running process"""
         self.resource_limit = App.ResourceLimitation(_get_item(data, "resource_limit"))
 
         # Read-only attributes
+        self.register_time = _get_int(data, "register_time")
+        """app register time"""
+        self.starts = _get_int(data, "starts")
+        """number of times started"""
         self.owner = _get_str(data, "owner")
-        """owner name"""
+        """owner name of app mesh user who created the app"""
         self.user = _get_str(data, "pid_user")
-        """process user name"""
+        """process OS user name"""
         self.pstree = _get_str(data, "pstree")
         """process tree"""
         self.container_id = _get_str(data, "container_id")
-        """container id"""
+        """docker container id"""
         self.memory = _get_int(data, "memory")
         """memory usage"""
         self.cpu = _get_int(data, "cpu")
         """cpu usage"""
         self.fd = _get_int(data, "fd")
         """file descriptor usage"""
+        self.stdout_cache_size = _get_int(data, "stdout_cache_size")
+        """number of stdout log files currently retained"""
         self.last_start_time = _get_int(data, "last_start_time")
         """last start time"""
         self.last_exit_time = _get_int(data, "last_exit_time")
         """last exit time"""
+        self.last_error = _get_str(data, "last_error")
+        """last error message"""
+        self.next_start_time = _get_int(data, "next_start_time")
+        """next start time"""
         self.health = _get_int(data, "health")
-        """health status"""
+        """health status: 0 for healthy, 1 for unhealthy"""
         self.version = _get_int(data, "version")
-        """version number"""
+        """app version"""
         self.return_code = _get_int(data, "return_code")
-        """last exit code"""
+        """last process exit code"""
         self.task_id = _get_int(data, "task_id")
         """current task id"""
         self.task_status = _get_str(data, "task_status")
