@@ -68,7 +68,7 @@ func NewAppMeshRequest(req *http.Request) (*appmesh.Request, error) {
 
 			// Verify CSRF token
 			csrfHeader := req.Header.Get(HTTP_HEADER_KEY_X_CSRF_TOKEN)
-			if csrfHeader == "" || csrfCookieValue == "" || csrfCookieValue != csrfHeader || !cloud.HMAC.VerifyHMAC(authCookieValue, csrfCookieValue) {
+			if csrfHeader == "" || csrfCookieValue == "" || csrfCookieValue != csrfHeader || !cloud.HMAC_SDKToAgent.VerifyHMAC(authCookieValue, csrfCookieValue) {
 				logger.Warnf("CSRF validation failed - RequestID: %s, Path: %s, Cookie: %s, Header: %s",
 					data.Uuid, data.RequestUri, csrfCookieValue, csrfHeader)
 				return nil, errors.New("invalid CSRF token")

@@ -1,4 +1,5 @@
 """TCP message classes for HTTP-like communication."""
+__all__ = []
 
 # Standard library imports
 from dataclasses import dataclass, field

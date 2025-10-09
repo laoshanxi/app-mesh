@@ -1,7 +1,7 @@
 //go:build windows
 // +build windows
 
-package cloud
+package main
 
 import (
 	"fmt"

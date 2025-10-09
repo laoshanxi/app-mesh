@@ -60,7 +60,7 @@ func (dp *DockerProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// PSK verify
 	pskMsg := r.Header.Get(DOCKER_REQUEST_ID_HEADER)
 	pskMsgHmac := r.Header.Get(cloud.HTTP_HEADER_HMAC)
-	if cloud.HMAC == nil || !cloud.HMAC.VerifyHMAC(pskMsg, pskMsgHmac) {
+	if cloud.HMAC_AgentToCPP == nil || !cloud.HMAC_AgentToCPP.VerifyHMAC(pskMsg, pskMsgHmac) {
 		http.Error(w, "PSK authentication failed", http.StatusProxyAuthRequired)
 		return
 	}
