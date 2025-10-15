@@ -38,7 +38,7 @@ jobs:
           run: |
             apt update
             apt install -y wget iputils-ping
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_11_glibc_2.35_x86_64.deb
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_11_glibc_2.35_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             # start appmesh
@@ -71,7 +71,7 @@ jobs:
           run: |
             apt update
             apt install -y wget iputils-ping
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_13_glibc_2.39_x86_64.deb
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_13_glibc_2.39_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             # start appmesh
@@ -104,7 +104,7 @@ jobs:
           run: |
             apt update
             apt install -y wget iputils-ping
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_7_glibc_2.27_x86_64.deb
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_7_glibc_2.27_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             # start appmesh
@@ -142,7 +142,7 @@ jobs:
             yum clean all
             yum makecache
 
-            yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_4.8.5_glibc_2.17_x86_64.rpm
+            yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_4.8.5_glibc_2.17_x86_64.rpm
 
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start

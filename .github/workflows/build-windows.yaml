@@ -63,7 +63,7 @@ jobs:
         shell: pwsh
         run: |
           # Install package
-          7z x .\appmesh_2.1.2_windows_x64.exe -oC:\local\appmesh
+          7z x .\appmesh_2.2.1_windows_x64.exe -oC:\local\appmesh
           ls "C:\local\appmesh"
 
           # Start service

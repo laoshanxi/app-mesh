@@ -46,13 +46,13 @@ sudo dpkg --import gpg_public.key
 
 ```shell
 # centos
-sudo yum install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
+sudo yum install appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm
 # ubuntu
-sudo -E apt install appmesh_2.1.1_gcc_7_glibc_2.27_x86_64.deb
+sudo -E apt install appmesh_2.2.1_gcc_7_glibc_2.27_x86_64.deb
 # SUSE
-sudo zypper install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
+sudo zypper install appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm
 # macOS
-sudo installer -pkg appmesh_2.1.2_clang_16_macos_15_arm64.pkg -target /
+sudo installer -pkg appmesh_2.2.1_clang_16_macos_15_arm64.pkg -target /
 # Note: use sudo -E to pass current environment variables
 ```
 

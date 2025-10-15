@@ -70,7 +70,7 @@ class AppMeshClientOAuth(AppMeshClient):
         totp_code: Optional[str] = None,
         timeout_seconds: Union[str, int] = 0,
         audience: Optional[str] = None,
-    ) -> None:
+    ) -> Optional[str]:
         """Login with user name and password using Keycloak.
 
         Args:

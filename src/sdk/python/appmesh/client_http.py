@@ -430,7 +430,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         totp_code: Optional[str] = None,
         timeout_seconds: Union[str, int] = _DURATION_ONE_WEEK_ISO,
         audience: Optional[str] = None,
-    ) -> None:
+    ) -> Optional[str]:
         """Login with user name and password.
 
         Args:
@@ -441,7 +441,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             audience: The audience of the JWT token, should be available by JWT service configuration (default is 'appmesh-service').
 
         Returns:
-            JWT token.
+            TOTP challenge string if verification is required, otherwise None.
         """
         # Standard App Mesh authentication
         self.session.cookies.clear()
@@ -454,8 +454,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         }
         if audience:
             headers["X-Audience"] = audience
-        # if totp_code:
-        #    headers["X-Totp-Code"] = totp_code
+        if totp_code:
+            headers["X-Totp-Code"] = totp_code
 
         resp = self._request_http(
             AppMeshClient._Method.POST,
@@ -467,10 +467,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             self._handle_token_update(resp.json()["access_token"])
         elif resp.status_code == HTTPStatus.PRECONDITION_REQUIRED:
             # TOTP required
-            if not totp_code:
-                raise Exception("TOTP code required")
             if "totp_challenge" in resp.json():
                 challenge = resp.json()["totp_challenge"]
+                if not totp_code:
+                    return challenge
                 self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
         else:
             raise Exception(resp.text)
