@@ -684,15 +684,25 @@ void RestHandler::apiRestMetrics(const HttpRequest &message)
 
 nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token)
 {
-	nlohmann::json result = nlohmann::json::object();
-	nlohmann::json profile = nlohmann::json::object();
-	profile[("name")] = std::string(uname);
-	profile[("auth_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-	result[("profile")] = std::move(profile);
-	result[("token_type")] = std::string(HTTP_HEADER_JWT_Bearer);
+	const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+	const auto exp = now + timeoutSeconds;
+
+	nlohmann::json result;
+	result["token_type"] = HTTP_HEADER_JWT_Bearer;
 	result[HTTP_HEADER_JWT_access_token] = token ? *token : generateJwtToken(uname, ugroup, audience, timeoutSeconds);
-	result[("expire_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
-	result[("expire_seconds")] = (timeoutSeconds);
+	result["expires_in"] = timeoutSeconds;
+	result["expire_time"] = exp;
+
+	// Optional OpenID/OAuth-style fields
+	result["issued_at"] = now;
+
+	// User profile (optional)
+	nlohmann::json profile;
+	profile["name"] = uname;
+	profile["group"] = ugroup;
+	profile["auth_time"] = now;
+	result["profile"] = std::move(profile);
+
 	return result;
 }
 
@@ -847,12 +857,15 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 		audience = HTTP_HEADER_JWT_Audience_appmesh;
 
 	const auto tokenUser = permissionCheck(message, permission, audience); // External audience verification
-	auto result = nlohmann::json::object();
-	result["user"] = tokenUser;
-	result["success"] = (true);
-	result["permission"] = std::move(permission);
-	result[JSON_KEY_USER_audience] = std::move(audience);
-	message.reply(web::http::status_codes::OK, result);
+
+	const auto token = getJwtToken(message);
+	const auto decodedToken = decodeJwtToken(token);
+	const auto expireTime = decodedToken.get_expires_at();
+	const auto audiences = decodedToken.get_audience();
+	audience = audiences.empty() ? audience : *audiences.begin(); // safe copy
+	auto timeoutSeconds = std::chrono::system_clock::to_time_t(expireTime) - std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+	message.reply(web::http::status_codes::OK, createJwtResponse(message, tokenUser, timeoutSeconds, "", audience, &token));
 }
 
 void RestHandler::apiUserTotpSecret(const HttpRequest &message)

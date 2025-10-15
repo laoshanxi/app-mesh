@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  APPMESH_VERSION: "2.1.2"
+  APPMESH_VERSION: "2.2.1"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
@@ -126,21 +126,7 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. Object design for Python SDK" >> CHANGELOG.txt
-          echo "2. CentOS 7 compatibility" >> CHANGELOG.txt
-          echo "3. SSL for all connections" >> CHANGELOG.txt
-          echo "4. GPG signing for RPM and DPKG packages (use 'rpm/dpkg --import gpg_public.key')" >> CHANGELOG.txt
-          echo "5. Generated SBOM (Software Bill of Materials) file" >> CHANGELOG.txt
-          echo "6. YAML format support for application configuration" >> CHANGELOG.txt
-          echo "7. Cluster host request forwarding" >> CHANGELOG.txt
-          echo "8. JWT authentication for client requests" >> CHANGELOG.txt
-          echo "9. PSK authentication for requests from App Mesh agent to engine" >> CHANGELOG.txt
-          echo "10. PSK authentication for Docker requests from App Mesh engine to agent" >> CHANGELOG.txt
-          echo "11. OAuth2 authentication" >> CHANGELOG.txt
-          echo "12. Enable key encryption by default" >> CHANGELOG.txt
-          echo "13. Cookie token and CSRF token" >> CHANGELOG.txt
-          echo "14. Windows64/macOS package" >> CHANGELOG.txt
-          echo "15. Remote task invoke" >> CHANGELOG.txt
+          echo "1. OAth2 integrate" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency
@@ -179,7 +165,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: CHANGELOG.txt
-          name: "SDK & Security enhancement"
+          name: "Security"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}

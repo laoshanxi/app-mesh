@@ -13,7 +13,7 @@ permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
 env:
-  APPMESH_VERSION: "2.1.2"
+  APPMESH_VERSION: "2.2.1"
 
 jobs:
   coverity-cpp-code-scan:

@@ -10,18 +10,23 @@ Setup:
     docker run --restart=always -d -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin --name keycloak2 quay.io/keycloak/keycloak:latest start-dev
 
 2. Configure Keycloak:
-    - Create realm: appmesh-realm, select this realm
-    - In "Authentication" menu, disable all Required actions
-    - Create user 'mesh' with password 'mesh123' and disable temporary password
-    - In Realm roles > create role: manage/view
-    - In Clients > create client: appmesh-client with client secret V87QbGeDJ4RCtzL8VNG4DTzsavZZENAx
-    - In Users > User details, assign role: appmesh-client manage/view
+    - [Manage realms] → [Create realm]: create <appmesh-realm>, then select it.
+    - [Authentication] → [Required Actions]: disable all required actions.
+    - [Users] → [Add user]: create user <mesh> with
+        Password = <mesh123>
+        Temporary password = OFF
+    - [Clients] → [Create client]: create <appmesh-client>
+        Enable Client authentication & Direct access grants
+        Client Roles: create <manage>, <view> roles for client scope
+        Copy Client Secret: <2gn0Ekis6Lwp7OSaEnMYgyoXK3y1s5dO>
+    - [Users] → [mesh] → [Role Mappings] → [Assign Client roles]: assign roles <appmesh-client→manage>, <appmesh-client→view>.
+    - Set SecurityInterface in config.yaml to oauth2
+    - Config oauth2.yaml
 """
 
 import os
 import sys
 import json
-import time
 import requests
 import jwt
 from jwt.algorithms import RSAAlgorithm
@@ -111,10 +116,10 @@ def main():
     """
     # Keycloak configuration
     keycloak_config = {
-        "auth_server_url": "http://localhost:8080",
+        "auth_server_url": "http://172.26.246.205:8080",
         "realm": "appmesh-realm",
         "client_id": "appmesh-client",
-        "client_secret": "V87QbGeDJ4RCtzL8VNG4DTzsavZZENAx",  # For confidential clients
+        "client_secret": "2gn0Ekis6Lwp7OSaEnMYgyoXK3y1s5dO",  # For confidential clients
     }
 
     # Create App Mesh client
@@ -125,11 +130,12 @@ def main():
     try:
         # Login to get token
         print("Attempting to login...")
-        token = client.login("mesh", "mesh123")
+        client.login("mesh", "mesh123")
         print("Login successful!")
 
         # Verify token
         print("Verifying token...")
+        token = client._token
         verifier = KeycloakTokenVerifier(keycloak_config["auth_server_url"], keycloak_config["realm"])
         is_valid, result = verifier.verify_token(token.get("access_token"))
 

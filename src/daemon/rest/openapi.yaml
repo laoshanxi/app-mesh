@@ -3,7 +3,7 @@ openapi: 3.1.0
 info:
   title: App Mesh REST API
   description: API documentation for App Mesh.
-  version: 2.1.2
+  version: 2.2.1
 
 paths:
   /appmesh/login:

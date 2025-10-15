@@ -53,7 +53,6 @@ class AppMeshClientTCP(AppMeshClient):
         self,
         rest_ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
         rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
-        jwt_token: Optional[str] = None,
         tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
     ):
         """Construct an App Mesh client TCP object to communicate securely with an App Mesh server over TLS.
@@ -66,7 +65,6 @@ class AppMeshClientTCP(AppMeshClient):
             ssl_client_cert: SSL client certificate:
               - str: Path to single PEM with cert+key
               - tuple: (cert_path, key_path)
-            jwt_token: Pre-configured JWT Token for authenticating requests.
             tcp_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6059).
 
         Note:
@@ -74,7 +72,8 @@ class AppMeshClientTCP(AppMeshClient):
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
         self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=rest_ssl_verify, ssl_client_cert=rest_ssl_client_cert)
-        super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert, jwt_token=jwt_token)
+        self._token = ""
+        super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert)
 
     def close(self) -> None:
         """Close the connection and release resources."""
@@ -105,6 +104,15 @@ class AppMeshClientTCP(AppMeshClient):
             return json.dumps(body).encode(self._ENCODING_UTF8)
 
         raise TypeError(f"Unsupported body type: {type(body)}")
+
+    def _handle_token_update(self, token: Optional[str]) -> None:
+        """Handle post action when token updated"""
+        self._token = token
+        super()._handle_token_update(token)
+
+    def _get_access_token(self) -> Optional[str]:
+        """Get the current access token."""
+        return self._token
 
     def _request_http(self, method: AppMeshClient._Method, path: str, query: Optional[dict] = None, header: Optional[dict] = None, body=None) -> requests.Response:
         """Send HTTP request over TCP transport.

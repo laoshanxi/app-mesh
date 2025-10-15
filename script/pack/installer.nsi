@@ -1,5 +1,5 @@
 !define APP_NAME "appmesh"
-!define APP_VERSION "2.1.2"
+!define APP_VERSION "2.2.1"
 !define COMPANY_NAME "laoshanxi"
 !define INSTALL_DIR "C:\local\${APP_NAME}"
 

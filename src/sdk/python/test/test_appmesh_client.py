@@ -172,33 +172,35 @@ class TestAppMeshClient(TestCase):
         client = AppMeshClient()
         with self.assertRaises(Exception):
             client.login("admin", "admin123", audience="appmesh-service-na")
-        token = client.login("admin", "admin123", audience="your-service-api")
-        with self.assertRaises(Exception):
-            self.assertFalse(client.authenticate(token))
-        self.assertTrue(client.authenticate(token, audience="your-service-api"))
+        client.login("admin", "admin123", audience="your-service-api")
+        token = client._get_access_token()
+        self.assertFalse(client.authenticate(token)[0])
+        self.assertTrue(client.authenticate(token, audience="your-service-api")[0])
 
-        token = client.login("admin", "admin123", audience="appmesh-service")
-        self.assertTrue(client.authenticate(token, audience="appmesh-service"))
-        with self.assertRaises(Exception):
-            self.assertFalse(client.authenticate(token, audience="appmesh-service-na"))
+        client.login("admin", "admin123", audience="appmesh-service")
+        token = client._get_access_token()
+        self.assertTrue(client.authenticate(token, audience="appmesh-service")[0])
+        self.assertFalse(client.authenticate(token, audience="appmesh-service-na")[0])
 
-        token2 = client.renew_token(100)
+        self.assertIsNotNone(client._get_access_token())
+
+        client.renew_token(100)
+        token2 = client._get_access_token()
         self.assertNotEqual(token, token2)
 
-        with self.assertRaises(Exception):
-            self.assertFalse(client.authentication(token))
-        self.assertTrue(client.authenticate(token2))
+        self.assertFalse(client.authentication(token)[0])
+        self.assertTrue(client.authenticate(token2)[0])
 
         self.assertTrue(client.logoff())
         with self.assertRaises(Exception):
             client.view_all_apps()
-        self.assertIsNotNone(client.login("admin", "admin123"))
+        self.assertIsNone(client.login("admin", "admin123"))
         self.assertIsNotNone(client.view_all_apps())
 
     def test_02_user(self):
         """test user"""
         client = AppMeshClient()
-        self.assertIsNotNone(client.login("admin", "admin123"))
+        self.assertIsNone(client.login("admin", "admin123"))
         with self.assertRaises(Exception):
             client.update_user_password("admin123", "admin")
         with self.assertRaises(Exception):
@@ -206,17 +208,17 @@ class TestAppMeshClient(TestCase):
         self.assertIsNone(client.update_user_password("admin123", "admin1234"))
 
         with self.assertRaises(Exception):
-            self.assertIsNone(client.login("admin", "admin123"))
-        self.assertIsNotNone(client.login("admin", "admin1234"))
+            client.login("admin", "admin123")
+        self.assertIsNone(client.login("admin", "admin1234"))
         self.assertIsNone(client.update_user_password("admin1234", "admin123"))
 
         self.assertIn("permission-list", client.view_permissions())
         self.assertIn("permission-list", client.view_user_permissions())
-        self.assertTrue(client.authenticate(client.jwt_token, "app-view"))
+        self.assertTrue(client.authenticate(client._get_access_token(), "app-view")[0])
         with self.assertRaises(Exception):
             self.assertFalse(client.authenticate("", "app-view"))
         with self.assertRaises(Exception):
-            self.assertFalse(client.authenticate(client.jwt_token, "app-view2"))
+            self.assertFalse(client.authenticate(client._get_access_token(), "app-view2"))
 
         self.assertIsNone(client.lock_user("mesh"))
         self.assertIsNone(client.unlock_user("mesh"))
@@ -231,9 +233,9 @@ class TestAppMeshClient(TestCase):
     def test_03_totp(self):
         """test TOTP"""
         client = AppMeshClient()
-        token = client.login("admin", "admin123")
+        client.login("admin", "admin123")
+        token = client._get_access_token()
         self.assertIsNotNone(token)
-        self.assertEqual(token, client.jwt_token)
         # get totp secret
         totp_secret = client.get_totp_secret()
         # print(f"TOTP Secret: {totp_secret!r}")
@@ -243,13 +245,14 @@ class TestAppMeshClient(TestCase):
         totp_code = totp.now()
         print(totp_code)
         # setup totp
-        self.assertTrue(client.setup_totp(totp_code))
+        self.assertIsNone(client.setup_totp(totp_code))
 
         # use totp code to login
         totp_code = totp.now()
         print(totp_code)
-        self.assertIsNotNone(client.login("admin", "admin123", totp_code))
+        self.assertIsNone(client.login("admin", "admin123", totp_code))
         self.assertIsNone(client.disable_totp())
+        print("TOTP disabled")
 
     def read_file_content(self, file_path):
         """read file content"""
@@ -291,7 +294,8 @@ class TestAppMeshClient(TestCase):
                 client.view_all_apps()
 
             # re-login and verify user info
-            token = client.login("admin", "admin123")
+            client.login("admin", "admin123")
+            token = client._get_access_token()
             client = AppMeshClient(rest_cookie_file=cookie_path)
             user_info = client.view_self()
             self.assertIn("name", user_info)
@@ -306,7 +310,8 @@ class TestAppMeshClient(TestCase):
             totp = TOTP(totp_secret)
             totp_code = totp.now()
             # setup totp
-            self.assertNotEqual(token, client.setup_totp(totp_code))
+            self.assertIsNone(client.setup_totp(totp_code))
+            self.assertNotEqual(token, client._get_access_token())
 
             content_after_totp = self.read_file_content(cookie_path)
 
@@ -321,7 +326,7 @@ class TestAppMeshClient(TestCase):
             self.assertTrue(client.logoff())
             totp_code = totp.now()
             print(totp_code)
-            self.assertIsNotNone(client.login("admin", "admin123", totp_code))
+            self.assertIsNone(client.login("admin", "admin123", totp_code))
             self.assertIn("appmesh_auth_token", content_after_totp)
             self.assertIn("appmesh_csrf_token", content_after_totp)
 

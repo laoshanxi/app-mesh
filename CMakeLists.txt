@@ -5,7 +5,7 @@ string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ")
 # project
 ##########################################################################
 cmake_policy(SET CMP0048 NEW)
-project(appmesh LANGUAGES CXX VERSION 2.1.2)
+project(appmesh LANGUAGES CXX VERSION 2.2.1)
 
 ##########################################################################
 # C++ flag

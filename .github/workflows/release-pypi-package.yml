@@ -35,7 +35,7 @@ jobs:
 
       - name: Build package
         run: |
-          python -m build --sdist --wheel --outdir dist
+          python -m build --wheel --outdir dist
         working-directory: src/sdk/python
 
       - name: Publish package
