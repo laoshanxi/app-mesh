@@ -12,7 +12,7 @@ sys.path.insert(0, sdk_python_path)
 project = "AppMesh"
 copyright = "2024, laoshanxi"
 author = "laoshanxi"
-release = "2.1.2"
+release = "2.2.1"
 
 # -- General configuration ---------------------------------------------------
 needs_sphinx = "3.0"

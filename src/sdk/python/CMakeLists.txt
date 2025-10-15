@@ -13,6 +13,6 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 file(REMOVE_RECURSE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/*")
 add_custom_target(wheel
     COMMENT "python package build ${CMAKE_CURRENT_SOURCE_DIR}"
-    COMMAND ${Python3_EXECUTABLE} -m build --sdist --wheel --outdir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+    COMMAND ${Python3_EXECUTABLE} -m build --wheel --outdir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )

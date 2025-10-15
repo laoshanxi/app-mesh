@@ -10,7 +10,7 @@ on:
       - "script/**"
 
 env:
-  APPMESH_VERSION: "2.1.2"
+  APPMESH_VERSION: "2.2.1"
 
 jobs:
   build:
@@ -90,7 +90,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          name: "SDK & Security enhancement"
+          name: "Security"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}

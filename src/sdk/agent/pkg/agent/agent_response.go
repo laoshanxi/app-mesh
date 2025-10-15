@@ -150,22 +150,14 @@ func (r *Response) ApplyResponse(w http.ResponseWriter, req *http.Request, reque
 // 2. Refreshing cookies on token renewal
 // 3. Removing cookies on logout
 func (r *Response) setCookie(w http.ResponseWriter, req *http.Request, request *appmesh.Request) {
-	// Check if authentication failed
-	if r.HttpStatus == http.StatusUnauthorized {
-		// Clear cookie on unauthorized response
-		if _, err := req.Cookie(COOKIE_TOKEN); err == nil {
-			r.clearAuthCookie(w, req)
-		}
-		return
-	}
-
 	// Only proceed for successful responses
 	if r.HttpStatus != http.StatusOK {
 		return
 	}
 
 	switch r.RequestUri {
-	case REST_PATH_LOGIN, REST_PATH_TOTP_VALIDATE:
+	case REST_PATH_LOGIN, REST_PATH_TOTP_VALIDATE, REST_PATH_AUTH:
+		r.setSecureHeaders(w)
 		// Set cookie if explicitly requested via header and value is true
 		if setCookieVal, ok := request.Headers[HTTP_HEADER_KEY_X_SET_COOKIE]; ok {
 			if requestSetCookie, err := strconv.ParseBool(setCookieVal); err == nil && requestSetCookie {
@@ -176,6 +168,7 @@ func (r *Response) setCookie(w http.ResponseWriter, req *http.Request, request *
 		}
 
 	case REST_PATH_TOKEN_RENEW, REST_PATH_TOTP_SETUP:
+		r.setSecureHeaders(w)
 		// Verify cookie exists and has valid value
 		if cookie, err := req.Cookie(COOKIE_TOKEN); err != nil {
 			logger.Debugf("No cookie present for %s", r.Uuid)
@@ -282,4 +275,10 @@ func (r *Response) createCSRFToken(w http.ResponseWriter, req *http.Request, max
 	}
 
 	http.SetCookie(w, cookie)
+}
+
+func (r *Response) setSecureHeaders(w http.ResponseWriter) {
+	// Prevent sensitive responses (like JWTs) from being cached by browsers or proxies.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 }

@@ -199,7 +199,7 @@ const std::string RestBase::generateJwtToken(const std::string &userName, const 
                          .set_audience(std::move(targetAudience))                   // Audience: intended recipient
                          .set_issued_at(jwt::date(now))                             // Issued at: token creation time
                          .set_expires_at(jwt::date(now + std::chrono::seconds{timeoutSeconds}))
-                         .set_id(Utility::shortID())                                     // JWT ID: unique identifier for the token
+                         .set_id(Utility::shortID())                                        // JWT ID: unique identifier for the token
                          .set_payload_claim("resource_access", jwt::claim(resourceAccess)); // Custom claim for permissions
 
     // Sign token with appropriate algorithm
@@ -353,24 +353,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
         throw std::domain_error(Utility::stringFormat("Authentication failed: %s", e.what()));
     }
 
-    // Extract roles from resource_access
-    std::set<std::string> roles;
-    if (decodedToken.has_payload_claim("resource_access"))
-    {
-        auto resource_access = decodedToken.get_payload_claim("resource_access").to_json();
-        for (const auto &item : resource_access.items())
-        {
-            const auto &client_data = item.value();
-            if (client_data.contains("roles") && client_data["roles"].is_array())
-            {
-                for (const auto &role : client_data["roles"])
-                {
-                    // Add client-prefixed role for better context
-                    roles.insert(role.get<std::string>());
-                }
-            }
-        }
-    }
+    std::set<std::string> roles; // App Mesh permission check do not need roles here
 
     // Return tuple of username, group, and roles
     return std::make_tuple(userName, userObj->getGroup(), roles);

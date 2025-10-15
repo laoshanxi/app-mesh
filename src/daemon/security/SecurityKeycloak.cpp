@@ -259,13 +259,22 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
         }
 
         // Construct issuer URL
-        const std::string issuer = (fs::path(m_config->m_keycloakUrl) / "realms" / m_config->m_keycloakRealm).string();
+        std::string issuer = (fs::path(m_config->m_keycloakUrl) / "realms" / m_config->m_keycloakRealm).string();
+        issuer = Utility::stringReplace(issuer, "\\", "/"); // fix windows path issue
 
         // Verify the token
         const auto verifier = jwt::verify()
                                   .allow_algorithm(jwt::algorithm::rs256{pem})
-                                  .with_audience("account") // TODO: use "account" or client id, depend on "Direct Access Grants"
                                   .with_issuer(issuer);
+
+        // Verify client-id; TODO: check aud instead of azp
+        if (decoded.has_payload_claim("azp"))
+        {
+            if (m_config->m_keycloakClientId != decoded.get_payload_claim("azp").as_string())
+            {
+                throw std::domain_error("JWT 'azp' claim does not match the expected client ID");
+            }
+        }
 
         verifier.verify(decoded);
 

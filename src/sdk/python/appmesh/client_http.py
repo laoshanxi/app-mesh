@@ -6,7 +6,6 @@
 # Standard library imports
 import abc
 import base64
-import http.cookiejar as cookiejar
 import json
 import locale
 import logging
@@ -18,6 +17,7 @@ from contextlib import suppress
 from datetime import datetime
 from enum import Enum, unique
 from http import HTTPStatus
+from http.cookiejar import CookieJar, MozillaCookieJar
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib import parse
@@ -26,11 +26,14 @@ from urllib import parse
 import aniso8601
 import jwt
 import requests
+from requests.cookies import RequestsCookieJar
 
 # Local imports
 from .app import App
 from .app_output import AppOutput
 from .app_run import AppRun
+
+logger = logging.getLogger(__name__)
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -198,7 +201,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_ssl_verify: Union[bool, str] = _DEFAULT_SSL_CA_CERT_PATH,
         rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (_DEFAULT_SSL_CLIENT_CERT_PATH, _DEFAULT_SSL_CLIENT_KEY_PATH),
         rest_timeout: Tuple[float, float] = (60, 300),
-        jwt_token: Optional[str] = None,
         rest_cookie_file: Optional[str] = None,
         auto_refresh_token: bool = False,
     ):
@@ -214,13 +216,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
               - str: Single PEM file with cert+key
               - tuple: (cert_path, key_path)
             rest_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.  Default `(60, 300)`.
-            rest_cookie_file: Path to a file for storing session cookies (alternative to jwt_token).
-            jwt_token: JWT token for API authentication, overrides cookie file if both provided.
+            rest_cookie_file: Cookie file path for HTTP clients (set this to enable persistent cookie storage).
             auto_refresh_token: Enable automatic token refresh before expiration (supports App Mesh and Keycloak tokens).
         """
         self._ensure_logging_configured()
         self.auth_server_url = rest_url
-        self._jwt_token = jwt_token
         self.ssl_verify = rest_ssl_verify
         self.ssl_client_cert = rest_ssl_client_cert
         self.rest_timeout = rest_timeout
@@ -234,11 +234,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self._lock = threading.Lock()
         self.session = requests.Session()
         self.cookie_file = rest_cookie_file
-        loaded = self._load_cookies(rest_cookie_file)
-        cookie_token = self._get_cookie_value(self.session.cookies, self._COOKIE_TOKEN) if loaded else None
-
-        # Set property last after all dependencies are initialized to setup refresh timer
-        self.jwt_token = jwt_token or cookie_token
+        if self._load_cookies(rest_cookie_file):
+            self._handle_token_update(self._get_access_token())
 
     @staticmethod
     def _ensure_logging_configured() -> None:
@@ -247,9 +244,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
     # @abc.abstractmethod
-    def _get_access_token(self) -> str:
+    def _get_access_token(self) -> Optional[str]:
         """Get the current access token."""
-        return self.jwt_token or ""
+        return self._get_cookie_value(self.session.cookies, self._COOKIE_TOKEN)
 
     def _load_cookies(self, cookie_file: Optional[str]) -> bool:
         """ "Load cookies from a Mozilla-format file into the session"""
@@ -257,44 +254,53 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             return False
 
         cookie_path = Path(cookie_file)
-        self.session.cookies = cookiejar.MozillaCookieJar(cookie_file)
+        self.session.cookies = MozillaCookieJar(cookie_file)
 
         if cookie_path.exists():
             self.session.cookies.load(ignore_discard=True, ignore_expires=True)
+            return True
         else:
             cookie_path.parent.mkdir(parents=True, exist_ok=True)
             self.session.cookies.save(ignore_discard=True, ignore_expires=True)
             if os.name == "posix":
                 cookie_path.chmod(0o600)  # User read/write only
 
-        return True
+        return False
 
     @staticmethod
-    def _get_cookie_value(cookies, name: str, check_expiry: bool = True) -> Optional[str]:
+    def _get_cookie_value(cookies: Union[RequestsCookieJar, CookieJar], name: str, check_expiry: bool = True) -> Optional[str]:
         """Get cookie value by name, checking expiry if requested."""
-        # If it's a RequestsCookieJar, use .get() but check expiry manually if requested
-        if hasattr(cookies, "get") and not isinstance(cookies, list):
-            cookie = cookies.get(name)
-            if cookie is None:
-                return None
-            if check_expiry and hasattr(cookie, "expires") and cookie.expires:
-                if cookie.expires < time.time():
-                    return None  # expired
-            return cookie.value if hasattr(cookie, "value") else cookie
+        if not cookies or not name:
+            return None
 
-        # Otherwise, assume it's a MozillaCookieJar — iterate manually
+        # Fast path for RequestsCookieJar (default in requests.Session)
+        if isinstance(cookies, RequestsCookieJar):
+            cookie = cookies.get(name)
+            if not cookie:
+                return None
+
+            # Some requests versions return a string directly, others a Cookie object
+            if hasattr(cookie, "expires"):
+                if check_expiry and cookie.expires and cookie.expires < time.time():
+                    return None  # expired
+                return getattr(cookie, "value", None)
+
+            # Otherwise, assume the cookie is a plain value
+            return str(cookie)
+
+        # Generic CookieJar or derived types (MozillaCookieJar)
         for cookie in cookies:
             if cookie.name == name:
-                if check_expiry and hasattr(cookie, "expires") and cookie.expires:
-                    if cookie.expires < time.time():
-                        return None  # expired
+                if check_expiry and cookie.expires and cookie.expires < time.time():
+                    return None  # expired
                 return cookie.value
 
         return None
 
     def _check_and_refresh_token(self) -> None:
         """Check and refresh token if needed, then schedule next check."""
-        if not self.jwt_token:
+        jwt_token = self._get_access_token()
+        if not jwt_token:
             return
 
         needs_refresh = True
@@ -302,7 +308,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         # Check token expiration directly from JWT
         with suppress(Exception):
-            decoded_token = jwt.decode(self._get_access_token(), options={"verify_signature": False})
+            decoded_token = jwt.decode(jwt_token, options={"verify_signature": False})
             expiry = decoded_token.get("exp", 0)
             current_time = time.time()
             time_to_expiry = expiry - current_time
@@ -312,12 +318,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if needs_refresh:
             try:
                 self.renew_token()
-                logging.info("Token successfully refreshed")
+                logger.info("Token successfully refreshed")
             except Exception as e:
-                logging.error("Token refresh failed: %s", e)
+                logger.error("Token refresh failed: %s", e)
 
         # Schedule next check if auto-refresh is still enabled
-        if self._auto_refresh_token and self.jwt_token:
+        if self._auto_refresh_token and jwt_token:
             self._schedule_token_refresh(time_to_expiry)
 
     def _schedule_token_refresh(self, time_to_expiry: Optional[float] = None) -> None:
@@ -343,9 +349,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             self._token_refresh_timer = threading.Timer(check_interval, self._check_and_refresh_token)
             self._token_refresh_timer.daemon = True
             self._token_refresh_timer.start()
-            logging.debug("Auto-refresh: Next token check scheduled in %.1f seconds", check_interval)
+            logger.debug("Auto-refresh: Next token check scheduled in %.1f seconds", check_interval)
         except Exception as e:
-            logging.error("Auto-refresh: Failed to schedule token refresh: %s", e)
+            logger.error("Auto-refresh: Failed to schedule token refresh: %s", e)
 
     # @abc.abstractmethod
     def close(self) -> None:
@@ -371,32 +377,18 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """Support for context manager protocol, ensuring resources are released."""
         self.close()
 
-    @property
-    def jwt_token(self) -> str:
-        """Get the current JWT (JSON Web Token) used for authentication."""
-        return self._jwt_token or ""
-
-    @jwt_token.setter
-    def jwt_token(self, token: Optional[str]) -> None:
-        """Set the JWT token for authentication.
-
-        Note:
-            This setter has no effect when cookie-based authentication is enabled (i.e., when a cookie file is being used).
-        """
-        if self._jwt_token == token:
-            return  # No change
-        self._jwt_token = token
-
+    def _handle_token_update(self, token: Optional[str]) -> None:
+        """Handle post action when token updated"""
         # Handle refresh
-        if self._jwt_token and self._auto_refresh_token:
+        if token and self._auto_refresh_token:
             self._schedule_token_refresh()
         elif self._token_refresh_timer:
             self._token_refresh_timer.cancel()
             self._token_refresh_timer = None
 
         # Handle session persistence
-        with self._lock:
-            if self.cookie_file:
+        if self.cookie_file:
+            with self._lock:
                 self.session.cookies.save(ignore_discard=True, ignore_expires=True)
 
     @property
@@ -435,10 +427,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self,
         user_name: str,
         user_pwd: str,
-        totp_code: Optional[str] = "",
+        totp_code: Optional[str] = None,
         timeout_seconds: Union[str, int] = _DURATION_ONE_WEEK_ISO,
         audience: Optional[str] = None,
-    ) -> str:
+    ) -> None:
         """Login with user name and password.
 
         Args:
@@ -452,17 +444,16 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             JWT token.
         """
         # Standard App Mesh authentication
-        self.jwt_token = None
+        self.session.cookies.clear()
 
         credentials = f"{user_name}:{user_pwd}".encode()
         headers = {
             self._HTTP_HEADER_KEY_AUTH: f"Basic {base64.b64encode(credentials).decode()}",
+            self._HTTP_HEADER_JWT_SET_COOKIE: "true",  # Enable cookie token mode
             "X-Expire-Seconds": str(self._parse_duration(timeout_seconds)),
         }
         if audience:
             headers["X-Audience"] = audience
-        if self.cookie_file:
-            headers[self._HTTP_HEADER_JWT_SET_COOKIE] = "true"
         # if totp_code:
         #    headers["X-Totp-Code"] = totp_code
 
@@ -473,20 +464,18 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         )
 
         if resp.status_code == HTTPStatus.OK:
-            if "access_token" in resp.json():
-                self.jwt_token = resp.json()["access_token"]
+            self._handle_token_update(resp.json()["access_token"])
         elif resp.status_code == HTTPStatus.PRECONDITION_REQUIRED:
+            # TOTP required
             if not totp_code:
                 raise Exception("TOTP code required")
             if "totp_challenge" in resp.json():
                 challenge = resp.json()["totp_challenge"]
-                self.jwt_token = self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
+                self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
         else:
             raise Exception(resp.text)
 
-        return self.jwt_token
-
-    def validate_totp(self, username: str, challenge: str, code: str, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> str:
+    def validate_totp(self, username: str, challenge: str, code: str, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
         """Validate TOTP challenge and obtain a new JWT token.
 
         Args:
@@ -497,9 +486,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 Accepts either:
                   - **ISO 8601 duration string** (e.g., `'P1Y2M3DT4H5M6S'`, `'P1W'`)
                   - **Numeric value (seconds)** for simpler cases.
-
-        Returns:
-            New JWT token if validation succeeds.
         """
         body = {
             "user_name": username,
@@ -508,7 +494,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             "expire_seconds": self._parse_duration(timeout),
         }
 
-        headers = {self._HTTP_HEADER_JWT_SET_COOKIE: "true"} if self.cookie_file else {}
+        headers = {self._HTTP_HEADER_JWT_SET_COOKIE: "true"}
 
         resp = self._request_http(
             AppMeshClient._Method.POST,
@@ -517,68 +503,76 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header=headers,
         )
 
-        if resp.status_code == HTTPStatus.OK and "access_token" in resp.json():
-            self.jwt_token = resp.json()["access_token"]
-            return self.jwt_token
-        raise Exception(resp.text)
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
+
+        self._handle_token_update(resp.json()["access_token"])
 
     def logoff(self) -> bool:
         """Log out of the current session from the server."""
-        if not self.jwt_token or not isinstance(self.jwt_token, str):
+        jwt_token = self._get_access_token()
+        if not jwt_token or not isinstance(jwt_token, str):
             return False
 
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/self/logoff")
-        self.jwt_token = None
-        return resp.status_code == HTTPStatus.OK
 
-    def authentication(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None) -> bool:
+        if resp.status_code != HTTPStatus.OK:
+            logger.warning("Failed to logout from Keycloak: %s", resp.text)
+            return False
+
+        self._handle_token_update("")
+        return True
+
+    def authentication(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True) -> Tuple[bool, str]:
         """Deprecated: Use authenticate() instead."""
-        return self.authenticate(token, permission, audience)
+        return self.authenticate(token, permission, audience, apply)
 
-    def authenticate(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None) -> bool:
-        """Authenticate with a token and verify permission if specified.
+    def authenticate(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True) -> Tuple[bool, str]:
+        """Authenticate a JWT token and optionally apply it to the current session.
 
         Args:
-            token: JWT token returned from login().
-            permission: Permission ID to verify the token user.
+            token: JWT token returned from `login()`.
+            permission: Optional permission ID to verify for the token's user.
                 Can be one of:
-                  - pre-defined by App Mesh from security.yaml (e.g 'app-view', 'app-delete')
-                  - defined by input from role_update() or security.yaml
-            audience: The audience of the JWT token.
+                - Predefined by App Mesh in security.yaml (e.g., 'app-view', 'app-delete')
+                - Defined via `role_update()` or security.yaml.
+            audience: Optional audience value to verify against the JWT token.
+            apply: If True, update the current session with the token upon success.
 
         Returns:
-            True if authentication succeeds.
+            Tuple of (success: bool, message: str), where:
+            - success: True if authentication succeeds (HTTP 200 OK).
+            - message: Response message from the server (e.g., error details).
         """
-        old_token = self.jwt_token
-        self.jwt_token = token
+        # Header auth token takes priority over cookie token
+        headers = {self._HTTP_HEADER_KEY_AUTH: f"Bearer {token}"}
 
-        headers = {}
         if audience:
             headers["X-Audience"] = audience
         if permission:
             headers["X-Permission"] = permission
+        if apply:
+            headers[self._HTTP_HEADER_JWT_SET_COOKIE] = "true"
 
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/auth", header=headers)
 
-        if resp.status_code != HTTPStatus.OK:
-            self.jwt_token = old_token
-            raise Exception(resp.text)
+        if resp.status_code == HTTPStatus.OK:
+            if apply:
+                self._handle_token_update(self._get_access_token())
 
-        return True
+        return resp.status_code == HTTPStatus.OK, resp.text
 
-    def renew_token(self, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> str:
+    def renew_token(self, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
         """Renew the current token.
 
         Args:
             timeout: Token expire timeout.
-
-        Returns:
-            The new JWT token.
         """
-        if not self.jwt_token:
+        jwt_token = self._get_access_token()
+        if not jwt_token:
             raise Exception("No token to renew")
 
-        if not isinstance(self.jwt_token, str):
+        if not isinstance(jwt_token, str):
             raise Exception("Unsupported token format")
 
         resp = self._request_http(
@@ -587,15 +581,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header={"X-Expire-Seconds": str(self._parse_duration(timeout))},
         )
 
-        if resp.status_code == HTTPStatus.OK:
-            response_data = resp.json()
-            if "access_token" not in response_data:
-                raise Exception("Token renewal response missing access_token")
-            self.jwt_token = response_data["access_token"]
-        else:
+        if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
 
-        return self.jwt_token
+        self._handle_token_update(resp.json()["access_token"])
 
     def get_totp_secret(self) -> str:
         """Generate TOTP secret for the current user."""
@@ -611,14 +600,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception("TOTP URI does not contain a 'secret' field")
         return secret
 
-    def setup_totp(self, totp_code: str) -> str:
+    def setup_totp(self, totp_code: str) -> None:
         """Set up 2FA for the current user.
 
         Args:
             totp_code: TOTP code.
-
-        Returns:
-            The new JWT token if setup succeeds.
         """
         resp = self._request_http(
             method=AppMeshClient._Method.POST,
@@ -626,12 +612,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header={"X-Totp-Code": totp_code},
         )
 
-        if resp.status_code == HTTPStatus.OK:
-            if "access_token" in resp.json():
-                self.jwt_token = resp.json()["access_token"]
-                return self.jwt_token
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
 
-        raise Exception(resp.text)
+        self._handle_token_update(resp.json()["access_token"])
 
     def disable_totp(self, user: str = "self") -> None:
         """Disable 2FA for the specified user."""
@@ -1236,13 +1220,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         # Prepare headers
         headers = header.copy() if header else {}
 
-        if self.cookie_file:
-            # Cookie-based token
-            csrf_token = self._get_cookie_value(self.session.cookies, self._COOKIE_CSRF_TOKEN)
-            if csrf_token:
-                headers[self._HTTP_HEADER_NAME_CSRF_TOKEN] = csrf_token
+        csrf_token = self._get_cookie_value(self.session.cookies, self._COOKIE_CSRF_TOKEN)
+        if csrf_token:
+            # appmesh token
+            headers[self._HTTP_HEADER_NAME_CSRF_TOKEN] = csrf_token
         else:
-            # Api-based token
+            # OAuth token
             access_token = self._get_access_token()
             if access_token:
                 headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {access_token}"

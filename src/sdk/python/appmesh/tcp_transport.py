@@ -125,6 +125,7 @@ class TCPTransport:
         return context
 
     def close(self) -> None:
+        """Close socket"""
         if self._socket:
             try:
                 self._socket.close()
@@ -134,6 +135,7 @@ class TCPTransport:
                 self._socket = None
 
     def connected(self) -> bool:
+        """Socket is connected or not"""
         return self._socket is not None
 
     def send_message(self, data: Union[bytes, bytearray, list]) -> None:

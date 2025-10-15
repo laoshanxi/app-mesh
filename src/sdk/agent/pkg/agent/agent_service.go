@@ -31,6 +31,7 @@ const (
 	COOKIE_TOKEN                = "appmesh_auth_token"
 	COOKIE_CSRF_TOKEN           = "appmesh_csrf_token"
 	REST_PATH_LOGIN             = "/appmesh/login"
+	REST_PATH_AUTH              = "/appmesh/auth"
 	REST_PATH_TOTP_VALIDATE     = "/appmesh/totp/validate"
 	REST_PATH_LOGOFF            = "/appmesh/self/logoff"
 	REST_PATH_TOKEN_RENEW       = "/appmesh/token/renew"
