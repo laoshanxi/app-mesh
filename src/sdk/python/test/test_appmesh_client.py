@@ -251,6 +251,13 @@ class TestAppMeshClient(TestCase):
         totp_code = totp.now()
         print(totp_code)
         self.assertIsNone(client.login("admin", "admin123", totp_code))
+
+        # use totp with 2 step login
+        challange = client.login("admin", "admin123")
+        self.assertIsNotNone(challange)
+        self.assertIsNone(client.validate_totp("admin", challange, totp_code))
+
+        # disable totp
         self.assertIsNone(client.disable_totp())
         print("TOTP disabled")
 

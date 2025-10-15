@@ -126,7 +126,7 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. OAth2 integrate" >> CHANGELOG.txt
+          echo "1. OAuth2" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency
