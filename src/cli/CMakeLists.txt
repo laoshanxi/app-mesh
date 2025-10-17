@@ -15,4 +15,5 @@ target_link_libraries(appc
   Threads::Threads
   Boost::program_options
   common
+  cppsdk
 )

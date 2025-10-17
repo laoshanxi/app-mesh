@@ -246,7 +246,7 @@ class AppMeshClient {
    * Logout and invalidate JWT token
    * @returns {Promise<void>}
    */
-  async logoff() {
+  async logout() {
     try {
       await this._request("post", "/appmesh/self/logoff");
     } catch (error) {
@@ -291,7 +291,7 @@ class AppMeshClient {
    * Setup 2FA with verification code
    * @param {string} totpCode - TOTP verification code
    */
-  async setup_totp(totpCode) {
+  async enable_totp(totpCode) {
     const headers = { "X-Totp-Code": totpCode };
     await this._request("post", "/appmesh/totp/setup", null, { headers });
   }
@@ -330,7 +330,7 @@ class AppMeshClient {
    * Get all applications info
    * @returns {Object} All apps info
    */
-  async view_all_apps() {
+  async list_apps() {
     const response = await this._request("get", "/appmesh/applications");
     return response.data;
   }
@@ -340,7 +340,7 @@ class AppMeshClient {
    * @param {string} name - App name
    * @returns {Object} App config
    */
-  async view_app(name) {
+  async get_app(name) {
     const response = await this._request("get", `/appmesh/app/${name}`);
     return response.data;
   }
@@ -612,7 +612,7 @@ class AppMeshClient {
           // axios response header use lower case
           try {
             if (headers["X-File-Mode".toLowerCase()]) {
-              await fs.chmod(localFile, parseInt(headers["X-File-Mode".toLowerCase()]));
+              await fs.chmod(localFile, parseInt(headers["X-File-Mode".toLowerCase()], 10));
             }
             if (headers["X-File-User".toLowerCase()] && headers["X-File-Group".toLowerCase()]) {
               await fs.chown(
@@ -712,7 +712,7 @@ class AppMeshClient {
    * Get host resource usage
    * @returns {Object} Resource stats
    */
-  async view_host_resources() {
+  async get_host_resources() {
     const response = await this._request("get", "/appmesh/resources");
     return response.data;
   }
@@ -721,7 +721,7 @@ class AppMeshClient {
    * Get current configuration
    * @returns {Promise<Object>} Config JSON
    */
-  async view_config() {
+  async get_config() {
     const response = await this._request("get", "/appmesh/config");
     return response.data;
   }
@@ -771,7 +771,7 @@ class AppMeshClient {
    * Get all server tags
    * @returns {Promise<Object>} All tags
    */
-  async view_tags() {
+  async get_tags() {
     const response = await this._request("get", "/appmesh/labels");
     return response.data;
   }
@@ -783,7 +783,7 @@ class AppMeshClient {
    * @param {string} [userName="self"] - Username
    * @returns {Promise<boolean>} Success status
    */
-  async update_user_password(oldPassword, newPassword, userName = "self") {
+  async update_password(oldPassword, newPassword, userName = "self") {
     const body = {
       "old_password": base64Utils.encode(oldPassword),
       "new_password": base64Utils.encode(newPassword)
@@ -837,7 +837,7 @@ class AppMeshClient {
    * Get user list
    * @returns {Object[]} User array
    */
-  async view_users() {
+  async list_users() {
     const response = await this._request("get", "/appmesh/users");
     return response.data;
   }
@@ -846,7 +846,7 @@ class AppMeshClient {
    * Get current user info
    * @returns {Object} User properties
    */
-  async view_self() {
+  async get_current_user() {
     const response = await this._request("get", "/appmesh/user/self");
     return response.data;
   }
@@ -855,7 +855,7 @@ class AppMeshClient {
    * Get all user groups
    * @returns {Object[]} Group array
    */
-  async view_groups() {
+  async list_groups() {
     const response = await this._request("get", "/appmesh/user/groups");
     return response.data;
   }
@@ -864,7 +864,7 @@ class AppMeshClient {
    * Get available permissions
    * @returns {Object[]} Permission list
    */
-  async view_permissions() {
+  async list_permissions() {
     const response = await this._request("get", "/appmesh/permissions");
     return response.data;
   }
@@ -873,7 +873,7 @@ class AppMeshClient {
    * Get user permissions
    * @returns {Object[]} Permission array
    */
-  async view_user_permissions() {
+  async get_user_permissions() {
     const response = await this._request("get", "/appmesh/user/permissions");
     return response.data;
   }
@@ -882,7 +882,7 @@ class AppMeshClient {
    * Get all roles and permissions
    * @returns {Object[]} Role array
    */
-  async view_roles() {
+  async list_roles() {
     const response = await this._request("get", "/appmesh/roles");
     return response.data;
   }
@@ -951,7 +951,9 @@ class AppMeshClient {
         headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = this.forwardingHost;
       } else {
         const parsedUrl = new URL(this.baseURL);
-        headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = `${this.forwardingHost}:${parsedUrl.port}`;
+        const defaultPort = parsedUrl.protocol === 'https:' ? '443' : '80';
+        const port = parsedUrl.port || defaultPort;
+        headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = `${this.forwardingHost}:${port}`;
       }
     }
     return headers;

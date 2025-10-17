@@ -1,0 +1,51 @@
+name: publish-rust-package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/sdk/rust/**"
+
+jobs:
+  build-and-release:
+    name: Build and Release Rust SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/sdk/rust
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build (release)
+        run: cargo build --release
+        env:
+          # Prevent compiler warnings from being treated as errors
+          RUSTFLAGS: ""
+          CI: true
+
+      #- name: Run tests
+      #  run: cargo test --release --all
+
+      - name: Verify publish
+        run: cargo publish --dry-run
+
+      - name: Publish to crates.io
+        run: cargo publish --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

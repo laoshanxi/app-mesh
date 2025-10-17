@@ -63,6 +63,12 @@ class TCPTransport:
         except Exception:
             pass  # suppress all exceptions
 
+    def __str__(self) -> str:
+        """Return TCP URI representation."""
+        scheme = "tcps" if self.ssl_verify else "tcp"
+        host, port = self.address
+        return f"{scheme}://{host}:{port}"
+
     def connect(self) -> None:
         """Establish TLS connection to server."""
         context = self._create_ssl_context()

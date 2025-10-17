@@ -20,7 +20,7 @@ const (
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.
 type AppMeshClientTCP struct {
 	*AppMeshClient
-	TcpExecutor *ClientRequesterTcp // Used for file operations.
+	TcpExecutor *RequesterTcp // Used for file operations.
 }
 
 // NewTcpClient creates a new AppMeshClientTCP instance for interacting with a TCP server.
@@ -32,7 +32,7 @@ func NewTcpClient(options Option) (*AppMeshClientTCP, error) {
 	}
 
 	// Set up TCP requester and client.
-	tcpRequester := &ClientRequesterTcp{
+	tcpRequester := &RequesterTcp{
 		TCPConnection: NewTCPConnection(),
 		BaseURL:       uri,
 	}
@@ -177,14 +177,14 @@ func (client *AppMeshClientTCP) uploadFileChunks(file *os.File) error {
 	return client.TcpExecutor.SendMessage([]byte{}) // EOF marker
 }
 
-// ClientRequesterTcp handles TCP requests.
-type ClientRequesterTcp struct {
+// RequesterTcp handles TCP requests.
+type RequesterTcp struct {
 	*TCPConnection
 	BaseURL string
 }
 
-// DoRequest performs a REST-like request over TCP.
-func (r *ClientRequesterTcp) DoRequest(method, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error) {
+// Request performs a REST-like request over TCP.
+func (r *RequesterTcp) Request(method, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error) {
 	u, err := ParseURL(r.BaseURL)
 	if err != nil {
 		return 0, nil, nil, err
@@ -228,14 +228,14 @@ func (r *ClientRequesterTcp) DoRequest(method, apiPath string, queries url.Value
 }
 
 // Close closes the TCP connection.
-func (r *ClientRequesterTcp) Close() {
+func (r *RequesterTcp) Close() {
 	if r.TCPConnection != nil {
 		r.TCPConnection.Close()
 	}
 }
 
 // request sends a request over TCP.
-func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
+func (r *RequesterTcp) request(req *http.Request) (*Response, error) {
 	data := NewRequest()
 	data.RequestUri = req.URL.Path
 	data.HttpMethod = req.Method

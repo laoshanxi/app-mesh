@@ -89,7 +89,7 @@ class AppMeshClientOAuth(AppMeshClient):
             scope="openid",  # what information to include in the token, such as "openid profile email"
         )
 
-    def logoff(self) -> bool:
+    def logout(self) -> bool:
         """Log out of the current session from Keycloak and clean up."""
         result = False
         if self._keycloak_openid and self._token:
@@ -104,7 +104,7 @@ class AppMeshClientOAuth(AppMeshClient):
                 self._token = {}
 
         # Call super to handle base class cleanup (timers, session)
-        super_result = super().logoff()
+        super_result = super().logout()
 
         return result and super_result
 
@@ -125,7 +125,7 @@ class AppMeshClientOAuth(AppMeshClient):
             logging.error("Keycloak token renewal failed: %s", e)
             raise Exception(f"Keycloak token renewal failed: {str(e)}") from e
 
-    def view_self(self) -> dict:
+    def get_current_user(self) -> dict:
         """Get information about the current user using Keycloak userinfo.
 
         Returns:

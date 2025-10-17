@@ -290,3 +290,5 @@ src/sdk/javascript/lib/appmesh.js
 *.jar
 target
 script/consul/data
+
+*.lock

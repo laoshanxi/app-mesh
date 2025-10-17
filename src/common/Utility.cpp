@@ -244,14 +244,14 @@ const std::string Utility::getBinaryName()
 
 bool Utility::isDirExist(const std::string &path)
 {
-	fs::path p(path);
-	return fs::exists(p) && fs::is_directory(p);
+	boost::system::error_code ec;
+	return fs::exists(path, ec) && fs::is_directory(path, ec);
 }
 
 bool Utility::isFileExist(const std::string &path)
 {
-	fs::path p(path);
-	return fs::exists(p) && !fs::is_directory(p);
+	boost::system::error_code ec;
+	return fs::exists(path, ec) && !fs::is_directory(path, ec);
 }
 
 bool Utility::createDirectory(const std::string &path, fs::perms perms)

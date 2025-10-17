@@ -128,7 +128,7 @@ class TestAppMeshClient(TestCase):
         """test config"""
         client = AppMeshClientTCP()
         client.login("admin", "admin123")
-        self.assertIn("cpu_cores", client.view_host_resources())
+        self.assertIn("cpu_cores", client.get_host_resources())
         self.assertIn("appmesh_prom_scrape_count", client.get_metrics())
         self.assertEqual(client.set_log_level("DEBUG"), "DEBUG")
         self.assertEqual(client.set_log_level("INFO"), "INFO")
@@ -139,16 +139,16 @@ class TestAppMeshClient(TestCase):
         client = AppMeshClient()
         client.login("admin", "admin123")
         self.assertIsNone(client.add_tag("MyTag", "TagValue"))
-        self.assertIn("MyTag", client.view_tags())
+        self.assertIn("MyTag", client.get_tags())
         self.assertIsNone(client.delete_tag("MyTag"))
-        self.assertNotIn("MyTag", client.view_tags())
+        self.assertNotIn("MyTag", client.get_tags())
 
     def test_06_app(self):
         """test application"""
         client = AppMeshClient()
         client.login("admin", "admin123")
-        self.assertEqual(client.view_app("ping").name, "ping")
-        for app in client.view_all_apps():
+        self.assertEqual(client.get_app("ping").name, "ping")
+        for app in client.list_apps():
             self.assertTrue(hasattr(app, "name"))
             self.assertTrue(hasattr(app, "shell"))
             self.assertTrue(hasattr(app, "session_login"))
@@ -191,29 +191,29 @@ class TestAppMeshClient(TestCase):
         self.assertFalse(client.authentication(token)[0])
         self.assertTrue(client.authenticate(token2)[0])
 
-        self.assertTrue(client.logoff())
+        self.assertTrue(client.logout())
         with self.assertRaises(Exception):
-            client.view_all_apps()
+            client.list_apps()
         self.assertIsNone(client.login("admin", "admin123"))
-        self.assertIsNotNone(client.view_all_apps())
+        self.assertIsNotNone(client.list_apps())
 
     def test_02_user(self):
         """test user"""
         client = AppMeshClient()
         self.assertIsNone(client.login("admin", "admin123"))
         with self.assertRaises(Exception):
-            client.update_user_password("admin123", "admin")
+            client.update_password("admin123", "admin")
         with self.assertRaises(Exception):
-            client.update_user_password("admin", "admin123")
-        self.assertIsNone(client.update_user_password("admin123", "admin1234"))
+            client.update_password("admin", "admin123")
+        self.assertIsNone(client.update_password("admin123", "admin1234"))
 
         with self.assertRaises(Exception):
             client.login("admin", "admin123")
         self.assertIsNone(client.login("admin", "admin1234"))
-        self.assertIsNone(client.update_user_password("admin1234", "admin123"))
+        self.assertIsNone(client.update_password("admin1234", "admin123"))
 
-        self.assertIn("permission-list", client.view_permissions())
-        self.assertIn("permission-list", client.view_user_permissions())
+        self.assertIn("permission-list", client.list_permissions())
+        self.assertIn("permission-list", client.get_user_permissions())
         self.assertTrue(client.authenticate(client._get_access_token(), "app-view")[0])
         with self.assertRaises(Exception):
             self.assertFalse(client.authenticate("", "app-view"))
@@ -225,10 +225,10 @@ class TestAppMeshClient(TestCase):
 
         self.assertIsNone(client.update_role("manage", ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"]))
 
-        self.assertIn("manage", client.view_roles())
-        self.assertIn("admin", client.view_groups())
-        self.assertIn("mesh", client.view_users())
-        self.assertEqual(client.view_self()["email"], "admin@appmesh.com")
+        self.assertIn("manage", client.list_roles())
+        self.assertIn("admin", client.list_groups())
+        self.assertIn("mesh", client.list_users())
+        self.assertEqual(client.get_current_user()["email"], "admin@appmesh.com")
 
     def test_03_totp(self):
         """test TOTP"""
@@ -245,7 +245,7 @@ class TestAppMeshClient(TestCase):
         totp_code = totp.now()
         print(totp_code)
         # setup totp
-        self.assertIsNone(client.setup_totp(totp_code))
+        self.assertIsNone(client.enable_totp(totp_code))
 
         # use totp code to login
         totp_code = totp.now()
@@ -290,7 +290,7 @@ class TestAppMeshClient(TestCase):
             self.assertIn("appmesh_csrf_token", content)
 
             # cookie cleared on logoff
-            client.logoff()
+            client.logout()
             content_after = self.read_file_content(cookie_path)
             self.assertNotIn("appmesh_auth_token", content_after)
             self.assertNotIn("appmesh_csrf_token", content_after)
@@ -298,13 +298,13 @@ class TestAppMeshClient(TestCase):
             # re-use cookie: should require login again
             client = AppMeshClient(rest_cookie_file=cookie_path)
             with self.assertRaises(Exception):
-                client.view_all_apps()
+                client.list_apps()
 
             # re-login and verify user info
             client.login("admin", "admin123")
             token = client._get_access_token()
             client = AppMeshClient(rest_cookie_file=cookie_path)
-            user_info = client.view_self()
+            user_info = client.get_current_user()
             self.assertIn("name", user_info)
             self.assertEqual(user_info["name"], "admin")
 
@@ -317,7 +317,7 @@ class TestAppMeshClient(TestCase):
             totp = TOTP(totp_secret)
             totp_code = totp.now()
             # setup totp
-            self.assertIsNone(client.setup_totp(totp_code))
+            self.assertIsNone(client.enable_totp(totp_code))
             self.assertNotEqual(token, client._get_access_token())
 
             content_after_totp = self.read_file_content(cookie_path)
@@ -330,7 +330,7 @@ class TestAppMeshClient(TestCase):
             content_before_totp = self.read_file_content(cookie_path)
 
             client = AppMeshClient(rest_cookie_file=cookie_path)
-            self.assertTrue(client.logoff())
+            self.assertTrue(client.logout())
             totp_code = totp.now()
             print(totp_code)
             self.assertIsNone(client.login("admin", "admin123", totp_code))
