@@ -1,10 +1,10 @@
+#include <ctime>
 #include <curl/curl.h>
 #include <fstream>
 #include <log4cpp/Priority.hh>
 #include <mutex>
 #include <openssl/ssl.h>
 #include <sstream>
-#include <ctime>
 
 #include "RestClient.h"
 #include "Utility.h"
@@ -177,7 +177,7 @@ void ClientSSLConfig::ResolveAbsolutePaths(std::string workingHome)
 
 std::string ClientSSLConfig::ResolveAbsolutePath(const std::string &workingHome, std::string filePath)
 {
-	if (!workingHome.empty())
+	if (!workingHome.empty() && !filePath.empty() && !Utility::startWith(filePath, workingHome))
 	{
 		return (fs::path(workingHome) / filePath).lexically_normal().string();
 	}
@@ -807,7 +807,7 @@ std::string RestClient::getCookie(const std::string &cookieName)
 		return it->second.value;
 	}
 
-	return "";
+	return std::string();
 }
 
 // Get specific cookie with full details

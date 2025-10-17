@@ -114,6 +114,9 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 	if audience != "" && audience != DEFAULT_JWT_AUDIENCE {
 		headers["X-Audience"] = audience
 	}
+	if totpCode != "" {
+		headers["X-Totp-Code"] = totpCode
+	}
 
 	code, raw, _, err := r.post("/appmesh/login", nil, headers, nil)
 	if err != nil {
@@ -126,13 +129,17 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 			return "", fmt.Errorf("failed to decode JWT response: %w", err)
 		}
 		r.updateToken(result.AccessToken)
-		return result.AccessToken, nil
+		return "", nil
 
 	case http.StatusPreconditionRequired:
 		var resp map[string]interface{}
 		if err := json.Unmarshal(raw, &resp); err == nil {
-			if challenge, ok := resp["totp_challenge"].(string); ok && totpCode != "" {
-				return r.ValidateTotp(user, challenge, totpCode, timeoutSeconds)
+			if challenge, ok := resp["totp_challenge"].(string); ok {
+				if totpCode == "" {
+					return challenge, nil
+				}
+				r.ValidateTotp(user, challenge, totpCode, timeoutSeconds)
+				return "", nil
 			}
 		}
 		return "", fmt.Errorf("TOTP challenge required or server error: %s", string(raw))
@@ -142,10 +149,10 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 	}
 }
 
-// ValidateTotp validates TOTP challenge and returns a new JWT token.
-func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode string, timeoutSeconds int) (string, error) {
+// ValidateTotp validates TOTP challenge.
+func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode string, timeoutSeconds int) error {
 	if username == "" || challenge == "" || totpCode == "" {
-		return "", fmt.Errorf("username, challenge, and TOTP code are required")
+		return fmt.Errorf("username, challenge, and TOTP code are required")
 	}
 
 	type TotpReq struct {
@@ -162,21 +169,21 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal TOTP request: %w", err)
+		return fmt.Errorf("failed to marshal TOTP request: %w", err)
 	}
 	code, raw, _, err := r.post("/appmesh/totp/validate", nil, nil, body)
 	if err != nil {
-		return "", fmt.Errorf("TOTP validation request failed: %w", err)
+		return fmt.Errorf("TOTP validation request failed: %w", err)
 	}
 	if code == http.StatusOK {
 		result := JWTResponse{}
 		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
-			return "", fmt.Errorf("failed to decode JWT response: %w", err)
+			return fmt.Errorf("failed to decode JWT response: %w", err)
 		}
 		r.updateToken(result.AccessToken)
-		return result.AccessToken, nil
+		return nil
 	}
-	return "", fmt.Errorf("TOTP validation failed with status %d: %s", code, string(raw))
+	return fmt.Errorf("TOTP validation failed with status %d: %s", code, string(raw))
 }
 
 // Logoff logs out the current session and invalidates the token.

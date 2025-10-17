@@ -783,7 +783,7 @@ class AppMeshClient {
    * @param {string} [userName="self"] - Username
    * @returns {Promise<boolean>} Success status
    */
-  async update_user_password(oldPassword, newPassword, userName = "self") {
+  async update_password(oldPassword, newPassword, userName = "self") {
     const body = {
       "old_password": base64Utils.encode(oldPassword),
       "new_password": base64Utils.encode(newPassword)

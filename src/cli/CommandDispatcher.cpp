@@ -75,7 +75,7 @@
 		return 0;                                                                                                                   \
 	}                                                                                                                               \
 	setCurrentUrl(m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>()); \
-	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
+	forwardTo(m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>());
 #define HELP_ARG_CHECK_WITH_RETURN_ZERO                                                                                             \
 	GET_USER_NAME_PASS                                                                                                              \
 	if (m_commandLineVariables.count(HELP) > 0)                                                                                     \
@@ -84,16 +84,13 @@
 		return 0;                                                                                                                   \
 	}                                                                                                                               \
 	setCurrentUrl(m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>()); \
-	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
+	forwardTo(m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>());
 // Each user should have its own token path
 static std::string m_configFile = CommandDispatcher::getAndCreateConfigDir() + "/.appmesh.config";
 const static std::string m_shellHistoryFile = CommandDispatcher::getAndCreateConfigDir() + "/.appmesh.shell.history";
 extern char **environ;
 
-const std::string HTTP_HEADER_JWT_set_cookie = "X-Set-Cookie";
-const std::string HTTP_HEADER_NAME_CSRF_TOKEN = "X-CSRF-Token";
 const std::string COOKIE_TOKEN = "appmesh_auth_token";
-const std::string COOKIE_CSRF_TOKEN = "appmesh_csrf_token";
 const std::string COOKIE_FILE = ".cookies";
 
 // Global variable for appc exec
@@ -114,6 +111,7 @@ void CommandDispatcher::initCommandMap()
 {
 	m_commandMap["logon"] = std::bind(&CommandDispatcher::cmdLogin, this);
 	m_commandMap["logoff"] = std::bind(&CommandDispatcher::cmdLogoff, this);
+	m_commandMap["logout"] = std::bind(&CommandDispatcher::cmdLogoff, this);
 	m_commandMap["loginfo"] = std::bind(&CommandDispatcher::cmdLoginUserInfo, this);
 
 	m_commandMap["add"] = std::bind(&CommandDispatcher::cmdAppAdd, this);
@@ -163,7 +161,7 @@ void CommandDispatcher::initCommandMap()
 void CommandDispatcher::initArgs()
 {
 	G_WORKING_PTR = this;
-	m_defaultUrl = this->getAppMeshUrl();
+	m_defaultUrl = this->getDefaultURL();
 #if !defined(_WIN32)
 	const auto sudo_user = Utility::getenv("SUDO_USER");
 	if (!sudo_user.empty())
@@ -295,7 +293,7 @@ int CommandDispatcher::cmdLogin()
 			std::cout << "User: ";
 			if (!(std::cin >> m_username))
 			{
-				exit(1);
+				throw std::invalid_argument("interrupted");
 			}
 			m_username = Utility::stdStringTrim(m_username);
 		}
@@ -318,13 +316,22 @@ int CommandDispatcher::cmdLogin()
 	}
 
 	// get token from REST
-	const auto jwtToken = acquireAuthToken();
-
-	// write token to disk
-	if (!jwtToken.empty())
+	std::string totp;
+	auto challange = this->login(m_username, m_userpwd, totp, m_tokenTimeoutSeconds, m_audience);
+	if (challange.length())
 	{
-		persistUserConfig(parseUrlHost(m_currentUrl));
-		std::cout << "User <" << m_username << "> logon to <" << m_currentUrl << "> success." << std::endl;
+		// Input TOTP key for validation until success
+		do
+		{
+			std::cin.clear();
+			std::cout << "Enter TOTP key: ";
+			if (std::cin >> totp)
+			{
+				this->validateTotp(m_username, challange, totp, m_tokenTimeoutSeconds);
+				persistUserConfig(parseUrlHost(m_currentUrl));
+				std::cout << "User <" << m_username << "> logon to <" << m_currentUrl << "> success." << std::endl;
+			}
+		} while (true);
 	}
 	return 0;
 }
@@ -338,14 +345,9 @@ int CommandDispatcher::cmdLogoff()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/appmesh/self/logoff";
-	auto response = requestHttp(true, web::http::methods::POST, restPath);
-	if (response->status_code == web::http::status_codes::OK)
-	{
-		persistUserConfig(parseUrlHost(m_currentUrl));
-		RestClient::clearSession();
-		std::cout << "User logoff from " << m_currentUrl << " success." << std::endl;
-	}
+	auto user = this->getAuthenUser();
+	this->logoff();
+	std::cout << "User <" << user << "> logoff from " << m_currentUrl << " success." << std::endl;
 	return 0;
 }
 
@@ -656,9 +658,9 @@ int CommandDispatcher::cmdAppAdd()
 	}
 	if (m_commandLineVariables.count(PID))
 		jsonObj[JSON_KEY_APP_pid] = (m_commandLineVariables[PID].as<int>());
-	std::string restPath = std::string("/appmesh/app/") + appName;
-	auto resp = requestHttp(true, web::http::methods::PUT, restPath, &jsonObj);
-	std::cout << Utility::jsonToYaml(nlohmann::json::parse(resp->text)) << std::endl;
+
+	auto resp = this->addApp(jsonObj);
+	std::cout << Utility::jsonToYaml(resp) << std::endl;
 	return 0;
 }
 
@@ -692,9 +694,8 @@ int CommandDispatcher::cmdAppDelete()
 				std::string msg = std::string("Are you sure you want to remove the application <") + appName + "> ? [y/n]";
 				if (confirmInput(msg.c_str()))
 				{
-					std::string restPath = std::string("/appmesh/app/") + appName;
-					auto response = requestHttp(true, web::http::methods::DEL, restPath);
-					std::cout << parseOutputMessage(response) << std::endl;
+					this->deleteApp(appName);
+					std::cout << "Application <" << appName << "> removed." << std::endl;
 				}
 			}
 		}
@@ -733,8 +734,7 @@ int CommandDispatcher::cmdAppView()
 	{
 		if (!m_commandLineVariables.count(SHOW_OUTPUT))
 		{
-			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables[APP].as<std::string>();
-			auto resp = nlohmann::json::parse(requestHttp(true, web::http::methods::GET, restPath)->text);
+			auto resp = this->viewApp(m_commandLineVariables[APP].as<std::string>());
 			if (m_commandLineVariables.count(PSTREE))
 			{
 				// view app process tree
@@ -756,34 +756,29 @@ int CommandDispatcher::cmdAppView()
 		{
 			// view app output
 			int index = 0;
-			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables[APP].as<std::string>() + "/output";
+			auto appName = m_commandLineVariables[APP].as<std::string>();
 			if (m_commandLineVariables.count(LOG_INDEX))
 			{
 				index = m_commandLineVariables[LOG_INDEX].as<int>();
 			}
 			long outputPosition = 0;
 			bool exit = false;
-			std::map<std::string, std::string> query;
-			query[HTTP_QUERY_KEY_stdout_index] = std::to_string(index);
-			query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(1);
 			while (!exit)
 			{
-				query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
-				auto response = requestHttp(true, web::http::methods::GET, restPath, nullptr, {}, query);
-				std::cout << response->text << std::flush;
+				auto response = this->getAppOutput(appName, outputPosition, index, 10240, "", 1);
+				std::cout << response.output << std::flush;
 				if (m_commandLineVariables.count(FOLLOW) == 0)
 					break;
-				outputPosition = response->header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response->header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
+				outputPosition = response.outputPosition;
 				// check continues failure
-				exit = response->header.count(HTTP_HEADER_KEY_exit_code);
+				exit = response.exitCode != nullptr;
 			}
 		}
 	}
 	else
 	{
-		std::string restPath = "/appmesh/applications";
-		auto response = requestHttp(true, web::http::methods::GET, restPath);
-		printApps(nlohmann::json::parse(response->text), reduce);
+		auto resp = this->viewAllApp();
+		printApps(resp, reduce);
 	}
 	return 0;
 }
@@ -797,9 +792,8 @@ int CommandDispatcher::cmdHostResources()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/appmesh/resources";
-	auto resp = requestHttp(true, web::http::methods::GET, restPath);
-	std::cout << JSON::dumpToLocalEncoding(nlohmann::json::parse(resp->text), 2) << std::endl;
+	auto resp = this->viewHostResources();
+	std::cout << JSON::dumpToLocalEncoding(resp, 2) << std::endl;
 	return 0;
 }
 
@@ -847,9 +841,11 @@ int CommandDispatcher::cmdAppControlState(bool start)
 	}
 	for (auto &app : appList)
 	{
-		std::string restPath = std::string("/appmesh/app/") + app + "/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
-		auto response = requestHttp(true, web::http::methods::POST, restPath);
-		std::cout << parseOutputMessage(response) << std::endl;
+		if (start)
+			this->enableApp(app);
+		else
+			this->disableApp(app);
+		std::cout << app << " " << (start ? "enabled" : "disabled") << std::endl;
 	}
 	if (appList.size() == 0)
 	{
@@ -881,11 +877,10 @@ int CommandDispatcher::cmdAppRun()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN_ZERO;
 
-	int returnCode = 0;
 	if (m_commandLineVariables.count(HELP) || (m_commandLineVariables.count(APP) == 0 && m_commandLineVariables.count(COMMAND) == 0))
 	{
 		std::cout << desc << std::endl;
-		return returnCode;
+		return 0;
 	}
 
 	std::map<std::string, std::string> query;
@@ -960,58 +955,44 @@ int CommandDispatcher::cmdAppRun()
 	if (timeout < 0)
 	{
 		// Use syncrun directly
-		// /app/syncrun?timeout=5
-		std::string restPath = "/appmesh/app/syncrun";
-		auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj, {}, query);
-		std::cout << response->text << std::flush;
-		returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
+		auto response = this->runAppSync(jsonObj, timeout, lifecycle);
+		std::cout << std::get<1>(response) << std::flush;
+		if (std::get<0>(response))
+			return *std::get<0>(response);
 	}
 	else
 	{
-		returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
+		auto response = runAsyncApp(jsonObj, timeout, lifecycle);
+		if (response)
+			return *response;
 	}
-	return returnCode;
+	return 0;
 }
 
-int CommandDispatcher::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds)
+std::shared_ptr<int> CommandDispatcher::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds)
 {
-	std::map<std::string, std::string> query;
-	query[HTTP_QUERY_KEY_timeout] = std::to_string(timeoutSeconds);
-	query[HTTP_QUERY_KEY_lifecycle] = std::to_string(lifeCycleSeconds);
-	int returnCode = -99;
-	if (1)
+	std::shared_ptr<int> returnCode;
+	// Use run and output
+	auto run = this->runAppAsync(jsonObj, timeoutSeconds, lifeCycleSeconds);
+	setupInterruptHandler(run.m_appName);
+	while (true)
 	{
-		// Use run and output
-		// /app/run?timeout=5
-		std::string restPath = "/appmesh/app/run";
-		auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj, {}, query);
-		auto result = nlohmann::json::parse(response->text);
-		auto appName = result[JSON_KEY_APP_name].get<std::string>();
-		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].get<std::string>();
-		long outputPosition = 0;
-		setupInterruptHandler(appName);
-		while (process_uuid.length())
+		// /app/testapp/output?process_uuid=ABDJDD-DJKSJDKF
+		returnCode = run.wait();
+		if (returnCode)
 		{
-			// /app/testapp/output?process_uuid=ABDJDD-DJKSJDKF
-			restPath = std::string("/appmesh/app/").append(appName).append("/output");
-			query.clear();
-			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
-			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
-			query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(1); // wait max 1 second in server side
-			response = requestHttp(false, web::http::methods::GET, restPath, nullptr, {}, query);
-			std::cout << response->text << std::flush;
-			outputPosition = response->header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response->header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
-			returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
-
-			if (response->header.count(HTTP_HEADER_KEY_exit_code) || response->status_code != web::http::status_codes::OK)
-			{
-				break;
-			}
+			break;
 		}
-		// delete
-		restPath = std::string("/appmesh/app/").append(appName);
-		requestHttp(false, web::http::methods::DEL, restPath);
 	}
+	// delete
+	try
+	{
+		this->deleteApp(run.m_appName);
+	}
+	catch (...)
+	{
+	}
+
 	return returnCode;
 }
 
@@ -1056,8 +1037,7 @@ void CrossPlatformSignalHandler(int signo)
 	{
 		if (!G_INTERRUPT.exchange(true) && !G_PENDING_CLEAN_APP_NAME.empty() && G_WORKING_PTR)
 		{
-			const auto restPath = std::string("/appmesh/app/").append(G_PENDING_CLEAN_APP_NAME);
-			G_WORKING_PTR->requestHttp(false, web::http::methods::DEL, restPath);
+			try { G_WORKING_PTR->deleteApp(G_PENDING_CLEAN_APP_NAME); } catch (...) {}
 		}
 #if defined(_WIN32)
 		return TRUE;
@@ -1264,20 +1244,21 @@ int CommandDispatcher::cmdExecuteShell()
 	{ACE_OS::sleep(sec);	return true; };
 	setupInterruptHandler(appName);
 	// clean
-	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(G_PENDING_CLEAN_APP_NAME));
+	try { this->deleteApp(G_PENDING_CLEAN_APP_NAME); } catch (...) {}
 	if (unrecognized.size())
 	{
 		// run once
 		do
 		{
-			returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
+			auto resp = runAsyncApp(jsonObj, timeout, lifecycle);
+			returnCode = resp ? *resp : returnCode;
 		} while (retry && returnCode != 0 && !G_INTERRUPT.load() && sleepSeconds(1));
 	}
 	else
 	{
 		// shell interactive
-		auto response = requestHttp(true, web::http::methods::GET, std::string("/appmesh/user/self"));
-		auto execUser = nlohmann::json::parse(response->text)[JSON_KEY_USER_exec_user].get<std::string>();
+		auto response = this->viewSelf();
+		auto execUser = response[JSON_KEY_USER_exec_user].get<std::string>();
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 
 		linenoiseSetMultiLine(1);
@@ -1320,7 +1301,8 @@ int CommandDispatcher::cmdExecuteShell()
 				jsonObj[JSON_KEY_APP_command] = cmd;
 				do
 				{
-					returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
+					auto resp = runAsyncApp(jsonObj, timeout, lifecycle);
+					returnCode = resp ? *resp : returnCode;
 				} while (retry && !G_INTERRUPT && sleepSeconds(1));
 			}
 		}
@@ -1450,9 +1432,7 @@ int CommandDispatcher::cmdLabelManage()
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			if (envVec.size() == 2)
 			{
-				std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
-				std::map<std::string, std::string> query = {{"value", envVec.at(1)}};
-				requestHttp(true, web::http::methods::PUT, restPath, nullptr, {}, query);
+				this->addTag(envVec.at(0), envVec.at(1));
 			}
 		}
 	}
@@ -1468,8 +1448,7 @@ int CommandDispatcher::cmdLabelManage()
 		for (auto &str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
-			std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
-			auto resp = requestHttp(true, web::http::methods::DEL, restPath);
+			this->deleteTag(envVec.at(0));
 		}
 	}
 	else if (m_commandLineVariables.count(VIEW) &&
@@ -1483,10 +1462,8 @@ int CommandDispatcher::cmdLabelManage()
 		return 0;
 	}
 
-	std::string restPath = "/appmesh/labels";
-	auto response = requestHttp(true, web::http::methods::GET, restPath);
 	// Finally print current
-	auto tags = nlohmann::json::parse(response->text);
+	auto tags = this->viewTags();
 	for (auto &tag : tags.items())
 	{
 		std::cout << tag.key() << "=" << tag.value().get<std::string>() << std::endl;
@@ -1517,9 +1494,8 @@ int CommandDispatcher::cmdLogLevel()
 	nlohmann::json jsonObj = {
 		{JSON_KEY_BaseConfig, {{JSON_KEY_LogLevel, level}}}};
 	// /app-manager/config
-	auto restPath = std::string("/appmesh/config");
-	auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
-	std::cout << "Log level set to: " << nlohmann::json::parse(response->text).at(JSON_KEY_BaseConfig).at(JSON_KEY_LogLevel).get<std::string>() << std::endl;
+	auto response = this->setConfig(jsonObj);
+	std::cout << "Log level set to: " << response.at(JSON_KEY_BaseConfig).at(JSON_KEY_LogLevel).get<std::string>() << std::endl;
 	return 0;
 }
 
@@ -1535,9 +1511,8 @@ int CommandDispatcher::cmdConfigView()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/appmesh/config";
-	auto resp = requestHttp(true, web::http::methods::GET, restPath);
-	std::cout << JSON::dumpToLocalEncoding(nlohmann::json::parse(resp->text), 2) << std::endl;
+	auto resp = this->viewConfig();
+	std::cout << JSON::dumpToLocalEncoding(resp, 2) << std::endl;
 	return 0;
 }
 
@@ -1558,13 +1533,11 @@ int CommandDispatcher::cmdChangePwd()
 	{
 		user = getAuthenUser();
 	}
-	std::string restPath = std::string("/appmesh/user/") + user + "/passwd";
+	auto oldPwd = inputPasswd("old password for " + user);
+	auto newPwd = inputPasswd("new password for " + user);
 
-	nlohmann::json jsonObj;
-	jsonObj[HTTP_BODY_KEY_OLD_PASSWORD] = Utility::encode64(inputPasswd("old password for " + user));
-	jsonObj[HTTP_BODY_KEY_NEW_PASSWORD] = Utility::encode64(inputPasswd("new password for " + user));
-	auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
-	std::cout << parseOutputMessage(response) << std::endl;
+	this->updatePassword(oldPwd, newPwd, user);
+	std::cout << "success" << std::endl;
 	return 0;
 }
 
@@ -1590,9 +1563,8 @@ int CommandDispatcher::cmdUserLock()
 	auto user = m_commandLineVariables[TARGET].as<std::string>();
 	auto lock = m_commandLineVariables[LOCK].as<bool>();
 
-	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
-	auto response = requestHttp(true, web::http::methods::POST, restPath);
-	std::cout << parseOutputMessage(response) << std::endl;
+	lock ? this->lockUser(user) : this->unlockUser(user);
+	std::cout << "success" << std::endl;
 	return 0;
 }
 
@@ -1614,9 +1586,8 @@ int CommandDispatcher::cmdUserManage()
 	if (m_commandLineVariables.count(JJSON) == 0)
 	{
 		// View user
-		std::string restPath = m_commandLineVariables.count(ALL) ? "/appmesh/users" : "/appmesh/user/self";
-		auto response = requestHttp(true, web::http::methods::GET, restPath);
-		std::cout << parseOutputMessage(response) << std::endl;
+		auto response = m_commandLineVariables.count(ALL) ? this->viewUsers() : this->viewSelf();
+		std::cout << response.dump(2) << std::endl;
 	}
 	else
 	{
@@ -1644,9 +1615,8 @@ int CommandDispatcher::cmdUserManage()
 			jsonObj[JSON_KEY_USER_key] = inputPasswd(userName);
 		}
 
-		std::string restPath = "/appmesh/user/" + userName;
-		auto response = requestHttp(true, web::http::methods::PUT, restPath, &jsonObj);
-		std::cout << parseOutputMessage(response) << std::endl;
+		this->addUser(jsonObj);
+		std::cout << "success" << std::endl;
 	}
 	return 0;
 }
@@ -1703,8 +1673,7 @@ int CommandDispatcher::cmdUserMFA()
 
 	if (m_commandLineVariables.count(ADD))
 	{
-		std::string restPath = "/appmesh/user/self";
-		auto resp = nlohmann::json::parse(requestHttp(true, web::http::methods::GET, restPath)->text);
+		auto resp = this->viewSelf();
 		std::string msg = "Do you want active 2FA for <%s> [y/n]:";
 		if (GET_JSON_BOOL_VALUE(resp, JSON_KEY_USER_mfa_enabled))
 		{
@@ -1713,10 +1682,7 @@ int CommandDispatcher::cmdUserMFA()
 		if (this->confirmInput(Utility::stringFormat(msg, userName.c_str()).c_str()))
 		{
 			// Generate TOTP secret
-			std::string restPath = std::string("/appmesh/totp/secret");
-			auto response = requestHttp(true, web::http::methods::POST, restPath);
-			auto result = nlohmann::json::parse(response->text);
-			auto totpUri = Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
+			auto totpUri = this->getTotpSecret();
 			Utility::printQRcode(totpUri);
 
 			// Input TOTP key for validation until success
@@ -1729,18 +1695,12 @@ int CommandDispatcher::cmdUserMFA()
 				std::cin >> totp;
 
 				// Setup TOTP
-				restPath = "/appmesh/totp/setup";
-				std::map<std::string, std::string> header;
-				header.insert({HTTP_HEADER_JWT_totp, totp});
 				try
 				{
-					response = requestHttp(true, web::http::methods::POST, restPath, nullptr, std::move(header));
-					if (response->status_code == web::http::status_codes::OK)
-					{
-						validating = false;
-						persistUserConfig(parseUrlHost(m_currentUrl));
-						std::cout << "TOTP setup for " << userName << " success." << std::endl;
-					}
+					this->setupTotp(totp);
+					validating = false;
+					persistUserConfig(parseUrlHost(m_currentUrl));
+					std::cout << "TOTP setup for " << userName << " success." << std::endl;
 				}
 				catch (...)
 				{
@@ -1752,9 +1712,8 @@ int CommandDispatcher::cmdUserMFA()
 	{
 		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s> [y/n]:", userName.c_str()).c_str()))
 		{
-			std::string restPath = std::string("/appmesh/totp/") + userName + "/disable";
-			auto response = requestHttp(true, web::http::methods::POST, restPath);
-			std::cout << parseOutputMessage(response) << std::endl;
+			this->disableTotp(userName);
+			std::cout << "success" << std::endl;
 		}
 	}
 	else
@@ -1828,48 +1787,6 @@ bool CommandDispatcher::confirmInput(const char *msg)
 	return result == "y";
 }
 
-std::shared_ptr<CurlResponse> CommandDispatcher::requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
-{
-	// default simulate mesh user login
-	if (getAuthToken().empty())
-	{
-		acquireAuthToken();
-	}
-
-	// header
-	if (m_forwardTo.length())
-	{
-		if (m_forwardTo.find(':') == std::string::npos)
-			header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo + ":" + parseUrlPort(m_currentUrl);
-		else
-			header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
-	}
-	const auto token = RestClient::getCookie(COOKIE_CSRF_TOKEN);
-	if (!token.empty())
-		header[HTTP_HEADER_NAME_CSRF_TOKEN] = token;
-
-	// body
-	std::string bodyContent = body ? body->dump() : std::string();
-
-	// request
-	auto resp = RestClient::request(m_currentUrl, mtd, path, bodyContent, header, query);
-
-	// check return
-	if (shouldThrow && resp->status_code != web::http::status_codes::OK)
-	{
-		throw std::invalid_argument(parseOutputMessage(resp));
-	}
-
-	// locale
-	if (resp->status_code == web::http::status_codes::OK && resp->header.count(web::http::header_names::content_type) &&
-		resp->header[web::http::header_names::content_type] == web::http::mime_types::text_plain_utf8)
-	{
-		resp->text = Utility::utf8ToLocalEncoding(resp->text);
-	}
-
-	return resp;
-}
-
 bool CommandDispatcher::isAppExist(const std::string &appName)
 {
 	static auto apps = getAppList();
@@ -1879,9 +1796,7 @@ bool CommandDispatcher::isAppExist(const std::string &appName)
 std::map<std::string, bool> CommandDispatcher::getAppList()
 {
 	std::map<std::string, bool> apps;
-	std::string restPath = "/appmesh/applications";
-	auto response = requestHttp(true, web::http::methods::GET, restPath);
-	auto jsonValue = nlohmann::json::parse(response->text);
+	auto jsonValue = this->viewAllApp();
 	for (auto &item : jsonValue.items())
 	{
 		auto appJson = item.value();
@@ -1896,20 +1811,18 @@ std::string CommandDispatcher::acquireAuthToken()
 	// 1. try to get from REST
 	if (m_username.length() && m_userpwd.length())
 	{
-		token = login(m_username, m_userpwd, m_currentUrl, m_audience);
+		token = login(m_username, m_userpwd, "", 0, m_audience);
 	}
 	else
 	{
 		// 2. try to read from token file
-		token = getAuthToken();
-
-		// 3. try to get get default token from REST
-		if (token.empty())
+		if (getAuthToken().empty())
 		{
-			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl, m_audience);
+			// 3. try to get get default token from REST
+			login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY));
 		}
 	}
-	return token;
+	return getAuthToken();
 }
 
 std::string CommandDispatcher::getAuthenUser()
@@ -1927,7 +1840,8 @@ std::string CommandDispatcher::getAuthenUser()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl, m_audience);
+			login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), "", 0, m_audience);
+			token = getAuthToken();
 		}
 		auto decodedToken = jwt::decode(token);
 		if (decodedToken.has_subject())
@@ -1945,7 +1859,7 @@ std::string CommandDispatcher::getAuthToken()
 	return RestClient::getCookie(COOKIE_TOKEN);
 }
 
-std::string CommandDispatcher::readPersistLastHost(const std::string &defaultAddress)
+std::string CommandDispatcher::readPersistLastHost()
 {
 	if (Utility::isFileExist(m_configFile))
 	{
@@ -1966,7 +1880,7 @@ std::string CommandDispatcher::readPersistLastHost(const std::string &defaultAdd
 			std::cerr << "failed to parse " << m_configFile << " as json format" << '\n';
 		}
 	}
-	return defaultAddress;
+	return std::string();
 }
 
 void CommandDispatcher::persistUserConfig(const std::string &hostName)
@@ -2006,52 +1920,6 @@ void CommandDispatcher::persistUserConfig(const std::string &hostName)
 	}
 }
 
-std::string CommandDispatcher::login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience)
-{
-	auto url = Utility::stdStringTrim(targetHost, '/');
-
-	// header
-	std::map<std::string, std::string> header;
-	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_Auth_BasicSpace) + Utility::encode64(user + ":" + passwd)});
-	header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
-	header.insert({HTTP_HEADER_JWT_audience, audience});
-	header.insert({HTTP_HEADER_JWT_set_cookie, std::to_string(true)});
-
-	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", "", std::move(header), {});
-	if (response->status_code == web::http::status_codes::OK)
-	{
-		setCurrentUrl(url);
-		return RestClient::getCookie(COOKIE_TOKEN);
-	}
-	else if (response->status_code == web::http::status_codes::Unauthorized && nlohmann::json::parse(response->text).contains(REST_TEXT_TOTP_CHALLENGE_JSON_KEY))
-	{
-		auto totpChallenge = nlohmann::json::parse(response->text).at(REST_TEXT_TOTP_CHALLENGE_JSON_KEY).get<std::string>();
-		// Input TOTP key for validation until success
-		do
-		{
-			std::string totp;
-			std::cin.clear();
-			std::cout << "Enter TOTP key: ";
-			std::cin >> totp;
-
-			nlohmann::json body;
-			body[HTTP_BODY_KEY_JWT_username] = user;
-			body[HTTP_BODY_KEY_JWT_totp] = totp;
-			body[HTTP_BODY_KEY_JWT_totp_challenge] = totpChallenge;
-			body[HTTP_BODY_KEY_JWT_expire_seconds] = m_tokenTimeoutSeconds;
-			header = {{HTTP_HEADER_JWT_set_cookie, std::to_string(true)}};
-			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", body.dump(), header, {});
-			if (response->status_code == web::http::status_codes::OK)
-			{
-				setCurrentUrl(url);
-				return RestClient::getCookie(COOKIE_TOKEN);
-			}
-			else
-				std::cout << parseOutputMessage(response) << std::endl;
-		} while (true);
-	}
-	throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(response).c_str()));
-}
 
 void CommandDispatcher::printApps(const nlohmann::json &json, bool reduce)
 {
@@ -2075,7 +1943,7 @@ void CommandDispatcher::printApps(const nlohmann::json &json, bool reduce)
 	// Create all column definitions with their formatters
 	std::vector<Column> columns = {
 		{"ID", "", [](const nlohmann::json &)
-		 { return ""; }}, // Index is handled separately
+		 { return std::string(); }}, // Index is handled separately
 		{"NAME", JSON_KEY_APP_name, [](const nlohmann::json &obj)
 		 {
 			 return GET_JSON_STR_VALUE(obj, JSON_KEY_APP_name);
@@ -2341,7 +2209,7 @@ int CommandDispatcher::inputSecurePasswd(char **pw, std::size_t sz, int mask, FI
 		{
 			/* emulate interruption: return 0 length */
 			idx = 0;
-			exit(1);
+			throw std::invalid_argument("interrupted");
 			break;
 		}
 		if (ch == 8 || ch == 127) // Backspace / Delete
@@ -2440,9 +2308,10 @@ int CommandDispatcher::inputSecurePasswd(char **pw, std::size_t sz, int mask, FI
 	return static_cast<int>(idx); /* return number of chars read */
 }
 
-const std::string CommandDispatcher::getAppMeshUrl()
+std::string CommandDispatcher::getDefaultURL()
 {
-	std::string url = APPMESH_LOCAL_HOST_URL;
+	std::string url;
+	auto hostName = this->readPersistLastHost();
 	auto file = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE);
 	if (file.length() > 0)
 	{
@@ -2451,28 +2320,65 @@ const std::string CommandDispatcher::getAppMeshUrl()
 		{
 			auto port = config[JSON_KEY_REST][JSON_KEY_RestListenPort].as<int>();
 			auto address = config[JSON_KEY_REST][JSON_KEY_RestListenAddress].Scalar();
+
+			if (hostName.empty())
+			{
+				// if no last cache, use URL from config.yaml
+				url = Utility::stringFormat("https://%s:%d", parseUrlHost(address).c_str(), port);
+				url = Utility::stringReplace(url, "0.0.0.0", "127.0.0.1");
+			}
+			else
+			{
+				// if only hostname, complete with full URI
+				url = Utility::stringFormat("https://%s:%d", hostName.c_str(), port);
+			}
+		}
+	}
+
+	if (url.empty())
+		url = APPMESH_LOCAL_HOST_URL;
+
+	return url;
+}
+
+void CommandDispatcher::initClient(const std::string &url)
+{
+	ClientSSLConfig cfg;
+	auto file = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE);
+	if (file.length() > 0)
+	{
+		auto config = YAML::LoadFile(file);
+		if (config[JSON_KEY_REST].IsDefined() && config[JSON_KEY_REST][JSON_KEY_RestListenPort].IsDefined())
+		{
 			auto restConfig = config[JSON_KEY_REST];
 			if (restConfig[JSON_KEY_SSL].IsDefined())
 			{
 				auto sslConfig = restConfig[JSON_KEY_SSL];
-				ClientSSLConfig config;
 				if (sslConfig[JSON_KEY_SSLVerifyClient].IsDefined())
-					config.m_verify_client = sslConfig[JSON_KEY_SSLVerifyClient].as<bool>();
+					cfg.m_verify_client = sslConfig[JSON_KEY_SSLVerifyClient].as<bool>();
 				if (sslConfig[JSON_KEY_SSLVerifyServer].IsDefined())
-					config.m_verify_server = sslConfig[JSON_KEY_SSLVerifyServer].as<bool>();
-				if (sslConfig[JSON_KEY_SSLClientCertificateFile].IsDefined())
-					config.m_certificate = sslConfig[JSON_KEY_SSLClientCertificateFile].Scalar();
-				if (sslConfig[JSON_KEY_SSLClientCertificateKeyFile].IsDefined())
-					config.m_private_key = sslConfig[JSON_KEY_SSLClientCertificateKeyFile].Scalar();
-				if (sslConfig[JSON_KEY_SSLCaPath].IsDefined())
-					config.m_ca_location = sslConfig[JSON_KEY_SSLCaPath].Scalar();
-				config.ResolveAbsolutePaths(Utility::getHomeDir());
-				RestClient::defaultSslConfiguration(config);
+					cfg.m_verify_server = sslConfig[JSON_KEY_SSLVerifyServer].as<bool>();
+				if (cfg.m_verify_client && sslConfig[JSON_KEY_SSLClientCertificateFile].IsDefined())
+					cfg.m_certificate = sslConfig[JSON_KEY_SSLClientCertificateFile].Scalar();
+				if (cfg.m_verify_client && sslConfig[JSON_KEY_SSLClientCertificateKeyFile].IsDefined())
+					cfg.m_private_key = sslConfig[JSON_KEY_SSLClientCertificateKeyFile].Scalar();
+				if (cfg.m_verify_server && sslConfig[JSON_KEY_SSLCaPath].IsDefined())
+					cfg.m_ca_location = sslConfig[JSON_KEY_SSLCaPath].Scalar();
+				cfg.ResolveAbsolutePaths(Utility::getHomeDir());
 			}
-			url = Utility::stringFormat("https://%s:%d", readPersistLastHost(address).c_str(), port);
 		}
 	}
-	return Utility::stringReplace(url, "0.0.0.0", "127.0.0.1");
+
+	const auto cookieDomain = parseUrlHost(url);
+	const auto sessionFilePath = (fs::path(getAndCreateCookieDirectory(cookieDomain)) / COOKIE_FILE).string();
+
+	this->init(url, cfg.m_ca_location, cfg.m_certificate, cfg.m_private_key, sessionFilePath);
+
+	// Auto-login CLI user if no auth token exists
+	if (getAuthToken().empty())
+	{
+		acquireAuthToken();
+	}
 }
 
 const std::string CommandDispatcher::getPosixTimezone()
@@ -2482,50 +2388,35 @@ const std::string CommandDispatcher::getPosixTimezone()
 	{
 		return YAML::LoadFile(file)[JSON_KEY_BaseConfig][JSON_KEY_PosixTimezone].as<std::string>();
 	}
-	return "";
+	return std::string();
 }
 
-const std::string CommandDispatcher::parseUrlHost(const std::string &url)
+std::string CommandDispatcher::hostSafeDir(const std::string &host)
 {
-	// https://stackoverflow.com/questions/2616011/easy-way-to-parse-a-url-in-c-cross-platform
-	std::string domain;
-	boost::regex ex("(http|https)://([^/ :]+):?([^/ ]*)(/?[^ #?]*)\\x3f?([^ #]*)#?([^ ]*)");
-	boost::cmatch what;
-	if (boost::regex_match(url.c_str(), what, ex))
-	{
-		// std::string protocol = std::string(what[1].first, what[1].second);
-		domain = std::string(what[2].first, what[2].second);
-		// std::string port = std::string(what[3].first, what[3].second);
-		// std::string path = std::string(what[4].first, what[4].second);
-		// std::string query = std::string(what[5].first, what[5].second);
-	}
-	return domain;
+	std::string safe = host;
+
+	const std::string illegalChars = R"(\/:*?"<>|)";
+	std::replace_if(safe.begin(), safe.end(), [&illegalChars](char c)
+					{ return illegalChars.find(c) != std::string::npos; }, '_');
+
+	return safe;
 }
 
-const std::string CommandDispatcher::parseUrlPort(const std::string &url)
+void CommandDispatcher::setCurrentUrl(const std::string &userSpecifyUrl)
 {
-	// https://stackoverflow.com/questions/2616011/easy-way-to-parse-a-url-in-c-cross-platform
-	std::string port;
-	boost::regex ex("(http|https)://([^/ :]+):?([^/ ]*)(/?[^ #?]*)\\x3f?([^ #]*)#?([^ ]*)");
-	boost::cmatch what;
-	if (boost::regex_match(url.c_str(), what, ex))
-	{
-		port = std::string(what[3].first, what[3].second);
-	}
-	return port;
+	m_currentUrl = userSpecifyUrl;
+	this->initClient(m_currentUrl);
 }
 
-void CommandDispatcher::setCurrentUrl(const std::string &url)
-{
-	m_currentUrl = url;
-	const auto cookieDomain = parseUrlHost(m_currentUrl);
-	if (cookieDomain != RestClient::getSessionConfiguration().cookie_file)
-	{
-		const auto sessionFilePath = (fs::path(getAndCreateCookieDirectory(cookieDomain)) / COOKIE_FILE).string();
-		RestClient::setSessionConfiguration(SessionConfig::FileSession(sessionFilePath));
-	}
-}
-
+/**
+ * Get and create config directory with proper permissions and sudo support
+ *
+ * Platform-specific locations:
+ * - Windows: %APPDATA%\AppMesh (falls back to %LOCALAPPDATA% or current dir)
+ * - Linux/macOS: $XDG_CONFIG_HOME/appmesh or ~/.config/appmesh
+ *
+ * @return Config directory path, or "." on failure
+ */
 std::string CommandDispatcher::getAndCreateConfigDir()
 {
 	boost::filesystem::path dir;
@@ -2658,7 +2549,7 @@ std::string CommandDispatcher::getAndCreateCookieDirectory(const std::string &ho
 	}
 
 	if (home.empty())
-		return "";
+		return std::string();
 
 	// Platform-specific path
 #ifdef __APPLE__
@@ -2674,12 +2565,12 @@ std::string CommandDispatcher::getAndCreateCookieDirectory(const std::string &ho
 	// Create directory
 	try
 	{
-		cookieDir /= Utility::stringReplace(host, ":", "_"); // separate per host
+		cookieDir /= hostSafeDir(host); // separate per host
 		boost::filesystem::create_directories(cookieDir);
 	}
 	catch (const boost::filesystem::filesystem_error &)
 	{
-		return "";
+		return std::string();
 	}
 
 #ifndef _WIN32
