@@ -148,7 +148,7 @@ def main():
             print(f"Token verification failed: {result}")
 
         # Make sure permission configured resource_access: {'appmesh-client': {'roles': ['view', 'uma_protection', 'manage']}}
-        print(client.view_app("ping"))
+        print(client.get_app("ping"))
 
     except Exception as e:
         print(f"Operation failed: {str(e)}")
