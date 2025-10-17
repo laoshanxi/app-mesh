@@ -55,12 +55,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     Methods:
         # Authentication Management
         - login()
-        - logoff()
+        - logout()
         - authenticate()
         - renew_token()
         - disable_totp()
         - get_totp_secret()
-        - setup_totp()
+        - enable_totp()
 
         # Application Management
         - add_app()
@@ -69,8 +69,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - enable_app()
         - check_app_health()
         - get_app_output()
-        - view_app()
-        - view_all_apps()
+        - get_app()
+        - list_apps()
 
         # Run Application Operations
         - run_app_async()
@@ -82,13 +82,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         # System Management
         - forward_to
         - set_config()
-        - view_config()
+        - get_config()
         - set_log_level()
-        - view_host_resources()
+        - get_host_resources()
         - get_metrics()
         - add_tag()
         - delete_tag()
-        - view_tags()
+        - get_tags()
 
         # File Management
         - download_file()
@@ -98,23 +98,24 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - add_user()
         - delete_user()
         - lock_user()
-        - update_user_password()
-        - view_self()
+        - update_password()
+        - get_current_user()
         - unlock_user()
-        - view_users()
-        - view_user_permissions()
-        - view_permissions()
+        - list_users()
+        - get_user_permissions()
+        - list_permissions()
         - delete_role()
         - update_role()
-        - view_roles()
-        - view_groups()
+        - list_roles()
+        - list_groups()
 
     Example:
         >>> python -m pip install --upgrade appmesh
         >>> from appmesh import AppMeshClient
         >>> client = AppMeshClient()
         >>> client.login("your-name", "your-password")
-        >>> response = client.app_view(app_name='ping')
+        >>> client.authenticate("your-token-for-token-login")
+        >>> response = client.get_app(app_name='ping')
     """
 
     # Duration constants
@@ -199,8 +200,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self,
         rest_url: str = "https://127.0.0.1:6060",
         rest_ssl_verify: Union[bool, str] = _DEFAULT_SSL_CA_CERT_PATH,
-        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (_DEFAULT_SSL_CLIENT_CERT_PATH, _DEFAULT_SSL_CLIENT_KEY_PATH),
+        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (
+            _DEFAULT_SSL_CLIENT_CERT_PATH,
+            _DEFAULT_SSL_CLIENT_KEY_PATH,
+        ),
         rest_timeout: Tuple[float, float] = (60, 300),
+        jwt_token: Optional[str] = None,
         rest_cookie_file: Optional[str] = None,
         auto_refresh_token: bool = False,
     ):
@@ -216,6 +221,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
               - str: Single PEM file with cert+key
               - tuple: (cert_path, key_path)
             rest_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.  Default `(60, 300)`.
+            jwt_token: (Deprecate) JWT token for API authentication, overrides cookie file if both provided.
             rest_cookie_file: Cookie file path for HTTP clients (set this to enable persistent cookie storage).
             auto_refresh_token: Enable automatic token refresh before expiration (supports App Mesh and Keycloak tokens).
         """
@@ -237,11 +243,18 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if self._load_cookies(rest_cookie_file):
             self._handle_token_update(self._get_access_token())
 
+        if jwt_token:
+            self.authenticate(jwt_token)
+
     @staticmethod
     def _ensure_logging_configured() -> None:
         """Ensure logging is configured with a default console handler if needed."""
         if not logging.root.handlers:
-            logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
 
     # @abc.abstractmethod
     def _get_access_token(self) -> Optional[str]:
@@ -268,7 +281,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return False
 
     @staticmethod
-    def _get_cookie_value(cookies: Union[RequestsCookieJar, CookieJar], name: str, check_expiry: bool = True) -> Optional[str]:
+    def _get_cookie_value(
+        cookies: Union[RequestsCookieJar, CookieJar], name: str, check_expiry: bool = True
+    ) -> Optional[str]:
         """Get cookie value by name, checking expiry if requested."""
         if not cookies or not name:
             return None
@@ -343,7 +358,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                     check_interval = 1  # Almost immediate refresh
                 else:
                     # Check at earlier of 5 minutes before expiry or regular interval
-                    check_interval = max(1, min(time_to_expiry - self._TOKEN_REFRESH_OFFSET, self._TOKEN_REFRESH_INTERVAL))
+                    check_interval = max(
+                        1, min(time_to_expiry - self._TOKEN_REFRESH_OFFSET, self._TOKEN_REFRESH_INTERVAL)
+                    )
 
             # Create timer to execute refresh check
             self._token_refresh_timer = threading.Timer(check_interval, self._check_and_refresh_token)
@@ -365,9 +382,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if self.session:
             self.session.close()
             self.session = None
-
-        # Clean token
-        self._jwt_token = None
 
     def __enter__(self):
         """Support for context manager protocol."""
@@ -466,16 +480,16 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if resp.status_code == HTTPStatus.OK:
             self._handle_token_update(resp.json()["access_token"])
         elif resp.status_code == HTTPStatus.PRECONDITION_REQUIRED:
-            # TOTP required
+            # TOTP required (HTTP 428)
             if "totp_challenge" in resp.json():
                 challenge = resp.json()["totp_challenge"]
                 if not totp_code:
                     return challenge
                 self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
-        else:
-            raise Exception(resp.text)
 
-    def validate_totp(self, username: str, challenge: str, code: str, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
+    def validate_totp(
+        self, username: str, challenge: str, code: str, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO
+    ) -> None:
         """Validate TOTP challenge and obtain a new JWT token.
 
         Args:
@@ -503,31 +517,32 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header=headers,
         )
 
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         self._handle_token_update(resp.json()["access_token"])
 
-    def logoff(self) -> bool:
+    def logout(self) -> bool:
         """Log out of the current session from the server."""
         jwt_token = self._get_access_token()
         if not jwt_token or not isinstance(jwt_token, str):
             return False
 
-        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/self/logoff")
+        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/self/logoff", raise_on_fail=False)
 
         if resp.status_code != HTTPStatus.OK:
-            logger.warning("Failed to logout from Keycloak: %s", resp.text)
+            logger.warning("Failed to logout: %s", resp.text)
             return False
 
         self._handle_token_update("")
         return True
 
-    def authentication(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True) -> Tuple[bool, str]:
+    def authentication(
+        self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True
+    ) -> Tuple[bool, str]:
         """Deprecated: Use authenticate() instead."""
         return self.authenticate(token, permission, audience, apply)
 
-    def authenticate(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True) -> Tuple[bool, str]:
+    def authenticate(
+        self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True
+    ) -> Tuple[bool, str]:
         """Authenticate a JWT token and optionally apply it to the current session.
 
         Args:
@@ -554,7 +569,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if apply:
             headers[self._HTTP_HEADER_JWT_SET_COOKIE] = "true"
 
-        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/auth", header=headers)
+        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/auth", header=headers, raise_on_fail=False)
 
         if resp.status_code == HTTPStatus.OK:
             if apply:
@@ -581,17 +596,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header={"X-Expire-Seconds": str(self._parse_duration(timeout))},
         )
 
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         self._handle_token_update(resp.json()["access_token"])
 
     def get_totp_secret(self) -> str:
         """Generate TOTP secret for the current user."""
         resp = self._request_http(method=AppMeshClient._Method.POST, path="/appmesh/totp/secret")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
 
         totp_uri = base64.b64decode(resp.json()["mfa_uri"]).decode()
         parsed_uri = self._parse_totp_uri(totp_uri)
@@ -600,7 +609,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception("TOTP URI does not contain a 'secret' field")
         return secret
 
-    def setup_totp(self, totp_code: str) -> None:
+    def enable_totp(self, totp_code: str) -> None:
         """Set up 2FA for the current user.
 
         Args:
@@ -612,20 +621,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header={"X-Totp-Code": totp_code},
         )
 
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         self._handle_token_update(resp.json()["access_token"])
 
     def disable_totp(self, user: str = "self") -> None:
         """Disable 2FA for the specified user."""
-        resp = self._request_http(
-            method=AppMeshClient._Method.POST,
-            path=f"/appmesh/totp/{user}/disable",
-        )
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/totp/{user}/disable")
 
     @staticmethod
     def _parse_totp_uri(totp_uri: str) -> dict:
@@ -646,25 +646,25 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application view
     ########################################
-    def view_app(self, app_name: str) -> App:
+    def get_app(self, app_name: str) -> App:
         """Get information about a specific application."""
         resp = self._request_http(AppMeshClient._Method.GET, path=f"/appmesh/app/{app_name}")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return App(resp.json())
 
-    def view_all_apps(self) -> List[App]:
+    def list_apps(self) -> List[App]:
         """Get information about all applications."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/applications")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return [App(app) for app in resp.json()]
 
-    def get_app_output(self, app_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = "", timeout: int = 0) -> AppOutput:
+    def get_app_output(
+        self,
+        app_name: str,
+        stdout_position: int = 0,
+        stdout_index: int = 0,
+        stdout_maxsize: int = 10240,
+        process_uuid: str = "",
+        timeout: int = 0,
+    ) -> AppOutput:
         """Get the stdout/stderr of an application.
 
         Args:
@@ -683,12 +683,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             AppMeshClient._Method.GET,
             path=f"/appmesh/app/{app_name}/output",
             query={
-                "stdout_position": str(stdout_position),
-                "stdout_index": str(stdout_index),
-                "stdout_maxsize": str(stdout_maxsize),
-                "process_uuid": process_uuid,
-                "timeout": str(timeout),
+                **({"stdout_position": str(stdout_position)} if stdout_position != 0 else {}),
+                **({"stdout_index": str(stdout_index)} if stdout_index != 0 else {}),
+                **({"stdout_maxsize": str(stdout_maxsize)} if stdout_maxsize != 0 else {}),
+                **({"process_uuid": process_uuid} if process_uuid != "" else {}),
+                **({"timeout": str(timeout)} if timeout != 0 else {}),
             },
+            raise_on_fail=False,
         )
 
         out_position = int(resp.headers["X-Output-Position"]) if "X-Output-Position" in resp.headers else None
@@ -699,10 +700,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def check_app_health(self, app_name: str) -> bool:
         """Check the health status of an application."""
         resp = self._request_http(AppMeshClient._Method.GET, path=f"/appmesh/app/{app_name}/health")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return int(resp.text) == 0
 
     ########################################
@@ -711,230 +708,131 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def add_app(self, app: App) -> App:
         """Register a new application."""
         resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", body=app.json())
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return App(resp.json())
 
     def delete_app(self, app_name: str) -> bool:
         """Remove an application."""
-        resp = self._request_http(AppMeshClient._Method.DELETE, path=f"/appmesh/app/{app_name}")
+        resp = self._request_http(AppMeshClient._Method.DELETE, path=f"/appmesh/app/{app_name}", raise_on_fail=False)
 
         if resp.status_code == HTTPStatus.OK:
             return True
         if resp.status_code == HTTPStatus.NOT_FOUND:
             return False
 
-        raise Exception(resp.text)
+        logger.warning("Failed to delete app: %s", resp.text)
+        resp.raise_for_status()
 
     def enable_app(self, app_name: str) -> None:
         """Enable an application."""
-        resp = self._request_http(AppMeshClient._Method.POST, path=f"/appmesh/app/{app_name}/enable")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(AppMeshClient._Method.POST, path=f"/appmesh/app/{app_name}/enable")
 
     def disable_app(self, app_name: str) -> None:
         """Disable an application."""
-        resp = self._request_http(AppMeshClient._Method.POST, path=f"/appmesh/app/{app_name}/disable")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(AppMeshClient._Method.POST, path=f"/appmesh/app/{app_name}/disable")
 
     ########################################
     # Configuration
     ########################################
-    def view_host_resources(self) -> Dict[str, Any]:
+    def get_host_resources(self) -> Dict[str, Any]:
         """Get a report of host resources including CPU, memory, and disk."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/resources")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
-    def view_config(self) -> Dict[str, Any]:
+    def get_config(self) -> Dict[str, Any]:
         """Get the App Mesh configuration in JSON format."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/config")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
     def set_config(self, config_json: dict) -> Dict[str, Any]:
         """Update the configuration."""
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/config", body=config_json)
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
     def set_log_level(self, level: str = "DEBUG") -> str:
         """Update the log level."""
         config_dict = self.set_config(config_json={"BaseConfig": {"LogLevel": level}})
-
         return config_dict["BaseConfig"]["LogLevel"]
 
     ########################################
     # User Management
     ########################################
-    def update_user_password(self, old_password: str, new_password: str, user_name: str = "self") -> None:
+    def update_password(self, old_password: str, new_password: str, user_name: str = "self") -> None:
         """Change the password of a user."""
         body = {
             "old_password": base64.b64encode(old_password.encode()).decode(),
             "new_password": base64.b64encode(new_password.encode()).decode(),
         }
 
-        resp = self._request_http(
-            method=AppMeshClient._Method.POST,
-            path=f"/appmesh/user/{user_name}/passwd",
-            body=body,
-        )
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{user_name}/passwd", body=body)
 
     def add_user(self, user_name: str, user_json: dict) -> None:
         """Add a new user."""
-        resp = self._request_http(
-            method=AppMeshClient._Method.PUT,
-            path=f"/appmesh/user/{user_name}",
-            body=user_json,
-        )
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(method=AppMeshClient._Method.PUT, path=f"/appmesh/user/{user_name}", body=user_json)
 
     def delete_user(self, user_name: str) -> None:
         """Delete a user."""
-        resp = self._request_http(
-            method=AppMeshClient._Method.DELETE,
-            path=f"/appmesh/user/{user_name}",
-        )
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(method=AppMeshClient._Method.DELETE, path=f"/appmesh/user/{user_name}")
 
     def lock_user(self, user_name: str) -> None:
         """Lock a user."""
-        resp = self._request_http(
-            method=AppMeshClient._Method.POST,
-            path=f"/appmesh/user/{user_name}/lock",
-        )
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{user_name}/lock")
 
     def unlock_user(self, user_name: str) -> None:
         """Unlock a user."""
-        resp = self._request_http(
-            method=AppMeshClient._Method.POST,
-            path=f"/appmesh/user/{user_name}/unlock",
-        )
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{user_name}/unlock")
 
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
-    def view_users(self) -> Dict[str, Any]:
+    def list_users(self) -> Dict[str, Any]:
         """Get information about all users."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/users")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
-    def view_self(self) -> dict:
+    def get_current_user(self) -> dict:
         """Get information about the current user."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/self")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
-    def view_groups(self) -> List[str]:
+    def list_groups(self) -> List[str]:
         """Get information about all user groups."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/groups")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
-    def view_permissions(self) -> List[str]:
+    def list_permissions(self) -> List[str]:
         """Get information about all available permissions."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/permissions")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
-    def view_user_permissions(self) -> List[str]:
+    def get_user_permissions(self) -> List[str]:
         """Get information about the permissions of the current user."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/permissions")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
-    def view_roles(self) -> Dict[str, Dict]:
+    def list_roles(self) -> Dict[str, Dict]:
         """Get information about all roles with permission definitions."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/roles")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
     def update_role(self, role_name: str, permission_set: list) -> None:
         """Update or add a role with defined permissions."""
-        resp = self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/role/{role_name}", body=permission_set)
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/role/{role_name}", body=permission_set)
 
     def delete_role(self, role_name: str) -> None:
         """Delete a user role."""
-        resp = self._request_http(
-            method=AppMeshClient._Method.DELETE,
-            path=f"/appmesh/role/{role_name}",
-        )
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(method=AppMeshClient._Method.DELETE, path=f"/appmesh/role/{role_name}")
 
     ########################################
     # Tag management
     ########################################
     def add_tag(self, tag_name: str, tag_value: str) -> None:
         """Add a new label."""
-        resp = self._request_http(
-            AppMeshClient._Method.PUT,
-            query={"value": tag_value},
-            path=f"/appmesh/label/{tag_name}",
-        )
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        self._request_http(AppMeshClient._Method.PUT, query={"value": tag_value}, path=f"/appmesh/label/{tag_name}")
 
     def delete_tag(self, tag_name: str) -> None:
         """Delete a label."""
-        resp = self._request_http(AppMeshClient._Method.DELETE, path=f"/appmesh/label/{tag_name}")
+        self._request_http(AppMeshClient._Method.DELETE, path=f"/appmesh/label/{tag_name}")
 
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
-    def view_tags(self) -> Dict[str, str]:
+    def get_tags(self) -> Dict[str, str]:
         """Get information about all labels."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/labels")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.json()
 
     ########################################
@@ -943,10 +841,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def get_metrics(self) -> str:
         """Get Prometheus metrics."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/metrics")
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.text
 
     ########################################
@@ -987,8 +881,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
         """Download a remote file to the local system."""
-        resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header={self._HTTP_HEADER_KEY_X_FILE_PATH: remote_file})
-        resp.raise_for_status()
+        resp = self._request_http(
+            AppMeshClient._Method.GET,
+            path="/appmesh/file/download",
+            header={self._HTTP_HEADER_KEY_X_FILE_PATH: remote_file},
+        )
 
         # Write the file content locally
         local_path = Path(local_file)
@@ -1009,7 +906,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         from requests_toolbelt import MultipartEncoder
 
         with local_path.open("rb") as fp:
-            encoder = MultipartEncoder(fields={"filename": os.path.basename(remote_file), "file": ("filename", fp, "application/octet-stream")})
+            encoder = MultipartEncoder(
+                fields={"filename": os.path.basename(remote_file), "file": ("filename", fp, "application/octet-stream")}
+            )
 
             header = {self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file), "Content-Type": encoder.content_type}
 
@@ -1018,13 +917,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
             # Upload file with or without attributes
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
-            resp = self._request_http(
-                AppMeshClient._Method.POST_STREAM,
-                path="/appmesh/file/upload",
-                header=header,
-                body=encoder,
+            self._request_http(
+                AppMeshClient._Method.POST_STREAM, path="/appmesh/file/upload", header=header, body=encoder
             )
-            resp.raise_for_status()
 
     ########################################
     # Application run
@@ -1058,10 +953,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             body=data,
             query={"timeout": str(timeout)},
         )
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         return resp.text
 
     def cancel_task(self, app_name: str) -> bool:
@@ -1074,8 +965,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: Task exist and cancled status.
         """
         resp = self._request_http(
-            AppMeshClient._Method.DELETE,
-            path=f"/appmesh/app/{app_name}/task",
+            AppMeshClient._Method.DELETE, path=f"/appmesh/app/{app_name}/task", raise_on_fail=False
         )
         return resp.status_code == HTTPStatus.OK
 
@@ -1115,9 +1005,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             },
         )
 
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-
         response_data = resp.json()
         return AppRun(self, response_data["name"], response_data["process_uuid"])
 
@@ -1140,7 +1027,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         interval = 1 if self.__class__.__name__ == "AppMeshClient" else 1000
 
         while run.proc_uid:
-            app_out = self.get_app_output(app_name=run.app_name, stdout_position=last_output_position, stdout_index=0, process_uuid=run.proc_uid, timeout=interval)
+            app_out = self.get_app_output(
+                app_name=run.app_name,
+                stdout_position=last_output_position,
+                stdout_index=0,
+                process_uuid=run.proc_uid,
+                timeout=interval,
+            )
 
             if app_out.output and stdout_print:
                 print(app_out.output, end="", flush=True)
@@ -1167,7 +1060,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def run_app_sync(
         self,
         app: Union[App, str],
-        stdout_print: bool = True,
         max_time_seconds: Union[int, str] = _DURATION_TWO_DAYS_ISO,
         life_cycle_seconds: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
     ) -> Tuple[Union[int, None], str]:
@@ -1180,7 +1072,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             app: An App instance or a shell command string.
                 If a string, an App instance is created as:
                 `appmesh.App({"command": "<command_string>", "shell": True})`
-            stdout_print: If True, prints the remote stdout locally. Defaults to True.
             max_time_seconds: Maximum runtime for the remote process.
                 Supports ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to DEFAULT_RUN_APP_TIMEOUT_SECONDS.
             life_cycle_seconds: Maximum lifecycle time for the remote process.
@@ -1200,20 +1091,25 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 "timeout": str(self._parse_duration(max_time_seconds)),
                 "lifecycle": str(self._parse_duration(life_cycle_seconds)),
             },
+            raise_on_fail=False,
         )
 
         exit_code = None
         if resp.status_code == HTTPStatus.OK:
-            if stdout_print:
-                print(resp.text, end="")
             if "X-Exit-Code" in resp.headers:
                 exit_code = int(resp.headers["X-Exit-Code"])
-        elif stdout_print:
-            print(resp.text)
 
         return exit_code, resp.text
 
-    def _request_http(self, method: _Method, path: str, query: Optional[dict] = None, header: Optional[dict] = None, body=None) -> requests.Response:
+    def _request_http(
+        self,
+        method: _Method,
+        path: str,
+        query: Optional[dict] = None,
+        header: Optional[dict] = None,
+        body=None,
+        raise_on_fail: bool = True,
+    ) -> requests.Response:
         """Make an HTTP request."""
         rest_url = parse.urljoin(self.auth_server_url, path)
 
@@ -1233,7 +1129,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if self.forward_to:
             target_host = self.forward_to
             if ":" not in target_host:
-                port = parse.urlsplit(self.auth_server_url).port
+                parsed = urlsplit(self.auth_server_url)
+                default_port = {'http': 80, 'https': 443}.get(parsed.scheme)
+                port = parsed.port or default_port
                 target_host = f"{target_host}:{port}"
             headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = target_host
 
@@ -1265,6 +1163,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 resp = self.session.put(params=query, data=body, **request_kwargs)
             else:
                 raise Exception("Invalid http method", method)
+
+            if raise_on_fail and resp.status_code != HTTPStatus.PRECONDITION_REQUIRED:
+                resp.raise_for_status()
 
             # Wrap the response for encoding handling
             return AppMeshClient._EncodingResponse(resp)

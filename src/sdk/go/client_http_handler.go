@@ -48,10 +48,10 @@ func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 			},
 
 			// Connection pooling configuration
-			MaxIdleConns:          100,              // Good default for moderate traffic
-			MaxIdleConnsPerHost:   20,               // Increased for better connection reuse
-			IdleConnTimeout:       90 * time.Second, // Standard timeout for idle connections
-			MaxConnsPerHost:       100,              // Balanced limit for concurrent connections
+			MaxIdleConns:        100,              // Good default for moderate traffic
+			MaxIdleConnsPerHost: 20,               // Increased for better connection reuse
+			IdleConnTimeout:     90 * time.Second, // Standard timeout for idle connections
+			MaxConnsPerHost:     100,              // Balanced limit for concurrent connections
 
 			// Additional optimizations
 			ForceAttemptHTTP2:  true,  // Enable HTTP/2 support
@@ -62,34 +62,34 @@ func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 
 // REST GET
 func (r *AppMeshClient) get(path string, params url.Values, headers map[string]string) (int, []byte, http.Header, error) {
-	return r.Proxy.DoRequest(http.MethodGet, path, params, headers, nil, r.getToken(), r.getForwardTo())
+	return r.Proxy.Request(http.MethodGet, path, params, headers, nil, r.getToken(), r.getForwardTo())
 }
 
 // REST PUT
 func (r *AppMeshClient) put(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, error) {
-	code, raw, _, err := r.Proxy.DoRequest(http.MethodPut, path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardTo())
+	code, raw, _, err := r.Proxy.Request(http.MethodPut, path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardTo())
 	return code, raw, err
 }
 
 // REST POST
 func (r *AppMeshClient) post(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, http.Header, error) {
-	return r.Proxy.DoRequest(http.MethodPost, path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardTo())
+	return r.Proxy.Request(http.MethodPost, path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardTo())
 }
 
 // REST DELETE
 func (r *AppMeshClient) delete(path string) (int, []byte, error) {
-	code, raw, _, err := r.Proxy.DoRequest(http.MethodDelete, path, nil, nil, nil, r.getToken(), r.getForwardTo())
+	code, raw, _, err := r.Proxy.Request(http.MethodDelete, path, nil, nil, nil, r.getToken(), r.getForwardTo())
 	return code, raw, err
 }
 
 // HTTP Request executor
-type ClientRequesterRest struct {
+type RequesterHttp struct {
 	baseURL    string
 	httpClient *http.Client
 }
 
 // REST request
-func (r *ClientRequesterRest) DoRequest(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error) {
+func (r *RequesterHttp) Request(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error) {
 	u, _ := url.Parse(r.baseURL)
 	u.Path = path.Join(u.Path, apiPath)
 	if queries != nil {
@@ -108,7 +108,11 @@ func (r *ClientRequesterRest) DoRequest(method string, apiPath string, queries u
 		if strings.Contains(forwardingHost, ":") {
 			req.Header.Set("X-Target-Host", forwardingHost)
 		} else {
-			req.Header.Set("X-Target-Host", forwardingHost+":"+u.Port())
+			port := u.Port()
+			if port == "" {
+				port = map[string]string{"https": "443", "http": "80"}[u.Scheme]
+			}
+			req.Header.Set("X-Target-Host", forwardingHost+":"+port)
 		}
 	}
 	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
@@ -132,7 +136,7 @@ func (r *ClientRequesterRest) DoRequest(method string, apiPath string, queries u
 }
 
 // Close closes the HTTP client and its idle connections.
-func (r *ClientRequesterRest) Close() {
+func (r *RequesterHttp) Close() {
 	if r.httpClient != nil {
 		r.httpClient.CloseIdleConnections()
 	}

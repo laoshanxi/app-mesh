@@ -46,9 +46,9 @@ func init() {
 	DEFAULT_CA_FILE = filepath.Join(_DEFAULT_SSL_DIR, "ca.pem")
 }
 
-// ClientRequester defines the interface for making HTTP requests.
-type ClientRequester interface {
-	DoRequest(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error)
+// Requester defines the interface for making HTTP requests.
+type Requester interface {
+	Request(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error)
 	Close()
 }
 

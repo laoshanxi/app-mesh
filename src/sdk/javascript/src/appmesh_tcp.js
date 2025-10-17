@@ -16,6 +16,7 @@ const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = 'X-Send-File-Socket'
 const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = 'X-Recv-File-Socket'
 const HTTP_HEADER_KEY_USER_AGENT = 'User-Agent'
 const HTTP_HEADER_KEY_X_FILE_PATH = 'X-File-Path'
+const HTTP_HEADER_KEY_AUTH = 'Authorization'
 
 /**
  * TCP Transport handler for secure TLS connections
@@ -279,6 +280,9 @@ class AppMeshClientTCP extends AppMeshClient {
     // Pass dummy baseURL to parent - not used for TCP communication
     super('https://127.0.0.1:6060', sslConfig)
     this.tcpTransport = new TCPTransport(tcpAddress, sslConfig)
+
+    // Store JWT token explicitly since cookies don't work with TCP
+    this._token = ''
   }
 
   /**
@@ -292,13 +296,72 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
+   * Get the current access token
+   * @returns {string} Current JWT token
+   * @private
+   * @override
+   */
+  _getAccessToken () {
+    return this._token
+  }
+
+  /**
+   * Handle token updates
+   *
+   * This method is called after login, renew_token, and authenticate operations.
+   * Since TCP doesn't support cookies, we store the token explicitly.
+   *
+   * @param {string} token - New JWT token
+   * @private
+   * @override
+   */
+  _handleTokenUpdate (token) {
+    this._token = token || ''
+    // Call parent implementation if it exists (for token refresh scheduling, etc.)
+    if (super._handleTokenUpdate) {
+      super._handleTokenUpdate(token)
+    }
+  }
+
+  /**
+   * Extract and store token from response
+   *
+   * Since TCP doesn't support Set-Cookie headers, we need to extract
+   * the token from response body after login/authenticate operations.
+   *
+   * @param {Object} response - Response object from _request
+   * @private
+   */
+  _extractTokenFromResponse (response) {
+    // Check if response contains access_token (from login/renew)
+    if (response.data) {
+      let data = response.data
+
+      // Parse if it's a Buffer containing JSON
+      if (Buffer.isBuffer(data)) {
+        try {
+          data = JSON.parse(data.toString(ENCODING_UTF8))
+        } catch (e) {
+          // Not JSON, ignore
+          return
+        }
+      }
+
+      // Extract and store token
+      if (data.access_token) {
+        this._handleTokenUpdate(data.access_token)
+      }
+    }
+  }
+
+  /**
    * Send HTTP request over TCP transport
    * @private
    * @override
    */
   async _request (method, path, body = null, options = {}) {
     if (!this.tcpTransport.connected()) {
-      this.tcpTransport.connect()
+      await this.tcpTransport.connect()
     }
 
     // Build request message
@@ -310,6 +373,12 @@ class AppMeshClientTCP extends AppMeshClient {
 
     // Set headers from options
     request.headers[HTTP_HEADER_KEY_USER_AGENT] = HTTP_USER_AGENT_TCP
+
+    // Add authentication token if available
+    const token = this._getAccessToken()
+    if (token) {
+      request.headers[HTTP_HEADER_KEY_AUTH] = token
+    }
 
     if (options.headers) {
       Object.assign(request.headers, options.headers)
@@ -345,13 +414,18 @@ class AppMeshClientTCP extends AppMeshClient {
     const response = new ResponseMessage().deserialize(respData)
 
     // Convert to standard response format matching axios structure
-    return {
+    const result = {
       status: response.httpStatus,
       statusText: this._getStatusText(response.httpStatus),
       headers: response.headers,
       data: response.body,
       config: options
     }
+
+    // Extract token from response if present (for login, authenticate, renew_token)
+    this._extractTokenFromResponse(result)
+
+    return result
   }
 
   /**
@@ -367,6 +441,7 @@ class AppMeshClientTCP extends AppMeshClient {
       401: 'Unauthorized',
       403: 'Forbidden',
       404: 'Not Found',
+      428: 'Precondition Required',
       500: 'Internal Server Error'
     }
     return statusTexts[code] || 'Unknown'
