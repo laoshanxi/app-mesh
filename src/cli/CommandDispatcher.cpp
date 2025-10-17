@@ -346,7 +346,7 @@ int CommandDispatcher::cmdLogoff()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	auto user = this->getAuthenUser();
-	this->logoff();
+	this->logout();
 	std::cout << "User <" << user << "> logoff from " << m_currentUrl << " success." << std::endl;
 	return 0;
 }
@@ -734,7 +734,7 @@ int CommandDispatcher::cmdAppView()
 	{
 		if (!m_commandLineVariables.count(SHOW_OUTPUT))
 		{
-			auto resp = this->viewApp(m_commandLineVariables[APP].as<std::string>());
+			auto resp = this->getApp(m_commandLineVariables[APP].as<std::string>());
 			if (m_commandLineVariables.count(PSTREE))
 			{
 				// view app process tree
@@ -777,7 +777,7 @@ int CommandDispatcher::cmdAppView()
 	}
 	else
 	{
-		auto resp = this->viewAllApp();
+		auto resp = this->listApps();
 		printApps(resp, reduce);
 	}
 	return 0;
@@ -792,7 +792,7 @@ int CommandDispatcher::cmdHostResources()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	auto resp = this->viewHostResources();
+	auto resp = this->getHostResources();
 	std::cout << JSON::dumpToLocalEncoding(resp, 2) << std::endl;
 	return 0;
 }
@@ -1257,7 +1257,7 @@ int CommandDispatcher::cmdExecuteShell()
 	else
 	{
 		// shell interactive
-		auto response = this->viewSelf();
+		auto response = this->getCurrentUser();
 		auto execUser = response[JSON_KEY_USER_exec_user].get<std::string>();
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 
@@ -1463,7 +1463,7 @@ int CommandDispatcher::cmdLabelManage()
 	}
 
 	// Finally print current
-	auto tags = this->viewTags();
+	auto tags = this->getTags();
 	for (auto &tag : tags.items())
 	{
 		std::cout << tag.key() << "=" << tag.value().get<std::string>() << std::endl;
@@ -1511,7 +1511,7 @@ int CommandDispatcher::cmdConfigView()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	auto resp = this->viewConfig();
+	auto resp = this->getConfig();
 	std::cout << JSON::dumpToLocalEncoding(resp, 2) << std::endl;
 	return 0;
 }
@@ -1586,7 +1586,7 @@ int CommandDispatcher::cmdUserManage()
 	if (m_commandLineVariables.count(JJSON) == 0)
 	{
 		// View user
-		auto response = m_commandLineVariables.count(ALL) ? this->viewUsers() : this->viewSelf();
+		auto response = m_commandLineVariables.count(ALL) ? this->listUsers() : this->getCurrentUser();
 		std::cout << response.dump(2) << std::endl;
 	}
 	else
@@ -1673,7 +1673,7 @@ int CommandDispatcher::cmdUserMFA()
 
 	if (m_commandLineVariables.count(ADD))
 	{
-		auto resp = this->viewSelf();
+		auto resp = this->getCurrentUser();
 		std::string msg = "Do you want active 2FA for <%s> [y/n]:";
 		if (GET_JSON_BOOL_VALUE(resp, JSON_KEY_USER_mfa_enabled))
 		{
@@ -1697,7 +1697,7 @@ int CommandDispatcher::cmdUserMFA()
 				// Setup TOTP
 				try
 				{
-					this->setupTotp(totp);
+					this->enableTotp(totp);
 					validating = false;
 					persistUserConfig(parseUrlHost(m_currentUrl));
 					std::cout << "TOTP setup for " << userName << " success." << std::endl;
@@ -1796,7 +1796,7 @@ bool CommandDispatcher::isAppExist(const std::string &appName)
 std::map<std::string, bool> CommandDispatcher::getAppList()
 {
 	std::map<std::string, bool> apps;
-	auto jsonValue = this->viewAllApp();
+	auto jsonValue = this->listApps();
 	for (auto &item : jsonValue.items())
 	{
 		auto appJson = item.value();

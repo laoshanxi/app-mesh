@@ -112,7 +112,7 @@ void ClientHttp::validateTotp(const std::string &user, const std::string &challe
     this->requestHttp(true, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
 }
 
-void ClientHttp::logoff()
+void ClientHttp::logout()
 {
     this->requestHttp(true, web::http::methods::POST, "/appmesh/self/logoff");
     RestClient::clearSession();
@@ -134,7 +134,7 @@ std::string ClientHttp::getTotpSecret()
     return Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
 }
 
-void ClientHttp::setupTotp(const std::string totp)
+void ClientHttp::enableTotp(const std::string totp)
 {
     std::map<std::string, std::string> header = {{HTTP_HEADER_JWT_totp, totp}};
     requestHttp(true, web::http::methods::POST, "/appmesh/totp/setup", nullptr, header);
@@ -156,13 +156,13 @@ void ClientHttp::updatePassword(const std::string oldPwd, const std::string newP
     requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
 }
 
-nlohmann::json ClientHttp::viewSelf() const
+nlohmann::json ClientHttp::getCurrentUser() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/self");
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::viewUsers() const
+nlohmann::json ClientHttp::listUsers() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/users");
     return nlohmann::json::parse(response->text);
@@ -187,13 +187,13 @@ void ClientHttp::unlockUser(const std::string user)
     requestHttp(true, web::http::methods::POST, restPath);
 }
 
-nlohmann::json ClientHttp::viewAllApp() const
+nlohmann::json ClientHttp::listApps() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/applications");
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::viewApp(const std::string &app) const
+nlohmann::json ClientHttp::getApp(const std::string &app) const
 {
     const std::string restPath = "/appmesh/app/" + app;
     auto response = requestHttp(true, web::http::methods::GET, restPath);
@@ -330,13 +330,13 @@ std::shared_ptr<int> AppRun::wait(int timeout, bool printToSTD)
     return this->m_client->waitForAsyncRun(this, timeout, printToSTD);
 }
 
-nlohmann::json ClientHttp::viewHostResources() const
+nlohmann::json ClientHttp::getHostResources() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/resources");
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::viewConfig() const
+nlohmann::json ClientHttp::getConfig() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/config");
     return nlohmann::json::parse(response->text);
@@ -348,7 +348,7 @@ nlohmann::json ClientHttp::setConfig(const nlohmann::json &config)
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::viewTags() const
+nlohmann::json ClientHttp::getTags() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/labels");
     return nlohmann::json::parse(response->text);
