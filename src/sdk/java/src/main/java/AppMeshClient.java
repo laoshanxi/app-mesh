@@ -256,7 +256,7 @@ public class AppMeshClient implements Closeable {
     }
 
     // Logoff current session from server
-    public boolean logoff() {
+    public boolean logout() {
         try {
             HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
             boolean ok = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
@@ -312,7 +312,7 @@ public class AppMeshClient implements Closeable {
     }
 
     // Setup 2FA for current login user
-    public String setupTotp(String totpCode) throws IOException {
+    public String enableTotp(String totpCode) throws IOException {
         if (totpCode == null || !totpCode.matches("\\d{6}")) {
             throw new IllegalArgumentException("TOTP code must be a 6-digit number");
         }
@@ -341,7 +341,7 @@ public class AppMeshClient implements Closeable {
     }
 
     // Get the server labels
-    public Map<String, String> viewTags() throws IOException {
+    public Map<String, String> getTags() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/labels", null, null, null);
         String responseContent = Utils.readResponse(conn);
         JSONObject jsonResponse = new JSONObject(responseContent);
@@ -367,14 +367,14 @@ public class AppMeshClient implements Closeable {
     }
 
     // Get all applications
-    public JSONArray viewAllApps() throws IOException {
+    public JSONArray listApps() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/applications", null, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONArray(responseContent);
     }
 
     // Get one application information
-    public JSONObject viewApp(String appName) throws IOException {
+    public JSONObject getApp(String appName) throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/app/" + encodeURIComponent(appName), null, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONObject(responseContent);
@@ -634,14 +634,14 @@ public class AppMeshClient implements Closeable {
     }
 
     // Get App Mesh host resource report include CPU, memory and disk
-    public JSONObject viewHostResources() throws IOException {
+    public JSONObject getHostResources() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/resources", null, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONObject(responseContent);
     }
 
     // Get App Mesh configuration JSON
-    public JSONObject viewConfig() throws IOException {
+    public JSONObject getConfig() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/config", null, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONObject(responseContent);
@@ -663,7 +663,7 @@ public class AppMeshClient implements Closeable {
         return cfg.getJSONObject("BaseConfig").getString("LogLevel");
     }
 
-    public boolean updateUserPassword(String oldPassword, String newPassword, String userName) throws IOException {
+    public boolean updatePassword(String oldPassword, String newPassword, String userName) throws IOException {
         JSONObject newPwd = new JSONObject();
         newPwd.put("old_password", Base64.getEncoder().encodeToString(oldPassword.getBytes(StandardCharsets.UTF_8)));
         newPwd.put("new_password", Base64.getEncoder().encodeToString(newPassword.getBytes(StandardCharsets.UTF_8)));
@@ -672,8 +672,8 @@ public class AppMeshClient implements Closeable {
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    public boolean updateUserPassword(String oldPassword, String newPassword) throws IOException {
-        return updateUserPassword(oldPassword, newPassword, "self");
+    public boolean updatePassword(String oldPassword, String newPassword) throws IOException {
+        return updatePassword(oldPassword, newPassword, "self");
     }
 
     public boolean addUser(String userName, JSONObject userJson) throws IOException {
@@ -698,22 +698,22 @@ public class AppMeshClient implements Closeable {
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    public JSONObject viewUsers() throws IOException {
+    public JSONObject listUsers() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/users", null, null, null);
         return new JSONObject(Utils.readResponse(conn));
     }
 
-    public JSONObject viewSelf() throws IOException {
+    public JSONObject getCurrentUser() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/user/self", null, null, null);
         return new JSONObject(Utils.readResponse(conn));
     }
 
-    public JSONObject viewGroups() throws IOException {
+    public JSONObject listGroups() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/user/groups", null, null, null);
         return new JSONObject(Utils.readResponse(conn));
     }
 
-    public Set<String> viewPermissions() throws IOException {
+    public Set<String> listPermissions() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/permissions", null, null, null);
         Set<String> permissions = new HashSet<>();
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
@@ -725,7 +725,7 @@ public class AppMeshClient implements Closeable {
         return permissions;
     }
 
-    public Set<String> viewUserPermissions() throws IOException {
+    public Set<String> getUserPermissions() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/user/permissions", null, null, null);
         Set<String> permissions = new HashSet<>();
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {

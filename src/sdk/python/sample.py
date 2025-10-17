@@ -29,7 +29,7 @@ def demo_app_mgmt():
     print("Application added:", client.add_app(myapp))
 
     # View app details
-    print("Application details:", client.view_app(myapp.name))
+    print("Application details:", client.get_app(myapp.name))
 
     # Enable and wait
     client.enable_app(myapp.name)

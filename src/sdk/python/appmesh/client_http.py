@@ -55,12 +55,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     Methods:
         # Authentication Management
         - login()
-        - logoff()
+        - logout()
         - authenticate()
         - renew_token()
         - disable_totp()
         - get_totp_secret()
-        - setup_totp()
+        - enable_totp()
 
         # Application Management
         - add_app()
@@ -69,8 +69,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - enable_app()
         - check_app_health()
         - get_app_output()
-        - view_app()
-        - view_all_apps()
+        - get_app()
+        - list_apps()
 
         # Run Application Operations
         - run_app_async()
@@ -82,13 +82,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         # System Management
         - forward_to
         - set_config()
-        - view_config()
+        - get_config()
         - set_log_level()
-        - view_host_resources()
+        - get_host_resources()
         - get_metrics()
         - add_tag()
         - delete_tag()
-        - view_tags()
+        - get_tags()
 
         # File Management
         - download_file()
@@ -98,16 +98,16 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - add_user()
         - delete_user()
         - lock_user()
-        - update_user_password()
-        - view_self()
+        - update_password()
+        - get_current_user()
         - unlock_user()
-        - view_users()
-        - view_user_permissions()
-        - view_permissions()
+        - list_users()
+        - get_user_permissions()
+        - list_permissions()
         - delete_role()
         - update_role()
-        - view_roles()
-        - view_groups()
+        - list_roles()
+        - list_groups()
 
     Example:
         >>> python -m pip install --upgrade appmesh
@@ -201,6 +201,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_ssl_verify: Union[bool, str] = _DEFAULT_SSL_CA_CERT_PATH,
         rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (_DEFAULT_SSL_CLIENT_CERT_PATH, _DEFAULT_SSL_CLIENT_KEY_PATH),
         rest_timeout: Tuple[float, float] = (60, 300),
+        jwt_token: Optional[str] = None,
         rest_cookie_file: Optional[str] = None,
         auto_refresh_token: bool = False,
     ):
@@ -216,6 +217,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
               - str: Single PEM file with cert+key
               - tuple: (cert_path, key_path)
             rest_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.  Default `(60, 300)`.
+            jwt_token: (Deprecate) JWT token for API authentication, overrides cookie file if both provided.
             rest_cookie_file: Cookie file path for HTTP clients (set this to enable persistent cookie storage).
             auto_refresh_token: Enable automatic token refresh before expiration (supports App Mesh and Keycloak tokens).
         """
@@ -236,6 +238,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self.cookie_file = rest_cookie_file
         if self._load_cookies(rest_cookie_file):
             self._handle_token_update(self._get_access_token())
+
+        if jwt_token:
+            self.authenticate(jwt_token)
 
     @staticmethod
     def _ensure_logging_configured() -> None:
@@ -508,7 +513,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         self._handle_token_update(resp.json()["access_token"])
 
-    def logoff(self) -> bool:
+    def logout(self) -> bool:
         """Log out of the current session from the server."""
         jwt_token = self._get_access_token()
         if not jwt_token or not isinstance(jwt_token, str):
@@ -600,7 +605,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception("TOTP URI does not contain a 'secret' field")
         return secret
 
-    def setup_totp(self, totp_code: str) -> None:
+    def enable_totp(self, totp_code: str) -> None:
         """Set up 2FA for the current user.
 
         Args:
@@ -646,7 +651,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application view
     ########################################
-    def view_app(self, app_name: str) -> App:
+    def get_app(self, app_name: str) -> App:
         """Get information about a specific application."""
         resp = self._request_http(AppMeshClient._Method.GET, path=f"/appmesh/app/{app_name}")
 
@@ -655,7 +660,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return App(resp.json())
 
-    def view_all_apps(self) -> List[App]:
+    def list_apps(self) -> List[App]:
         """Get information about all applications."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/applications")
 
@@ -683,11 +688,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             AppMeshClient._Method.GET,
             path=f"/appmesh/app/{app_name}/output",
             query={
-                "stdout_position": str(stdout_position),
-                "stdout_index": str(stdout_index),
-                "stdout_maxsize": str(stdout_maxsize),
-                "process_uuid": process_uuid,
-                "timeout": str(timeout),
+                **({"stdout_position": str(stdout_position)} if stdout_position != 0 else {}),
+                **({"stdout_index": str(stdout_index)} if stdout_index != 0 else {}),
+                **({"stdout_maxsize": str(stdout_maxsize)} if stdout_maxsize != 0 else {}),
+                **({"process_uuid": process_uuid} if process_uuid != "" else {}),
+                **({"timeout": str(timeout)} if timeout != 0 else {}),
             },
         )
 
@@ -745,7 +750,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Configuration
     ########################################
-    def view_host_resources(self) -> Dict[str, Any]:
+    def get_host_resources(self) -> Dict[str, Any]:
         """Get a report of host resources including CPU, memory, and disk."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/resources")
 
@@ -754,7 +759,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_config(self) -> Dict[str, Any]:
+    def get_config(self) -> Dict[str, Any]:
         """Get the App Mesh configuration in JSON format."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/config")
 
@@ -781,7 +786,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # User Management
     ########################################
-    def update_user_password(self, old_password: str, new_password: str, user_name: str = "self") -> None:
+    def update_password(self, old_password: str, new_password: str, user_name: str = "self") -> None:
         """Change the password of a user."""
         body = {
             "old_password": base64.b64encode(old_password.encode()).decode(),
@@ -836,7 +841,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
 
-    def view_users(self) -> Dict[str, Any]:
+    def list_users(self) -> Dict[str, Any]:
         """Get information about all users."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/users")
 
@@ -845,7 +850,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_self(self) -> dict:
+    def get_current_user(self) -> dict:
         """Get information about the current user."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/self")
 
@@ -854,7 +859,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_groups(self) -> List[str]:
+    def list_groups(self) -> List[str]:
         """Get information about all user groups."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/groups")
 
@@ -863,7 +868,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_permissions(self) -> List[str]:
+    def list_permissions(self) -> List[str]:
         """Get information about all available permissions."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/permissions")
 
@@ -872,7 +877,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_user_permissions(self) -> List[str]:
+    def get_user_permissions(self) -> List[str]:
         """Get information about the permissions of the current user."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/permissions")
 
@@ -881,7 +886,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_roles(self) -> Dict[str, Dict]:
+    def list_roles(self) -> Dict[str, Dict]:
         """Get information about all roles with permission definitions."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/roles")
 
@@ -928,7 +933,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
 
-    def view_tags(self) -> Dict[str, str]:
+    def get_tags(self) -> Dict[str, str]:
         """Get information about all labels."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/labels")
 
@@ -1167,7 +1172,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def run_app_sync(
         self,
         app: Union[App, str],
-        stdout_print: bool = True,
         max_time_seconds: Union[int, str] = _DURATION_TWO_DAYS_ISO,
         life_cycle_seconds: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
     ) -> Tuple[Union[int, None], str]:
@@ -1180,7 +1184,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             app: An App instance or a shell command string.
                 If a string, an App instance is created as:
                 `appmesh.App({"command": "<command_string>", "shell": True})`
-            stdout_print: If True, prints the remote stdout locally. Defaults to True.
             max_time_seconds: Maximum runtime for the remote process.
                 Supports ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to DEFAULT_RUN_APP_TIMEOUT_SECONDS.
             life_cycle_seconds: Maximum lifecycle time for the remote process.
@@ -1204,12 +1207,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         exit_code = None
         if resp.status_code == HTTPStatus.OK:
-            if stdout_print:
-                print(resp.text, end="")
             if "X-Exit-Code" in resp.headers:
                 exit_code = int(resp.headers["X-Exit-Code"])
-        elif stdout_print:
-            print(resp.text)
 
         return exit_code, resp.text
 

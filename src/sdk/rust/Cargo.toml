@@ -1,0 +1,33 @@
+[package]
+name = "appmesh"
+version = "0.1.0"
+edition = "2021"
+description = "AppMesh SDK for Rust"
+license = "MIT"
+authors = ["AppMesh Contributors"]
+repository = "https://github.com/laoshanxi/app-mesh"
+documentation = "https://github.com/laoshanxi/app-mesh/tree/main/docs"
+readme = "README.md"
+keywords = ["appmesh", "sdk", "microservices", "container"]
+categories = ["api-bindings", "network-programming"]
+
+[lib]
+name = "appmesh"
+path = "src/lib.rs"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json", "cookies", "rustls-tls"] }
+tokio = { version = "1.47", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+base64 = "0.22"
+log = "0.4"
+futures = "0.3"
+regex = "1.12"
+
+[dev-dependencies]
+mockito = "1.7"
+tokio = { version = "1.47", features = ["full"] }
+serde_json = "1.0"
+env_logger = "0.11"

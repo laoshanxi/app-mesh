@@ -16,18 +16,19 @@ func TestAppmeshLogin(t *testing.T) {
 	emptyStr := ""
 	client := NewHttpClient(Option{SslTrustedCA: &emptyStr})
 
-	token, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
-	res, _ := client.ViewHostResources()
+	client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	token := client.getToken()
+	res, _ := client.GetHostResources()
 	t.Log(res)
 	ret, err := client.Authenticate(token, "", DEFAULT_JWT_AUDIENCE)
 	require.Equal(t, ret, true)
 	require.Nil(t, err)
-	labels, _ := client.ViewTags()
+	labels, _ := client.GetTags()
 	t.Log(labels)
-	apps, _ := client.ViewAllApps()
+	apps, _ := client.ListApps()
 	t.Log(apps)
 
-	app, _ := client.ViewApp("test")
+	app, _ := client.GetApp("test")
 	t.Log(app)
 
 	runApp := Application{}
@@ -72,7 +73,8 @@ func TestAppmeshTotp(t *testing.T) {
 
 	client := NewHttpClient(Option{})
 
-	token, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, DEFAULT_JWT_AUDIENCE)
+	_, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, DEFAULT_JWT_AUDIENCE)
+	token := client.getToken()
 	require.NoError(t, err, "Login failed")
 
 	success, err := client.Authenticate(token, "", DEFAULT_JWT_AUDIENCE)
