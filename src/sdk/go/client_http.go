@@ -186,8 +186,8 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 	return fmt.Errorf("TOTP validation failed with status %d: %s", code, string(raw))
 }
 
-// Logoff logs out the current session and invalidates the token.
-func (r *AppMeshClient) Logoff() (bool, error) {
+// Logout logs out the current session and invalidates the token.
+func (r *AppMeshClient) Logout() (bool, error) {
 	token := r.getToken()
 	if token != "" {
 		code, _, _, err := r.post("/appmesh/self/logoff", nil, nil, nil)
@@ -271,8 +271,8 @@ func (r *AppMeshClient) GetTotpSecret() (string, error) {
 	return "", fmt.Errorf("failed to get TOTP secret with status %d: %s", code, string(raw))
 }
 
-// SetupTotp configures TOTP 2FA for the current user and returns a new token.
-func (r *AppMeshClient) SetupTotp(totpCode string) (string, error) {
+// EnableTotp configures TOTP 2FA for the current user and returns a new token.
+func (r *AppMeshClient) EnableTotp(totpCode string) (string, error) {
 	if totpCode == "" {
 		return "", fmt.Errorf("TOTP code is required")
 	}
@@ -306,8 +306,8 @@ func (r *AppMeshClient) DisableTotp(user string) (bool, error) {
 	return code == http.StatusOK, nil
 }
 
-// ViewTags retrieves all available labels/tags from the server.
-func (r *AppMeshClient) ViewTags() (Labels, error) {
+// GetTags retrieves all available labels/tags from the server.
+func (r *AppMeshClient) GetTags() (Labels, error) {
 	code, raw, _, err := r.get("/appmesh/labels", nil, nil)
 	labels := Labels{}
 	if err != nil {
@@ -321,8 +321,8 @@ func (r *AppMeshClient) ViewTags() (Labels, error) {
 	return labels, nil
 }
 
-// ViewHostResources retrieves system resource information (CPU, memory, disk).
-func (r *AppMeshClient) ViewHostResources() (map[string]interface{}, error) {
+// GetHostResources retrieves system resource information (CPU, memory, disk).
+func (r *AppMeshClient) GetHostResources() (map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/resources", nil, nil)
 	res := map[string]interface{}{}
 	if err != nil {
@@ -336,8 +336,8 @@ func (r *AppMeshClient) ViewHostResources() (map[string]interface{}, error) {
 	return res, nil
 }
 
-// ViewAllApps returns all applications visible to the current user.
-func (r *AppMeshClient) ViewAllApps() ([]Application, error) {
+// ListApps returns all applications visible to the current user.
+func (r *AppMeshClient) ListApps() ([]Application, error) {
 	code, raw, _, err := r.get("/appmesh/applications", nil, nil)
 	apps := []Application{}
 	if err != nil {
@@ -351,8 +351,8 @@ func (r *AppMeshClient) ViewAllApps() ([]Application, error) {
 	return apps, nil
 }
 
-// ViewApp returns detailed information about a specific application.
-func (r *AppMeshClient) ViewApp(appName string) (*Application, error) {
+// GetApp returns detailed information about a specific application.
+func (r *AppMeshClient) GetApp(appName string) (*Application, error) {
 	if appName == "" {
 		return nil, fmt.Errorf("application name is required")
 	}
@@ -704,8 +704,8 @@ func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttr
 	return nil
 }
 
-// ViewConfig retrieves the current App Mesh configuration.
-func (r *AppMeshClient) ViewConfig() (map[string]interface{}, error) {
+// GetConfig retrieves the current App Mesh configuration.
+func (r *AppMeshClient) GetConfig() (map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/config", nil, nil)
 	cfg := map[string]interface{}{}
 	if err != nil {
@@ -775,8 +775,8 @@ func (r *AppMeshClient) SetLogLevel(level string) (string, error) {
 	return "", fmt.Errorf("set log level failed with status %d: %s", code, string(raw))
 }
 
-// UpdateUserPassword changes the password for a user (default is "self").
-func (r *AppMeshClient) UpdateUserPassword(oldPassword, newPassword, userName string) (bool, error) {
+// UpdatePassword changes the password for a user (default is "self").
+func (r *AppMeshClient) UpdatePassword(oldPassword, newPassword, userName string) (bool, error) {
 	if oldPassword == "" || newPassword == "" {
 		return false, fmt.Errorf("old password and new password are required")
 	}
@@ -867,8 +867,8 @@ func (r *AppMeshClient) UnlockUser(userName string) (bool, error) {
 	return true, nil
 }
 
-// ViewUsers retrieves information about all users visible to the current user.
-func (r *AppMeshClient) ViewUsers() ([]map[string]interface{}, error) {
+// ListUsers retrieves information about all users visible to the current user.
+func (r *AppMeshClient) ListUsers() ([]map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/users", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view users request failed: %w", err)
@@ -882,8 +882,8 @@ func (r *AppMeshClient) ViewUsers() ([]map[string]interface{}, error) {
 	return users, nil
 }
 
-// ViewSelf retrieves information about the current authenticated user.
-func (r *AppMeshClient) ViewSelf() (map[string]interface{}, error) {
+// GetCurrentUser retrieves information about the current authenticated user.
+func (r *AppMeshClient) GetCurrentUser() (map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/user/self", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view self request failed: %w", err)
@@ -898,8 +898,8 @@ func (r *AppMeshClient) ViewSelf() (map[string]interface{}, error) {
 	return nil, fmt.Errorf("view self failed with status %d", code)
 }
 
-// ViewGroups retrieves information about all user groups.
-func (r *AppMeshClient) ViewGroups() ([]map[string]interface{}, error) {
+// ListGroups retrieves information about all user groups.
+func (r *AppMeshClient) ListGroups() ([]map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/user/groups", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view groups request failed: %w", err)
@@ -928,8 +928,8 @@ func (r *AppMeshClient) ViewPermissions() ([]map[string]interface{}, error) {
 	return perms, nil
 }
 
-// ViewUserPermissions retrieves permissions assigned to the current user.
-func (r *AppMeshClient) ViewUserPermissions() ([]map[string]interface{}, error) {
+// GetUserPermissions retrieves permissions assigned to the current user.
+func (r *AppMeshClient) GetUserPermissions() ([]map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/user/permissions", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view user permissions request failed: %w", err)
@@ -943,8 +943,8 @@ func (r *AppMeshClient) ViewUserPermissions() ([]map[string]interface{}, error) 
 	return perms, nil
 }
 
-// ViewRoles retrieves all roles with their permission definitions.
-func (r *AppMeshClient) ViewRoles() ([]map[string]interface{}, error) {
+// ListRoles retrieves all roles with their permission definitions.
+func (r *AppMeshClient) ListRoles() ([]map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/roles", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view roles request failed: %w", err)

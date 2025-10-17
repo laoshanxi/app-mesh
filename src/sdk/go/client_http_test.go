@@ -18,17 +18,17 @@ func TestAppmeshLogin(t *testing.T) {
 
 	client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
 	token := client.getToken()
-	res, _ := client.ViewHostResources()
+	res, _ := client.GetHostResources()
 	t.Log(res)
 	ret, err := client.Authenticate(token, "", DEFAULT_JWT_AUDIENCE)
 	require.Equal(t, ret, true)
 	require.Nil(t, err)
-	labels, _ := client.ViewTags()
+	labels, _ := client.GetTags()
 	t.Log(labels)
-	apps, _ := client.ViewAllApps()
+	apps, _ := client.ListApps()
 	t.Log(apps)
 
-	app, _ := client.ViewApp("test")
+	app, _ := client.GetApp("test")
 	t.Log(app)
 
 	runApp := Application{}

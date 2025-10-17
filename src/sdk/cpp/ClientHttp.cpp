@@ -1,13 +1,16 @@
+#include "ClientHttp.h"
+
 #include <iostream>
 #include <map>
 #include <string>
 
 #include <ace/OS_NS_time.h>
 #include <boost/regex.hpp>
+#include <nlohmann/json.hpp>
 
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
-#include "ClientHttp.h"
+#include "../../common/os/linux.h"
 
 namespace
 {
@@ -15,6 +18,20 @@ namespace
     const std::string HTTP_HEADER_NAME_CSRF_TOKEN = "X-CSRF-Token";
     const std::string COOKIE_CSRF_TOKEN = "appmesh_csrf_token";
 }
+
+// === AppRun implementation ===
+
+AppRun::AppRun(ClientHttp *client, const std::string &appName, const std::string &procUid)
+    : m_client(client), m_appName(appName), m_procUid(procUid)
+{
+}
+
+std::shared_ptr<int> AppRun::wait(int timeout, bool printToSTD)
+{
+    return this->m_client->waitForAsyncRun(this, timeout, printToSTD);
+}
+
+// === ClientHttp implementation ===
 
 void ClientHttp::init(const std::string url, const std::string ssl_verify,
                       const std::string ssl_client_cert, const std::string ssl_client_certkey,
@@ -42,6 +59,7 @@ void ClientHttp::forwardTo(const std::string url)
     m_forwardTo = url;
 }
 
+// Authentication Management
 std::string ClientHttp::login(const std::string &user, const std::string &passwd,
                               const std::string totp, int timeoutSeconds, std::string audience)
 {
@@ -61,8 +79,9 @@ std::string ClientHttp::login(const std::string &user, const std::string &passwd
 
     auto response = this->requestHttp(false, web::http::methods::POST, "/appmesh/login", nullptr, header);
 
-    if (response->status_code == web::http::status_codes::Unauthorized)
+    if (response->status_code == web::http::status_codes::PreconditionRequired)
     {
+        // TOTP required (HTTP 428)
         auto jsonResponse = nlohmann::json::parse(response->text);
         if (jsonResponse.contains(REST_TEXT_TOTP_CHALLENGE_JSON_KEY))
         {
@@ -78,6 +97,20 @@ std::string ClientHttp::login(const std::string &user, const std::string &passwd
     }
 
     return std::string();
+}
+
+void ClientHttp::validateTotp(const std::string &user, const std::string &challenge,
+                              const std::string totp, int timeoutSeconds)
+{
+    std::map<std::string, std::string> header = {{HTTP_HEADER_JWT_set_cookie, "true"}};
+
+    nlohmann::json body = {
+        {HTTP_BODY_KEY_JWT_username, user},
+        {HTTP_BODY_KEY_JWT_totp, totp},
+        {HTTP_BODY_KEY_JWT_totp_challenge, challenge},
+        {HTTP_BODY_KEY_JWT_expire_seconds, timeoutSeconds}};
+
+    this->requestHttp(true, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
 }
 
 std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
@@ -98,21 +131,7 @@ std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
     return std::make_tuple(resp->status_code == web::http::status_codes::OK, resp->text);
 }
 
-void ClientHttp::validateTotp(const std::string &user, const std::string &challenge,
-                              const std::string totp, int timeoutSeconds)
-{
-    std::map<std::string, std::string> header = {{HTTP_HEADER_JWT_set_cookie, "true"}};
-
-    nlohmann::json body = {
-        {HTTP_BODY_KEY_JWT_username, user},
-        {HTTP_BODY_KEY_JWT_totp, totp},
-        {HTTP_BODY_KEY_JWT_totp_challenge, challenge},
-        {HTTP_BODY_KEY_JWT_expire_seconds, timeoutSeconds}};
-
-    this->requestHttp(true, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
-}
-
-void ClientHttp::logoff()
+void ClientHttp::logout()
 {
     this->requestHttp(true, web::http::methods::POST, "/appmesh/self/logoff");
     RestClient::clearSession();
@@ -134,7 +153,7 @@ std::string ClientHttp::getTotpSecret()
     return Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
 }
 
-void ClientHttp::setupTotp(const std::string totp)
+void ClientHttp::enableTotp(const std::string totp)
 {
     std::map<std::string, std::string> header = {{HTTP_HEADER_JWT_totp, totp}};
     requestHttp(true, web::http::methods::POST, "/appmesh/totp/setup", nullptr, header);
@@ -146,57 +165,17 @@ void ClientHttp::disableTotp(const std::string user)
     requestHttp(true, web::http::methods::POST, restPath);
 }
 
-void ClientHttp::updatePassword(const std::string oldPwd, const std::string newPwd, const std::string user)
-{
-    nlohmann::json jsonObj = {
-        {HTTP_BODY_KEY_OLD_PASSWORD, Utility::encode64(oldPwd)},
-        {HTTP_BODY_KEY_NEW_PASSWORD, Utility::encode64(newPwd)}};
-
-    const std::string restPath = "/appmesh/user/" + user + "/passwd";
-    requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
-}
-
-nlohmann::json ClientHttp::viewSelf() const
-{
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/self");
-    return nlohmann::json::parse(response->text);
-}
-
-nlohmann::json ClientHttp::viewUsers() const
-{
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/users");
-    return nlohmann::json::parse(response->text);
-}
-
-void ClientHttp::addUser(const nlohmann::json &user)
-{
-    const std::string userName = user.at(JSON_KEY_USER_readonly_name).get<std::string>();
-    const std::string restPath = "/appmesh/user/" + userName;
-    requestHttp(true, web::http::methods::PUT, restPath, &user);
-}
-
-void ClientHttp::lockUser(const std::string user)
-{
-    const std::string restPath = "/appmesh/user/" + user + "/lock";
-    requestHttp(true, web::http::methods::POST, restPath);
-}
-
-void ClientHttp::unlockUser(const std::string user)
-{
-    const std::string restPath = "/appmesh/user/" + user + "/unlock";
-    requestHttp(true, web::http::methods::POST, restPath);
-}
-
-nlohmann::json ClientHttp::viewAllApp() const
-{
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/applications");
-    return nlohmann::json::parse(response->text);
-}
-
-nlohmann::json ClientHttp::viewApp(const std::string &app) const
+// Application View
+nlohmann::json ClientHttp::getApp(const std::string &app) const
 {
     const std::string restPath = "/appmesh/app/" + app;
     auto response = requestHttp(true, web::http::methods::GET, restPath);
+    return nlohmann::json::parse(response->text);
+}
+
+nlohmann::json ClientHttp::listApps() const
+{
+    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/applications");
     return nlohmann::json::parse(response->text);
 }
 
@@ -233,6 +212,14 @@ AppOutput ClientHttp::getAppOutput(const std::string &app, int outputPosition,
     return output;
 }
 
+bool ClientHttp::checkAppHealth(const std::string &app) const
+{
+    const std::string restPath = "/appmesh/app/" + app + "/health";
+    auto response = requestHttp(true, web::http::methods::GET, restPath);
+    return std::stoi(response->text) == 0;
+}
+
+// Application Manage
 nlohmann::json ClientHttp::addApp(const nlohmann::json &app)
 {
     const std::string restPath = "/appmesh/app/" + GET_JSON_STR_VALUE(app, JSON_KEY_APP_name);
@@ -244,13 +231,6 @@ void ClientHttp::deleteApp(const std::string &app)
 {
     const std::string restPath = "/appmesh/app/" + app;
     requestHttp(true, web::http::methods::DEL, restPath);
-}
-
-bool ClientHttp::checkAppHealth(const std::string &app) const
-{
-    const std::string restPath = "/appmesh/app/" + app + "/health";
-    auto response = requestHttp(true, web::http::methods::GET, restPath);
-    return std::stoi(response->text) == 0;
 }
 
 void ClientHttp::enableApp(const std::string &app)
@@ -265,6 +245,7 @@ void ClientHttp::disableApp(const std::string &app)
     requestHttp(true, web::http::methods::POST, restPath);
 }
 
+// Run Application Operations
 std::tuple<std::shared_ptr<int>, std::string> ClientHttp::runAppSync(const nlohmann::json &app,
                                                                      int maxTimeout,
                                                                      int lifeCycleSeconds)
@@ -320,23 +301,73 @@ std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool 
     }
 }
 
-AppRun::AppRun(ClientHttp *client, const std::string &appName, const std::string &procUid)
-    : m_client(client), m_appName(appName), m_procUid(procUid)
+std::string ClientHttp::runTask(const std::string &app, const nlohmann::json &data, int timeout)
 {
+    const std::string restPath = "/appmesh/app/" + app + "/task";
+    std::map<std::string, std::string> query = {{"timeout", std::to_string(timeout)}};
+
+    auto response = requestHttp(true, web::http::methods::POST, restPath, &data, {}, query);
+    return response->text;
 }
 
-std::shared_ptr<int> AppRun::wait(int timeout, bool printToSTD)
+bool ClientHttp::cancelTask(const std::string &app)
 {
-    return this->m_client->waitForAsyncRun(this, timeout, printToSTD);
+    const std::string restPath = "/appmesh/app/" + app + "/task";
+    auto response = requestHttp(false, web::http::methods::DEL, restPath);
+    return response->status_code == web::http::status_codes::OK;
 }
 
-nlohmann::json ClientHttp::viewHostResources() const
+// File Management
+void ClientHttp::downloadFile(const std::string &remoteFile, const std::string &localFile, bool preservePermissions)
+{
+    // header
+    std::map<std::string, std::string> header;
+    this->addCommonHeaders(header);
+    header[HTTP_HEADER_KEY_file_path] = Utility::encodeURIComponent(remoteFile);
+
+    auto response = RestClient::download(m_url, REST_PATH_DOWNLOAD, remoteFile, localFile, header);
+
+    if (response->status_code != web::http::status_codes::OK)
+    {
+        throw std::invalid_argument(response->text);
+    }
+
+    if (preservePermissions)
+    {
+        Utility::applyFilePermission(localFile, response->header);
+    }
+}
+
+void ClientHttp::uploadFile(const std::string &localFile, const std::string &remoteFile, bool preservePermissions)
+{
+    // header
+    std::map<std::string, std::string> header;
+    this->addCommonHeaders(header);
+    header[HTTP_HEADER_KEY_file_path] = Utility::encodeURIComponent(remoteFile);
+    if (preservePermissions)
+    {
+        auto fileInfo = os::fileStat(localFile);
+        header[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
+        header[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
+        header[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
+    }
+
+    auto response = RestClient::upload(m_url, REST_PATH_UPLOAD, localFile, header);
+
+    if (response->status_code != web::http::status_codes::OK)
+    {
+        throw std::invalid_argument(response->text);
+    }
+}
+
+// System Management
+nlohmann::json ClientHttp::getHostResources() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/resources");
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::viewConfig() const
+nlohmann::json ClientHttp::getConfig() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/config");
     return nlohmann::json::parse(response->text);
@@ -348,7 +379,21 @@ nlohmann::json ClientHttp::setConfig(const nlohmann::json &config)
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::viewTags() const
+std::string ClientHttp::setLogLevel(const std::string &level)
+{
+    nlohmann::json jsonObj = {{JSON_KEY_BaseConfig, {{JSON_KEY_LogLevel, level}}}};
+    auto response = this->setConfig(jsonObj);
+    return response.at(JSON_KEY_BaseConfig).at(JSON_KEY_LogLevel).get<std::string>();
+}
+
+std::string ClientHttp::getMetrics()
+{
+    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/metrics");
+    return response->text;
+}
+
+// Tag Management
+nlohmann::json ClientHttp::getTags() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/labels");
     return nlohmann::json::parse(response->text);
@@ -367,6 +412,125 @@ void ClientHttp::deleteTag(const std::string &tag)
     requestHttp(true, web::http::methods::DEL, restPath);
 }
 
+// User Management
+void ClientHttp::updatePassword(const std::string oldPwd, const std::string newPwd, const std::string user)
+{
+    nlohmann::json jsonObj = {
+        {HTTP_BODY_KEY_OLD_PASSWORD, Utility::encode64(oldPwd)},
+        {HTTP_BODY_KEY_NEW_PASSWORD, Utility::encode64(newPwd)}};
+
+    const std::string restPath = "/appmesh/user/" + user + "/passwd";
+    requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
+}
+
+nlohmann::json ClientHttp::getCurrentUser() const
+{
+    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/self");
+    return nlohmann::json::parse(response->text);
+}
+
+nlohmann::json ClientHttp::listUsers() const
+{
+    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/users");
+    return nlohmann::json::parse(response->text);
+}
+
+void ClientHttp::addUser(const nlohmann::json &user)
+{
+    const std::string userName = user.at(JSON_KEY_USER_readonly_name).get<std::string>();
+    const std::string restPath = "/appmesh/user/" + userName;
+    requestHttp(true, web::http::methods::PUT, restPath, &user);
+}
+
+void ClientHttp::deleteUser(const std::string &user)
+{
+    const std::string restPath = "/appmesh/user/" + user;
+    requestHttp(true, web::http::methods::DEL, restPath);
+}
+
+void ClientHttp::lockUser(const std::string user)
+{
+    const std::string restPath = "/appmesh/user/" + user + "/lock";
+    requestHttp(true, web::http::methods::POST, restPath);
+}
+
+void ClientHttp::unlockUser(const std::string user)
+{
+    const std::string restPath = "/appmesh/user/" + user + "/unlock";
+    requestHttp(true, web::http::methods::POST, restPath);
+}
+
+std::set<std::string> ClientHttp::getUserPermissions()
+{
+    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/permissions");
+    auto result = nlohmann::json::parse(response->text);
+    std::set<std::string> permissions;
+    for (const auto &perm : result)
+    {
+        permissions.insert(perm.get<std::string>());
+    }
+    return permissions;
+}
+
+std::set<std::string> ClientHttp::listPermissions()
+{
+    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/permissions");
+    auto result = nlohmann::json::parse(response->text);
+    std::set<std::string> permissions;
+    for (const auto &perm : result)
+    {
+        permissions.insert(perm.get<std::string>());
+    }
+    return permissions;
+}
+
+std::map<std::string, std::set<std::string>> ClientHttp::listRoles()
+{
+    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/roles");
+    auto result = nlohmann::json::parse(response->text);
+    std::map<std::string, std::set<std::string>> roles;
+    for (const auto &item : result.items())
+    {
+        std::set<std::string> permissions;
+        for (const auto &perm : item.value())
+        {
+            permissions.insert(perm.get<std::string>());
+        }
+        roles[item.key()] = permissions;
+    }
+    return roles;
+}
+
+std::set<std::string> ClientHttp::listGroups()
+{
+    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/groups");
+    auto result = nlohmann::json::parse(response->text);
+    std::set<std::string> groups;
+    for (const auto &group : result)
+    {
+        groups.insert(group.get<std::string>());
+    }
+    return groups;
+}
+
+void ClientHttp::updateRole(const std::string &role, std::set<std::string> rolePermissions)
+{
+    nlohmann::json jsonObj = nlohmann::json::array();
+    for (const auto &perm : rolePermissions)
+    {
+        jsonObj.push_back(perm);
+    }
+    const std::string restPath = "/appmesh/role/" + role;
+    requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
+}
+
+void ClientHttp::deleteRole(const std::string &role)
+{
+    const std::string restPath = "/appmesh/role/" + role;
+    requestHttp(true, web::http::methods::DEL, restPath);
+}
+
+// Protected members
 std::shared_ptr<CurlResponse> ClientHttp::requestHttp(bool shouldThrow,
                                                       const web::http::method &mtd,
                                                       const std::string &path,
@@ -375,17 +539,7 @@ std::shared_ptr<CurlResponse> ClientHttp::requestHttp(bool shouldThrow,
                                                       std::map<std::string, std::string> query) const
 {
     // header
-    if (!m_forwardTo.empty())
-    {
-        if (m_forwardTo.find(':') == std::string::npos)
-            header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo + ":" + parseUrlPort(m_url);
-        else
-            header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
-    }
-
-    const auto token = RestClient::getCookie(COOKIE_CSRF_TOKEN);
-    if (!token.empty())
-        header[HTTP_HEADER_NAME_CSRF_TOKEN] = token;
+    this->addCommonHeaders(header);
 
     // body
     const std::string bodyContent = body ? body->dump() : std::string();
@@ -407,6 +561,21 @@ std::shared_ptr<CurlResponse> ClientHttp::requestHttp(bool shouldThrow,
     }
 
     return resp;
+}
+
+void ClientHttp::addCommonHeaders(std::map<std::string, std::string> &header) const
+{
+    if (!m_forwardTo.empty())
+    {
+        if (m_forwardTo.find(':') == std::string::npos)
+            header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo + ":" + parseUrlPort(m_url);
+        else
+            header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
+    }
+
+    const auto token = RestClient::getCookie(COOKIE_CSRF_TOKEN);
+    if (!token.empty())
+        header[HTTP_HEADER_NAME_CSRF_TOKEN] = token;
 }
 
 std::string ClientHttp::parseUrlHost(const std::string &url)

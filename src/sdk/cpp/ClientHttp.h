@@ -2,6 +2,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <tuple>
 
@@ -19,9 +20,9 @@ struct AppOutput
     std::shared_ptr<int> exitCode;
 };
 
-// TODO: forward
 class ClientHttp;
 
+// TODO: forward
 struct AppRun
 {
     AppRun(ClientHttp *client, const std::string &appName, const std::string &procUid);
@@ -39,6 +40,7 @@ public:
     ClientHttp() = default;
     virtual ~ClientHttp() = default;
 
+    // Session/Client
     void init(const std::string url = "https://127.0.0.1:6060",
               const std::string ssl_verify = "ssl/ca.pem",
               const std::string ssl_client_cert = "ssl/client.pem",
@@ -46,6 +48,7 @@ public:
               const std::string cookieFile = "");
     void forwardTo(const std::string url = "");
 
+    // Authentication Management
     std::string login(const std::string &user, const std::string &passwd,
                       const std::string totp = "", int timeoutSeconds = 0,
                       std::string audience = "");
@@ -55,46 +58,67 @@ public:
                                                const std::string permission = "",
                                                const std::string audience = "",
                                                bool apply = true);
-    void logoff();
+    void logout();
     void renewToken(int timeoutSeconds = 0);
     std::string getTotpSecret();
-    void setupTotp(const std::string totp);
+    void enableTotp(const std::string totp);
     void disableTotp(const std::string user = "self");
 
-    void updatePassword(const std::string oldPwd, const std::string newPwd,
-                        const std::string user = "self");
-    nlohmann::json viewSelf() const;
-    nlohmann::json viewUsers() const;
-    void addUser(const nlohmann::json &user);
-    void lockUser(const std::string user);
-    void unlockUser(const std::string user);
-
-    nlohmann::json viewAllApp() const;
-    nlohmann::json viewApp(const std::string &app) const;
+    // Application View
+    nlohmann::json getApp(const std::string &app) const;
+    nlohmann::json listApps() const;
     AppOutput getAppOutput(const std::string &app, int outputPosition = 0,
                            int stdoutIndex = 0, int stdoutMaxsize = 10240,
                            const std::string &processUuid = "", int timeout = 0) const;
+    bool checkAppHealth(const std::string &app) const;
+
+    // Application Manage
     nlohmann::json addApp(const nlohmann::json &app);
     void deleteApp(const std::string &app);
-    bool checkAppHealth(const std::string &app) const;
     void enableApp(const std::string &app);
     void disableApp(const std::string &app);
 
+    // Run Application Operations
     std::tuple<std::shared_ptr<int>, std::string> runAppSync(const nlohmann::json &app,
                                                              int maxTimeout = 60 * 60 * 24,
                                                              int lifeCycleSeconds = 60 * 60 * 24 * 2);
     AppRun runAppAsync(const nlohmann::json &app,
                        int maxTimeout = 60 * 60 * 24,
                        int lifeCycleSeconds = 60 * 60 * 24 * 2);
-    std::shared_ptr<int> waitForAsyncRun(AppRun *run, int timeout = 1, bool printToSTD = true);
+    std::shared_ptr<int> waitForAsyncRun(AppRun *run, int timeout = 0, bool printToSTD = true);
+    std::string runTask(const std::string &app, const nlohmann::json &data, int timeout);
+    bool cancelTask(const std::string &app);
 
-    nlohmann::json viewHostResources() const;
-    nlohmann::json viewConfig() const;
+    // File Management
+    void downloadFile(const std::string &remoteFile, const std::string &localFile, bool preservePermissions = true);
+    void uploadFile(const std::string &localFile, const std::string &remoteFile, bool preservePermissions = true);
+
+    // System Management
+    nlohmann::json getHostResources() const;
+    nlohmann::json getConfig() const;
     nlohmann::json setConfig(const nlohmann::json &config);
+    std::string setLogLevel(const std::string &level);
+    std::string getMetrics();
 
-    nlohmann::json viewTags() const;
+    // Tag Management
+    nlohmann::json getTags() const;
     void addTag(const std::string &tag, const std::string &value);
     void deleteTag(const std::string &tag);
+
+    // User Management
+    void updatePassword(const std::string oldPwd, const std::string newPwd, const std::string user = "self");
+    nlohmann::json getCurrentUser() const;
+    nlohmann::json listUsers() const;
+    void addUser(const nlohmann::json &user);
+    void deleteUser(const std::string &user);
+    void lockUser(const std::string user);
+    void unlockUser(const std::string user);
+    std::set<std::string> getUserPermissions();
+    std::set<std::string> listPermissions();
+    std::map<std::string, std::set<std::string>> listRoles();
+    std::set<std::string> listGroups();
+    void updateRole(const std::string &role, std::set<std::string> rolePermissions);
+    void deleteRole(const std::string &role);
 
 protected:
     std::shared_ptr<CurlResponse> requestHttp(bool shouldThrow,
@@ -103,6 +127,7 @@ protected:
                                               const nlohmann::json *body = nullptr,
                                               std::map<std::string, std::string> header = {},
                                               std::map<std::string, std::string> query = {}) const;
+    void addCommonHeaders(std::map<std::string, std::string> &header) const;
 
     static std::string parseUrlHost(const std::string &url);
     static std::string parseUrlPort(const std::string &url);

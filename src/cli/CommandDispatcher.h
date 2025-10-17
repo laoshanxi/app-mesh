@@ -76,7 +76,6 @@ private:
 	int inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void setupInterruptHandler(const std::string &appName);
 	void teardownInterruptHandler();
-	std::string parseOutputMessage(std::shared_ptr<CurlResponse> &resp);
 	std::shared_ptr<int> runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds);
 	std::string getDefaultURL();
 	void initClient(const std::string &url);

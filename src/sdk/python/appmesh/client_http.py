@@ -55,12 +55,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     Methods:
         # Authentication Management
         - login()
-        - logoff()
+        - logout()
         - authenticate()
         - renew_token()
         - disable_totp()
         - get_totp_secret()
-        - setup_totp()
+        - enable_totp()
 
         # Application Management
         - add_app()
@@ -69,8 +69,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - enable_app()
         - check_app_health()
         - get_app_output()
-        - view_app()
-        - view_all_apps()
+        - get_app()
+        - list_apps()
 
         # Run Application Operations
         - run_app_async()
@@ -82,13 +82,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         # System Management
         - forward_to
         - set_config()
-        - view_config()
+        - get_config()
         - set_log_level()
-        - view_host_resources()
+        - get_host_resources()
         - get_metrics()
         - add_tag()
         - delete_tag()
-        - view_tags()
+        - get_tags()
 
         # File Management
         - download_file()
@@ -99,15 +99,15 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - delete_user()
         - lock_user()
         - update_password()
-        - view_self()
+        - get_current_user()
         - unlock_user()
-        - view_users()
-        - view_user_permissions()
-        - view_permissions()
+        - list_users()
+        - get_user_permissions()
+        - list_permissions()
         - delete_role()
         - update_role()
-        - view_roles()
-        - view_groups()
+        - list_roles()
+        - list_groups()
 
     Example:
         >>> python -m pip install --upgrade appmesh
@@ -513,7 +513,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         self._handle_token_update(resp.json()["access_token"])
 
-    def logoff(self) -> bool:
+    def logout(self) -> bool:
         """Log out of the current session from the server."""
         jwt_token = self._get_access_token()
         if not jwt_token or not isinstance(jwt_token, str):
@@ -605,7 +605,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception("TOTP URI does not contain a 'secret' field")
         return secret
 
-    def setup_totp(self, totp_code: str) -> None:
+    def enable_totp(self, totp_code: str) -> None:
         """Set up 2FA for the current user.
 
         Args:
@@ -651,7 +651,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application view
     ########################################
-    def view_app(self, app_name: str) -> App:
+    def get_app(self, app_name: str) -> App:
         """Get information about a specific application."""
         resp = self._request_http(AppMeshClient._Method.GET, path=f"/appmesh/app/{app_name}")
 
@@ -660,7 +660,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return App(resp.json())
 
-    def view_all_apps(self) -> List[App]:
+    def list_apps(self) -> List[App]:
         """Get information about all applications."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/applications")
 
@@ -750,7 +750,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Configuration
     ########################################
-    def view_host_resources(self) -> Dict[str, Any]:
+    def get_host_resources(self) -> Dict[str, Any]:
         """Get a report of host resources including CPU, memory, and disk."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/resources")
 
@@ -759,7 +759,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_config(self) -> Dict[str, Any]:
+    def get_config(self) -> Dict[str, Any]:
         """Get the App Mesh configuration in JSON format."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/config")
 
@@ -841,7 +841,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
 
-    def view_users(self) -> Dict[str, Any]:
+    def list_users(self) -> Dict[str, Any]:
         """Get information about all users."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/users")
 
@@ -850,7 +850,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_self(self) -> dict:
+    def get_current_user(self) -> dict:
         """Get information about the current user."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/self")
 
@@ -859,7 +859,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_groups(self) -> List[str]:
+    def list_groups(self) -> List[str]:
         """Get information about all user groups."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/groups")
 
@@ -868,7 +868,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_permissions(self) -> List[str]:
+    def list_permissions(self) -> List[str]:
         """Get information about all available permissions."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/permissions")
 
@@ -877,7 +877,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_user_permissions(self) -> List[str]:
+    def get_user_permissions(self) -> List[str]:
         """Get information about the permissions of the current user."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/user/permissions")
 
@@ -886,7 +886,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.json()
 
-    def view_roles(self) -> Dict[str, Dict]:
+    def list_roles(self) -> Dict[str, Dict]:
         """Get information about all roles with permission definitions."""
         resp = self._request_http(method=AppMeshClient._Method.GET, path="/appmesh/roles")
 
@@ -933,7 +933,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
 
-    def view_tags(self) -> Dict[str, str]:
+    def get_tags(self) -> Dict[str, str]:
         """Get information about all labels."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/labels")
 

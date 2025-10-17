@@ -472,7 +472,7 @@ std::shared_ptr<CurlResponse> RestClient::download(
 	}
 
 	// Open the file for writing
-	std::unique_ptr<FILE, void (*)(FILE *)> output_file(fopen(localFile.c_str(), "wb"), [](FILE *fp)
+	std::unique_ptr<FILE, void (*)(FILE *)> output_file(fopen(localFile.c_str(), "w+b"), [](FILE *fp)
 														{ if (fp) fclose(fp); });
 	if (!output_file)
 	{
@@ -529,6 +529,17 @@ std::shared_ptr<CurlResponse> RestClient::download(
 	{
 		// Get the HTTP response code
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->status_code);
+
+		if (response->status_code != 200 && response->text.empty())
+		{
+			rewind(output_file.get());
+			fseek(output_file.get(), 0, SEEK_END);
+			long size = ftell(output_file.get());
+			rewind(output_file.get());
+
+			response->text.assign(size, '\0');
+			fread(&response->text[0], 1, size, output_file.get());
+		}
 
 		// Save cookies to memory if using memory-based session
 		if (m_sessionConfig.enable_session && m_sessionConfig.use_memory_cookies)

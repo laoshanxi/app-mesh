@@ -346,7 +346,7 @@ int CommandDispatcher::cmdLogoff()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	auto user = this->getAuthenUser();
-	this->logoff();
+	this->logout();
 	std::cout << "User <" << user << "> logoff from " << m_currentUrl << " success." << std::endl;
 	return 0;
 }
@@ -734,7 +734,7 @@ int CommandDispatcher::cmdAppView()
 	{
 		if (!m_commandLineVariables.count(SHOW_OUTPUT))
 		{
-			auto resp = this->viewApp(m_commandLineVariables[APP].as<std::string>());
+			auto resp = this->getApp(m_commandLineVariables[APP].as<std::string>());
 			if (m_commandLineVariables.count(PSTREE))
 			{
 				// view app process tree
@@ -777,7 +777,7 @@ int CommandDispatcher::cmdAppView()
 	}
 	else
 	{
-		auto resp = this->viewAllApp();
+		auto resp = this->listApps();
 		printApps(resp, reduce);
 	}
 	return 0;
@@ -792,7 +792,7 @@ int CommandDispatcher::cmdHostResources()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	auto resp = this->viewHostResources();
+	auto resp = this->getHostResources();
 	std::cout << JSON::dumpToLocalEncoding(resp, 2) << std::endl;
 	return 0;
 }
@@ -994,35 +994,6 @@ std::shared_ptr<int> CommandDispatcher::runAsyncApp(nlohmann::json &jsonObj, int
 	}
 
 	return returnCode;
-}
-
-std::string CommandDispatcher::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
-{
-	if (!resp)
-	{
-		return std::string();
-	}
-	try
-	{
-		auto output = resp->text;
-		if (output.empty() && resp->status_code != web::http::status_codes::OK)
-			return resp->text;
-		if (output.empty())
-			return std::string();
-		auto respJson = nlohmann::json::parse(resp->text);
-		if (respJson.contains(REST_TEXT_MESSAGE_JSON_KEY))
-		{
-			return respJson.at(REST_TEXT_MESSAGE_JSON_KEY).get<std::string>();
-		}
-		else
-		{
-			return respJson.dump(2);
-		}
-	}
-	catch (...)
-	{
-	}
-	return resp->text;
 }
 
 #if defined(_WIN32)
@@ -1257,7 +1228,7 @@ int CommandDispatcher::cmdExecuteShell()
 	else
 	{
 		// shell interactive
-		auto response = this->viewSelf();
+		auto response = this->getCurrentUser();
 		auto execUser = response[JSON_KEY_USER_exec_user].get<std::string>();
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 
@@ -1331,21 +1302,12 @@ int CommandDispatcher::cmdDownloadFile()
 		return 0;
 	}
 
-	std::string restPath = REST_PATH_DOWNLOAD;
 	auto file = m_commandLineVariables[REMOTE].as<std::string>();
 	auto local = m_commandLineVariables[LOCAL].as<std::string>();
+	auto copyPermission = m_commandLineVariables.count(COPY_ATTR);
 
-	// header
-	std::map<std::string, std::string> header;
-	header.insert({HTTP_HEADER_KEY_file_path, Utility::encodeURIComponent(file)});
-	auto response = RestClient::download(m_currentUrl, restPath, file, local, header);
-
-	if (m_commandLineVariables.count(COPY_ATTR))
-		Utility::applyFilePermission(local, response->header);
-	if (response->status_code == web::http::status_codes::OK)
-		std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
-	else
-		throw std::invalid_argument(parseOutputMessage(response));
+	this->downloadFile(file, local, copyPermission);
+	std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
 	return 0;
 }
 
@@ -1378,24 +1340,10 @@ int CommandDispatcher::cmdUploadFile()
 		return 0;
 	}
 	local = boost::filesystem::canonical(local).string();
-	std::string restPath = REST_PATH_UPLOAD;
+	auto copyPermission = m_commandLineVariables.count(COPY_ATTR);
 
-	// header
-	std::map<std::string, std::string> header;
-	header.insert({HTTP_HEADER_KEY_file_path, Utility::encodeURIComponent(file)});
-	if (m_commandLineVariables.count(COPY_ATTR))
-	{
-		auto fileInfo = os::fileStat(local);
-		header.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
-		header.insert({HTTP_HEADER_KEY_file_user, std::to_string(std::get<1>(fileInfo))});
-		header.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
-	}
-
-	auto response = RestClient::upload(m_currentUrl, restPath, local, header);
-	if (response->status_code == web::http::status_codes::OK)
-		std::cout << "Uploaded file <" << local << ">" << std::endl;
-	else
-		throw std::invalid_argument(parseOutputMessage(response));
+	this->uploadFile(local, file, copyPermission);
+	std::cout << "Uploaded file <" << local << ">" << std::endl;
 	return 0;
 }
 
@@ -1463,7 +1411,7 @@ int CommandDispatcher::cmdLabelManage()
 	}
 
 	// Finally print current
-	auto tags = this->viewTags();
+	auto tags = this->getTags();
 	for (auto &tag : tags.items())
 	{
 		std::cout << tag.key() << "=" << tag.value().get<std::string>() << std::endl;
@@ -1490,12 +1438,7 @@ int CommandDispatcher::cmdLogLevel()
 	}
 
 	auto level = m_commandLineVariables[LEVEL].as<std::string>();
-
-	nlohmann::json jsonObj = {
-		{JSON_KEY_BaseConfig, {{JSON_KEY_LogLevel, level}}}};
-	// /app-manager/config
-	auto response = this->setConfig(jsonObj);
-	std::cout << "Log level set to: " << response.at(JSON_KEY_BaseConfig).at(JSON_KEY_LogLevel).get<std::string>() << std::endl;
+	std::cout << "Log level set to: " << this->setLogLevel(level) << std::endl;
 	return 0;
 }
 
@@ -1511,7 +1454,7 @@ int CommandDispatcher::cmdConfigView()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	auto resp = this->viewConfig();
+	auto resp = this->getConfig();
 	std::cout << JSON::dumpToLocalEncoding(resp, 2) << std::endl;
 	return 0;
 }
@@ -1586,7 +1529,7 @@ int CommandDispatcher::cmdUserManage()
 	if (m_commandLineVariables.count(JJSON) == 0)
 	{
 		// View user
-		auto response = m_commandLineVariables.count(ALL) ? this->viewUsers() : this->viewSelf();
+		auto response = m_commandLineVariables.count(ALL) ? this->listUsers() : this->getCurrentUser();
 		std::cout << response.dump(2) << std::endl;
 	}
 	else
@@ -1673,7 +1616,7 @@ int CommandDispatcher::cmdUserMFA()
 
 	if (m_commandLineVariables.count(ADD))
 	{
-		auto resp = this->viewSelf();
+		auto resp = this->getCurrentUser();
 		std::string msg = "Do you want active 2FA for <%s> [y/n]:";
 		if (GET_JSON_BOOL_VALUE(resp, JSON_KEY_USER_mfa_enabled))
 		{
@@ -1697,7 +1640,7 @@ int CommandDispatcher::cmdUserMFA()
 				// Setup TOTP
 				try
 				{
-					this->setupTotp(totp);
+					this->enableTotp(totp);
 					validating = false;
 					persistUserConfig(parseUrlHost(m_currentUrl));
 					std::cout << "TOTP setup for " << userName << " success." << std::endl;
@@ -1796,7 +1739,7 @@ bool CommandDispatcher::isAppExist(const std::string &appName)
 std::map<std::string, bool> CommandDispatcher::getAppList()
 {
 	std::map<std::string, bool> apps;
-	auto jsonValue = this->viewAllApp();
+	auto jsonValue = this->listApps();
 	for (auto &item : jsonValue.items())
 	{
 		auto appJson = item.value();

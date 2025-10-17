@@ -9,7 +9,7 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 def get_version():
     """PyPI package version"""
-    return "2.0.2"
+    return "2.0.3"
 
 
 # Dependencies
