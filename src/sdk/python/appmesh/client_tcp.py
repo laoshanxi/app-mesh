@@ -2,6 +2,7 @@
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
 # Standard library imports
+from http import HTTPStatus
 import json
 from pathlib import Path
 import socket
@@ -114,7 +115,7 @@ class AppMeshClientTCP(AppMeshClient):
         """Get the current access token."""
         return self._token
 
-    def _request_http(self, method: AppMeshClient._Method, path: str, query: Optional[dict] = None, header: Optional[dict] = None, body=None) -> requests.Response:
+    def _request_http(self, method: AppMeshClient._Method, path: str, query: Optional[dict] = None, header: Optional[dict] = None, body=None, raise_on_fail: bool = True) -> requests.Response:
         """Send HTTP request over TCP transport.
 
         Args:
@@ -187,6 +188,11 @@ class AppMeshClientTCP(AppMeshClient):
         # Set content type
         if appmesh_resp.body_msg_type:
             response.headers["Content-Type"] = appmesh_resp.body_msg_type
+
+        if raise_on_fail and response.status_code != HTTPStatus.PRECONDITION_REQUIRED:
+            response.reason = str(response._content)
+            response.url = f"{str(self.tcp_transport)}/{path.lstrip('/')}"
+            response.raise_for_status()
 
         return AppMeshClient._EncodingResponse(response)
 

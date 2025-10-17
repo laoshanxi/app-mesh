@@ -43,3 +43,8 @@ updates:
     directory: /src/sdk/python
     schedule:
       interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /src/sdk/rust
+    schedule:
+      interval: weekly

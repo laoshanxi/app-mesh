@@ -8,15 +8,15 @@
 #include <nlohmann/json.hpp>
 
 #include "../common/Utility.h"
+#include "../sdk/cpp/ClientHttp.h"
 
-struct CurlResponse;
 namespace po = boost::program_options;
 class ACE_Sig_Action;
 
 //////////////////////////////////////////////////////////////////////////
 // Command Line arguments parse and request/print
 //////////////////////////////////////////////////////////////////////////
-class CommandDispatcher
+class CommandDispatcher : public ClientHttp
 {
 public:
 	explicit CommandDispatcher(int argc, char *argv[]);
@@ -56,15 +56,12 @@ private:
 	int cmdInitRandomPassword();
 
 public:
-	std::shared_ptr<CurlResponse> requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
-
 	std::string getLoginUser();
 	std::string acquireAuthToken();
 	std::string getAuthenUser();
 	std::string getAuthToken();
-	std::string readPersistLastHost(const std::string &defaultAddress);
+	std::string readPersistLastHost();
 	void persistUserConfig(const std::string &hostName);
-	std::string login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience);
 	static std::string getAndCreateConfigDir();
 	static std::string getAndCreateCookieDirectory(const std::string &host);
 
@@ -79,13 +76,13 @@ private:
 	int inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void setupInterruptHandler(const std::string &appName);
 	void teardownInterruptHandler();
-	std::string parseOutputMessage(std::shared_ptr<CurlResponse> &resp);
-	int runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds);
-	const std::string getAppMeshUrl();
+	std::shared_ptr<int> runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds);
+	std::string getDefaultURL();
+	void initClient(const std::string &url);
 	const std::string getPosixTimezone();
-	const std::string parseUrlHost(const std::string &url);
-	const std::string parseUrlPort(const std::string &url);
-	void setCurrentUrl(const std::string &url);
+	static std::string hostSafeDir(const std::string &host);
+
+	void setCurrentUrl(const std::string &userSpecifyUrl);
 
 private:
 	using CommandHandler = std::function<int()>;
@@ -100,5 +97,4 @@ private:
 	std::string m_currentUrl;
 	std::string m_username;
 	std::string m_userpwd;
-	std::string m_forwardTo;
 };

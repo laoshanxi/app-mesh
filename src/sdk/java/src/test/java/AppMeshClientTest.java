@@ -35,7 +35,7 @@ public class AppMeshClientTest {
     public void tearDown() {
         LOGGER.info("tearDown");
         if (client != null) {
-            client.logoff();
+            client.logout();
             client = null;
         }
     }
@@ -49,18 +49,18 @@ public class AppMeshClientTest {
         token = client.renewToken("P1D");
         assertNotNull(token, "Renew should return a non-null token");
 
-        JSONArray apps = client.viewAllApps();
-        assertNotNull(apps, "viewAllApps should return a non-null JSONArray");
+        JSONArray apps = client.listApps();
+        assertNotNull(apps, "listApps should return a non-null JSONArray");
         System.out.println("All applications: " + apps.toString(2));
 
-        JSONObject pingApp = client.viewApp("ping");
+        JSONObject pingApp = client.getApp("ping");
         assertNotNull(pingApp, "viewApp for 'ping' should return a non-null JSONObject");
         System.out.println("Ping application: " + pingApp.toString(2));
 
         boolean authenticated = client.authenticate(token, "app-view", "");
         assertTrue(authenticated, "User should be authenticated with the token");
 
-        boolean loggedOut = client.logoff();
+        boolean loggedOut = client.logout();
         assertTrue(loggedOut, "User should be successfully logged out");
     }
 
@@ -120,8 +120,8 @@ public class AppMeshClientTest {
     @Test
     public void testUser() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W", "");
-        System.out.println(client.viewUserPermissions().toString());
-        System.out.println(client.viewSelf().toString());
+        System.out.println(client.getUserPermissions().toString());
+        System.out.println(client.getCurrentUser().toString());
         System.out.println(client.viewRoles().toString());
     }
 
@@ -136,7 +136,7 @@ public class AppMeshClientTest {
         assertNotNull(addedApp, "addApp should return a non-null JSONObject");
         assertEquals("testApp", addedApp.getString("name"), "Added app should have the correct name");
 
-        JSONObject viewedApp = client.viewApp("testApp");
+        JSONObject viewedApp = client.getApp("testApp");
         assertNotNull(viewedApp, "viewApp for 'testApp' should return a non-null JSONObject");
         assertEquals("testApp", viewedApp.getString("name"), "Viewed app should have the correct name");
     }
@@ -144,19 +144,19 @@ public class AppMeshClientTest {
     @Test
     public void testHostResources() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W", "");
-        System.out.println(client.viewHostResources().toString());
-        System.out.println(client.viewConfig().toString());
+        System.out.println(client.getHostResources().toString());
+        System.out.println(client.getConfig().toString());
         assertEquals("DEBUG", client.setLogLevel("DEBUG").toString());
     }
 
     @Test
     public void testTag() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W", "");
-        System.out.println(client.viewTags().toString());
+        System.out.println(client.getTags().toString());
         System.out.println(client.addTag("ABC", "DEF"));
-        assertTrue(client.viewTags().containsKey("ABC"));
+        assertTrue(client.getTags().containsKey("ABC"));
         assertTrue(client.deleteTag("ABC"));
-        assertTrue(!client.viewTags().containsKey("ABC"));
+        assertTrue(!client.getTags().containsKey("ABC"));
 
         System.out.println(client.getMetrics());
     }

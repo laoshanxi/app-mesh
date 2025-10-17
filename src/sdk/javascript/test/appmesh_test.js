@@ -27,19 +27,19 @@ async function test() {
 
     // User and Role tests
     console.log('\nTesting user permissions...')
-    console.log('Permissions:', await client.view_user_permissions())
-    console.log('Roles:', await client.view_roles())
-    console.log('Users:', await client.view_users())
-    console.log('Self:', await client.view_self())
+    console.log('Permissions:', await client.get_user_permissions())
+    console.log('Roles:', await client.list_roles())
+    console.log('Users:', await client.list_users())
+    console.log('Self:', await client.get_current_user())
 
     // View configuration test
     console.log('\nTesting view_config...')
-    const config = await client.view_config()
+    const config = await client.get_config()
     console.log('Configuration:', JSON.stringify(config, null, 2))
 
     // View resources test
     console.log('\nTesting view_host_resources...')
-    const resources = await client.view_host_resources()
+    const resources = await client.get_host_resources()
     console.log('Resources:', JSON.stringify(resources, null, 2))
 
     // Set log level test
@@ -68,11 +68,11 @@ async function test() {
 
     // View applications test
     console.log('\nTesting view_all_apps...')
-    const apps = await client.view_all_apps()
+    const apps = await client.list_apps()
     console.log('Applications:', JSON.stringify(apps, null, 2))
 
     // View specific app
-    const app_view = await client.view_app('ping')
+    const app_view = await client.get_app('ping')
     console.log('App view:', app_view)
 
     // Check app health
@@ -130,14 +130,14 @@ async function test() {
     console.log('totp_secret:', totp_secret)
     const code = node2fa.generateToken(totp_secret)
     console.log(code)
-    //const totp_setup = await client.setup_totp(code);
+    //const totp_setup = await client.enable_totp(code);
     //console.log("totp_setup:", totp_setup);
     const totp_disable = await client.disable_totp()
     console.log('totp_disable:', totp_disable)
     */
 
     // Logout test
-    await client.logoff()
+    await client.logout()
     console.log('Logged out successfully')
 
     await client.login(username, password)
