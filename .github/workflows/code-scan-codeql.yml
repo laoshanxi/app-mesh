@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ["go", "python", "javascript", "java", "rust", "cpp"]
+        language: ["go", "python", "javascript", "java", "rust"]
         # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python', 'rust' ]
         # Learn more:
         # https://docs.github.com/en/free-pro-team@latest/github/finding-security-vulnerabilities-and-errors-in-your-code/configuring-code-scanning#changing-the-languages-that-are-analyzed
@@ -72,19 +72,11 @@ jobs:
 
       - name: Build Rust project
         if: matrix.language == 'rust'
+        env:
+          RUSTFLAGS: "-D warnings -A dead_code"
         run: |
           cd src/sdk/rust
           cargo build
-
-      - name: Build CPP project in container
-        if: matrix.language == 'cpp'
-        run: |
-          docker run --rm -v ${{ github.workspace }}:/workspace laoshanxi/appmesh:build_ubuntu /bin/bash --login -c "
-            cd /workspace
-            mkdir -p build && cd build
-            cmake ..
-            make -j$(nproc)
-          "
 
       # ℹ️ Command-line programs to run using the OS shell.
       # 📚 https://git.io/JvXDl

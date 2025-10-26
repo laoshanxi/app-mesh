@@ -9,6 +9,7 @@ mod error;
 mod models;
 mod persistent_jar;
 mod requester;
+mod response_ext;
 mod tcp_messages;
 mod tcp_transport;
 

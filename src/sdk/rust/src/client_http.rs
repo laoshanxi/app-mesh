@@ -19,6 +19,7 @@ use crate::error::AppMeshError;
 use crate::models::*;
 use crate::persistent_jar::PersistentJar;
 use crate::requester::Requester;
+use crate::response_ext::ResponseExt;
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
@@ -76,13 +77,24 @@ impl RequesterHttp {
         })
     }
 
+    /// Convert reqwest::Response to http::Response<Bytes>
     async fn to_http_response(resp: reqwest::Response) -> Result<http::Response<Bytes>> {
-        let (status, headers, body) = (resp.status(), resp.headers().clone(), resp.bytes().await?);
+        let status = resp.status();
+        let headers = resp.headers().clone();
+        let body = resp.bytes().await?;
 
         let mut builder = http::Response::builder().status(status);
-        *builder.headers_mut().unwrap() = headers;
 
-        let http_resp = builder.body(body).expect("Building http::Response should not fail");
+        // Copy all headers to the http::Response
+        if let Some(header_map) = builder.headers_mut() {
+            *header_map = headers;
+        }
+
+        let http_resp = builder.body(body).map_err(|e| AppMeshError::RequestFailed {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: format!("Failed to build response: {}", e),
+        })?;
+
         Ok(http_resp)
     }
 
@@ -146,7 +158,7 @@ impl Requester for RequesterHttp {
 
         let mut req = self.client.request(method.clone(), &url);
 
-        // Add common headers (CSRF token, forwarding)
+        // Add common headers (CSRF token, forwarding, user agent)
         let mut all_headers = headers.unwrap_or_default();
         self.add_common_headers(&mut all_headers);
         for (k, v) in all_headers {
@@ -163,7 +175,8 @@ impl Requester for RequesterHttp {
 
         let resp = req.send().await?;
 
-        if fail_on_error && !resp.status().is_success() {
+        // Check for HTTP errors before converting response
+        if fail_on_error && !resp.status().is_success() && resp.status() != StatusCode::PRECONDITION_REQUIRED {
             let status = resp.status();
             let text = resp.text().await?;
             error!("HTTP {} error: {}", status, text);
@@ -235,9 +248,9 @@ impl AppMeshClient {
         cookie_file: Option<String>,
     ) -> Result<Arc<Self>> {
         let url = url.unwrap_or_else(|| DEFAULT_HTTP_URL.to_string());
-        let http_requester = RequesterHttp::new(url.clone(), ssl_verify, ssl_client_cert, cookie_file)?;
+        let requester = RequesterHttp::new(url.clone(), ssl_verify, ssl_client_cert, cookie_file)?;
 
-        Ok(Arc::new(Self { requester: Box::new(http_requester), url }))
+        Ok(Arc::new(Self { requester: Box::new(requester), url }))
     }
 
     /// Create AppMeshClient with custom requester (for TCP or other implementations)
@@ -285,21 +298,22 @@ impl AppMeshClient {
             headers.insert(HTTP_HEADER_JWT_TOTP.to_string(), totp_code.to_string());
         }
 
-        let response = self.requester.request(Method::POST, "/appmesh/login", None, Some(headers), None, false).await?;
+        let resp = self.requester.request(Method::POST, "/appmesh/login", None, Some(headers), None, false).await?;
 
         // Handle TOTP challenge (HTTP 428)
-        if response.status() == StatusCode::PRECONDITION_REQUIRED {
-            let json: Value = serde_json::from_slice(response.body())?;
+        if resp.status() == StatusCode::PRECONDITION_REQUIRED {
+            let json: Value = resp.json()?;
             if let Some(challenge) = json.get(REST_TEXT_TOTP_CHALLENGE_JSON_KEY) {
                 return Ok(challenge.as_str().unwrap_or("").to_string());
             }
-        } else if response.status() != StatusCode::OK {
-            let text = String::from_utf8_lossy(response.body()).to_string();
+            return Err(AppMeshError::AuthenticationFailed(json.to_string()));
+        } else if resp.status() != StatusCode::OK {
+            let text = resp.text()?;
             return Err(AppMeshError::AuthenticationFailed(text));
         }
 
         // Extract token from response and notify requester
-        let json: Value = serde_json::from_slice(response.body())?;
+        let json: Value = resp.json()?;
         let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
         self.requester.handle_token_update(token);
 
@@ -319,13 +333,13 @@ impl AppMeshClient {
         });
 
         let body_bytes: Vec<u8> = serde_json::to_vec(&body).unwrap();
-        let response = self
+        let resp = self
             .requester
             .request(Method::POST, "/appmesh/totp/validate", Some(&body_bytes), Some(headers), None, true)
             .await?;
 
         // Extract token from response and notify requester
-        let json: Value = serde_json::from_slice(response.body())?;
+        let json: Value = resp.json()?;
         let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
         self.requester.handle_token_update(token);
 
@@ -357,7 +371,7 @@ impl AppMeshClient {
         let resp = self.requester.request(Method::POST, "/appmesh/auth", None, Some(headers), None, false).await?;
 
         let is_ok = resp.status() == StatusCode::OK;
-        let text = String::from_utf8_lossy(resp.body()).to_string();
+        let text = resp.text()?;
 
         // If authentication succeeded and apply is true, update token
         if is_ok && apply {
@@ -384,11 +398,11 @@ impl AppMeshClient {
             headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.to_string(), sec.to_string());
         }
 
-        let response =
+        let resp =
             self.requester.request(Method::POST, "/appmesh/token/renew", None, Some(headers), None, true).await?;
 
         // Extract token from response and notify requester
-        let json: Value = serde_json::from_slice(response.body())?;
+        let json: Value = resp.json()?;
         let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
         self.requester.handle_token_update(token);
 
@@ -399,7 +413,7 @@ impl AppMeshClient {
     pub async fn get_totp_secret(&self) -> Result<String> {
         let resp = self.requester.request(Method::POST, "/appmesh/totp/secret", None, None, None, true).await?;
 
-        let val: Value = serde_json::from_slice(resp.body())?;
+        let val: Value = resp.json()?;
         let encoded =
             val[HTTP_BODY_KEY_MFA_URI].as_str().ok_or_else(|| AppMeshError::Other("Invalid MFA URI".to_string()))?;
 
@@ -434,11 +448,10 @@ impl AppMeshClient {
         let mut headers = HashMap::new();
         headers.insert(HTTP_HEADER_JWT_TOTP.to_string(), totp.to_string());
 
-        let response =
-            self.requester.request(Method::POST, "/appmesh/totp/setup", None, Some(headers), None, true).await?;
+        let resp = self.requester.request(Method::POST, "/appmesh/totp/setup", None, Some(headers), None, true).await?;
 
         // Extract token from response and notify requester
-        let json: Value = serde_json::from_slice(response.body())?;
+        let json: Value = resp.json()?;
         let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
         self.requester.handle_token_update(token);
 
@@ -475,14 +488,14 @@ impl AppMeshClient {
 
     /// Get current user information
     pub async fn get_current_user(&self) -> Result<Value> {
-        let r = self.requester.request(Method::GET, "/appmesh/user/self", None, None, None, true).await?;
-        Ok(serde_json::from_slice(r.body())?)
+        let resp = self.requester.request(Method::GET, "/appmesh/user/self", None, None, None, true).await?;
+        Ok(resp.json()?)
     }
 
     /// List all users
     pub async fn list_users(&self) -> Result<Value> {
-        let r = self.requester.request(Method::GET, "/appmesh/users", None, None, None, true).await?;
-        Ok(serde_json::from_slice(r.body())?)
+        let resp = self.requester.request(Method::GET, "/appmesh/users", None, None, None, true).await?;
+        Ok(resp.json()?)
     }
 
     /// Add a new user
@@ -517,33 +530,33 @@ impl AppMeshClient {
 
     /// List all groups
     pub async fn list_groups(&self) -> Result<Vec<String>> {
-        let r = self.requester.request(Method::GET, "/appmesh/user/groups", None, None, None, true).await?;
+        let resp = self.requester.request(Method::GET, "/appmesh/user/groups", None, None, None, true).await?;
 
-        let json: Value = serde_json::from_slice(r.body())?;
+        let json: Value = resp.json()?;
         Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
     }
 
     /// Get current user's permissions
     pub async fn get_user_permissions(&self) -> Result<Vec<String>> {
-        let r = self.requester.request(Method::GET, "/appmesh/user/permissions", None, None, None, true).await?;
+        let resp = self.requester.request(Method::GET, "/appmesh/user/permissions", None, None, None, true).await?;
 
-        let json: Value = serde_json::from_slice(r.body())?;
+        let json: Value = resp.json()?;
         Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
     }
 
     /// List all available permissions
     pub async fn list_permissions(&self) -> Result<Vec<String>> {
-        let r = self.requester.request(Method::GET, "/appmesh/permissions", None, None, None, true).await?;
+        let resp = self.requester.request(Method::GET, "/appmesh/permissions", None, None, None, true).await?;
 
-        let json: Value = serde_json::from_slice(r.body())?;
+        let json: Value = resp.json()?;
         Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
     }
 
     /// List all roles
     pub async fn list_roles(&self) -> Result<HashMap<String, Vec<String>>> {
-        let r = self.requester.request(Method::GET, "/appmesh/roles", None, None, None, true).await?;
+        let resp = self.requester.request(Method::GET, "/appmesh/roles", None, None, None, true).await?;
 
-        let json: Value = serde_json::from_slice(r.body())?;
+        let json: Value = resp.json()?;
         let mut roles = HashMap::new();
 
         if let Some(obj) = json.as_object() {
@@ -582,15 +595,15 @@ impl AppMeshClient {
     /// List all applications
     pub async fn list_apps(&self) -> Result<Vec<Application>> {
         let resp = self.requester.request(Method::GET, "/appmesh/applications", None, None, None, true).await?;
-        let apps: Vec<Application> = serde_json::from_slice(resp.body())
-            .map_err(|e| AppMeshError::Other(format!("Deserialize error: {}", e)))?;
+        let apps: Vec<Application> = resp.json()?;
         Ok(apps)
     }
 
     /// Get application details
     pub async fn get_app(&self, name: &str) -> Result<Application> {
-        let r = self.requester.request(Method::GET, &format!("/appmesh/app/{}", name), None, None, None, true).await?;
-        Ok(serde_json::from_slice(r.body())?)
+        let resp =
+            self.requester.request(Method::GET, &format!("/appmesh/app/{}", name), None, None, None, true).await?;
+        Ok(resp.json()?)
     }
 
     /// Get application output
@@ -625,38 +638,37 @@ impl AppMeshClient {
             .request(Method::GET, &format!("/appmesh/app/{}/output", app), None, None, Some(query), false)
             .await?;
 
+        let headers = resp.headers().clone();
         let mut out = AppOutput {
             status_code: resp.status().as_u16(),
-            output: String::new(),
+            output: resp.text()?,
             output_position: 0,
             exit_code: None,
         };
 
-        if let Some(pos) = resp.headers().get(HTTP_HEADER_KEY_OUTPUT_POS) {
+        if let Some(pos) = headers.get(HTTP_HEADER_KEY_OUTPUT_POS) {
             if let Ok(s) = pos.to_str() {
                 out.output_position = s.parse().unwrap_or(0);
             }
         }
 
-        if let Some(code) = resp.headers().get(HTTP_HEADER_KEY_EXIT_CODE) {
+        if let Some(code) = headers.get(HTTP_HEADER_KEY_EXIT_CODE) {
             if let Ok(s) = code.to_str() {
                 out.exit_code = Some(s.parse().unwrap_or(0));
             }
         }
-
-        out.output = String::from_utf8_lossy(resp.body()).to_string();
 
         Ok(out)
     }
 
     /// Check application health
     pub async fn check_app_health(&self, app: &str) -> Result<bool> {
-        let r = self
+        let resp = self
             .requester
             .request(Method::GET, &format!("/appmesh/app/{}/health", app), None, None, None, true)
             .await?;
 
-        let text = String::from_utf8_lossy(r.body()).to_string();
+        let text = resp.text()?;
         Ok(text.trim() == "0")
     }
 
@@ -671,11 +683,11 @@ impl AppMeshClient {
             .ok_or_else(|| AppMeshError::ConfigurationError("App name required".to_string()))?;
 
         let body_bytes: Vec<u8> = serde_json::to_vec(&app).unwrap();
-        let r = self
+        let resp = self
             .requester
             .request(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true)
             .await?;
-        Ok(serde_json::from_slice(r.body())?)
+        Ok(resp.json()?)
     }
 
     /// Delete an application
@@ -724,8 +736,7 @@ impl AppMeshClient {
             }
         }
 
-        let output = String::from_utf8_lossy(resp.body()).to_string();
-        Ok((code, output))
+        Ok((code, resp.text()?))
     }
 
     /// Run application asynchronously
@@ -735,12 +746,12 @@ impl AppMeshClient {
         query.insert(HTTP_QUERY_KEY_LIFECYCLE.to_string(), lifecycle.to_string());
 
         let body_bytes: Vec<u8> = serde_json::to_vec(&app).unwrap();
-        let r = self
+        let resp = self
             .requester
             .request(Method::POST, "/appmesh/app/run", Some(&body_bytes), None, Some(query), true)
             .await?;
 
-        let json: Value = serde_json::from_slice(r.body())?;
+        let json: Value = resp.json()?;
         Ok(AppRun {
             client: Arc::clone(self),
             app_name: json[JSON_KEY_APP_NAME]
@@ -760,25 +771,25 @@ impl AppMeshClient {
         let start_time = std::time::Instant::now();
 
         loop {
-            let response = self
+            let app_out = self
                 .get_app_output(&run.app_name, last_output_position, 0, 10240, Some(&run.proc_uid), Some(1))
                 .await?;
 
-            last_output_position = response.output_position;
+            last_output_position = app_out.output_position;
 
-            if print_to_std && !response.output.is_empty() {
-                print!("{}", response.output);
+            if print_to_std && !app_out.output.is_empty() {
+                print!("{}", app_out.output);
                 use std::io::Write;
                 std::io::stdout().flush().ok();
             }
 
-            if response.exit_code.is_some()
-                || response.status_code != StatusCode::OK.as_u16()
+            if app_out.exit_code.is_some()
+                || app_out.status_code != StatusCode::OK.as_u16()
                 || (timeout > 0 && start_time.elapsed().as_secs() >= timeout as u64)
             {
                 // Clean up the temporary app
                 let _ = self.delete_app(&run.app_name).await;
-                return Ok(response.exit_code);
+                return Ok(app_out.exit_code);
             }
 
             // Small delay before next poll
@@ -792,22 +803,22 @@ impl AppMeshClient {
         query.insert(HTTP_QUERY_KEY_TIMEOUT.to_string(), timeout.to_string());
 
         let body_bytes: Vec<u8> = serde_json::to_vec(&data).unwrap();
-        let r = self
+        let resp = self
             .requester
             .request(Method::POST, &format!("/appmesh/app/{}/task", app), Some(&body_bytes), None, Some(query), true)
             .await?;
 
-        Ok(String::from_utf8_lossy(r.body()).to_string())
+        Ok(resp.text()?)
     }
 
     /// Cancel a running task
     pub async fn cancel_task(&self, app: &str) -> Result<bool> {
-        let r = self
+        let resp = self
             .requester
             .request(Method::DELETE, &format!("/appmesh/app/{}/task", app), None, None, None, false)
             .await?;
 
-        Ok(r.status() == StatusCode::OK)
+        Ok(resp.status() == StatusCode::OK)
     }
 
     //
@@ -816,21 +827,21 @@ impl AppMeshClient {
 
     /// Get host resource information
     pub async fn get_host_resources(&self) -> Result<serde_json::Value> {
-        let r = self.requester.request(Method::GET, "/appmesh/resources", None, None, None, true).await?;
-        Ok(serde_json::from_slice(r.body())?)
+        let resp = self.requester.request(Method::GET, "/appmesh/resources", None, None, None, true).await?;
+        Ok(resp.json()?)
     }
 
     /// Get system configuration
     pub async fn get_config(&self) -> Result<Value> {
-        let r = self.requester.request(Method::GET, "/appmesh/config", None, None, None, true).await?;
-        Ok(serde_json::from_slice(r.body())?)
+        let resp = self.requester.request(Method::GET, "/appmesh/config", None, None, None, true).await?;
+        Ok(resp.json()?)
     }
 
     /// Set system configuration
     pub async fn set_config(&self, config: Value) -> Result<Value> {
         let body_bytes: Vec<u8> = serde_json::to_vec(&config).unwrap();
-        let r = self.requester.request(Method::POST, "/appmesh/config", Some(&body_bytes), None, None, true).await?;
-        Ok(serde_json::from_slice(r.body())?)
+        let resp = self.requester.request(Method::POST, "/appmesh/config", Some(&body_bytes), None, None, true).await?;
+        Ok(resp.json()?)
     }
 
     /// Set log level
@@ -847,8 +858,8 @@ impl AppMeshClient {
 
     /// Get Prometheus metrics
     pub async fn get_metrics(&self) -> Result<String> {
-        let r = self.requester.request(Method::GET, "/appmesh/metrics", None, None, None, true).await?;
-        Ok(String::from_utf8_lossy(r.body()).to_string())
+        let resp = self.requester.request(Method::GET, "/appmesh/metrics", None, None, None, true).await?;
+        Ok(resp.text()?)
     }
 
     //
@@ -857,8 +868,8 @@ impl AppMeshClient {
 
     /// Get all tags
     pub async fn get_tags(&self) -> Result<Value> {
-        let response = self.requester.request(Method::GET, "/appmesh/labels", None, None, None, true).await?;
-        Ok(serde_json::from_slice(response.body())?)
+        let resp = self.requester.request(Method::GET, "/appmesh/labels", None, None, None, true).await?;
+        Ok(resp.json()?)
     }
 
     /// Add a tag
@@ -890,10 +901,11 @@ impl AppMeshClient {
 
         // Clone headers before consuming the response
         let resp_headers = resp.headers().clone();
+        let body = resp.bytes();
 
         // Write file content
         let local_path = Path::new(local_file);
-        fs::write(local_path, resp.body())?;
+        fs::write(local_path, body)?;
 
         // Apply file attributes on Unix systems
         if preserve_permissions {

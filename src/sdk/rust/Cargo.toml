@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "AppMesh SDK for Rust"
 license = "MIT"
-authors = ["AppMesh Contributors"]
+authors = ["laoshanxi"]
 repository = "https://github.com/laoshanxi/app-mesh"
 documentation = "https://github.com/laoshanxi/app-mesh/tree/main/docs"
 readme = "README.md"
-keywords = ["appmesh", "sdk", "microservices", "container"]
+keywords = ["appmesh", "sdk", "microservices", "in-memory-computing"]
 categories = ["api-bindings", "network-programming"]
 
 [lib]
@@ -43,6 +43,7 @@ http = "1.3"
 thiserror = "2.0.17"
 bytes = "1.10.1"
 async-trait = "0.1.89"
+encoding_rs = "0.8.35"
 
 [dev-dependencies]
 mockito = "1.7"

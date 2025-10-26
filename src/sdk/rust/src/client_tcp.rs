@@ -129,19 +129,19 @@ impl Requester for RequesterTcp {
             .map_err(|e| AppMeshError::ConnectionError(e.to_string()))?
             .ok_or_else(|| AppMeshError::ConnectionError("Socket connection broken".into()))?;
 
-        let response =
+        let resp =
             ResponseMessage::deserialize(&resp_data).map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
 
-        let status = StatusCode::from_u16(response.http_status as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let status = StatusCode::from_u16(resp.http_status as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
         if fail_on_error && status != StatusCode::PRECONDITION_REQUIRED && !status.is_success() {
             return Err(AppMeshError::RequestFailed {
                 status,
-                message: String::from_utf8_lossy(&response.body).to_string(),
+                message: String::from_utf8_lossy(&resp.body).to_string(),
             });
         }
 
-        Self::to_http_response(response)
+        Self::to_http_response(resp)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
