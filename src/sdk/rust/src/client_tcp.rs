@@ -30,12 +30,12 @@ const HTTP_HEADER_KEY_X_FILE_PATH: &str = "X-File-Path";
 pub type Result<T> = std::result::Result<T, AppMeshError>;
 
 /// TCP-based requester implementation
-pub struct RequesterTcp {
+pub struct TCPRequester {
     tcp_transport: Arc<Mutex<TCPTransport>>,
     token: Arc<Mutex<Option<String>>>,
 }
 
-impl RequesterTcp {
+impl TCPRequester {
     pub fn new(
         tcp_address: Option<(String, u16)>,
         ssl_verify: Option<String>,
@@ -93,8 +93,8 @@ impl RequesterTcp {
 }
 
 #[async_trait]
-impl Requester for RequesterTcp {
-    async fn request(
+impl Requester for TCPRequester {
+    async fn send(
         &self,
         method: Method,
         path: &str,
@@ -193,7 +193,7 @@ impl AppMeshClientTCP {
         let tcp_transport = Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify, ssl_client_cert_pair)));
 
         // Create TcpRequester with shared transport
-        let tcp_requester = RequesterTcp::with_shared_transport(Arc::clone(&tcp_transport));
+        let tcp_requester = TCPRequester::with_shared_transport(Arc::clone(&tcp_transport));
 
         // Create URL for the client (used for informational purposes)
         let url = format!("tcp://{}:{}", tcp_address.0, tcp_address.1);

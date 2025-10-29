@@ -5,14 +5,12 @@
        src="https://img.shields.io/coverity/scan/21528.svg"/>
 </a>
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh/badge)](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh)
-[![release.badge]][release.url] [![pypi.badge]][pypi.url] [![npm.badge]][npm.url]
+[![release.badge]][release.url] [![pypi.badge]][pypi.url] [![npm.badge]][npm.url] [![cargo.badge]][cargo.url]
 
 # App Mesh: Advanced Application Management Platform
 
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/whatis.gif" align=center /></div>
 App Mesh is an open-source, multi-tenant application management platform designed for cloud-native environments. It efficiently manages, schedules, and monitors both microservices and traditional applications, offering a lightweight alternative to Kubernetes. App Mesh bridges the gap between simple process managers and complex container orchestration systems, making it ideal for organizations seeking to modernize their infrastructure without adopting full container-native complexity. Supporting both containerized and native applications, it provides a versatile solution for diverse enterprise needs.
-
-<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
 ## Features
 
@@ -29,6 +27,8 @@ SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp) <br> [R
 ## Getting started
 
 Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Install.html) to learn how to install App Mesh via Docker Compose or natively and set up an App Mesh cluster.
+
+<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
 ## Documentation
 
@@ -84,6 +84,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 
 ## Success
 
+- [In-memory remote task execute](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
 - [Build a powerful monitor system with Grafana/Prometheus/Loki](https://app-mesh.readthedocs.io/en/latest/success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.html)
 - [Customize application start behavior](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)
 - [Open service broker support local PV for Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
@@ -95,7 +96,6 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [Python parallel run](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
 - [Secure consul cluster](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
 - [JWT service with REST and UI](https://github.com/laoshanxi/app-mesh/blob/main/script/docker-compose-auth-service.yaml)
-- [Remote task execute](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
 
 ---
 
@@ -115,19 +115,21 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [Crypto++](https://www.cryptopp.com)
 - [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
 
-[language.url]:   https://isocpp.org/
+[language.url]: https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg
-[standard.url]:   https://en.wikipedia.org/wiki/C%2B%2B#Standardization
+[standard.url]: https://en.wikipedia.org/wiki/C%2B%2B#Standardization
 [standard.badge]: https://img.shields.io/badge/C%2B%2B-11%2F14%2F17-blue.svg
-[release.url]:    https://github.com/laoshanxi/app-mesh/releases
-[release.badge]:  https://img.shields.io/github/v/release/laoshanxi/app-mesh?label=Github%20package
-[docker.url]:     https://hub.docker.com/repository/docker/laoshanxi/appmesh
-[docker.badge]:   https://img.shields.io/docker/pulls/laoshanxi/appmesh.svg
-[cockpit.url]:    https://github.com/laoshanxi/app-mesh-ui
-[cockpit.badge]:  https://img.shields.io/badge/Cockpit-app--mesh--ui-blue?logo=appveyor
-[unittest.url]:   https://github.com/catchorg/Catch2
+[release.url]: https://github.com/laoshanxi/app-mesh/releases
+[release.badge]: https://img.shields.io/github/v/release/laoshanxi/app-mesh?label=Github%20package
+[docker.url]: https://hub.docker.com/repository/docker/laoshanxi/appmesh
+[docker.badge]: https://img.shields.io/docker/pulls/laoshanxi/appmesh.svg
+[cockpit.url]: https://github.com/laoshanxi/app-mesh-ui
+[cockpit.badge]: https://img.shields.io/badge/Cockpit-app--mesh--ui-blue?logo=appveyor
+[unittest.url]: https://github.com/catchorg/Catch2
 [unittest.badge]: https://img.shields.io/badge/UnitTest-Catch2-blue?logo=appveyor
 [pypi.badge]: https://img.shields.io/pypi/v/appmesh?label=PyPI%3Aappmesh
 [pypi.url]: https://pypi.org/project/appmesh/
 [npm.badge]: https://img.shields.io/npm/v/appmesh?label=npm%3Aappmesh
 [npm.url]: https://www.npmjs.com/package/appmesh
+[cargo.badge]: https://img.shields.io/crates/v/appmesh
+[cargo.url]: https://crates.io/crates/appmesh

@@ -15,32 +15,27 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/pquerna/otp"
+	"go.uber.org/atomic"
 )
 
 // AppMeshClient interacts with App Mesh REST APIs.
 type AppMeshClient struct {
-	Proxy            Requester
+	req              Requester
 	forwardTo        string // Forward target host
-	jwtToken         string
+	cookieFile       string
 	sslClientCert    string // Client SSL certificate file.
 	sslClientCertKey string // Client SSL certificate key file.
 	sslCAFile        string // Trusted CA file/dir.
 
-	autoRefreshToken  bool
-	tokenRefreshTimer *time.Timer
-
-	mutex sync.RWMutex // RWMutex for better read performance
 }
 
 // Option for NewHttpClient
 type Option struct {
 	AppMeshUri string // URI of the App Mesh server; use "https://127.0.0.1:6060" for HTTP or "127.0.0.1:6059" for TCP.
-	Token      string // JWT authentication token for API requests.
+	CookieFile string // Cookie file path for persistence
 	ForwardTo  string // The target host to which all requests will be forwarded; with this set, AppMeshUri will act as a proxy to forward requests.
 
 	SslClientCertificateFile    string // Path to the client certificate file (PEM format), leave empty to disable client authentication.
@@ -55,11 +50,13 @@ type Option struct {
 
 	HttpTimeoutMinutes *time.Duration // Timeout for http.Client requests in minutes.
 	tcpOnly            *bool          // Indicates if the client is for TCP connections only, skip create http.Client.
-	AutoRefreshToken   bool           // Enable automatic token refresh before expiration.
 }
 
-// NewHttpClient builds a new client instance for interacting with App Mesh REST APIs.
-func NewHttpClient(options Option) *AppMeshClient {
+// NewHTTPClient builds a new client instance for interacting with App Mesh REST APIs.
+func NewHTTPClient(options Option) (*AppMeshClient, error) {
+	return newHTTPClientWithRequester(options, nil)
+}
+func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, error) {
 	clientCertFile := options.SslClientCertificateFile
 	clientCertKeyFile := options.SslClientCertificateKeyFile
 	caFile := DEFAULT_CA_FILE
@@ -67,37 +64,43 @@ func NewHttpClient(options Option) *AppMeshClient {
 		caFile = *options.SslTrustedCA
 	}
 
-	var httpClient *http.Client
-	if options.tcpOnly == nil || !*options.tcpOnly {
-		httpClient = newHttpClient(clientCertFile, clientCertKeyFile, caFile)
-		if options.HttpTimeoutMinutes != nil {
-			httpClient.Timeout = *options.HttpTimeoutMinutes
-		}
-	}
-
 	baseURL := options.AppMeshUri
 	if baseURL == "" {
 		baseURL = DEFAULT_HTTP_URI
 	}
+	parsed, err := ParseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
 
-	httpRequester := &RequesterHttp{
-		baseURL:    baseURL,
-		httpClient: httpClient,
+	var req Requester
+	if r != nil {
+		req = r
+	} else {
+		var httpClient *HTTPConnection
+
+		if options.tcpOnly == nil || !*options.tcpOnly {
+			httpClient = newHTTPConnection(clientCertFile, clientCertKeyFile, caFile, options.CookieFile)
+			if options.HttpTimeoutMinutes != nil {
+				httpClient.Timeout = *options.HttpTimeoutMinutes
+			}
+		}
+
+		req = &HTTPRequester{
+			baseURL:        *parsed,
+			httpClient:     httpClient,
+			forwardingHost: atomic.NewString(options.ForwardTo),
+		}
 	}
 
 	c := &AppMeshClient{
-		Proxy:             httpRequester,
-		sslClientCert:     clientCertFile,
-		sslClientCertKey:  clientCertKeyFile,
-		sslCAFile:         caFile,
-		autoRefreshToken:  options.AutoRefreshToken,
-		tokenRefreshTimer: nil,
+		req:              req,
+		sslClientCert:    clientCertFile,
+		sslClientCertKey: clientCertKeyFile,
+		sslCAFile:        caFile,
 	}
 
-	c.updateForwardTo(options.ForwardTo)
-	c.updateToken(options.Token)
-
-	return c
+	return c, nil
 }
 
 // Login authenticates the user with username/password and optional TOTP code.
@@ -106,10 +109,10 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 		return "", fmt.Errorf("username and password are required")
 	}
 
-	r.updateToken("") // reset token
 	headers := map[string]string{
-		"Authorization":    "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
-		"X-Expire-Seconds": fmt.Sprintf("%d", timeoutSeconds),
+		"Authorization":            "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
+		"X-Expire-Seconds":         fmt.Sprintf("%d", timeoutSeconds),
+		HTTP_HEADER_JWT_SET_COOKIE: strconv.FormatBool(true),
 	}
 	if audience != "" && audience != DEFAULT_JWT_AUDIENCE {
 		headers["X-Audience"] = audience
@@ -128,7 +131,7 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
 			return "", fmt.Errorf("failed to decode JWT response: %w", err)
 		}
-		r.updateToken(result.AccessToken)
+		r.req.handleTokenUpdate(result.AccessToken)
 		return "", nil
 
 	case http.StatusPreconditionRequired:
@@ -180,7 +183,7 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
 			return fmt.Errorf("failed to decode JWT response: %w", err)
 		}
-		r.updateToken(result.AccessToken)
+		r.req.handleTokenUpdate(result.AccessToken)
 		return nil
 	}
 	return fmt.Errorf("TOTP validation failed with status %d: %s", code, string(raw))
@@ -188,27 +191,16 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 
 // Logout logs out the current session and invalidates the token.
 func (r *AppMeshClient) Logout() (bool, error) {
-	token := r.getToken()
-	if token != "" {
-		code, _, _, err := r.post("/appmesh/self/logoff", nil, nil, nil)
-		r.updateToken("")
-		if err != nil {
-			return false, fmt.Errorf("logoff request failed: %w", err)
-		}
-		return code == http.StatusOK, nil
-	}
-	return true, nil
+	code, _, _, err := r.post("/appmesh/self/logoff", nil, nil, nil)
+	r.req.handleTokenUpdate("")
+	return code == http.StatusOK, err
 }
 
 // Authenticate checks token validity and optional permission against the server.
-func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audience string) (bool, error) {
+func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audience string, apply bool) (bool, error) {
 	if jwtToken == "" {
 		return false, fmt.Errorf("JWT token is required")
 	}
-
-	old := r.getToken()
-	r.updateToken(jwtToken)
-	defer r.updateToken(old)
 
 	headers := Headers{}
 	if permission != "" {
@@ -217,19 +209,23 @@ func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audienc
 	if audience != "" && audience != DEFAULT_JWT_AUDIENCE {
 		headers["X-Audience"] = audience
 	}
+	if apply {
+		headers[HTTP_HEADER_JWT_SET_COOKIE] = strconv.FormatBool(true)
+	}
 
 	code, _, _, err := r.post("/appmesh/auth", nil, headers, nil)
 	if err != nil {
 		return false, fmt.Errorf("authentication request failed: %w", err)
+	}
+
+	if apply && code == http.StatusOK {
+		r.req.handleTokenUpdate(jwtToken)
 	}
 	return code == http.StatusOK, nil
 }
 
 // RenewToken renews the current JWT token before expiration.
 func (r *AppMeshClient) RenewToken() (bool, error) {
-	if r.getToken() == "" {
-		return false, fmt.Errorf("no token to renew")
-	}
 	code, raw, _, err := r.post("/appmesh/token/renew", nil, nil, nil)
 	if err != nil {
 		return false, fmt.Errorf("token renewal request failed: %w", err)
@@ -239,7 +235,7 @@ func (r *AppMeshClient) RenewToken() (bool, error) {
 		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
 			return false, fmt.Errorf("failed to decode JWT response: %w", err)
 		}
-		r.updateToken(result.AccessToken)
+		r.req.handleTokenUpdate(result.AccessToken)
 		return true, nil
 	}
 	return false, fmt.Errorf("token renewal failed with status %d: %s", code, string(raw))
@@ -287,7 +283,7 @@ func (r *AppMeshClient) EnableTotp(totpCode string) (string, error) {
 		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
 			return "", fmt.Errorf("failed to decode JWT response: %w", err)
 		}
-		r.updateToken(result.AccessToken)
+		r.req.handleTokenUpdate(result.AccessToken)
 		return result.AccessToken, nil
 	}
 	return "", fmt.Errorf("TOTP setup failed with status %d: %s", code, string(raw))
@@ -463,7 +459,7 @@ func (r *AppMeshClient) AddApp(app Application) (*Application, error) {
 
 	body, err := json.Marshal(app)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal application: %w", err)
+		return nil, fmt.Errorf("failed to marshal application %q: %w", app.Name, err)
 	}
 	code, raw, err := r.put(fmt.Sprintf("/appmesh/app/%s", app.Name), nil, nil, body)
 	if err != nil {
@@ -1026,138 +1022,33 @@ func (r *AppMeshClient) DeleteTag(tagName string) (bool, error) {
 
 // Close releases all resources and stops background timers.
 func (r *AppMeshClient) Close() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	if r.tokenRefreshTimer != nil {
-		r.tokenRefreshTimer.Stop()
-		r.tokenRefreshTimer = nil
-	}
-	// nothing else to close for http.Client (CloseIdleConnections if needed)
+	r.req.Close()
 }
 
 // getForwardTo returns the current forward target host in a thread-safe manner.
 func (r *AppMeshClient) getForwardTo() string {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.forwardTo
+	return r.req.getForwardTo()
 }
 
 // updateForwardTo sets the forward target host in a thread-safe manner.
 func (r *AppMeshClient) updateForwardTo(host string) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.forwardTo = host
+	r.req.setForwardTo(host)
 }
 
-// getToken returns the current JWT token in a thread-safe manner.
-func (r *AppMeshClient) getToken() string {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.jwtToken
+func (r *AppMeshClient) get(path string, params url.Values, headers map[string]string) (int, []byte, http.Header, error) {
+	return r.req.Send(http.MethodGet, path, params, headers, nil)
 }
 
-// updateToken sets the JWT token and manages auto-refresh scheduling in a thread-safe manner.
-func (r *AppMeshClient) updateToken(token string) {
-	r.mutex.Lock()
-	r.jwtToken = token
-
-	shouldSchedule := token != "" && r.autoRefreshToken
-	shouldStop := !shouldSchedule && r.tokenRefreshTimer != nil
-
-	r.mutex.Unlock()
-
-	if shouldSchedule {
-		r.scheduleTokenRefresh() // avoid double lock
-	}
-	if shouldStop {
-		// We need to acquire the lock again to safely stop the timer
-		r.mutex.Lock()
-		if r.tokenRefreshTimer != nil {
-			r.tokenRefreshTimer.Stop()
-			r.tokenRefreshTimer = nil
-		}
-		r.mutex.Unlock()
-	}
+func (r *AppMeshClient) put(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, error) {
+	code, raw, _, err := r.req.Send(http.MethodPut, path, params, headers, bytes.NewBuffer(body))
+	return code, raw, err
 }
 
-// scheduleTokenRefresh calculates and schedules the next token refresh check.
-func (r *AppMeshClient) scheduleTokenRefresh() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	if r.tokenRefreshTimer != nil {
-		r.tokenRefreshTimer.Stop()
-		r.tokenRefreshTimer = nil
-	}
-
-	timeToExpiry := r.getSecondsToExpiryUnsafe()
-	checkInterval := time.Duration(TOKEN_REFRESH_INTERVAL_SECONDS) * time.Second
-
-	if timeToExpiry > 0 {
-		if timeToExpiry <= TOKEN_REFRESH_OFFSET_SECONDS {
-			checkInterval = 1 * time.Second
-		} else {
-			checkInterval = time.Duration(timeToExpiry-TOKEN_REFRESH_OFFSET_SECONDS) * time.Second
-		}
-	}
-
-	r.tokenRefreshTimer = time.AfterFunc(checkInterval, func() {
-		r.checkAndRefreshToken()
-	})
+func (r *AppMeshClient) post(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, http.Header, error) {
+	return r.req.Send(http.MethodPost, path, params, headers, bytes.NewBuffer(body))
 }
 
-// getSecondsToExpiry extracts the expiration time from the JWT token payload.
-func (r *AppMeshClient) getSecondsToExpiry() int64 {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.getSecondsToExpiryUnsafe()
-}
-
-// getSecondsToExpiryUnsafe extracts the expiration time from the JWT token payload (unsafe - no locking).
-func (r *AppMeshClient) getSecondsToExpiryUnsafe() int64 {
-	token := r.jwtToken
-	if token == "" {
-		return 0
-	}
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return 0
-	}
-	payload := parts[1]
-	// base64 URL decode (raw variant)
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(payload)
-	if err != nil {
-		// sometimes padding is required
-		payloadBytes2, err2 := base64.URLEncoding.DecodeString(payload)
-		if err2 != nil {
-			return 0
-		}
-		payloadBytes = payloadBytes2
-	}
-	var claims struct {
-		Exp int64 `json:"exp"`
-	}
-	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
-		return 0
-	}
-	return claims.Exp - time.Now().Unix()
-}
-
-// checkAndRefreshToken attempts to refresh the token if it's near expiration.
-func (r *AppMeshClient) checkAndRefreshToken() {
-	needsRefresh := true
-	timeToExpiry := r.getSecondsToExpiry()
-	if timeToExpiry > TOKEN_REFRESH_OFFSET_SECONDS {
-		needsRefresh = false
-	}
-	if needsRefresh {
-		if _, err := r.RenewToken(); err != nil {
-			fmt.Printf("Token refresh failed: %v\n", err)
-		} else {
-			fmt.Println("Token successfully refreshed")
-		}
-	}
-	if r.autoRefreshToken && r.getToken() != "" {
-		r.scheduleTokenRefresh()
-	}
+func (r *AppMeshClient) delete(path string) (int, []byte, error) {
+	code, raw, _, err := r.req.Send(http.MethodDelete, path, nil, nil, nil)
+	return code, raw, err
 }

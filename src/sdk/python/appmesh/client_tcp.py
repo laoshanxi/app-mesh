@@ -11,6 +11,7 @@ from typing import Optional, Tuple, Union
 
 # Third-party imports
 import requests
+from requests.structures import CaseInsensitiveDict
 
 # Local imports
 from .client_http import AppMeshClient
@@ -72,7 +73,9 @@ class AppMeshClientTCP(AppMeshClient):
             TCP connections require an explicit full-chain CA specification for certificate validation,
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
-        self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=rest_ssl_verify, ssl_client_cert=rest_ssl_client_cert)
+        self.tcp_transport = TCPTransport(
+            address=tcp_address, ssl_verify=rest_ssl_verify, ssl_client_cert=rest_ssl_client_cert
+        )
         self._token = ""
         super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert)
 
@@ -115,7 +118,15 @@ class AppMeshClientTCP(AppMeshClient):
         """Get the current access token."""
         return self._token
 
-    def _request_http(self, method: AppMeshClient._Method, path: str, query: Optional[dict] = None, header: Optional[dict] = None, body=None, raise_on_fail: bool = True) -> requests.Response:
+    def _request_http(
+        self,
+        method: AppMeshClient._Method,
+        path: str,
+        query: Optional[dict] = None,
+        header: Optional[dict] = None,
+        body=None,
+        raise_on_fail: bool = True,
+    ) -> requests.Response:
         """Send HTTP request over TCP transport.
 
         Args:
@@ -176,7 +187,7 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_resp = ResponseMessage().deserialize(resp_data)
         response = requests.Response()
         response.status_code = appmesh_resp.http_status
-        response.headers = appmesh_resp.headers
+        response.headers = CaseInsensitiveDict(appmesh_resp.headers)
 
         # Set response content
         # response.encoding = self._ENCODING_UTF8 # only need when charset not in appmesh_resp.body_msg_type
@@ -212,7 +223,9 @@ class AppMeshClientTCP(AppMeshClient):
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
 
         if self._HTTP_HEADER_KEY_X_RECV_FILE_SOCKET not in resp.headers:
-            raise ValueError(f"Server did not respond with socket transfer option: " f"{self._HTTP_HEADER_KEY_X_RECV_FILE_SOCKET}")
+            raise ValueError(
+                f"Server did not respond with socket transfer option: " f"{self._HTTP_HEADER_KEY_X_RECV_FILE_SOCKET}"
+            )
 
         # Download file chunks
         local_path = Path(local_file)
@@ -252,7 +265,9 @@ class AppMeshClientTCP(AppMeshClient):
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)
 
         if self._HTTP_HEADER_KEY_X_SEND_FILE_SOCKET not in resp.headers:
-            raise ValueError(f"Server did not respond with socket transfer option: " f"{self._HTTP_HEADER_KEY_X_SEND_FILE_SOCKET}")
+            raise ValueError(
+                f"Server did not respond with socket transfer option: " f"{self._HTTP_HEADER_KEY_X_SEND_FILE_SOCKET}"
+            )
 
         # Upload file chunks
         with local_path.open("rb") as fp:

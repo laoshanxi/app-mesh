@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,26 +15,12 @@ import (
 	"go.uber.org/zap"
 )
 
+var logger *zap.SugaredLogger = utils.GetLogger()
+
 // AppMesh wraps AppMeshClientTCP with a mutex for thread safety
 type AppMesh struct {
 	*appmesh.AppMeshClientTCP
 	mu sync.Mutex
-}
-
-// Request represents the message sent over TCP
-type Request struct {
-	appmesh.Request
-}
-
-var logger *zap.SugaredLogger = utils.GetLogger()
-
-// SetHMACVerify sets the HMAC header for the request if HMAC is initialized
-func (r *Request) SetHMACVerify() error {
-	if HMAC_AgentToCPP == nil {
-		return fmt.Errorf("HMAC not initialized")
-	}
-	r.Headers[HTTP_HEADER_HMAC] = HMAC_AgentToCPP.GenerateHMAC(r.Uuid)
-	return nil
 }
 
 // NewAppMeshClient creates and returns a new AppMesh client for interacting with a TCP server
@@ -47,7 +34,7 @@ func NewAppMeshClient() *AppMesh {
 
 	client := &AppMesh{}
 	var err error
-	client.AppMeshClientTCP, err = appmesh.NewTcpClient(appmesh.Option{
+	client.AppMeshClientTCP, err = appmesh.NewTCPClient(appmesh.Option{
 		AppMeshUri:                  uri.String(),
 		SslTrustedCA:                &config.ConfigData.REST.SSL.SSLCaPath,
 		SslClientCertificateFile:    config.ConfigData.REST.SSL.SSLClientCertificateFile,
@@ -60,12 +47,12 @@ func NewAppMeshClient() *AppMesh {
 }
 
 // GetHostResources retrieves cloud resources via a TCP request
-func (r *AppMesh) GetHostResources() (map[string]interface{}, error) {
-	data := r.generateRequest()
+func (r *AppMesh) GetHostResources(ctx context.Context) (map[string]interface{}, error) {
+	data := r.newRequest()
 	data.HttpMethod = http.MethodGet
 	data.RequestUri = "/appmesh/cloud/resources" // This URI relies on PSK (Pre-Shared Key) check instead of permission check
 
-	resp, err := r.request(data)
+	resp, err := r.request(ctx, data)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -86,17 +73,10 @@ func (r *AppMesh) GetHostResources() (map[string]interface{}, error) {
 	return m, nil
 }
 
-// generateRequest creates and returns a new Request with a unique UUID
-func (r *AppMesh) generateRequest() *Request {
-	return &Request{
-		Request: *appmesh.NewRequest(),
-	}
-}
-
 // request sends a TCP request and returns the response
-func (r *AppMesh) request(data *Request) (*appmesh.Response, error) {
+func (r *AppMesh) request(ctx context.Context, data *Request) (*appmesh.Response, error) {
 	// Set HMAC verification for the request
-	if err := data.SetHMACVerify(); err != nil {
+	if err := data.setHMACVerify(); err != nil {
 		return nil, err
 	}
 
@@ -111,12 +91,12 @@ func (r *AppMesh) request(data *Request) (*appmesh.Response, error) {
 	defer r.mu.Unlock()
 
 	// Send the data over TCP
-	if err := r.AppMeshClientTCP.TcpExecutor.SendMessage(buf); err != nil {
+	if err := r.AppMeshClientTCP.SendMessage(ctx, buf); err != nil {
 		return nil, fmt.Errorf("failed to send data: %v", err)
 	}
 
 	// Receive the response over TCP
-	respData, err := r.AppMeshClientTCP.TcpExecutor.ReadMessage()
+	respData, err := r.AppMeshClientTCP.ReadMessage()
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive data: %v", err)
 	}
@@ -128,4 +108,23 @@ func (r *AppMesh) request(data *Request) (*appmesh.Response, error) {
 	}
 
 	return respMsg, nil
+}
+
+// Request represents the message sent over TCP
+type Request struct {
+	*appmesh.Request
+}
+
+// newRequest creates and returns a new Request with a unique UUID
+func (r *AppMesh) newRequest() *Request {
+	return &Request{appmesh.NewRequest()}
+}
+
+// setHMACVerify sets the HMAC header for the request if HMAC is initialized
+func (r *Request) setHMACVerify() error {
+	if HMAC_AgentToCPP == nil {
+		return fmt.Errorf("HMAC not initialized")
+	}
+	r.Headers[HTTP_HEADER_HMAC] = HMAC_AgentToCPP.GenerateHMAC(r.UUID)
+	return nil
 }

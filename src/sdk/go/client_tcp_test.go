@@ -11,7 +11,7 @@ import (
 )
 
 func TestAppmeshTCPFile(t *testing.T) {
-	client, err := NewTcpClient(Option{})
+	client, err := NewTCPClient(Option{})
 	fmt.Println(err)
 	require.Nil(t, err)
 

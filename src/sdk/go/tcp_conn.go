@@ -2,6 +2,7 @@
 package appmesh
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
@@ -31,18 +32,7 @@ func NewTCPConnection() *TCPConnection {
 }
 
 // Connect establishes a secure TLS TCP connection to an App Mesh server.
-func (r *TCPConnection) Connect(url string, sslClientCert string, sslClientCertKey string, sslCAPath string) error {
-	// Close existing connection if any
-	r.Close()
-
-	// Validate and parse URL
-	u, err := ParseURL(url)
-	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
-	}
-
-	tcpAddr := net.JoinHostPort(u.Hostname(), u.Port())
-
+func (r *TCPConnection) Connect(tcpAddr net.Addr, sslClientCert string, sslClientCertKey string, sslCAPath string) error {
 	// TLS configuration with secure defaults
 	conf := &tls.Config{
 		MinVersion: tls.VersionTLS12,
@@ -70,7 +60,7 @@ func (r *TCPConnection) Connect(url string, sslClientCert string, sslClientCertK
 
 	// Establish connection
 	dialer := net.Dialer{Timeout: TCP_CONNECT_TIMEOUT_SECONDS * time.Second}
-	conn, err := tls.DialWithDialer(&dialer, "tcp", tcpAddr, conf)
+	conn, err := tls.DialWithDialer(&dialer, "tcp", tcpAddr.String(), conf)
 	if err != nil {
 		if conn != nil {
 			conn.Close()
@@ -145,24 +135,39 @@ func (r *TCPConnection) readBytes(msgLength uint32) ([]byte, error) {
 }
 
 // SendMessage sends a complete message over the TCP connection.
-func (r *TCPConnection) SendMessage(buffer []byte) error {
+func (r *TCPConnection) SendMessage(ctx context.Context, buffer []byte) error {
 	r.muSend.Lock()
 	defer r.muSend.Unlock()
 
-	if err := r.sendHeader(len(buffer)); err != nil {
+	// Fast-fail on canceled context.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	// Apply context deadline once for the entire send.
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := r.conn.SetWriteDeadline(deadline); err != nil {
+			return fmt.Errorf("set write deadline: %w", err)
+		}
+		defer r.conn.SetWriteDeadline(time.Time{}) // Clear after full message send
+	}
+
+	// --- Prepare header (stack allocated) ---
+	var header [TCP_MESSAGE_HEADER_LENGTH]byte
+	// Write the magic number to the first 4 bytes in network byte order.
+	binary.BigEndian.PutUint32(header[:4], TCP_MESSAGE_MAGIC)
+	// Write the body length to the next 4 bytes in network byte order.
+	binary.BigEndian.PutUint32(header[4:], uint32(len(buffer)))
+
+	// --- Send header and body atomically ---
+	if err := r.sendBytes(header[:]); err != nil {
 		return fmt.Errorf("failed to send header: %w", err)
 	}
-	return r.sendBytes(buffer)
-}
+	if err := r.sendBytes(buffer); err != nil {
+		return fmt.Errorf("failed to send body: %w", err)
+	}
 
-// sendHeader sends the length of the data as an 8-byte header.
-func (r *TCPConnection) sendHeader(length int) error {
-	headerBuf := make([]byte, TCP_MESSAGE_HEADER_LENGTH)
-	// Write the magic number to the first 4 bytes in network byte order.
-	binary.BigEndian.PutUint32(headerBuf[:4], TCP_MESSAGE_MAGIC)
-	// Write the body length to the next 4 bytes in network byte order.
-	binary.BigEndian.PutUint32(headerBuf[4:], uint32(length))
-	return r.sendBytes(headerBuf)
+	return nil
 }
 
 // sendBytes sends the specified bytes over the TCP connection.
@@ -172,7 +177,7 @@ func (r *TCPConnection) sendBytes(buffer []byte) error {
 	for totalSentSize < bufferSize {
 		byteSent, err := r.conn.Write(buffer[totalSentSize:])
 		if err != nil {
-			return fmt.Errorf("write error after %d/%d bytes: %w", totalSentSize, bufferSize, err)
+			return fmt.Errorf("write failed after %d/%d bytes: %w", totalSentSize, bufferSize, err)
 		}
 		totalSentSize += byteSent
 	}
@@ -182,7 +187,7 @@ func (r *TCPConnection) sendBytes(buffer []byte) error {
 // Close closes the underlying TCP connection.
 func (r *TCPConnection) Close() {
 	if r.conn != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 	}
 }
 

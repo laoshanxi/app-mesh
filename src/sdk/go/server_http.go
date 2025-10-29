@@ -15,10 +15,21 @@ type AppMeshServerHttpContext struct {
 	client *AppMeshClient
 }
 
-// NewHttpContext creates a new AppMeshServer instance for interacting with the local App Mesh service.
+// NewHTTPContext creates a new AppMeshServer instance for interacting with the local App Mesh service.
 // Uses default HTTPS endpoint and SSL settings unless overridden via Option.
-func NewHttpContext(options Option) *AppMeshServerHttpContext {
-	return &AppMeshServerHttpContext{client: NewHttpClient(options)}
+func NewHTTPContext(options Option) (*AppMeshServerHttpContext, error) {
+	httpClient, err := NewHTTPClient(options)
+	if err != nil {
+		return nil, err
+	}
+	return &AppMeshServerHttpContext{client: httpClient}, nil
+}
+func newHTTPContextWithRequester(options Option, r Requester) (*AppMeshServerHttpContext, error) {
+	httpClient, err := newHTTPClientWithRequester(options, r)
+	if err != nil {
+		return nil, err
+	}
+	return &AppMeshServerHttpContext{client: httpClient}, nil
 }
 
 // getRuntimeEnv reads and validates required runtime environment variables.
