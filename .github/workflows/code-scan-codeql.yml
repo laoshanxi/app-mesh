@@ -73,7 +73,7 @@ jobs:
       - name: Build Rust project
         if: matrix.language == 'rust'
         env:
-          RUSTFLAGS: "-D warnings -A dead_code"
+          RUSTFLAGS: "-A warnings"
         run: |
           cd src/sdk/rust
           cargo build

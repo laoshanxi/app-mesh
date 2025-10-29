@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -22,27 +23,36 @@ const (
 var logger = utils.GetLogger()
 var parentPID = os.Getppid()
 
-// monitorParentProcess monitors the parent process and exits if it is no longer alive or the context is canceled.
-func monitorParentProcess(ctx context.Context) {
+// monitorParentProcess monitors the parent process and exits gracefully
+// when either the parent exits or the context is canceled.
+func monitorParentProcess(ctx context.Context, stop context.CancelFunc) {
 	if parentPID <= 1 {
 		return // No valid parent to monitor
 	}
 
-	// Instead of creating a ticker that runs constantly, use a longer interval
-	// and efficiently wait using a timer channel
 	timer := time.NewTimer(parentCheckInterval)
-	defer timer.Stop()
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
+			// Context canceled — exit loop, timer will be cleaned up by defer
 			return
 		case <-timer.C:
-			// Check if parent exists by checking /proc directly instead of using Signal(0)
+			// Check if parent still alive
 			if !utils.IsProcessRunning(parentPID) {
-				logger.Fatal("Parent process exited, shutting down")
+				logger.Warn("Parent process exited, canceling context...")
+				stop() // Gracefully signal upper layers to stop
+				return
 			}
-			// Reset the timer with a longer interval
+			// Reset timer for next check
 			timer.Reset(parentCheckInterval)
 		}
 	}
@@ -80,16 +90,28 @@ func initializeServices(ctx context.Context) {
 	}()
 }
 
-// setupGracefulShutdown sets up signal handling for SIGINT and SIGTERM and cancels the context on signal reception.
-func setupGracefulShutdown(cancel context.CancelFunc) {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+// createSignalContext sets up signal handling for exit
+func createSignalContext() (context.Context, context.CancelFunc) {
+	baseCtx, cancel := context.WithCancel(context.Background())
 
-	go func() {
-		<-sigs
-		logger.Info("Shutting down gracefully...")
-		cancel() // Trigger context cancellation
-	}()
+	signals := []os.Signal{
+		os.Interrupt,    // Ctrl+C
+		syscall.SIGTERM, // kill cmd
+	}
+
+	if runtime.GOOS != "windows" {
+		signals = append(signals,
+			syscall.SIGQUIT, // Ctrl+\
+			syscall.SIGHUP,  // Console
+		)
+	}
+
+	signalCtx, stop := signal.NotifyContext(baseCtx, signals...)
+
+	return signalCtx, func() {
+		stop()
+		cancel()
+	}
 }
 
 func changeWorkDir(dir string) {
@@ -113,13 +135,10 @@ func main() {
 	cwd, _ := os.Getwd()
 	logger.Info("Current working directory:", cwd)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, stop := createSignalContext()
+	defer stop()
 
 	config.ResolveAbsolutePaths()
-
-	// Handle graceful shutdown
-	setupGracefulShutdown(cancel)
 
 	// Read PSK from shared memory
 	psk, err := readPSKFromSHM()
@@ -137,11 +156,15 @@ func main() {
 
 	// Start all services
 	initializeServices(ctx)
-	go monitorParentProcess(ctx)
+	go monitorParentProcess(ctx, stop)
 
 	changeWorkDir(path.Join(config.GetAppMeshHomeDir(), "work", "tmp"))
 
 	// Wait for shutdown signal
 	<-ctx.Done()
-	logger.Info("Shutdown complete.")
+	logger.Info("Received shutdown signal, initiating graceful shutdown...")
+
+	// shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// defer cancel()
+	// Do clean with timeout here
 }

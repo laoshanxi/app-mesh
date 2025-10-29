@@ -33,6 +33,8 @@ Welcome to AppMesh's documentation!
    :caption: Success:
    :numbered:
 
+   RemoteTask.md
+   success/remote_run_cli_and_python.md
    success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.md
    success/customize_app_startup_behavior.md
    success/open_service_broker_support_local_pv_for_K8S.md
@@ -40,7 +42,6 @@ Welcome to AppMesh's documentation!
    success/secure_REST_file_server.md
    success/standalone_JWT_server.md
    success/kubernetes_run_native_application.md
-   success/remote_run_cli_and_python.md
    success/python_parallel_run.md
 
 

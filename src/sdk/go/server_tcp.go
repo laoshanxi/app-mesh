@@ -5,16 +5,22 @@ type AppMeshServerTcpContext struct {
 	AppMeshServerHttpContext
 }
 
-// NewTcpContext creates a new AppMeshServer that routes all HTTP requests through a TCP-based executor.
-func NewTcpContext(options Option) (*AppMeshServerTcpContext, error) {
-	tcpClient, err := NewTcpClient(options) // Use TCP Executor from TcpClient
+// NewTCPContext creates a new AppMeshServer that routes all HTTP requests through a TCP-based executor.
+func NewTCPContext(options Option) (*AppMeshServerTcpContext, error) {
+	tcpClient, err := NewTCPClient(options) // Use TCP Executor from TcpClient
+	if err != nil {
+		return nil, err
+	}
 
-	server := NewHttpContext(options)
-	server.client.Proxy = tcpClient.TcpExecutor
+	server, err := newHTTPContextWithRequester(options, tcpClient.tcpReq)
+	if err != nil {
+		return nil, err
+	}
+
 	return &AppMeshServerTcpContext{AppMeshServerHttpContext: *server}, err
 }
 
 // CloseConnection closes the TCP connection.
 func (r *AppMeshServerTcpContext) CloseConnection() {
-	r.client.Proxy.Close()
+	r.client.req.Close()
 }
