@@ -1,9 +1,12 @@
+// agent_response.go
 package agent
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -27,11 +30,11 @@ type ResponseMessage struct {
 	Message string `json:"message"`
 }
 
-// ReadAppMeshResponse reads and parses a new response from the connection
-func ReadAppMeshResponse(conn *Connection) (*Response, error) {
+// readResponseFromConn reads and parses a new response from the connection
+func readResponseFromConn(conn *Connection) (*Response, error) {
 	data, err := conn.ReadMessage()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read message: %w", err)
 	}
 
 	if data == nil {
@@ -39,93 +42,110 @@ func ReadAppMeshResponse(conn *Connection) (*Response, error) {
 	}
 
 	r := new(Response)
-	err = r.Deserialize(data)
-	if err != nil {
-		return nil, err
+	if err := r.Deserialize(data); err != nil {
+		return nil, fmt.Errorf("deserialize response: %w", err)
 	}
 
 	// Handle TCP file download
 	if value, exists := r.Headers[HTTP_HEADER_KEY_X_Recv_File_Socket]; exists && r.HttpStatus == http.StatusOK {
-		r.TempDownloadFilePath = path.Join(config.GetAppMeshHomeDir(), "work", "tmp", r.Uuid)
-
-		bytes, err := base64.StdEncoding.DecodeString(value)
-		if err != nil {
-			logger.Warnf("Failed to decode base64 string for download: %v", err)
-			return nil, err
-		}
-
-		file := string(bytes)
-		logger.Infof("Downloading remote file <%s> to local file <%s>", file, r.TempDownloadFilePath)
-
-		if err := r.ReadFileData(conn, r.TempDownloadFilePath); err != nil {
-			return nil, err
+		if err := r.downloadFileFromConn(conn, value); err != nil {
+			return nil, fmt.Errorf("handle file download for UUID %s: %w", r.UUID, err)
 		}
 	}
 
 	// Handle TCP file upload
 	if value, exists := r.Headers[HTTP_HEADER_KEY_X_Send_File_Socket]; exists && r.HttpStatus == http.StatusOK {
-		r.TempUploadFilePath = path.Join(config.GetAppMeshHomeDir(), "work", "tmp", r.Uuid)
-
-		bytes, err := base64.StdEncoding.DecodeString(value)
-		if err != nil {
-			logger.Warnf("Failed to decode base64 string for upload: %v", err)
-			return nil, err
+		if err := r.prepareFileUpload(value); err != nil {
+			return nil, fmt.Errorf("prepare file upload for UUID %s: %w", r.UUID, err)
 		}
-
-		file := string(bytes)
-		logger.Debugf("Preparing to upload local file <%s> to remote file <%s>", r.TempUploadFilePath, file)
 	}
 
-	return r, err
+	return r, nil
 }
 
-// ReadFileData reads file data from the connection and writes it to the target file path
-func (r *Response) ReadFileData(conn *Connection, targetFilePath string) error {
-	// No need lock here, as ReadAppMeshResponse() is a single thread
-	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY, 0600)
+// downloadFileFromConn processes file download from the connection
+func (r *Response) downloadFileFromConn(conn *Connection, encodedPath string) error {
+	bytes, err := base64.StdEncoding.DecodeString(encodedPath)
 	if err != nil {
-		logger.Warnf("Failed to create file: %v", err)
-		return err
+		return fmt.Errorf("decode base64 path: %w", err)
 	}
-	defer f.Close()
 
-	for {
-		bodyBuf, err := conn.ReadMessage()
-		if err != nil {
-			logger.Warnf("Error reading TCP file header: %v", err)
-			return err
-		}
+	r.TempDownloadFilePath = path.Join(config.GetAppMeshHomeDir(), "work", "tmp", r.UUID)
+	remoteFile := string(bytes)
 
-		if bodyBuf == nil {
-			logger.Debugf("Completed reading TCP file to: <%s>", targetFilePath)
-			break
-		}
+	logger.Infof("Downloading remote file <%s> to local file <%s>", remoteFile, r.TempDownloadFilePath)
 
-		if _, err = f.Write(bodyBuf); err != nil {
-			logger.Warnf("Failed to write to file: %v", err)
-			return err
-		}
+	if err := r.readFileFromConn(conn, r.TempDownloadFilePath); err != nil {
+		// Clean up partial file on error
+		os.Remove(r.TempDownloadFilePath)
+		return fmt.Errorf("read file data from %s: %w", remoteFile, err)
 	}
 
 	return nil
 }
 
-// ApplyResponse applies the response to the HTTP response writer
-func (r *Response) ApplyResponse(w http.ResponseWriter, req *http.Request, request *appmesh.Request) {
+// prepareFileUpload sets up for file upload
+func (r *Response) prepareFileUpload(encodedPath string) error {
+	bytes, err := base64.StdEncoding.DecodeString(encodedPath)
+	if err != nil {
+		return fmt.Errorf("decode base64 path: %w", err)
+	}
+
+	r.TempUploadFilePath = path.Join(config.GetAppMeshHomeDir(), "work", "tmp", r.UUID)
+	remoteFile := string(bytes)
+
+	logger.Debugf("Preparing to upload local file <%s> to remote file <%s>", r.TempUploadFilePath, remoteFile)
+	return nil
+}
+
+// readFileFromConn reads file data from the connection and writes it to the target file path
+func (r *Response) readFileFromConn(conn *Connection, targetFilePath string) error {
+	// No need lock here, as ReadAppMeshResponse() is a single thread
+	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	defer f.Close()
+
+	// Use larger buffer for better performance
+	bufWriter := bufio.NewWriterSize(f, 128*1024) // 128KB buffer
+	defer bufWriter.Flush()
+
+	for {
+		bodyBuf, err := conn.ReadMessage()
+		if err != nil {
+			return fmt.Errorf("read TCP file chunk: %w", err)
+		}
+
+		// EOF marker
+		if len(bodyBuf) == 0 {
+			break
+		}
+
+		if _, err = bufWriter.Write(bodyBuf); err != nil {
+			return fmt.Errorf("write to file: %w", err)
+		}
+	}
+
+	return bufWriter.Flush()
+}
+
+// writeToHTTPResponse applies the response to the HTTP response writer
+func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request, request *Request) {
 	// Set headers
 	for k, v := range r.Headers {
 		w.Header().Set(k, v)
 	}
 
 	// Set cookies
-	r.setCookie(w, req, request)
+	r.handleAuthCookies(w, req, request)
 
 	// Handle the response body based on the path
 	if r.RequestUri == REST_PATH_DOWNLOAD || r.RequestUri == REST_PATH_UPLOAD {
 		if err := HandleRESTFile(w, req, r); err != nil {
 			utils.HttpError(w, err.Error(), http.StatusInternalServerError)
 		}
-		logger.Debugf("File REST call Finished %s", r.Uuid)
+		logger.Debugf("File REST call finished %s", r.UUID)
 	} else {
 		// Set content type
 		if len(r.BodyMsgType) > 0 {
@@ -137,19 +157,19 @@ func (r *Response) ApplyResponse(w http.ResponseWriter, req *http.Request, reque
 
 		if len(r.Body) > 0 {
 			if _, err := w.Write(r.Body); err != nil {
-				logger.Warnf("Error writing response body for %s: %v", r.Uuid, err)
+				logger.Warnf("Error writing response body for %s: %v", r.UUID, err)
 			}
 		}
-		logger.Debugf("REST call Finished %s", r.Uuid)
+		logger.Debugf("REST call finished %s", r.UUID)
 	}
 }
 
-// setCookie manages authentication cookies based on the HTTP request and response
+// handleAuthCookies manages authentication cookies based on the HTTP request and response
 // It handles three scenarios:
 // 1. Setting cookies on successful login
 // 2. Refreshing cookies on token renewal
 // 3. Removing cookies on logout
-func (r *Response) setCookie(w http.ResponseWriter, req *http.Request, request *appmesh.Request) {
+func (r *Response) handleAuthCookies(w http.ResponseWriter, req *http.Request, request *Request) {
 	// Only proceed for successful responses
 	if r.HttpStatus != http.StatusOK {
 		return
@@ -160,24 +180,24 @@ func (r *Response) setCookie(w http.ResponseWriter, req *http.Request, request *
 		r.setSecureHeaders(w)
 		// Set cookie if explicitly requested via header and value is true
 		if setCookieVal, ok := request.Headers[HTTP_HEADER_KEY_X_SET_COOKIE]; ok {
-			if requestSetCookie, err := strconv.ParseBool(setCookieVal); err == nil && requestSetCookie {
-				r.createAuthCookie(w, req)
-			} else {
-				logger.Debugf("Set-Cookie header value invalid or false for %s", r.Uuid)
+			if requestSetCookie, _ := strconv.ParseBool(setCookieVal); requestSetCookie {
+				r.setAuthCookie(w, req)
 			}
 		}
 
 	case REST_PATH_TOKEN_RENEW, REST_PATH_TOTP_SETUP:
 		r.setSecureHeaders(w)
 		// Verify cookie exists and has valid value
-		if cookie, err := req.Cookie(COOKIE_TOKEN); err != nil {
-			logger.Debugf("No cookie present for %s", r.Uuid)
-			return
-		} else if cookie.Value == "" {
-			logger.Debugf("Empty cookie value for %s", r.Uuid)
+		cookie, err := req.Cookie(COOKIE_TOKEN)
+		if err != nil {
+			logger.Debugf("No cookie present for %s", r.UUID)
 			return
 		}
-		r.createAuthCookie(w, req)
+		if cookie.Value == "" {
+			logger.Debugf("Empty cookie value for %s", r.UUID)
+			return
+		}
+		r.setAuthCookie(w, req)
 
 	case REST_PATH_LOGOFF:
 		// Clear existing cookie if present
@@ -187,23 +207,24 @@ func (r *Response) setCookie(w http.ResponseWriter, req *http.Request, request *
 	}
 }
 
-// createAuthCookie extracts JWT token from response body and creates an auth cookie
-func (r *Response) createAuthCookie(w http.ResponseWriter, req *http.Request) {
-	logger.Infof("Creating authentication cookie for %s", r.Uuid)
+// setAuthCookie extracts JWT token from response body and creates an auth cookie
+func (r *Response) setAuthCookie(w http.ResponseWriter, req *http.Request) {
+	logger.Infof("Creating authentication cookie for %s", r.UUID)
+
 	// Parse JWT from response body
 	var jwtResponse struct {
 		AccessToken   string  `json:"access_token"`
 		ExpireSeconds float64 `json:"expire_seconds"`
 	}
 
-	if err := json.Unmarshal([]byte(r.Body), &jwtResponse); err != nil {
-		logger.Warnf("Failed to unmarshal JWT response body for %s: %v", r.Uuid, err)
+	if err := json.Unmarshal(r.Body, &jwtResponse); err != nil {
+		logger.Warnf("Failed to unmarshal JWT response body for %s: %v", r.UUID, err)
 		return
 	}
 
 	// Validate token presence
 	if jwtResponse.AccessToken == "" {
-		logger.Warnf("Missing access_token in response body for %s", r.Uuid)
+		logger.Warnf("Missing access_token in response body for %s", r.UUID)
 		return
 	}
 
@@ -225,12 +246,12 @@ func (r *Response) createAuthCookie(w http.ResponseWriter, req *http.Request) {
 	http.SetCookie(w, cookie)
 
 	// Create CSRF token cookie (generate HMAC token from access token)
-	r.createCSRFToken(w, req, cookie.MaxAge, jwtResponse.AccessToken)
+	r.setCSRFToken(w, req, cookie.MaxAge, jwtResponse.AccessToken)
 }
 
 // clearAuthCookie invalidates the authentication cookie
 func (r *Response) clearAuthCookie(w http.ResponseWriter, req *http.Request) {
-	logger.Debugf(" Clearing authentication cookie for %s", r.Uuid)
+	logger.Debugf("Clearing authentication cookie for %s", r.UUID)
 	http.SetCookie(w, &http.Cookie{
 		Name:     COOKIE_TOKEN,
 		Value:    "",
@@ -246,7 +267,7 @@ func (r *Response) clearAuthCookie(w http.ResponseWriter, req *http.Request) {
 
 // clearCSRFToken invalidates the CSRF token cookie
 func (r *Response) clearCSRFToken(w http.ResponseWriter, req *http.Request) {
-	logger.Debugf("Clearing CSRF token for %s", r.Uuid)
+	logger.Debugf("Clearing CSRF token for %s", r.UUID)
 	http.SetCookie(w, &http.Cookie{
 		Name:     COOKIE_CSRF_TOKEN,
 		Value:    "",
@@ -258,15 +279,15 @@ func (r *Response) clearCSRFToken(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// createCSRFToken generates a CSRF token and sets it in the response header
-func (r *Response) createCSRFToken(w http.ResponseWriter, req *http.Request, maxAge int, hmacMessage string) {
-	logger.Debugf("Creating CSRF token for %s", r.Uuid)
+// setCSRFToken generates a CSRF token and sets it in the response header
+func (r *Response) setCSRFToken(w http.ResponseWriter, req *http.Request, maxAge int, hmacMessage string) {
+	logger.Debugf("Creating CSRF token for %s", r.UUID)
 
 	token := cloud.HMAC_SDKToAgent.GenerateHMAC(hmacMessage)
 
 	cookie := &http.Cookie{
 		Name:     COOKIE_CSRF_TOKEN,
-		Value:    token, // Set the CSRF token as the cookie value
+		Value:    token,
 		Path:     "/",
 		HttpOnly: false, // CSRF token should be accessible via JavaScript
 		Secure:   req.TLS != nil,
@@ -277,6 +298,7 @@ func (r *Response) createCSRFToken(w http.ResponseWriter, req *http.Request, max
 	http.SetCookie(w, cookie)
 }
 
+// setSecureHeaders sets security headers for sensitive responses
 func (r *Response) setSecureHeaders(w http.ResponseWriter) {
 	// Prevent sensitive responses (like JWTs) from being cached by browsers or proxies.
 	w.Header().Set("Cache-Control", "no-store")

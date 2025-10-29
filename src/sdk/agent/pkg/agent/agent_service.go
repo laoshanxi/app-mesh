@@ -1,11 +1,11 @@
 package agent
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,7 +23,6 @@ import (
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
 )
 
 // Constants for REST paths and headers
@@ -53,14 +52,11 @@ const (
 )
 
 var (
-	logger         *zap.SugaredLogger = utils.GetLogger()
-	httpRequestMap sync.Map           // Cache for asynchronous responses
+	logger          = utils.GetLogger()
+	REST_PATH_TASK  = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
+	localConnection *Connection // TCP connection to the local server
 
-	REST_PATH_TASK         = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
-	localConnection        *Connection // TCP connection to the local server
-	remoteConnections      sync.Map    // TCP connections to remote servers
-	remoteConnectionsMutex sync.Mutex
-	delegatePool           sync.Pool
+	delegatePool sync.Pool
 )
 
 // Initialize the delegate pool using net/http.Client
@@ -89,8 +85,8 @@ func init() {
 
 // MonitorConnectionResponse continuously reads messages from a connection and forwards responses
 // to their corresponding channels. It handles connection cleanup on errors.
-func MonitorConnectionResponse(conn *Connection, targetHost string, allowError bool) {
-	defer DeleteConnection(targetHost)
+func MonitorConnectionResponse(conn *Connection, allowError bool) {
+	defer DeleteConnection(conn)
 
 	// Helper function to handle errors consistently
 	handleError := func(msg string, args ...interface{}) {
@@ -103,46 +99,28 @@ func MonitorConnectionResponse(conn *Connection, targetHost string, allowError b
 	}
 
 	for {
-		response, err := ReadAppMeshResponse(conn)
+		response, err := readResponseFromConn(conn)
 		if err != nil {
-			handleError("Failed to parse response from host %s: %v", targetHost, err)
+			handleError("Failed to parse response from host %s: %v", conn, err)
 			return
 		}
 
-		ch, ok := httpRequestMap.LoadAndDelete(response.Uuid)
-		if !ok {
-			// This is expected when a request was canceled/timed out and already cleaned up
-			// Don't treat as fatal - just log and continue processing other responses
-			logger.Warnf("Request ID <%s> not found for response (likely canceled or timed out)", response.Uuid)
-			continue // Continue to next response instead of returning
-		}
-
-		responseChan, ok := ch.(chan *Response)
-		if !ok {
-			handleError("Invalid response message type for request ID <%s>", response.Uuid)
-			return
-		}
-
-		// Try to send the response, but don't block if channel is closed
-		select {
-		case responseChan <- response:
-			// Successfully sent response
-		default:
-			// Channel is closed or full (shouldn't happen with buffered channel)
-			logger.Warnf("Failed to send response for request ID <%s> (channel closed)", response.Uuid)
-		}
+		conn.onResponse(response)
 	}
 }
 
 // ListenAndServeREST starts the REST API server
 func ListenAndServeREST() error {
-	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
-	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
-	// Connect to TCP REST server
-	targetHost := strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1)
+	var listenAddr = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
+	var hostPort = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
 
-	var err error
-	localConnection, err = EstablishConnection(targetHost, config.ConfigData.REST.SSL.VerifyServer, false)
+	hostPort = strings.Replace(hostPort, "0.0.0.0", "127.0.0.1", 1)
+	connectAddr, err := net.ResolveTCPAddr("tcp", hostPort)
+	if err != nil {
+		log.Fatalf("Failed to resolve address %s: %v", hostPort, err)
+	}
+
+	localConnection, err = GetOrCreateConnection(connectAddr, config.ConfigData.REST.SSL.VerifyServer, false)
 	if err != nil {
 		logger.Fatalf("Failed to connect to TCP server <%s> with error: %v", connectAddr, err)
 	}
@@ -327,27 +305,31 @@ func HandleIndex(w http.ResponseWriter, r *http.Request) {
 func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	var targetConnection = localConnection
 
-	// Create context with timeout from request context
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute) // TODO: Adjust timeout as needed
-	defer cancel()
-
 	// Handle forward request
-	// In order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
 	forwardingHost := string(r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST))
 	if forwardingHost != "" {
 		logger.Debugf("Forward request to %s", forwardingHost)
 
-		parsedURL, _ := appmesh.ParseURL(forwardingHost)
+		forwardingURL, err := appmesh.ParseURL(forwardingHost)
+		if err != nil {
+			utils.HttpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		forwardingAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(forwardingURL.Hostname(), forwardingURL.Port()))
+		if err != nil {
+			utils.HttpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		// If no port is provided, use HTTP forwarding
-		if parsedURL.Port() == "" || parsedURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
+		if forwardingURL.Port() == "" || forwardingURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
 			// Forward with HTTP protocol
 			r.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
-			ForwardAppMeshRequest(w, r, forwardingHost)
+			ForwardAppMeshRequest(w, r, forwardingURL)
 			return
 		} else {
 			// Forward with TCP protocol
-			var err error
-			targetConnection, err = EstablishConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
+			targetConnection, err = GetOrCreateConnection(forwardingAddr, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
 				utils.HttpError(w, err.Error(), http.StatusInternalServerError)
@@ -361,8 +343,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set(HTTP_HEADER_KEY_File_Path, utils.DecodeURIComponent(filePath))
 	}
 
-	// Body buffer
-	request, err := NewAppMeshRequest(r)
+	request, err := newRequestFromHTTP(r)
 	if err != nil {
 		utils.HttpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -379,66 +360,31 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create a channel to accept Response
-	ch := make(chan *Response, 1) // Buffered channel to prevent goroutine leak
-	httpRequestMap.Store(request.Uuid, ch)
-
-	// Ensure cleanup of the request from map
-	defer func() {
-		httpRequestMap.Delete(request.Uuid)
-		// Drain channel if needed to prevent goroutine leak
-		select {
-		case <-ch:
-		default:
-		}
-	}()
-
-	sendErr := targetConnection.SendRequestData(request)
+	resp, sendErr := targetConnection.SendRequestDataWithContext(r.Context(), request)
 	if sendErr != nil {
 		logger.Errorf("Failed to send request to server with error: %v", sendErr)
-		utils.HttpError(w, sendErr.Error(), http.StatusInternalServerError)
-		// Only delete connection on send error
-		if targetConnection != localConnection {
-			DeleteConnection(forwardingHost)
-		}
-		return
-	}
 
-	// Wait for response with timeout and cancellation
-	var resp *Response
-	select {
-	case resp = <-ch:
-		// Successfully received response
-	case <-ctx.Done():
-		// Handle timeout or cancellation
-		switch ctx.Err() {
-		case context.DeadlineExceeded:
-			logger.Warnf("Request timeout for UUID: %s", request.Uuid)
-			utils.HttpError(w, "Request timeout", http.StatusGatewayTimeout)
-		case context.Canceled:
-			logger.Warnf("Request canceled for UUID: %s", request.Uuid)
-			utils.HttpError(w, "Request canceled", http.StatusRequestTimeout)
+		// Only delete remote connections on error, not local connection
+		if targetConnection != localConnection {
+			DeleteConnection(targetConnection)
 		}
-		// Note: We don't delete the connection on timeout/cancellation
-		// as the connection might still be healthy
+
+		utils.HttpError(w, sendErr.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Reply to client
-	resp.ApplyResponse(w, r, request)
+	resp.writeToHTTPResponse(w, r, request)
 
 	// Handle file upload after response to client
 	if resp.TempUploadFilePath != "" {
-		// Use context for file upload timeout as well
-		uploadCtx, uploadCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer uploadCancel()
-
-		sendErr = targetConnection.SendFileDataWithContext(uploadCtx, resp.TempUploadFilePath)
+		defer os.Remove(resp.TempUploadFilePath)
+		sendErr = targetConnection.SendFileDataWithContext(r.Context(), resp.TempUploadFilePath)
 		if sendErr != nil {
 			logger.Errorf("Failed to send file data: %v", sendErr)
 			// Only delete connection on file send error
 			if targetConnection != localConnection {
-				DeleteConnection(forwardingHost)
+				DeleteConnection(targetConnection)
 			}
 			// Don't return error to client since response was already sent
 		}
@@ -446,19 +392,11 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // ForwardAppMeshRequest forwards the incoming request to another host and copies the response back.
-func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHost string) {
-	// Parse the forwarding host URL
-	parsedURL, err := appmesh.ParseURL(forwardingHost)
-	if err != nil {
-		logger.Warnf("Failed to parse forward URL: %v", err)
-		utils.HttpError(w, "Failed to parse forward URL: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHost *url.URL) {
 	// Create a new request to be sent to the target server
-	targetURL := fmt.Sprintf("%s://%s%s?%s", parsedURL.Scheme, parsedURL.Host, r.URL.Path, r.URL.RawQuery)
+	targetURL := fmt.Sprintf("%s://%s%s?%s", forwardingHost.Scheme, forwardingHost.Host, r.URL.Path, r.URL.RawQuery)
 	logger.Debugf("Forwarding request: %s %s", r.Method, targetURL)
-	req, err := http.NewRequest(r.Method, targetURL, r.Body)
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
 	if err != nil {
 		logger.Errorf("Failed to create forward request: %v", err)
 		utils.HttpError(w, "Failed to create forward request: "+err.Error(), http.StatusInternalServerError)

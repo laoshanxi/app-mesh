@@ -27,6 +27,7 @@ import aniso8601
 import jwt
 import requests
 from requests.cookies import RequestsCookieJar
+from requests.structures import CaseInsensitiveDict
 
 # Local imports
 from .app import App
@@ -721,6 +722,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         logger.warning("Failed to delete app: %s", resp.text)
         resp.raise_for_status()
+        return False
 
     def enable_app(self, app_name: str) -> None:
         """Enable an application."""
@@ -847,7 +849,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     # File management
     ########################################
     @staticmethod
-    def _apply_file_attributes(local_path: Path, headers: dict) -> None:
+    def _apply_file_attributes(local_path: Path, headers: CaseInsensitiveDict) -> None:
         """Apply file attributes from headers to local file."""
         if sys.platform == "win32":
             return
@@ -1129,8 +1131,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if self.forward_to:
             target_host = self.forward_to
             if ":" not in target_host:
-                parsed = urlsplit(self.auth_server_url)
-                default_port = {'http': 80, 'https': 443}.get(parsed.scheme)
+                parsed = parse.urlsplit(self.auth_server_url)
+                default_port = {"http": 80, "https": 443}.get(parsed.scheme)
                 port = parsed.port or default_port
                 target_host = f"{target_host}:{port}"
             headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = target_host
