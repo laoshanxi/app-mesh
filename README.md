@@ -12,8 +12,6 @@
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/whatis.gif" align=center /></div>
 App Mesh is an open-source, multi-tenant application management platform designed for cloud-native environments. It efficiently manages, schedules, and monitors both microservices and traditional applications, offering a lightweight alternative to Kubernetes. App Mesh bridges the gap between simple process managers and complex container orchestration systems, making it ideal for organizations seeking to modernize their infrastructure without adopting full container-native complexity. Supporting both containerized and native applications, it provides a versatile solution for diverse enterprise needs.
 
-<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
-
 ## Features
 
 Feature | Description
@@ -29,6 +27,8 @@ SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp) <br> [R
 ## Getting started
 
 Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Install.html) to learn how to install App Mesh via Docker Compose or natively and set up an App Mesh cluster.
+
+<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
 ## Documentation
 
@@ -84,6 +84,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 
 ## Success
 
+- [In-memory remote task execute](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
 - [Build a powerful monitor system with Grafana/Prometheus/Loki](https://app-mesh.readthedocs.io/en/latest/success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.html)
 - [Customize application start behavior](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)
 - [Open service broker support local PV for Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
@@ -95,7 +96,6 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [Python parallel run](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
 - [Secure consul cluster](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
 - [JWT service with REST and UI](https://github.com/laoshanxi/app-mesh/blob/main/script/docker-compose-auth-service.yaml)
-- [Remote task execute](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
 
 ---
 

@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,7 +33,7 @@ func (r *Request) SetHMACVerify() error {
 	if HMAC_AgentToCPP == nil {
 		return fmt.Errorf("HMAC not initialized")
 	}
-	r.Headers[HTTP_HEADER_HMAC] = HMAC_AgentToCPP.GenerateHMAC(r.Uuid)
+	r.Headers[HTTP_HEADER_HMAC] = HMAC_AgentToCPP.GenerateHMAC(r.UUID)
 	return nil
 }
 
@@ -47,7 +48,7 @@ func NewAppMeshClient() *AppMesh {
 
 	client := &AppMesh{}
 	var err error
-	client.AppMeshClientTCP, err = appmesh.NewTcpClient(appmesh.Option{
+	client.AppMeshClientTCP, err = appmesh.NewTCPClient(appmesh.Option{
 		AppMeshUri:                  uri.String(),
 		SslTrustedCA:                &config.ConfigData.REST.SSL.SSLCaPath,
 		SslClientCertificateFile:    config.ConfigData.REST.SSL.SSLClientCertificateFile,
@@ -60,12 +61,12 @@ func NewAppMeshClient() *AppMesh {
 }
 
 // GetHostResources retrieves cloud resources via a TCP request
-func (r *AppMesh) GetHostResources() (map[string]interface{}, error) {
+func (r *AppMesh) GetHostResources(ctx context.Context) (map[string]interface{}, error) {
 	data := r.generateRequest()
 	data.HttpMethod = http.MethodGet
 	data.RequestUri = "/appmesh/cloud/resources" // This URI relies on PSK (Pre-Shared Key) check instead of permission check
 
-	resp, err := r.request(data)
+	resp, err := r.request(ctx, data)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -94,7 +95,7 @@ func (r *AppMesh) generateRequest() *Request {
 }
 
 // request sends a TCP request and returns the response
-func (r *AppMesh) request(data *Request) (*appmesh.Response, error) {
+func (r *AppMesh) request(ctx context.Context, data *Request) (*appmesh.Response, error) {
 	// Set HMAC verification for the request
 	if err := data.SetHMACVerify(); err != nil {
 		return nil, err
@@ -111,12 +112,12 @@ func (r *AppMesh) request(data *Request) (*appmesh.Response, error) {
 	defer r.mu.Unlock()
 
 	// Send the data over TCP
-	if err := r.AppMeshClientTCP.TcpExecutor.SendMessage(buf); err != nil {
+	if err := r.AppMeshClientTCP.SendMessage(ctx, buf); err != nil {
 		return nil, fmt.Errorf("failed to send data: %v", err)
 	}
 
 	// Receive the response over TCP
-	respData, err := r.AppMeshClientTCP.TcpExecutor.ReadMessage()
+	respData, err := r.AppMeshClientTCP.ReadMessage()
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive data: %v", err)
 	}

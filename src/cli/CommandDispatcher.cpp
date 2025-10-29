@@ -92,6 +92,7 @@ extern char **environ;
 
 const std::string COOKIE_TOKEN = "appmesh_auth_token";
 const std::string COOKIE_FILE = ".cookies";
+std::string COOKIE_PATH;
 
 // Global variable for appc exec
 static std::atomic_bool G_INTERRUPT(false);
@@ -1243,7 +1244,7 @@ int CommandDispatcher::cmdExecuteShell()
 			{
 				// NULL means either EOF (Ctrl+D) or we got interrupted
 				std::cout << "End of input (Ctrl+D pressed)" << std::endl;
-				continue;
+				break;
 			}
 			std::string cmd(input);
 			free(input);
@@ -1530,6 +1531,8 @@ int CommandDispatcher::cmdUserManage()
 	{
 		// View user
 		auto response = m_commandLineVariables.count(ALL) ? this->listUsers() : this->getCurrentUser();
+		response["cookie"] = COOKIE_PATH;
+		response["config"] = m_configFile;
 		std::cout << response.dump(2) << std::endl;
 	}
 	else
@@ -2313,9 +2316,9 @@ void CommandDispatcher::initClient(const std::string &url)
 	}
 
 	const auto cookieDomain = parseUrlHost(url);
-	const auto sessionFilePath = (fs::path(getAndCreateCookieDirectory(cookieDomain)) / COOKIE_FILE).string();
+	COOKIE_PATH = (fs::path(getAndCreateCookieDirectory(cookieDomain)) / COOKIE_FILE).string();
 
-	this->init(url, cfg.m_ca_location, cfg.m_certificate, cfg.m_private_key, sessionFilePath);
+	this->init(url, cfg.m_ca_location, cfg.m_certificate, cfg.m_private_key, COOKIE_PATH);
 
 	// Auto-login CLI user if no auth token exists
 	if (getAuthToken().empty())

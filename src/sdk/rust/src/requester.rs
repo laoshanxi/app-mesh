@@ -13,7 +13,7 @@ type Result<T> = std::result::Result<T, AppMeshError>;
 #[async_trait]
 pub trait Requester: Send + Sync {
     /// Execute an HTTP request
-    async fn request(
+    async fn send(
         &self,
         method: Method,
         path: &str,
