@@ -86,12 +86,13 @@
 	setCurrentUrl(m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>()); \
 	forwardTo(m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>());
 // Each user should have its own token path
-static std::string m_configFile = CommandDispatcher::getAndCreateConfigDir() + "/.appmesh.config";
-const static std::string m_shellHistoryFile = CommandDispatcher::getAndCreateConfigDir() + "/.appmesh.shell.history";
+const static std::string m_configFile = (fs::path(CommandDispatcher::getAndCreateConfigDir()) / ".appmesh.config").string();
+const static std::string m_shellHistoryFile = (fs::path(CommandDispatcher::getAndCreateConfigDir()) / ".appmesh.shell.history").string();
 extern char **environ;
 
 const std::string COOKIE_TOKEN = "appmesh_auth_token";
 const std::string COOKIE_FILE = ".cookies";
+std::string COOKIE_PATH;
 
 // Global variable for appc exec
 static std::atomic_bool G_INTERRUPT(false);
@@ -1243,7 +1244,7 @@ int CommandDispatcher::cmdExecuteShell()
 			{
 				// NULL means either EOF (Ctrl+D) or we got interrupted
 				std::cout << "End of input (Ctrl+D pressed)" << std::endl;
-				continue;
+				break;
 			}
 			std::string cmd(input);
 			free(input);
@@ -1530,6 +1531,9 @@ int CommandDispatcher::cmdUserManage()
 	{
 		// View user
 		auto response = m_commandLineVariables.count(ALL) ? this->listUsers() : this->getCurrentUser();
+		response["ext"]["cookie"] = COOKIE_PATH;
+		response["ext"]["config"] = m_configFile;
+		response["ext"]["history"] = m_shellHistoryFile;
 		std::cout << response.dump(2) << std::endl;
 	}
 	else
@@ -2313,9 +2317,9 @@ void CommandDispatcher::initClient(const std::string &url)
 	}
 
 	const auto cookieDomain = parseUrlHost(url);
-	const auto sessionFilePath = (fs::path(getAndCreateCookieDirectory(cookieDomain)) / COOKIE_FILE).string();
+	COOKIE_PATH = (fs::path(getAndCreateCookieDirectory(cookieDomain)) / COOKIE_FILE).string();
 
-	this->init(url, cfg.m_ca_location, cfg.m_certificate, cfg.m_private_key, sessionFilePath);
+	this->init(url, cfg.m_ca_location, cfg.m_certificate, cfg.m_private_key, COOKIE_PATH);
 
 	// Auto-login CLI user if no auth token exists
 	if (getAuthToken().empty())
@@ -2352,185 +2356,112 @@ void CommandDispatcher::setCurrentUrl(const std::string &userSpecifyUrl)
 }
 
 /**
- * Get and create config directory with proper permissions and sudo support
+ * Return the *real user's* home directory (even when running under sudo).
+ */
+static std::string getRealUserHome()
+{
+#ifndef _WIN32
+	const char *sudoUser = std::getenv("SUDO_USER");
+	if (sudoUser && *sudoUser)
+	{
+		if (struct passwd *pw = getpwnam(sudoUser))
+			return pw->pw_dir;
+	}
+
+	if (struct passwd *pw = getpwuid(getuid()))
+		return pw->pw_dir;
+
+	const char *home = std::getenv("HOME");
+	return (home && *home) ? home : ".";
+#else
+	const char *base = std::getenv("APPDATA");
+	if (!base || !*base)
+		base = std::getenv("LOCALAPPDATA");
+	return (base && *base) ? base : ".";
+#endif
+}
+
+/**
+ * Get (and if needed, create) the fixed per-user AppMesh config directory.
  *
- * Platform-specific locations:
- * - Windows: %APPDATA%\AppMesh (falls back to %LOCALAPPDATA% or current dir)
- * - Linux/macOS: $XDG_CONFIG_HOME/appmesh or ~/.config/appmesh
- *
- * @return Config directory path, or "." on failure
+ * Cross-platform logic:
+ *  - Windows: %APPDATA%\AppMesh
+ *  - Linux:   ~/.config/appmesh
+ *  - macOS:   ~/Library/Application Support/AppMesh
  */
 std::string CommandDispatcher::getAndCreateConfigDir()
 {
-	boost::filesystem::path dir;
+	fs::path dir;
 
 #ifdef _WIN32
-	const char *appData = std::getenv("APPDATA");			// C:\Users\<User>\AppData\Roaming
-	const char *localAppData = std::getenv("LOCALAPPDATA"); // C:\Users\<User>\AppData\Local
-
-	std::string base = appData ? appData : (localAppData ? localAppData : ".");
-	dir = boost::filesystem::path(base) / "AppMesh";
-
+	dir = fs::path(getRealUserHome()) / "AppMesh";
 #else
-	// Handle sudo: get real user's home
-	std::string home;
-	uid_t targetUid = getuid();
-	gid_t targetGid = getgid();
-
-	if (targetUid == 0)
-	{
-		const auto sudoUser = Utility::getenv("SUDO_USER");
-		if (!sudoUser.empty())
-		{
-			struct passwd *pw = getpwnam(sudoUser.c_str());
-			if (pw)
-			{
-				home = pw->pw_dir;
-				targetUid = pw->pw_uid;
-				targetGid = pw->pw_gid;
-			}
-		}
-	}
-
-	if (home.empty())
-		home = Utility::getenv("HOME");
-
-	// Only use XDG_CONFIG_HOME if not running as root
-	const auto xdgConfig = (targetUid != 0) ? Utility::getenv("XDG_CONFIG_HOME") : std::string();
-
-	std::string base;
-	if (!xdgConfig.empty())
-		base = xdgConfig;
-	else if (!home.empty())
-		base = home + "/.config";
-	else
-		base = ".";
-
-	dir = boost::filesystem::path(base) / "appmesh";
+	std::string home = getRealUserHome();
+#ifdef __APPLE__
+	dir = fs::path(home) / "Library" / "Application Support" / "AppMesh";
+#else
+	dir = fs::path(home) / ".config" / "appmesh";
+#endif
 #endif
 
 	try
 	{
-		if (!boost::filesystem::exists(dir))
-			boost::filesystem::create_directories(dir);
+		if (!fs::exists(dir))
+			fs::create_directories(dir);
+#ifndef _WIN32
+		chmod(dir.string().c_str(), 0755);
+#endif
 	}
-	catch (const boost::filesystem::filesystem_error &)
+	catch (const fs::filesystem_error &)
 	{
 		return ".";
 	}
-
-#ifndef _WIN32
-	chmod(dir.string().c_str(), 0755);
-
-	// Change ownership of created directories
-	if (getuid() == 0 && targetUid != 0)
-	{
-		boost::filesystem::path p = dir;
-		while (!p.empty() && p != p.root_path())
-		{
-			chown(p.string().c_str(), targetUid, targetGid);
-			p = p.parent_path();
-		}
-	}
-#endif
 
 	return dir.string();
 }
 
 /**
- * Get and create cookie directory with proper permissions and sudo support
+ * Get (and if needed, create) a persistent per-user cookie directory.
+ * Always stable for same real user.
  *
- * Platform-specific locations:
- * - Windows: %LOCALAPPDATA%\AppMesh\cookies
- * - Linux:   ~/.local/share/appmesh/cookies
- * - macOS:   ~/Library/Application Support/AppMesh/cookies
- *
- * @return Cookie directory path, or empty string on failure
+ * Cross-platform logic:
+ *  - Windows: %LOCALAPPDATA%\AppMesh\cookies
+ *  - Linux:   ~/.local/share/appmesh/cookies
+ *  - macOS:   ~/Library/Application Support/AppMesh/cookies
  */
 std::string CommandDispatcher::getAndCreateCookieDirectory(const std::string &host)
 {
-	boost::filesystem::path cookieDir;
+	fs::path cookieDir;
 
 #ifdef _WIN32
-	// Windows: Use LOCALAPPDATA
-	const auto localAppData = Utility::getenv("LOCALAPPDATA");
-	const auto appData = Utility::getenv("APPDATA");
+	const char *base = std::getenv("LOCALAPPDATA");
+	if (!base || !*base)
+		base = std::getenv("APPDATA");
+	if (!base || !*base)
+		base = ".";
 
-	std::string base = !localAppData.empty() ? localAppData : (!appData.empty() ? appData : ".");
-	cookieDir = boost::filesystem::path(base) / "AppMesh" / "cookies";
-
+	cookieDir = fs::path(base) / "AppMesh" / "cookies";
 #else
-	// Unix/Linux/macOS: Get home directory (handle sudo)
-	std::string home;
-	uid_t targetUid = getuid();
-	gid_t targetGid = getgid();
-
-	if (targetUid == 0)
-	{
-		const auto sudoUser = Utility::getenv("SUDO_USER");
-		if (!sudoUser.empty())
-		{
-			struct passwd *pw = getpwnam(sudoUser.c_str());
-			if (pw)
-			{
-				home = pw->pw_dir;
-				targetUid = pw->pw_uid;
-				targetGid = pw->pw_gid;
-			}
-		}
-	}
-
-	if (home.empty())
-	{
-		home = Utility::getenv("HOME");
-		if (home.empty())
-		{
-			struct passwd *pw = getpwuid(getuid());
-			if (pw)
-				home = pw->pw_dir;
-		}
-	}
-
-	if (home.empty())
-		return std::string();
-
-	// Platform-specific path
+	std::string home = getRealUserHome();
 #ifdef __APPLE__
-	cookieDir = boost::filesystem::path(home) / "Library" / "Application Support" / "AppMesh" / "cookies";
+	cookieDir = fs::path(home) / "Library" / "Application Support" / "AppMesh" / "cookies";
 #else
-	const auto xdgData = (targetUid != 0) ? Utility::getenv("XDG_DATA_HOME") : std::string();
-	std::string base = !xdgData.empty() ? xdgData : (home + "/.local/share");
-	cookieDir = boost::filesystem::path(base) / "appmesh" / "cookies";
+	cookieDir = fs::path(home) / ".local" / "share" / "appmesh" / "cookies";
+#endif
 #endif
 
-#endif
-
-	// Create directory
 	try
 	{
-		cookieDir /= hostSafeDir(host); // separate per host
-		boost::filesystem::create_directories(cookieDir);
+		cookieDir /= hostSafeDir(host);
+		fs::create_directories(cookieDir);
+#ifndef _WIN32
+		chmod(cookieDir.string().c_str(), 0700);
+#endif
 	}
-	catch (const boost::filesystem::filesystem_error &)
+	catch (const fs::filesystem_error &)
 	{
 		return std::string();
 	}
-
-#ifndef _WIN32
-	// Set permissions and ownership on Unix
-	chmod(cookieDir.string().c_str(), 0700);
-
-	if (getuid() == 0 && targetUid != 0)
-	{
-		// Change ownership for entire path
-		boost::filesystem::path p = cookieDir;
-		while (!p.empty() && p != p.root_path())
-		{
-			chown(p.string().c_str(), targetUid, targetGid);
-			p = p.parent_path();
-		}
-	}
-#endif
 
 	return cookieDir.string();
 }

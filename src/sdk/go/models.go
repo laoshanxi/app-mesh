@@ -1,9 +1,6 @@
 package appmesh
 
 import (
-	"io"
-	"net/http"
-	"net/url"
 	"path/filepath"
 	"runtime"
 
@@ -17,6 +14,9 @@ const (
 	DEFAULT_TOKEN_EXPIRE_SECONDS       = 7 * (60 * 60 * 24) // default 7 day(s)
 	DEFAULT_JWT_AUDIENCE               = "appmesh-service"
 	HTTP_USER_AGENT_HEADER_NAME        = "User-Agent"
+	HTTP_HEADER_NAME_CSRF_TOKEN        = "X-CSRF-Token"
+	HTTP_HEADER_JWT_SET_COOKIE         = "X-Set-Cookie"
+	COOKIE_CSRF_TOKEN                  = "appmesh_csrf_token"
 	HTTP_USER_AGENT                    = "appmesh/golang"
 	HTTP_USER_AGENT_TCP                = "appmesh/golang/tcp"
 	HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
@@ -44,12 +44,6 @@ func init() {
 	DEFAULT_CLIENT_CERT_FILE = filepath.Join(_DEFAULT_SSL_DIR, "client.pem")
 	DEFAULT_CLIENT_CERT_KEY_FILE = filepath.Join(_DEFAULT_SSL_DIR, "client-key.pem")
 	DEFAULT_CA_FILE = filepath.Join(_DEFAULT_SSL_DIR, "ca.pem")
-}
-
-// Requester defines the interface for making HTTP requests.
-type Requester interface {
-	Request(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error)
-	Close()
 }
 
 // Application represents the application configuration and status.
@@ -185,7 +179,7 @@ type JWTConfig struct {
 
 // Request represents the message sent over TCP.
 type Request struct {
-	Uuid          string            `msgpack:"uuid"`
+	UUID          string            `msgpack:"uuid"`
 	RequestUri    string            `msgpack:"request_uri"`
 	HttpMethod    string            `msgpack:"http_method"`
 	ClientAddress string            `msgpack:"client_addr"`
@@ -197,7 +191,7 @@ type Request struct {
 // NewRequest creates a Request with all fields initialized.
 func NewRequest() *Request {
 	return &Request{
-		Uuid:          xid.New().String(),
+		UUID:          xid.New().String(),
 		RequestUri:    "",
 		HttpMethod:    "",
 		ClientAddress: "",
@@ -214,7 +208,7 @@ func (r *Request) Serialize() ([]byte, error) {
 
 // Response represents the message received over TCP.
 type Response struct {
-	Uuid        string            `msgpack:"uuid"`
+	UUID        string            `msgpack:"uuid"`
 	RequestUri  string            `msgpack:"request_uri"`
 	HttpStatus  int               `msgpack:"http_status"`
 	BodyMsgType string            `msgpack:"body_msg_type"`

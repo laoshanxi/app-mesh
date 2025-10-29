@@ -237,7 +237,6 @@ void RestClient::setSessionConfig(CURL *curl)
 	{
 		// Use file-based cookies (Netscape cookie format)
 		curl_easy_setopt(curl, CURLOPT_COOKIEFILE, m_sessionConfig.cookie_file.c_str()); // Read cookies
-		curl_easy_setopt(curl, CURLOPT_COOKIEJAR, m_sessionConfig.cookie_file.c_str());	 // Write cookies
 	}
 }
 
@@ -341,7 +340,7 @@ std::shared_ptr<CurlResponse> RestClient::request(
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->status_code);
 
 		// Save cookies to memory if using memory-based session
-		if (m_sessionConfig.enable_session && m_sessionConfig.use_memory_cookies)
+		if (m_sessionConfig.enable_session)
 		{
 			std::lock_guard<std::mutex> lock(m_sessionMutex);
 			struct curl_slist *cookies = nullptr;
@@ -349,14 +348,22 @@ std::shared_ptr<CurlResponse> RestClient::request(
 
 			if (cookies)
 			{
-				m_memoryCookies.clear();
-				struct curl_slist *nc = cookies;
-				while (nc)
+				if (m_sessionConfig.use_memory_cookies)
 				{
-					m_memoryCookies += std::string(nc->data) + "\n";
-					nc = nc->next;
+					m_memoryCookies.clear();
+					struct curl_slist *nc = cookies;
+					while (nc)
+					{
+						m_memoryCookies += std::string(nc->data) + "\n";
+						nc = nc->next;
+					}
+					curl_slist_free_all(cookies);
 				}
-				curl_slist_free_all(cookies);
+				else if (!m_sessionConfig.cookie_file.empty())
+				{
+					curl_easy_setopt(curl, CURLOPT_COOKIELIST, "FLUSH");
+					curl_easy_setopt(curl, CURLOPT_COOKIEJAR, m_sessionConfig.cookie_file.c_str()); // Write cookies
+				}
 			}
 		}
 	}
