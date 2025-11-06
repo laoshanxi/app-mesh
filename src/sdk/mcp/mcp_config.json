@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "local-stdio-appmesh": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "appmesh_server"]
+    },
+    "remote-sse-server": {
+      "type": "sse",
+      "url": "https://api.example.com/sse",
+      "disabled": true
+    },
+    "remote-http-server": {
+      "type": "http",
+      "url": "https://api.example.com/mcp",
+      "disabled": true
+    }
+  }
+}
