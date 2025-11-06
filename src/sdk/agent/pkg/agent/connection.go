@@ -31,8 +31,8 @@ type Connection struct {
 	closeOnce sync.Once
 }
 
-// GetOrCreateConnection returns an existing connection or creates a new one.
-func GetOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (*Connection, error) {
+// getOrCreateConnection returns an existing connection or creates a new one.
+func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (*Connection, error) {
 	// Check if connection already exists (without holding lock during creation)
 	if conn, ok := remoteConnections.Load(tcpAddress); ok {
 		return conn.(*Connection), nil
@@ -80,8 +80,8 @@ func (c *Connection) String() string {
 	return c.addr.String()
 }
 
-// SendRequestDataWithContext serializes and sends request data.
-func (c *Connection) SendRequestDataWithContext(ctx context.Context, request *Request) (*Response, error) {
+// sendRequestDataWithContext serializes and sends request data.
+func (c *Connection) sendRequestDataWithContext(ctx context.Context, request *Request) (*Response, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("context cancelled before sending: %w", err)
 	}
@@ -188,8 +188,8 @@ func (c *Connection) onResponse(response *Response) {
 	}
 }
 
-// SendFileDataWithContext uploads a file in chunks with context support.
-func (c *Connection) SendFileDataWithContext(ctx context.Context, localFile string) error {
+// sendFileDataWithContext uploads a file in chunks with context support.
+func (c *Connection) sendFileDataWithContext(ctx context.Context, localFile string) error {
 	file, err := os.Open(localFile)
 	if err != nil {
 		return fmt.Errorf("open file %q: %w", localFile, err)
@@ -224,18 +224,18 @@ func (c *Connection) SendFileDataWithContext(ctx context.Context, localFile stri
 	return c.SendMessage(ctx, []byte{})
 }
 
-// DeleteConnection closes and removes a connection from the pool.
-func DeleteConnection(target *Connection) {
+// deleteConnection closes and removes a connection from the pool.
+func deleteConnection(target *Connection) {
 	if value, ok := remoteConnections.LoadAndDelete(target.addr); ok {
 		if conn, ok := value.(*Connection); ok {
-			conn.Close()
+			conn.close()
 			logger.Infof("Removed connection: %s", target)
 		}
 	}
 }
 
-// Close closes the connection and cleans up all pending responses.
-func (c *Connection) Close() {
+// close closes the connection and cleans up all pending responses.
+func (c *Connection) close() {
 	c.closeOnce.Do(func() {
 		close(c.closed) // Signal that connection is closing
 

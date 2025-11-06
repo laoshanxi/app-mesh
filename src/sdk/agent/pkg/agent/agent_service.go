@@ -86,7 +86,7 @@ func init() {
 // MonitorConnectionResponse continuously reads messages from a connection and forwards responses
 // to their corresponding channels. It handles connection cleanup on errors.
 func MonitorConnectionResponse(conn *Connection, allowError bool) {
-	defer DeleteConnection(conn)
+	defer deleteConnection(conn)
 
 	// Helper function to handle errors consistently
 	handleError := func(msg string, args ...interface{}) {
@@ -120,7 +120,7 @@ func ListenAndServeREST() error {
 		log.Fatalf("Failed to resolve address %s: %v", hostPort, err)
 	}
 
-	localConnection, err = GetOrCreateConnection(connectAddr, config.ConfigData.REST.SSL.VerifyServer, false)
+	localConnection, err = getOrCreateConnection(connectAddr, config.ConfigData.REST.SSL.VerifyServer, false)
 	if err != nil {
 		logger.Fatalf("Failed to connect to TCP server <%s> with error: %v", connectAddr, err)
 	}
@@ -329,7 +329,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		} else {
 			// Forward with TCP protocol
-			targetConnection, err = GetOrCreateConnection(forwardingAddr, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
+			targetConnection, err = getOrCreateConnection(forwardingAddr, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
 				utils.HttpError(w, err.Error(), http.StatusInternalServerError)
@@ -360,13 +360,13 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp, sendErr := targetConnection.SendRequestDataWithContext(r.Context(), request)
+	resp, sendErr := targetConnection.sendRequestDataWithContext(r.Context(), request)
 	if sendErr != nil {
 		logger.Errorf("Failed to send request to server with error: %v", sendErr)
 
 		// Only delete remote connections on error, not local connection
 		if targetConnection != localConnection {
-			DeleteConnection(targetConnection)
+			deleteConnection(targetConnection)
 		}
 
 		utils.HttpError(w, sendErr.Error(), http.StatusInternalServerError)
@@ -379,12 +379,12 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	// Handle file upload after response to client
 	if resp.TempUploadFilePath != "" {
 		defer os.Remove(resp.TempUploadFilePath)
-		sendErr = targetConnection.SendFileDataWithContext(r.Context(), resp.TempUploadFilePath)
+		sendErr = targetConnection.sendFileDataWithContext(r.Context(), resp.TempUploadFilePath)
 		if sendErr != nil {
 			logger.Errorf("Failed to send file data: %v", sendErr)
 			// Only delete connection on file send error
 			if targetConnection != localConnection {
-				DeleteConnection(targetConnection)
+				deleteConnection(targetConnection)
 			}
 			// Don't return error to client since response was already sent
 		}
