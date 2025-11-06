@@ -43,5 +43,5 @@ jobs:
           project: laoshanxi%2Fapp-mesh
           working-directory: build
           token: ${{ secrets.COVERITY_SCAN_TOKEN }}
-          email: 178029200@qq.com
+          email: ${{ secrets.COVERITY_SCAN_EMAIL }}
           version: ${{ env.APPMESH_VERSION }}
