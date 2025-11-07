@@ -1188,13 +1188,15 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	}
 	else
 	{
+		auto weakSelf = std::weak_ptr<Application>(std::dynamic_pointer_cast<Application>(weak_from_this().lock()));
+
 		if (monitorProcess)
 		{
-			process.reset(new MonitoredProcess(this));
+			process = std::make_shared<MonitoredProcess>(weakSelf);
 		}
 		else
 		{
-			process.reset(new AppProcess(this));
+			process = std::make_shared<AppProcess>(weakSelf);
 		}
 	}
 	return process;
