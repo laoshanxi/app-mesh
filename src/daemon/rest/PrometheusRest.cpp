@@ -72,15 +72,15 @@ std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &
 	return std::make_shared<GaugeMetric>(m_promRegistry, metricName, metricHelp, labels);
 }
 
-void PrometheusRest::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
+void PrometheusRest::handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &message)>> &restFunctions)
 {
-	if (message.m_method == web::http::methods::GET && message.m_relative_uri != METRIC_PATH)
+	if (message->m_method == web::http::methods::GET && message->m_relative_uri != METRIC_PATH)
 		PROM_COUNTER_INCREASE(m_restGetCounter)
-	else if (message.m_method == web::http::methods::PUT)
+	else if (message->m_method == web::http::methods::PUT)
 		PROM_COUNTER_INCREASE(m_restPutCounter)
-	else if (message.m_method == web::http::methods::POST)
+	else if (message->m_method == web::http::methods::POST)
 		PROM_COUNTER_INCREASE(m_restPostCounter)
-	else if (message.m_method == web::http::methods::DEL)
+	else if (message->m_method == web::http::methods::DEL)
 		PROM_COUNTER_INCREASE(m_restDelCounter)
 
 	RestBase::handleRest(message, restFunctions);
@@ -103,7 +103,7 @@ bool PrometheusRest::collected()
 	return true;
 }
 
-void PrometheusRest::apiMetrics(const HttpRequest &message)
+void PrometheusRest::apiMetrics(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "PrometheusRest::apiMetrics() ";
 	LOG_DBG << fname << "Entered";
@@ -117,7 +117,7 @@ void PrometheusRest::apiMetrics(const HttpRequest &message)
 		m_appmeshFileDesc->metric().Set(os::pstree()->totalFileDescriptors());
 	}
 	auto body = collectData();
-	message.reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
+	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
 }
 
 CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, const std::string &name, const std::string &help, std::map<std::string, std::string> label)

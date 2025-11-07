@@ -19,64 +19,64 @@ RestBase::~RestBase()
 {
 }
 
-void RestBase::handle_get(const HttpRequest &message)
+void RestBase::handle_get(const std::shared_ptr<HttpRequest> &message)
 {
     handleRest(message, m_restGetFunctions);
 }
 
-void RestBase::handle_put(const HttpRequest &message)
+void RestBase::handle_put(const std::shared_ptr<HttpRequest> &message)
 {
     handleRest(message, m_restPutFunctions);
 }
 
-void RestBase::handle_post(const HttpRequest &message)
+void RestBase::handle_post(const std::shared_ptr<HttpRequest> &message)
 {
     handleRest(message, m_restPstFunctions);
 }
 
-void RestBase::handle_delete(const HttpRequest &message)
+void RestBase::handle_delete(const std::shared_ptr<HttpRequest> &message)
 {
     handleRest(message, m_restDelFunctions);
 }
 
-void RestBase::handle_options(const HttpRequest &message)
+void RestBase::handle_options(const std::shared_ptr<HttpRequest> &message)
 {
-    message.reply(web::http::status_codes::OK);
+    message->reply(web::http::status_codes::OK);
 }
 
-void RestBase::handle_head(const HttpRequest &message)
+void RestBase::handle_head(const std::shared_ptr<HttpRequest> &message)
 {
-    message.reply(web::http::status_codes::OK);
+    message->reply(web::http::status_codes::OK);
 }
 
-void RestBase::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
+void RestBase::handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &restFunctions)
 {
     const static char fname[] = "RestBase::handleRest() ";
     REST_INFO_PRINT;
 
-    const auto path = Utility::stringReplace(message.m_relative_uri, "//", "/");
+    const auto path = Utility::stringReplace(message->m_relative_uri, "//", "/");
 
     // Root handler
     if (path == "/" || path.empty())
     {
         static std::string body(REST_ROOT_TEXT_MESSAGE);
         static std::string contentType("text/html; charset=utf-8");
-        message.reply(web::http::status_codes::OK, body, contentType);
+        message->reply(web::http::status_codes::OK, body, contentType);
         return;
     }
 
     // Find matching REST function
     auto it = std::find_if(
         restFunctions.begin(), restFunctions.end(),
-        [&](const std::pair<const std::string, std::function<void(const HttpRequest &)>> &kvp)
+        [&](const std::pair<const std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &kvp)
         {
             return path == kvp.first || boost::regex_match(path, boost::regex(kvp.first));
         });
 
     if (it == restFunctions.end())
     {
-        LOG_WAR << fname << "404 NotFound " << message.m_method << ":" << path;
-        message.reply(web::http::status_codes::NotFound, Utility::text2json("Path not found " + message.m_method + ":" + path));
+        LOG_WAR << fname << "404 NotFound " << message->m_method << ":" << path;
+        message->reply(web::http::status_codes::NotFound, Utility::text2json("Path not found " + message->m_method + ":" + path));
         return;
     }
 
@@ -87,42 +87,42 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     catch (const NotFoundException &e)
     {
-        LOG_WAR << fname << "404 NotFound " << message.m_method << ":" << path << " - " << e.what();
-        message.reply(web::http::status_codes::NotFound, Utility::text2json(e.what()));
+        LOG_WAR << fname << "404 NotFound " << message->m_method << ":" << path << " - " << e.what();
+        message->reply(web::http::status_codes::NotFound, Utility::text2json(e.what()));
     }
     catch (const std::domain_error &e)
     {
         // Security issue: domain_error -> 401
-        LOG_WAR << fname << "401 Unauthorized " << message.m_method << ":" << path << " - " << e.what();
-        message.reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()));
+        LOG_WAR << fname << "401 Unauthorized " << message->m_method << ":" << path << " - " << e.what();
+        message->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()));
     }
     catch (const std::invalid_argument &e)
     {
         // Input issue: invalid_argument -> 400
-        LOG_WAR << fname << "400 BadRequest " << message.m_method << ":" << path << " - " << e.what();
-        message.reply(web::http::status_codes::BadRequest, Utility::text2json(e.what()));
+        LOG_WAR << fname << "400 BadRequest " << message->m_method << ":" << path << " - " << e.what();
+        message->reply(web::http::status_codes::BadRequest, Utility::text2json(e.what()));
     }
     catch (const std::runtime_error &e)
     {
         // Logic issue: runtime_error -> 412
-        LOG_WAR << fname << "412 RuntimeError " << message.m_method << ":" << path << " - " << e.what();
-        message.reply(web::http::status_codes::PreconditionFailed, Utility::text2json(e.what()));
+        LOG_WAR << fname << "412 RuntimeError " << message->m_method << ":" << path << " - " << e.what();
+        message->reply(web::http::status_codes::PreconditionFailed, Utility::text2json(e.what()));
     }
     catch (const std::exception &e)
     {
         // Others: Server issue
-        LOG_ERR << fname << "500 InternalServerError " << message.m_method << ":" << path << " - " << e.what();
-        message.reply(web::http::status_codes::InternalError, Utility::text2json("Internal server error"));
+        LOG_ERR << fname << "500 InternalServerError " << message->m_method << ":" << path << " - " << e.what();
+        message->reply(web::http::status_codes::InternalError, Utility::text2json("Internal server error"));
     }
     catch (...)
     {
         // Others: Server issue
-        LOG_ERR << fname << "500 InternalServerError " << message.m_method << ":" << path << " - Unknown exception";
-        message.reply(web::http::status_codes::InternalError, Utility::text2json("Unknown exception"));
+        LOG_ERR << fname << "500 InternalServerError " << message->m_method << ":" << path << " - Unknown exception";
+        message->reply(web::http::status_codes::InternalError, Utility::text2json("Unknown exception"));
     }
 }
 
-void RestBase::bindRestMethod(const web::http::method &method, const std::string &path, std::function<void(const HttpRequest &)> func)
+void RestBase::bindRestMethod(const web::http::method &method, const std::string &path, std::function<void(const std::shared_ptr<HttpRequest> &)> func)
 {
     const static char fname[] = "RestBase::bindRest() ";
 
@@ -141,12 +141,12 @@ void RestBase::bindRestMethod(const web::http::method &method, const std::string
         LOG_ERR << fname << method << " not supported.";
 }
 
-const std::string RestBase::getJwtToken(const HttpRequest &message)
+const std::string RestBase::getJwtToken(const std::shared_ptr<HttpRequest> &message)
 {
     std::string token;
-    if (message.m_headers.count(HTTP_HEADER_JWT_Authorization))
+    if (message->m_headers.count(HTTP_HEADER_JWT_Authorization))
     {
-        token = Utility::stdStringTrim(message.m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
+        token = Utility::stdStringTrim(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
         token = Utility::stdStringTrim(token, HTTP_HEADER_JWT_BearerSpace, true, false);
         token = Utility::stdStringTrim(token);
     }
@@ -359,7 +359,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
     return std::make_tuple(userName, userObj->getGroup(), roles);
 }
 
-const std::string RestBase::getJwtUserName(const HttpRequest &message)
+const std::string RestBase::getJwtUserName(const std::shared_ptr<HttpRequest> &message)
 {
     const auto decodedToken = decodeJwtToken(getJwtToken(message));
 
@@ -379,7 +379,7 @@ const std::string RestBase::getJwtUserName(const HttpRequest &message)
     }
 }
 
-const std::set<std::string> RestBase::getJwtUserAudience(const HttpRequest &message)
+const std::set<std::string> RestBase::getJwtUserAudience(const std::shared_ptr<HttpRequest> &message)
 {
     const auto decodedToken = decodeJwtToken(getJwtToken(message));
 
@@ -393,7 +393,7 @@ const std::set<std::string> RestBase::getJwtUserAudience(const HttpRequest &mess
     }
 }
 
-const std::string RestBase::permissionCheck(const HttpRequest &message, const std::string &permission, const std::string &audience)
+const std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission, const std::string &audience)
 {
     const static char fname[] = "RestBase::permissionCheck() ";
 
@@ -439,6 +439,6 @@ const std::string RestBase::permissionCheck(const HttpRequest &message, const st
         }
     }
 
-    LOG_DBG << fname << "Authentication successful for client: " << message.m_remote_address << ", user: " << userName << ", permission: " << (permission.empty() ? "none" : permission);
+    LOG_DBG << fname << "Authentication successful for client: " << message->m_remote_address << ", user: " << userName << ", permission: " << (permission.empty() ? "none" : permission);
     return userName;
 }

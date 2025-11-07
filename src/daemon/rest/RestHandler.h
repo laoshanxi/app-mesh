@@ -21,69 +21,69 @@ public:
 	static std::string getHttpQueryString(const HttpRequest &message, const std::string &key);
 
 protected:
-	void checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite);
+	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::string &appName, bool requestWrite);
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 
-	nlohmann::json createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token = nullptr);
-	void apiUserLogin(const HttpRequest &message);
-	void apiUserLogoff(const HttpRequest &message);
-	void apiUserTokenRenew(const HttpRequest &message);
-	void apiUserAuth(const HttpRequest &message);
-	void apiUserTotpSecret(const HttpRequest &message);
-	void apiUserTotpSetup(const HttpRequest &message);
-	void apiUserTotpValidate(const HttpRequest &message);
-	void apiUserTotpDisable(const HttpRequest &message);
+	nlohmann::json createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token = nullptr);
+	void apiUserLogin(const std::shared_ptr<HttpRequest> &message);
+	void apiUserLogoff(const std::shared_ptr<HttpRequest> &message);
+	void apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message);
+	void apiUserAuth(const std::shared_ptr<HttpRequest> &message);
+	void apiUserTotpSecret(const std::shared_ptr<HttpRequest> &message);
+	void apiUserTotpSetup(const std::shared_ptr<HttpRequest> &message);
+	void apiUserTotpValidate(const std::shared_ptr<HttpRequest> &message);
+	void apiUserTotpDisable(const std::shared_ptr<HttpRequest> &message);
 
-	void apiAppView(const HttpRequest &message);
-	void apiAppOutputView(const HttpRequest &message);
-	void apiAppsView(const HttpRequest &message);
+	void apiAppView(const std::shared_ptr<HttpRequest> &message);
+	void apiAppOutputView(const std::shared_ptr<HttpRequest> &message);
+	void apiAppsView(const std::shared_ptr<HttpRequest> &message);
 
-	std::shared_ptr<Application> parseAndRegRunApp(const HttpRequest &message);
-	void apiRunAsync(const HttpRequest &message);
-	void apiRunSync(const HttpRequest &message);
+	std::shared_ptr<Application> parseAndRegRunApp(const std::shared_ptr<HttpRequest> &message);
+	void apiRunAsync(const std::shared_ptr<HttpRequest> &message);
+	void apiRunSync(const std::shared_ptr<HttpRequest> &message);
 
-	void apiSendMessage(const HttpRequest &message);		 // client send message and wait for response with async REST call
-	void apiRemoveMessage(const HttpRequest &message);		 // client remove message
-	void apiGetMessage(const HttpRequest &message);			 // server get message with block and iterator REST call
-	void apiSendMessageResponse(const HttpRequest &message); // server send response (then server response to client apiSendMessage)
+	void apiSendMessage(const std::shared_ptr<HttpRequest> &message);		  // client send message and wait for response with async REST call
+	void apiRemoveMessage(const std::shared_ptr<HttpRequest> &message);		  // client remove message
+	void apiGetMessage(const std::shared_ptr<HttpRequest> &message);		  // server get message with block and iterator REST call
+	void apiSendMessageResponse(const std::shared_ptr<HttpRequest> &message); // server send response (then server response to client apiSendMessage)
 
-	void apiCloudResourceView(const HttpRequest &message);
+	void apiCloudResourceView(const std::shared_ptr<HttpRequest> &message);
 
-	void apiResourceView(const HttpRequest &message);
+	void apiResourceView(const std::shared_ptr<HttpRequest> &message);
 
-	void apiAppAdd(const HttpRequest &message);
-	void apiAppEnable(const HttpRequest &message);
-	void apiAppDisable(const HttpRequest &message);
-	void apiAppDelete(const HttpRequest &message);
+	void apiAppAdd(const std::shared_ptr<HttpRequest> &message);
+	void apiAppEnable(const std::shared_ptr<HttpRequest> &message);
+	void apiAppDisable(const std::shared_ptr<HttpRequest> &message);
+	void apiAppDelete(const std::shared_ptr<HttpRequest> &message);
 
-	void apiFileDownload(const HttpRequest &message);
-	void apiFileUpload(const HttpRequest &message);
+	void apiFileDownload(const std::shared_ptr<HttpRequest> &message);
+	void apiFileUpload(const std::shared_ptr<HttpRequest> &message);
 
-	void apiLabelsView(const HttpRequest &message);
-	void apiLabelAdd(const HttpRequest &message);
-	void apiLabelDel(const HttpRequest &message);
+	void apiLabelsView(const std::shared_ptr<HttpRequest> &message);
+	void apiLabelAdd(const std::shared_ptr<HttpRequest> &message);
+	void apiLabelDel(const std::shared_ptr<HttpRequest> &message);
 
-	void apiBasicConfigView(const HttpRequest &message);
-	void apiBasicConfigSet(const HttpRequest &message);
+	void apiBasicConfigView(const std::shared_ptr<HttpRequest> &message);
+	void apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message);
 
-	void apiPermissionsView(const HttpRequest &message);
-	void apiUserPermissionsView(const HttpRequest &message);
-	void apiUserChangePwd(const HttpRequest &message);
-	void apiUserLock(const HttpRequest &message);
-	void apiUserUnlock(const HttpRequest &message);
-	void apiUserView(const HttpRequest &message);
-	void apiUserAdd(const HttpRequest &message);
-	void apiUserDel(const HttpRequest &message);
-	void apiUsersView(const HttpRequest &message);
-	void apiUserGroupsView(const HttpRequest &message);
+	void apiPermissionsView(const std::shared_ptr<HttpRequest> &message);
+	void apiUserPermissionsView(const std::shared_ptr<HttpRequest> &message);
+	void apiUserChangePwd(const std::shared_ptr<HttpRequest> &message);
+	void apiUserLock(const std::shared_ptr<HttpRequest> &message);
+	void apiUserUnlock(const std::shared_ptr<HttpRequest> &message);
+	void apiUserView(const std::shared_ptr<HttpRequest> &message);
+	void apiUserAdd(const std::shared_ptr<HttpRequest> &message);
+	void apiUserDel(const std::shared_ptr<HttpRequest> &message);
+	void apiUsersView(const std::shared_ptr<HttpRequest> &message);
+	void apiUserGroupsView(const std::shared_ptr<HttpRequest> &message);
 
-	void apiRolesView(const HttpRequest &message);
-	void apiRoleUpdate(const HttpRequest &message);
-	void apiRoleDelete(const HttpRequest &message);
+	void apiRolesView(const std::shared_ptr<HttpRequest> &message);
+	void apiRoleUpdate(const std::shared_ptr<HttpRequest> &message);
+	void apiRoleDelete(const std::shared_ptr<HttpRequest> &message);
 
-	void apiHealth(const HttpRequest &message);
-	void apiRestMetrics(const HttpRequest &message); // not for Prometheus
+	void apiHealth(const std::shared_ptr<HttpRequest> &message);
+	void apiRestMetrics(const std::shared_ptr<HttpRequest> &message); // not for Prometheus
 };
 
 typedef ACE_Singleton<RestHandler, ACE_Null_Mutex> RESTHANDLER;

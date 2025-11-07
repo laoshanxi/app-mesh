@@ -146,24 +146,25 @@ void HttpRequest::verifyHMAC() const
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequestAutoCleanup - automatically removes app from global map on cleanup
 ////////////////////////////////////////////////////////////////////////////////
-HttpRequestAutoCleanup::HttpRequestAutoCleanup(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
-	: HttpRequest(message), m_app(appObj)
+HttpRequestAutoCleanup::HttpRequestAutoCleanup(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj)
+	: HttpRequest(*message), m_app(appObj)
 {
 }
 
 HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 {
 	// Trigger suicide timer to remove app (avoid using Application lock to access Configuration)
-	if (m_app)
-		m_app->regSuicideTimer(0);
-	m_app.reset();
+	if (auto app = m_app.lock())
+	{
+		app->regSuicideTimer(0);
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequestWithTimeout - HTTP request with timeout support
 ////////////////////////////////////////////////////////////////////////////////
-HttpRequestWithTimeout::HttpRequestWithTimeout(const HttpRequest &message)
-	: HttpRequest(message), m_timerResponseId(INVALID_TIMER_ID), m_httpRequestReplyFlag(false), m_id(0)
+HttpRequestWithTimeout::HttpRequestWithTimeout(const std::shared_ptr<HttpRequest> &message)
+	: HttpRequest(*message), m_timerResponseId(INVALID_TIMER_ID), m_httpRequestReplyFlag(false), m_id(0)
 {
 }
 
@@ -238,8 +239,8 @@ bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 using APP_OUT_MULTI_MAP_TYPE = ACE_Hash_Multi_Map_Manager<pid_t, std::shared_ptr<HttpRequestOutputView>, ACE_Hash<pid_t>, ACE_Equal_To<pid_t>, ACE_Recursive_Thread_Mutex>;
 static APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
 
-HttpRequestOutputView::HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
-	: HttpRequest(message), m_timerResponseId(INVALID_TIMER_ID), m_pid(ACE_INVALID_PID), m_app(appObj)
+HttpRequestOutputView::HttpRequestOutputView(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj)
+	: HttpRequest(*message), m_timerResponseId(INVALID_TIMER_ID), m_pid(appObj->getpid()), m_app(appObj)
 {
 }
 
@@ -247,15 +248,20 @@ void HttpRequestOutputView::init()
 {
 	const static char fname[] = "HttpRequestOutputView::init() ";
 
-	size_t timeout = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
-	m_pid = m_app->getpid();
+	auto app = m_app.lock();
+	if (!app)
+	{
+		HttpRequest::reply(web::http::status_codes::ExpectationFailed);
+		return;
+	}
 
+	size_t timeout = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
 	if (AppProcess::running(m_pid) && timeout > 0)
 	{
-		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(this->shared_from_this()));
+		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(shared_from_this()));
 		m_timerResponseId = this->registerTimer(1000L * timeout, 0, std::bind(&HttpRequestOutputView::onTimerResponse, this), fname);
 
-		LOG_DBG << fname << "app <" << m_app->getName() << "> view output with pid <" << m_pid << ">, APP_OUT_VIEW_MAP size = " << APP_OUT_VIEW_MAP.current_size();
+		LOG_DBG << fname << "app <" << app->getName() << "> view output with pid <" << m_pid << ">, APP_OUT_VIEW_MAP size = " << APP_OUT_VIEW_MAP.current_size();
 	}
 	else
 	{
@@ -278,6 +284,13 @@ bool HttpRequestOutputView::onTimerResponse()
 		CLEAR_TIMER_ID(m_timerResponseId);
 		if (!m_httpRequestReplyFlag.test_and_set())
 		{
+			auto app = m_app.lock();
+			if (!app)
+			{
+				HttpRequest::reply(web::http::status_codes::ExpectationFailed);
+				return false;
+			}
+
 			long pos = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
 			int index = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
 			long maxSize = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
@@ -286,7 +299,7 @@ bool HttpRequestOutputView::onTimerResponse()
 			bool outputHtml = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_html).length();
 			bool outputJson = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_json).length();
 
-			auto result = m_app->getOutput(pos, maxSize, processUuid, index, timeout);
+			auto result = app->getOutput(pos, maxSize, processUuid, index, timeout);
 			auto output = std::get<0>(result);
 			const auto &finished = std::get<1>(result);
 			const auto &exitCode = std::get<2>(result);
@@ -311,7 +324,7 @@ bool HttpRequestOutputView::onTimerResponse()
 				{
 					ss << line << "</pre>\n<pre>";
 				}
-				output = Utility::stringFormat(html, m_app->getName().c_str(), ss.str().c_str());
+				output = Utility::stringFormat(html, app->getName().c_str(), ss.str().c_str());
 			}
 			else if (outputJson)
 			{
@@ -325,13 +338,11 @@ bool HttpRequestOutputView::onTimerResponse()
 				output = jsonArray.dump();
 			}
 			HttpRequest::reply(web::http::status_codes::OK, output, headers);
-			m_app.reset();
 		}
 	}
 	catch (const std::exception &e)
 	{
 		HttpRequest::reply(web::http::status_codes::ExpectationFailed);
-		m_app.reset();
 	}
 	return false;
 }

@@ -232,31 +232,30 @@ void TcpHandler::handleTcpRest()
 			msg = nullptr;
 			if (request)
 			{
-				const HttpRequest &message = *request;
-				LOG_DBG << fname << message.m_method << " from <"
-						<< message.m_remote_address << "> path <"
-						<< message.m_relative_uri << "> id <"
-						<< message.m_uuid << "> TcpHandler <"
+				LOG_DBG << fname << request->m_method << " from <"
+						<< request->m_remote_address << "> path <"
+						<< request->m_relative_uri << "> id <"
+						<< request->m_uuid << "> TcpHandler <"
 						<< entity->m_tcpHanlerId << ">";
 
-				if (message.m_method == web::http::methods::GET)
-					RESTHANDLER::instance()->handle_get(message);
-				else if (message.m_method == web::http::methods::PUT)
-					RESTHANDLER::instance()->handle_put(message);
-				else if (message.m_method == web::http::methods::DEL)
-					RESTHANDLER::instance()->handle_delete(message);
-				else if (message.m_method == web::http::methods::POST)
-					RESTHANDLER::instance()->handle_post(message);
-				else if (message.m_method == web::http::methods::OPTIONS)
-					RESTHANDLER::instance()->handle_options(message);
-				else if (message.m_method == web::http::methods::HEAD)
-					RESTHANDLER::instance()->handle_head(message);
+				if (request->m_method == web::http::methods::GET)
+					RESTHANDLER::instance()->handle_get(request);
+				else if (request->m_method == web::http::methods::PUT)
+					RESTHANDLER::instance()->handle_put(request);
+				else if (request->m_method == web::http::methods::DEL)
+					RESTHANDLER::instance()->handle_delete(request);
+				else if (request->m_method == web::http::methods::POST)
+					RESTHANDLER::instance()->handle_post(request);
+				else if (request->m_method == web::http::methods::OPTIONS)
+					RESTHANDLER::instance()->handle_options(request);
+				else if (request->m_method == web::http::methods::HEAD)
+					RESTHANDLER::instance()->handle_head(request);
 				else
 				{
 					closeTcpHandler(entity->m_tcpHanlerId);
-					LOG_ERR << fname << "no such method " << message.m_method
-							<< " from " << message.m_remote_address
-							<< " with path " << message.m_relative_uri;
+					LOG_ERR << fname << "no such method " << request->m_method
+							<< " from " << request->m_remote_address
+							<< " with path " << request->m_relative_uri;
 				}
 			}
 			else
