@@ -81,11 +81,11 @@ class Application;
 class HttpRequestAutoCleanup : public HttpRequest
 {
 public:
-	explicit HttpRequestAutoCleanup(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
+	explicit HttpRequestAutoCleanup(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj);
 	virtual ~HttpRequestAutoCleanup();
 
 private:
-	std::shared_ptr<Application> m_app;
+	std::weak_ptr<Application> m_app;
 };
 
 // HttpRequest with timeout support
@@ -94,7 +94,7 @@ class HttpRequestWithTimeout : public HttpRequest, public TimerHandler
 {
 public:
 	using HttpRequest::reply;
-	explicit HttpRequestWithTimeout(const HttpRequest &message);
+	explicit HttpRequestWithTimeout(const std::shared_ptr<HttpRequest> &message);
 	virtual ~HttpRequestWithTimeout();
 
 	bool initTimer(int timeoutSeconds);
@@ -125,7 +125,7 @@ private:
 class HttpRequestOutputView : public TimerHandler, public HttpRequest
 {
 public:
-	explicit HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
+	explicit HttpRequestOutputView(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj);
 	~HttpRequestOutputView() = default;
 	void init();
 
@@ -142,7 +142,7 @@ public:
 private:
 	std::atomic_long m_timerResponseId;
 	pid_t m_pid;
-	std::shared_ptr<Application> m_app;
+	std::weak_ptr<Application> m_app;
 	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;
 };
 

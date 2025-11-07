@@ -31,46 +31,46 @@ protected:
     /// </summary>
     /// <param name="message"></param>
     /// <param name="restFunctions"></param>
-    virtual void handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions);
+    virtual void handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &restFunctions);
     /// <summary>
     /// Bind a REST path to a function
     /// </summary>
     /// <param name="method"></param>
     /// <param name="path">support regex</param>
     /// <param name="func"></param>
-    void bindRestMethod(const web::http::method &method, const std::string &path, std::function<void(const HttpRequest &)> func);
+    void bindRestMethod(const web::http::method &method, const std::string &path, std::function<void(const std::shared_ptr<HttpRequest> &)> func);
 
 public:
-    void handle_get(const HttpRequest &message);
-    void handle_put(const HttpRequest &message);
-    void handle_post(const HttpRequest &message);
-    void handle_delete(const HttpRequest &message);
-    void handle_options(const HttpRequest &message);
-    void handle_head(const HttpRequest &message);
+    void handle_get(const std::shared_ptr<HttpRequest> &message);
+    void handle_put(const std::shared_ptr<HttpRequest> &message);
+    void handle_post(const std::shared_ptr<HttpRequest> &message);
+    void handle_delete(const std::shared_ptr<HttpRequest> &message);
+    void handle_options(const std::shared_ptr<HttpRequest> &message);
+    void handle_head(const std::shared_ptr<HttpRequest> &message);
 
 protected:
     // tuple: username, usergroup, roles
     const std::tuple<std::string, std::string, std::set<std::string>> verifyToken(const std::string &token, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
-    const std::string permissionCheck(const HttpRequest &message, const std::string &permission, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
-    const std::string getJwtUserName(const HttpRequest &message);
-    const std::set<std::string> getJwtUserAudience(const HttpRequest &message);
-    const std::string getJwtToken(const HttpRequest &message);
+    const std::string permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
+    const std::string getJwtUserName(const std::shared_ptr<HttpRequest> &message);
+    const std::set<std::string> getJwtUserAudience(const std::shared_ptr<HttpRequest> &message);
+    const std::string getJwtToken(const std::shared_ptr<HttpRequest> &message);
     const jwt::decoded_jwt<jwt::traits::nlohmann_json> decodeJwtToken(const std::string &token);
     const std::string generateJwtToken(const std::string &uname, const std::string &userGroup, const std::string &audience, int timeoutSeconds);
 
 protected:
     // API functions
-    std::map<std::string, std::function<void(const HttpRequest &)>> m_restGetFunctions;
-    std::map<std::string, std::function<void(const HttpRequest &)>> m_restPutFunctions;
-    std::map<std::string, std::function<void(const HttpRequest &)>> m_restPstFunctions;
-    std::map<std::string, std::function<void(const HttpRequest &)>> m_restDelFunctions;
+    std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restGetFunctions;
+    std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restPutFunctions;
+    std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restPstFunctions;
+    std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restDelFunctions;
 };
 
-#define REST_INFO_PRINT                       \
-    LOG_DBG                                   \
-        << "Function: " << __FUNCTION__       \
-        << " Method: " << message.m_method    \
-        << " URI: " << message.m_relative_uri \
-        << " Remote: " << message.m_remote_address;
-// << " Query: " << message.m_querys
-// << " Header: " << message.m_headers
+#define REST_INFO_PRINT                        \
+    LOG_DBG                                    \
+        << "Function: " << __FUNCTION__        \
+        << " Method: " << message->m_method    \
+        << " URI: " << message->m_relative_uri \
+        << " Remote: " << message->m_remote_address;
+// << " Query: " << message->m_querys
+// << " Header: " << message->m_headers

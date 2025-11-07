@@ -5,7 +5,7 @@
 #include "../rest/TcpServer.h"
 #include "MonitoredProcess.h"
 
-MonitoredProcess::MonitoredProcess(void *owner)
+MonitoredProcess::MonitoredProcess(std::weak_ptr<Application> owner)
 	: AppProcess(owner)
 {
 }

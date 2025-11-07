@@ -114,14 +114,14 @@ protected:
 	/// </summary>
 	/// <param name="message"></param>
 	/// <param name="restFunctions"></param>
-	virtual void handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions) override;
+	virtual void handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &message)>> &restFunctions) override;
 
 private:
 	/// <summary>
 	/// REST API function
 	/// </summary>
 	/// <param name="message"></param>
-	void apiMetrics(const HttpRequest &message);
+	void apiMetrics(const std::shared_ptr<HttpRequest> &message);
 	/// <summary>
 	/// Create metrics
 	/// </summary>

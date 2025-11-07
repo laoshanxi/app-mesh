@@ -18,6 +18,7 @@
 
 class LinuxCgroup;
 class ResourceLimitation;
+class Application;
 
 // Construct an ACE_Process with a given pid
 class AttachProcess : public ACE_Process
@@ -61,7 +62,7 @@ private:
 class AppProcess : public ProcessExitHandler
 {
 public:
-	explicit AppProcess(void *owner);
+	explicit AppProcess(std::weak_ptr<Application> owner);
 	virtual ~AppProcess();
 
 	// Get process ID
@@ -147,7 +148,7 @@ private:
 	void prepareEnvironment(std::map<std::string, std::string> &envMap);
 
 protected:
-	const void *m_owner; // Application owner pointer
+	const std::weak_ptr<Application> m_owner; // Application owner pointer
 
 private:
 	std::atomic_long m_timerTerminateId;   // Timer ID for delayed kill

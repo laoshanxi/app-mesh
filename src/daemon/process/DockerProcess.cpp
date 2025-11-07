@@ -13,7 +13,7 @@ namespace
 }
 
 DockerProcess::DockerProcess(const std::string &containerName, const std::string &dockerImage)
-	: AppProcess(nullptr), m_containerName(containerName), m_dockerImage(dockerImage), m_containerEngine(CONTAINER_DOCKER)
+	: AppProcess({}), m_containerName(containerName), m_dockerImage(dockerImage), m_containerEngine(CONTAINER_DOCKER)
 {
 	const static char fname[] = "DockerProcess::DockerProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -39,7 +39,7 @@ void DockerProcess::terminate()
 	if (!containerId.empty())
 	{
 		auto cmd = Utility::stringFormat("%s rm -f %s", m_containerEngine.c_str(), containerId.c_str());
-		auto proc = std::make_shared<AppProcess>(nullptr);
+		auto proc = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 		proc->spawnProcess(cmd, "root", "", {}, nullptr);
 		if (proc->wait(ACE_Time_Value(3)) <= 0)
 		{
@@ -69,7 +69,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	// Step 0: Clean old docker container (containers may remain after host restart)
 	std::string dockerCommand = Utility::stringFormat("%s rm -f %s", m_containerEngine.c_str(), containerName.c_str());
 	{
-		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
+		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 		dockerProcess->wait();
 	}
@@ -77,7 +77,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	// Step 1: Check if docker image exists
 	dockerCommand = Utility::stringFormat("%s inspect -f '{{.Size}}' %s", m_containerEngine.c_str(), m_dockerImage.c_str());
 	{
-		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
+		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 		dockerProcess->delayKill(DOCKER_CLI_TIMEOUT_SEC, fname);
 		dockerProcess->wait();
@@ -151,7 +151,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	bool startSuccess = false;
 	std::string containerId;
 	{
-		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
+		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 		dockerProcess->delayKill(DOCKER_CLI_TIMEOUT_SEC, fname);
 		dockerProcess->wait();
@@ -182,7 +182,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	if (startSuccess)
 	{
 		dockerCommand = Utility::stringFormat("%s inspect -f '{{.State.Pid}}' %s", m_containerEngine.c_str(), containerId.c_str());
-		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
+		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 		dockerProcess->delayKill(DOCKER_CLI_TIMEOUT_SEC, fname);
 		dockerProcess->wait();
@@ -243,7 +243,7 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 		LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
 	}
 
-	m_imagePull = std::make_shared<AppProcess>(nullptr);
+	m_imagePull = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 	m_imagePull->spawnProcess(m_containerEngine + " pull " + dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 	m_imagePull->delayKill(pullTimeout, fname);
 	this->attach(m_imagePull->getpid());
@@ -278,7 +278,7 @@ int DockerProcess::returnValue() const
 
 	const auto containerId = this->containerId();
 	auto dockerCommand = Utility::stringFormat("%s inspect %s --format='{{.State.ExitCode}}'", m_containerEngine.c_str(), containerId.c_str());
-	auto dockerProcess = std::make_shared<AppProcess>(nullptr);
+	auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 	dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, containerId);
 	dockerProcess->wait();
 
@@ -332,7 +332,7 @@ const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool 
 		}
 
 		auto dockerCommand = Utility::stringFormat("%s logs --since %llu %s", m_containerEngine.c_str(), secondsUTC, m_containerId.c_str());
-		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
+		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, m_containerId);
 		dockerProcess->wait();
 

@@ -110,7 +110,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #endif
 
 #define GET_HTTP_HEADER(message, headerName) \
-	message.m_headers.count(headerName) > 0 ? message.m_headers.find(headerName)->second : std::string()
+	message->m_headers.count(headerName) > 0 ? message->m_headers.find(headerName)->second : std::string()
 #define APPMESH_CONFIG_YAML_FILE "config.yaml"
 #define APPMESH_SECURITY_YAML_FILE "security.yaml"
 #define APPMESH_SECURITY_LDAP_YAML_FILE "ldap.yaml"
