@@ -29,7 +29,7 @@ namespace
 	constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 }
 
-AppProcess::AppProcess(void *owner)
+AppProcess::AppProcess(std::weak_ptr<Application> owner)
 	: m_owner(owner),
 	  m_timerTerminateId(INVALID_TIMER_ID),
 	  m_timerCheckStdoutId(INVALID_TIMER_ID),
@@ -118,13 +118,10 @@ void AppProcess::onExit(int exitCode)
 
 bool AppProcess::onTimerAppExit(int exitCode)
 {
-	if (m_owner)
+	if (auto owner = m_owner.lock())
 	{
-		if (auto app = Configuration::instance()->getApp(m_owner))
-		{
-			// Update application with exit information
-			app->onExitUpdate(exitCode);
-		}
+		// Update application with exit information
+		owner->onExitUpdate(exitCode);
 	}
 	return false;
 }
@@ -581,9 +578,9 @@ void AppProcess::prepareEnvironment(std::map<std::string, std::string> &envMap)
 			std::chrono::system_clock::now().time_since_epoch())
 			.count());
 
-	if (auto app = Configuration::instance()->getApp(m_owner))
+	if (auto owner = m_owner.lock())
 	{
-		envMap[ENV_APPMESH_APPLICATION_NAME] = app->getName();
+		envMap[ENV_APPMESH_APPLICATION_NAME] = owner->getName();
 	}
 }
 

@@ -252,7 +252,7 @@ void HttpRequestOutputView::init()
 
 	if (AppProcess::running(m_pid) && timeout > 0)
 	{
-		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(this->shared_from_this()));
+		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(shared_from_this()));
 		m_timerResponseId = this->registerTimer(1000L * timeout, 0, std::bind(&HttpRequestOutputView::onTimerResponse, this), fname);
 
 		LOG_DBG << fname << "app <" << m_app->getName() << "> view output with pid <" << m_pid << ">, APP_OUT_VIEW_MAP size = " << APP_OUT_VIEW_MAP.current_size();

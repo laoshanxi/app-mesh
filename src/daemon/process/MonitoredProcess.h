@@ -15,7 +15,7 @@ class HttpRequest;
 class MonitoredProcess : public AppProcess, public ACE_Process
 {
 public:
-	explicit MonitoredProcess(void *owner);
+	explicit MonitoredProcess(std::weak_ptr<Application> owner);
 	~MonitoredProcess();
 
 	// Called when process exits
