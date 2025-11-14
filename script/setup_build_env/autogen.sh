@@ -79,7 +79,7 @@ $WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
 go version
-go env -w GOPROXY=https://goproxy.io,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
+go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 
 # check libssl in case of setup_build_env/update_openssl.sh not executed
 if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then
@@ -109,10 +109,6 @@ if [ true ]; then
 	$WGET_A https://cmake.org/files/v$version/cmake-$version.$build-$os-$platform.sh
 	sh cmake-$version.$build-$os-$platform.sh --prefix=/usr/local/ --skip-license
 fi
-
-# Golang third party library
-export GO111MODULE=on
-#export GOPROXY=https://goproxy.io,direct
 
 # build static libcurl
 $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
@@ -274,6 +270,25 @@ cd QR-Code-generator/cpp && cp qrcodegen.* /usr/local/include/ && make && cp lib
 cd $ROOTDIR
 git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
 cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
+
+cd ${ROOTDIR}
+git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
+cp -rf concurrentqueue /usr/local/include/
+
+cd $ROOTDIR
+git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
+if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+	cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
+else
+	cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
+fi
+make -j"$(($(nproc) / 2))" && make install
+
+cd $ROOTDIR
+git clone --depth=1 https://github.com/uriparser/uriparser.git
+cd uriparser && mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF ..
+make && make install
 
 # clean
 go clean -cache -fuzzcache -modcache

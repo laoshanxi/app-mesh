@@ -18,8 +18,8 @@ class AppMeshServerTCP(AppMeshServer):
 
     def __init__(
         self,
-        rest_ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
-        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+        ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
         *,
         logger_: Optional[logging.Logger] = None,
@@ -31,5 +31,5 @@ class AppMeshServerTCP(AppMeshServer):
         """
         # Deliberately avoid calling super().__init__ to inject a TCP client while keeping the same public API.
         object.__init__(self)
-        self._client = AppMeshClientTCP(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert, tcp_address=tcp_address)
+        self._client = AppMeshClientTCP(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, tcp_address=tcp_address)
         self._logger = logger_ or logger

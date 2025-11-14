@@ -40,8 +40,8 @@ class AppMeshServer(metaclass=abc.ABCMeta):
     def __init__(
         self,
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
-        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+        ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         rest_timeout: Tuple[float, float] = (60, 300),
         *,
         logger_: Optional[logging.Logger] = None,
@@ -51,7 +51,7 @@ class AppMeshServer(metaclass=abc.ABCMeta):
         Args:
             follows the same parameters as `AppMeshClient`.
         """
-        self._client = AppMeshClient(rest_url, rest_ssl_verify, rest_ssl_client_cert, rest_timeout)
+        self._client = AppMeshClient(rest_url, ssl_verify, ssl_client_cert, rest_timeout)
         self._logger = logger_ or logger
 
     @staticmethod

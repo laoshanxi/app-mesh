@@ -14,6 +14,8 @@
 #include <ace/SSL/SSL_SOCK_Stream.h>
 #endif
 
+using ByteBuffer = std::shared_ptr<std::vector<std::uint8_t>>;
+
 class Response
 {
 public:
@@ -27,7 +29,7 @@ public:
 	std::string request_uri;
 	int http_status;
 	std::string body_msg_type;
-	std::vector<uint8_t> body;
+	std::vector<std::uint8_t> body;
 	std::map<std::string, std::string> headers;
 	std::map<std::string, std::string> file_upload_request_headers;
 
@@ -41,14 +43,14 @@ public:
 	~Request() = default;
 
 	std::shared_ptr<msgpack::sbuffer> serialize() const;
-	bool deserialize(const char *data, std::size_t dataSize);
+	bool deserialize(const ByteBuffer &data);
 
 public:
 	std::string uuid;
 	std::string request_uri;
 	std::string http_method;
 	std::string client_addr;
-	std::vector<uint8_t> body; // raw binary
+	std::vector<std::uint8_t> body; // raw binary
 	std::map<std::string, std::string> headers;
 	std::map<std::string, std::string> query;
 
@@ -67,8 +69,7 @@ public:
 	/// @brief Read a message block from socket (include header and body).
 	/// @param socket ACE_SSL_SOCK_Stream used to receive data
 	/// @return char *: The complete data buffer according to a Protocbuf message
-	/// @return int: the message data size
-	static const std::tuple<std::shared_ptr<char>, int> readMessageBlock(const ACE_SSL_SOCK_Stream &socket);
+	static const ByteBuffer readMessageBlock(const ACE_SSL_SOCK_Stream &socket);
 
 	/// @brief Read 4 bytes int (network order) for below message size
 	/// @param socket ACE_SSL_SOCK_Stream used to receive data
@@ -81,6 +82,5 @@ public:
 	/// @param bodySize message size used to read from socket
 	/// @param recvReturn socket return code
 	/// @return char *: message data
-	/// @return int: the message data size
-	static const std::tuple<std::shared_ptr<char>, int> readBytes(const ACE_SSL_SOCK_Stream &socket, size_t bodySize, ssize_t &recvReturn);
+	static const ByteBuffer readBytes(const ACE_SSL_SOCK_Stream &socket, size_t bodySize, ssize_t &recvReturn);
 };

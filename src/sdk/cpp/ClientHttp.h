@@ -129,9 +129,6 @@ protected:
                                               std::map<std::string, std::string> query = {}) const;
     void addCommonHeaders(std::map<std::string, std::string> &header) const;
 
-    static std::string parseUrlHost(const std::string &url);
-    static std::string parseUrlPort(const std::string &url);
-
 private:
     std::string m_url;
     std::string m_forwardTo;

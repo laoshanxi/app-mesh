@@ -9,12 +9,13 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 def get_version():
     """PyPI package version"""
-    return "2.0.4"
+    return "2.1.0"
 
 
 # Dependencies
 install_requires = [
     "requests",
+    "websocket-client",
     "msgpack",
     "requests_toolbelt",
     "aniso8601",

@@ -2,6 +2,7 @@
 # sub dir
 ##########################################################################
 add_subdirectory(os)
+add_subdirectory(websockets)
 
 ##########################################################################
 # common
@@ -19,6 +20,7 @@ target_link_libraries(common
     ZLIB::ZLIB # nghttp2
     ${ACE_LIBRARY}
     ${ACE_SSL_LIBRARY}
+    wsockets
     log4cpp
     yaml-cpp::yaml-cpp
     Boost::regex
