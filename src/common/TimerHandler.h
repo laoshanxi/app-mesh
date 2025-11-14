@@ -175,5 +175,5 @@ private:
 	Thread_Timer_Queue m_timerQueue; ///< Queue for managing active timers.
 };
 
-using TIMER_MANAGER = ACE_Singleton<TimerManager, ACE_Recursive_Thread_Mutex>;
+using TIMER_MANAGER = ACE_Singleton<TimerManager, ACE_Null_Mutex>;
 using QUIT_HANDLER = ACE_Singleton<ACE_Test_and_Set<ACE_Recursive_Thread_Mutex, sig_atomic_t>, ACE_Null_Mutex>;

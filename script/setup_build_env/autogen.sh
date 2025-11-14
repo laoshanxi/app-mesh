@@ -275,6 +275,19 @@ cd $ROOTDIR
 git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
 cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
 
+cd ${ROOTDIR}
+git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
+cp -rf concurrentqueue /usr/local/include/
+
+cd $ROOTDIR
+git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
+if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+	cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
+else
+	cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
+fi
+make -j"$(($(nproc) / 2))" && make install
+
 # clean
 go clean -cache -fuzzcache -modcache
 pip3 cache purge
