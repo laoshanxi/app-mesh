@@ -9,6 +9,8 @@
 #include "../../common/Utility.h"
 #include "protoc/ProtobufHelper.h"
 
+class WebSocketSession;
+
 // HttpRequest is a wrapper of <web::http::http_request>
 //   - Used for REST server to forward requests to TCP server and wait for TCP result before responding to REST client
 //   - Used for TCP server to send results to REST server
@@ -34,7 +36,7 @@ public:
 	bool reply(web::http::status_code status, const nlohmann::json &body_data) const;
 
 	// Responds to this HTTP request with raw bytes
-	bool reply(web::http::status_code status, const std::vector<uint8_t> &body_data) const;
+	bool reply(web::http::status_code status, const std::vector<std::uint8_t> &body_data) const;
 
 	// Responds to this HTTP request with JSON body and custom headers
 	bool reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const;
@@ -51,7 +53,8 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
-	static std::shared_ptr<HttpRequest> deserialize(const char *input, int inputSize, int tcpHandlerId);
+	static std::shared_ptr<HttpRequest> deserializeTCP(const ByteBuffer &input, int tcpHandlerId);
+	static std::shared_ptr<HttpRequest> deserializeWS(const ByteBuffer &input, std::weak_ptr<WebSocketSession> wsi);
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;
@@ -60,18 +63,19 @@ public:
 	web::http::method m_method;
 	std::string m_relative_uri;
 	std::string m_remote_address;
-	std::shared_ptr<std::vector<uint8_t>> m_body; // Shared pointer to avoid copying large data
+	std::shared_ptr<std::vector<std::uint8_t>> m_body; // Shared pointer to avoid copying large data
 	std::map<std::string, std::string> m_query;
 	std::map<std::string, std::string> m_headers;
 
 protected:
 	// Sends REST response to client through TCP handler
-	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
+	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
 					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
 					   const std::string &bodyType) const;
 
 private:
 	const int m_tcpHandlerId;
+	std::weak_ptr<WebSocketSession> m_session_ref;
 };
 
 class Application;
@@ -110,7 +114,7 @@ public:
 
 protected:
 	// Overridden reply to ensure single response by canceling timer and checking reply flag
-	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
+	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
 					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
 					   const std::string &bodyType) const override;
 

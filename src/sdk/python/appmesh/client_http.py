@@ -200,8 +200,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def __init__(
         self,
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify: Union[bool, str] = _DEFAULT_SSL_CA_CERT_PATH,
-        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (
+        ssl_verify: Union[bool, str] = _DEFAULT_SSL_CA_CERT_PATH,
+        ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (
             _DEFAULT_SSL_CLIENT_CERT_PATH,
             _DEFAULT_SSL_CLIENT_KEY_PATH,
         ),
@@ -214,11 +214,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         Args:
             rest_url: The server's base URI. Defaults to "https://127.0.0.1:6060".
-            rest_ssl_verify: SSL server verification mode:
+            ssl_verify: SSL server verification mode:
               - True: Use system CAs.
               - False: Disable verification (insecure).
               - str: Path to custom CA or directory. To include system CAs, combine them into one file (e.g., cat custom_ca.pem /etc/ssl/certs/ca-certificates.crt > combined_ca.pem).
-            rest_ssl_client_cert: SSL client certificate file(s):
+            ssl_client_cert: SSL client certificate file(s):
               - str: Single PEM file with cert+key
               - tuple: (cert_path, key_path)
             rest_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.  Default `(60, 300)`.
@@ -227,9 +227,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             auto_refresh_token: Enable automatic token refresh before expiration (supports App Mesh and Keycloak tokens).
         """
         self._ensure_logging_configured()
-        self.auth_server_url = rest_url
-        self.ssl_verify = rest_ssl_verify
-        self.ssl_client_cert = rest_ssl_client_cert
+        self.base_url = rest_url
+        self.ssl_verify = ssl_verify
+        self.ssl_client_cert = ssl_client_cert
         self.rest_timeout = rest_timeout
         self._forward_to = None
 
@@ -1113,7 +1113,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         raise_on_fail: bool = True,
     ) -> requests.Response:
         """Make an HTTP request."""
-        rest_url = parse.urljoin(self.auth_server_url, path)
+        url = parse.urljoin(self.base_url, path)
 
         # Prepare headers
         headers = header.copy() if header else {}
@@ -1131,7 +1131,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if self.forward_to:
             target_host = self.forward_to
             if ":" not in target_host:
-                parsed = parse.urlsplit(self.auth_server_url)
+                parsed = parse.urlsplit(self.base_url)
                 default_port = {"http": 80, "https": 443}.get(parsed.scheme)
                 port = parsed.port or default_port
                 target_host = f"{target_host}:{port}"
@@ -1146,7 +1146,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         try:
             request_kwargs = {
-                "url": rest_url,
+                "url": url,
                 "headers": headers,
                 "cert": self.ssl_client_cert,
                 "verify": self.ssl_verify,

@@ -135,4 +135,24 @@ cd ${TMP_DIR}
 git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
 sudo cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
 
+echo "Installing concurrentqueue..."
+cd ${TMP_DIR}
+git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
+sudo cp -rf concurrentqueue /usr/local/include/
+
+echo "Building and installing libwebsockets..."
+cd $TMP_DIR
+git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
+cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
+make
+sudo make install
+
+echo "Building and installing uriparser..."
+cd $TMP_DIR
+git clone --depth=1 https://github.com/uriparser/uriparser.git
+cd uriparser && mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF ..
+make
+sudo make install
+
 echo "Build completed successfully!"

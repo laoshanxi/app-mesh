@@ -7,6 +7,7 @@
 #include <ace/Recursive_Thread_Mutex.h>
 #include <ace/Svc_Handler.h>
 #include <boost/lockfree/spsc_queue.hpp>
+#include <concurrentqueue/blockingconcurrentqueue.h>
 #ifdef __has_include
 #if __has_include(<ace/SSL/SSL_SOCK_Stream.h>)
 #include <ace/SSL/SSL_SOCK_Stream.h>
@@ -17,8 +18,11 @@
 #include <ace/SSL/SSL_SOCK_Stream.h>
 #endif
 
-#include "../../common/MessageQueue.h"
 #include "protoc/ProtobufHelper.h"
+
+class HttpRequest;
+struct HttpRequestMsg;
+using MessageQueue = moodycamel::BlockingConcurrentQueue<std::shared_ptr<HttpRequestMsg>>;
 
 // = TITLE
 //     Receive client message from the remote clients.
@@ -53,10 +57,11 @@ public:
 	/// <summary>
 	/// Process TCP request
 	/// </summary>
-	static void handleTcpRest();
+	static void handleTcpRestLoop();
+	static bool processRequest(std::shared_ptr<HttpRequest> &request);
 	static void closeTcpHandler(int tcpHandlerId);
-	static void closeMsgQueue();
 	const int &id();
+	static void queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int id);
 
 protected:
 	// = Demultiplexing hooks.
@@ -75,7 +80,7 @@ protected:
 
 public:
 	static bool replyTcp(int tcpHandlerId, const Response &resp);
-	static ACE_SSL_Context *initTcpSSL(ACE_SSL_Context *context);
+	static ACE_SSL_Context *initTcpSSL(ACE_SSL_Context *context, const std::string &certFile, const std::string &keyFile, const std::string &caPath);
 
 private:
 	std::string m_clientHostName;

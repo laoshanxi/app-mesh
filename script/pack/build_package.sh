@@ -149,14 +149,73 @@ get_dependencies() {
     $LIBRARY_INSPECTOR "$binary" | grep "$pattern" | eval $LIBRARY_EXTRACTOR || true
 }
 
+# resolve_macos_dylib_path: Resolves @rpath/@loader_path references in macOS dylib paths
+# Usage: resolve_macos_dylib_path <dylib_path> <binary_path>
+# Returns the actual file path or the input if unresolvable
+resolve_macos_dylib_path() {
+    local dylib_path="$1"
+    local binary_path="$2"
+
+    # If it's already a real path, return it
+    [[ -f "$dylib_path" ]] && { echo "$dylib_path"; return 0; }
+
+    local binary_dir=$(dirname "$binary_path")
+    local lib_name=$(basename "$dylib_path")
+    local resolved
+
+    # Handle @rpath/@loader_path
+    if [[ "$dylib_path" == @rpath/* ]]; then
+        resolved="${dylib_path#@rpath/}"
+    elif [[ "$dylib_path" == @loader_path/* ]]; then
+        resolved="${dylib_path#@loader_path/}"
+    else
+        echo "$dylib_path"
+        return 0
+    fi
+
+    # Search paths: relative to binary, system paths, and Homebrew
+    local BREW_DIR="/opt/homebrew"
+    [[ "$(uname -m)" != "arm64" ]] && BREW_DIR="/usr/local"
+    
+    local search_paths=(
+        "$binary_dir"
+        "$binary_dir/lib"
+        "$binary_dir/lib64"
+        "/usr/local/lib"
+        "/usr/local/lib64"
+        "$BREW_DIR/lib"
+        "$BREW_DIR/lib64"
+        "$BREW_DIR/opt"
+    )
+
+    # Try exact match in each search path
+    for dir in "${search_paths[@]}"; do
+        [[ -f "$dir/$resolved" ]] && { echo "$dir/$resolved"; return 0; }
+    done
+
+    # Fallback: search Homebrew for library by name
+    local found=$(find "$BREW_DIR" -name "$lib_name" -type f 2>/dev/null | head -1)
+    [[ -n "$found" ]] && { echo "$found"; return 0; }
+
+    # Unresolvable: return original
+    echo "$dylib_path"
+}
+
 copy_libraries() {
-    local dependencies=(boost curl ACE libssl libcrypto log4cpp yaml)
-    local bin_path="${CMAKE_BINARY_DIR}/gen/appsvc"
-    for dep in "${dependencies[@]}"; do
-        info "Scanning appsvc for dependency: $dep"
-        while IFS= read -r lib; do
-            [[ -n "$lib" ]] && copy "$lib" "${PACKAGE_HOME}/lib64"
-        done < <(get_dependencies "$bin_path" "$dep")
+    local dependencies=(boost curl ACE libssl libcrypto log4cpp yaml websockets uriparser)
+    for bin_path in "${CMAKE_BINARY_DIR}/gen/appc" "${CMAKE_BINARY_DIR}/gen/appsvc"; do
+        for dep in "${dependencies[@]}"; do
+            info "Scanning $bin_path for dependency: $dep"
+            while IFS= read -r lib; do
+                if [[ -n "$lib" ]]; then
+                    # Resolve @rpath/@loader_path on macOS
+                    if [[ "$OSTYPE" == "darwin"* ]]; then
+                        lib=$(resolve_macos_dylib_path "$lib" "$bin_path")
+                    fi
+                    [[ -f "$lib" ]] && copy "$lib" "${PACKAGE_HOME}/lib64"
+                fi
+            done < <(get_dependencies "$bin_path" "$dep")
+        done
     done
 }
 
@@ -167,46 +226,42 @@ handle_macos_specifics() {
 
     info "Handling macOS specific dependency chains..."
 
-    # 1) curl (from appsvc) -> openldap -> libsasl2
-    # Get curl-related libs from appsvc, then inspect them for openldap, then from libldap find libsasl2.
-    while IFS= read -r curl_lib; do
-        [[ -n "$curl_lib" ]] || continue
-        while IFS= read -r ldap_lib; do
-            [[ -n "$ldap_lib" ]] || continue
-            info "Copying openldap dependency: $ldap_lib"
-            copy "$ldap_lib" "${PACKAGE_HOME}/lib64"
+    # Helper to copy a library and its transitive dependencies matching a pattern
+    copy_transitive() {
+        local binary="$1"
+        local primary_pattern="$2"
+        local secondary_pattern="$3"
+        
+        while IFS= read -r lib; do
+            [[ -n "$lib" ]] || continue
+            [[ -f "$lib" ]] || continue
+            info "Copying dependency: $lib"
+            copy "$lib" "${PACKAGE_HOME}/lib64"
+            
+            # Copy secondary dependencies
+            if [[ -n "$secondary_pattern" ]]; then
+                while IFS= read -r sec_lib; do
+                    [[ -n "$sec_lib" ]] || continue
+                    [[ -f "$sec_lib" ]] || continue
+                    info "Copying transitive dependency: $sec_lib"
+                    copy "$sec_lib" "${PACKAGE_HOME}/lib64"
+                done < <(get_dependencies "$lib" "$secondary_pattern")
+            fi
+        done < <(get_dependencies "$binary" "$primary_pattern")
+    }
 
-            while IFS= read -r sasl_lib; do
-                [[ -n "$sasl_lib" ]] || continue
-				[[ -f "$sasl_lib" ]] || continue
-                info "Copying sasl2 dependency: $sasl_lib"
-                copy "$sasl_lib" "${PACKAGE_HOME}/lib64"
-            done < <(get_dependencies "$ldap_lib" "libsasl2")
-        done < <(get_dependencies "$curl_lib" "openldap")
-    done < <(get_dependencies "${CMAKE_BINARY_DIR}/gen/appsvc" "curl")
+    # 1) curl -> openldap -> libsasl2
+    copy_transitive "${CMAKE_BINARY_DIR}/gen/appsvc" "curl" "openldap" | while read -r ldap; do
+        while IFS= read -r sasl; do
+            [[ -n "$sasl" ]] || continue
+            [[ -f "$sasl" ]] || continue
+            info "Copying libsasl2: $sasl"
+            copy "$sasl" "${PACKAGE_HOME}/lib64"
+        done < <(get_dependencies "$ldap" "libsasl2")
+    done
 
-    # 2) boost_regex -> libicu (inspect libs referenced by appc's libboost_regex)
-    # find libboost_regex linked libs, copy them and then copy their libicu deps
-    while IFS= read -r boost_regex_lib; do
-        [[ -n "$boost_regex_lib" ]] || continue
-        info "Copying libboost_regex dependency: $boost_regex_lib"
-        copy "$boost_regex_lib" "${PACKAGE_HOME}/lib64"
-        while IFS= read -r icu_lib; do
-            [[ -n "$icu_lib" ]] || continue
-            info "Copying libicu dependency: $icu_lib"
-            copy "$icu_lib" "${PACKAGE_HOME}/lib64"
-        done < <(get_dependencies "$boost_regex_lib" "libicu")
-    done < <(get_dependencies "${CMAKE_BINARY_DIR}/gen/appc" "libboost_regex")
-
-    # 3) boost_filesystem -> libboost_atomic (explicit sibling library)
-    local boost_filesystem=$($LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_filesystem | eval $LIBRARY_EXTRACTOR)
-    if [[ -n "$boost_filesystem" ]]; then
-        local boost_atomic="$(dirname "$boost_filesystem")/libboost_atomic.dylib"
-        if [[ -f "$boost_atomic" ]]; then
-            info "Copying boost_atomic dependency: $boost_atomic"
-            copy "$boost_atomic" "${PACKAGE_HOME}/lib64"
-        fi
-    fi
+    # 2) boost_regex -> libicu
+    copy_transitive "${CMAKE_BINARY_DIR}/gen/appc" "libboost_regex" "libicu"
 
     # Replace LD_LIBRARY_PATH to DYLD_LIBRARY_PATH for macOS
     sed -i '' 's/LD_LIBRARY_PATH/DYLD_LIBRARY_PATH/g' "${PACKAGE_HOME}/script/"*

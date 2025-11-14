@@ -22,8 +22,8 @@ class AppMeshClientOAuth(AppMeshClient):
         self,
         oauth2: Dict[str, str],  # Required for Keycloak
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
-        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+        ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         rest_timeout: Tuple[float, float] = (60, 300),
         auto_refresh_token: bool = True,  # Default to True for Keycloak
     ):
@@ -39,8 +39,8 @@ class AppMeshClientOAuth(AppMeshClient):
         # Initialize base class, disabling its Keycloak and auto-refresh logic
         super().__init__(
             rest_url=rest_url,
-            rest_ssl_verify=rest_ssl_verify,
-            rest_ssl_client_cert=rest_ssl_client_cert,
+            ssl_verify=ssl_verify,
+            ssl_client_cert=ssl_client_cert,
             rest_timeout=rest_timeout,
             auto_refresh_token=auto_refresh_token,
         )

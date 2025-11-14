@@ -48,9 +48,9 @@ public:
     void handle_options(const std::shared_ptr<HttpRequest> &message);
     void handle_head(const std::shared_ptr<HttpRequest> &message);
 
-protected:
     // tuple: username, usergroup, roles
     const std::tuple<std::string, std::string, std::set<std::string>> verifyToken(const std::string &token, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
+protected:
     const std::string permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
     const std::string getJwtUserName(const std::shared_ptr<HttpRequest> &message);
     const std::set<std::string> getJwtUserAudience(const std::shared_ptr<HttpRequest> &message);

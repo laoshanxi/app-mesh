@@ -313,7 +313,35 @@ function Install-HeaderOnlyLibraries {
     # Catch2
     git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
     Copy-Item "Catch2\single_include\catch2\catch.hpp" "C:\local\include\" -Force
-    
+
+    # concurrentqueue
+    git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
+    Copy-Item -Recurse "concurrentqueue" "C:\local\include\" -Force
+
+    # libwebsockets
+    git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
+    Set-Location "libwebsockets"
+    (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int uid_t;', 'typedef long uid_t;' | Set-Content "include\libwebsockets.h"
+    (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int gid_t;', 'typedef long gid_t;' | Set-Content "include\libwebsockets.h"
+    (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int useconds_t;', 'typedef unsigned long useconds_t;' | Set-Content "include\libwebsockets.h"
+    (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef int suseconds_t;', 'typedef long suseconds_t;' | Set-Content "include\libwebsockets.h"
+    New-Item -ItemType Directory -Force -Path "build" | Out-Null
+    Set-Location "build"
+    cmake .. -Wno-dev -G "Visual Studio 17 2022" -A x64 -DLWS_WITHOUT_TESTAPPS=ON -DCMAKE_C_FLAGS="/wd4819" -DCMAKE_CXX_FLAGS="/wd4819" -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_INSTALL_PREFIX="C:/local"
+    cmake --build . --config Release
+    cmake --install . --config Release
+    Set-Location $ROOTDIR
+
+    # uriparser
+    git clone --depth=1 https://github.com/uriparser/uriparser.git
+    Set-Location "uriparser"
+    New-Item -ItemType Directory -Force -Path "build" | Out-Null
+    Set-Location "build"
+    cmake .. -G "Visual Studio 17 2022" -A x64 -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_INSTALL_PREFIX="C:/local"
+    cmake --build . --config Release
+    cmake --install . --config Release
+    Set-Location $ROOTDIR
+
     # QR Code Generator
     git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
     Set-Location "QR-Code-generator\cpp"
@@ -470,7 +498,7 @@ function Install-GoTools {
     $env:GOBIN = "C:\local\bin"
     New-Item -ItemType Directory -Force -Path $env:GOBIN | Out-Null
     
-    go env -w GOPROXY="https://goproxy.io,direct"
+    go env -w GOPROXY="https://goproxy.cn,direct"
     go env -w GOBIN="C:\local\bin"
     go env -w GO111MODULE=on
     

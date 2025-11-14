@@ -123,7 +123,7 @@ def main():
     }
 
     # Create App Mesh client
-    client = AppMeshClientOAuth(rest_ssl_verify=False, oauth2=keycloak_config, auto_refresh_token=True)
+    client = AppMeshClientOAuth(ssl_verify=False, oauth2=keycloak_config, auto_refresh_token=True)
 
     # Try to login and verify the token
     # Make sure "Required Actions" is disabled in "appmesh-realm" Authentication

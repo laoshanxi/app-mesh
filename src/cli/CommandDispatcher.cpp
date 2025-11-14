@@ -35,6 +35,7 @@
 #include "../common/Utility.h"
 #include "../common/json.h"
 #include "../common/os/linux.h"
+#include "../common/UriParser.hpp"
 #include "CommandDispatcher.h"
 #include "cmd_args.h"
 
@@ -320,7 +321,7 @@ int CommandDispatcher::cmdLogin()
 			}
 		} while (true);
 	}
-	persistUserConfig(parseUrlHost(m_currentUrl));
+	persistUserConfig(Uri::parse(m_currentUrl).host);
 	return 0;
 }
 
@@ -1633,7 +1634,7 @@ int CommandDispatcher::cmdUserMFA()
 				{
 					this->enableTotp(totp);
 					validating = false;
-					persistUserConfig(parseUrlHost(m_currentUrl));
+					persistUserConfig(Uri::parse(m_currentUrl).host);
 					std::cout << "TOTP setup for " << userName << " success." << std::endl;
 				}
 				catch (...)
@@ -2253,12 +2254,11 @@ std::string CommandDispatcher::getDefaultURL()
 		if (config[JSON_KEY_REST].IsDefined() && config[JSON_KEY_REST][JSON_KEY_RestListenPort].IsDefined())
 		{
 			auto port = config[JSON_KEY_REST][JSON_KEY_RestListenPort].as<int>();
-			auto address = config[JSON_KEY_REST][JSON_KEY_RestListenAddress].Scalar();
-
 			if (hostName.empty())
 			{
 				// if no last cache, use URL from config.yaml
-				url = Utility::stringFormat("https://%s:%d", parseUrlHost(address).c_str(), port);
+				auto address = config[JSON_KEY_REST][JSON_KEY_RestListenAddress].Scalar();
+				url = Utility::stringFormat("https://%s:%d", address.c_str(), port);
 				url = Utility::stringReplace(url, "0.0.0.0", "127.0.0.1");
 			}
 			else
@@ -2303,7 +2303,7 @@ void CommandDispatcher::initClient(const std::string &url)
 		}
 	}
 
-	const auto cookieDomain = parseUrlHost(url);
+	const auto cookieDomain = Uri::parse(url).host;
 	COOKIE_PATH = (fs::path(getAndCreateCookieDirectory(cookieDomain)) / COOKIE_FILE).string();
 
 	this->init(url, cfg.m_ca_location, cfg.m_certificate, cfg.m_private_key, COOKIE_PATH);
