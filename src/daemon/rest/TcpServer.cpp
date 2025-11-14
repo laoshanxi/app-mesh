@@ -92,7 +92,7 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	// https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Reactor/WFMO_Reactor/Network_Events.cpp#L66
 	if (readCount > 0)
 	{
-		m_messageQueue.enqueue(new ACE_Message_Block((const char *)(new HttpRequestMsg(data, readCount, m_id))));
+		m_messageQueue.enqueue(std::make_shared<HttpRequestMsg>(data, readCount, m_id));
 		return 0;
 	}
 
@@ -221,15 +221,13 @@ void TcpHandler::handleTcpRest()
 {
 	const static char fname[] = "TcpHandler::handleTcpRest() ";
 
-	ACE_Message_Block *msg = nullptr;
-	while (0 == m_messageQueue.deactivated() && QUIT_HANDLER::instance()->is_set() == 0)
+	while (QUIT_HANDLER::instance()->is_set() == 0)
 	{
-		if (m_messageQueue.dequeue(msg) >= -1 && msg)
+		std::shared_ptr<HttpRequestMsg> entity;
+		m_messageQueue.wait_dequeue(entity);
+		if (entity)
 		{
-			std::unique_ptr<HttpRequestMsg> entity(static_cast<HttpRequestMsg *>((void *)msg->rd_ptr()));
 			auto request = HttpRequest::deserialize(entity->m_data.get(), entity->m_dataSize, entity->m_tcpHanlerId);
-			msg->release();
-			msg = nullptr;
 			if (request)
 			{
 				LOG_DBG << fname << request->m_method << " from <"
@@ -283,12 +281,6 @@ void TcpHandler::closeTcpHandler(int tcpHandlerId)
 	{
 		LOG_WAR << fname << "No such TcpHandler id=" << tcpHandlerId;
 	}
-}
-
-void TcpHandler::closeMsgQueue()
-{
-	// TODO: release memory before clear
-	m_messageQueue.close();
 }
 
 const int &TcpHandler::id()
@@ -388,16 +380,9 @@ bool TcpHandler::reply(const Response &resp)
 	return true;
 }
 
-ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
+ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context, const std::string &cert, const std::string &key, const std::string &ca)
 {
 	const static char fname[] = "TcpHandler::initTcpSSL() ";
-
-	// Retrieve SSL configuration
-	const static std::string homeDir = Utility::getHomeDir();
-	bool verifyClient = Configuration::instance()->getSslVerifyClient();
-	auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());	 // Server certificate (PEM, include intermediates)
-	auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile()); // Private key
-	auto ca = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());				 // CA file or directory
 
 	LOG_INF << fname << "Init SSL with CA <" << ca << "> server cert <" << cert << "> server private key <" << key << ">";
 
@@ -447,7 +432,7 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 	SSL_CTX_clear_options(context->context(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 
 	// Set client certificate verification if required
-	if (verifyClient)
+	if (!ca.empty())
 	{
 		context->set_verify_peer(true, 1 /* verify once */, 0 /* verification depth */);
 

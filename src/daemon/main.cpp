@@ -35,10 +35,12 @@
 #include <ace/SSL/SSL_SOCK_Acceptor.h>
 #endif
 
+#include "../common/RestClient.h"
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
 #include "../common/os/chown.h"
 #include "../common/os/pstree.h"
+#include "../common/websockets/WebSocketService.h"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
@@ -212,6 +214,10 @@ void AppMeshDaemon::initializeEnvironment()
 void AppMeshDaemon::initializeACE()
 {
 	const static char fname[] = "AppMeshDaemon::initializeACE() ";
+
+	// Singleton initialization without lock
+	TIMER_MANAGER::instance();
+	QUIT_HANDLER::instance();
 
 #if defined(_WIN32)
 	// On Windows WFMO_Reactor: use a single reactor thread (WFMO waits on handles).
@@ -423,11 +429,17 @@ void AppMeshDaemon::initializeRestService()
 		LOG_INF << fname << "REST service is disabled, skipping initialization";
 		return;
 	}
+	ACE_INET_Addr acceptorAddr(config->getRestTcpPort(), config->getRestListenAddress().c_str());
+	const std::string homeDir = Utility::getHomeDir();
+	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
+	const auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());					 // Server certificate (PEM, include intermediates)
+	const auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile());					 // Private key
+	const auto ca = verifyClient ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath()) : std::string(); // CA file or directory
 
-	LOG_INF << fname << "Initializing REST service on <" << config->getRestListenAddress() << ":" << config->getRestTcpPort() << ">";
+	LOG_INF << fname << "Initializing REST service on <" << acceptorAddr.get_host_addr() << ">";
 
 	// Initialize SSL
-	TcpHandler::initTcpSSL(ACE_SSL_Context::instance());
+	TcpHandler::initTcpSSL(ACE_SSL_Context::instance(), cert, key, ca);
 
 #if !defined(_WIN32)
 	// On POSIX, start additional reactor thread for REST
@@ -439,7 +451,6 @@ void AppMeshDaemon::initializeRestService()
 
 	// Setup acceptor
 	m_acceptor = std::make_unique<TcpAcceptor>();
-	ACE_INET_Addr acceptorAddr(config->getRestTcpPort(), config->getRestListenAddress().c_str());
 
 	constexpr int FLAG_ACE_NONBLOCK = 0;
 	constexpr int FLAG_SO_REUSEADDR = 1;
@@ -453,6 +464,8 @@ void AppMeshDaemon::initializeRestService()
 	m_client = std::make_unique<TcpClient>();
 	m_client->connect(acceptorAddr);
 
+	// WebSocketService::instance()->initialize(acceptorAddr, cert, key, ca);
+	// WebSocketService::instance()->start(config->getThreadPoolSize());
 	startAgentApplication();
 	config->registerPrometheus();
 
@@ -705,7 +718,6 @@ void AppMeshDaemon::cleanupResources()
 
 	try
 	{
-		TcpHandler::closeMsgQueue();
 		Utility::removeFile((fs::path(Utility::getHomeDir()) / PID_FILE).string());
 		LOG_INF << fname << "Resources cleaned up";
 	}

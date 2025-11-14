@@ -292,3 +292,4 @@ target
 script/consul/data
 
 *.lock
+*.out

@@ -43,6 +43,7 @@ apt install -y libcrypto++-dev
 
 # build ACE
 apt install -y libace-dev libace-ssl-dev
+apt install -y libwebsockets-dev
 
 # yaml-cpp
 apt install -y libyaml-cpp-dev
@@ -117,6 +118,9 @@ cd QR-Code-generator/cpp && cp qrcodegen.* /usr/local/include/ && make && cp lib
 
 git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
 cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
+
+git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
+cp -rf concurrentqueue /usr/local/include/
 
 # clean
 go clean -cache -fuzzcache -modcache

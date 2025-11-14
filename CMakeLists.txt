@@ -87,6 +87,11 @@ message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
 find_package(msgpack-cxx REQUIRED)
 
 ##########################################################################
+# libwebsockets  https://libwebsockets.org/
+##########################################################################
+find_package(libwebsockets REQUIRED)
+
+##########################################################################
 # libcurl
 ##########################################################################
 if (APPLE)
