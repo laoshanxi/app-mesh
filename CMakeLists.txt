@@ -166,6 +166,8 @@ if (NOT WIN32)
     find_library(${LDAP_LIBRARIES} REQUIRED)
 endif()
 
+find_package(uriparser REQUIRED)
+
 ##########################################################################
 # pthread
 ##########################################################################

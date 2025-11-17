@@ -5,12 +5,12 @@
 #include <string>
 
 #include <ace/OS_NS_time.h>
-#include <boost/regex.hpp>
 #include <nlohmann/json.hpp>
 
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../../common/os/linux.h"
+#include "../../common/UriParser.hpp"
 
 namespace
 {
@@ -568,7 +568,7 @@ void ClientHttp::addCommonHeaders(std::map<std::string, std::string> &header) co
     if (!m_forwardTo.empty())
     {
         if (m_forwardTo.find(':') == std::string::npos)
-            header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo + ":" + parseUrlPort(m_url);
+            header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo + ":" + std::to_string(Uri::parse(m_url).port);
         else
             header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
     }
@@ -576,28 +576,4 @@ void ClientHttp::addCommonHeaders(std::map<std::string, std::string> &header) co
     const auto token = RestClient::getCookie(COOKIE_CSRF_TOKEN);
     if (!token.empty())
         header[HTTP_HEADER_NAME_CSRF_TOKEN] = token;
-}
-
-std::string ClientHttp::parseUrlHost(const std::string &url)
-{
-    static const boost::regex ex(R"(^(?:https?://)?(\[[^\]]+\]|[^/:?#]+))");
-    boost::smatch what;
-    if (boost::regex_search(url, what, ex))
-    {
-        return what[1].str();
-    }
-    return "";
-}
-
-std::string ClientHttp::parseUrlPort(const std::string &url)
-{
-    static const boost::regex ex(R"(^(?:https?://)?(?:\[[^\]]+\]|[^/:?#]+):([0-9]+))");
-    boost::smatch what;
-    if (boost::regex_search(url, what, ex))
-    {
-        return what[1].str();
-    }
-
-    // Default ports
-    return (url.rfind("https", 0) == 0) ? "443" : "80";
 }

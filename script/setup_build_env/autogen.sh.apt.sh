@@ -43,7 +43,6 @@ apt install -y libcrypto++-dev
 
 # build ACE
 apt install -y libace-dev libace-ssl-dev
-apt install -y libwebsockets-dev
 
 # yaml-cpp
 apt install -y libyaml-cpp-dev
@@ -60,15 +59,15 @@ curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -
 # Golang
 # apt install -y golang
 if command -v go >/dev/null 2>&1; then
-	echo "Go is installed: $(go version)"
+    echo "Go is installed: $(go version)"
 else
-	GO_ARCH=$architecture
-	GO_VER=1.25.1
-	$WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
-	rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
-	rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
-	go version
-	go env -w GOPROXY=https://goproxy.io,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
+    GO_ARCH=$architecture
+    GO_VER=1.25.1
+    $WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
+    rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+    rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
+    go version
+    go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 fi
 # Golang third party library
 go install github.com/cloudflare/cfssl/cmd/cfssl@latest
@@ -78,10 +77,10 @@ go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 #messagepack Python pip
 apt install -y python3-pip
 if [ true ]; then
-	git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
-	cd msgpack-c
-	cmake .
-	cmake --build . --target install
+    git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
+    cd msgpack-c
+    cmake .
+    cmake --build . --target install
 fi
 python3 -m pip install --break-system-packages --upgrade --ignore-installed msgpack requests requests_toolbelt aniso8601 twine wheel
 
@@ -106,6 +105,7 @@ EOF
 git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
 sed -i -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_required(VERSION 3.20)/' linenoise-ng/CMakeLists.txt
 cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target linenoise && cmake --install .
+cd ${ROOTDIR}
 
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
@@ -122,13 +122,24 @@ cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
 git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
 cp -rf concurrentqueue /usr/local/include/
 
+git clone --depth=1 https://github.com/uriparser/uriparser.git
+cd uriparser && mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF ..
+make && make install
+cd ${ROOTDIR}
+
+git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
+cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
+make -j"$(($(nproc) / 2))" && make install
+cd ${ROOTDIR}
+
 # clean
 go clean -cache -fuzzcache -modcache
 pip3 cache purge
 if [ -f "/usr/bin/yum" ]; then
-	yum clean all
+    yum clean all
 else
-	apt-get clean
+    apt-get clean
 fi
 
 cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent

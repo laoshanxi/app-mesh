@@ -1,7 +1,6 @@
 // WebSocketClient.h
 #pragma once
 
-#include <ace/INET_Addr.h>
 #include <atomic>
 #include <functional>
 #include <libwebsockets.h>
@@ -30,13 +29,17 @@ struct Message
 // Connection configuration
 struct ConnectionConfig
 {
-    ACE_INET_Addr address;
+    ConnectionConfig()
+        : protocol_name("appmesh-ws"), timeout_secs(60) {}
+
+    std::string uri;
     std::shared_ptr<ClientSSLConfig> ssl_config;
-    std::string path;
     std::string protocol_name;
     int timeout_secs;
 
-    ConnectionConfig() : path("/"), protocol_name("appmesh-ws"), timeout_secs(60) {}
+    std::string auth_basic_username;
+    std::string auth_basic_password;
+    std::string auth_bearer_token;
 };
 
 // Callback types

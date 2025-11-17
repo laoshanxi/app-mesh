@@ -17,8 +17,7 @@ int main(int argc, char *argv[])
 
     // Configure connection
     ConnectionConfig config;
-    config.address.set("127.0.0.1:7681");
-    config.path = "/";
+    config.uri = "wss://127.0.0.1:7681/mcp/?token=abc";
     config.protocol_name = "appmesh-ws";
     config.ssl_config = std::make_shared<ClientSSLConfig>();
     config.ssl_config->m_verify_server = true;
@@ -27,6 +26,7 @@ int main(int argc, char *argv[])
 #else
     config.ssl_config->m_ca_location = "/opt/appmesh/ssl/ca.pem";
 #endif
+    config.auth_bearer_token = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjYwMzY2MywiYWdlbnRJZCI6OTQ3MzUwLCJlbmRwb2ludElkIjoiYWdlbnRfOTQ3MzUwIiwicHVycG9zZSI6Im1jcC1lbmRwb2ludCIsImlhdCI6MTc2MzM3MDY4MiwiZXhwIjoxNzk0OTI4MjgyfQ.ieusueE1adRtwFpdr0HldJ7mAnjILh2jhoOVcysdU3_WoKBEPd8kE_RbGgnRwix520XZ3o-PTAkS_jUGWjlQ5w";
 
     client.setConfig(config);
 

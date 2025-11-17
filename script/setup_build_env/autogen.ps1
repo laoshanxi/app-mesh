@@ -330,6 +330,17 @@ function Install-HeaderOnlyLibraries {
     cmake .. -Wno-dev -G "Visual Studio 17 2022" -A x64 -DLWS_WITHOUT_TESTAPPS=ON -DCMAKE_C_FLAGS="/wd4819" -DCMAKE_CXX_FLAGS="/wd4819" -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_INSTALL_PREFIX="C:/local"
     cmake --build . --config Release
     cmake --install . --config Release
+    Set-Location $ROOTDIR
+
+    # uriparser
+    git clone --depth=1 https://github.com/uriparser/uriparser.git
+    Set-Location "uriparser"
+    New-Item -ItemType Directory -Force -Path "build" | Out-Null
+    Set-Location "build"
+    cmake .. -G "Visual Studio 17 2022" -A x64 -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_INSTALL_PREFIX="C:/local"
+    cmake --build . --config Release
+    cmake --install . --config Release
+    Set-Location $ROOTDIR
 
     # QR Code Generator
     git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
@@ -487,7 +498,7 @@ function Install-GoTools {
     $env:GOBIN = "C:\local\bin"
     New-Item -ItemType Directory -Force -Path $env:GOBIN | Out-Null
     
-    go env -w GOPROXY="https://goproxy.io,direct"
+    go env -w GOPROXY="https://goproxy.cn,direct"
     go env -w GOBIN="C:\local\bin"
     go env -w GO111MODULE=on
     

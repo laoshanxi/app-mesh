@@ -1,8 +1,8 @@
 // Session.cpp
 #include "Session.h"
 
-WebSocketSession::WebSocketSession(struct lws *wsi)
-    : m_wsi(wsi), m_connected_at(std::time(nullptr))
+WebSocketSession::WebSocketSession()
+    : m_connected_at(std::time(nullptr))
 {
 }
 
@@ -21,6 +21,13 @@ WSResponse WebSocketSession::handleRequest(const WSRequest &req)
         resp.m_payload = "HTTP response";
     }
     return resp;
+}
+
+bool WebSocketSession::verifySession(std::shared_ptr<WSSessionInfo> ssnInfo)
+{
+    m_session_info = ssnInfo;
+    // TODO: validate
+    return true;
 }
 
 void WebSocketSession::enqueueOutgoingMessage(std::string &&msg)
@@ -52,11 +59,6 @@ bool WebSocketSession::hasOutgoingMessages() const
 {
     std::lock_guard<std::mutex> lock(m_outgoing_mutex);
     return !m_outgoing_messages.empty();
-}
-
-struct lws *WebSocketSession::getWsi() const
-{
-    return m_wsi;
 }
 
 std::time_t WebSocketSession::getConnectionAt() const

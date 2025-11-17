@@ -147,4 +147,12 @@ cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON 
 make
 sudo make install
 
+echo "Building and installing uriparser..."
+cd $TMP_DIR
+git clone --depth=1 https://github.com/uriparser/uriparser.git
+cd uriparser && mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF ..
+make
+sudo make install
+
 echo "Build completed successfully!"

@@ -1,7 +1,10 @@
 // WebSocketClient.cpp
 #include "WebSocketClient.h"
+#include "../UriParser.hpp"
 
 #include <cstring>
+
+constexpr int LWS_RX_BUFFER_SIZE = 8192;
 
 // Protocol callback
 int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
@@ -10,7 +13,23 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
 
     switch (reason)
     {
+    // 1. handshake (handle auth)
+    case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
+    {
+        unsigned char **p = (unsigned char **)in, *end = (*p) + len;
 
+        Client *client = (Client *)lws_get_opaque_user_data(wsi);
+        if (client && !client->m_config.auth_bearer_token.empty())
+        {
+            std::string jwt = "Bearer " + client->m_config.auth_bearer_token;
+            if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_AUTHORIZATION, (unsigned char *)jwt.c_str(), (int)strlen(jwt.c_str()), p, end))
+            {
+                return -1;
+            }
+        }
+    }
+    break;
+    // 2. after handshake, before HTTP establish connection
     case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
         if (pss)
         {
@@ -18,6 +37,7 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
         }
         break;
 
+    // 3. connection ready
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
         lwsl_user("CLIENT_ESTABLISHED\n");
         if (pss && pss->client)
@@ -25,7 +45,7 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
             pss->client->handleConnect();
         }
         break;
-
+    // 4. recieve data
     case LWS_CALLBACK_CLIENT_RECEIVE:
     {
         if (!pss || !pss->client)
@@ -141,7 +161,7 @@ bool Client::createContext()
         {m_config.protocol_name.c_str(), // protocol name
          websocket_callback,
          sizeof(ProtocolSession),
-         4096, // rx buffer size
+         LWS_RX_BUFFER_SIZE,
          0, NULL, 0},
         LWS_PROTOCOL_LIST_TERM};
 
@@ -213,10 +233,17 @@ bool Client::connect()
     struct lws_client_connect_info info;
     memset(&info, 0, sizeof(info));
 
+    auto u = Uri::parse(m_config.uri);
+    std::string path_with_query = u.path;
+    if (!u.query.empty())
+    {
+        path_with_query += "?" + u.query;
+    }
+
     info.context = m_context;
-    info.port = m_config.address.get_port_number();
-    info.address = m_config.address.get_host_name();
-    info.path = m_config.path.c_str();
+    info.port = u.port;
+    info.address = u.host.c_str();
+    info.path = path_with_query.c_str();
     info.host = info.address;
     info.origin = info.address;
     info.protocol = m_config.protocol_name.c_str();
@@ -239,9 +266,9 @@ bool Client::connect()
 
     lwsl_user("Connecting to %s:%d%s\n", info.address, info.port, info.path);
 
-    // Auth: if you need HTTP Basic auth set these
-    info.auth_username = nullptr;
-    info.auth_password = nullptr;
+    // Auth: if you need HTTP Basic auth
+    info.auth_username = m_config.auth_basic_username.empty() ? nullptr : m_config.auth_basic_username.c_str();
+    info.auth_password = m_config.auth_basic_password.empty() ? nullptr : m_config.auth_basic_password.c_str();
 
     // Websocket reserved bits / unknown opcode behavior (default safe settings)
 #if defined(LWS_ROLE_WS)
@@ -252,6 +279,7 @@ bool Client::connect()
     if (!lws_client_connect_via_info(&info))
     {
         lwsl_err("lws_client_connect_via_info failed\n");
+        destroyContext();
         return false;
     }
 
@@ -260,12 +288,15 @@ bool Client::connect()
 
 void Client::disconnect()
 {
-    if (m_wsi)
-    {
-        lws_close_reason(m_wsi, LWS_CLOSE_STATUS_NORMAL, nullptr, 0);
-        m_wsi = nullptr;
-    }
+    struct lws *wsi_copy = m_wsi;
     m_connected = false;
+    m_wsi = nullptr; // Clear pointer before timeout
+
+    if (wsi_copy)
+    {
+        lws_set_opaque_user_data(wsi_copy, nullptr);
+        lws_set_timeout(wsi_copy, PENDING_TIMEOUT_CLOSE_ACK, 1);
+    }
 }
 
 bool Client::isConnected() const

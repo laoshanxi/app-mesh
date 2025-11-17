@@ -1,11 +1,14 @@
 // WebSocketService.cpp
 #include <cstring>
 #include <iostream>
+#include <memory>
 
 #include <libwebsockets.h>
 
 #include "../Utility.h"
 #include "WebSocketService.h"
+
+constexpr int LWS_RX_BUFFER_SIZE = 8192;
 
 // -------------------------------
 // Constructor / Destructor
@@ -29,6 +32,34 @@ WebSocketService *WebSocketService::instance()
 // -------------------------------
 // Session management
 // -------------------------------
+
+std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
+{
+    auto ssnInfo = std::make_shared<WSSessionInfo>();
+
+    auto grab = [&](lws_token_indexes token, size_t bufSize) -> std::string
+    {
+        std::string out;
+        out.resize(bufSize);
+
+        int len = lws_hdr_copy(wsi, &out[0], bufSize, token);
+        if (len <= 0)
+            return {};
+
+        if (static_cast<size_t>(len) >= bufSize)
+            out[bufSize - 1] = '\0';
+
+        // Return only the actual length
+        return std::string(out.c_str(), len);
+    };
+
+    ssnInfo->path = grab(WSI_TOKEN_GET_URI, 256);
+    ssnInfo->query = grab(WSI_TOKEN_HTTP_URI_ARGS, 512);
+    ssnInfo->auth = grab(WSI_TOKEN_HTTP_AUTHORIZATION, 1024);
+
+    return ssnInfo;
+}
+
 std::shared_ptr<WebSocketSession> WebSocketService::findSession(struct lws *wsi)
 {
     std::lock_guard<std::mutex> lock(m_sessions_mutex);
@@ -38,17 +69,21 @@ std::shared_ptr<WebSocketSession> WebSocketService::findSession(struct lws *wsi)
     return nullptr;
 }
 
-void WebSocketService::createSession(struct lws *wsi)
+std::shared_ptr<WebSocketSession> WebSocketService::createSession(struct lws *wsi)
 {
     const static char fname[] = "WebSocketService::createSession() ";
 
-    std::lock_guard<std::mutex> lock(m_sessions_mutex);
-    m_sessions.emplace(wsi, std::make_shared<WebSocketSession>(wsi));
+    auto ssn = std::make_shared<WebSocketSession>();
+    {
+        std::lock_guard<std::mutex> lock(m_sessions_mutex);
+        m_sessions.emplace(wsi, ssn);
+    }
 
     LOG_INF << fname << "Connection established: " << wsi << " (total=" << m_sessions.size() << ")";
+    return ssn;
 }
 
-std::shared_ptr<WebSocketSession> WebSocketService::destroySession(struct lws *wsi)
+void WebSocketService::destroySession(struct lws *wsi)
 {
     const static char fname[] = "WebSocketService::destroySession() ";
 
@@ -57,12 +92,12 @@ std::shared_ptr<WebSocketSession> WebSocketService::destroySession(struct lws *w
     if (it == m_sessions.end())
     {
         LOG_WAR << fname << "Session not found: " << wsi;
-        return nullptr;
     }
-    auto session = it->second;
-    m_sessions.erase(it);
-    LOG_INF << fname << "Session destroyed: " << wsi << " (total=" << m_sessions.size() << ")";
-    return session;
+    else
+    {
+        m_sessions.erase(it);
+        LOG_INF << fname << "Session destroyed: " << wsi << " (total=" << m_sessions.size() << ")";
+    }
 }
 
 // -------------------------------
@@ -119,6 +154,13 @@ void WebSocketService::shutdown()
 
     LOG_INF << fname << "Shutting down...";
 
+    // Send sentinel values to wake up workers
+    for (size_t i = 0; i < m_worker_threads.size(); ++i)
+    {
+        WSRequest sentinel;
+        sentinel.m_wsi = nullptr; // Invalid request as signal
+        m_incoming_queue.enqueue(std::move(sentinel));
+    }
     // m_incoming_queue.stop();
     // m_outgoing_queue.stop();
 
@@ -215,9 +257,21 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
 {
     switch (reason)
     {
+    case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+    {
+        // Note: opaque_user_data is not avialable in this stage
+        auto ssn = createSession(wsi);
+        if (!ssn->verifySession(getSessionInfo(wsi)))
+        {
+            return -1;
+        }
+        break;
+    }
     case LWS_CALLBACK_ESTABLISHED:
     {
-        createSession(wsi);
+        // Promote createSession to LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION for session validation
+        // header info is not avialable here
+        // createSession(wsi);
         break;
     }
     case LWS_CALLBACK_RECEIVE:
@@ -295,6 +349,11 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
 // -------------------------------
 int WebSocketService::sendWebSocketMessage(struct lws *wsi, const std::string &msg)
 {
+    if (!wsi || lws_get_protocol(wsi) == nullptr)
+    {
+        return -1;
+    }
+
     size_t len = msg.size();
     std::vector<unsigned char> buffer(LWS_PRE + len);
     memcpy(buffer.data() + LWS_PRE, msg.data(), len);
@@ -353,6 +412,13 @@ void WebSocketService::runIOEventLoop()
 
     while (m_is_running)
     {
+        // Process ALL pending outgoing responses before servicing
+        WSResponse resp;
+        while (m_outgoing_queue.try_dequeue(resp))
+        {
+            deliverResponse(std::move(resp));
+        }
+
         int result = lws_service(m_context, 0);
         if (result < 0)
         {
@@ -370,13 +436,6 @@ void WebSocketService::runIOEventLoop()
             last_broadcast_time = now;
         }
         */
-
-        // Process outgoing responses
-        WSResponse resp;
-        while (m_outgoing_queue.try_dequeue(resp))
-        {
-            deliverResponse(std::move(resp));
-        }
     }
 
     LOG_INF << fname << "Thread stopped";
@@ -392,7 +451,7 @@ void WebSocketService::runWorkerLoop(int worker_id)
         m_incoming_queue.wait_dequeue(req);
 
         if (!req.m_wsi)
-            continue;
+            break; // sentinel
 
         auto session = findSession(req.m_wsi);
         if (!session)
@@ -415,7 +474,7 @@ bool WebSocketService::createContext(const char *cert_path, const char *key_path
 
     static struct lws_protocols protocols[] = {
         {"http", &WebSocketService::staticHttpCallback, 0, 0, 0, nullptr, 0},
-        {"appmesh-ws", &WebSocketService::staticWebSocketCallback, 0, 4096, 0, nullptr, 0},
+        {"appmesh-ws", &WebSocketService::staticWebSocketCallback, 0, LWS_RX_BUFFER_SIZE, 0, nullptr, 0},
         {nullptr, nullptr, 0, 0, 0, nullptr, 0}};
 
     struct lws_context_creation_info info;

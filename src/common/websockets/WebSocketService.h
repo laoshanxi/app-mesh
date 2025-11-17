@@ -27,9 +27,10 @@ public:
     static WebSocketService *instance();
 
     // Session management
+    std::shared_ptr<WSSessionInfo> getSessionInfo(struct lws *wsi);
     std::shared_ptr<WebSocketSession> findSession(struct lws *wsi);
-    void createSession(struct lws *wsi);
-    std::shared_ptr<WebSocketSession> destroySession(struct lws *wsi);
+    std::shared_ptr<WebSocketSession> createSession(struct lws *wsi);
+    void destroySession(struct lws *wsi);
 
     // Initialize without TLS
     bool initialize(ACE_INET_Addr addr);

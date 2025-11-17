@@ -9,6 +9,14 @@
 
 struct lws;
 
+// Client connection information
+struct WSSessionInfo
+{
+    std::string path;
+    std::string query;
+    std::string auth;
+};
+
 // -----------------------------------------------------------------------------
 // Message Types
 // -----------------------------------------------------------------------------
@@ -35,11 +43,12 @@ struct WSResponse
 class WebSocketSession
 {
 public:
-    explicit WebSocketSession(struct lws *wsi);
+    explicit WebSocketSession();
     ~WebSocketSession() = default;
 
     // Processes incoming request and generates response (echo for websocket messages)
     WSResponse handleRequest(const WSRequest &req);
+    bool verifySession(std::shared_ptr<WSSessionInfo> ssnInfo);
 
     // Enqueue outgoing message (from worker thread)
     void enqueueOutgoingMessage(std::string &&msg);
@@ -51,11 +60,10 @@ public:
 
     bool hasOutgoingMessages() const;
 
-    struct lws *getWsi() const;
     std::time_t getConnectionAt() const;
 
 private:
-    struct lws *m_wsi;
+    std::shared_ptr<WSSessionInfo> m_session_info;
     std::time_t m_connected_at;
 
     mutable std::mutex m_outgoing_mutex;

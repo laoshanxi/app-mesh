@@ -20,7 +20,7 @@
 
 #include "protoc/ProtobufHelper.h"
 
-class HttpRequestMsg;
+struct HttpRequestMsg;
 using MessageQueue = moodycamel::BlockingConcurrentQueue<std::shared_ptr<HttpRequestMsg>>;
 
 // = TITLE

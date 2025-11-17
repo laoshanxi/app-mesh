@@ -17,7 +17,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <ctime>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -181,6 +180,14 @@ struct WSResponse
     uint64_t m_req_id = 0;
 };
 
+// Client connection information
+struct WSSessionInfo
+{
+    std::string path;
+    std::string query;
+    std::string auth;
+};
+
 // -----------------------------------------------------------------------------
 // WebSocketSession: manages per-connection state
 // -----------------------------------------------------------------------------
@@ -210,15 +217,22 @@ public:
         return resp;
     }
 
+    bool verifySession(std::shared_ptr<WSSessionInfo> ssnInfo)
+    {
+        m_session_info = ssnInfo;
+        // TODO: validate
+        return true;
+    }
+
     void enqueueOutgoingMessage(std::string &&msg)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard<std::mutex> lock(m_outgoing_mutex);
         m_outgoing_messages.push(std::move(msg));
     }
 
     void enqueueOutgoingMessage(const std::string &msg)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard<std::mutex> lock(m_outgoing_mutex);
         m_outgoing_messages.push(msg);
     }
 
@@ -226,17 +240,17 @@ public:
     // called by I/O thread when WSI is writable; returns next message to send or empty
     bool dequeueOutgoingMessage(std::string &output)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard<std::mutex> lock(m_outgoing_mutex);
         if (m_outgoing_messages.empty())
             return false;
-        output = std::move(m_outgoing_messages.front());
+        output = m_outgoing_messages.front();
         m_outgoing_messages.pop();
         return true;
     }
 
     bool hasOutgoingMessages() const
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard<std::mutex> lock(m_outgoing_mutex);
         return !m_outgoing_messages.empty();
     }
 
@@ -245,8 +259,9 @@ public:
 
 private:
     struct lws *m_wsi;
+    std::shared_ptr<WSSessionInfo> m_session_info;
     std::time_t m_connected_at;
-    mutable std::mutex m_mutex;
+    mutable std::mutex m_outgoing_mutex;
     std::queue<std::string> m_outgoing_messages;
 };
 
@@ -268,6 +283,33 @@ public:
     }
 
     // Session management
+    std::shared_ptr<WSSessionInfo> getSessionInfo(struct lws *wsi)
+    {
+        auto ssnInfo = std::make_shared<WSSessionInfo>();
+
+        auto grab = [&](lws_token_indexes token, size_t bufSize) -> std::string
+        {
+            std::string out;
+            out.resize(bufSize);
+
+            int len = lws_hdr_copy(wsi, &out[0], bufSize, token);
+            if (len <= 0)
+                return {};
+
+            if (static_cast<size_t>(len) >= bufSize)
+                out[bufSize - 1] = '\0';
+
+            return std::string(out.c_str()); // trim to actual length
+        };
+
+        ssnInfo->path = grab(WSI_TOKEN_GET_URI, 256);
+        ssnInfo->query = grab(WSI_TOKEN_HTTP_URI_ARGS, 512);
+        ssnInfo->auth = grab(WSI_TOKEN_HTTP_AUTHORIZATION, 1024);
+
+        std::cout << "LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: <" << ssnInfo->path << "> <" << ssnInfo->query << "> <" << ssnInfo->auth << ">\n";
+        return ssnInfo;
+    }
+
     std::shared_ptr<WebSocketSession> findSession(struct lws *wsi)
     {
         std::lock_guard<std::mutex> lock(m_sessions_mutex);
@@ -277,21 +319,31 @@ public:
         return nullptr;
     }
 
-    void createSession(struct lws *wsi)
+    std::shared_ptr<WebSocketSession> createSession(struct lws *wsi)
     {
-        std::lock_guard<std::mutex> lock(m_sessions_mutex);
-        m_sessions.emplace(wsi, std::make_shared<WebSocketSession>(wsi));
+        auto ssn = std::make_shared<WebSocketSession>(wsi);
+        {
+            std::lock_guard<std::mutex> lock(m_sessions_mutex);
+            m_sessions.emplace(wsi, ssn);
+        }
+
+        std::cout << "[WebSocket] Connection established: " << wsi << " (total=" << m_sessions.size() << ")\n";
+        return ssn;
     }
 
-    std::shared_ptr<WebSocketSession> destroySession(struct lws *wsi)
+    void destroySession(struct lws *wsi)
     {
         std::lock_guard<std::mutex> lock(m_sessions_mutex);
         auto it = m_sessions.find(wsi);
         if (it == m_sessions.end())
-            return nullptr;
-        auto session = it->second;
-        m_sessions.erase(it);
-        return session;
+        {
+            std::cout << "[WebSocket] Session not found: " << wsi << "\n";
+        }
+        else
+        {
+            m_sessions.erase(it);
+            std::cout << "[WebSocket] Session destroyed: " << wsi << " (total=" << m_sessions.size() << ")\n";
+        }
     }
 
     // Initialize without TLS
@@ -341,6 +393,14 @@ public:
             return;
 
         std::cout << "[Service] Shutting down...\n";
+
+        // Send sentinel values to wake up workers
+        for (size_t i = 0; i < m_worker_threads.size(); ++i)
+        {
+            WSRequest sentinel;
+            sentinel.m_wsi = nullptr; // Invalid request as signal
+            m_incoming_queue.push(std::move(sentinel));
+        }
 
         m_incoming_queue.stop();
         m_outgoing_queue.stop();
@@ -434,11 +494,20 @@ public:
     {
         switch (reason)
         {
+        case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+        {
+            // Note: opaque_user_data is not available in this stage
+            auto ssn = createSession(wsi);
+            if (!ssn->verifySession(getSessionInfo(wsi)))
+            {
+                return -1;
+            }
+            break;
+        }
         case LWS_CALLBACK_ESTABLISHED:
         {
-            createSession(wsi);
-            std::lock_guard<std::mutex> lock(m_sessions_mutex);
-            std::cout << "[WebSocket] Connection established: " << wsi << " (total=" << m_sessions.size() << ")\n";
+            // Promote createSession to LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION for session validation
+            // header info is not available here
             break;
         }
         case LWS_CALLBACK_RECEIVE:
@@ -481,16 +550,7 @@ public:
         case LWS_CALLBACK_CLOSED:
         case LWS_CALLBACK_WSI_DESTROY:
         {
-            auto session = destroySession(wsi);
-            if (session)
-            {
-                time_t duration = std::time(nullptr) - session->getConnectionAt();
-                std::cout << "[WebSocket] Connection closed: " << wsi << " (duration=" << duration << "s)\n";
-            }
-            else
-            {
-                std::cout << "[WebSocket] Connection closed (unknown): " << wsi << "\n";
-            }
+            destroySession(wsi);
             break;
         }
         default:
@@ -514,6 +574,7 @@ public:
     // Enqueue incoming request into worker queue
     void enqueueIncomingRequest(WSRequest &&request)
     {
+        std::cout << "[Service] Received (" << request.m_payload.length() << " bytes)\n";
         m_incoming_queue.push(std::move(request));
     }
 
@@ -521,6 +582,11 @@ private:
     // Send text message over WebSocket (called only from event loop thread)
     static int sendWebSocketMessage(struct lws *wsi, const std::string &msg)
     {
+        if (!wsi || lws_get_protocol(wsi) == nullptr)
+        {
+            return -1;
+        }
+
         size_t len = msg.size();
         std::vector<unsigned char> buffer(LWS_PRE + len);
         memcpy(buffer.data() + LWS_PRE, msg.data(), len);
@@ -535,12 +601,18 @@ private:
         if (!resp.m_wsi)
             return;
 
-        auto session = findSession(resp.m_wsi);
-        if (!session)
+        std::shared_ptr<WebSocketSession> session;
         {
-            std::cout << "[Service] Cannot deliver response: session not found for wsi=" << resp.m_wsi << "\n";
-            return;
+            std::lock_guard<std::mutex> lock(m_sessions_mutex);
+            auto it = m_sessions.find(resp.m_wsi);
+            if (it == m_sessions.end())
+            {
+                std::cout << "[Service] Cannot deliver response: session not found for wsi=" << resp.m_wsi << "\n";
+                return;
+            }
+            session = it->second;
         }
+        // Now operate on session outside the lock - session won't be deleted due to shared_ptr
 
         session->enqueueOutgoingMessage(std::move(resp.m_payload));
         // request LWS to call SERVER_WRITEABLE for this wsi
@@ -575,6 +647,13 @@ private:
 
         while (m_is_running)
         {
+            // Process ALL pending outgoing responses before servicing
+            WSResponse resp;
+            while (m_outgoing_queue.pop(resp, 0))
+            {
+                deliverResponse(std::move(resp));
+            }
+
             int result = lws_service(m_context, 0);
             if (result < 0)
             {
@@ -589,13 +668,6 @@ private:
                 std::string broadcast_msg = "[Server] Heartbeat at " + std::to_string(std::time(nullptr));
                 broadcastMessage(broadcast_msg);
                 last_broadcast_time = now;
-            }
-
-            // Process outgoing responses
-            WSResponse resp;
-            while (m_outgoing_queue.pop(resp, 0))
-            {
-                deliverResponse(std::move(resp));
             }
         }
 
@@ -613,7 +685,7 @@ private:
                 continue;
 
             if (!req.m_wsi)
-                continue;
+                break; // sentinel
 
             auto session = findSession(req.m_wsi);
             if (!session)
@@ -638,7 +710,7 @@ private:
 
         static struct lws_protocols protocols[] = {
             {"http", &WebSocketService::staticHttpCallback, 0, 0, 0, nullptr, 0},
-            {"appmesh-ws", &WebSocketService::staticWebSocketCallback, 0, 4096, 0, nullptr, 0},
+            {"appmesh-ws", &WebSocketService::staticWebSocketCallback, 0, 8192, 0, nullptr, 0},
             {nullptr, nullptr, 0, 0, 0, nullptr, 0}};
 
         struct lws_context_creation_info info;
@@ -737,7 +809,7 @@ int main(int argc, char **argv)
     (void)argv;
 
     bool initialized = false;
-    if (std::filesystem::exists(TLS_CERT_PATH) && std::filesystem::exists(TLS_KEY_PATH))
+    if (strlen(TLS_CERT_PATH) && strlen(TLS_KEY_PATH) && std::ifstream(TLS_CERT_PATH) && std::ifstream(TLS_KEY_PATH))
     {
         initialized = WebSocketService::instance()->initialize(SERVER_PORT, TLS_CERT_PATH, TLS_KEY_PATH, TLS_CA_PATH);
     }
