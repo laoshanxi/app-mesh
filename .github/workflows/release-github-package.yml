@@ -129,6 +129,8 @@ jobs:
           echo "1. OAuth2" >> CHANGELOG.txt
           echo "2. C++ SDK" >> CHANGELOG.txt
           echo "3. Rust SDK" >> CHANGELOG.txt
+          echo "4. WebSocket service" >> CHANGELOG.txt
+          echo "5. Python WebSocket SDK" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency

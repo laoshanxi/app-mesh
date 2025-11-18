@@ -53,14 +53,14 @@ class AppMeshClientTCP(AppMeshClient):
 
     def __init__(
         self,
-        rest_ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
-        rest_ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+        ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
     ):
         """Construct an App Mesh client TCP object to communicate securely with an App Mesh server over TLS.
 
         Args:
-            rest_ssl_verify: SSL certificate verification behavior. Can be True, False, or a path to CA bundle.
+            ssl_verify: SSL certificate verification behavior. Can be True, False, or a path to CA bundle.
               - True: Use system CA certificates (e.g., /etc/ssl/certs/ on Linux)
               - False:  Disable verification (insecure)
               - str: Path to custom CA bundle or directory
@@ -73,11 +73,9 @@ class AppMeshClientTCP(AppMeshClient):
             TCP connections require an explicit full-chain CA specification for certificate validation,
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
-        self.tcp_transport = TCPTransport(
-            address=tcp_address, ssl_verify=rest_ssl_verify, ssl_client_cert=rest_ssl_client_cert
-        )
+        self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
         self._token = ""
-        super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert)
+        super().__init__(rest_ssl_verify=ssl_verify, rest_ssl_client_cert=ssl_client_cert)
 
     def close(self) -> None:
         """Close the connection and release resources."""

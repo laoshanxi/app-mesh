@@ -20,6 +20,7 @@
 
 #include "protoc/ProtobufHelper.h"
 
+class HttpRequest;
 struct HttpRequestMsg;
 using MessageQueue = moodycamel::BlockingConcurrentQueue<std::shared_ptr<HttpRequestMsg>>;
 
@@ -56,9 +57,11 @@ public:
 	/// <summary>
 	/// Process TCP request
 	/// </summary>
-	static void handleTcpRest();
+	static void handleTcpRestLoop();
+	static bool processRequest(std::shared_ptr<HttpRequest> &request);
 	static void closeTcpHandler(int tcpHandlerId);
 	const int &id();
+	static void queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int id);
 
 protected:
 	// = Demultiplexing hooks.

@@ -45,7 +45,7 @@ public:
     void shutdown();
 
     // HTTP and WebSocket callbacks (called from C)
-    int handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *in, size_t len);
+    int handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
     int handleWebSocketCallback(struct lws *wsi, enum lws_callback_reasons reason, void *in, size_t len);
 
     // Enqueue outgoing/incoming
@@ -54,7 +54,7 @@ public:
 
 private:
     // Internal helpers
-    static int sendWebSocketMessage(struct lws *wsi, const std::string &msg);
+    static int sendWebSocketMessage(struct lws *wsi, const std::vector<std::uint8_t> &pre_padded_msg);
     void deliverResponse(WSResponse &&resp);
     void broadcastMessage(const std::string &msg);
 

@@ -429,14 +429,14 @@ void AppMeshDaemon::initializeRestService()
 		LOG_INF << fname << "REST service is disabled, skipping initialization";
 		return;
 	}
-	ACE_INET_Addr acceptorAddr(config->getRestTcpPort(), config->getRestListenAddress().c_str());
+	ACE_INET_Addr tcpAddr(config->getRestTcpPort(), config->getRestListenAddress().c_str());
 	const std::string homeDir = Utility::getHomeDir();
 	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
 	const auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());					 // Server certificate (PEM, include intermediates)
 	const auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile());					 // Private key
 	const auto ca = verifyClient ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath()) : std::string(); // CA file or directory
 
-	LOG_INF << fname << "Initializing REST service on <" << acceptorAddr.get_host_addr() << ">";
+	LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
 
 	// Initialize SSL
 	TcpHandler::initTcpSSL(ACE_SSL_Context::instance(), cert, key, ca);
@@ -455,17 +455,24 @@ void AppMeshDaemon::initializeRestService()
 	constexpr int FLAG_ACE_NONBLOCK = 0;
 	constexpr int FLAG_SO_REUSEADDR = 1;
 
-	if (m_acceptor->open(acceptorAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
+	if (m_acceptor->open(tcpAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
 	{
 		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getRestTcpPort()) + " with error: " + last_error_msg());
 	}
 
 	// Setup client connection
 	m_client = std::make_unique<TcpClient>();
-	m_client->connect(acceptorAddr);
+	m_client->connect(tcpAddr);
 
-	// WebSocketService::instance()->initialize(acceptorAddr, cert, key, ca);
-	// WebSocketService::instance()->start(config->getThreadPoolSize());
+	// Websocket service
+	/*
+	// TODO: define from config
+	ACE_INET_Addr wsAddr(config->getRestTcpPort() - 1, config->getRestListenAddress().c_str());
+	WebSocketService::instance()->initialize(wsAddr, cert, key, ca);
+	WebSocketService::instance()->start(config->getThreadPoolSize());
+	LOG_INF << fname << "Initializing Websocket service on <" << wsAddr.get_host_addr() << ":" << wsAddr.get_port_number() << ">";
+	*/
+
 	startAgentApplication();
 	config->registerPrometheus();
 
@@ -481,7 +488,7 @@ void AppMeshDaemon::startRestThreadPool()
 
 	for (size_t i = 0; i < config->getThreadPoolSize(); ++i)
 	{
-		m_threadPool.emplace_back(std::make_unique<std::thread>(TcpHandler::handleTcpRest));
+		m_threadPool.emplace_back(std::make_unique<std::thread>(TcpHandler::handleTcpRestLoop));
 	}
 
 	LOG_INF << fname << "Started " << config->getThreadPoolSize() << " threads for REST thread pool";

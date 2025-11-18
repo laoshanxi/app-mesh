@@ -10,6 +10,24 @@
 
 constexpr int LWS_RX_BUFFER_SIZE = 8192;
 
+struct HttpSessionData
+{
+    // char auth[1024] = {0};
+    // char ext_x_file_path[512] = {0};
+    std::ofstream *upload_stream = nullptr;
+
+    void close()
+    {
+        if (upload_stream)
+        {
+            if (upload_stream->is_open())
+                upload_stream->close();
+            delete upload_stream;
+            upload_stream = nullptr;
+        }
+    }
+};
+
 // -------------------------------
 // Constructor / Destructor
 // -------------------------------
@@ -35,27 +53,86 @@ WebSocketService *WebSocketService::instance()
 
 std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
 {
+    if (!wsi)
+    {
+        return nullptr;
+    }
+
     auto ssnInfo = std::make_shared<WSSessionInfo>();
 
-    auto grab = [&](lws_token_indexes token, size_t bufSize) -> std::string
+    // ---- Standard Header Grabber ----
+    auto grabToken = [&](lws_token_indexes token) -> std::string
     {
-        std::string out;
-        out.resize(bufSize);
-
-        int len = lws_hdr_copy(wsi, &out[0], bufSize, token);
+        int len = lws_hdr_total_length(wsi, token);
         if (len <= 0)
+        {
             return {};
+        }
 
-        if (static_cast<size_t>(len) >= bufSize)
-            out[bufSize - 1] = '\0';
+        // Allocate buffer (len + 1 for null terminator)
+        std::vector<char> buf(len + 1);
+        int result_len = lws_hdr_copy(wsi, buf.data(), buf.size(), token);
 
-        // Return only the actual length
-        return std::string(out.c_str(), len);
+        if (result_len <= 0)
+        {
+            return {};
+        }
+        return std::string(buf.data(), result_len);
     };
 
-    ssnInfo->path = grab(WSI_TOKEN_GET_URI, 256);
-    ssnInfo->query = grab(WSI_TOKEN_HTTP_URI_ARGS, 512);
-    ssnInfo->auth = grab(WSI_TOKEN_HTTP_AUTHORIZATION, 1024);
+    // ---- Custom Header Grabber (MUST be lowercase) ----
+    auto grabCustom = [&](std::string name, size_t maxLen = 1024) -> std::string
+    {
+        // lws requires lowercase header name + colon
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        name.push_back(':'); // Add colon to header name
+
+        int header_len = lws_hdr_custom_length(wsi, name.c_str(), name.length());
+        if (header_len <= 0)
+        {
+            return {};
+        }
+
+        size_t buf_size = std::min(maxLen, static_cast<size_t>(header_len + 1));
+        std::vector<char> buf(buf_size);
+
+        int len = lws_hdr_custom_copy(wsi, buf.data(), buf.size(), name.c_str(), name.length());
+        if (len <= 0)
+        {
+            LOG_ERR << "Failed to copy custom header " << name << ", lws err=" << len;
+            return {};
+        }
+
+        return std::string(buf.data(), len);
+    };
+
+    // ---- Method + Path ----
+
+    // Check HTTP/2 Pseudo-headers
+    if (lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_COLON_METHOD))
+    {
+        ssnInfo->method = grabToken(WSI_TOKEN_HTTP_COLON_METHOD);
+        ssnInfo->path = grabToken(WSI_TOKEN_HTTP_COLON_PATH);
+    }
+    // Check HTTP/1.1 GET
+    else if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI))
+    {
+        ssnInfo->method = "GET";
+        ssnInfo->path = grabToken(WSI_TOKEN_GET_URI);
+    }
+    // Check HTTP/1.1 POST
+    else if (lws_hdr_total_length(wsi, WSI_TOKEN_POST_URI))
+    {
+        ssnInfo->method = "POST";
+        ssnInfo->path = grabToken(WSI_TOKEN_POST_URI);
+    }
+
+    // ---- Standard headers ----
+    ssnInfo->query = grabToken(WSI_TOKEN_HTTP_URI_ARGS);
+    ssnInfo->auth = grabToken(WSI_TOKEN_HTTP_AUTHORIZATION);
+
+    // ---- Custom headers ----
+    ssnInfo->ext_x_file_path = grabCustom("X-File-Path");
 
     return ssnInfo;
 }
@@ -73,7 +150,7 @@ std::shared_ptr<WebSocketSession> WebSocketService::createSession(struct lws *ws
 {
     const static char fname[] = "WebSocketService::createSession() ";
 
-    auto ssn = std::make_shared<WebSocketSession>();
+    auto ssn = std::make_shared<WebSocketSession>(wsi);
     {
         std::lock_guard<std::mutex> lock(m_sessions_mutex);
         m_sessions.emplace(wsi, ssn);
@@ -95,8 +172,9 @@ void WebSocketService::destroySession(struct lws *wsi)
     }
     else
     {
+        time_t duration = time(nullptr) - it->second->getConnectionAt();
         m_sessions.erase(it);
-        LOG_INF << fname << "Session destroyed: " << wsi << " (total=" << m_sessions.size() << ")";
+        LOG_INF << fname << "Session destroyed: " << wsi << " (duration=" << duration << "s, sessions=" << m_sessions.size() << ")";
     }
 }
 
@@ -158,7 +236,7 @@ void WebSocketService::shutdown()
     for (size_t i = 0; i < m_worker_threads.size(); ++i)
     {
         WSRequest sentinel;
-        sentinel.m_wsi = nullptr; // Invalid request as signal
+        sentinel.m_type = WSRequest::Type::Closing;
         m_incoming_queue.enqueue(std::move(sentinel));
     }
     // m_incoming_queue.stop();
@@ -192,62 +270,126 @@ void WebSocketService::shutdown()
 // -------------------------------
 // HTTP callback (called from C)
 // -------------------------------
-int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *in, size_t len)
+int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
 {
+    auto *pss = static_cast<HttpSessionData *>(user);
+
     switch (reason)
     {
-    case LWS_CALLBACK_ADD_HEADERS:
-    {
-        auto *header_args = static_cast<lws_process_html_args *>(in);
-        unsigned char *buffer_ptr = reinterpret_cast<unsigned char *>(header_args->p);
-        unsigned char *buffer_end = buffer_ptr + header_args->max_len;
-        std::string cookie_value = "sessionid=secure_" + std::to_string(std::time(nullptr)) +
-                                   "; Path=/; HttpOnly; Secure; SameSite=Strict";
-        if (lws_add_http_header_by_name(wsi,
-                                        reinterpret_cast<const unsigned char *>("set-cookie:"),
-                                        reinterpret_cast<const unsigned char *>(cookie_value.c_str()),
-                                        static_cast<int>(cookie_value.length()),
-                                        &buffer_ptr, buffer_end))
-        {
-            lwsl_err("Failed to add Set-Cookie header\n");
-            return -1;
-        }
-        header_args->p = reinterpret_cast<char *>(buffer_ptr);
-        return 0;
-    }
     case LWS_CALLBACK_HTTP:
     {
-        char uri_buffer[256] = {0};
-        lws_hdr_copy(wsi, uri_buffer, sizeof(uri_buffer), WSI_TOKEN_GET_URI);
+        auto ssnInfo = getSessionInfo(wsi);
+        if (!ssnInfo)
+        {
+            lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, nullptr);
+            return -1;
+        }
 
-        if (strcmp(uri_buffer, "/") == 0 || strcmp(uri_buffer, "/index.html") == 0)
+        // MANUAL PSS INITIALIZATION
+        if (pss)
+            pss->upload_stream = nullptr;
+
+        // 1. Serve Index
+        if (ssnInfo->path == "/" || ssnInfo->path == "/index.html")
         {
             if (lws_serve_http_file(wsi, "index.html", "text/html; charset=utf-8", nullptr, 0) < 0)
+                return -1;
+            return 0; // Standard LWS return for serving file
+        }
+
+        // 2. Authentication Check
+        if (!WebSocketSession::verify(ssnInfo))
+        {
+            lws_return_http_status(wsi, HTTP_STATUS_UNAUTHORIZED, "Authentication failed");
+            return -1;
+        }
+
+        // std::strncpy(pss->ext_x_file_path, ssnInfo->ext_x_file_path.c_str(), sizeof(pss->ext_x_file_path) - 1);
+        // std::strncpy(pss->auth, ssnInfo->auth.c_str(), sizeof(pss->auth) - 1);
+
+        // 3. File Download
+        if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download" && !ssnInfo->ext_x_file_path.empty())
+        {
+            // Note: lws_serve_http_file handles LWS_PRE internally
+            if (lws_serve_http_file(wsi, ssnInfo->ext_x_file_path.c_str(), "application/octet-stream", nullptr, 0) < 0)
+                return -1;
+            return 0;
+        }
+
+        // 4. File Upload Setup
+        if (ssnInfo->method == "POST" && ssnInfo->path == "/appmesh/file/upload" && !ssnInfo->ext_x_file_path.empty())
+        {
+            if (pss)
             {
-                lwsl_err("Failed to serve index.html\n");
-                return -1;
+                pss->upload_stream = new std::ofstream(ssnInfo->ext_x_file_path, std::ios::binary);
+                if (!pss->upload_stream->is_open())
+                {
+                    pss->close();
+                    lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Cannot open file");
+                    return -1;
+                }
+                // Return 0 to allow LWS to proceed to LWS_CALLBACK_HTTP_BODY
+                return 0;
             }
-            return 0;
+            return 0; // Ready to receive body
         }
-        else if (strcmp(uri_buffer, "/style.css") == 0)
-        {
-            if (lws_serve_http_file(wsi, "style.css", "text/css", nullptr, 0) < 0)
-                return -1;
-            return 0;
-        }
-        else if (strcmp(uri_buffer, "/script.js") == 0)
-        {
-            if (lws_serve_http_file(wsi, "script.js", "application/javascript", nullptr, 0) < 0)
-                return -1;
-            return 0;
-        }
+
         lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, nullptr);
         return -1;
     }
+
+    case LWS_CALLBACK_HTTP_BODY:
+    {
+        if (pss && pss->upload_stream)
+        {
+            // Write chunk to disk (BLOCKING I/O - Careful)
+            pss->upload_stream->write(reinterpret_cast<const char *>(in), static_cast<std::streamsize>(len));
+
+            if (!pss->upload_stream->good())
+            {
+                pss->close();
+                lwsl_err("File write failed\n");
+                return -1; // Abort connection
+            }
+        }
+        return 0;
+    }
+
+    case LWS_CALLBACK_HTTP_BODY_COMPLETION:
+    {
+        if (pss && pss->upload_stream)
+        {
+            pss->close();
+
+            // HTTP replies in libwebsockets do NOT require LWS_PRE
+            std::string msg = "Upload OK";
+            lws_return_http_status(wsi, HTTP_STATUS_OK, nullptr);
+            lws_write(wsi, (unsigned char *)msg.c_str(), msg.size(), LWS_WRITE_HTTP_FINAL);
+            lws_http_transaction_completed(wsi);
+        }
+        return 0;
+    }
+
+    case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
+    case LWS_CALLBACK_CLOSED_HTTP:
+    {
+        if (pss)
+            pss->close();
+        // Optional: Delete partial file
+        break;
+    }
+
+    case LWS_CALLBACK_HTTP_FILE_COMPLETION:
+    {
+        // Good place to log download success
+        // lwsl_info("File download completed\n");
+        return lws_http_transaction_completed(wsi);
+    }
+
     default:
         break;
     }
-    return lws_callback_http_dummy(wsi, reason, nullptr, in, len);
+    return lws_callback_http_dummy(wsi, reason, user, in, len);
 }
 
 // -------------------------------
@@ -259,12 +401,19 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
     {
     case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
     {
+        // Retrieve session info (from header) and cache to Session
         // Note: opaque_user_data is not avialable in this stage
-        auto ssn = createSession(wsi);
-        if (!ssn->verifySession(getSessionInfo(wsi)))
+        auto ssnInfo = getSessionInfo(wsi);
+        /* TODO: Websocket can use auth here to replace the auth in RestBase::verifyToken
+        // Verify headers BEFORE creating a full session object if possible
+        if (!WebSocketSession::verify(ssnInfo))
         {
-            return -1;
+            return -1; // 403 Forbidden (implied)
         }
+        */
+        // Pass the info to createSession so it doesn't have to parse it again
+        auto ssn = createSession(wsi);
+        ssn->verifySession(ssnInfo);
         break;
     }
     case LWS_CALLBACK_ESTABLISHED:
@@ -276,37 +425,76 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
     }
     case LWS_CALLBACK_RECEIVE:
     {
-        std::string message(static_cast<const char *>(in), len);
+        const bool is_first = lws_is_first_fragment(wsi);
+        const bool is_final = lws_is_final_fragment(wsi);
+        // const bool is_binary = lws_frame_is_binary(wsi); // Check if text or binary
 
-        WSRequest req;
-        req.m_type = WSRequest::Type::WebSocketMessage;
-        req.m_wsi = wsi;
-        req.m_payload = std::move(message);
-        req.m_req_id = m_next_request_id.fetch_add(1, std::memory_order_relaxed);
-        enqueueIncomingRequest(std::move(req));
+        auto session = findSession(wsi);
+        if (session)
+        {
+            try
+            {
+                auto full_data = session->onReceive(in, len, is_first, is_final);
+                if (!full_data.empty())
+                {
+                    WSRequest req;
+                    req.m_type = WSRequest::Type::WebSocketMessage;
+                    req.m_session_ref = session;
+                    req.m_payload = std::move(full_data);
+                    req.m_req_id = m_next_request_id.fetch_add(1, std::memory_order_relaxed);
+                    enqueueIncomingRequest(std::move(req));
+                }
+            }
+            catch (const std::exception &e)
+            {
+                return -1; // Error
+            }
+        }
         break;
     }
     case LWS_CALLBACK_SERVER_WRITEABLE:
     {
-        // Only the IO thread gets this callback; pop one message from session queue and send.
         auto session = findSession(wsi);
         if (!session)
             break;
 
-        std::string msg;
-        if (session->dequeueOutgoingMessage(msg))
+        // Keep writing while we have messages and socket accepts data
+        while (true)
         {
-            int result = sendWebSocketMessage(wsi, msg);
-            if (result < 0)
+            auto *msg_ptr = session->peekOutgoingMessage();
+            if (!msg_ptr)
+                break; // Queue empty
+
+            // Calculate pointer and length based on offset
+            // Buffer: [ LWS_PRE area ... | Data ... ]
+            // Ptr = buffer.data() + LWS_PRE + offset
+            size_t total_len = msg_ptr->size();
+            size_t offset = session->getOutgoingMessageOffset();
+
+            unsigned char *p = (unsigned char *)msg_ptr->data() + LWS_PRE + offset;
+            size_t len = (total_len - LWS_PRE) - offset;
+
+            int sent = lws_write(wsi, p, len, LWS_WRITE_BINARY);
+
+            if (sent < 0)
             {
-                lwsl_err("Failed to send WebSocket message\n");
-                return -1;
+                return -1; // Error
             }
-            // If session still has more messages, request writable again.
-            if (session->hasOutgoingMessages())
+
+            // Mark progress
+            session->advanceOutgoingMessage(sent);
+
+            // If partial write occurred, lws_write usually implies choke.
+            // Or if we successfully sent this message but lws says choked now:
+            if (lws_send_pipe_choked(wsi))
             {
-                lws_callback_on_writable(wsi);
+                lws_callback_on_writable(wsi); // Re-schedule
+                break;
             }
+
+            // If we finished the message, loop continues to try sending the next one
+            // unless we want to yield to let other connections handle.
+            // Usually good to break after a few writes or if nothing left.
         }
         break;
     }
@@ -327,8 +515,8 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
 // -------------------------------
 void WebSocketService::enqueueOutgoingResponse(WSResponse &&resp)
 {
-    auto lswi = resp.m_wsi;
-    if (!lswi || !m_context)
+    auto ssn = resp.m_session_ref.lock();
+    if (!ssn || !m_context)
         return;
 
     m_outgoing_queue.enqueue(std::move(resp));
@@ -340,60 +528,59 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
 {
     static const char fname[] = "WebSocketService::enqueueIncomingRequest() ";
 
-    LOG_DBG << fname << "Received (" << req.m_payload.length() << " bytes)";
+    LOG_DBG << fname << "Received (" << req.m_payload.size() << " bytes)";
     m_incoming_queue.enqueue(std::move(req));
 }
 
 // -------------------------------
 // Low-level send
 // -------------------------------
-int WebSocketService::sendWebSocketMessage(struct lws *wsi, const std::string &msg)
+int WebSocketService::sendWebSocketMessage(struct lws *wsi, const std::vector<std::uint8_t> &pre_padded_msg)
 {
-    if (!wsi || lws_get_protocol(wsi) == nullptr)
-    {
+    if (!wsi)
         return -1;
-    }
 
-    size_t len = msg.size();
-    std::vector<unsigned char> buffer(LWS_PRE + len);
-    memcpy(buffer.data() + LWS_PRE, msg.data(), len);
-    int bytes_written = lws_write(wsi, buffer.data() + LWS_PRE, static_cast<int>(len), LWS_WRITE_TEXT);
-    return bytes_written;
+    // Assume pre_padded_msg already has LWS_PRE size reserved at the front
+    // and data starts at pre_padded_msg.data() + LWS_PRE
+
+    size_t payload_len = pre_padded_msg.size() - LWS_PRE;
+    unsigned char *p = (unsigned char *)pre_padded_msg.data() + LWS_PRE;
+
+    return lws_write(wsi, p, payload_len, LWS_WRITE_BINARY);
 }
 
 void WebSocketService::deliverResponse(WSResponse &&resp)
 {
-    const static char fname[] = "WebSocketService::deliverResponse() ";
+    // Lock is essential here to prevent race with destroySession logic
+    std::lock_guard<std::mutex> lock(m_sessions_mutex);
+    auto ssn = resp.m_session_ref.lock();
 
-    if (!resp.m_wsi)
-        return;
-
-    auto session = findSession(resp.m_wsi);
-    if (!session)
+    if (ssn)
     {
-        LOG_ERR << fname << "Cannot deliver response: session not found for wsi=" << resp.m_wsi;
-        return;
+        // Verify the wsi is still in our map (Double check validity)
+        auto it = m_sessions.find(ssn->getWsi());
+        if (it != m_sessions.end())
+        {
+            ssn->enqueueOutgoingMessage(std::move(resp.m_payload));
+            lws_callback_on_writable(ssn->getWsi());
+        }
     }
-
-    session->enqueueOutgoingMessage(std::move(resp.m_payload));
-    // request LWS to call SERVER_WRITEABLE for this wsi
-    lws_callback_on_writable(resp.m_wsi);
 }
 
 void WebSocketService::broadcastMessage(const std::string &msg)
 {
-    std::vector<struct lws *> active_connections;
+    std::vector<std::shared_ptr<WebSocketSession>> active_connections;
     {
         std::lock_guard<std::mutex> lock(m_sessions_mutex);
         for (auto &session_pair : m_sessions)
-            active_connections.push_back(session_pair.first);
+            active_connections.push_back(session_pair.second);
     }
 
-    for (auto wsi : active_connections)
+    for (auto ssn : active_connections)
     {
         WSResponse resp;
-        resp.m_wsi = wsi;
-        resp.m_payload = msg;
+        resp.m_session_ref = ssn;
+        resp.m_payload.assign(msg.begin(), msg.end());
         enqueueOutgoingResponse(std::move(resp));
     }
 }
@@ -445,20 +632,23 @@ void WebSocketService::runWorkerLoop(int worker_id)
 {
     const static char fname[] = "WebSocketService::runWorkerLoop() ";
     LOG_INF << fname << "Thread started: ID=" << worker_id;
+
     while (m_is_running)
     {
         WSRequest req;
         m_incoming_queue.wait_dequeue(req);
 
-        if (!req.m_wsi)
-            break; // sentinel
+        if (req.m_type == WSRequest::Type::Closing)
+            break;
 
-        auto session = findSession(req.m_wsi);
-        if (!session)
-            continue;
-
-        WSResponse resp = session->handleRequest(req);
-        enqueueOutgoingResponse(std::move(resp));
+        if (auto session = req.m_session_ref.lock())
+        {
+            session->handleRequest(req);
+        }
+        else
+        {
+            LOG_WAR << "Session expired for request " << req.m_req_id;
+        }
     }
     LOG_INF << fname << "Thread stopped: ID=" << worker_id;
 }
@@ -473,7 +663,7 @@ bool WebSocketService::createContext(const char *cert_path, const char *key_path
     LOG_DBG << fname << "Initializing lws_context";
 
     static struct lws_protocols protocols[] = {
-        {"http", &WebSocketService::staticHttpCallback, 0, 0, 0, nullptr, 0},
+        {"http", &WebSocketService::staticHttpCallback, sizeof(HttpSessionData), 0, 0, nullptr, 0},
         {"appmesh-ws", &WebSocketService::staticWebSocketCallback, 0, LWS_RX_BUFFER_SIZE, 0, nullptr, 0},
         {nullptr, nullptr, 0, 0, 0, nullptr, 0}};
 
@@ -541,7 +731,7 @@ bool WebSocketService::createContext(const char *cert_path, const char *key_path
 // -------------------------------
 int WebSocketService::staticHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
 {
-    return WebSocketService::instance()->handleHttpCallback(wsi, reason, in, len);
+    return WebSocketService::instance()->handleHttpCallback(wsi, reason, user, in, len);
 }
 
 int WebSocketService::staticWebSocketCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)

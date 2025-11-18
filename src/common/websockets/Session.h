@@ -2,70 +2,93 @@
 #pragma once
 
 #include <ctime>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
+#include <vector>
 
 struct lws;
+class WebSocketSession;
 
 // Client connection information
 struct WSSessionInfo
 {
+    std::string method;
     std::string path;
     std::string query;
     std::string auth;
+    std::string ext_x_file_path;
 };
 
 // -----------------------------------------------------------------------------
 // Message Types
 // -----------------------------------------------------------------------------
+
+struct WSResponse
+{
+    std::weak_ptr<WebSocketSession> m_session_ref;
+    std::vector<std::uint8_t> m_payload;
+    uint64_t m_req_id = 0;
+};
+
 struct WSRequest
 {
     enum class Type
     {
         WebSocketMessage,
-        HttpRequest
+        HttpMessage,
+        Closing
     } m_type;
 
-    struct lws *m_wsi = nullptr;
-    std::string m_payload;
+    std::weak_ptr<WebSocketSession> m_session_ref;
+    std::vector<std::uint8_t> m_payload;
     uint64_t m_req_id = 0;
+
+    void reply(std::vector<std::uint8_t> &&data) const;
 };
 
-struct WSResponse
+struct Buffer
 {
-    struct lws *m_wsi = nullptr;
-    std::string m_payload;
-    uint64_t m_req_id = 0;
+    std::vector<std::uint8_t> data;
 };
 
 class WebSocketSession
 {
 public:
-    explicit WebSocketSession();
+    explicit WebSocketSession(lws *lws);
     ~WebSocketSession() = default;
 
     // Processes incoming request and generates response (echo for websocket messages)
-    WSResponse handleRequest(const WSRequest &req);
+    void handleRequest(const WSRequest &req);
     bool verifySession(std::shared_ptr<WSSessionInfo> ssnInfo);
+    static bool verify(std::shared_ptr<WSSessionInfo> ssnInfo);
 
     // Enqueue outgoing message (from worker thread)
-    void enqueueOutgoingMessage(std::string &&msg);
-    void enqueueOutgoingMessage(const std::string &msg);
+    void enqueueOutgoingMessage(std::vector<std::uint8_t> &&payload);
+    void enqueueOutgoingMessage(const std::vector<std::uint8_t> &payload);
 
-    // Pop next outgoing message. Returns true if message obtained.
-    // called by I/O thread when WSI is writable
-    bool dequeueOutgoingMessage(std::string &output);
+    // Return a reference to the front, don't pop yet
+    std::vector<std::uint8_t> *peekOutgoingMessage();
+    // Advance offset, pop if done
+    void advanceOutgoingMessage(size_t bytes_sent);
+    size_t getOutgoingMessageOffset() { return m_current_msg_offset; }
 
     bool hasOutgoingMessages() const;
 
+    struct lws *getWsi() const;
     std::time_t getConnectionAt() const;
 
+    std::vector<std::uint8_t> onReceive(const void *in, size_t len, bool is_first, bool is_final);
+
 private:
+    lws *m_lws;
+    const std::time_t m_connected_at;
     std::shared_ptr<WSSessionInfo> m_session_info;
-    std::time_t m_connected_at;
+    Buffer m_buffer;
 
     mutable std::mutex m_outgoing_mutex;
-    std::queue<std::string> m_outgoing_messages;
+    std::queue<std::vector<std::uint8_t>> m_outgoing_messages;
+    size_t m_current_msg_offset = 0; // Tracks bytes sent for the front message
 };

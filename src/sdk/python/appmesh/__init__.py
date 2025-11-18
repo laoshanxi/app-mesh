@@ -16,6 +16,7 @@ __all__ = [
     "App",
     "AppMeshClient",
     "AppMeshClientTCP",
+    "AppMeshClientWSS",
     "AppMeshClientOAuth",
     "AppMeshServer",
     "AppMeshServerTCP",
@@ -26,6 +27,7 @@ _LAZY_IMPORTS = {
     "App": ("app", "App"),  # from .app import App
     "AppMeshClient": ("client_http", "AppMeshClient"),  # from .client_http import AppMeshClient
     "AppMeshClientTCP": ("client_tcp", "AppMeshClientTCP"),  # from .client_tcp import AppMeshClientTCP
+    "AppMeshClientWSS": ("client_wss", "AppMeshClientWSS"),  # from .client_wss import AppMeshClientWSS
     "AppMeshClientOAuth": ("client_http_oauth", "AppMeshClientOAuth"),  # from .client_http_oauth import AppMeshClientOAuth
     "AppMeshServer": ("server_http", "AppMeshServer"),  # from .server_http import AppMeshServer
     "AppMeshServerTCP": ("server_tcp", "AppMeshServerTCP"),  # from .server_tcp import AppMeshServerTCP
@@ -36,6 +38,7 @@ if TYPE_CHECKING:
     from .app import App  # noqa: F401
     from .client_http import AppMeshClient  # noqa: F401
     from .client_tcp import AppMeshClientTCP  # noqa: F401
+    from .client_wss import AppMeshClientWSS  # noqa: F401
     from .client_http_oauth import AppMeshClientOAuth  # noqa: F401
     from .server_http import AppMeshServer  # noqa: F401
     from .server_tcp import AppMeshServerTCP  # noqa: F401

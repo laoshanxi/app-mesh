@@ -160,24 +160,29 @@ private:
 // -----------------------------------------------------------------------------
 // Message Types
 // -----------------------------------------------------------------------------
+
+struct WSResponse
+{
+    struct lws *m_wsi = nullptr;
+    std::vector<std::uint8_t> m_payload;
+    uint64_t m_req_id = 0;
+};
+
 struct WSRequest
 {
     enum class Type
     {
         WebSocketMessage,
-        HttpRequest
+        HttpMessage,
+        Closing
     } m_type;
 
     struct lws *m_wsi = nullptr;
-    std::string m_payload;
+    std::vector<std::uint8_t> m_payload;
     uint64_t m_req_id = 0;
-};
 
-struct WSResponse
-{
-    struct lws *m_wsi = nullptr;
-    std::string m_payload;
-    uint64_t m_req_id = 0;
+    // Reply with a move-only payload (implementation expects a vector<uint8_t>)
+    void reply(std::vector<std::uint8_t> &&data) const;
 };
 
 // Client connection information
@@ -186,6 +191,11 @@ struct WSSessionInfo
     std::string path;
     std::string query;
     std::string auth;
+};
+
+struct Buffer
+{
+    std::vector<std::uint8_t> data;
 };
 
 // -----------------------------------------------------------------------------
@@ -200,21 +210,22 @@ public:
     ~WebSocketSession() = default;
 
     // Processes incoming request and generates response (echo for websocket messages)
-    WSResponse handleRequest(const WSRequest &req)
+    void handleRequest(const WSRequest &req)
     {
-        WSResponse resp;
-        resp.m_wsi = req.m_wsi;
-        resp.m_req_id = req.m_req_id;
-
+        std::string simulateRespData;
         if (req.m_type == WSRequest::Type::WebSocketMessage)
         {
-            resp.m_payload = "[Echo] " + req.m_payload;
+            simulateRespData = "[Echo] Server Recieved: " + std::string(req.m_payload.begin(), req.m_payload.end());
         }
         else
         {
-            resp.m_payload = "HTTP response";
+            simulateRespData = "HTTP response";
         }
-        return resp;
+
+        std::vector<std::uint8_t> respData;
+        respData.assign(simulateRespData.begin(), simulateRespData.end());
+
+        req.reply(std::move(respData));
     }
 
     bool verifySession(std::shared_ptr<WSSessionInfo> ssnInfo)
@@ -224,13 +235,13 @@ public:
         return true;
     }
 
-    void enqueueOutgoingMessage(std::string &&msg)
+    void enqueueOutgoingMessage(std::vector<std::uint8_t> &&msg)
     {
         std::lock_guard<std::mutex> lock(m_outgoing_mutex);
         m_outgoing_messages.push(std::move(msg));
     }
 
-    void enqueueOutgoingMessage(const std::string &msg)
+    void enqueueOutgoingMessage(const std::vector<std::uint8_t> &msg)
     {
         std::lock_guard<std::mutex> lock(m_outgoing_mutex);
         m_outgoing_messages.push(msg);
@@ -238,7 +249,7 @@ public:
 
     // Pop next outgoing message. Returns true if message obtained.
     // called by I/O thread when WSI is writable; returns next message to send or empty
-    bool dequeueOutgoingMessage(std::string &output)
+    bool dequeueOutgoingMessage(std::vector<std::uint8_t> &output)
     {
         std::lock_guard<std::mutex> lock(m_outgoing_mutex);
         if (m_outgoing_messages.empty())
@@ -257,12 +268,32 @@ public:
     struct lws *getWsi() const { return m_wsi; }
     std::time_t getConnectionAt() const { return m_connected_at; }
 
+    std::vector<std::uint8_t> onReceive(const void *in, size_t len, bool is_first, bool is_final)
+    {
+        if (is_first)
+        {
+            m_buffer.data.clear();
+        }
+
+        const char *p = static_cast<const char *>(in);
+        m_buffer.data.insert(m_buffer.data.end(), p, p + len);
+
+        if (is_final)
+        {
+            std::vector<std::uint8_t> out = std::move(m_buffer.data);
+            return out;
+        }
+
+        return {}; // not finished
+    }
+
 private:
     struct lws *m_wsi;
     std::shared_ptr<WSSessionInfo> m_session_info;
     std::time_t m_connected_at;
     mutable std::mutex m_outgoing_mutex;
-    std::queue<std::string> m_outgoing_messages;
+    std::queue<std::vector<std::uint8_t>> m_outgoing_messages;
+    Buffer m_buffer;
 };
 
 // -----------------------------------------------------------------------------
@@ -341,8 +372,9 @@ public:
         }
         else
         {
+            time_t duration = time(nullptr) - it->second->getConnectionAt();
             m_sessions.erase(it);
-            std::cout << "[WebSocket] Session destroyed: " << wsi << " (total=" << m_sessions.size() << ")\n";
+            std::cout << "Session destroyed: " << wsi << " (duration=" << duration << "s, sessions=" << m_sessions.size() << ")";
         }
     }
 
@@ -512,15 +544,22 @@ public:
         }
         case LWS_CALLBACK_RECEIVE:
         {
-            std::string message(static_cast<const char *>(in), len);
-            std::cout << "[WebSocket] Received (" << len << " bytes): " << message << "\n";
-
-            WSRequest req;
-            req.m_type = WSRequest::Type::WebSocketMessage;
-            req.m_wsi = wsi;
-            req.m_payload = std::move(message);
-            req.m_req_id = m_next_request_id.fetch_add(1, std::memory_order_relaxed);
-            enqueueIncomingRequest(std::move(req));
+            auto session = findSession(wsi);
+            if (session)
+            {
+                bool is_first = lws_is_first_fragment(wsi) != 0;
+                bool is_final = lws_is_final_fragment(wsi) != 0;
+                auto full_data = session->onReceive(in, len, is_first, is_final);
+                if (!full_data.empty())
+                {
+                    WSRequest req;
+                    req.m_type = WSRequest::Type::WebSocketMessage;
+                    req.m_wsi = wsi;
+                    req.m_payload = std::move(full_data);
+                    req.m_req_id = m_next_request_id.fetch_add(1, std::memory_order_relaxed);
+                    enqueueIncomingRequest(std::move(req));
+                }
+            }
             break;
         }
         case LWS_CALLBACK_SERVER_WRITEABLE:
@@ -530,7 +569,7 @@ public:
             if (!session)
                 break;
 
-            std::string msg;
+            std::vector<std::uint8_t> msg;
             if (session->dequeueOutgoingMessage(msg))
             {
                 int result = sendWebSocketMessage(wsi, msg);
@@ -574,13 +613,13 @@ public:
     // Enqueue incoming request into worker queue
     void enqueueIncomingRequest(WSRequest &&request)
     {
-        std::cout << "[Service] Received (" << request.m_payload.length() << " bytes)\n";
+        std::cout << "[WebSocket] Received (" << request.m_payload.size() << " bytes): " << std::string(request.m_payload.begin(), request.m_payload.end()) << "\n";
         m_incoming_queue.push(std::move(request));
     }
 
 private:
     // Send text message over WebSocket (called only from event loop thread)
-    static int sendWebSocketMessage(struct lws *wsi, const std::string &msg)
+    static int sendWebSocketMessage(struct lws *wsi, const std::vector<std::uint8_t> &msg)
     {
         if (!wsi || lws_get_protocol(wsi) == nullptr)
         {
@@ -588,7 +627,7 @@ private:
         }
 
         size_t len = msg.size();
-        std::vector<unsigned char> buffer(LWS_PRE + len);
+        std::vector<std::uint8_t> buffer(LWS_PRE + len);
         memcpy(buffer.data() + LWS_PRE, msg.data(), len);
         int bytes_written = lws_write(wsi, buffer.data() + LWS_PRE,
                                       static_cast<int>(len), LWS_WRITE_TEXT);
@@ -633,7 +672,7 @@ private:
         {
             WSResponse resp;
             resp.m_wsi = wsi;
-            resp.m_payload = msg;
+            resp.m_payload.assign(msg.begin(), msg.end());
             enqueueOutgoingResponse(std::move(resp));
         }
     }
@@ -684,15 +723,17 @@ private:
             if (!m_incoming_queue.pop(req, WORKER_POLL_TIMEOUT_MS))
                 continue;
 
+            if (req.m_type == WSRequest::Type::Closing)
+                break;
+
             if (!req.m_wsi)
-                break; // sentinel
+                continue;
 
             auto session = findSession(req.m_wsi);
             if (!session)
                 continue;
 
-            WSResponse resp = session->handleRequest(req);
-            enqueueOutgoingResponse(std::move(resp));
+            session->handleRequest(req);
         }
         std::cout << "[Worker-" << worker_id << "] Thread stopped\n";
     }
@@ -800,6 +841,15 @@ private:
     std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions;
 };
 
+void WSRequest::reply(std::vector<std::uint8_t> &&data) const
+{
+    WSResponse resp;
+    resp.m_wsi = m_wsi;
+    resp.m_req_id = m_req_id;
+    resp.m_payload = std::move(data);
+    WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
+}
+
 // -----------------------------------------------------------------------------
 // main
 // -----------------------------------------------------------------------------
@@ -809,7 +859,7 @@ int main(int argc, char **argv)
     (void)argv;
 
     bool initialized = false;
-    if (strlen(TLS_CERT_PATH) && strlen(TLS_KEY_PATH) && std::ifstream(TLS_CERT_PATH) && std::ifstream(TLS_KEY_PATH))
+    if (std::ifstream(TLS_CERT_PATH) && std::ifstream(TLS_KEY_PATH))
     {
         initialized = WebSocketService::instance()->initialize(SERVER_PORT, TLS_CERT_PATH, TLS_KEY_PATH, TLS_CA_PATH);
     }

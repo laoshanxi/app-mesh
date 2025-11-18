@@ -227,7 +227,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             auto_refresh_token: Enable automatic token refresh before expiration (supports App Mesh and Keycloak tokens).
         """
         self._ensure_logging_configured()
-        self.auth_server_url = rest_url
+        self.base_url = rest_url
         self.ssl_verify = rest_ssl_verify
         self.ssl_client_cert = rest_ssl_client_cert
         self.rest_timeout = rest_timeout
@@ -1113,7 +1113,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         raise_on_fail: bool = True,
     ) -> requests.Response:
         """Make an HTTP request."""
-        rest_url = parse.urljoin(self.auth_server_url, path)
+        url = parse.urljoin(self.base_url, path)
 
         # Prepare headers
         headers = header.copy() if header else {}
@@ -1131,7 +1131,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if self.forward_to:
             target_host = self.forward_to
             if ":" not in target_host:
-                parsed = parse.urlsplit(self.auth_server_url)
+                parsed = parse.urlsplit(self.base_url)
                 default_port = {"http": 80, "https": 443}.get(parsed.scheme)
                 port = parsed.port or default_port
                 target_host = f"{target_host}:{port}"
@@ -1146,7 +1146,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         try:
             request_kwargs = {
-                "url": rest_url,
+                "url": url,
                 "headers": headers,
                 "cert": self.ssl_client_cert,
                 "verify": self.ssl_verify,
