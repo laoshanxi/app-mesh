@@ -44,17 +44,12 @@ public:
     // Shutdown service gracefully
     void shutdown();
 
-    // HTTP and WebSocket callbacks (called from C)
-    int handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *in, size_t len);
-    int handleWebSocketCallback(struct lws *wsi, enum lws_callback_reasons reason, void *in, size_t len);
-
     // Enqueue outgoing/incoming
     void enqueueOutgoingResponse(WSResponse &&resp);
     void enqueueIncomingRequest(WSRequest &&request);
 
 private:
     // Internal helpers
-    static int sendWebSocketMessage(struct lws *wsi, const std::string &msg);
     void deliverResponse(WSResponse &&resp);
     void broadcastMessage(const std::string &msg);
 
@@ -64,6 +59,10 @@ private:
 
     // Create/init lws_context
     bool createContext(const char *cert_path, const char *key_path, const char *ca_path);
+
+    // HTTP and WebSocket callbacks (called from C)
+    int handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
+    int handleWebSocketCallback(struct lws *wsi, enum lws_callback_reasons reason, void *in, size_t len);
 
     // Static C callbacks that forward to singleton instance
     static int staticHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);

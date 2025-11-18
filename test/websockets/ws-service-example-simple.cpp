@@ -540,7 +540,7 @@ static std::unordered_map<struct lws *, std::unique_ptr<WebSocketSession>> g_ses
 static int sendWebSocketData(struct lws *wsi, const std::string &msg)
 {
     size_t len = msg.size();
-    std::vector<unsigned char> buf(LWS_PRE + len);
+    std::vector<std::uint8_t> buf(LWS_PRE + len);
 
     memcpy(buf.data() + LWS_PRE, msg.data(), len);
 

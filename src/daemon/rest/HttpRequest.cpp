@@ -5,6 +5,7 @@
 
 #include "../../common/Utility.h"
 #include "../../common/json.h"
+#include "../../common/websockets/WebSocketService.h"
 #include "../Configuration.h"
 #include "../application/Application.h"
 #include "../process/AppProcess.h"
@@ -19,7 +20,7 @@ HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	  m_method(std::move(request.http_method)),
 	  m_relative_uri(std::move(request.request_uri)),
 	  m_remote_address(std::move(request.client_addr)),
-	  m_body(std::make_shared<std::vector<uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
+	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
 	  m_tcpHandlerId(tcpHandlerId)
@@ -45,7 +46,7 @@ bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &bod
 	return reply(status, body_data, {});
 }
 
-bool HttpRequest::reply(web::http::status_code status, const std::vector<uint8_t> &body_data) const
+bool HttpRequest::reply(web::http::status_code status, const std::vector<std::uint8_t> &body_data) const
 {
 	return reply(m_relative_uri, m_uuid, body_data, {}, status, web::http::mime_types::application_octetstream);
 }
@@ -53,7 +54,7 @@ bool HttpRequest::reply(web::http::status_code status, const std::vector<uint8_t
 bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const
 {
 	const auto body = body_data.dump();
-	const auto bodyBytes = std::vector<uint8_t>(body.begin(), body.end());
+	const auto bodyBytes = std::vector<std::uint8_t>(body.begin(), body.end());
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, web::http::mime_types::application_json);
 }
 
@@ -64,18 +65,36 @@ bool HttpRequest::reply(web::http::status_code status, std::string &body_data, c
 
 bool HttpRequest::reply(web::http::status_code status, const std::string &body_data, const std::map<std::string, std::string> &headers, const std::string &content_type) const
 {
-	const auto bodyBytes = std::vector<uint8_t>(body_data.begin(), body_data.end());
+	const auto bodyBytes = std::vector<std::uint8_t>(body_data.begin(), body_data.end());
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inputSize, int tcpHandlerId)
+std::shared_ptr<HttpRequest> HttpRequest::deserializeTCP(const ByteBuffer &input, int tcpHandlerId)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
 	Request req;
-	if (req.deserialize(input, inputSize))
+	if (req.deserialize(input))
 	{
 		return std::make_shared<HttpRequest>(std::move(req), tcpHandlerId);
+	}
+	else
+	{
+		LOG_ERR << fname << "failed to decode tcp raw data";
+	}
+	return nullptr;
+}
+
+std::shared_ptr<HttpRequest> HttpRequest::deserializeWS(const ByteBuffer &input, std::weak_ptr<WebSocketSession> wsi)
+{
+	const static char fname[] = "HttpRequest::deserialize() ";
+
+	Request req;
+	if (req.deserialize(input))
+	{
+		auto request = std::make_shared<HttpRequest>(std::move(req), -1);
+		request->m_session_ref = wsi;
+		return request;
 	}
 	else
 	{
@@ -106,7 +125,7 @@ void HttpRequest::dump() const
 	//	LOG_DBG << fname << "m_headers:" << h.first << "=" << h.second;
 }
 
-bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
+bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
 						const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequest::reply() ";
@@ -125,7 +144,18 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 
 	if (m_tcpHandlerId > 0)
 	{
+		// TCP protocol
 		return TcpHandler::replyTcp(m_tcpHandlerId, response);
+	}
+	else if (auto ssn = m_session_ref.lock())
+	{
+		// WebSocket protocol
+		auto data = response.serialize();
+		WSResponse resp;
+		resp.m_session_ref = ssn;
+		resp.m_payload = std::vector<std::uint8_t>(reinterpret_cast<const unsigned char *>(data->data()), reinterpret_cast<const unsigned char *>(data->data()) + data->size());
+		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
+		return true;
 	}
 
 	return false;
@@ -219,7 +249,7 @@ int HttpRequestWithTimeout::id()
 	return m_id.load();
 }
 
-bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
+bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
 								   const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequestWithTimeout::reply() ";

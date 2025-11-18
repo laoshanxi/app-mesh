@@ -75,6 +75,15 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
         break;
     }
 
+    case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
+        if (pss && pss->client && pss->client->hasMessages())
+        {
+            // Now we are in the IO thread, safe to request writeable
+            if (pss->client->m_wsi)
+                lws_callback_on_writable(pss->client->m_wsi);
+        }
+        break;
+
     case LWS_CALLBACK_CLIENT_WRITEABLE:
         if (pss && pss->client)
         {
@@ -152,27 +161,29 @@ void Client::onError(OnErrorCallback callback)
 bool Client::createContext()
 {
     if (m_context)
-    {
         return true;
-    }
 
-    // Protocol definition
-    static struct lws_protocols protocols[] = {
-        {m_config.protocol_name.c_str(), // protocol name
-         websocket_callback,
-         sizeof(ProtocolSession),
-         LWS_RX_BUFFER_SIZE,
-         0, NULL, 0},
-        LWS_PROTOCOL_LIST_TERM};
+    // CLEAR and RESIZE the member vector
+    m_protocols.clear();
+    m_protocols.resize(2); // 1 for protocol, 1 for terminator
 
-    // Update protocol name dynamically
-    protocols[0].name = m_config.protocol_name.c_str();
+    // Configure Protocol 0
+    m_protocols[0].name = m_config.protocol_name.c_str();
+    m_protocols[0].callback = websocket_callback;
+    m_protocols[0].per_session_data_size = sizeof(ProtocolSession);
+    m_protocols[0].rx_buffer_size = LWS_RX_BUFFER_SIZE;
+    m_protocols[0].id = 0;
+    m_protocols[0].user = NULL; // in LWS_CALLBACK_PROTOCOL_INIT, cannot use lws_get_opaque_user_data(wsi), can choose this: client = (Client *)lws_context_user(lws_get_context(wsi));
+    m_protocols[0].tx_packet_size = 0;
+
+    // Configure Terminator
+    m_protocols[1] = LWS_PROTOCOL_LIST_TERM;
 
     struct lws_context_creation_info info;
     memset(&info, 0, sizeof(info));
 
     info.port = CONTEXT_PORT_NO_LISTEN;
-    info.protocols = protocols;
+    info.protocols = m_protocols.data();
     info.fd_limit_per_thread = 2 + 4; // small client usage
     info.timeout_secs = m_config.timeout_secs;
     info.gid = (gid_t)-1;
@@ -307,17 +318,17 @@ bool Client::isConnected() const
 bool Client::sendText(const std::string &message)
 {
     if (!m_connected || !m_wsi)
-    {
         return false;
-    }
 
     enqueueMessage(Message(message));
-    lws_callback_on_writable(m_wsi);
+
+    // The loop will then trigger EVENT_WAIT_CANCELLED or process the queue naturally
+    lws_cancel_service(m_context);
 
     return true;
 }
 
-bool Client::sendBinary(const std::vector<uint8_t> &data)
+bool Client::sendBinary(const std::vector<std::uint8_t> &data)
 {
     if (!m_connected || !m_wsi)
     {
@@ -420,7 +431,7 @@ void Client::handleWritable()
     }
 
     // Allocate buffer with LWS_PRE padding
-    std::vector<uint8_t> buffer(LWS_PRE + msg.data.size());
+    std::vector<std::uint8_t> buffer(LWS_PRE + msg.data.size());
     memcpy(buffer.data() + LWS_PRE, msg.data.data(), msg.data.size());
 
     // Determine write flags

@@ -16,13 +16,13 @@
 // Message structure for queuing outbound messages
 struct Message
 {
-    std::vector<uint8_t> data;
+    std::vector<std::uint8_t> data;
     bool is_binary;
 
     Message(const std::string &text)
         : data(text.begin(), text.end()), is_binary(false) {}
 
-    Message(const std::vector<uint8_t> &binary)
+    Message(const std::vector<std::uint8_t> &binary)
         : data(binary), is_binary(true) {}
 };
 
@@ -84,7 +84,7 @@ public:
 
     // Send messages
     bool sendText(const std::string &message);
-    bool sendBinary(const std::vector<uint8_t> &data);
+    bool sendBinary(const std::vector<std::uint8_t> &data);
 
     // Event loop
     void run();
@@ -109,6 +109,7 @@ private:
     void destroyContext();
 
     ConnectionConfig m_config;
+    std::vector<struct lws_protocols> m_protocols;
     struct lws_context *m_context;
     struct lws *m_wsi;
 
@@ -121,7 +122,7 @@ private:
     OnMessageCallback m_on_message;
     OnErrorCallback m_on_error;
 
-    std::vector<uint8_t> m_receive_buffer;
+    std::vector<std::uint8_t> m_receive_buffer;
     std::queue<Message> m_message_queue;
     mutable std::mutex m_queue_mutex;
     std::mutex m_callback_mutex;

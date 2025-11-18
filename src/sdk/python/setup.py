@@ -15,6 +15,7 @@ def get_version():
 # Dependencies
 install_requires = [
     "requests",
+    "websocket-client",
     "msgpack",
     "requests_toolbelt",
     "aniso8601",

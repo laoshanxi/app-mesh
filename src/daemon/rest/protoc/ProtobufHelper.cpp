@@ -50,13 +50,13 @@ std::shared_ptr<msgpack::sbuffer> Request::serialize() const
 	return sbuf;
 }
 
-bool Request::deserialize(const char *data, std::size_t dataSize)
+bool Request::deserialize(const ByteBuffer &data)
 {
 	const static char fname[] = "Request::deserialize() ";
 	try
 	{
 		msgpack::unpacked result;
-		msgpack::unpack(result, data, dataSize);
+		msgpack::unpack(result, reinterpret_cast<const char *>(data->data()), data->size());
 
 		msgpack::object obj = result.get();
 		obj.convert(*this); // directly fill into *this
@@ -70,7 +70,7 @@ bool Request::deserialize(const char *data, std::size_t dataSize)
 	return false;
 }
 
-const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(const ACE_SSL_SOCK_Stream &socket)
+const ByteBuffer ProtobufHelper::readMessageBlock(const ACE_SSL_SOCK_Stream &socket)
 {
 	const static char fname[] = "ProtobufHelper::readMessageBlock() ";
 	LOG_DBG << fname << "entered";
@@ -79,7 +79,7 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(co
 	const auto bodySize = readMsgHeader(socket, recvReturn);
 	if (bodySize <= 0)
 	{
-		return std::make_tuple(nullptr, recvReturn);
+		return nullptr;
 	}
 	return readBytes(socket, bodySize, recvReturn);
 }
@@ -88,9 +88,8 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 {
 	const static char fname[] = "ProtobufHelper::readMsgHeader() ";
 	// read header socket data (4 bytes)
-	auto result = readBytes(socket, TCP_MESSAGE_HEADER_LENGTH, recvReturn);
-	auto data = std::get<0>(result);
-	if (recvReturn <= 0)
+	auto data = readBytes(socket, TCP_MESSAGE_HEADER_LENGTH, recvReturn);
+	if (!data)
 	{
 		LOG_DBG << fname << "read header length failed with error: " << last_error_msg();
 		return -1;
@@ -99,7 +98,7 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	// Step 1: Safely copy and parse the 4-byte magic number from the header
 	// Step 2: Safely copy and parse the 4-byte body size from the header
 	uint32_t magic = 0, bodySize = 0;
-	std::memcpy(&magic, data.get(), sizeof(magic));
+	std::memcpy(&magic, data->data(), sizeof(magic));
 	magic = ntohl(magic); // Convert to host byte order
 	if (magic != TCP_MESSAGE_MAGIC)
 	{
@@ -107,7 +106,7 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 				<< std::setfill('0') << magic << "] (expected: 0x" << TCP_MESSAGE_MAGIC << ")";
 		return -1;
 	}
-	std::memcpy(&bodySize, data.get() + sizeof(magic), sizeof(bodySize));
+	std::memcpy(&bodySize, data->data() + sizeof(magic), sizeof(bodySize));
 	bodySize = ntohl(bodySize); // Convert to host byte order
 	LOG_DBG << fname << "body length read from header: " << bodySize << " bytes";
 
@@ -119,13 +118,13 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	return bodySize;
 }
 
-const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE_SSL_SOCK_Stream &socket, size_t bodySize, ssize_t &recvReturn)
+const ByteBuffer ProtobufHelper::readBytes(const ACE_SSL_SOCK_Stream &socket, size_t bodySize, ssize_t &recvReturn)
 {
 	const static char fname[] = "ProtobufHelper::readBytes() ";
 
 	// read socket data with given length
 	const auto bufferSize = bodySize;
-	auto bodyBuffer = make_shared_array<char>(bufferSize);
+	auto bodyBuffer = std::make_shared<std::vector<std::uint8_t>>(bufferSize);
 	// https://www.demo2s.com/c/c-if-errno-eintr-fiag.html
 	// https://programmerall.com/article/5562684780/#:~:text=When%20a%20certain%20signal%20is%20caught%2C%20the%20system,system%20calls%20that%20may%20block%20the%20process%20forever.
 	errno = 0;
@@ -134,7 +133,7 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE
 	while (totalReceived < bufferSize)
 	{
 		size_t transferred = 0;
-		recvReturn = socket.recv_n(bodyBuffer.get() + totalReceived, bufferSize - totalReceived, 0, &transferred);
+		recvReturn = socket.recv_n(bodyBuffer->data() + totalReceived, bufferSize - totalReceived, 0, &transferred);
 
 		if (recvReturn <= 0)
 		{
@@ -158,14 +157,13 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE
 #endif
 			// Hard failure
 			LOG_WAR << fname << "read socket data failed with error(" << lastErr << "): " << ACE_OS::strerror(lastErr);
-			return std::make_tuple(nullptr, recvReturn);
+			return nullptr;
 		}
 
 		totalReceived += transferred;
 	}
 
-	recvReturn = static_cast<ssize_t>(totalReceived);
-	LOG_DBG << fname << "read message block data with length: " << bufferSize;
+	LOG_DBG << fname << "read message block data with length: " << totalReceived;
 
-	return std::make_tuple(bodyBuffer, recvReturn);
+	return bodyBuffer;
 }

@@ -68,13 +68,15 @@ int main(int argc, char *argv[])
     // Send messages
     if (client.isConnected())
     {
-        client.sendText("Hello, WebSocket!");
+        client.sendText("Hello, WebSocket, msg from client");
 
         // Send more messages
         for (int i = 0; i < 5 && keep_running; i++)
         {
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            client.sendText("Message " + std::to_string(i));
+            auto str = "Hello, This is client No-" + std::to_string(i);
+            std::vector<std::uint8_t> vec(str.begin(), str.end());
+            client.sendBinary(vec);
         }
     }
 

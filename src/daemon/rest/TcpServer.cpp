@@ -23,12 +23,12 @@ std::atomic_int TcpHandler::m_idGenerator = ATOMIC_FLAG_INIT;
 
 struct HttpRequestMsg
 {
-	explicit HttpRequestMsg(const std::shared_ptr<char> &data, size_t len, int client)
-		: m_data(data), m_dataSize(len), m_tcpHanlerId(client)
+	explicit HttpRequestMsg(const ByteBuffer &data, int client)
+		: m_data(data), m_tcpHanlerId(client)
 	{
 	}
-	const std::shared_ptr<char> m_data;
-	const size_t m_dataSize;
+	// TODO: use more efficiency definition
+	const ByteBuffer m_data;
 	const int m_tcpHanlerId;
 };
 
@@ -54,6 +54,12 @@ TcpHandler::~TcpHandler()
 	ACE_Reactor::instance()->remove_handler(this, READ_MASK);
 }
 
+void TcpHandler::queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int id)
+{
+	auto req = std::make_shared<HttpRequestMsg>(data, id);
+	m_messageQueue.enqueue(req);
+}
+
 // Perform the tcp record receive.
 // handle_input() will be triggered before handle_close()
 int TcpHandler::handle_input(ACE_HANDLE)
@@ -77,41 +83,19 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	}
 
 	// Read incoming message
-	auto result = ProtobufHelper::readMessageBlock(this->peer());
-	auto data = std::get<0>(result);
-	auto readCount = std::get<1>(result);
+	auto data = ProtobufHelper::readMessageBlock(this->peer());
 
-	// Early return on null data
-	if (!data)
+	// Early return on empty data
+	if (!data || data->size() == 0)
 	{
-		LOG_WAR << fname << "Failed to receive data from <" << m_clientHostName << ">, closing connection";
+		LOG_WAR << fname << "Receive error from <" << m_clientHostName << ">: " << last_error_msg() << ", closing connection";
 		return -1;
 	}
 
 	// Handle successful read
 	// https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Reactor/WFMO_Reactor/Network_Events.cpp#L66
-	if (readCount > 0)
-	{
-		m_messageQueue.enqueue(std::make_shared<HttpRequestMsg>(data, readCount, m_id));
-		return 0;
-	}
-
-	// Handle connection closure
-	if (readCount == 0)
-	{
-		LOG_WAR << fname << "Connection closed by <" << m_clientHostName << ">";
-		return -1;
-	}
-
-	// Handle errors
-	if (errno == EWOULDBLOCK)
-	{
-		LOG_WAR << fname << "Socket buffer full: " << last_error_msg() << ", closing connection with <" << m_clientHostName << ">";
-		return -1; // No partial reads supported
-	}
-
-	LOG_WAR << fname << "Receive error from <" << m_clientHostName << ">: " << last_error_msg() << ", closing connection";
-	return -1;
+	queueInputRequest(data, m_id);
+	return 0;
 }
 
 int TcpHandler::testStream()
@@ -166,11 +150,9 @@ bool TcpHandler::recvUploadFile()
 	{
 		std::ofstream file(fileInfo->m_filePath, std::ios::binary | std::ios::out | std::ios::trunc);
 		auto msg = ProtobufHelper::readMessageBlock(this->peer());
-		while (std::get<0>(msg) != nullptr)
+		while (msg)
 		{
-			auto msgData = std::get<0>(msg);
-			auto msgSize = std::get<1>(msg);
-			file.write(msgData.get(), msgSize);
+			file.write(reinterpret_cast<const char *>(msg->data()), msg->size());
 			msg = ProtobufHelper::readMessageBlock(this->peer());
 		}
 		LOG_INF << fname << "upload finished";
@@ -217,9 +199,9 @@ int TcpHandler::open(void *)
 	}
 }
 
-void TcpHandler::handleTcpRest()
+void TcpHandler::handleTcpRestLoop()
 {
-	const static char fname[] = "TcpHandler::handleTcpRest() ";
+	const static char fname[] = "TcpHandler::handleTcpRestLoop() ";
 
 	while (QUIT_HANDLER::instance()->is_set() == 0)
 	{
@@ -227,36 +209,8 @@ void TcpHandler::handleTcpRest()
 		m_messageQueue.wait_dequeue(entity);
 		if (entity)
 		{
-			auto request = HttpRequest::deserialize(entity->m_data.get(), entity->m_dataSize, entity->m_tcpHanlerId);
-			if (request)
-			{
-				LOG_DBG << fname << request->m_method << " from <"
-						<< request->m_remote_address << "> path <"
-						<< request->m_relative_uri << "> id <"
-						<< request->m_uuid << "> TcpHandler <"
-						<< entity->m_tcpHanlerId << ">";
-
-				if (request->m_method == web::http::methods::GET)
-					RESTHANDLER::instance()->handle_get(request);
-				else if (request->m_method == web::http::methods::PUT)
-					RESTHANDLER::instance()->handle_put(request);
-				else if (request->m_method == web::http::methods::DEL)
-					RESTHANDLER::instance()->handle_delete(request);
-				else if (request->m_method == web::http::methods::POST)
-					RESTHANDLER::instance()->handle_post(request);
-				else if (request->m_method == web::http::methods::OPTIONS)
-					RESTHANDLER::instance()->handle_options(request);
-				else if (request->m_method == web::http::methods::HEAD)
-					RESTHANDLER::instance()->handle_head(request);
-				else
-				{
-					closeTcpHandler(entity->m_tcpHanlerId);
-					LOG_ERR << fname << "no such method " << request->m_method
-							<< " from " << request->m_remote_address
-							<< " with path " << request->m_relative_uri;
-				}
-			}
-			else
+			auto request = HttpRequest::deserializeTCP(entity->m_data, entity->m_tcpHanlerId);
+			if (!request || !processRequest(request))
 			{
 				closeTcpHandler(entity->m_tcpHanlerId);
 				LOG_WAR << fname << "Failed to parse request, closing connection with TcpHandler <" << entity->m_tcpHanlerId << ">";
@@ -264,6 +218,34 @@ void TcpHandler::handleTcpRest()
 		}
 	}
 	LOG_WAR << fname << "Exit";
+}
+
+bool TcpHandler::processRequest(std::shared_ptr<HttpRequest> &request)
+{
+	const static char fname[] = "TcpHandler::processRequest() ";
+
+	LOG_DBG << fname << request->m_method << " from <"
+			<< request->m_remote_address << "> path <"
+			<< request->m_relative_uri << "> id <"
+			<< request->m_uuid << ">";
+
+	if (request->m_method == web::http::methods::GET)
+		RESTHANDLER::instance()->handle_get(request);
+	else if (request->m_method == web::http::methods::PUT)
+		RESTHANDLER::instance()->handle_put(request);
+	else if (request->m_method == web::http::methods::DEL)
+		RESTHANDLER::instance()->handle_delete(request);
+	else if (request->m_method == web::http::methods::POST)
+		RESTHANDLER::instance()->handle_post(request);
+	else if (request->m_method == web::http::methods::OPTIONS)
+		RESTHANDLER::instance()->handle_options(request);
+	else if (request->m_method == web::http::methods::HEAD)
+		RESTHANDLER::instance()->handle_head(request);
+	else
+	{
+		return false;
+	}
+	return true;
 }
 
 void TcpHandler::closeTcpHandler(int tcpHandlerId)
