@@ -18,18 +18,19 @@
 #include "protoc/ProtobufHelper.h"
 
 ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
-MessageQueue TcpHandler::m_messageQueue;
-std::atomic_int TcpHandler::m_idGenerator = ATOMIC_FLAG_INIT;
+RequestQueue TcpHandler::m_messageQueue;
+std::atomic_int TcpHandler::m_idGenerator{0};
 
 struct HttpRequestMsg
 {
-	explicit HttpRequestMsg(const ByteBuffer &data, int client)
-		: m_data(data), m_tcpHanlerId(client)
+	explicit HttpRequestMsg(const ByteBuffer &data, int client, void *wsSessionId = NULL)
+		: m_data(data), m_tcpHanlerId(client), m_wsSessionId(wsSessionId)
 	{
 	}
 	// TODO: use more efficiency definition
 	const ByteBuffer m_data;
 	const int m_tcpHanlerId;
+	const void *m_wsSessionId;
 };
 
 // Default constructor.
@@ -52,11 +53,13 @@ TcpHandler::~TcpHandler()
 	LOG_DBG << fname << "client=" << m_id;
 	m_handlers.unbind(m_id);
 	ACE_Reactor::instance()->remove_handler(this, READ_MASK);
+	ACE_Reactor::instance()->remove_handler(this, WRITE_MASK);
 }
 
-void TcpHandler::queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int id)
+void TcpHandler::queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int tcpHandlerId, void *wsSessionId)
 {
-	auto req = std::make_shared<HttpRequestMsg>(data, id);
+	assert(!(tcpHandlerId && wsSessionId));
+	auto req = std::make_shared<HttpRequestMsg>(data, tcpHandlerId, wsSessionId);
 	m_messageQueue.enqueue(req);
 }
 
@@ -177,7 +180,8 @@ int TcpHandler::open(void *)
 	{
 		this->m_clientHostName = Utility::stringFormat("%s:%hu", addr.get_host_name(), addr.get_port_number());
 		// TODO: one TCP connection can not leverage parallel ACE_TP_Reactor thread pool
-		if (ACE_Reactor::instance()->register_handler(this, READ_MASK) == -1)
+		if (ACE_Reactor::instance()->register_handler(this, READ_MASK) == -1 ||
+			ACE_Reactor::instance()->register_handler(this, WRITE_MASK) == -1)
 		{
 			LOG_ERR << fname << "can't register with reactor";
 			return -1;
@@ -191,7 +195,7 @@ int TcpHandler::open(void *)
 				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << last_error_msg();
 			}
 
-			// if (this->peer().disable(ACE_NONBLOCK) == -1) // Disable non-blocking mode already controled by ACE_NONBLOCK_FLAG
+			// if (this->peer().disable(ACE_NONBLOCK) == -1) // Disable non-blocking mode already controled by FLAG_ACE_NONBLOCK
 
 			LOG_INF << fname << "client <" << m_clientHostName << "> connected";
 		}
@@ -209,7 +213,7 @@ void TcpHandler::handleTcpRestLoop()
 		m_messageQueue.wait_dequeue(entity);
 		if (entity)
 		{
-			auto request = HttpRequest::deserializeTCP(entity->m_data, entity->m_tcpHanlerId);
+			auto request = entity->m_tcpHanlerId ? HttpRequest::deserializeTCP(entity->m_data, entity->m_tcpHanlerId) : HttpRequest::deserializeWS(entity->m_data, entity->m_wsSessionId);
 			if (!request || !processRequest(request))
 			{
 				closeTcpHandler(entity->m_tcpHanlerId);
@@ -270,96 +274,102 @@ const int &TcpHandler::id()
 	return m_id;
 }
 
-bool TcpHandler::reply(const Response &resp)
+bool TcpHandler::reply(std::unique_ptr<Response> &&resp)
 {
-	const static char fname[] = "TcpHandler::reply() ";
+	m_respQueue.enqueue(std::move(resp));
+	return reactor()->notify(this, ACE_Event_Handler::WRITE_MASK) == 0;
+}
 
-	// Early validation
+int TcpHandler::handle_output(ACE_HANDLE)
+{
+	const static char fname[] = "TcpHandler::handle_output() ";
+
+	std::unique_ptr<Response> r;
+	while (m_respQueue.try_dequeue(r))
 	{
-		std::lock_guard<std::mutex> guard(m_socketLock);
-		if (this->peer().get_handle() == ACE_INVALID_HANDLE)
+		auto resp = *r;
+
+		// Serialize response data once
+		const auto data = resp.serialize();
+		if (!data || data->size() == 0)
 		{
-			LOG_WAR << fname << "Socket not available, ignoring message: " << resp.uuid;
-			return false;
+			this->peer().close();
+			return -1;
 		}
-	}
 
-	// Serialize response data once
-	const auto data = resp.serialize();
-	if (!data || data->size() == 0)
-	{
-		this->peer().close();
-		return false;
-	}
+		const auto buffer = data->data();
+		const auto length = data->size();
+		LOG_DBG << fname << "send response length: " << length;
 
-	const auto buffer = data->data();
-	const auto length = data->size();
-	LOG_DBG << fname << "send response length: " << length;
-
-	// Handle file upload preparation
-	if (resp.http_status == web::http::status_codes::OK &&
-		resp.request_uri == REST_PATH_UPLOAD && !resp.body.empty() &&
-		resp.headers.count(HTTP_HEADER_KEY_X_Send_File_Socket))
-	{
-		const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second);
-		m_pendingUploadFile.push(std::make_shared<FileUploadInfo>(fileName, resp.file_upload_request_headers));
-		LOG_INF << fname << "upload from socket to : " << fileName;
-	}
-
-	// Send response data
-	{
-		std::lock_guard<std::mutex> guard(m_socketLock);
-		if (!sendHeader(length) || !sendBytes(buffer, length))
+		// Handle file upload preparation
+		if (resp.http_status == web::http::status_codes::OK &&
+			resp.request_uri == REST_PATH_UPLOAD && !resp.body.empty() &&
+			resp.headers.count(HTTP_HEADER_KEY_X_Send_File_Socket))
 		{
-			LOG_ERR << fname << "send response failed with error: " << last_error_msg();
-			return false;
+			const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second);
+			m_pendingUploadFile.push(std::make_shared<FileUploadInfo>(fileName, resp.file_upload_request_headers));
+			LOG_INF << fname << "upload from socket to : " << fileName;
 		}
-	}
 
-	// Handle file download
-	if (resp.http_status == web::http::status_codes::OK &&
-		resp.request_uri == REST_PATH_DOWNLOAD && !resp.body.empty() &&
-		resp.headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket))
-	{
-		const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second);
-		LOG_INF << fname << "download socket file : " << fileName;
-
-		std::ifstream file(fileName, std::ios::binary | std::ios::ate);
-		if (file)
+		// Send response data
 		{
-			const auto fileSize = file.tellg();
-			std::streampos sentSize = 0;
-			file.seekg(0, std::ios::beg);
-			auto buffer = make_shared_array<char>(TCP_CHUNK_BLOCK_SIZE);
 			std::lock_guard<std::mutex> guard(m_socketLock);
-
-			while (file.good() && sentSize < fileSize)
+			if (!sendData(buffer, length))
 			{
-				file.read(buffer.get(), TCP_CHUNK_BLOCK_SIZE);
-				const auto readSize = file.gcount();
-				if (readSize <= 0)
-				{
-					break;
-				}
-				sentSize += readSize;
-				if (!sendHeader(readSize) || !sendBytes(buffer.get(), readSize))
-				{
-					LOG_ERR << fname << "send chunk failed with error: " << last_error_msg();
-					return false;
-				}
+				LOG_ERR << fname << "send response failed with error: " << last_error_msg();
+				return -1;
 			}
 		}
-		else
-		{
-			LOG_ERR << fname << "Failed to open file: " << fileName;
-		}
 
-		// Send final delimiter
-		return sendHeader(0);
+		// Handle file download
+		if (resp.http_status == web::http::status_codes::OK &&
+			resp.request_uri == REST_PATH_DOWNLOAD && !resp.body.empty() &&
+			resp.headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket))
+		{
+			const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second);
+			LOG_INF << fname << "download socket file : " << fileName;
+
+			std::ifstream file(fileName, std::ios::binary | std::ios::ate);
+			if (file)
+			{
+				const auto fileSize = file.tellg();
+				std::streampos sentSize = 0;
+				file.seekg(0, std::ios::beg);
+				auto buffer = make_shared_array<char>(TCP_CHUNK_BLOCK_SIZE);
+				std::lock_guard<std::mutex> guard(m_socketLock);
+
+				while (file.good() && sentSize < fileSize)
+				{
+					file.read(buffer.get(), TCP_CHUNK_BLOCK_SIZE);
+					const auto readSize = file.gcount();
+					if (readSize <= 0)
+					{
+						break;
+					}
+					sentSize += readSize;
+					if (!sendData(buffer.get(), readSize))
+					{
+						LOG_ERR << fname << "send chunk failed with error: " << last_error_msg();
+						return -1;
+					}
+				}
+			}
+			else
+			{
+				LOG_ERR << fname << "Failed to open file: " << fileName;
+			}
+
+			// Send final delimiter
+			sendData(0, 0);
+		}
 	}
 
 	LOG_DBG << fname << "successfully";
-	return true;
+	bool empty = m_respQueue.size_approx() == 0;
+	if (empty)
+		this->reactor()->cancel_wakeup(this, ACE_Event_Handler::WRITE_MASK);
+
+	return 0;
 }
 
 ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context, const std::string &cert, const std::string &key, const std::string &ca)
@@ -443,66 +453,76 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context, const std::str
 	return context;
 }
 
-bool TcpHandler::sendBytes(const char *data, size_t length, int timeoutSeconds)
+bool TcpHandler::sendBytes(const iovec *iov, size_t count)
 {
 	const static char fname[] = "TcpHandler::sendBytes() ";
 
-	size_t totalSent = 0;					// Track total bytes sent
-	ACE_Time_Value timeout(timeoutSeconds); // Timeout for the send operation
+	size_t idx = 0;	   // Current index in the iovec array
+	size_t offset = 0; // Offset inside the current iovec buffer
 
-	while (totalSent < length)
+	while (idx < count)
 	{
-		size_t sendSize = 0;	// Bytes sent in the current iteration
-		ssize_t sendReturn = 0; // Result of send_n call
-		errno = 0;				// Reset errno before the call
+		// Create a temporary iovec pointing to the remaining data in the current buffer
+		iovec cur;
 
-		// Attempt to send the remaining bytes
-		sendReturn = this->peer().send_n(
-			(void *)(data + totalSent),				   // Pointer to unsent data
-			length - totalSent,						   // Remaining length to send
-			(timeoutSeconds > 0) ? &timeout : nullptr, // Optional timeout
-			&sendSize								   // Capture bytes sent in this call
-		);
+		// Cast to (char*) ensures pointer arithmetic works correctly on both void* (Linux) and char* (Windows)
+		cur.iov_base = (char *)iov[idx].iov_base + offset;
+		cur.iov_len = iov[idx].iov_len - offset;
+
+		// Reset errno/last_error before the call for clean state
+		ACE_OS::last_error(0);
+
+		// Send 1 iovec buffer at a time to ensure SSL state consistency during partial writes
+		ssize_t sendReturn = this->peer().sendv(&cur, 1);
 
 		// LOG_DBG << fname << m_clientHostName
-		//		<< " Total length remaining: " << (length - totalSent)
-		//		<< ", Sent length: " << sendSize
-		//		<< ", Send result: " << sendReturn
-		//		<< ", Error: " << (errno ? last_error_msg() : "None");
+		//         << " iov_idx: " << idx
+		//         << " len: " << cur.iov_len
+		//         << " sent: " << sendReturn;
 
-		// Handle send_n result
-		if (sendReturn <= 0) // `0` or negative indicates failure
+		if (sendReturn <= 0)
 		{
-			if (errno == EINTR) // Interrupted by a signal
+			int err = ACE_OS::last_error(); // Get platform-agnostic error code (Critical for Windows support)
+			if (sendReturn < 0 && err == EINTR)
 			{
-				LOG_WAR << fname << m_clientHostName << " Send interrupted, retrying. Error: " << last_error_msg();
-				continue; // Retry sending
+				// Interrupted by signal - Log warning and retry immediately
+				LOG_WAR << fname << m_clientHostName << " Send interrupted (EINTR), retrying.";
+				continue;
 			}
-			else if (errno == EWOULDBLOCK || errno == ETIMEDOUT) // Timeout occurred
+
+			// Handle fatal errors or blocking conditions (since timeout is not requested)
+			// Note: EWOULDBLOCK means the socket buffer is full. Without a timeout/select loop,
+			// we treat this as a failure to send.
+			if (err == EWOULDBLOCK || err == EAGAIN)
 			{
-				LOG_ERR << fname << m_clientHostName << " Send operation timed out. Error: " << last_error_msg();
-				return false; // Timeout is a failure condition
-			}
-			else // Other errors
-			{
-				LOG_ERR << fname << m_clientHostName << " Send failed. Error: " << last_error_msg();
+				LOG_ERR << fname << m_clientHostName << " Socket would block (buffer full). Error: " << last_error_msg();
 				return false;
 			}
+
+			// Connection closed (0) or other fatal error
+			LOG_ERR << fname << m_clientHostName << " Send failed. Res: " << sendReturn << ", Error: " << last_error_msg();
+			return false;
 		}
 
-		// Accumulate the bytes successfully sent
-		totalSent += sendSize;
+		// Update offset with bytes actually sent
+		offset += sendReturn;
+
+		// If we have sent the full content of the current iovec, move to the next one
+		// Note: use >= to be safe, though == is mathematically expected
+		if (offset >= iov[idx].iov_len)
+		{
+			idx++;
+			offset = 0; // Reset offset for the next buffer
+		}
 	}
 
 	return true;
 }
 
-bool TcpHandler::sendHeader(size_t intValue)
+bool TcpHandler::sendData(const char *data, size_t length)
 {
-	const static char fname[] = "TcpHandler::sendHeader() ";
-	LOG_DBG << fname << "sending <" << intValue << "> data to " << m_clientHostName;
-
-	const static int headerSendTimeout = 10;
+	const static char fname[] = "TcpHandler::sendData() ";
+	LOG_DBG << fname << "sending <" << length << "> data to " << m_clientHostName;
 
 	// Write the TCP header (8 bytes) to the buffer in network byte order (big-endian):
 	// - First 4 bytes: Magic number (for message validation)
@@ -510,13 +530,26 @@ bool TcpHandler::sendHeader(size_t intValue)
 	char headerBuff[TCP_MESSAGE_HEADER_LENGTH];
 	uint32_t magic = htonl(TCP_MESSAGE_MAGIC);
 	std::memcpy(headerBuff, &magic, sizeof(magic));
-	uint32_t dataSize = htonl(intValue);
+	uint32_t dataSize = htonl(length);
 	std::memcpy(headerBuff + 4, &dataSize, sizeof(dataSize));
 
-	return sendBytes(headerBuff, TCP_MESSAGE_HEADER_LENGTH, headerSendTimeout);
+	iovec iov[2];
+	iov[0].iov_base = headerBuff;
+	iov[0].iov_len = TCP_MESSAGE_HEADER_LENGTH;
+
+	size_t count = 1;
+
+	if (length > 0)
+	{
+		iov[1].iov_base = (char *)data;
+		iov[1].iov_len = length;
+		count = 2;
+	}
+
+	return sendBytes(iov, count);
 }
 
-bool TcpHandler::replyTcp(int tcpHandlerId, const Response &resp)
+bool TcpHandler::replyTcp(int tcpHandlerId, std::unique_ptr<Response> &&resp)
 {
 	const static char fname[] = "TcpHandler::replyTcp() ";
 
@@ -524,8 +557,8 @@ bool TcpHandler::replyTcp(int tcpHandlerId, const Response &resp)
 	TcpHandler *client = NULL;
 	if (m_handlers.find(tcpHandlerId, client) == 0 && client)
 	{
-		return client->reply(resp);
+		return client->reply(std::move(resp));
 	}
-	LOG_WAR << fname << "Client " << tcpHandlerId << " not exist, can not reply response: " << resp.uuid;
+	LOG_WAR << fname << "Client " << tcpHandlerId << " not exist, can not reply response.";
 	return false;
 }

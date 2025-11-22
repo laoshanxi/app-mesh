@@ -7,10 +7,10 @@
 
 void WSRequest::reply(std::vector<std::uint8_t> &&data) const
 {
-    WSResponse resp;
-    resp.m_session_ref = m_session_ref;
-    resp.m_req_id = m_req_id;
-    resp.m_payload = std::move(data);
+    auto resp = std::make_unique<WSResponse>();
+    resp->m_session_ref = m_session_ref;
+    resp->m_req_id = m_req_id;
+    resp->m_payload = std::move(data);
     WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 }
 
@@ -30,7 +30,7 @@ bool WebSocketSession::verifyToken(const std::string &token)
 {
     try
     {
-        RESTHANDLER::instance()->verifyToken(token);
+        RESTHANDLER::instance()->verifyToken(token, WEBSOCKET_FILE_AUDIENCE);
         return true;
     }
     catch (...)

@@ -1,19 +1,14 @@
 ##########################################################################
-# rest
+# uwebsockets
 ##########################################################################
-add_subdirectory(protoc)
-add_subdirectory(prometheus)
-# add_subdirectory(uwebsockets)
 
 aux_source_directory(. SRC_LIST)
-add_library(rest STATIC ${SRC_LIST})
-add_library(${PROJECT_NAME}::rest ALIAS rest)
+add_library(uwebsockets ${SRC_LIST})
+add_library(${PROJECT_NAME}::uwebsockets ALIAS uwebsockets)
 
 ##########################################################################
 # Link
 ##########################################################################
-target_link_libraries(rest
-  PRIVATE
-    Boost::regex
-    protoc
+target_link_libraries(uwebsockets
+  PUBLIC
 )

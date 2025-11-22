@@ -16,7 +16,7 @@
 
 // Blocking concurrent queues for incoming requests and outgoing responses
 using REQUEST_QUEUE = moodycamel::BlockingConcurrentQueue<WSRequest>;
-using RESPONSE_QUEUE = moodycamel::BlockingConcurrentQueue<WSResponse>;
+using RESPONSE_QUEUE = moodycamel::ConcurrentQueue<std::unique_ptr<WSResponse>>;
 
 class WebSocketService
 {
@@ -45,12 +45,12 @@ public:
     void shutdown();
 
     // Enqueue outgoing/incoming
-    void enqueueOutgoingResponse(WSResponse &&resp);
+    void enqueueOutgoingResponse(std::unique_ptr<WSResponse> &&resp);
     void enqueueIncomingRequest(WSRequest &&request);
 
 private:
     // Internal helpers
-    void deliverResponse(WSResponse &&resp);
+    void deliverResponse(const std::unique_ptr<WSResponse> &resp);
     void broadcastMessage(const std::string &msg);
 
     // Threads
@@ -82,5 +82,5 @@ private:
     std::atomic<uint64_t> m_next_request_id;
 
     mutable std::mutex m_sessions_mutex;
-    std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions;
+    std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions; // TODO: use ID to avoid address re-use
 };

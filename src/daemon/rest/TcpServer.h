@@ -22,7 +22,8 @@
 
 class HttpRequest;
 struct HttpRequestMsg;
-using MessageQueue = moodycamel::BlockingConcurrentQueue<std::shared_ptr<HttpRequestMsg>>;
+using RequestQueue = moodycamel::BlockingConcurrentQueue<std::shared_ptr<HttpRequestMsg>>;
+using ResponseQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Response>>;
 
 // = TITLE
 //     Receive client message from the remote clients.
@@ -61,34 +62,36 @@ public:
 	static bool processRequest(std::shared_ptr<HttpRequest> &request);
 	static void closeTcpHandler(int tcpHandlerId);
 	const int &id();
-	static void queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int id);
+	static void queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int tcpHandlerId, void *wsSessionId = NULL);
 
 protected:
 	// = Demultiplexing hooks.
 	virtual int handle_input(ACE_HANDLE) override;
+	virtual int handle_output(ACE_HANDLE fd) override;
 
 	/// <summary>
 	/// Reply response to Golang
 	/// </summary>
 	/// <param name="Response"></param>
-	bool reply(const Response &resp);
-	bool sendBytes(const char *data, size_t length, int timeoutSeconds = 0);
-	bool sendHeader(size_t intValue);
+	bool reply(std::unique_ptr<Response> &&resp);
+	bool sendData(const char *data, size_t length);
+	bool sendBytes(const iovec *iov, size_t count);
 
 	int testStream();
 	bool recvUploadFile();
 
 public:
-	static bool replyTcp(int tcpHandlerId, const Response &resp);
+	static bool replyTcp(int tcpHandlerId, std::unique_ptr<Response> &&resp);
 	static ACE_SSL_Context *initTcpSSL(ACE_SSL_Context *context, const std::string &certFile, const std::string &keyFile, const std::string &caPath);
 
 private:
 	std::string m_clientHostName;
 	std::mutex m_socketLock;
 	const int m_id;
+	ResponseQueue m_respQueue;
 	boost::lockfree::spsc_queue<std::shared_ptr<FileUploadInfo>> m_pendingUploadFile;
 
 	static ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> m_handlers;
-	static MessageQueue m_messageQueue;
+	static RequestQueue m_messageQueue;
 	static std::atomic_int m_idGenerator;
 };

@@ -193,6 +193,7 @@ function Install-VcpkgPackages {
         'boost-serialization:x64-windows',
         'boost-lockfree:x64-windows',
         'ace[ssl]:x64-windows',
+        'uwebsockets[core,ssl]:x64-windows',
         'cryptopp:x64-windows',
         'curl:x64-windows',
         'yaml-cpp:x64-windows'
