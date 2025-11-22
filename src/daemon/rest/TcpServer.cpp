@@ -19,17 +19,18 @@
 
 ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
 MessageQueue TcpHandler::m_messageQueue;
-std::atomic_int TcpHandler::m_idGenerator = ATOMIC_FLAG_INIT;
+std::atomic_int TcpHandler::m_idGenerator{0};
 
 struct HttpRequestMsg
 {
-	explicit HttpRequestMsg(const ByteBuffer &data, int client)
-		: m_data(data), m_tcpHanlerId(client)
+	explicit HttpRequestMsg(const ByteBuffer &data, int client, void *wsSessionId = NULL)
+		: m_data(data), m_tcpHanlerId(client), m_wsSessionId(wsSessionId)
 	{
 	}
 	// TODO: use more efficiency definition
 	const ByteBuffer m_data;
 	const int m_tcpHanlerId;
+	const void *m_wsSessionId;
 };
 
 // Default constructor.
@@ -54,9 +55,10 @@ TcpHandler::~TcpHandler()
 	ACE_Reactor::instance()->remove_handler(this, READ_MASK);
 }
 
-void TcpHandler::queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int id)
+void TcpHandler::queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int tcpHandlerId, void *wsSessionId)
 {
-	auto req = std::make_shared<HttpRequestMsg>(data, id);
+	assert(!(tcpHandlerId && wsSessionId));
+	auto req = std::make_shared<HttpRequestMsg>(data, tcpHandlerId, wsSessionId);
 	m_messageQueue.enqueue(req);
 }
 
@@ -209,7 +211,7 @@ void TcpHandler::handleTcpRestLoop()
 		m_messageQueue.wait_dequeue(entity);
 		if (entity)
 		{
-			auto request = HttpRequest::deserializeTCP(entity->m_data, entity->m_tcpHanlerId);
+			auto request = entity->m_tcpHanlerId ? HttpRequest::deserializeTCP(entity->m_data, entity->m_tcpHanlerId) : HttpRequest::deserializeWS(entity->m_data, entity->m_wsSessionId);
 			if (!request || !processRequest(request))
 			{
 				closeTcpHandler(entity->m_tcpHanlerId);

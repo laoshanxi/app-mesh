@@ -147,6 +147,14 @@ cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON 
 make
 sudo make install
 
+echo "Installing uWebSockets..."
+cd $TMP_DIR
+git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
+cd uWebSockets
+make && sudo make install
+sudo cp uSockets/src/libusockets.h /usr/local/include/
+sudo cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
+
 echo "Building and installing uriparser..."
 cd $TMP_DIR
 git clone --depth=1 https://github.com/uriparser/uriparser.git

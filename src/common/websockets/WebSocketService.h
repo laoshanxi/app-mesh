@@ -82,5 +82,5 @@ private:
     std::atomic<uint64_t> m_next_request_id;
 
     mutable std::mutex m_sessions_mutex;
-    std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions;
+    std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions; // TODO: use ID to avoid address re-use
 };

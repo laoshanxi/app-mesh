@@ -30,7 +30,7 @@ bool WebSocketSession::verifyToken(const std::string &token)
 {
     try
     {
-        RESTHANDLER::instance()->verifyToken(token);
+        RESTHANDLER::instance()->verifyToken(token, WEBSOCKET_FILE_AUDIENCE);
         return true;
     }
     catch (...)

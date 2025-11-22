@@ -316,7 +316,7 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiFileDownload() ";
 
-	permissionCheck(message, PERMISSION_KEY_file_download);
+	auto uname = permissionCheck(message, PERMISSION_KEY_file_download);
 	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
 		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
@@ -343,13 +343,18 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = Utility::encode64(file);
 		body = Utility::text2json("Please recieve file from socket");
 	}
+	else
+	{
+		// Download from WebSocket HTTP
+		headers[HTTP_HEADER_JWT_Authorization] = generateJwtToken(uname, "", WEBSOCKET_FILE_AUDIENCE, WEBSOCKET_FILE_OPERATION_TIMEOUT);
+	}
 	message->reply(web::http::status_codes::OK, body, headers);
 }
 
 void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiFileUpload() ";
-	permissionCheck(message, PERMISSION_KEY_file_upload);
+	auto uname = permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
 		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
@@ -371,6 +376,11 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		LOG_DBG << fname << "Upload file from socket";
 		headers[HTTP_HEADER_KEY_X_Send_File_Socket] = Utility::encode64(file);
 		body = Utility::text2json("Please send file from socket");
+	}
+	else
+	{
+		// Upload from WebSocket HTTP
+		headers[HTTP_HEADER_JWT_Authorization] = generateJwtToken(uname, "", WEBSOCKET_FILE_AUDIENCE, WEBSOCKET_FILE_OPERATION_TIMEOUT);
 	}
 	message->reply(web::http::status_codes::OK, body, headers);
 	// set permission
@@ -726,6 +736,11 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 	const auto audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
+
+	if (audience == WEBSOCKET_FILE_AUDIENCE)
+	{
+		throw std::invalid_argument("illegal audience");
+	}
 
 	if (message->m_headers.count(HTTP_HEADER_JWT_Authorization) == 0)
 	{

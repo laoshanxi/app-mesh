@@ -20,6 +20,7 @@ __all__ = [
     "AppMeshClientOAuth",
     "AppMeshServer",
     "AppMeshServerTCP",
+    "AppMeshServerWSS",
 ]
 
 # Lazy import configuration
@@ -31,6 +32,7 @@ _LAZY_IMPORTS = {
     "AppMeshClientOAuth": ("client_http_oauth", "AppMeshClientOAuth"),  # from .client_http_oauth import AppMeshClientOAuth
     "AppMeshServer": ("server_http", "AppMeshServer"),  # from .server_http import AppMeshServer
     "AppMeshServerTCP": ("server_tcp", "AppMeshServerTCP"),  # from .server_tcp import AppMeshServerTCP
+    "AppMeshServerWSS": ("server_wss", "AppMeshServerWSS"),  # from .server_tcp import AppMeshServerWSS
 }
 
 if TYPE_CHECKING:
@@ -42,6 +44,7 @@ if TYPE_CHECKING:
     from .client_http_oauth import AppMeshClientOAuth  # noqa: F401
     from .server_http import AppMeshServer  # noqa: F401
     from .server_tcp import AppMeshServerTCP  # noqa: F401
+    from .server_wss import AppMeshServerWSS  # noqa: F401
 
 
 def _lazy_import(name: str):

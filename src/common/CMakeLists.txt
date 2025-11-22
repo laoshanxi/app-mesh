@@ -20,7 +20,7 @@ target_link_libraries(common
     ZLIB::ZLIB # nghttp2
     ${ACE_LIBRARY}
     ${ACE_SSL_LIBRARY}
-    wsockets
+    libwebsockets
     log4cpp
     yaml-cpp::yaml-cpp
     Boost::regex

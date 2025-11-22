@@ -61,7 +61,7 @@ public:
 	static bool processRequest(std::shared_ptr<HttpRequest> &request);
 	static void closeTcpHandler(int tcpHandlerId);
 	const int &id();
-	static void queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int id);
+	static void queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int tcpHandlerId, void *wsSessionId = NULL);
 
 protected:
 	// = Demultiplexing hooks.

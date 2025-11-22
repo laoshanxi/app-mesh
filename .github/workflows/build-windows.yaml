@@ -70,9 +70,11 @@ jobs:
           C:\local\appmesh\bin\nssm.exe install AppMeshService "C:\local\appmesh\bin\appsvc.exe"
           C:\local\appmesh\bin\nssm.exe set AppMeshService Start SERVICE_AUTO_START
           C:\local\appmesh\bin\nssm.exe start AppMeshService
-          # Start-Process -FilePath "C:\local\appmesh\bin\appsvc.exe" -WindowStyle Hidden
 
-          sleep 3
+          Start-Sleep -Seconds 2
+          Start-Process -FilePath "C:\local\appmesh\bin\appsvc.exe" -WindowStyle Hidden
+          Start-Sleep -Seconds 2
+
           ls "C:\local\appmesh"
           cat "C:\local\appmesh\work\server.log"
 

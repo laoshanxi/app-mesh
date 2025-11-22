@@ -54,7 +54,7 @@ public:
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
 	static std::shared_ptr<HttpRequest> deserializeTCP(const ByteBuffer &input, int tcpHandlerId);
-	static std::shared_ptr<HttpRequest> deserializeWS(const ByteBuffer &input, std::weak_ptr<WebSocketSession> wsi);
+	static std::shared_ptr<HttpRequest> deserializeWS(const ByteBuffer &input, const void *wsi);
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;
@@ -75,7 +75,7 @@ protected:
 
 private:
 	const int m_tcpHandlerId;
-	std::weak_ptr<WebSocketSession> m_session_ref;
+	const void *m_wsSessionId;
 };
 
 class Application;

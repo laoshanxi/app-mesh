@@ -23,7 +23,8 @@ HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
-	  m_tcpHandlerId(tcpHandlerId)
+	  m_tcpHandlerId(tcpHandlerId),
+	  m_wsSessionId(0)
 {
 }
 
@@ -85,7 +86,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserializeTCP(const ByteBuffer &input
 	return nullptr;
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserializeWS(const ByteBuffer &input, std::weak_ptr<WebSocketSession> wsi)
+std::shared_ptr<HttpRequest> HttpRequest::deserializeWS(const ByteBuffer &input, const void *wsi)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
@@ -93,7 +94,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserializeWS(const ByteBuffer &input,
 	if (req.deserialize(input))
 	{
 		auto request = std::make_shared<HttpRequest>(std::move(req), -1);
-		request->m_session_ref = wsi;
+		request->m_wsSessionId = wsi;
 		return request;
 	}
 	else
@@ -147,12 +148,12 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		// TCP protocol
 		return TcpHandler::replyTcp(m_tcpHandlerId, response);
 	}
-	else if (auto ssn = m_session_ref.lock())
+	else if (m_wsSessionId)
 	{
 		// WebSocket protocol
 		auto data = response.serialize();
 		WSResponse resp;
-		resp.m_session_ref = ssn;
+		resp.m_session_ref = const_cast<void *>(m_wsSessionId);
 		resp.m_payload = std::vector<std::uint8_t>(reinterpret_cast<const unsigned char *>(data->data()), reinterpret_cast<const unsigned char *>(data->data()) + data->size());
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 		return true;

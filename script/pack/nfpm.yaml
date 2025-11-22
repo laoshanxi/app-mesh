@@ -16,7 +16,7 @@ section: admin
 # Priority.
 priority: standard
 # Dependencies. (overridable)
-depends:
+depends: []
 # Maintainer. (required)
 maintainer: "laoshanxi <178029200@qq.com>"
 # Description.
@@ -45,9 +45,9 @@ overrides:
     depends:
       - openssl
       - procps
-      - libldap-dev
+      - ldap-utils
   rpm:
     depends:
       - openssl
       - procps
-      # openldap-devel
+      # - openldap-devel (if needed)

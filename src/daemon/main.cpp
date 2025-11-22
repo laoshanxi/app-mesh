@@ -465,13 +465,13 @@ void AppMeshDaemon::initializeRestService()
 	m_client->connect(tcpAddr);
 
 	// Websocket service
-	/*
-	// TODO: define from config
-	ACE_INET_Addr wsAddr(config->getRestTcpPort() - 1, config->getRestListenAddress().c_str());
-	WebSocketService::instance()->initialize(wsAddr, cert, key, ca);
-	WebSocketService::instance()->start(config->getThreadPoolSize());
-	LOG_INF << fname << "Initializing Websocket service on <" << wsAddr.get_host_addr() << ":" << wsAddr.get_port_number() << ">";
-	*/
+	if (config->getWebSocketPort())
+	{
+		ACE_INET_Addr wsAddr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
+		WebSocketService::instance()->initialize(wsAddr, cert, key, ca);
+		WebSocketService::instance()->start(0);
+		LOG_INF << fname << "Initializing Websocket service on <" << wsAddr.get_host_addr() << ":" << wsAddr.get_port_number() << ">";
+	}
 
 	startAgentApplication();
 	config->registerPrometheus();
