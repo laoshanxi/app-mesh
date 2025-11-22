@@ -1013,7 +1013,7 @@ void CommandDispatcher::setupInterruptHandler(const std::string &appName)
 	G_PENDING_CLEAN_APP_NAME = appName;
 	G_INTERRUPT = false; // if ctrl + c is triggered, stop run and start read input from stdin
 #if defined(_WIN32)
-	static std::atomic_flag windowsRegisterOnlyOnce{false};
+	static std::atomic_flag windowsRegisterOnlyOnce = ATOMIC_FLAG_INIT;
 	if (!windowsRegisterOnlyOnce.test_and_set())
 	{
 		SetConsoleCtrlHandler(CrossPlatformSignalHandler, TRUE);

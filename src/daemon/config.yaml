@@ -36,6 +36,9 @@ REST:
   # TCP port for the TCP API.
   RestTcpPort: 6059
 
+  # WebSocket port for the WSS API.
+  WebSocketPort: 6058
+
   # Port for Prometheus metrics export.
   # To enable metrics collection, set to a specific port (e.g., 9091).
   PrometheusExporterListenPort: 0
@@ -60,7 +63,7 @@ REST:
     Issuer: ""
 
     # Audience for the JWT token.
-    Audience: ["appmesh-service", "your-service-api"]
+    Audience: ["appmesh-service", "appmesh-file-service", "your-service-api"]
 
     # Authentication type to use [local/ldap/consul/oauth2].
     SecurityInterface: local

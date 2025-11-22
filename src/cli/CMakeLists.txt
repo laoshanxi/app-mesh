@@ -11,9 +11,9 @@ add_executable(${PROJECT_NAME}::appc ALIAS appc)
 ##########################################################################
 target_link_libraries(appc
   PRIVATE
-  linenoise
-  Threads::Threads
-  Boost::program_options
-  common
-  cppsdk
+    linenoise
+    Threads::Threads
+    Boost::program_options
+    common
+    cppsdk
 )

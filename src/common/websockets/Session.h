@@ -29,7 +29,7 @@ struct WSSessionInfo
 
 struct WSResponse
 {
-    std::weak_ptr<WebSocketSession> m_session_ref;
+    void *m_session_ref;
     std::vector<std::uint8_t> m_payload;
     uint64_t m_req_id = 0;
 };
@@ -43,7 +43,7 @@ struct WSRequest
         Closing
     } m_type;
 
-    std::weak_ptr<WebSocketSession> m_session_ref;
+    void *m_session_ref;
     std::vector<std::uint8_t> m_payload;
     uint64_t m_req_id = 0;
 
@@ -63,7 +63,7 @@ public:
 
     // Processes incoming request and generates response (echo for websocket messages)
     void handleRequest(const WSRequest &req);
-    static bool verifyToken(const std::string & token);
+    static bool verifyToken(const std::string &token);
 
     // Enqueue outgoing message (from worker thread)
     void enqueueOutgoingMessage(std::vector<std::uint8_t> &&payload);

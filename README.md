@@ -117,6 +117,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
 - [concurrentqueue](https://github.com/cameron314/concurrentqueue)
 - [libwebsockets](https://libwebsockets.org/)
+- [uWebSockets](https://github.com/uNetworking/uWebSockets)
 
 [language.url]: https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg

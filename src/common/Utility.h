@@ -135,6 +135,8 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_HTTP_THREAD_POOL_SIZE 6
 #define REST_REQUEST_TIMEOUT_SECONDS 60
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
+#define WEBSOCKET_FILE_OPERATION_TIMEOUT 30
+#define WEBSOCKET_FILE_AUDIENCE "appmesh-file-service"
 
 #define JWT_USER_KEY "mesh123"
 #define JWT_USER_NAME "mesh"
@@ -289,6 +291,7 @@ public:
 #define JSON_KEY_RestListenPort "RestListenPort"
 #define JSON_KEY_RestListenAddress "RestListenAddress"
 #define JSON_KEY_RestTcpPort "RestTcpPort"
+#define JSON_KEY_WebSocketPort "WebSocketPort"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 
 #define JSON_KEY_ScheduleIntervalSeconds "ScheduleIntervalSeconds"

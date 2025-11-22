@@ -217,6 +217,12 @@ int Configuration::getRestTcpPort()
 	return m_rest->m_restTcpPort;
 }
 
+int Configuration::getWebSocketPort()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_webSocketPort;
+}
+
 nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
 {
 	auto allApp = getApps();
@@ -578,6 +584,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestTcpPort))
 				SET_COMPARE(this->m_rest->m_restTcpPort, newConfig->m_rest->m_restTcpPort);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_WebSocketPort))
+				SET_COMPARE(this->m_rest->m_webSocketPort, newConfig->m_rest->m_webSocketPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
 				SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize))
@@ -833,6 +841,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
 	rest->m_restTcpPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestTcpPort);
+	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
 	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
@@ -917,6 +926,7 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_PrometheusExporterListenPort] = (m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
 	result[JSON_KEY_RestTcpPort] = (m_restTcpPort);
+	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
 

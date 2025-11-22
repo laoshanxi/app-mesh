@@ -133,6 +133,13 @@ cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON 
 make -j"$(($(nproc) / 2))" && make install
 cd ${ROOTDIR}
 
+git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
+cd uWebSockets
+make WITH_OPENSSL=1 && make install
+cp uSockets/src/libusockets.h /usr/local/include/
+cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
+cd $ROOTDIR
+
 # clean
 go clean -cache -fuzzcache -modcache
 pip3 cache purge

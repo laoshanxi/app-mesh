@@ -77,6 +77,7 @@ public:
 		int m_promListenPort;
 		std::string m_restListenAddress;
 		int m_restTcpPort;
+		int m_webSocketPort;
 		std::shared_ptr<JsonSsl> m_ssl;
 		std::shared_ptr<JsonJwt> m_jwt;
 	};
@@ -110,6 +111,7 @@ public:
 	std::string getRestListenAddress();
 	std::string getRestJwtIssuer();
 	int getRestTcpPort();
+	int getWebSocketPort();
 	nlohmann::json serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName, bool throwOnNotFound = true) const noexcept(false);
 	std::shared_ptr<Application> getApp(const void *app) const;

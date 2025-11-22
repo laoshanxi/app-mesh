@@ -5,6 +5,7 @@
 
 #include <libwebsockets.h>
 
+#include "../../daemon/rest/TcpServer.h"
 #include "../Utility.h"
 #include "WebSocketService.h"
 
@@ -443,7 +444,7 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
             {
                 WSRequest req;
                 req.m_type = WSRequest::Type::WebSocketMessage;
-                req.m_session_ref = session;
+                req.m_session_ref = wsi;
                 req.m_payload = std::move(full_data);
                 req.m_req_id = m_next_request_id.fetch_add(1, std::memory_order_relaxed);
                 enqueueIncomingRequest(std::move(req));
@@ -519,9 +520,9 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
 // -------------------------------
 // Queue operations
 // -------------------------------
-void WebSocketService::enqueueOutgoingResponse(WSResponse &&resp)
+void WebSocketService::enqueueOutgoingResponse(std::unique_ptr<WSResponse> &&resp)
 {
-    auto ssn = resp.m_session_ref.lock();
+    auto ssn = findSession((lws *)resp->m_session_ref);
     if (!ssn || !m_context)
         return;
 
@@ -534,25 +535,30 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
 {
     static const char fname[] = "WebSocketService::enqueueIncomingRequest() ";
 
+    static bool use_this_worker_pool = !m_worker_threads.empty();
+
     LOG_DBG << fname << "Received (" << req.m_payload.size() << " bytes)";
-    m_incoming_queue.enqueue(std::move(req));
+    if (use_this_worker_pool)
+    {
+        m_incoming_queue.enqueue(std::move(req));
+    }
+    else
+    {
+        auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
+        TcpHandler::queueInputRequest(data, 0, req.m_session_ref);
+    }
 }
 
-void WebSocketService::deliverResponse(WSResponse &&resp)
+void WebSocketService::deliverResponse(const std::unique_ptr<WSResponse> &resp)
 {
     // Lock is essential here to prevent race with destroySession logic
     std::lock_guard<std::mutex> lock(m_sessions_mutex);
-    auto ssn = resp.m_session_ref.lock();
-
-    if (ssn)
+    // Verify the wsi is still in our map (Double check validity)
+    auto it = m_sessions.find((lws *)resp->m_session_ref);
+    if (it != m_sessions.end())
     {
-        // Verify the wsi is still in our map (Double check validity)
-        auto it = m_sessions.find(ssn->getWsi());
-        if (it != m_sessions.end())
-        {
-            ssn->enqueueOutgoingMessage(std::move(resp.m_payload));
-            lws_callback_on_writable(ssn->getWsi());
-        }
+        it->second->enqueueOutgoingMessage(std::move(resp->m_payload));
+        lws_callback_on_writable(it->first);
     }
 }
 
@@ -567,9 +573,9 @@ void WebSocketService::broadcastMessage(const std::string &msg)
 
     for (auto ssn : active_connections)
     {
-        WSResponse resp;
-        resp.m_session_ref = ssn;
-        resp.m_payload.assign(msg.begin(), msg.end());
+        auto resp = std::make_unique<WSResponse>();
+        resp->m_session_ref = ssn->getWsi();
+        resp->m_payload.assign(msg.begin(), msg.end());
         enqueueOutgoingResponse(std::move(resp));
     }
 }
@@ -589,10 +595,10 @@ void WebSocketService::runIOEventLoop()
     while (m_is_running)
     {
         // Process ALL pending outgoing responses before servicing
-        WSResponse resp;
+        std::unique_ptr<WSResponse> resp;
         while (m_outgoing_queue.try_dequeue(resp))
         {
-            deliverResponse(std::move(resp));
+            deliverResponse(resp);
         }
 
         int result = lws_service(m_context, 0);
@@ -630,7 +636,7 @@ void WebSocketService::runWorkerLoop(int worker_id)
         if (req.m_type == WSRequest::Type::Closing)
             break;
 
-        if (auto session = req.m_session_ref.lock())
+        if (auto session = findSession((lws *)req.m_session_ref))
         {
             session->handleRequest(req);
         }

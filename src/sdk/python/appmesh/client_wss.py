@@ -124,11 +124,16 @@ class AppMeshClientWSS(AppMeshClient):
             local_file: Local destination path.
             preserve_permissions: Apply remote file permissions/ownership locally.
         """
+        header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
+        resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
+        if self._HTTP_HEADER_KEY_AUTH not in resp.headers:
+            raise ValueError(f"Server did not respond with file transfer autentication: " f"{self._HTTP_HEADER_KEY_AUTH}")
+
         # Use requests to GET file
         local_path = Path(local_file)
         header = {
-            AppMeshClient._HTTP_HEADER_KEY_AUTH: self._get_access_token(),
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
+            AppMeshClient._HTTP_HEADER_KEY_AUTH: resp.headers[self._HTTP_HEADER_KEY_AUTH],
         }
         path = "/appmesh/file/download"
         rest_url = parse.urljoin(self.base_url, path)
@@ -154,6 +159,11 @@ class AppMeshClientWSS(AppMeshClient):
             remote_file: Remote destination path.
             preserve_permissions: Upload file permissions/ownership metadata.
         """
+        header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
+        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)
+        if self._HTTP_HEADER_KEY_AUTH not in resp.headers:
+            raise ValueError(f"Server did not respond with file transfer autentication: " f"{self._HTTP_HEADER_KEY_AUTH}")
+
         local_path = Path(local_file)
         if not local_path.exists():
             raise FileNotFoundError(f"Local file not found: {local_file}")
@@ -161,7 +171,7 @@ class AppMeshClientWSS(AppMeshClient):
         # Upload file with http
         path = "/appmesh/file/upload"
         header = {
-            AppMeshClient._HTTP_HEADER_KEY_AUTH: self._get_access_token(),
+            AppMeshClient._HTTP_HEADER_KEY_AUTH: resp.headers[self._HTTP_HEADER_KEY_AUTH],
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
         }
         if preserve_permissions:

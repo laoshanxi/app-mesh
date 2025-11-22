@@ -10,11 +10,21 @@ project(appmesh LANGUAGES CXX VERSION 2.2.1)
 ##########################################################################
 # C++ flag
 ##########################################################################
-if(NOT WIN32)
+if(WIN32)
+    set(CMAKE_CXX_STANDARD 17)
+    if(MSVC)
+        add_compile_options(/permissive-)
+    endif()
+    find_package(unofficial-uwebsockets CONFIG REQUIRED)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+       CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
     set(CMAKE_CXX_STANDARD 14)
+else()
+    set(CMAKE_CXX_STANDARD 17)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
 
 set(BUILD_TAG ${PROJECT_NAME}_${PROJECT_VERSION}_${APPMESH_BUILD_DATE})
 add_compile_options(-DBUILD_TAG=${BUILD_TAG})
@@ -23,29 +33,39 @@ SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
 SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
 
 ##########################################################################
+# custom module file
+##########################################################################
+include(${CMAKE_SOURCE_DIR}/cmake/CopyDLLs.cmake)
+
+##########################################################################
 # debug / release
 ##########################################################################
-# Set the default build type if not specified
+# Set the default build type if not specified and cache it (optional: add FORCE)
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_UPPERCASE)
 message(STATUS "CMAKE_BUILD_TYPE: ${BUILD_TYPE_UPPERCASE}")
 
-# Set compiler flags based on the build type
+# Explicitly set flags using CMAKE_CXX_FLAGS_<CONFIG> for better control.
 if (BUILD_TYPE_UPPERCASE STREQUAL "DEBUG")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -ggdb3 -O0")
+    # Ensure -O0 (no optimization) for Debug
+    set(CMAKE_CXX_FLAGS_DEBUG "-Wall -ggdb3 -O0 ${CMAKE_CXX_FLAGS_DEBUG}")
 elseif (BUILD_TYPE_UPPERCASE STREQUAL "RELEASE")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall")
+    # Ensure -O3 (high optimization) and -DNDEBUG (disable assertions) for Release
+    set(CMAKE_CXX_FLAGS_RELEASE "-Wall -O3 -DNDEBUG ${CMAKE_CXX_FLAGS_RELEASE}")
 elseif (BUILD_TYPE_UPPERCASE STREQUAL "MINSIZEREL")
-    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL}")
+    # Ensure -Os (size optimization) and -DNDEBUG
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "-Wall -Os -DNDEBUG ${CMAKE_CXX_FLAGS_MINSIZEREL}")
 elseif (BUILD_TYPE_UPPERCASE STREQUAL "ASAN")
+    # ASAN block remains correct for sanitizer purposes
     # https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
     set(CMAKE_CXX_FLAGS_ASAN "${CMAKE_CXX_FLAGS_ASAN} -Wall -ggdb3 -O0 -g -fsanitize=address -fno-omit-frame-pointer")
     set(CMAKE_EXE_LINKER_FLAGS_ASAN "${CMAKE_EXE_LINKER_FLAGS_ASAN} -fsanitize=address -lasan -lstdc++")
-else ()
+else()
     message(FATAL_ERROR "Invalid build type: ${CMAKE_BUILD_TYPE}")
 endif()
+
 # Print compile parameters: FLAGS = CMAKE_CXX_FLAGS + CMAKE_CXX_FLAGS_RELEASE
 set(CMAKE_CXX_FLAGS_NAME "CMAKE_CXX_FLAGS_${BUILD_TYPE_UPPERCASE}")
 message(STATUS "${CMAKE_CXX_FLAGS_NAME}: ${CMAKE_CXX_FLAGS} ${${CMAKE_CXX_FLAGS_NAME}}")
