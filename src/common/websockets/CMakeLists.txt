@@ -10,7 +10,7 @@ add_library(${PROJECT_NAME}::wsockets ALIAS wsockets)
 # Link
 ##########################################################################
 target_link_libraries(wsockets
-  PRIVATE
-  websockets_shared
-  uriparser::uriparser
+  PUBLIC
+    websockets_shared
+    uriparser::uriparser
 )

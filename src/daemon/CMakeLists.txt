@@ -25,4 +25,8 @@ target_link_libraries(appsvc
     process
     prometheus
     common
+  PUBLIC
+    websockets_shared
+    uriparser::uriparser
 )
+copy_runtime_dependencies(appsvc)
