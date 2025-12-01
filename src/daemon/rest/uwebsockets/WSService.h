@@ -1,5 +1,5 @@
-#ifndef SERVER_H
-#define SERVER_H
+#ifndef WSSERVICE_H
+#define WSSERVICE_H
 
 #include <algorithm>
 #include <atomic>
@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <regex>
 #include <shared_mutex>
 #include <set>
 #include <sstream>
@@ -31,7 +32,8 @@
 #include <unistd.h>
 #endif
 
-#include <App.h>
+#include <uWebSockets/App.h>
+#include "ReplyContext.h"
 
 namespace WSS
 {
@@ -74,41 +76,15 @@ namespace WSS
         std::string subProtocol;
     };
 
-    // Reply context for thread-safe asynchronous responses.
-    class ReplyContext
+    // Route match result containing captured groups from regex
+    struct RouteMatch
     {
-    public:
-        using ReplyCallback = std::function<void(std::string &&data, bool isLast, bool isBinary)>;
-
-        explicit ReplyContext(ReplyCallback callback)
-            : m_callback(std::move(callback)), m_completed(false) {}
-
-        void sendReply(std::string &&data, bool isLast = true, bool isBinary = false)
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            if (!m_completed && m_callback)
-            {
-                m_callback(std::move(data), isLast, isBinary);
-                if (isLast)
-                {
-                    m_completed = true;
-                    m_callback = nullptr; 
-                }
-            }
-        }
-
-        bool isCompleted() const
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            return m_completed;
-        }
-
-    private:
-        ReplyCallback m_callback;
-        bool m_completed;
-        mutable std::mutex m_mutex;
+        std::vector<std::string> params; // Captured groups from regex
+        std::string getParam(size_t index) const { return index < params.size() ? params[index] : ""; }
+        size_t paramCount() const { return params.size(); }
     };
 
+    // Forward declaration for ReplyContextPtr
     using ReplyContextPtr = std::shared_ptr<ReplyContext>;
 
     // Thread-safe WebSocket connection wrapper
@@ -124,13 +100,16 @@ namespace WSS
         // Sends data to the client safely from ANY thread.
         void send(std::string &&data, uWS::OpCode opcode = uWS::OpCode::TEXT)
         {
-            // Check if we are on the correct thread
+            // WARNING: If the Server has been stopped and threads joined, m_loop is dangling.
+            // The user must ensure no async tasks call this after Server::stop().
+            // Check if we are on the correct thread            
             if (uWS::Loop::get() == m_loop)
             {
                 // We are on the owner thread, just send if valid
                 std::lock_guard<std::mutex> lock(m_mutex);
                 if (m_valid && m_ws)
                 {
+                    // Check for backpressure could be added here (ws->getBufferedAmount())
                     m_ws->send(data, opcode);
                 }
             }
@@ -154,9 +133,9 @@ namespace WSS
         {
             if (uWS::Loop::get() == m_loop)
             {
-                WebSocketType* ws = nullptr;
+                WebSocketType *ws = nullptr;
                 {
-                    std::lock_guard<std::mutex> lock(m_mutex); 
+                    std::lock_guard<std::mutex> lock(m_mutex);
                     ws = m_ws;
                 }
                 if (ws)
@@ -170,7 +149,7 @@ namespace WSS
                 // Defer the entire process to the owner loop thread
                 m_loop->defer([self = this->shared_from_this(), code, reason = std::move(reason)]()
                 {
-                    WebSocketType* ws = nullptr;
+                    WebSocketType *ws = nullptr;
                     {
                         std::lock_guard<std::mutex> lock(self->m_mutex);
                         ws = self->m_ws;
@@ -203,10 +182,10 @@ namespace WSS
 
     private:
         WebSocketType *m_ws;
-        std::string m_id;
-        std::string m_protocol;
+        const std::string m_id;
+        const std::string m_protocol;
         bool m_valid;
-        uWS::Loop *m_loop;
+        uWS::Loop *const m_loop;
         mutable std::mutex m_mutex;
     };
 
@@ -220,13 +199,14 @@ namespace WSS
         using HttpResponseType = uWS::HttpResponse<SSL>;
         using WebSocketType = uWS::WebSocket<SSL, true, SessionData>;
 
-        using HttpHandler = std::function<void(HttpResponseType *res, uWS::HttpRequest *req, ReplyContextPtr replyCtx)>;
+        using HttpHandler = std::function<void(HttpResponseType *res, uWS::HttpRequest *req, ReplyContextPtr replyCtx, const RouteMatch &match)>;
         using WSMessageHandler = std::function<void(std::string_view message, WSConnectionPtr connection, ReplyContextPtr replyCtx, bool isBinary)>;
         using WSOpenHandler = std::function<void(WSConnectionPtr connection)>;
         using WSCloseHandler = std::function<void(const std::string &connID, int code, std::string_view message)>;
 
         Server(int port, SSLContextOptions ssl = {}, int numThreads = 1)
-            : m_port(port), m_ssl(std::move(ssl)), m_numThreads(std::max(1, numThreads)), m_running(false), m_nextConnId(0), m_startedThreads(0)
+            : m_port(port), m_numThreads(std::max(1, numThreads)), m_ssl(std::move(ssl)), 
+              m_running(false), m_nextConnId(1), m_startedThreads(0)
         {
             m_serverThreads.resize(m_numThreads);
             m_listenSockets.resize(m_numThreads, nullptr);
@@ -239,40 +219,71 @@ namespace WSS
             stop();
         }
 
+        // Register an exact match route
         void route(const std::string &method, const std::string &pattern, HttpHandler handler)
         {
-            std::lock_guard<std::mutex> lock(m_routeMutex);
-            m_httpRoutes[method + ":" + pattern] = std::move(handler);
+            if (isRunning())
+                throw std::logic_error("cannot register HTTP routes after the WebSocket service has started");
+
+            std::string upperMethod = toUpperCase(method);
+            std::string routeKey = upperMethod + ":" + pattern;
+            m_exactRoutes[routeKey] = std::move(handler);
+        }
+
+        // Register a regex pattern route
+        void routeRegex(const std::string &method, const std::string &regexPattern, HttpHandler handler)
+        {
+            if (isRunning())
+                throw std::logic_error("cannot register HTTP routes after the WebSocket service has started");
+
+            std::string upperMethod = toUpperCase(method);
+            try
+            {
+                RegexRoute route;
+                route.method = upperMethod;
+                route.pattern = std::regex(regexPattern, std::regex::ECMAScript | std::regex::optimize);
+                route.patternStr = regexPattern;
+                route.handler = std::move(handler);
+                m_regexRoutes.push_back(std::move(route));
+            }
+            catch (const std::regex_error &e)
+            {
+                throw std::invalid_argument("Invalid regex pattern: " + regexPattern + " - " + e.what());
+            }
         }
 
         void registerSupportedProtocol(const std::string &protocol)
         {
-            std::lock_guard<std::mutex> lock(m_protocolMutex);
+            if (isRunning())
+                throw std::logic_error("cannot modify supported protocols after the WebSocket service has started");
             m_supportedProtocols.insert(protocol);
         }
 
         void onWSMessage(WSMessageHandler handler)
         {
-            std::lock_guard<std::mutex> lock(m_handlerMutex);
+            if (isRunning())
+                throw std::logic_error("cannot set message handler after the WebSocket service has started");
             m_wsMessageHandler = std::move(handler);
         }
 
         void onWSOpen(WSOpenHandler handler)
         {
-            std::lock_guard<std::mutex> lock(m_handlerMutex);
+            if (isRunning())
+                throw std::logic_error("cannot set open handler after the WebSocket service has started");
             m_wsOpenHandler = std::move(handler);
         }
 
         void onWSClose(WSCloseHandler handler)
         {
-            std::lock_guard<std::mutex> lock(m_handlerMutex);
+            if (isRunning())
+                throw std::logic_error("cannot set close handler after the WebSocket service has started");
             m_wsCloseHandler = std::move(handler);
         }
 
         // Sends data to a specific client. Thread-safe.
         bool sendToClient(const std::string &clientId, std::string &&data, uWS::OpCode opcode = uWS::OpCode::TEXT)
         {
-            if (!m_running.load())
+            if (!isRunning())
                 return false;
 
             WSConnectionPtr conn = getConnection(clientId);
@@ -285,28 +296,37 @@ namespace WSS
         }
 
         // Thread-safe broadcasts using uWS Pub/Sub
-        void broadcast(const std::string &data, uWS::OpCode opcode = uWS::OpCode::TEXT)
+        void broadcast(const std::shared_ptr<std::string> data, uWS::OpCode opcode = uWS::OpCode::TEXT)
         {
-            if (!m_running.load())
+            // Protect against accessing loops while stop() is running
+            std::shared_lock<std::shared_mutex> lock(m_stateMutex);
+            
+            if (!m_running)
                 return;
 
-            // m_appLoops and m_broadcasters are immutable after start().
             for (int i = 0; i < m_numThreads; ++i)
             {
                 uWS::Loop *loop = m_appLoops[i];
-                if (loop && m_broadcasters[i])
+                auto broadcaster = m_broadcasters[i];
+                if (loop && broadcaster)
                 {
-                    // Copy data because the deferred lambda needs it
-                    auto broadcaster = m_broadcasters[i];
+                    // shared data to avoid copying for each thread
                     loop->defer([broadcaster, data, opcode]()
                     {
                         if (broadcaster && *broadcaster)
                         {
-                            (*broadcaster)(data, opcode);
+                            (*broadcaster)(*data, opcode);
                         }
                     });
                 }
             }
+        }
+
+        // Get connection count
+        size_t getConnectionCount() const
+        {
+            std::shared_lock<std::shared_mutex> lock(m_connectionsMutex);
+            return m_connections.size();
         }
 
         void start()
@@ -328,6 +348,9 @@ namespace WSS
 
         void stop()
         {
+            // Take write lock to prevent broadcast/routes from accessing loops during destruction
+            std::unique_lock<std::shared_mutex> stateLock(m_stateMutex);
+
             if (!m_running.exchange(false))
                 return;
 
@@ -348,9 +371,9 @@ namespace WSS
             {
                 std::vector<WSConnectionPtr> connectionsToClose;
                 {
-                    std::shared_lock<std::shared_mutex> lock(m_connectionsMutex); 
+                    std::shared_lock<std::shared_mutex> lock(m_connectionsMutex);
                     connectionsToClose.reserve(m_connections.size());
-                    for (auto &pair : m_connections)
+                    for (const auto &pair : m_connections)
                     {
                         if (pair.second)
                             connectionsToClose.push_back(pair.second);
@@ -363,21 +386,27 @@ namespace WSS
                 }
             }
 
+            // Release lock here to allow loops to process the close events
+            stateLock.unlock();
+
             // 3. Join threads
             for (auto &thread : m_serverThreads)
             {
                 if (thread.joinable())
                     thread.join();
             }
+            
+            // Re-acquire lock to safely clear structures
+            stateLock.lock();
 
             // Cleanup
             m_appLoops.assign(m_numThreads, nullptr);
             m_listenSockets.assign(m_numThreads, nullptr);
-            
-            // Clear broadcasters AFTER joining threads to prevent race conditions
-            for(auto& b : m_broadcasters)
+
+            // Clear broadcasters
+            for (auto &b : m_broadcasters)
                 b.reset();
-            
+
             // Clear connections
             {
                 std::unique_lock<std::shared_mutex> lock(m_connectionsMutex);
@@ -388,31 +417,49 @@ namespace WSS
         bool isRunning() const { return m_running.load(); }
 
     private:
+        struct ResponseState
+        {
+            std::atomic<bool> aborted{false};
+            std::atomic<bool> responded{false};
+            bool headersWritten{false};
+        };
+
+        struct RegexRoute
+        {
+            std::string method;
+            std::regex pattern;
+            std::string patternStr;
+            HttpHandler handler;
+        };
+
+        static std::string toUpperCase(const std::string &str)
+        {
+            std::string result = str;
+            std::transform(result.begin(), result.end(), result.begin(), ::toupper);
+            return result;
+        }
+
         // Factory for creating a safe HTTP reply context
         static ReplyContextPtr createReplyContext(HttpResponseType *res, const std::string &contentType = "application/json")
         {
             auto state = std::make_shared<ResponseState>();
-            res->onAborted([state]()
-            { 
-                state->aborted = true; 
-            });
+            res->onAborted([state]() { state->aborted = true; });
 
             // The ownerLoop is the loop of the thread that handled the incoming request.
             uWS::Loop *ownerLoop = uWS::Loop::get();
 
             return std::make_shared<ReplyContext>(
-                [res, contentType, state, ownerLoop](const std::string &data, bool isLast, bool /*isBinary*/)
+                [res, contentType, state, ownerLoop](std::string &&data, bool isLast, bool /*isBinary*/)
                 {
                     // Define the actual write operation
-                    auto writeResponse = [res, contentType, state, data, isLast]()
+                    auto writeResponse = [res, contentType, state, data = std::move(data), isLast]()
                     {
                         if (state->aborted || state->responded)
                             return;
 
                         // Use corking for efficient header/body writing
-                        res->cork([res, contentType, state, data, isLast]()
+                        res->cork([res, &contentType, state, &data, isLast]()
                         {
-                            // Check again inside cork to be sure
                             if (state->aborted || state->responded)
                                 return;
 
@@ -442,18 +489,10 @@ namespace WSS
                     }
                     else if (ownerLoop)
                     {
-                        ownerLoop->defer(writeResponse);
+                        ownerLoop->defer(std::move(writeResponse));
                     }
                 });
         }
-
-    private:
-        struct ResponseState
-        {
-            std::atomic<bool> aborted{false};
-            std::atomic<bool> responded{false};
-            bool headersWritten{false}; // Only accessed on loop thread
-        };
 
         void enableTcpNoDelay(void *nativeHandle)
         {
@@ -503,43 +542,62 @@ namespace WSS
             return protocols;
         }
 
+        std::pair<HttpHandler, RouteMatch> findRoute(const std::string &method, const std::string &url)
+        {
+            // First try exact match
+            std::string routeKey = method + ":" + url;
+            auto exactIt = m_exactRoutes.find(routeKey);
+            if (exactIt != m_exactRoutes.end())
+            {
+                return {exactIt->second, RouteMatch{}};
+            }
+
+            // Then try regex routes
+            for (const auto &route : m_regexRoutes)
+            {
+                if (route.method != method)
+                    continue;
+
+                std::smatch matches;
+                if (std::regex_match(url, matches, route.pattern))
+                {
+                    RouteMatch match;
+                    // Skip the first match (full string), capture groups start at index 1
+                    for (size_t i = 1; i < matches.size(); ++i)
+                    {
+                        match.params.push_back(matches[i].str());
+                    }
+                    return {route.handler, match};
+                }
+            }
+
+            return {nullptr, RouteMatch{}};
+        }
+
         void runServerInstance(int threadId)
         {
             AppType app = createApp();
 
-            // Create a shared_ptr to hold the broadcaster function
-            // This ensures the lambda remains valid even after app.run() returns
             auto broadcaster = std::make_shared<std::function<void(std::string_view, uWS::OpCode)>>(
                 [&app](std::string_view data, uWS::OpCode opcode)
                 {
                     app.publish("broadcast", data, opcode);
                 });
 
-            // No lock needed here as we are in strict startup phase controlled by logic
             m_broadcasters[threadId] = broadcaster;
 
             setupRoutes(app, threadId);
 
             app.listen(m_port, [this, threadId](auto *socket)
             {
-                // No lock needed for simple assignment during startup
                 m_listenSockets[threadId] = socket;
                 m_appLoops[threadId] = uWS::Loop::get();
-
-                if (socket)
-                {
-                    std::cout << "Server thread " << threadId << " listening on port " << m_port << (SSL ? " (SSL)" : "") << std::endl;
-                }
-                else
-                {
-                    std::cerr << "Server thread " << threadId << " failed to listen on port " << m_port << std::endl;
-                }
 
                 {
                     std::lock_guard<std::mutex> lock(m_startMutex);
                     ++m_startedThreads;
                 }
-                m_startCv.notify_all(); 
+                m_startCv.notify_all();
             });
 
             app.run();
@@ -571,7 +629,6 @@ namespace WSS
                          std::vector<std::string> requestedProtocols = parseProtocolHeader(requestedHeader);
 
                          // Find the first requested protocol that we support
-                         std::lock_guard<std::mutex> lock(m_protocolMutex);
                          for (const auto &proto : requestedProtocols)
                          {
                              if (m_supportedProtocols.find(proto) != m_supportedProtocols.end())
@@ -605,23 +662,17 @@ namespace WSS
                      auto connection = createConnection(ws, data->subProtocol);
                      data->connectionPtr = connection;
 
-                     WSOpenHandler handler;
-                     {
-                         std::lock_guard<std::mutex> lock(m_handlerMutex);
-                         handler = m_wsOpenHandler;
-                     }
+                     WSOpenHandler handler = m_wsOpenHandler;
                      if (handler)
                          handler(connection);
                  },
                  .message = [this](auto *ws, std::string_view message, uWS::OpCode opCode)
                  {
                      SessionData *data = ws->getUserData();
-                     if (!data)
-                         return;
+                     if (!data) return;
 
                      std::shared_ptr<void> connectionShared = data->connectionPtr.lock();
-                     if (!connectionShared)
-                         return;
+                     if (!connectionShared) return;
 
                      auto connection = std::static_pointer_cast<WSConnectionType>(connectionShared);
                      bool isBinary = (opCode == uWS::OpCode::BINARY);
@@ -634,21 +685,15 @@ namespace WSS
                              // Note: If the user wants to close for isLast, they should call connection->close() explicitly.
                          });
 
-                     WSMessageHandler handler;
-                     {
-                         std::lock_guard<std::mutex> lock(m_handlerMutex);
-                         handler = m_wsMessageHandler;
-                     }
+                     WSMessageHandler handler = m_wsMessageHandler;
                      if (handler)
                          handler(message, connection, replyCtx, isBinary);
                  },
                  .close = [this](auto *ws, int code, std::string_view message)
                  {
                      SessionData *data = ws->getUserData();
-                     if (!data)
-                         return;
-                     
-                     // Critical: Explicitly invalidate the wrapper immediately.
+                     if (!data) return;
+
                      std::shared_ptr<void> connectionShared = data->connectionPtr.lock();
                      std::string connId;
                      if (connectionShared)
@@ -659,45 +704,34 @@ namespace WSS
                          removeConnection(connId);
                      }
 
-                     WSCloseHandler handler;
-                     {
-                         std::lock_guard<std::mutex> lock(m_handlerMutex);
-                         handler = m_wsCloseHandler;
-                     }
+                     WSCloseHandler handler = m_wsCloseHandler;
                      if (handler && !connId.empty())
                          handler(connId, code, message);
                  }});
 
-            // HTTP Handler (simplified generic catch-all)
+            // HTTP catch-all handler with regex support
             app.any("/*", [this](auto *res, auto *req)
             {
-                std::string method(req->getMethod());
+                std::string method = toUpperCase(std::string(req->getMethod()));
                 std::string url(req->getUrl());
-                std::string routeKey = method + ":" + url;
 
-                HttpHandler handler;
-                {
-                    std::lock_guard<std::mutex> lock(m_routeMutex);
-                    auto it = m_httpRoutes.find(routeKey);
-                    if (it != m_httpRoutes.end())
-                        handler = it->second;
-                }
+                auto [handler, match] = findRoute(method, url);
 
                 if (handler)
                 {
                     auto replyCtx = createReplyContext(res);
-                    handler(res, req, replyCtx);
+                    handler(res, req, replyCtx, match);
                 }
                 else
                 {
                     res->writeStatus("404 Not Found");
                     res->writeHeader("Content-Type", "application/json");
                     res->end(R"({"error":"Route not found"})");
-                } 
+                }
             });
         }
 
-        WSConnectionPtr createConnection(WebSocketType* ws, const std::string &subProtocol)
+        WSConnectionPtr createConnection(WebSocketType *ws, const std::string &subProtocol)
         {
             uWS::Loop *currentLoop = uWS::Loop::get();
             std::string connId = "appmesh-ws-" + std::to_string(m_nextConnId.fetch_add(1));
@@ -730,23 +764,23 @@ namespace WSS
         std::vector<std::thread> m_serverThreads;
         std::vector<uWS::Loop *> m_appLoops;
         std::vector<us_listen_socket_t *> m_listenSockets;
-        std::vector<std::shared_ptr<std::function<void(std::string_view, uWS::OpCode)>>> m_broadcasters; 
-        
+        std::vector<std::shared_ptr<std::function<void(std::string_view, uWS::OpCode)>>> m_broadcasters;
+
         std::mutex m_startMutex;
         std::condition_variable m_startCv;
 
-        std::mutex m_routeMutex;
-        std::unordered_map<std::string, HttpHandler> m_httpRoutes;
+        std::unordered_map<std::string, HttpHandler> m_exactRoutes;
+        std::vector<RegexRoute> m_regexRoutes; // Regex routes (checked in order)
 
-        std::mutex m_handlerMutex;
         WSMessageHandler m_wsMessageHandler;
         WSOpenHandler m_wsOpenHandler;
         WSCloseHandler m_wsCloseHandler;
 
-        std::shared_mutex m_connectionsMutex;
+        mutable std::shared_mutex m_connectionsMutex;
         std::unordered_map<std::string, WSConnectionPtr> m_connections;
 
-        std::mutex m_protocolMutex;
+        mutable std::shared_mutex m_stateMutex; // Protect state transitions (Running <-> Stopped) and sensitive lists
+
         std::set<std::string> m_supportedProtocols;
     };
 

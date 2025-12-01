@@ -23,14 +23,15 @@ std::atomic_int TcpHandler::m_idGenerator{0};
 
 struct HttpRequestMsg
 {
-	explicit HttpRequestMsg(const ByteBuffer &data, int client, void *wsSessionId = NULL)
-		: m_data(data), m_tcpHanlerId(client), m_wsSessionId(wsSessionId)
+	explicit HttpRequestMsg(const ByteBuffer &data, int tcpHandlerID, void *lwsSessionID = NULL, std::shared_ptr<WSS::ReplyContext> uwsReplyCtx = nullptr)
+		: m_data(data), m_tcpHanlerId(tcpHandlerID), m_wsSessionId(lwsSessionID), m_replyContext(uwsReplyCtx)
 	{
 	}
-	// TODO: use more efficiency definition
-	const ByteBuffer m_data;
+	const ByteBuffer m_data; // TODO: use more efficiency definition
+	// Three different protocols:
 	const int m_tcpHanlerId;
 	const void *m_wsSessionId;
+	std::shared_ptr<WSS::ReplyContext> m_replyContext;
 };
 
 // Default constructor.
@@ -56,10 +57,9 @@ TcpHandler::~TcpHandler()
 	ACE_Reactor::instance()->remove_handler(this, WRITE_MASK);
 }
 
-void TcpHandler::queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int tcpHandlerId, void *wsSessionId)
+void TcpHandler::queueInputRequest(ByteBuffer &data, int tcpHandlerID, void *lwsSessionID, std::shared_ptr<WSS::ReplyContext> uwsContext)
 {
-	assert(!(tcpHandlerId && wsSessionId));
-	auto req = std::make_shared<HttpRequestMsg>(data, tcpHandlerId, wsSessionId);
+	auto req = std::make_shared<HttpRequestMsg>(data, tcpHandlerID, lwsSessionID, uwsContext);
 	m_messageQueue.enqueue(req);
 }
 
@@ -213,7 +213,7 @@ void TcpHandler::handleTcpRestLoop()
 		m_messageQueue.wait_dequeue(entity);
 		if (entity)
 		{
-			auto request = entity->m_tcpHanlerId ? HttpRequest::deserializeTCP(entity->m_data, entity->m_tcpHanlerId) : HttpRequest::deserializeWS(entity->m_data, entity->m_wsSessionId);
+			auto request = HttpRequest::deserialize(entity->m_data, entity->m_tcpHanlerId, entity->m_wsSessionId, entity->m_replyContext);
 			if (!request || !processRequest(request))
 			{
 				closeTcpHandler(entity->m_tcpHanlerId);

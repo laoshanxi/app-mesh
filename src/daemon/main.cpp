@@ -57,6 +57,14 @@
 #include "../common/Valgrind.h"
 #endif
 
+// TODO: uwebsockets not support win for now
+#if !defined(_WIN32)
+#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+#include "rest/uwebsockets/Adaptor.hpp"
+#define HAVE_UWEBSOCKETS 1
+#endif
+#endif
+
 using TcpAcceptor = ACE_Acceptor<TcpHandler, ACE_SSL_SOCK_Acceptor>;
 
 // Global state management
@@ -467,10 +475,14 @@ void AppMeshDaemon::initializeRestService()
 	// Websocket service
 	if (config->getWebSocketPort())
 	{
+#ifdef HAVE_UWEBSOCKETS
+		WSS::start(config, 3);
+#else
 		ACE_INET_Addr wsAddr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
 		WebSocketService::instance()->initialize(wsAddr, cert, key, ca);
 		WebSocketService::instance()->start(0);
 		LOG_INF << fname << "Initializing Websocket service on <" << wsAddr.get_host_addr() << ":" << wsAddr.get_port_number() << ">";
+#endif
 	}
 
 	startAgentApplication();

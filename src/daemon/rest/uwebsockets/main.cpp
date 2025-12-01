@@ -1,16 +1,16 @@
-#include "Server.h"
+#include "WSService.h"
 
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
 #include <iostream>
-#include <json.hpp>
+#include <nlohmann/json.hpp>
 #include <string_view>
 #include <thread>
 
 using json = nlohmann::json;
 
-// Compile: g++ main.cpp -o server -ggdb3 -luSockets -lz -lpthread -lssl -lcrypto -std=c++17 -I /usr/local/include/uWebSockets/ -I /usr/local/include/nlohmann/
+// Compile: g++ main.cpp -o server -ggdb3 -luSockets -lz -lpthread -lssl -lcrypto -std=c++17
 
 class AsyncTaskProcessor
 {
@@ -18,7 +18,8 @@ public:
     void processTask(const std::string &taskId, WSS::ReplyContextPtr replyCtx)
     {
         // Simulate processing in another thread
-        // NOTE: std::thread::detach is used for simplicity; in production use a thread pool.
+        // WARNING: Detached threads can cause crashes if they outlive the Server object.
+        // In production, use a joinable thread pool or ensure these threads complete before Server destruction.
         std::thread([taskId, replyCtx]()
         {
             // Send initial acknowledgment
@@ -39,13 +40,13 @@ public:
                 {"status", "completed"},
                 {"taskId", taskId},
                 {"progress", 100},
-                {"result", "Task completed successfully"}
-            };
+                {"result", "Task completed successfully"}};
             replyCtx->sendReply(result.dump(), true);
         }).detach();
     }
 };
 
+// Broadcasts periodic messages to all connected clients
 template <bool SSL>
 class TimerNotifier
 {
@@ -61,9 +62,7 @@ public:
     void start()
     {
         if (m_running.exchange(true))
-        {
             return;
-        }
 
         m_timerThread = std::thread([this]()
         {
@@ -83,7 +82,7 @@ public:
                         {"message", "Periodic server notification"}
                     };
                     
-                    m_server->broadcast(notification.dump());
+                    m_server->broadcast(std::make_shared<std::string>(notification.dump()));
                 }
             }
         });
@@ -92,14 +91,10 @@ public:
     void stop()
     {
         if (!m_running.exchange(false))
-        {
             return;
-        }
 
         if (m_timerThread.joinable())
-        {
             m_timerThread.join();
-        }
     }
 
 private:
@@ -110,7 +105,7 @@ private:
 
 int main()
 {
-    const int NUM_THREADS = 4;
+    const int NUM_THREADS = 2;
     std::cout << "Starting server with " << NUM_THREADS << " worker threads." << std::endl;
 
     WSS::SSLContextOptions ssl{
@@ -126,19 +121,33 @@ int main()
     AsyncTaskProcessor taskProcessor;
     TimerNotifier<true> notifier(&server);
 
-    // HTTP Route: Simple immediate reply
-    server.route("get", "/api/status", [](auto * /*res*/, auto * /*req*/, auto replyCtx)
+    // HTTP Route: Simple immediate reply (exact match)
+    server.route("GET", "/api/status", [](auto * /*res*/, auto * /*req*/, auto replyCtx, const auto & /*match*/)
     {
         json response = {{"status", "ok"}, {"timestamp", std::time(nullptr)}};
-        replyCtx->sendReply(response.dump(), true); 
+        replyCtx->sendReply(response.dump(), true);
+    });
+
+    // HTTP Route: Regex example - get user's specific resource
+    // Matches: /api/users/123/orders/456
+    server.routeRegex("GET", R"(/api/users/(\d+)/orders/(\d+))", [](auto * /*res*/, auto * /*req*/, auto replyCtx, const auto &match)
+    {
+        std::string userId = match.getParam(0);
+        std::string orderId = match.getParam(1);
+        json response = {
+            {"userId", userId},
+            {"orderId", orderId},
+            {"status", "completed"},
+            {"total", 99.99}
+        };
+        replyCtx->sendReply(response.dump(), true);
     });
 
     // HTTP Route: Async task processing
-    server.route("post", "/api/task", [&taskProcessor](auto *res, auto * /*req*/, auto replyCtx)
+    server.route("POST", "/api/task", [&taskProcessor](auto *res, auto * /*req*/, auto replyCtx, const auto & /*match*/)
     {
         auto body = std::make_shared<std::string>();
-        
-        // Accumulate body
+
         res->onData([replyCtx, &taskProcessor, body](std::string_view chunk, bool isLast)
         {
             body->append(chunk.data(), chunk.size());
@@ -151,7 +160,7 @@ int main()
                     std::string taskId = reqData.value("taskId", "unknown");
                     taskProcessor.processTask(taskId, replyCtx);
                 }
-                catch (const std::exception& e)
+                catch (const std::exception &e)
                 {
                     json error = {{"error", e.what()}};
                     replyCtx->sendReply(error.dump(), true);
@@ -162,7 +171,8 @@ int main()
         res->onAborted([]() {});
     });
 
-    server.route("post", "/api/notify", [&server](auto *res, auto * /*req*/, auto replyCtx)
+    // HTTP Route: Send notification to specific client
+    server.route("POST", "/api/notify", [&server](auto *res, auto * /*req*/, auto replyCtx, const auto & /*match*/)
     {
         auto body = std::make_shared<std::string>();
         const size_t MAX_PAYLOAD_SIZE = 64 * 1024; // 64KB for notifications
@@ -197,7 +207,7 @@ int main()
                     json response = {{"success", sent}, {"clientId", clientId}};
                     replyCtx->sendReply(response.dump(), true);
                 }
-                catch (const std::exception& e)
+                catch (const std::exception &e)
                 {
                     json error = {{"error", e.what()}};
                     replyCtx->sendReply(error.dump(), true);
@@ -205,9 +215,10 @@ int main()
             }
         });
 
-        res->onAborted([]() {}); 
+        res->onAborted([]() {});
     });
 
+    // WebSocket: Handle messages
     server.onWSMessage([&taskProcessor](std::string_view message, auto connection, auto replyCtx, bool isBinary)
     {
         if (isBinary)
@@ -230,7 +241,6 @@ int main()
                     {"clientId", connection->getId()},
                     {"protocol", connection->getProtocol()} // Echo back the protocol
                 };
-                // Use the context reply for simplicity in request/response patterns
                 replyCtx->sendReply(response.dump(), true);
             }
             else if (action == "ping")
@@ -240,7 +250,6 @@ int main()
             }
             else if (action == "task")
             {
-                // Example of async task processing
                 std::string taskId = msgData.value("taskId", "unknown");
                 taskProcessor.processTask(taskId, replyCtx);
             }
@@ -252,22 +261,67 @@ int main()
         }
         catch (const std::exception& e)
         {
-            // connection->send is safe to call from here (same thread) or anywhere else
             json error = {{"type", "error"}, {"message", e.what()}};
             connection->send(error.dump());
         }
     });
 
-    // Optional: Handle new connections
+    // HTTP Route: Broadcast to all clients
+    server.route("POST", "/api/broadcast", [&server](auto *res, auto * /*req*/, auto replyCtx, const auto & /*match*/)
+    {
+        auto body = std::make_shared<std::string>();
+        constexpr size_t MAX_PAYLOAD_SIZE = 64 * 1024;
+
+        res->onData([replyCtx, &server, body, res](std::string_view chunk, bool isLast)
+        {
+            if (body->size() + chunk.size() > MAX_PAYLOAD_SIZE)
+            {
+                res->writeStatus("413 Payload Too Large")->end();
+                return;
+            }
+
+            body->append(chunk.data(), chunk.size());
+
+            if (isLast)
+            {
+                try
+                {
+                    auto reqData = json::parse(*body);
+                    std::string message = reqData.value("message", "");
+
+                    if (message.empty())
+                    {
+                        json error = {{"error", "Missing message"}};
+                        replyCtx->sendReply(error.dump(), true);
+                        return;
+                    }
+
+                    json notification = {{"type", "broadcast"}, {"message", message}};
+                    server.broadcast(std::make_shared<std::string>(notification.dump()));
+
+                    json response = {{"success", true}, {"recipients", server.getConnectionCount()}};
+                    replyCtx->sendReply(response.dump(), true);
+                }
+                catch (const std::exception &e)
+                {
+                    json error = {{"error", e.what()}};
+                    replyCtx->sendReply(error.dump(), true);
+                }
+            }
+        });
+
+        res->onAborted([]() {});
+    });
+
+    // WebSocket: Handle new connections
     server.onWSOpen([](auto connection)
-    { 
+    {
         std::cout << "New connection: " << connection->getId() << " | Protocol: " << (connection->getProtocol().empty() ? "(none)" : connection->getProtocol()) << std::endl;
-        // Send initial welcome message
         json welcome = {{"type", "welcome"}, {"id", connection->getId()}};
         connection->send(welcome.dump());
     });
 
-    // Optional: Handle connection close
+    // WebSocket: Handle connection close
     server.onWSClose([](const std::string &connId, int code, std::string_view message)
     {
         std::cout << "Connection closed: " << connId << " | Code: " << code << " | Reason: " << message << std::endl; 
@@ -282,8 +336,11 @@ int main()
     std::cin.get();
 
     std::cout << "Shutting down..." << std::endl;
+    
+    // STOP notifier FIRST to prevent it from broadcasting to a dying server
     notifier.stop();
     server.stop();
+    std::cout << "Server stopped." << std::endl;
 
     return 0;
 }

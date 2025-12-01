@@ -29,4 +29,5 @@ target_link_libraries(appsvc
     websockets_shared
     uriparser::uriparser
 )
+
 copy_runtime_dependencies(appsvc)

@@ -11,7 +11,15 @@ project(appmesh LANGUAGES CXX VERSION 2.2.1)
 # C++ flag
 ##########################################################################
 if(NOT WIN32)
-    set(CMAKE_CXX_STANDARD 14)
+    message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+    # TODO: Although GNU 7 supports C++17, log4cpp is incompatible with it, temporarily require GNU 8 or higher for C++17.
+    if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0) OR
+       (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 6.0))
+        set(CMAKE_CXX_STANDARD 17)
+    else()
+        set(CMAKE_CXX_STANDARD 14)
+    endif()
+    message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -52,7 +60,7 @@ elseif (BUILD_TYPE_UPPERCASE STREQUAL "ASAN")
     # https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
     set(CMAKE_CXX_FLAGS_ASAN "${CMAKE_CXX_FLAGS_ASAN} -Wall -ggdb3 -O0 -g -fsanitize=address -fno-omit-frame-pointer")
     set(CMAKE_EXE_LINKER_FLAGS_ASAN "${CMAKE_EXE_LINKER_FLAGS_ASAN} -fsanitize=address -lasan -lstdc++")
-else ()
+else()
     message(FATAL_ERROR "Invalid build type: ${CMAKE_BUILD_TYPE}")
 endif()
 

@@ -20,6 +20,10 @@
 
 #include "protoc/ProtobufHelper.h"
 
+namespace WSS
+{
+	class ReplyContext;
+}
 class HttpRequest;
 struct HttpRequestMsg;
 using RequestQueue = moodycamel::BlockingConcurrentQueue<std::shared_ptr<HttpRequestMsg>>;
@@ -62,7 +66,7 @@ public:
 	static bool processRequest(std::shared_ptr<HttpRequest> &request);
 	static void closeTcpHandler(int tcpHandlerId);
 	const int &id();
-	static void queueInputRequest(std::shared_ptr<std::vector<std::uint8_t>> &data, int tcpHandlerId, void *wsSessionId = NULL);
+	static void queueInputRequest(ByteBuffer &data, int tcpHandlerID, void *lwsSessionID = NULL, std::shared_ptr<WSS::ReplyContext> uwsContext = nullptr);
 
 protected:
 	// = Demultiplexing hooks.

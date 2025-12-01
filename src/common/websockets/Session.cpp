@@ -22,7 +22,7 @@ WebSocketSession::WebSocketSession(lws *lws)
 void WebSocketSession::handleRequest(const WSRequest &req)
 {
     auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
-    auto request = HttpRequest::deserializeWS(data, req.m_session_ref);
+    auto request = HttpRequest::deserialize(data, -1, req.m_session_ref, nullptr);
     TcpHandler::processRequest(request);
 }
 

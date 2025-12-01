@@ -10,10 +10,12 @@
 #include "../application/Application.h"
 #include "../process/AppProcess.h"
 #include "../security/HMACVerifier.h"
-#include "HttpRequest.h"
 #include "RestHandler.h"
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
+#include "uwebsockets/ReplyContext.h"
+
+#include "HttpRequest.h"
 
 HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	: m_uuid(std::move(request.uuid)),
@@ -23,8 +25,7 @@ HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
-	  m_tcpHandlerId(tcpHandlerId),
-	  m_wsSessionId(0)
+	  m_tcpHandlerId(tcpHandlerId), m_wsSessionId(0), m_replyContext(nullptr)
 {
 }
 
@@ -70,31 +71,16 @@ bool HttpRequest::reply(web::http::status_code status, const std::string &body_d
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserializeTCP(const ByteBuffer &input, int tcpHandlerId)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, int tcpHandlerId, const void *wsi, std::shared_ptr<WSS::ReplyContext> ctx)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
 	Request req;
 	if (req.deserialize(input))
 	{
-		return std::make_shared<HttpRequest>(std::move(req), tcpHandlerId);
-	}
-	else
-	{
-		LOG_ERR << fname << "failed to decode tcp raw data";
-	}
-	return nullptr;
-}
-
-std::shared_ptr<HttpRequest> HttpRequest::deserializeWS(const ByteBuffer &input, const void *wsi)
-{
-	const static char fname[] = "HttpRequest::deserialize() ";
-
-	Request req;
-	if (req.deserialize(input))
-	{
-		auto request = std::make_shared<HttpRequest>(std::move(req), -1);
+		auto request = std::make_shared<HttpRequest>(std::move(req), tcpHandlerId);
 		request->m_wsSessionId = wsi;
+		request->m_replyContext = ctx;
 		return request;
 	}
 	else
@@ -157,6 +143,12 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		resp->m_payload = std::vector<std::uint8_t>(reinterpret_cast<const unsigned char *>(data->data()), reinterpret_cast<const unsigned char *>(data->data()) + data->size());
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 		return true;
+	}
+	else if (m_replyContext)
+	{
+		auto data = response->serialize();
+		auto str = std::string(data->data(), data->size());
+		m_replyContext->sendReply(std::move(str), false, true);
 	}
 
 	return false;

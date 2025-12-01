@@ -10,6 +10,10 @@
 #include "protoc/ProtobufHelper.h"
 
 class WebSocketSession;
+namespace WSS
+{
+	class ReplyContext;
+}
 
 // HttpRequest is a wrapper of <web::http::http_request>
 //   - Used for REST server to forward requests to TCP server and wait for TCP result before responding to REST client
@@ -53,8 +57,7 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
-	static std::shared_ptr<HttpRequest> deserializeTCP(const ByteBuffer &input, int tcpHandlerId);
-	static std::shared_ptr<HttpRequest> deserializeWS(const ByteBuffer &input, const void *wsi);
+	static std::shared_ptr<HttpRequest> deserialize(const ByteBuffer &input, int tcpHandlerId, const void *wsi, std::shared_ptr<WSS::ReplyContext> ctx);
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;
@@ -76,6 +79,7 @@ protected:
 private:
 	const int m_tcpHandlerId;
 	const void *m_wsSessionId;
+	std::shared_ptr<WSS::ReplyContext> m_replyContext;
 };
 
 class Application;
