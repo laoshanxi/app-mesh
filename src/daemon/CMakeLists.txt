@@ -30,4 +30,12 @@ target_link_libraries(appsvc
     uriparser::uriparser
 )
 
+if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
+  if(WIN32)
+    target_link_libraries(appsvc PUBLIC unofficial::uwebsockets::uwebsockets)
+  else()
+    target_link_libraries(appsvc PUBLIC uSockets)
+  endif()
+endif()
+
 copy_runtime_dependencies(appsvc)

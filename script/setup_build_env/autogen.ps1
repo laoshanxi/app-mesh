@@ -222,7 +222,8 @@ function Install-HeaderOnlyLibraries {
     
     # log4cpp
     Write-Host "Installing log4cpp..." -ForegroundColor Yellow
-    Save-File "https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.4.tar.gz" "log4cpp.tar.gz"
+    $log4cppUrl = "https://sourceforge.net/projects/log4cpp/files/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.4.tar.gz/download"
+    curl -L -o log4cpp.tar.gz $log4cppUrl
     tar -xvf log4cpp.tar.gz
     Set-Location log4cpp
     New-Item -ItemType Directory -Force -Path "build" | Out-Null
@@ -596,10 +597,6 @@ include_directories("C:/local/include")
 link_directories("C:/local/lib")
 list(PREPEND CMAKE_PREFIX_PATH "C:/local")
 
-# C++ Standard
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 # Optimization flags
 set(CMAKE_CXX_FLAGS_RELEASE_INIT "/O2 /Ob2 /DNDEBUG /MD")
 set(CMAKE_C_FLAGS_RELEASE_INIT "/O2 /Ob2 /DNDEBUG /MD")
@@ -610,6 +607,7 @@ add_compile_definitions(
     _WIN32
     _WINDOWS
     NOMINMAX
+    NOSEND
     WIN32_LEAN_AND_MEAN
 )
 

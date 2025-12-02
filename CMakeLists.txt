@@ -10,19 +10,21 @@ project(appmesh LANGUAGES CXX VERSION 2.2.1)
 ##########################################################################
 # C++ flag
 ##########################################################################
-if(NOT WIN32)
-    message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-    # TODO: Although GNU 7 supports C++17, log4cpp is incompatible with it, temporarily require GNU 8 or higher for C++17.
-    if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0) OR
-       (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 6.0))
-        set(CMAKE_CXX_STANDARD 17)
-    else()
-        set(CMAKE_CXX_STANDARD 14)
+if(WIN32)
+    set(CMAKE_CXX_STANDARD 17)
+    if(MSVC)
+        add_compile_options(/permissive-)
     endif()
-    message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
+    find_package(unofficial-uwebsockets CONFIG REQUIRED)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+       CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
+    set(CMAKE_CXX_STANDARD 14)
+else()
+    set(CMAKE_CXX_STANDARD 17)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
 
 set(BUILD_TAG ${PROJECT_NAME}_${PROJECT_VERSION}_${APPMESH_BUILD_DATE})
 add_compile_options(-DBUILD_TAG=${BUILD_TAG})
