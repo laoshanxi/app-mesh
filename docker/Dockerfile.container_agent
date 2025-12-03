@@ -1,4 +1,4 @@
-FROM python:3.13.7-slim-bookworm AS build_stage
+FROM python:3.14.1-slim-bookworm AS build_stage
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -17,7 +17,7 @@ RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir appmesh && \
     wget --no-check-certificate https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/cli/appmesh_agent.py -P /appmesh/
 
-FROM python:3.13.7-slim-bookworm
+FROM python:3.14.1-slim-bookworm
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
