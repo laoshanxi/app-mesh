@@ -42,7 +42,7 @@ public:
     bool start(int worker_count);
 
     // Shutdown service gracefully
-    void shutdown();
+    void stop();
 
     // Enqueue outgoing/incoming
     void enqueueOutgoingResponse(std::unique_ptr<WSResponse> &&resp);

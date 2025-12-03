@@ -44,8 +44,9 @@ REST:
   PrometheusExporterListenPort: 0
 
   # Number of threads to handle HTTP requests.
-  # Increase this number based on expected concurrent load.
-  HttpThreadPoolSize: 2
+  WorkerThreadPoolSize: 2
+  # Number of threads to handle I/O operations.
+  IOThreadPoolSize: 2
 
   # JWT Authentication Configuration
   JWT:

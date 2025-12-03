@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <map>
 
 namespace WSS
 {
@@ -12,26 +13,27 @@ namespace WSS
     class ReplyContext
     {
     public:
-        using ReplyCallback = std::function<void(std::string &&data, bool isLast, bool isBinary)>;
+        using Headers = std::map<std::string, std::string>;
+        using ReplyCallback = std::function<void(std::string &&data, const std::string &status, const Headers &headers, const std::string &contentType, bool isLast, bool isBinary)>;
+        enum class ProtocolType { Http, WebSocket };
 
-        explicit ReplyContext(ReplyCallback callback)
-            : m_callback(std::move(callback)), m_completed(false) {}
+        explicit ReplyContext(ProtocolType protocolType, ReplyCallback callback)
+            : m_protocolType(protocolType), m_callback(std::move(callback)) {}
 
         ReplyContext(const ReplyContext &) = delete;
         ReplyContext &operator=(const ReplyContext &) = delete;
 
-        void sendReply(std::string &&data, bool isLast = false, bool isBinary = true)
+        // Send HTTP response
+        void replyHTTP(std::string &&httpStatus, std::string &&body, Headers &&headers, std::string &&contentType)
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            if (!m_completed && m_callback)
-            {
-                m_callback(std::move(data), isLast, isBinary);
-                if (isLast)
-                {
-                    m_completed = true;
-                    m_callback = nullptr;
-                }
-            }
+            invokeCallback(std::move(body), httpStatus, headers, contentType, true, false);
+        }
+
+        // Send WebSocket response
+        void replyData(std::string &&data, bool isLast = false, bool isBinary = true)
+        {
+            static const Headers emptyHeaders;
+            invokeCallback(std::move(data), "200 OK", emptyHeaders, "text/plain", isLast, isBinary);
         }
 
         bool isCompleted() const
@@ -40,10 +42,34 @@ namespace WSS
             return m_completed;
         }
 
+        ProtocolType getProtocolType() const { return m_protocolType; }
+
     private:
+        void invokeCallback(std::string &&data, const std::string &status, const Headers &headers, const std::string &contentType, bool isLast, bool isBinary)
+        {
+            ReplyCallback cb = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                if (!m_completed && m_callback)
+                {
+                    if (isLast)
+                    {
+                        m_completed = true;
+                        cb = std::move(m_callback); // Move out to destroy
+                    }
+                    else
+                    {
+                        cb = m_callback;
+                    }
+                }
+                if (cb) cb(std::move(data), status, headers, contentType, isLast, isBinary);
+            }
+        }
+
+        ProtocolType m_protocolType;
         ReplyCallback m_callback;
-        bool m_completed;
-        mutable std::mutex m_mutex; // TODO: review whether this is neccesary, m_completed can be atomic, and m_callback set null?
+        bool m_completed{false};
+        mutable std::mutex m_mutex;
     };
 }
-#endif // REPLY_CONTEXT_H
+#endif

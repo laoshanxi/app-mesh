@@ -11,13 +11,14 @@
 
 #include <ace/OS.h>
 #include <boost/filesystem.hpp>
-#include <log4cpp/Category.hh>
-#include <log4cpp/Priority.hh>
 #include <nlohmann/json.hpp>
 #include <qrcodegen.hpp>
 #include <yaml-cpp/yaml.h>
-namespace fs = boost::filesystem;
 
+#include "HttpHeaderMap.h"
+#include "StreamLogger.h"
+
+namespace fs = boost::filesystem;
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
 template <typename TargetType, typename SourceType>
@@ -26,11 +27,6 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	auto result = std::dynamic_pointer_cast<TargetType>(ptr);
 	return result;
 }
-
-#define LOG_DBG log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG
-#define LOG_INF log4cpp::Category::getRoot() << log4cpp::Priority::INFO
-#define LOG_WAR log4cpp::Category::getRoot() << log4cpp::Priority::WARN
-#define LOG_ERR log4cpp::Category::getRoot() << log4cpp::Priority::ERROR
 
 // Expand micro variable (microkey=microvalue)
 #define __MICRO_KEY__(str) #str				  // No expand micro
@@ -67,6 +63,10 @@ namespace std
 #if (__GNUC__ < 4) || (__GNUC__ == 4 && __GNUC_MINOR__ < 8) || (__GNUC__ == 4 && __GNUC_MINOR__ == 8 && __GNUC_PATCHLEVEL__ <= 5)
 #define COMPILER_LOWER_EQUAL_485
 #endif
+#endif
+
+#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+#define HAVE_UWEBSOCKETS 1
 #endif
 
 template <typename T>
@@ -132,7 +132,8 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
 #define DEFAULT_SCHEDULE_INTERVAL 2
-#define DEFAULT_HTTP_THREAD_POOL_SIZE 6
+#define DEFAULT_WORKER_THREAD_POOL_SIZE 2
+#define DEFAULT_IO_THREAD_POOL_SIZE 2
 #define REST_REQUEST_TIMEOUT_SECONDS 60
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
 #define WEBSOCKET_FILE_OPERATION_TIMEOUT 30
@@ -215,7 +216,7 @@ public:
 	// OS related
 	static unsigned long long getThreadId();
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
-	static void applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers);
+	static void applyFilePermission(const std::string &file, HttpHeaderMap headers);
 	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
 	static std::map<std::string, std::string> getenvs();
 
@@ -320,7 +321,8 @@ public:
 #define JSON_KEY_JWT_Keycloak_ClientID "client_id"
 #define JSON_KEY_JWT_Keycloak_ClientSecret "client_secret"
 
-#define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
+#define JSON_KEY_WorkerThreadPoolSize "WorkerThreadPoolSize"
+#define JSON_KEY_IOThreadPoolSize "IOThreadPoolSize"
 #define JSON_KEY_Roles "Roles"
 #define JSON_KEY_Groups "Groups"
 #define JSON_KEY_Labels "Labels"
