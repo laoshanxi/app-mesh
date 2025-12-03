@@ -11,13 +11,13 @@
 
 #include <ace/OS.h>
 #include <boost/filesystem.hpp>
-#include <log4cpp/Category.hh>
-#include <log4cpp/Priority.hh>
 #include <nlohmann/json.hpp>
 #include <qrcodegen.hpp>
 #include <yaml-cpp/yaml.h>
-namespace fs = boost::filesystem;
 
+#include "StreamLogger.h"
+
+namespace fs = boost::filesystem;
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
 template <typename TargetType, typename SourceType>
@@ -26,11 +26,6 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	auto result = std::dynamic_pointer_cast<TargetType>(ptr);
 	return result;
 }
-
-#define LOG_DBG log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG
-#define LOG_INF log4cpp::Category::getRoot() << log4cpp::Priority::INFO
-#define LOG_WAR log4cpp::Category::getRoot() << log4cpp::Priority::WARN
-#define LOG_ERR log4cpp::Category::getRoot() << log4cpp::Priority::ERROR
 
 // Expand micro variable (microkey=microvalue)
 #define __MICRO_KEY__(str) #str				  // No expand micro
@@ -67,6 +62,10 @@ namespace std
 #if (__GNUC__ < 4) || (__GNUC__ == 4 && __GNUC_MINOR__ < 8) || (__GNUC__ == 4 && __GNUC_MINOR__ == 8 && __GNUC_PATCHLEVEL__ <= 5)
 #define COMPILER_LOWER_EQUAL_485
 #endif
+#endif
+
+#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+#define HAVE_UWEBSOCKETS 1
 #endif
 
 template <typename T>

@@ -5,7 +5,6 @@
 
 #include "../../common/Utility.h"
 #include "../../common/json.h"
-#include "../../common/websockets/WebSocketService.h"
 #include "../Configuration.h"
 #include "../application/Application.h"
 #include "../process/AppProcess.h"
@@ -14,6 +13,9 @@
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 #include "uwebsockets/ReplyContext.h"
+#if !defined(HAVE_UWEBSOCKETS)
+#include "../../common/websockets/WebSocketService.h"
+#endif
 
 #include "HttpRequest.h"
 
@@ -134,6 +136,14 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		// TCP protocol
 		return TcpHandler::replyTcp(m_tcpHandlerId, std::move(response));
 	}
+#if defined(HAVE_UWEBSOCKETS)
+	else if (m_replyContext)
+	{
+		auto data = response->serialize();
+		auto str = std::string(data->data(), data->size());
+		m_replyContext->sendReply(std::move(str), false, true);
+	}
+#else
 	else if (m_wsSessionId)
 	{
 		// WebSocket protocol
@@ -144,12 +154,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 		return true;
 	}
-	else if (m_replyContext)
-	{
-		auto data = response->serialize();
-		auto str = std::string(data->data(), data->size());
-		m_replyContext->sendReply(std::move(str), false, true);
-	}
+#endif
 
 	return false;
 }
