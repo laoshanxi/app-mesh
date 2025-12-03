@@ -14,6 +14,12 @@ add_library(${PROJECT_NAME}::common ALIAS common)
 ##########################################################################
 # Link
 ##########################################################################
+if(WIN32)
+  # TODO: Windows have link issue, so temprary use header only
+  target_link_libraries(common PRIVATE spdlog::spdlog_header_only)
+else()
+  target_link_libraries(common PUBLIC spdlog::spdlog)
+endif()
 target_link_libraries(common
   PRIVATE
     ${CURL_LIB}
@@ -21,7 +27,6 @@ target_link_libraries(common
     ${ACE_LIBRARY}
     ${ACE_SSL_LIBRARY}
     libwebsockets
-    log4cpp
     yaml-cpp::yaml-cpp
     Boost::regex
     Boost::system

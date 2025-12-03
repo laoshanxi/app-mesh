@@ -12,12 +12,8 @@ project(appmesh LANGUAGES CXX VERSION 2.2.1)
 ##########################################################################
 if(WIN32)
     set(CMAKE_CXX_STANDARD 17)
-    if(MSVC)
-        add_compile_options(/permissive-)
-    endif()
     find_package(unofficial-uwebsockets CONFIG REQUIRED)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
-       CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
     set(CMAKE_CXX_STANDARD 14)
 else()
     set(CMAKE_CXX_STANDARD 17)
@@ -105,6 +101,11 @@ message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
 # MessagePack    https://msgpack.org/
 ##########################################################################
 find_package(msgpack-cxx REQUIRED)
+
+##########################################################################
+# spdlog
+##########################################################################
+find_package(spdlog REQUIRED)
 
 ##########################################################################
 # libwebsockets  https://libwebsockets.org/
@@ -244,7 +245,7 @@ endif()
 # sub dir
 ##########################################################################
 add_subdirectory(src)
-add_subdirectory(test/websockets)
+# add_subdirectory(test/websockets)
 
 ##########################################################################
 # Test

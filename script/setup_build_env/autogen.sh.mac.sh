@@ -29,7 +29,7 @@ BREW_PACKAGES=(
 	cmake
 	go
 	openssl@3
-	log4cpp
+	spdlog
 	openldap
 	cryptopp
 	yaml-cpp

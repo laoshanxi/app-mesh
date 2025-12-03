@@ -53,6 +53,7 @@
 	(VERBOSE_ARGS, "Enable verbose output")								\
 	(HELP_ARGS, "Display command usage and exit")
 
+#define SET_LOG_LEVEL(verbose) spdlog::set_level((verbose) ? spdlog::level::debug : spdlog::level::info)
 #define GET_USER_NAME_PASS                                               	\
 	if (m_commandLineVariables.count(USERNAME))                          	\
 	{                                                                    	\
@@ -66,7 +67,7 @@
 			m_userpwd = inputPasswd(m_username);							\
 		}																	\
 	}                                                                    	\
-	log4cpp::Category::getRoot().setPriority(m_commandLineVariables.count(VERBOSE) ? log4cpp::Priority::DEBUG : log4cpp::Priority::INFO);
+	SET_LOG_LEVEL(m_commandLineVariables.count(VERBOSE));
 
 #define HELP_ARG_CHECK_WITH_RETURN                                                                                                  \
 	GET_USER_NAME_PASS                                                                                                              \
