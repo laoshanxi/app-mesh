@@ -67,7 +67,6 @@ if [ -f "/usr/bin/yum" ]; then
     apt install -y python3-pip
     apt install -y zlib1g-dev #for libcurl
     #apt install -y libboost-all-dev libace-dev libace
-    #apt install -y liblog4cpp5-dev
 fi
 python3 -m pip install --upgrade pip || python3 -m pip install --break-system-packages --upgrade pip || true
 
@@ -139,28 +138,25 @@ $WGET_A https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
 unzip -o include.zip
 mv include/nlohmann /usr/local/include/
 
-# build log4cpp:
-# https://my.oschina.net/u/1983790/blog/1587568
-if [ "$architecture" = "arm64" ]; then
-    # arm64 will failed with log4cpp build, use package directly
-    apt install -y liblog4cpp5-dev
+# spdlog
+if [ -f "/usr/bin/yum" ]; then
+    yum install -y spdlog-devel
 else
-    # yum install log4cpp -y
-    if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-        $WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
-        tar zxvf log4cpp-1.1.3.tar.gz >/dev/null
-    else
-        $WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.4.tar.gz
-        tar zxvf log4cpp-1.1.4.tar.gz >/dev/null
-    fi
-    cd log4cpp/
-    ./autogen.sh
-    ./configure
-    make -j"$(($(nproc) / 2))"
-    make install
-    ls -al /usr/local/lib*/liblog4cpp.a
+    apt install -y libspdlog-dev
 fi
-cd $ROOTDIR
+# build spdlog for old OS
+GCC_MAJOR_VER=$(gcc -dumpversion 2>/dev/null | cut -d'.' -f1 | tr -dc '0-9')
+if [ -n "$GCC_MAJOR_VER" ] && [ "$GCC_MAJOR_VER" -lt 8 ]; then
+    echo "Build spdlog from source"
+    if [ -f "/usr/bin/yum" ]; then
+        git clone -b v1.9.2 --depth 1 https://github.com/gabime/spdlog.git
+    else
+        git clone --depth 1 https://github.com/gabime/spdlog.git
+    fi
+    cd spdlog && mkdir build && cd build
+    cmake .. && cmake --build . && cmake --install .
+    cd $ROOTDIR
+fi
 
 # build ACE
 if [ true ]; then

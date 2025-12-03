@@ -5,7 +5,6 @@
 
 #include "../../common/Utility.h"
 #include "../../common/json.h"
-#include "../../common/websockets/WebSocketService.h"
 #include "../Configuration.h"
 #include "../application/Application.h"
 #include "../process/AppProcess.h"
@@ -14,6 +13,9 @@
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 #include "uwebsockets/ReplyContext.h"
+#if !defined(HAVE_UWEBSOCKETS)
+#include "../../common/websockets/WebSocketService.h"
+#endif
 
 #include "HttpRequest.h"
 
@@ -24,7 +26,7 @@ HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	  m_remote_address(std::move(request.client_addr)),
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
-	  m_headers(std::move(request.headers)),
+	  m_headers(HttpHeaderMap(request.headers)),
 	  m_tcpHandlerId(tcpHandlerId), m_wsSessionId(0), m_replyContext(nullptr)
 {
 }
@@ -134,6 +136,29 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		// TCP protocol
 		return TcpHandler::replyTcp(m_tcpHandlerId, std::move(response));
 	}
+#if defined(HAVE_UWEBSOCKETS)
+	else if (m_replyContext)
+	{
+		if (m_replyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
+		{
+			// HTTP protocol
+			m_replyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::map<std::string, std::string>(headers), std::string(bodyType));
+			return true;
+		}
+		else if (m_replyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
+		{
+			// WebSocket protocol
+			auto data = response->serialize();
+			m_replyContext->replyData(std::string(data->data(), data->size()), false, true);
+			return true;
+		}
+		else
+		{
+			LOG_ERR << fname << "Unknown reply context protocol type";
+			return false;
+		}
+	}
+#else
 	else if (m_wsSessionId)
 	{
 		// WebSocket protocol
@@ -144,12 +169,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 		return true;
 	}
-	else if (m_replyContext)
-	{
-		auto data = response->serialize();
-		auto str = std::string(data->data(), data->size());
-		m_replyContext->sendReply(std::move(str), false, true);
-	}
+#endif
 
 	return false;
 }

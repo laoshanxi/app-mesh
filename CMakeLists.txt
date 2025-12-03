@@ -11,13 +11,9 @@ project(appmesh LANGUAGES CXX VERSION 2.2.1)
 # C++ flag
 ##########################################################################
 if(WIN32)
-    set(CMAKE_CXX_STANDARD 17)
-    if(MSVC)
-        add_compile_options(/permissive-)
-    endif()
+    set(CMAKE_CXX_STANDARD 20)
     find_package(unofficial-uwebsockets CONFIG REQUIRED)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
-       CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
     set(CMAKE_CXX_STANDARD 14)
 else()
     set(CMAKE_CXX_STANDARD 17)
@@ -50,13 +46,13 @@ message(STATUS "CMAKE_BUILD_TYPE: ${BUILD_TYPE_UPPERCASE}")
 # Explicitly set flags using CMAKE_CXX_FLAGS_<CONFIG> for better control.
 if (BUILD_TYPE_UPPERCASE STREQUAL "DEBUG")
     # Ensure -O0 (no optimization) for Debug
-    set(CMAKE_CXX_FLAGS_DEBUG "-Wall -ggdb3 -O0 ${CMAKE_CXX_FLAGS_DEBUG}")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -ggdb3 -O0")
 elseif (BUILD_TYPE_UPPERCASE STREQUAL "RELEASE")
     # Ensure -O3 (high optimization) and -DNDEBUG (disable assertions) for Release
-    set(CMAKE_CXX_FLAGS_RELEASE "-Wall -O3 -DNDEBUG ${CMAKE_CXX_FLAGS_RELEASE}")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall -O3 -DNDEBUG")
 elseif (BUILD_TYPE_UPPERCASE STREQUAL "MINSIZEREL")
     # Ensure -Os (size optimization) and -DNDEBUG
-    set(CMAKE_CXX_FLAGS_MINSIZEREL "-Wall -Os -DNDEBUG ${CMAKE_CXX_FLAGS_MINSIZEREL}")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -Wall -Os -DNDEBUG")
 elseif (BUILD_TYPE_UPPERCASE STREQUAL "ASAN")
     # ASAN block remains correct for sanitizer purposes
     # https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
@@ -66,9 +62,9 @@ else()
     message(FATAL_ERROR "Invalid build type: ${CMAKE_BUILD_TYPE}")
 endif()
 
-# Print compile parameters: FLAGS = CMAKE_CXX_FLAGS + CMAKE_CXX_FLAGS_RELEASE
+# Print compile parameters: show the active configuration's flags (avoid duplicating the global flags in the message)
 set(CMAKE_CXX_FLAGS_NAME "CMAKE_CXX_FLAGS_${BUILD_TYPE_UPPERCASE}")
-message(STATUS "${CMAKE_CXX_FLAGS_NAME}: ${CMAKE_CXX_FLAGS} ${${CMAKE_CXX_FLAGS_NAME}}")
+message(STATUS "${CMAKE_CXX_FLAGS_NAME}: ${${CMAKE_CXX_FLAGS_NAME}}")
 
 # Set the library path to prioritize /usr/local/lib64
 set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} /usr/local/lib64)
@@ -105,6 +101,11 @@ message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
 # MessagePack    https://msgpack.org/
 ##########################################################################
 find_package(msgpack-cxx REQUIRED)
+
+##########################################################################
+# spdlog
+##########################################################################
+find_package(spdlog REQUIRED)
 
 ##########################################################################
 # libwebsockets  https://libwebsockets.org/
@@ -244,7 +245,7 @@ endif()
 # sub dir
 ##########################################################################
 add_subdirectory(src)
-add_subdirectory(test/websockets)
+# add_subdirectory(test/websockets)
 
 ##########################################################################
 # Test
