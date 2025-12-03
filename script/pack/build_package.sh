@@ -202,7 +202,7 @@ resolve_macos_dylib_path() {
 }
 
 copy_libraries() {
-    local dependencies=(boost curl ACE libssl libcrypto log4cpp yaml websockets uriparser)
+    local dependencies=(boost curl ACE libssl libcrypto yaml websockets uriparser spdlog libfmt)
     for bin_path in "${CMAKE_BINARY_DIR}/gen/appc" "${CMAKE_BINARY_DIR}/gen/appsvc"; do
         for dep in "${dependencies[@]}"; do
             info "Scanning $bin_path for dependency: $dep"
