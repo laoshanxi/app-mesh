@@ -135,7 +135,7 @@ class AppMeshClientWSS(AppMeshClient):
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
             AppMeshClient._HTTP_HEADER_KEY_AUTH: resp.headers[self._HTTP_HEADER_KEY_AUTH],
         }
-        path = "/appmesh/file/download"
+        path = "/appmesh/file/download/ws"
         rest_url = parse.urljoin(self.base_url, path)
         r = requests.get(url=rest_url, stream=True, timeout=120, headers=header, verify=self.ssl_verify)
         if r.status_code == HTTPStatus.OK:
@@ -169,7 +169,7 @@ class AppMeshClientWSS(AppMeshClient):
             raise FileNotFoundError(f"Local file not found: {local_file}")
 
         # Upload file with http
-        path = "/appmesh/file/upload"
+        path = "/appmesh/file/upload/ws"
         header = {
             AppMeshClient._HTTP_HEADER_KEY_AUTH: resp.headers[self._HTTP_HEADER_KEY_AUTH],
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,

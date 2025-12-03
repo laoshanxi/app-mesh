@@ -269,6 +269,7 @@ asan/
 
 .vscode
 b/
+c/
 _build
 .cache
 api/

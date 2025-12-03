@@ -1,7 +1,6 @@
 #include <ctime>
 #include <curl/curl.h>
 #include <fstream>
-#include <log4cpp/Priority.hh>
 #include <mutex>
 #include <openssl/ssl.h>
 #include <sstream>
@@ -582,7 +581,8 @@ void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 
 void RestClient::setSslConfig(CURL *curl)
 {
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, log4cpp::Category::getRoot().getPriority() == log4cpp::Priority::DEBUG);
+	bool verbose = spdlog::default_logger()->level() <= spdlog::level::debug;
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
 
 	const bool verify = m_sslConfig.m_verify_client || m_sslConfig.m_verify_server;
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify);

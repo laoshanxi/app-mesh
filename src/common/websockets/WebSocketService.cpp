@@ -45,7 +45,7 @@ WebSocketService::WebSocketService()
 
 WebSocketService::~WebSocketService()
 {
-    shutdown();
+    stop();
 }
 
 WebSocketService *WebSocketService::instance()
@@ -254,9 +254,9 @@ bool WebSocketService::start(int worker_count)
     return true;
 }
 
-void WebSocketService::shutdown()
+void WebSocketService::stop()
 {
-    const static char fname[] = "WebSocketService::shutdown() ";
+    const static char fname[] = "WebSocketService::stop() ";
 
     if (!m_is_running.exchange(false))
         return;
@@ -335,13 +335,13 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         }
 
         // 3. File Download
-        if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download" && !ssnInfo->ext_x_file_path.empty())
+        if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download/ws" && !ssnInfo->ext_x_file_path.empty())
         {
             return lws_serve_http_file(wsi, ssnInfo->ext_x_file_path.c_str(), "application/octet-stream", nullptr, 0);
         }
 
         // 4. File Upload Setup
-        if (ssnInfo->method == "POST" && ssnInfo->path == "/appmesh/file/upload" && !ssnInfo->ext_x_file_path.empty())
+        if (ssnInfo->method == "POST" && ssnInfo->path == "/appmesh/file/upload/ws" && !ssnInfo->ext_x_file_path.empty())
         {
             if (pss)
             {

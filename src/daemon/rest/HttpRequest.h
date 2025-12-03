@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "../../common/HttpHeaderMap.h"
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
 #include "protoc/ProtobufHelper.h"
@@ -68,7 +69,7 @@ public:
 	std::string m_remote_address;
 	std::shared_ptr<std::vector<std::uint8_t>> m_body; // Shared pointer to avoid copying large data
 	std::map<std::string, std::string> m_query;
-	std::map<std::string, std::string> m_headers;
+	HttpHeaderMap m_headers;
 
 protected:
 	// Sends REST response to client through TCP handler

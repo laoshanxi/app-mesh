@@ -334,7 +334,7 @@ void ClientHttp::downloadFile(const std::string &remoteFile, const std::string &
 
     if (preservePermissions)
     {
-        Utility::applyFilePermission(localFile, response->header);
+        Utility::applyFilePermission(localFile, HttpHeaderMap(response->header));
     }
 }
 

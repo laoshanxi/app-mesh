@@ -72,7 +72,8 @@ public:
 		nlohmann::json AsJson() const;
 
 		bool m_restEnabled;
-		int m_httpThreadPoolSize;
+		int m_workerThreadPoolSize;
+		int m_IOThreadPoolSize;
 		int m_restListenPort;
 		int m_promListenPort;
 		std::string m_restListenAddress;
@@ -132,7 +133,8 @@ public:
 	std::string getSSLCertificateKeyFile() const;
 	std::string getSSLCaPath() const;
 	bool getRestEnabled() const;
-	std::size_t getThreadPoolSize() const;
+	std::size_t getWorkerThreadPoolSize() const;
+	std::size_t getIOThreadPoolSize() const;
 	const std::string getDescription() const;
 	const std::string getPosixTimezone() const;
 

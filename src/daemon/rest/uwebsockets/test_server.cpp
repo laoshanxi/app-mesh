@@ -1,4 +1,4 @@
-#include "WSService.h"
+#include "Service.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -10,7 +10,7 @@
 
 using json = nlohmann::json;
 
-// Compile: g++ main.cpp -o server -ggdb3 -luSockets -lz -lpthread -lssl -lcrypto -std=c++17
+// Compile: g++ test_server.cpp -o server -ggdb3 -luSockets -lz -lpthread -lssl -lcrypto -std=c++17
 
 class AsyncTaskProcessor
 {
@@ -24,14 +24,14 @@ public:
         {
             // Send initial acknowledgment
             json ack = {{"status", "processing"}, {"taskId", taskId}, {"progress", 0}};
-            replyCtx->sendReply(ack.dump(), false);
+            replyCtx->replyData(ack.dump(), false);
 
             // Simulate progressive updates
             for (int i = 1; i <= 5; ++i)
             {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 json progress = {{"status", "processing"}, {"taskId", taskId}, {"progress", i * 20}};
-                replyCtx->sendReply(progress.dump(), false);
+                replyCtx->replyData(progress.dump(), false);
             }
 
             // Send final result
@@ -41,7 +41,7 @@ public:
                 {"taskId", taskId},
                 {"progress", 100},
                 {"result", "Task completed successfully"}};
-            replyCtx->sendReply(result.dump(), true);
+            replyCtx->replyData(result.dump(), true);
         }).detach();
     }
 };
@@ -125,7 +125,7 @@ int main()
     server.route("GET", "/api/status", [](auto * /*res*/, auto * /*req*/, auto replyCtx, const auto & /*match*/)
     {
         json response = {{"status", "ok"}, {"timestamp", std::time(nullptr)}};
-        replyCtx->sendReply(response.dump(), true);
+        replyCtx->replyData(response.dump(), true);
     });
 
     // HTTP Route: Regex example - get user's specific resource
@@ -140,7 +140,7 @@ int main()
             {"status", "completed"},
             {"total", 99.99}
         };
-        replyCtx->sendReply(response.dump(), true);
+        replyCtx->replyData(response.dump(), true);
     });
 
     // HTTP Route: Async task processing
@@ -163,7 +163,7 @@ int main()
                 catch (const std::exception &e)
                 {
                     json error = {{"error", e.what()}};
-                    replyCtx->sendReply(error.dump(), true);
+                    replyCtx->replyData(error.dump(), true);
                 }
             }
         });
@@ -178,7 +178,7 @@ int main()
         const size_t MAX_PAYLOAD_SIZE = 64 * 1024; // 64KB for notifications
         res->onData([replyCtx, &server, body, MAX_PAYLOAD_SIZE, res](std::string_view chunk, bool isLast)
         {
-             if (body->size() + chunk.size() > MAX_PAYLOAD_SIZE) {
+            if (body->size() + chunk.size() > MAX_PAYLOAD_SIZE) {
                 res->writeStatus("413 Payload Too Large")->end();
                 return;
             }
@@ -194,7 +194,7 @@ int main()
                     if (!reqData.contains("clientId") || !reqData.contains("message"))
                     {
                         json error = {{"error", "Missing clientId or message"}};
-                        replyCtx->sendReply(error.dump(), true);
+                        replyCtx->replyData(error.dump(), true);
                         return;
                     }
 
@@ -205,12 +205,12 @@ int main()
                     bool sent = server.sendToClient(clientId, notification.dump());
 
                     json response = {{"success", sent}, {"clientId", clientId}};
-                    replyCtx->sendReply(response.dump(), true);
+                    replyCtx->replyData(response.dump(), true);
                 }
                 catch (const std::exception &e)
                 {
                     json error = {{"error", e.what()}};
-                    replyCtx->sendReply(error.dump(), true);
+                    replyCtx->replyData(error.dump(), true);
                 }
             }
         });
@@ -241,7 +241,7 @@ int main()
                     {"clientId", connection->getId()},
                     {"protocol", connection->getProtocol()} // Echo back the protocol
                 };
-                replyCtx->sendReply(response.dump(), true);
+                replyCtx->replyData(response.dump(), true);
             }
             else if (action == "ping")
             {
@@ -292,7 +292,7 @@ int main()
                     if (message.empty())
                     {
                         json error = {{"error", "Missing message"}};
-                        replyCtx->sendReply(error.dump(), true);
+                        replyCtx->replyData(error.dump(), true);
                         return;
                     }
 
@@ -300,12 +300,12 @@ int main()
                     server.broadcast(std::make_shared<std::string>(notification.dump()));
 
                     json response = {{"success", true}, {"recipients", server.getConnectionCount()}};
-                    replyCtx->sendReply(response.dump(), true);
+                    replyCtx->replyData(response.dump(), true);
                 }
                 catch (const std::exception &e)
                 {
                     json error = {{"error", e.what()}};
-                    replyCtx->sendReply(error.dump(), true);
+                    replyCtx->replyData(error.dump(), true);
                 }
             }
         });

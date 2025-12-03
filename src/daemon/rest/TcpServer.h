@@ -18,6 +18,7 @@
 #include <ace/SSL/SSL_SOCK_Stream.h>
 #endif
 
+#include "../../common/HttpHeaderMap.h"
 #include "protoc/ProtobufHelper.h"
 
 namespace WSS
@@ -46,10 +47,10 @@ class TcpHandler : public ACE_Svc_Handler<ACE_SSL_SOCK_Stream, ACE_NULL_SYNCH>
 	struct FileUploadInfo
 	{
 		std::string m_filePath;
-		std::map<std::string, std::string> m_requestHeaders;
+		HttpHeaderMap m_requestHeaders;
 
 		// Constructor for easy creation
-		FileUploadInfo(const std::string &uploadFilePath, const std::map<std::string, std::string> &requestHeaders);
+		FileUploadInfo(const std::string &uploadFilePath, const HttpHeaderMap &requestHeaders);
 	};
 
 public:
@@ -95,7 +96,7 @@ private:
 	ResponseQueue m_respQueue;
 	boost::lockfree::spsc_queue<std::shared_ptr<FileUploadInfo>> m_pendingUploadFile;
 
-	static ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> m_handlers;
-	static RequestQueue m_messageQueue;
-	static std::atomic_int m_idGenerator;
+	static ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> g_handlers;
+	static RequestQueue g_messageQueue;
+	static std::atomic_int g_idGenerator;
 };

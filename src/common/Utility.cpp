@@ -28,14 +28,9 @@
 #include <boost/program_options/parsers.hpp>
 #include <hashidsxx/hashids.cpp>
 #include <hashidsxx/hashids.h>
-#include <log4cpp/Appender.hh>
-#include <log4cpp/Category.hh>
-#include <log4cpp/FileAppender.hh>
-#include <log4cpp/OstreamAppender.hh>
-#include <log4cpp/PatternLayout.hh>
-#include <log4cpp/Priority.hh>
-#include <log4cpp/RollingFileAppender.hh>
 #include <nlohmann/json.hpp>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "DateTime.h"
 #include "Password.h"
@@ -376,64 +371,57 @@ bool Utility::ensureSystemRoot()
 
 void Utility::initLogging(const std::string &name)
 {
-	using namespace log4cpp;
+	std::vector<spdlog::sink_ptr> sinks;
 
-	// Configure console logging with custom date format
-	auto consoleLayout = new PatternLayout();
-	consoleLayout->setConversionPattern("%d{%Y-%m-%d %H:%M:%S.%l} [%t] %p %c: %m%n");
-	auto consoleAppender = new OstreamAppender("console", &std::cout);
-	consoleAppender->setLayout(consoleLayout);
+	// Console sink
+	auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+	sinks.push_back(consoleSink);
 
-	Category &root = Category::getRoot();
-
-	// Configure rolling file logging if name is provided
+	// Rotating file sink
 	if (!name.empty())
 	{
 		auto logPath = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / name).string() + ".log";
-		auto rollingFileAppender = new RollingFileAppender(
-			"rollingFileAppender",
-			logPath,
-			20 * 1024 * 1024,
-			5,
-			true,
-			00664);
+		constexpr size_t maxFileSize = 50 * 1024 * 1024; // 50MB
+		constexpr size_t maxFiles = 5;
 
-		// Apply the same date format to the file layout
-		auto pLayout = new PatternLayout();
-		pLayout->setConversionPattern("%d{%Y-%m-%d %H:%M:%S.%l} [%t] %p %c: %m%n");
-		rollingFileAppender->setLayout(pLayout);
-		root.addAppender(rollingFileAppender);
+		auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(logPath, maxFileSize, maxFiles, false);
+		sinks.push_back(fileSink);
 	}
-	root.addAppender(consoleAppender);
 
-	// Log level
+	// Create logger
+	auto logger = std::make_shared<spdlog::logger>("appmesh", sinks.begin(), sinks.end());
+	spdlog::set_default_logger(logger);
+
+	// Pattern
+	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] %l: %v");
+
+	// Log level from env
 	auto levelEnv = Utility::getenv("LOG_LEVEL");
 	if (!levelEnv.empty())
-	{
 		setLogLevel(levelEnv);
-	}
 
 	LOG_DBG << "Logging process ID:" << getpid();
 }
 
 bool Utility::setLogLevel(const std::string &level)
 {
-	std::map<std::string, log4cpp::Priority::PriorityLevel> levelMap = {
-		{"NOTSET", log4cpp::Priority::NOTSET},
-		{"DEBUG", log4cpp::Priority::DEBUG},
-		{"INFO", log4cpp::Priority::INFO},
-		{"NOTICE", log4cpp::Priority::NOTICE},
-		{"WARN", log4cpp::Priority::WARN},
-		{"ERROR", log4cpp::Priority::ERROR},
-		{"CRIT", log4cpp::Priority::CRIT},
-		{"ALERT", log4cpp::Priority::ALERT},
-		{"FATAL", log4cpp::Priority::FATAL},
-		{"EMERG", log4cpp::Priority::EMERG}};
+	static std::map<std::string, spdlog::level::level_enum> levelMap =
+		{
+			{"NOTSET", spdlog::level::off},
+			{"DEBUG", spdlog::level::debug},
+			{"INFO", spdlog::level::info},
+			{"WARN", spdlog::level::warn},
+			{"ERROR", spdlog::level::err},
+			{"CRIT", spdlog::level::critical},
+			{"ALERT", spdlog::level::critical},
+			{"FATAL", spdlog::level::critical},
+			{"EMERG", spdlog::level::critical}};
 
-	if (level.length() > 0 && levelMap.find(level) != levelMap.end())
+	auto it = levelMap.find(level);
+	if (it != levelMap.end())
 	{
+		spdlog::set_level(it->second);
 		LOG_INF << "Setting log level to " << level;
-		log4cpp::Category::getRoot().setPriority(levelMap[level]);
 		return true;
 	}
 	else
@@ -575,21 +563,25 @@ std::string Utility::readFileCpp(const std::string &path)
 {
 	const static char fname[] = "Utility::readFileCPP() ";
 
-	if (!Utility::isFileExist(path))
+	std::ifstream file(path.c_str(), std::ios::in | std::ios::binary);
+	if (!file)
 	{
-		LOG_WAR << fname << "File not exist :" << path;
+		LOG_WAR << fname << "Cannot open file <" << path << ">";
 		return std::string();
 	}
 
-	std::ifstream file(path);
-	if (!file.is_open())
-	{
-		LOG_ERR << "can not open file <" << path << ">";
-		return std::string();
-	}
-	std::string str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-	file.close();
-	return str;
+	std::string content;
+
+	// Try to reserve size if this is a regular file
+	file.seekg(0, std::ios::end);
+	const std::streamoff size = file.tellg();
+	if (size > 0)
+		content.reserve(static_cast<size_t>(size));
+	file.seekg(0, std::ios::beg);
+
+	content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+
+	return content;
 }
 
 std::string Utility::localEncodingToUtf8(const std::string &ansi)
@@ -1368,7 +1360,7 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMa
 	totalEnvSize += std::max(4096, totalEnvSize / 5);
 }
 
-void Utility::applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers)
+void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers)
 {
 	if (Utility::isFileExist(file))
 	{

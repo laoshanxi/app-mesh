@@ -56,7 +56,8 @@ var (
 	REST_PATH_TASK  = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
 	localConnection *Connection // TCP connection to the local server
 
-	delegatePool sync.Pool
+	delegatePool     sync.Pool
+	indexHtmlContent []byte
 )
 
 // Initialize the delegate pool using net/http.Client
@@ -80,6 +81,13 @@ func init() {
 				},
 			}
 		},
+	}
+
+	var err error
+	indexHtmlContent, err = os.ReadFile(config.GetAppMeshHomeDir() + "/script/index.html")
+	if err != nil {
+		logger.Errorf("Failed to read index.html: %v", err)
+		indexHtmlContent = []byte("<html><body><h1>App Mesh</h1><p>Welcome to App Mesh!</p></body></html>")
 	}
 }
 
@@ -250,55 +258,8 @@ func ListenAndServeTLS(address string, server *http.Server) error {
 
 // HandleIndex serves the index page
 func HandleIndex(w http.ResponseWriter, r *http.Request) {
-	htmlContent := `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>App Mesh</title>
-	<style>
-		body {
-			display: flex;
-			flex-direction: column;
-			min-height: 100vh;
-			margin: 0;
-			font-family: Arial, sans-serif;
-		}
-		.content {
-			flex: 1;
-		}
-		.footer {
-			text-align: center;
-			padding: 1em;
-			background-color: #f1f1f1;
-		}
-	</style>
-</head>
-<body>
-	<div class="content">
-		<p>Welcome to App Mesh!</p>
-	</div>
-	<div class="footer">
-		<a id="swagger-link" href="#">View Swagger Documentation</a> | <a href="/openapi.yaml">OpenAPI definition</a>
-	</div>
-	<script>
-		document.addEventListener("DOMContentLoaded", function() {
-			var swaggerLink = document.getElementById("swagger-link");
-			swaggerLink.addEventListener("click", function(event) {
-				event.preventDefault();
-				var currentDomain = window.location.origin;
-				var swaggerURL = "https://petstore.swagger.io/?url=" + encodeURIComponent(currentDomain + "/openapi.yaml");
-				window.location.href = swaggerURL;
-			});
-		});
-	</script>
-</body>
-</html>
-`
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(htmlContent))
+	w.Write(indexHtmlContent)
 }
 
 // HandleAppMeshRequest processes AppMesh requests

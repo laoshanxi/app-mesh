@@ -364,10 +364,16 @@ bool Configuration::getRestEnabled() const
 	return m_rest->m_restEnabled;
 }
 
-std::size_t Configuration::getThreadPoolSize() const
+std::size_t Configuration::getWorkerThreadPoolSize() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_httpThreadPoolSize;
+	return m_rest->m_workerThreadPoolSize;
+}
+
+std::size_t Configuration::getIOThreadPoolSize() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_IOThreadPoolSize;
 }
 
 const std::string Configuration::getDescription() const
@@ -588,8 +594,10 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_webSocketPort, newConfig->m_rest->m_webSocketPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
 				SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize))
-				SET_COMPARE(this->m_rest->m_httpThreadPoolSize, newConfig->m_rest->m_httpThreadPoolSize);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_WorkerThreadPoolSize))
+				SET_COMPARE(this->m_rest->m_workerThreadPoolSize, newConfig->m_rest->m_workerThreadPoolSize);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_IOThreadPoolSize))
+				SET_COMPARE(this->m_rest->m_IOThreadPoolSize, newConfig->m_rest->m_IOThreadPoolSize);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort) && (this->m_rest->m_promListenPort != newConfig->m_rest->m_promListenPort))
 			{
 				SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
@@ -844,10 +852,15 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
-	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
-	if (threadpool > 0 && threadpool < 40)
+	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WorkerThreadPoolSize);
+	if (threadpool > 0 && threadpool < 100)
 	{
-		rest->m_httpThreadPoolSize = threadpool;
+		rest->m_workerThreadPoolSize = threadpool;
+	}
+	auto iotThreadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_IOThreadPoolSize);
+	if (iotThreadpool > 0 && iotThreadpool < 100)
+	{
+		rest->m_IOThreadPoolSize = iotThreadpool;
 	}
 	if (rest->m_restListenPort < 1000 || rest->m_restListenPort > 65534)
 	{
@@ -921,7 +934,8 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 {
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_RestEnabled] = (m_restEnabled);
-	result[JSON_KEY_HttpThreadPoolSize] = ((uint32_t)m_httpThreadPoolSize);
+	result[JSON_KEY_WorkerThreadPoolSize] = ((uint32_t)m_workerThreadPoolSize);
+	result[JSON_KEY_IOThreadPoolSize] = ((uint32_t)m_IOThreadPoolSize);
 	result[JSON_KEY_RestListenPort] = (m_restListenPort);
 	result[JSON_KEY_PrometheusExporterListenPort] = (m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
@@ -936,7 +950,8 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 }
 
 Configuration::JsonRest::JsonRest()
-	: m_restEnabled(false), m_httpThreadPoolSize(DEFAULT_HTTP_THREAD_POOL_SIZE),
+	: m_restEnabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
+	  m_IOThreadPoolSize(DEFAULT_IO_THREAD_POOL_SIZE),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
 	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT)
 {
