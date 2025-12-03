@@ -17,6 +17,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <map>
 #include <vector>
 
 // TCP_NODELAY includes
@@ -440,7 +441,7 @@ namespace WSS
         }
 
         // Factory for creating a safe HTTP reply context
-        static ReplyContextPtr createReplyContext(HttpResponseType *res, const std::string &contentType = "application/json")
+        static ReplyContextPtr createReplyContext(HttpResponseType *res)
         {
             auto state = std::make_shared<ResponseState>();
             res->onAborted([state]() { state->aborted = true; });
@@ -449,24 +450,27 @@ namespace WSS
             uWS::Loop *ownerLoop = uWS::Loop::get();
 
             return std::make_shared<ReplyContext>(
-                [res, contentType, state, ownerLoop](std::string &&data, bool isLast, bool /*isBinary*/)
+                [res, state, ownerLoop](std::string &&data, const std::string &status, const std::map<std::string, std::string> &headers, const std::string &contentType, bool isLast, bool /*isBinary*/)
                 {
                     // Define the actual write operation
-                    auto writeResponse = [res, contentType, state, data = std::move(data), isLast]()
+                    auto writeResponse = [res, state, data = std::move(data), status, headers, contentType, isLast]()
                     {
                         if (state->aborted || state->responded)
                             return;
 
                         // Use corking for efficient header/body writing
-                        res->cork([res, &contentType, state, &data, isLast]()
+                        res->cork([res, state, &data, &status, &headers, &contentType, isLast]()
                         {
                             if (state->aborted || state->responded)
                                 return;
 
                             if (!state->headersWritten)
                             {
-                                res->writeStatus("200 OK");
-                                res->writeHeader("Content-Type", contentType);
+                                res->writeStatus(status);
+                                for (const auto &[key, value] : headers)
+                                    res->writeHeader(key, value);
+                                if (!contentType.empty())
+                                    res->writeHeader("Content-Type", contentType);
                                 state->headersWritten = true;
                             }
 
@@ -613,6 +617,7 @@ namespace WSS
 
         void setupRoutes(AppType &app, int /*threadId*/)
         {
+            // WebSocket route (catch-all path)
             app.template ws<SessionData>(
                 "/*",
                 {.compression = uWS::SHARED_COMPRESSOR,
@@ -679,8 +684,9 @@ namespace WSS
 
                      // Create a ReplyContext that uses the connection's thread-safe send method
                      auto replyCtx = std::make_shared<ReplyContext>(
-                         [conn = connection](std::string &&replyData, bool /*isLast*/, bool replyBinary)
+                         [conn = connection](std::string &&replyData, const std::string &, const std::map<std::string, std::string> &, const std::string &, bool /*isLast*/, bool replyBinary)
                          {
+                             // WebSocket ignores HTTP status/headers
                              conn->send(std::move(replyData), replyBinary ? uWS::OpCode::BINARY : uWS::OpCode::TEXT);
                              // Note: If the user wants to close for isLast, they should call connection->close() explicitly.
                          });

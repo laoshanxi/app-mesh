@@ -21,6 +21,7 @@
 #else
 #include <ace/TP_Reactor.h>
 #endif
+#include <spdlog/spdlog.h>
 
 #ifdef __has_include
 #if __has_include(<ace/SSL/SSL_Context.h>)
@@ -40,7 +41,6 @@
 #include "../common/Utility.h"
 #include "../common/os/chown.h"
 #include "../common/os/pstree.h"
-#include "../common/websockets/WebSocketService.h"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
@@ -57,12 +57,10 @@
 #include "../common/Valgrind.h"
 #endif
 
-// TODO: uwebsockets not support win for now
-#if !defined(_WIN32)
-#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+#if defined(HAVE_UWEBSOCKETS)
 #include "rest/uwebsockets/Adaptor.hpp"
-#define HAVE_UWEBSOCKETS 1
-#endif
+#else
+#include "../common/websockets/WebSocketService.h"
 #endif
 
 using TcpAcceptor = ACE_Acceptor<TcpHandler, ACE_SSL_SOCK_Acceptor>;
@@ -475,14 +473,19 @@ void AppMeshDaemon::initializeRestService()
 	// Websocket service
 	if (config->getWebSocketPort())
 	{
-#ifdef HAVE_UWEBSOCKETS
-		WSS::start(config, 3);
+		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
+#if defined(HAVE_UWEBSOCKETS)
+		// 3 <IO> threads + shared <WORKER> threads
+		constexpr int ioThreadNumber = 3;
+		UWebSocketService::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
+		UWebSocketService::instance()->start();
 #else
-		ACE_INET_Addr wsAddr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
-		WebSocketService::instance()->initialize(wsAddr, cert, key, ca);
-		WebSocketService::instance()->start(0);
-		LOG_INF << fname << "Initializing Websocket service on <" << wsAddr.get_host_addr() << ":" << wsAddr.get_port_number() << ">";
+		// 1 <IO> thread + shared <WORKER> threads
+		constexpr int workerThreadNumber = 0; // Use shared thread pool
+		WebSocketService::instance()->initialize(addr, cert, key, ca);
+		WebSocketService::instance()->start(workerThreadNumber);
 #endif
+		LOG_INF << fname << "Initializing Websocket service on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
 	}
 
 	startAgentApplication();
@@ -592,6 +595,8 @@ void AppMeshDaemon::runMainLoop()
 	{
 		try
 		{
+			spdlog::default_logger()->flush();
+
 			executeApplications();
 
 			if (config->getRestEnabled())

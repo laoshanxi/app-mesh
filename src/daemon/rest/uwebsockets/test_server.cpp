@@ -10,7 +10,7 @@
 
 using json = nlohmann::json;
 
-// Compile: g++ main.cpp -o server -ggdb3 -luSockets -lz -lpthread -lssl -lcrypto -std=c++17
+// Compile: g++ test_server.cpp -o server -ggdb3 -luSockets -lz -lpthread -lssl -lcrypto -std=c++17
 
 class AsyncTaskProcessor
 {
@@ -178,7 +178,7 @@ int main()
         const size_t MAX_PAYLOAD_SIZE = 64 * 1024; // 64KB for notifications
         res->onData([replyCtx, &server, body, MAX_PAYLOAD_SIZE, res](std::string_view chunk, bool isLast)
         {
-             if (body->size() + chunk.size() > MAX_PAYLOAD_SIZE) {
+            if (body->size() + chunk.size() > MAX_PAYLOAD_SIZE) {
                 res->writeStatus("413 Payload Too Large")->end();
                 return;
             }

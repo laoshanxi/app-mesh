@@ -26,7 +26,6 @@ target_link_libraries(appsvc
     prometheus
     common
   PUBLIC
-    websockets_shared
     uriparser::uriparser
 )
 
@@ -36,6 +35,8 @@ if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
   else()
     target_link_libraries(appsvc PUBLIC uSockets)
   endif()
+else()
+  target_link_libraries(appsvc PUBLIC websockets_shared)
 endif()
 
 copy_runtime_dependencies(appsvc)

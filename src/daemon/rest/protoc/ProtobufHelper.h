@@ -14,6 +14,8 @@
 #include <ace/SSL/SSL_SOCK_Stream.h>
 #endif
 
+#include "../../../common/HttpHeaderMap.h"
+
 using ByteBuffer = std::shared_ptr<std::vector<std::uint8_t>>;
 
 class Response
@@ -31,7 +33,7 @@ public:
 	std::string body_msg_type;
 	std::vector<std::uint8_t> body;
 	std::map<std::string, std::string> headers;
-	std::map<std::string, std::string> file_upload_request_headers;
+	HttpHeaderMap file_upload_request_headers;
 
 	MSGPACK_DEFINE_MAP(uuid, request_uri, http_status, body_msg_type, body, headers);
 };

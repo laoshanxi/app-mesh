@@ -16,10 +16,11 @@
 #include "RestHandler.h"
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
+#include "uwebsockets/ReplyContext.h"
 
-ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
-RequestQueue TcpHandler::m_messageQueue;
-std::atomic_int TcpHandler::m_idGenerator{0};
+ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> TcpHandler::g_handlers;
+RequestQueue TcpHandler::g_messageQueue;
+std::atomic_int TcpHandler::g_idGenerator{0};
 
 struct HttpRequestMsg
 {
@@ -36,14 +37,14 @@ struct HttpRequestMsg
 
 // Default constructor.
 TcpHandler::TcpHandler(void)
-	: m_id(++m_idGenerator), m_pendingUploadFile(1)
+	: m_id(g_idGenerator.fetch_add(1, std::memory_order_relaxed) + 1), m_pendingUploadFile(1)
 {
 	const static char fname[] = "TcpHandler::TcpHandler() ";
-	m_handlers.bind(m_id, this);
-	LOG_DBG << fname << "client=" << m_id << ", total client number: " << m_handlers.current_size();
+	g_handlers.bind(m_id, this);
+	LOG_DBG << fname << "client=" << m_id << ", total client number: " << g_handlers.current_size();
 }
 
-TcpHandler::FileUploadInfo::FileUploadInfo(const std::string &uploadFilePath, const std::map<std::string, std::string> &requestHeaders)
+TcpHandler::FileUploadInfo::FileUploadInfo(const std::string &uploadFilePath, const HttpHeaderMap &requestHeaders)
 	: m_filePath(uploadFilePath), m_requestHeaders(requestHeaders)
 {
 }
@@ -52,7 +53,7 @@ TcpHandler::~TcpHandler()
 {
 	const static char fname[] = "TcpHandler::~TcpHandler() ";
 	LOG_DBG << fname << "client=" << m_id;
-	m_handlers.unbind(m_id);
+	g_handlers.unbind(m_id);
 	ACE_Reactor::instance()->remove_handler(this, READ_MASK);
 	ACE_Reactor::instance()->remove_handler(this, WRITE_MASK);
 }
@@ -60,7 +61,7 @@ TcpHandler::~TcpHandler()
 void TcpHandler::queueInputRequest(ByteBuffer &data, int tcpHandlerID, void *lwsSessionID, std::shared_ptr<WSS::ReplyContext> uwsContext)
 {
 	auto req = std::make_shared<HttpRequestMsg>(data, tcpHandlerID, lwsSessionID, uwsContext);
-	m_messageQueue.enqueue(req);
+	g_messageQueue.enqueue(req);
 }
 
 // Perform the tcp record receive.
@@ -210,14 +211,28 @@ void TcpHandler::handleTcpRestLoop()
 	while (QUIT_HANDLER::instance()->is_set() == 0)
 	{
 		std::shared_ptr<HttpRequestMsg> entity;
-		m_messageQueue.wait_dequeue(entity);
+		g_messageQueue.wait_dequeue(entity);
 		if (entity)
 		{
 			auto request = HttpRequest::deserialize(entity->m_data, entity->m_tcpHanlerId, entity->m_wsSessionId, entity->m_replyContext);
 			if (!request || !processRequest(request))
 			{
-				closeTcpHandler(entity->m_tcpHanlerId);
-				LOG_WAR << fname << "Failed to parse request, closing connection with TcpHandler <" << entity->m_tcpHanlerId << ">";
+				LOG_WAR << fname << "Failed to parse request, closing connection";
+				if (entity->m_tcpHanlerId > 0)
+				{
+					closeTcpHandler(entity->m_tcpHanlerId);
+				}
+#if defined(HAVE_UWEBSOCKETS)
+				else if (entity->m_replyContext)
+				{
+					entity->m_replyContext->sendReply("500 Internal Server Error", true, false);
+				}
+#else
+				else if (entity->m_wsSessionId)
+				{
+					// TODO: handle libwensockets close to avoid leak
+				}
+#endif
 			}
 		}
 	}
@@ -256,9 +271,9 @@ void TcpHandler::closeTcpHandler(int tcpHandlerId)
 {
 	const static char fname[] = "TcpHandler::closeTcpHandler() ";
 
-	ACE_GUARD(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex());
+	ACE_GUARD(ACE_Recursive_Thread_Mutex, locker, g_handlers.mutex());
 	TcpHandler *client = NULL;
-	if (m_handlers.find(tcpHandlerId, client) == 0 && client)
+	if (g_handlers.find(tcpHandlerId, client) == 0 && client)
 	{
 		LOG_INF << fname << "Closing TcpHandler id=" << tcpHandlerId;
 		client->peer().close();
@@ -553,9 +568,9 @@ bool TcpHandler::replyTcp(int tcpHandlerId, std::unique_ptr<Response> &&resp)
 {
 	const static char fname[] = "TcpHandler::replyTcp() ";
 
-	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex(), false);
+	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, g_handlers.mutex(), false);
 	TcpHandler *client = NULL;
-	if (m_handlers.find(tcpHandlerId, client) == 0 && client)
+	if (g_handlers.find(tcpHandlerId, client) == 0 && client)
 	{
 		return client->reply(std::move(resp));
 	}

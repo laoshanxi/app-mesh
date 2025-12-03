@@ -194,6 +194,7 @@ function Install-VcpkgPackages {
         'boost-lockfree:x64-windows',
         'ace[ssl]:x64-windows',
         'uwebsockets[core,ssl]:x64-windows',
+        'spdlog:x64-windows',
         'cryptopp:x64-windows',
         'curl:x64-windows',
         'yaml-cpp:x64-windows'
@@ -219,36 +220,6 @@ function Install-HeaderOnlyLibraries {
     Expand-File "json-include.zip" "json-temp"
     New-Item -ItemType Directory -Force -Path "C:\local\include" | Out-Null
     Copy-Item -Recurse "json-temp\include\nlohmann" "C:\local\include\" -Force
-    
-    # log4cpp
-    Write-Host "Installing log4cpp..." -ForegroundColor Yellow
-    $log4cppUrl = "https://sourceforge.net/projects/log4cpp/files/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.4.tar.gz/download"
-    curl -L -o log4cpp.tar.gz $log4cppUrl
-    tar -xvf log4cpp.tar.gz
-    Set-Location log4cpp
-    New-Item -ItemType Directory -Force -Path "build" | Out-Null
-    Set-Location build
-    
-    # Patch CMakeLists.txt
-    $cmakeFile = "..\CMakeLists.txt"
-    if (Test-Path $cmakeFile) {
-        $lines = Get-Content $cmakeFile
-        if ($lines[0] -notmatch 'cmake_minimum_required') {
-            $newLines = @("cmake_minimum_required(VERSION 3.10)") + $lines
-            Set-Content $cmakeFile $newLines
-        }
-    }
-    
-    # Patch config-win32.h
-    $configFile = "..\include\log4cpp\config-win32.h"
-    $content = Get-Content $configFile
-    $content = $content -replace 'typedef\s+int\s+mode_t;', 'typedef unsigned short mode_t;'
-    Set-Content $configFile $content
-    
-    cmake .. -Wno-dev -G "Visual Studio 17 2022" -A x64 -DCMAKE_INSTALL_PREFIX="C:/local"
-    cmake --build . --config Release
-    cmake --install . --config Release
-    Set-Location $ROOTDIR
     
     # Message Pack
     Write-Host "Installing MessagePack..." -ForegroundColor Yellow
