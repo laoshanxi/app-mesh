@@ -66,6 +66,7 @@ copy_configuration_files() {
     # Copy script files
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appc.sh" "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml" "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/index.html" "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/pack/"{setup.sh,entrypoint.sh,appmesh*.sh,*.html} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/docker/"{prom*.yml,docker*.yaml} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_agent.py} "${PACKAGE_HOME}/script/"
@@ -202,7 +203,7 @@ resolve_macos_dylib_path() {
 }
 
 copy_libraries() {
-    local dependencies=(boost curl ACE libssl libcrypto log4cpp yaml websockets uriparser)
+    local dependencies=(boost curl ACE libssl libcrypto yaml websockets uriparser spdlog libfmt)
     for bin_path in "${CMAKE_BINARY_DIR}/gen/appc" "${CMAKE_BINARY_DIR}/gen/appsvc"; do
         for dep in "${dependencies[@]}"; do
             info "Scanning $bin_path for dependency: $dep"

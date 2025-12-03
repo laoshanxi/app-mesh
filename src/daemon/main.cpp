@@ -15,12 +15,8 @@
 #include <ace/OS.h>
 #include <ace/Process_Manager.h>
 #include <ace/Reactor.h>
-#if defined(_WIN32)
-#include <ace/WFMO_Reactor.h>
-#include <windows.h>
-#else
 #include <ace/TP_Reactor.h>
-#endif
+#include <spdlog/spdlog.h>
 
 #ifdef __has_include
 #if __has_include(<ace/SSL/SSL_Context.h>)
@@ -40,7 +36,6 @@
 #include "../common/Utility.h"
 #include "../common/os/chown.h"
 #include "../common/os/pstree.h"
-#include "../common/websockets/WebSocketService.h"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
@@ -57,12 +52,10 @@
 #include "../common/Valgrind.h"
 #endif
 
-// TODO: uwebsockets not support win for now
-#if !defined(_WIN32)
-#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+#if defined(HAVE_UWEBSOCKETS)
 #include "rest/uwebsockets/Adaptor.hpp"
-#define HAVE_UWEBSOCKETS 1
-#endif
+#else
+#include "../common/websockets/WebSocketService.h"
 #endif
 
 using TcpAcceptor = ACE_Acceptor<TcpHandler, ACE_SSL_SOCK_Acceptor>;
@@ -100,7 +93,7 @@ public:
 
 	// REST service management
 	void initializeRestService();
-	void startRestThreadPool();
+	void startWorkerThreadPool();
 	void startAgentApplication();
 
 	// High availability
@@ -188,9 +181,9 @@ int AppMeshDaemon::run(int argc, char *argv[])
 	try
 	{
 		initializeEnvironment();
-		initializeACE();
 		initializeLogging();
 		initializeConfiguration();
+		initializeACE();
 		initializeSecurity();
 		initializeDirectories();
 		setupSignalHandlers();
@@ -227,27 +220,15 @@ void AppMeshDaemon::initializeACE()
 	TIMER_MANAGER::instance();
 	QUIT_HANDLER::instance();
 
-#if defined(_WIN32)
-	// On Windows WFMO_Reactor: use a single reactor thread (WFMO waits on handles).
-	LOG_INF << fname << "Initializing ACE WFMO_Reactor (Windows)";
-	ACE_Reactor::instance(new ACE_Reactor(new ACE_WFMO_Reactor(), true));
-	if (ACE_Reactor::instance()->open(ACE_WFMO_Reactor::DEFAULT_SIZE) == -1)
-	{
-		LOG_WAR << fname << "Failed to open ACE WFMO_Reactor, using default max handles";
-	}
-	// TODO: On windows, one for thread wait handlers, one for timer with better performance.
-#else
-	// On POSIX TP_Reactor: start one thread, and extra reactor threads when REST enabled
 	LOG_INF << fname << "Initializing ACE TP_Reactor (POSIX)";
 	ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
 	if (ACE_Reactor::instance()->open(ACE::max_handles()) == -1)
 	{
 		LOG_WAR << fname << "Failed to open ACE TP_Reactor, using default max handles";
 	}
-#endif
 
 	// Reactor thread for (process exit event) / (acceptor handling)
-	startReactorThreads(ACE_Reactor::instance(), 1);
+	startReactorThreads(ACE_Reactor::instance(), Configuration::instance()->getIOThreadPoolSize());
 
 	// Activate timer manager (start 1 thread by ACE_Thread_Manager::instance())
 	LOG_INF << fname << "Activating timer manager";
@@ -375,10 +356,6 @@ void AppMeshDaemon::startReactorThreads(ACE_Reactor *reactor, size_t threadCount
 		throw std::invalid_argument("Null reactor provided");
 	}
 
-#if defined(_WIN32)
-	threadCount = 1; // WFMO_Reactor requires single thread
-#endif
-
 	std::lock_guard<std::mutex> lock(m_threadPoolMutex);
 
 	for (size_t i = 0; i < threadCount; ++i)
@@ -455,7 +432,7 @@ void AppMeshDaemon::initializeRestService()
 #endif
 
 	// Start REST thread pool
-	startRestThreadPool();
+	startWorkerThreadPool();
 
 	// Setup acceptor
 	m_acceptor = std::make_unique<TcpAcceptor>();
@@ -475,14 +452,19 @@ void AppMeshDaemon::initializeRestService()
 	// Websocket service
 	if (config->getWebSocketPort())
 	{
-#ifdef HAVE_UWEBSOCKETS
-		WSS::start(config, 3);
+		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
+#if defined(HAVE_UWEBSOCKETS)
+		// 3 <IO> threads + shared <WORKER> threads
+		int ioThreadNumber = Configuration::instance()->getIOThreadPoolSize();
+		UWebSocketService::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
+		UWebSocketService::instance()->start();
 #else
-		ACE_INET_Addr wsAddr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
-		WebSocketService::instance()->initialize(wsAddr, cert, key, ca);
-		WebSocketService::instance()->start(0);
-		LOG_INF << fname << "Initializing Websocket service on <" << wsAddr.get_host_addr() << ":" << wsAddr.get_port_number() << ">";
+		// 1 <IO> thread + shared <WORKER> threads
+		constexpr int workerThreadNumber = 0; // Use shared thread pool
+		WebSocketService::instance()->initialize(addr, cert, key, ca);
+		WebSocketService::instance()->start(workerThreadNumber);
 #endif
+		LOG_INF << fname << "Initializing Websocket service on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
 	}
 
 	startAgentApplication();
@@ -491,19 +473,19 @@ void AppMeshDaemon::initializeRestService()
 	LOG_INF << fname << "REST service initialized";
 }
 
-void AppMeshDaemon::startRestThreadPool()
+void AppMeshDaemon::startWorkerThreadPool()
 {
-	const static char fname[] = "AppMeshDaemon::startRestThreadPool() ";
+	const static char fname[] = "AppMeshDaemon::startWorkerThreadPool() ";
 
 	auto config = Configuration::instance();
 	std::lock_guard<std::mutex> lock(m_threadPoolMutex);
 
-	for (size_t i = 0; i < config->getThreadPoolSize(); ++i)
+	for (size_t i = 0; i < config->getWorkerThreadPoolSize(); ++i)
 	{
 		m_threadPool.emplace_back(std::make_unique<std::thread>(TcpHandler::handleTcpRestLoop));
 	}
 
-	LOG_INF << fname << "Started " << config->getThreadPoolSize() << " threads for REST thread pool";
+	LOG_INF << fname << "Started " << config->getWorkerThreadPoolSize() << " threads for REST thread pool";
 }
 
 void AppMeshDaemon::startAgentApplication()
@@ -697,11 +679,18 @@ void AppMeshDaemon::performShutdown()
 
 	endReactorEvent(ACE_Reactor::instance());
 
+#if defined(HAVE_UWEBSOCKETS)
+	UWebSocketService::instance()->stop();
+#else
+	WebSocketService::instance()->shutdown();
+#endif
+
 	// joinAllThreads();
 	cleanupResources();
 
 	LOG_INF << fname << "AppMesh daemon exited";
 
+	spdlog::shutdown();
 	ACE_OS::_exit(0);
 	ACE::fini();
 }
