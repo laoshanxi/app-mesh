@@ -7,13 +7,6 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
-#include <log4cpp/Appender.hh>
-#include <log4cpp/Category.hh>
-#include <log4cpp/FileAppender.hh>
-#include <log4cpp/OstreamAppender.hh>
-#include <log4cpp/PatternLayout.hh>
-#include <log4cpp/Priority.hh>
-#include <log4cpp/RollingFileAppender.hh>
 #include <set>
 #include <string>
 #include <thread>
@@ -26,29 +19,6 @@ void init()
     {
         initialized = true;
         ACE::init();
-        using namespace log4cpp;
-        auto logDir = Utility::stringFormat("%s", Utility::getBinDir().c_str());
-        auto consoleLayout = new PatternLayout();
-        consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
-        auto consoleAppender = new OstreamAppender("console", &std::cout);
-        consoleAppender->setLayout(consoleLayout);
-
-        auto rollingFileAppender = new RollingFileAppender(
-            "rollingFileAppender",
-            logDir.append("/unittest.log"),
-            20 * 1024 * 1024,
-            5,
-            true,
-            00664);
-
-        auto pLayout = new PatternLayout();
-        pLayout->setConversionPattern("%d [%t] %p %c: %m%n");
-        rollingFileAppender->setLayout(pLayout);
-
-        Category &root = Category::getRoot();
-        root.addAppender(rollingFileAppender);
-        root.addAppender(consoleAppender);
-
         // Log level
         Utility::setLogLevel("DEBUG");
 
