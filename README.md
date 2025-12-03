@@ -16,12 +16,12 @@ App Mesh is an open-source, multi-tenant application management platform designe
 
 Feature | Description
 ---|---
-Application management | 🧩 <b>Application Management (CURD) with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained Application Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
+Application management <br> (Advanced systemd) | 🧩 <b>Application Management (CURD) with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained Application Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
+Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
 Security |  🔐 Authentication: [LDAP](https://app-mesh.readthedocs.io/en/latest/LDAP.html), [OAuth](src/sdk/python/test/test_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html), YAML-based storage (local file or Consul for clustering) <br> 🔐 Authorization: [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html), [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html), multi-tenant isolation <br> 🔐 Protection: SSL/TLS for `TCP`/`HTTP`/`WebSocket`, CSRF tokens, HMAC with PSK for non-token verification
-Cloud native | Schedule cloud-level applications to run on multiple hosts with resource size requests. <br> 🌩️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br>🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile)
-Micro service application | 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
+Cloud Native | Schedule cloud-level applications to run on multiple hosts with resource size requests. <br> 🌩️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
 Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
-Platform support | X86_64 <br> ARM32 <br> ARM64
+Platform support | X86_64, ARM32, ARM64
 SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp) <br> [Rust](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/rust) <br> [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) <br> [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/client_http.go) <br> [JavaScript](https://www.npmjs.com/package/appmesh) <br> [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) <br> [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
 Echosystem | [Model Context Protocol (MCP)](src/sdk/mcp) <br> [IoT MQTT](src/sdk/mqtt)
 
@@ -50,13 +50,10 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 | Command lines            | √        | √                                     | √                                |
 | SDK                      | √        |                                       |
 | Cron schedule expression | √        |                                       | √                                |
-| Manage daemon process    |          |                                       | √                                |
 | Manage docker app        | √        |                                       |
-| Start check (avoid leak) | √        | √                                     |
-| Session login            |          |                                       |
+| Session login            | √        |                                       |
 | Manage stdout/stderr     | √        | √                                     |
 | Health check             | √        |                                       |
-| Rich control options     | √        |                                       |
 | Authentication           | √        | √                                     |
 | Multi-tenant             | √        |                                       | √                                |
 
@@ -65,7 +62,6 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 | Feature           | App Mesh | Kubernetes |
 | ----------------- | -------- | ---------- |
 | Easy deploy       | √        |
-| More features     |          | √          |
 | Non-container app | √        |
 | Service expose    | √        | √          |
 | Scheduler         | √        | √          |
@@ -112,7 +108,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
 - [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
 - [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)
-- [log4cpp](http://log4cpp.sourceforge.net)
+- [spdlog](https://github.com/gabime/spdlog)
 - [Crypto++](https://www.cryptopp.com)
 - [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
 - [concurrentqueue](https://github.com/cameron314/concurrentqueue)

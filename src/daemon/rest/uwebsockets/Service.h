@@ -17,6 +17,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <map>
 #include <vector>
 
 // TCP_NODELAY includes
@@ -100,66 +101,17 @@ namespace WSS
         // Sends data to the client safely from ANY thread.
         void send(std::string &&data, uWS::OpCode opcode = uWS::OpCode::TEXT)
         {
-            // WARNING: If the Server has been stopped and threads joined, m_loop is dangling.
-            // The user must ensure no async tasks call this after Server::stop().
-            // Check if we are on the correct thread            
-            if (uWS::Loop::get() == m_loop)
-            {
-                // We are on the owner thread, just send if valid
-                std::lock_guard<std::mutex> lock(m_mutex);
-                if (m_valid && m_ws)
-                {
-                    // Check for backpressure could be added here (ws->getBufferedAmount())
-                    m_ws->send(data, opcode);
-                }
-            }
-            else
-            {
-                // Defer to the owner loop. Capture shared_from_this() to keep object alive.
-                m_loop->defer([self = this->shared_from_this(), data = std::move(data), opcode]()
-                {
-                    // Once inside the defer, we are on the owner thread
-                    std::lock_guard<std::mutex> lock(self->m_mutex);
-                    if (self->m_valid && self->m_ws)
-                    {
-                        self->m_ws->send(data, opcode);
-                    }
-                });
-            }
+            runOnLoop([this, data = std::move(data), opcode](WebSocketType* ws) mutable {
+                ws->send(std::move(data), opcode);
+            });
         }
 
         // Closes the WebSocket connection safely from ANY thread.
         void close(int code = Config::DEFAULT_CLOSE_CODE, std::string reason = "")
         {
-            if (uWS::Loop::get() == m_loop)
-            {
-                WebSocketType *ws = nullptr;
-                {
-                    std::lock_guard<std::mutex> lock(m_mutex);
-                    ws = m_ws;
-                }
-                if (ws)
-                {
-                    // Call end() outside lock to avoid next close/invalidate acquiring same lock.
-                    ws->end(code, reason);
-                }
-            }
-            else
-            {
-                // Defer the entire process to the owner loop thread
-                m_loop->defer([self = this->shared_from_this(), code, reason = std::move(reason)]()
-                {
-                    WebSocketType *ws = nullptr;
-                    {
-                        std::lock_guard<std::mutex> lock(self->m_mutex);
-                        ws = self->m_ws;
-                    }
-                    if (ws)
-                    {
-                        ws->end(code, reason);
-                    }
-                });
-            }
+            runOnLoop([this, code, reason = std::move(reason)](WebSocketType* ws) mutable {
+                ws->end(code, std::move(reason));
+            });
         }
 
         // CRITICAL: Called only from the loop thread when uWS reports disconnection
@@ -176,9 +128,52 @@ namespace WSS
             return m_valid && m_ws;
         }
 
+        // Getter methods
         const std::string &getId() const { return m_id; }
         const std::string &getProtocol() const { return m_protocol; }
         uWS::Loop *getLoop() const { return m_loop; }
+
+    private:
+        // Helper function to execute a WebSocket operation on the owner thread
+        // The Func is a lambda taking a pointer to WebSocketType*
+        template <typename Func>
+        void runOnLoop(Func&& func)
+        {
+            // WARNING: Ensure m_loop is valid if called after Server::stop().
+            if (uWS::Loop::get() == m_loop)
+            {
+                // We are on the owner thread, just execute if valid
+                WebSocketType *ws = nullptr;
+                bool valid = false;
+                {
+                    std::lock_guard<std::mutex> lock(m_mutex);
+                    ws = m_ws;
+                    valid = m_valid;
+                }
+                if (valid && ws)
+                {
+                    func(ws);
+                }
+            }
+            else
+            {
+                // Defer to the owner loop. Capture shared_from_this() to keep object alive.
+                m_loop->defer([self = this->shared_from_this(), func = std::forward<Func>(func)]() mutable {
+                    // Once inside the defer, we are on the owner thread
+                    WebSocketType *ws = nullptr;
+                    bool valid = false;
+                    {
+                        std::lock_guard<std::mutex> lock(self->m_mutex);
+                        ws = self->m_ws;
+                        valid = self->m_valid;
+                    }
+                    if (valid && ws)
+                    {
+                        func(ws);
+                    }
+                });
+            }
+        }
 
     private:
         WebSocketType *m_ws;
@@ -439,8 +434,21 @@ namespace WSS
             return result;
         }
 
+        // Factory for creating a safe WebSocket reply context
+        static ReplyContextPtr createWebSocketReplyContext(WSConnectionPtr connection)
+        {
+            return std::make_shared<ReplyContext>(ReplyContext::ProtocolType::WebSocket,
+                [connection](std::string &&data, const std::string &, const std::map<std::string, std::string> &, const std::string &, bool /*isLast*/, bool isBinary)
+                {
+                    if (connection && connection->isValid())
+                    {
+                        connection->send(std::move(data), isBinary ? uWS::OpCode::BINARY : uWS::OpCode::TEXT);
+                    }
+                });
+        }
+
         // Factory for creating a safe HTTP reply context
-        static ReplyContextPtr createReplyContext(HttpResponseType *res, const std::string &contentType = "application/json")
+        static ReplyContextPtr createHttpReplyContext(HttpResponseType *res)
         {
             auto state = std::make_shared<ResponseState>();
             res->onAborted([state]() { state->aborted = true; });
@@ -448,25 +456,28 @@ namespace WSS
             // The ownerLoop is the loop of the thread that handled the incoming request.
             uWS::Loop *ownerLoop = uWS::Loop::get();
 
-            return std::make_shared<ReplyContext>(
-                [res, contentType, state, ownerLoop](std::string &&data, bool isLast, bool /*isBinary*/)
+            return std::make_shared<ReplyContext>(ReplyContext::ProtocolType::Http,
+                [res, state, ownerLoop](std::string &&data, const std::string &status, const std::map<std::string, std::string> &headers, const std::string &contentType, bool isLast, bool /*isBinary*/)
                 {
                     // Define the actual write operation
-                    auto writeResponse = [res, contentType, state, data = std::move(data), isLast]()
+                    auto writeResponse = [res, state, data = std::move(data), status, headers, contentType, isLast]()
                     {
                         if (state->aborted || state->responded)
                             return;
 
                         // Use corking for efficient header/body writing
-                        res->cork([res, &contentType, state, &data, isLast]()
+                        res->cork([res, state, &data, &status, &headers, &contentType, isLast]()
                         {
                             if (state->aborted || state->responded)
                                 return;
 
                             if (!state->headersWritten)
                             {
-                                res->writeStatus("200 OK");
-                                res->writeHeader("Content-Type", contentType);
+                                res->writeStatus(status);
+                                for (const auto &[key, value] : headers)
+                                    res->writeHeader(key, value);
+                                if (!contentType.empty())
+                                    res->writeHeader("Content-Type", contentType);
                                 state->headersWritten = true;
                             }
 
@@ -613,6 +624,7 @@ namespace WSS
 
         void setupRoutes(AppType &app, int /*threadId*/)
         {
+            // WebSocket route (catch-all path)
             app.template ws<SessionData>(
                 "/*",
                 {.compression = uWS::SHARED_COMPRESSOR,
@@ -678,12 +690,7 @@ namespace WSS
                      bool isBinary = (opCode == uWS::OpCode::BINARY);
 
                      // Create a ReplyContext that uses the connection's thread-safe send method
-                     auto replyCtx = std::make_shared<ReplyContext>(
-                         [conn = connection](std::string &&replyData, bool /*isLast*/, bool replyBinary)
-                         {
-                             conn->send(std::move(replyData), replyBinary ? uWS::OpCode::BINARY : uWS::OpCode::TEXT);
-                             // Note: If the user wants to close for isLast, they should call connection->close() explicitly.
-                         });
+                     auto replyCtx = createWebSocketReplyContext(connection);
 
                      WSMessageHandler handler = m_wsMessageHandler;
                      if (handler)
@@ -719,7 +726,7 @@ namespace WSS
 
                 if (handler)
                 {
-                    auto replyCtx = createReplyContext(res);
+                    auto replyCtx = createHttpReplyContext(res);
                     handler(res, req, replyCtx, match);
                 }
                 else
