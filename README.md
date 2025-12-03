@@ -112,7 +112,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
 - [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
 - [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)
-- [log4cpp](http://log4cpp.sourceforge.net)
+- [spdlog](https://github.com/gabime/spdlog)
 - [Crypto++](https://www.cryptopp.com)
 - [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
 - [concurrentqueue](https://github.com/cameron314/concurrentqueue)

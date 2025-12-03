@@ -41,11 +41,10 @@ struct WSRequest
         WebSocketMessage,
         HttpMessage,
         Closing
-    } m_type;
-
-    void *m_session_ref;
+    } m_type = Type::WebSocketMessage;
     std::vector<std::uint8_t> m_payload;
     uint64_t m_req_id = 0;
+    void *m_session_ref = 0;
 
     void reply(std::vector<std::uint8_t> &&data) const;
 };
