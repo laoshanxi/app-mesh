@@ -72,7 +72,7 @@ public:
 		nlohmann::json AsJson() const;
 
 		bool m_restEnabled;
-		int m_httpThreadPoolSize;
+		int m_workerThreadPoolSize;
 		int m_IOThreadPoolSize;
 		int m_restListenPort;
 		int m_promListenPort;
