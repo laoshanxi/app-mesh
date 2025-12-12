@@ -43,9 +43,9 @@ bool Response::deserialize(const char *data, int dataSize)
 	return false;
 }
 
-std::shared_ptr<msgpack::sbuffer> Request::serialize() const
+std::unique_ptr<msgpack::sbuffer> Request::serialize() const
 {
-	auto sbuf = std::make_shared<msgpack::sbuffer>();
+	auto sbuf = std::make_unique<msgpack::sbuffer>();
 	msgpack::pack(*sbuf, *this);
 	return sbuf;
 }

@@ -62,8 +62,8 @@ namespace WSS
                         cb = m_callback;
                     }
                 }
-                if (cb) cb(std::move(data), status, headers, contentType, isLast, isBinary);
             }
+            if (cb) cb(std::move(data), status, headers, contentType, isLast, isBinary);
         }
 
         ProtocolType m_protocolType;

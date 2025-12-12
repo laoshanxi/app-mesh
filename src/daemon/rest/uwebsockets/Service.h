@@ -655,7 +655,7 @@ namespace WSS
                      }
                      // If no protocol header was sent, we accept without a subprotocol (acceptedProtocol stays empty)
                      res->template upgrade<SessionData>(
-                         SessionData{.connectionPtr = std::weak_ptr<void>(), .subProtocol = acceptedProtocol},
+                         SessionData{.subProtocol = acceptedProtocol},
                          req->getHeader("sec-websocket-key"),
                          acceptedProtocol.empty() ? std::string_view() : std::string_view(acceptedProtocol),
                          req->getHeader("sec-websocket-extensions"),

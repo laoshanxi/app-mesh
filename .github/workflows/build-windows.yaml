@@ -40,7 +40,7 @@ jobs:
         run: .\script\pack\build_package.ps1
 
       - name: Upload packages
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: windows-${{ github.sha }}
           path: build/appmesh_*.exe
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Download packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: windows-${{ github.sha }}
 

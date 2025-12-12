@@ -42,7 +42,7 @@ using ResponseQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Response>>;
 //     Note: the construction function of ACE_SSL_SOCK_Stream can used to specify a ACE_SSL_Context
 //       Define a new ACE_SSL_SOCK_Stream if you want to change the global ACE_SSL_Context
 //       ACE_SSL_SOCK_Stream (ACE_SSL_Context *context = ACE_SSL_Context::instance ());
-class TcpHandler : public ACE_Svc_Handler<ACE_SSL_SOCK_Stream, ACE_NULL_SYNCH>
+class TcpHandler : public ACE_Svc_Handler<ACE_SSL_SOCK_Stream, ACE_MT_SYNCH>
 {
 	struct FileUploadInfo
 	{
@@ -65,6 +65,7 @@ public:
 	/// </summary>
 	static void handleTcpRestLoop();
 	static bool processRequest(std::shared_ptr<HttpRequest> &request);
+	static bool processForward(const std::string forwardTo, std::shared_ptr<HttpRequest> &request);
 	static void closeTcpHandler(int tcpHandlerId);
 	const int &id();
 	static void queueInputRequest(ByteBuffer &data, int tcpHandlerID, void *lwsSessionID = NULL, std::shared_ptr<WSS::ReplyContext> uwsContext = nullptr);
@@ -87,7 +88,8 @@ protected:
 
 public:
 	static bool replyTcp(int tcpHandlerId, std::unique_ptr<Response> &&resp);
-	static ACE_SSL_Context *initTcpSSL(ACE_SSL_Context *context, const std::string &certFile, const std::string &keyFile, const std::string &caPath);
+	static ACE_SSL_Context *initServerSSL(ACE_SSL_Context *context, const std::string &certFile, const std::string &keyFile, const std::string &caPath);
+	static ACE_SSL_Context *initClientSSL(ACE_SSL_Context *context, const std::string &certFile, const std::string &keyFile, const std::string &caPath);
 
 private:
 	std::string m_clientHostName;

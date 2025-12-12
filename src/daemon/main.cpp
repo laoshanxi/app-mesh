@@ -43,7 +43,7 @@
 #include "application/Application.h"
 #include "process/AppProcess.h"
 #include "rest/RestHandler.h"
-#include "rest/TcpClient.h"
+#include "rest/SocketStream.h"
 #include "rest/TcpServer.h"
 #include "security/HMACVerifier.h"
 #include "security/Security.h"
@@ -115,7 +115,7 @@ public:
 
 private:
 	std::vector<std::unique_ptr<std::thread>> m_threadPool;
-	std::unique_ptr<TcpClient> m_client;
+	std::shared_ptr<StreamPointer> m_client;
 	std::unique_ptr<TcpAcceptor> m_acceptor;
 	std::atomic<bool> m_shutdownRequested{false};
 	std::mutex m_threadPoolMutex;
@@ -374,7 +374,7 @@ void AppMeshDaemon::runReactorEvent(ACE_Reactor *reactor)
 
 	LOG_DBG << fname << "Reactor event thread started";
 
-	reactor->owner(ACE_OS::thr_self());
+	// reactor->owner(ACE_OS::thr_self());
 
 	while (!isShutdownRequested() && QUIT_HANDLER::instance()->is_set() == 0 && !reactor->reactor_event_loop_done())
 	{
@@ -423,13 +423,11 @@ void AppMeshDaemon::initializeRestService()
 
 	LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
 
-	// Initialize SSL
-	TcpHandler::initTcpSSL(ACE_SSL_Context::instance(), cert, key, ca);
+	// Initialize SSL for TCP server and client
+	TcpHandler::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
 
-#if !defined(_WIN32)
-	// On POSIX, start additional reactor thread for REST
-	startReactorThreads(ACE_Reactor::instance(), 1);
-#endif
+	const auto clientCA = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());
+	TcpHandler::initClientSSL(Global::getClientSSL(), "", "", clientCA);
 
 	// Start REST thread pool
 	startWorkerThreadPool();
@@ -446,8 +444,11 @@ void AppMeshDaemon::initializeRestService()
 	}
 
 	// Setup client connection
-	m_client = std::make_unique<TcpClient>();
-	m_client->connect(tcpAddr);
+	m_client = std::make_shared<StreamPointer>(new SocketStream(Global::getClientSSL()));
+	if (m_client->stream()->connect(tcpAddr))
+		LOG_INF << fname << "Test local TCP client connected successfully";
+	else
+		LOG_WAR << fname << "Test local TCP client connection failed";
 
 	// Websocket service
 	if (config->getWebSocketPort())
@@ -576,26 +577,19 @@ void AppMeshDaemon::runMainLoop()
 		{
 			executeApplications();
 
-			if (config->getRestEnabled())
-			{
-				if (!checkTcpConnection(tcpErrorCounter))
-				{
-					break; // Exit if TCP connection fails too many times
-				}
-			}
-			else
-			{
-				std::this_thread::sleep_for(std::chrono::seconds(config->getScheduleInterval()));
-			}
+			std::this_thread::sleep_for(std::chrono::seconds(config->getScheduleInterval()));
+
+			// Exit if TCP connection fails too many times
+			if (config->getRestEnabled() && !checkTcpConnection(tcpErrorCounter))
+				break;
 
 			PersistManager::instance()->persistSnapshot();
 			HealthCheckTask::instance()->doHealthCheck();
+			spdlog::default_logger()->flush();
 
 			// Update process tree for prometheus if needed
 			if (config->prometheusEnabled() && RESTHANDLER::instance()->collected())
-			{
 				m_ptree = os::processes();
-			}
 		}
 		catch (const std::exception &ex)
 		{
@@ -612,7 +606,10 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 
 	auto config = Configuration::instance();
 
-	if (!m_client->testConnection(config->getScheduleInterval()))
+	// m_client->stream()->close();
+	// m_client = std::make_shared<StreamPointer>(new SocketStream(Global::getClientSSL()));
+	// m_client->stream()->connect(ACE_INET_Addr(6059, "localhost"));
+	if (m_client && m_client->stream() && !m_client->stream()->connected())
 	{
 		errorCounter++;
 		LOG_WAR << fname << "REST TCP connection test failed, attempt <" << errorCounter << ">";
@@ -629,7 +626,10 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 
 		// Reconnect
 		ACE_INET_Addr acceptorAddr(config->getRestTcpPort(), config->getRestListenAddress().c_str());
-		m_client->connect(acceptorAddr);
+		if (m_client->stream()->connect(acceptorAddr))
+			LOG_INF << fname << "Test local TCP client reconnected successfully";
+		else
+			LOG_WAR << fname << "Test local TCP client reconnection failed";
 	}
 	else
 	{

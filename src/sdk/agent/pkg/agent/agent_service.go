@@ -269,6 +269,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	// Handle forward request
 	forwardingHost := string(r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST))
 	if forwardingHost != "" {
+		r.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
 		logger.Debugf("Forward request to %s", forwardingHost)
 
 		forwardingURL, err := appmesh.ParseURL(forwardingHost)
@@ -285,7 +286,6 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		// If no port is provided, use HTTP forwarding
 		if forwardingURL.Port() == "" || forwardingURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
 			// Forward with HTTP protocol
-			r.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
 			ForwardAppMeshRequest(w, r, forwardingURL)
 			return
 		} else {

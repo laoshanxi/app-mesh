@@ -59,6 +59,7 @@ public:
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
 	static std::shared_ptr<HttpRequest> deserialize(const ByteBuffer &input, int tcpHandlerId, const void *wsi, std::shared_ptr<WSS::ReplyContext> ctx);
+	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;
@@ -71,7 +72,6 @@ public:
 	std::map<std::string, std::string> m_query;
 	HttpHeaderMap m_headers;
 
-protected:
 	// Sends REST response to client through TCP handler
 	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
 					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,

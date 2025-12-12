@@ -44,7 +44,7 @@ public:
 	Request() = default;
 	~Request() = default;
 
-	std::shared_ptr<msgpack::sbuffer> serialize() const;
+	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	bool deserialize(const ByteBuffer &data);
 
 public:
