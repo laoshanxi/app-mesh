@@ -92,6 +92,20 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, i
 	return nullptr;
 }
 
+std::unique_ptr<msgpack::sbuffer> HttpRequest::serialize() const
+{
+	Request req;
+	req.body = *m_body;
+	req.client_addr = m_remote_address;
+	req.http_method = m_method;
+	req.request_uri = m_relative_uri;
+	req.uuid = m_uuid;
+	req.headers = m_headers;
+	req.query = m_query;
+
+	return req.serialize();
+}
+
 const nlohmann::json HttpRequest::emptyJsonMessage()
 {
 	nlohmann::json emptyBody;

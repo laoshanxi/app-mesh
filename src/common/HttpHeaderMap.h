@@ -86,7 +86,7 @@ public:
 
     std::string get(const std::string &key, const std::string &defaultValue = "") const
     {
-        auto it = find(key);
+        auto it = find(normalize(key));
         return it != m_headers.end() ? it->second : defaultValue;
     }
 

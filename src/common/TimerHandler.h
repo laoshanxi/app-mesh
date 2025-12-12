@@ -176,4 +176,4 @@ private:
 };
 
 using TIMER_MANAGER = ACE_Singleton<TimerManager, ACE_Null_Mutex>;
-using QUIT_HANDLER = ACE_Singleton<ACE_Test_and_Set<ACE_Recursive_Thread_Mutex, sig_atomic_t>, ACE_Null_Mutex>;
+using QUIT_HANDLER = ACE_Singleton<ACE_Test_and_Set<ACE_Thread_Mutex, sig_atomic_t>, ACE_Null_Mutex>; // TODO: replace with std::atomic

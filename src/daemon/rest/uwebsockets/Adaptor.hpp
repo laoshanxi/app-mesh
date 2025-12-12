@@ -235,20 +235,20 @@ private:
         // GENERIC HTTP HANDLER
         // -------------------------------------------------------------------------
         m_server->routeRegex("GET", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, replyCtx); });
+                             { handleHttpRequest(res, req,  std::move(replyCtx)); });
         m_server->routeRegex("POST", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, replyCtx); });
+                             { handleHttpRequest(res, req,  std::move(replyCtx)); });
         m_server->routeRegex("PUT", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, replyCtx); });
+                             { handleHttpRequest(res, req,  std::move(replyCtx)); });
         m_server->routeRegex("DELETE", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, replyCtx); });
+                             { handleHttpRequest(res, req, std::move(replyCtx)); });
 
         // WebSocket: Handle incoming messages
         m_server->onWSMessage([](std::string_view message, auto /*connection*/, auto replyCtx, bool /*isBinary*/)
         {
             LOG_DBG << "WebSocketAdaptor::onWSMessage()";
             auto data = std::make_shared<std::vector<std::uint8_t>>(message.begin(), message.end());
-            TcpHandler::queueInputRequest(data, 0, 0, replyCtx);
+            TcpHandler::queueInputRequest(data, 0, 0,  std::move(replyCtx));
         });
 
         // WebSocket: Handle new connections

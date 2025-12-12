@@ -32,6 +32,16 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
+#ifdef __has_include
+#if __has_include(<ace/SSL/SSL_Context.h>)
+#include <ace/SSL/SSL_Context.h>
+#else
+#include <ace/SSL_Context.h>
+#endif
+#else
+#include <ace/SSL/SSL_Context.h>
+#endif
+
 #include "DateTime.h"
 #include "Password.h"
 #include "Utility.h"
@@ -391,6 +401,7 @@ void Utility::initLogging(const std::string &name)
 	// Create logger
 	auto logger = std::make_shared<spdlog::logger>("appmesh", sinks.begin(), sinks.end());
 	spdlog::set_default_logger(logger);
+	logger->flush_on(spdlog::level::info);
 
 	// Pattern
 	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] %l: %v");
@@ -1793,4 +1804,13 @@ const char *last_error_msg()
 
 	// Return a pointer to the internal buffer of the thread-local string
 	return g_errorMessage.c_str();
+}
+
+namespace Global
+{
+	ACE_SSL_Context *getClientSSL()
+	{
+		static ACE_SSL_Context sslContext;
+		return &sslContext;
+	}
 }

@@ -577,3 +577,9 @@ public:
 
 // cross-platform and safe last error
 const char *last_error_msg();
+
+class ACE_SSL_Context;
+namespace Global
+{
+	ACE_SSL_Context *getClientSSL();
+}
