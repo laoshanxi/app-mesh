@@ -10,10 +10,12 @@
 
 #include "../../common/RestClient.h"
 #include "../../common/TimerHandler.h"
+#include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
+#include "SocketStream.h"
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 #include "uwebsockets/ReplyContext.h"
@@ -54,8 +56,7 @@ TcpHandler::~TcpHandler()
 	const static char fname[] = "TcpHandler::~TcpHandler() ";
 	LOG_DBG << fname << "client=" << m_id;
 	g_handlers.unbind(m_id);
-	ACE_Reactor::instance()->remove_handler(this, READ_MASK);
-	ACE_Reactor::instance()->remove_handler(this, WRITE_MASK);
+	ACE_Reactor::instance()->remove_handler(this, ACE_Event_Handler::ALL_EVENTS_MASK | ACE_Event_Handler::DONT_CALL);
 }
 
 void TcpHandler::queueInputRequest(ByteBuffer &data, int tcpHandlerID, void *lwsSessionID, std::shared_ptr<WSS::ReplyContext> uwsContext)
@@ -180,9 +181,7 @@ int TcpHandler::open(void *)
 	else
 	{
 		this->m_clientHostName = Utility::stringFormat("%s:%hu", addr.get_host_name(), addr.get_port_number());
-		// TODO: one TCP connection can not leverage parallel ACE_TP_Reactor thread pool
-		if (ACE_Reactor::instance()->register_handler(this, READ_MASK) == -1 ||
-			ACE_Reactor::instance()->register_handler(this, WRITE_MASK) == -1)
+		if (ACE_Reactor::instance()->register_handler(this, READ_MASK) == -1)
 		{
 			LOG_ERR << fname << "can't register with reactor";
 			return -1;
@@ -196,7 +195,7 @@ int TcpHandler::open(void *)
 				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << last_error_msg();
 			}
 
-			// if (this->peer().disable(ACE_NONBLOCK) == -1) // Disable non-blocking mode already controled by FLAG_ACE_NONBLOCK
+			this->peer().enable(ACE_NONBLOCK); // Enable non-blocking mode
 
 			LOG_INF << fname << "client <" << m_clientHostName << "> connected";
 		}
@@ -248,6 +247,13 @@ bool TcpHandler::processRequest(std::shared_ptr<HttpRequest> &request)
 			<< request->m_relative_uri << "> id <"
 			<< request->m_uuid << ">";
 
+	if (request->m_headers.contains(HTTP_HEADER_KEY_Forwarding_Host))
+	{
+		auto host = request->m_headers.get(HTTP_HEADER_KEY_Forwarding_Host);
+		request->m_headers.erase(HTTP_HEADER_KEY_Forwarding_Host); // prevent loop forwarding
+		return processForward(std::move(host), request);
+	}
+
 	if (request->m_method == web::http::methods::GET)
 		RESTHANDLER::instance()->handle_get(request);
 	else if (request->m_method == web::http::methods::PUT)
@@ -264,6 +270,63 @@ bool TcpHandler::processRequest(std::shared_ptr<HttpRequest> &request)
 	{
 		return false;
 	}
+	return true;
+}
+
+bool TcpHandler::processForward(const std::string forwardTo, std::shared_ptr<HttpRequest> &request)
+{
+	const static char fname[] = "TcpHandler::processForward() ";
+	LOG_DBG << fname << "Forwarding Host: " << forwardTo;
+
+	static ACE_Map_Manager<std::string, TcpStreamPtr, ACE_Thread_Mutex> g_clients;
+
+	Uri parser;
+	auto uri = parser.parse(forwardTo);
+	auto host = uri.host;
+	uri.port = (uri.port <= 1024) ? Configuration::instance()->getRestTcpPort() : uri.port;
+
+	TcpStreamPtr client;
+	if (g_clients.find(host, client) != 0)
+	{
+		ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, g_clients.mutex(), false);
+		if (g_clients.find(host, client) != 0)
+		{
+			client = TcpStreamPtr(new SocketStream(Global::getClientSSLContext()));
+			if (!client->connect(ACE_INET_Addr(uri.port, host.c_str())))
+			{
+				LOG_ERR << fname << "Failed to connect to forwarding host: " << host;
+				request->reply(web::http::status_codes::BadGateway, "Failed to connect to forwarding host");
+				return true;
+			}
+
+			g_clients.bind(host, client);
+		}
+	}
+
+	// Ensure call back not trigger before send to keep sequence.
+	std::lock_guard<std::mutex> lock(client->get_state_mutex());
+	client->onData([client, request](std::vector<char> &&data)
+	{
+		Response r;
+		if (r.deserialize(data.data(), data.size()))
+		{
+			request->reply(r.request_uri, r.uuid, r.body, r.headers, r.http_status, r.body_msg_type);
+		}
+		else
+		{
+			request->reply(web::http::status_codes::InternalError, "Failed to parse forwarded response");
+		}
+	});
+
+	client->onClose([client, host, request]()
+	{
+		LOG_WAR << "Forwarding client to " << host << " closed";
+		g_clients.unbind(host);
+		request->reply(web::http::status_codes::BadGateway, "Forwarding host connection closed");
+	});
+
+	auto data = request->serialize();
+	client->send(std::move(data));
 	return true;
 }
 
@@ -387,9 +450,9 @@ int TcpHandler::handle_output(ACE_HANDLE)
 	return 0;
 }
 
-ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context, const std::string &cert, const std::string &key, const std::string &ca)
+ACE_SSL_Context *TcpHandler::initServerSSL(ACE_SSL_Context *context, const std::string &cert, const std::string &key, const std::string &ca)
 {
-	const static char fname[] = "TcpHandler::initTcpSSL() ";
+	const static char fname[] = "TcpHandler::initServerSSL() ";
 
 	LOG_INF << fname << "Init SSL with CA <" << ca << "> server cert <" << cert << "> server private key <" << key << ">";
 
@@ -465,6 +528,46 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context, const std::str
 	SSL_CTX_set_session_cache_mode(context->context(), SSL_SESS_CACHE_SERVER);
 	SSL_CTX_set_timeout(context->context(), 300); // 5-minute session timeout
 
+	return context;
+}
+
+ACE_SSL_Context *TcpHandler::initClientSSL(ACE_SSL_Context *context, const std::string &cert, const std::string &key, const std::string &ca)
+{
+	const static char fname[] = "TcpHandler::initClientSSL() ";
+
+	LOG_INF << fname << "Init SSL with CA <" << ca << "> server cert <" << cert << "> server private key <" << key << ">";
+
+	context->set_mode(ACE_SSL_Context::SSLv23_client);
+	if (!ca.empty())
+	{
+		// Load trusted CA certificates if the CA path is accessible
+		if (ACE_OS::access(ca.c_str(), R_OK) == 0)
+		{
+			bool isDir = Utility::isDirExist(ca);
+			if (context->load_trusted_ca(isDir ? 0 : ca.c_str(), isDir ? ca.c_str() : 0, false) != 0)
+			{
+				LOG_WAR << fname << "Failed to load trusted CA from: " << ca;
+				return nullptr;
+			}
+		}
+		else
+		{
+			LOG_WAR << fname << "CA path inaccessible or invalid: " << ca;
+			return nullptr;
+		}
+	}
+
+	if (!cert.empty() && !key.empty())
+	{
+		// Load client certificate and private key
+		if (context->certificate(cert.c_str(), SSL_FILETYPE_PEM) == -1 ||
+			context->private_key(key.c_str(), SSL_FILETYPE_PEM) == -1)
+		{
+			LOG_ERR << fname << "Failed to load certificate " << cert << " and/or private key " << key;
+			return nullptr;
+		}
+		// context->set_verify_peer(true); // Verify server certificate
+	}
 	return context;
 }
 

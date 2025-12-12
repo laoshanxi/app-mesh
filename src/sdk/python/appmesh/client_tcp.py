@@ -137,11 +137,6 @@ class AppMeshClientTCP(AppMeshClient):
         Returns:
             Simulated HTTP response.
         """
-
-        # Check for unsupported features
-        if super().forward_to:
-            raise RuntimeError("Forward request is not supported in TCP mode")
-
         if not self.tcp_transport.connected():
             self.tcp_transport.connect()
 
@@ -157,6 +152,10 @@ class AppMeshClientTCP(AppMeshClient):
         token = self._get_access_token()
         if token:
             appmesh_request.headers[self._HTTP_HEADER_KEY_AUTH] = token
+
+        # Add forwarding host
+        if super().forward_to:
+            appmesh_request.headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = super().forward_to
 
         # Add custom headers
         if header:

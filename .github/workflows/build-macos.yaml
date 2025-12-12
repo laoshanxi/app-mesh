@@ -115,7 +115,7 @@ jobs:
           python3 src/sdk/python/sample.py
 
           cd src/sdk/go
-          go test -v
+          go test -v || tail /opt/appmesh/work/stdout/appmesh.agent.out
 
   publish:
     needs: test

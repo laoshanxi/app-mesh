@@ -131,6 +131,8 @@ jobs:
           echo "3. Rust SDK" >> CHANGELOG.txt
           echo "4. WebSocket service" >> CHANGELOG.txt
           echo "5. Python WebSocket SDK" >> CHANGELOG.txt
+          echo "6. TCP protocol forwarding" >> CHANGELOG.txt
+          echo "7. TCP async client" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency
