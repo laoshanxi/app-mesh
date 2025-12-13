@@ -52,7 +52,7 @@ jobs:
           make pack
 
       - name: Upload packages
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.os }}-${{ github.sha }}
           path: build/appmesh_*.pkg
@@ -70,7 +70,7 @@ jobs:
           go-version: "stable"
 
       - name: Download packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: ${{ matrix.os }}-${{ github.sha }}
 
@@ -122,12 +122,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Download macos-14 packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: macos-14-${{ github.sha }}
 
       - name: Download macos-15 packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: macos-15-${{ github.sha }}
 
