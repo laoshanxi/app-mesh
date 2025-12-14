@@ -273,26 +273,28 @@ void WebSocketService::stop()
     // m_incoming_queue.stop();
     // m_outgoing_queue.stop();
 
+    for (auto &worker : m_worker_threads)
+        if (worker.joinable())
+            worker.join();
+
+    m_worker_threads.clear();
+
+    // Wake lws loop to exit cleanly
     if (m_context)
         lws_cancel_service(m_context);
 
     if (m_event_loop_thread.joinable())
         m_event_loop_thread.join();
 
-    for (auto &worker : m_worker_threads)
-        if (worker.joinable())
-            worker.join();
-    m_worker_threads.clear();
-
-    if (m_context)
-    {
-        lws_context_destroy(m_context);
-        m_context = nullptr;
-    }
-
     {
         std::lock_guard<std::mutex> lock(m_sessions_mutex);
         m_sessions.clear();
+    }
+
+    if (m_context)
+    {
+        // lws_context_destroy(m_context); // TODO: crash
+        m_context = nullptr;
     }
 
     LOG_INF << fname << "Shutdown complete";

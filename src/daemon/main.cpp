@@ -435,9 +435,8 @@ void AppMeshDaemon::initializeRestService()
 	// Setup acceptor
 	m_acceptor = std::make_unique<TcpAcceptor>();
 
-	constexpr int FLAG_ACE_NONBLOCK = 0;
+	constexpr int FLAG_ACE_NONBLOCK = 0; // Blocking mode
 	constexpr int FLAG_SO_REUSEADDR = 1;
-
 	if (m_acceptor->open(tcpAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
 	{
 		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getRestTcpPort()) + " with error: " + last_error_msg());
