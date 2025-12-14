@@ -500,7 +500,6 @@ public:
 			m_state.store(ConnState::CLOSED, std::memory_order_release);
 			return -1;
 		}
-		this->add_reference(); // TODO: workaround for delete-after-use
 
 		fire_connect();
 		return 0;
@@ -717,8 +716,6 @@ public:
 	{
 		const static char fname[] = "SocketStream::handle_close() ";
 		LOG_DBG << fname << this;
-
-		ACE_Event_Handler_var guard(this); // Safe guard due to this can be called manually
 
 		ConnState prev = m_state.exchange(ConnState::CLOSED, std::memory_order_acq_rel);
 		if (prev != ConnState::CLOSED)

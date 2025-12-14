@@ -195,7 +195,7 @@ int TcpHandler::open(void *)
 				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << last_error_msg();
 			}
 
-			this->peer().enable(ACE_NONBLOCK); // Enable non-blocking mode
+			this->peer().disable(ACE_NONBLOCK); // Blocking mode
 
 			LOG_INF << fname << "client <" << m_clientHostName << "> connected";
 		}
