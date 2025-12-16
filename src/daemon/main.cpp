@@ -31,6 +31,7 @@
 #include <ace/SSL/SSL_SOCK_Acceptor.h>
 #endif
 
+#include "../common/QuitHandler.h"
 #include "../common/RestClient.h"
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
@@ -43,9 +44,9 @@
 #include "application/Application.h"
 #include "process/AppProcess.h"
 #include "rest/RestHandler.h"
+#include "rest/SSLHelper.h"
 #include "rest/SocketServer.h"
 #include "rest/SocketStream.h"
-#include "rest/SSLHelper.h"
 #include "rest/Worker.h"
 #include "security/HMACVerifier.h"
 #include "security/Security.h"
@@ -91,7 +92,6 @@ public:
 	// Reactor management
 	void startReactorThreads(ACE_Reactor *reactor, size_t threadCount);
 	void runReactorEvent(ACE_Reactor *reactor);
-	int endReactorEvent(ACE_Reactor *reactor);
 
 	// REST service management
 	void initializeRestService();
@@ -108,46 +108,19 @@ public:
 
 	// Shutdown
 	void performShutdown();
-	void joinAllThreads();
+	void cleanWorkerThreads();
 	void cleanupResources();
-
-	// Utility methods
-	void requestShutdown() { m_shutdownRequested.store(true); }
-	bool isShutdownRequested() const { return m_shutdownRequested.load(); }
 
 private:
 	std::vector<std::unique_ptr<std::thread>> m_threadPool;
 	std::shared_ptr<SocketStreamPtr> m_client;
 	std::unique_ptr<TcpAcceptor> m_acceptor;
-	std::atomic<bool> m_shutdownRequested{false};
-	std::mutex m_threadPoolMutex;
 	std::list<os::Process> m_ptree;
 };
 
 // Global daemon instance
 static std::unique_ptr<AppMeshDaemon> g_daemon;
 static constexpr int MAX_TCP_ERROR_COUNT = 30;
-
-#if defined(_WIN32)
-static BOOL WINAPI ConsoleCtrlHandlerRoutine(DWORD ctrlType)
-{
-	switch (ctrlType)
-	{
-	case CTRL_C_EVENT:
-	case CTRL_CLOSE_EVENT:
-	case CTRL_LOGOFF_EVENT:
-	case CTRL_SHUTDOWN_EVENT:
-		QUIT_HANDLER::instance()->set(true);
-		if (g_daemon)
-			g_daemon->requestShutdown();
-		if (ACE_Reactor::instance())
-			ACE_Reactor::instance()->end_reactor_event_loop(); // End reactor event loop to wake reactor threads
-		return TRUE;
-	default:
-		return FALSE;
-	}
-}
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -220,7 +193,8 @@ void AppMeshDaemon::initializeACE()
 
 	// Singleton initialization without lock
 	TIMER_MANAGER::instance();
-	QUIT_HANDLER::instance();
+	QuitHandler::instance();
+	WORKER::instance();
 
 	LOG_INF << fname << "Initializing ACE TP_Reactor (POSIX)";
 	ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
@@ -322,14 +296,7 @@ void AppMeshDaemon::setupSignalHandlers()
 {
 	const static char fname[] = "AppMeshDaemon::setupSignalHandlers() ";
 
-#if defined(_WIN32)
-	// On Windows, register native console handler and do NOT rely on ACE_Reactor SIG handlers.
-	SetConsoleCtrlHandler(ConsoleCtrlHandlerRoutine, TRUE);
-#else
-	// POSIX: register SIGINT/SIGTERM with ACE_Reactor (so QUIT_HANDLER is triggered via reactor)
-	ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());
-	ACE_Reactor::instance()->register_handler(SIGTERM, QUIT_HANDLER::instance());
-#endif
+	setupQuitHandler(ACE_Reactor::instance());
 
 	Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, ACE_Reactor::instance());
 
@@ -358,8 +325,6 @@ void AppMeshDaemon::startReactorThreads(ACE_Reactor *reactor, size_t threadCount
 		throw std::invalid_argument("Null reactor provided");
 	}
 
-	std::lock_guard<std::mutex> lock(m_threadPoolMutex);
-
 	for (size_t i = 0; i < threadCount; ++i)
 	{
 		m_threadPool.emplace_back(std::make_unique<std::thread>(
@@ -378,10 +343,10 @@ void AppMeshDaemon::runReactorEvent(ACE_Reactor *reactor)
 
 	// reactor->owner(ACE_OS::thr_self());
 
-	while (!isShutdownRequested() && QUIT_HANDLER::instance()->is_set() == 0 && !reactor->reactor_event_loop_done())
+	while (!QuitHandler::instance()->shouldExit() && !reactor->reactor_event_loop_done())
 	{
 		reactor->run_reactor_event_loop();
-		if (QUIT_HANDLER::instance()->is_set() || isShutdownRequested())
+		if (QuitHandler::instance()->shouldExit())
 		{
 			break;
 		}
@@ -389,20 +354,6 @@ void AppMeshDaemon::runReactorEvent(ACE_Reactor *reactor)
 	}
 
 	LOG_WAR << fname << "Reactor event thread exiting";
-}
-
-int AppMeshDaemon::endReactorEvent(ACE_Reactor *reactor)
-{
-	const static char fname[] = "AppMeshDaemon::endReactorEvent() ";
-
-	if (!reactor)
-	{
-		LOG_ERR << fname << "Null reactor";
-		return -1;
-	}
-
-	LOG_DBG << fname << "Ending reactor event loop";
-	return reactor->end_reactor_event_loop();
 }
 
 void AppMeshDaemon::initializeRestService()
@@ -426,10 +377,10 @@ void AppMeshDaemon::initializeRestService()
 	LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
 
 	// Initialize SSL for TCP server and client
-	initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
+	SSLHelper::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
 
 	const auto clientCA = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());
-	initClientSSL(Global::getClientSSL(), "", "", "" /*clientCA*/);
+	SSLHelper::initClientSSL(Global::getClientSSL(), "", "", "" /*clientCA*/);
 
 	// Start REST thread pool
 	startWorkerThreadPool();
@@ -480,14 +431,11 @@ void AppMeshDaemon::startWorkerThreadPool()
 	const static char fname[] = "AppMeshDaemon::startWorkerThreadPool() ";
 
 	auto config = Configuration::instance();
-	std::lock_guard<std::mutex> lock(m_threadPoolMutex);
+	auto workerNum = config->getWorkerThreadPoolSize();
 
-	for (size_t i = 0; i < config->getWorkerThreadPoolSize(); ++i)
-	{
-		m_threadPool.emplace_back(std::make_unique<std::thread>(Worker::runRequestLoop));
-	}
+	WORKER::instance()->activate(THR_NEW_LWP | THR_JOINABLE, workerNum);
 
-	LOG_INF << fname << "Started " << config->getWorkerThreadPoolSize() << " threads for REST thread pool";
+	LOG_INF << fname << "Started " << workerNum << " threads for REST thread pool";
 }
 
 void AppMeshDaemon::startAgentApplication()
@@ -572,7 +520,7 @@ void AppMeshDaemon::runMainLoop()
 	int tcpErrorCounter = 0;
 	LOG_INF << fname << "Entering main application monitoring loop";
 
-	while (!isShutdownRequested() && QUIT_HANDLER::instance()->is_set() == 0)
+	while (!QuitHandler::instance()->shouldExit())
 	{
 		try
 		{
@@ -618,8 +566,7 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 		if (errorCounter > MAX_TCP_ERROR_COUNT)
 		{
 			LOG_ERR << fname << "REST TCP connection test failed more than " << MAX_TCP_ERROR_COUNT << " times, requesting shutdown";
-			requestShutdown();
-			QUIT_HANDLER::instance()->set(true);
+			QuitHandler::instance()->requestExit();
 			return false;
 		}
 
@@ -675,10 +622,7 @@ void AppMeshDaemon::performShutdown()
 
 	LOG_INF << fname << "Beginning shutdown sequence";
 
-	requestShutdown();
-	QUIT_HANDLER::instance()->set(true);
-
-	endReactorEvent(ACE_Reactor::instance());
+	QuitHandler::instance()->requestExit();
 
 #if defined(HAVE_UWEBSOCKETS)
 	WebSocketAdaptor::instance()->stop();
@@ -686,7 +630,7 @@ void AppMeshDaemon::performShutdown()
 	WebSocketService::instance()->stop();
 #endif
 
-	// joinAllThreads();
+	cleanWorkerThreads();
 	cleanupResources();
 
 	LOG_INF << fname << "AppMesh daemon exited";
@@ -696,28 +640,12 @@ void AppMeshDaemon::performShutdown()
 	ACE::fini();
 }
 
-void AppMeshDaemon::joinAllThreads()
+void AppMeshDaemon::cleanWorkerThreads()
 {
-	const static char fname[] = "AppMeshDaemon::joinAllThreads() ";
+	const static char fname[] = "AppMeshDaemon::cleanWorkerThreads() ";
 
-	std::lock_guard<std::mutex> lock(m_threadPoolMutex);
-
-	for (auto &threadPtr : m_threadPool)
-	{
-		if (threadPtr && threadPtr->joinable())
-		{
-			try
-			{
-				threadPtr->join();
-			}
-			catch (const std::exception &ex)
-			{
-				LOG_WAR << fname << "Failed to join thread: " << ex.what();
-			}
-		}
-	}
-
-	m_threadPool.clear();
+	WORKER::instance()->shutdown();
+	WORKER::instance()->wait();
 	LOG_INF << fname << "All threads joined";
 }
 

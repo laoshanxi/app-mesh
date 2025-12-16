@@ -547,7 +547,7 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
     else
     {
         auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
-        Worker::queueInputRequest(data, 0, req.m_session_ref);
+        WORKER::instance()->queueInputRequest(data, 0, req.m_session_ref);
     }
 }
 

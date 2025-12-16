@@ -593,7 +593,7 @@ namespace WSS
                     app.publish("broadcast", data, opcode);
                 });
 
-            m_broadcasters[threadId] = broadcaster;
+            m_broadcasters[threadId] = std::move(broadcaster);
 
             setupRoutes(app, threadId);
 

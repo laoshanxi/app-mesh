@@ -78,7 +78,7 @@ public:
 					   const std::string &bodyType) const;
 
 private:
-	const int m_tcpHandlerId;
+	const int m_tcpClientId;
 	const void *m_wsSessionId;
 	std::shared_ptr<WSS::ReplyContext> m_replyContext;
 };

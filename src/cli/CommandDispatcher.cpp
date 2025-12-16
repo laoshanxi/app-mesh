@@ -811,11 +811,12 @@ int CommandDispatcher::cmdAppControlState(bool start)
 	{
 		auto appMap = this->getAppList();
 		std::for_each(appMap.begin(), appMap.end(), [&appList, &start](const std::pair<std::string, bool> &pair)
-					  {
+		{
 			if (start != pair.second)
 			{
 				appList.push_back(pair.first);
-			} });
+			}
+		});
 	}
 	else
 	{
