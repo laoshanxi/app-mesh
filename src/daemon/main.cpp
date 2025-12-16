@@ -43,6 +43,7 @@
 #include "application/Application.h"
 #include "process/AppProcess.h"
 #include "rest/RestHandler.h"
+#include "rest/SocketServer.h"
 #include "rest/SocketStream.h"
 #include "rest/TcpServer.h"
 #include "security/HMACVerifier.h"
@@ -58,7 +59,7 @@
 #include "../common/websockets/WebSocketService.h"
 #endif
 
-using TcpAcceptor = ACE_Acceptor<TcpHandler, ACE_SSL_SOCK_Acceptor>;
+using TcpAcceptor = ACE_Acceptor<SocketServer, ACE_SSL_SOCK_Acceptor>;
 
 // Global state management
 class AppMeshDaemon
@@ -115,7 +116,7 @@ public:
 
 private:
 	std::vector<std::unique_ptr<std::thread>> m_threadPool;
-	std::shared_ptr<StreamPointer> m_client;
+	std::shared_ptr<SocketStreamPtr> m_client;
 	std::unique_ptr<TcpAcceptor> m_acceptor;
 	std::atomic<bool> m_shutdownRequested{false};
 	std::mutex m_threadPoolMutex;
@@ -435,7 +436,7 @@ void AppMeshDaemon::initializeRestService()
 	// Setup acceptor
 	m_acceptor = std::make_unique<TcpAcceptor>();
 
-	constexpr int FLAG_ACE_NONBLOCK = 0; // Blocking mode
+	constexpr int FLAG_ACE_NONBLOCK = 1; // None-blocking mode
 	constexpr int FLAG_SO_REUSEADDR = 1;
 	if (m_acceptor->open(tcpAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
 	{
@@ -443,7 +444,7 @@ void AppMeshDaemon::initializeRestService()
 	}
 
 	// Setup client connection
-	m_client = std::make_shared<StreamPointer>(new SocketStream(Global::getClientSSL()));
+	m_client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
 	if (m_client->stream()->connect(tcpAddr))
 		LOG_INF << fname << "Test local TCP client connected successfully";
 	else
@@ -606,7 +607,7 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 	auto config = Configuration::instance();
 
 	// m_client->stream()->close();
-	// m_client = std::make_shared<StreamPointer>(new SocketStream(Global::getClientSSL()));
+	// m_client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
 	// m_client->stream()->connect(ACE_INET_Addr(6059, "localhost"));
 	if (m_client && m_client->stream() && !m_client->stream()->connected())
 	{

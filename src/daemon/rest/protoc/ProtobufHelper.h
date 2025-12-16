@@ -23,8 +23,8 @@ class Response
 public:
 	Response();
 	virtual ~Response();
-	std::shared_ptr<msgpack::sbuffer> serialize() const;
-	bool deserialize(const char *data, int dataSize);
+	std::unique_ptr<msgpack::sbuffer> serialize() const;
+	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
 public:
 	std::string uuid;

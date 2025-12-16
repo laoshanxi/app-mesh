@@ -16,21 +16,21 @@ Response::~Response()
 {
 }
 
-std::shared_ptr<msgpack::sbuffer> Response::serialize() const
+std::unique_ptr<msgpack::sbuffer> Response::serialize() const
 {
 	// pack
-	auto sbuf = std::make_shared<msgpack::sbuffer>();
+	auto sbuf = std::make_unique<msgpack::sbuffer>();
 	msgpack::pack(*sbuf, *this);
 	return sbuf;
 }
 
-bool Response::deserialize(const char *data, int dataSize)
+bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
 {
 	const static char fname[] = "Response::deserialize() ";
 	try
 	{
 		msgpack::unpacked result;
-		msgpack::unpack(result, data, dataSize);
+		msgpack::unpack(result, reinterpret_cast<const char *>(data), dataSize);
 		msgpack::object obj = result.get();
 		Response resp = obj.as<Response>();
 		*this = resp;
