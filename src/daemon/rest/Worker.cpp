@@ -21,60 +21,75 @@
 #include "Worker.h"
 #include "uwebsockets/ReplyContext.h"
 
-RequestQueue Worker::m_messages;
-
 struct HttpRequestMsg
 {
-	explicit HttpRequestMsg(const ByteBuffer &data, int tcpHandlerID, void *lwsSessionID = NULL, std::shared_ptr<WSS::ReplyContext> uwsReplyCtx = nullptr)
-		: m_data(data), m_tcpHanlerId(tcpHandlerID), m_wsSessionId(lwsSessionID), m_replyContext(uwsReplyCtx)
+	explicit HttpRequestMsg(const ByteBuffer &data, int tcpClientId, void *lwsSessionID = NULL, std::shared_ptr<WSS::ReplyContext> uwsReplyCtx = nullptr)
+		: m_data(data), m_tcpClientId(tcpClientId), m_wsSessionId(lwsSessionID), m_replyContext(uwsReplyCtx)
 	{
 	}
 	const ByteBuffer m_data; // TODO: use more efficiency definition
 	// Three different protocols:
-	const int m_tcpHanlerId;
+	const int m_tcpClientId;
 	const void *m_wsSessionId;
 	std::shared_ptr<WSS::ReplyContext> m_replyContext;
 };
 
-void Worker::queueInputRequest(ByteBuffer &data, int tcpHandlerID, void *lwsSessionID, std::shared_ptr<WSS::ReplyContext> uwsContext)
+void Worker::queueInputRequest(ByteBuffer &data, int tcpClientId, void *lwsSessionID, std::shared_ptr<WSS::ReplyContext> uwsContext)
 {
-	auto req = std::make_shared<HttpRequestMsg>(data, tcpHandlerID, lwsSessionID, uwsContext);
-	m_messages.enqueue(req);
+	m_messages.enqueue(std::make_shared<HttpRequestMsg>(std::move(data), tcpClientId, lwsSessionID, std::move(uwsContext)));
 }
 
-void Worker::runRequestLoop()
+int Worker::svc()
 {
-	const static char fname[] = "Worker::runRequestLoop() ";
+	const static char fname[] = "Worker::svc() ";
+	LOG_INF << fname;
 
 	while (QUIT_HANDLER::instance()->is_set() == 0)
 	{
 		std::shared_ptr<HttpRequestMsg> entity;
 		m_messages.wait_dequeue(entity);
-		if (entity)
+
+		// Sentinel check
+		if (!entity || (entity->m_tcpClientId == 0 && entity->m_wsSessionId == nullptr && !entity->m_replyContext))
 		{
-			auto request = HttpRequest::deserialize(entity->m_data, entity->m_tcpHanlerId, entity->m_wsSessionId, entity->m_replyContext);
-			if (!request || !processRequest(request))
+			LOG_INF << fname << "Got sentinel";
+			break;
+		}
+
+		auto request = HttpRequest::deserialize(entity->m_data, entity->m_tcpClientId, entity->m_wsSessionId, entity->m_replyContext);
+		if (!request || !processRequest(request))
+		{
+			LOG_WAR << fname << "Failed to parse request, closing connection";
+			if (entity->m_tcpClientId > 0)
 			{
-				LOG_WAR << fname << "Failed to parse request, closing connection";
-				if (entity->m_tcpHanlerId > 0)
-				{
-					SocketServer::closeClient(entity->m_tcpHanlerId);
-				}
-#if defined(HAVE_UWEBSOCKETS)
-				else if (entity->m_replyContext)
-				{
-					entity->m_replyContext->replyData("500 Internal Server Error", true, false);
-				}
-#else
-				else if (entity->m_wsSessionId)
-				{
-					// TODO: handle libwensockets close to avoid leak
-				}
-#endif
+				SocketServer::closeClient(entity->m_tcpClientId);
 			}
+#if defined(HAVE_UWEBSOCKETS)
+			else if (entity->m_replyContext)
+			{
+				entity->m_replyContext->replyData("500 Internal Server Error", true, false);
+			}
+#else
+			else if (entity->m_wsSessionId)
+			{
+				// TODO: handle libwensockets close to avoid leak
+			}
+#endif
 		}
 	}
+
 	LOG_WAR << fname << "Exit";
+	return 0;
+}
+
+void Worker::shutdown()
+{
+	ByteBuffer sentinel{nullptr};
+	size_t threadNum = this->thr_count();
+	for (size_t i = 0; i < threadNum; ++i)
+	{
+		queueInputRequest(sentinel, 0, nullptr);
+	}
 }
 
 bool Worker::processRequest(std::shared_ptr<HttpRequest> &request)
@@ -117,7 +132,7 @@ bool Worker::processForward(const std::string forwardTo, std::shared_ptr<HttpReq
 	const static char fname[] = "Worker::processForward() ";
 	LOG_DBG << fname << "Forwarding Host: " << forwardTo;
 
-	static ACE_Map_Manager<std::string, std::shared_ptr<SocketStreamPtr>, ACE_Thread_Mutex> fwdClientMap;
+	static ACE_Map_Manager<std::string, std::shared_ptr<SocketStreamPtr>, ACE_Thread_Mutex> connectedClients;
 
 	Uri parser;
 	auto uri = parser.parse(forwardTo);
@@ -125,10 +140,10 @@ bool Worker::processForward(const std::string forwardTo, std::shared_ptr<HttpReq
 	uri.port = (uri.port <= 1024) ? Configuration::instance()->getRestTcpPort() : uri.port;
 
 	std::shared_ptr<SocketStreamPtr> client;
-	if (fwdClientMap.find(host, client) != 0)
+	if (connectedClients.find(host, client) != 0)
 	{
-		ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, fwdClientMap.mutex(), false);
-		if (fwdClientMap.find(host, client) != 0)
+		ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, connectedClients.mutex(), false);
+		if (connectedClients.find(host, client) != 0)
 		{
 			client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
 			if (!client->stream()->connect(ACE_INET_Addr(uri.port, host.c_str())))
@@ -138,7 +153,7 @@ bool Worker::processForward(const std::string forwardTo, std::shared_ptr<HttpReq
 				return true;
 			}
 
-			fwdClientMap.bind(host, client);
+			connectedClients.bind(host, client);
 		}
 	}
 
@@ -166,7 +181,7 @@ bool Worker::processForward(const std::string forwardTo, std::shared_ptr<HttpReq
 	client->stream()->onClose([host, request]()
 	{
 		LOG_WAR << "Forwarding client to " << host << " closed";
-		fwdClientMap.unbind(host);
+		connectedClients.unbind(host);
 		request->reply(web::http::status_codes::BadGateway, "Forwarding host connection closed");
 	});
 

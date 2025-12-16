@@ -28,7 +28,7 @@ HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
-	  m_tcpHandlerId(tcpHandlerId), m_wsSessionId(0), m_replyContext(nullptr)
+	  m_tcpClientId(tcpHandlerId), m_wsSessionId(0), m_replyContext(nullptr)
 {
 }
 
@@ -146,10 +146,10 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	if (requestUri == REST_PATH_UPLOAD)
 		response->file_upload_request_headers = m_headers;
 
-	if (m_tcpHandlerId > 0)
+	if (m_tcpClientId > 0)
 	{
 		// TCP protocol
-		return SocketServer::replyTcp(m_tcpHandlerId, std::move(response));
+		return SocketServer::replyTcp(m_tcpClientId, std::move(response));
 	}
 #if defined(HAVE_UWEBSOCKETS)
 	else if (m_replyContext)

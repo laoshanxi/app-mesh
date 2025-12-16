@@ -108,7 +108,7 @@ public:
 
 	// Shutdown
 	void performShutdown();
-	void joinAllThreads();
+	void cleanWorkerThreads();
 	void cleanupResources();
 
 	// Utility methods
@@ -120,7 +120,6 @@ private:
 	std::shared_ptr<SocketStreamPtr> m_client;
 	std::unique_ptr<TcpAcceptor> m_acceptor;
 	std::atomic<bool> m_shutdownRequested{false};
-	std::mutex m_threadPoolMutex;
 	std::list<os::Process> m_ptree;
 };
 
@@ -221,6 +220,7 @@ void AppMeshDaemon::initializeACE()
 	// Singleton initialization without lock
 	TIMER_MANAGER::instance();
 	QUIT_HANDLER::instance();
+	WORKER::instance();
 
 	LOG_INF << fname << "Initializing ACE TP_Reactor (POSIX)";
 	ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
@@ -358,8 +358,6 @@ void AppMeshDaemon::startReactorThreads(ACE_Reactor *reactor, size_t threadCount
 		throw std::invalid_argument("Null reactor provided");
 	}
 
-	std::lock_guard<std::mutex> lock(m_threadPoolMutex);
-
 	for (size_t i = 0; i < threadCount; ++i)
 	{
 		m_threadPool.emplace_back(std::make_unique<std::thread>(
@@ -426,10 +424,10 @@ void AppMeshDaemon::initializeRestService()
 	LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
 
 	// Initialize SSL for TCP server and client
-	initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
+	SSLHelper::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
 
 	const auto clientCA = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());
-	initClientSSL(Global::getClientSSL(), "", "", "" /*clientCA*/);
+	SSLHelper::initClientSSL(Global::getClientSSL(), "", "", "" /*clientCA*/);
 
 	// Start REST thread pool
 	startWorkerThreadPool();
@@ -480,14 +478,11 @@ void AppMeshDaemon::startWorkerThreadPool()
 	const static char fname[] = "AppMeshDaemon::startWorkerThreadPool() ";
 
 	auto config = Configuration::instance();
-	std::lock_guard<std::mutex> lock(m_threadPoolMutex);
+	auto workerNum = config->getWorkerThreadPoolSize();
 
-	for (size_t i = 0; i < config->getWorkerThreadPoolSize(); ++i)
-	{
-		m_threadPool.emplace_back(std::make_unique<std::thread>(Worker::runRequestLoop));
-	}
+	WORKER::instance()->activate(THR_NEW_LWP | THR_JOINABLE, workerNum);
 
-	LOG_INF << fname << "Started " << config->getWorkerThreadPoolSize() << " threads for REST thread pool";
+	LOG_INF << fname << "Started " << workerNum << " threads for REST thread pool";
 }
 
 void AppMeshDaemon::startAgentApplication()
@@ -686,7 +681,7 @@ void AppMeshDaemon::performShutdown()
 	WebSocketService::instance()->stop();
 #endif
 
-	// joinAllThreads();
+	cleanWorkerThreads();
 	cleanupResources();
 
 	LOG_INF << fname << "AppMesh daemon exited";
@@ -696,28 +691,12 @@ void AppMeshDaemon::performShutdown()
 	ACE::fini();
 }
 
-void AppMeshDaemon::joinAllThreads()
+void AppMeshDaemon::cleanWorkerThreads()
 {
-	const static char fname[] = "AppMeshDaemon::joinAllThreads() ";
+	const static char fname[] = "AppMeshDaemon::cleanWorkerThreads() ";
 
-	std::lock_guard<std::mutex> lock(m_threadPoolMutex);
-
-	for (auto &threadPtr : m_threadPool)
-	{
-		if (threadPtr && threadPtr->joinable())
-		{
-			try
-			{
-				threadPtr->join();
-			}
-			catch (const std::exception &ex)
-			{
-				LOG_WAR << fname << "Failed to join thread: " << ex.what();
-			}
-		}
-	}
-
-	m_threadPool.clear();
+	WORKER::instance()->shutdown();
+	WORKER::instance()->wait();
 	LOG_INF << fname << "All threads joined";
 }
 
