@@ -39,7 +39,6 @@
 #include <vector>
 
 #include "../../common/Utility.h"
-#include "TcpServer.h"
 
 // Protocol constants
 static constexpr size_t TCP_HEADER_SIZE = TCP_MESSAGE_HEADER_LENGTH;
@@ -61,50 +60,49 @@ public:
 			if (this->ssl_)
 				::SSL_free(this->ssl_);
 			this->ssl_ = ::SSL_new(ctx->context());
+			m_last_ssl_error = SSL_ERROR_NONE;
 		}
 	}
 
-	int last_ssl_error() const { return m_last_ssl_error; }
+	int last_ssl_error() const { return m_last_ssl_error.load(); }
 
 	ssize_t send(const void *buf, size_t len, int *out_ssl_error = nullptr)
 	{
-		ACE_Errno_Guard eguard(errno);
-		ssize_t n = ACE_SSL_SOCK_Stream::send(buf, len);
-		int ssl_err = SSL_ERROR_NONE;
+		::ERR_clear_error(); // Clear OpenSSL error queue
 
+		ssize_t n = ACE_SSL_SOCK_Stream::send(buf, len);
+
+		int err = SSL_ERROR_NONE;
 		if (n <= 0 && this->ssl_)
 		{
-			ssl_err = ::SSL_get_error(this->ssl_, static_cast<int>(n));
-			m_last_ssl_error = ssl_err;
-		}
-		else
-		{
-			m_last_ssl_error = SSL_ERROR_NONE;
+			err = ::SSL_get_error(this->ssl_, static_cast<int>(n));
 		}
 
+		m_last_ssl_error = err;
+
 		if (out_ssl_error)
-			*out_ssl_error = m_last_ssl_error;
+			*out_ssl_error = err;
+
 		return n;
 	}
 
 	ssize_t recv(void *buf, size_t len, int *out_ssl_error = nullptr)
 	{
-		ACE_Errno_Guard eguard(errno);
-		ssize_t n = ACE_SSL_SOCK_Stream::recv(buf, len);
-		int ssl_err = SSL_ERROR_NONE;
+		::ERR_clear_error(); // Clear OpenSSL error queue
 
+		ssize_t n = ACE_SSL_SOCK_Stream::recv(buf, len);
+
+		int err = SSL_ERROR_NONE;
 		if (n <= 0 && this->ssl_)
 		{
-			ssl_err = ::SSL_get_error(this->ssl_, static_cast<int>(n));
-			m_last_ssl_error = ssl_err;
-		}
-		else
-		{
-			m_last_ssl_error = SSL_ERROR_NONE;
+			err = ::SSL_get_error(this->ssl_, static_cast<int>(n));
 		}
 
+		m_last_ssl_error = err;
+
 		if (out_ssl_error)
-			*out_ssl_error = m_last_ssl_error;
+			*out_ssl_error = err;
+
 		return n;
 	}
 
@@ -155,7 +153,7 @@ public:
 	Phase phase() const { return m_phase; }
 
 	size_t header_bytes_needed() const { return TCP_HEADER_SIZE - m_header_offset; }
-	char *header_write_ptr() { return m_header_buf + m_header_offset; }
+	std::uint8_t *header_write_ptr() { return m_header_buf + m_header_offset; }
 
 	bool advance_header(size_t bytes)
 	{
@@ -176,13 +174,13 @@ public:
 
 		if (magic != TCP_MAGIC)
 		{
-			LOG_ERR << fname << "Invalid magic: " << magic;
+			LOG_ERR << fname << "Invalid magic number: 0x" << std::hex;
 			return false;
 		}
 
 		if (len > TCP_MAX_BODY_SIZE)
 		{
-			LOG_ERR << fname << "Body too large: " << len;
+			LOG_ERR << fname << "Message body too large: " << len << ", maximum allowed: " << TCP_MAX_BODY_SIZE;
 			return false;
 		}
 
@@ -195,7 +193,7 @@ public:
 
 	size_t expected_body_len() const { return m_expected_body_len; }
 	size_t body_bytes_needed() const { return m_expected_body_len - m_body_offset; }
-	char *body_write_ptr() { return m_body_buf.data() + m_body_offset; }
+	std::uint8_t *body_write_ptr() { return m_body_buf.data() + m_body_offset; }
 
 	bool advance_body(size_t bytes)
 	{
@@ -203,14 +201,14 @@ public:
 		return m_body_offset >= m_expected_body_len;
 	}
 
-	std::vector<char> extract_message()
+	std::vector<std::uint8_t> extract_message()
 	{
-		std::vector<char> result = std::move(m_body_buf);
+		std::vector<std::uint8_t> result = std::move(m_body_buf);
 		reset();
 		return result;
 	}
 
-	RecvResult do_recv(SSL_Stream_Ex &stream, char *buf, size_t len, size_t &bytes_received, int &ssl_error)
+	RecvResult do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t len, size_t &bytes_received, int &ssl_error)
 	{
 		bytes_received = 0;
 		ssl_error = SSL_ERROR_NONE;
@@ -228,6 +226,7 @@ public:
 
 		if (n == 0)
 		{
+			LOG_DBG << "Peer closed connection during receive";
 			return RecvResult::CLOSED;
 		}
 
@@ -243,14 +242,15 @@ public:
 			return RecvResult::WOULD_BLOCK;
 		}
 
+		LOG_ERR << "Receive operation failed with error: " << last_error_msg();
 		return RecvResult::ERR;
 	}
 
 private:
 	Phase m_phase;
-	char m_header_buf[TCP_HEADER_SIZE]{};
+	std::uint8_t m_header_buf[TCP_HEADER_SIZE]{};
 	size_t m_header_offset{};
-	std::vector<char> m_body_buf;
+	std::vector<std::uint8_t> m_body_buf;
 	size_t m_body_offset{};
 	size_t m_expected_body_len{};
 };
@@ -289,12 +289,9 @@ public:
 	SendBuffer(const SendBuffer &) = delete;
 	SendBuffer &operator=(const SendBuffer &) = delete;
 
-	bool complete() const
-	{
-		return (m_header_sent >= TCP_HEADER_SIZE) && (m_body_sent >= body_size());
-	}
-
+	bool complete() const { return (m_header_sent >= TCP_HEADER_SIZE) && (m_body_sent >= body_size()); }
 	size_t body_size() const { return m_body ? m_body->size() : 0; }
+	const std::unique_ptr<msgpack::sbuffer> &body() const { return m_body; }
 
 	SendResult do_send(SSL_Stream_Ex &stream, int &ssl_error)
 	{
@@ -339,7 +336,10 @@ private:
 			}
 
 			if (n == 0)
+			{
+				LOG_DBG << "Connection closed by peer during send operation";
 				return SendResult::CLOSED;
+			}
 
 			// Check SSL errors first
 			if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE)
@@ -351,6 +351,7 @@ private:
 			if (err == EWOULDBLOCK || err == EAGAIN)
 				return SendResult::WOULD_BLOCK;
 
+			LOG_ERR << "Send operation failed with error: " << last_error_msg();
 			return SendResult::ERR;
 		}
 		return SendResult::COMPLETE;
@@ -434,7 +435,8 @@ class SocketStream : public ACE_Svc_Handler<SSL_Stream_Ex, ACE_MT_SYNCH>
 {
 public:
 	using Super = ACE_Svc_Handler<SSL_Stream_Ex, ACE_MT_SYNCH>;
-	using DataCallback = std::function<void(std::vector<char> &&data)>;
+	using DataCallback = std::function<void(std::vector<std::uint8_t> &&data)>;
+	using SendCallback = std::function<void(const std::unique_ptr<msgpack::sbuffer> &data)>;
 	using EventCallback = std::function<void()>;
 	using ErrorCallback = std::function<void(const std::string &err)>;
 
@@ -455,7 +457,6 @@ public:
 		LOG_DBG << fname << this;
 
 		this->peer().set_ssl_context(ctx);
-		this->reference_counting_policy().value(ACE_Event_Handler::Reference_Counting_Policy::ENABLED);
 	}
 
 	virtual ~SocketStream()
@@ -466,6 +467,7 @@ public:
 
 	// --- Setup ---
 	void onData(DataCallback cb) { m_data_cb = std::move(cb); }
+	void onSent(SendCallback cb) { m_send_cb = std::move(cb); }
 	void onConnect(EventCallback cb) { m_connect_cb = std::move(cb); }
 	void onClose(EventCallback cb) { m_close_cb = std::move(cb); }
 	void onError(ErrorCallback cb) { m_error_cb = std::move(cb); }
@@ -492,11 +494,12 @@ public:
 		{
 			LOG_ERR << fname << "Failed to enable non-blocking mode: " << last_error_msg();
 		}
+		this->peer().get_remote_addr(m_target);
 
 		// Initial Registration MUST use register_handler.
 		if (reactor()->register_handler(this, ACE_Event_Handler::READ_MASK) == -1)
 		{
-			LOG_ERR << fname << "Failed to register handler";
+			LOG_ERR << fname << "Failed to register handler: " << last_error_msg();
 			m_state.store(ConnState::CLOSED, std::memory_order_release);
 			return -1;
 		}
@@ -508,8 +511,13 @@ public:
 	// ========== Client-side: Connect to remote server ==========
 	bool connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr)
 	{
+		const static char fname[] = "SocketStream::connect() ";
+
 		if (!this->reactor())
+		{
+			LOG_ERR << fname << "No reactor assigned";
 			return false;
+		}
 		ACE_SSL_SOCK_Connector connector;
 		// NOTE: ACE_SSL_SOCK_Connector here is blocking (consider use parent ACE_Task::svc)
 		if (connector.connect(this->peer(), remote, timeout, ACE_Addr::sap_any, 1) == -1)
@@ -518,8 +526,12 @@ public:
 			return false;
 		}
 
+		// For client use pair with SocketStreamPtr(ACE_Event_Handler_var)
+		this->reference_counting_policy().value(ACE_Event_Handler::Reference_Counting_Policy::ENABLED);
+
 		if (this->open(nullptr) == -1)
 		{
+			LOG_ERR << fname << "Failed to open socket stream after connection";
 			this->peer().close();
 			return false;
 		}
@@ -527,19 +539,28 @@ public:
 	}
 
 	// --- Public API ---
-	void send(const std::string &data) { send_impl(SendBuffer(data)); }
-	void send(const char *data, size_t len) { send_impl(SendBuffer(data, len)); }
-	void send(std::unique_ptr<msgpack::sbuffer> &&data) { send_impl(SendBuffer(std::move(data))); }
+	bool send(const std::string &data) { return send_impl(SendBuffer(data)); }
+	bool send(const char *data, size_t len) { return send_impl(SendBuffer(data, len)); }
+	bool send(std::unique_ptr<msgpack::sbuffer> &&data) { return send_impl(SendBuffer(std::move(data))); }
 
+	// Interface function for ACE_Acceptor
+	virtual int close(u_long flags = 0) { return Super::close(flags); }
+
+	// Close from user side
 	void close()
 	{
+		const static char fname[] = "SocketStream::close() ";
+
 		ConnState expected = ConnState::OPEN;
 		if (m_state.compare_exchange_strong(expected, ConnState::CLOSING))
 		{
+			LOG_DBG << fname << "Initiating graceful close for " << this;
+
 			if (auto r = this->reactor())
 			{
 				if (r->notify(this, ACE_Event_Handler::EXCEPT_MASK) == -1)
 				{
+					LOG_WAR << fname << "Failed to notify reactor for close: " << last_error_msg();
 					// Notify failed, directly trigger close
 					// This is safe because we already transitioned to CLOSING
 					handle_close(ACE_INVALID_HANDLE, ACE_Event_Handler::ALL_EVENTS_MASK);
@@ -551,6 +572,7 @@ public:
 				std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
 				m_state.store(ConnState::CLOSED, std::memory_order_release);
 				this->peer().close();
+				LOG_DBG << fname << "Closed without reactor: " << this;
 				fire_close();
 			}
 		}
@@ -563,6 +585,7 @@ public:
 
 	std::mutex &get_state_mutex() const { return m_cb_mutex; } // Exposed for TcpHandler::processForward
 
+protected:
 	// --- ACE_Svc_Handler Overrides ---
 
 	virtual int handle_input(ACE_HANDLE fd = ACE_INVALID_HANDLE) override
@@ -576,6 +599,7 @@ public:
 		// 1. SSL Read Check for Send (Renegotiation)
 		if (m_ssl_want_read_for_send.exchange(false))
 		{
+			LOG_DBG << fname << "Processing pending SSL read for send";
 			handle_output(fd);
 		}
 
@@ -609,7 +633,7 @@ public:
 					return -1;
 				if (res == RecvResult::ERR)
 				{
-					report_error("Recv header error");
+					report_error("Receive header error");
 					return -1;
 				}
 				if (res == RecvResult::WOULD_BLOCK)
@@ -634,7 +658,7 @@ public:
 				return -1;
 			if (res == RecvResult::ERR)
 			{
-				report_error("Recv body error");
+				report_error("Receive body error");
 				return -1;
 			}
 			if (res == RecvResult::WOULD_BLOCK)
@@ -649,7 +673,7 @@ public:
 	virtual int handle_output(ACE_HANDLE fd = ACE_INVALID_HANDLE) override
 	{
 		ACE_UNUSED_ARG(fd);
-		const static char fname[] = "SocketStream::handle_input() ";
+		const static char fname[] = "SocketStream::handle_output() ";
 		LOG_DBG << fname << this;
 
 		std::lock_guard<std::recursive_mutex> lock(m_io_mutex);
@@ -657,6 +681,7 @@ public:
 		// SSL Renegotiation Handling:
 		if (m_ssl_want_write_for_recv.exchange(false))
 		{
+			LOG_DBG << fname << "Processing pending SSL write for receive";
 			int ret = handle_input(fd);
 			if (ret == -1)
 				return -1;
@@ -676,6 +701,7 @@ public:
 				std::lock_guard<std::mutex> send_lock(m_send_state.mutex());
 				if (m_send_state.is_empty_unsafe() && !m_ssl_want_write_for_recv.load(std::memory_order_acquire))
 				{
+					LOG_DBG << fname << "Send queue empty, disabling write mask";
 					disable_mask(ACE_Event_Handler::WRITE_MASK);
 				}
 				return 0;
@@ -683,25 +709,30 @@ public:
 
 			int ssl_err = 0;
 			SendResult res = buf->do_send(this->peer(), ssl_err);
-
-			if (res == SendResult::PROGRESS || res == SendResult::COMPLETE)
+			switch (res)
+			{
+			case SendResult::COMPLETE:
+				notify_sent(buf->body());
 				continue;
-			if (res == SendResult::CLOSED)
-				return -1;
-			if (res == SendResult::ERR)
-			{
-				report_error("Send error");
-				return -1;
-			}
+			case SendResult::PROGRESS:
+				continue;
 
-			if (res == SendResult::WOULD_BLOCK)
-			{
+			case SendResult::WOULD_BLOCK:
 				if (ssl_err == SSL_ERROR_WANT_READ)
 				{
 					m_ssl_want_read_for_send.store(true, std::memory_order_release);
 					enable_mask(ACE_Event_Handler::READ_MASK);
 				}
 				return 0;
+
+			case SendResult::CLOSED:
+				return -1;
+			case SendResult::ERR:
+				report_error("Send error");
+				return -1;
+			default:
+				report_error("Unknown SendResult value encountered");
+				return -1;
 			}
 		}
 		return -1;
@@ -712,15 +743,13 @@ public:
 		return -1; // Trigger close
 	}
 
-	virtual int handle_close(ACE_HANDLE, ACE_Reactor_Mask) override
+	virtual int handle_close(ACE_HANDLE h, ACE_Reactor_Mask m) override
 	{
 		const static char fname[] = "SocketStream::handle_close() ";
-		LOG_DBG << fname << this;
 
 		ConnState prev = m_state.exchange(ConnState::CLOSED, std::memory_order_acq_rel);
 		if (prev != ConnState::CLOSED)
 		{
-			LOG_INF << fname << this << " closing";
 			std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
 
 			if (auto r = this->reactor())
@@ -730,25 +759,32 @@ public:
 
 			this->peer().close();
 			m_send_state.clear();
+			LOG_DBG << fname << this << " Socket closed and resources cleaned up";
 			fire_close();
 		}
-		return 0;
+
+		// IMPORTANT: For ACE_Acceptor mode release which not using SocketStreamPtr:
+		//  - ACE_Event_Handler::Reference_Counting_Policy::DISABLED
+		return Super::handle_close(h, m);
 	}
 
 private:
-	void send_impl(SendBuffer &&buf)
+	bool send_impl(SendBuffer &&buf)
 	{
+		const static char fname[] = "SocketStream::send_impl() ";
+
 		if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
-			return;
+			return false;
 
 		{
 			std::lock_guard<std::mutex> lock(m_send_state.mutex());
 
 			// Double check state inside lock to prevent race with handle_close removal
 			if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
-				return;
+				return false;
 
 			m_send_state.enqueue_unsafe(std::move(buf));
+			LOG_DBG << fname << "Enqueued message for sending, queue size now: " << (m_send_state.is_empty_unsafe() ? 1 : m_send_state.is_empty_unsafe());
 		}
 
 		// Check state again after releasing lock
@@ -756,6 +792,8 @@ private:
 		{
 			enable_mask(ACE_Event_Handler::WRITE_MASK);
 		}
+
+		return true;
 	}
 
 	void handle_ssl_want_write(int ssl_err)
@@ -799,27 +837,35 @@ private:
 			}
 			catch (...)
 			{
-				LOG_WAR << "Close callback failed";
+				LOG_ERR << "Exception thrown in close callback";
 			}
 		}
 	}
 
-	void deliver_message(std::vector<char> &&msg)
+	void deliver_message(std::vector<std::uint8_t> &&msg)
 	{
 		std::lock_guard<std::mutex> l(m_cb_mutex);
 		if (m_data_cb)
 			m_data_cb(std::move(msg));
 	}
 
+	void notify_sent(const std::unique_ptr<msgpack::sbuffer> &data)
+	{
+		std::lock_guard<std::mutex> l(m_cb_mutex);
+		if (m_send_cb)
+			m_send_cb(data);
+	}
+
 	void report_error(const std::string &msg)
 	{
-		LOG_ERR << "SocketStream (" << msg << "), (" << last_error_msg() << ")";
+		LOG_ERR << "SocketStream error: " << msg << " | " << last_error_msg();
 		std::lock_guard<std::mutex> l(m_cb_mutex);
 		if (m_error_cb)
 			m_error_cb(msg);
 	}
 
 private:
+	ACE_INET_Addr m_target;
 	std::atomic<ConnState> m_state;
 
 	RecvState m_recv_state;
@@ -832,15 +878,16 @@ private:
 	mutable std::mutex m_cb_mutex;			 // Protects callbacks
 
 	DataCallback m_data_cb;
+	SendCallback m_send_cb;
 	EventCallback m_connect_cb;
 	EventCallback m_close_cb;
 	ErrorCallback m_error_cb;
 };
 
-class StreamPointer : public ACE_Event_Handler_var
+class SocketStreamPtr : public ACE_Event_Handler_var
 {
 public:
-	StreamPointer() = default;
-	explicit StreamPointer(SocketStream *p) : ACE_Event_Handler_var(p) {}
-	SocketStream *stream() { return this->handler() ? dynamic_cast<SocketStream *>(this->handler()) : nullptr; }
+	SocketStreamPtr() = default;
+	explicit SocketStreamPtr(SocketStream *p) : ACE_Event_Handler_var(p) {}
+	SocketStream *stream() { return static_cast<SocketStream *>(handler()); }
 };

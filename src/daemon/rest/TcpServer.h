@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <fstream>
 #include <memory>
 #include <mutex>
 
@@ -30,6 +31,16 @@ struct HttpRequestMsg;
 using RequestQueue = moodycamel::BlockingConcurrentQueue<std::shared_ptr<HttpRequestMsg>>;
 using ResponseQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Response>>;
 
+struct FileUploadInfo
+{
+	std::string m_filePath;
+	HttpHeaderMap m_requestHeaders;
+	std::ofstream m_file;
+
+	// Constructor for easy creation
+	FileUploadInfo(const std::string &uploadFilePath, const HttpHeaderMap &requestHeaders);
+};
+
 // = TITLE
 //     Receive client message from the remote clients.
 //
@@ -44,15 +55,6 @@ using ResponseQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Response>>;
 //       ACE_SSL_SOCK_Stream (ACE_SSL_Context *context = ACE_SSL_Context::instance ());
 class TcpHandler : public ACE_Svc_Handler<ACE_SSL_SOCK_Stream, ACE_MT_SYNCH>
 {
-	struct FileUploadInfo
-	{
-		std::string m_filePath;
-		HttpHeaderMap m_requestHeaders;
-
-		// Constructor for easy creation
-		FileUploadInfo(const std::string &uploadFilePath, const HttpHeaderMap &requestHeaders);
-	};
-
 public:
 	TcpHandler(void);
 	virtual ~TcpHandler(void);

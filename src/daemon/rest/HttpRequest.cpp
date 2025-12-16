@@ -10,6 +10,7 @@
 #include "../process/AppProcess.h"
 #include "../security/HMACVerifier.h"
 #include "RestHandler.h"
+#include "SocketServer.h"
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 #include "uwebsockets/ReplyContext.h"
@@ -148,7 +149,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	if (m_tcpHandlerId > 0)
 	{
 		// TCP protocol
-		return TcpHandler::replyTcp(m_tcpHandlerId, std::move(response));
+		return SocketServer::replyTcp(m_tcpHandlerId, std::move(response));
 	}
 #if defined(HAVE_UWEBSOCKETS)
 	else if (m_replyContext)

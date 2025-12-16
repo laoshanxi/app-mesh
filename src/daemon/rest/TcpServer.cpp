@@ -15,6 +15,7 @@
 #include "../Configuration.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
+#include "SocketServer.h"
 #include "SocketStream.h"
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
@@ -46,8 +47,10 @@ TcpHandler::TcpHandler(void)
 	LOG_DBG << fname << "client=" << m_id << ", total client number: " << g_handlers.current_size();
 }
 
-TcpHandler::FileUploadInfo::FileUploadInfo(const std::string &uploadFilePath, const HttpHeaderMap &requestHeaders)
-	: m_filePath(uploadFilePath), m_requestHeaders(requestHeaders)
+FileUploadInfo::FileUploadInfo(const std::string &uploadFilePath, const HttpHeaderMap &requestHeaders)
+	: m_filePath(uploadFilePath),
+	  m_requestHeaders(requestHeaders),
+	  m_file(uploadFilePath, std::ios::binary | std::ios::out | std::ios::trunc)
 {
 }
 
@@ -153,11 +156,10 @@ bool TcpHandler::recvUploadFile()
 	std::shared_ptr<FileUploadInfo> fileInfo;
 	if (m_pendingUploadFile.pop(fileInfo))
 	{
-		std::ofstream file(fileInfo->m_filePath, std::ios::binary | std::ios::out | std::ios::trunc);
 		auto msg = ProtobufHelper::readMessageBlock(this->peer());
 		while (msg)
 		{
-			file.write(reinterpret_cast<const char *>(msg->data()), msg->size());
+			fileInfo->m_file.write(reinterpret_cast<const char *>(msg->data()), msg->size());
 			msg = ProtobufHelper::readMessageBlock(this->peer());
 		}
 		LOG_INF << fname << "upload finished";
@@ -195,7 +197,7 @@ int TcpHandler::open(void *)
 				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << last_error_msg();
 			}
 
-			this->peer().disable(ACE_NONBLOCK); // Blocking mode
+			this->peer().enable(ACE_NONBLOCK); // None-blocking mode
 
 			LOG_INF << fname << "client <" << m_clientHostName << "> connected";
 		}
@@ -278,20 +280,20 @@ bool TcpHandler::processForward(const std::string forwardTo, std::shared_ptr<Htt
 	const static char fname[] = "TcpHandler::processForward() ";
 	LOG_DBG << fname << "Forwarding Host: " << forwardTo;
 
-	static ACE_Map_Manager<std::string, std::shared_ptr<StreamPointer>, ACE_Thread_Mutex> g_clients;
+	static ACE_Map_Manager<std::string, std::shared_ptr<SocketStreamPtr>, ACE_Thread_Mutex> g_clients;
 
 	Uri parser;
 	auto uri = parser.parse(forwardTo);
 	auto host = uri.host;
 	uri.port = (uri.port <= 1024) ? Configuration::instance()->getRestTcpPort() : uri.port;
 
-	std::shared_ptr<StreamPointer> client;
+	std::shared_ptr<SocketStreamPtr> client;
 	if (g_clients.find(host, client) != 0)
 	{
 		ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, g_clients.mutex(), false);
 		if (g_clients.find(host, client) != 0)
 		{
-			client = std::make_shared<StreamPointer>(new SocketStream(Global::getClientSSL()));
+			client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
 			if (!client->stream()->connect(ACE_INET_Addr(uri.port, host.c_str())))
 			{
 				LOG_ERR << fname << "Failed to connect to forwarding host: " << host;
@@ -303,9 +305,15 @@ bool TcpHandler::processForward(const std::string forwardTo, std::shared_ptr<Htt
 		}
 	}
 
+	if (!client || !client->stream())
+	{
+		LOG_CRT << fname << "Failed create connection to: " << forwardTo;
+		return false;
+	}
+
 	// Ensure call back not trigger before send to keep sequence.
 	std::lock_guard<std::mutex> lock(client->stream()->get_state_mutex());
-	client->stream()->onData([request](std::vector<char> &&data)
+	client->stream()->onData([request](std::vector<std::uint8_t> &&data)
 	{
 		Response r;
 		if (r.deserialize(data.data(), data.size()))
