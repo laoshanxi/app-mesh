@@ -21,8 +21,6 @@
 #include "Worker.h"
 #include "uwebsockets/ReplyContext.h"
 
-RequestQueue Worker::m_messages;
-
 struct HttpRequestMsg
 {
 	explicit HttpRequestMsg(const ByteBuffer &data, int tcpHandlerID, void *lwsSessionID = NULL, std::shared_ptr<WSS::ReplyContext> uwsReplyCtx = nullptr)
@@ -42,9 +40,10 @@ void Worker::queueInputRequest(ByteBuffer &data, int tcpHandlerID, void *lwsSess
 	m_messages.enqueue(req);
 }
 
-void Worker::runRequestLoop()
+int Worker::svc()
 {
-	const static char fname[] = "Worker::runRequestLoop() ";
+	const static char fname[] = "Worker::svc() ";
+	LOG_INF << fname;
 
 	while (QUIT_HANDLER::instance()->is_set() == 0)
 	{
@@ -75,6 +74,7 @@ void Worker::runRequestLoop()
 		}
 	}
 	LOG_WAR << fname << "Exit";
+	return 0;
 }
 
 bool Worker::processRequest(std::shared_ptr<HttpRequest> &request)
@@ -151,7 +151,7 @@ bool Worker::processForward(const std::string forwardTo, std::shared_ptr<HttpReq
 	// Ensure call back not trigger before send to keep sequence.
 	std::lock_guard<std::mutex> lock(client->stream()->get_state_mutex());
 	client->stream()->onData([request](std::vector<std::uint8_t> &&data)
-	{
+							 {
 		Response r;
 		if (r.deserialize(data.data(), data.size()))
 		{
@@ -160,15 +160,13 @@ bool Worker::processForward(const std::string forwardTo, std::shared_ptr<HttpReq
 		else
 		{
 			request->reply(web::http::status_codes::InternalError, "Failed to parse forwarded response");
-		}
-	});
+		} });
 
 	client->stream()->onClose([host, request]()
-	{
+							  {
 		LOG_WAR << "Forwarding client to " << host << " closed";
 		fwdClientMap.unbind(host);
-		request->reply(web::http::status_codes::BadGateway, "Forwarding host connection closed");
-	});
+		request->reply(web::http::status_codes::BadGateway, "Forwarding host connection closed"); });
 
 	auto data = request->serialize();
 	client->stream()->send(std::move(data));
