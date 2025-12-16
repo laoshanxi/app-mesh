@@ -8,7 +8,7 @@
 #include "../../common/HttpHeaderMap.h"
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
-#include "protoc/ProtobufHelper.h"
+#include "Data.h"
 
 class WebSocketSession;
 namespace WSS

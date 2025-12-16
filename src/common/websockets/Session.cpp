@@ -2,7 +2,7 @@
 #include "Session.h"
 #include "../../daemon/rest/HttpRequest.h"
 #include "../../daemon/rest/RestHandler.h"
-#include "../../daemon/rest/TcpServer.h"
+#include "../../daemon/rest/Worker.h"
 #include "WebSocketService.h"
 
 void WSRequest::reply(std::vector<std::uint8_t> &&data) const
@@ -23,7 +23,7 @@ void WebSocketSession::handleRequest(const WSRequest &req)
 {
     auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
     auto request = HttpRequest::deserialize(data, -1, req.m_session_ref, nullptr);
-    TcpHandler::processRequest(request);
+    Worker::processRequest(request);
 }
 
 bool WebSocketSession::verifyToken(const std::string &token)

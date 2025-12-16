@@ -19,7 +19,7 @@
 #include "../../../common/Utility.h"
 #include "../../Configuration.h"
 #include "../RestHandler.h"
-#include "../TcpServer.h"
+#include "../Worker.h"
 #include "Service.h"
 
 using json = nlohmann::json;
@@ -103,8 +103,6 @@ private:
             return false;
         }
     }
-
-   
 
     // Security: Validate path to prevent Directory Traversal attacks
     static bool validatePath(const std::filesystem::path &filePath)
@@ -248,7 +246,7 @@ private:
         {
             LOG_DBG << "WebSocketAdaptor::onWSMessage()";
             auto data = std::make_shared<std::vector<std::uint8_t>>(message.begin(), message.end());
-            TcpHandler::queueInputRequest(data, 0, 0,  std::move(replyCtx));
+            Worker::queueInputRequest(data, 0, 0,  std::move(replyCtx));
         });
 
         // WebSocket: Handle new connections
@@ -319,7 +317,7 @@ private:
             {
                 auto msgPack = requestState->serialize();
                 auto packedData = std::make_shared<std::vector<uint8_t>>(msgPack->data(), msgPack->data() + msgPack->size());
-                TcpHandler::queueInputRequest(packedData, 0, 0, ctx);
+                Worker::queueInputRequest(packedData, 0, 0, ctx);
             }
         });
     }

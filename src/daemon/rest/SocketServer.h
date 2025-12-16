@@ -1,13 +1,14 @@
 #pragma once
 
 #include "SocketStream.h"
-#include "TcpServer.h"
+#include "Worker.h"
 
 #include <ace/Guard_T.h>
 #include <ace/Map_Manager.h>
 #include <ace/Recursive_Thread_Mutex.h>
 
 #include <atomic>
+#include <fstream>
 #include <memory>
 #include <vector>
 
@@ -17,6 +18,20 @@ using ServerStreamMap = ACE_Map_Manager<int, SocketServer *, ACE_Recursive_Threa
 // Server-side socket handler. Managed by ACE_Acceptor.
 class SocketServer : public SocketStream
 {
+    struct FileUploadInfo
+    {
+        FileUploadInfo(const std::string &uploadFilePath, const HttpHeaderMap &requestHeaders)
+            : m_filePath(uploadFilePath),
+              m_requestHeaders(requestHeaders),
+              m_file(uploadFilePath, std::ios::binary | std::ios::out | std::ios::trunc)
+        {
+        }
+
+        std::string m_filePath;
+        HttpHeaderMap m_requestHeaders;
+        std::ofstream m_file;
+    };
+
 public:
     SocketServer(ACE_SSL_Context *ctx = ACE_SSL_Context::instance(), ACE_Reactor *reactor = ACE_Reactor::instance())
         : SocketStream(ctx, reactor), m_id(++idGenerator())
@@ -51,7 +66,7 @@ public:
             else
             {
                 auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(data));
-                TcpHandler::queueInputRequest(buf, getId());
+                Worker::queueInputRequest(buf, getId());
             }
         });
 
@@ -92,8 +107,26 @@ public:
         return false;
     }
 
+    static void closeClient(int clientID)
+    {
+        const static char fname[] = "SocketServer::closeClient() ";
+
+        ACE_GUARD(ACE_Recursive_Thread_Mutex, locker, streams().mutex());
+        SocketServer *client = NULL;
+        if (streams().find(clientID, client) == 0 && client)
+        {
+            LOG_INF << fname << "Closing ClientID=" << clientID;
+            client->shutdown();
+        }
+        else
+        {
+            LOG_WAR << fname << "No such ClientID=" << clientID;
+        }
+    }
+
     int getId() const { return m_id; }
 
+private:
     void checkForUploadFileRequest(std::unique_ptr<Response> &resp)
     {
         const static char fname[] = "SocketServer::checkForUploadFileRequest() ";
@@ -141,7 +174,6 @@ public:
         }
     }
 
-private:
     void sendNextDownloadChunk(std::unique_ptr<std::ifstream> &download)
     {
         const static char fname[] = "SocketServer::sendNextDownloadChunk() ";

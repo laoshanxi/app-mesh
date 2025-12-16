@@ -543,13 +543,10 @@ public:
 	bool send(const char *data, size_t len) { return send_impl(SendBuffer(data, len)); }
 	bool send(std::unique_ptr<msgpack::sbuffer> &&data) { return send_impl(SendBuffer(std::move(data))); }
 
-	// Interface function for ACE_Acceptor
-	virtual int close(u_long flags = 0) { return Super::close(flags); }
-
-	// Close from user side
-	void close()
+	// Close from user side (close function is already used for interface)
+	void shutdown()
 	{
-		const static char fname[] = "SocketStream::close() ";
+		const static char fname[] = "SocketStream::shutdown() ";
 
 		ConnState expected = ConnState::OPEN;
 		if (m_state.compare_exchange_strong(expected, ConnState::CLOSING))
@@ -583,7 +580,7 @@ public:
 		return m_state.load(std::memory_order_acquire) == ConnState::OPEN;
 	}
 
-	std::mutex &get_state_mutex() const { return m_cb_mutex; } // Exposed for TcpHandler::processForward
+	std::mutex &get_state_mutex() const { return m_cb_mutex; } // Exposed for Worker::processForward
 
 protected:
 	// --- ACE_Svc_Handler Overrides ---
