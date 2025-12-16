@@ -199,18 +199,19 @@ nlohmann::json ResourceCollection::AsJson()
 	auto mountPoints = os::getMountPoints();
 	auto fsArr = nlohmann::json::array();
 	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr](const std::pair<std::string, std::string> &pair)
-				  {
-					  auto usage = os::df(pair.first);
-					  if (usage != nullptr)
-					  {
-						  nlohmann::json fs = nlohmann::json::object();
-						  fs["size"] = (usage->totalSize);
-						  fs["used"] = (usage->usedSize);
-						  fs["usage"] = (usage->usagePercentage);
-						  fs["device"] = Utility::localEncodingToUtf8(pair.second);
-						  fs["mount_point"] = std::string(pair.first);
-						  fsArr.push_back(fs);
-					  } });
+	{
+		auto usage = os::df(pair.first);
+		if (usage != nullptr)
+		{
+			nlohmann::json fs = nlohmann::json::object();
+			fs["size"] = (usage->totalSize);
+			fs["used"] = (usage->usedSize);
+			fs["usage"] = (usage->usagePercentage);
+			fs["device"] = Utility::localEncodingToUtf8(pair.second);
+			fs["mount_point"] = std::string(pair.first);
+			fsArr.push_back(fs);
+		}
+	});
 
 	result[("fs")] = std::move(fsArr);
 	result[("systime")] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));

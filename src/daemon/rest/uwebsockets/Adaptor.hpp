@@ -246,7 +246,7 @@ private:
         {
             LOG_DBG << "WebSocketAdaptor::onWSMessage()";
             auto data = std::make_shared<std::vector<std::uint8_t>>(message.begin(), message.end());
-            Worker::queueInputRequest(data, 0, 0,  std::move(replyCtx));
+            WORKER::instance()->queueInputRequest(data, 0, 0,  std::move(replyCtx));
         });
 
         // WebSocket: Handle new connections
@@ -317,7 +317,7 @@ private:
             {
                 auto msgPack = requestState->serialize();
                 auto packedData = std::make_shared<std::vector<uint8_t>>(msgPack->data(), msgPack->data() + msgPack->size());
-                Worker::queueInputRequest(packedData, 0, 0, ctx);
+                WORKER::instance()->queueInputRequest(packedData, 0, 0, ctx);
             }
         });
     }

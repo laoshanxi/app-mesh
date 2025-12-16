@@ -50,7 +50,7 @@ jobs:
             # test appmesh golang sdk
             apt install -y wget
             GO_ARCH=amd64
-            GO_VER=1.25.1
+            GO_VER=1.25.3
             wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
             tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
             cd /work/src/sdk/go
@@ -83,7 +83,7 @@ jobs:
             # test appmesh golang sdk
             apt install -y wget
             GO_ARCH=amd64
-            GO_VER=1.25.1
+            GO_VER=1.25.3
             wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
             tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
             cd /work/src/sdk/go
@@ -116,7 +116,7 @@ jobs:
             # test appmesh golang sdk
             apt install -y wget
             GO_ARCH=amd64
-            GO_VER=1.25.1
+            GO_VER=1.25.3
             wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
             tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
             cd /work/src/sdk/go
@@ -153,7 +153,7 @@ jobs:
             # test appmesh golang sdk
             yum install -y wget
             GO_ARCH=amd64
-            GO_VER=1.25.1
+            GO_VER=1.25.3
             wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
             tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
             cd /work/src/sdk/go
