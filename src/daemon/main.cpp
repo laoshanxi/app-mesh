@@ -45,7 +45,8 @@
 #include "rest/RestHandler.h"
 #include "rest/SocketServer.h"
 #include "rest/SocketStream.h"
-#include "rest/TcpServer.h"
+#include "rest/SSLHelper.h"
+#include "rest/Worker.h"
 #include "security/HMACVerifier.h"
 #include "security/Security.h"
 #include "security/TokenBlacklist.h"
@@ -425,10 +426,10 @@ void AppMeshDaemon::initializeRestService()
 	LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
 
 	// Initialize SSL for TCP server and client
-	TcpHandler::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
+	initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
 
 	const auto clientCA = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());
-	TcpHandler::initClientSSL(Global::getClientSSL(), "", "", clientCA);
+	initClientSSL(Global::getClientSSL(), "", "", "" /*clientCA*/);
 
 	// Start REST thread pool
 	startWorkerThreadPool();
@@ -483,7 +484,7 @@ void AppMeshDaemon::startWorkerThreadPool()
 
 	for (size_t i = 0; i < config->getWorkerThreadPoolSize(); ++i)
 	{
-		m_threadPool.emplace_back(std::make_unique<std::thread>(TcpHandler::handleTcpRestLoop));
+		m_threadPool.emplace_back(std::make_unique<std::thread>(Worker::runRequestLoop));
 	}
 
 	LOG_INF << fname << "Started " << config->getWorkerThreadPoolSize() << " threads for REST thread pool";
@@ -606,7 +607,7 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 
 	auto config = Configuration::instance();
 
-	// m_client->stream()->close();
+	// m_client->stream()->shutdown();
 	// m_client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
 	// m_client->stream()->connect(ACE_INET_Addr(6059, "localhost"));
 	if (m_client && m_client->stream() && !m_client->stream()->connected())

@@ -5,7 +5,7 @@
 
 #include <libwebsockets.h>
 
-#include "../../daemon/rest/TcpServer.h"
+#include "../../daemon/rest/Worker.h"
 #include "../Utility.h"
 #include "WebSocketService.h"
 
@@ -547,7 +547,7 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
     else
     {
         auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
-        TcpHandler::queueInputRequest(data, 0, req.m_session_ref);
+        Worker::queueInputRequest(data, 0, req.m_session_ref);
     }
 }
 

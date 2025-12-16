@@ -2,7 +2,6 @@
 
 #include "../../common/Utility.h"
 #include "../rest/HttpRequest.h"
-#include "../rest/TcpServer.h"
 #include "MonitoredProcess.h"
 
 MonitoredProcess::MonitoredProcess(std::weak_ptr<Application> owner)
