@@ -58,7 +58,7 @@
 #if defined(HAVE_UWEBSOCKETS)
 #include "rest/uwebsockets/Adaptor.hpp"
 #else
-#include "../common/websockets/WebSocketService.h"
+#include "../common/lwsservice/WebSocketService.h"
 #endif
 
 using TcpAcceptor = ACE_Acceptor<SocketServer, ACE_SSL_SOCK_Acceptor>;

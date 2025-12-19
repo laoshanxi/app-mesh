@@ -590,7 +590,7 @@ add_compile_options(
 )
 
 # Debugging output
-message(STATUS "Toolchain CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
+message(STATUS "Toolchain CMAKE_PREFIX_PATH: `${CMAKE_PREFIX_PATH}")
 "@ | Out-File -FilePath "C:\local\windows-toolchain.cmake" -Encoding utf8
     
     Write-Host "CMake toolchain file created at C:\local\windows-toolchain.cmake" -ForegroundColor Green
@@ -609,13 +609,8 @@ function Show-Summary {
     Write-Host ""
     Write-Host "To build your project, use:" -ForegroundColor Yellow
     Write-Host "  mkdir build && cd build" -ForegroundColor White
-    Write-Host "  cmake .. -DCMAKE_TOOLCHAIN_FILE=C:\local\windows-toolchain.cmake -G `"Visual Studio 17 2022`" -A x64" -ForegroundColor White
+    Write-Host "  cmake .. -G `"Visual Studio 17 2022`" -A x64" -ForegroundColor White
     Write-Host "  cmake --build . --config Release" -ForegroundColor White
-    Write-Host ""
-    Write-Host "To configure VSCode (Workspace Settings: .vscode/settings.json), add:" -ForegroundColor Yellow
-    Write-Host '  "cmake.configureSettings": {' -ForegroundColor White
-    Write-Host '      "CMAKE_TOOLCHAIN_FILE": "C:/local/windows-toolchain.cmake"' -ForegroundColor White
-    Write-Host '  }' -ForegroundColor White
     Write-Host ""
     Write-Host "Important paths:" -ForegroundColor Yellow
     Write-Host "  Libraries: C:\local\lib" -ForegroundColor White
@@ -645,8 +640,8 @@ try {
     Install-NsisPlugin
     Build-NativeLibraries
     Set-EnvironmentVariables
-    New-CMakeToolchain
-    #Remove-TempFiles
+    # New-CMakeToolchain
+    # Remove-TempFiles
     Show-Summary
 }
 catch {

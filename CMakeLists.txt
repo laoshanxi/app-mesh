@@ -1,15 +1,11 @@
-cmake_minimum_required(VERSION 3.10)
-string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ")
+cmake_minimum_required(VERSION 3.21)
+if(WIN32)
+    include(cmake/WindowsConfig.cmake) # Load platform config BEFORE project()
+endif()
 
-##########################################################################
-# project
-##########################################################################
-cmake_policy(SET CMP0048 NEW)
-project(appmesh LANGUAGES CXX VERSION 2.2.1)
+project(appmesh LANGUAGES CXX C VERSION 2.2.1)
 
-##########################################################################
-# C++ flag
-##########################################################################
+# --- Standards ---
 if(WIN32)
     set(CMAKE_CXX_STANDARD 20)
     find_package(unofficial-uwebsockets CONFIG REQUIRED)
@@ -29,8 +25,14 @@ SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
 SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
 
 ##########################################################################
-# custom module file
+# Default to a local staging directory for packaging
 ##########################################################################
+if(NOT DEFINED CMAKE_INSTALL_PREFIX OR CMAKE_INSTALL_PREFIX STREQUAL "" OR CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/package_root" CACHE PATH "Package staging root" FORCE)
+endif()
+include(GNUInstallDirs) # Standard install locations
+message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+
 include(${CMAKE_SOURCE_DIR}/cmake/CopyDLLs.cmake)
 
 ##########################################################################
@@ -314,6 +316,7 @@ add_custom_target(pack
         PROJECT_VERSION=${PROJECT_VERSION} 
         CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} 
         CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR} 
+        CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
         BUILD_TYPE=${BUILD_TYPE_ENV}
         ${PACKAGING_COMMAND}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -347,7 +350,7 @@ add_custom_target(cppcheck
 #   create venv under home and use pip install appmesh
 ##########################################################################
 add_custom_target(sbom
-    COMMENT "Generate SBOM dependency list from ${CMAKE_BINARY_DIR}/nfpm_home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft.yaml"
+    COMMENT "Generate SBOM dependency list from ${CMAKE_INSTALL_PREFIX} with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft.yaml"
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft_dpkg_generate.sh
-    COMMAND syft ${CMAKE_BINARY_DIR}/nfpm_home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
+    COMMAND syft ${CMAKE_INSTALL_PREFIX}/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
 )

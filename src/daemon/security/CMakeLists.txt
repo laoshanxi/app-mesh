@@ -1,21 +1,15 @@
-##########################################################################
-# sub dir
-##########################################################################
+# src/daemon/security/CMakeLists.txt
+
 if (NOT WIN32)
-add_subdirectory(ldapplugin)
+  add_subdirectory(ldapplugin)
 endif()
 
-##########################################################################
-# security
-##########################################################################
+# --- Define library ---
 aux_source_directory(. SRC_LIST)
 add_library(security STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::security ALIAS security)
 
-##########################################################################
-# Link
-##########################################################################
-
+# --- Linking ---
 if(APPLE)
   target_link_libraries(security
     PRIVATE

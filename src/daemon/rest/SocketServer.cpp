@@ -171,15 +171,15 @@ void SocketServer::sendNextDownloadChunk(std::unique_ptr<std::ifstream> &downloa
     if (!download)
         return;
 
-    std::vector<char> buffer(TCP_CHUNK_BLOCK_SIZE);
-    download->read(buffer.data(), buffer.size());
+    std::unique_ptr<msgpack::sbuffer> buffer = std::make_unique<msgpack::sbuffer>(TCP_CHUNK_BLOCK_SIZE);
+    download->read(buffer->data(), buffer->size());
 
     const auto readSize = static_cast<std::size_t>(download->gcount());
 
     if (readSize > 0)
     {
         // Send exactly what we read
-        this->send(buffer.data(), readSize);
+        this->send(std::move(buffer));
     }
     else
     {
