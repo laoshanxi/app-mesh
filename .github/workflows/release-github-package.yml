@@ -62,6 +62,16 @@ jobs:
         with:
           install: true
 
+      - name: Generate SBOM for ubuntu:latest amd64
+        run: |
+          BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          if [ "${BUILD_DIR}" == "amd64" ]; then
+            docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu /bin/bash --login -c "set -e; mkdir syft_${BUILD_DIR}; cd syft_${BUILD_DIR}; cmake ..; make -j'$(nproc)'; make pack; make sbom; ls; make test ARGS='-V'"
+            BUILD_DIR_SYFT="${{ github.workspace }}/syft_${BUILD_DIR}"
+            SBOM_JSON_FILE="${{ github.workspace }}/appmesh.${{ env.APPMESH_VERSION }}.sbom.spdx.json"
+            cp $BUILD_DIR_SYFT/sbom.spdx.json "$SBOM_JSON_FILE"
+          fi
+
       - name: Build Ubuntu 24
         run: |
           BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
@@ -84,16 +94,6 @@ jobs:
           BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           if [ "${BUILD_DIR}" == "amd64" ]; then
             docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_centos7 /bin/bash --login -c "set -e; mkdir centos7_$BUILD_DIR; cd centos7_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
-          fi
-
-      - name: Generate SBOM for ubuntu:latest amd64
-        run: |
-          BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
-          if [ "${BUILD_DIR}" == "amd64" ]; then
-            docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu /bin/bash --login -c "set -e; mkdir syft_${BUILD_DIR}; cd syft_${BUILD_DIR}; cmake ..; make -j'$(nproc)'; make pack; make sbom; ls; make test ARGS='-V'"
-            BUILD_DIR_SYFT="${{ github.workspace }}/syft_${BUILD_DIR}"
-            SBOM_JSON_FILE="${{ github.workspace }}/appmesh.${{ env.APPMESH_VERSION }}.sbom.spdx.json"
-            cp $BUILD_DIR_SYFT/sbom.spdx.json "$SBOM_JSON_FILE"
           fi
 
       - name: Upload packages
@@ -163,7 +163,7 @@ jobs:
           dpkg-sig --verify */*.deb
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v3.0.0
+        uses: actions/attest-build-provenance@v3.1.0
         with:
           subject-path: "*/*.rpm"
 

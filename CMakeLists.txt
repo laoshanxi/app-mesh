@@ -1,18 +1,16 @@
-cmake_minimum_required(VERSION 3.10)
-string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ")
+cmake_minimum_required(VERSION 3.21)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+if(WIN32)
+    include(cmake/WindowsConfig.cmake) # Load platform config BEFORE project()
+endif()
 
-##########################################################################
-# project
-##########################################################################
-cmake_policy(SET CMP0048 NEW)
-project(appmesh LANGUAGES CXX VERSION 2.2.1)
+project(appmesh LANGUAGES CXX C VERSION 2.2.1)
 
-##########################################################################
-# C++ flag
-##########################################################################
+# --- Standards ---
 if(WIN32)
     set(CMAKE_CXX_STANDARD 20)
-    find_package(unofficial-uwebsockets CONFIG REQUIRED)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
     set(CMAKE_CXX_STANDARD 14)
 else()
@@ -22,222 +20,62 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
 
+string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ")
 set(BUILD_TAG ${PROJECT_NAME}_${PROJECT_VERSION}_${APPMESH_BUILD_DATE})
 add_compile_options(-DBUILD_TAG=${BUILD_TAG})
-message(BUILD_TAG=${BUILD_TAG})
-SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
+message(STATUS BUILD_TAG=${BUILD_TAG})
+
 SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
 
 ##########################################################################
-# custom module file
+# Default to a local staging directory for packaging
 ##########################################################################
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/package_root" CACHE PATH "Package staging root" FORCE)
+endif()
+include(GNUInstallDirs) # Standard install locations
+message(STATUS "Package staging root: ${CMAKE_INSTALL_PREFIX}")
+
 include(${CMAKE_SOURCE_DIR}/cmake/CopyDLLs.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/Dependencies.cmake)
 
 ##########################################################################
-# debug / release
+# Build Type
 ##########################################################################
-# Set the default build type if not specified and cache it (optional: add FORCE)
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type")
 endif()
-string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_UPPERCASE)
-message(STATUS "CMAKE_BUILD_TYPE: ${BUILD_TYPE_UPPERCASE}")
-
-# Explicitly set flags using CMAKE_CXX_FLAGS_<CONFIG> for better control.
-if (BUILD_TYPE_UPPERCASE STREQUAL "DEBUG")
-    # Ensure -O0 (no optimization) for Debug
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -ggdb3 -O0")
-elseif (BUILD_TYPE_UPPERCASE STREQUAL "RELEASE")
-    # Ensure -O3 (high optimization) and -DNDEBUG (disable assertions) for Release
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall -O3 -DNDEBUG")
-elseif (BUILD_TYPE_UPPERCASE STREQUAL "MINSIZEREL")
-    # Ensure -Os (size optimization) and -DNDEBUG
-    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -Wall -Os -DNDEBUG")
-elseif (BUILD_TYPE_UPPERCASE STREQUAL "ASAN")
-    # ASAN block remains correct for sanitizer purposes
+# Common warnings
+add_compile_options(-Wall)
+# ASAN (optional)
+option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
+if(ENABLE_ASAN)
     # https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
-    set(CMAKE_CXX_FLAGS_ASAN "${CMAKE_CXX_FLAGS_ASAN} -Wall -ggdb3 -O0 -g -fsanitize=address -fno-omit-frame-pointer")
-    set(CMAKE_EXE_LINKER_FLAGS_ASAN "${CMAKE_EXE_LINKER_FLAGS_ASAN} -fsanitize=address -lasan -lstdc++")
-else()
-    message(FATAL_ERROR "Invalid build type: ${CMAKE_BUILD_TYPE}")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address)
 endif()
 
-# Print compile parameters: show the active configuration's flags (avoid duplicating the global flags in the message)
-set(CMAKE_CXX_FLAGS_NAME "CMAKE_CXX_FLAGS_${BUILD_TYPE_UPPERCASE}")
-message(STATUS "${CMAKE_CXX_FLAGS_NAME}: ${${CMAKE_CXX_FLAGS_NAME}}")
-
-# Set the library path to prioritize /usr/local/lib64
-set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} /usr/local/lib64)
-
 ##########################################################################
-# Boost - modern, formal, cross-platform
+# APPLE
 ##########################################################################
-# Minimal Boost options
-set(BOOST_USE_MULTITHREADED ON)
-set(BOOST_USE_STATIC_LIBS OFF)   # Use shared libraries
-# Optional: set BOOST_ROOT if installed in non-standard path (macOS Homebrew)
 if(APPLE)
-    set(BOOST_ROOT /opt/homebrew)
-endif()
-# Modern Boost CMake: use imported targets
-find_package(Boost 1.76 REQUIRED COMPONENTS
-    system
-    filesystem
-    regex
-    thread
-    program_options
-    date_time
-)
-if(NOT Boost_FOUND)
-    message(FATAL_ERROR "Boost not found")
-endif()
-# Include Boost headers
-include_directories(${Boost_INCLUDE_DIRS})
-# Debug info
-message(STATUS "Boost version: ${Boost_VERSION}")
-message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
-
-##########################################################################
-# MessagePack    https://msgpack.org/
-##########################################################################
-find_package(msgpack-cxx REQUIRED)
-
-##########################################################################
-# spdlog
-##########################################################################
-find_package(spdlog REQUIRED)
-
-##########################################################################
-# libwebsockets  https://libwebsockets.org/
-##########################################################################
-find_package(libwebsockets REQUIRED)
-
-##########################################################################
-# libcurl
-##########################################################################
-if (APPLE)
-    # Explicitly set paths for Homebrew curl
-    set(CURL_ROOT "/opt/homebrew/opt/curl")
-    set(CURL_INCLUDE_DIR "${CURL_ROOT}/include")
-    set(CURL_LIB "${CURL_ROOT}/lib/libcurl.dylib")
-
-    # Verify paths manually
-    find_path(CURL_INCLUDE_DIR curl/curl.h PATHS ${CURL_INCLUDE_DIR})
-    find_library(CURL_LIB NAMES curl PATHS ${CURL_ROOT}/lib)
-
-    if(NOT CURL_INCLUDE_DIR OR NOT CURL_LIB)
-        message(FATAL_ERROR "Could not find CURL. Ensure CURL is installed via Homebrew.")
-    endif()
-
-    message(STATUS "CURL include dir: ${CURL_INCLUDE_DIR}")
-    message(STATUS "CURL library dir: ${CURL_LIB}")
-
-    # Include directories and link libraries
-    include_directories(${CURL_INCLUDE_DIR})
-    link_directories(${CURL_LIBRARY})
-elseif (WIN32)
-    # For Windows, use vcpkg or other package manager to find libcurl
-    find_package(CURL REQUIRED)
-    if (CURL_FOUND)
-        message(STATUS "Found CURL: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
-        set(CURL_LIB ${CURL_LIBRARIES})
-    else()
-        message(FATAL_ERROR "libcurl not found")
-    endif()
-else()
-    find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
-    if (NOT CURL_LIB)
-        find_package(CURL REQUIRED)
-        message(STATUS "Found system libcurl: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
-        set(CURL_LIB ${CURL_LIBRARIES})
-    endif()
-endif()
-message("Found CURL_LIB: ${CURL_LIB}")
-
-##########################################################################
-# openssl
-##########################################################################
-find_package(OpenSSL REQUIRED)
-message("OPENSSL_FOUND: ${OPENSSL_FOUND}")
-if (OPENSSL_FOUND)
-    include_directories(${OPENSSL_INCLUDE_DIR})
-    message(STATUS "openssl include dir: ${OPENSSL_INCLUDE_DIR}")
-    message(STATUS "openssl library dir: ${OPENSSL_LIBRARIES}")
-    message(STATUS "openssl library ver: ${OPENSSL_VERSION}.")
-else()
-    message(FATAL_ERROR "openssl library not found")
-endif()
-if (WIN32)
-    find_package(cryptopp REQUIRED)
-endif()
-
-##########################################################################
-# ACE
-##########################################################################
-find_library(ACE_LIBRARY ACE REQUIRED)
-find_library(ACE_SSL_LIBRARY ACE_SSL REQUIRED)
-find_package(ZLIB REQUIRED)
-find_package(yaml-cpp REQUIRED)
-
-##########################################################################
-# openldap for none-WIN32
-##########################################################################
-if (NOT WIN32)
-    set(LDAP_LIBRARIES ldap lber)
-    find_library(${LDAP_LIBRARIES} REQUIRED)
-endif()
-
-find_package(uriparser REQUIRED)
-
-##########################################################################
-# pthread
-##########################################################################
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
-
-##########################################################################
-# Include dir
-##########################################################################
-if(EXISTS /usr/local/include)
-    include_directories(/usr/local/include)
-endif()
-
-##########################################################################
-# Library dir
-##########################################################################
-if(EXISTS /usr/local/lib64)
-    link_directories(/usr/local/lib64)
-endif()
-if(EXISTS /usr/local/lib)
-    link_directories(/usr/local/lib)
-endif()
-
-if(APPLE)
-    # Detect Apple Silicon vs Intel
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+    # Detect Homebrew prefix
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
         set(HOMEBREW_PREFIX "/opt/homebrew")
-        set(CMAKE_INSTALL_RPATH "/opt/homebrew/lib;/opt/appmesh/lib64")
     else()
         set(HOMEBREW_PREFIX "/usr/local")
-        set(CMAKE_INSTALL_RPATH "/usr/local/lib;/opt/appmesh/lib64")
     endif()
 
-    # Enable C++17 (used for ACE 8.0)
-    # set(CMAKE_CXX_STANDARD 17)
-    # set(CMAKE_CXX_STANDARD_REQUIRED ON)
-    # set(CMAKE_CXX_EXTENSIONS OFF)
+    # Prefer Homebrew packages
+    list(PREPEND CMAKE_PREFIX_PATH "${HOMEBREW_PREFIX}")
 
-    # Add Homebrew include and library paths
-    include_directories(${HOMEBREW_PREFIX}/include)
-    link_directories(${HOMEBREW_PREFIX}/lib)
+    # RPATH: append, do not overwrite
+    list(APPEND CMAKE_INSTALL_RPATH
+        "${HOMEBREW_PREFIX}/lib"
+        "/opt/appmesh/lib64"
+    )
 
-    # Add Homebrew path to CMAKE_PREFIX_PATH
-    list(APPEND CMAKE_PREFIX_PATH ${HOMEBREW_PREFIX})
-
-    # Ignore warning: 'vsprintf' is deprecated
-    add_compile_options(-Wno-deprecated-declarations)
-
-    # Optional: Add pkg-config path if needed
+    # pkg-config (optional but explicit)
     set(ENV{PKG_CONFIG_PATH} "${HOMEBREW_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 endif()
 
@@ -245,7 +83,7 @@ endif()
 # sub dir
 ##########################################################################
 add_subdirectory(src)
-# add_subdirectory(test/websockets)
+add_subdirectory(script/sbom)
 
 ##########################################################################
 # Test
@@ -314,23 +152,11 @@ add_custom_target(pack
         PROJECT_VERSION=${PROJECT_VERSION} 
         CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} 
         CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR} 
+        CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
         BUILD_TYPE=${BUILD_TYPE_ENV}
         ${PACKAGING_COMMAND}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS appc appsvc agent
-)
-
-
-##########################################################################
-# Golang agent build
-##########################################################################
-set(AGENT_BIN ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/agent${CMAKE_EXECUTABLE_SUFFIX})
-
-add_custom_target(agent ALL
-    COMMAND go build -buildvcs=false -o ${AGENT_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/cmd
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/cmd
-    COMMENT "Golang build agent"
-    VERBATIM
 )
 
 ##########################################################################
@@ -339,15 +165,4 @@ add_custom_target(agent ALL
 add_custom_target(cppcheck
     COMMENT "code static check ${CMAKE_CURRENT_SOURCE_DIR}"
     COMMAND cppcheck --enable=all --quiet --std=c++11 --platform=native ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-##########################################################################
-# SBOM
-# in-order to include Python packages:
-#   create venv under home and use pip install appmesh
-##########################################################################
-add_custom_target(sbom
-    COMMENT "Generate SBOM dependency list from ${CMAKE_BINARY_DIR}/nfpm_home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft.yaml"
-    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft_dpkg_generate.sh
-    COMMAND syft ${CMAKE_BINARY_DIR}/nfpm_home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
 )

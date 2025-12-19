@@ -1,6 +1,5 @@
-##########################################################################
-# prometheus
-##########################################################################
+# src/daemon/rest/prometheus/CMakeLists.txt
+
 if (WIN32)
   aux_source_directory(C:/local/src/prometheus SRC_LIST)
   aux_source_directory(C:/local/src/prometheus/detail DETAIL_SRC_LIST)
@@ -11,9 +10,7 @@ endif()
 add_library(prometheus STATIC ${SRC_LIST} ${DETAIL_SRC_LIST})
 add_library(${PROJECT_NAME}::prometheus ALIAS prometheus)
 
-##########################################################################
-# Link
-##########################################################################
+# --- Linking ---
 target_include_directories(prometheus
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
