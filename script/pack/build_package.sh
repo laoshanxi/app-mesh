@@ -28,7 +28,7 @@ validate_environment() {
     [[ ! -d "${CMAKE_BINARY_DIR}" ]] && die "Directory ${CMAKE_BINARY_DIR} does not exist"
 
     export INSTALL_LOCATION="/opt/appmesh"
-    export PACKAGE_HOME="${CMAKE_BINARY_DIR}/nfpm_home"
+    export PACKAGE_HOME="${CMAKE_INSTALL_PREFIX}"
     export GOARCH=$(go env GOARCH)
 }
 
