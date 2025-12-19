@@ -130,7 +130,7 @@ cd ${ROOTDIR}
 
 git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
 cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
-make -j"$(($(nproc) / 2))" && make install
+make -j"$(nproc)" && make install
 cd ${ROOTDIR}
 
 git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git

@@ -3,8 +3,8 @@
 set -euo pipefail
 
 # Configuration
-readonly SCAN_DIR="nfpm_home/lib64"
-readonly OUTPUT_DIR="nfpm_home"
+readonly SCAN_DIR="package_root/lib64"
+readonly OUTPUT_DIR="package_root"
 readonly PACKAGE_LIST_FILE="dependency_list.txt"
 readonly DPKG_STATUS_FILE="/var/lib/dpkg/status"
 readonly DPKG_INFO_DIR="/var/lib/dpkg/info"

@@ -114,7 +114,7 @@ $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
 tar zxvf curl-8.5.0.tar.gz >/dev/null; cd curl-8.5.0
 mkdir build; cd build; # http2: -DHTTP_ONLY=OFF -DCURL_USE_NGHTTP2=ON
 cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl || cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DCURL_USE_OPENSSL=ON
-make -j"$(($(nproc) / 2))" >/dev/null
+make -j"$(nproc)" >/dev/null
 make install
 ldconfig
 cd $ROOTDIR
@@ -190,7 +190,7 @@ cd cryptopp/
 $WGET_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_9_0/cryptopp890.zip
 unzip -o cryptopp890.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
-make -j"$(($(nproc) / 2))"
+make -j"$(nproc)"
 make install
 
 cd $ROOTDIR
@@ -274,11 +274,11 @@ cp -rf concurrentqueue /usr/local/include/
 cd $ROOTDIR
 git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
 if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
+    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
 else
-    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
+    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
 fi
-make -j"$(($(nproc) / 2))" && make install
+make -j"$(nproc)" && make install
 
 if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
     echo "uWebSockets not support C++11"

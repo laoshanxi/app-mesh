@@ -1,21 +1,14 @@
-##########################################################################
-# sub dir
-##########################################################################
 add_subdirectory(application)
 add_subdirectory(process)
 add_subdirectory(rest)
 add_subdirectory(security)
 
-##########################################################################
-# appsvc
-##########################################################################
+# --- Define Executable ---
 aux_source_directory(. SRC_LIST)
 add_executable(appsvc ${SRC_LIST})
 add_executable(${PROJECT_NAME}::appsvc ALIAS appsvc)
 
-##########################################################################
-# Link
-##########################################################################
+# --- Linking ---
 target_link_libraries(appsvc
   PRIVATE
     Threads::Threads

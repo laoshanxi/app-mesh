@@ -15,7 +15,7 @@
 #include "Worker.h"
 #include "uwebsockets/ReplyContext.h"
 #if !defined(HAVE_UWEBSOCKETS)
-#include "../../common/websockets/WebSocketService.h"
+#include "../../common/lwsservice/WebSocketService.h"
 #endif
 
 #include "HttpRequest.h"

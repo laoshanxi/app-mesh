@@ -1,4 +1,4 @@
-#include "../../src/common/websockets/WebSocketClient.h"
+#include "../../src/common/lwsservice/WebSocketClient.h"
 #include <csignal>
 #include <iostream>
 

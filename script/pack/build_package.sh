@@ -28,7 +28,7 @@ validate_environment() {
     [[ ! -d "${CMAKE_BINARY_DIR}" ]] && die "Directory ${CMAKE_BINARY_DIR} does not exist"
 
     export INSTALL_LOCATION="/opt/appmesh"
-    export PACKAGE_HOME="${CMAKE_BINARY_DIR}/nfpm_home"
+    export PACKAGE_HOME="${CMAKE_INSTALL_PREFIX}"
     export GOARCH=$(go env GOARCH)
 }
 
@@ -274,7 +274,7 @@ build_packages() {
         die "Some variables were not substituted in nfpm.yaml."
     fi
 
-    info "Packaging the following files:"
+    info "Packaging the following files(${PACKAGE_HOME}):"
     find "${PACKAGE_HOME}" -type d -exec sh -c 'echo "${1%/}/"' _ {} \; -o -type f -print | sed "s|^${PACKAGE_HOME}/||" | sort | grep -v '^$' | sed 's/^/ - /'
 
     if [[ "$OSTYPE" == "linux"* ]]; then
