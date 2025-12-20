@@ -1,3 +1,4 @@
+// src/daemon/Configuration.h
 #pragma once
 
 #include <memory>

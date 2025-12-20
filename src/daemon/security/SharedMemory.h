@@ -1,3 +1,4 @@
+// src/daemon/security/SharedMemory.h
 #pragma once
 
 #include <atomic>

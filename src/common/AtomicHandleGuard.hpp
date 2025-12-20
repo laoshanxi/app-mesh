@@ -1,3 +1,4 @@
+// src/common/AtomicHandleGuard.hpp
 #pragma once
 
 #include <ace/OS_NS_unistd.h>

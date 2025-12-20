@@ -1,4 +1,4 @@
-// ws-service-example.cpp
+// test/websockets/ws-service-example.cpp
 //
 // Production-grade libwebsockets WSS server (C++17)
 // - WebSocketService: manages lws_context, event loop thread, sessions, worker pool

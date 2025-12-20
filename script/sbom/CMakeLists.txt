@@ -1,3 +1,4 @@
+# script/sbom/CMakeLists.txt
 ##########################################################################
 # SBOM
 # in-order to include Python packages:

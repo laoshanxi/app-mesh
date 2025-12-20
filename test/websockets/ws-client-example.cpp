@@ -1,3 +1,4 @@
+// test/websockets/ws-client-example.cpp
 #include "../../src/common/lwsservice/WebSocketClient.h"
 #include <csignal>
 #include <iostream>

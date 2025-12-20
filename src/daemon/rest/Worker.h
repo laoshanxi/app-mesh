@@ -1,4 +1,4 @@
-// Worker.h
+// src/daemon/rest/Worker.h
 #pragma once
 #include "Data.h"
 

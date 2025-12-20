@@ -1,4 +1,4 @@
-// WebSocketClient.h
+// src/common/lwsservice/WebSocketClient.h
 #pragma once
 
 #include <atomic>

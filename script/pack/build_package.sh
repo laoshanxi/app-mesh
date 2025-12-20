@@ -21,7 +21,7 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 info() { log "INFO $@"; }
 error() { log "ERROR $@"; }
 die() { error "$@" && exit 1; }
-copy() { rm -f "$2/$(basename "$1")" && cp "$1" "$2/"; }
+copy() { cp "$1" "$2/" || return 0; }
 
 validate_environment() {
     [[ -z "${CMAKE_BINARY_DIR:-}" ]] && die "CMAKE_BINARY_DIR is not set"

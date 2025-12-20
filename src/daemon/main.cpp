@@ -1,3 +1,4 @@
+// src/daemon/main.cpp
 #include <atomic>
 #include <chrono>
 #include <exception>

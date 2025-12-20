@@ -1,3 +1,4 @@
+# src/sdk/python/CMakeLists.txt
 ##########################################################################
 # Python package build (PEP 517 front-end)
 # To build the package, run:
@@ -10,9 +11,9 @@
 ##########################################################################
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-file(REMOVE_RECURSE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/*")
+file(REMOVE_RECURSE "${CMAKE_CURRENT_BINARY_DIR}/*.whl")
 add_custom_target(wheel
     COMMENT "python package build ${CMAKE_CURRENT_SOURCE_DIR}"
-    COMMAND ${Python3_EXECUTABLE} -m build --wheel --outdir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+    COMMAND ${Python3_EXECUTABLE} -m build --wheel --outdir ${CMAKE_CURRENT_BINARY_DIR}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )

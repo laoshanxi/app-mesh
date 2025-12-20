@@ -1,3 +1,4 @@
+// src/daemon/application/AppUtils.h
 #pragma once
 
 #include <memory>

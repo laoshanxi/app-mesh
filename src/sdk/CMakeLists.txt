@@ -1,4 +1,4 @@
-# sdk/CMakeLists.txt
+# src/sdk/CMakeLists.txt
 
 add_subdirectory(agent)
 add_subdirectory(cpp)

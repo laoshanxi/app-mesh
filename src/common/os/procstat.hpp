@@ -1,3 +1,4 @@
+// src/common/os/procstat.hpp
 #pragma once
 
 #include <atomic>  // std::atomic

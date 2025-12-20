@@ -1,3 +1,4 @@
+// src/common/os/linux.h
 #pragma once
 
 // This file contains cross-platform OS utilities for Linux/macOS/Windows.

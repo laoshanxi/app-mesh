@@ -1,3 +1,4 @@
+// src/daemon/security/User.h
 #pragma once
 
 #include <chrono>
