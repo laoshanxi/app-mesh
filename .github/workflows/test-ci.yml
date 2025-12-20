@@ -59,6 +59,7 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
+            python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
             python3 /work/src/sdk/python/test/test_appmesh_client.py
             python3 /work/src/sdk/python/sample.py
 
@@ -92,6 +93,7 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --break-system-packages --upgrade appmesh pyotp
+            python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
             python3 /work/src/sdk/python/test/test_appmesh_client.py
             python3 /work/src/sdk/python/sample.py
 
@@ -125,6 +127,7 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
+            python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
             python3 /work/src/sdk/python/test/test_appmesh_client.py
             python3 /work/src/sdk/python/sample.py
 
@@ -162,5 +165,6 @@ jobs:
             # test appmesh python sdk
             yum install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
+            python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
             python3 /work/src/sdk/python/test/test_appmesh_client.py
             python3 /work/src/sdk/python/sample.py
