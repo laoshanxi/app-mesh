@@ -1,3 +1,4 @@
+// src/daemon/ResourceCollection.h
 #pragma once
 
 #include <chrono>

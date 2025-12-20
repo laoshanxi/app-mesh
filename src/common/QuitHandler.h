@@ -1,3 +1,4 @@
+// src/common/QuitHandler.h
 #pragma once
 
 #include <ace/Event_Handler.h>

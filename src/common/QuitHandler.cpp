@@ -1,3 +1,4 @@
+// src/common/QuitHandler.cpp
 #include "QuitHandler.h"
 
 #include "Utility.h"

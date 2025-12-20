@@ -1,4 +1,4 @@
-// Common C++/POSIX
+// src/common/os/net.cpp
 #include <cerrno>  // errno
 #include <cstring> // strerror, strcmp
 #include <utility> // std::move

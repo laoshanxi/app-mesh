@@ -1,3 +1,4 @@
+// src/daemon/security/HMACVerifier.h
 #pragma once
 
 #include <memory>

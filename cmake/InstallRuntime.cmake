@@ -18,8 +18,8 @@ function(_ir_get_transitive_deps target out_var)
     get_target_property(iface_libs ${current_target} INTERFACE_LINK_LIBRARIES)
     
     foreach(lib IN LISTS libs iface_libs)
-      if(NOT lib) 
-        continue() 
+      if(NOT lib)
+        continue()
       endif()
       
       # Clean up generator expressions

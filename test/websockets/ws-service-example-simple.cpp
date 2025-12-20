@@ -1,4 +1,4 @@
-// main.cpp
+// test/websockets/ws-service-example-simple.cpp
 //
 // Optimized libwebsockets C++ example with modern architecture:
 //  - Single dedicated I/O thread for libwebsockets event loop

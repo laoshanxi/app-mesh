@@ -1,4 +1,4 @@
-// Required headers
+// src/daemon/security/User.cpp
 #include <cstdint>
 #include <cstring>
 #include <ctime>

@@ -1,4 +1,4 @@
-// This file contains cross-platform OS utilities for Linux/macOS/Windows.
+// src/common/os/linux.cpp
 #include "linux.h" // Include the header first
 
 // Common headers

@@ -27,7 +27,6 @@ New-Item -ItemType Directory -Path (Join-Path $PackageDir "apps") | Out-Null
 # Copy build binaries
 $BinDest = Join-Path $PackageDir "bin"
 if (Test-Path $BuildDir) {
-    Copy-Item -Path "build\gen\agent.exe" -Destination $BinDest -Force
     Copy-Item -Path "$BuildDir\*" -Destination $BinDest -Recurse -Force
     Copy-Item -Path (Join-Path $ProjectRoot "src\sdk\python\py_*.py") -Destination $BinDest -Force
     Remove-Item -Path "$BuildDir\*.pdb" -Force -ErrorAction SilentlyContinue

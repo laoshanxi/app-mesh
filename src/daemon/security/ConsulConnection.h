@@ -1,3 +1,4 @@
+// src/daemon/security/ConsulConnection.h
 #pragma once
 
 #include <atomic>

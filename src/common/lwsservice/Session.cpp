@@ -1,4 +1,4 @@
-// Session.cpp
+// src/common/lwsservice/Session.cpp
 #include "Session.h"
 #include "../../daemon/rest/HttpRequest.h"
 #include "../../daemon/rest/RestHandler.h"

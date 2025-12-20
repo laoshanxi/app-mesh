@@ -1,3 +1,4 @@
+# src/sdk/python/CMakeLists.txt
 ##########################################################################
 # Python package build (PEP 517 front-end)
 # To build the package, run:
