@@ -72,8 +72,8 @@ jobs:
           C:\local\appmesh\bin\nssm.exe start AppMeshService
 
           Start-Sleep -Seconds 2
-          Start-Process -FilePath "C:\local\appmesh\bin\appsvc.exe" -WindowStyle Hidden
-          Start-Sleep -Seconds 2
+          #Start-Process -FilePath "C:\local\appmesh\bin\appsvc.exe" -WindowStyle Hidden
+          #Start-Sleep -Seconds 2
 
           ls "C:\local\appmesh"
           cat "C:\local\appmesh\work\server.log"

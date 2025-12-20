@@ -1,3 +1,4 @@
+# test/security/CMakeLists.txt
 ##########################################################################
 # Unit Test
 ##########################################################################
@@ -13,11 +14,6 @@ add_catch_test(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
     Threads::Threads
-    rest
-    security
-    application
-    process
-    prometheus
-    consul
     common
+    security
 )

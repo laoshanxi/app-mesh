@@ -1,3 +1,4 @@
+// src/cli/main.cpp
 #include <algorithm>
 #include <iostream>
 #include <nlohmann/json.hpp>

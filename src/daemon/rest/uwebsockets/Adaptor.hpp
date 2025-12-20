@@ -1,3 +1,4 @@
+// src/daemon/rest/uwebsockets/Adaptor.hpp
 #pragma once
 
 #include <atomic>

@@ -1,3 +1,4 @@
+// src/daemon/rest/RestBase.h
 #pragma once
 
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>

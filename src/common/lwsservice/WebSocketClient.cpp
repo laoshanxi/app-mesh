@@ -1,4 +1,4 @@
-// WebSocketClient.cpp
+// src/common/lwsservice/WebSocketClient.cpp
 #include "WebSocketClient.h"
 #include "../UriParser.hpp"
 

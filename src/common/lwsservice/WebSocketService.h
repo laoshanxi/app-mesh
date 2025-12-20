@@ -1,4 +1,4 @@
-// WebSocketService.h
+// src/common/lwsservice/WebSocketService.h
 #pragma once
 
 #include "Session.h"

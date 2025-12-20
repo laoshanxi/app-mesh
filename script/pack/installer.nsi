@@ -46,7 +46,7 @@ FunctionEnd
 
 Section "Install"
     SetOutPath "$INSTDIR"
-    File /r "..\..\build\appmesh\*"
+    File /r "..\..\build\package_root\*"
 
     StrCpy $START_APPSVC "$INSTDIR\bin\appsvc.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"

@@ -1,3 +1,4 @@
+// src/daemon/security/Role.h
 #pragma once
 
 #include <map>

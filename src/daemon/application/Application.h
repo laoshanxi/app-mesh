@@ -1,3 +1,4 @@
+// src/daemon/application/Application.h
 #pragma once
 
 #include <atomic>

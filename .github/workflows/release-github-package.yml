@@ -77,7 +77,7 @@ jobs:
           BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu24 /bin/bash --login -c "set -e; mkdir ubuntu24_$BUILD_DIR; cd ubuntu24_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
           # Test
-          docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace ubuntu:24.04 /bin/bash -c "set -e; cd ubuntu24_$BUILD_DIR; apt update; apt install -y ./appmesh_*.deb; /opt/appmesh/script/appmesh.initd.sh start; sleep 3; appc ls; appc resource"
+          docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace ubuntu:24.04 /bin/bash -c "set -e; cd ubuntu24_$BUILD_DIR; apt update; apt install -y ./appmesh_*.deb; /opt/appmesh/script/appmesh.initd.sh start; sleep 3; cat /opt/appmesh/work/server.log; appc ls; appc resource"
 
       - name: Build Ubuntu 22
         run: |

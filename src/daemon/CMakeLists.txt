@@ -1,3 +1,4 @@
+# src/daemon/CMakeLists.txt
 add_subdirectory(application)
 add_subdirectory(process)
 add_subdirectory(rest)
@@ -18,8 +19,6 @@ target_link_libraries(appsvc
     process
     prometheus
     common
-  PUBLIC
-    uriparser::uriparser
 )
 
 if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)

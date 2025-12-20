@@ -1,3 +1,4 @@
+// src/daemon/rest/SocketServer.cpp
 #include "SocketServer.h"
 
 #include <ace/Guard_T.h>
@@ -171,6 +172,8 @@ void SocketServer::sendNextDownloadChunk(std::unique_ptr<std::ifstream> &downloa
     if (!download)
         return;
 
+    // TODO: Use customerized sbuffer (need override size()) can avoid data copy here: this->send(std::move(buffer));
+    // std::unique_ptr<msgpack::sbuffer> buffer = std::make_unique<msgpack::sbuffer>(TCP_CHUNK_BLOCK_SIZE);
     std::vector<char> buffer(TCP_CHUNK_BLOCK_SIZE);
     download->read(buffer.data(), buffer.size());
 

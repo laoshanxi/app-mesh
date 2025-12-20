@@ -1,3 +1,4 @@
+// src/daemon/security/HMACVerifier.cpp
 #include <chrono>
 #include <openssl/hmac.h>
 #include <sstream>
