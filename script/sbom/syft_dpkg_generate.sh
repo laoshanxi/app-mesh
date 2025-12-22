@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Configuration
-readonly SCAN_DIR="package_root/lib64"
+readonly SCAN_DIR="package_root/lib"
 readonly OUTPUT_DIR="package_root"
 readonly PACKAGE_LIST_FILE="dependency_list.txt"
 readonly DPKG_STATUS_FILE="/var/lib/dpkg/status"

@@ -66,7 +66,7 @@ REST:
     # Audience for the JWT token.
     Audience: ["appmesh-service", "appmesh-file-service", "your-service-api"]
 
-    # Authentication type to use [local/ldap/consul/oauth2].
+    # Authentication type to use [local/consul/oauth2].
     SecurityInterface: local
 
   SSL:

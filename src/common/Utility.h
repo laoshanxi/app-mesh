@@ -114,7 +114,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 	message->m_headers.count(headerName) > 0 ? message->m_headers.find(headerName)->second : std::string()
 #define APPMESH_CONFIG_YAML_FILE "config.yaml"
 #define APPMESH_SECURITY_YAML_FILE "security.yaml"
-#define APPMESH_SECURITY_LDAP_YAML_FILE "ldap.yaml"
 #define APPMESH_CONSUL_API_CONFIG_FILE "consul.yaml"
 #define APPMESH_OAUTH2_CONFIG_FILE "oauth2.yaml"
 #define APPMESH_APPMG_INIT_FLAG_FILE ".appmginit"
@@ -251,15 +250,6 @@ public:
 	static std::string maskSecret(const std::string &secret, size_t visibleChars = 2, const std::string &mask = "***");
 };
 
-#ifdef __linux__
-#define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
-#elif defined(__APPLE__)
-#define ENV_LD_LIBRARY_PATH "DYLD_LIBRARY_PATH"
-#elif defined(_WIN32)
-#define ENV_LD_LIBRARY_PATH "PATH"
-#else
-#define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH" // Default to Linux style for other platforms
-#endif
 #define PID_FILE "appmesh.pid"
 #define ENV_APPMESH_APPLICATION_NAME "APP_MESH_APPLICATION_NAME"
 #define ENV_APPMESH_LAUNCH_TIME "APP_MESH_LAUNCH_TIME"
@@ -413,15 +403,8 @@ public:
 #define JSON_KEY_USER_audience "audience"
 
 #define JSON_KEY_USER_key_method_local "local"
-#define JSON_KEY_USER_key_method_ldap "ldap"
 #define JSON_KEY_USER_key_method_consul "consul"
 #define JSON_KEY_USER_key_method_oauth2 "oauth2"
-#define JSON_KEY_USER_LDAP_ldap_uri "Uri"
-#define JSON_KEY_USER_LDAP_ldap_LoginDN "LoginDN"
-#define JSON_KEY_USER_LDAP_ldap_LoginPWD "LoginPWD"
-#define JSON_KEY_USER_LDAP_ldap_SyncPeriodSeconds "SyncPeriodSeconds"
-#define JSON_KEY_USER_LDAP_bind_dn "BindDN"
-#define JSON_KEY_USER_LDAP_USER_REPLACE_HOLDER "{USER}"
 
 #define HTTP_HEADER_JWT "JWT"
 #define HTTP_HEADER_JWT_Audience_appmesh "appmesh-service"

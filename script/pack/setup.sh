@@ -133,16 +133,6 @@ setup_env_file() {
         error "Failed to set default locale [en_US.UTF-8], not available"
     fi
 
-    # Library path setup
-    local lib_path="${PROG_HOME}/lib64"
-    if [ -d "$lib_path" ]; then
-        if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-            echo "LD_LIBRARY_PATH=${lib_path}:${LD_LIBRARY_PATH}" >>"$ENV_FILE"
-        else
-            echo "LD_LIBRARY_PATH=${lib_path}" >>"$ENV_FILE"
-        fi
-    fi
-
     # AppMesh environment variables
     printenv | grep '^APPMESH_' | while read -r var; do
         info "Applying environment variable: $var"
@@ -180,7 +170,7 @@ setup_service() {
     fi
 
     # Create appc symlink
-    rm -f "$APPC_SOFTLINK" && ln -sf "${PROG_HOME}/script/appc.sh" "$APPC_SOFTLINK"
+    rm -f "$APPC_SOFTLINK" && ln -sf "${PROG_HOME}/bin/appc" "$APPC_SOFTLINK"
     info "Symlink for appc created at $APPC_SOFTLINK"
 
     # Initialize secure installation if needed
