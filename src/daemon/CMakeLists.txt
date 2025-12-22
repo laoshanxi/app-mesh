@@ -31,4 +31,4 @@ else()
   target_link_libraries(appsvc PUBLIC websockets_shared)
 endif()
 
-copy_runtime_dependencies(appsvc)
+install_runtime(TARGET appsvc)

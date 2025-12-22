@@ -5,8 +5,7 @@
 ##########################################################################
 set(AGENT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cmd)
 
-#set(AGENT_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
-set(AGENT_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+set(AGENT_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
 if(CMAKE_CONFIGURATION_TYPES)
     set(AGENT_OUTPUT_DIR ${AGENT_OUTPUT_DIR}/$<CONFIG>)
 endif()
@@ -19,7 +18,7 @@ add_custom_target(agent ALL
     VERBATIM
 )
 
-#install(PROGRAMS "${AGENT_BIN}"
-#    DESTINATION ${CMAKE_INSTALL_BINDIR}
-#    COMPONENT Runtime
-#)
+install(PROGRAMS "${AGENT_BIN}"
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT Runtime
+)

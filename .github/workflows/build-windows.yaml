@@ -31,9 +31,10 @@ jobs:
         run: |
           mkdir build && cd build
           cmake .. -G "Visual Studio 17 2022" -A x64
-          cmake --build . --config Release --target agent
-          cmake --build . --config Release --target appc
-          cmake --build . --config Release --target appsvc
+          cmake --build . --parallel --config Release --target agent
+          cmake --build . --parallel --config Release --target appc
+          cmake --build . --parallel --config Release --target appsvc
+          cmake --build . --parallel --config Release --target install
 
       - name: Build package
         shell: pwsh

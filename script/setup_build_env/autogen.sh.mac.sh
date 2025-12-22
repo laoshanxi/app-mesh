@@ -30,7 +30,6 @@ BREW_PACKAGES=(
 	go
 	openssl@3
 	spdlog
-	openldap
 	cryptopp
 	yaml-cpp
 	nlohmann-json
@@ -110,16 +109,6 @@ echo "Installing jwt-cpp..."
 cd ${TMP_DIR}
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 sudo cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
-
-echo "Building and installing ldap-cpp..."
-cd ${TMP_DIR}
-git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
-cd ldap-cpp
-mkdir build
-cd build
-cmake -DBUILD_SHARED_LIBS=OFF ..
-make
-sudo make install
 
 echo "Building and installing QR-Code-generator..."
 cd ${TMP_DIR}

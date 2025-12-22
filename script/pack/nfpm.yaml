@@ -16,7 +16,7 @@ section: admin
 # Priority.
 priority: standard
 # Dependencies. (overridable)
-depends: []
+depends: [openssl, procps]
 # Maintainer. (required)
 maintainer: "laoshanxi <178029200@qq.com>"
 # Description.
@@ -36,18 +36,12 @@ contents:
 # Scripts to run at specific stages. (overridable)
 scripts:
   preinstall:
-  postinstall: ${CMAKE_CURRENT_SOURCE_DIR}/script/pack/post_install.sh
-  preremove: ${CMAKE_CURRENT_SOURCE_DIR}/script/pack/pre_uninstall.sh
-  postremove: ${CMAKE_CURRENT_SOURCE_DIR}/script/pack/post_uninstall.sh
+  postinstall: ${CMAKE_SOURCE_DIR}/script/pack/post_install.sh
+  preremove: ${CMAKE_SOURCE_DIR}/script/pack/pre_uninstall.sh
+  postremove: ${CMAKE_SOURCE_DIR}/script/pack/post_uninstall.sh
 # All fields above marked as `overridable` can be overridden for a given
 overrides:
   deb:
     depends:
-      - openssl
-      - procps
-      - ldap-utils
   rpm:
     depends:
-      - openssl
-      - procps
-      # - openldap-devel (if needed)

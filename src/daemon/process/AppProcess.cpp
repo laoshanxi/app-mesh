@@ -458,21 +458,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		option.set_handles(m_stdinHandler.get(), m_stdoutHandler.get(), m_stdoutHandler.get());
 	}
 
-#if !defined(WIN32)
-	// Do not inherit LD_LIBRARY_PATH to child
-	// TODO: Windows does not have lib64 directory
-	static const std::string ldEnv = Utility::getenv(ENV_LD_LIBRARY_PATH);
-	if (!ldEnv.empty() && !envMap.count(ENV_LD_LIBRARY_PATH))
-	{
-		std::string env = ldEnv;
-		const auto homeLib = Utility::getHomeDir() + "/lib64";
-		env = Utility::stringReplace(env, homeLib + ":", "");
-		env = Utility::stringReplace(env, homeLib, "");
-		option.setenv(ENV_LD_LIBRARY_PATH, "%s", env.c_str());
-		LOG_DBG << fname << "replace LD_LIBRARY_PATH with " << env.c_str();
-	}
-#endif
-
 	if (spawn(option) >= 0)
 	{
 		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << m_pid.load() << ">.";

@@ -46,11 +46,6 @@ add_compile_definitions(BUILD_TAG=${BUILD_TAG})
 message(STATUS "Build Tag: ${BUILD_TAG}")
 
 # =============================================================================
-# Output Directories; TODO: remove use CMAKE_INSTALL_PREFIX
-# =============================================================================
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/gen")
-
-# =============================================================================
 # Installation Configuration
 # =============================================================================
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
@@ -58,14 +53,16 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
         CACHE PATH "Package staging root" FORCE)
 endif()
 
+set(CMAKE_INSTALL_LIBDIR lib) # Force use <lib> for all OS
 include(GNUInstallDirs)
 message(STATUS "Install Prefix: ${CMAKE_INSTALL_PREFIX}")
 
 # =============================================================================
 # External Dependencies
 # =============================================================================
-include(cmake/CopyDLLs.cmake)
+include(cmake/InstallRuntime.cmake)
 include(cmake/Dependencies.cmake)
+include(cmake/DetectCPU.cmake)
 
 # =============================================================================
 # Build Type & Compiler Options
@@ -86,9 +83,12 @@ if(ENABLE_ASAN)
 endif()
 
 # =============================================================================
-# Platform: macOS (Apple)
+# Platform-Specific RPATH Configuration
 # =============================================================================
 if(APPLE)
+    # --------------------------------------------------------------------------
+    # macOS RPATH Configuration
+    # --------------------------------------------------------------------------
     # Detect Homebrew prefix based on architecture
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
         set(HOMEBREW_PREFIX "/opt/homebrew")
@@ -97,26 +97,35 @@ if(APPLE)
     endif()
 
     list(PREPEND CMAKE_PREFIX_PATH "${HOMEBREW_PREFIX}")
-
-    set(CMAKE_SKIP_INSTALL_RPATH FALSE)
-    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-    set(CMAKE_MACOSX_RPATH ON)
-    
-    set(CMAKE_INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
-    set(CMAKE_BUILD_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
-
     set(ENV{PKG_CONFIG_PATH} "${HOMEBREW_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 
-    message(STATUS "Homebrew Prefix: ${HOMEBREW_PREFIX}")
-elseif(UNIX)
-    set(CMAKE_SKIP_INSTALL_RPATH FALSE)
+    # RPATH settings for macOS
+    set(CMAKE_MACOSX_RPATH ON)
+    set(CMAKE_SKIP_BUILD_RPATH FALSE)
     set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 
-    # $ORIGIN must be escaped to prevent CMake from interpreting the $
+    # Use @executable_path for relocatable binaries
+    set(CMAKE_INSTALL_RPATH "@executable_path/../${CMAKE_INSTALL_LIBDIR}")
+
+    # During build, use the Homebrew library paths
+    set(CMAKE_BUILD_RPATH "${HOMEBREW_PREFIX}/lib")
+
+    message(STATUS "Homebrew Prefix: ${HOMEBREW_PREFIX}")
+    message(STATUS "macOS Install RPATH: ${CMAKE_INSTALL_RPATH}")
+
+elseif(UNIX)
+    # --------------------------------------------------------------------------
+    # Linux RPATH Configuration
+    # --------------------------------------------------------------------------
+    set(CMAKE_SKIP_BUILD_RPATH FALSE)
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
+
+    # $ORIGIN allows the binary to find libraries relative to itself
     set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
-    set(CMAKE_BUILD_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+
+    message(STATUS "Linux Install RPATH: ${CMAKE_INSTALL_RPATH}")
 endif()
 
 # =============================================================================
@@ -177,8 +186,7 @@ endif()
 # =============================================================================
 if(WIN32)
     set(PACKAGING_COMMAND
-        powershell -ExecutionPolicy Bypass -NoProfile
-        -File "${CMAKE_SOURCE_DIR}/script/pack/build_package.ps1")
+        powershell -ExecutionPolicy Bypass -NoProfile -File "${CMAKE_SOURCE_DIR}/script/pack/build_package.ps1")
     set(BUILD_TYPE_ENV "$<CONFIG>")
 else()
     set(PACKAGING_COMMAND bash "${CMAKE_SOURCE_DIR}/script/pack/build_package.sh")
@@ -187,16 +195,24 @@ endif()
 
 add_custom_target(pack
     COMMENT "Creating distribution package..."
+
+    # 1. make install using all CPU cores
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target install
+            --parallel ${PARALLEL_BUILD}
+            --config $<CONFIG>
+
+    # 2. packaging
     COMMAND ${CMAKE_COMMAND} -E env
-        "PROJECT_NAME=${PROJECT_NAME}"
-        "PROJECT_VERSION=${PROJECT_VERSION}"
-        "CMAKE_CURRENT_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
-        "CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}"
-        "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}"
-        "BUILD_TYPE=${BUILD_TYPE_ENV}"
+        PROJECT_NAME=${PROJECT_NAME}
+        PROJECT_VERSION=${PROJECT_VERSION}
+        CMAKE_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+        CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}
+        CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+        BUILD_TYPE=${BUILD_TYPE_ENV}
         ${PACKAGING_COMMAND}
-    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-    DEPENDS appc appsvc agent
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
 # =============================================================================

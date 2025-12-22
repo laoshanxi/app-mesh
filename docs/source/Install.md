@@ -27,7 +27,7 @@ Configuration:
 
 - Working data persists in `/opt/appmesh/work` - mount this directory for persistence.
 
-- Security plugin supports `local`/`consul`/`ldap`/`oauth2`, mount `/opt/appmesh/security.yaml` to override local security information.
+- Security plugin supports `local`/`consul`/`oauth2`, mount `/opt/appmesh/security.yaml` to override local security information.
 
 - The remote TLS connection related certification files are located in `/opt/appmesh/ssl`.
 

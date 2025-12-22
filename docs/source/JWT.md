@@ -11,7 +11,7 @@ JSON Web Tokens are an open, industry standard RFC 7519 method for representing 
 What is supported:
 
 > - REST login use JWT standard
-> - Support local JSON based user management and LDAP users
+> - Support local JSON based user management
 > - Provide login and auth API to run as a stand-alone JWT server
 > - Support centralized user & role DB server by Consul
 

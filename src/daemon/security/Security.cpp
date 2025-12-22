@@ -5,7 +5,6 @@
 #include "SecurityConsul.h"
 #include "SecurityJson.h"
 #include "SecurityKeycloak.h"
-#include "ldapplugin/SecurityLDAP.h"
 
 std::shared_ptr<Security> Security::m_instance = nullptr;
 std::recursive_mutex Security::m_mutex;
@@ -27,14 +26,6 @@ void Security::init(const std::string &interface)
     else if (interface == JSON_KEY_USER_key_method_consul)
     {
         instance = std::make_shared<SecurityConsul>();
-    }
-    else if (interface == JSON_KEY_USER_key_method_ldap)
-    {
-#if !defined(_WIN32)
-        instance = std::make_shared<SecurityLDAP>();
-#else
-        throw std::invalid_argument("LDAP security plugin is not supported on Windows");
-#endif
     }
     else
     {

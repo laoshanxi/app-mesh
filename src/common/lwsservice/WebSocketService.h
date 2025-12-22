@@ -70,7 +70,7 @@ private:
 
 private:
     ACE_INET_Addr m_addr;
-    struct lws_context *m_context;
+    std::atomic<struct lws_context *> m_context;
 
     std::thread m_event_loop_thread;
     std::vector<std::thread> m_worker_threads;

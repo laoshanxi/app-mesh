@@ -14,3 +14,5 @@ target_link_libraries(appc
     common
     cppsdk
 )
+
+install_runtime(TARGET appc)

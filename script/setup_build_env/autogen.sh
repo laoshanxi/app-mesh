@@ -45,7 +45,6 @@ if [ -f "/usr/bin/yum" ]; then
     fi
     yum install -y epel-release
     yum install -y git make gcc-c++
-    yum install -y openldap-devel liboath-devel
     yum install -y wget which gettext unzip
     yum install -y python3-pip
     yum install -y zlib-devel #for libcurl
@@ -62,7 +61,6 @@ if [ -f "/usr/bin/yum" ]; then
     export DEBIAN_FRONTEND=noninteractive
     apt update
     apt install -y g++ git make
-    apt install -y libldap-dev liboath-dev
     apt install -y wget alien gettext unzip
     apt install -y python3-pip
     apt install -y zlib1g-dev #for libcurl
@@ -139,24 +137,23 @@ unzip -o include.zip
 mv include/nlohmann /usr/local/include/
 
 # spdlog
-if [ -f "/usr/bin/yum" ]; then
-    yum install -y spdlog-devel
-else
-    apt install -y libspdlog-dev
-fi
-# build spdlog for old OS
+# spdlog - build from source
 GCC_MAJOR_VER=$(gcc -dumpversion 2>/dev/null | cut -d'.' -f1 | tr -dc '0-9')
+echo "Detected GCC major version: ${GCC_MAJOR_VER:-unknown}"
+cd "$ROOTDIR"
 if [ -n "$GCC_MAJOR_VER" ] && [ "$GCC_MAJOR_VER" -lt 8 ]; then
-    echo "Build spdlog from source"
-    if [ -f "/usr/bin/yum" ]; then
-        git clone -b v1.9.2 --depth 1 https://github.com/gabime/spdlog.git
-    else
-        git clone --depth 1 https://github.com/gabime/spdlog.git
-    fi
-    cd spdlog && mkdir build && cd build
-    cmake .. && cmake --build . && cmake --install .
-    cd $ROOTDIR
+    echo "GCC < 8: build spdlog from v1.9.2 branch"
+    git clone -b v1.9.2 --depth 1 https://github.com/gabime/spdlog.git
+else
+    echo "GCC >= 8: build spdlog from default branch"
+    git clone --depth 1 https://github.com/gabime/spdlog.git
 fi
+cd spdlog || exit 1
+mkdir -p build && cd build || exit 1
+cmake .. -DSPDLOG_BUILD_SHARED=ON -DSPDLOG_BUILD_EXAMPLES=OFF -DSPDLOG_BUILD_TESTS=OFF
+cmake --build . --parallel
+cmake --install .
+cd "$ROOTDIR"
 
 # build ACE
 if [ true ]; then
@@ -242,14 +239,6 @@ cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. &&
 
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
-
-git clone https://github.com/AndreyBarmaley/ldap-cpp.git
-cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..;
-if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    while ! make; do make clean && git reset --hard HEAD^ && cmake -DBUILD_SHARED_LIBS=OFF ..; sleep 0.5; done
-fi
-make; make install
-ldconfig
 
 cd $ROOTDIR
 git clone https://github.com/jbeder/yaml-cpp.git
