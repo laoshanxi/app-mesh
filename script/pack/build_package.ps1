@@ -13,31 +13,19 @@ Write-Host "Detected Build Type: $BuildType"
 $ProjectRoot = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent
 Set-Location -Path $ProjectRoot
 
-$BuildDir = Join-Path $ProjectRoot "build\gen\$BuildType"
 $PackageRoot = Join-Path $ProjectRoot "build\package_root"
 if (Test-Path "env:CMAKE_INSTALL_PREFIX") {
     $PackageRoot = $env:CMAKE_INSTALL_PREFIX
 }
 
 # Prepare package directory
-Remove-Item -Recurse -Force $PackageRoot -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path (Join-Path $PackageRoot "bin") | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $PackageRoot "ssl") | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $PackageRoot "script") | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $PackageRoot "apps") | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $PackageRoot "ssl") -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $PackageRoot "script") -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $PackageRoot "apps") -Force | Out-Null
 
 # Copy build binaries
 $BinDest = Join-Path $PackageRoot "bin"
-if (Test-Path $BuildDir) {
-    Copy-Item -Path "$BuildDir\*" -Destination $BinDest -Recurse -Force
-    Copy-Item -Path (Join-Path $ProjectRoot "src\sdk\python\py_*.py") -Destination $BinDest -Force
-    Remove-Item -Path "$BuildDir\*.pdb" -Force -ErrorAction SilentlyContinue
-    Write-Host "Copied build output to $BinDest"
-}
-else {
-    Write-Error "Binary directory $BuildDir not found"
-    exit 1
-}
+Copy-Item -Path (Join-Path $ProjectRoot "src\sdk\python\py_*.py") -Destination $BinDest -Force
 
 # Generate SSL certs in ssl directory
 $SSLDest = Join-Path $PackageRoot "ssl"
@@ -82,7 +70,9 @@ else {
 }
 
 # Optional: Create installer using NSIS
-Copy-Item "$env:ChocolateyInstall\lib\nssm\tools\nssm.exe" "$BinDest"
+$nssmExe = "$env:ChocolateyInstall\lib\nssm\tools\nssm.exe"
+Write-Host "Copy nssm.exe from $nssmExe to $BinDest"
+Copy-Item -Path $nssmExe -Destination $BinDest -Force
 
 $NSISScript = Join-Path $ProjectRoot "script\pack\installer.nsi"
 $NSISExe = "C:\Program Files (x86)\NSIS\makensis.exe"

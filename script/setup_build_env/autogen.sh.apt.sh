@@ -28,7 +28,6 @@ apt install -y g++ cmake make
 # apt install -y valgrind libasan6
 
 # security
-apt install -y libldap-dev liboath-dev
 apt install -y alien gettext unzip
 
 # cpplint tools
@@ -37,7 +36,6 @@ apt install -y alien gettext unzip
 apt install -y git
 
 # dependency libraries
-apt install -y libspdlog-dev
 apt install -y libboost-all-dev
 apt install -y libcrypto++-dev
 
@@ -107,11 +105,17 @@ sed -i -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_
 cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target linenoise && cmake --install .
 cd ${ROOTDIR}
 
+# spdlog - build from source
+git clone --depth 1 https://github.com/gabime/spdlog.git
+cd spdlog || exit 1
+mkdir -p build && cd build || exit 1
+cmake .. -DSPDLOG_BUILD_SHARED=ON -DSPDLOG_BUILD_EXAMPLES=OFF -DSPDLOG_BUILD_TESTS=OFF
+cmake --build . --parallel
+cmake --install .
+cd ${ROOTDIR}
+
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
-
-git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
-cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
 
 git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
 cd QR-Code-generator/cpp && cp qrcodegen.* /usr/local/include/ && make && cp libqrcodegencpp.a /usr/local/lib/

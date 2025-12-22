@@ -166,14 +166,6 @@ find_library(ACE_SSL_LIBRARY ACE_SSL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-##########################################################################
-# openldap for none-WIN32
-##########################################################################
-if (NOT WIN32)
-    set(LDAP_LIBRARIES ldap lber)
-    find_library(${LDAP_LIBRARIES} REQUIRED)
-endif()
-
 find_package(uriparser REQUIRED)
 
 ##########################################################################

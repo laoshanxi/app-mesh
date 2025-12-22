@@ -270,31 +270,31 @@ void WebSocketService::stop()
         sentinel.m_type = WSRequest::Type::Closing;
         m_incoming_queue.enqueue(std::move(sentinel));
     }
-    // m_incoming_queue.stop();
-    // m_outgoing_queue.stop();
 
+    // 3. Wake up lws event loop safely
+    struct lws_context *ctx = m_context.load();
+    if (ctx)
+    {
+        lws_cancel_service(ctx);
+    }
+
+    // 4. Join all threads
     for (auto &worker : m_worker_threads)
+    {
         if (worker.joinable())
             worker.join();
-
+    }
     m_worker_threads.clear();
 
-    // Wake lws loop to exit cleanly
-    if (m_context)
-        lws_cancel_service(m_context);
-
     if (m_event_loop_thread.joinable())
+    {
         m_event_loop_thread.join();
+    }
 
+    // 5. Cleanup sessions
     {
         std::lock_guard<std::mutex> lock(m_sessions_mutex);
         m_sessions.clear();
-    }
-
-    if (m_context)
-    {
-        // lws_context_destroy(m_context); // TODO: crash
-        m_context = nullptr;
     }
 
     LOG_INF << fname << "Shutdown complete";
@@ -524,13 +524,20 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
 // -------------------------------
 void WebSocketService::enqueueOutgoingResponse(std::unique_ptr<WSResponse> &&resp)
 {
+    // Safety check: if we are not running, don't bother
+    if (!m_is_running.load())
+        return;
+
     auto ssn = findSession((lws *)resp->m_session_ref);
-    if (!ssn || !m_context)
+    struct lws_context *ctx = m_context.load();
+
+    if (!ssn || !ctx)
         return;
 
     m_outgoing_queue.enqueue(std::move(resp));
+
     // Wake lws service so the IO loop will process the response
-    lws_cancel_service(m_context);
+    lws_cancel_service(ctx);
 }
 
 void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
@@ -588,22 +595,24 @@ void WebSocketService::broadcastMessage(const std::string &msg)
 void WebSocketService::runIOEventLoop()
 {
     const static char fname[] = "WebSocketService::runIOEventLoop() ";
-
     LOG_INF << fname << "Thread started";
 
-    // using Clock = std::chrono::steady_clock;
-    // auto last_broadcast_time = Clock::now();
-
-    while (m_is_running)
+    while (m_is_running.load())
     {
         // Process ALL pending outgoing responses before servicing
         std::unique_ptr<WSResponse> resp;
-        while (m_outgoing_queue.try_dequeue(resp))
+        while (m_outgoing_queue.try_dequeue(resp) && m_is_running.load())
         {
             deliverResponse(resp);
         }
 
-        int result = lws_service(m_context, 0);
+        // Load context atomically
+        struct lws_context *ctx = m_context.load();
+        if (!ctx)
+            break;
+
+        // Service the loop
+        int result = lws_service(ctx, 0);
         if (result < 0)
         {
             lwsl_err("lws_service error: %d\n", result);
@@ -622,6 +631,7 @@ void WebSocketService::runIOEventLoop()
         */
     }
 
+    m_context.store(nullptr);
     LOG_INF << fname << "Thread stopped";
 }
 
@@ -712,13 +722,14 @@ bool WebSocketService::createContext(const char *cert_path, const char *key_path
     retry.secs_since_valid_hangup = 35;
     info.retry_and_idle_policy = &retry;
 
-    m_context = lws_create_context(&info);
-    if (!m_context)
+    struct lws_context *ctx = lws_create_context(&info);
+    if (!ctx)
     {
         throw std::runtime_error("lws_create_context failed");
         return false;
     }
 
+    m_context.store(ctx);
     LOG_INF << fname << "lws_context created";
     return true;
 }
