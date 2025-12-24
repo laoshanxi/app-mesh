@@ -52,8 +52,11 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/package_root"
         CACHE PATH "Package staging root" FORCE)
 endif()
-
-set(CMAKE_INSTALL_LIBDIR lib) # Force use <lib> for all OS
+if(WIN32)
+    set(CMAKE_INSTALL_LIBDIR bin) # Use <bin> for Windows <lib>
+else()
+    set(CMAKE_INSTALL_LIBDIR lib) # Use <lib> for <lib64>
+endif()
 include(GNUInstallDirs)
 message(STATUS "Install Prefix: ${CMAKE_INSTALL_PREFIX}")
 
