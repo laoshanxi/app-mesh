@@ -33,7 +33,7 @@ function(_install_runtime_win32 target)
         # Copy the found DLLs to the installation folder
         foreach(_file IN LISTS _r_deps)
             file(INSTALL
-                DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\"
+                DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}\"
                 TYPE SHARED_LIBRARY
                 FILES \"\${_file}\"
             )
@@ -97,6 +97,7 @@ function(_install_runtime_apple target allowed_prefixes)
             PRE_EXCLUDE_REGEXES
                 \"^/usr/lib/.*\"
                 \"^/System/.*\"
+                \"^/Library/.*\"
                 \"libSystem\\\\..*\"
                 \"libc\\\\+\\\\+\\\\..*\"
                 \"libobjc\\\\..*\"
@@ -104,6 +105,7 @@ function(_install_runtime_apple target allowed_prefixes)
             POST_EXCLUDE_REGEXES
                 \"^/usr/lib/.*\"
                 \"^/System/.*\"
+                \"^/Library/.*\"
         )
 
         # Track which libraries we've already processed (for deduplication)

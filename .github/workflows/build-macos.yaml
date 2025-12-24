@@ -111,6 +111,7 @@ jobs:
 
           # test appmesh python sdk
           python3 -m pip install --break-system-packages --upgrade appmesh pyotp
+          python3 src/sdk/python/test/test_appmesh_client.py || tail /opt/appmesh/work/server.log
           python3 src/sdk/python/test/test_appmesh_client.py
           python3 src/sdk/python/sample.py
 
