@@ -2,115 +2,134 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
+#include <mutex>
 #include <string>
 
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
-#define ISO8601FORMAT_IN_SECONDS "%Y-%m-%d %H:%M:%S%F%ZP"
-#define ISO8601FORMAT_IN_MINUTES "%Y-%m-%d %H:%M%F%ZP"
-#define ISO8601FORMAT_OUT "%Y-%m-%dT%H:%M:%S%F%Q"
-#define RFC3339FORMAT "%Y-%m-%dT%H:%M:%S%FZ"
+// Use constexpr instead of macros for type safety
+constexpr const char *ISO8601FORMAT_IN_SECONDS = "%Y-%m-%d %H:%M:%S%F%ZP";
+constexpr const char *ISO8601FORMAT_IN_MINUTES = "%Y-%m-%d %H:%M%F%ZP";
+constexpr const char *ISO8601FORMAT_OUT = "%Y-%m-%dT%H:%M:%S%F%Q";
+constexpr const char *RFC3339FORMAT = "%Y-%m-%dT%H:%M:%S%FZ";
 
-/// <summary>
-/// Boost local time zone
-/// https://stackoverflow.com/questions/8746848/boost-get-the-current-local-date-time-with-current-time-zone-from-the-machine
-/// </summary>
-class machine_time_zone : public boost::local_time::custom_time_zone
+/// @brief Boost local time zone implementation for machine's current timezone
+/// @note The UTC offset is calculated once at first access and cached
+class MachineTimeZone : public boost::local_time::custom_time_zone
 {
-	typedef boost::local_time::custom_time_zone base_type;
-	typedef base_type::time_duration_type time_duration_type;
+	using base_type = boost::local_time::custom_time_zone;
+	using time_duration_type = base_type::time_duration_type;
 
 public:
-	machine_time_zone();
-	// This method is not precise, real offset may be several seconds more or less.
-	static const boost::posix_time::time_duration &get_utc_offset();
-	// GMT
-	static const std::string &get_std_zone_abbrev();
+	MachineTimeZone();
+
+	/// @brief Get the UTC offset for the local machine
+	/// @note This method is not precise; real offset may be several seconds off
+	/// @return Cached UTC offset as time_duration
+	static boost::posix_time::time_duration getUtcOffset();
+
+	/// @brief Get the standard timezone abbreviation (e.g., "EST", "PST")
+	/// @return Timezone abbreviation string
+	static std::string getStdZoneAbbrev();
+
+private:
+	static std::once_flag s_offsetInitFlag;
+	static std::once_flag s_abbrevInitFlag;
+	static boost::posix_time::time_duration s_utcOffset;
+	static std::string s_zoneAbbrev;
 };
 
-/// <summary>
-/// Date Time parse and format
-/// </summary>
+/// @brief Thread-safe DateTime parsing and formatting utilities
+/// @details Provides ISO8601 and RFC3339 date-time parsing and formatting
+///          with timezone support using Boost.DateTime
 class DateTime
 {
 public:
-	/// <summary>
-	/// Return local host posix zone string
-	/// </summary>
-	/// <returns>posix zone: +08:00:00 with format [%H:%M:%S]</returns>
-	static const std::string getLocalZoneUTCOffset();
+	using TimePoint = std::chrono::system_clock::time_point;
+	using Duration = std::chrono::system_clock::duration;
+	using BoostDuration = boost::posix_time::time_duration;
+	using TimeZonePtr = boost::local_time::time_zone_ptr;
 
-	/// <summary>
-	/// Set DateTime output posix zone info to variable: LOCAL_POSIX_ZONE
-	/// default use LOCAL_POSIX_ZONE without set
-	/// </summary>
-	/// <param name="posixZone">posix zone: +08:00:00 with format [%H:%M:%S]</param>
-	static const boost::local_time::time_zone_ptr& initOutputFormatPosixZone(const std::string &posixZone);
+	// Delete copy/move - this is a utility class with only static methods
+	DateTime() = delete;
+	DateTime(const DateTime &) = delete;
+	DateTime &operator=(const DateTime &) = delete;
+	DateTime(DateTime &&) = delete;
+	DateTime &operator=(DateTime &&) = delete;
 
-	/// <summary>
-	/// Parse ISO8601 date time from string, if the parameter strTime have zone info, will ignore posixTimeZone
-	/// </summary>
-	/// <param name="strTime">"2017-09-11 21:52:13+00:00" or "2017-09-11 21:52:13"</param>
-	/// <param name="posixTimeZone">+07:00, leave empty will use getLocalZoneUTCOffset()</param>
-	/// <returns></returns>
-	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone = "");
+	/// @brief Get the local host's UTC offset as a POSIX zone string
+	/// @return Posix zone string (e.g., "+08:00:00") in format [%H:%M:%S]
+	static std::string getLocalZoneUtcOffset();
 
-	/// <summary>
-	/// Format time_point with [%Y-%m-%d %H:%M:%S%F%Q] flags and LOCAL_POSIX_ZONE (set from initOutputFormatPosixZone()) offset
-	/// </summary>
-	/// <param name="time">std::chrono::system_clock::time_point</param>
-	/// <returns>ISO8601 date time string: 2017-09-11 21:52:13+00:00</returns>
-	static std::string formatISO8601Time(const std::chrono::system_clock::time_point &time);
+	/// @brief Initialize the output format timezone
+	/// @param posixZone Posix zone string (e.g., "+08:00:00"). Empty uses local zone.
+	/// @return Reference to the configured timezone pointer
+	/// @thread_safety Thread-safe
+	static TimeZonePtr initOutputFormatPosixZone(const std::string &posixZone);
 
-	/// <summary>
-	/// Format time_point with provided flags and LOCAL_POSIX_ZONE (set from initOutputFormatPosixZone()) offset
-	/// The format is using boost::local_time::local_date_time, only seconds will be taken.
-	/// </summary>
-	/// <param name="time">std::chrono::system_clock::time_point</param>
-	/// <param name="fmt">The format can be found here: https://www.boost.org/doc/libs/1_69_0/doc/html/date_time/date_time_io.html#date_time.format_flags</param>
-	/// <returns>Formated date time string</returns>
-	static std::string formatLocalTime(const std::chrono::system_clock::time_point &time, const char *fmt = ISO8601FORMAT_OUT);
+	/// @brief Parse an ISO8601 formatted date-time string
+	/// @param strTime DateTime string (e.g., "2017-09-11 21:52:13+00:00" or "2017-09-11 21:52:13")
+	/// @param posixTimeZone Optional timezone (e.g., "+07:00"). Empty uses local zone.
+	/// @return Parsed time_point in system_clock
+	/// @throws std::invalid_argument if parsing fails
+	static TimePoint parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone = "");
 
-	/// <summary>
-	/// Format time_point (utc) to RFC3339 format
-	/// </summary>
-	/// <param name="time">UTC time_point</param>
-	/// <returns>RFC3339 date time: 2019-01-23T10:18:32.079Z</returns>
-	static std::string formatRFC3339Time(const std::chrono::system_clock::time_point &time);
+	/// @brief Format a time_point to ISO8601 string
+	/// @param time The time_point to format
+	/// @return ISO8601 formatted string (e.g., "2017-09-11T21:52:13+00:00")
+	static std::string formatISO8601Time(const TimePoint &time);
 
-	/// <summary>
-	/// Get posix time zone string from date time string
-	/// </summary>
-	/// <param name="strTime">ISO8601 time format: 2020-10-11T19:50:00+08:00</param>
-	/// <returns>posix time zone: +08:00</returns>
-	static std::string getISO8601TimeZone(const std::string &strTime);
+	/// @brief Format a time_point with custom format string
+	/// @param time The time_point to format
+	/// @param fmt Boost date_time format string
+	/// @return Formatted date-time string, empty on error
+	/// @see https://www.boost.org/doc/libs/1_69_0/doc/html/date_time/date_time_io.html#date_time.format_flags
+	static std::string formatLocalTime(const TimePoint &time, const char *fmt = ISO8601FORMAT_OUT);
 
-	/// <summary>
-	/// Get day time duration from time_point (time_point is UTC time)
-	/// </summary>
-	/// <param name="time">std::chrono::system_clock::time_point</param>
-	/// <returns>boost::posix_time::time_duration</returns>
-	static boost::posix_time::time_duration pickDayTimeUtcDuration(const std::chrono::system_clock::time_point &time);
+	/// @brief Format a UTC time_point to RFC3339 format
+	/// @param time UTC time_point
+	/// @return RFC3339 formatted string (e.g., "2019-01-23T10:18:32.079Z")
+	static std::string formatRFC3339Time(const TimePoint &time);
 
-	/// <summary>
-	/// Parse day time string to UTC day time duration
-	/// </summary>
-	/// <param name="strTime">string with [%H:%M:%S] format</param>
-	/// <returns>boost::posix_time::time_duration</returns>
-	static boost::posix_time::time_duration parseDayTimeUtcDuration(std::string strTime);
+	/// @brief Extract timezone from an ISO8601 date-time string
+	/// @param strTime ISO8601 formatted string (e.g., "2020-10-11T19:50:00+08:00")
+	/// @return Timezone portion (e.g., "+08:00"), empty if not found
+	static std::string getISO8601TimeZone(const std::string &strTime) noexcept;
 
-	/// <summary>
-	/// Format boost::posix_time::time_duration to day time string
-	/// </summary>
-	/// <param name="duration">boost::posix_time::time_duration</param>
-	/// <returns>string with [%H:%M:%S] format</returns>
-	static std::string formatDayTimeUtcDuration(boost::posix_time::time_duration &duration);
+	/// @brief Extract the time-of-day from a time_point as UTC duration
+	/// @param time The time_point (interpreted as UTC)
+	/// @return Time of day as boost::posix_time::time_duration
+	static BoostDuration pickDayTimeUtcDuration(const TimePoint &time) noexcept;
 
-	/// <summary>
-	/// Reduce posix zone (+08:00:00 -> +08), remove last ":00"
-	/// </summary>
-	/// <param name="timeStr">ISO8601 format date time string</param>
-	/// <returns>reduced string</returns>
+	/// @brief Parse a day-time string to UTC duration
+	/// @param strTime Time string in format [%H:%M:%S] or [%H:%M] or [%H]
+	/// @return Parsed duration
+	static BoostDuration parseDayTimeUtcDuration(const std::string &strTime);
+
+	/// @brief Format a duration to day-time string
+	/// @param duration The duration to format
+	/// @return String in format [%H:%M:%S+TZ]
+	static std::string formatDayTimeUtcDuration(const BoostDuration &duration);
+
+	/// @brief Reduce posix zone precision (e.g., "+08:00:00" -> "+08")
+	/// @param timeStr ISO8601 format date-time string
+	/// @return Reduced string with trailing ":00" removed from timezone
 	static std::string reducePosixZone(const std::string &timeStr);
+
+private:
+	/// @brief Get or create the output timezone pointer
+	/// @return Current output timezone
+	static TimeZonePtr getOutputPosixZone();
+
+	/// @brief Get the local timezone pointer
+	/// @return Local machine timezone
+	static TimeZonePtr getLocalPosixZone();
+
+	static std::mutex s_outputZoneMutex;
+	static TimeZonePtr s_outputPosixZone;
+	static std::once_flag s_localZoneInitFlag;
+	static TimeZonePtr s_localPosixZone;
+	static std::string s_localZoneOffset;
 };

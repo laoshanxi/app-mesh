@@ -75,7 +75,7 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
     REQUIRE(DateTime::formatRFC3339Time(iso8601TimePoint) == rfc3339);
 
     // getLocalZoneUTCOffset
-    LOG_DBG << DateTime::getLocalZoneUTCOffset();
+    LOG_DBG << DateTime::getLocalZoneUtcOffset();
     LOG_DBG << "parseDayTimeUtcDuration:" << DateTime::parseDayTimeUtcDuration("20:33:00+08");
     REQUIRE(boost::posix_time::to_simple_string(DateTime::parseDayTimeUtcDuration("20:33:00+08")) == "12:33:00");
 
@@ -93,8 +93,8 @@ TEST_CASE("Boost Date Time Test", "[Boost]")
 {
     init();
 
-    LOG_DBG << "get_std_zone_abbrev: " << machine_time_zone::get_std_zone_abbrev();
-    LOG_DBG << "get_utc_offset: " << machine_time_zone::get_utc_offset();
+    LOG_DBG << "get_std_zone_abbrev: " << MachineTimeZone::getStdZoneAbbrev();
+    LOG_DBG << "get_utc_offset: " << MachineTimeZone::getUtcOffset();
     REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("-08:00")) == "-08:00:00");
     REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("08:00")) == "08:00:00");
 

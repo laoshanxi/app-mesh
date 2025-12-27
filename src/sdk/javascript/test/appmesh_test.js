@@ -83,7 +83,7 @@ async function test() {
     const newApp = {
       name: 'test-ping',
       description: 'appmesh ping test',
-      command: 'ping github.com -w 300',
+      command: 'ping cloudflare.com -w 300',
       shell: true,
       behavior: {
         control: { 0: 'standby' },
@@ -108,7 +108,7 @@ async function test() {
     const runApp = {
       name: 'test-run',
       description: 'appmesh ping test',
-      command: 'ping github.com -w 5',
+      command: 'ping cloudflare.com -w 5',
       shell: true,
       behavior: {
         control: { 0: 'standby' },

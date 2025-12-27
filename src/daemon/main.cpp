@@ -19,6 +19,10 @@
 #include <ace/TP_Reactor.h>
 #include <spdlog/spdlog.h>
 
+#if defined(_WIN32)
+#include "ace/WFMO_Reactor.h" // For windows ACE_Process_Manager
+#endif
+
 #ifdef __has_include
 #if __has_include(<ace/SSL/SSL_Context.h>)
 #include <ace/SSL/SSL_Context.h>
@@ -299,7 +303,16 @@ void AppMeshDaemon::setupSignalHandlers()
 
 	setupQuitHandler(ACE_Reactor::instance());
 
-	Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, ACE_Reactor::instance());
+#if defined(_WIN32)
+	static auto processReactor = new ACE_Reactor(new ACE_WFMO_Reactor(), 1);
+	m_threadPool.emplace_back(std::make_unique<std::thread>(
+		[this]()
+		{ runReactorEvent(processReactor); }));
+#else
+	static auto processReactor = ACE_Reactor::instance();
+#endif
+
+	Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, processReactor);
 
 	LOG_INF << fname << "Signal handlers configured";
 }

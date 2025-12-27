@@ -33,7 +33,6 @@ BREW_PACKAGES=(
 	cryptopp
 	yaml-cpp
 	nlohmann-json
-	msgpack-cxx
 )
 
 # Ensure brew is available
@@ -152,5 +151,12 @@ cd uriparser && mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF ..
 make
 sudo make install
+
+echo "Building and installing msgpack-cxx..."
+cd $TMP_DIR
+git clone -b cpp_master --depth 1 https://github.com/laoshanxi/msgpack-c.git
+cd msgpack-c
+cmake .
+sudo cmake --build . --target install
 
 echo "Build completed successfully!"

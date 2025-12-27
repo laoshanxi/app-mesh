@@ -23,7 +23,7 @@ def demo_app_mgmt():
     myapp = App()
     myapp.name = "myapp"
     myapp.status = 0  # 0 = disabled
-    myapp.command = "ping github.com"
+    myapp.command = "ping cloudflare.com"
 
     # Add app
     print("Application added:", client.add_app(myapp))

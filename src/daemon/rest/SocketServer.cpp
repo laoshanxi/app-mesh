@@ -46,6 +46,7 @@ int SocketServer::open(void *acceptor_or_connector)
     const static char fname[] = "SocketServer::open() ";
     LOG_INF << fname << "Initializing connection for client | ClientID=" << m_id;
 
+    // TODO: those callback functions are IO thread, avoid handle none-IO operation here!
     this->onData([this](std::vector<std::uint8_t> &&data)
     {
         const static char fname_cb[] = "SocketServer::onData() ";
@@ -172,17 +173,13 @@ void SocketServer::sendNextDownloadChunk(std::unique_ptr<std::ifstream> &downloa
     if (!download)
         return;
 
-    // TODO: Use customerized sbuffer (need override size()) can avoid data copy here: this->send(std::move(buffer));
-    // std::unique_ptr<msgpack::sbuffer> buffer = std::make_unique<msgpack::sbuffer>(TCP_CHUNK_BLOCK_SIZE);
-    std::vector<char> buffer(TCP_CHUNK_BLOCK_SIZE);
-    download->read(buffer.data(), buffer.size());
-
-    const auto readSize = static_cast<std::size_t>(download->gcount());
+    std::unique_ptr<msgpack::sbuffer> buffer = std::make_unique<msgpack::sbuffer>(TCP_CHUNK_BLOCK_SIZE);
+    const auto readSize = buffer->read_from(*download, TCP_CHUNK_BLOCK_SIZE);
 
     if (readSize > 0)
     {
         // Send exactly what we read
-        this->send(buffer.data(), readSize);
+        this->send(std::move(buffer));
     }
     else
     {

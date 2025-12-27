@@ -75,7 +75,7 @@ go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 #messagepack Python pip
 apt install -y python3-pip
 if [ true ]; then
-    git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
+    git clone -b cpp_master --depth 1 https://github.com/laoshanxi/msgpack-c.git
     cd msgpack-c
     cmake .
     cmake --build . --target install
