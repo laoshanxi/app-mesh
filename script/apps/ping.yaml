@@ -1,7 +1,7 @@
 ---
 name: ping
 description: appmesh ping test
-command: ping github.com
+command: ping cloudflare.com
 shell: true
 owner: mesh
 permission: 33

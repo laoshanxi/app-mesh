@@ -1,284 +1,418 @@
 // src/common/DateTime.cpp
-#include <chrono>
-#include <ctime>
-#include <iostream>
-
-#include <ace/OS.h>
-#include <boost/date_time/local_time/local_time.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
-
 #include "DateTime.h"
+
+#include <algorithm>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include <stdexcept>
+
 #include "Utility.h"
 
-static const boost::local_time::time_zone_ptr LOCAL_POSIX_ZONE = boost::local_time::time_zone_ptr(new machine_time_zone());
-static boost::local_time::time_zone_ptr OUTPUT_POSIX_ZONE;
+// Static member definitions for MachineTimeZone
+std::once_flag MachineTimeZone::s_offsetInitFlag;
+std::once_flag MachineTimeZone::s_abbrevInitFlag;
+boost::posix_time::time_duration MachineTimeZone::s_utcOffset;
+std::string MachineTimeZone::s_zoneAbbrev;
 
-machine_time_zone::machine_time_zone()
+// Static member definitions for DateTime
+std::mutex DateTime::s_outputZoneMutex;
+DateTime::TimeZonePtr DateTime::s_outputPosixZone;
+std::once_flag DateTime::s_localZoneInitFlag;
+DateTime::TimeZonePtr DateTime::s_localPosixZone;
+std::string DateTime::s_localZoneOffset;
+
+// ============================================================================
+// MachineTimeZone Implementation
+// ============================================================================
+
+MachineTimeZone::MachineTimeZone()
 	: boost::local_time::custom_time_zone(
-		  time_zone_names("Local machine time zone", get_std_zone_abbrev(), "", ""),
-		  get_utc_offset(),
+		  boost::local_time::time_zone_names("Local machine time zone", getStdZoneAbbrev(), "", ""),
+		  getUtcOffset(),
 		  boost::local_time::dst_adjustment_offsets(
 			  time_duration_type(0, 0, 0),
-			  time_duration_type(0, 0, 0), time_duration_type(0, 0, 0)),
+			  time_duration_type(0, 0, 0),
+			  time_duration_type(0, 0, 0)),
 		  boost::shared_ptr<boost::local_time::dst_calc_rule>())
 {
 }
 
-// This method is not precise, real offset may be several seconds more or less.
-const boost::posix_time::time_duration &machine_time_zone::get_utc_offset()
+boost::posix_time::time_duration MachineTimeZone::getUtcOffset()
 {
-	using boost::posix_time::second_clock;
-	static boost::posix_time::time_duration utc_offset(second_clock::local_time() - second_clock::universal_time());
-	return utc_offset;
+	std::call_once(s_offsetInitFlag, []()
+				   {
+        using boost::posix_time::second_clock;
+        s_utcOffset = second_clock::local_time() - second_clock::universal_time(); });
+	return s_utcOffset;
 }
 
-const std::string &machine_time_zone::get_std_zone_abbrev()
+std::string MachineTimeZone::getStdZoneAbbrev()
 {
-	// https://stackoverflow.com/questions/2136970/how-to-get-the-current-time-zone/28259774#28259774
-	static std::string zone;
-	static bool init = false;
-	if (!init)
+	std::call_once(s_abbrevInitFlag, []()
+				   {
+        std::time_t now = 0;
+        std::tm local_tm{};
+
+#if defined(_WIN32) || defined(_WIN64)
+        localtime_s(&local_tm, &now);
+#else
+        localtime_r(&now, &local_tm);
+#endif
+        
+        char buff[64] = {0};
+        std::strftime(buff, sizeof(buff), "%Z", &local_tm);
+        s_zoneAbbrev = buff; });
+	return s_zoneAbbrev;
+}
+
+DateTime::TimeZonePtr DateTime::getLocalPosixZone()
+{
+	std::call_once(s_localZoneInitFlag, []()
+				   { s_localPosixZone = boost::local_time::time_zone_ptr(new MachineTimeZone()); });
+	return s_localPosixZone;
+}
+
+DateTime::TimeZonePtr DateTime::getOutputPosixZone()
+{
+	std::lock_guard<std::mutex> lock(s_outputZoneMutex);
+	if (!s_outputPosixZone)
 	{
-		init = true;
-		struct tm local_tm;
-		time_t cur_time = 0;
-		ACE_OS::localtime_r(&cur_time, &local_tm);
-		char buff[64] = {0};
-		strftime(buff, sizeof(buff), "%Z", &local_tm);
-		zone = buff;
+		s_outputPosixZone = getLocalPosixZone();
 	}
-	return zone;
+	return s_outputPosixZone;
+}
+
+// ============================================================================
+// DateTime Public Methods
+// ============================================================================
+
+std::string DateTime::getLocalZoneUtcOffset()
+{
+	static std::once_flag initFlag;
+	static std::string cachedOffset;
+
+	std::call_once(initFlag, []()
+				   {
+        const auto tz_offset = MachineTimeZone::getUtcOffset();
+        std::ostringstream ss;
+        if (!tz_offset.is_negative()) {
+            ss << '+';
+        }
+        ss << tz_offset;
+        cachedOffset = ss.str();
+        LOG_DBG << "DateTime::getLocalZoneUtcOffset() Local timezone UTC offset: " << cachedOffset; });
+
+	return cachedOffset;
+}
+
+DateTime::TimeZonePtr DateTime::initOutputFormatPosixZone(const std::string &posixZone)
+{
+	std::lock_guard<std::mutex> lock(s_outputZoneMutex);
+
+	if (!posixZone.empty())
+	{
+		try
+		{
+			auto duration = boost::posix_time::duration_from_string(posixZone);
+			auto formatStr = boost::posix_time::to_simple_string(duration);
+			s_outputPosixZone = boost::local_time::time_zone_ptr(new boost::local_time::posix_time_zone(formatStr));
+		}
+		catch (const std::exception &e)
+		{
+			LOG_WAR << "DateTime::initOutputFormatPosixZone() Failed to parse zone '" << posixZone << "': " << e.what() << ". Using local zone.";
+			s_outputPosixZone = getLocalPosixZone();
+		}
+	}
+	else
+	{
+		s_outputPosixZone = getLocalPosixZone();
+	}
+
+	return s_outputPosixZone;
+}
+
+std::string DateTime::getISO8601TimeZone(const std::string &strTime) noexcept
+{
+	if (strTime.empty())
+	{
+		return {};
+	}
+
+	// Scan backwards to find '+' or '-' indicating timezone
+	for (auto it = strTime.rbegin(); it != strTime.rend(); ++it)
+	{
+		const char ch = *it;
+		if (ch == '+' || ch == '-')
+		{
+			// Calculate the position from the beginning
+			const auto pos = static_cast<size_t>(std::distance(it, strTime.rend()) - 1);
+			return strTime.substr(pos);
+		}
+		if (ch == ' ' || ch == 'T')
+		{
+			// Hit date-time separator before finding timezone
+			return {};
+		}
+	}
+	return {};
 }
 
 std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone)
 {
-	const static char fname[] = "DateTime::parseISO8601DateTime() ";
+	constexpr const char *fname = "DateTime::parseISO8601DateTime() ";
 
-	// Check if the input time string is empty and return epoch time if so.
 	if (strTime.empty())
 	{
 		LOG_DBG << fname << "Empty date-time string input, returning epoch time.";
 		return std::chrono::system_clock::from_time_t(0);
 	}
 
-	// Copy the input string for processing
+	// Work with a copy for modification
 	std::string iso8601TimeStr = strTime;
 
-	// Extract the timezone part from the input string if present
-	std::string zoneStr = DateTime::getISO8601TimeZone(iso8601TimeStr);
+	// Extract timezone from input or use provided/local default
+	std::string zoneStr = getISO8601TimeZone(iso8601TimeStr);
 
 	if (zoneStr.empty())
 	{
-		if (!posixTimeZone.empty())
+		zoneStr = posixTimeZone.empty() ? getLocalZoneUtcOffset() : posixTimeZone;
+		iso8601TimeStr += zoneStr;
+	}
+
+	// Replace 'T' separator with space for boost parsing
+	iso8601TimeStr = Utility::stringReplace(iso8601TimeStr, "T", " ");
+
+	// Determine format based on colon count in the datetime portion
+	const char *format = ISO8601FORMAT_IN_MINUTES;
+	if (!zoneStr.empty() && iso8601TimeStr.length() > zoneStr.length())
+	{
+		const auto dateTimePortion = iso8601TimeStr.substr(0, iso8601TimeStr.length() - zoneStr.length());
+		if (Utility::charCount(dateTimePortion, ':') >= 2)
 		{
-			// Use the provided POSIX timezone if no timezone is found in the string
-			zoneStr = posixTimeZone;
+			format = ISO8601FORMAT_IN_SECONDS;
 		}
-		else
-		{
-			// Default to the local timezone offset if none is provided or found
-			zoneStr = DateTime::getLocalZoneUTCOffset();
-		}
-		iso8601TimeStr += zoneStr; // Append the timezone to the date-time string
 	}
 
 	try
 	{
-		// Replace 'T' with a space to match the expected input format
-		iso8601TimeStr = Utility::stringReplace(iso8601TimeStr, "T", " ");
-
-		// Determine the appropriate ISO8601 format (with seconds or minutes precision)
-		std::string format = ISO8601FORMAT_IN_MINUTES;
-		if (!zoneStr.empty() && iso8601TimeStr.length() > zoneStr.length())
-		{
-			// Extract the date-time portion without the timezone
-			auto dateTimeSectionStr = iso8601TimeStr.substr(0, iso8601TimeStr.length() - zoneStr.length());
-
-			// Check the number of colons to decide the format (e.g., hours:minutes vs. hours:minutes:seconds)
-			if (Utility::charCount(dateTimeSectionStr, ':') == 2)
-			{
-				format = ISO8601FORMAT_IN_SECONDS;
-			}
-		}
-
-		// Setup a string stream for parsing the date-time string
 		std::istringstream iss(iso8601TimeStr);
-		iss.exceptions(std::ios_base::failbit); // Enable exception throwing on parsing errors
+		iss.exceptions(std::ios_base::failbit);
 
-		// Apply a custom locale with a local_time_input_facet for parsing
-		iss.imbue(std::locale(std::locale::classic(), new boost::local_time::local_time_input_facet(format)));
+		// Note: The facet pointer is managed by the locale (it will be deleted)
+		auto *facet = new boost::local_time::local_time_input_facet(format);
+		iss.imbue(std::locale(std::locale::classic(), facet));
 
-		// Parse the string into a boost::local_date_time object
 		boost::local_time::local_date_time localDateTime(boost::date_time::special_values::not_a_date_time);
 		iss >> localDateTime;
 
 		LOG_DBG << fname << "Converted ISO8601 string <" << iso8601TimeStr << "> to local time <" << localDateTime << ">";
 
-		// Convert the parsed time to UTC and then to std::chrono::system_clock::time_point
-		auto ptime = localDateTime.utc_time();
+		const auto ptime = localDateTime.utc_time();
 		return std::chrono::system_clock::from_time_t(boost::posix_time::to_time_t(ptime));
 	}
-	catch (const std::ios_base::failure &fail)
+	catch (const std::exception &e)
 	{
-		// Log and rethrow exception for invalid ISO8601 strings
-		LOG_WAR << fname << "Failed to parse ISO8601 string: <" << iso8601TimeStr << ">, Error: " << fail.what();
-		throw std::invalid_argument("Invalid ISO8601 string");
-	}
-	catch (...)
-	{
-		// Catch any other exceptions and log a generic error
-		LOG_WAR << fname << "Failed to parse ISO8601 string: <" << iso8601TimeStr << ">, unknown error occurred";
-		throw std::invalid_argument("Invalid ISO8601 string");
+		LOG_WAR << fname << "Failed to parse ISO8601 string: <" << iso8601TimeStr << ">, Error: " << e.what();
+		throw std::invalid_argument("Invalid ISO8601 string: " + iso8601TimeStr);
 	}
 }
 
-const std::string DateTime::getLocalZoneUTCOffset()
-{
-	const static char fname[] = "DateTime::getLocalZoneUTCOffset() ";
-	// option: https://stackoverflow.com/questions/2136970/how-to-get-the-current-time-zone/28259774#28259774
-	static std::string zone;
-	if (zone.empty())
-	{
-		boost::posix_time::time_duration tz_offset = machine_time_zone::get_utc_offset();
-		std::ostringstream ss;
-		ss << (tz_offset.is_negative() ? "" : "+");
-		ss << tz_offset;
-		zone = ss.str();
-		LOG_DBG << fname << "Local timezone UTC offset: " << zone;
-	}
-	return zone;
-}
-
-const boost::local_time::time_zone_ptr &DateTime::initOutputFormatPosixZone(const std::string &posixZone)
-{
-	if (posixZone.length())
-	{
-		auto duration = boost::posix_time::duration_from_string(posixZone);
-		auto formatStr = boost::posix_time::to_simple_string(duration);
-		OUTPUT_POSIX_ZONE = boost::local_time::time_zone_ptr(new boost::local_time::posix_time_zone(formatStr));
-	}
-	else
-	{
-		OUTPUT_POSIX_ZONE = LOCAL_POSIX_ZONE;
-	}
-	return OUTPUT_POSIX_ZONE;
-}
-
-std::string DateTime::formatISO8601Time(const std::chrono::system_clock::time_point &time)
+std::string DateTime::formatISO8601Time(const TimePoint &time)
 {
 	return formatLocalTime(time, ISO8601FORMAT_OUT);
 }
 
-std::string DateTime::formatRFC3339Time(const std::chrono::system_clock::time_point &time)
+std::string DateTime::formatRFC3339Time(const TimePoint &time)
 {
-	// do not need posix zone here
-	// https://www.boost.org/doc/libs/1_69_0/doc/html/date_time/date_time_io.html
-	std::ostringstream oss;
-	oss.exceptions(std::ios_base::failbit);
-	oss.imbue(std::locale(std::locale::classic(), new boost::posix_time::time_facet(RFC3339FORMAT)));
-	oss << boost::posix_time::from_time_t(std::chrono::system_clock::to_time_t(time));
-	return oss.str();
+	try
+	{
+		std::ostringstream oss;
+		oss.exceptions(std::ios_base::failbit);
+
+		auto *facet = new boost::posix_time::time_facet(RFC3339FORMAT);
+		oss.imbue(std::locale(std::locale::classic(), facet));
+
+		const auto ptime = boost::posix_time::from_time_t(std::chrono::system_clock::to_time_t(time));
+		oss << ptime;
+
+		return oss.str();
+	}
+	catch (const std::exception &e)
+	{
+		LOG_ERR << "DateTime::formatRFC3339Time() Failed: " << e.what();
+		return {};
+	}
 }
 
-std::string DateTime::formatLocalTime(const std::chrono::system_clock::time_point &time, const char *fmt)
+std::string DateTime::formatLocalTime(const TimePoint &time, const char *fmt)
 {
-	const static char fname[] = "DateTime::formatLocalTime() ";
+	constexpr const char *fname = "DateTime::formatLocalTime() ";
 
-	if (time == std::chrono::system_clock::time_point::min() || time == std::chrono::system_clock::time_point::max())
+	// Check for invalid time points
+	if (time == TimePoint::min() || time == TimePoint::max())
 	{
 		LOG_DBG << fname << "Invalid time point provided (min/max value)";
-		return std::string();
+		return {};
 	}
 
 	try
 	{
-		if (OUTPUT_POSIX_ZONE == nullptr)
+		const auto outputZone = getOutputPosixZone();
+		const auto localZone = getLocalPosixZone();
+
+		const auto timeT = std::chrono::system_clock::to_time_t(time);
+		std::tm local_tm{};
+
+#if defined(_WIN32) || defined(_WIN64)
+		localtime_s(&local_tm, &timeT);
+#else
+		localtime_r(&timeT, &local_tm);
+#endif
+
+		const boost::gregorian::date target_date(
+			static_cast<unsigned short>(local_tm.tm_year + 1900),
+			static_cast<unsigned short>(local_tm.tm_mon + 1),
+			static_cast<unsigned short>(local_tm.tm_mday));
+
+		const boost::posix_time::time_duration target_duration(local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
+
+		boost::local_time::local_date_time localDateTime(
+			target_date,
+			target_duration,
+			localZone,
+			boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
+
+		// Convert to output timezone if different
+		if (outputZone && outputZone != localZone &&
+			outputZone->base_utc_offset() != localZone->base_utc_offset())
 		{
-			initOutputFormatPosixZone("");
-		}
-		struct tm local_tm;
-		memset(&local_tm, 0, sizeof(local_tm));
-		auto timeT = std::chrono::system_clock::to_time_t(time);
-		ACE_OS::localtime_r(&timeT, &local_tm);
-		boost::gregorian::date target_date(local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
-		boost::posix_time::time_duration target_duration(local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
-		boost::local_time::local_date_time localDateTime(target_date, target_duration, LOCAL_POSIX_ZONE, boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
-		if (OUTPUT_POSIX_ZONE && OUTPUT_POSIX_ZONE != LOCAL_POSIX_ZONE && OUTPUT_POSIX_ZONE->base_utc_offset() != LOCAL_POSIX_ZONE->base_utc_offset())
-		{
-			localDateTime = localDateTime.local_time_in(OUTPUT_POSIX_ZONE);
+			localDateTime = localDateTime.local_time_in(outputZone);
 		}
 
 		std::ostringstream oss;
 		oss.exceptions(std::ios_base::failbit);
-		oss.imbue(std::locale(std::locale::classic(), new boost::local_time::local_time_facet(fmt)));
+
+		auto *facet = new boost::local_time::local_time_facet(fmt);
+		oss.imbue(std::locale(std::locale::classic(), facet));
 		oss << localDateTime;
+
 		return reducePosixZone(oss.str());
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "Failed to format time <" << std::chrono::system_clock::to_time_t(time) << "> with format <" << fmt << ">. Error: " << e.what();
+		LOG_ERR << fname << "Failed to format time <"
+				<< std::chrono::system_clock::to_time_t(time)
+				<< "> with format <" << fmt << ">. Error: " << e.what();
+		return {};
 	}
-	return std::string();
 }
 
-std::string DateTime::getISO8601TimeZone(const std::string &strTime)
+boost::posix_time::time_duration DateTime::pickDayTimeUtcDuration(
+	const TimePoint &time) noexcept
 {
-	// go through with reversed order
-	for (size_t i = strTime.length() - 1; i > 0; i--)
+	try
 	{
-		switch (strTime[i])
-		{
-		case '-':
-		case '+':
-			return strTime.substr(i); // found zone string
-		case ' ':
-		case 'T':
-			return std::string(); // not found zone string
-		default:
-			break;
-		}
+		const auto ptime = boost::posix_time::from_time_t(std::chrono::system_clock::to_time_t(time));
+		return ptime.time_of_day();
 	}
-	return std::string();
+	catch (...)
+	{
+		return boost::posix_time::time_duration(0, 0, 0);
+	}
 }
 
-boost::posix_time::time_duration DateTime::pickDayTimeUtcDuration(const std::chrono::system_clock::time_point &time)
+boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(
+	const std::string &strTime)
 {
-	const auto ptime = boost::posix_time::from_time_t(std::chrono::system_clock::to_time_t(time));
-	return ptime.time_of_day();
+	constexpr const char *fname = "DateTime::parseDayTimeUtcDuration() ";
+
+	std::string timeStr = strTime;
+	const std::string posixTimezone = getISO8601TimeZone(timeStr);
+
+	// Remove timezone suffix if present
+	if (!posixTimezone.empty())
+	{
+		timeStr = timeStr.substr(0, timeStr.length() - posixTimezone.length());
+	}
+
+	// Trim whitespace
+	const auto start = timeStr.find_first_not_of(" \t");
+	const auto end = timeStr.find_last_not_of(" \t");
+	if (start != std::string::npos)
+	{
+		timeStr = timeStr.substr(start, end - start + 1);
+	}
+
+	// Parse the duration and construct a fake date for timezone conversion
+	const auto duration = boost::posix_time::duration_from_string(timeStr);
+
+	std::ostringstream fakeDateStream;
+	fakeDateStream << "2000-01-01T"
+				   << std::setfill('0') << std::setw(2) << duration.hours() << ":"
+				   << std::setfill('0') << std::setw(2) << duration.minutes() << ":"
+				   << std::setfill('0') << std::setw(2) << duration.seconds();
+
+	const auto timePoint = parseISO8601DateTime(fakeDateStream.str(), posixTimezone);
+	const auto result = pickDayTimeUtcDuration(timePoint);
+
+	LOG_DBG << fname << "Parsed <" << strTime << "> with zone <" << posixTimezone
+			<< "> to <" << formatISO8601Time(timePoint) << "> with duration: " << result;
+
+	return result;
 }
 
-boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(std::string strTime)
+std::string DateTime::formatDayTimeUtcDuration(const BoostDuration &duration)
 {
-	const static char fname[] = "DateTime::parseDayTimeUtcDuration() ";
+	const auto posixTimezone = getLocalZoneUtcOffset();
 
-	const std::string posixTimezone = DateTime::getISO8601TimeZone(strTime);
-	strTime = Utility::stdStringTrim(strTime, posixTimezone, false, true);
-	// re-format to accept [%H:%M] and [%H], duration parse need provide [%H:%M:%S] for parseISO8601DateTime
-	auto duration = boost::posix_time::duration_from_string(strTime);
-	std::string fakeDate = Utility::stringFormat("2000-01-01T%02d:%02d:%02d", duration.hours(), duration.minutes(), duration.seconds());
-	auto timePoint = parseISO8601DateTime(fakeDate, posixTimezone);
-	duration = pickDayTimeUtcDuration(timePoint);
+	std::ostringstream fakeDateStream;
+	fakeDateStream << "2000-01-01T"
+				   << std::setfill('0') << std::setw(2) << duration.hours() << ":"
+				   << std::setfill('0') << std::setw(2) << duration.minutes() << ":"
+				   << std::setfill('0') << std::setw(2) << duration.seconds();
 
-	LOG_DBG << fname << "Parsed <" << strTime << "> with zone <" << posixTimezone << "> to <" << formatISO8601Time(timePoint) << "> with duration: " << duration;
-	return duration;
-}
+	const auto timePoint = parseISO8601DateTime(fakeDateStream.str(), posixTimezone);
+	const auto timeStr = formatISO8601Time(timePoint);
 
-std::string DateTime::formatDayTimeUtcDuration(boost::posix_time::time_duration &duration)
-{
-	// use host zone
-	const auto posixTimezone = DateTime::getLocalZoneUTCOffset();
-	const std::string fakeDate = Utility::stringFormat("2000-01-01T%02d:%02d:%02d", duration.hours(), duration.minutes(), duration.seconds());
-	const auto timePoint = parseISO8601DateTime(fakeDate, posixTimezone);
-	auto timeStr = formatISO8601Time(timePoint);
-	return Utility::splitString(timeStr, "T").back();
+	// Extract time portion after 'T'
+	const auto tPos = timeStr.find('T');
+	if (tPos != std::string::npos && tPos + 1 < timeStr.length())
+	{
+		return timeStr.substr(tPos + 1);
+	}
+	return timeStr;
 }
 
 std::string DateTime::reducePosixZone(const std::string &strTime)
 {
-	// Check if the string contains either '+' or '-'
-	if (strTime.find_last_of("+-") != std::string::npos)
+	// Find the last '+' or '-' to locate timezone
+	const auto tzPos = strTime.find_last_of("+-");
+	if (tzPos == std::string::npos)
 	{
-		return Utility::stdStringTrim(strTime, ":00", /*leftTrim=*/false, /*rightTrim=*/true);
+		return strTime;
 	}
-	return strTime;
+
+	// Recursively remove trailing ":00" from timezone portion
+	std::string result = strTime;
+	while (result.length() >= 3)
+	{
+		if (result.substr(result.length() - 3) == ":00")
+		{
+			// Don't remove if it would leave just the sign
+			if (result.length() - 3 > tzPos + 1)
+			{
+				result = result.substr(0, result.length() - 3);
+			}
+			else
+			{
+				break;
+			}
+		}
+		else
+		{
+			break;
+		}
+	}
+	return result;
 }

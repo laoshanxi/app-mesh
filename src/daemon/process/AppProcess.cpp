@@ -481,22 +481,27 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 {
 	const static char fname[] = "AppProcess::spawn() ";
 
-	auto pid = Process_Manager::instance()->spawn(option);
+	pid_t pid = Process_Manager::instance()->spawn(option);
+	if (pid == ACE_INVALID_PID)
+	{
+		LOG_ERR << fname << "spawn failed: " << last_error_msg();
+		return pid;
+	}
+
 	m_pid.store(pid);
 
-	if (pid != ACE_INVALID_PID)
+	// register handler (THIS is how exit is handled)
+	if (Process_Manager::instance()->register_handler(this, pid) == -1)
 	{
-		if (Process_Manager::instance()->register_handler(this, pid) == -1)
-		{
-			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << last_error_msg();
-		}
-#if defined(_WIN32)
-		// Create Windows job object and assign process to it
-		// This handle must remain in scope until process is assigned
-		m_job = os::create_job(os::name_job(pid));
-		os::assign_job(m_job, pid);
-#endif
+		LOG_ERR << fname << "Failed to register handler for pid=" << pid << ": " << last_error_msg();
 	}
+
+#if defined(_WIN32)
+	// Create Windows job object and assign process to it
+	// This handle must remain in scope until process is assigned
+	m_job = os::create_job(os::name_job(pid));
+	os::assign_job(m_job, pid);
+#endif
 
 	return pid;
 }

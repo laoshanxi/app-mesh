@@ -192,7 +192,7 @@ public:
 	static std::vector<std::string> splitString(const std::string &s, const std::string &c);
 	static bool startWith(const std::string &str, const std::string &head);
 	static bool endWith(const std::string &str, const std::string &end);
-	static size_t charCount(const std::string &str, const char &c);
+	static size_t charCount(const std::string &str, char c);
 	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos = 0);
 	static std::string humanReadableSize(long double bytesSize);
 	static std::string humanReadableDuration(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime = std::chrono::system_clock::now());

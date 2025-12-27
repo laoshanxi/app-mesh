@@ -1240,10 +1240,9 @@ bool Utility::endWith(const std::string &str, const std::string &postfix)
 	return valid_ && ends_with_;
 }
 
-size_t Utility::charCount(const std::string &str, const char &c)
+size_t Utility::charCount(const std::string &str, char c)
 {
-	return std::count_if(str.begin(), str.end(), [c](char strChar)
-						 { return strChar == c; });
+	return static_cast<size_t>(std::count(str.begin(), str.end(), c));
 }
 
 std::string Utility::stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos)

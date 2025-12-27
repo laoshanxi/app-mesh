@@ -223,7 +223,7 @@ function Install-HeaderOnlyLibraries {
     
     # Message Pack
     Write-Host "Installing MessagePack..." -ForegroundColor Yellow
-    git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
+    git clone -b cpp_master --depth 1 https://github.com/laoshanxi/msgpack-c.git
     Set-Location msgpack-c
     cmake . -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_INSTALL_PREFIX="C:/local"
     cmake --install . --config Release

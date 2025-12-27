@@ -28,7 +28,7 @@ func TestAppmeshLogin(t *testing.T) {
 	t.Log(app)
 
 	runApp := Application{}
-	cmd := "ping github.com -w 3"
+	cmd := "ping cloudflare.com -w 3"
 	runApp.Command = &cmd
 	client.RunAppSync(runApp, true, 5, 10)
 	client.RunAppAsync(runApp, 5, 10)

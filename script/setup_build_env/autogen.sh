@@ -202,7 +202,7 @@ cd $ROOTDIR
 # Message Pack
 # https://github.com/msgpack/msgpack-c/tree/cpp_master
 if [ true ]; then
-    git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
+    git clone -b cpp_master --depth 1 https://github.com/laoshanxi/msgpack-c.git
     cd msgpack-c
     cmake .
     cmake --build . --target install

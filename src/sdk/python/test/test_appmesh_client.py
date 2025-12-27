@@ -54,14 +54,14 @@ def get_test_paths():
 def get_ping_command():
     """return platform specific ping command"""
     if sys.platform == "win32":
-        return "ping github.com -n 5 -w 2000"
+        return "ping cloudflare.com -n 5 -w 2000"
     elif sys.platform.startswith("darwin"):
         # On macOS, -c count, -W wait (in ms) is not supported, use -c and maybe -t TTL
         # Use `ping -c 5 github.com`
-        return "ping github.com -c 5"
+        return "ping cloudflare.com -c 5"
     else:
         # Linux
-        return "ping github.com -w 5"
+        return "ping cloudflare.com -w 5"
 
 
 class TestAppMeshClient(TestCase):
@@ -159,7 +159,7 @@ class TestAppMeshClient(TestCase):
         """test application management"""
         client = AppMeshClient()
         client.login("admin", "admin123")
-        app = client.add_app(App({"command": "ping github.com -w 5", "name": "SDK"}))
+        app = client.add_app(App({"command": "ping cloudflare.com -w 5", "name": "SDK"}))
         self.assertTrue(hasattr(app, "name"))
 
         self.assertTrue(client.delete_app("SDK"))

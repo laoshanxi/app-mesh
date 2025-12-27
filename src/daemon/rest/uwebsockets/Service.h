@@ -103,7 +103,10 @@ namespace WSS
         void send(std::string &&data, uWS::OpCode opcode = uWS::OpCode::TEXT)
         {
             runOnLoop([data = std::move(data), opcode](WebSocketType* ws) mutable {
-                ws->send(std::move(data), opcode);
+                if (ws->send(std::move(data), opcode) != WebSocketType::SendStatus::SUCCESS)
+                {
+                    // TODO: drop / close / downgrade
+                }
             });
         }
 
