@@ -68,9 +68,12 @@ else
     go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 fi
 # Golang third party library
-go install github.com/cloudflare/cfssl/cmd/cfssl@latest
-go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
-go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+export CGO_ENABLED=0
+LDFLAGS="-s -w"
+BUILDFLAGS="-trimpath -buildvcs=false"
+go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl@latest
+go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssljson@latest
+go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
 #messagepack Python pip
 apt install -y python3-pip

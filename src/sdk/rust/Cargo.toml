@@ -16,7 +16,7 @@ name = "appmesh"
 path = "src/lib.rs"
 
 [dependencies]
-reqwest = { version = "0.12", features = [
+reqwest = { version = "0.13", features = [
     "json",
     "cookies",
     "multipart",

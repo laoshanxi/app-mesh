@@ -75,7 +75,7 @@ func readConsulConfig() (*consulapi.Config, error) {
 		viperConfig.AddConfigPath(".") // Path to look for the config file in, for debug test
 	}
 	viperConfig.AddConfigPath(filepath.Join(config.GetAppMeshHomeDir(), "work/config/")) // Path to look for the config file in
-	viperConfig.AddConfigPath(config.GetAppMeshHomeDir())                                // Path to look for the config file in
+	viperConfig.AddConfigPath(filepath.Join(config.GetAppMeshHomeDir(), "config"))       // Path to look for the config file in
 
 	// Read YAML file
 	if err := viperConfig.ReadInConfig(); err != nil {

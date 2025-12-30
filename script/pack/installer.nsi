@@ -8,6 +8,7 @@ OutFile "..\..\build\${APP_NAME}_${APP_VERSION}_windows_x64.exe"
 InstallDir "${INSTALL_DIR}"
 RequestExecutionLevel admin
 SetCompressor lzma
+ShowInstDetails show
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -51,15 +52,55 @@ Section "Install"
     StrCpy $START_APPSVC "$INSTDIR\bin\appsvc.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"
 
-    ; create service (remove if exists)
+    ; Check and install OpenSSL
+    DetailPrint "Checking for OpenSSL..."
+    nsExec::ExecToStack 'cmd /c "openssl version"'
+    Pop $0
+    Pop $1
+    ${If} $0 != 0
+        DetailPrint "OpenSSL not found. Installing via Winget..."
+        nsExec::ExecToLog 'winget install OpenSSL.OpenSSL --accept-source winget --accept-package-agreements --silent --disable-interactivity'
+        nsExec::ExecToStack 'cmd /c "openssl version"'
+        Pop $0
+        Pop $1
+        ${If} $0 == 0
+             DetailPrint "OpenSSL installed successfully."
+        ${Else}
+             DetailPrint "Warning: Failed to install OpenSSL automatically."
+        ${EndIf}
+    ${Else}
+        DetailPrint "OpenSSL is already installed."
+    ${EndIf}
+
+    ; Generate SSL certs
+    DetailPrint "Starting SSL certificate generation"
+    nsExec::ExecToLog '"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\ssl\generate_ssl_cert.ps1"'
+    Pop $0
+    DetailPrint "PowerShell exit code: $0"
+    ${If} $0 != 0
+        DetailPrint "ERROR: SSL certificate generation failed"
+        MessageBox MB_ICONSTOP "SSL certificate generation failed"
+        Abort
+    ${Else}
+        DetailPrint "SUCCESS: SSL certificate generation completed"
+    ${EndIf}
+
+
+    ; Remove existing service if present
+    nsExec::ExecToLog '"$NSSM_PATH" stop AppMeshService'
     nsExec::ExecToLog '"$NSSM_PATH" remove AppMeshService confirm'
+
+    ; Install service
     nsExec::ExecToLog '"$NSSM_PATH" install AppMeshService "$START_APPSVC"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppDirectory "$INSTDIR"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Start SERVICE_AUTO_START'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService DependOnService Dhcp Tcpip Netman'
+    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Type SERVICE_WIN32_OWN_PROCESS'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Description "App Mesh background service"'
+    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService DependOnService Dhcp Tcpip Netman'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppStdout "$INSTDIR\install_stdout.log"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppStderr "$INSTDIR\install_stderr.log"'
+    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppExit Default Restart'
+    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppRestartDelay 5000'
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -94,6 +135,7 @@ FunctionEnd
 Section "Uninstall"
     ; stop and remove the service
     nsExec::ExecToLog '"$INSTDIR\bin\nssm.exe" stop AppMeshService'
+    Sleep 1000
     nsExec::ExecToLog '"$INSTDIR\bin\nssm.exe" remove AppMeshService confirm'
 
     ; Remove $INSTDIR\bin from the system PATH

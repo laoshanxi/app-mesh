@@ -103,7 +103,7 @@ void ConsulConnection::initialize()
 	auto file = (fs::path(Configuration::instance()->getWorkDir()) / "config" / APPMESH_CONSUL_API_CONFIG_FILE).string();
 	if (!Utility::isFileExist(file))
 	{
-		file = (fs::path(Configuration::instance()->getWorkDir()).parent_path() / APPMESH_CONSUL_API_CONFIG_FILE).string();
+		file = (fs::path(Configuration::instance()->getWorkDir()).parent_path() / "config" / APPMESH_CONSUL_API_CONFIG_FILE).string();
 	}
 
 	{

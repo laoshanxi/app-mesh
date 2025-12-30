@@ -28,6 +28,7 @@ readonly TIMEOUT_SECONDS=10                    # Desired timeout in seconds
 readonly SLEEP_INTERVAL=0.2                    # Check interval in seconds
 readonly MAX_ATTEMPTS=$((TIMEOUT_SECONDS * 5)) # 5 attempts per second (1/0.2)
 readonly ENV_FILE="$PROG_HOME/appmesh.default"
+readonly PIDFile="${PROG_HOME}/appmesh.pid"
 
 # Exit codes as per LSB standards
 readonly LSB_OK=0
@@ -69,21 +70,26 @@ check_installation() {
 	return $LSB_OK
 }
 
-get_pid() {
-	# Find the PID of the process matching the provided name
-	ps aux | grep -w "$1" | grep -v grep | awk '{print $2}'
+read_pid() {
+	local pid
+	[ -f "$PIDFile" ] || return 1
+	# Allow read to return non-zero (EOF) as long as pid is captured
+	read -r pid <"$PIDFile" || [ -n "$pid" ] || return 1
+	printf '%s' "$pid"
 }
 
 is_running() {
 	local pid
-	pid=$(get_pid "$1")
-	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+	pid=$(read_pid) || return 1
+	# Process exists
+	kill -0 "$pid" 2>/dev/null || return 1
+	return 0
 }
 
 start_service() {
 	check_installation || return $?
 
-	if is_running "$PROG"; then
+	if is_running; then
 		log "info" "App Mesh is already running"
 		return $LSB_OK
 	fi
@@ -100,14 +106,14 @@ start_service() {
 	# Wait for process to be detected with timeout
 	attempt=0
 	sleep 1
-	while ! is_running "$PROG" && [ $attempt -lt $MAX_ATTEMPTS ]; do
+	while ! is_running && [ $attempt -lt $MAX_ATTEMPTS ]; do
 		sleep $SLEEP_INTERVAL
 		attempt=$((attempt + 1))
 	done
 
-	if is_running "$PROG"; then
+	if is_running; then
 		local pid
-		pid=$(get_pid "$PROG")
+		pid=$(read_pid)
 		log "info" "App Mesh started successfully (PID: $pid)"
 		return $LSB_OK
 	else
@@ -120,7 +126,7 @@ stop_service() {
 	log "info" "Stopping App Mesh Service..."
 
 	local pid
-	pid=$(get_pid "$PROG")
+	pid=$(read_pid)
 	if [ -z "$pid" ]; then
 		log "info" "App Mesh is not running"
 		return $LSB_OK
@@ -129,14 +135,9 @@ stop_service() {
 	# Try graceful shutdown
 	kill "$pid" || true
 	sleep $SLEEP_INTERVAL
-	#local attempt=0
-	#while is_running "$PROG" && [ $attempt -lt $MAX_ATTEMPTS ]; do
-	#	sleep $SLEEP_INTERVAL
-	#	attempt=$((attempt + 1))
-	#done
 
 	# Force kill if still running
-	if is_running "$PROG"; then
+	if is_running; then
 		log "info" "Force killing App Mesh process (PID: $pid)"
 		kill -9 "$pid" || true
 	fi
@@ -146,9 +147,9 @@ stop_service() {
 }
 
 service_status() {
-	if is_running "$PROG"; then
+	if is_running; then
 		local pid
-		pid=$(get_pid "$PROG")
+		pid=$(read_pid)
 		log "info" "App Mesh is running (PID: $pid)"
 		return $LSB_OK
 	else
@@ -176,9 +177,9 @@ restart | force-reload)
 	start_service
 	;;
 reload)
-	if is_running "$PROG"; then
+	if is_running; then
 		log "info" "Reloading configuration..."
-		kill -HUP "$(get_pid "$PROG")" || true
+		kill -HUP "$(read_pid)" || true
 		exit $LSB_OK
 	else
 		log "error" "Cannot reload: App Mesh is not running"

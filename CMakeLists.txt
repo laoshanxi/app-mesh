@@ -64,6 +64,7 @@ message(STATUS "Install Prefix: ${CMAKE_INSTALL_PREFIX}")
 # External Dependencies
 # =============================================================================
 include(cmake/InstallRuntime.cmake)
+include(cmake/InstallConfig.cmake)
 include(cmake/Dependencies.cmake)
 include(cmake/DetectCPU.cmake)
 

@@ -221,7 +221,7 @@ const std::string Utility::getConfigFilePath(const std::string &configFile, bool
 		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string());
 		return workingConfigFile;
 	}
-	return (fs::path(Utility::getHomeDir()) / configFile).string();
+	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_CONFIG_DIR / configFile).string();
 }
 
 // program_name from errno.h
