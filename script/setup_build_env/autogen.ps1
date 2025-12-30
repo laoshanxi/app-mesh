@@ -6,7 +6,7 @@
 
 # Ensure script runs with admin privileges
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Error "This script must be run as Administrator. Exiting..."
+    Write-Host "This script must be run as Administrator." -ForegroundColor Red
     exit 1
 }
 
@@ -466,26 +466,31 @@ function Install-Go {
 }
 
 function Install-GoTools {
-    Write-Host "Installing Go development tools..." -ForegroundColor Cyan
-    
+    Write-Host "Installing Go tools (min binary size)..." -ForegroundColor Cyan
+
     $env:GOBIN = "C:\local\bin"
+    $env:CGO_ENABLED = "0"
+
     New-Item -ItemType Directory -Force -Path $env:GOBIN | Out-Null
-    
+
     go env -w GOPROXY="https://goproxy.cn,direct"
-    go env -w GOBIN="C:\local\bin"
+    go env -w GOBIN="$env:GOBIN"
     go env -w GO111MODULE=on
-    
+
+    $ldflags = "-s -w"
+    $buildFlags = @("-trimpath", "-buildvcs=false")
+
     $goTools = @(
         'github.com/cloudflare/cfssl/cmd/cfssl@latest',
         'github.com/cloudflare/cfssl/cmd/cfssljson@latest'
     )
-    
+
     foreach ($tool in $goTools) {
-        Write-Host "Installing $tool..." -ForegroundColor Yellow
-        go install $tool
+        Write-Host "Installing $tool (stripped)..." -ForegroundColor Yellow
+        go install @buildFlags -ldflags="$ldflags" $tool
     }
-    
-    Write-Host "Go tools installed successfully" -ForegroundColor Green
+
+    Write-Host "Go tools installed successfully (minimal size)" -ForegroundColor Green
 }
 
 function Build-NativeLibraries {
@@ -568,6 +573,7 @@ function Show-Summary {
     Write-Host "  vcpkg: C:\vcpkg" -ForegroundColor White
     Write-Host ""
     Write-Host "Please restart your terminal or run 'refreshenv' to use the new environment." -ForegroundColor Cyan
+    exit 0
 }
 
 ################################################################################

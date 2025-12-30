@@ -258,7 +258,7 @@ install_initd_service() {
 
 setup_permissions() {
     info "Setting up permissions"
-    chmod 644 "${PROG_HOME}"/config.yaml "${PROG_HOME}"/security.yaml
+    chmod 644 "${PROG_HOME}"/config/config.yaml "${PROG_HOME}"/config/security.yaml
     find "${PROG_HOME}/script" -name "*.sh" -exec chmod +x {} \;
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER:-}" ]; then

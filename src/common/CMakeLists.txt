@@ -4,7 +4,7 @@
 add_subdirectory(os)
 
 if(NOT CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 17)
-  message(STATUS "C++ standard <17: Adding lwsservice")
+  message(STATUS "C++ standard less than 17: Adding lwsservice")
   add_subdirectory(lwsservice)
 endif()
 
