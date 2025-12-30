@@ -85,12 +85,13 @@ jobs:
           if [ -z "$pkg_file" ]; then
             echo "No matching pkg file found!" && ls -l && exit 1
           fi
-          if ! sudo installer -pkg "$pkg_file" -target /; then
+          if ! sudo installer -pkg "$pkg_file" -target / -verbose; then
             echo "Installer failed! Printing debug info:"
             ls -l
             cat /var/log/install.log | tail -n 100
             exit 1
           fi
+          cat /var/log/install.log | tail -n 100
 
           # Start App Mesh
           appc -v || true

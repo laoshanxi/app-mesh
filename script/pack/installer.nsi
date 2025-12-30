@@ -8,6 +8,7 @@ OutFile "..\..\build\${APP_NAME}_${APP_VERSION}_windows_x64.exe"
 InstallDir "${INSTALL_DIR}"
 RequestExecutionLevel admin
 SetCompressor lzma
+ShowInstDetails show
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -50,6 +51,44 @@ Section "Install"
 
     StrCpy $START_APPSVC "$INSTDIR\bin\appsvc.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"
+
+    ; Check and install OpenSSL
+    DetailPrint "Checking for OpenSSL..."
+    nsExec::ExecToStack 'cmd /c "openssl version"'
+    Pop $0
+    Pop $1
+    ${If} $0 != 0
+        DetailPrint "OpenSSL not found. Installing via Winget..."
+        nsExec::ExecToLog 'winget install OpenSSL.OpenSSL --accept-source winget --accept-package-agreements --silent --disable-interactivity'
+        nsExec::ExecToStack 'cmd /c "openssl version"'
+        Pop $0
+        Pop $1
+        ${If} $0 == 0
+             DetailPrint "OpenSSL installed successfully."
+        ${Else}
+             DetailPrint "Warning: Failed to install OpenSSL automatically."
+        ${EndIf}
+    ${Else}
+        DetailPrint "OpenSSL is already installed."
+    ${EndIf}
+
+    ; Generate SSL certs
+    DetailPrint "=================================================="
+    DetailPrint "Starting SSL certificate generation"
+    DetailPrint "Script path: $INSTDIR\ssl\generate_ssl_cert.ps1"
+    DetailPrint "=================================================="
+    nsExec::ExecToLog '"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\ssl\generate_ssl_cert.ps1"'
+    Pop $0
+    DetailPrint "PowerShell exit code: $0"
+    ${If} $0 != 0
+        DetailPrint "ERROR: SSL certificate generation failed"
+        MessageBox MB_ICONSTOP "SSL certificate generation failed. See:$\r$\n$INSTDIR\ssl\generate_ssl_cert.log"
+        Abort
+    ${Else}
+        DetailPrint "SUCCESS: SSL certificate generation completed"
+    ${EndIf}
+    DetailPrint "=================================================="
+
 
     ; create service (remove if exists)
     nsExec::ExecToLog '"$NSSM_PATH" remove AppMeshService confirm'
