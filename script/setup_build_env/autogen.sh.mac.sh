@@ -65,9 +65,12 @@ done
 echo "Installing Go tools..."
 export GO111MODULE=on
 export GOBIN=/usr/local/bin
-go install github.com/cloudflare/cfssl/cmd/cfssl@latest
-go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
-go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+export CGO_ENABLED=0
+LDFLAGS="-s -w"
+BUILDFLAGS="-trimpath -buildvcs=false"
+go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl@latest
+go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssljson@latest
+go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
 echo "Installing hashidsxx..."
 cd ${TMP_DIR}

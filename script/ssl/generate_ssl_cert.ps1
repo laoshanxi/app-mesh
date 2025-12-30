@@ -1,30 +1,27 @@
-# generate_ssl_cert.ps1
+# script/ssl/generate_ssl_cert.ps1
 ################################################################################
 # Script to generate self-signed SSL certificate files for Windows
-# PowerShell port of the original Bash script
 ################################################################################
 
 param(
     [string]$WorkingDir
 )
-$env:PATH = "C:\local\bin;C:\go\bin;C:\vcpkg\installed\x64-windows\bin;" + $env:PATH
+
+# Normalize empty string to $null
+if ([string]::IsNullOrWhiteSpace($WorkingDir)) {
+    $WorkingDir = $PSScriptRoot
+    Write-Host "WorkingDir not provided. Defaulting to script directory: $WorkingDir"
+}
+
+# Ensure OpenSSL is in path if installed via common methods, or rely on system PATH
+$env:PATH = "C:\Program Files\OpenSSL-Win64\bin;C:\local\bin;C:\go\bin;C:\vcpkg\installed\x64-windows\bin;" + $env:PATH
 
 Set-PSDebug -Trace 0
 $ErrorActionPreference = "Stop"
-$CA_CONFIG = "ca-config.json"
-$CA_CSR = "ca-csr.json"
 
 function Set-WorkingDir {
-    # Use script-level variables to modify the global variables
-    if (-not $WorkingDir -or [string]::IsNullOrWhiteSpace($WorkingDir)) {
-        $script:WorkingDir = $PSScriptRoot
-    }
-    Set-Location -Path $script:WorkingDir
-    Write-Log "Working directory set to: $script:WorkingDir"
-
-    # Update the global variables with full paths
-    $script:CA_CONFIG = Join-Path -Path $script:WorkingDir -ChildPath "ca-config.json"
-    $script:CA_CSR = Join-Path -Path $script:WorkingDir -ChildPath "ca-csr.json"
+    Set-Location -Path $WorkingDir
+    Write-Log "Working directory set to: $WorkingDir"
 }
 
 function Write-Log {
@@ -34,7 +31,7 @@ function Write-Log {
 }
 
 function Test-Dependencies {
-    $dependencies = @("cfssl", "cfssljson", "openssl")
+    $dependencies = @("openssl")
     
     foreach ($cmd in $dependencies) {
         try {
@@ -42,62 +39,10 @@ function Test-Dependencies {
         }
         catch {
             Write-Log "Error: Missing required dependency: $cmd"
-            Write-Log "Please install CloudFlare SSL tools and OpenSSL"
+            Write-Log "Please install OpenSSL for Windows."
             exit 1
         }
     }
-}
-
-function New-CAConfig {
-    $config = @{
-        signing = @{
-            default  = @{
-                expiry = "87600h"
-            }
-            profiles = @{
-                client = @{
-                    expiry = "87600h"
-                    usages = @(
-                        "signing",
-                        "key encipherment", 
-                        "client auth"
-                    )
-                }
-                server = @{
-                    expiry = "87600h"
-                    usages = @(
-                        "signing",
-                        "key encipherment",
-                        "server auth",
-                        "client auth"
-                    )
-                }
-            }
-        }
-    }
-    
-    [System.IO.File]::WriteAllText($CA_CONFIG, ($config | ConvertTo-Json -Depth 10), [System.Text.UTF8Encoding]::new($false))
-}
-
-function New-CACSR {
-    $csr = @{
-        CN    = "AppMesh"
-        key   = @{
-            algo = "ecdsa"
-            size = 256
-        }
-        names = @(
-            @{
-                C  = "CN"
-                L  = "Shaanxi"
-                O  = "DevGroup"
-                ST = "Beijing"
-                OU = "System"
-            }
-        )
-    }
-    
-    [System.IO.File]::WriteAllText($CA_CSR, ($csr | ConvertTo-Json -Depth 10), [System.Text.UTF8Encoding]::new($false))
 }
 
 function Get-HostAddresses {
@@ -112,7 +57,7 @@ function Get-HostAddresses {
     
     # Get IP addresses
     $networkAdapters = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { 
-        $_.IPAddress -ne "127.0.0.1" -and $_.PrefixOrigin -eq "Dhcp" -or $_.PrefixOrigin -eq "Manual"
+        $_.IPAddress -ne "127.0.0.1" -and ($_.PrefixOrigin -eq "Dhcp" -or $_.PrefixOrigin -eq "Manual")
     }
     
     foreach ($adapter in $networkAdapters) {
@@ -126,52 +71,119 @@ function Get-HostAddresses {
     return ($addresses | Sort-Object -Unique) -join ","
 }
 
+function Generate-OpenSSLConfig {
+    param(
+        [string]$CN,
+        [string]$Type, # "server" or "client"
+        [string]$HostsStr
+    )
+
+    $sanBlock = ""
+    if ($Type -eq "server" -and -not [string]::IsNullOrEmpty($HostsStr)) {
+        $dnsIndex = 1
+        $ipIndex = 1
+        $hosts = $HostsStr -split ","
+        $sanLines = @()
+
+        foreach ($h in $hosts) {
+            # Simple regex to check if it's an IP address
+            if ($h -match "^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$") {
+                $sanLines += "IP.$ipIndex = $h"
+                $ipIndex++
+            } else {
+                $sanLines += "DNS.$dnsIndex = $h"
+                $dnsIndex++
+            }
+        }
+        $sanBlock = "[alt_names]`n" + ($sanLines -join "`n")
+    }
+
+    $keyUsage = "critical, digitalSignature, keyEncipherment"
+    if ($Type -eq "server") {
+        # Server certs usually perform both auths in modern setups, but mainly ServerAuth
+        $extKeyUsage = "serverAuth, clientAuth" 
+        $sanSectionHeader = "subjectAltName = @alt_names"
+    } else {
+        $extKeyUsage = "clientAuth"
+        $sanSectionHeader = "" # Clients usually don't strictly need SANs for this use case
+        $sanBlock = ""
+    }
+
+    $configContent = @"
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = CN
+L = Shaanxi
+O = DevGroup
+ST = Beijing
+OU = System
+CN = $CN
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = $keyUsage
+extendedKeyUsage = $extKeyUsage
+$sanSectionHeader
+
+$sanBlock
+"@
+    
+    $configPath = Join-Path $script:WorkingDir "$Type.cnf"
+    [System.IO.File]::WriteAllText($configPath, $configContent, [System.Text.UTF8Encoding]::new($false))
+    return $configPath
+}
+
 function New-Certificates {
     param([string]$Hosts)
     
     $hostname = $env:COMPUTERNAME
     
-    Write-Log "Generating CA certificate..."
-    & cfssl gencert -initca $CA_CSR | & cfssljson -bare ca
+    # 1. CA Generation
+    Write-Log "Generating CA certificate (ECDSA)..."
     
+    # Generate CA Private Key (prime256v1)
+    & openssl ecparam -name prime256v1 -genkey -noout -out ca-key.pem
+    
+    # Generate CA Root Certificate (Self-Signed)
+    # Subject matches the original script's JSON config
+    & openssl req -new -x509 -nodes -days 3650 -key ca-key.pem -out ca.pem -subj "/C=CN/L=Shaanxi/O=DevGroup/ST=Beijing/OU=System/CN=AppMesh"
+    
+    # 2. Server Certificate Generation
     Write-Log "Generating server certificate..."
-    $serverCSR = @{
-        CN    = $hostname
-        hosts = @("")
-        key   = @{
-            algo = "ecdsa"
-            size = 256
-        }
-    } | ConvertTo-Json -Compress
     
-    # Write server CSR to file
-    $serverCsrPath = Join-Path -Path $script:WorkingDir -ChildPath "server-csr.json"
-    [System.IO.File]::WriteAllText($serverCsrPath, $serverCSR, [System.Text.UTF8Encoding]::new($false))
-    & cfssl gencert "-ca=ca.pem" "-ca-key=ca-key.pem" "-config=$CA_CONFIG" "-profile=server" "-hostname=$Hosts" $serverCsrPath | & cfssljson -bare server
+    # Generate Server Private Key
+    & openssl ecparam -name prime256v1 -genkey -noout -out server-key.pem
+    
+    # Generate Server Config for SANs
+    $serverConf = Generate-OpenSSLConfig -CN $hostname -Type "server" -HostsStr $Hosts
+    
+    # Generate Server CSR
+    & openssl req -new -key server-key.pem -out server.csr -config $serverConf
+    
+    # Sign Server Certificate with CA
+    & openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -out server.pem -days 3650 -sha256 -extfile $serverConf -extensions v3_req
 
-    # Combine fullchain for multiple level (not include root CA)
-    # $serverPem = Join-Path $script:WorkingDir "server.pem"
-    # $caPem = Join-Path $script:WorkingDir "ca.pem"
-    # $fullchain = Join-Path $script:WorkingDir "server_fullchain.pem"
-    # Get-Content $serverPem, $caPem | Set-Content $fullchain -Encoding ascii
-    # Write-Log "Generated server full chain: $fullchain"
-
+    # 3. Client Certificate Generation
     Write-Log "Generating client certificate..."
-    $clientCSR = @{
-        CN    = "appmesh-client"
-        hosts = @("")
-        key   = @{
-            algo = "ecdsa"
-            size = 256
-        }
-    } | ConvertTo-Json -Compress
+    
+    # Generate Client Private Key
+    & openssl ecparam -name prime256v1 -genkey -noout -out client-key.pem
+    
+    # Generate Client Config
+    $clientConf = Generate-OpenSSLConfig -CN "appmesh-client" -Type "client" -HostsStr ""
+    
+    # Generate Client CSR
+    & openssl req -new -key client-key.pem -out client.csr -config $clientConf
+    
+    # Sign Client Certificate with CA
+    & openssl x509 -req -in client.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -out client.pem -days 3650 -sha256 -extfile $clientConf -extensions v3_req
 
-    $clientCsrPath = Join-Path -Path $script:WorkingDir -ChildPath "client-csr.json"
-    [System.IO.File]::WriteAllText($clientCsrPath, $clientCSR, [System.Text.UTF8Encoding]::new($false))
-    & cfssl gencert "-ca=ca.pem" "-ca-key=ca-key.pem" "-config=$CA_CONFIG" "-profile=client" "-hostname=$Hosts" $clientCsrPath | & cfssljson -bare client
-
-    # Remove template files
-    Remove-Item -Path "$serverCsrPath", "$clientCsrPath" -ErrorAction SilentlyContinue
+    # Cleanup intermediate files
+    Remove-Item -Path "server.csr", "client.csr" -ErrorAction SilentlyContinue
 }
 
 function Test-Certificates {
@@ -314,22 +326,21 @@ function New-RS256KeyPair {
 
 function Remove-TempFiles {
     Write-Log "Cleaning up configuration files..."
-    Remove-Item -Path $CA_CONFIG, $CA_CSR -ErrorAction SilentlyContinue
+    Remove-Item -Path "server.cnf", "client.cnf", "ca.srl" -ErrorAction SilentlyContinue
 }
 
 function Main {
-    Write-Log "Starting SSL certificate generation..."
+    Write-Log "Starting SSL certificate generation (OpenSSL mode)..."
 
     Set-WorkingDir
     
     Test-Dependencies
     
-    New-CAConfig
-    New-CACSR
-    
+    # Gather hosts to populate SANs (Subject Alternative Names)
     $hosts = Get-HostAddresses
-    Write-Log "Using hosts: $hosts"
+    Write-Log "Using hosts for Server SANs: $hosts"
     
+    # Generate CA, Server, and Client certs using OpenSSL
     New-Certificates -Hosts $hosts
     
     if (Test-Certificates) {

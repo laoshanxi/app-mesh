@@ -15,7 +15,7 @@ docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host -v /var/ru
 Configuration:
 
 - Configuration Files Location:
-  - Default: `/opt/appmesh/` (read-only)
+  - Default: `/opt/appmesh/config` (read-only)
   - Override: `/opt/appmesh/work/config/`
   - Files: `config.yaml`, `security.yaml`, `consul.yaml`
 
@@ -27,7 +27,7 @@ Configuration:
 
 - Working data persists in `/opt/appmesh/work` - mount this directory for persistence.
 
-- Security plugin supports `local`/`consul`/`oauth2`, mount `/opt/appmesh/security.yaml` to override local security information.
+- Security plugin supports `local`/`consul`/`oauth2`, mount `/opt/appmesh/config/security.yaml` to override local security information.
 
 - The remote TLS connection related certification files are located in `/opt/appmesh/ssl`.
 

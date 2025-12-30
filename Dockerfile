@@ -31,7 +31,7 @@ RUN bash -c "ls && apt-get update && \
 	ln -s /opt/appmesh/script/entrypoint.sh /entrypoint.sh && \
 	touch /opt/appmesh/appmesh.pid && \
 	chown -R appmesh:appmesh /opt/appmesh/ && \
-	. /usr/local/bin/appc -v && /opt/appmesh/bin/appsvc -v"
+	ldd /usr/local/bin/appc && /usr/local/bin/appc -v && /opt/appmesh/bin/appsvc -v"
 EXPOSE 6060
 USER appmesh
 WORKDIR /opt/appmesh/work/
