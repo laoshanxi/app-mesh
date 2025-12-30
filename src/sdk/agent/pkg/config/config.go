@@ -84,7 +84,7 @@ func readConfig() error {
 		config.AddConfigPath("../../../../daemon")
 	}
 	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "work/config/"))
-	config.AddConfigPath(GetAppMeshHomeDir())
+	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "config"))
 
 	// Read YAML file
 	if err := config.ReadInConfig(); err != nil {

@@ -1,18 +1,19 @@
-# generate_ssl_cert.ps1
+# script/ssl/generate_ssl_cert.ps1
 ################################################################################
 # Script to generate self-signed SSL certificate files for Windows
-# PowerShell port of the original Bash script
+# Supports both CFSSL (preferred) and pure OpenSSL (fallback) strategies
 ################################################################################
 
 param(
     [string]$WorkingDir
 )
-$env:PATH = "C:\local\bin;C:\go\bin;C:\vcpkg\installed\x64-windows\bin;" + $env:PATH
+$env:PATH = "C:\local\appmesh\bin;C:\Program Files\OpenSSL-Win64\bin;C:\local\bin;C:\go\bin;C:\vcpkg\installed\x64-windows\bin;" + $env:PATH
 
 Set-PSDebug -Trace 0
 $ErrorActionPreference = "Stop"
 $CA_CONFIG = "ca-config.json"
 $CA_CSR = "ca-csr.json"
+$script:UsePureOpenSSL = $false
 
 function Set-WorkingDir {
     # Use script-level variables to modify the global variables
@@ -33,22 +34,42 @@ function Write-Log {
     Write-Host "[$timestamp] $Message"
 }
 
+function Test-CommandExists {
+    param([string]$Command)
+    try {
+        $null = Get-Command $Command -ErrorAction Stop
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 function Test-Dependencies {
-    $dependencies = @("cfssl", "cfssljson", "openssl")
-    
-    foreach ($cmd in $dependencies) {
-        try {
-            $null = Get-Command $cmd -ErrorAction Stop
-        }
-        catch {
-            Write-Log "Error: Missing required dependency: $cmd"
-            Write-Log "Please install CloudFlare SSL tools and OpenSSL"
-            exit 1
-        }
+    # 1. Always check for OpenSSL (Required for verification and fallback)
+    if (-not (Test-CommandExists "openssl")) {
+        Write-Log "Error: OpenSSL is not installed or not in PATH."
+        Write-Log "Please install OpenSSL."
+        exit 1
+    }
+
+    # If CFSSL usage is already forced off, skip checks
+    if ($script:UsePureOpenSSL) { return }
+
+    # 2. Check for CFSSL
+    if ((Test-CommandExists "cfssl") -and (Test-CommandExists "cfssljson")) {
+        $script:UsePureOpenSSL = $false
+        Write-Log "Found CFSSL tools. Using CFSSL generation strategy."
+    }
+    else {
+        $script:UsePureOpenSSL = $true
+        Write-Log "CFSSL tools not found. Falling back to pure OpenSSL generation strategy."
     }
 }
 
 function New-CAConfig {
+    if ($script:UsePureOpenSSL) { return }
+
     $config = @{
         signing = @{
             default  = @{
@@ -80,6 +101,8 @@ function New-CAConfig {
 }
 
 function New-CACSR {
+    if ($script:UsePureOpenSSL) { return }
+
     $csr = @{
         CN    = "AppMesh"
         key   = @{
@@ -126,15 +149,15 @@ function Get-HostAddresses {
     return ($addresses | Sort-Object -Unique) -join ","
 }
 
-function New-Certificates {
+function New-Certificates-CFSSL {
     param([string]$Hosts)
     
     $hostname = $env:COMPUTERNAME
     
-    Write-Log "Generating CA certificate..."
+    Write-Log "Generating CA certificate (CFSSL)..."
     & cfssl gencert -initca $CA_CSR | & cfssljson -bare ca
     
-    Write-Log "Generating server certificate..."
+    Write-Log "Generating server certificate (CFSSL)..."
     $serverCSR = @{
         CN    = $hostname
         hosts = @("")
@@ -149,14 +172,7 @@ function New-Certificates {
     [System.IO.File]::WriteAllText($serverCsrPath, $serverCSR, [System.Text.UTF8Encoding]::new($false))
     & cfssl gencert "-ca=ca.pem" "-ca-key=ca-key.pem" "-config=$CA_CONFIG" "-profile=server" "-hostname=$Hosts" $serverCsrPath | & cfssljson -bare server
 
-    # Combine fullchain for multiple level (not include root CA)
-    # $serverPem = Join-Path $script:WorkingDir "server.pem"
-    # $caPem = Join-Path $script:WorkingDir "ca.pem"
-    # $fullchain = Join-Path $script:WorkingDir "server_fullchain.pem"
-    # Get-Content $serverPem, $caPem | Set-Content $fullchain -Encoding ascii
-    # Write-Log "Generated server full chain: $fullchain"
-
-    Write-Log "Generating client certificate..."
+    Write-Log "Generating client certificate (CFSSL)..."
     $clientCSR = @{
         CN    = "appmesh-client"
         hosts = @("")
@@ -172,6 +188,137 @@ function New-Certificates {
 
     # Remove template files
     Remove-Item -Path "$serverCsrPath", "$clientCsrPath" -ErrorAction SilentlyContinue
+}
+
+function New-Certificates-OpenSSL {
+    param([string]$Hosts)
+    
+    $hostname = $env:COMPUTERNAME
+    
+    # Define absolute paths for all files
+    $caKeyPath = Join-Path $script:WorkingDir "ca-key.pem"
+    $caCertPath = Join-Path $script:WorkingDir "ca.pem"
+    $caCnfPath = Join-Path $script:WorkingDir "ca.cnf"  # Config for CA
+    
+    $serverKeyPath = Join-Path $script:WorkingDir "server-key.pem"
+    $serverCnfPath = Join-Path $script:WorkingDir "server.cnf"
+    $serverCsrPath = Join-Path $script:WorkingDir "server.csr"
+    $serverCertPath = Join-Path $script:WorkingDir "server.pem"
+    
+    $clientKeyPath = Join-Path $script:WorkingDir "client-key.pem"
+    $clientCnfPath = Join-Path $script:WorkingDir "client.cnf"
+    $clientCsrPath = Join-Path $script:WorkingDir "client.csr"
+    $clientCertPath = Join-Path $script:WorkingDir "client.pem"
+
+    # --- Helper to generate OpenSSL Config with SANs (For Leaf Certs) ---
+    function Get-OpenSSLConfig {
+        param($CN, $Profile)
+        
+        $sanList = @()
+        $dnsIdx = 1
+        $ipIdx = 1
+        
+        $hostsArray = $Hosts -split ","
+        foreach ($h in $hostsArray) {
+            $h = $h.Trim()
+            if ($h -match "^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$") {
+                $sanList += "IP.$ipIdx = $h"
+                $ipIdx++
+            }
+            else {
+                $sanList += "DNS.$dnsIdx = $h"
+                $dnsIdx++
+            }
+        }
+        $sanBlock = $sanList -join "`n"
+
+        $eku = "serverAuth, clientAuth"
+        if ($Profile -eq "client") { $eku = "clientAuth" }
+
+        return @"
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+[req_distinguished_name]
+C = CN
+ST = Beijing
+L = Shaanxi
+O = DevGroup
+OU = System
+CN = $CN
+[v3_req]
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = $eku
+subjectAltName = @alt_names
+[alt_names]
+$sanBlock
+"@
+    }
+
+    # --- NEW: Generate CA Config with required Extensions ---
+    $caCnf = @"
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_ca
+prompt = no
+[req_distinguished_name]
+C = CN
+ST = Beijing
+L = Shaanxi
+O = DevGroup
+OU = System
+CN = AppMesh
+[v3_ca]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+subjectKeyIdentifier = hash
+"@
+    [System.IO.File]::WriteAllText($caCnfPath, $caCnf, [System.Text.Encoding]::ASCII)
+
+    # 1. Generate CA (ECDSA P-256)
+    Write-Log "Generating CA certificate (OpenSSL)..."
+    # Generate Key
+    & openssl ecparam -name prime256v1 -genkey -noout -out $caKeyPath
+
+    # Generate Root Cert using the config to apply extensions
+    & openssl req -new -x509 -nodes -days 3650 -key $caKeyPath -out $caCertPath -config $caCnfPath
+
+    # 2. Generate Server Certificate
+    Write-Log "Generating server certificate (OpenSSL)..."
+    & openssl ecparam -name prime256v1 -genkey -noout -out $serverKeyPath
+    
+    $serverCnf = Get-OpenSSLConfig -CN $hostname -Profile "server"
+    # Use [System.Text.Encoding]::ASCII to avoid BOM issues with OpenSSL on Windows
+    [System.IO.File]::WriteAllText($serverCnfPath, $serverCnf, [System.Text.Encoding]::ASCII)
+    
+    & openssl req -new -key $serverKeyPath -out $serverCsrPath -config $serverCnfPath
+    & openssl x509 -req -in $serverCsrPath -CA $caCertPath -CAkey $caKeyPath -CAcreateserial -out $serverCertPath -days 3650 -extensions v3_req -extfile $serverCnfPath
+
+    # 3. Generate Client Certificate
+    Write-Log "Generating client certificate (OpenSSL)..."
+    & openssl ecparam -name prime256v1 -genkey -noout -out $clientKeyPath
+
+    $clientCnf = Get-OpenSSLConfig -CN "appmesh-client" -Profile "client"
+    [System.IO.File]::WriteAllText($clientCnfPath, $clientCnf, [System.Text.Encoding]::ASCII)
+
+    & openssl req -new -key $clientKeyPath -out $clientCsrPath -config $clientCnfPath
+    & openssl x509 -req -in $clientCsrPath -CA $caCertPath -CAkey $caKeyPath -CAcreateserial -out $clientCertPath -days 3650 -extensions v3_req -extfile $clientCnfPath
+
+    # Cleanup temp OpenSSL files
+    $srlPath = Join-Path $script:WorkingDir "ca.srl"
+    Remove-Item $serverCnfPath, $clientCnfPath, $serverCsrPath, $clientCsrPath, $srlPath, $caCnfPath -ErrorAction SilentlyContinue
+}
+
+function New-Certificates {
+    param([string]$Hosts)
+
+    if ($script:UsePureOpenSSL) {
+        New-Certificates-OpenSSL -Hosts $Hosts
+    }
+    else {
+        New-Certificates-CFSSL -Hosts $Hosts
+    }
 }
 
 function Test-Certificates {
