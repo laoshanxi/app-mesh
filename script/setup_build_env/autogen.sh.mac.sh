@@ -27,6 +27,7 @@ cd "${TMP_DIR}"
 BREW_PACKAGES=(
 	wget
 	cmake
+    ninja
 	go
 	openssl@3
 	spdlog
