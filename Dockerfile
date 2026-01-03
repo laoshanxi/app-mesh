@@ -9,9 +9,9 @@
 FROM laoshanxi/appmesh:build_ubuntu22 AS build_stage
 WORKDIR /workspace
 RUN bash -c 'git clone https://github.com/laoshanxi/app-mesh.git && \
-    cd app-mesh && mkdir build && cd build && \
-    cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && \
-    make -j"$(nproc)" && make pack'
+    cd app-mesh && \
+    cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl -B build -G Ninja && \
+    cmake --build build --target pack --parallel'
 
 FROM python:3.13.7-slim-bookworm
 ARG AM_UID="482"

@@ -32,7 +32,6 @@ add_custom_target(agent ALL
         -o "${AGENT_BIN}"
         .
     WORKING_DIRECTORY "${AGENT_SRC_DIR}"
-    BYPRODUCTS "${AGENT_BIN}"
     COMMENT "Building Go agent ($<IF:$<CONFIG:Debug>,Debug,Release>) - Version: ${PROJECT_VERSION}"
     VERBATIM
     COMMAND_EXPAND_LISTS

@@ -48,6 +48,7 @@ if [ -f "/usr/bin/yum" ]; then
     yum install -y wget which gettext unzip
     yum install -y python3-pip
     yum install -y zlib-devel #for libcurl
+    yum install -y ninja-build 2>/dev/null || (yum install -y python3-pip && pip3 install ninja)
     #yum install -y boost169-devel boost169-static
     #export BOOST_LIBRARYDIR=/usr/lib64/boost169
     #export BOOST_INCLUDEDIR=/usr/include/boost169
@@ -60,7 +61,7 @@ if [ -f "/usr/bin/yum" ]; then
     # sed -i s/security.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
     export DEBIAN_FRONTEND=noninteractive
     apt update
-    apt install -y g++ git make
+    apt install -y g++ git make ninja-build
     apt install -y wget alien gettext unzip
     apt install -y python3-pip
     apt install -y zlib1g-dev #for libcurl

@@ -22,7 +22,7 @@ apt update
 # apt full-upgrade -q -y
 # apt install -y build-essential
 apt install -y wget curl libcurl4-openssl-dev libssl-dev
-apt install -y g++ cmake make
+apt install -y g++ cmake make ninja-build
 
 # memory tool for debug
 # apt install -y valgrind libasan6
