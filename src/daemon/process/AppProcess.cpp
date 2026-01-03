@@ -113,18 +113,12 @@ void AppProcess::onExit(int exitCode)
 	// Clean OS resources
 	cleanResource();
 
-	// Notify App exit event asynchronously
-	registerTimer(0, 0, std::bind(&AppProcess::onTimerAppExit, this, exitCode), fname);
-}
-
-bool AppProcess::onTimerAppExit(int exitCode)
-{
+	// Notify App exit
 	if (auto owner = m_owner.lock())
 	{
 		// Update application with exit information
 		owner->onExitUpdate(exitCode);
 	}
-	return false;
 }
 
 bool AppProcess::running() const
@@ -647,7 +641,7 @@ int ProcessExitHandler::handle_exit(ACE_Process *process)
 
 	const pid_t exitPid = process->getpid();
 	const int exitCode = process->return_value();
-	registerTimer(0, 0, std::bind(&ProcessExitHandler::onProcessExit, this, exitCode, exitPid), fname);
+	ProcessExitHandler::onProcessExit(exitPid, exitCode);
 	return 0;
 }
 
@@ -659,11 +653,11 @@ void ProcessExitHandler::terminate(pid_t pid)
 	if (pid > 1)
 	{
 		const int exitCode = 9;
-		onProcessExit(exitCode, pid);
+		onProcessExit(pid, exitCode);
 	}
 }
 
-bool ProcessExitHandler::onProcessExit(int exitCode, pid_t exitPid)
+bool ProcessExitHandler::onProcessExit(pid_t exitPid, int exitCode)
 {
 	const static char fname[] = "ProcessExitHandler::onProcessExit() ";
 

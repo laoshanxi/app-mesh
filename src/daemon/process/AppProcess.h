@@ -52,7 +52,7 @@ public:
 	void terminate(pid_t pid);
 
 private:
-	bool onProcessExit(int exitCode, pid_t exitPid);
+	bool onProcessExit(pid_t exitPid, int exitCode);
 };
 
 // Process Object supporting:
@@ -74,9 +74,6 @@ public:
 
 	// Set process exit code and trigger cleanup
 	virtual void onExit(int exitCode);
-
-	// Timer callback for application exit event
-	bool onTimerAppExit(int exitCode);
 
 	// Check if process is running
 	bool running() const;

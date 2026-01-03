@@ -25,7 +25,7 @@ install(
 
 if(WIN32)
     install(CODE [[
-        set(_apps_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${DST}/apps")
+        set(_apps_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/apps")
         message(STATUS "Patching Windows app configs in: ${_apps_dir}")
         file(GLOB _app_yamls "${_apps_dir}/*.yaml")
         foreach(_yml IN LISTS _app_yamls)
@@ -85,6 +85,15 @@ endif()
 # SSL Scripts and Binaries (ssl/)
 if(WIN32)
     install(FILES "${SRC}/script/ssl/generate_ssl_cert.ps1" DESTINATION "${DST}/ssl" COMPONENT scripts)
+    # openssl.exe and runtime DLLs (or copy cfssl is also fine)
+    find_program(OPENSSL_EXECUTABLE NAMES openssl REQUIRED)
+    get_filename_component(OPENSSL_BIN_DIR "${OPENSSL_EXECUTABLE}" DIRECTORY)
+    install(PROGRAMS "${OPENSSL_BIN_DIR}/openssl.exe" DESTINATION "${DST}/bin" COMPONENT runtime)
+    file(GLOB OPENSSL_RUNTIME_DLLS
+        "${OPENSSL_BIN_DIR}/libssl*.dll"
+        "${OPENSSL_BIN_DIR}/libcrypto*.dll"
+    )
+    install(FILES ${OPENSSL_RUNTIME_DLLS} DESTINATION "${DST}/bin" COMPONENT runtime)
 else()
     install(FILES "${SRC}/script/ssl/generate_ssl_cert.sh" DESTINATION "${DST}/ssl" COMPONENT scripts)
     # TODO: macOS ssl can not work with pure openssl 
@@ -96,11 +105,11 @@ else()
 endif()
 
 # Python tool (bin/)
-install(DIRECTORY "${SRC}/src/sdk/python/"
+install(PROGRAMS
+    "${SRC}/src/sdk/python/py_exec.py"
+    "${SRC}/src/sdk/python/py_task.py"
     DESTINATION "${DST}/bin"
     COMPONENT binaries
-    FILES_MATCHING PATTERN "py_*.py"
-    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
 
 # Windows: NSSM Service Manager
