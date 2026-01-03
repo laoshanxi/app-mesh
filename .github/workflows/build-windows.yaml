@@ -29,12 +29,8 @@ jobs:
       - name: Build binaries
         shell: pwsh
         run: |
-          mkdir build && cd build
-          cmake .. -G "Visual Studio 17 2022" -A x64
-          cmake --build . --parallel --config Release --target agent
-          cmake --build . --parallel --config Release --target appc
-          cmake --build . --parallel --config Release --target appsvc
-          cmake --build . --parallel --config Release --target install
+          cmake -B build -G Ninja
+          cmake --build build --target pack --parallel
 
       - name: Build package
         shell: pwsh

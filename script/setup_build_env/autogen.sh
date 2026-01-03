@@ -44,7 +44,7 @@ if [ -f "/usr/bin/yum" ]; then
         sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*
     fi
     yum install -y epel-release
-    yum install -y git make gcc-c++
+    yum install -y git make gcc-c++ ninja-build
     yum install -y wget which gettext unzip
     yum install -y python3-pip
     yum install -y zlib-devel #for libcurl
@@ -60,7 +60,7 @@ if [ -f "/usr/bin/yum" ]; then
     # sed -i s/security.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
     export DEBIAN_FRONTEND=noninteractive
     apt update
-    apt install -y g++ git make
+    apt install -y g++ git make ninja-build
     apt install -y wget alien gettext unzip
     apt install -y python3-pip
     apt install -y zlib1g-dev #for libcurl
