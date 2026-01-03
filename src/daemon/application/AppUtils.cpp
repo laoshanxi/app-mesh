@@ -14,8 +14,42 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 #if defined(_WIN32)
-	// TODO: For Windows, implement bat solution
-	m_shellCmd = cmd;
+	// Windows Implementation
+	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
+
+	// Create a batch file name: workdir/shell/appmesh.<app_name>.bat
+	const auto fileName = Utility::stringFormat("%s\\appmesh.%s.bat", shellDir.c_str(), name.c_str());
+
+	// Open batch file for writing
+	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
+	if (!shellFile.is_open())
+	{
+		LOG_WAR << fname << "Failed to open shell file for writing: " << fileName;
+		throw std::runtime_error("Failed to create shell script file.");
+	}
+
+	// Write the batch script content
+	shellFile << "@echo off" << std::endl;
+
+	// 1. Handle Working Directory
+	// Use /d to ensure drive changes are handled (e.g., C: to D:)
+	if (!workingDir.empty())
+	{
+		shellFile << "cd /d \"" << workingDir << "\"" << std::endl;
+	}
+
+	// 2. Write the user command
+	shellFile << cmd << std::endl;
+
+	shellFile.close();
+
+	// 3. Prepare the command line for ACE_Process
+	// cmd.exe /C executes the command (file) and then terminates
+	m_fileName = fileName;
+	m_shellCmd = Utility::stringFormat("cmd.exe /C \"%s\"", m_fileName.c_str());
+
+	LOG_DBG << fname << "Generated batch file <" << fileName << "> for app <" << name << "> command: " << m_shellCmd;
+
 #else
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
 	const static std::string defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();

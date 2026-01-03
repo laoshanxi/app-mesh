@@ -25,7 +25,7 @@ install(
 
 if(WIN32)
     install(CODE [[
-        set(_apps_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${DST}/apps")
+        set(_apps_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/apps")
         message(STATUS "Patching Windows app configs in: ${_apps_dir}")
         file(GLOB _app_yamls "${_apps_dir}/*.yaml")
         foreach(_yml IN LISTS _app_yamls)
@@ -96,11 +96,11 @@ else()
 endif()
 
 # Python tool (bin/)
-install(DIRECTORY "${SRC}/src/sdk/python/"
+install(PROGRAMS
+    "${SRC}/src/sdk/python/py_exec.py"
+    "${SRC}/src/sdk/python/py_task.py"
     DESTINATION "${DST}/bin"
     COMPONENT binaries
-    FILES_MATCHING PATTERN "py_*.py"
-    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
 
 # Windows: NSSM Service Manager
