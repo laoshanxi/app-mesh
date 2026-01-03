@@ -132,6 +132,7 @@ function Install-DevelopmentTools {
         'python3' = 'python'
         'nsis'    = 'makensis'
         'nssm'    = 'nssm'
+        'ninja'   = 'ninja'
     }
 
     # Ensure choco is available (Install-Chocolatey will set it up)
@@ -562,9 +563,8 @@ function Show-Summary {
     Write-Host "=== Build Environment Setup Complete ===" -ForegroundColor Green
     Write-Host ""
     Write-Host "To build your project, use:" -ForegroundColor Yellow
-    Write-Host "  mkdir build && cd build" -ForegroundColor White
-    Write-Host "  cmake .. -G `"Visual Studio 17 2022`" -A x64" -ForegroundColor White
-    Write-Host "  cmake --build . --config Release" -ForegroundColor White
+    Write-Host "  cmake -B build -G Ninja && cmake --build build --parallel" -ForegroundColor White
+    Write-Host "  cmake .. -G `"Visual Studio 17 2022`" -A x64 && cmake --build build --parallel" -ForegroundColor White
     Write-Host ""
     Write-Host "Important paths:" -ForegroundColor Yellow
     Write-Host "  Libraries: C:\local\lib" -ForegroundColor White
