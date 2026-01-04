@@ -85,6 +85,15 @@ endif()
 # SSL Scripts and Binaries (ssl/)
 if(WIN32)
     install(FILES "${SRC}/script/ssl/generate_ssl_cert.ps1" DESTINATION "${DST}/ssl" COMPONENT scripts)
+    # openssl.exe and runtime DLLs (or copy cfssl is also fine)
+    find_program(OPENSSL_EXECUTABLE NAMES openssl REQUIRED)
+    get_filename_component(OPENSSL_BIN_DIR "${OPENSSL_EXECUTABLE}" DIRECTORY)
+    install(PROGRAMS "${OPENSSL_BIN_DIR}/openssl.exe" DESTINATION "${DST}/bin" COMPONENT runtime)
+    file(GLOB OPENSSL_RUNTIME_DLLS
+        "${OPENSSL_BIN_DIR}/libssl*.dll"
+        "${OPENSSL_BIN_DIR}/libcrypto*.dll"
+    )
+    install(FILES ${OPENSSL_RUNTIME_DLLS} DESTINATION "${DST}/bin" COMPONENT runtime)
 else()
     install(FILES "${SRC}/script/ssl/generate_ssl_cert.sh" DESTINATION "${DST}/ssl" COMPONENT scripts)
     # TODO: macOS ssl can not work with pure openssl 
