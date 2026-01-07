@@ -2,13 +2,13 @@
 
 #[cfg(test)]
 mod tests {
-    use appmesh::AppMeshClient;
+    use appmesh::AppMeshClientWSS;
     use mockito::{Server, ServerGuard};
     use serde_json::json;
     use std::sync::Arc;
 
-    async fn create_test_client(server: &ServerGuard) -> Arc<AppMeshClient> {
-        AppMeshClient::new(None, None, None, None).unwrap()
+    async fn create_test_client(server: &ServerGuard) -> Arc<AppMeshClientWSS> {
+        AppMeshClientWSS::new(None, None, None).unwrap()
     }
 
     async fn setup_auth_mock(server: &mut ServerGuard) {

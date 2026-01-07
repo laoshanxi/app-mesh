@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use crate::client_http::AppMeshClient;
 use crate::client_tcp::AppMeshClientTCP;
+use crate::client_wss::AppMeshClientWSS;
 use crate::constants::*;
 use crate::error::AppMeshError;
 
@@ -241,6 +242,110 @@ impl ClientBuilderTCP {
     }
 }
 
+/// Builder for creating AppMesh WSS clients
+///
+/// # Examples
+///
+/// ```no_run
+/// use appmesh_sdk::ClientBuilderWSS;
+///
+/// let client = ClientBuilderWSS::new()
+///     .address("appmesh.example.com", 6058)
+///     .ssl_ca_cert("/path/to/ca.pem")
+///     .build()?;
+/// ```
+#[derive(Default)]
+pub struct ClientBuilderWSS {
+    host: Option<String>,
+    port: Option<u16>,
+    ssl_ca_cert: Option<String>,
+    ssl_client_cert: Option<PathBuf>,
+    ssl_client_key: Option<PathBuf>,
+}
+
+impl ClientBuilderWSS {
+    /// Create a new WSS client builder
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the server address
+    ///
+    /// Default: `127.0.0.1:6058`
+    pub fn address(mut self, host: impl Into<String>, port: u16) -> Self {
+        self.host = Some(host.into());
+        self.port = Some(port);
+        self
+    }
+
+    /// Set the host (uses default port 6058)
+    pub fn host(mut self, host: impl Into<String>) -> Self {
+        self.host = Some(host.into());
+        self
+    }
+
+    /// Set the port (uses default host 127.0.0.1)
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = Some(port);
+        self
+    }
+
+    /// Set the SSL CA certificate path
+    pub fn ssl_ca_cert(mut self, path: impl Into<String>) -> Self {
+        self.ssl_ca_cert = Some(path.into());
+        self
+    }
+
+    /// Set the SSL client certificate for mutual TLS
+    pub fn ssl_client_cert(mut self, cert_path: impl Into<PathBuf>) -> Self {
+        self.ssl_client_cert = Some(cert_path.into());
+        self
+    }
+
+    /// Set the SSL client key for mutual TLS
+    pub fn ssl_client_key(mut self, key_path: impl Into<PathBuf>) -> Self {
+        self.ssl_client_key = Some(key_path.into());
+        self
+    }
+
+    /// Set both client certificate and key at once
+    pub fn ssl_client_auth(mut self, cert_path: impl Into<PathBuf>, key_path: impl Into<PathBuf>) -> Self {
+        self.ssl_client_cert = Some(cert_path.into());
+        self.ssl_client_key = Some(key_path.into());
+        self
+    }
+
+    /// Validate configuration
+    fn validate(&self) -> Result<()> {
+        match (&self.ssl_client_cert, &self.ssl_client_key) {
+            (Some(_), None) => {
+                return Err(AppMeshError::ConfigurationError("SSL client certificate provided without key".to_string()))
+            }
+            (None, Some(_)) => {
+                return Err(AppMeshError::ConfigurationError("SSL client key provided without certificate".to_string()))
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Build the WSS client
+    pub fn build(self) -> Result<Arc<AppMeshClientWSS>> {
+        self.validate()?;
+
+        // Default WSS port is 6058, whereas TCP was 6059
+        let address = Some((self.host.unwrap_or_else(|| "127.0.0.1".to_string()), self.port.unwrap_or(6058)));
+
+        let ssl_verify = self.ssl_ca_cert;
+        let ssl_client_cert = match (self.ssl_client_cert, self.ssl_client_key) {
+            (Some(cert), Some(key)) => Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string())),
+            _ => None,
+        };
+
+        AppMeshClientWSS::new(address, ssl_verify, ssl_client_cert)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +364,12 @@ mod tests {
     #[test]
     fn test_tcp_builder_validation() {
         let result = ClientBuilderTCP::new().ssl_client_cert("/path/to/cert.pem").build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_wss_builder_validation() {
+        let result = ClientBuilderWSS::new().ssl_client_cert("/path/to/cert.pem").build();
         assert!(result.is_err());
     }
 }

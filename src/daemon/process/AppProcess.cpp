@@ -104,8 +104,6 @@ int AppProcess::returnValue() const
 
 void AppProcess::onExit(int exitCode)
 {
-	const static char fname[] = "AppProcess::onExit() ";
-
 	// Update PID and exit code
 	m_pid.store(ACE_INVALID_PID);
 	m_returnValue.store(exitCode);
