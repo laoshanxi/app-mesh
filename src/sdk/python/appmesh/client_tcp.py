@@ -88,8 +88,8 @@ class AppMeshClientTCP(AppMeshClient):
         """Ensure resources are properly released when the object is garbage collected."""
         try:
             self.close()
-        except Exception:
-            pass  # Never raise in __del__
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # suppress all exceptions
 
     def _covert_bytes(self, body) -> bytes:
         """Prepare request body for transmission."""

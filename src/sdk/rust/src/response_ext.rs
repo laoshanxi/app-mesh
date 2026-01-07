@@ -2,7 +2,6 @@
 
 use crate::error::AppMeshError;
 use bytes::Bytes;
-use encoding_rs::{Encoding, UTF_8};
 use http;
 use serde::de::DeserializeOwned;
 use serde_json;
