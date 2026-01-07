@@ -258,6 +258,11 @@ impl AppMeshClient {
         Arc::new(Self { req: requester, url })
     }
 
+    // Close the requester (if applicable)
+    pub fn close(&self) {
+        self.req.close();
+    }
+
     /// Set forwarding host for requests
     pub fn forward_to(&mut self, url: Option<String>) {
         self.req.set_forward_to(url);

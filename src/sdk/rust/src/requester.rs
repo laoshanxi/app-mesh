@@ -31,4 +31,7 @@ pub trait Requester: Send + Sync {
 
     /// Set the forward_to URL (TCP implementation should ignore this (no-op))
     fn set_forward_to(&mut self, url: Option<String>) {}
+
+    /// Close the requester (if applicable)
+    fn close(&self) {}
 }

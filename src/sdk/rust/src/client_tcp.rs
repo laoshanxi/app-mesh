@@ -165,6 +165,10 @@ impl Requester for TCPRequester {
         // Store token for TCP authentication
         self.set_token(token);
     }
+
+    fn close(&self) {
+        self.tcp_transport.lock().ok().map(|mut t| t.close());
+    }
 }
 
 /// TCP-based AppMesh client
@@ -202,13 +206,6 @@ impl AppMeshClientTCP {
         let client = AppMeshClient::with_requester(Box::new(tcp_requester), url);
 
         Ok(Arc::new(Self { client, tcp_transport }))
-    }
-
-    /// Close the TCP connection
-    pub fn close(&self) {
-        if let Ok(mut transport) = self.tcp_transport.lock() {
-            transport.close();
-        }
     }
 
     /// Get reference to the underlying AppMeshClient

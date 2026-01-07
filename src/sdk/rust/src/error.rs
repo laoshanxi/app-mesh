@@ -24,6 +24,8 @@ pub enum AppMeshError {
     SerializationError(String),
     /// File not found (e.g., config or cert file)
     FileNotFound(String),
+    /// Generic IO error wrapper
+    IoError(String),
     /// Feature not supported by this transport
     UnsupportedFeature { feature: String, transport: String },
     /// Generic error (use sparingly)
@@ -44,6 +46,7 @@ impl fmt::Display for AppMeshError {
             Self::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
             Self::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
             Self::FileNotFound(msg) => write!(f, "File not found: {}", msg),
+            Self::IoError(msg) => write!(f, "IO error: {}", msg),
             Self::UnsupportedFeature { feature, transport } => {
                 write!(f, "Feature '{}' is not supported by {} transport", feature, transport)
             }
@@ -81,7 +84,7 @@ impl From<std::io::Error> for AppMeshError {
             std::io::ErrorKind::ConnectionRefused
             | std::io::ErrorKind::ConnectionReset
             | std::io::ErrorKind::TimedOut => Self::ConnectionError(err.to_string()),
-            _ => Self::Other(format!("IO error: {}", err)),
+            _ => Self::IoError(err.to_string()),
         }
     }
 }
