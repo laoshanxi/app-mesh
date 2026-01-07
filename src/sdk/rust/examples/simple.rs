@@ -1,5 +1,5 @@
 //! Example of using AppMesh SDK
-use appmesh::ClientBuilderTCP;
+use appmesh::ClientBuilderWSS;
 use serde_json::json;
 use std::error::Error;
 
@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     // Initialize client
-    let client = ClientBuilderTCP::new().build()?;
+    let client = ClientBuilderWSS::new().build()?;
 
     // Login
     client.login("admin", "admin123", None, None, None).await?;

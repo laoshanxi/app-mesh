@@ -392,6 +392,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """Support for context manager protocol, ensuring resources are released."""
         self.close()
 
+    def __del__(self):
+        """Ensure resources are released when the object is garbage collected."""
+        try:
+            self.close()
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # suppress all exceptions
+
     def _handle_token_update(self, token: Optional[str]) -> None:
         """Handle post action when token updated"""
         # Handle refresh

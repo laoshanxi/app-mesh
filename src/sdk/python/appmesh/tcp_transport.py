@@ -60,7 +60,7 @@ class TCPTransport:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             pass  # suppress all exceptions
 
     def __str__(self) -> str:
