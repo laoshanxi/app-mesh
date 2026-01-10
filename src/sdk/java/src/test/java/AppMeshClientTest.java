@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test;
 
 public class AppMeshClientTest {
     private static final Logger LOGGER = Logger.getLogger(AppMeshClientTest.class.getName());
-    private static final String BASE_URL = "https://127.0.0.1:6060"; // Consider using a config file or env var
     private static final String CA_FILE = "/opt/appmesh/ssl/ca.pem";
     private static final String CLIENT_CERT_FILE = "/opt/appmesh/ssl/client.pem";
     private static final String CLIENT_CERT_KET_FILE = "/opt/appmesh/ssl/client-key.pem";
@@ -26,7 +25,7 @@ public class AppMeshClientTest {
     @BeforeEach
     public void setup() {
         LOGGER.info("setup");
-        client = new AppMeshClient.Builder().baseURL(BASE_URL).caCert(CA_FILE)
+        client = new AppMeshClientWSS.Builder().caCert(CA_FILE)
                 .clientCert(CLIENT_CERT_FILE, CLIENT_CERT_KET_FILE).build();
         assertNotNull(client, "AppMeshClient should be initialized");
     }

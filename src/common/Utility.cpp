@@ -1373,14 +1373,42 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMa
 
 void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers)
 {
+	const static char fname[] = "Utility::applyFilePermission() ";
+
 	if (Utility::isFileExist(file))
 	{
 		if (headers.count(HTTP_HEADER_KEY_file_mode))
-			os::fileChmod(file, std::stoi(headers.find(HTTP_HEADER_KEY_file_mode)->second));
+		{
+			const auto &modeStr = headers.find(HTTP_HEADER_KEY_file_mode)->second;
+			if (!modeStr.empty())
+			{
+				try
+				{
+					os::fileChmod(file, std::stoi(modeStr));
+				}
+				catch (...)
+				{
+					LOG_WAR << fname << "Invalid file mode value: " << modeStr;
+				}
+			}
+		}
+
 		if (headers.count(HTTP_HEADER_KEY_file_user) && headers.count(HTTP_HEADER_KEY_file_group))
-			os::chown(file,
-					  std::stoi(headers.find(HTTP_HEADER_KEY_file_user)->second),
-					  std::stoi(headers.find(HTTP_HEADER_KEY_file_group)->second));
+		{
+			const auto &userStr = headers.find(HTTP_HEADER_KEY_file_user)->second;
+			const auto &groupStr = headers.find(HTTP_HEADER_KEY_file_group)->second;
+			if (!userStr.empty() && !groupStr.empty())
+			{
+				try
+				{
+					os::chown(file, std::stoi(userStr), std::stoi(groupStr));
+				}
+				catch (...)
+				{
+					LOG_WAR << fname << "Invalid user/group ID value: " << userStr << "/" << groupStr;
+				}
+			}
+		}
 	}
 }
 

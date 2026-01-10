@@ -9,10 +9,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -49,14 +49,14 @@ public class AppMeshClient implements Closeable {
     private final AtomicReference<String> jwtToken = new AtomicReference<>(null);
     private volatile String forwardTo;
 
-    private AppMeshClient(Builder builder) {
+    protected AppMeshClient(Builder builder) {
         this.baseURL = Objects.requireNonNull(builder.baseURL, "Base URL cannot be null");
         if (builder.jwtToken != null) {
             this.jwtToken.set(builder.jwtToken);
         }
         if (builder.caCertFilePath != null || builder.clientCertFilePath != null) {
             try {
-                Utils.configureSSLCertificates(builder.caCertFilePath, builder.clientCertFilePath,
+                Utils.enableSSLCertificates(builder.caCertFilePath, builder.clientCertFilePath,
                         builder.clientCertKeyFilePath);
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Failed to use custom certificate", e);
@@ -128,7 +128,7 @@ public class AppMeshClient implements Closeable {
         public Integer exitCode;
     }
 
-    //  AppRun represents an asynchronous run on the server.
+    // AppRun represents an asynchronous run on the server.
     public class AppRun {
         private final String appName;
         private final String procUid;
@@ -555,37 +555,16 @@ public class AppMeshClient implements Closeable {
             }
         }
         if (applyFileAttributes) {
-            String fileMode = conn.getHeaderField("X-File-Mode");
-            if (fileMode != null) {
-                try {
-                    Files.setPosixFilePermissions(Paths.get(localFile),
-                            PosixFilePermissions.fromString(Utils.toPermissionString(Integer.parseInt(fileMode, 10))));
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Failed to apply file mode: " + fileMode, e);
-                }
-            }
-            String fileUser = conn.getHeaderField("X-File-User");
-            String fileGroup = conn.getHeaderField("X-File-Group");
-            if (fileUser != null && fileGroup != null) {
-                try {
-                    Files.setOwner(Paths.get(localFile),
-                            FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByName(fileUser));
-                    Files.getFileAttributeView(Paths.get(localFile), PosixFileAttributeView.class)
-                            .setGroup(FileSystems.getDefault().getUserPrincipalLookupService()
-                                    .lookupPrincipalByGroupName(fileGroup));
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Failed to set file owner or group", e);
-                }
-            }
+            applyFileAttributes(localFile, conn);
         }
         return true;
     }
 
     // Upload a local file to the remote server, the remote file will have the same
     // permission as the local file
-    public boolean uploadFile(Object localFile, String filePath, boolean applyFileAttributes) throws IOException {
+    public boolean uploadFile(Object localFile, String remoteFile, boolean preservePermissions) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
-        headers.put("X-File-Path", encodeURIComponent(filePath));
+        headers.put("X-File-Path", encodeURIComponent(remoteFile));
 
         File file;
         if (localFile instanceof String) {
@@ -600,11 +579,8 @@ public class AppMeshClient implements Closeable {
             throw new IOException("File not found: " + file.getAbsolutePath());
         }
 
-        if (applyFileAttributes) {
-            int fileMode = Utils.getFilePermissions(file);
-            headers.put("X-File-Mode", String.valueOf(fileMode));
-            Map<String, String> fileAttributes = Utils.getFileAttributes(file);
-            headers.putAll(fileAttributes);
+        if (preservePermissions) {
+            headers.putAll(getFileAttributes(file));
         }
 
         String boundary = Utils.generateBoundary();
@@ -787,6 +763,16 @@ public class AppMeshClient implements Closeable {
         return headers;
     }
 
+    // Protected accessor for subclasses to reuse same headers
+    protected Map<String, String> getCommonHeaders() {
+        return commonHeaders();
+    }
+
+    // Protected accessor for subclasses to get baseURL
+    protected String getBaseURL() {
+        return this.baseURL;
+    }
+
     private String encodeURIComponent(String value) {
         if (value == null)
             return null;
@@ -806,12 +792,80 @@ public class AppMeshClient implements Closeable {
     }
 
     /**
+     * Apply file attributes from response headers.
+     */
+    protected void applyFileAttributes(String localFile, HttpURLConnection conn) {
+        Path path = Paths.get(localFile);
+
+        try {
+            // ----- File mode -----
+            String fileModeStr = conn.getHeaderField("X-File-Mode");
+            if (fileModeStr != null) {
+                try {
+                    int mode = Integer.parseInt(fileModeStr);
+                    Set<PosixFilePermission> perms = PosixFilePermissions.fromString(Utils.toPermissionString(mode));
+                    Files.setPosixFilePermissions(path, perms);
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to apply file mode: " + fileModeStr, e);
+                }
+            }
+
+            // ----- UID / GID -----
+            String uidStr = conn.getHeaderField("X-File-User");
+            String gidStr = conn.getHeaderField("X-File-Group");
+
+            if (uidStr != null && gidStr != null) {
+                try {
+                    int uid = Integer.parseInt(uidStr);
+                    int gid = Integer.parseInt(gidStr);
+
+                    // These attributes exist on Unix systems only
+                    Files.setAttribute(path, "unix:uid", uid);
+                    Files.setAttribute(path, "unix:gid", gid);
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to apply file uid/gid: " + uidStr + "/" + gidStr, e);
+                }
+            }
+
+        } catch (Exception e) {
+            // Best-effort, never fail the transfer
+            LOGGER.log(Level.WARNING, "Warning: Failed to apply file attributes", e);
+        }
+    }
+
+    /**
+     * Get file attributes for upload.
+     */
+    protected Map<String, String> getFileAttributes(File file) {
+        Map<String, String> attrs = new HashMap<>();
+        try {
+            Path path = file.toPath();
+
+            // ----- Mode -----
+            int mode = Utils.getFilePermissions(file) & 0777;
+            attrs.put("X-File-Mode", String.valueOf(mode));
+
+            // ----- UID / GID -----
+            Object uid = Files.getAttribute(path, "unix:uid");
+            Object gid = Files.getAttribute(path, "unix:gid");
+
+            attrs.put("X-File-User", uid.toString());
+            attrs.put("X-File-Group", gid.toString());
+
+        } catch (Exception e) {
+            // Best effort (matches Python behavior)
+        }
+
+        return attrs;
+    }
+
+    /**
      * Core HTTP request helper. Builds URL, attaches headers and body (for JSON
      * POST/PUT),
      * and returns the HttpURLConnection for caller to inspect response / read
      * streams.
      */
-    private HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
+    public HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
             Map<String, String> params)
             throws IOException {
         StringBuilder urlBuilder = new StringBuilder(baseURL).append(path);
