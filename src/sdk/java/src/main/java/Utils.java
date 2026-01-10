@@ -73,18 +73,41 @@ public class Utils {
         HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
     }
 
-    public static void configureSSLCertificates(String caCertFilePath, String clientCertFilePath, String clientCertKeyFilePath)
+    public static void enableSSLCertificates(String caCertFilePath, String clientCertFilePath, String clientCertKeyFilePath)
             throws Exception {
+        // Reuse createSSLContext to avoid duplicating certificate/provider initialization logic
+        SSLContext sc = createSSLContext(caCertFilePath, clientCertFilePath, clientCertKeyFilePath, false);
+        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+    }
 
-        // Add BouncyCastle as a provider
+    public static SSLContext createSSLContext(String caCertFilePath, String clientCertFilePath,
+            String clientCertKeyFilePath, boolean disableVerification)
+            throws Exception {
         if (Security.getProvider("BC") == null) {
             Security.addProvider(new BouncyCastleProvider());
             LOGGER.log(Level.INFO, "BouncyCastle provider added.");
-        } else {
-            LOGGER.log(Level.INFO, "BouncyCastle provider already exists.");
         }
 
-        // Initialize an empty KeyStore
+        if (disableVerification) {
+            TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
+                @Override
+                public X509Certificate[] getAcceptedIssuers() {
+                    return new X509Certificate[0];
+                }
+
+                @Override
+                public void checkClientTrusted(X509Certificate[] certs, String authType) {
+                }
+
+                @Override
+                public void checkServerTrusted(X509Certificate[] certs, String authType) {
+                }
+            } };
+            SSLContext sc = SSLContext.getInstance("TLS");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            return sc;
+        }
+
         KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
         keyStore.load(null, null);
 
@@ -94,9 +117,7 @@ public class Utils {
         // Initialize SSLContext with the KeyManagers (if any) and TrustManagers
         SSLContext sc = SSLContext.getInstance("TLS");
         sc.init(keyManagers, trustManagers, null);
-
-        // Set the SSLContext for HttpsURLConnection
-        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory()); // Same as SSLContext.setDefault(sc);
+        return sc;
     }
 
     private static TrustManager[] createTrustManagers(KeyStore keyStore, String caCertFilePath)
@@ -325,14 +346,26 @@ public class Utils {
         }
     }
 
+    private static byte[] readAllBytes(InputStream input) throws IOException {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int bytesRead;
+        while ((bytesRead = input.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, bytesRead);
+        }
+        return outputStream.toByteArray();
+    }
+
     public static String readResponse(HttpURLConnection conn) throws IOException {
-        try (InputStream inputStream = conn.getInputStream(); ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-            }
-            return outputStream.toString(StandardCharsets.UTF_8.name());
+        try (InputStream inputStream = conn.getInputStream()) {
+            byte[] bytes = readAllBytes(inputStream);
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+    }
+
+    public static byte[] readResponseBytes(HttpURLConnection conn) throws IOException {
+        try (InputStream inputStream = conn.getInputStream()) {
+            return readAllBytes(inputStream);
         }
     }
 }
