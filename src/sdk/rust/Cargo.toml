@@ -16,11 +16,11 @@ name = "appmesh"
 path = "src/lib.rs"
 
 [dependencies]
-reqwest = { version = "0.12", features = [
+reqwest = { version = "0.13.1", features = [
     "json",
     "cookies",
     "multipart",
-    "rustls-tls",
+    "query",
 ] }
 tokio = { version = "1.47", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
