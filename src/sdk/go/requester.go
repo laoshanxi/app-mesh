@@ -241,3 +241,129 @@ func (t *TCPRequester) setForwardTo(forwardTo string) {
 func (h *TCPRequester) getForwardTo() string {
 	return h.forwardingHost.Load()
 }
+
+// WSSRequester handles REST-like requests over a WSS transport.
+type WSSRequester struct {
+	*WSSConnection
+	baseURL url.URL
+
+	forwardingHost atomic.String
+	token          atomic.String
+}
+
+// Send performs the request over WSS.
+func (w *WSSRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	u := w.baseURL
+	u.Path = path.Join(u.Path, apiPath)
+	if queries != nil {
+		u.RawQuery = queries.Encode()
+	}
+
+	req, err := http.NewRequest(method, u.String(), body)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+
+	token := w.token.Load()
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	forwardingHost := w.forwardingHost.Load()
+	if forwardingHost != "" {
+		if strings.Contains(forwardingHost, ":") {
+			req.Header.Set("X-Target-Host", forwardingHost)
+		} else {
+			req.Header.Set("X-Target-Host", forwardingHost+":"+u.Port())
+		}
+	}
+	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT_TCP)
+	for k, v := range headers {
+		req.Header.Add(k, v)
+	}
+
+	resp, err := w.request(req)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+
+	respHeaders := make(http.Header)
+	for key, value := range resp.Headers {
+		respHeaders.Add(key, value)
+	}
+
+	return resp.HttpStatus, resp.Body, respHeaders, nil
+}
+
+// Close closes the underlying WSS connection.
+func (w *WSSRequester) Close() {
+	if w.WSSConnection != nil {
+		w.WSSConnection.Close()
+	}
+}
+
+// request serializes an internal Request, sends it over WSSConnection and waits for Response.
+func (w *WSSRequester) request(req *http.Request) (*Response, error) {
+	data := NewRequest()
+	data.RequestUri = req.URL.Path
+	data.HttpMethod = req.Method
+	data.ClientAddress = w.ClientAddress()
+	for key, values := range req.Header {
+		if len(values) > 0 {
+			data.Headers[key] = values[0]
+		}
+	}
+	for key, values := range req.URL.Query() {
+		if len(values) > 0 {
+			data.Query[key] = values[0]
+		}
+	}
+
+	if data.RequestUri != REST_PATH_UPLOAD && req.Body != nil {
+		bodyBytes, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		if len(bodyBytes) > 0 {
+			if strings.HasSuffix(data.RequestUri, "/task") {
+				data.Body = bodyBytes
+			} else {
+				data.Body = HtmlUnescapeBytes(bodyBytes)
+			}
+		}
+	}
+
+	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_TCP
+
+	buf, err := data.Serialize()
+	if err != nil {
+		return nil, err
+	}
+
+	// send via WSSConnection
+	ctx := req.Context()
+	if err := w.SendMessage(ctx, buf); err != nil {
+		return nil, err
+	}
+
+	respData, err := w.ReadMessage()
+	if err != nil {
+		return nil, err
+	}
+
+	respMsg := &Response{}
+	if err := respMsg.Deserialize(respData); err != nil {
+		return nil, err
+	}
+	return respMsg, nil
+}
+
+func (w *WSSRequester) handleTokenUpdate(token string) {
+	w.token.Store(token)
+}
+func (w *WSSRequester) setForwardTo(forwardTo string) {
+	w.forwardingHost.Store(forwardTo)
+}
+func (w *WSSRequester) getForwardTo() string {
+	return w.forwardingHost.Load()
+}

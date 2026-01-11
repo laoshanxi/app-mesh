@@ -236,22 +236,6 @@ public class AppMeshClientTCP extends AppMeshClient {
         super.close();
     }
 
-    // Helper to reuse base class attribute logic if possible, or reimplement
-    private void applyAttributes(HttpURLConnection conn, String localFile) {
-        String fileMode = conn.getHeaderField("X-File-Mode");
-        if (fileMode != null) {
-            try {
-                Files.setPosixFilePermissions(Paths.get(localFile),
-                        java.nio.file.attribute.PosixFilePermissions
-                                .fromString(Utils.toPermissionString(Integer.parseInt(fileMode, 10))));
-            } catch (Exception ignored) {
-            }
-        }
-        // Owner/Group logic is platform specific and often requires more setup,
-        // skipping for brevity or
-        // it can be copied from AppMeshClient.java if that method is accessible.
-    }
-
     // Minimal HttpURLConnection wrapper around ResponseMessage
     private static class TcpHttpURLConnection extends HttpURLConnection {
         private final ResponseMessage resp;
