@@ -11,9 +11,12 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -236,44 +239,7 @@ public class Utils {
         }
     }
 
-    public static int getFilePermissions(File file) throws IOException {
-        Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(file.toPath());
-        int mode = 0;
-        for (PosixFilePermission permission : permissions) {
-            switch (permission) {
-                case OWNER_READ:
-                    mode |= 0400;
-                    break;
-                case OWNER_WRITE:
-                    mode |= 0200;
-                    break;
-                case OWNER_EXECUTE:
-                    mode |= 0100;
-                    break;
-                case GROUP_READ:
-                    mode |= 040;
-                    break;
-                case GROUP_WRITE:
-                    mode |= 020;
-                    break;
-                case GROUP_EXECUTE:
-                    mode |= 010;
-                    break;
-                case OTHERS_READ:
-                    mode |= 04;
-                    break;
-                case OTHERS_WRITE:
-                    mode |= 02;
-                    break;
-                case OTHERS_EXECUTE:
-                    mode |= 01;
-                    break;
-            }
-        }
-        return mode;
-    }
-
-    public static String toPermissionString(int mode) {
+    private static String toPermissionString(int mode) {
         StringBuilder result = new StringBuilder(9);
         result.append((mode & 0400) == 0 ? '-' : 'r');
         result.append((mode & 0200) == 0 ? '-' : 'w');
@@ -287,19 +253,99 @@ public class Utils {
         return result.toString();
     }
 
+    // Helper to convert PosixFilePermissions to numeric mode
+    private static int posixPermissionsToMode(Set<PosixFilePermission> perms) {
+        int mode = 0;
+        if (perms.contains(PosixFilePermission.OWNER_READ))
+            mode |= 0400;
+        if (perms.contains(PosixFilePermission.OWNER_WRITE))
+            mode |= 0200;
+        if (perms.contains(PosixFilePermission.OWNER_EXECUTE))
+            mode |= 0100;
+        if (perms.contains(PosixFilePermission.GROUP_READ))
+            mode |= 0040;
+        if (perms.contains(PosixFilePermission.GROUP_WRITE))
+            mode |= 0020;
+        if (perms.contains(PosixFilePermission.GROUP_EXECUTE))
+            mode |= 0010;
+        if (perms.contains(PosixFilePermission.OTHERS_READ))
+            mode |= 0004;
+        if (perms.contains(PosixFilePermission.OTHERS_WRITE))
+            mode |= 0002;
+        if (perms.contains(PosixFilePermission.OTHERS_EXECUTE))
+            mode |= 0001;
+        return mode;
+    }
+
     public static Map<String, String> getFileAttributes(File file) {
         Map<String, String> attributes = new HashMap<>();
         try {
-            PosixFileAttributeView posixView = Files.getFileAttributeView(file.toPath(), PosixFileAttributeView.class);
-            PosixFileAttributes attrs = posixView.readAttributes();
-            attributes.put("X-File-User", attrs.owner().getName());
-            attributes.put("X-File-Group", attrs.group().getName());
+            Path path = file.toPath();
+
+            // Get file mode
+            PosixFileAttributeView posixView = Files.getFileAttributeView(path, PosixFileAttributeView.class);
+            if (posixView != null) {
+                PosixFileAttributes attrs = posixView.readAttributes();
+                Set<PosixFilePermission> perms = attrs.permissions();
+                int mode = posixPermissionsToMode(perms);
+                attributes.put("X-File-Mode", String.valueOf(mode));
+            }
+
+            // Get numeric UID/GID using unix: attributes
+            try {
+                Integer uid = (Integer) Files.getAttribute(path, "unix:uid");
+                Integer gid = (Integer) Files.getAttribute(path, "unix:gid");
+                attributes.put("X-File-User", String.valueOf(uid));
+                attributes.put("X-File-Group", String.valueOf(gid));
+            } catch (UnsupportedOperationException | IllegalArgumentException e) {
+                LOGGER.log(Level.FINE, "unix:uid/gid not supported, skipping ownership attributes");
+            }
+
         } catch (UnsupportedOperationException e) {
-            LOGGER.log(Level.WARNING, "POSIX file attributes not supported", e);
+            LOGGER.log(Level.FINE, "POSIX file attributes not supported");
         } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Error reading file attributes", e);
+            LOGGER.log(Level.WARNING, "Error reading file attributes", e);
         }
         return attributes;
+    }
+
+    public static void applyFileAttributes(String localFile, HttpURLConnection conn) {
+        Path path = Paths.get(localFile);
+
+        try {
+            // ----- File mode -----
+            String fileModeStr = conn.getHeaderField("X-File-Mode");
+            if (fileModeStr != null) {
+                try {
+                    int mode = Integer.parseInt(fileModeStr);
+                    Set<PosixFilePermission> perms = PosixFilePermissions.fromString(Utils.toPermissionString(mode));
+                    Files.setPosixFilePermissions(path, perms);
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to apply file mode: " + fileModeStr, e);
+                }
+            }
+
+            // ----- UID / GID -----
+            String uidStr = conn.getHeaderField("X-File-User");
+            String gidStr = conn.getHeaderField("X-File-Group");
+
+            if (uidStr != null && gidStr != null) {
+                try {
+                    int uid = Integer.parseInt(uidStr);
+                    int gid = Integer.parseInt(gidStr);
+
+                    // These attributes exist on Unix systems only
+                    Files.setAttribute(path, "unix:uid", uid);
+                    Files.setAttribute(path, "unix:gid", gid);
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to apply file uid/gid: " + uidStr + "/" + gidStr, e);
+                }
+            }
+
+        } catch (Exception e) {
+            // Best-effort, never fail the transfer
+            LOGGER.log(Level.WARNING, "Warning: Failed to apply file attributes", e);
+        }
     }
 
     public static String generateBoundary() {

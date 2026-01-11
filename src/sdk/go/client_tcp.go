@@ -126,7 +126,7 @@ func (c *AppMeshClientTCP) receiveFile(localFile string, headers http.Header, ap
 	}
 
 	if applyFileAttributes {
-		_ = SetFileAttributes(localFile, headers)
+		_ = ApplyFileAttributes(localFile, headers)
 	}
 	return nil
 }
@@ -153,11 +153,7 @@ func (c *AppMeshClientTCP) FileUpload(ctx context.Context, localFile, remoteFile
 
 	// Get the file attributes.
 	if applyFileAttributes {
-		attrs, err := GetFileAttributes(localFile)
-		if err != nil {
-			return err
-		}
-		MergeStringMaps(headers, attrs)
+		headers, _ = GetFileAttributes(localFile, headers)
 	}
 
 	status, msg, responseHeaders, err := c.post(REST_PATH_UPLOAD, nil, headers, nil)

@@ -446,7 +446,7 @@ func HandleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePa
 
 	if data.TempUploadFilePath == "" {
 		logger.Infof("File saved: %s", filePath)
-		err := appmesh.SetFileAttributes(filePath, r.Header)
+		err := appmesh.ApplyFileAttributes(filePath, r.Header)
 		if err != nil {
 			logger.Warnf("Failed to set file attributes for %s: %v", filePath, err)
 		}

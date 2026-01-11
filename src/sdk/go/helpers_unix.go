@@ -4,32 +4,69 @@
 package appmesh
 
 import (
+	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"syscall"
 )
 
 // GetFileAttributes returns a map with file attributes: mode, user ID, and group ID.
-func GetFileAttributes(filePath string) (map[string]string, error) {
-	// Initialize the map to store file attributes
-	attributes := make(map[string]string)
+// The second parameter is optional; if provided, the map will be populated and
+// returned. Otherwise a new map is returned. Signature: GetFileAttributes(path[, headers]) (map[string]string, error)
+func GetFileAttributes(filePath string, headers ...map[string]string) (map[string]string, error) {
+	var h map[string]string
+	if len(headers) > 0 && headers[0] != nil {
+		h = headers[0]
+	} else {
+		h = make(map[string]string)
+	}
 
-	// Get the file attributes
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		return attributes, err // Return nil map and the error if file stats cannot be retrieved
+		return h, err
 	}
 
-	// Retrieve syscall.Stat_t from the file info
 	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
 	if !ok {
-		return attributes, syscall.EINVAL // Return nil map and an invalid argument error if Sys() is not *syscall.Stat_t
+		return h, syscall.EINVAL
 	}
 
-	// Populate the attributes map
-	attributes["X-File-Mode"] = strconv.Itoa(int(fileInfo.Mode().Perm()))
-	attributes["X-File-User"] = strconv.Itoa(int(stat.Uid))
-	attributes["X-File-Group"] = strconv.Itoa(int(stat.Gid))
+	h["X-File-Mode"] = strconv.Itoa(int(fileInfo.Mode().Perm()))
+	h["X-File-User"] = strconv.Itoa(int(stat.Uid))
+	h["X-File-Group"] = strconv.Itoa(int(stat.Gid))
 
-	return attributes, nil
+	return h, nil
+}
+
+// ApplyFileAttributes applies file mode and ownership (UID, GID) to a given file
+// based on HTTP headers. Implemented for Unix-like systems.
+func ApplyFileAttributes(filePath string, headers http.Header) error {
+	// http.Header.Get is Case-Insensitive
+
+	// Mode
+	if modeStr := headers.Get("X-File-Mode"); modeStr != "" {
+		// Parse decimal string "493" -> 493
+		modeVal, err := strconv.ParseUint(modeStr, 10, 32)
+		if err == nil {
+			// Cast to os.FileMode
+			if err := os.Chmod(filePath, os.FileMode(modeVal)); err != nil {
+				return fmt.Errorf("failed to change file mode: %w", err)
+			}
+		}
+	}
+
+	// Ownership
+	uidStr := headers.Get("X-File-User")
+	gidStr := headers.Get("X-File-Group")
+	if uidStr != "" && gidStr != "" {
+		uid, errU := strconv.Atoi(uidStr)
+		gid, errG := strconv.Atoi(gidStr)
+		if errU == nil && errG == nil {
+			if err := os.Chown(filePath, uid, gid); err != nil {
+				return fmt.Errorf("failed to change file ownership: %w", err)
+			}
+		}
+	}
+	return nil
 }

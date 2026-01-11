@@ -9,11 +9,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HashMap;
@@ -555,7 +550,7 @@ public class AppMeshClient implements Closeable {
             }
         }
         if (applyFileAttributes) {
-            applyFileAttributes(localFile, conn);
+            Utils.applyFileAttributes(localFile, conn);
         }
         return true;
     }
@@ -580,7 +575,7 @@ public class AppMeshClient implements Closeable {
         }
 
         if (preservePermissions) {
-            headers.putAll(getFileAttributes(file));
+            headers.putAll(Utils.getFileAttributes(file));
         }
 
         String boundary = Utils.generateBoundary();
@@ -789,74 +784,6 @@ public class AppMeshClient implements Closeable {
         } catch (UnsupportedEncodingException e) {
             throw new RuntimeException("UTF-8 encoding not supported", e);
         }
-    }
-
-    /**
-     * Apply file attributes from response headers.
-     */
-    protected void applyFileAttributes(String localFile, HttpURLConnection conn) {
-        Path path = Paths.get(localFile);
-
-        try {
-            // ----- File mode -----
-            String fileModeStr = conn.getHeaderField("X-File-Mode");
-            if (fileModeStr != null) {
-                try {
-                    int mode = Integer.parseInt(fileModeStr);
-                    Set<PosixFilePermission> perms = PosixFilePermissions.fromString(Utils.toPermissionString(mode));
-                    Files.setPosixFilePermissions(path, perms);
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Failed to apply file mode: " + fileModeStr, e);
-                }
-            }
-
-            // ----- UID / GID -----
-            String uidStr = conn.getHeaderField("X-File-User");
-            String gidStr = conn.getHeaderField("X-File-Group");
-
-            if (uidStr != null && gidStr != null) {
-                try {
-                    int uid = Integer.parseInt(uidStr);
-                    int gid = Integer.parseInt(gidStr);
-
-                    // These attributes exist on Unix systems only
-                    Files.setAttribute(path, "unix:uid", uid);
-                    Files.setAttribute(path, "unix:gid", gid);
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Failed to apply file uid/gid: " + uidStr + "/" + gidStr, e);
-                }
-            }
-
-        } catch (Exception e) {
-            // Best-effort, never fail the transfer
-            LOGGER.log(Level.WARNING, "Warning: Failed to apply file attributes", e);
-        }
-    }
-
-    /**
-     * Get file attributes for upload.
-     */
-    protected Map<String, String> getFileAttributes(File file) {
-        Map<String, String> attrs = new HashMap<>();
-        try {
-            Path path = file.toPath();
-
-            // ----- Mode -----
-            int mode = Utils.getFilePermissions(file) & 0777;
-            attrs.put("X-File-Mode", String.valueOf(mode));
-
-            // ----- UID / GID -----
-            Object uid = Files.getAttribute(path, "unix:uid");
-            Object gid = Files.getAttribute(path, "unix:gid");
-
-            attrs.put("X-File-User", uid.toString());
-            attrs.put("X-File-Group", gid.toString());
-
-        } catch (Exception e) {
-            // Best effort (matches Python behavior)
-        }
-
-        return attrs;
     }
 
     /**

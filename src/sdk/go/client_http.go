@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -647,11 +646,8 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 		"X-File-Path":  url.QueryEscape(remoteFile),
 	}
 	// Optionally include attributes (placeholder — server must support)
-	if applyFileAttributes && runtime.GOOS != "windows" {
-		if fi, err := os.Stat(localFile); err == nil {
-			mode := fi.Mode().Perm()
-			headers["X-File-Mode"] = fmt.Sprintf("%d", mode)
-		}
+	if applyFileAttributes {
+		headers, _ = GetFileAttributes(localFile, headers)
 	}
 
 	code, raw, _, err := r.post("/appmesh/file/upload", nil, headers, body.Bytes())
@@ -686,17 +682,11 @@ func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttr
 	if _, err := out.Write(raw); err != nil {
 		return fmt.Errorf("failed to write file data: %w", err)
 	}
-	// apply attributes if requested (placeholder)
-	if applyFileAttributes && runtime.GOOS != "windows" {
-		if modeStr := respHdr.Get("X-File-Mode"); modeStr != "" {
-			if m, err := strconv.ParseInt(modeStr, 10, 32); err == nil {
-				if err := os.Chmod(localFile, os.FileMode(m)); err != nil {
-					// Log but don't fail the entire operation
-					fmt.Printf("Warning: failed to set file permissions: %v\n", err)
-				}
-			}
-		}
+
+	if applyFileAttributes {
+		_ = ApplyFileAttributes(localFile, respHdr)
 	}
+
 	return nil
 }
 
