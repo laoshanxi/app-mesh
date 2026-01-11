@@ -10,7 +10,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -169,7 +168,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         }
 
         if (applyFileAttributes) {
-            applyFileAttributes(localFile, conn);
+            Utils.applyFileAttributes(localFile, conn);
         }
         return true;
     }
@@ -196,7 +195,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         headers.put("X-Send-File-Socket", "true");
 
         if (preservePermissions) {
-            headers.putAll(getFileAttributes(file));
+            headers.putAll(Utils.getFileAttributes(file));
         }
 
         // Initiate upload request

@@ -223,11 +223,11 @@ namespace os
     bool fileChmod(const std::string &path, uint16_t mode);
 
     /**
-     * @brief Change file permissions using a numeric shorthand value (e.g., 755).
+     * @brief Change file permissions using a numeric shorthand value (e.g., "493" which is 0o755).
      * Cross-platform permission modification with shorthand notation.
      *
      * @param path File path.
-     * @param mode Shorthand permissions mode (e.g., 755).
+     * @param mode as a decimal string representation of the octal value
      * @return True if successful, false otherwise.
      */
     bool chmod(const std::string &path, uint16_t mode);
