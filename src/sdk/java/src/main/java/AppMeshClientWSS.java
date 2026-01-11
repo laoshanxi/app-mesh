@@ -28,7 +28,6 @@ public class AppMeshClientWSS extends AppMeshClient {
     private static final String HTTP_USER_AGENT_WSS = "appmesh/java/wss";
     private static final String HEADER_X_FILE_PATH = "X-File-Path";
     private static final String HEADER_AUTHORIZATION = "Authorization";
-    private static final String HEADER_X_FILE_MODE = "X-File-Mode";
     private static final int FILE_TRANSFER_TIMEOUT = 120000; // 120 seconds
 
     private final WSSTransport wssTransport;
@@ -216,7 +215,7 @@ public class AppMeshClientWSS extends AppMeshClient {
 
         // Apply file attributes if requested
         if (applyFileAttributes) {
-            applyFileAttributes(localFile, conn);
+            Utils.applyFileAttributes(localFile, conn);
         }
 
         return true;
@@ -257,7 +256,10 @@ public class AppMeshClientWSS extends AppMeshClient {
 
         // Add file attributes if requested
         if (applyFileAttributes) {
-            conn.setRequestProperty(HEADER_X_FILE_MODE, String.valueOf(Utils.getFilePermissions(file)));
+            Map<String, String> headers = Utils.getFileAttributes(file);
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                conn.setRequestProperty(entry.getKey(), entry.getValue());
+            }
         }
 
         // Stream file content

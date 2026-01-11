@@ -9,9 +9,9 @@
 #include <nlohmann/json.hpp>
 
 #include "../../common/RestClient.h"
+#include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
 #include "../../common/os/linux.h"
-#include "../../common/UriParser.hpp"
 
 namespace
 {
@@ -348,9 +348,19 @@ void ClientHttp::uploadFile(const std::string &localFile, const std::string &rem
     if (preservePermissions)
     {
         auto fileInfo = os::fileStat(localFile);
-        header[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
-        header[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
-        header[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
+        int mode = std::get<0>(fileInfo);
+        int uid = std::get<1>(fileInfo);
+        int gid = std::get<2>(fileInfo);
+
+        if (mode >= 0)
+        {
+            header[HTTP_HEADER_KEY_file_mode] = std::to_string(mode);
+        }
+        if (uid >= 0 && gid >= 0)
+        {
+            header[HTTP_HEADER_KEY_file_user] = std::to_string(uid);
+            header[HTTP_HEADER_KEY_file_group] = std::to_string(gid);
+        }
     }
 
     auto response = RestClient::upload(m_url, REST_PATH_UPLOAD, localFile, header);

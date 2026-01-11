@@ -35,11 +35,9 @@ namespace os
 			LOG_ERR << fname << "Path does not exist: " << path;
 			return false;
 		}
-		constexpr uid_t INVALID_UID = static_cast<uid_t>(-1);
-		constexpr gid_t INVALID_GID = static_cast<gid_t>(-1);
-		if (uid == INVALID_UID || gid == INVALID_GID)
+		if (uid < 0 || gid < 0)
 		{
-			LOG_ERR << fname << "Invalid UID or GID provided";
+			LOG_WAR << fname << "Invalid UID or GID provided";
 			return false;
 		}
 

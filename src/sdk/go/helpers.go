@@ -8,12 +8,10 @@ import (
 	"fmt"
 	"html"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -176,51 +174,6 @@ func MergeStringMaps(map1, map2 map[string]string) {
 	for key, value := range map2 {
 		map1[key] = value
 	}
-}
-
-// SetFileAttributes applies file mode and ownership (UID, GID) to a given file based on HTTP headers.
-func SetFileAttributes(filePath string, headers http.Header) error {
-	// Apply file mode if provided
-	if fileModeStr := headers.Get("X-File-Mode"); fileModeStr != "" {
-		mode, err := strconv.ParseUint(fileModeStr, 10, 32)
-		if err != nil {
-			return fmt.Errorf("invalid file mode: %w", err)
-		}
-		if err := os.Chmod(filePath, os.FileMode(uint32(mode))); err != nil {
-			return fmt.Errorf("failed to change file mode: %w", err)
-		}
-	}
-
-	// Apply file ownership (UID, GID) if provided
-	fileUserStr := headers.Get("X-File-User")
-	fileGroupStr := headers.Get("X-File-Group")
-
-	if fileUserStr != "" || fileGroupStr != "" {
-		uid := -1 // Default to -1 (no change) unless provided
-		gid := -1 // Default to -1 (no change) unless provided
-
-		if fileUserStr != "" {
-			parsedUID, err := strconv.Atoi(fileUserStr)
-			if err != nil {
-				return fmt.Errorf("invalid UID: %w", err)
-			}
-			uid = parsedUID
-		}
-
-		if fileGroupStr != "" {
-			parsedGID, err := strconv.Atoi(fileGroupStr)
-			if err != nil {
-				return fmt.Errorf("invalid GID: %w", err)
-			}
-			gid = parsedGID
-		}
-
-		if err := os.Chown(filePath, uid, gid); err != nil {
-			return fmt.Errorf("failed to change file ownership: %w", err)
-		}
-	}
-
-	return nil
 }
 
 // SetTcpNoDelay disables Nagle's algorithm for the given net.Conn,

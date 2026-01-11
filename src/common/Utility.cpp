@@ -1375,38 +1375,43 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 {
 	const static char fname[] = "Utility::applyFilePermission() ";
 
-	if (Utility::isFileExist(file))
+	if (!Utility::isFileExist(file))
 	{
-		if (headers.count(HTTP_HEADER_KEY_file_mode))
+		return;
+	}
+
+	if (headers.count(HTTP_HEADER_KEY_file_mode))
+	{
+		const auto &modeStr = headers.find(HTTP_HEADER_KEY_file_mode)->second;
+		if (!modeStr.empty())
 		{
-			const auto &modeStr = headers.find(HTTP_HEADER_KEY_file_mode)->second;
-			if (!modeStr.empty())
+			try
 			{
-				try
-				{
-					os::fileChmod(file, std::stoi(modeStr));
-				}
-				catch (...)
-				{
-					LOG_WAR << fname << "Invalid file mode value: " << modeStr;
-				}
+				int mode = std::stoi(modeStr);
+				os::fileChmod(file, static_cast<uint16_t>(mode));
+			}
+			catch (...)
+			{
+				LOG_WAR << fname << "Invalid file mode value: " << modeStr;
 			}
 		}
+	}
 
-		if (headers.count(HTTP_HEADER_KEY_file_user) && headers.count(HTTP_HEADER_KEY_file_group))
+	if (headers.count(HTTP_HEADER_KEY_file_user) && headers.count(HTTP_HEADER_KEY_file_group))
+	{
+		const auto &userStr = headers.find(HTTP_HEADER_KEY_file_user)->second;
+		const auto &groupStr = headers.find(HTTP_HEADER_KEY_file_group)->second;
+		if (!userStr.empty() && !groupStr.empty())
 		{
-			const auto &userStr = headers.find(HTTP_HEADER_KEY_file_user)->second;
-			const auto &groupStr = headers.find(HTTP_HEADER_KEY_file_group)->second;
-			if (!userStr.empty() && !groupStr.empty())
+			try
 			{
-				try
-				{
-					os::chown(file, std::stoi(userStr), std::stoi(groupStr));
-				}
-				catch (...)
-				{
-					LOG_WAR << fname << "Invalid user/group ID value: " << userStr << "/" << groupStr;
-				}
+				int uid = std::stoi(userStr);
+				int gid = std::stoi(groupStr);
+				os::chown(file, uid, gid);
+			}
+			catch (...)
+			{
+				LOG_WAR << fname << "Invalid user/group ID value: " << userStr << "/" << groupStr;
 			}
 		}
 	}

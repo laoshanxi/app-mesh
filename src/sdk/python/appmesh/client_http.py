@@ -857,20 +857,36 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     @staticmethod
     def _apply_file_attributes(local_path: Path, headers: CaseInsensitiveDict) -> None:
-        """Apply file attributes from headers to local file."""
+        """
+        Apply file attributes from headers to local file.
+        Expected headers: X-File-Mode (decimal str), X-File-User, X-File-Group.
+        """
         if sys.platform == "win32":
             return
 
-        if "X-File-Mode" in headers:
-            file_mode = int(headers["X-File-Mode"])
-            with suppress(OSError):
-                local_path.chmod(file_mode)
+        headers = CaseInsensitiveDict(headers or {})
 
+        # Mode
+        if "X-File-Mode" in headers:
+            try:
+                # Transferred as decimal string of the integer (e.g. "493" for 0o755)
+                file_mode = int(headers["X-File-Mode"])
+                with suppress(OSError):
+                    local_path.chmod(file_mode)
+            except ValueError:
+                logger.warning("Invalid X-File-Mode value: %s", headers.get("X-File-Mode"))
+
+        # Ownership (Root only usually)
         if "X-File-User" in headers and "X-File-Group" in headers:
-            file_uid = int(headers["X-File-User"])
-            file_gid = int(headers["X-File-Group"])
-            with suppress(OSError):
-                os.chown(path=local_path, uid=file_uid, gid=file_gid)
+            try:
+                uid = int(headers["X-File-User"])
+                gid = int(headers["X-File-Group"])
+                chown = getattr(os, "chown", None)
+                if callable(chown):
+                    with suppress(OSError):
+                        chown(str(local_path), uid, gid)
+            except ValueError:
+                logger.warning("Invalid X-File-User/Group values")
 
     @staticmethod
     def _get_file_attributes(local_path: Path) -> dict:

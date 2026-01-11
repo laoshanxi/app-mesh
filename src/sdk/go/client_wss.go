@@ -136,7 +136,7 @@ func (c *AppMeshClientWSS) FileDownload(remoteFile, localFile string, applyFileA
 	}
 
 	if applyFileAttributes {
-		_ = SetFileAttributes(localFile, resp.Header)
+		_ = ApplyFileAttributes(localFile, resp.Header)
 	}
 	return nil
 }
@@ -162,11 +162,7 @@ func (c *AppMeshClientWSS) FileUpload(ctx context.Context, localFile, remoteFile
 	}
 
 	if applyFileAttributes {
-		attrs, err := GetFileAttributes(localFile)
-		if err != nil {
-			return err
-		}
-		MergeStringMaps(headers, attrs)
+		headers, _ = GetFileAttributes(localFile, headers)
 	}
 
 	status, msg, responseHeaders, err := c.post(REST_PATH_UPLOAD, nil, headers, nil)

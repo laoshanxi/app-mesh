@@ -1612,9 +1612,19 @@ namespace os
 		const static char fname[] = "fileStat() ";
 
 #if defined(_WIN32)
-		// Windows implementation
-		return std::make_tuple(-1, -1, -1);
-
+		// Windows: Only return mode (limited support), no UID/GID
+		struct _stat fileStat{};
+		if (::_stat(path.c_str(), &fileStat) == 0)
+		{
+			// Windows mode bits are limited, but we can still read them
+			int permissionBits = fileStat.st_mode & 0777;
+			return std::make_tuple(permissionBits, -1, -1);
+		}
+		else
+		{
+			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << last_error_msg();
+			return std::make_tuple(-1, -1, -1);
+		}
 #else
 		// Unix implementation
 		struct stat fileStat{};
@@ -1622,7 +1632,7 @@ namespace os
 		{
 			// Extract permission bits using bitwise AND
 			int permissionBits = fileStat.st_mode & 0777;
-			return std::make_tuple(permissionBits, fileStat.st_uid, fileStat.st_gid);
+			return std::make_tuple(permissionBits, static_cast<int>(fileStat.st_uid), static_cast<int>(fileStat.st_gid));
 		}
 		else
 		{
