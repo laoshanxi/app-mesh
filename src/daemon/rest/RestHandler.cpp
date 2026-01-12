@@ -335,8 +335,8 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	std::map<std::string, std::string> headers;
 	auto fileInfo = os::fileStat(file);
 	headers[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
-	headers[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
-	headers[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
+	headers[HTTP_HEADER_KEY_file_user] = std::get<1>(fileInfo);
+	headers[HTTP_HEADER_KEY_file_group] = std::get<2>(fileInfo);
 	auto body = HttpRequest::emptyJsonMessage();
 	if (message->m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) && message->m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
 	{

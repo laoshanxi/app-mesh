@@ -1,6 +1,6 @@
 [package]
 name = "appmesh"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "AppMesh SDK for Rust"
 license = "MIT"
@@ -41,6 +41,7 @@ encoding_rs = "0.8.35"
 tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 futures-util = "0.3.31"
 serde_bytes = "0.11.19"
+nix = { version = "0.30.1", features = ["user", "fs"] }
 
 [dev-dependencies]
 mockito = "1.7"

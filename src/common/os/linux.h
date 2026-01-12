@@ -204,13 +204,10 @@ namespace os
     std::map<std::string, std::string> getMountPoints();
 
     /**
-     * @brief Get file mode, user ID, and group ID.
-     * Cross-platform file stat information.
-     *
-     * @param path File path.
-     * @return Tuple containing file mode (permissions), user ID, and group ID. Returns (-1, -1, -1) on failure.
-     */
-    std::tuple<int, int, int> fileStat(const std::string &path);
+	 * @brief Get file status including mode, username, and groupname.
+	 * @return tuple<mode, username, groupname> or <-1, "", ""> on failure.
+	 */
+    std::tuple<int, std::string, std::string> fileStat(const std::string &path);
 
     /**
      * @brief Change file permissions using a numeric mode value.

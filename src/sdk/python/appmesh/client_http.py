@@ -859,34 +859,63 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def _apply_file_attributes(local_path: Path, headers: CaseInsensitiveDict) -> None:
         """
         Apply file attributes from headers to local file.
-        Expected headers: X-File-Mode (decimal str), X-File-User, X-File-Group.
+        Expected headers: X-File-Mode (decimal str), X-File-User (username), X-File-Group (groupname).
         """
         if sys.platform == "win32":
             return
 
         headers = CaseInsensitiveDict(headers or {})
 
-        # Mode
+        # Ownership by name - apply FIRST, as chown clears setuid/setgid bits
+        user_header = headers.get("X-File-User")
+        group_header = headers.get("X-File-Group")
+
+        if user_header is not None and group_header is not None:
+            chown = getattr(os, "chown", None)
+            if callable(chown):
+                try:
+                    import pwd
+                    import grp
+                    # Try to resolve as username/groupname first
+                    try:
+                        uid = pwd.getpwnam(user_header).pw_uid
+                    except KeyError:
+                        # Fall back to numeric UID if name lookup fails
+                        try:
+                            uid = int(user_header)
+                        except ValueError:
+                            uid = None
+
+                    try:
+                        gid = grp.getgrnam(group_header).gr_gid
+                    except KeyError:
+                        # Fall back to numeric GID if name lookup fails
+                        try:
+                            gid = int(group_header)
+                        except ValueError:
+                            gid = None
+
+                    if uid is not None and gid is not None:
+                        with suppress(OSError):
+                            chown(str(local_path), uid, gid)
+                    else:
+                        logger.warning("Could not resolve X-File-User/Group: %s/%s", user_header, group_header)
+
+                except (ValueError, KeyError) as e:
+                    logger.warning("Invalid X-File-User/Group values: %s/%s - %s", user_header, group_header, e)
+
+        # Mode - apply AFTER chown to preserve permission bits
         if "X-File-Mode" in headers:
             try:
-                # Transferred as decimal string of the integer (e.g. "493" for 0o755)
                 file_mode = int(headers["X-File-Mode"])
-                with suppress(OSError):
-                    local_path.chmod(file_mode)
+                # Validate mode is within valid range (0-511 for 0o777)
+                if 0 <= file_mode <= 0o777:
+                    with suppress(OSError):
+                        local_path.chmod(file_mode)
+                else:
+                    logger.warning("X-File-Mode value out of range: %s", file_mode)
             except ValueError:
                 logger.warning("Invalid X-File-Mode value: %s", headers.get("X-File-Mode"))
-
-        # Ownership (Root only usually)
-        if "X-File-User" in headers and "X-File-Group" in headers:
-            try:
-                uid = int(headers["X-File-User"])
-                gid = int(headers["X-File-Group"])
-                chown = getattr(os, "chown", None)
-                if callable(chown):
-                    with suppress(OSError):
-                        chown(str(local_path), uid, gid)
-            except ValueError:
-                logger.warning("Invalid X-File-User/Group values")
 
     @staticmethod
     def _get_file_attributes(local_path: Path) -> dict:
@@ -894,15 +923,31 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if sys.platform == "win32":
             return {}
 
-        with suppress(OSError):
+        try:
+            import pwd
+            import grp
             st = local_path.stat()
-            return {
+            result = {
                 "X-File-Mode": str(st.st_mode & 0o777),  # Mask to keep only permission bits
-                "X-File-User": str(st.st_uid),
-                "X-File-Group": str(st.st_gid),
             }
 
-        return {}
+            # Get username/groupname for portability
+            try:
+                result["X-File-User"] = pwd.getpwuid(st.st_uid).pw_name
+            except KeyError:
+                # User not found, fall back to UID
+                result["X-File-User"] = str(st.st_uid)
+
+            try:
+                result["X-File-Group"] = grp.getgrgid(st.st_gid).gr_name
+            except KeyError:
+                # Group not found, fall back to GID
+                result["X-File-Group"] = str(st.st_gid)
+
+            return result
+
+        except OSError:
+            return {}
 
     def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
         """Download a remote file to the local system."""

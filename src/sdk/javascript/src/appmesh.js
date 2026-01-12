@@ -614,13 +614,14 @@ class AppMeshClient {
             if (headers["X-File-Mode".toLowerCase()]) {
               await fs.chmod(localFile, parseInt(headers["X-File-Mode".toLowerCase()], 10));
             }
-            if (headers["X-File-User".toLowerCase()] && headers["X-File-Group".toLowerCase()]) {
+            // TODO: no user/group name in JS
+            /*if (headers["X-File-User".toLowerCase()] && headers["X-File-Group".toLowerCase()]) {
               await fs.chown(
                 localFile,
                 parseInt(headers["X-File-User".toLowerCase()]),
                 parseInt(headers["X-File-Group".toLowerCase()])
               );
-            }
+            }*/
           } catch (ex) {
             console.warn("Warning: Unable to change owner/group of", localFile, "Operation requires elevated privileges.");
           }
@@ -675,8 +676,9 @@ class AppMeshClient {
       // Add file attributes
       if (applyAttrs) {
         headers["X-File-Mode"] = (stat.mode & 0o777).toString(); // Only permission bits
-        headers["X-File-User"] = stat.uid.toString();
-        headers["X-File-Group"] = stat.gid.toString();
+        // TODO: no user/group name in JS
+        // headers["X-File-User"] = stat.uid.toString();
+        // headers["X-File-Group"] = stat.gid.toString();
       }
 
       // Add form-data headers
