@@ -10,7 +10,6 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,6 +19,12 @@ use crate::models::*;
 use crate::persistent_jar::PersistentJar;
 use crate::requester::Requester;
 use crate::response_ext::ResponseExt;
+
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+#[cfg(unix)]
+use nix::unistd::{chown, Gid, Group, Uid, User as UnixUser};
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
@@ -888,37 +893,47 @@ impl AppMeshClient {
 
         // Apply file attributes on Unix systems
         if preserve_permissions {
-            Self::apply_file_attributes(&local_path, &resp_headers);
+            let _ = Self::apply_file_attributes(&local_path, &resp_headers);
         }
 
         Ok(())
     }
 
-    pub(crate) fn apply_file_attributes(local_file: &Path, headers: &http::HeaderMap) {
+    /// Apply file attributes from HTTP headers.
+    /// Supports both name-based and numeric ID lookup for user/group.
+    pub(crate) fn apply_file_attributes(local_file: &Path, headers: &http::HeaderMap) -> Result<()> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
 
-            if let Some(mode_str) = headers.get(HTTP_HEADER_KEY_X_FILE_MODE) {
-                if let Ok(mode_str) = mode_str.to_str() {
-                    if let Ok(mode) = u32::from_str(mode_str) {
-                        let _ = fs::set_permissions(local_file, fs::Permissions::from_mode(mode));
-                    }
+            if let (Some(u), Some(g)) = (
+                headers.get(HTTP_HEADER_KEY_X_FILE_USER).and_then(|v| v.to_str().ok()),
+                headers.get(HTTP_HEADER_KEY_X_FILE_GROUP).and_then(|v| v.to_str().ok()),
+            ) {
+                let uid =
+                    UnixUser::from_name(u).ok().flatten().map(|x| x.uid).or_else(|| u.parse().ok().map(Uid::from_raw));
+
+                let gid =
+                    Group::from_name(g).ok().flatten().map(|x| x.gid).or_else(|| g.parse().ok().map(Gid::from_raw));
+
+                if let (Some(uid), Some(gid)) = (uid, gid) {
+                    chown(local_file, Some(uid), Some(gid)).map_err(|e| {
+                        AppMeshError::Other(format!("Failed to chown '{}': {}", local_file.display(), e))
+                    })?;
                 }
             }
 
-            // Set ownership if available
-            if let (Some(uid_str), Some(gid_str)) =
-                (headers.get(HTTP_HEADER_KEY_X_FILE_USER), headers.get(HTTP_HEADER_KEY_X_FILE_GROUP))
+            if let Some(mode) = headers
+                .get(HTTP_HEADER_KEY_X_FILE_MODE)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u32>().ok())
+                .filter(|m| *m <= 0o777)
             {
-                if let (Ok(uid_str), Ok(gid_str)) = (uid_str.to_str(), gid_str.to_str()) {
-                    if let (Ok(uid), Ok(gid)) = (uid_str.parse::<u32>(), gid_str.parse::<u32>()) {
-                        use std::os::unix::fs::chown;
-                        let _ = chown(local_file, Some(uid), Some(gid));
-                    }
-                }
+                fs::set_permissions(local_file, fs::Permissions::from_mode(mode))?;
             }
         }
+
+        Ok(())
     }
 
     /// Upload a file to remote server
@@ -951,22 +966,34 @@ impl AppMeshClient {
         Ok(())
     }
 
+    /// Get file attributes and populate headers with mode, user, and group.
+    /// Uses names instead of numeric IDs for cross-system portability.
     pub(crate) fn get_file_attributes(local_file: &Path, headers: &mut HashMap<String, String>) {
-        // Add file attributes on Unix systems
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
+            let m = match fs::metadata(local_file) {
+                Ok(m) => m,
+                Err(_) => return,
+            };
 
-            if let Ok(metadata) = fs::metadata(local_file) {
-                let permissions = metadata.permissions();
-                let mode = permissions.mode() & 0o777;
-                headers.insert(HTTP_HEADER_KEY_X_FILE_MODE.to_string(), mode.to_string());
+            headers.insert(HTTP_HEADER_KEY_X_FILE_MODE.into(), (m.permissions().mode() & 0o777).to_string());
 
-                // Get file ownership
-                use std::os::unix::fs::MetadataExt;
-                headers.insert(HTTP_HEADER_KEY_X_FILE_USER.to_string(), metadata.uid().to_string());
-                headers.insert(HTTP_HEADER_KEY_X_FILE_GROUP.to_string(), metadata.gid().to_string());
-            }
+            let uid = m.uid();
+            let gid = m.gid();
+
+            headers.insert(
+                HTTP_HEADER_KEY_X_FILE_USER.into(),
+                UnixUser::from_uid(Uid::from_raw(uid))
+                    .ok()
+                    .flatten()
+                    .map(|u| u.name)
+                    .unwrap_or_else(|| uid.to_string()),
+            );
+
+            headers.insert(
+                HTTP_HEADER_KEY_X_FILE_GROUP.into(),
+                Group::from_gid(Gid::from_raw(gid)).ok().flatten().map(|g| g.name).unwrap_or_else(|| gid.to_string()),
+            );
         }
     }
 }

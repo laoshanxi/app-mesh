@@ -1601,53 +1601,69 @@ namespace os
 	}
 
 	/**
-	 * @brief Get file mode, user ID, and group ID.
-	 * Cross-platform file stat information.
-	 *
-	 * @param path File path.
-	 * @return Tuple containing file mode (permissions), user ID, and group ID. Returns (-1, -1, -1) on failure.
+	 * @brief Get file status including mode, username, and groupname.
+	 * @return tuple<mode, username, groupname> or <-1, "", ""> on failure.
 	 */
-	std::tuple<int, int, int> fileStat(const std::string &path)
+	std::tuple<int, std::string, std::string> fileStat(const std::string &path)
 	{
 		const static char fname[] = "fileStat() ";
-
-#if defined(_WIN32)
+		// Provide a Windows-specific implementation and keep the existing
+		// Unix/Linux behavior for other platforms.
+	#if defined(_WIN32)
 		// Windows: Only return mode (limited support), no UID/GID
 		struct _stat fileStat{};
 		if (::_stat(path.c_str(), &fileStat) == 0)
 		{
 			// Windows mode bits are limited, but we can still read them
 			int permissionBits = fileStat.st_mode & 0777;
-			return std::make_tuple(permissionBits, -1, -1);
+			return std::make_tuple(permissionBits, "", "");
 		}
 		else
 		{
 			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << last_error_msg();
-			return std::make_tuple(-1, -1, -1);
+			return std::make_tuple(-1, "", "");
 		}
-#else
-		// Unix implementation
-		struct stat fileStat{};
-		if (::stat(path.c_str(), &fileStat) == 0)
+	#else
+		struct stat st;
+		if (stat(path.c_str(), &st) != 0)
 		{
-			// Extract permission bits using bitwise AND
-			int permissionBits = fileStat.st_mode & 0777;
-			return std::make_tuple(permissionBits, static_cast<int>(fileStat.st_uid), static_cast<int>(fileStat.st_gid));
+			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << last_error_msg();
+			return std::make_tuple(-1, "", "");
+		}
+
+		int mode = st.st_mode & 0777; // Permission bits only
+
+		std::string username;
+		std::string groupname;
+
+		// Get username by UID
+		if (struct passwd *pw = getpwuid(st.st_uid))
+		{
+			username = pw->pw_name;
 		}
 		else
 		{
-			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << last_error_msg();
-			return std::make_tuple(-1, -1, -1);
+			username = std::to_string(st.st_uid); // Fallback to numeric
 		}
-#endif
+
+		// Get groupname by GID
+		if (struct group *gr = getgrgid(st.st_gid))
+		{
+			groupname = gr->gr_name;
+		}
+		else
+		{
+			groupname = std::to_string(st.st_gid); // Fallback to numeric
+		}
+
+		return std::make_tuple(mode, username, groupname);
+	#endif
 	}
 
 	/**
-	 * @brief Change file permissions using a numeric mode value.
-	 * Cross-platform file permission modification.
-	 *
+	 * @brief Change file permissions using a numeric mode value (0-511 for 0o777).
 	 * @param path File path.
-	 * @param mode Permissions mode in octal (e.g., 0755).
+	 * @param mode Permissions mode as decimal value (e.g., 493 for 0o755).
 	 * @return True if successful, false otherwise.
 	 */
 	bool fileChmod(const std::string &path, uint16_t mode)
