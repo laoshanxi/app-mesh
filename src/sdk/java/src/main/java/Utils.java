@@ -10,13 +10,18 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.GroupPrincipal;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.nio.file.attribute.UserPrincipal;
+import java.nio.file.attribute.UserPrincipalLookupService;
+import java.nio.file.attribute.UserPrincipalNotFoundException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -48,7 +53,6 @@ import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
 import org.bouncycastle.openssl.jcajce.JcePEMDecryptorProviderBuilder;
 import org.threeten.extra.PeriodDuration;
-
 
 public class Utils {
     private static final Logger LOGGER = Logger.getLogger(Utils.class.getName());
@@ -279,72 +283,110 @@ public class Utils {
 
     public static Map<String, String> getFileAttributes(File file) {
         Map<String, String> attributes = new HashMap<>();
-        try {
-            Path path = file.toPath();
 
-            // Get file mode
+        Path path = file.toPath();
+
+        // Check if we're on a POSIX system
+        if (!FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            LOGGER.log(Level.FINE, "POSIX file attributes not supported on this system");
+            return attributes;
+        }
+
+        try {
             PosixFileAttributeView posixView = Files.getFileAttributeView(path, PosixFileAttributeView.class);
             if (posixView != null) {
                 PosixFileAttributes attrs = posixView.readAttributes();
+
+                // File mode
                 Set<PosixFilePermission> perms = attrs.permissions();
                 int mode = posixPermissionsToMode(perms);
                 attributes.put("X-File-Mode", String.valueOf(mode));
-            }
 
-            // Get numeric UID/GID using unix: attributes
-            try {
-                Integer uid = (Integer) Files.getAttribute(path, "unix:uid");
-                Integer gid = (Integer) Files.getAttribute(path, "unix:gid");
-                attributes.put("X-File-User", String.valueOf(uid));
-                attributes.put("X-File-Group", String.valueOf(gid));
-            } catch (UnsupportedOperationException | IllegalArgumentException e) {
-                LOGGER.log(Level.FINE, "unix:uid/gid not supported, skipping ownership attributes");
-            }
+                // Owner and group by NAME (more portable across systems)
+                UserPrincipal owner = attrs.owner();
+                GroupPrincipal group = attrs.group();
 
-        } catch (UnsupportedOperationException e) {
-            LOGGER.log(Level.FINE, "POSIX file attributes not supported");
+                if (owner != null) {
+                    attributes.put("X-File-User", owner.getName());
+                }
+                if (group != null) {
+                    attributes.put("X-File-Group", group.getName());
+                }
+            }
         } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "Error reading file attributes", e);
+            LOGGER.log(Level.WARNING, "Error reading file attributes for: " + file.getPath(), e);
         }
         return attributes;
     }
 
-    public static void applyFileAttributes(String localFile, HttpURLConnection conn) {
+    public static void applyFileAttributes(String localFile, java.net.HttpURLConnection conn) {
         Path path = Paths.get(localFile);
 
-        try {
-            // ----- File mode -----
-            String fileModeStr = conn.getHeaderField("X-File-Mode");
-            if (fileModeStr != null) {
+        if (!Files.exists(path)) {
+            LOGGER.log(Level.WARNING, "File does not exist: " + localFile);
+            return;
+        }
+
+        // Check if we're on a POSIX system
+        if (!FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            LOGGER.log(Level.FINE, "POSIX file attributes not supported on this system");
+            return;
+        }
+
+        // ----- Owner / Group by NAME - Apply FIRST (chown clears setuid/setgid) -----
+        String userStr = conn.getHeaderField("X-File-User");
+        String groupStr = conn.getHeaderField("X-File-Group");
+
+        if (userStr != null && !userStr.isEmpty() && groupStr != null && !groupStr.isEmpty()) {
+            try {
+                UserPrincipalLookupService lookupService = FileSystems.getDefault().getUserPrincipalLookupService();
+
+                UserPrincipal owner = null;
+                GroupPrincipal group = null;
+
                 try {
-                    int mode = Integer.parseInt(fileModeStr);
-                    Set<PosixFilePermission> perms = PosixFilePermissions.fromString(Utils.toPermissionString(mode));
+                    owner = lookupService.lookupPrincipalByName(userStr.trim());
+                } catch (UserPrincipalNotFoundException e) {
+                    LOGGER.log(Level.FINE, "User not found by name, ownership not changed: " + userStr);
+                }
+
+                try {
+                    group = lookupService.lookupPrincipalByGroupName(groupStr.trim());
+                } catch (UserPrincipalNotFoundException e) {
+                    LOGGER.log(Level.FINE, "Group not found by name, group not changed: " + groupStr);
+                }
+
+                PosixFileAttributeView posixView = Files.getFileAttributeView(path, PosixFileAttributeView.class);
+                if (posixView != null) {
+                    if (owner != null) {
+                        posixView.setOwner(owner);
+                    }
+                    if (group != null) {
+                        posixView.setGroup(group);
+                    }
+                }
+            } catch (IOException e) {
+                LOGGER.log(Level.WARNING, "Failed to apply file ownership: " + userStr + "/" + groupStr, e);
+            }
+        }
+
+        // ----- File mode - Apply AFTER chown to preserve all permission bits -----
+        String fileModeStr = conn.getHeaderField("X-File-Mode");
+        if (fileModeStr != null && !fileModeStr.isEmpty()) {
+            try {
+                int mode = Integer.parseInt(fileModeStr.trim());
+                // Validate mode range (0-511 in decimal, which is 0-0777 in octal)
+                if (mode < 0 || mode > 511) {
+                    LOGGER.log(Level.WARNING, "File mode out of valid range (0-511): " + mode);
+                } else {
+                    Set<PosixFilePermission> perms = PosixFilePermissions.fromString(toPermissionString(mode));
                     Files.setPosixFilePermissions(path, perms);
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Failed to apply file mode: " + fileModeStr, e);
                 }
+            } catch (NumberFormatException e) {
+                LOGGER.log(Level.WARNING, "Invalid file mode format: " + fileModeStr, e);
+            } catch (IOException e) {
+                LOGGER.log(Level.WARNING, "Failed to apply file mode: " + fileModeStr, e);
             }
-
-            // ----- UID / GID -----
-            String uidStr = conn.getHeaderField("X-File-User");
-            String gidStr = conn.getHeaderField("X-File-Group");
-
-            if (uidStr != null && gidStr != null) {
-                try {
-                    int uid = Integer.parseInt(uidStr);
-                    int gid = Integer.parseInt(gidStr);
-
-                    // These attributes exist on Unix systems only
-                    Files.setAttribute(path, "unix:uid", uid);
-                    Files.setAttribute(path, "unix:gid", gid);
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Failed to apply file uid/gid: " + uidStr + "/" + gidStr, e);
-                }
-            }
-
-        } catch (Exception e) {
-            // Best-effort, never fail the transfer
-            LOGGER.log(Level.WARNING, "Warning: Failed to apply file attributes", e);
         }
     }
 
