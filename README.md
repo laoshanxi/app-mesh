@@ -7,10 +7,49 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh/badge)](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh)
 [![release.badge]][release.url] [![pypi.badge]][pypi.url] [![npm.badge]][npm.url] [![cargo.badge]][cargo.url]
 
-# App Mesh: Advanced Application Management Platform
+# Advanced Application Management Platform
 
-<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/whatis.gif" align=center /></div>
-App Mesh is an open-source, multi-tenant application management platform designed for cloud-native environments. It efficiently manages, schedules, and monitors both microservices and traditional applications, offering a lightweight alternative to Kubernetes. App Mesh bridges the gap between simple process managers and complex container orchestration systems, making it ideal for organizations seeking to modernize their infrastructure without adopting full container-native complexity. Supporting both containerized and native applications, it provides a versatile solution for diverse enterprise needs.
+App Mesh is a secure platform for running, managing, and interacting with applications as managed services.
+
+## 1. Application Management
+
+Manages applications similarly to systemd services or Docker-managed processes with more advanced features:
+
+```shell
+# List registered applications
+$ appc ls
+ID  NAME    OWNER  STATUS    HEALTH  PID  USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
+1   pyexec  mesh   disabled  -       -    -     -         -     -       37s  -         0       "python3 ../../bin/py_exec.py"
+2   ping    mesh   enabled   OK      747  root  5.9 MiB   0     -       37s  37s       1       "ping cloudflare.com"
+3   pytask  mesh   enabled   OK      748  root  29.7 MiB  0     -       37s  37s       1       "python3 ../../bin/py_task.py"
+# Add app
+$ appc add -a myapp -c "ping www.baidu.com"
+# View app
+$ appc ls -a myapp -o
+PING www.baidu.com (183.2.172.17) 56(84) bytes of data.
+64 bytes from 183.2.172.17 (183.2.172.17): icmp_seq=1 ttl=52 time=34.9 ms
+64 bytes from 183.2.172.17 (183.2.172.17): icmp_seq=2 ttl=52 time=35.1 ms
+64 bytes from 183.2.172.17 (183.2.172.17): icmp_seq=3 ttl=52 time=35.3 ms
+# appc -h for more usage
+```
+
+## 2. Sending Tasks to a Running Application
+
+Interacting with your app instance, send data to your app and recieve response via SDK:
+
+```python
+from appmesh import AppMeshClient
+client = AppMeshClient()
+client.login("USER-NAME", "USER-PWD")
+
+result_from_server = "0"
+for i in range(10):
+    task_data = f"print({result_from_server} + {i}, end='')"
+    result_from_server = client.run_task(app_name="pytask", data=task_data)
+    print(result_from_server)
+```
+
+App Mesh is a multi-tenant application management platform designed for cloud-native environments. It efficiently manages, schedules, and monitors both microservices and traditional applications, offering a lightweight alternative to Kubernetes. App Mesh bridges the gap between simple process managers and complex container orchestration systems, making it ideal for organizations seeking to modernize their infrastructure without adopting full container-native complexity. Supporting both containerized and native applications, it provides a versatile solution for diverse enterprise needs.
 
 ## Features
 
