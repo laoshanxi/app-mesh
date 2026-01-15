@@ -65,7 +65,7 @@ const HostResource &ResourceCollection::getHostResource()
 #if !defined(_WIN32)
 	if (isDocker)
 	{
-		static auto cpus = LinuxCgroup(0, 0, 100).readHostCpuSet();
+		static auto cpus = LinuxCgroup::create(0, 0, 100)->readHostCpuCount();
 		m_resources.m_cores = m_resources.m_sockets = m_resources.m_processors = cpus;
 	}
 #endif
@@ -93,16 +93,16 @@ const HostResource &ResourceCollection::getHostResource()
 	// Memory
 	if (isDocker)
 	{
-		static LinuxCgroup cgroup(0, 0, 100);
-		static auto limit_in_bytes = cgroup.readHostMemValue("memory.limit_in_bytes");
+		static auto cgroup = LinuxCgroup::create(0, 0, 100);
+		static auto limit_in_bytes = cgroup->readHostMemoryValue("memory.limit_in_bytes");
 		m_resources.m_total_bytes = limit_in_bytes;
-		m_resources.m_free_bytes = m_resources.m_total_bytes - cgroup.readHostMemValue("memory.usage_in_bytes");
+		m_resources.m_free_bytes = m_resources.m_total_bytes - cgroup->readHostMemoryValue("memory.usage_in_bytes");
 
-		if (cgroup.swapSupport())
+		if (cgroup->isSwapLimitSupported())
 		{
-			static auto memsw_limit_in_bytes = cgroup.readHostMemValue("memory.memsw.limit_in_bytes");
+			static auto memsw_limit_in_bytes = cgroup->readHostMemoryValue("memory.memsw.limit_in_bytes");
 			m_resources.m_totalSwap_bytes = memsw_limit_in_bytes;
-			m_resources.m_freeSwap_bytes = m_resources.m_totalSwap_bytes - cgroup.readHostMemValue("memory.memsw.usage_in_bytes");
+			m_resources.m_freeSwap_bytes = m_resources.m_totalSwap_bytes - cgroup->readHostMemoryValue("memory.memsw.usage_in_bytes");
 		}
 	}
 	if (m_resources.m_total_bytes <= 0 || m_resources.m_total_bytes >= 9223372036854771712L)
@@ -200,7 +200,7 @@ nlohmann::json ResourceCollection::AsJson()
 	auto mountPoints = os::getMountPoints();
 	auto fsArr = nlohmann::json::array();
 	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr](const std::pair<std::string, std::string> &pair)
-	{
+				  {
 		auto usage = os::df(pair.first);
 		if (usage != nullptr)
 		{
@@ -211,8 +211,7 @@ nlohmann::json ResourceCollection::AsJson()
 			fs["device"] = Utility::localEncodingToUtf8(pair.second);
 			fs["mount_point"] = std::string(pair.first);
 			fsArr.push_back(fs);
-		}
-	});
+		} });
 
 	result[("fs")] = std::move(fsArr);
 	result[("systime")] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));

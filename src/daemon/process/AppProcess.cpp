@@ -240,11 +240,11 @@ void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
 	// Reference: https://blog.csdn.net/u011547375/article/details/9851455
 	if (limit)
 	{
-		m_cgroup = std::make_unique<LinuxCgroup>(
-			limit->m_memoryMb,
-			limit->m_memoryVirtMb - limit->m_memoryMb,
-			limit->m_cpuShares);
-		m_cgroup->setCgroup(limit->m_name, getpid(), ++(limit->m_index));
+		auto mbToBytes = [](long long mb) -> long long
+		{ return mb > 0 ? mb * 1024LL * 1024LL : 0; };
+
+		m_cgroup = LinuxCgroup::create(mbToBytes(limit->m_memoryMb), mbToBytes(limit->m_memoryVirtMb - limit->m_memoryMb), limit->m_cpuShares);
+		m_cgroup->applyLimits(limit->m_name, getpid(), ++(limit->m_index));
 	}
 }
 

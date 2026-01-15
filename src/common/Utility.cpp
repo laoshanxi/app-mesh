@@ -282,18 +282,26 @@ bool Utility::createDirectory(const std::string &path, fs::perms perms)
 bool Utility::createRecursiveDirectory(const std::string &path, fs::perms perms)
 {
 	const static char fname[] = "Utility::createRecursiveDirectory() ";
-
-	if (!isDirExist(path))
+	try
 	{
-		const fs::path directoryPath = fs::path(path);
-		if (!fs::create_directories(directoryPath))
+		if (fs::exists(path))
+			return true;
+
+		// This is where the crash happens
+		if (fs::create_directories(path))
 		{
-			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << last_error_msg();
-			return false;
+			// Set permissions (ignoring errors if we don't own the file)
+			boost::system::error_code ec;
+			fs::permissions(path, perms, ec);
+			return true;
 		}
-		fs::permissions(directoryPath, perms);
 	}
-	return true;
+	catch (const std::exception &e)
+	{
+		// VITAL: Catch the permission error so the app survives
+		LOG_WAR << fname << "Cannot create directory " << path << ". Container might be Read-Only. Error: " << e.what();
+	}
+	return false;
 }
 
 bool Utility::removeDir(const std::string &path)
