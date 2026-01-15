@@ -268,7 +268,8 @@ int CommandDispatcher::cmdLogin()
 	po::options_description authenticate("Authentication Options", BOOST_DESC_WIDTH);
 	authenticate.add_options()
 	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Session duration in seconds or ISO 8601 format [default: PT7D]")
-	(AUDIENCE_ARGS, po::value<std::string>()->default_value(HTTP_HEADER_JWT_Audience_appmesh), "JWT Audience [default: 'appmesh-service']");
+	(AUDIENCE_ARGS, po::value<std::string>()->default_value(HTTP_HEADER_JWT_Audience_appmesh), "JWT Audience [default: 'appmesh-service']")
+	(SHOWTOKEN_ARGS, "Show the authentication token");
 	OTHER_OPTIONS;
 	desc.add(connection).add(authenticate).add(other);
 	shiftCommandLineArgs(desc);
@@ -324,6 +325,11 @@ int CommandDispatcher::cmdLogin()
 		} while (true);
 	}
 	persistUserConfig(Uri::parse(m_currentUrl).host);
+
+	if (m_commandLineVariables.count(SHOWTOKEN) > 0)
+	{
+		std::cout << getAuthToken() << std::endl;
+	}
 	return 0;
 }
 
@@ -346,12 +352,19 @@ int CommandDispatcher::cmdLoginUserInfo()
 {
 	po::options_description desc("Print current login user \nUsage: appc loginfo [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
+	po::options_description user("User Options", BOOST_DESC_WIDTH);
+	user.add_options()
+	(SHOWTOKEN_ARGS, "Show the authentication token for the current session");
 	OTHER_OPTIONS;
-	desc.add(connection).add(other);
+	desc.add(connection).add(user).add(other);
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::cout << getLoginUser() << std::endl;
+	std::cout << "User: " << getLoginUser() << std::endl;
+	if (m_commandLineVariables.count(SHOWTOKEN) > 0)
+	{
+		std::cout << "Token: " << getAuthToken() << std::endl;
+	}
 	return 0;
 }
 

@@ -14,6 +14,8 @@
 #define USERNAME_ARGS "user,U"
 #define PASSWORD "password"
 #define PASSWORD_ARGS "password,X"
+#define SHOWTOKEN "show-token"
+#define SHOWTOKEN_ARGS "show-token"
 
 #define VERBOSE "verbose"
 #define VERBOSE_ARGS "verbose,v"
