@@ -134,6 +134,7 @@ jobs:
           echo "6. TCP protocol forwarding" >> CHANGELOG.txt
           echo "7. Async none-blocking IO" >> CHANGELOG.txt
           echo "8. Standard GNU installation dirs" >> CHANGELOG.txt
+          echo "9. cgroup V2 support" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency
