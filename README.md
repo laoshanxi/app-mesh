@@ -9,11 +9,13 @@
 
 # Advanced Application Management Platform
 
-App Mesh is a secure platform for running, managing, and interacting with applications as managed services.
+App Mesh is a secure platform for executing and managing user-defined process behaviors as managed services, providing control and integration via CLI and RESTful APIs.
+
+App Mesh = systemd + scheduler + remote exec + API
 
 ## 1. Application Management
 
-Manages applications similarly to systemd services or Docker-managed processes with more advanced features:
+Manages user-defined processes in a way similar to systemd services or Docker-managed processes, while providing more advanced capabilities for control, security, and integration.
 
 ```shell
 # List registered applications
@@ -33,9 +35,11 @@ PING www.baidu.com (183.2.172.17) 56(84) bytes of data.
 # appc -h for more usage
 ```
 
+Supports not only long-running services, but also scheduled and policy-driven executions, with remote control and execution status tracking.
+
 ## 2. Sending Tasks to a Running Application
 
-Interacting with your app instance, send data to your app and recieve response via SDK:
+Interact with a running application by sending tasks or data to it and receiving responses through the SDK.
 
 ```python
 from appmesh import AppMeshClient
@@ -49,20 +53,18 @@ for i in range(10):
     print(result_from_server)
 ```
 
-App Mesh is a multi-tenant application management platform designed for cloud-native environments. It efficiently manages, schedules, and monitors both microservices and traditional applications, offering a lightweight alternative to Kubernetes. App Mesh bridges the gap between simple process managers and complex container orchestration systems, making it ideal for organizations seeking to modernize their infrastructure without adopting full container-native complexity. Supporting both containerized and native applications, it provides a versatile solution for diverse enterprise needs.
-
 ## Features
 
 Feature | Description
 ---|---
-Application management <br> (Advanced systemd) | 🧩 <b>Application Management (CURD) with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained Application Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
+App Management  | 🧩 <b>App CURD with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained  Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
 Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
-Security |  🔐 Authentication: [OAuth](src/sdk/python/test/test_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html), YAML-based storage (local file or Consul for clustering) <br> 🔐 Authorization: [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html), [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html), multi-tenant isolation <br> 🔐 Protection: SSL/TLS for `TCP`/`HTTP`/`WebSocket`, CSRF tokens, HMAC with PSK for non-token verification
-Cloud Native | Schedule cloud-level applications to run on multiple hosts with resource size requests. <br> 🌩️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
-Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
-Platform support | X86_64, ARM32, ARM64
+Security |  🔐 Authentication: [OAuth](src/sdk/python/test/test_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html), YAML-based storage (local or Consul for clustering) <br> 🔐 Authorization: [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html), [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html), multi-tenant isolation <br> 🔐 Protection: SSL/TLS for `TCP`/`HTTP`/`WebSocket`, CSRF tokens, HMAC with PSK for non-token verification
+Cloud Native | 🌩️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
+Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download API <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Request Forwarding <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
+Platform support | X86, ARM
 SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp) <br> [Rust](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/rust) <br> [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) <br> [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/client_http.go) <br> [JavaScript](https://www.npmjs.com/package/appmesh) <br> [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) <br> [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
-Echosystem | [Model Context Protocol (MCP)](src/sdk/mcp) <br> [IoT MQTT](src/sdk/mqtt)
+Echosystem | LLM: [Model Context Protocol (MCP)](src/sdk/mcp) <br> IoT: [MQTT](src/sdk/mqtt)
 
 ## Getting started
 
@@ -95,20 +97,6 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 | Health check             | √        |                                       |
 | Authentication           | √        | √                                     |
 | Multi-tenant             | √        |                                       | √                                |
-
-### Cluster mode
-
-| Feature           | App Mesh | Kubernetes |
-| ----------------- | -------- | ---------- |
-| Easy deploy       | √        |
-| Non-container app | √        |
-| Service expose    | √        | √          |
-| Scheduler         | √        | √          |
-| Definition file   | YAML     | YAML       |
-| GUI               | √        | √          |
-| Virtual Network   |          | √          |
-| Monitor tools     | √        | √          |
-| [Remote task](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)   | √        |            |
 
 ---
 
