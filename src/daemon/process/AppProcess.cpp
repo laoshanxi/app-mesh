@@ -104,6 +104,8 @@ int AppProcess::returnValue() const
 
 void AppProcess::onExit(int exitCode)
 {
+	const static char fname[] = "AppProcess::onExit() ";
+
 	// Update PID and exit code
 	m_pid.store(ACE_INVALID_PID);
 	m_returnValue.store(exitCode);
@@ -111,12 +113,18 @@ void AppProcess::onExit(int exitCode)
 	// Clean OS resources
 	cleanResource();
 
-	// Notify App exit
+	// Notify App exit event asynchronously
+	registerTimer(0, 0, std::bind(&AppProcess::onTimerAppExit, this, exitCode), fname);
+}
+
+bool AppProcess::onTimerAppExit(int exitCode)
+{
 	if (auto owner = m_owner.lock())
 	{
 		// Update application with exit information
 		owner->onExitUpdate(exitCode);
 	}
+	return false;
 }
 
 bool AppProcess::running() const

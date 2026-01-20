@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 
 ################################################################################
-## RPM/DEB post installation script file, executed during installation
+## RPM/DEB/PKG Post-installation script
+## Handles: Native Relocation (MacOS/RPM) and Manual Relocation (DEB)
 ################################################################################
 
 set -u # Exit on undefined variables
 
-readonly DEFAULT_INSTALL_PATH="/opt/appmesh"
-readonly FORBIDDEN_PATHS=("/bin" "/sbin" "/etc" "/lib" "/lib32" "/lib64" "/usr" "/var" "/boot" "/root" "/media" "/tmp" "/proc" "/sys" "/dev" "/System" "/Library" "/Applications" "/Volumes" "/Network" "/lost+found")
-declare TARGET_INSTALL_PATH="$DEFAULT_INSTALL_PATH"
+# The fixed path where the package payload was originally built to go
+readonly BUILT_IN_PREFIX="/opt/appmesh"
+
+# Default target is the built-in prefix, unless detected otherwise
+declare TARGET_INSTALL_PATH="$BUILT_IN_PREFIX"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 info() { log "INFO $@"; }
-error() { log "ERROR $@"; }
-die() { error "$@" && exit 1; }
+die() { log "ERROR $@" && exit 1; }
 
-# Detect operating system
 detect_os() {
     case "$(uname -s)" in
     Darwin*) echo "macos" ;;
@@ -30,16 +31,15 @@ get_realpath() {
     if command -v realpath >/dev/null 2>&1; then
         realpath "$path" 2>/dev/null || echo "$path"
     elif command -v readlink >/dev/null 2>&1; then
-        # Try GNU readlink first, then BSD readlink
-        if readlink -f "$path" 2>/dev/null; then
-            readlink -f "$path"
-        elif [[ "$(detect_os)" == "macos" ]]; then
-            python -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$path" 2>/dev/null || echo "$path"
+        local resolved
+        resolved=$(readlink -f "$path" 2>/dev/null) && echo "$resolved" && return
+        # Fallback for macOS
+        if [[ "$(detect_os)" == "macos" ]]; then
+            python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$path" 2>/dev/null || echo "$path"
         else
             echo "$path"
         fi
     else
-        # Fallback: basic path resolution
         if [[ "$path" == /* ]]; then
             echo "$path"
         else
@@ -48,138 +48,148 @@ get_realpath() {
     fi
 }
 
-is_valid_path() {
-    # Resolve the real path
-    local path=$(get_realpath "$1")
+# 1. Detect where the user/installer WANTS the files
+determine_target_path() {
+    local os_type
+    os_type=$(detect_os)
 
-    # Ensure path is directory
-    if [[ ! -d "$path" ]]; then
-        return 1
+    # PRIORITY 1: MacOS Native Installer Destination
+    # The macOS installer passes the destination path as the $2 argument to this script
+    if [[ "$os_type" == "macos" ]] && [[ -n "${2:-}" ]]; then
+        TARGET_INSTALL_PATH="$2"
+        info "MacOS Installer requested install to: $TARGET_INSTALL_PATH"
+        return
     fi
 
-    # Root path check
-    if [[ "$path" == "/" ]]; then
-        return 1
+    # PRIORITY 2: RPM Native Relocation
+    # RPM sets RPM_INSTALL_PREFIX environment variable if --prefix or --relocate is used
+    if [[ -n "${RPM_INSTALL_PREFIX:-}" ]]; then
+        TARGET_INSTALL_PATH="$RPM_INSTALL_PREFIX"
+        info "RPM Relocation detected at: $TARGET_INSTALL_PATH"
+        return
     fi
 
-    for forbidden in "${FORBIDDEN_PATHS[@]}"; do
-        if [[ "$path" == "$forbidden" || "$path" == "$forbidden/"* ]]; then
-            return 1
+    # PRIORITY 3: Manual Environment Variable (User Override)
+    # Useful for DEB packages or manual script runs
+    if [[ -n "${PROMPT_INSTALL_PATH:-}" ]] && [[ "$PROMPT_INSTALL_PATH" != "1" ]]; then
+        TARGET_INSTALL_PATH="$PROMPT_INSTALL_PATH"
+        info "Environment variable requested install to: $TARGET_INSTALL_PATH"
+        return
+    fi
+
+    # PRIORITY 4: Interactive Prompt (Only if explicitly enabled)
+    if [[ "${PROMPT_INSTALL_PATH:-}" == "1" ]]; then
+        read -r -p "Enter installation path [${BUILT_IN_PREFIX}]: " USER_INPUT
+        TARGET_INSTALL_PATH="${USER_INPUT:-$BUILT_IN_PREFIX}"
+    fi
+}
+
+# 2. Handle the files (Move if necessary, or just verify)
+finalize_files() {
+    local os_type
+    os_type=$(detect_os)
+
+    # Normalize paths (remove trailing slashes)
+    TARGET_INSTALL_PATH="${TARGET_INSTALL_PATH%/}"
+    local built_in_normalized="${BUILT_IN_PREFIX%/}"
+
+    # Resolve to absolute path
+    TARGET_INSTALL_PATH=$(get_realpath "$TARGET_INSTALL_PATH")
+
+    # Only append /appmesh if files don't exist at the target and we're doing manual relocation
+    # Native relocation (RPM/MacOS) installs directly to the target path
+    if [[ "$(basename "$TARGET_INSTALL_PATH")" != "appmesh" ]] && [[ ! -d "$TARGET_INSTALL_PATH/bin" ]]; then
+        TARGET_INSTALL_PATH="$TARGET_INSTALL_PATH/appmesh"
+    fi
+
+    info "Finalizing installation at: $TARGET_INSTALL_PATH"
+
+    # If target == built-in, nothing to relocate
+    if [[ "$TARGET_INSTALL_PATH" == "$built_in_normalized" ]]; then
+        info "Installing to default location, no relocation needed."
+        return
+    fi
+
+    # CASE A: Native Relocation Happened (RPM/MacOS)
+    # The files are ALREADY at $TARGET_INSTALL_PATH because the installer put them there.
+    if [[ -d "$TARGET_INSTALL_PATH/bin" ]]; then
+        info "Files found at target. Native relocation successful."
+        # Clean up built-in path if it exists and is different
+        if [[ -d "$built_in_normalized" ]] && [[ "$TARGET_INSTALL_PATH" != "$built_in_normalized" ]]; then
+            info "Cleaning up original path: $built_in_normalized"
+            rm -rf "$built_in_normalized"
         fi
-    done
 
-    return 0
-}
-
-validate_install_path() {
-    local install_path=$(get_realpath "$1")
-
-    # Empty path check
-    if [[ -z "$install_path" ]]; then
-        die "Installation path cannot be empty"
-    fi
-
-    # Forbidden path check
-    if ! is_valid_path "$install_path"; then
-        die "Installation to $install_path is not allowed. Please choose a different path"
-    fi
-
-    # Writable path check
-    local parent_dir=$(dirname "$install_path")
-    if [[ ! -d "$parent_dir" ]]; then
-        info "Parent directory $parent_dir does not exist, will try to create it"
-    elif [[ ! -w "$parent_dir" ]]; then
-        die "Directory $parent_dir is not writable"
-    fi
-}
-
-process_installation_path() {
-    if [[ -n "${PROMPT_INSTALL_PATH:-}" ]]; then
-        if [[ "$PROMPT_INSTALL_PATH" == "1" ]]; then
-            # Interactive prompt for custom installation directory
-            read -r -p "Enter installation path [${DEFAULT_INSTALL_PATH}]: " USER_INPUT_PATH
-            TARGET_INSTALL_PATH="${USER_INPUT_PATH:-$DEFAULT_INSTALL_PATH}"
-        else
-            # Use the provided value as the installation directory
-            TARGET_INSTALL_PATH="$PROMPT_INSTALL_PATH"
-        fi
-    fi
-
-    TARGET_INSTALL_PATH="$(get_realpath "$TARGET_INSTALL_PATH")"
-    validate_install_path "$TARGET_INSTALL_PATH"
-}
-
-setup_installation() {
-    local source_path=$(get_realpath "$DEFAULT_INSTALL_PATH")
-    local target_path="$TARGET_INSTALL_PATH"
-    local os_type=$(detect_os)
-
-    # Ensure target path ends with "appmesh"
-    [[ "$(basename "$target_path")" != "appmesh" ]] && target_path="$target_path/appmesh"
-
-    # Create target directory
-    mkdir -p "$target_path" || die "Failed to create directory: $target_path"
-    info "Installing to: $target_path"
-
-    # Copy files if paths differ
-    if [[ "$source_path" != "$target_path" ]]; then
-        info "Moving files from $source_path to $target_path"
-
-        # Use appropriate copy command based on OS
+    # CASE B: Manual Relocation Needed (DEB or Custom Move)
+    # The files are at $BUILT_IN_PREFIX, but user wants them at $TARGET_INSTALL_PATH.
+    elif [[ -d "$built_in_normalized/bin" ]]; then
+        info "Moving files from $built_in_normalized to $TARGET_INSTALL_PATH"
+        
+        # Create target directory
+        mkdir -p "$TARGET_INSTALL_PATH" || die "Failed to create directory: $TARGET_INSTALL_PATH"
+        
+        # Copy files then remove source (safer than mv for cross-filesystem)
         if [[ "$os_type" == "macos" ]]; then
-            cp -R "$source_path"/* "$target_path"/ || die "Failed to copy files from $source_path to $target_path"
+            cp -R "$built_in_normalized"/* "$TARGET_INSTALL_PATH"/ || die "Failed to copy files"
         else
-            cp -rf "$source_path"/* "$target_path"/ || die "Failed to copy files from $source_path to $target_path"
+            cp -rf "$built_in_normalized"/* "$TARGET_INSTALL_PATH"/ || die "Failed to copy files"
         fi
-
-        rm -rf "$source_path"
-
-        # Update service file: macOS use launchd.plist，Linux use systemd.service
-        if [[ "$os_type" == "macos" ]]; then
-            local service_file="$target_path/script/appmesh.launchd.plist"
-            sed -i '' "s|/opt/appmesh|$target_path|g" "$service_file" || die "Failed to update service file: $service_file"
-        else
-            local service_file="$target_path/script/appmesh.systemd.service"
-            sed -i "s|/opt/appmesh|$target_path|g" "$service_file" || die "Failed to update service file: $service_file"
-        fi
-    fi
-
-    # Set appropriate permissions
-    if [[ "$os_type" == "macos" ]]; then
-        # macOS specific permission handling
-        chmod -R 755 "$target_path" 2>/dev/null || true
-    fi
-}
-
-run_setup_script() {
-    local setup_script="$TARGET_INSTALL_PATH/script/setup.sh"
-    info "Executing setup script: $setup_script"
-    if [ -x /usr/bin/bash ]; then
-        /usr/bin/bash "$setup_script"
-    elif [ -x /bin/bash ]; then
-        /bin/bash "$setup_script"
+        rm -rf "$built_in_normalized"
     else
-        bash "$setup_script"
+        die "Cannot find installation files at $TARGET_INSTALL_PATH or $built_in_normalized"
+    fi
+
+    # Update Service Files with the REAL path
+    update_service_paths "$TARGET_INSTALL_PATH"
+}
+
+update_service_paths() {
+    local install_path="$1"
+    local os_type
+    os_type=$(detect_os)
+
+    info "Updating service configuration paths..."
+
+    if [[ "$os_type" == "macos" ]]; then
+        local plist="$install_path/script/appmesh.launchd.plist"
+        if [[ -f "$plist" ]]; then
+            info "Patching macOS plist: $plist"
+            # Use | as delimiter to avoid escaping issues with paths
+            sed -i '' "s|/opt/appmesh|$install_path|g" "$plist" || die "Failed to update plist: $plist"
+        fi
+    else
+        local service="$install_path/script/appmesh.systemd.service"
+        if [[ -f "$service" ]]; then
+            info "Patching systemd service: $service"
+            # Use | as delimiter to avoid escaping issues with paths
+            sed -i "s|/opt/appmesh|$install_path|g" "$service" || die "Failed to update service: $service"
+        fi
     fi
 }
 
-################################################################################
-# Main Function
-################################################################################
+run_setup() {
+    local setup_script="$TARGET_INSTALL_PATH/script/setup.sh"
+    if [[ -f "$setup_script" ]]; then
+        info "Executing setup script: $setup_script"
+        if [[ -x /usr/bin/bash ]]; then
+            /usr/bin/bash "$setup_script"
+        elif [[ -x /bin/bash ]]; then
+            /bin/bash "$setup_script"
+        else
+            bash "$setup_script"
+        fi
+    else
+        info "Setup script not found at $setup_script, skipping."
+    fi
+}
+
 main() {
     info "Starting post installation"
-
-    # Read and validate installation path
-    process_installation_path
-
-    # Install to target path
-    setup_installation
-
-    # Run setup.sh
-    run_setup_script
-
-    info "Post installation completed"
+    determine_target_path "$@"
+    finalize_files
+    run_setup
+    info "Post-install complete."
 }
 
 # Execute main function
-main
+main "$@"

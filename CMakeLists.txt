@@ -74,6 +74,7 @@ include(cmake/DetectCPU.cmake)
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 add_compile_options(-Wall)
 

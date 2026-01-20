@@ -75,6 +75,9 @@ public:
 	// Set process exit code and trigger cleanup
 	virtual void onExit(int exitCode);
 
+	// Timer callback for application exit event
+	bool onTimerAppExit(int exitCode);
+
 	// Check if process is running
 	bool running() const;
 	static bool running(pid_t pid);

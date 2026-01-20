@@ -76,44 +76,63 @@ int SocketServer::open(void *acceptor_or_connector)
         LOG_WAR << "SocketServer::onError() | ClientID=" << id << " | Error occurred: " << msg;
     });
 
+    this->onClose([id = m_id]()
+    {
+        streams.unbind(id);
+        LOG_DBG << "SocketServer::onClose() | ClientID=" << id;
+    });
+
     // Proceed with base class opening (registers with reactor).
-    return SocketStream::open(acceptor_or_connector);
+    int result = SocketStream::open(acceptor_or_connector);
+    if (result == -1)
+    {
+        streams.unbind(m_id);
+    }
+    return result;
+}
+
+SocketStreamPtr SocketServer::findClient(int clientId)
+{
+    const static char fname[] = "SocketServer::findClient() ";
+
+    SocketServer *client = nullptr;
+    ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, streams.mutex(), SocketStreamPtr());
+    if (streams.find(clientId, client) == 0 && client != nullptr)
+    {
+        return SocketStreamPtr(client);
+    }
+    LOG_WAR << fname << "Target client not found | ClientID=" << clientId;
+    return SocketStreamPtr();
 }
 
 bool SocketServer::replyTcp(int clientId, std::unique_ptr<Response> &&resp)
 {
     const static char fname[] = "SocketServer::replyTcp() ";
 
-    ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, streams.mutex(), false);
-
-    SocketServer *client = nullptr;
-    if (streams.find(clientId, client) == 0 && client)
+    auto clientGuard = findClient(clientId);
+    if (clientGuard.stream() == nullptr)
     {
-        LOG_DBG << fname << "Sending response to client | ClientID=" << clientId;
-        client->checkForUploadFileRequest(resp);   // pre set upload before response
-        auto rt = client->send(resp->serialize()); // response
-        client->checkForDownloadFileRequest(resp); // post set download after response
-        return rt;
+        return false;
     }
 
-    LOG_WAR << fname << "Target client not found - cannot deliver response | ClientID=" << clientId << " | AvailableSessions=" << streams.current_size();
-    return false;
+    auto *client = static_cast<SocketServer *>(clientGuard.stream());
+
+    LOG_DBG << fname << "Sending response | ClientID=" << clientId;
+    client->checkForUploadFileRequest(resp);   // pre set upload before response
+    auto rt = client->send(resp->serialize()); // response
+    client->checkForDownloadFileRequest(resp); // post set download after response
+    return rt;
 }
 
-void SocketServer::closeClient(int clientID)
+void SocketServer::closeClient(int clientId)
 {
     const static char fname[] = "SocketServer::closeClient() ";
 
-    ACE_GUARD(ACE_Recursive_Thread_Mutex, locker, streams.mutex());
-    SocketServer *client = NULL;
-    if (streams.find(clientID, client) == 0 && client)
+    auto client = findClient(clientId);
+    if (client.stream() != nullptr)
     {
-        LOG_INF << fname << "Closing ClientID=" << clientID;
-        client->shutdown();
-    }
-    else
-    {
-        LOG_WAR << fname << "No such ClientID=" << clientID;
+        LOG_INF << fname << "Closing ClientID=" << clientId;
+        client.stream()->shutdown();
     }
 }
 

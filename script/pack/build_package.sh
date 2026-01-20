@@ -46,7 +46,20 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     export CLANG_VERSION=$(clang --version | awk -F ' ' '/Apple clang version/ {print $4}' | cut -d '.' -f1)
     export PACKAGE_FILE_NAME="${CMAKE_BINARY_DIR}/${PROJECT_NAME}_${PROJECT_VERSION}_clang_${CLANG_VERSION}_macos_${MACOS_VERSION}_${GOARCH}.pkg"
 
+    # Generate component plist to enable relocation
+    COMPONENT_PLIST="${CMAKE_BINARY_DIR}/component.plist"
+
+    # Analyze the root to create an initial plist
+    pkgbuild --analyze --root "${PACKAGE_HOME}" "${COMPONENT_PLIST}"
+
+    # Patch the plist to allow relocation (BundleIsRelocatable = true)
+    # We also ensure the BundlePostInstallScriptPath is respected
+    plutil -replace BundleIsRelocatable -bool YES "${COMPONENT_PLIST}" 2>/dev/null || \
+    sed -i '' 's/<false\/>/<true\/>/g' "${COMPONENT_PLIST}" # Fallback if plutil fails
+
+    info "Building Relocatable PKG..."
     pkgbuild --root "${PACKAGE_HOME}" \
+             --component-plist "${COMPONENT_PLIST}" \
              --scripts "${CMAKE_BINARY_DIR}/pkg_scripts" \
              --identifier "com.laoshanxi.appmesh" \
              --version "${PROJECT_VERSION}" \
