@@ -318,18 +318,23 @@ int CommandDispatcher::cmdLogin()
 			std::cout << "Enter TOTP key: ";
 			if (std::cin >> totp)
 			{
-				this->validateTotp(m_username, challange, totp, m_tokenTimeoutSeconds);
-				std::cout << "User <" << m_username << "> logon to <" << m_currentUrl << "> success." << std::endl;
+				this->validateTotp(m_username, challange, totp, m_tokenTimeoutSeconds);			
 				break;
 			}
 		} while (true);
 	}
+
 	persistUserConfig(Uri::parse(m_currentUrl).host);
 
 	if (m_commandLineVariables.count(SHOWTOKEN) > 0)
 	{
 		std::cout << getAuthToken() << std::endl;
 	}
+	else
+	{
+		std::cout << "User <" << m_username << "> logon to <" << m_currentUrl << "> success." << std::endl;
+	}
+
 	return 0;
 }
 

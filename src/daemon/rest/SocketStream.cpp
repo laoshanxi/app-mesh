@@ -257,6 +257,9 @@ SocketStream::SocketStream(ACE_SSL_Context *ctx, ACE_Reactor *reactor)
 	const static char fname[] = "SocketStream::SocketStream() ";
 	LOG_DBG << fname << this;
 
+	// Both ACE_Acceptor and ACE_Connector modes use reference counting (SocketStreamPtr).
+	this->reference_counting_policy().value(ACE_Event_Handler::Reference_Counting_Policy::ENABLED);
+
 	this->peer().set_ssl_context(ctx);
 }
 
@@ -294,10 +297,13 @@ int SocketStream::open(void *acceptor_or_connector)
 	{
 		LOG_ERR << fname << "Failed to register handler: " << last_error_msg();
 		m_state.store(ConnState::CLOSED, std::memory_order_release);
+
+		this->remove_reference(); // Release the construction reference
 		return -1;
 	}
 
 	fire_connect();
+	this->remove_reference(); // Release the construction reference
 	return 0;
 }
 
@@ -317,9 +323,6 @@ bool SocketStream::connect(const ACE_INET_Addr &remote, const ACE_Time_Value *ti
 		report_error("Connect failed");
 		return false;
 	}
-
-	// For client use pair with SocketStreamPtr(ACE_Event_Handler_var)
-	this->reference_counting_policy().value(ACE_Event_Handler::Reference_Counting_Policy::ENABLED);
 
 	if (this->open(nullptr) == -1)
 	{
@@ -530,6 +533,7 @@ int SocketStream::handle_exception(ACE_HANDLE)
 int SocketStream::handle_close(ACE_HANDLE h, ACE_Reactor_Mask m)
 {
 	const static char fname[] = "SocketStream::handle_close() ";
+	LOG_DBG << fname << this;
 
 	ConnState prev = m_state.exchange(ConnState::CLOSED, std::memory_order_acq_rel);
 	if (prev != ConnState::CLOSED)
@@ -547,9 +551,7 @@ int SocketStream::handle_close(ACE_HANDLE h, ACE_Reactor_Mask m)
 		fire_close();
 	}
 
-	// IMPORTANT: For ACE_Acceptor mode release which not using SocketStreamPtr:
-	//  - ACE_Event_Handler::Reference_Counting_Policy::DISABLED
-	return Super::handle_close(h, m);
+	return Super::handle_close(h, m); // Important for ACE_Event_Handler::Reference_Counting_Policy::DISABLED
 }
 
 bool SocketStream::send_impl(SendBuffer &&buf)

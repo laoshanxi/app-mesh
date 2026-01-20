@@ -39,6 +39,9 @@ scripts:
   postinstall: ${CMAKE_SOURCE_DIR}/script/pack/post_install.sh
   preremove: ${CMAKE_SOURCE_DIR}/script/pack/pre_uninstall.sh
   postremove: ${CMAKE_SOURCE_DIR}/script/pack/post_uninstall.sh
+rpm:
+  prefixes:
+    - /opt/appmesh # rpm -ivh ./appmesh.rpm --relocate /opt/appmesh=/opt/abc
 # All fields above marked as `overridable` can be overridden for a given
 overrides:
   deb:

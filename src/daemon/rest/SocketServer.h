@@ -32,6 +32,7 @@ public:
     static void closeClient(int clientID);
 
     int getId() const;
+    static SocketStreamPtr findClient(int clientId);
 
 private:
     void checkForUploadFileRequest(std::unique_ptr<Response> &resp);

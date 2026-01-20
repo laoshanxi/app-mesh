@@ -322,10 +322,35 @@ private:
 	ErrorCallback m_error_cb;
 };
 
-class SocketStreamPtr : public ACE_Event_Handler_var
+class SocketStreamPtr
 {
 public:
 	SocketStreamPtr() = default;
-	explicit SocketStreamPtr(SocketStream *p) : ACE_Event_Handler_var(p) {}
-	SocketStream *stream() { return static_cast<SocketStream *>(handler()); }
+
+	/// @brief Wraps a raw pointer with optional reference increment.
+	/// @param p The SocketStream instance to manage.
+	///  Note: A new ACE_Event_Handler typically starts with a ref_count of 1.
+	///  Since we already clear the construction reference in SocketStream::open, so always use add_ref=true here to avoid premature deletion.
+	/// @param add_ref Control logic:
+	///  - true (Guard Mode): Use for existing objects to prevent deletion.
+	///  - false (Transfer Mode): Use for 'new' objects to take ownership.
+	explicit SocketStreamPtr(SocketStream *p, bool add_ref = true) : m_var(p)
+	{
+		if (m_var.handler() && add_ref)
+		{
+			m_var.handler()->add_reference();
+		}
+	}
+
+	SocketStreamPtr(const SocketStreamPtr &) = default;
+	SocketStreamPtr &operator=(const SocketStreamPtr &) = default;
+
+	SocketStream *stream() const { return static_cast<SocketStream *>(m_var.handler()); }
+	SocketStream *operator->() const { return stream(); }
+	SocketStream &operator*() const { return *stream(); }
+	explicit operator bool() const { return m_var.handler() != nullptr; }
+	void reset() { m_var = nullptr; }
+
+private:
+	ACE_Event_Handler_var m_var;
 };
