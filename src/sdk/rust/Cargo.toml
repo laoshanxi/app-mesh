@@ -41,7 +41,7 @@ encoding_rs = "0.8.35"
 tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 futures-util = "0.3.31"
 serde_bytes = "0.11.19"
-nix = { version = "0.30.1", features = ["user", "fs"] }
+nix = { version = "0.31.0", features = ["user", "fs"] }
 
 [dev-dependencies]
 mockito = "1.7"
