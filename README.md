@@ -1,4 +1,4 @@
-﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![unittest.badge]][unittest.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
+[![language.badge]][language.url] [![standard.badge]][standard.url] [![unittest.badge]][unittest.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
 [![Documentation Status](https://readthedocs.org/projects/app-mesh/badge/?version=latest)](https://app-mesh.readthedocs.io/en/latest/?badge=latest) [![Join the chat at https://gitter.im/app-mesh/community](https://badges.gitter.im/app-mesh/community.svg)](https://gitter.im/app-mesh/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 <a href="https://scan.coverity.com/projects/laoshanxi-app-mesh">
   <img alt="Coverity Scan Build Status"
@@ -62,9 +62,9 @@ Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthe
 Security |  🔐 Authentication: [OAuth](src/sdk/python/test/test_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html), YAML-based storage (local or Consul for clustering) <br> 🔐 Authorization: [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html), [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html), multi-tenant isolation <br> 🔐 Protection: SSL/TLS for `TCP`/`HTTP`/`WebSocket`, CSRF tokens, HMAC with PSK for non-token verification
 Cloud Native | 🌩️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
 Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download API <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Request Forwarding <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
-Platform support | X86, ARM
-SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp) <br> [Rust](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/rust) <br> [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) <br> [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/client_http.go) <br> [JavaScript](https://www.npmjs.com/package/appmesh) <br> [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) <br> [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
 Echosystem | LLM: [Model Context Protocol (MCP)](src/sdk/mcp) <br> IoT: [MQTT](src/sdk/mqtt)
+Platform support | X86, ARM
+SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp), [Rust](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/rust), [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http), [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/client_http.go), [JavaScript](https://www.npmjs.com/package/appmesh), [Java](https://github.com/laoshanxi/app-mesh/packages/2227502), [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
 
 ## 📦 Install
 
@@ -129,7 +129,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 
 ## 🔗 Library dependency
 
-- [MessagePack](https://msgpack.org/)
+- [Google/protobuf](https://github.com/protocolbuffers/protobuf)
 - [boostorg/boost](https://github.com/boostorg/boost)
 - [ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
 - [Thalhammer/jwt-cpp](https://github.com/Thalhammer/jwt-cpp)
