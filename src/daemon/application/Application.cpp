@@ -1245,7 +1245,7 @@ void Application::onExitUpdate(int code)
 		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, process->startError().c_str()));
 	}
 	// immediate error handling (compared with Application::execute)
-	// this->registerTimer(0, 0, std::bind(&Application::handleError, this), fname);
+	// this->registerTimer(0, 0, fname, std::bind(&Application::handleError, this));
 }
 
 void Application::terminate(std::shared_ptr<AppProcess> &p)
@@ -1297,7 +1297,7 @@ void Application::handleError()
 		// keep alive always, used for period run
 		nextLaunchTime(std::chrono::system_clock::now());
 		m_nextStartTimerIdEvent.reset();
-		m_nextStartTimerId.store(this->registerTimer(0, 0, std::bind(&Application::onTimerSpawn, this), fname));
+		m_nextStartTimerId.store(this->registerTimer(0, 0, fname, std::bind(&Application::onTimerSpawn, this)));
 		m_nextStartTimerIdEvent.signal();
 		LOG_DBG << fname << "Next action for <" << m_name << "> is KEEPALIVE";
 		break;
@@ -1334,7 +1334,7 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 		// 2. register timer
 		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
 		m_nextStartTimerIdEvent.reset();
-		m_nextStartTimerId.store(this->registerTimer(delay, 0, std::bind(&Application::onTimerSpawn, this), fname));
+		m_nextStartTimerId.store(this->registerTimer(delay, 0, fname, std::bind(&Application::onTimerSpawn, this)));
 		m_nextStartTimerIdEvent.signal();
 		LOG_DBG << fname << "Next start for <" << m_name << "> is " << DateTime::formatLocalTime(next)
 				<< " start timer ID <" << m_nextStartTimerId.load() << ">";
@@ -1349,7 +1349,7 @@ void Application::regSuicideTimer(int timeoutSeconds)
 
 	this->cancelTimer(m_timerRemoveId);
 	LOG_DBG << fname << "Application <" << getName() << "> will be removed after <" << timeoutSeconds << "> seconds";
-	m_timerRemoveId.store(this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onTimerAppRemove, this), fname));
+	m_timerRemoveId.store(this->registerTimer(1000L * timeoutSeconds, 0, fname, std::bind(&Application::onTimerAppRemove, this)));
 }
 
 void Application::setLastError(const std::string &error)
