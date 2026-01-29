@@ -117,12 +117,13 @@ protected:
 	/// <param name="restFunctions"></param>
 	virtual void handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &message)>> &restFunctions) override;
 
-private:
 	/// <summary>
 	/// REST API function
 	/// </summary>
 	/// <param name="message"></param>
 	void apiMetrics(const std::shared_ptr<HttpRequest> &message);
+
+private:
 	/// <summary>
 	/// Create metrics
 	/// </summary>
@@ -153,6 +154,7 @@ public:
 
 constexpr auto METRIC_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
 constexpr auto METRIC_PATH = "/metrics";
+constexpr auto APPMESH_METRIC_PATH = "/appmesh/metrics";
 
 #define PROM_COUNTER_INCREASE(counter)     \
 	{                                      \

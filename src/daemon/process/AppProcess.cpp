@@ -114,7 +114,7 @@ void AppProcess::onExit(int exitCode)
 	cleanResource();
 
 	// Notify App exit event asynchronously
-	registerTimer(0, 0, std::bind(&AppProcess::onTimerAppExit, this, exitCode), fname);
+	registerTimer(0, 0, fname, std::bind(&AppProcess::onTimerAppExit, this, exitCode));
 }
 
 bool AppProcess::onTimerAppExit(int exitCode)
@@ -272,7 +272,7 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 
 	if (!IS_VALID_TIMER_ID(m_timerTerminateId))
 	{
-		m_timerTerminateId = registerTimer(1000L * timeout, 0, std::bind(&AppProcess::onTimerTerminate, this), from);
+		m_timerTerminateId = registerTimer(1000L * timeout, 0, from, std::bind(&AppProcess::onTimerTerminate, this));
 	}
 	else
 	{
@@ -287,8 +287,8 @@ void AppProcess::registerCheckStdoutTimer()
 	if (!IS_VALID_TIMER_ID(m_timerCheckStdoutId))
 	{
 		static const int TIMEOUT_SEC = STDOUT_FILE_SIZE_CHECK_INTERVAL;
-		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, TIMEOUT_SEC,
-											 std::bind(&AppProcess::onTimerCheckStdout, this), fname);
+		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, TIMEOUT_SEC, fname,
+											 std::bind(&AppProcess::onTimerCheckStdout, this));
 	}
 	else
 	{

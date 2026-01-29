@@ -130,7 +130,7 @@ bool SecurityLDAP::syncGroupUsers()
 
     if (!IS_VALID_TIMER_ID(m_syncTimerId) && m_ldap->m_syncSeconds > 0)
     {
-        m_syncTimerId = this->registerTimer(1000L, m_ldap->m_syncSeconds, std::bind(&SecurityLDAP::syncGroupUsers, this), fname);
+        m_syncTimerId = this->registerTimer(1000L, m_ldap->m_syncSeconds, fname, std::bind(&SecurityLDAP::syncGroupUsers, this));
     }
     return true;
 }

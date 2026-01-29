@@ -33,7 +33,7 @@ int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *a
 		return -1; // Stop timer - will call handle_close()
 	}
 
-	// Execute timer callback
+	// Execute callback with exception safety
 	bool shouldContinue = false;
 	try
 	{
@@ -103,9 +103,7 @@ long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalSec
 	ACE_Time_Value future = (delayMilliseconds == 0) ? ACE_Time_Value::zero : ACE_OS::gettimeofday() + ACE_Time_Value(delayMilliseconds / 1000, (delayMilliseconds % 1000) * 1000);
 	ACE_Time_Value interval(intervalSeconds);
 
-	// Pass TimerEvent as both ACE_Event_Handler and 'magic cookie' act
-	// Memory will be released in TimerEvent::handle_close()
-	// timerObj can be nullptr for lambda-only timers
+	// TimerEvent passed as both handler and 'magic cookie' act; released in handle_close()
 	bool isOneShot = (intervalSeconds == 0);
 	auto *timer = new TimerEvent(isOneShot, std::move(timerObj), handler);
 	long timerId = m_timerQueue.schedule(timer, timer, future, interval);
@@ -169,7 +167,7 @@ bool TimerManager::cancelTimer(std::atomic_long &timerId)
 /// TimerHandler
 ////////////////////////////////////////////////////////////////
 
-long TimerHandler::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, const std::string from)
+long TimerHandler::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const std::string from, const TimerCallback &handler)
 {
 	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalSeconds, from, shared_from_this(), handler);
 }
@@ -183,7 +181,7 @@ bool TimerHandler::cancelTimer(std::atomic_long &timerId)
 /// Standalone Functions
 ////////////////////////////////////////////////////////////////
 
-long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, const std::string &from)
+long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const std::string &from, const TimerCallback &handler)
 {
 	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalSeconds, from, nullptr, handler);
 }

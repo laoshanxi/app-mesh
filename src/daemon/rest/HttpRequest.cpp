@@ -242,7 +242,7 @@ bool HttpRequestWithTimeout::initTimer(int timeoutSeconds)
 		return false;
 	}
 
-	m_timerResponseId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&HttpRequestWithTimeout::onTimerResponse, this), fname);
+	m_timerResponseId = this->registerTimer(1000L * timeoutSeconds, 0, fname, std::bind(&HttpRequestWithTimeout::onTimerResponse, this));
 	LOG_DBG << fname << "registered timer " << m_timerResponseId << " for request " << this->m_uuid << " with timeout " << timeoutSeconds << " seconds";
 	return true;
 }
@@ -318,7 +318,7 @@ void HttpRequestOutputView::init()
 	if (AppProcess::running(m_pid) && timeout > 0)
 	{
 		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(shared_from_this()));
-		m_timerResponseId = this->registerTimer(1000L * timeout, 0, std::bind(&HttpRequestOutputView::onTimerResponse, this), fname);
+		m_timerResponseId = this->registerTimer(1000L * timeout, 0, fname, std::bind(&HttpRequestOutputView::onTimerResponse, this));
 
 		LOG_DBG << fname << "app <" << app->getName() << "> view output with pid <" << m_pid << ">, APP_OUT_VIEW_MAP size = " << APP_OUT_VIEW_MAP.current_size();
 	}

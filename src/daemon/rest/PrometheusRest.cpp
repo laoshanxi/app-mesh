@@ -75,14 +75,25 @@ std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &
 
 void PrometheusRest::handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &message)>> &restFunctions)
 {
-	if (message->m_method == web::http::methods::GET && message->m_relative_uri != METRIC_PATH)
-		PROM_COUNTER_INCREASE(m_restGetCounter)
+	if (message->m_method == web::http::methods::GET)
+	{
+		if (message->m_relative_uri != METRIC_PATH && message->m_relative_uri != APPMESH_METRIC_PATH)
+		{
+			PROM_COUNTER_INCREASE(m_restGetCounter)
+		}
+	}
 	else if (message->m_method == web::http::methods::PUT)
+	{
 		PROM_COUNTER_INCREASE(m_restPutCounter)
+	}
 	else if (message->m_method == web::http::methods::POST)
+	{
 		PROM_COUNTER_INCREASE(m_restPostCounter)
+	}
 	else if (message->m_method == web::http::methods::DEL)
+	{
 		PROM_COUNTER_INCREASE(m_restDelCounter)
+	}
 
 	RestBase::handleRest(message, restFunctions);
 }
@@ -90,6 +101,14 @@ void PrometheusRest::handleRest(const std::shared_ptr<HttpRequest> &message, con
 const std::string PrometheusRest::collectData()
 {
 	m_collectTime = ACE_OS::time();
+	if (m_scrapeCounter)
+	{
+		m_scrapeCounter->metric().Increment();
+	}
+	if (m_appmeshFileDesc)
+	{
+		m_appmeshFileDesc->metric().Set(os::pstree()->totalFileDescriptors());
+	}
 	// leave a static text serializer here
 	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
 	return promSerializer->Serialize(m_promRegistry->Collect());
@@ -109,14 +128,6 @@ void PrometheusRest::apiMetrics(const std::shared_ptr<HttpRequest> &message)
 	const static char fname[] = "PrometheusRest::apiMetrics() ";
 	LOG_DBG << fname << "Entered";
 
-	if (m_scrapeCounter)
-	{
-		m_scrapeCounter->metric().Increment();
-	}
-	if (m_appmeshFileDesc)
-	{
-		m_appmeshFileDesc->metric().Set(os::pstree()->totalFileDescriptors());
-	}
 	auto body = collectData();
 	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
 }
