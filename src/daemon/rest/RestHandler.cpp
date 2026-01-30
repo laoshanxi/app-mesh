@@ -79,7 +79,7 @@ constexpr auto REST_PATH_SEC_PERM_VIEW_ALL = "/appmesh/permissions";
 constexpr auto REST_PATH_SEC_USER_GROUPS_VIEW = "/appmesh/user/groups";
 
 // 10. metrics
-constexpr auto REST_PATH_PROMETHEUS_METRICS = "/appmesh/metrics";
+constexpr auto REST_PATH_PROMETHEUS_METRICS = APPMESH_METRIC_PATH;
 constexpr auto REST_PATH_RESOURCE_VIEW = "/appmesh/resources";
 
 RestHandler::RestHandler() : PrometheusRest()
@@ -689,8 +689,7 @@ void RestHandler::apiHealth(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 {
-	auto body = this->collectData();
-	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
+	PrometheusRest::apiMetrics(message);
 }
 
 nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token)

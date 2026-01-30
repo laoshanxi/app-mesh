@@ -29,6 +29,8 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	return result;
 }
 
+#define SAFE_DELETE(ptr) do { delete (ptr); (ptr) = nullptr; } while (0)
+
 // Expand micro variable (microkey=microvalue)
 #define __MICRO_KEY__(str) #str				  // No expand micro
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
