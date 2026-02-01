@@ -1,38 +1,24 @@
 // src/common/lwsservice/WebSocketService.cpp
-#include <algorithm>
 #include <cstring>
 #include <iostream>
 #include <memory>
-#include <vector>
 
 #include <libwebsockets.h>
 
-#include "../../daemon/rest/RestHandler.h"
 #include "../../daemon/rest/Worker.h"
 #include "../Utility.h"
 #include "WebSocketService.h"
 
 constexpr int LWS_RX_BUFFER_SIZE = 8192;
 
-// -------------------------------
 // PSS Structure for HTTP
-// -------------------------------
 struct HttpSessionData
 {
-    // Upload state
     std::ofstream *upload_stream = nullptr;
 
-    // Response state (for sending metrics or large data)
-    std::string *response_body = nullptr;
-    size_t response_offset = 0;
-    bool is_sending_response = false;
-    bool headers_sent = false;
-    std::string *content_type = nullptr;
-
     // Explicit Constructor
-    HttpSessionData() = default;
-
-    // Explicit Destructor
+    HttpSessionData() : upload_stream(nullptr) {}
+    // Explicit Destrcuctor
     ~HttpSessionData() { cleanup(); }
 
     void cleanup()
@@ -43,24 +29,9 @@ struct HttpSessionData
             {
                 upload_stream->close();
             }
-            SAFE_DELETE(upload_stream);
+            delete upload_stream;
+            upload_stream = nullptr;
         }
-        // Reset response state
-        is_sending_response = false;
-        headers_sent = false;
-        response_offset = 0;
-        SAFE_DELETE(response_body);
-        SAFE_DELETE(content_type);
-    }
-
-    // Helper to setup a text response
-    void setupResponse(std::string body, std::string type)
-    {
-        response_body = new std::string(std::move(body));
-        content_type = new std::string(std::move(type));
-        response_offset = 0;
-        headers_sent = false;
-        is_sending_response = true;
     }
 };
 
@@ -352,35 +323,26 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         if (!ssnInfo)
             return lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, nullptr);
 
-        // 1. Prometheus metrics (Robust handling)
-        if (ssnInfo->path == METRIC_PATH)
-        {
-            // Store data in PSS and schedule write
-            pss->setupResponse(RESTHANDLER::instance()->collectData(), METRIC_CONTENT_TYPE);
-            lws_callback_on_writable(wsi); // Trigger writeable callback
-            return 0;                      // Return 0 to keep connection open for writing
-        }
-
-        // 2. Serve Index
+        // 1. Serve Index
         if (ssnInfo->path == "/" || ssnInfo->path == "/index.html")
         {
             // Note: lws_serve_http_file handles LWS_PRE internally
             return lws_serve_http_file(wsi, "index.html", "text/html; charset=utf-8", nullptr, 0);
         }
 
-        // 3. Auth Check
+        // 2. Auth Check
         if (!WebSocketSession::verifyToken(ssnInfo->autherization))
         {
             return lws_return_http_status(wsi, HTTP_STATUS_UNAUTHORIZED, "Authentication failed");
         }
 
-        // 4. File Download
+        // 3. File Download
         if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download/ws" && !ssnInfo->ext_x_file_path.empty())
         {
             return lws_serve_http_file(wsi, ssnInfo->ext_x_file_path.c_str(), "application/octet-stream", nullptr, 0);
         }
 
-        // 5. File Upload Setup
+        // 4. File Upload Setup
         if (ssnInfo->method == "POST" && ssnInfo->path == "/appmesh/file/upload/ws" && !ssnInfo->ext_x_file_path.empty())
         {
             if (pss)
@@ -396,63 +358,6 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         }
 
         return lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, nullptr);
-    }
-
-    // -------------------------------------------------------------------
-    // Handle Buffered HTTP Writing (For Metrics)
-    // -------------------------------------------------------------------
-    case LWS_CALLBACK_HTTP_WRITEABLE:
-    {
-        if (!pss || !pss->is_sending_response)
-            return 0;
-
-        // A. Send Headers first if needed
-        if (!pss->headers_sent && pss->response_body && pss->content_type)
-        {
-            uint8_t buffer[LWS_PRE + 2048];
-            uint8_t *p = buffer + LWS_PRE;
-            uint8_t *end = buffer + sizeof(buffer);
-
-            if (lws_add_http_common_headers(wsi, HTTP_STATUS_OK, pss->content_type->c_str(), pss->response_body->size(), &p, end))
-                return 1; // Error
-
-            if (lws_finalize_write_http_header(wsi, buffer + LWS_PRE, &p, end))
-                return 1; // Error
-
-            pss->headers_sent = true;
-            // Don't return, fall through to write body immediately if possible
-        }
-
-        // B. Send Body Chunks
-        if (pss->response_body && pss->response_offset < pss->response_body->size())
-        {
-            // Determine chunk size (e.g., 2KB or remaining)
-            constexpr size_t CHUNK_LIMIT = 2048;
-            size_t remaining = pss->response_body->size() - pss->response_offset;
-            size_t write_len = std::min(CHUNK_LIMIT, remaining);
-            unsigned char *data = (unsigned char *)pss->response_body->data() + pss->response_offset;
-
-            // Determine write mode (HTTP vs HTTP_FINAL)
-            enum lws_write_protocol mode = (write_len == remaining) ? LWS_WRITE_HTTP_FINAL : LWS_WRITE_HTTP;
-
-            int n = lws_write(wsi, data, write_len, mode);
-            if (n < 0)
-                return 1; // Connection closed
-
-            pss->response_offset += (size_t)n;
-
-            // C. Schedule next write or finish
-            if (pss->response_offset < pss->response_body->size())
-            {
-                lws_callback_on_writable(wsi); // Request callback for next chunk
-                return 0;
-            }
-
-            // Done
-            return lws_http_transaction_completed(wsi);
-        }
-
-        return 0;
     }
 
     case LWS_CALLBACK_HTTP_BODY:
