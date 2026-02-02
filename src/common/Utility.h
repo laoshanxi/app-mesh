@@ -29,7 +29,12 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	return result;
 }
 
-#define SAFE_DELETE(ptr) do { delete (ptr); (ptr) = nullptr; } while (0)
+#define SAFE_DELETE(ptr) \
+	do                   \
+	{                    \
+		delete (ptr);    \
+		(ptr) = nullptr; \
+	} while (0)
 
 // Expand micro variable (microkey=microvalue)
 #define __MICRO_KEY__(str) #str				  // No expand micro
@@ -431,6 +436,8 @@ public:
 #define HTTP_HEADER_KEY_X_Send_File_Socket "X-Send-File-Socket"
 #define HTTP_HEADER_KEY_X_Recv_File_Socket "X-Recv-File-Socket"
 #define HTTP_HEADER_KEY_Forwarding_Host "X-Target-Host"
+#define HTTP_HEADER_KEY_X_LWS_Protocol "x-lws-protocol"
+#define HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP "HTTP"
 
 #define HTTP_BODY_KEY_MFA_URI "mfa_uri"
 #define HTTP_BODY_KEY_OLD_PASSWORD "old_password"

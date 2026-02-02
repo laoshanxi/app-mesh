@@ -70,3 +70,22 @@ bool Request::deserialize(const ByteBuffer &data)
 	}
 	return false;
 }
+
+bool Request::contain_body()
+{
+	auto it = headers.find("content-length");
+	if (it != headers.end())
+	{
+		char *end;
+		long long len = std::strtoll(it->second.c_str(), &end, 10);
+		return len > 0;
+	}
+
+	it = headers.find("transfer-encoding");
+	if (it != headers.end())
+	{
+		return it->second.find("chunked") != std::string::npos;
+	}
+
+	return false;
+}

@@ -11,6 +11,7 @@ void WSRequest::reply(std::vector<std::uint8_t> &&data) const
     resp->m_session_ref = m_session_ref;
     resp->m_req_id = m_req_id;
     resp->m_payload = std::move(data);
+    resp->m_is_http = (m_type == Type::HttpMessage);
     WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 }
 
