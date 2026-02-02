@@ -29,9 +29,10 @@ struct WSSessionInfo
 
 struct WSResponse
 {
-    void *m_session_ref;
+    void *m_session_ref = nullptr;
     std::vector<std::uint8_t> m_payload;
     uint64_t m_req_id = 0;
+    bool m_is_http = false;
 };
 
 struct WSRequest

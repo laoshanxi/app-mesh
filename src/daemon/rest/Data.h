@@ -47,7 +47,8 @@ public:
 
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	bool deserialize(const ByteBuffer &data);
-
+	
+	bool contain_body();
 public:
 	std::string uuid;
 	std::string request_uri;

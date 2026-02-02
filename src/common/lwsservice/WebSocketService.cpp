@@ -1,10 +1,13 @@
 // src/common/lwsservice/WebSocketService.cpp
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 #include <memory>
 
 #include <libwebsockets.h>
 
+#include "../../daemon/rest/Data.h"
+#include "../../daemon/rest/HttpRequest.h"
 #include "../../daemon/rest/Worker.h"
 #include "../Utility.h"
 #include "WebSocketService.h"
@@ -16,22 +19,34 @@ struct HttpSessionData
 {
     std::ofstream *upload_stream = nullptr;
 
-    // Explicit Constructor
-    HttpSessionData() : upload_stream(nullptr) {}
-    // Explicit Destrcuctor
-    ~HttpSessionData() { cleanup(); }
+    // HTTP request data
+    bool http_pending = false;
+    Request *http_request = nullptr;
+    std::vector<uint8_t> *http_response_data = nullptr;
+
+    HttpSessionData()
+    {
+        cleanup();
+        upload_stream = nullptr;
+        http_request = nullptr;
+        http_response_data = new std::vector<uint8_t>();
+    }
+
+    ~HttpSessionData()
+    {
+        cleanup();
+    }
 
     void cleanup()
     {
-        if (upload_stream)
+        if (upload_stream && upload_stream->is_open())
         {
-            if (upload_stream->is_open())
-            {
-                upload_stream->close();
-            }
-            delete upload_stream;
-            upload_stream = nullptr;
+            upload_stream->close();
         }
+        SAFE_DELETE(upload_stream);
+        SAFE_DELETE(http_request);
+        http_pending = false;
+        SAFE_DELETE(http_response_data);
     }
 };
 
@@ -151,6 +166,36 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
         ssnInfo->method = "POST";
         ssnInfo->path = grabToken(WSI_TOKEN_POST_URI);
     }
+    // Check HTTP/1.1 PUT
+    else if (lws_hdr_total_length(wsi, WSI_TOKEN_PUT_URI))
+    {
+        ssnInfo->method = "PUT";
+        ssnInfo->path = grabToken(WSI_TOKEN_PUT_URI);
+    }
+    // Check HTTP/1.1 DELETE
+    else if (lws_hdr_total_length(wsi, WSI_TOKEN_DELETE_URI))
+    {
+        ssnInfo->method = "DELETE";
+        ssnInfo->path = grabToken(WSI_TOKEN_DELETE_URI);
+    }
+    // Check HTTP/1.1 OPTIONS
+    else if (lws_hdr_total_length(wsi, WSI_TOKEN_OPTIONS_URI))
+    {
+        ssnInfo->method = "OPTIONS";
+        ssnInfo->path = grabToken(WSI_TOKEN_OPTIONS_URI);
+    }
+    // Check HTTP/1.1 HEAD
+    else if (lws_hdr_total_length(wsi, WSI_TOKEN_HEAD_URI))
+    {
+        ssnInfo->method = "HEAD";
+        ssnInfo->path = grabToken(WSI_TOKEN_HEAD_URI);
+    }
+    // Check HTTP/1.1 PATCH
+    else if (lws_hdr_total_length(wsi, WSI_TOKEN_PATCH_URI))
+    {
+        ssnInfo->method = "PATCH";
+        ssnInfo->path = grabToken(WSI_TOKEN_PATCH_URI);
+    }
 
     // ---- Standard headers ----
     ssnInfo->query = grabToken(WSI_TOKEN_HTTP_URI_ARGS);
@@ -166,6 +211,77 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
     ssnInfo->ext_x_file_path = grabCustom("X-File-Path");
 
     return ssnInfo;
+}
+
+Request *WebSocketService::buildHttpRequest(struct lws *wsi)
+{
+    auto *req = new Request();
+    auto ssnInfo = getSessionInfo(wsi);
+
+    req->uuid = Utility::uuid();
+    req->request_uri = ssnInfo->path;
+    req->http_method = ssnInfo->method;
+
+    // Client address
+    char ip[64] = {};
+    lws_get_peer_simple(wsi, ip, sizeof(ip));
+    req->client_addr = ip;
+
+    // Extract all HTTP headers
+    for (int tok = 0; tok < 100; ++tok)
+    {
+        int len = lws_hdr_total_length(wsi, (lws_token_indexes)tok);
+        if (len <= 0)
+            continue;
+
+        std::vector<char> buf(len + 1);
+        int n = lws_hdr_copy(wsi, buf.data(), buf.size(), (lws_token_indexes)tok);
+        if (n <= 0)
+            continue;
+
+        const char *raw = (const char *)lws_token_to_string((lws_token_indexes)tok);
+        if (!raw)
+            continue;
+
+        std::string name(raw);
+        // Normalize header name: remove trailing colon, lowercase (optional but recommended)
+        if (!name.empty() && name.back() == ':')
+            name.pop_back();
+
+        // Skip non-header tokens (URI tokens and request-line metadata)
+        // URI tokens end with "_URI" (GET_URI, PUT_URI, etc.)
+        // Also skip HTTP/2 pseudo-headers and version information
+        if (name.empty() ||
+            (name.find("_URI") != std::string::npos) ||
+            (name.find("HTTP/") != std::string::npos) ||
+            (name.find(":method") == 0) ||
+            (name.find(":path") == 0))
+        {
+            continue;
+        }
+
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        req->headers[name] = std::string(buf.data(), n);
+    }
+
+    // Parse query string (?a=b&c=d)
+    if (!ssnInfo->query.empty())
+    {
+        std::istringstream iss(ssnInfo->query);
+        std::string pair;
+        while (std::getline(iss, pair, '&'))
+        {
+            auto pos = pair.find('=');
+            if (pos != std::string::npos)
+            {
+                req->query[pair.substr(0, pos)] = pair.substr(pos + 1);
+            }
+        }
+    }
+
+    // IMPORTANT: Distinguish HTTP vs WebSocket
+    req->headers[HTTP_HEADER_KEY_X_LWS_Protocol] = HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
+    return req;
 }
 
 std::shared_ptr<WebSocketSession> WebSocketService::findSession(struct lws *wsi)
@@ -199,7 +315,8 @@ void WebSocketService::destroySession(struct lws *wsi)
     auto it = m_sessions.find(wsi);
     if (it == m_sessions.end())
     {
-        LOG_WAR << fname << "Session not found: " << wsi;
+        // Only warn if this was a known session (not just an HTTP one)
+        // LOG_WAR << fname << "Session not found: " << wsi;
     }
     else
     {
@@ -310,41 +427,43 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
 
     switch (reason)
     {
-    case LWS_CALLBACK_HTTP:
-    {
+    case LWS_CALLBACK_HTTP_BIND_PROTOCOL:
         // CRITICAL: Initialize PSS via placement new
         if (pss)
-        {
-            pss->cleanup(); // Re-initialize: Handle Keep-Alive.
             new (pss) HttpSessionData();
-        }
+        m_valid_http_wsi.insert(wsi);
+        return 0;
 
+    case LWS_CALLBACK_HTTP:
+    {
         auto ssnInfo = getSessionInfo(wsi);
         if (!ssnInfo)
             return lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, nullptr);
 
-        // 1. Serve Index
+        // 1. Serve index
         if (ssnInfo->path == "/" || ssnInfo->path == "/index.html")
         {
             // Note: lws_serve_http_file handles LWS_PRE internally
             return lws_serve_http_file(wsi, "index.html", "text/html; charset=utf-8", nullptr, 0);
         }
 
-        // 2. Auth Check
-        if (!WebSocketSession::verifyToken(ssnInfo->autherization))
-        {
-            return lws_return_http_status(wsi, HTTP_STATUS_UNAUTHORIZED, "Authentication failed");
-        }
-
-        // 3. File Download
+        // 2. File download
         if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download/ws" && !ssnInfo->ext_x_file_path.empty())
         {
+            if (!WebSocketSession::verifyToken(ssnInfo->autherization))
+            {
+                return lws_return_http_status(wsi, HTTP_STATUS_UNAUTHORIZED, "Authentication failed");
+            }
             return lws_serve_http_file(wsi, ssnInfo->ext_x_file_path.c_str(), "application/octet-stream", nullptr, 0);
         }
 
-        // 4. File Upload Setup
+        // 3. File upload setup
         if (ssnInfo->method == "POST" && ssnInfo->path == "/appmesh/file/upload/ws" && !ssnInfo->ext_x_file_path.empty())
         {
+            if (!WebSocketSession::verifyToken(ssnInfo->autherization))
+            {
+                return lws_return_http_status(wsi, HTTP_STATUS_UNAUTHORIZED, "Authentication failed");
+            }
             if (pss)
             {
                 pss->upload_stream = new std::ofstream(ssnInfo->ext_x_file_path, std::ios::binary);
@@ -357,6 +476,28 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             }
         }
 
+        // 4. Enqueue HTTP request for async processing
+        if (pss)
+        {
+            pss->http_request = buildHttpRequest(wsi);
+            if (pss->http_request->contain_body())
+            {
+                // Body will arrive via HTTP_BODY callbacks
+                pss->http_pending = true;
+                return 0;
+            }
+
+            auto serialized = pss->http_request->serialize();
+            WSRequest ws_req;
+            ws_req.m_type = WSRequest::Type::HttpMessage;
+            ws_req.m_session_ref = wsi;
+            ws_req.m_payload.assign(serialized->data(), serialized->data() + serialized->size());
+            ws_req.m_req_id = m_next_request_id.fetch_add(1);
+
+            enqueueIncomingRequest(std::move(ws_req));
+            pss->http_pending = true;
+            return 0;
+        }
         return lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, nullptr);
     }
 
@@ -372,6 +513,11 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
                 return -1; // Abort
             }
         }
+        else if (pss && pss->http_pending)
+        {
+            auto &body = pss->http_request->body;
+            body.insert(body.end(), static_cast<const uint8_t *>(in), static_cast<const uint8_t *>(in) + len);
+        }
         return 0;
     }
 
@@ -380,12 +526,103 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         if (pss && pss->upload_stream)
         {
             pss->cleanup();
-            // HTTP replies in libwebsockets do NOT require LWS_PRE
-            std::string msg = "Upload OK";
+            const std::string msg = "Upload OK";
+            unsigned char buf[LWS_PRE + msg.size()];
+            memcpy(buf + LWS_PRE, msg.data(), msg.size());
             lws_return_http_status(wsi, HTTP_STATUS_OK, nullptr);
-            lws_write(wsi, (unsigned char *)msg.c_str(), msg.size(), LWS_WRITE_HTTP_FINAL);
+            lws_write(wsi, buf + LWS_PRE, msg.size(), LWS_WRITE_HTTP_FINAL);
             return lws_http_transaction_completed(wsi);
         }
+
+        if (pss && pss->http_pending && pss->http_request)
+        {
+            auto serialized = pss->http_request->serialize();
+            WSRequest ws_req;
+            ws_req.m_type = WSRequest::Type::HttpMessage;
+            ws_req.m_session_ref = wsi;
+            ws_req.m_payload.assign(serialized->data(), serialized->data() + serialized->size());
+            ws_req.m_req_id = m_next_request_id.fetch_add(1);
+
+            enqueueIncomingRequest(std::move(ws_req));
+        }
+        return 0;
+    }
+
+    case LWS_CALLBACK_HTTP_WRITEABLE:
+    {
+        if (!pss || !pss->http_response_data || pss->http_response_data->empty())
+            return 0;
+
+        Response http_resp;
+        if (!http_resp.deserialize(pss->http_response_data->data(), pss->http_response_data->size()))
+        {
+            pss->http_response_data->clear();
+            pss->http_pending = false;
+            return lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, nullptr);
+        }
+
+        int status_code = http_resp.http_status > 0 ? http_resp.http_status : HTTP_STATUS_OK;
+
+        // HTTP headers
+        unsigned char headers[LWS_PRE + 4096];
+        unsigned char *p = headers + LWS_PRE;
+        unsigned char *end = headers + sizeof(headers) - 1;
+
+        if (lws_add_http_header_status(wsi, status_code, &p, end))
+            return 1;
+
+        // Standard headers
+        std::string content_type = http_resp.body_msg_type.empty() ? "application/json" : http_resp.body_msg_type;
+        if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE, (const unsigned char *)content_type.c_str(), (int)content_type.length(), &p, end))
+            return 1;
+        std::string content_length = std::to_string(http_resp.body.size());
+        if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_LENGTH, (const unsigned char *)content_length.c_str(), (int)content_length.length(), &p, end))
+            return 1;
+
+        // Custom headers (skip CT / CL)
+        for (const auto &h : http_resp.headers)
+        {
+            std::string lower = h.first;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            if (lower == "content-type" || lower == "content-length")
+                continue;
+            if (lws_add_http_header_by_name(wsi, (const unsigned char *)h.first.c_str(), (const unsigned char *)h.second.c_str(), (int)h.second.length(), &p, end))
+                return 1;
+        }
+
+        if (lws_finalize_http_header(wsi, &p, end))
+            return 1;
+
+        // WRITE HEADERS
+        int header_len = lws_ptr_diff(p, headers + LWS_PRE);
+        int n = lws_write(wsi, headers + LWS_PRE, header_len, LWS_WRITE_HTTP_HEADERS);
+        if (n < 0)
+            return 1;
+
+        // Buffer with LWS_PRE for BODY
+        if (!http_resp.body.empty())
+        {
+            std::vector<unsigned char> body(LWS_PRE + http_resp.body.size());
+            memcpy(body.data() + LWS_PRE, http_resp.body.data(), http_resp.body.size());
+            n = lws_write(wsi, body.data() + LWS_PRE, http_resp.body.size(), LWS_WRITE_HTTP_FINAL);
+            if (n < 0)
+                return 1;
+        }
+        else
+        {
+            /* HTTP/2 requires explicit stream finalization */
+            unsigned char dummy[LWS_PRE];
+            lws_write(wsi, dummy + LWS_PRE, 0, LWS_WRITE_HTTP_FINAL);
+        }
+
+        // Cleanup after successful write
+        pss->http_response_data->clear();
+        pss->http_pending = false;
+
+        // Close transaction (keep-alive handled by LWS automatically based on headers)
+        if (lws_http_transaction_completed(wsi))
+            return -1;
+
         return 0;
     }
 
@@ -395,6 +632,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // CRITICAL: Destruct PSS
         if (pss)
             pss->~HttpSessionData();
+        m_valid_http_wsi.erase(wsi);
         break;
     }
 
@@ -524,15 +762,27 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
 // -------------------------------
 void WebSocketService::enqueueOutgoingResponse(std::unique_ptr<WSResponse> &&resp)
 {
-    // Safety check: if we are not running, don't bother
+    static const char fname[] = "WebSocketService::enqueueOutgoingResponse() ";
+
     if (!m_is_running.load())
+    {
+        LOG_WAR << fname << "lws is not running, dropping response";
         return;
+    }
 
-    auto ssn = findSession((lws *)resp->m_session_ref);
+    // WS session validation
+    if (resp->m_is_http == false && findSession((lws *)resp->m_session_ref) == nullptr)
+    {
+        LOG_WAR << fname << "WebSocket Session invalid or closed, dropping response";
+        return;
+    }
+
     struct lws_context *ctx = m_context.load();
-
-    if (!ssn || !ctx)
+    if (!ctx)
+    {
+        LOG_WAR << fname << "lws_context is not available, dropping response";
         return;
+    }
 
     m_outgoing_queue.enqueue(std::move(resp));
 
@@ -560,14 +810,34 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
 
 void WebSocketService::deliverResponse(const std::unique_ptr<WSResponse> &resp)
 {
-    // Lock is essential here to prevent race with destroySession logic
-    std::lock_guard<std::mutex> lock(m_sessions_mutex);
-    // Verify the wsi is still in our map (Double check validity)
-    auto it = m_sessions.find((lws *)resp->m_session_ref);
-    if (it != m_sessions.end())
+    // HTTP connections use HttpSessionData (per-connection user data), WebSocketSession in m_sessions
+    struct lws *wsi = (struct lws *)resp->m_session_ref;
+
+    if (resp->m_is_http)
     {
-        it->second->enqueueOutgoingMessage(std::move(resp->m_payload));
-        lws_callback_on_writable(it->first);
+        if (m_valid_http_wsi.find(wsi) == m_valid_http_wsi.end())
+        {
+            LOG_WAR << "HTTP Session invalid or closed, dropping response";
+            return;
+        }
+
+        auto *pss = static_cast<HttpSessionData *>(lws_wsi_user(wsi));
+        if (!pss || !pss->http_pending)
+            return;
+
+        *(pss->http_response_data) = std::move(resp->m_payload);
+        lws_callback_on_writable(wsi);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(m_sessions_mutex);
+        // Verify the wsi is still in our map (Double check validity)
+        auto it = m_sessions.find(wsi);
+        if (it != m_sessions.end())
+        {
+            it->second->enqueueOutgoingMessage(std::move(resp->m_payload));
+            lws_callback_on_writable(it->first);
+        }
     }
 }
 
@@ -646,15 +916,23 @@ void WebSocketService::runWorkerLoop(int worker_id)
         m_incoming_queue.wait_dequeue(req);
 
         if (req.m_type == WSRequest::Type::Closing)
+        {
+            // Closing
             break;
-
-        if (auto session = findSession((lws *)req.m_session_ref))
-        {
-            session->handleRequest(req);
         }
-        else
+        else if (req.m_type == WSRequest::Type::WebSocketMessage)
         {
-            LOG_WAR << "Session expired for request " << req.m_req_id;
+            // WS messages require session
+            if (auto session = findSession((lws *)req.m_session_ref))
+                session->handleRequest(req);
+        }
+        else if (req.m_type == WSRequest::Type::HttpMessage)
+        {
+            // HTTP messages do not require session
+            auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
+            auto request = HttpRequest::deserialize(data, -1, req.m_session_ref, nullptr);
+            if (request)
+                WORKER::instance()->processRequest(request);
         }
     }
     LOG_INF << fname << "Thread stopped: ID=" << worker_id;
@@ -681,9 +959,15 @@ bool WebSocketService::createContext(const char *cert_path, const char *key_path
     info.protocols = protocols;
     info.gid = -1;
     info.uid = -1;
+
+    // ALLOW_HTTP_ON_HTTPS_LISTENER for HTTP/2 support
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
                    LWS_SERVER_OPTION_HTTP_HEADERS_SECURITY_BEST_PRACTICES_ENFORCE |
-                   LWS_SERVER_OPTION_PEER_CERT_NOT_REQUIRED;
+                   LWS_SERVER_OPTION_ALLOW_HTTP_ON_HTTPS_LISTENER;
+
+    // For HTTP/2, we need to set ALPN protocols
+    static const char *alpn_protos = "h2,http/1.1";
+    info.alpn = alpn_protos;
 
     // client cert verify enable/disable
     bool verify_client_cert = ca_path && strlen(ca_path) > 0;

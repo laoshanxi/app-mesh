@@ -177,11 +177,12 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 #else
 	else if (m_wsSessionId)
 	{
-		// WebSocket protocol
+		// WebSocket protocol or HTTP over WebSocketService
 		auto data = response->serialize();
 		auto resp = std::make_unique<WSResponse>();
 		resp->m_session_ref = const_cast<void *>(m_wsSessionId);
 		resp->m_payload = std::vector<std::uint8_t>(reinterpret_cast<const unsigned char *>(data->data()), reinterpret_cast<const unsigned char *>(data->data()) + data->size());
+		resp->m_is_http = m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) == HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 		return true;
 	}
