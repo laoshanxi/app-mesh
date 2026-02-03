@@ -58,8 +58,7 @@ int SocketServer::open(void *acceptor_or_connector)
         }
         else
         {
-            auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(data));
-            WORKER::instance()->queueInputRequest(buf, getId());
+            WORKER::instance()->queueTcpRequest(std::move(data), getId());
         }
     });
 

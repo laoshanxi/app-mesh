@@ -809,8 +809,7 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
     }
     else
     {
-        auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
-        WORKER::instance()->queueInputRequest(data, 0, req.m_session_ref);
+        WORKER::instance()->queueLwsRequest(std::move(req.m_payload), req.m_session_ref);
     }
 }
 
@@ -935,10 +934,9 @@ void WebSocketService::runWorkerLoop(int worker_id)
         else if (req.m_type == WSRequest::Type::HttpMessage)
         {
             // HTTP messages do not require session
-            auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
-            auto request = HttpRequest::deserialize(data, -1, req.m_session_ref, nullptr);
+            auto request = HttpRequest::deserialize(std::move(req.m_payload), -1, req.m_session_ref, nullptr);
             if (request)
-                WORKER::instance()->processRequest(request);
+                WORKER::instance()->process(request);
         }
     }
     LOG_INF << fname << "Thread stopped: ID=" << worker_id;

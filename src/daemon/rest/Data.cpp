@@ -140,7 +140,7 @@ bool Request::deserialize(const ByteBuffer &data)
 	try
 	{
 		msgpack::unpacked result;
-		msgpack::unpack(result, reinterpret_cast<const char *>(data->data()), data->size());
+		msgpack::unpack(result, reinterpret_cast<const char *>(data.data()), data.size());
 
 		msgpack::object obj = result.get();
 		obj.convert(*this); // directly fill into *this

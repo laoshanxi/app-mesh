@@ -280,7 +280,7 @@ public:
 	void shutdown();
 	bool connected() const;
 
-	std::mutex &get_state_mutex() const; // Exposed for Worker::processForward
+	std::mutex &get_state_mutex() const; // Exposed for Worker::forward
 
 protected:
 	// --- ACE_Svc_Handler Overrides ---

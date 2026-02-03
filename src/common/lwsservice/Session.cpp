@@ -22,9 +22,8 @@ WebSocketSession::WebSocketSession(lws *lws)
 
 void WebSocketSession::handleRequest(const WSRequest &req)
 {
-    auto data = std::make_shared<std::vector<std::uint8_t>>(std::move(req.m_payload));
-    auto request = HttpRequest::deserialize(data, -1, req.m_session_ref, nullptr);
-    WORKER::instance()->processRequest(request);
+    auto request = HttpRequest::deserialize(req.m_payload, -1, req.m_session_ref, nullptr);
+    WORKER::instance()->process(request);
 }
 
 bool WebSocketSession::verifyToken(const std::string &token)
