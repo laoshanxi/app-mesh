@@ -27,7 +27,7 @@
  * - HTTP is stateless (no session in m_sessions), uses PSS for per-request state
  * - WebSocket is stateful (session in m_sessions), persistent connection
  * - m_is_http flag in WSResponse ensures correct libwebsockets API usage
- * - TODO: Cookie not supported yet, so only none-authenticated HTTP SDK APIs are avialable now
+ * - TODO: Cookie unset and CSRF token not yet implemented like golang
  */
 
 #include "Session.h"

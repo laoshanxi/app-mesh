@@ -17,7 +17,7 @@
 
 #include "../../common/HttpHeaderMap.h"
 
-using ByteBuffer = std::shared_ptr<std::vector<std::uint8_t>>;
+using ByteBuffer = std::vector<std::uint8_t>;
 
 class Response
 {
