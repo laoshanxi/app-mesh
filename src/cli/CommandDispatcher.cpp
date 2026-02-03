@@ -93,7 +93,6 @@ const static std::string m_configFile = (fs::path(CommandDispatcher::getAndCreat
 const static std::string m_shellHistoryFile = (fs::path(CommandDispatcher::getAndCreateConfigDir()) / ".appmesh.shell.history").string();
 extern char **environ;
 
-const std::string COOKIE_TOKEN = "appmesh_auth_token";
 const std::string COOKIE_FILE = ".cookies";
 std::string COOKIE_PATH;
 
