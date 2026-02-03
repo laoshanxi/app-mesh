@@ -462,6 +462,12 @@ public:
 #define HTTP_QUERY_KEY_loglevel "level"
 #define HTTP_QUERY_KEY_label_value "value"
 
+// Cookie
+#define COOKIE_TOKEN "appmesh_auth_token"
+#define COOKIE_CSRF_TOKEN "appmesh_csrf_token"
+#define HTTP_HEADER_KEY_X_SET_COOKIE "X-Set-Cookie"
+#define HTTP_HEADER_KEY_X_CSRF_TOKEN "X-CSRF-Token"
+
 #define PERMISSION_KEY_view_app "app-view"
 #define PERMISSION_KEY_view_app_output "app-output-view"
 #define PERMISSION_KEY_view_all_app "app-view-all"

@@ -316,6 +316,7 @@ private:
 
             if (last)
             {
+                requestState->convertCookieToAuthorization();
                 auto msgPack = requestState->serialize();
                 auto packedData = std::make_shared<std::vector<uint8_t>>(msgPack->data(), msgPack->data() + msgPack->size());
                 WORKER::instance()->queueInputRequest(packedData, 0, 0, ctx);

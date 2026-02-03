@@ -158,7 +158,8 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		if (m_replyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
 		{
 			// HTTP protocol
-			m_replyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::map<std::string, std::string>(headers), std::string(bodyType));
+			response->handleAuthCookies();
+			m_replyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
 			return true;
 		}
 		else if (m_replyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)

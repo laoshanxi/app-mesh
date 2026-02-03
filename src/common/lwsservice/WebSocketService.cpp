@@ -53,8 +53,7 @@ struct HttpSessionData
 // -------------------------------
 // Constructor / Destructor
 // -------------------------------
-WebSocketService::WebSocketService()
-    : m_context(nullptr), m_is_running(false), m_next_request_id(1)
+WebSocketService::WebSocketService() : m_context(nullptr), m_is_running(false), m_next_request_id(1)
 {
 }
 
@@ -281,6 +280,10 @@ Request *WebSocketService::buildHttpRequest(struct lws *wsi)
 
     // IMPORTANT: Distinguish HTTP vs WebSocket
     req->headers[HTTP_HEADER_KEY_X_LWS_Protocol] = HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
+
+    // Convert cookie to Authorization header if present (follows agent_request.go pattern)
+    req->convertCookieToAuthorization();
+
     return req;
 }
 
@@ -562,6 +565,9 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         }
 
         int status_code = http_resp.http_status > 0 ? http_resp.http_status : HTTP_STATUS_OK;
+
+        // Handle authentication cookies (Set-Cookie header)
+        http_resp.handleAuthCookies();
 
         // HTTP headers
         unsigned char headers[LWS_PRE + 4096];

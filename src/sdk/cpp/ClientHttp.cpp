@@ -13,13 +13,6 @@
 #include "../../common/Utility.h"
 #include "../../common/os/linux.h"
 
-namespace
-{
-    const std::string HTTP_HEADER_JWT_set_cookie = "X-Set-Cookie";
-    const std::string HTTP_HEADER_NAME_CSRF_TOKEN = "X-CSRF-Token";
-    const std::string COOKIE_CSRF_TOKEN = "appmesh_csrf_token";
-}
-
 // === AppRun implementation ===
 
 AppRun::AppRun(ClientHttp *client, const std::string &appName, const std::string &procUid)
@@ -69,7 +62,7 @@ std::string ClientHttp::login(const std::string &user, const std::string &passwd
     std::map<std::string, std::string> header;
     header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_Auth_BasicSpace) +
                                             Utility::encode64(user + ":" + passwd);
-    header[HTTP_HEADER_JWT_set_cookie] = "true";
+    header[HTTP_HEADER_KEY_X_SET_COOKIE] = "true";
 
     if (timeoutSeconds > 0)
         header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(timeoutSeconds);
@@ -103,7 +96,7 @@ std::string ClientHttp::login(const std::string &user, const std::string &passwd
 void ClientHttp::validateTotp(const std::string &user, const std::string &challenge,
                               const std::string totp, int timeoutSeconds)
 {
-    std::map<std::string, std::string> header = {{HTTP_HEADER_JWT_set_cookie, "true"}};
+    std::map<std::string, std::string> header = {{HTTP_HEADER_KEY_X_SET_COOKIE, "true"}};
 
     nlohmann::json body = {
         {HTTP_BODY_KEY_JWT_username, user},
@@ -126,7 +119,7 @@ std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
     if (!audience.empty())
         header[HTTP_HEADER_JWT_audience] = audience;
     if (apply)
-        header[HTTP_HEADER_JWT_set_cookie] = "true";
+        header[HTTP_HEADER_KEY_X_SET_COOKIE] = "true";
 
     auto resp = this->requestHttp(false, web::http::methods::POST, "/appmesh/auth", nullptr, header);
     return std::make_tuple(resp->status_code == web::http::status_codes::OK, resp->text);
@@ -586,5 +579,5 @@ void ClientHttp::addCommonHeaders(std::map<std::string, std::string> &header) co
 
     const auto token = RestClient::getCookie(COOKIE_CSRF_TOKEN);
     if (!token.empty())
-        header[HTTP_HEADER_NAME_CSRF_TOKEN] = token;
+        header[HTTP_HEADER_KEY_X_CSRF_TOKEN] = token;
 }

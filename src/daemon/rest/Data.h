@@ -27,6 +27,9 @@ public:
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
+	bool handleAuthCookies();
+	bool setAuthCookie();
+
 public:
 	std::string uuid;
 	std::string request_uri;
@@ -47,8 +50,10 @@ public:
 
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	bool deserialize(const ByteBuffer &data);
-	
+
 	bool contain_body();
+	bool convertCookieToAuthorization();
+
 public:
 	std::string uuid;
 	std::string request_uri;
