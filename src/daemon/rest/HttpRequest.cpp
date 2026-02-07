@@ -159,6 +159,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		{
 			// HTTP protocol
 			response->handleAuthCookies();
+			response->applyCorsHeaders();
 			m_uwsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
 			return true;
 		}

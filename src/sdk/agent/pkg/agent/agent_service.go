@@ -137,19 +137,27 @@ func ListenAndServeREST() error {
 	// HTTP router using gorilla/mux
 	router := mux.NewRouter()
 
+	// Apply CORS globally
+	if !corsDisabled {
+		router.Use(utils.Cors(utils.DefaultCORSConfig))
+	}
+
 	// Grafana
 	grafana.RegGrafanaRestHandler(router)
 
 	// docker.sock proxy
 	RegisterDockerRoutes(router)
 
-	// OPTIONS & HEAD handlers (for all paths including static content)
-	router.HandleFunc("/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK) // Options handler
-	})).Methods("OPTIONS", "HEAD")
+	// AppMesh endpoints - register with all common HTTP methods
+	router.PathPrefix("/appmesh").Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodHead).HandlerFunc(HandleAppMeshRequest)
 
-	// AppMesh endpoints
-	router.NotFoundHandler = utils.Cors(utils.DefaultCORSConfig)(HandleAppMeshRequest)
+	// Catch-all for static content and other routes
+	router.NotFoundHandler = http.HandlerFunc(HandleAppMeshRequest)
+
+	// Explicit OPTIONS handler (optional but safe)
+	router.Methods(http.MethodOptions).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	return StartHTTPSServer(listenAddr, router)
 }
