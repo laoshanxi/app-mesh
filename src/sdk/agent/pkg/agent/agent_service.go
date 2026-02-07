@@ -56,8 +56,7 @@ var (
 	REST_PATH_TASK  = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
 	localConnection *Connection // TCP connection to the local server
 
-	delegatePool     sync.Pool
-	indexHtmlContent []byte
+	delegatePool sync.Pool
 )
 
 // Initialize the delegate pool using net/http.Client
@@ -81,13 +80,6 @@ func init() {
 				},
 			}
 		},
-	}
-
-	var err error
-	indexHtmlContent, err = os.ReadFile(config.GetAppMeshHomeDir() + "/script/index.html")
-	if err != nil {
-		logger.Errorf("Failed to read index.html: %v", err)
-		indexHtmlContent = []byte("<html><body><h1>App Mesh</h1><p>Welcome to App Mesh!</p></body></html>")
 	}
 }
 
@@ -145,28 +137,19 @@ func ListenAndServeREST() error {
 	// HTTP router using gorilla/mux
 	router := mux.NewRouter()
 
-	// OpenAPI Swagger
-	RegisterOpenAPIRoutes(router)
-
 	// Grafana
 	grafana.RegGrafanaRestHandler(router)
 
 	// docker.sock proxy
 	RegisterDockerRoutes(router)
 
-	// AppMesh endpoints
-	router.HandleFunc("/appmesh/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(HandleAppMeshRequest)).Methods("GET", "PUT", "POST", "DELETE")
-	// Forward /metrics to /appmesh/metrics
-	router.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = "/appmesh/metrics" // Change the URL path to /appmesh/metrics
-		router.ServeHTTP(w, r)
-	}).Methods(http.MethodGet)
-
-	// Index & OPTIONS & HEAD
-	router.HandleFunc("/", utils.Cors(utils.DefaultCORSConfig)(HandleIndex)).Methods(http.MethodGet)
+	// OPTIONS & HEAD handlers (for all paths including static content)
 	router.HandleFunc("/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK) // Options handler
 	})).Methods("OPTIONS", "HEAD")
+
+	// AppMesh endpoints
+	router.NotFoundHandler = utils.Cors(utils.DefaultCORSConfig)(HandleAppMeshRequest)
 
 	return StartHTTPSServer(listenAddr, router)
 }
@@ -254,12 +237,6 @@ func ListenAndServeTLS(address string, server *http.Server) error {
 		return fmt.Errorf("server error: %w", err)
 	}
 	return nil
-}
-
-// HandleIndex serves the index page
-func HandleIndex(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(indexHtmlContent)
 }
 
 // HandleAppMeshRequest processes AppMesh requests

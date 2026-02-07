@@ -57,15 +57,6 @@ void RestBase::handleRest(const std::shared_ptr<HttpRequest> &message, const std
 
     const auto path = Utility::stringReplace(message->m_relative_uri, "//", "/");
 
-    // Root handler
-    if (path == "/" || path.empty())
-    {
-        static std::string body(REST_ROOT_TEXT_MESSAGE);
-        static std::string contentType("text/html; charset=utf-8");
-        message->reply(web::http::status_codes::OK, body, contentType);
-        return;
-    }
-
     // Find matching REST function
     auto it = std::find_if(
         restFunctions.begin(), restFunctions.end(),

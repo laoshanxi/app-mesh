@@ -154,7 +154,6 @@ public:
 
 constexpr auto METRIC_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
 constexpr auto METRIC_PATH = "/metrics";
-constexpr auto APPMESH_METRIC_PATH = "/appmesh/metrics";
 
 #define PROM_COUNTER_INCREASE(counter)     \
 	{                                      \

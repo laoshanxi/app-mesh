@@ -21,6 +21,10 @@ public:
 	static long getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max);
 	static std::string getHttpQueryString(const HttpRequest &message, const std::string &key);
 
+	// Static content serving utilities
+	static const std::string &getOpenApiContent();
+	static const std::string &getIndexHtmlContent();
+
 protected:
 	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::string &appName, bool requestWrite);
 	std::string regexSearch(const std::string &value, const char *regex);
@@ -84,7 +88,11 @@ protected:
 	void apiRoleDelete(const std::shared_ptr<HttpRequest> &message);
 
 	void apiHealth(const std::shared_ptr<HttpRequest> &message);
-	void apiRestMetrics(const std::shared_ptr<HttpRequest> &message); // not for Prometheus
+
+	// Static content handlers
+	void apiOpenApi(const std::shared_ptr<HttpRequest> &message);
+	void apiSwagger(const std::shared_ptr<HttpRequest> &message);
+	void apiIndex(const std::shared_ptr<HttpRequest> &message);
 };
 
 typedef ACE_Singleton<RestHandler, ACE_Null_Mutex> RESTHANDLER;

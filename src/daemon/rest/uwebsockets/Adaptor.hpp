@@ -132,7 +132,7 @@ private:
         out.reserve(filename.size());
         for (unsigned char c : filename)
         {
-            if ((std::isalnum(c) || c=='.' || c=='-' || c=='_' || c==' '))
+            if ((std::isalnum(c) || c == '.' || c == '-' || c == '_' || c == ' '))
                 out.push_back(c);
             else
                 out.push_back('_');
@@ -190,33 +190,6 @@ private:
         // Register a supported sub-protocol for WebSocket
         m_server->registerSupportedProtocol("appmesh-ws");
 
-        // OpenAPI route: serve the OpenAPI YAML
-        m_server->route("GET", "/openapi.yaml", [](auto *res, auto *req, auto /*replyCtx*/, const auto & /*match*/)
-        {
-            static const std::string openAPIContent = Utility::readFileCpp((std::filesystem::path(Configuration::instance()->getWorkDir()) / ".." / "script/openapi.yaml").string());
-            addCors(res, req);
-            res->writeHeader("Content-Type", "application/x-yaml");
-            res->writeStatus("200 OK")->end(openAPIContent);
-        });
-
-        // Swagger UI redirect: point to petstore.swagger.io with our openapi.yaml
-        m_server->route("GET", "/swagger/", [](auto *res, auto *req, auto /*replyCtx*/, const auto & /*match*/)
-        {
-            auto host = req->getHeader("host");
-            if (host.empty()) host = req->getHeader("Host");
-            std::string swaggerURL = "https://petstore.swagger.io/?url=https://" + std::string(host) + "/openapi.yaml";
-
-            res->writeHeader("Location", swaggerURL);
-            res->writeStatus("307 Temporary Redirect")->end();
-        });
-
-        // HTTP Route: Serve index.html
-        m_server->route("GET", "/", [](auto *res, auto * /*req*/, auto /*replyCtx*/, const auto & /*match*/)
-        {
-            static const std::string indexHtml = Utility::readFileCpp((std::filesystem::path(Configuration::instance()->getWorkDir()) / ".." / "script/index.html").string());
-            res->writeHeader("Content-Type", "text/html; charset=utf-8")->end(indexHtml);
-        });
-
         // OPTIONS handler for CORS preflight
         m_server->routeRegex("OPTIONS", "^/appmesh/.*$", [](auto *res, auto *req, auto /*replyCtx*/, const auto & /*match*/)
         {
@@ -234,11 +207,11 @@ private:
         // GENERIC HTTP HANDLER
         // -------------------------------------------------------------------------
         m_server->routeRegex("GET", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req,  std::move(replyCtx)); });
+                             { handleHttpRequest(res, req, std::move(replyCtx)); });
         m_server->routeRegex("POST", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req,  std::move(replyCtx)); });
+                             { handleHttpRequest(res, req, std::move(replyCtx)); });
         m_server->routeRegex("PUT", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req,  std::move(replyCtx)); });
+                             { handleHttpRequest(res, req, std::move(replyCtx)); });
         m_server->routeRegex("DELETE", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
                              { handleHttpRequest(res, req, std::move(replyCtx)); });
 

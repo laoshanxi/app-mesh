@@ -77,7 +77,7 @@ void PrometheusRest::handleRest(const std::shared_ptr<HttpRequest> &message, con
 {
 	if (message->m_method == web::http::methods::GET)
 	{
-		if (message->m_relative_uri != METRIC_PATH && message->m_relative_uri != APPMESH_METRIC_PATH)
+		if (message->m_relative_uri != METRIC_PATH)
 		{
 			PROM_COUNTER_INCREASE(m_restGetCounter)
 		}

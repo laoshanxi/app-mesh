@@ -20,6 +20,59 @@
 #include "PrometheusRest.h"
 #include "RestHandler.h"
 
+// Content-type constants
+constexpr auto CONTENT_TYPE_HTML = "text/html; charset=utf-8";
+constexpr auto CONTENT_TYPE_YAML = "application/x-yaml";
+
+// Static content serving utilities
+const std::string &RestHandler::getOpenApiContent()
+{
+	static const std::string content = Utility::readFileCpp((fs::path(Configuration::instance()->getWorkDir()) / ".." / "script" / "openapi.yaml").string());
+	return content;
+}
+
+const std::string &RestHandler::getIndexHtmlContent()
+{
+	static const std::string content = Utility::readFileCpp((fs::path(Configuration::instance()->getWorkDir()) / ".." / "script" / "index.html").string());
+	return content;
+}
+
+// Static content handlers
+void RestHandler::apiOpenApi(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiOpenApi() ";
+	LOG_DBG << fname << "Serving OpenAPI specification";
+
+	std::string content = getOpenApiContent();
+	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_YAML);
+}
+
+void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiSwagger() ";
+	LOG_DBG << fname << "Redirecting to Swagger UI";
+
+	auto host = message->m_headers.get("host");
+	if (host.empty())
+		host = message->m_headers.get("Host");
+
+	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
+	std::map<std::string, std::string> headers;
+	headers["Location"] = swaggerUrl;
+
+	std::string emptyBody;
+	message->reply(web::http::status_codes::TemporaryRedirect, emptyBody, headers, CONTENT_TYPE_HTML);
+}
+
+void RestHandler::apiIndex(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiIndex() ";
+	LOG_DBG << fname << "Serving index.html";
+
+	std::string content = getIndexHtmlContent();
+	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
+}
+
 // 1. Authentication
 constexpr auto REST_PATH_LOGIN = "/appmesh/login";
 constexpr auto REST_PATH_LOG_OFF = "/appmesh/self/logoff";
@@ -78,12 +131,17 @@ constexpr auto REST_PATH_SEC_USER_PERM_VIEW = "/appmesh/user/permissions";
 constexpr auto REST_PATH_SEC_PERM_VIEW_ALL = "/appmesh/permissions";
 constexpr auto REST_PATH_SEC_USER_GROUPS_VIEW = "/appmesh/user/groups";
 
-// 10. metrics
-constexpr auto REST_PATH_PROMETHEUS_METRICS = APPMESH_METRIC_PATH;
+// 10. resources
 constexpr auto REST_PATH_RESOURCE_VIEW = "/appmesh/resources";
 
 RestHandler::RestHandler() : PrometheusRest()
 {
+	// Static content handlers
+	bindRestMethod(web::http::methods::GET, "/swagger/", std::bind(&RestHandler::apiSwagger, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/openapi.yaml", std::bind(&RestHandler::apiOpenApi, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/index.html", std::bind(&RestHandler::apiIndex, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/", std::bind(&RestHandler::apiIndex, this, std::placeholders::_1));
+
 	// 1. Authentication
 	bindRestMethod(web::http::methods::POST, REST_PATH_LOGIN, std::bind(&RestHandler::apiUserLogin, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_LOG_OFF, std::bind(&RestHandler::apiUserLogoff, this, std::placeholders::_1));
@@ -146,7 +204,6 @@ RestHandler::RestHandler() : PrometheusRest()
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_GROUPS_VIEW, std::bind(&RestHandler::apiUserGroupsView, this, std::placeholders::_1));
 
 	// 10. metrics
-	bindRestMethod(web::http::methods::GET, REST_PATH_PROMETHEUS_METRICS, std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_RESOURCE_VIEW, std::bind(&RestHandler::apiResourceView, this, std::placeholders::_1));
 }
 
@@ -685,11 +742,6 @@ void RestHandler::apiHealth(const std::shared_ptr<HttpRequest> &message)
 	auto health = Configuration::instance()->getApp(appName)->health();
 	auto body = std::to_string(health);
 	message->reply(web::http::status_codes::OK, body);
-}
-
-void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
-{
-	PrometheusRest::apiMetrics(message);
 }
 
 nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token)
