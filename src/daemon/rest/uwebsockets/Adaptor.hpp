@@ -271,8 +271,8 @@ private:
 
         auto requestState = std::make_shared<Request>();
 
-        std::string m = std::string(req->getMethod());
-        std::transform(m.begin(), m.end(), m.begin(), [](unsigned char c) { return std::toupper(c); });
+        std::string m{req->getMethod()};
+        std::transform(m.begin(), m.end(), m.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
         requestState->http_method = std::move(m);
         requestState->request_uri = std::string(req->getUrl());
 
@@ -572,7 +572,7 @@ private:
             if (isLast)
             {
                 state->file.flush();
-                bool writeOk = state->file.good();
+                const bool writeOk = state->file.good();
                 state->file.close();
 
                 if (!writeOk)

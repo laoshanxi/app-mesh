@@ -166,7 +166,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		{
 			// WebSocket protocol
 			auto data = response->serialize();
-			m_uwsReplyContext->replyData(std::string(data->data(), data->size()), false, true);
+			m_uwsReplyContext->replyWebSocket(std::string(data->data(), data->size()), false, true);
 			return true;
 		}
 		else

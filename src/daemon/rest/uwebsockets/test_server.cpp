@@ -25,14 +25,14 @@ public:
         {
             // Send initial acknowledgment
             json ack = {{"status", "processing"}, {"taskId", taskId}, {"progress", 0}};
-            replyCtx->replyData(ack.dump(), false);
+            replyCtx->replyWebSocket(ack.dump(), false);
 
             // Simulate progressive updates
             for (int i = 1; i <= 5; ++i)
             {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 json progress = {{"status", "processing"}, {"taskId", taskId}, {"progress", i * 20}};
-                replyCtx->replyData(progress.dump(), false);
+                replyCtx->replyWebSocket(progress.dump(), false);
             }
 
             // Send final result
@@ -42,7 +42,7 @@ public:
                 {"taskId", taskId},
                 {"progress", 100},
                 {"result", "Task completed successfully"}};
-            replyCtx->replyData(result.dump(), true);
+            replyCtx->replyWebSocket(result.dump(), true);
         }).detach();
     }
 };
@@ -126,7 +126,7 @@ int main()
     server.route("GET", "/api/status", [](auto * /*res*/, auto * /*req*/, auto replyCtx, const auto & /*match*/)
     {
         json response = {{"status", "ok"}, {"timestamp", std::time(nullptr)}};
-        replyCtx->replyData(response.dump(), true);
+        replyCtx->replyWebSocket(response.dump(), true);
     });
 
     // HTTP Route: Regex example - get user's specific resource
@@ -141,7 +141,7 @@ int main()
             {"status", "completed"},
             {"total", 99.99}
         };
-        replyCtx->replyData(response.dump(), true);
+        replyCtx->replyWebSocket(response.dump(), true);
     });
 
     // HTTP Route: Async task processing
@@ -164,7 +164,7 @@ int main()
                 catch (const std::exception &e)
                 {
                     json error = {{"error", e.what()}};
-                    replyCtx->replyData(error.dump(), true);
+                    replyCtx->replyWebSocket(error.dump(), true);
                 }
             }
         });
@@ -195,7 +195,7 @@ int main()
                     if (!reqData.contains("clientId") || !reqData.contains("message"))
                     {
                         json error = {{"error", "Missing clientId or message"}};
-                        replyCtx->replyData(error.dump(), true);
+                        replyCtx->replyWebSocket(error.dump(), true);
                         return;
                     }
 
@@ -206,12 +206,12 @@ int main()
                     bool sent = server.sendToClient(clientId, notification.dump());
 
                     json response = {{"success", sent}, {"clientId", clientId}};
-                    replyCtx->replyData(response.dump(), true);
+                    replyCtx->replyWebSocket(response.dump(), true);
                 }
                 catch (const std::exception &e)
                 {
                     json error = {{"error", e.what()}};
-                    replyCtx->replyData(error.dump(), true);
+                    replyCtx->replyWebSocket(error.dump(), true);
                 }
             }
         });
@@ -242,7 +242,7 @@ int main()
                     {"clientId", connection->getId()},
                     {"protocol", connection->getProtocol()} // Echo back the protocol
                 };
-                replyCtx->replyData(response.dump(), true);
+                replyCtx->replyWebSocket(response.dump(), true);
             }
             else if (action == "ping")
             {
@@ -293,7 +293,7 @@ int main()
                     if (message.empty())
                     {
                         json error = {{"error", "Missing message"}};
-                        replyCtx->replyData(error.dump(), true);
+                        replyCtx->replyWebSocket(error.dump(), true);
                         return;
                     }
 
@@ -301,12 +301,12 @@ int main()
                     server.broadcast(std::make_shared<std::string>(notification.dump()));
 
                     json response = {{"success", true}, {"recipients", server.getConnectionCount()}};
-                    replyCtx->replyData(response.dump(), true);
+                    replyCtx->replyWebSocket(response.dump(), true);
                 }
                 catch (const std::exception &e)
                 {
                     json error = {{"error", e.what()}};
-                    replyCtx->replyData(error.dump(), true);
+                    replyCtx->replyWebSocket(error.dump(), true);
                 }
             }
         });
