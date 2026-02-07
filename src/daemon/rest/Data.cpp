@@ -127,6 +127,19 @@ bool Response::handleAuthCookies()
 	return result;
 }
 
+void Response::handleCorsHeaders()
+{
+	static const bool corsDisabled = Utility::getenv("APPMESH_CORS_DISABLE") == "true";
+	if (corsDisabled)
+	{
+		return;
+	}
+	headers["Access-Control-Allow-Origin"] = "*";
+	headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+	headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-CSRF-Token";
+	headers["Access-Control-Allow-Credentials"] = "true";
+}
+
 std::unique_ptr<msgpack::sbuffer> Request::serialize() const
 {
 	auto sbuf = std::make_unique<msgpack::sbuffer>();

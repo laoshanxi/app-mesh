@@ -27,8 +27,10 @@ public:
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
+	// HTTP protocol headers and cookies
 	bool handleAuthCookies();
 	bool setAuthCookie();
+	void handleCorsHeaders();
 
 public:
 	std::string uuid;
