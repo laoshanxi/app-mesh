@@ -3,8 +3,6 @@
 #include "Worker.h"
 
 #include "../../common/QuitHandler.h"
-#include "../../common/RestClient.h"
-#include "../../common/TimerHandler.h"
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
@@ -62,33 +60,34 @@ int Worker::svc()
 
 	while (!QuitHandler::instance()->shouldExit())
 	{
-		std::shared_ptr<HttpRequestContext> entity;
-		m_messages.wait_dequeue(entity);
+		std::shared_ptr<HttpRequestContext> requestContext;
+		m_messages.wait_dequeue(requestContext);
 
 		// Sentinel check
-		if (!entity || entity->m_data.empty())
+		const bool isSentinel = !requestContext || requestContext->m_data.empty();
+		if (isSentinel)
 		{
 			LOG_INF << fname << "Got sentinel";
 			break;
 		}
 
-		auto request = HttpRequest::deserialize(entity->m_data, entity->m_tcpClientId, entity->m_lwsSession, entity->m_uwsReplyContext);
+		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsSession, requestContext->m_uwsReplyContext);
 
 		if (!request || !process(request))
 		{
 			LOG_WAR << fname << "Failed to parse request, closing connection";
 
-			if (entity->m_tcpClientId > 0)
+			if (requestContext->m_tcpClientId > 0)
 			{
-				SocketServer::closeClient(entity->m_tcpClientId);
+				SocketServer::closeClient(requestContext->m_tcpClientId);
 			}
 #if defined(HAVE_UWEBSOCKETS)
-			else if (entity->m_uwsReplyContext)
+			else if (requestContext->m_uwsReplyContext)
 			{
-				entity->m_uwsReplyContext->replyData("500 Internal Server Error", true, false);
+				requestContext->m_uwsReplyContext->replyWebSocket("500 Internal Server Error", true, false);
 			}
 #else
-			else if (entity->m_lwsSession)
+			else if (requestContext->m_lwsSession)
 			{
 				// TODO: handle libwebsockets close to avoid leak
 			}

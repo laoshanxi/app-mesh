@@ -31,7 +31,7 @@ namespace WSS
         }
 
         // Send WebSocket response
-        void replyData(std::string &&data, bool isLast = false, bool isBinary = true)
+        void replyWebSocket(std::string &&data, bool isLast = false, bool isBinary = true)
         {
             static const Headers emptyHeaders;
             invokeCallback(std::move(data), "200 OK", emptyHeaders, "text/plain", isLast, isBinary);
