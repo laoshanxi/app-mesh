@@ -443,14 +443,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         if (!ssnInfo)
             return lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, nullptr);
 
-        // 1. Serve index
-        if (ssnInfo->path == "/" || ssnInfo->path == "/index.html")
-        {
-            // Note: lws_serve_http_file handles LWS_PRE internally
-            return lws_serve_http_file(wsi, "index.html", "text/html; charset=utf-8", nullptr, 0);
-        }
-
-        // 2. File download
+        // 1. File download
         if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download/ws" && !ssnInfo->ext_x_file_path.empty())
         {
             if (!WebSocketSession::verifyToken(ssnInfo->autherization))
@@ -460,7 +453,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             return lws_serve_http_file(wsi, ssnInfo->ext_x_file_path.c_str(), "application/octet-stream", nullptr, 0);
         }
 
-        // 3. File upload setup
+        // 2. File upload setup
         if (ssnInfo->method == "POST" && ssnInfo->path == "/appmesh/file/upload/ws" && !ssnInfo->ext_x_file_path.empty())
         {
             if (!WebSocketSession::verifyToken(ssnInfo->autherization))
@@ -479,7 +472,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             }
         }
 
-        // 4. Enqueue HTTP request for async processing
+        // 3. Enqueue HTTP request for async processing
         if (pss)
         {
             pss->http_request = buildHttpRequest(wsi);
