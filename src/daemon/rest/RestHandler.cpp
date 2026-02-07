@@ -132,6 +132,7 @@ constexpr auto REST_PATH_SEC_PERM_VIEW_ALL = "/appmesh/permissions";
 constexpr auto REST_PATH_SEC_USER_GROUPS_VIEW = "/appmesh/user/groups";
 
 // 10. resources
+constexpr auto REST_PATH_PROMETHEUS_METRICS = "/appmesh/metrics";
 constexpr auto REST_PATH_RESOURCE_VIEW = "/appmesh/resources";
 
 RestHandler::RestHandler() : PrometheusRest()
@@ -204,6 +205,7 @@ RestHandler::RestHandler() : PrometheusRest()
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_GROUPS_VIEW, std::bind(&RestHandler::apiUserGroupsView, this, std::placeholders::_1));
 
 	// 10. metrics
+	bindRestMethod(web::http::methods::GET, REST_PATH_PROMETHEUS_METRICS, std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_RESOURCE_VIEW, std::bind(&RestHandler::apiResourceView, this, std::placeholders::_1));
 }
 
@@ -742,6 +744,11 @@ void RestHandler::apiHealth(const std::shared_ptr<HttpRequest> &message)
 	auto health = Configuration::instance()->getApp(appName)->health();
 	auto body = std::to_string(health);
 	message->reply(web::http::status_codes::OK, body);
+}
+
+void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
+{
+	PrometheusRest::apiMetrics(message);
 }
 
 nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token)

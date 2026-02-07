@@ -1,9 +1,11 @@
 // src/daemon/rest/Data.cpp
+#include <algorithm>
+#include <cerrno>
 #include <chrono>
-#include <errno.h>
 #include <tuple>
 
 #include <msgpack.hpp>
+#include <nlohmann/json.hpp>
 
 #include "../../common/Utility.h"
 #include "Data.h"
@@ -33,8 +35,7 @@ bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
 		msgpack::unpacked result;
 		msgpack::unpack(result, reinterpret_cast<const char *>(data), dataSize);
 		msgpack::object obj = result.get();
-		Response resp = obj.as<Response>();
-		*this = resp;
+		obj.convert(*this);
 		return true;
 	}
 	catch (const std::exception &e)
@@ -76,14 +77,16 @@ bool Response::setAuthCookie()
 	}
 
 	// Trim "Bearer " prefix if present
-	if (accessToken.find(HTTP_HEADER_JWT_BearerSpace) == 0)
+	const std::string bearerPrefix = HTTP_HEADER_JWT_BearerSpace;
+	if (accessToken.compare(0, bearerPrefix.length(), bearerPrefix) == 0)
 	{
-		accessToken = accessToken.substr(7);
+		accessToken = accessToken.substr(bearerPrefix.length());
 	}
 
 	// Create cookie string
-	std::string cookieValue = COOKIE_TOKEN + std::string("=") + accessToken + "; Path=/; HttpOnly; SameSite=Strict";
-	// TODO: Check if using HTTPS (for Secure flag)
+	std::string cookieValue = std::string(COOKIE_TOKEN) + "=" + accessToken + "; Path=/; HttpOnly; SameSite=Strict";
+
+	// TODO: Determine HTTPS dynamically
 	bool isSecure = true;
 	if (isSecure)
 	{
@@ -110,21 +113,28 @@ bool Response::handleAuthCookies()
 
 	// Check if response path indicates a login/auth endpoint (where cookie should be set)
 	const std::string &requestUri = this->request_uri;
-	bool shouldSetCookie = false;
-
-	// Check for login/auth paths (or check if response has access_token)
-	if (requestUri == "/appmesh/login" || requestUri == "/appmesh/auth" || requestUri == "/appmesh/totp/validate")
-	{
-		shouldSetCookie = true;
-	}
+	bool shouldSetCookie = (requestUri == "/appmesh/login" ||
+							requestUri == "/appmesh/auth" ||
+							requestUri == "/appmesh/totp/validate");
 
 	if (!shouldSetCookie)
 		return false;
 
 	bool result = this->setAuthCookie();
-
 	LOG_DBG << fname << "setAuthCookie result: " << (result ? "success" : "no cookie set");
 	return result;
+}
+
+void Response::applyCorsHeaders()
+{
+	static const bool corsDisabled = Utility::getenv("APPMESH_CORS_DISABLE") == "true";
+	if (corsDisabled)
+		return;
+
+	headers["Access-Control-Allow-Origin"] = "*";
+	headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+	headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-CSRF-Token";
+	// Note: Removed Access-Control-Allow-Credentials as it conflicts with wildcard origin
 }
 
 std::unique_ptr<msgpack::sbuffer> Request::serialize() const
@@ -141,10 +151,8 @@ bool Request::deserialize(const ByteBuffer &data)
 	{
 		msgpack::unpacked result;
 		msgpack::unpack(result, reinterpret_cast<const char *>(data.data()), data.size());
-
 		msgpack::object obj = result.get();
-		obj.convert(*this); // directly fill into *this
-
+		obj.convert(*this);
 		return true;
 	}
 	catch (const std::exception &e)
@@ -154,14 +162,19 @@ bool Request::deserialize(const ByteBuffer &data)
 	return false;
 }
 
-bool Request::contain_body()
+bool Request::contain_body() const
 {
 	auto it = headers.find("content-length");
 	if (it != headers.end())
 	{
 		char *end;
+		errno = 0;
 		long long len = std::strtoll(it->second.c_str(), &end, 10);
-		return len > 0;
+		if (errno == 0 && end != it->second.c_str())
+		{
+			return len > 0;
+		}
+		return false;
 	}
 
 	it = headers.find("transfer-encoding");
@@ -173,7 +186,15 @@ bool Request::contain_body()
 	return false;
 }
 
-// Helper function to extract cookie value from Cookie header
+static std::string trim(const std::string &str)
+{
+	size_t start = str.find_first_not_of(" \t\r\n");
+	if (start == std::string::npos)
+		return "";
+	size_t end = str.find_last_not_of(" \t\r\n");
+	return str.substr(start, end - start + 1);
+}
+
 static std::string getCookieValue(const std::string &cookieHeader, const std::string &cookieName)
 {
 	std::string searchPattern = cookieName + "=";
@@ -182,12 +203,12 @@ static std::string getCookieValue(const std::string &cookieHeader, const std::st
 		return "";
 
 	startPos += searchPattern.size();
-	size_t endPos = cookieHeader.find(";", startPos);
+	size_t endPos = cookieHeader.find(';', startPos);
 	if (endPos == std::string::npos)
 	{
-		return cookieHeader.substr(startPos);
+		return trim(cookieHeader.substr(startPos));
 	}
-	return cookieHeader.substr(startPos, endPos - startPos);
+	return trim(cookieHeader.substr(startPos, endPos - startPos));
 }
 
 // Convert cookie to Authorization header (follows agent_request.go validateCSRFToken pattern)
@@ -216,15 +237,8 @@ bool Request::convertCookieToAuthorization()
 	// 2. Compare with X-CSRF-Token header
 	// 3. Verify HMAC if both present
 	// For now, we just inject the Authorization header
-
-	// Trim whitespace
-	while (!authCookieValue.empty() && authCookieValue.back() == ' ')
-		authCookieValue.pop_back();
-	while (!authCookieValue.empty() && authCookieValue.front() == ' ')
-		authCookieValue = authCookieValue.substr(1);
-
 	// Inject Authorization header
-	headers[HTTP_HEADER_JWT_Authorization] = HTTP_HEADER_JWT_BearerSpace + authCookieValue;
+	headers[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + authCookieValue;
 
 	LOG_DBG << fname << "Converted cookie to Authorization header for UUID: " << uuid;
 	return true;

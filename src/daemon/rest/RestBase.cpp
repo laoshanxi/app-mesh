@@ -67,6 +67,12 @@ void RestBase::handleRest(const std::shared_ptr<HttpRequest> &message, const std
 
     if (it == restFunctions.end())
     {
+        if (message->m_method == web::http::methods::OPTIONS)
+        {
+            LOG_DBG << fname << "204 NoContent " << message->m_method << ":" << path;
+            message->reply(web::http::status_codes::NoContent);
+            return;
+        }
         LOG_WAR << fname << "404 NotFound " << message->m_method << ":" << path;
         message->reply(web::http::status_codes::NotFound, Utility::text2json("Path not found " + message->m_method + ":" + path));
         return;

@@ -45,12 +45,12 @@ func New(opts ...Opt) *GrafanaHandler {
 }
 
 func (h *GrafanaHandler) handleRestRouter(router *mux.Router) {
-	router.HandleFunc("/appmesh_grafana", utils.Cors(utils.DefaultCORSConfig)(h.HandleRoot)).Methods(http.MethodGet)
-	router.HandleFunc("/appmesh_grafana/query", utils.Cors(utils.DefaultCORSConfig)(h.HandleQuery)).Methods(http.MethodPost)
-	router.HandleFunc("/appmesh_grafana/annotations", utils.Cors(utils.DefaultCORSConfig)(h.HandleAnnotations)).Methods(http.MethodPost)
-	router.HandleFunc("/appmesh_grafana/search", utils.Cors(utils.DefaultCORSConfig)(h.HandleSearch)).Methods(http.MethodPost)
-	router.HandleFunc("/appmesh_grafana/tag-keys", utils.Cors(utils.DefaultCORSConfig)(h.HandleTagKeys)).Methods(http.MethodPost)
-	router.HandleFunc("/appmesh_grafana/tag-values", utils.Cors(utils.DefaultCORSConfig)(h.HandleTagValues)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana", (h.HandleRoot)).Methods(http.MethodGet)
+	router.HandleFunc("/appmesh_grafana/query", (h.HandleQuery)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana/annotations", (h.HandleAnnotations)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana/search", (h.HandleSearch)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana/tag-keys", (h.HandleTagKeys)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana/tag-values", (h.HandleTagValues)).Methods(http.MethodPost)
 
 	// You can also add CORS for OPTIONS requests if needed:
 	//router.HandleFunc("/appmesh_grafana", utils.Cors(utils.DefaultCORSConfig)(h.HandleOptions)).Methods(http.MethodOptions)

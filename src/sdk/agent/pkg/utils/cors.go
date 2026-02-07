@@ -75,9 +75,10 @@ var DefaultCORSConfig = CORSConfig{
 }
 
 // Cors is a middleware that handles CORS for HTTP requests
-func Cors(config CORSConfig) func(http.HandlerFunc) http.HandlerFunc {
+// Cors returns a middleware compatible with http.Handler (and thus mux.Router.Use).
+func Cors(config CORSConfig) func(http.Handler) http.Handler {
 	if !globalCORSEnabled {
-		return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(next http.Handler) http.Handler {
 			return next
 		}
 	}
@@ -93,8 +94,8 @@ func Cors(config CORSConfig) func(http.HandlerFunc) http.HandlerFunc {
 		originsMap[origin] = struct{}{}
 	}
 
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Set CORS headers
 			origin := r.Header.Get("Origin")
 			if origin != "" {
@@ -129,6 +130,6 @@ func Cors(config CORSConfig) func(http.HandlerFunc) http.HandlerFunc {
 
 			// Call the next handler
 			next.ServeHTTP(w, r)
-		}
+		})
 	}
 }

@@ -3,13 +3,10 @@ package agent
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 )
 
 const (
 	prometheusMetricPath = "/metrics"
-	appmeshMetricPath    = "/appmesh/metrics"
 )
 
 // PrometheusServer represents the Prometheus exporter server
@@ -31,32 +28,11 @@ func (s *PrometheusServer) RootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Prometheus metrics available at %s", prometheusMetricPath)
 }
 
-// MetricsHandler handles the metrics path request
-func (s *PrometheusServer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		utils.HttpError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Create a new request for the Appmesh metrics
-	appmeshReq, err := http.NewRequest(http.MethodGet, appmeshMetricPath, nil)
-	if err != nil {
-		utils.HttpError(w, "Failed to create Appmesh request", http.StatusInternalServerError)
-		return
-	}
-
-	// Copy relevant headers from the original request
-	appmeshReq.Header = r.Header
-
-	// Call HandleAppMeshRequest with the new request
-	HandleAppMeshRequest(w, appmeshReq)
-}
-
 // ListenAndServe starts the Prometheus exporter server
 func (s *PrometheusServer) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.RootHandler)
-	mux.HandleFunc(prometheusMetricPath, s.MetricsHandler)
+	mux.HandleFunc(prometheusMetricPath, HandleAppMeshRequest)
 
 	addr := fmt.Sprintf(":%d", s.port)
 	logger.Infof("Starting Prometheus exporter server on %s", addr)

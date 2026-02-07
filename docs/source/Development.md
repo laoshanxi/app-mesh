@@ -51,7 +51,7 @@ GET | /appmesh/user/permissions |  | Get user self permissions, user token is re
 GET | /appmesh/permissions |  | Get all permissions
 GET | /appmesh/user/groups |  | Get all user groups
 -|-|-|-
-GET | /appmesh/metrics | | Get Prometheus exporter metrics (this is not scrap url for prometheus server)
+GET | /appmesh/metrics | | Get Prometheus exporter metrics
 GET | /appmesh/resources | | Get host resource usage
 
 ## How to build App Mesh

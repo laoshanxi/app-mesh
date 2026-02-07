@@ -88,6 +88,7 @@ protected:
 	void apiRoleDelete(const std::shared_ptr<HttpRequest> &message);
 
 	void apiHealth(const std::shared_ptr<HttpRequest> &message);
+	void apiRestMetrics(const std::shared_ptr<HttpRequest> &message);
 
 	// Static content handlers
 	void apiOpenApi(const std::shared_ptr<HttpRequest> &message);
