@@ -240,7 +240,6 @@ private:
     {
         const static char fname[] = "WebSocketAdaptor::handleHttpRequest() ";
         LOG_DBG << fname << "Enter";
-        addCors(res, req);
 
         auto requestState = std::make_shared<Request>();
 
