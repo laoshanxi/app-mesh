@@ -190,13 +190,6 @@ private:
         // Register a supported sub-protocol for WebSocket
         m_server->registerSupportedProtocol("appmesh-ws");
 
-        // OPTIONS handler for CORS preflight
-        m_server->routeRegex("OPTIONS", "^/appmesh/.*$", [](auto *res, auto *req, auto /*replyCtx*/, const auto & /*match*/)
-        {
-            addCors(res, req);
-            res->writeStatus("204 No Content")->end();
-        });
-
         m_server->route("GET", "/appmesh/file/download/ws", [this](auto *res, auto *req, auto /*replyCtx*/, const auto & /*match*/)
                         { handleDownload(res, req); });
 
@@ -213,6 +206,8 @@ private:
         m_server->routeRegex("PUT", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
                              { handleHttpRequest(res, req, std::move(replyCtx)); });
         m_server->routeRegex("DELETE", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
+                             { handleHttpRequest(res, req, std::move(replyCtx)); });
+        m_server->routeRegex("OPTIONS", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
                              { handleHttpRequest(res, req, std::move(replyCtx)); });
 
         // WebSocket: Handle incoming messages
@@ -240,7 +235,6 @@ private:
     {
         const static char fname[] = "WebSocketAdaptor::handleHttpRequest() ";
         LOG_DBG << fname << "Enter";
-        addCors(res, req);
 
         auto requestState = std::make_shared<Request>();
 
