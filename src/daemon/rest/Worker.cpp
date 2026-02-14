@@ -17,6 +17,7 @@
 #include <ace/OS_NS_sys_select.h>
 #include <ace/os_include/netinet/os_tcp.h>
 
+#include <atomic>
 #include <cerrno>
 #include <fstream>
 #include <limits>
@@ -36,6 +37,49 @@ struct HttpRequestContext
 	const int m_tcpClientId;							  // TCP socket
 	void *const m_lwsSession;							  // libwebsockets
 	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext; // uWebsockets
+};
+
+struct ForwardingConnection
+{
+	SocketStreamPtr stream;
+	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Thread_Mutex>;
+	PendingRequestMap pending_requests;
+	std::atomic<bool> closed{false};
+
+	bool addRequest(const std::string &uuid, std::shared_ptr<HttpRequest> request)
+	{
+		if (closed.load(std::memory_order_relaxed))
+			return false;
+		return pending_requests.bind(uuid, std::move(request)) == 0;
+	}
+
+	std::shared_ptr<HttpRequest> takeRequest(const std::string &uuid)
+	{
+		std::shared_ptr<HttpRequest> req;
+		pending_requests.unbind(uuid, req);
+		return req;
+	}
+
+	void failAll(const std::string &msg)
+	{
+		std::vector<std::string> keys;
+		{
+			ACE_GUARD(ACE_Thread_Mutex, guard, pending_requests.mutex());
+			closed.store(true, std::memory_order_relaxed);
+			for (auto iter = pending_requests.begin(); iter != pending_requests.end(); ++iter)
+			{
+				keys.push_back((*iter).ext_id_);
+			}
+		}
+		for (auto &uuid : keys)
+		{
+			std::shared_ptr<HttpRequest> req;
+			if (pending_requests.unbind(uuid, req) == 0 && req)
+			{
+				req->reply(web::http::status_codes::BadGateway, msg);
+			}
+		}
+	}
 };
 
 void Worker::queueTcpRequest(ByteBuffer &&data, int tcpClientId)
@@ -162,67 +206,106 @@ bool Worker::forward(std::string forwardTo, const std::shared_ptr<HttpRequest> &
 	static const char fname[] = "Worker::forward() ";
 	LOG_DBG << fname << "Forwarding Host: " << forwardTo;
 
-	static ACE_Map_Manager<std::string, std::shared_ptr<SocketStreamPtr>, ACE_Thread_Mutex> connectedClients;
+	using ForwardingClientMap = ACE_Map_Manager<std::string, std::shared_ptr<ForwardingConnection>, ACE_Recursive_Thread_Mutex>;
+	static ForwardingClientMap connectedClients;
 
 	Uri parser;
 	auto uri = parser.parse(forwardTo);
 	const std::string host = uri.host;
 	uri.port = (uri.port <= 1024) ? Configuration::instance()->getRestTcpPort() : uri.port;
 
-	std::shared_ptr<SocketStreamPtr> client;
-	if (connectedClients.find(host, client) != 0)
+	std::shared_ptr<ForwardingConnection> conn;
+	if (connectedClients.find(host, conn) != 0 || conn->closed.load(std::memory_order_relaxed))
 	{
-		ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, connectedClients.mutex(), false);
+		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, connectedClients.mutex(), false);
+
+		// Remove stale closed connection
+		if (connectedClients.find(host, conn) == 0 && conn->closed.load(std::memory_order_relaxed))
+		{
+			connectedClients.unbind(host);
+			conn.reset();
+		}
 
 		// Double-checked locking
-		if (connectedClients.find(host, client) != 0)
+		if (connectedClients.find(host, conn) != 0)
 		{
-			client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
+			conn = std::make_shared<ForwardingConnection>();
+			conn->stream = SocketStreamPtr(new SocketStream(Global::getClientSSL()));
 
-			if (!client->stream()->connect(ACE_INET_Addr(uri.port, host.c_str())))
+			// Set up callbacks once before connecting (safe: callbacks are stored, not invoked yet)
+			std::weak_ptr<ForwardingConnection> weakConn = conn;
+
+			conn->stream->onData(
+				[weakConn](std::vector<std::uint8_t> &&data)
+				{
+					auto c = weakConn.lock();
+					if (!c)
+						return;
+					Response r;
+					if (r.deserialize(data.data(), data.size()))
+					{
+						auto req = c->takeRequest(r.uuid);
+						if (req)
+						{
+							req->reply(r.request_uri, r.uuid, r.body, r.headers, r.http_status, r.body_msg_type);
+						}
+						else
+						{
+							LOG_WAR << "Worker::forward() Received response for unknown UUID: " << r.uuid;
+						}
+					}
+					else
+					{
+						LOG_ERR << "Worker::forward() Failed to deserialize forwarded response";
+						c->failAll("Corrupted response from forwarding host");
+					}
+				});
+
+			conn->stream->onClose(
+				[weakConn, host]()
+				{
+					LOG_WAR << "Worker::forward() Forwarding connection to " << host << " closed";
+					if (auto c = weakConn.lock())
+					{
+						c->failAll("Forwarding host connection closed");
+					}
+					connectedClients.unbind(host);
+				});
+
+			if (!conn->stream->connect(ACE_INET_Addr(uri.port, host.c_str())))
 			{
 				LOG_ERR << fname << "Failed to connect to forwarding host: " << host;
 				request->reply(web::http::status_codes::BadGateway, "Failed to connect to forwarding host");
 				return true;
 			}
 
-			connectedClients.bind(host, client);
+			connectedClients.bind(host, conn);
 		}
 	}
 
-	if (!client || !client->stream())
+	if (!conn || !conn->stream.stream())
 	{
 		LOG_CRT << fname << "Failed to create connection to: " << forwardTo;
 		return false;
 	}
 
-	// Ensure callback does not trigger before send to maintain sequence
-	std::lock_guard<std::mutex> lock(client->stream()->get_state_mutex());
-
-	client->stream()->onData(
-		[request](std::vector<std::uint8_t> &&data)
-		{
-			Response r;
-			if (r.deserialize(data.data(), data.size()))
-			{
-				request->reply(r.request_uri, r.uuid, r.body, r.headers, r.http_status, r.body_msg_type);
-			}
-			else
-			{
-				request->reply(web::http::status_codes::InternalError, "Failed to parse forwarded response");
-			}
-		});
-
-	client->stream()->onClose(
-		[host, request]()
-		{
-			LOG_WAR << "Forwarding client to " << host << " closed";
-			connectedClients.unbind(host);
-			request->reply(web::http::status_codes::BadGateway, "Forwarding host connection closed");
-		});
+	// Register request before sending so the response callback can find it
+	if (!conn->addRequest(request->m_uuid, request))
+	{
+		request->reply(web::http::status_codes::BadGateway, "Forwarding connection closed");
+		return true;
+	}
 
 	auto data = request->serialize();
-	client->stream()->send(std::move(data));
+	if (!conn->stream->send(std::move(data)))
+	{
+		// Send failed — remove pending request and notify caller
+		auto req = conn->takeRequest(request->m_uuid);
+		if (req)
+		{
+			req->reply(web::http::status_codes::BadGateway, "Failed to send to forwarding host");
+		}
+	}
 
 	return true;
 }

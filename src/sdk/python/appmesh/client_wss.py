@@ -205,10 +205,6 @@ class AppMeshClientWSS(AppMeshClient):
             Simulated HTTP response.
         """
 
-        # Check for unsupported features
-        if super().forward_to:
-            raise RuntimeError("Forward request is not supported in WSS mode")
-
         if not self.wss_transport.connected():
             self.wss_transport.connect()
 
@@ -224,6 +220,10 @@ class AppMeshClientWSS(AppMeshClient):
         token = self._get_access_token()
         if token:
             appmesh_request.headers[self._HTTP_HEADER_KEY_AUTH] = token
+
+        # Add forwarding host
+        if super().forward_to:
+            appmesh_request.headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = super().forward_to
 
         # Add custom headers
         if header:

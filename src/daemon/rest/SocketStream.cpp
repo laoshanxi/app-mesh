@@ -569,7 +569,7 @@ bool SocketStream::send_impl(SendBuffer &&buf)
 			return false;
 
 		m_send_state.enqueue_unsafe(std::move(buf));
-		LOG_DBG << fname << "Enqueued message for sending, queue size now: " << (m_send_state.is_empty_unsafe() ? 1 : m_send_state.is_empty_unsafe());
+		LOG_DBG << fname << "Enqueued message for sending";
 	}
 
 	// Check state again after releasing lock
