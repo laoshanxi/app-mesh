@@ -232,6 +232,8 @@ private:
 	std::shared_ptr<SendBuffer> m_current;
 };
 
+class SocketStreamPtr;
+
 // SocketStream: Async TCP/TLS Socket
 // Works with both:
 //   - Server side: ACE_Acceptor<ACE_SSL_SOCK_Stream, ACE_SSL_SOCK_Acceptor>
@@ -270,6 +272,10 @@ public:
 
 	// ========== Client-side: Connect to remote server ==========
 	bool connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
+
+	/// Create a new client SocketStream and connect to the remote address.
+	/// Always returns a valid SocketStreamPtr; check connected() for success.
+	static SocketStreamPtr createConnection(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
 
 	// --- Public API ---
 	bool send(const std::string &data);

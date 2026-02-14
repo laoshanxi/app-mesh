@@ -129,7 +129,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 
 ## 🔗 Library dependency
 
-- [Google/protobuf](https://github.com/protocolbuffers/protobuf)
+- [MessagePack](https://github.com/msgpack/msgpack-c)
 - [boostorg/boost](https://github.com/boostorg/boost)
 - [ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
 - [Thalhammer/jwt-cpp](https://github.com/Thalhammer/jwt-cpp)

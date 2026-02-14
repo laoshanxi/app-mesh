@@ -383,6 +383,11 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 	const auto &file = (message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+	if (file.find("..") != std::string::npos || file.find('\0') != std::string::npos)
+	{
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+		return;
+	}
 	if (!Utility::isFileExist(file))
 	{
 		message->reply(web::http::status_codes::NotAcceptable, Utility::text2json("file not found"));
@@ -421,6 +426,11 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 	const auto &file = message->m_headers.find(HTTP_HEADER_KEY_file_path)->second;
+	if (file.find("..") != std::string::npos || file.find('\0') != std::string::npos)
+	{
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+		return;
+	}
 	if (Utility::isFileExist(file))
 	{
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("file already exist"));
@@ -817,7 +827,7 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 		if (!Security::instance()->verifyUserKey(uname, passwd))
 		{
 			// passwd failed
-			message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Incorrect user password"));
+			message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Authentication failed"));
 		}
 		else if (user && !user->mfaEnabled())
 		{
@@ -855,7 +865,7 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 				else
 				{
 					// totp failed
-					message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Incorrect totp key"));
+					message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Authentication failed"));
 				}
 			}
 		}
@@ -1037,8 +1047,8 @@ void RestHandler::apiUserTotpDisable(const std::shared_ptr<HttpRequest> &message
 	}
 	else
 	{
-		LOG_WAR << fname << "No such user exist: " << userName;
-		throw std::invalid_argument("No such user exist");
+		LOG_WAR << fname << "user not found: " << userName;
+		throw std::invalid_argument("user not found");
 	}
 }
 
