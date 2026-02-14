@@ -18,7 +18,7 @@ struct WSSessionInfo
     std::string method;
     std::string path;
     std::string query;
-    std::string autherization;
+    std::string authorization;
     std::string auth_scheme;
     std::string ext_x_file_path;
 };
@@ -68,11 +68,8 @@ public:
     // Enqueue outgoing message (from worker thread)
     void enqueueOutgoingMessage(std::vector<std::uint8_t> &&payload);
 
-    // Return a reference to the front, don't pop yet
-    std::vector<std::uint8_t> *peekOutgoingMessage();
-    // Advance offset, pop if done
-    void advanceOutgoingMessage(size_t bytes_sent);
-    size_t getOutgoingMessageOffset();
+    // Pop and return the front outgoing message (includes LWS_PRE prefix)
+    std::vector<std::uint8_t> popOutgoingMessage();
 
     bool hasOutgoingMessages() const;
 
@@ -88,5 +85,4 @@ private:
 
     mutable std::mutex m_outgoing_mutex;
     std::queue<std::vector<std::uint8_t>> m_outgoing_messages;
-    size_t m_outgoing_offset = 0; // Tracks bytes sent for the front message
 };

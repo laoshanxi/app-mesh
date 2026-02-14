@@ -30,12 +30,12 @@ jobs:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
       - name: test ubuntu:22
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ubuntu:22.04
-          options: -v ${{ github.workspace }}:/work
-          shell: bash
-          run: |
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            --entrypoint=bash \
+            ubuntu:22.04 \
+            -c '
             apt update
             apt install -y wget iputils-ping
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_11_glibc_2.35_x86_64.deb
@@ -62,14 +62,15 @@ jobs:
             python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
             python3 /work/src/sdk/python/test/test_appmesh_client.py
             python3 /work/src/sdk/python/sample.py
+            '
 
       - name: test ubuntu:24
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ubuntu:24.04
-          options: -v ${{ github.workspace }}:/work
-          shell: bash
-          run: |
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            --entrypoint=bash \
+            ubuntu:24.04 \
+            -c '
             apt update
             apt install -y wget iputils-ping
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_13_glibc_2.39_x86_64.deb
@@ -96,14 +97,15 @@ jobs:
             python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
             python3 /work/src/sdk/python/test/test_appmesh_client.py
             python3 /work/src/sdk/python/sample.py
+            '
 
       - name: test ubuntu:18
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ubuntu:18.04
-          options: -v ${{ github.workspace }}:/work
-          shell: bash
-          run: |
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            --entrypoint=bash \
+            ubuntu:18.04 \
+            -c '
             apt update
             apt install -y wget iputils-ping
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_7_glibc_2.27_x86_64.deb
@@ -130,14 +132,15 @@ jobs:
             python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
             python3 /work/src/sdk/python/test/test_appmesh_client.py
             python3 /work/src/sdk/python/sample.py
+            '
 
       - name: test centos:7
-        uses: addnab/docker-run-action@v3
-        with:
-          image: centos:7
-          options: -v ${{ github.workspace }}:/work
-          shell: bash
-          run: |
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            --entrypoint=bash \
+            centos:7 \
+            -c '
             # centos 7
             cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
             rm -f /etc/yum.repos.d/*.repo
@@ -168,3 +171,4 @@ jobs:
             python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
             python3 /work/src/sdk/python/test/test_appmesh_client.py
             python3 /work/src/sdk/python/sample.py
+            '

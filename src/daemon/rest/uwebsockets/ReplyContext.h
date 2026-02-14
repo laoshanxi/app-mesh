@@ -2,6 +2,7 @@
 #ifndef REPLY_CONTEXT_H
 #define REPLY_CONTEXT_H
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -43,6 +44,21 @@ namespace WSS
             return m_completed;
         }
 
+        // Mark the context as aborted (e.g., client disconnected).
+        // Prevents further callbacks and releases captured resources.
+        void markAborted()
+        {
+            m_aborted.store(true, std::memory_order_release);
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_completed = true;
+            m_callback = nullptr;
+        }
+
+        bool isAborted() const
+        {
+            return m_aborted.load(std::memory_order_acquire);
+        }
+
         ProtocolType getProtocolType() const { return m_protocolType; }
 
     private:
@@ -70,6 +86,7 @@ namespace WSS
         ProtocolType m_protocolType;
         ReplyCallback m_callback;
         bool m_completed{false};
+        std::atomic<bool> m_aborted{false};
         mutable std::mutex m_mutex;
     };
 }

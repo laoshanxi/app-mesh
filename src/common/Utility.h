@@ -255,6 +255,9 @@ public:
 	static const std::string readStdin2End();
 	static std::string escapeCommandLine(const std::string &input);
 	static std::string maskSecret(const std::string &secret, size_t visibleChars = 2, const std::string &mask = "***");
+
+	// Constant-time string comparison to prevent timing attacks
+	static bool secureCompare(const std::string &a, const std::string &b);
 };
 
 #define PID_FILE "appmesh.pid"

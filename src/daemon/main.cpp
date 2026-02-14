@@ -410,8 +410,8 @@ void AppMeshDaemon::initializeRestService()
 	}
 
 	// Setup client connection
-	m_client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
-	if (m_client->stream()->connect(tcpAddr))
+	m_client = std::make_shared<SocketStreamPtr>(SocketStream::createConnection(tcpAddr));
+	if (m_client->stream() && m_client->stream()->connected())
 		LOG_INF << fname << "Test local TCP client connected successfully";
 	else
 		LOG_WAR << fname << "Test local TCP client connection failed";

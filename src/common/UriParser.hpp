@@ -19,18 +19,39 @@ public:
     {
         Uri result;
 
-        // Detect if original input started with a leading slash (for path-preservation).
         bool originalStartsWithSlash = (!uriStr.empty() && uriStr[0] == '/');
 
         // 1. Schemeless / protocol-relative detection
-        // We consider a scheme present if there's a ':' before any '/' (e.g. "http:", "mailto:")
         size_t colonPos = uriStr.find(':');
         size_t slashPos = uriStr.find('/');
-        bool hasScheme = (colonPos != std::string::npos) && (slashPos == std::string::npos || colonPos < slashPos);
         bool isProtocolRelative = (uriStr.size() >= 2 && uriStr[0] == '/' && uriStr[1] == '/');
+
+        // A scheme must:
+        // - Have a colon before any slash
+        // - The part before the colon must be alphabetic (schemes can't start with digits)
+        // - Be followed by "//" for authority-based URIs, or at least not be purely numeric
+        bool hasScheme = false;
+        if (colonPos != std::string::npos && (slashPos == std::string::npos || colonPos < slashPos))
+        {
+            std::string potentialScheme = uriStr.substr(0, colonPos);
+            // Valid schemes start with a letter and contain only [a-zA-Z0-9+.-]
+            // If it looks like a host:port (e.g., starts with digit or is an IP), it's not a scheme
+            if (!potentialScheme.empty() && std::isalpha(static_cast<unsigned char>(potentialScheme[0])))
+            {
+                // Check if what follows the colon is just digits (port) or looks like a path/authority
+                std::string afterColon = uriStr.substr(colonPos + 1);
+                // If after colon is purely numeric, this is likely host:port, not scheme:rest
+                bool isPort = !afterColon.empty() && afterColon.find_first_not_of("0123456789") == std::string::npos;
+                if (!isPort)
+                {
+                    hasScheme = true;
+                }
+            }
+        }
+
         bool autoScheme = !hasScheme && !isProtocolRelative;
 
-        // If autoScheme, temporarily prepend http:// to allow uriparser to parse host when the input is like "example.com/path".
+        // If autoScheme, prepend http:// so uriparser can parse the host
         std::string temp = autoScheme ? ("http://" + uriStr) : uriStr;
 
         // 2. Parse using RAII wrapper

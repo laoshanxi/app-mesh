@@ -16,7 +16,7 @@ void WSRequest::reply(std::vector<std::uint8_t> &&data) const
 }
 
 WebSocketSession::WebSocketSession(lws *lws)
-    : m_lws(lws), m_connected_at(std::time(nullptr)), m_outgoing_offset(0)
+    : m_lws(lws), m_connected_at(std::time(nullptr))
 {
 }
 
@@ -52,57 +52,14 @@ void WebSocketSession::enqueueOutgoingMessage(std::vector<std::uint8_t> &&payloa
     m_outgoing_messages.push(std::move(buffer));
 }
 
-std::vector<uint8_t> *WebSocketSession::peekOutgoingMessage()
+std::vector<uint8_t> WebSocketSession::popOutgoingMessage()
 {
     std::lock_guard<std::mutex> lock(m_outgoing_mutex);
     if (m_outgoing_messages.empty())
-        return nullptr;
-    return &m_outgoing_messages.front();
-}
-
-void WebSocketSession::advanceOutgoingMessage(size_t bytes_sent)
-{
-    std::lock_guard<std::mutex> lock(m_outgoing_mutex);
-    if (m_outgoing_messages.empty())
-        return;
-
-    m_outgoing_offset += bytes_sent;
-
-    // The buffer size includes LWS_PRE. We are tracking payload sent.
-    // Note: Your buffer creation includes LWS_PRE, so size() is LWS_PRE + payload.
-
-    // LWS logic:
-    // Buffer: [PRE][PAYLOAD]
-    // lws_write sends PAYLOAD.
-    // If partial, we need to offset the pointer passed to lws_write next time.
-
-    // Validate we don't exceed buffer boundaries
-    size_t total_size = m_outgoing_messages.front().size();
-
-    // Safety check: total_size should technically never be < LWS_PRE if created correctly
-    if (total_size < LWS_PRE)
-    {
-        m_outgoing_messages.pop();
-        m_outgoing_offset = 0;
-        return;
-    }
-
-    // Logic:
-    // The payload size is (total_size - LWS_PRE).
-    // If m_outgoing_offset >= (total_size - LWS_PRE), we are done.
-
-    size_t payload_size = total_size - LWS_PRE;
-    if (m_outgoing_offset >= payload_size)
-    {
-        m_outgoing_messages.pop();
-        m_outgoing_offset = 0;
-    }
-}
-
-size_t WebSocketSession::getOutgoingMessageOffset()
-{
-    std::lock_guard<std::mutex> lock(m_outgoing_mutex);
-    return m_outgoing_offset;
+        return {};
+    auto msg = std::move(m_outgoing_messages.front());
+    m_outgoing_messages.pop();
+    return msg;
 }
 
 bool WebSocketSession::hasOutgoingMessages() const

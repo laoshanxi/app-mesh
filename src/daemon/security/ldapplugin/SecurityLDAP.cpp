@@ -47,8 +47,8 @@ std::shared_ptr<User> SecurityLDAP::getUserInfo(const std::string &userName)
             return user;
         }
     }
-    LOG_WAR << fname << "No such user in LDAP: " << userName;
-    throw std::invalid_argument("No such user in LDAP");
+    LOG_DBG << fname << "user not found in LDAP: " << userName;
+    throw NotFoundException("user not found");
 }
 
 std::set<std::string> SecurityLDAP::getUserPermissions(const std::string &userName, const std::string &userGroup)
@@ -161,7 +161,7 @@ bool SecurityLDAP::verifyUserKey(const std::string &userName, const std::string 
             // TODO: validate TOTP
         }
         LOG_WAR << fname << "Authentication failed for user: " << userName;
-        throw std::domain_error("verify user password failed");
+        throw std::domain_error("Authentication failed");
     }
     else
     {

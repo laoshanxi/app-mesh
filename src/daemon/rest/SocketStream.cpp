@@ -569,7 +569,7 @@ bool SocketStream::send_impl(SendBuffer &&buf)
 			return false;
 
 		m_send_state.enqueue_unsafe(std::move(buf));
-		LOG_DBG << fname << "Enqueued message for sending, queue size now: " << (m_send_state.is_empty_unsafe() ? 1 : m_send_state.is_empty_unsafe());
+		LOG_DBG << fname << "Enqueued message for sending";
 	}
 
 	// Check state again after releasing lock
@@ -647,4 +647,16 @@ void SocketStream::report_error(const std::string &msg)
 	std::lock_guard<std::mutex> l(m_cb_mutex);
 	if (m_error_cb)
 		m_error_cb(msg);
+}
+
+SocketStreamPtr SocketStream::createConnection(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout)
+{
+	const static char fname[] = "SocketStream::createConnection() ";
+
+	SocketStreamPtr stream(new SocketStream(Global::getClientSSL()));
+	if (stream->connect(remote, timeout))
+		LOG_DBG << fname << "Connected to " << remote.get_host_addr() << ":" << remote.get_port_number();
+	else
+		LOG_WAR << fname << "Failed to connect to " << remote.get_host_addr() << ":" << remote.get_port_number();
+	return stream;
 }

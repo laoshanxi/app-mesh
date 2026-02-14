@@ -69,8 +69,8 @@ std::shared_ptr<User> Users::getUser(std::string name) const
 	}
 	else
 	{
-		LOG_WAR << fname << "no such user: " << name;
-		throw NotFoundException("no such user");
+		LOG_DBG << fname << "user not found: " << name;
+		throw NotFoundException("user not found");
 	}
 }
 
@@ -127,7 +127,8 @@ std::shared_ptr<User> Users::addUser(const std::string &userName, const nlohmann
 void Users::delUser(const std::string &name)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	getUser(name);
+	if (!getUser(name))
+		throw std::invalid_argument("User not found");
 	m_users.erase(name);
 }
 
@@ -512,9 +513,9 @@ bool User::verifyKey(const std::string &key)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (Security::instance()->encryptKey())
 	{
-		return m_key == Utility::hash(key);
+		return Utility::secureCompare(m_key, Utility::hash(key));  // Use constant-time comparison
 	}
-	return m_key == key;
+	return Utility::secureCompare(m_key, key);  // Use constant-time comparison
 }
 
 const std::string &User::getMfaKey()
