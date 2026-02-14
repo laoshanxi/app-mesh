@@ -24,7 +24,8 @@
 #include "Service.h"
 
 using json = nlohmann::json;
-static constexpr std::size_t DOWNLOAD_CHUNK_SIZE = 64 * 1024; // 64KB
+static constexpr std::size_t DOWNLOAD_CHUNK_SIZE = 64 * 1024;        // 64KB
+static constexpr std::size_t MAX_HTTP_BODY_SIZE = 500 * 1024 * 1024; // 500MB
 
 // Manages the lifecycle of the UWebSocket Secure (WSS) server.
 class WebSocketAdaptor
@@ -144,7 +145,7 @@ private:
     static void addCors(Res *res, Req *req)
     {
         std::string reqHeaders = std::string(req->getHeader("access-control-request-headers"));
-        res->writeHeader("Access-Control-Allow-Origin", "*")->writeHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        res->writeHeader("Access-Control-Allow-Origin", "*")->writeHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
         if (!reqHeaders.empty())
         {
             res->writeHeader("Access-Control-Allow-Headers", reqHeaders);
@@ -157,7 +158,6 @@ private:
         std::ifstream stream;
         std::vector<char> buffer;
         std::uintmax_t totalSize = 0;
-        std::uintmax_t bytesSent = 0;
         std::atomic<bool> aborted{false};
         std::atomic<bool> finished{false};
 
@@ -199,16 +199,16 @@ private:
         // -------------------------------------------------------------------------
         // GENERIC HTTP HANDLER
         // -------------------------------------------------------------------------
-        m_server->routeRegex("GET", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, std::move(replyCtx)); });
-        m_server->routeRegex("POST", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, std::move(replyCtx)); });
-        m_server->routeRegex("PUT", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, std::move(replyCtx)); });
-        m_server->routeRegex("DELETE", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, std::move(replyCtx)); });
-        m_server->routeRegex("OPTIONS", "^/.*$", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
-                             { handleHttpRequest(res, req, std::move(replyCtx)); });
+        m_server->routeFallback("GET", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
+                                { handleHttpRequest(res, req, std::move(replyCtx)); });
+        m_server->routeFallback("POST", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
+                                { handleHttpRequest(res, req, std::move(replyCtx)); });
+        m_server->routeFallback("PUT", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
+                                { handleHttpRequest(res, req, std::move(replyCtx)); });
+        m_server->routeFallback("DELETE", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
+                                { handleHttpRequest(res, req, std::move(replyCtx)); });
+        m_server->routeFallback("OPTIONS", [this](auto *res, auto *req, auto replyCtx, const WSS::RouteMatch & /*match*/)
+                                { handleHttpRequest(res, req, std::move(replyCtx)); });
 
         // WebSocket: Handle incoming messages
         m_server->onWSMessage([](std::string_view message, auto /*connection*/, auto replyCtx, bool /*isBinary*/)
@@ -248,14 +248,16 @@ private:
             requestState->headers.emplace(k, v);
         }
 
-        auto decoded = Utility::decodeURIComponent(std::string(req->getQuery()));
-        for (auto qs = std::string_view(decoded); !qs.empty();)
+        auto rawQuery = std::string(req->getQuery());
+        for (auto qs = std::string_view(rawQuery); !qs.empty();)
         {
             auto amp = qs.find('&');
             auto kv = qs.substr(0, amp);
             auto eq = kv.find('=');
 
-            requestState->query.emplace(std::string(kv.substr(0, eq)), eq == std::string_view::npos ? "" : std::string(kv.substr(eq + 1)));
+            auto key = Utility::decodeURIComponent(std::string(kv.substr(0, eq)));
+            auto val = eq == std::string_view::npos ? std::string() : Utility::decodeURIComponent(std::string(kv.substr(eq + 1)));
+            requestState->query.emplace(std::move(key), std::move(val));
 
             if (amp == std::string_view::npos)
                 break;
@@ -265,17 +267,17 @@ private:
         auto ip = res->getRemoteAddressAsText();
         requestState->client_addr.assign(ip.begin(), ip.end());
 
-        auto aborted = std::make_shared<std::atomic<bool>>(false);
-
-        res->onAborted([aborted]()
+        res->onData([res, requestState, ctx](std::string_view data, bool last) mutable
         {
-            aborted->store(true, std::memory_order_release);
-        });
-
-        res->onData([requestState, ctx, aborted](std::string_view data, bool last) mutable
-        {
-            if (aborted->load(std::memory_order_acquire))
+            if (ctx->isAborted())
             {
+                return;
+            }
+
+            if (requestState->body.size() + data.size() > MAX_HTTP_BODY_SIZE)
+            {
+                ctx->markAborted(); // Mark aborted first to prevent reply callback from using res
+                res->writeStatus("413 Payload Too Large")->end("Body too large");
                 return;
             }
 
@@ -354,7 +356,6 @@ private:
         // Set response headers
         res->writeHeader("Content-Type", "application/octet-stream");
         res->writeHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
-        res->writeHeader("Content-Length", std::to_string(fileSize));
 
         // Handle client abort - must register before any async operation
         res->onAborted([state, filePathStr]()
@@ -365,10 +366,10 @@ private:
             LOG_DBG << fname << "Download aborted for file: " << filePathStr;
         });
 
-        // Streaming function
-        auto streamData = [res, state]() -> bool
+        // Streaming function: seeks to the given offset and streams from there.
+        auto streamFrom = [res, state](std::uintmax_t offset) -> bool
         {
-            const static char fname[] = "WebSocketAdaptor::download::streamData() ";
+            const static char fname[] = "WebSocketAdaptor::download::streamFrom() ";
 
             if (state->aborted.load(std::memory_order_acquire) ||
                 state->finished.load(std::memory_order_acquire))
@@ -376,9 +377,22 @@ private:
                 return false; // Deregister handler
             }
 
-            while (state->bytesSent < state->totalSize)
+            // Seek to the offset position (wire-committed bytes)
+            state->stream.clear(); // Clear any EOF/error flags before seeking
+            state->stream.seekg(static_cast<std::streamoff>(offset));
+            if (!state->stream.good())
             {
-                std::size_t remaining = static_cast<std::size_t>(state->totalSize - state->bytesSent);
+                LOG_ERR << fname << "Failed to seek to offset " << offset;
+                if (!state->finished.exchange(true, std::memory_order_acq_rel))
+                {
+                    res->end();
+                }
+                return false;
+            }
+
+            while (offset < state->totalSize)
+            {
+                std::size_t remaining = static_cast<std::size_t>(state->totalSize - offset);
                 std::size_t chunkSize = std::min(remaining, state->buffer.size());
 
                 state->stream.read(state->buffer.data(), static_cast<std::streamsize>(chunkSize));
@@ -388,47 +402,50 @@ private:
                 {
                     if (state->stream.eof())
                     {
+                        LOG_WAR << fname << "File truncated during download: at " << offset << " of expected " << state->totalSize << " bytes";
                         break;
                     }
-                    LOG_ERR << fname << "File read error";
-                    state->finished.store(true, std::memory_order_release);
-                    res->end();
+                    LOG_ERR << fname << "File read error at offset " << offset;
+                    if (!state->finished.exchange(true, std::memory_order_acq_rel))
+                    {
+                        res->end();
+                    }
                     return false;
                 }
 
                 auto [ok, done] = res->tryEnd(std::string_view(state->buffer.data(), bytesRead), state->totalSize);
-                state->bytesSent += bytesRead;
 
                 if (done)
                 {
                     state->finished.store(true, std::memory_order_release);
+                    LOG_DBG << fname << "Download completed, total size: " << state->totalSize;
                     return false;
                 }
 
                 if (!ok)
                 {
-                    // Backpressure - wait for onWritable callback
+                    // Backpressure - wait for onWritable callback which provides the committed offset
                     return true; // Keep handler registered
                 }
-            }
 
-            // All data sent
+                offset += bytesRead;
+            }
             if (!state->finished.exchange(true, std::memory_order_acq_rel))
             {
-                LOG_DBG << fname << "Download completed, bytes sent: " << state->bytesSent;
+                res->end();
             }
 
             return false; // Deregister handler
         };
 
-        // Register the writable handler
-        res->onWritable([streamData](std::uintmax_t /*offset*/) mutable
+        // Register the writable handler - offset is the total bytes committed to the wire
+        res->onWritable([streamFrom](std::uintmax_t offset) mutable
         {
-            return streamData();
+            return streamFrom(offset);
         });
 
-        // Trigger the first write attempt immediately
-        streamData();
+        // Trigger the first write attempt immediately (offset 0 = start of file)
+        streamFrom(0);
     }
 
     void handleUpload(WSS::SSLServer::HttpResponseType *res, WSS::SSLServer::HttpRequestType *req)
@@ -561,8 +578,9 @@ private:
                 if (!state->responded.exchange(true, std::memory_order_acq_rel))
                 {
                     json resp = {{"status", "success"}, {"path", state->path}, {"size", state->totalBytes}};
+                    res->writeStatus("201 Created");
                     res->writeHeader("Content-Type", "application/json");
-                    res->writeStatus("201 Created")->end(resp.dump());
+                    res->end(resp.dump());
                 }
             }
         });

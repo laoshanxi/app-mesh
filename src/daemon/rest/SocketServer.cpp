@@ -30,8 +30,7 @@ SocketServer::SocketServer(ACE_SSL_Context *ctx, ACE_Reactor *reactor)
     : SocketStream(ctx, reactor), m_id(++idGenerator)
 {
     const static char fname[] = "SocketServer::SocketServer() ";
-    streams.bind(m_id, this);
-    LOG_DBG << fname << "New client session established | ClientID=" << m_id << " | ActiveSessions=" << streams.current_size();
+    LOG_DBG << fname << "New client session | ClientID=" << m_id;
 }
 
 SocketServer::~SocketServer()
@@ -47,45 +46,56 @@ int SocketServer::open(void *acceptor_or_connector)
     LOG_INF << fname << "Initializing connection for client | ClientID=" << m_id;
 
     // TODO: those callback functions are IO thread, avoid handle none-IO operation here!
-    this->onData([this](std::vector<std::uint8_t> &&data)
-    {
-        const static char fname_cb[] = "SocketServer::onData() ";
-        LOG_DBG << fname_cb << "Data received from client | ClientID=" << getId() << " | Bytes=" << data.size();
-
-        if (m_pendingUploadFile)
+    this->onData(
+        [this](std::vector<std::uint8_t> &&data)
         {
-            recvNextUploadChunk(m_pendingUploadFile, std::move(data));
-        }
-        else
+            const static char fname_cb[] = "SocketServer::onData() ";
+            LOG_DBG << fname_cb << "Data received from client | ClientID=" << getId() << " | Bytes=" << data.size();
+
+            if (m_pendingUploadFile)
+            {
+                recvNextUploadChunk(m_pendingUploadFile, std::move(data));
+            }
+            else
+            {
+                WORKER::instance()->queueTcpRequest(std::move(data), getId());
+            }
+        });
+
+    this->onSent(
+        [this](const std::unique_ptr<msgpack::sbuffer> &data)
         {
-            WORKER::instance()->queueTcpRequest(std::move(data), getId());
-        }
-    });
+            if (m_pendingDownloadFile)
+            {
+                sendNextDownloadChunk(m_pendingDownloadFile);
+            }
+        });
 
-    this->onSent([this](const std::unique_ptr<msgpack::sbuffer> &data)
-    {
-        if (m_pendingDownloadFile)
+    this->onError(
+        [id = m_id](const std::string &msg)
         {
-            sendNextDownloadChunk(m_pendingDownloadFile);
-        }
-    });
+            LOG_WAR << "SocketServer::onError() | ClientID=" << id << " | Error occurred: " << msg;
+        });
 
-    this->onError([id = m_id](const std::string &msg)
-    {
-        LOG_WAR << "SocketServer::onError() | ClientID=" << id << " | Error occurred: " << msg;
-    });
+    this->onClose(
+        [id = m_id]()
+        {
+            streams.unbind(id);
+            LOG_DBG << "SocketServer::onClose() | ClientID=" << id;
+        });
 
-    this->onClose([id = m_id]()
-    {
-        streams.unbind(id);
-        LOG_DBG << "SocketServer::onClose() | ClientID=" << id;
-    });
+    // Register in stream map before opening (so replyTcp can find us once reactor is active).
+    streams.bind(m_id, this);
 
     // Proceed with base class opening (registers with reactor).
     int result = SocketStream::open(acceptor_or_connector);
     if (result == -1)
     {
         streams.unbind(m_id);
+    }
+    else
+    {
+        LOG_DBG << fname << "Client session registered | ClientID=" << m_id << " | ActiveSessions=" << streams.current_size();
     }
     return result;
 }
@@ -118,8 +128,8 @@ bool SocketServer::replyTcp(int clientId, std::unique_ptr<Response> &&resp)
 
     LOG_DBG << fname << "Sending response | ClientID=" << clientId;
     client->checkForUploadFileRequest(resp);   // pre set upload before response
-    auto rt = client->send(resp->serialize()); // response
-    client->checkForDownloadFileRequest(resp); // post set download after response
+    client->checkForDownloadFileRequest(resp); // pre set download before response
+    auto rt = client->send(resp->serialize()); // response (onSent will trigger first chunk)
     return rt;
 }
 
@@ -172,14 +182,13 @@ void SocketServer::checkForDownloadFileRequest(std::unique_ptr<Response> &resp)
         auto fileStream = std::make_unique<std::ifstream>(fileName, std::ios::binary);
         if (!fileStream->is_open())
         {
-            auto msg = Utility::text2json("Failed write file").dump();
+            auto msg = Utility::text2json("Failed to open file for reading").dump();
             resp->http_status = web::http::status_codes::InternalError;
             resp->body = std::vector<std::uint8_t>(msg.begin(), msg.end());
             LOG_ERR << fname << "Download file access failed | ClientID=" << getId() << " | FilePath=" << fileName;
             return;
         }
         m_pendingDownloadFile = std::move(fileStream);
-        sendNextDownloadChunk(m_pendingDownloadFile);
         LOG_INF << fname << "Download file transfer initiated | ClientID=" << getId() << " | FilePath=" << fileName;
     }
 }
