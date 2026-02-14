@@ -31,7 +31,7 @@ std::string HMACVerifier::generateHMAC(const std::string &message) const
 
 bool HMACVerifier::verifyHMAC(const std::string &message, const std::string &receivedHmac) const
 {
-    return generateHMAC(message) == receivedHmac;
+    return Utility::secureCompare(generateHMAC(message), receivedHmac);
 }
 
 std::string HMACVerifier::writePSKToSHM()

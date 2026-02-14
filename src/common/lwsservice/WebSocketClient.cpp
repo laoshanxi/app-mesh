@@ -60,6 +60,12 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
             pss->client->m_receive_buffer.clear();
         }
 
+        constexpr size_t MAX_CLIENT_MSG_SIZE = 1024 * 1024 * 1024; // 1GB
+        if (pss->client->m_receive_buffer.size() + len > MAX_CLIENT_MSG_SIZE)
+        {
+            lwsl_err("Message size exceeded limit\n");
+            return -1;
+        }
         pss->client->m_receive_buffer.insert(
             pss->client->m_receive_buffer.end(),
             static_cast<uint8_t *>(in),
@@ -336,7 +342,7 @@ bool Client::sendBinary(const std::vector<std::uint8_t> &data)
     }
 
     enqueueMessage(Message(data));
-    lws_callback_on_writable(m_wsi);
+    lws_cancel_service(m_context);
 
     return true;
 }
@@ -438,10 +444,9 @@ void Client::handleWritable()
     lws_write_protocol protocol = msg.is_binary ? LWS_WRITE_BINARY : LWS_WRITE_TEXT;
 
     int written = lws_write(m_wsi, buffer.data() + LWS_PRE, msg.data.size(), protocol);
-
-    if (written < (int)msg.data.size())
+    if (written < 0)
     {
-        lwsl_err("lws_write failed: %d\n", written);
+        lwsl_err("lws_write error\n");
         return;
     }
 

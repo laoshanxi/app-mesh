@@ -24,55 +24,6 @@
 constexpr auto CONTENT_TYPE_HTML = "text/html; charset=utf-8";
 constexpr auto CONTENT_TYPE_YAML = "application/x-yaml";
 
-// Static content serving utilities
-const std::string &RestHandler::getOpenApiContent()
-{
-	static const std::string content = Utility::readFileCpp((fs::path(Configuration::instance()->getWorkDir()) / ".." / "script" / "openapi.yaml").string());
-	return content;
-}
-
-const std::string &RestHandler::getIndexHtmlContent()
-{
-	static const std::string content = Utility::readFileCpp((fs::path(Configuration::instance()->getWorkDir()) / ".." / "script" / "index.html").string());
-	return content;
-}
-
-// Static content handlers
-void RestHandler::apiOpenApi(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiOpenApi() ";
-	LOG_DBG << fname << "Serving OpenAPI specification";
-
-	std::string content = getOpenApiContent();
-	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_YAML);
-}
-
-void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiSwagger() ";
-	LOG_DBG << fname << "Redirecting to Swagger UI";
-
-	auto host = message->m_headers.get("host");
-	if (host.empty())
-		host = message->m_headers.get("Host");
-
-	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
-	std::map<std::string, std::string> headers;
-	headers["Location"] = swaggerUrl;
-
-	std::string emptyBody;
-	message->reply(web::http::status_codes::TemporaryRedirect, emptyBody, headers, CONTENT_TYPE_HTML);
-}
-
-void RestHandler::apiIndex(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiIndex() ";
-	LOG_DBG << fname << "Serving index.html";
-
-	std::string content = getIndexHtmlContent();
-	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
-}
-
 // 1. Authentication
 constexpr auto REST_PATH_LOGIN = "/appmesh/login";
 constexpr auto REST_PATH_LOG_OFF = "/appmesh/self/logoff";
@@ -213,6 +164,55 @@ RestHandler::~RestHandler()
 {
 	const static char fname[] = "RestHandler::~RestHandler() ";
 	LOG_INF << fname << "RestHandler destroyed";
+}
+
+// Static content serving utilities
+const std::string &RestHandler::getOpenApiContent()
+{
+	static const std::string content = Utility::readFileCpp((fs::path(Configuration::instance()->getWorkDir()) / ".." / "script" / "openapi.yaml").string());
+	return content;
+}
+
+const std::string &RestHandler::getIndexHtmlContent()
+{
+	static const std::string content = Utility::readFileCpp((fs::path(Configuration::instance()->getWorkDir()) / ".." / "script" / "index.html").string());
+	return content;
+}
+
+// Static content handlers
+void RestHandler::apiOpenApi(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiOpenApi() ";
+	LOG_DBG << fname << "Serving OpenAPI specification";
+
+	std::string content = getOpenApiContent();
+	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_YAML);
+}
+
+void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiSwagger() ";
+	LOG_DBG << fname << "Redirecting to Swagger UI";
+
+	auto host = message->m_headers.get("host");
+	if (host.empty())
+		host = message->m_headers.get("Host");
+
+	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
+	std::map<std::string, std::string> headers;
+	headers["Location"] = swaggerUrl;
+
+	std::string emptyBody;
+	message->reply(web::http::status_codes::TemporaryRedirect, emptyBody, headers, CONTENT_TYPE_HTML);
+}
+
+void RestHandler::apiIndex(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiIndex() ";
+	LOG_DBG << fname << "Serving index.html";
+
+	std::string content = getIndexHtmlContent();
+	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
 }
 
 void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::string &appName, bool requestWrite)
@@ -383,6 +383,11 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 	const auto &file = (message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+	if (file.find("..") != std::string::npos || file.find('\0') != std::string::npos)
+	{
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+		return;
+	}
 	if (!Utility::isFileExist(file))
 	{
 		message->reply(web::http::status_codes::NotAcceptable, Utility::text2json("file not found"));
@@ -421,6 +426,11 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 	const auto &file = message->m_headers.find(HTTP_HEADER_KEY_file_path)->second;
+	if (file.find("..") != std::string::npos || file.find('\0') != std::string::npos)
+	{
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+		return;
+	}
 	if (Utility::isFileExist(file))
 	{
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("file already exist"));
@@ -817,7 +827,7 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 		if (!Security::instance()->verifyUserKey(uname, passwd))
 		{
 			// passwd failed
-			message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Incorrect user password"));
+			message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Authentication failed"));
 		}
 		else if (user && !user->mfaEnabled())
 		{
@@ -855,7 +865,7 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 				else
 				{
 					// totp failed
-					message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Incorrect totp key"));
+					message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Authentication failed"));
 				}
 			}
 		}
@@ -1037,8 +1047,8 @@ void RestHandler::apiUserTotpDisable(const std::shared_ptr<HttpRequest> &message
 	}
 	else
 	{
-		LOG_WAR << fname << "No such user exist: " << userName;
-		throw std::invalid_argument("No such user exist");
+		LOG_WAR << fname << "user not found: " << userName;
+		throw std::invalid_argument("user not found");
 	}
 }
 

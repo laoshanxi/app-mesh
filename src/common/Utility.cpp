@@ -21,6 +21,7 @@
 
 #include <ace/OS.h>
 #include <ace/UUID.h>
+#include <openssl/crypto.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
@@ -1478,6 +1479,16 @@ std::string Utility::hash(const std::string &str)
 	}
 
 	return std::string("H") + std::to_string(hash);
+}
+
+bool Utility::secureCompare(const std::string &a, const std::string &b)
+{
+	// Length comparison must happen first to avoid buffer overruns
+	if (a.size() != b.size())
+		return false;
+
+	// Use OpenSSL's constant-time comparison (already linked)
+	return CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
 }
 
 std::string Utility::stringFormat(const std::string fmt_str, ...)
