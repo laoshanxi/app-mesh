@@ -13,7 +13,7 @@ RUN bash -c 'git clone https://github.com/laoshanxi/app-mesh.git && \
     cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl -B build -G Ninja && \
     cmake --build build --target pack --parallel'
 
-FROM python:3.13.7-slim-bookworm
+FROM python:3.14.3-slim-bookworm
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
