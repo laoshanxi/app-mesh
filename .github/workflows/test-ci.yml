@@ -30,7 +30,7 @@ jobs:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
       - name: test ubuntu:22
-        uses: maus007/docker-run-action-fork@5ddaad0f7eedd03f64e412b1931852bd3031b273
+        uses: maus007/docker-run-action-fork@207a4e2a8ebf7e4b985656ba990b1e53715dce2a
         with:
           image: ubuntu:22.04
           options: -v ${{ github.workspace }}:/work
@@ -64,7 +64,7 @@ jobs:
             python3 /work/src/sdk/python/sample.py
 
       - name: test ubuntu:24
-        uses: maus007/docker-run-action-fork@5ddaad0f7eedd03f64e412b1931852bd3031b273
+        uses: maus007/docker-run-action-fork@207a4e2a8ebf7e4b985656ba990b1e53715dce2a
         with:
           image: ubuntu:24.04
           options: -v ${{ github.workspace }}:/work
@@ -98,7 +98,7 @@ jobs:
             python3 /work/src/sdk/python/sample.py
 
       - name: test ubuntu:18
-        uses: maus007/docker-run-action-fork@5ddaad0f7eedd03f64e412b1931852bd3031b273
+        uses: maus007/docker-run-action-fork@207a4e2a8ebf7e4b985656ba990b1e53715dce2a
         with:
           image: ubuntu:18.04
           options: -v ${{ github.workspace }}:/work
@@ -132,7 +132,7 @@ jobs:
             python3 /work/src/sdk/python/sample.py
 
       - name: test centos:7
-        uses: maus007/docker-run-action-fork@5ddaad0f7eedd03f64e412b1931852bd3031b273
+        uses: maus007/docker-run-action-fork@207a4e2a8ebf7e4b985656ba990b1e53715dce2a
         with:
           image: centos:7
           options: -v ${{ github.workspace }}:/work
