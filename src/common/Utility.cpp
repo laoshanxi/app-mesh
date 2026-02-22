@@ -1,5 +1,6 @@
 // src/common/Utility.cpp
 #include <atomic>
+#include <cctype>
 #include <errno.h>
 #include <fstream>
 #include <list>
@@ -259,6 +260,98 @@ bool Utility::isFileExist(const std::string &path)
 {
 	boost::system::error_code ec;
 	return fs::exists(path, ec) && !fs::is_directory(path, ec);
+}
+
+bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string &filePath)
+{
+	boost::system::error_code ec;
+
+	// Resolve the allowed base directory — must exist and be canonical.
+	fs::path canonicalBase = fs::canonical(fs::path(baseDir), ec);
+	if (ec)
+	{
+		return false;
+	}
+
+	fs::path file(filePath);
+
+	// Try to canonicalize the full path directly (works when file already exists).
+	fs::path resolvedPath = fs::canonical(file, ec);
+	if (ec)
+	{
+		// File does not exist yet (e.g. upload target). Canonicalize the parent
+		// directory — which must exist — then append the bare filename.
+		// Never fall back to fs::absolute: it does not resolve symlinks or "..".
+		fs::path canonicalParent = fs::canonical(file.parent_path(), ec);
+		if (ec)
+		{
+			// Parent directory does not exist either — reject.
+			return false;
+		}
+		resolvedPath = canonicalParent / file.filename();
+	}
+
+	// Ensure resolvedPath starts with canonicalBase (prefix check).
+	// Append trailing separator to base so "/opt" does not match "/opt2/…".
+	std::string baseStr = canonicalBase.string();
+	if (baseStr.back() != fs::path::preferred_separator)
+	{
+		baseStr += fs::path::preferred_separator;
+	}
+	std::string resolvedStr = resolvedPath.string();
+
+	// Allow exact match to base dir itself or any path inside it.
+	if (resolvedStr != canonicalBase.string() && resolvedStr.find(baseStr) != 0)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool Utility::isPasswordComplex(const std::string &password, std::string &errorMsg)
+{
+	if (password.length() < APPMESH_PASSWD_MIN_LENGTH)
+	{
+		errorMsg = stringFormat("Password must be at least %d characters", APPMESH_PASSWD_MIN_LENGTH);
+		return false;
+	}
+
+	bool hasUpper = false, hasLower = false, hasDigit = false, hasSpecial = false;
+	for (char c : password)
+	{
+		// Cast to unsigned char before passing to std::is* functions to avoid
+		// undefined behaviour on platforms where char is signed and c < 0.
+		const unsigned char uc = static_cast<unsigned char>(c);
+		if (std::isupper(uc)) hasUpper = true;
+		else if (std::islower(uc)) hasLower = true;
+		else if (std::isdigit(uc)) hasDigit = true;
+		else hasSpecial = true;
+	}
+
+	if (!hasUpper)
+	{
+		errorMsg = "Password must contain at least one uppercase letter";
+		return false;
+	}
+	if (!hasLower)
+	{
+		errorMsg = "Password must contain at least one lowercase letter";
+		return false;
+	}
+	if (!hasDigit)
+	{
+		errorMsg = "Password must contain at least one digit";
+		return false;
+	}
+	if (!hasSpecial)
+	{
+		errorMsg = "Password must contain at least one special character";
+		return false;
+	}
+
+	errorMsg.clear();
+	return true;
 }
 
 bool Utility::createDirectory(const std::string &path, fs::perms perms)

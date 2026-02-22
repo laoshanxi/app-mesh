@@ -75,9 +75,6 @@ export APPMESH_DAEMON_EXEC_USER_GROUP=appmesh
 
 # Timezone configuration
 export APPMESH_BaseConfig_PosixTimezone="+08"
-
-# Disable CORS for agent listen service
-export APPMESH_CORS_DISABLE=true
 ```
 
 ## Configuration Locations

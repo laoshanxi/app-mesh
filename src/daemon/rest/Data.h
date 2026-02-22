@@ -31,6 +31,7 @@ public:
 	bool handleAuthCookies();
 	bool setAuthCookie();
 	void applyCorsHeaders();
+	void applySecurityHeaders();
 
 public:
 	std::string uuid;

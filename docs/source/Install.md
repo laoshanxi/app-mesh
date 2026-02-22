@@ -119,7 +119,6 @@ By default, App Mesh will connect to Consul via `https://127.0.0.1:443`. App Mes
 - Disable Custom Process User: Set `export APPMESH_BaseConfig_DisableExecUser=true` to disable custom process users.
 - Daemon User and Group: Use `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user and group.
 - Timezone Configuration: Use `APPMESH_BaseConfig_PosixTimezone` (e.g., `export APPMESH_BaseConfig_PosixTimezone="+08"`) for timezone setting.
-- CORS Configuration: Set `APPMESH_CORS_DISABLE=true` to disable Cross-Origin Resource Sharing for the agent listen service.
 - Default User: The installation creates an appmesh Linux user for app execution.
 - CentOS Dependencies: On CentOS 8, install libnsl with `sudo yum install libnsl`
 

@@ -365,6 +365,24 @@ bool Configuration::getRestEnabled() const
 	return m_rest->m_restEnabled;
 }
 
+bool Configuration::getPasswordComplexityEnabled() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_passwordComplexityEnabled;
+}
+
+bool Configuration::getCorsDisabled() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_corsDisabled;
+}
+
+std::string Configuration::getFileAllowedBaseDir() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_fileAllowedBaseDir;
+}
+
 std::size_t Configuration::getWorkerThreadPoolSize() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -587,6 +605,12 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 			auto rest = jsonValue.at(JSON_KEY_REST);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestEnabled))
 				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_PasswordComplexityEnabled))
+				SET_COMPARE(this->m_rest->m_passwordComplexityEnabled, newConfig->m_rest->m_passwordComplexityEnabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsDisabled))
+				SET_COMPARE(this->m_rest->m_corsDisabled, newConfig->m_rest->m_corsDisabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_FileAllowedBaseDir))
+				SET_COMPARE(this->m_rest->m_fileAllowedBaseDir, newConfig->m_rest->m_fileAllowedBaseDir);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort))
 				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestTcpPort))
@@ -852,6 +876,9 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_restTcpPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestTcpPort);
 	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_PasswordComplexityEnabled, rest->m_passwordComplexityEnabled);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_CorsDisabled, rest->m_corsDisabled);
+	rest->m_fileAllowedBaseDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_FileAllowedBaseDir);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
 	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WorkerThreadPoolSize);
 	if (threadpool > 0 && threadpool < 100)
@@ -942,6 +969,9 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
 	result[JSON_KEY_RestTcpPort] = (m_restTcpPort);
 	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
+	result[JSON_KEY_PasswordComplexityEnabled] = (m_passwordComplexityEnabled);
+	result[JSON_KEY_CorsDisabled] = (m_corsDisabled);
+	result[JSON_KEY_FileAllowedBaseDir] = std::string(m_fileAllowedBaseDir);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
 
@@ -951,7 +981,7 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 }
 
 Configuration::JsonRest::JsonRest()
-	: m_restEnabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
+	: m_restEnabled(false), m_passwordComplexityEnabled(false), m_corsDisabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
 	  m_IOThreadPoolSize(DEFAULT_IO_THREAD_POOL_SIZE),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
 	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT)

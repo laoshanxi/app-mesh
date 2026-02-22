@@ -149,7 +149,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define JWT_USER_KEY "mesh123"
 #define JWT_USER_NAME "mesh"
 #define JWT_ADMIN_NAME "admin"
-#define APPMESH_PASSWD_MIN_LENGTH 6
+#define APPMESH_PASSWD_MIN_LENGTH 8 // OWASP ASVS 2.1.1: minimum 12 characters
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 
@@ -183,6 +183,8 @@ public:
 	static const std::string getBinaryName();
 	static bool isDirExist(const std::string &path);
 	static bool isFileExist(const std::string &path);
+	static bool isPathTraversalSafe(const std::string &baseDir, const std::string &filePath);
+	static bool isPasswordComplex(const std::string &password, std::string &errorMsg);
 	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
 	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
 	static bool removeDir(const std::string &path);
@@ -292,6 +294,9 @@ public:
 #define JSON_KEY_RestListenPort "RestListenPort"
 #define JSON_KEY_RestListenAddress "RestListenAddress"
 #define JSON_KEY_RestTcpPort "RestTcpPort"
+#define JSON_KEY_PasswordComplexityEnabled "PasswordComplexityEnabled"
+#define JSON_KEY_FileAllowedBaseDir "FileAllowedBaseDir"
+#define JSON_KEY_CorsDisabled "CorsDisabled"
 #define JSON_KEY_WebSocketPort "WebSocketPort"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 
