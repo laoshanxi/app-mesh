@@ -558,6 +558,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // Handle authentication cookies (Set-Cookie header)
         http_resp.handleAuthCookies();
         http_resp.applyCorsHeaders();
+        http_resp.applySecurityHeaders();
 
         // HTTP headers
         unsigned char headers[LWS_PRE + 8192];

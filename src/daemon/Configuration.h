@@ -73,6 +73,9 @@ public:
 		nlohmann::json AsJson() const;
 
 		bool m_restEnabled;
+		bool m_passwordComplexityEnabled;
+		bool m_corsDisabled;
+		std::string m_fileAllowedBaseDir;
 		int m_workerThreadPoolSize;
 		int m_IOThreadPoolSize;
 		int m_restListenPort;
@@ -134,6 +137,9 @@ public:
 	std::string getSSLCertificateKeyFile() const;
 	std::string getSSLCaPath() const;
 	bool getRestEnabled() const;
+	bool getPasswordComplexityEnabled() const;
+	bool getCorsDisabled() const;
+	std::string getFileAllowedBaseDir() const;
 	std::size_t getWorkerThreadPoolSize() const;
 	std::size_t getIOThreadPoolSize() const;
 	const std::string getDescription() const;

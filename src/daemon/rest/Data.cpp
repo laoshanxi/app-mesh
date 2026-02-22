@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../../common/Utility.h"
+#include "../Configuration.h"
 #include "Data.h"
 
 Response::Response()
@@ -127,14 +128,19 @@ bool Response::handleAuthCookies()
 
 void Response::applyCorsHeaders()
 {
-	static const bool corsDisabled = Utility::getenv("APPMESH_CORS_DISABLE") == "true";
-	if (corsDisabled)
+	if (Configuration::instance()->getCorsDisabled())
 		return;
 
 	headers["Access-Control-Allow-Origin"] = "*";
 	headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
 	headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-CSRF-Token";
 	// Note: Removed Access-Control-Allow-Credentials as it conflicts with wildcard origin
+}
+
+void Response::applySecurityHeaders()
+{
+	headers["X-Content-Type-Options"] = "nosniff";
+	headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
 }
 
 std::unique_ptr<msgpack::sbuffer> Request::serialize() const

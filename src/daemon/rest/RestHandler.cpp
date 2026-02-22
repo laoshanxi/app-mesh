@@ -388,6 +388,14 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
 		return;
 	}
+
+	std::string allowedBaseDir = Configuration::instance()->getFileAllowedBaseDir();
+	if (!allowedBaseDir.empty() && !Utility::isPathTraversalSafe(allowedBaseDir, file))
+	{
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path - path traversal detected"));
+		return;
+	}
+
 	if (!Utility::isFileExist(file))
 	{
 		message->reply(web::http::status_codes::NotAcceptable, Utility::text2json("file not found"));
@@ -431,6 +439,14 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
 		return;
 	}
+
+	std::string allowedBaseDir = Configuration::instance()->getFileAllowedBaseDir();
+	if (!allowedBaseDir.empty() && !Utility::isPathTraversalSafe(allowedBaseDir, file))
+	{
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path - path traversal detected"));
+		return;
+	}
+
 	if (Utility::isFileExist(file))
 	{
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("file already exist"));
@@ -574,9 +590,13 @@ void RestHandler::apiUserChangePwd(const std::shared_ptr<HttpRequest> &message)
 	}
 	auto newPasswd = Utility::decode64(GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_NEW_PASSWORD));
 
-	if (newPasswd.length() < APPMESH_PASSWD_MIN_LENGTH)
+	if (Configuration::instance()->getPasswordComplexityEnabled())
 	{
-		throw std::invalid_argument(Utility::stringFormat("password length should be greater than %d", APPMESH_PASSWD_MIN_LENGTH));
+		std::string complexityError;
+		if (!Utility::isPasswordComplex(newPasswd, complexityError))
+		{
+			throw std::invalid_argument(complexityError);
+		}
 	}
 
 	if (!Security::instance()->verifyUserKey(targetUser, curPasswd))
@@ -633,7 +653,20 @@ void RestHandler::apiUserAdd(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_add_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_ADD);
 
-	Security::instance()->addUser(pathUserName, message->extractJson());
+	const auto userJson = message->extractJson();
+	if (Configuration::instance()->getPasswordComplexityEnabled())
+	{
+		const auto rawPasswd = Utility::decode64(GET_JSON_STR_VALUE(userJson, JSON_KEY_USER_key));
+		if (!rawPasswd.empty())
+		{
+			std::string complexityError;
+			if (!Utility::isPasswordComplex(rawPasswd, complexityError))
+			{
+				throw std::invalid_argument(complexityError);
+			}
+		}
+	}
+	Security::instance()->addUser(pathUserName, userJson);
 	Security::instance()->save();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUser;

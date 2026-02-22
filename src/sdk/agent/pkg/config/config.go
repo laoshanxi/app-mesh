@@ -20,6 +20,7 @@ type (
 		RestListenPort               int    `yaml:"RestListenPort"`
 		RestTcpPort                  int    `yaml:"RestTcpPort"`
 		PrometheusExporterListenPort int    `yaml:"PrometheusExporterListenPort"`
+		CorsDisabled                 bool   `yaml:"CorsDisabled"`
 
 		SSL appmesh.SSLConfig `yaml:"SSL"`
 		JWT appmesh.JWTConfig `yaml:"JWT"`
@@ -40,6 +41,7 @@ var ConfigData = Configuration{
 		RestListenPort:               6060,
 		RestTcpPort:                  6059,
 		PrometheusExporterListenPort: 0,
+		CorsDisabled:                 false,
 
 		SSL: appmesh.SSLConfig{
 			SSLCaPath:                   "ssl/ca.pem",

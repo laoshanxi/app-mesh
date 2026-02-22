@@ -48,6 +48,15 @@ REST:
   # Number of threads to handle I/O operations.
   IOThreadPoolSize: 2
 
+  # Enables or disables password complexity validation when changing passwords.
+  PasswordComplexityEnabled: false
+
+  # When true, CORS headers will not be added to responses.
+  CorsDisabled: false
+
+  # Allowed base directory for file upload/download operations.
+  FileAllowedBaseDir:
+
   # JWT Authentication Configuration
   JWT:
     # Salt for JWT token generation. IMPORTANT: Change this in production.
