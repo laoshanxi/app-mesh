@@ -18,27 +18,10 @@ add_compile_options("/utf-8")
 if(NOT CMAKE_TOOLCHAIN_FILE)
     if(EXISTS "C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
         include("C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
-        message(STATUS "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
+        set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "Vcpkg toolchain file" FORCE)
+        message(STATUS "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
     endif()
 endif()
-
-# --- vcpkg paths (manual integration) ---
-set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "Path to vcpkg root")
-set(VCPKG_TRIPLET "x64-windows" CACHE STRING "vcpkg triplet to use")
-
-set(_vcpkg_inc "${VCPKG_ROOT}/installed/${VCPKG_TRIPLET}/include")
-set(_vcpkg_lib "${VCPKG_ROOT}/installed/${VCPKG_TRIPLET}/lib")
-
-if(NOT EXISTS "${_vcpkg_inc}")
-    message(FATAL_ERROR "vcpkg include directory not found: ${_vcpkg_inc}")
-endif()
-if(NOT EXISTS "${_vcpkg_lib}")
-    message(WARNING "vcpkg lib directory not found: ${_vcpkg_lib}")
-endif()
-
-# Global include/lib for legacy compatibility
-include_directories("${_vcpkg_inc}")
-link_directories("${_vcpkg_lib}")
 
 # --- Local dependencies (C:/local) ---
 set(APP_MESH_LOCAL_ROOT "C:/local" CACHE PATH "Root path for local dependencies")
@@ -77,6 +60,6 @@ add_compile_definitions(_WINSOCK_DEPRECATED_NO_WARNINGS)
 
 # --- Diagnostics ---
 message(STATUS "App-Mesh Windows config:")
-message(STATUS "  vcpkg:      ${VCPKG_ROOT} (${VCPKG_TRIPLET})")
-message(STATUS "  local root: ${APP_MESH_LOCAL_ROOT}")
+message(STATUS "  toolchain:         ${CMAKE_TOOLCHAIN_FILE}")
+message(STATUS "  local root:        ${APP_MESH_LOCAL_ROOT}")
 message(STATUS "  CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
