@@ -14,14 +14,6 @@ endif()
 # --- UTF-8 encoding ---
 add_compile_options("/utf-8")
 
-# Explicitly include vcpkg toolchain
-if(NOT CMAKE_TOOLCHAIN_FILE)
-    if(EXISTS "C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
-        include("C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
-        message(STATUS "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
-    endif()
-endif()
-
 # --- vcpkg paths (manual integration) ---
 set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "Path to vcpkg root")
 set(VCPKG_TRIPLET "x64-windows" CACHE STRING "vcpkg triplet to use")
@@ -30,15 +22,11 @@ set(_vcpkg_inc "${VCPKG_ROOT}/installed/${VCPKG_TRIPLET}/include")
 set(_vcpkg_lib "${VCPKG_ROOT}/installed/${VCPKG_TRIPLET}/lib")
 
 if(NOT EXISTS "${_vcpkg_inc}")
-    message(FATAL_ERROR "vcpkg include directory not found: ${_vcpkg_inc}")
+    message(WARNING "vcpkg include directory not found: ${_vcpkg_inc}")
 endif()
 if(NOT EXISTS "${_vcpkg_lib}")
     message(WARNING "vcpkg lib directory not found: ${_vcpkg_lib}")
 endif()
-
-# Global include/lib for legacy compatibility
-include_directories("${_vcpkg_inc}")
-link_directories("${_vcpkg_lib}")
 
 # --- Local dependencies (C:/local) ---
 set(APP_MESH_LOCAL_ROOT "C:/local" CACHE PATH "Root path for local dependencies")
