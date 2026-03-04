@@ -86,7 +86,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		m_imagePull.reset();
 
 		auto imageSizeStr = Utility::stdStringTrim(dockerProcess->getOutputMsg(nullptr, 10240, true));
-		if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
+		if (!Utility::isNumber(imageSizeStr) || std::stoll(imageSizeStr) < 1)
 		{
 			LOG_WAR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
 			startError(Utility::stringFormat("docker image <%s> not exist, try to pull.", m_dockerImage.c_str()));

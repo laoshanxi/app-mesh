@@ -36,5 +36,5 @@ public:
 private:
 	// Request Docker HTTP REST API
 	const std::shared_ptr<CurlResponse> requestDocker(const web::http::method &mtd, const std::string &path,
-													  std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body);
+													  std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body) const;
 };

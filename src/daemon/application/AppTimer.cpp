@@ -59,20 +59,13 @@ std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono
         else if (m_dailyLimit->m_startTimeValue > m_dailyLimit->m_endTimeValue)
         {
             // Start greater than End means from end to start is invalid range (the valid range is across 0:00).
-            if (now >= m_dailyLimit->m_endTimeValue || now < m_dailyLimit->m_startTimeValue)
+            // Invalid range: [endTime, startTime), Valid range: [startTime, 24:00) + [00:00, endTime)
+            if (now >= m_dailyLimit->m_endTimeValue && now < m_dailyLimit->m_startTimeValue)
             {
-                if (now < m_dailyLimit->m_startTimeValue)
-                {
-                    auto offset = (m_dailyLimit->m_startTimeValue - now).total_seconds();
-                    target += std::chrono::seconds(offset);
-                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset << ">";
-                }
-                else if (now > m_dailyLimit->m_endTimeValue)
-                {
-                    auto offset = std::chrono::hours(24) - std::chrono::seconds((m_dailyLimit->m_endTimeValue + now).total_seconds());
-                    target += offset;
-                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset.count() << ">";
-                }
+                // In the invalid range, advance to startTime
+                auto offset = (m_dailyLimit->m_startTimeValue - now).total_seconds();
+                target += std::chrono::seconds(offset);
+                LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset << ">";
             }
         }
     }
@@ -136,9 +129,10 @@ std::chrono::system_clock::time_point AppTimerPeriod::nextTime(const std::chrono
     auto startTime = checkStartTime(startFrom);
 
     // 2. calculate next time based on interval gap
-    if (startTime > m_startTime)
+    if (startTime > m_startTime && m_intervalSeconds > 0)
     {
-        int nextGapSeconds = m_intervalSeconds - (std::chrono::duration_cast<std::chrono::seconds>(startTime - m_startTime).count() % m_intervalSeconds);
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(startTime - m_startTime).count();
+        auto nextGapSeconds = m_intervalSeconds - (elapsed % m_intervalSeconds);
         startTime += std::chrono::seconds(nextGapSeconds);
     }
 

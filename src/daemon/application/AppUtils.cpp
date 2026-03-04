@@ -98,20 +98,9 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	// Check if we need to switch user and handle sudo with session login
 	if (!execUser.empty() && execUser != osUser && sessionLogin)
 	{
-		if (getuid() == 0)
-		{
-			m_usingSudo = true;
-			// If we are root and sessionLogin is true, use sudo with login option
-			m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash '%s'", execUser.c_str(), m_fileName.c_str());
-			LOG_DBG << fname << "Generated shell command with sudo for user <" << execUser << "> : " << m_shellCmd;
-		}
-		else if (getuid() != 0)
-		{
-			m_usingSudo = true;
-			// If not root, attempt to execute as the specified user directly
-			m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash '%s'", execUser.c_str(), m_fileName.c_str());
-			LOG_DBG << fname << "Generated shell command with sudo login for non-root user <" << execUser << "> : " << m_shellCmd;
-		}
+		m_usingSudo = true;
+		m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash '%s'", execUser.c_str(), m_fileName.c_str());
+		LOG_DBG << fname << "Generated shell command with sudo for user <" << execUser << "> : " << m_shellCmd;
 	}
 
 	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> and command <" << m_shellCmd << ">";
@@ -207,7 +196,7 @@ int LogFileQueue::size()
 
 const std::string LogFileQueue::getFileName(int index)
 {
-	if (index <= size() - 1)
+	if (index >= 0 && index < size())
 	{
 		return m_fileQueue[index]->getFileName();
 	}

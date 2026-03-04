@@ -1,6 +1,6 @@
 // src/daemon/application/Application.cpp
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
 #include <limits>
 
 #include <boost/smart_ptr/make_shared.hpp>
@@ -169,6 +169,7 @@ bool Application::available(const std::chrono::system_clock::time_point &now)
 
 void Application::FromJson(const std::shared_ptr<Application> &app, const nlohmann::json &jsonObj)
 {
+	const static char fname[] = "Application::FromJson() ";
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
 
 	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner));
@@ -341,7 +342,11 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		else
 		{
 			app->m_startInterval = duration.parse(app->m_startIntervalValue);
-			assert(app->m_startInterval > 0);
+			if (app->m_startInterval <= 0)
+			{
+				LOG_ERR << fname << "invalid start interval: " << app->m_startIntervalValue;
+				app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
+			}
 			app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
 		}
 	}

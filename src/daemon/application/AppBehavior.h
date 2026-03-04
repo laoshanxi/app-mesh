@@ -1,4 +1,6 @@
 // src/daemon/application/AppBehavior.h
+#pragma once
+
 #include <map>
 #include <string>
 
