@@ -251,7 +251,8 @@ void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
 		auto mbToBytes = [](long long mb) -> long long
 		{ return mb > 0 ? mb * 1024LL * 1024LL : 0; };
 
-		m_cgroup = LinuxCgroup::create(mbToBytes(limit->m_memoryMb), mbToBytes(limit->m_memoryVirtMb - limit->m_memoryMb), limit->m_cpuShares);
+		long long swapMb = (limit->m_memoryVirtMb > limit->m_memoryMb) ? (limit->m_memoryVirtMb - limit->m_memoryMb) : 0;
+		m_cgroup = LinuxCgroup::create(mbToBytes(limit->m_memoryMb), mbToBytes(swapMb), limit->m_cpuShares);
 		m_cgroup->applyLimits(limit->m_name, getpid(), ++(limit->m_index));
 	}
 }
@@ -422,7 +423,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		// Setup STDOUT
 		if (!m_stdoutFileName.empty())
 		{
-			m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC));
+			m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_TRUNC));
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
 
 			if (!m_stdoutHandler.valid())

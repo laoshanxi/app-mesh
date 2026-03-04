@@ -77,12 +77,19 @@ AppBehavior::Action AppBehavior::str2action(const std::string &action2str)
 
 std::string AppBehavior::action2str(AppBehavior::Action action)
 {
-    static std::string array[] = {
-        JSON_KEY_APP_behavior_standby,
-        JSON_KEY_APP_behavior_restart,
-        JSON_KEY_APP_behavior_keepalive,
-        JSON_KEY_APP_behavior_remove};
-    return array[(int)action];
+    switch (action)
+    {
+    case Action::STANDBY:
+        return JSON_KEY_APP_behavior_standby;
+    case Action::RESTART:
+        return JSON_KEY_APP_behavior_restart;
+    case Action::KEEPALIVE:
+        return JSON_KEY_APP_behavior_keepalive;
+    case Action::REMOVE:
+        return JSON_KEY_APP_behavior_remove;
+    default:
+        return JSON_KEY_APP_behavior_standby;
+    }
 }
 
 AppBehavior::Action AppBehavior::exitAction(int code)

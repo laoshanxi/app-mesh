@@ -258,7 +258,7 @@ int DockerApiProcess::returnValue() const
 	if (this->containerId().length())
 	{
 		// GET /containers/{id}/json
-		auto resp = const_cast<DockerApiProcess *>(this)->requestDocker(
+		auto resp = requestDocker(
 			web::http::methods::GET,
 			Utility::stringFormat("/containers/%s/json", this->containerId().c_str()),
 			{}, {}, nullptr);
@@ -285,7 +285,7 @@ int DockerApiProcess::returnValue() const
 }
 
 const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path,
-																	std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body)
+																	std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body) const
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
@@ -308,12 +308,7 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 
 	try
 	{
-		auto resp = RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query);
-		if (resp->status_code != web::http::status_codes::OK)
-		{
-			startError(resp->text);
-		}
-		return resp;
+		return RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query);
 	}
 	catch (const std::exception &ex)
 	{
