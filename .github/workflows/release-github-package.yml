@@ -116,11 +116,11 @@ jobs:
 
     steps:
       - name: Download arm64 packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: amd64-${{ github.sha }}
       - name: Download amd64 packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: arm64-${{ github.sha }}
 

@@ -32,7 +32,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/appmesh/work # mount this to enable configuration persist
     privileged: true
-    user: root
     ports:
       - "443:443" # for appmesh_ui
       - "6061:6061" # Prometheus Exporter

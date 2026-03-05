@@ -33,7 +33,6 @@ services:
     ports:
       - "443:443" # for appmesh_ui
     privileged: true
-    user: root
     depends_on:
       - consul
     logging:
@@ -68,7 +67,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     links:
       - consul
-    user: root
     depends_on:
       - consul
     logging:
@@ -94,7 +92,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     links:
       - consul
-    user: root
     depends_on:
       - consul
     logging:
@@ -120,7 +117,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     links:
       - consul
-    user: root
     depends_on:
       - consul
     logging:

@@ -70,7 +70,7 @@ jobs:
           go-version: "stable"
 
       - name: Download packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.os }}-${{ github.sha }}
 
@@ -124,12 +124,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Download macos-14 packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: macos-14-${{ github.sha }}
 
       - name: Download macos-15 packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: macos-15-${{ github.sha }}
 
