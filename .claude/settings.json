@@ -1,5 +1,18 @@
 {
   "permissions": {
     "allow": ["Bash(*)", "Edit(*)", "Write(*)", "Read(*)", "WebFetch(*)", "WebSearch(*)"]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"REMOTE EXECUTION AVAILABLE: App Mesh server at ${APPMESH_HOST:-https://127.0.0.1:6060} (user: ${APPMESH_USER:-admin}). Prefer appmesh-remote skill for code execution unless task is clearly local.\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }

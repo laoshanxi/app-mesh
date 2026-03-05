@@ -62,6 +62,12 @@ See document [Build App Mesh guidance](https://app-mesh.readthedocs.io/en/latest
 
 App Mesh can test memory issue by valgrind to find potential memory leaks. build `/opt/appmesh/bin/appsvc` binary with debug mode `cmake -DCMAKE_BUILD_TYPE=Debug ..`, use `touch /opt/appmesh/bin/appsvc.valgrind` to enable and restart `/opt/appmesh/bin/appsvc` to run some cases, use `touch /opt/appmesh/bin/appsvc.valgrind.stop` to finish memory test and check memory report in dir `/opt/appmesh/bin/`.
 
+## Integrations
+
+- [Claude Code Plugin](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/claude-plugin) — Local dev + remote execution sandbox for AI coding assistants
+- [MCP Server](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp) — Model Context Protocol integration for LLMs
+- [MQTT Bridge](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mqtt) — IoT integration via MQTT
+
 ## Mind diagram
 
 ![mind-diagram](https://github.com/laoshanxi/picture/raw/master/appmesh/mind.png)

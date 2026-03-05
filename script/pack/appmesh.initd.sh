@@ -43,7 +43,7 @@ readonly LSB_NOT_RUNNING_RELOAD=7
 [ -r /lib/lsb/init-functions ] && . /lib/lsb/init-functions
 
 # Source system configuration
-[ -r ENV_FILE ] && . ENV_FILE
+[ -r "$ENV_FILE" ] && . "$ENV_FILE"
 
 log() {
 	local level="$1"

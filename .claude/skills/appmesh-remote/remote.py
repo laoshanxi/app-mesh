@@ -1,0 +1,1 @@
+../../../src/sdk/claude-plugin/skills/appmesh-remote/remote.py

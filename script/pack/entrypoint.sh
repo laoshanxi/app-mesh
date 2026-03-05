@@ -28,8 +28,9 @@ log() {
 	fi
 }
 info() { log "INFO" "$@"; }
-warn() { log "ERROR" "$@"; }
-die() { error "$@" && exit 1; }
+warn() { log "WARN" "$@"; }
+error() { log "ERROR" "$@"; }
+die() { error "$@"; exit 1; }
 
 # Function: Check Required Dependencies
 check_dependencies() {
@@ -39,7 +40,7 @@ check_dependencies() {
 	for cmd in $required_commands; do
 		if ! command -v "$cmd" >/dev/null 2>&1; then
 			warn "Required command not found: $cmd"
-			((missing_deps++))
+			missing_deps=$((missing_deps + 1))
 		fi
 	done
 
@@ -113,5 +114,5 @@ initialize_directory
 prepare_app_start "$@"
 secure_installation_check
 
-info "Starting App Mesh service: $PROGRAM"
+info "Starting App Mesh service as $(id -un): $PROGRAM"
 exec "$PROGRAM"

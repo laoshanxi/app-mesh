@@ -1,0 +1,11 @@
+{
+  "name": "appmesh-remote",
+  "version": "1.0.0",
+  "description": "Local dev + remote execution via tar-based sync and App Mesh Python SDK",
+  "skills": [
+    "skills/appmesh-remote"
+  ],
+  "rules": [
+    "rules/remote-dev-mode.md"
+  ]
+}

@@ -156,3 +156,37 @@ Compile-time selection via `HAVE_UWEBSOCKETS` (auto-set when C++17+ available):
 - Logging via spdlog macros: `LOG_DBG`, `LOG_INF`, `LOG_WAR`, `LOG_ERR` (defined in `StreamLogger.h`)
 - Singletons via ACE macros: `RESTHANDLER`, `WORKER`, `TIMER_MANAGER`, `TOKEN_BLACK_LIST`
 - OpenAPI spec: `src/daemon/rest/openapi.yaml`
+
+## Remote Execution Policy
+
+> Also shipped as `src/sdk/claude-plugin/rules/remote-dev-mode.md` for plugin consumers.
+
+When `APPMESH_WORKSPACE` is set, remote execution mode is active. Local development + remote execution: tar-based sync uploads files, appmesh Python SDK executes commands.
+
+### Local operations (Claude native tools, no special handling)
+- **Read / Edit / Write / Grep / Glob** → local files
+- **Git** → local git
+
+### Remote operations (via `remote.py`)
+- **Build / Test** → `python3 .claude/skills/appmesh-remote/remote.py sync-exec "<cmd>"`
+- **System commands** → `python3 .claude/skills/appmesh-remote/remote.py exec "<cmd>"`
+- **Deploy service** → `python3 .claude/skills/appmesh-remote/remote.py deploy <name> "<cmd>"`
+- **Run script** → `python3 .claude/skills/appmesh-remote/remote.py run-script <file>`
+
+### Use `appmesh-remote` skill automatically when:
+- User says build, test, run, execute, or deploy and env vars are set
+- User says "on the server", "remotely", "on the host"
+- User asks to install packages or check remote system status
+
+### Do NOT use remote execution for:
+- Reading, editing, searching code → use Claude native tools locally
+- Git operations → run locally
+- User explicitly says "run locally" or "run here"
+
+### Interrupt handling
+- `remote.py` handles Ctrl+C: disables and deletes the remote app automatically
+- If a remote app is left behind: `python3 .claude/skills/appmesh-remote/remote.py cleanup <app_name>`
+
+### Defaults
+- Default credentials: user `admin`, password `admin123`
+- Default host: `https://127.0.0.1:6060`
