@@ -156,3 +156,35 @@ Compile-time selection via `HAVE_UWEBSOCKETS` (auto-set when C++17+ available):
 - Logging via spdlog macros: `LOG_DBG`, `LOG_INF`, `LOG_WAR`, `LOG_ERR` (defined in `StreamLogger.h`)
 - Singletons via ACE macros: `RESTHANDLER`, `WORKER`, `TIMER_MANAGER`, `TOKEN_BLACK_LIST`
 - OpenAPI spec: `src/daemon/rest/openapi.yaml`
+
+## Remote Execution Policy
+
+When `APPMESH_PASSWORD` environment variable is set, a remote App Mesh server is available. Follow these rules:
+
+### Use `appmesh-remote` skill automatically when:
+- User asks to run, execute, or test Python/Bash code on a remote target
+- User says "run remotely", "on the server", "on the host", "on the container"
+- User generates code and wants to verify it works (and `APPMESH_PASSWORD` is set)
+- User asks to check system status, install packages, or manage processes remotely
+
+### Do NOT use remote execution for:
+- Git operations, building this project locally (cmake/make), editing local files
+- Running this repo's test suites (make test, python -m unittest in src/sdk/)
+- When user explicitly says "run locally" or "run here"
+
+### Execution mode
+- **Always use async** (`run_app_async` + `run.wait(stdout_print=True)`) for real-time stdout streaming
+- **Print `APP_NAME=` and `REMOTE_SCRIPT=` early** so Claude can parse them from partial output
+- If user interrupts (Escape), the Bash process is killed — Python's `except KeyboardInterrupt` may NOT run. Claude must run a **separate cleanup script** using the parsed `app_name` to `disable_app()` → `delete_app()` → remove temp files
+- Use `run_app_sync` only for cleanup commands (`rm -f`) or quick checks (`which python3`)
+
+### Deploy mode (register as long-running app)
+- User says "deploy", "register", "keep running", "run as service"
+- Use `add_app()` with `status=1` and `KEEPALIVE` exit behavior instead of one-shot `run_app_async()`
+- Upload script to `/opt/appmesh/work/` (persistent), not `/tmp/`
+- After deploy, show user how to check stdout: `appc ls -a <name> -o -f`
+
+### Defaults
+- Default credentials: user `admin`, password `admin123`
+- If `APPMESH_PASSWORD` is not set, use the default password `admin123` as fallback
+- Default host: `https://127.0.0.1:6060`

@@ -53,7 +53,7 @@ install(FILES
 
 # OS-Specific Service Files
 if(APPLE)
-    install(FILES
+    install(PROGRAMS
         "${SRC}/script/pack/appmesh.launchd.plist"
         "${SRC}/script/pack/appmesh.initd.sh"
         "${SRC}/script/pack/entrypoint.sh"
