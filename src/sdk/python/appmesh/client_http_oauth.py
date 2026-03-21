@@ -8,6 +8,9 @@ from typing import Optional, Union, Tuple, Dict, Any
 from keycloak import KeycloakOpenID
 
 from .client_http import AppMeshClient
+from .exceptions import AppMeshAuthError
+
+logger = logging.getLogger(__name__)
 
 
 class AppMeshClientOAuth(AppMeshClient):
@@ -88,6 +91,8 @@ class AppMeshClientOAuth(AppMeshClient):
             grant_type="password",  # grant type for token request: "password" / "client_credentials" / "refresh_token"
             scope="openid",  # what information to include in the token, such as "openid profile email"
         )
+        self._on_token_changed(self._get_access_token())
+        self.start_token_refresh()
 
     def logout(self) -> bool:
         """Log out of the current session from Keycloak and clean up."""
@@ -99,7 +104,7 @@ class AppMeshClientOAuth(AppMeshClient):
                     self._keycloak_openid.logout(refresh_token)
                     result = True
             except Exception as e:
-                logging.warning("Failed to logout from Keycloak: %s", e)
+                logger.warning("Failed to logout from Keycloak: %s", e)
             finally:
                 self._token = {}
 
@@ -111,19 +116,20 @@ class AppMeshClientOAuth(AppMeshClient):
     def renew_token(self, timeout: Union[int, str] = 0) -> None:
         """Renew the current Keycloak token."""
         if not self._token or not isinstance(self._token, dict):
-            raise Exception("No valid Keycloak token available")
+            raise AppMeshAuthError("No valid Keycloak token available")
 
         refresh_token = self._token.get("refresh_token")
         if not refresh_token:
-            raise Exception("No Keycloak refresh token available to renew")
+            raise AppMeshAuthError("No Keycloak refresh token available to renew")
 
         try:
             # Handle Keycloak token (dictionary format)
             new_token = self._keycloak_openid.refresh_token(refresh_token)
             self._token = new_token
+            self._on_token_changed(self._get_access_token())
         except Exception as e:
-            logging.error("Keycloak token renewal failed: %s", e)
-            raise Exception(f"Keycloak token renewal failed: {str(e)}") from e
+            logger.error("Keycloak token renewal failed: %s", e)
+            raise AppMeshAuthError(f"Keycloak token renewal failed: {str(e)}") from e
 
     def get_current_user(self) -> dict:
         """Get information about the current user using Keycloak userinfo.
@@ -143,7 +149,7 @@ class AppMeshClientOAuth(AppMeshClient):
                 try:
                     self._keycloak_openid.logout(refresh_token)
                 except Exception as e:
-                    logging.warning("Failed to logout from Keycloak during close: %s", e)
+                    logger.warning("Failed to logout from Keycloak during close: %s", e)
                 finally:
                     self._keycloak_openid = None
                     self._token = {}

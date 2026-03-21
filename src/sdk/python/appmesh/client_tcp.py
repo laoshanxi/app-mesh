@@ -2,24 +2,17 @@
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
 # Standard library imports
-from http import HTTPStatus
-import json
-from pathlib import Path
 import socket
-import uuid
+from pathlib import Path
 from typing import Optional, Tuple, Union
-
-# Third-party imports
-import requests
-from requests.structures import CaseInsensitiveDict
 
 # Local imports
 from .client_http import AppMeshClient
-from .tcp_messages import RequestMessage, ResponseMessage
 from .tcp_transport import TCPTransport
+from .transport_mixin import TransportClientMixin
 
 
-class AppMeshClientTCP(AppMeshClient):
+class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
     """Client SDK for interacting with the App Mesh service over TCP.
 
     The `AppMeshClientTCP` class extends the functionality of `AppMeshClient` by offering a TCP-based communication layer
@@ -46,10 +39,12 @@ class AppMeshClientTCP(AppMeshClient):
 
     # TLS-optimized chunk size, leaves room for TLS overhead within the 16 KB limit
     _TCP_BLOCK_SIZE = 16 * 1024 - 128
-    _ENCODING_UTF8 = "utf-8"
-    _HTTP_USER_AGENT_TCP = "appmesh/python/tcp"
+    _HTTP_USER_AGENT_TRANSPORT = "appmesh/python/tcp"
     _HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
     _HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
+
+    # Polling interval for wait_for_async_run (seconds)
+    _POLL_INTERVAL = 1
 
     def __init__(
         self,
@@ -75,7 +70,14 @@ class AppMeshClientTCP(AppMeshClient):
         """
         self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
         self._token = ""
+        self._transport_client_addr = socket.gethostname()
+        self._transport_name = "Socket"
         super().__init__(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
+
+    @property
+    def _transport(self):
+        """Return the TCP transport instance."""
+        return self.tcp_transport
 
     def close(self) -> None:
         """Close the connection and release resources."""
@@ -90,119 +92,6 @@ class AppMeshClientTCP(AppMeshClient):
             self.close()
         except Exception:  # pylint: disable=broad-exception-caught
             pass  # suppress all exceptions
-
-    def _covert_bytes(self, body) -> bytes:
-        """Prepare request body for transmission."""
-        if body is None:
-            return b""
-
-        if isinstance(body, (bytes, bytearray, memoryview)):
-            return body
-
-        if isinstance(body, str):
-            return body.encode(self._ENCODING_UTF8)
-
-        if isinstance(body, (dict, list)):
-            return json.dumps(body).encode(self._ENCODING_UTF8)
-
-        raise TypeError(f"Unsupported body type: {type(body)}")
-
-    def _handle_token_update(self, token: Optional[str]) -> None:
-        """Handle post action when token updated"""
-        self._token = token
-        super()._handle_token_update(token)
-
-    def _get_access_token(self) -> Optional[str]:
-        """Get the current access token."""
-        return self._token
-
-    def _request_http(
-        self,
-        method: AppMeshClient._Method,
-        path: str,
-        query: Optional[dict] = None,
-        header: Optional[dict] = None,
-        body=None,
-        raise_on_fail: bool = True,
-    ) -> requests.Response:
-        """Send HTTP request over TCP transport.
-
-        Args:
-            method: HTTP method.
-            path: URI path.
-            query: Query parameters.
-            header: HTTP headers.
-            body: Request body.
-
-        Returns:
-            Simulated HTTP response.
-        """
-        if not self.tcp_transport.connected():
-            self.tcp_transport.connect()
-
-        # Prepare request message (ensure no fields are assigned None!)
-        appmesh_request = RequestMessage()
-        appmesh_request.uuid = str(uuid.uuid1())
-        appmesh_request.http_method = method.value
-        appmesh_request.request_uri = path
-        appmesh_request.client_addr = socket.gethostname()
-        appmesh_request.headers[self._HTTP_HEADER_KEY_USER_AGENT] = self._HTTP_USER_AGENT_TCP
-
-        # Add authentication token
-        token = self._get_access_token()
-        if token:
-            appmesh_request.headers[self._HTTP_HEADER_KEY_AUTH] = token
-
-        # Add forwarding host
-        if super().forward_to:
-            appmesh_request.headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = super().forward_to
-
-        # Add custom headers
-        if header:
-            appmesh_request.headers.update(header)
-
-        # Add query parameters
-        if query:
-            appmesh_request.query.update(query)
-
-        # Prepare body
-        body_bytes = self._covert_bytes(body)
-        if body_bytes:
-            appmesh_request.body = body_bytes
-
-        # Send request
-        data = appmesh_request.serialize()
-        self.tcp_transport.send_message(data)
-
-        # Receive response
-        resp_data = self.tcp_transport.receive_message()
-        if not resp_data:  # Covers None and empty bytes
-            self.tcp_transport.close()
-            raise ConnectionError("Socket connection broken")
-
-        # Parse response
-        appmesh_resp = ResponseMessage().deserialize(resp_data)
-        response = requests.Response()
-        response.status_code = appmesh_resp.http_status
-        response.headers = CaseInsensitiveDict(appmesh_resp.headers)
-
-        # Set response content
-        # response.encoding = self._ENCODING_UTF8 # only need when charset not in appmesh_resp.body_msg_type
-        if isinstance(appmesh_resp.body, bytes):
-            response._content = appmesh_resp.body
-        else:
-            response._content = str(appmesh_resp.body).encode(self._ENCODING_UTF8)
-
-        # Set content type
-        if appmesh_resp.body_msg_type:
-            response.headers["Content-Type"] = appmesh_resp.body_msg_type
-
-        if raise_on_fail and response.status_code != HTTPStatus.PRECONDITION_REQUIRED:
-            response.reason = str(response._content)
-            response.url = f"{str(self.tcp_transport)}/{path.lstrip('/')}"
-            response.raise_for_status()
-
-        return AppMeshClient._EncodingResponse(response)
 
     def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
         """Copy a remote file to local, preserving file attributes if requested.

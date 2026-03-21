@@ -9,7 +9,7 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 def get_version():
     """PyPI package version"""
-    return "2.1.8"
+    return "2.1.9"
 
 
 # Dependencies
@@ -41,5 +41,5 @@ setuptools.setup(
     ],
     packages=setuptools.find_packages(exclude=["test*"]),
     install_requires=install_requires,
-    python_requires=">=3",
+    python_requires=">=3.6",
 )

@@ -83,7 +83,7 @@ def get_application(app_name: str) -> dict:
         app = client.get_app(app_name)
 
         logger.info("Retrieved information for application: %s", app_name)
-        return {"success": True, "application": app.json()}
+        return {"success": True, "application": app.to_dict()}
 
     except RuntimeError as e:
         return {"success": False, "error": str(e), "message": "AppMesh client not initialized."}
@@ -122,7 +122,7 @@ def list_applications(filter_status: Optional[str] = None) -> dict:
             app_status = "enabled" if app.status == 1 else "disabled"
             if filter_status and app_status.lower() != filter_status.lower():
                 continue
-            applications.append(app.json())
+            applications.append(app.to_dict())
 
         logger.info("Retrieved %d applications", len(applications))
         return {"success": True, "count": len(applications), "applications": applications}

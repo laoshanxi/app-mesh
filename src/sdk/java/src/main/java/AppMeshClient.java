@@ -20,12 +20,18 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSocketFactory;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * App Mesh client object used to access App Mesh REST Service.
+ * App Mesh client for interacting with App Mesh REST Service.
+ *
+ * <p>Supports HTTP, TCP and WSS transports through subclasses.
+ * Use {@link Builder} for convenient construction with custom SSL and timeout settings.
  */
 public class AppMeshClient implements Closeable {
     private static final Logger LOGGER = Logger.getLogger(AppMeshClient.class.getName());
@@ -40,73 +46,134 @@ public class AppMeshClient implements Closeable {
     private static final String JSON_CONTENT_TYPE = "application/json; utf-8";
     private static final int HTTP_PRECONDITION_REQUIRED = 428;
 
+    private static final int DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
+    private static final int DEFAULT_READ_TIMEOUT_MS = 300_000;
+
+    // Platform-aware default SSL directory (matches Python SDK)
+    private static final String DEFAULT_SSL_DIR =
+            System.getProperty("os.name", "").toLowerCase().contains("win")
+                    ? "c:/local/appmesh/ssl" : "/opt/appmesh/ssl";
+    private static final String DEFAULT_SSL_CA_CERT = DEFAULT_SSL_DIR + "/ca.pem";
+    private static final String DEFAULT_SSL_CLIENT_CERT = DEFAULT_SSL_DIR + "/client.pem";
+    private static final String DEFAULT_SSL_CLIENT_KEY = DEFAULT_SSL_DIR + "/client-key.pem";
+
     private final String baseURL;
     private final AtomicReference<String> jwtToken = new AtomicReference<>(null);
     private volatile String forwardTo;
 
+    // Per-instance SSL (avoids modifying JVM global defaults)
+    private final SSLSocketFactory sslSocketFactory;
+    private final boolean disableHostnameVerification;
+
+    // Timeout settings
+    private final int connectTimeoutMs;
+    private final int readTimeoutMs;
+
+    /**
+     * Internal constructor used by Builder and subclasses.
+     */
     protected AppMeshClient(Builder builder) {
         this.baseURL = Objects.requireNonNull(builder.baseURL, "Base URL cannot be null");
+        this.connectTimeoutMs = builder.connectTimeoutMs;
+        this.readTimeoutMs = builder.readTimeoutMs;
+        this.disableHostnameVerification = builder.disableSSLVerification;
+
         if (builder.jwtToken != null) {
             this.jwtToken.set(builder.jwtToken);
         }
-        if (builder.caCertFilePath != null || builder.clientCertFilePath != null) {
+
+        // Build per-instance SSLContext
+        SSLSocketFactory factory = null;
+        if (builder.caCertFilePath != null || builder.clientCertFilePath != null || builder.disableSSLVerification) {
             try {
-                Utils.enableSSLCertificates(builder.caCertFilePath, builder.clientCertFilePath,
-                        builder.clientCertKeyFilePath);
+                javax.net.ssl.SSLContext sc = Utils.createSSLContext(
+                        builder.caCertFilePath, builder.clientCertFilePath,
+                        builder.clientCertKeyFilePath, builder.keyPassword,
+                        builder.disableSSLVerification);
+                factory = sc.getSocketFactory();
             } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Failed to use custom certificate", e);
-                throw new RuntimeException("Failed to initialize AppMeshClient", e);
-            }
-        } else if (builder.disableSSLVerification) {
-            try {
-                Utils.disableSSLVerification();
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Failed to disable SSL verification", e);
-                throw new RuntimeException("Failed to initialize AppMeshClient", e);
+                LOGGER.log(Level.SEVERE, "Failed to create SSL context", e);
+                throw new RuntimeException("Failed to initialize AppMeshClient SSL", e);
             }
         }
+        this.sslSocketFactory = factory;
     }
 
-    /** Builder for AppMeshClient. */
+    /** Builder for {@link AppMeshClient}. */
     public static class Builder {
         private String baseURL = "https://127.0.0.1:6060";
         private String caCertFilePath;
         private String clientCertFilePath;
         private String clientCertKeyFilePath;
+        private char[] keyPassword;
         private String jwtToken;
         private boolean disableSSLVerification = false;
+        private int connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
+        private int readTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
+        private boolean sslPathsExplicitlySet = false;
 
         public Builder() {
+            // Auto-detect default SSL certificates if the directory exists
+            if (new java.io.File(DEFAULT_SSL_DIR).isDirectory()) {
+                this.caCertFilePath = DEFAULT_SSL_CA_CERT;
+                this.clientCertFilePath = DEFAULT_SSL_CLIENT_CERT;
+                this.clientCertKeyFilePath = DEFAULT_SSL_CLIENT_KEY;
+            }
         }
 
-        // AppMesh service URI string.
+        /** AppMesh service base URL (default: {@code https://127.0.0.1:6060}). */
         public Builder baseURL(String baseURL) {
             this.baseURL = baseURL;
             return this;
         }
 
-        // SSL CA certification, a path to a CA bundle
+        /** Path to a CA certificate bundle for server verification (overrides auto-detected default). */
         public Builder caCert(String caCertFilePath) {
             this.caCertFilePath = caCertFilePath;
+            this.sslPathsExplicitlySet = true;
             return this;
         }
 
-        // SSL client certificate and key pair.
+        /** Client certificate and key paths for mutual TLS (overrides auto-detected defaults). */
         public Builder clientCert(String clientCertFilePath, String clientCertKeyFilePath) {
             this.clientCertFilePath = clientCertFilePath;
             this.clientCertKeyFilePath = clientCertKeyFilePath;
+            this.sslPathsExplicitlySet = true;
             return this;
         }
 
-        // Disable SSL verification for none-production use
+        /** Password for encrypted private key (default: none). */
+        public Builder keyPassword(char[] password) {
+            this.keyPassword = password;
+            return this;
+        }
+
+        /** Disable SSL verification (insecure — development only). Clears any auto-detected certificate paths. */
         public Builder disableSSLVerify() {
             this.disableSSLVerification = true;
+            if (!sslPathsExplicitlySet) {
+                this.caCertFilePath = null;
+                this.clientCertFilePath = null;
+                this.clientCertKeyFilePath = null;
+            }
             return this;
         }
 
-        // Initial with a correct token, same with login() & authenticate()
+        /** Initialize with an existing JWT token. */
         public Builder jwtToken(String jwtToken) {
             this.jwtToken = jwtToken;
+            return this;
+        }
+
+        /** Connection timeout in milliseconds (default: 30000). */
+        public Builder connectTimeoutMs(int ms) {
+            this.connectTimeoutMs = ms;
+            return this;
+        }
+
+        /** Read timeout in milliseconds (default: 300000 = 5 min). */
+        public Builder readTimeoutMs(int ms) {
+            this.readTimeoutMs = ms;
             return this;
         }
 
@@ -115,7 +182,7 @@ public class AppMeshClient implements Closeable {
         }
     }
 
-    // Application output object for appOutput() method.
+    /** Application output container for {@link #getAppOutput}. */
     public static class AppOutput {
         public boolean httpSuccess;
         public String httpBody;
@@ -123,7 +190,7 @@ public class AppMeshClient implements Closeable {
         public Integer exitCode;
     }
 
-    // AppRun represents an asynchronous run on the server.
+    /** Represents an asynchronous run on the server. */
     public class AppRun {
         private final String appName;
         private final String procUid;
@@ -137,7 +204,6 @@ public class AppMeshClient implements Closeable {
             this.forwardingHost = client.forwardTo;
         }
 
-        // Getters and setters for appName, procUid, client, and forwardingHost
         public String getAppName() {
             return appName;
         }
@@ -155,18 +221,15 @@ public class AppMeshClient implements Closeable {
         }
 
         /**
-         * A small helper that temporarily sets forwarding host while calling
-         * waitForAsyncRun.
-         * Use as try-with-resources:
-         * try (ForwardingHostManager m = new ForwardingHostManager()) { run.wait(...);
-         * }
+         * Helper that temporarily sets forwarding host while calling waitForAsyncRun.
+         * Use with try-with-resources.
          */
         public class ForwardingHostManager implements Closeable {
             private final String originalForwardingHost;
 
             public ForwardingHostManager() {
                 this.originalForwardingHost = clientRef.forwardTo;
-                clientRef.setForwardTo(forwardingHost); // may be null
+                clientRef.setForwardTo(forwardingHost);
             }
 
             @Override
@@ -188,17 +251,29 @@ public class AppMeshClient implements Closeable {
 
     @Override
     public void close() {
-        // nothing to close here directly; Utils may own global resources
         this.jwtToken.set(null);
     }
 
-    // Login with user name and password.
+    // -------- Authentication --------
+
+    /**
+     * Login with username and password.
+     *
+     * @param username       login name
+     * @param password       login password
+     * @param totpCode       TOTP code (null if not using MFA)
+     * @param expireSeconds  token expiry — integer seconds or ISO 8601 duration string (null = server default)
+     * @param audience       JWT audience (null = default)
+     * @return the JWT token on success
+     * @throws IOException on network or authentication failure
+     */
     public String login(String username, String password, String totpCode, Object expireSeconds, String audience)
             throws IOException {
         Map<String, String> headers = new HashMap<>();
         String basic = BASIC_PREFIX
                 + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
         headers.put(AUTHORIZATION_HEADER, basic);
+        headers.put("X-Set-Cookie", "true");
         if (expireSeconds != null) {
             headers.put("X-Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
         }
@@ -211,25 +286,35 @@ public class AppMeshClient implements Closeable {
 
         HttpURLConnection conn = request("POST", "/appmesh/login", null, headers, null);
         int statusCode = conn.getResponseCode();
-        String responseContent = Utils.readResponse(conn);
 
         if (statusCode == HttpURLConnection.HTTP_OK) {
+            String responseContent = Utils.readResponse(conn);
             JSONObject jsonResponse = new JSONObject(responseContent);
             String token = jsonResponse.getString("access_token");
             this.jwtToken.set(token);
             return token;
-        } else if (statusCode == HTTP_PRECONDITION_REQUIRED && totpCode != null && !totpCode.isEmpty()) {
+        } else if (statusCode == HTTP_PRECONDITION_REQUIRED) {
+            String responseContent = Utils.readResponseSafe(conn);
             JSONObject jsonResponse = new JSONObject(responseContent);
             if (jsonResponse.has("totp_challenge")) {
-                String challenge = jsonResponse.getString("totp_challenge");
-                return validateTotp(username, challenge, totpCode, expireSeconds);
+                if (totpCode != null && !totpCode.isEmpty()) {
+                    String challenge = jsonResponse.getString("totp_challenge");
+                    return validateTotp(username, challenge, totpCode, expireSeconds);
+                }
+                return jsonResponse.getString("totp_challenge");
             }
+            throw new IOException("Login failed: HTTP " + statusCode + " - " + responseContent);
         }
 
-        throw new IOException("Login failed: HTTP " + statusCode + " - " + responseContent);
+        String errorBody = Utils.readErrorResponse(conn);
+        throw new IOException("Login failed: HTTP " + statusCode + " - " + errorBody);
     }
 
-    // Validates TOTP challenge.
+    /**
+     * Validate TOTP challenge code.
+     *
+     * @return the JWT token on success
+     */
     public String validateTotp(String username, String challenge, String code, Object expireSeconds)
             throws IOException {
         JSONObject body = new JSONObject();
@@ -240,17 +325,18 @@ public class AppMeshClient implements Closeable {
             body.put("expire_seconds", Utils.toSeconds(expireSeconds));
         }
         HttpURLConnection conn = request("POST", "/appmesh/totp/validate", body, null, null);
-        String responseContent = Utils.readResponse(conn);
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+            String responseContent = Utils.readResponse(conn);
             JSONObject jsonResponse = new JSONObject(responseContent);
             String token = jsonResponse.getString("access_token");
             this.jwtToken.set(token);
             return token;
         }
-        throw new IOException("TOTP validation failed: HTTP " + conn.getResponseCode() + " - " + responseContent);
+        String errorBody = Utils.readResponseSafe(conn);
+        throw new IOException("TOTP validation failed: HTTP " + conn.getResponseCode() + " - " + errorBody);
     }
 
-    // Logoff current session from server
+    /** Logout current session from server. */
     public boolean logout() {
         try {
             HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
@@ -264,8 +350,14 @@ public class AppMeshClient implements Closeable {
         }
     }
 
-    // Login with token and verify permission when specified, verified token will be
-    // stored in client object when success
+    /**
+     * Authenticate with an existing JWT token.
+     *
+     * @param token      JWT token to verify
+     * @param permission optional permission to check (null to skip)
+     * @param audience   optional JWT audience (null to skip)
+     * @return {@code true} if authentication succeeds
+     */
     public boolean authenticate(String token, String permission, String audience) throws IOException {
         this.jwtToken.set(token);
         Map<String, String> headers = new HashMap<>();
@@ -277,13 +369,19 @@ public class AppMeshClient implements Closeable {
             headers.put("X-Permission", permission);
         }
         HttpURLConnection conn = request("POST", "/appmesh/auth", null, headers, null);
-        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+        boolean ok = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+        if (!ok) {
+            this.jwtToken.set(null);
+        }
+        return ok;
     }
 
-    // Renew current token
-    // expireSeconds (int | str, optional): token expire timeout of seconds. support
-    // ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W'),
-    // default is 7 days.
+    /**
+     * Renew the current JWT token.
+     *
+     * @param expireSeconds token expiry — integer seconds or ISO 8601 duration (null = server default)
+     * @return the new JWT token
+     */
     public String renewToken(Object expireSeconds) throws IOException {
         Map<String, String> headers = new HashMap<>();
         if (expireSeconds != null) {
@@ -297,7 +395,7 @@ public class AppMeshClient implements Closeable {
         return token;
     }
 
-    // Generate TOTP secret for current login user and return MFA URI with JSON body
+    /** Generate TOTP secret for the current user. Returns the MFA URI. */
     public String getTotpSecret() throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/totp/secret", null, null, null);
         String responseContent = Utils.readResponse(conn);
@@ -306,7 +404,7 @@ public class AppMeshClient implements Closeable {
         return new String(Base64.getDecoder().decode(mfaUri), StandardCharsets.UTF_8);
     }
 
-    // Setup 2FA for current login user
+    /** Enable TOTP for the current user with a 6-digit verification code. */
     public String enableTotp(String totpCode) throws IOException {
         if (totpCode == null || !totpCode.matches("\\d{6}")) {
             throw new IllegalArgumentException("TOTP code must be a 6-digit number");
@@ -314,29 +412,33 @@ public class AppMeshClient implements Closeable {
         Map<String, String> headers = new HashMap<>();
         headers.put("X-Totp-Code", totpCode);
         HttpURLConnection conn = request("POST", "/appmesh/totp/setup", null, headers, null);
-        String responseContent = Utils.readResponse(conn);
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+            String responseContent = Utils.readResponse(conn);
             JSONObject jsonResponse = new JSONObject(responseContent);
             String token = jsonResponse.getString("access_token");
             this.jwtToken.set(token);
             return token;
         }
-        throw new IOException("TOTP setup failed: HTTP " + conn.getResponseCode() + " - " + responseContent);
+        String errorBody = Utils.readResponseSafe(conn);
+        throw new IOException("TOTP setup failed: HTTP " + conn.getResponseCode() + " - " + errorBody);
     }
 
+    /** Disable TOTP for the current user. */
     public boolean disableTotp() throws IOException {
         return disableTotp("self");
     }
 
-    // Disable 2FA for specific user
+    /** Disable TOTP for a specific user. */
     public boolean disableTotp(String user) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/totp/" + encodeURIComponent(user) + "/disable", null, null,
                 null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    // Get the server labels
-    public Map<String, String> getTags() throws IOException {
+    // -------- Labels / Tags --------
+
+    /** Get all server labels. */
+    public Map<String, String> getLabels() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/labels", null, null, null);
         String responseContent = Utils.readResponse(conn);
         JSONObject jsonResponse = new JSONObject(responseContent);
@@ -347,70 +449,76 @@ public class AppMeshClient implements Closeable {
         return labels;
     }
 
-    // Add a new label
-    public boolean addTag(String key, String value) throws IOException {
+
+    /** Add or update a label. */
+    public boolean addLabel(String key, String value) throws IOException {
         Map<String, String> params = new HashMap<>();
         params.put("value", value);
         HttpURLConnection conn = request("PUT", "/appmesh/label/" + encodeURIComponent(key), null, null, params);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    // Delete a label
-    public boolean deleteTag(String key) throws IOException {
+
+    /** Delete a label. */
+    public boolean deleteLabel(String key) throws IOException {
         HttpURLConnection conn = request("DELETE", "/appmesh/label/" + encodeURIComponent(key), null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    // Get all applications
+
+    // -------- Application Management --------
+
+    /** List all applications. */
     public JSONArray listApps() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/applications", null, null, null);
-        String responseContent = Utils.readResponse(conn);
-        return new JSONArray(responseContent);
+        return new JSONArray(Utils.readResponse(conn));
     }
 
-    // Get one application information
+    /** Get one application by name. */
     public JSONObject getApp(String appName) throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/app/" + encodeURIComponent(appName), null, null, null);
-        String responseContent = Utils.readResponse(conn);
-        return new JSONObject(responseContent);
+        return new JSONObject(Utils.readResponse(conn));
     }
 
-    // Get application health status
+    /** Check application health (returns {@code true} if healthy). */
     public boolean checkAppHealth(String appName) throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/app/" + encodeURIComponent(appName) + "/health", null, null,
                 null);
-        String responseContent = Utils.readResponse(conn);
-        return "0".equals(responseContent.trim());
+        if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+            return false;
+        }
+        return "0".equals(Utils.readResponse(conn).trim());
     }
 
-    // Enable an application
+    /** Enable an application. */
     public boolean enableApp(String appName) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/app/" + encodeURIComponent(appName) + "/enable", null, null,
                 null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    // Stop and disable an application
+    /** Disable an application. */
     public boolean disableApp(String appName) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/app/" + encodeURIComponent(appName) + "/disable", null, null,
                 null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    // Remove an application.
+    /** Delete an application. */
     public boolean deleteApp(String appName) throws IOException {
         HttpURLConnection conn = request("DELETE", "/appmesh/app/" + encodeURIComponent(appName), null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    // Register an application
+    /** Register or update an application. */
     public JSONObject addApp(String appName, JSONObject appJson) throws IOException {
         HttpURLConnection conn = request("PUT", "/appmesh/app/" + encodeURIComponent(appName), appJson, null, null);
-        String responseContent = Utils.readResponse(conn);
-        return new JSONObject(responseContent);
+        return new JSONObject(Utils.readResponse(conn));
     }
 
-    // Get application stdout/stderr
+    // -------- Application Output & Execution --------
+
+    /** Get application stdout/stderr output. */
     public AppOutput getAppOutput(String appName, long stdoutPosition, int stdoutIndex, int stdoutMaxsize,
             String processUuid, int timeout) throws IOException {
         Map<String, String> query = new HashMap<>();
@@ -423,7 +531,7 @@ public class AppMeshClient implements Closeable {
                 query);
         AppOutput response = new AppOutput();
         response.httpSuccess = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
-        response.httpBody = Utils.readResponse(conn);
+        response.httpBody = Utils.readResponseSafe(conn);
 
         String exitCodeStr = conn.getHeaderField("X-Exit-Code");
         if (exitCodeStr != null && !exitCodeStr.isEmpty()) {
@@ -445,13 +553,21 @@ public class AppMeshClient implements Closeable {
         return response;
     }
 
-    // Block run a command remotely, 'name' attribute in appJson dict used to run an
-    // existing application
-    // The synchronized run will block the process until the remote run is finished
-    // then return the result from HTTP response
-    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTimeoutSeconds) throws Exception {
+    /**
+     * Run an application synchronously (blocking).
+     *
+     * @param appJson           application JSON definition
+     * @param maxTimeoutSeconds maximum execution time in seconds
+     * @param lifeCycleSeconds  application lifecycle time (0 = server default)
+     * @return (exitCode, stdout) pair
+     */
+    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTimeoutSeconds, int lifeCycleSeconds)
+            throws Exception {
         Map<String, String> query = new HashMap<>();
         query.put("timeout", String.valueOf(maxTimeoutSeconds));
+        if (lifeCycleSeconds > 0) {
+            query.put("lifecycle", String.valueOf(lifeCycleSeconds));
+        }
         HttpURLConnection conn = request("POST", "/appmesh/app/syncrun", appJson, null, query);
         String exitCodeHeader = conn.getHeaderField("X-Exit-Code");
         Integer exitCode = null;
@@ -462,12 +578,21 @@ public class AppMeshClient implements Closeable {
                 LOGGER.log(Level.WARNING, "Failed to parse exit code header", e);
             }
         }
-        return Pair.of(exitCode, Utils.readResponse(conn));
+        return Pair.of(exitCode, Utils.readResponseSafe(conn));
     }
 
-    // Asyncrized run a command remotely, 'name' attribute in appJson dict used to
-    // run an existing application
-    // Asyncrized run will not block process
+    /**
+     * Run an application synchronously (overload without lifecycle).
+     */
+    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTimeoutSeconds) throws Exception {
+        return runAppSync(appJson, maxTimeoutSeconds, 0);
+    }
+
+    /**
+     * Run an application asynchronously (non-blocking).
+     *
+     * @return an {@link AppRun} handle to track the execution
+     */
     public AppRun runAppAsync(JSONObject appJson, Object maxTimeSeconds, Object lifeCycleSeconds) throws Exception {
         Map<String, String> query = new HashMap<>();
         query.put("timeout", String.valueOf(Utils.toSeconds(maxTimeSeconds)));
@@ -481,7 +606,7 @@ public class AppMeshClient implements Closeable {
         return new AppRun(this, jsonResponse.getString("name"), jsonResponse.getString("process_uuid"));
     }
 
-    // Wait for an async run to be finished
+    /** Wait for an async run to complete. */
     public Integer waitForAsyncRun(AppRun run, boolean stdoutPrint, int timeoutSeconds) throws Exception {
         if (run == null)
             return null;
@@ -512,34 +637,41 @@ public class AppMeshClient implements Closeable {
         return null;
     }
 
-    // Run a task remotely - send data to a running application and wait for result
+    // -------- Task Management --------
+
+    /**
+     * Send a task to a running application and wait for the result.
+     */
     public String runTask(String appName, String data, int timeout) throws IOException {
         Map<String, String> query = new HashMap<>();
         query.put("timeout", String.valueOf(timeout));
 
-        HttpURLConnection conn = request("POST", "/appmesh/app/" + appName + "/task", data, null, query);
+        HttpURLConnection conn = request("POST", "/appmesh/app/" + encodeURIComponent(appName) + "/task", data, null,
+                query);
 
         if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-            throw new IOException("Task failed: " + Utils.readResponse(conn));
+            throw new IOException("Task failed: " + Utils.readResponseSafe(conn));
         }
-
         return Utils.readResponse(conn);
     }
 
-    // Cancel a running task
+    /** Cancel a running task. */
     public boolean cancelTask(String appName) throws IOException {
-        HttpURLConnection conn = request("DELETE", "/appmesh/app/" + appName + "/task", null, null, null);
+        HttpURLConnection conn = request("DELETE", "/appmesh/app/" + encodeURIComponent(appName) + "/task", null, null,
+                null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    // Copy a remote file to local, the local file will have the same permission as
-    // the remote file
+    // -------- File Transfer --------
+
+    /** Download a remote file to local disk. */
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put("X-File-Path", encodeURIComponent(filePath));
+
         HttpURLConnection conn = request("GET", "/appmesh/file/download", null, headers, null);
         if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-            throw new IOException(Utils.readResponse(conn));
+            throw new IOException(Utils.readResponseSafe(conn));
         }
         try (InputStream inputStream = conn.getInputStream();
                 OutputStream outputStream = new FileOutputStream(localFile)) {
@@ -555,8 +687,7 @@ public class AppMeshClient implements Closeable {
         return true;
     }
 
-    // Upload a local file to the remote server, the remote file will have the same
-    // permission as the local file
+    /** Upload a local file to the remote server. */
     public boolean uploadFile(Object localFile, String remoteFile, boolean preservePermissions) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put("X-File-Path", encodeURIComponent(remoteFile));
@@ -583,12 +714,13 @@ public class AppMeshClient implements Closeable {
 
         URL url = Utils.toUrl(this.baseURL + "/appmesh/file/upload");
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        applySSL(connection);
         connection.setDoOutput(true);
         connection.setRequestMethod("POST");
+        connection.setConnectTimeout(connectTimeoutMs);
+        connection.setReadTimeout(readTimeoutMs);
         commonHeaders().forEach(connection::setRequestProperty);
-        if (headers != null) {
-            headers.forEach(connection::setRequestProperty);
-        }
+        headers.forEach(connection::setRequestProperty);
 
         try (OutputStream output = connection.getOutputStream()) {
             Utils.writeMultipartFormData(output, boundary, file);
@@ -598,138 +730,150 @@ public class AppMeshClient implements Closeable {
         if (responseCode != HttpURLConnection.HTTP_OK) {
             String responseBody = Utils.readErrorResponse(connection);
             LOGGER.severe("HTTP error code: " + responseCode);
-            LOGGER.severe("Response body: " + responseBody);
             throw new IOException("HTTP error code: " + responseCode + ", Response: " + responseBody);
         }
         return true;
     }
 
-    // Get App Mesh host resource report include CPU, memory and disk
+    // -------- System & Configuration --------
+
+    /** Get host resource report (CPU, memory, disk). */
     public JSONObject getHostResources() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/resources", null, null, null);
-        String responseContent = Utils.readResponse(conn);
-        return new JSONObject(responseContent);
+        return new JSONObject(Utils.readResponse(conn));
     }
 
-    // Get App Mesh configuration JSON
+    /** Get App Mesh configuration. */
     public JSONObject getConfig() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/config", null, null, null);
-        String responseContent = Utils.readResponse(conn);
-        return new JSONObject(responseContent);
+        return new JSONObject(Utils.readResponse(conn));
     }
 
-    // Update configuration, the format follow 'config.yaml', support partial update
+    /** Update configuration (supports partial update). */
     public JSONObject setConfig(JSONObject configJson) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/config", configJson, null, null);
-        String responseContent = Utils.readResponse(conn);
-        return new JSONObject(responseContent);
+        return new JSONObject(Utils.readResponse(conn));
     }
 
-    // Update App Mesh log level(DEBUG/INFO/NOTICE/WARN/ERROR)
+    /** Update log level (DEBUG/INFO/NOTICE/WARN/ERROR). */
     public String setLogLevel(String level) throws IOException {
         JSONObject config = new JSONObject().put("BaseConfig", new JSONObject().put("LogLevel", level));
         HttpURLConnection conn = request("POST", "/appmesh/config", config, null, null);
-        String responseContent = Utils.readResponse(conn);
-        JSONObject cfg = new JSONObject(responseContent);
+        JSONObject cfg = new JSONObject(Utils.readResponse(conn));
         return cfg.getJSONObject("BaseConfig").getString("LogLevel");
     }
 
+    /** Get Prometheus metrics text. */
+    public String getMetrics() throws IOException {
+        HttpURLConnection conn = request("GET", "/appmesh/metrics", null, null, null);
+        return Utils.readResponse(conn);
+    }
+
+    // -------- User Management --------
+
+    /** Change password for a specific user. */
     public boolean updatePassword(String oldPassword, String newPassword, String userName) throws IOException {
-        JSONObject newPwd = new JSONObject();
-        newPwd.put("old_password", Base64.getEncoder().encodeToString(oldPassword.getBytes(StandardCharsets.UTF_8)));
-        newPwd.put("new_password", Base64.getEncoder().encodeToString(newPassword.getBytes(StandardCharsets.UTF_8)));
-        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(userName) + "/passwd", newPwd,
+        JSONObject body = new JSONObject();
+        body.put("old_password", Base64.getEncoder().encodeToString(oldPassword.getBytes(StandardCharsets.UTF_8)));
+        body.put("new_password", Base64.getEncoder().encodeToString(newPassword.getBytes(StandardCharsets.UTF_8)));
+        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(userName) + "/passwd", body,
                 null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    /** Change password for the current user. */
     public boolean updatePassword(String oldPassword, String newPassword) throws IOException {
         return updatePassword(oldPassword, newPassword, "self");
     }
 
+    /** Add or update a user. */
     public boolean addUser(String userName, JSONObject userJson) throws IOException {
         HttpURLConnection conn = request("PUT", "/appmesh/user/" + encodeURIComponent(userName), userJson, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    /** Delete a user. */
     public boolean deleteUser(String userName) throws IOException {
         HttpURLConnection conn = request("DELETE", "/appmesh/user/" + encodeURIComponent(userName), null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    /** Lock a user account. */
     public boolean lockUser(String userName) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(userName) + "/lock", null, null,
                 null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    /** Unlock a user account. */
     public boolean unlockUser(String userName) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(userName) + "/unlock", null,
                 null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    /** List all users. */
     public JSONObject listUsers() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/users", null, null, null);
         return new JSONObject(Utils.readResponse(conn));
     }
 
+    /** Get current authenticated user info. */
     public JSONObject getCurrentUser() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/user/self", null, null, null);
         return new JSONObject(Utils.readResponse(conn));
     }
 
+    /** List user groups. */
     public JSONObject listGroups() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/user/groups", null, null, null);
         return new JSONObject(Utils.readResponse(conn));
     }
 
+    // -------- Permissions & Roles --------
+
+    /** List all available permissions. */
     public Set<String> listPermissions() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/permissions", null, null, null);
+        JSONArray jsonArray = new JSONArray(Utils.readResponse(conn));
         Set<String> permissions = new HashSet<>();
-        if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
-            JSONArray jsonArray = new JSONArray(Utils.readResponse(conn));
-            for (int i = 0; i < jsonArray.length(); i++) {
-                permissions.add(jsonArray.getString(i));
-            }
+        for (int i = 0; i < jsonArray.length(); i++) {
+            permissions.add(jsonArray.getString(i));
         }
         return permissions;
     }
 
+    /** List permissions for the current user. */
     public Set<String> getUserPermissions() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/user/permissions", null, null, null);
+        JSONArray jsonArray = new JSONArray(Utils.readResponse(conn));
         Set<String> permissions = new HashSet<>();
-        if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
-            JSONArray jsonArray = new JSONArray(Utils.readResponse(conn));
-            for (int i = 0; i < jsonArray.length(); i++) {
-                permissions.add(jsonArray.getString(i));
-            }
+        for (int i = 0; i < jsonArray.length(); i++) {
+            permissions.add(jsonArray.getString(i));
         }
         return permissions;
     }
 
+    /** View all roles and their permissions. */
     public JSONObject viewRoles() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/roles", null, null, null);
         return new JSONObject(Utils.readResponse(conn));
     }
 
+    /** Update permissions for a role. */
     public boolean updateRole(String roleName, JSONObject rolePermissionJson) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/role/" + encodeURIComponent(roleName), rolePermissionJson,
                 null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    /** Delete a role. */
     public boolean deleteRole(String roleName) throws IOException {
         HttpURLConnection conn = request("DELETE", "/appmesh/role/" + encodeURIComponent(roleName), null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    public String getMetrics() throws IOException {
-        HttpURLConnection conn = request("GET", "/appmesh/metrics", null, null, null);
-        return Utils.readResponse(conn);
-    }
-
-    // -------- Internal helpers --------
+    // -------- Internal Helpers --------
 
     private Map<String, String> commonHeaders() {
         Map<String, String> headers = new HashMap<>();
@@ -758,14 +902,25 @@ public class AppMeshClient implements Closeable {
         return headers;
     }
 
-    // Protected accessor for subclasses to reuse same headers
+    /** Accessor for subclasses to reuse common headers. */
     protected Map<String, String> getCommonHeaders() {
         return commonHeaders();
     }
 
-    // Protected accessor for subclasses to get baseURL
+    /** Accessor for subclasses to get the base URL. */
     protected String getBaseURL() {
         return this.baseURL;
+    }
+
+    /** Apply per-instance SSL configuration to a connection (if configured). */
+    protected void applySSL(HttpURLConnection connection) {
+        if (connection instanceof HttpsURLConnection && sslSocketFactory != null) {
+            HttpsURLConnection httpsConn = (HttpsURLConnection) connection;
+            httpsConn.setSSLSocketFactory(sslSocketFactory);
+            if (disableHostnameVerification) {
+                httpsConn.setHostnameVerifier((hostname, session) -> true);
+            }
+        }
     }
 
     private String encodeURIComponent(String value) {
@@ -773,7 +928,6 @@ public class AppMeshClient implements Closeable {
             return null;
         try {
             String encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.name());
-            // make it closer to JS encodeURIComponent
             return encoded.replace("+", "%20")
                     .replace("%21", "!")
                     .replace("%27", "'")
@@ -787,14 +941,11 @@ public class AppMeshClient implements Closeable {
     }
 
     /**
-     * Core HTTP request helper. Builds URL, attaches headers and body (for JSON
-     * POST/PUT),
-     * and returns the HttpURLConnection for caller to inspect response / read
-     * streams.
+     * Core HTTP request helper. Builds URL, attaches headers and body, applies SSL
+     * and timeout settings, and returns the {@link HttpURLConnection}.
      */
     public HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
-            Map<String, String> params)
-            throws IOException {
+            Map<String, String> params) throws IOException {
         StringBuilder urlBuilder = new StringBuilder(baseURL).append(path);
 
         if (params != null && !params.isEmpty()) {
@@ -809,12 +960,17 @@ public class AppMeshClient implements Closeable {
                     throw new RuntimeException("Error encoding URL parameters", ex);
                 }
             }
-            urlBuilder.setLength(urlBuilder.length() - 1); // remove trailing &
+            urlBuilder.setLength(urlBuilder.length() - 1);
         }
 
         URL url = Utils.toUrl(urlBuilder.toString());
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod(method.toUpperCase());
+        connection.setConnectTimeout(connectTimeoutMs);
+        connection.setReadTimeout(readTimeoutMs);
+
+        // Apply per-instance SSL
+        applySSL(connection);
 
         Map<String, String> allHeaders = new HashMap<>(commonHeaders());
         if (headers != null) {

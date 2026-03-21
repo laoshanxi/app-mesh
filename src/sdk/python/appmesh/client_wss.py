@@ -3,23 +3,20 @@
 
 # Standard library imports
 from http import HTTPStatus
-import json
 from pathlib import Path
-import uuid
 from typing import Optional, Tuple, Union
+from urllib import parse
 
 # Third-party imports
-from urllib import parse
 import requests
-from requests.structures import CaseInsensitiveDict
 
 # Local imports
 from .client_http import AppMeshClient
-from .tcp_messages import RequestMessage, ResponseMessage
 from .wss_transport import WSSTransport
+from .transport_mixin import TransportClientMixin
 
 
-class AppMeshClientWSS(AppMeshClient):
+class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
     """Client SDK for interacting with the App Mesh service over WebSocket Secure (WSS).
 
     The `AppMeshClientWSS` class extends the functionality of `AppMeshClient` by offering a WSS-based communication layer
@@ -46,8 +43,10 @@ class AppMeshClientWSS(AppMeshClient):
 
     # WSS-optimized chunk size
     _WSS_BLOCK_SIZE = 64 * 1024
-    _ENCODING_UTF8 = "utf-8"
-    _HTTP_USER_AGENT_WSS = "appmesh/python/wss"
+    _HTTP_USER_AGENT_TRANSPORT = "appmesh/python/wss"
+
+    # Polling interval for wait_for_async_run (seconds)
+    _POLL_INTERVAL = 1
 
     def __init__(
         self,
@@ -73,9 +72,16 @@ class AppMeshClientWSS(AppMeshClient):
         """
         self.wss_transport = WSSTransport(address=wss_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
         self._token = ""
+        self._transport_client_addr = "wss-client"
+        self._transport_name = "WebSocket"
         # http and websocket share same address
         host, port = wss_address
         super().__init__(rest_url=f"https://{host}:{port}", ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
+
+    @property
+    def _transport(self):
+        """Return the WSS transport instance."""
+        return self.wss_transport
 
     def close(self) -> None:
         """Close the connection and release resources."""
@@ -91,31 +97,6 @@ class AppMeshClientWSS(AppMeshClient):
         except Exception:
             pass  # Never raise in __del__
 
-    def _covert_bytes(self, body) -> bytes:
-        """Prepare request body for transmission."""
-        if body is None:
-            return b""
-
-        if isinstance(body, (bytes, bytearray, memoryview)):
-            return bytes(body)
-
-        if isinstance(body, str):
-            return body.encode(self._ENCODING_UTF8)
-
-        if isinstance(body, (dict, list)):
-            return json.dumps(body).encode(self._ENCODING_UTF8)
-
-        raise TypeError(f"Unsupported body type: {type(body)}")
-
-    def _handle_token_update(self, token: Optional[str]) -> None:
-        """Handle post action when token updated"""
-        self._token = token
-        super()._handle_token_update(token)
-
-    def _get_access_token(self) -> Optional[str]:
-        """Get the current access token."""
-        return self._token
-
     def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
         """Copy a remote file to local, preserving file attributes if requested.
 
@@ -127,7 +108,7 @@ class AppMeshClientWSS(AppMeshClient):
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
         if self._HTTP_HEADER_KEY_AUTH not in resp.headers:
-            raise ValueError(f"Server did not respond with file transfer autentication: " f"{self._HTTP_HEADER_KEY_AUTH}")
+            raise ValueError(f"Server did not respond with file transfer authentication: {self._HTTP_HEADER_KEY_AUTH}")
 
         # Use requests to GET file
         local_path = Path(local_file)
@@ -147,7 +128,7 @@ class AppMeshClientWSS(AppMeshClient):
 
             # Apply file attributes if requested
             if preserve_permissions:
-                AppMeshClient._apply_file_attributes(local_path, r.headers)  # TODO
+                AppMeshClient._apply_file_attributes(local_path, r.headers)
         else:
             r.raise_for_status()
 
@@ -162,7 +143,7 @@ class AppMeshClientWSS(AppMeshClient):
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)
         if self._HTTP_HEADER_KEY_AUTH not in resp.headers:
-            raise ValueError(f"Server did not respond with file transfer autentication: " f"{self._HTTP_HEADER_KEY_AUTH}")
+            raise ValueError(f"Server did not respond with file transfer authentication: {self._HTTP_HEADER_KEY_AUTH}")
 
         local_path = Path(local_file)
         if not local_path.exists():
@@ -175,99 +156,9 @@ class AppMeshClientWSS(AppMeshClient):
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
         }
         if preserve_permissions:
-            header.update(AppMeshClient._get_file_attributes(local_path))  # TODO
+            header.update(AppMeshClient._get_file_attributes(local_path))
         rest_url = parse.urljoin(self.base_url, path)
 
         with local_path.open("rb") as fp:
             r = requests.post(url=rest_url, stream=True, data=fp, timeout=120, headers=header, verify=self.ssl_verify)
             r.raise_for_status()
-
-    def _request_http(
-        self,
-        method: AppMeshClient._Method,
-        path: str,
-        query: Optional[dict] = None,
-        header: Optional[dict] = None,
-        body=None,
-        raise_on_fail: bool = True,
-    ) -> requests.Response:
-        """Send HTTP request over WSS transport.
-
-        Args:
-            method: HTTP method.
-            path: URI path.
-            query: Query parameters.
-            header: HTTP headers.
-            body: Request body.
-            raise_on_fail: Raise exception on HTTP error.
-
-        Returns:
-            Simulated HTTP response.
-        """
-
-        if not self.wss_transport.connected():
-            self.wss_transport.connect()
-
-        # Prepare request message (ensure no fields are assigned None!)
-        appmesh_request = RequestMessage()
-        appmesh_request.uuid = str(uuid.uuid1())
-        appmesh_request.http_method = method.value
-        appmesh_request.request_uri = path
-        appmesh_request.client_addr = "wss-client"
-        appmesh_request.headers[self._HTTP_HEADER_KEY_USER_AGENT] = self._HTTP_USER_AGENT_WSS
-
-        # Add authentication token
-        token = self._get_access_token()
-        if token:
-            appmesh_request.headers[self._HTTP_HEADER_KEY_AUTH] = token
-
-        # Add forwarding host
-        if super().forward_to:
-            appmesh_request.headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = super().forward_to
-
-        # Add custom headers
-        if header:
-            appmesh_request.headers.update(header)
-
-        # Add query parameters
-        if query:
-            appmesh_request.query.update(query)
-
-        # Prepare body
-        body_bytes = self._covert_bytes(body)
-        if body_bytes:
-            appmesh_request.body = body_bytes
-
-        # Send request
-        data = appmesh_request.serialize()
-        self.wss_transport.send_message(data)
-
-        # Receive response
-        resp_data = self.wss_transport.receive_message()
-        if not resp_data:  # Covers None and empty bytes
-            self.wss_transport.close()
-            raise ConnectionError("WebSocket connection broken")
-
-        # Parse response
-        appmesh_resp = ResponseMessage().deserialize(resp_data)
-        response = requests.Response()
-        response.status_code = appmesh_resp.http_status
-        response.headers = CaseInsensitiveDict(appmesh_resp.headers)
-
-        # Set response content
-        # response.encoding = self._ENCODING_UTF8 # only need when charset not in appmesh_resp.body_msg_type
-        if isinstance(appmesh_resp.body, bytes):
-            response._content = appmesh_resp.body
-        else:
-            response._content = str(appmesh_resp.body).encode(self._ENCODING_UTF8)
-
-        # Set content type
-        if appmesh_resp.body_msg_type:
-            response.headers["Content-Type"] = appmesh_resp.body_msg_type
-
-        if raise_on_fail and response.status_code != HTTPStatus.PRECONDITION_REQUIRED:
-            response.reason = str(response._content)
-            response.url = f"{str(self.wss_transport)}/{path.lstrip('/')}"
-            response.raise_for_status()
-
-        return AppMeshClient._EncodingResponse(response)

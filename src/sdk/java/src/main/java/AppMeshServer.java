@@ -1,5 +1,6 @@
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
@@ -9,47 +10,77 @@ import java.util.logging.Logger;
 /**
  * App Mesh server SDK for Java (HTTP transport).
  *
- * Provides methods `taskFetch` and `taskReturn` for application processes
- * to receive payloads from and return results to the App Mesh service.
+ * <p>Provides methods {@link #taskFetch()} and {@link #taskReturn(byte[])} for application
+ * processes to receive payloads from and return results to the App Mesh service.
  */
 public class AppMeshServer {
     private static final Logger LOGGER = Logger.getLogger(AppMeshServer.class.getName());
-    private static final long RETRY_DELAY_MS = 100;
+    private static final long INITIAL_RETRY_DELAY_MS = 100;
+    private static final long MAX_RETRY_DELAY_MS = 10_000;
+
+    /** 0 = unlimited retries (original behavior). */
+    private static final int DEFAULT_MAX_RETRIES = 0;
 
     protected final AppMeshClient client;
+    private final int maxRetries;
 
     public AppMeshServer() {
-        this.client = new AppMeshClient.Builder().build();
+        this(new AppMeshClient.Builder().build(), DEFAULT_MAX_RETRIES);
     }
 
     public AppMeshServer(AppMeshClient client) {
+        this(client, DEFAULT_MAX_RETRIES);
+    }
+
+    /**
+     * Create a server with custom retry configuration.
+     *
+     * @param client     the underlying client
+     * @param maxRetries maximum fetch retries (0 = unlimited)
+     */
+    public AppMeshServer(AppMeshClient client, int maxRetries) {
         this.client = client;
+        this.maxRetries = maxRetries;
     }
 
     private String[] getRuntimeEnv() {
         String processKey = System.getenv("APP_MESH_PROCESS_KEY");
         String appName = System.getenv("APP_MESH_APPLICATION_NAME");
         if (processKey == null || processKey.isEmpty()) {
-            throw new RuntimeException("Missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service.");
+            throw new RuntimeException(
+                    "Missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service.");
         }
         if (appName == null || appName.isEmpty()) {
-            throw new RuntimeException("Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.");
+            throw new RuntimeException(
+                    "Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.");
         }
         return new String[] { processKey, appName };
     }
 
+    /**
+     * Fetch a task payload from the App Mesh service.
+     *
+     * <p>Retries on non-OK responses with exponential backoff up to {@code maxRetries}
+     * times (0 = unlimited).
+     *
+     * @return the task payload bytes
+     * @throws IOException if the maximum number of retries is exceeded or an unrecoverable error occurs
+     */
     public byte[] taskFetch() throws IOException {
         String[] env = getRuntimeEnv();
         String pkey = env[0];
         String appName = env[1];
-        String path = "/appmesh/app/" + appName + "/task";
+        String path = "/appmesh/app/" + URLEncoder.encode(appName, StandardCharsets.UTF_8.name()).replace("+", "%20") + "/task";
 
         Map<String, String> query = new HashMap<>();
         query.put("process_key", pkey);
 
+        int attempts = 0;
+        long delay = INITIAL_RETRY_DELAY_MS;
+
         while (true) {
-            HttpURLConnection conn = client.request("GET", path, null, null, query);
             try {
+                HttpURLConnection conn = client.request("GET", path, null, null, query);
                 int status = conn.getResponseCode();
                 if (status == HttpURLConnection.HTTP_OK) {
                     return Utils.readResponseBytes(conn);
@@ -59,8 +90,14 @@ public class AppMeshServer {
                 LOGGER.log(Level.WARNING, "taskFetch request failed, retrying", e);
             }
 
+            attempts++;
+            if (maxRetries > 0 && attempts >= maxRetries) {
+                throw new IOException("taskFetch failed after " + attempts + " retries");
+            }
+
             try {
-                Thread.sleep(RETRY_DELAY_MS);
+                Thread.sleep(delay);
+                delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS); // exponential backoff
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("Interrupted while waiting to retry taskFetch", e);
@@ -68,16 +105,20 @@ public class AppMeshServer {
         }
     }
 
+    /**
+     * Return a processing result back to the App Mesh service.
+     *
+     * @param result the result bytes to return
+     */
     public void taskReturn(byte[] result) throws IOException {
         String[] env = getRuntimeEnv();
         String pkey = env[0];
         String appName = env[1];
-        String path = "/appmesh/app/" + appName + "/task";
+        String path = "/appmesh/app/" + URLEncoder.encode(appName, StandardCharsets.UTF_8.name()).replace("+", "%20") + "/task";
 
         Map<String, String> query = new HashMap<>();
         query.put("process_key", pkey);
 
-        // Send result as UTF-8 string. For binary payloads, caller may encode as needed.
         String body = result == null ? "" : new String(result, StandardCharsets.UTF_8);
         HttpURLConnection conn = client.request("PUT", path, body, null, query);
         int status = conn.getResponseCode();

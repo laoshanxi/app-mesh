@@ -19,6 +19,7 @@ const (
 	COOKIE_CSRF_TOKEN                  = "appmesh_csrf_token"
 	HTTP_USER_AGENT                    = "appmesh/golang"
 	HTTP_USER_AGENT_TCP                = "appmesh/golang/tcp"
+	HTTP_USER_AGENT_WSS                = "appmesh/golang/wss"
 	HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
 	HTTP_HEADER_KEY_File_Path          = "X-File-Path"
@@ -101,8 +102,8 @@ type Application struct {
 	Env           *Environments       `json:"env"`
 	SecEnv        *Environments       `json:"sec_env"`
 
-	TaskId     *string `json:"task_id"`
-	TaskStatus *string `json:"task_status"`
+	TaskId     *int        `json:"task_id"`
+	TaskStatus *string    `json:"task_status"`
 }
 
 // AppRun represents the state of an asynchronous application run.

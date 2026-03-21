@@ -29,7 +29,5 @@ class AppMeshServerTCP(AppMeshServer):
         Args:
             follows the same parameters as `AppMeshClientTCP`.
         """
-        # Deliberately avoid calling super().__init__ to inject a TCP client while keeping the same public API.
-        object.__init__(self)
-        self._client = AppMeshClientTCP(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, tcp_address=tcp_address)
-        self._logger = logger_ or logger
+        tcp_client = AppMeshClientTCP(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, tcp_address=tcp_address)
+        super().__init__(client=tcp_client, logger_=logger_)

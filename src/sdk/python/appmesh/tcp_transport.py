@@ -1,12 +1,17 @@
 # tcp_transport.py
 """TCP Transport layer handling socket connections."""
-__all__ = []
+__all__ = ["TCPTransport"]
 
+import logging
 import socket
 import ssl
 import struct
 from pathlib import Path
 from typing import Optional, Union, Tuple
+
+from .exceptions import AppMeshConnectionError
+
+logger = logging.getLogger(__name__)
 
 
 class TCPTransport:
@@ -75,7 +80,6 @@ class TCPTransport:
         # Create a TCP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(True)
-        # sock.settimeout(30)  # Connection timeout set to 30 seconds
 
         try:
             # Wrap the socket with SSL/TLS
@@ -83,12 +87,10 @@ class TCPTransport:
             ssl_socket.connect(self.address)
             # Disable Nagle's algorithm
             ssl_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            # After connecting, set separate timeout for recv/send
-            # ssl_socket.settimeout(20)  # 20 seconds for recv/send
             self._socket = ssl_socket
         except (socket.error, ssl.SSLError) as e:
             sock.close()
-            raise RuntimeError(f"Failed to connect to {self.address}: {e}") from e
+            raise AppMeshConnectionError(f"Failed to connect to {self.address}: {e}") from e
 
     def _create_ssl_context(self) -> ssl.SSLContext:
         """Create and configure SSL context."""
@@ -136,7 +138,7 @@ class TCPTransport:
             try:
                 self._socket.close()
             except Exception as e:
-                print(f"Error closing socket: {e}")
+                logger.warning("Error closing socket: %s", e)
             finally:
                 self._socket = None
 
@@ -152,7 +154,7 @@ class TCPTransport:
             data: Message data to send, or empty list for EOF signal.
         """
         if not self._socket:
-            raise RuntimeError("Cannot send message: not connected")
+            raise AppMeshConnectionError("Cannot send message: not connected")
 
         try:
             length = len(data) if data else 0
@@ -164,7 +166,7 @@ class TCPTransport:
                 self._socket.sendall(data)
         except (socket.error, ssl.SSLError) as e:
             self.close()
-            raise RuntimeError(f"Error sending message: {e}") from e
+            raise AppMeshConnectionError(f"Error sending message: {e}") from e
 
     def receive_message(self) -> Optional[bytearray]:
         """
@@ -174,7 +176,7 @@ class TCPTransport:
             Message data, or None for EOF signal.
         """
         if not self._socket:
-            raise RuntimeError("Cannot receive message: not connected")
+            raise AppMeshConnectionError("Cannot receive message: not connected")
 
         try:
             # Unpack the data (big-endian format)
@@ -188,9 +190,9 @@ class TCPTransport:
 
             return self._recvall(length) if length > 0 else None
 
-        except (socket.error, ssl.SSLError) as e:
+        except (socket.error, ssl.SSLError, EOFError, ValueError) as e:
             self.close()
-            raise RuntimeError(f"Error receiving message: {e}") from e
+            raise AppMeshConnectionError(f"Error receiving message: {e}") from e
 
     def _recvall(self, length: int) -> bytes:
         """

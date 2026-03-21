@@ -1,4 +1,4 @@
-# server_tcp.py
+# server_wss.py
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
 # Standard library imports
@@ -29,7 +29,5 @@ class AppMeshServerWSS(AppMeshServer):
         Args:
             follows the same parameters as `AppMeshClientWSS`.
         """
-        # Deliberately avoid calling super().__init__ to inject a WSS client while keeping the same public API.
-        object.__init__(self)
-        self._client = AppMeshClientWSS(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, wss_address=wss_address)
-        self._logger = logger_ or logger
+        wss_client = AppMeshClientWSS(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, wss_address=wss_address)
+        super().__init__(client=wss_client, logger_=logger_)

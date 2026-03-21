@@ -4,7 +4,6 @@
 """App Mesh HTTP Client SDK for REST API interactions."""
 
 # Standard library imports
-import abc
 import base64
 import json
 import locale
@@ -13,6 +12,7 @@ import os
 import sys
 import threading
 import time
+import warnings
 from contextlib import suppress
 from datetime import datetime
 from enum import Enum, unique
@@ -33,11 +33,12 @@ from requests.structures import CaseInsensitiveDict
 from .app import App
 from .app_output import AppOutput
 from .app_run import AppRun
+from .exceptions import AppMeshAuthError, AppMeshRequestError
 
 logger = logging.getLogger(__name__)
 
 
-class AppMeshClient(metaclass=abc.ABCMeta):
+class AppMeshClient:
     """
     Client SDK for interacting with the App Mesh service via REST API.
 
@@ -87,9 +88,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - set_log_level()
         - get_host_resources()
         - get_metrics()
-        - add_tag()
-        - delete_tag()
-        - get_tags()
+        - add_label()
+        - delete_label()
+        - list_labels()
 
         # File Management
         - download_file()
@@ -119,6 +120,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         >>> response = client.get_app(app_name='ping')
     """
 
+    # Polling interval for wait_for_async_run (seconds for HTTP, overridden by TCP/WSS)
+    _POLL_INTERVAL = 1
+
     # Duration constants
     _DURATION_ONE_WEEK_ISO = "P1W"
     _DURATION_TWO_DAYS_ISO = "P2D"
@@ -126,11 +130,16 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     _TOKEN_REFRESH_INTERVAL = 300  # 5 min to refresh token
     _TOKEN_REFRESH_OFFSET = 30  # 30s before token expire to refresh token
 
-    # Platform-aware default SSL paths
+    # Platform-aware default SSL paths (only used if directory exists)
     _DEFAULT_SSL_DIR = Path("c:/local/appmesh/ssl" if os.name == "nt" else "/opt/appmesh/ssl")
-    _DEFAULT_SSL_CA_CERT_PATH = str(_DEFAULT_SSL_DIR / "ca.pem")
-    _DEFAULT_SSL_CLIENT_CERT_PATH = str(_DEFAULT_SSL_DIR / "client.pem")
-    _DEFAULT_SSL_CLIENT_KEY_PATH = str(_DEFAULT_SSL_DIR / "client-key.pem")
+    if _DEFAULT_SSL_DIR.is_dir():
+        _DEFAULT_SSL_CA_CERT_PATH = str(_DEFAULT_SSL_DIR / "ca.pem")
+        _DEFAULT_SSL_CLIENT_CERT_PATH = str(_DEFAULT_SSL_DIR / "client.pem")
+        _DEFAULT_SSL_CLIENT_KEY_PATH = str(_DEFAULT_SSL_DIR / "client-key.pem")
+    else:
+        _DEFAULT_SSL_CA_CERT_PATH = False  # No certs available, skip verification
+        _DEFAULT_SSL_CLIENT_CERT_PATH = None
+        _DEFAULT_SSL_CLIENT_KEY_PATH = None
 
     # JWT constants
     _DEFAULT_JWT_AUDIENCE = "appmesh-service"
@@ -202,8 +211,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_url: str = "https://127.0.0.1:6060",
         ssl_verify: Union[bool, str] = _DEFAULT_SSL_CA_CERT_PATH,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (
-            _DEFAULT_SSL_CLIENT_CERT_PATH,
-            _DEFAULT_SSL_CLIENT_KEY_PATH,
+            (_DEFAULT_SSL_CLIENT_CERT_PATH, _DEFAULT_SSL_CLIENT_KEY_PATH)
+            if _DEFAULT_SSL_CLIENT_CERT_PATH
+            else None
         ),
         rest_timeout: Tuple[float, float] = (60, 300),
         jwt_token: Optional[str] = None,
@@ -233,16 +243,19 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self.rest_timeout = rest_timeout
         self._forward_to = None
 
-        # Token auto-refresh
-        self._token_refresh_timer = None
+        # Token auto-refresh (single background thread + Event-based wake)
         self._auto_refresh_token = auto_refresh_token
+        self._refresh_thread = None
+        self._refresh_stop = threading.Event()
+        self._refresh_wake = threading.Event()
 
         # Session and cookie management
         self._lock = threading.Lock()
         self.session = requests.Session()
         self.cookie_file = rest_cookie_file
         if self._load_cookies(rest_cookie_file):
-            self._handle_token_update(self._get_access_token())
+            if self._auto_refresh_token and self._get_access_token():
+                self.start_token_refresh()
 
         if jwt_token:
             self.authenticate(jwt_token)
@@ -257,13 +270,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
 
-    # @abc.abstractmethod
     def _get_access_token(self) -> Optional[str]:
         """Get the current access token."""
         return self._get_cookie_value(self.session.cookies, self._COOKIE_TOKEN)
 
     def _load_cookies(self, cookie_file: Optional[str]) -> bool:
-        """ "Load cookies from a Mozilla-format file into the session"""
+        """Load cookies from a Mozilla-format file into the session."""
         if not cookie_file:
             return False
 
@@ -313,73 +325,57 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return None
 
-    def _check_and_refresh_token(self) -> None:
-        """Check and refresh token if needed, then schedule next check."""
-        jwt_token = self._get_access_token()
-        if not jwt_token:
-            return
-
-        needs_refresh = True
-        time_to_expiry = float("inf")
-
-        # Check token expiration directly from JWT
+    def _compute_refresh_delay(self) -> float:
+        """Compute seconds to wait before next token refresh attempt."""
         with suppress(Exception):
-            decoded_token = jwt.decode(jwt_token, options={"verify_signature": False})
-            expiry = decoded_token.get("exp", 0)
-            current_time = time.time()
-            time_to_expiry = expiry - current_time
-            needs_refresh = time_to_expiry < self._TOKEN_REFRESH_OFFSET
+            token = self._get_access_token()
+            if token:
+                exp = jwt.decode(token, options={"verify_signature": False}).get("exp", 0)
+                remaining = exp - time.time()
+                if remaining <= self._TOKEN_REFRESH_OFFSET:
+                    return 1  # Expiring soon, refresh immediately
+                return max(1, min(remaining - self._TOKEN_REFRESH_OFFSET, self._TOKEN_REFRESH_INTERVAL))
+        return self._TOKEN_REFRESH_INTERVAL
 
-        # Refresh token if needed
-        if needs_refresh:
+    def _token_refresh_loop(self) -> None:
+        """Background thread: sleep → renew → repeat until stopped."""
+        while not self._refresh_stop.is_set():
+            delay = self._compute_refresh_delay()
+            self._refresh_wake.clear()
+            self._refresh_wake.wait(timeout=delay)
+            if self._refresh_stop.is_set():
+                break
+            if self._refresh_wake.is_set():
+                continue  # Token changed externally, recompute delay
             try:
                 self.renew_token()
                 logger.info("Token successfully refreshed")
             except Exception as e:
                 logger.error("Token refresh failed: %s", e)
 
-        # Schedule next check if auto-refresh is still enabled
-        if self._auto_refresh_token and jwt_token:
-            self._schedule_token_refresh(time_to_expiry)
+    def start_token_refresh(self) -> None:
+        """Start the background token refresh thread (idempotent)."""
+        if not self._auto_refresh_token:
+            return
+        if self._refresh_thread and self._refresh_thread.is_alive():
+            return
+        self._refresh_stop.clear()
+        self._refresh_wake.clear()
+        self._refresh_thread = threading.Thread(target=self._token_refresh_loop, daemon=True)
+        self._refresh_thread.start()
 
-    def _schedule_token_refresh(self, time_to_expiry: Optional[float] = None) -> None:
-        """Schedule next token refresh check."""
-        # Cancel existing timer if any
-        if self._token_refresh_timer:
-            self._token_refresh_timer.cancel()
-            self._token_refresh_timer = None
+    def stop_token_refresh(self) -> None:
+        """Stop the background token refresh thread."""
+        self._refresh_stop.set()
+        self._refresh_wake.set()  # Wake thread so it exits promptly
+        if self._refresh_thread and self._refresh_thread.is_alive():
+            self._refresh_thread.join(timeout=5)
+        self._refresh_thread = None
 
-        try:
-            # Default to checking after 60 seconds
-            check_interval = self._TOKEN_REFRESH_INTERVAL
-
-            # Calculate more precise check time if expiry is known
-            if time_to_expiry is not None:
-                if time_to_expiry <= self._TOKEN_REFRESH_OFFSET:  # Expires within 5 minutes
-                    check_interval = 1  # Almost immediate refresh
-                else:
-                    # Check at earlier of 5 minutes before expiry or regular interval
-                    check_interval = max(
-                        1, min(time_to_expiry - self._TOKEN_REFRESH_OFFSET, self._TOKEN_REFRESH_INTERVAL)
-                    )
-
-            # Create timer to execute refresh check
-            self._token_refresh_timer = threading.Timer(check_interval, self._check_and_refresh_token)
-            self._token_refresh_timer.daemon = True
-            self._token_refresh_timer.start()
-            logger.debug("Auto-refresh: Next token check scheduled in %.1f seconds", check_interval)
-        except Exception as e:
-            logger.error("Auto-refresh: Failed to schedule token refresh: %s", e)
-
-    # @abc.abstractmethod
     def close(self) -> None:
         """Close the session and release resources."""
-        # Cancel token refresh timer
-        if self._token_refresh_timer:
-            self._token_refresh_timer.cancel()
-            self._token_refresh_timer = None
-
-        # Close the session
+        self._auto_refresh_token = False
+        self.stop_token_refresh()
         if self.session:
             self.session.close()
             self.session = None
@@ -399,19 +395,15 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         except Exception:  # pylint: disable=broad-exception-caught
             pass  # suppress all exceptions
 
-    def _handle_token_update(self, token: Optional[str]) -> None:
-        """Handle post action when token updated"""
-        # Handle refresh
-        if token and self._auto_refresh_token:
-            self._schedule_token_refresh()
-        elif self._token_refresh_timer:
-            self._token_refresh_timer.cancel()
-            self._token_refresh_timer = None
-
-        # Handle session persistence
+    def _on_token_changed(self, token: Optional[str]) -> None:
+        """Notify that a token was updated: persist cookies and wake refresh thread."""
+        # Persist cookies
         if self.cookie_file:
             with self._lock:
                 self.session.cookies.save(ignore_discard=True, ignore_expires=True)
+        # Wake refresh thread to recompute delay for the new token
+        if token:
+            self._refresh_wake.set()
 
     @property
     def forward_to(self) -> str:
@@ -486,7 +478,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         )
 
         if resp.status_code == HTTPStatus.OK:
-            self._handle_token_update(resp.json()["access_token"])
+            self._on_token_changed(resp.json()["access_token"])
+            self.start_token_refresh()
         elif resp.status_code == HTTPStatus.PRECONDITION_REQUIRED:
             # TOTP required (HTTP 428)
             if "totp_challenge" in resp.json():
@@ -525,7 +518,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header=headers,
         )
 
-        self._handle_token_update(resp.json()["access_token"])
+        self._on_token_changed(resp.json()["access_token"])
+        self.start_token_refresh()
 
     def logout(self) -> bool:
         """Log out of the current session from the server."""
@@ -539,13 +533,15 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             logger.warning("Failed to logout: %s", resp.text)
             return False
 
-        self._handle_token_update("")
+        self.stop_token_refresh()
+        self._on_token_changed(None)
         return True
 
     def authentication(
         self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True
     ) -> Tuple[bool, str]:
         """Deprecated: Use authenticate() instead."""
+        warnings.warn("authentication() is deprecated, use authenticate() instead", DeprecationWarning, stacklevel=2)
         return self.authenticate(token, permission, audience, apply)
 
     def authenticate(
@@ -581,7 +577,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         if resp.status_code == HTTPStatus.OK:
             if apply:
-                self._handle_token_update(self._get_access_token())
+                self._on_token_changed(self._get_access_token())
 
         return resp.status_code == HTTPStatus.OK, resp.text
 
@@ -593,10 +589,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
         jwt_token = self._get_access_token()
         if not jwt_token:
-            raise Exception("No token to renew")
+            raise AppMeshAuthError("No token to renew")
 
         if not isinstance(jwt_token, str):
-            raise Exception("Unsupported token format")
+            raise AppMeshAuthError("Unsupported token format")
 
         resp = self._request_http(
             AppMeshClient._Method.POST,
@@ -604,7 +600,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header={"X-Expire-Seconds": str(self._parse_duration(timeout))},
         )
 
-        self._handle_token_update(resp.json()["access_token"])
+        self._on_token_changed(resp.json()["access_token"])
 
     def get_totp_secret(self) -> str:
         """Generate TOTP secret for the current user."""
@@ -614,7 +610,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         parsed_uri = self._parse_totp_uri(totp_uri)
         secret = parsed_uri.get("secret")
         if secret is None:
-            raise Exception("TOTP URI does not contain a 'secret' field")
+            raise AppMeshAuthError("TOTP URI does not contain a 'secret' field")
         return secret
 
     def enable_totp(self, totp_code: str) -> None:
@@ -629,7 +625,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header={"X-Totp-Code": totp_code},
         )
 
-        self._handle_token_update(resp.json()["access_token"])
+        self._on_token_changed(resp.json()["access_token"])
 
     def disable_totp(self, user: str = "self") -> None:
         """Disable 2FA for the specified user."""
@@ -715,7 +711,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     def add_app(self, app: App) -> App:
         """Register a new application."""
-        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", body=app.json())
+        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", body=app.to_dict())
         return App(resp.json())
 
     def delete_app(self, app_name: str) -> bool:
@@ -829,20 +825,21 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self._request_http(method=AppMeshClient._Method.DELETE, path=f"/appmesh/role/{role_name}")
 
     ########################################
-    # Tag management
+    # Label management
     ########################################
-    def add_tag(self, tag_name: str, tag_value: str) -> None:
+    def add_label(self, label_name: str, label_value: str) -> None:
         """Add a new label."""
-        self._request_http(AppMeshClient._Method.PUT, query={"value": tag_value}, path=f"/appmesh/label/{tag_name}")
+        self._request_http(AppMeshClient._Method.PUT, query={"value": label_value}, path=f"/appmesh/label/{label_name}")
 
-    def delete_tag(self, tag_name: str) -> None:
+    def delete_label(self, label_name: str) -> None:
         """Delete a label."""
-        self._request_http(AppMeshClient._Method.DELETE, path=f"/appmesh/label/{tag_name}")
+        self._request_http(AppMeshClient._Method.DELETE, path=f"/appmesh/label/{label_name}")
 
-    def get_tags(self) -> Dict[str, str]:
+    def list_labels(self) -> Dict[str, str]:
         """Get information about all labels."""
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/labels")
         return resp.json()
+
 
     ########################################
     # Prometheus metrics
@@ -1026,13 +1023,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return resp.text
 
     def cancel_task(self, app_name: str) -> bool:
-        """Client cancle a running task to a App Mesh application.
+        """Cancel a running task for an App Mesh application.
 
         Args:
             app_name: Name of the target application (as registered in App Mesh).
 
         Returns:
-            bool: Task exist and cancled status.
+            bool: Task exist and cancelled status.
         """
         resp = self._request_http(
             AppMeshClient._Method.DELETE, path=f"/appmesh/app/{app_name}/task", raise_on_fail=False
@@ -1067,7 +1064,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         resp = self._request_http(
             AppMeshClient._Method.POST,
-            body=app.json(),
+            body=app.to_dict(),
             path="/appmesh/app/run",
             query={
                 "timeout": str(self._parse_duration(max_time_seconds)),
@@ -1094,7 +1091,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         last_output_position = 0
         start = datetime.now()
-        interval = 1 if self.__class__.__name__ == "AppMeshClient" else 1000
+        interval = self._POLL_INTERVAL
 
         while run.proc_uid:
             app_out = self.get_app_output(
@@ -1155,7 +1152,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         resp = self._request_http(
             AppMeshClient._Method.POST,
-            body=app.json(),
+            body=app.to_dict(),
             path="/appmesh/app/syncrun",
             query={
                 "timeout": str(self._parse_duration(max_time_seconds)),
@@ -1232,7 +1229,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             elif method == AppMeshClient._Method.PUT:
                 resp = self.session.put(params=query, data=body, **request_kwargs)
             else:
-                raise Exception("Invalid http method", method)
+                raise AppMeshRequestError(f"Invalid http method: {method}")
 
             if raise_on_fail and resp.status_code != HTTPStatus.PRECONDITION_REQUIRED:
                 resp.raise_for_status()
@@ -1241,4 +1238,4 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             return AppMeshClient._EncodingResponse(resp)
 
         except requests.exceptions.RequestException as e:
-            raise Exception(f"HTTP request failed: {e}") from e
+            raise AppMeshRequestError(f"HTTP request failed: {e}") from e

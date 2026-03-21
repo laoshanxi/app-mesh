@@ -4,15 +4,14 @@ use crate::error::AppMeshError;
 use async_trait::async_trait;
 use bytes::Bytes;
 use reqwest::Method;
-use std::any::Any;
 use std::collections::HashMap;
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
-/// Trait for different request implementations (HTTP, TCP, etc.)
+/// Trait for different request implementations (HTTP, TCP, WSS)
 #[async_trait]
 pub trait Requester: Send + Sync {
-    /// Execute an HTTP request
+    /// Execute an HTTP-style request over the underlying transport
     async fn send(
         &self,
         method: Method,
@@ -23,15 +22,19 @@ pub trait Requester: Send + Sync {
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>>;
 
-    /// Downcast to concrete type for type-specific operations
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-
     /// Handle token updates (called after successful authentication)
     fn handle_token_update(&self, token: Option<String>);
 
-    /// Set the forward_to URL (TCP implementation should ignore this (no-op))
-    fn set_forward_to(&mut self, url: Option<String>) {}
+    /// Set the forward_to URL (TCP/WSS implementations may ignore this)
+    fn set_forward_to(&mut self, _url: Option<String>) {}
 
     /// Close the requester (if applicable)
     fn close(&self) {}
+
+    /// Retrieve the current access token (if stored by this transport).
+    ///
+    /// HTTP transport reads from the cookie jar; TCP/WSS from an in-memory field.
+    fn get_access_token(&self) -> Option<String> {
+        None
+    }
 }

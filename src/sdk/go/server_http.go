@@ -1,7 +1,9 @@
 package appmesh
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -47,9 +49,17 @@ func (r *AppMeshServerHttpContext) getRuntimeEnv() (key, appName string, err err
 }
 
 // TaskFetch fetches task data (payload) from the App Mesh service for the current running application process.
-// Retries indefinitely with 100ms backoff until successful.
+// Uses context for cancellation support with exponential backoff on retries.
 // Returns the payload string provided by the client.
 func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
+	return r.TaskFetchWithContext(context.Background())
+}
+
+// TaskFetchWithContext fetches task data with context support for cancellation and timeout.
+//
+// Retries with exponential backoff (100ms → 10s cap). Pass a context with timeout/cancel
+// to limit the retry duration.
+func (r *AppMeshServerHttpContext) TaskFetchWithContext(ctx context.Context) (string, error) {
 	key, appName, err := r.getRuntimeEnv()
 	if err != nil {
 		return "", err
@@ -59,21 +69,36 @@ func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
 	query := url.Values{}
 	query.Set("process_key", key)
 
+	const (
+		initialDelay = 100 * time.Millisecond
+		maxDelay     = 10 * time.Second
+	)
+	delay := initialDelay
+
 	for {
 		status, body, _, err := r.client.get(path, query, nil)
 		if err != nil {
 			log.Printf("task_fetch request failed: %v, retrying...", err)
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		if status != http.StatusOK {
+		} else if status == http.StatusOK {
+			return string(body), nil
+		} else {
 			log.Printf("task_fetch failed with status %d: %s, retrying...", status, string(body))
-			time.Sleep(100 * time.Millisecond)
-			continue
 		}
 
-		return string(body), nil
+		// Wait with context cancellation support
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", fmt.Errorf("task_fetch cancelled: %w", ctx.Err())
+		case <-timer.C:
+		}
+
+		// Exponential backoff with cap
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
+		}
 	}
 }
 

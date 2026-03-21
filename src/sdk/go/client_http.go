@@ -133,14 +133,16 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 		r.req.handleTokenUpdate(result.AccessToken)
 		return "", nil
 
-	case http.StatusPreconditionRequired:
+	case 428: // HTTP 428 Precondition Required (TOTP challenge)
 		var resp map[string]interface{}
 		if err := json.Unmarshal(raw, &resp); err == nil {
 			if challenge, ok := resp["totp_challenge"].(string); ok {
 				if totpCode == "" {
 					return challenge, nil
 				}
-				r.ValidateTotp(user, challenge, totpCode, timeoutSeconds)
+				if err := r.ValidateTotp(user, challenge, totpCode, timeoutSeconds); err != nil {
+					return "", fmt.Errorf("TOTP validation failed: %w", err)
+				}
 				return "", nil
 			}
 		}
@@ -301,20 +303,21 @@ func (r *AppMeshClient) DisableTotp(user string) (bool, error) {
 	return code == http.StatusOK, nil
 }
 
-// GetTags retrieves all available labels/tags from the server.
-func (r *AppMeshClient) GetTags() (Labels, error) {
+// GetLabels retrieves all available labels from the server.
+func (r *AppMeshClient) GetLabels() (Labels, error) {
 	code, raw, _, err := r.get("/appmesh/labels", nil, nil)
 	labels := Labels{}
 	if err != nil {
-		return labels, fmt.Errorf("view tags request failed: %w", err)
+		return labels, fmt.Errorf("view labels request failed: %w", err)
 	}
 	if code == http.StatusOK {
 		if err := json.Unmarshal(raw, &labels); err != nil {
-			return labels, fmt.Errorf("failed to unmarshal tags: %w", err)
+			return labels, fmt.Errorf("failed to unmarshal labels: %w", err)
 		}
 	}
 	return labels, nil
 }
+
 
 // GetHostResources retrieves system resource information (CPU, memory, disk).
 func (r *AppMeshClient) GetHostResources() (map[string]interface{}, error) {
@@ -761,6 +764,18 @@ func (r *AppMeshClient) SetLogLevel(level string) (string, error) {
 	return "", fmt.Errorf("set log level failed with status %d: %s", code, string(raw))
 }
 
+// GetMetrics retrieves Prometheus metrics text from the server.
+func (r *AppMeshClient) GetMetrics() (string, error) {
+	code, raw, _, err := r.get("/appmesh/metrics", nil, nil)
+	if err != nil {
+		return "", fmt.Errorf("get metrics request failed: %w", err)
+	}
+	if code == http.StatusOK {
+		return string(raw), nil
+	}
+	return "", fmt.Errorf("get metrics failed with status %d: %s", code, string(raw))
+}
+
 // UpdatePassword changes the password for a user (default is "self").
 func (r *AppMeshClient) UpdatePassword(oldPassword, newPassword, userName string) (bool, error) {
 	if oldPassword == "" || newPassword == "" {
@@ -854,16 +869,17 @@ func (r *AppMeshClient) UnlockUser(userName string) (bool, error) {
 }
 
 // ListUsers retrieves information about all users visible to the current user.
-func (r *AppMeshClient) ListUsers() ([]map[string]interface{}, error) {
+func (r *AppMeshClient) ListUsers() (map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/users", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view users request failed: %w", err)
 	}
-	users := []map[string]interface{}{}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &users); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal users: %w", err)
-		}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("list users failed with status %d: %s", code, string(raw))
+	}
+	users := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &users); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal users: %w", err)
 	}
 	return users, nil
 }
@@ -890,52 +906,56 @@ func (r *AppMeshClient) ListGroups() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("view groups request failed: %w", err)
 	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("list groups failed with status %d: %s", code, string(raw))
+	}
 	groups := []map[string]interface{}{}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &groups); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal groups: %w", err)
-		}
+	if err := json.Unmarshal(raw, &groups); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal groups: %w", err)
 	}
 	return groups, nil
 }
 
 // ViewPermissions retrieves all available permissions in the system.
-func (r *AppMeshClient) ViewPermissions() ([]map[string]interface{}, error) {
+func (r *AppMeshClient) ViewPermissions() ([]string, error) {
 	code, raw, _, err := r.get("/appmesh/permissions", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view permissions request failed: %w", err)
 	}
-	perms := []map[string]interface{}{}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &perms); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal permissions: %w", err)
-		}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("view permissions failed with status %d: %s", code, string(raw))
+	}
+	var perms []string
+	if err := json.Unmarshal(raw, &perms); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal permissions: %w", err)
 	}
 	return perms, nil
 }
 
 // GetUserPermissions retrieves permissions assigned to the current user.
-func (r *AppMeshClient) GetUserPermissions() ([]map[string]interface{}, error) {
+func (r *AppMeshClient) GetUserPermissions() ([]string, error) {
 	code, raw, _, err := r.get("/appmesh/user/permissions", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view user permissions request failed: %w", err)
 	}
-	perms := []map[string]interface{}{}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &perms); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal user permissions: %w", err)
-		}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("view user permissions failed with status %d: %s", code, string(raw))
+	}
+	var perms []string
+	if err := json.Unmarshal(raw, &perms); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal user permissions: %w", err)
 	}
 	return perms, nil
 }
 
 // ListRoles retrieves all roles with their permission definitions.
-func (r *AppMeshClient) ListRoles() ([]map[string]interface{}, error) {
+// The returned map has role names as keys and slices of permission strings as values.
+func (r *AppMeshClient) ListRoles() (map[string][]string, error) {
 	code, raw, _, err := r.get("/appmesh/roles", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view roles request failed: %w", err)
 	}
-	roles := []map[string]interface{}{}
+	roles := map[string][]string{}
 	if code == http.StatusOK {
 		if err := json.Unmarshal(raw, &roles); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal roles: %w", err)
@@ -980,35 +1000,35 @@ func (r *AppMeshClient) DeleteRole(roleName string) (bool, error) {
 	return true, nil
 }
 
-// AddTag creates a new label with the specified name and value.
-func (r *AppMeshClient) AddTag(tagName string, tagValue string) (bool, error) {
-	if tagName == "" {
-		return false, fmt.Errorf("tag name is required")
+// AddLabel creates or updates a label with the specified name and value.
+func (r *AppMeshClient) AddLabel(labelName string, labelValue string) (bool, error) {
+	if labelName == "" {
+		return false, fmt.Errorf("label name is required")
 	}
 
-	body, err := json.Marshal(map[string]string{tagName: tagValue})
+	q := url.Values{}
+	q.Set("value", labelValue)
+	code, _, err := r.put(fmt.Sprintf("/appmesh/label/%s", url.PathEscape(labelName)), q, nil, nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to marshal tag: %w", err)
-	}
-	code, _, _, err := r.post("/appmesh/label", nil, nil, body)
-	if err != nil {
-		return false, fmt.Errorf("add tag request failed: %w", err)
+		return false, fmt.Errorf("add label request failed: %w", err)
 	}
 	return code == http.StatusOK, nil
 }
 
-// DeleteTag removes a label/tag from the system.
-func (r *AppMeshClient) DeleteTag(tagName string) (bool, error) {
-	if tagName == "" {
-		return false, fmt.Errorf("tag name is required")
+
+// DeleteLabel removes a label from the system.
+func (r *AppMeshClient) DeleteLabel(labelName string) (bool, error) {
+	if labelName == "" {
+		return false, fmt.Errorf("label name is required")
 	}
 
-	code, _, err := r.delete(fmt.Sprintf("/appmesh/label/%s", tagName))
+	code, _, err := r.delete(fmt.Sprintf("/appmesh/label/%s", url.PathEscape(labelName)))
 	if err != nil {
-		return false, fmt.Errorf("delete tag request failed: %w", err)
+		return false, fmt.Errorf("delete label request failed: %w", err)
 	}
 	return code == http.StatusOK, nil
 }
+
 
 // Close releases all resources and stops background timers.
 func (r *AppMeshClient) Close() {

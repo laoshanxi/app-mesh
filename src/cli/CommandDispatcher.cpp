@@ -1389,7 +1389,7 @@ int CommandDispatcher::cmdLabelManage()
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			if (envVec.size() == 2)
 			{
-				this->addTag(envVec.at(0), envVec.at(1));
+				this->addLabel(envVec.at(0), envVec.at(1));
 			}
 		}
 	}
@@ -1405,7 +1405,7 @@ int CommandDispatcher::cmdLabelManage()
 		for (auto &str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
-			this->deleteTag(envVec.at(0));
+			this->deleteLabel(envVec.at(0));
 		}
 	}
 	else if (m_commandLineVariables.count(VIEW) &&
@@ -1420,7 +1420,7 @@ int CommandDispatcher::cmdLabelManage()
 	}
 
 	// Finally print current
-	auto tags = this->getTags();
+	auto tags = this->getLabels();
 	for (auto &tag : tags.items())
 	{
 		std::cout << tag.key() << "=" << tag.value().get<std::string>() << std::endl;

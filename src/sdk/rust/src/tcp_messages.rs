@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RequestMessage {
     #[serde(default)]
     pub uuid: String,
@@ -27,20 +27,6 @@ pub struct RequestMessage {
     pub query: HashMap<String, String>,
 }
 
-impl Default for RequestMessage {
-    fn default() -> Self {
-        Self {
-            uuid: String::new(),
-            request_uri: String::new(),
-            http_method: String::new(),
-            client_addr: String::new(),
-            body: Vec::new(),
-            headers: HashMap::new(),
-            query: HashMap::new(),
-        }
-    }
-}
-
 impl RequestMessage {
     pub fn new() -> Self {
         Self::default()
@@ -61,7 +47,7 @@ impl RequestMessage {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResponseMessage {
     #[serde(default)]
     pub uuid: String,
@@ -82,20 +68,8 @@ pub struct ResponseMessage {
     pub headers: HashMap<String, String>,
 }
 
-impl Default for ResponseMessage {
-    fn default() -> Self {
-        Self {
-            uuid: String::new(),
-            request_uri: String::new(),
-            http_status: 0,
-            body_msg_type: String::new(),
-            body: Vec::new(),
-            headers: HashMap::new(),
-        }
-    }
-}
-
 impl ResponseMessage {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }

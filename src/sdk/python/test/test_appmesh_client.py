@@ -140,10 +140,10 @@ class TestAppMeshClient(TestCase):
         """test tag"""
         client = AppMeshClient()
         client.login("admin", self.DEFAULT_PASSWORD)
-        self.assertIsNone(client.add_tag("MyTag", "TagValue"))
-        self.assertIn("MyTag", client.get_tags())
-        self.assertIsNone(client.delete_tag("MyTag"))
-        self.assertNotIn("MyTag", client.get_tags())
+        self.assertIsNone(client.add_label("MyTag", "TagValue"))
+        self.assertIn("MyTag", client.list_labels())
+        self.assertIsNone(client.delete_label("MyTag"))
+        self.assertNotIn("MyTag", client.list_labels())
 
     def test_06_app(self):
         """test application"""
