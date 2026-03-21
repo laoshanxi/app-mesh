@@ -1,5 +1,5 @@
 // client_builder.rs
-//! Builder pattern for constructing AppMesh clients with better ergonomics and validation
+//! Builder pattern for constructing AppMesh clients with better ergonomics and validation.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,12 +13,12 @@ use crate::error::AppMeshError;
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
-/// Builder for creating AppMesh HTTP clients
+/// Builder for creating AppMesh HTTP clients.
 ///
 /// # Examples
 ///
 /// ```no_run
-/// use appmesh_sdk::ClientBuilder;
+/// use appmesh::ClientBuilder;
 ///
 /// let client = ClientBuilder::new()
 ///     .url("https://appmesh.example.com:6060")
@@ -26,6 +26,7 @@ type Result<T> = std::result::Result<T, AppMeshError>;
 ///     .cookie_file("/tmp/cookies.txt")
 ///     .timeout_secs(30)
 ///     .build()?;
+/// # Ok::<(), appmesh::AppMeshError>(())
 /// ```
 #[derive(Default)]
 pub struct ClientBuilder {
@@ -35,85 +36,97 @@ pub struct ClientBuilder {
     ssl_client_key: Option<PathBuf>,
     cookie_file: Option<String>,
     timeout: Option<Duration>,
+    danger_accept_invalid_certs: bool,
+    auto_refresh_token: bool,
 }
 
 impl ClientBuilder {
-    /// Create a new builder with default settings
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the AppMesh server URL
-    ///
-    /// Default: `https://127.0.0.1:6060`
+    /// Set the AppMesh server URL (default: `https://127.0.0.1:6060`).
     pub fn url(mut self, url: impl Into<String>) -> Self {
         self.url = Some(url.into());
         self
     }
 
-    /// Set the SSL CA certificate path for server verification
-    ///
-    /// Default: `/opt/appmesh/ssl/ca.pem`
+    /// Set the SSL CA certificate path (default: `/opt/appmesh/ssl/ca.pem`).
     pub fn ssl_ca_cert(mut self, path: impl Into<String>) -> Self {
         self.ssl_ca_cert = Some(path.into());
         self
     }
 
-    /// Set the SSL client certificate for mutual TLS
+    /// Set the SSL client certificate for mutual TLS.
     pub fn ssl_client_cert(mut self, cert_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_cert = Some(cert_path.into());
         self
     }
 
-    /// Set the SSL client key for mutual TLS
+    /// Set the SSL client key for mutual TLS.
     pub fn ssl_client_key(mut self, key_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_key = Some(key_path.into());
         self
     }
 
-    /// Set both client certificate and key at once
+    /// Set both client certificate and key at once.
     pub fn ssl_client_auth(mut self, cert_path: impl Into<PathBuf>, key_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_cert = Some(cert_path.into());
         self.ssl_client_key = Some(key_path.into());
         self
     }
 
-    /// Enable cookie persistence to a file
+    /// Disable SSL certificate verification (insecure — development only).
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.danger_accept_invalid_certs = accept;
+        self
+    }
+
+    /// Enable automatic JWT token refresh before expiration.
+    ///
+    /// When enabled, a background tokio task periodically checks the token's
+    /// `exp` claim and calls `renew_token` ~30 seconds before it expires.
+    /// Call [`AppMeshClient::schedule_token_refresh`] after login to start
+    /// the refresh loop, or it will be started automatically after the first
+    /// successful login.
+    pub fn auto_refresh_token(mut self, enable: bool) -> Self {
+        self.auto_refresh_token = enable;
+        self
+    }
+
+    /// Enable cookie persistence to a file.
     pub fn cookie_file(mut self, path: impl Into<String>) -> Self {
         self.cookie_file = Some(path.into());
         self
     }
 
-    /// Set request timeout in seconds
-    ///
-    /// Default: 60 seconds
+    /// Set request timeout in seconds (default: 60).
     pub fn timeout_secs(mut self, secs: u64) -> Self {
         self.timeout = Some(Duration::from_secs(secs));
         self
     }
 
-    /// Set request timeout
-    ///
-    /// Default: 60 seconds
+    /// Set request timeout (default: 60 seconds).
     pub fn timeout(mut self, duration: Duration) -> Self {
         self.timeout = Some(duration);
         self
     }
 
-    /// Validate the configuration before building
     fn validate(&self) -> Result<()> {
-        // Validate that if one client cert field is set, both are set
         match (&self.ssl_client_cert, &self.ssl_client_key) {
             (Some(_), None) => {
-                return Err(AppMeshError::ConfigurationError("SSL client certificate provided without key".to_string()))
+                return Err(AppMeshError::ConfigurationError(
+                    "SSL client certificate provided without key".into(),
+                ))
             }
             (None, Some(_)) => {
-                return Err(AppMeshError::ConfigurationError("SSL client key provided without certificate".to_string()))
+                return Err(AppMeshError::ConfigurationError(
+                    "SSL client key provided without certificate".into(),
+                ))
             }
             _ => {}
         }
 
-        // Validate URL if provided
         if let Some(url) = &self.url {
             url::Url::parse(url)
                 .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid URL '{}': {}", url, e)))?;
@@ -122,33 +135,46 @@ impl ClientBuilder {
         Ok(())
     }
 
-    /// Build the HTTP client
+    /// Build the HTTP client.
     pub fn build(self) -> Result<Arc<AppMeshClient>> {
         self.validate()?;
 
-        let url = self.url;
-        let ssl_verify = self.ssl_ca_cert;
         let ssl_client_cert = match (self.ssl_client_cert, self.ssl_client_key) {
-            (Some(cert), Some(key)) => Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string())),
+            (Some(cert), Some(key)) => {
+                Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string()))
+            }
             _ => None,
         };
-        let cookie_file = self.cookie_file;
 
-        AppMeshClient::new(url, ssl_verify, ssl_client_cert, cookie_file)
+        let client = AppMeshClient::new(
+            self.url,
+            self.ssl_ca_cert,
+            ssl_client_cert,
+            self.cookie_file,
+            self.timeout,
+            self.danger_accept_invalid_certs,
+        )?;
+
+        if self.auto_refresh_token {
+            client.set_auto_refresh_token(true);
+        }
+
+        Ok(client)
     }
 }
 
-/// Builder for creating AppMesh TCP clients
+/// Builder for creating AppMesh TCP clients.
 ///
 /// # Examples
 ///
 /// ```no_run
-/// use appmesh_sdk::TcpClientBuilder;
+/// use appmesh::ClientBuilderTCP;
 ///
-/// let client = TcpClientBuilder::new()
+/// let client = ClientBuilderTCP::new()
 ///     .address("appmesh.example.com", 6059)
 ///     .ssl_ca_cert("/path/to/ca.pem")
 ///     .build()?;
+/// # Ok::<(), appmesh::AppMeshError>(())
 /// ```
 #[derive(Default)]
 pub struct ClientBuilderTCP {
@@ -157,102 +183,113 @@ pub struct ClientBuilderTCP {
     ssl_ca_cert: Option<String>,
     ssl_client_cert: Option<PathBuf>,
     ssl_client_key: Option<PathBuf>,
+    danger_accept_invalid_certs: bool,
 }
 
 impl ClientBuilderTCP {
-    /// Create a new TCP client builder
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the server address
-    ///
-    /// Default: `127.0.0.1:6059`
+    /// Set the server address (default: `127.0.0.1:6059`).
     pub fn address(mut self, host: impl Into<String>, port: u16) -> Self {
         self.host = Some(host.into());
         self.port = Some(port);
         self
     }
 
-    /// Set the host (uses default port 6059)
     pub fn host(mut self, host: impl Into<String>) -> Self {
         self.host = Some(host.into());
         self
     }
 
-    /// Set the port (uses default host 127.0.0.1)
     pub fn port(mut self, port: u16) -> Self {
         self.port = Some(port);
         self
     }
 
-    /// Set the SSL CA certificate path
     pub fn ssl_ca_cert(mut self, path: impl Into<String>) -> Self {
         self.ssl_ca_cert = Some(path.into());
         self
     }
 
-    /// Set the SSL client certificate for mutual TLS
     pub fn ssl_client_cert(mut self, cert_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_cert = Some(cert_path.into());
         self
     }
 
-    /// Set the SSL client key for mutual TLS
     pub fn ssl_client_key(mut self, key_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_key = Some(key_path.into());
         self
     }
 
-    /// Set both client certificate and key at once
     pub fn ssl_client_auth(mut self, cert_path: impl Into<PathBuf>, key_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_cert = Some(cert_path.into());
         self.ssl_client_key = Some(key_path.into());
         self
     }
 
-    /// Validate configuration
+    /// Disable all TLS certificate verification (insecure — development/testing only).
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.danger_accept_invalid_certs = accept;
+        self
+    }
+
     fn validate(&self) -> Result<()> {
         match (&self.ssl_client_cert, &self.ssl_client_key) {
             (Some(_), None) => {
-                return Err(AppMeshError::ConfigurationError("SSL client certificate provided without key".to_string()))
+                return Err(AppMeshError::ConfigurationError(
+                    "SSL client certificate provided without key".into(),
+                ))
             }
             (None, Some(_)) => {
-                return Err(AppMeshError::ConfigurationError("SSL client key provided without certificate".to_string()))
+                return Err(AppMeshError::ConfigurationError(
+                    "SSL client key provided without certificate".into(),
+                ))
             }
             _ => {}
         }
         Ok(())
     }
 
-    /// Build the TCP client
     pub fn build(self) -> Result<Arc<AppMeshClientTCP>> {
         self.validate()?;
 
-        let address =
-            Some((self.host.unwrap_or_else(|| DEFAULT_TCP_URL.0.to_string()), self.port.unwrap_or(DEFAULT_TCP_URL.1)));
-
-        let ssl_verify = self.ssl_ca_cert;
+        let address = Some((
+            self.host.unwrap_or_else(|| DEFAULT_TCP_HOST.to_string()),
+            self.port.unwrap_or(DEFAULT_TCP_PORT),
+        ));
         let ssl_client_cert = match (self.ssl_client_cert, self.ssl_client_key) {
-            (Some(cert), Some(key)) => Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string())),
+            (Some(cert), Some(key)) => {
+                Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string()))
+            }
             _ => None,
         };
 
-        AppMeshClientTCP::new(address, ssl_verify, ssl_client_cert)
+        // When danger_accept_invalid_certs is set, pass an empty string to signal
+        // SslVerify::False in the transport layer.
+        let ssl_ca_cert = if self.danger_accept_invalid_certs {
+            Some(String::new())
+        } else {
+            self.ssl_ca_cert
+        };
+
+        AppMeshClientTCP::new(address, ssl_ca_cert, ssl_client_cert)
     }
 }
 
-/// Builder for creating AppMesh WSS clients
+/// Builder for creating AppMesh WSS clients.
 ///
 /// # Examples
 ///
 /// ```no_run
-/// use appmesh_sdk::ClientBuilderWSS;
+/// use appmesh::ClientBuilderWSS;
 ///
 /// let client = ClientBuilderWSS::new()
 ///     .address("appmesh.example.com", 6058)
 ///     .ssl_ca_cert("/path/to/ca.pem")
 ///     .build()?;
+/// # Ok::<(), appmesh::AppMeshError>(())
 /// ```
 #[derive(Default)]
 pub struct ClientBuilderWSS {
@@ -261,88 +298,98 @@ pub struct ClientBuilderWSS {
     ssl_ca_cert: Option<String>,
     ssl_client_cert: Option<PathBuf>,
     ssl_client_key: Option<PathBuf>,
+    danger_accept_invalid_certs: bool,
 }
 
 impl ClientBuilderWSS {
-    /// Create a new WSS client builder
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the server address
-    ///
-    /// Default: `127.0.0.1:6058`
+    /// Set the server address (default: `127.0.0.1:6058`).
     pub fn address(mut self, host: impl Into<String>, port: u16) -> Self {
         self.host = Some(host.into());
         self.port = Some(port);
         self
     }
 
-    /// Set the host (uses default port 6058)
     pub fn host(mut self, host: impl Into<String>) -> Self {
         self.host = Some(host.into());
         self
     }
 
-    /// Set the port (uses default host 127.0.0.1)
     pub fn port(mut self, port: u16) -> Self {
         self.port = Some(port);
         self
     }
 
-    /// Set the SSL CA certificate path
     pub fn ssl_ca_cert(mut self, path: impl Into<String>) -> Self {
         self.ssl_ca_cert = Some(path.into());
         self
     }
 
-    /// Set the SSL client certificate for mutual TLS
     pub fn ssl_client_cert(mut self, cert_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_cert = Some(cert_path.into());
         self
     }
 
-    /// Set the SSL client key for mutual TLS
     pub fn ssl_client_key(mut self, key_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_key = Some(key_path.into());
         self
     }
 
-    /// Set both client certificate and key at once
     pub fn ssl_client_auth(mut self, cert_path: impl Into<PathBuf>, key_path: impl Into<PathBuf>) -> Self {
         self.ssl_client_cert = Some(cert_path.into());
         self.ssl_client_key = Some(key_path.into());
         self
     }
 
-    /// Validate configuration
+    /// Disable all TLS certificate verification (insecure — development/testing only).
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.danger_accept_invalid_certs = accept;
+        self
+    }
+
     fn validate(&self) -> Result<()> {
         match (&self.ssl_client_cert, &self.ssl_client_key) {
             (Some(_), None) => {
-                return Err(AppMeshError::ConfigurationError("SSL client certificate provided without key".to_string()))
+                return Err(AppMeshError::ConfigurationError(
+                    "SSL client certificate provided without key".into(),
+                ))
             }
             (None, Some(_)) => {
-                return Err(AppMeshError::ConfigurationError("SSL client key provided without certificate".to_string()))
+                return Err(AppMeshError::ConfigurationError(
+                    "SSL client key provided without certificate".into(),
+                ))
             }
             _ => {}
         }
         Ok(())
     }
 
-    /// Build the WSS client
     pub fn build(self) -> Result<Arc<AppMeshClientWSS>> {
         self.validate()?;
 
-        // Default WSS port is 6058, whereas TCP was 6059
-        let address = Some((self.host.unwrap_or_else(|| "127.0.0.1".to_string()), self.port.unwrap_or(6058)));
-
-        let ssl_verify = self.ssl_ca_cert;
+        let address = Some((
+            self.host.unwrap_or_else(|| DEFAULT_TCP_HOST.to_string()),
+            self.port.unwrap_or(DEFAULT_WSS_PORT),
+        ));
         let ssl_client_cert = match (self.ssl_client_cert, self.ssl_client_key) {
-            (Some(cert), Some(key)) => Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string())),
+            (Some(cert), Some(key)) => {
+                Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string()))
+            }
             _ => None,
         };
 
-        AppMeshClientWSS::new(address, ssl_verify, ssl_client_cert)
+        // When danger_accept_invalid_certs is set, pass an empty string to signal
+        // SslVerify::False in the transport layer.
+        let ssl_ca_cert = if self.danger_accept_invalid_certs {
+            Some(String::new())
+        } else {
+            self.ssl_ca_cert
+        };
+
+        AppMeshClientWSS::new(address, ssl_ca_cert, ssl_client_cert)
     }
 }
 
@@ -351,12 +398,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_builder_validation() {
-        // Should fail: cert without key
+    fn test_builder_validation_cert_without_key() {
         let result = ClientBuilder::new().ssl_client_cert("/path/to/cert.pem").build();
         assert!(result.is_err());
+    }
 
-        // Should fail: key without cert
+    #[test]
+    fn test_builder_validation_key_without_cert() {
         let result = ClientBuilder::new().ssl_client_key("/path/to/key.pem").build();
         assert!(result.is_err());
     }

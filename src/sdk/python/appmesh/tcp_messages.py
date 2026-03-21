@@ -1,5 +1,5 @@
 """TCP message classes for HTTP-like communication."""
-__all__ = []
+__all__ = ["RequestMessage", "ResponseMessage"]
 
 # Standard library imports
 from dataclasses import dataclass, field
@@ -37,16 +37,18 @@ class ResponseMessage:
     body: bytes = b""
     headers: Dict[str, str] = field(default_factory=dict)
 
-    def deserialize(self, buf: bytes) -> "ResponseMessage":
+    @classmethod
+    def from_bytes(cls, buf: bytes) -> "ResponseMessage":
         """Deserialize TCP msgpack buffer with proper type conversion."""
         data = msgpack.unpackb(buf, raw=False)
-        hints = get_type_hints(self.__class__)
+        hints = get_type_hints(cls)
+        instance = cls()
 
         for key, value in data.items():
             if key in hints:
-                setattr(self, key, self._convert_type(value, hints[key]))
+                setattr(instance, key, cls._convert_type(value, hints[key]))
 
-        return self
+        return instance
 
     @staticmethod
     def _convert_type(value: Any, expected_type: Type) -> Any:

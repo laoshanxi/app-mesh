@@ -21,6 +21,10 @@ __all__ = [
     "AppMeshServer",
     "AppMeshServerTCP",
     "AppMeshServerWSS",
+    "AppMeshError",
+    "AppMeshAuthError",
+    "AppMeshConnectionError",
+    "AppMeshRequestError",
 ]
 
 # Lazy import configuration
@@ -32,7 +36,11 @@ _LAZY_IMPORTS = {
     "AppMeshClientOAuth": ("client_http_oauth", "AppMeshClientOAuth"),  # from .client_http_oauth import AppMeshClientOAuth
     "AppMeshServer": ("server_http", "AppMeshServer"),  # from .server_http import AppMeshServer
     "AppMeshServerTCP": ("server_tcp", "AppMeshServerTCP"),  # from .server_tcp import AppMeshServerTCP
-    "AppMeshServerWSS": ("server_wss", "AppMeshServerWSS"),  # from .server_tcp import AppMeshServerWSS
+    "AppMeshServerWSS": ("server_wss", "AppMeshServerWSS"),  # from .server_wss import AppMeshServerWSS
+    "AppMeshError": ("exceptions", "AppMeshError"),  # from .exceptions import AppMeshError
+    "AppMeshAuthError": ("exceptions", "AppMeshAuthError"),  # from .exceptions import AppMeshAuthError
+    "AppMeshConnectionError": ("exceptions", "AppMeshConnectionError"),  # from .exceptions import AppMeshConnectionError
+    "AppMeshRequestError": ("exceptions", "AppMeshRequestError"),  # from .exceptions import AppMeshRequestError
 }
 
 if TYPE_CHECKING:
@@ -45,6 +53,7 @@ if TYPE_CHECKING:
     from .server_http import AppMeshServer  # noqa: F401
     from .server_tcp import AppMeshServerTCP  # noqa: F401
     from .server_wss import AppMeshServerWSS  # noqa: F401
+    from .exceptions import AppMeshError, AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError  # noqa: F401
 
 
 def _lazy_import(name: str):

@@ -16,20 +16,35 @@
 // === AppRun implementation ===
 
 AppRun::AppRun(ClientHttp *client, const std::string &appName, const std::string &procUid)
-    : m_client(client), m_appName(appName), m_procUid(procUid)
+    : m_client(client), m_appName(appName), m_procUid(procUid), m_forwardTo(client->getForwardTo())
 {
 }
 
-std::shared_ptr<int> AppRun::wait(int timeout, bool printToSTD)
+std::shared_ptr<int> AppRun::wait(int timeout, bool printToStdout)
 {
-    return this->m_client->waitForAsyncRun(this, timeout, printToSTD);
+    // Temporarily restore the forward_to target that was active at run creation,
+    // ensuring output queries reach the correct cluster node.
+    // Use RAII guard to guarantee restore even if an exception is thrown.
+    const auto originalForwardTo = m_client->getForwardTo();
+    m_client->forwardTo(m_forwardTo);
+    try
+    {
+        auto result = m_client->waitForAsyncRun(this, timeout, printToStdout);
+        m_client->forwardTo(originalForwardTo);
+        return result;
+    }
+    catch (...)
+    {
+        m_client->forwardTo(originalForwardTo);
+        throw;
+    }
 }
 
 // === ClientHttp implementation ===
 
-void ClientHttp::init(const std::string url, const std::string ssl_verify,
-                      const std::string ssl_client_cert, const std::string ssl_client_certkey,
-                      const std::string cookieFile)
+void ClientHttp::init(const std::string &url, const std::string &ssl_verify,
+                      const std::string &ssl_client_cert, const std::string &ssl_client_certkey,
+                      const std::string &cookieFile)
 {
     m_url = url;
 
@@ -48,14 +63,19 @@ void ClientHttp::init(const std::string url, const std::string ssl_verify,
     RestClient::defaultSslConfiguration(config);
 }
 
-void ClientHttp::forwardTo(const std::string url)
+void ClientHttp::forwardTo(const std::string &url)
 {
     m_forwardTo = url;
 }
 
+const std::string &ClientHttp::getForwardTo() const
+{
+    return m_forwardTo;
+}
+
 // Authentication Management
 std::string ClientHttp::login(const std::string &user, const std::string &passwd,
-                              const std::string totp, int timeoutSeconds, std::string audience)
+                              const std::string &totp, int timeoutSeconds, const std::string &audience)
 {
     RestClient::clearSession();
 
@@ -67,7 +87,7 @@ std::string ClientHttp::login(const std::string &user, const std::string &passwd
     if (timeoutSeconds > 0)
         header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(timeoutSeconds);
     if (!audience.empty())
-        header[HTTP_HEADER_JWT_audience] = std::move(audience);
+        header[HTTP_HEADER_JWT_audience] = audience;
     if (!totp.empty())
         header[HTTP_HEADER_JWT_totp] = totp;
 
@@ -94,7 +114,7 @@ std::string ClientHttp::login(const std::string &user, const std::string &passwd
 }
 
 void ClientHttp::validateTotp(const std::string &user, const std::string &challenge,
-                              const std::string totp, int timeoutSeconds)
+                              const std::string &totp, int timeoutSeconds)
 {
     std::map<std::string, std::string> header = {{HTTP_HEADER_KEY_X_SET_COOKIE, "true"}};
 
@@ -108,8 +128,8 @@ void ClientHttp::validateTotp(const std::string &user, const std::string &challe
 }
 
 std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
-                                                       const std::string permission,
-                                                       const std::string audience, bool apply)
+                                                       const std::string &permission,
+                                                       const std::string &audience, bool apply)
 {
     std::map<std::string, std::string> header = {
         {HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + token}};
@@ -147,13 +167,13 @@ std::string ClientHttp::getTotpSecret()
     return Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
 }
 
-void ClientHttp::enableTotp(const std::string totp)
+void ClientHttp::enableTotp(const std::string &totp)
 {
     std::map<std::string, std::string> header = {{HTTP_HEADER_JWT_totp, totp}};
     requestHttp(true, web::http::methods::POST, "/appmesh/totp/setup", nullptr, header);
 }
 
-void ClientHttp::disableTotp(const std::string user)
+void ClientHttp::disableTotp(const std::string &user)
 {
     const std::string restPath = "/appmesh/totp/" + user + "/disable";
     requestHttp(true, web::http::methods::POST, restPath);
@@ -272,7 +292,7 @@ AppRun ClientHttp::runAppAsync(const nlohmann::json &app, int maxTimeout, int li
     return AppRun(this, appName, procUid);
 }
 
-std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool printToSTD)
+std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool printToStdout)
 {
     int lastOutputPosition = 0;
     const int startTime = ACE_OS::time();
@@ -283,7 +303,7 @@ std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool 
                                            run->m_procUid, timeout);
 
         lastOutputPosition = response.outputPosition;
-        if (printToSTD && !response.output.empty())
+        if (printToStdout && !response.output.empty())
             std::cout << response.output << std::flush;
 
         if (response.exitCode ||
@@ -390,34 +410,34 @@ std::string ClientHttp::setLogLevel(const std::string &level)
     return response.at(JSON_KEY_BaseConfig).at(JSON_KEY_LogLevel).get<std::string>();
 }
 
-std::string ClientHttp::getMetrics()
+std::string ClientHttp::getMetrics() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/metrics");
     return response->text;
 }
 
-// Tag Management
-nlohmann::json ClientHttp::getTags() const
+// Label Management
+nlohmann::json ClientHttp::getLabels() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/labels");
     return nlohmann::json::parse(response->text);
 }
 
-void ClientHttp::addTag(const std::string &tag, const std::string &value)
+void ClientHttp::addLabel(const std::string &label, const std::string &value)
 {
-    const std::string restPath = "/appmesh/label/" + tag;
+    const std::string restPath = "/appmesh/label/" + label;
     std::map<std::string, std::string> query = {{"value", value}};
     requestHttp(true, web::http::methods::PUT, restPath, nullptr, {}, query);
 }
 
-void ClientHttp::deleteTag(const std::string &tag)
+void ClientHttp::deleteLabel(const std::string &label)
 {
-    const std::string restPath = "/appmesh/label/" + tag;
+    const std::string restPath = "/appmesh/label/" + label;
     requestHttp(true, web::http::methods::DEL, restPath);
 }
 
 // User Management
-void ClientHttp::updatePassword(const std::string oldPwd, const std::string newPwd, const std::string user)
+void ClientHttp::updatePassword(const std::string &oldPwd, const std::string &newPwd, const std::string &user)
 {
     nlohmann::json jsonObj = {
         {HTTP_BODY_KEY_OLD_PASSWORD, Utility::encode64(oldPwd)},
@@ -452,19 +472,19 @@ void ClientHttp::deleteUser(const std::string &user)
     requestHttp(true, web::http::methods::DEL, restPath);
 }
 
-void ClientHttp::lockUser(const std::string user)
+void ClientHttp::lockUser(const std::string &user)
 {
     const std::string restPath = "/appmesh/user/" + user + "/lock";
     requestHttp(true, web::http::methods::POST, restPath);
 }
 
-void ClientHttp::unlockUser(const std::string user)
+void ClientHttp::unlockUser(const std::string &user)
 {
     const std::string restPath = "/appmesh/user/" + user + "/unlock";
     requestHttp(true, web::http::methods::POST, restPath);
 }
 
-std::set<std::string> ClientHttp::getUserPermissions()
+std::set<std::string> ClientHttp::getUserPermissions() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/permissions");
     auto result = nlohmann::json::parse(response->text);
@@ -476,7 +496,7 @@ std::set<std::string> ClientHttp::getUserPermissions()
     return permissions;
 }
 
-std::set<std::string> ClientHttp::listPermissions()
+std::set<std::string> ClientHttp::listPermissions() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/permissions");
     auto result = nlohmann::json::parse(response->text);
@@ -488,7 +508,7 @@ std::set<std::string> ClientHttp::listPermissions()
     return permissions;
 }
 
-std::map<std::string, std::set<std::string>> ClientHttp::listRoles()
+std::map<std::string, std::set<std::string>> ClientHttp::listRoles() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/roles");
     auto result = nlohmann::json::parse(response->text);
@@ -505,7 +525,7 @@ std::map<std::string, std::set<std::string>> ClientHttp::listRoles()
     return roles;
 }
 
-std::set<std::string> ClientHttp::listGroups()
+std::set<std::string> ClientHttp::listGroups() const
 {
     auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/groups");
     auto result = nlohmann::json::parse(response->text);
@@ -517,7 +537,7 @@ std::set<std::string> ClientHttp::listGroups()
     return groups;
 }
 
-void ClientHttp::updateRole(const std::string &role, std::set<std::string> rolePermissions)
+void ClientHttp::updateRole(const std::string &role, const std::set<std::string> &rolePermissions)
 {
     nlohmann::json jsonObj = nlohmann::json::array();
     for (const auto &perm : rolePermissions)

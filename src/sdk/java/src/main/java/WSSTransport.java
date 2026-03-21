@@ -151,8 +151,27 @@ public class WSSTransport implements AutoCloseable {
         client.send(messageData);
     }
 
+    /**
+     * Receive a message, blocking indefinitely until data arrives.
+     */
     public byte[] receiveMessage() throws InterruptedException {
         return recvQueue.take();
+    }
+
+    /**
+     * Receive a message with a timeout.
+     *
+     * @param timeoutSeconds maximum seconds to wait
+     * @return received bytes, or null if timed out
+     * @throws InterruptedException if the thread is interrupted
+     * @throws IOException          if the receive times out
+     */
+    public byte[] receiveMessage(int timeoutSeconds) throws InterruptedException, IOException {
+        byte[] data = recvQueue.poll(timeoutSeconds, TimeUnit.SECONDS);
+        if (data == null) {
+            throw new IOException("WebSocket receive timed out after " + timeoutSeconds + " seconds");
+        }
+        return data;
     }
 
     /**

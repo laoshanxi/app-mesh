@@ -39,7 +39,8 @@ const config = {
       path: false,
       https: false,
       http: false,
-      buffer: false
+      buffer: false,
+      child_process: false
     }
   },
   plugins: [

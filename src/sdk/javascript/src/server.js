@@ -113,6 +113,10 @@ class AppMeshServer {
     const { processKey, appName } = this._getRuntimeEnv()
     const path = `/appmesh/app/${appName}/task`
 
+    const INITIAL_DELAY = 100
+    const MAX_DELAY = 10000
+    let delay = INITIAL_DELAY
+
     while (true) {
       try {
         const response = await this._client._request('get', path, null, {
@@ -123,14 +127,16 @@ class AppMeshServer {
           this._logger.warn(
             `task_fetch failed with status ${response.status}: ${response.data}, retrying...`
           )
-          await this._sleep(100)
+          await this._sleep(delay)
+          delay = Math.min(delay * 2, MAX_DELAY)
           continue
         }
 
         return response.data
       } catch (error) {
         this._logger.warn(`task_fetch error: ${error.message}, retrying...`)
-        await this._sleep(100)
+        await this._sleep(delay)
+        delay = Math.min(delay * 2, MAX_DELAY)
       }
     }
   }
@@ -224,8 +230,7 @@ class AppMeshServerTCP extends AppMeshServer {
     tcpAddress = ['127.0.0.1', 6059],
     options = {}
   ) {
-    // Don't call super() to avoid creating HTTP client
-    // Initialize base properties manually
+    super(undefined, sslConfig)
     this._logger = options.logger || console
     this._sslConfig = sslConfig
     this._tcpAddress = tcpAddress

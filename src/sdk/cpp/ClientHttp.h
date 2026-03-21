@@ -23,7 +23,7 @@ struct AppOutput
 
 class ClientHttp;
 
-// TODO: forward
+/// Result of an asynchronous application run, used to monitor and retrieve output.
 struct AppRun
 {
     AppRun(ClientHttp *client, const std::string &appName, const std::string &procUid);
@@ -32,7 +32,13 @@ struct AppRun
     const std::string m_appName;
     const std::string m_procUid;
 
-    std::shared_ptr<int> wait(int timeout = 0, bool printToSTD = true);
+    /// Wait for the asynchronous run to complete.
+    /// Temporarily restores the forward_to target that was active at run creation,
+    /// ensuring output queries reach the correct cluster node.
+    std::shared_ptr<int> wait(int timeout = 0, bool printToStdout = true);
+
+private:
+    std::string m_forwardTo; ///< Saved forward_to target from run creation time
 };
 
 class ClientHttp
@@ -42,28 +48,29 @@ public:
     virtual ~ClientHttp() = default;
 
     // Session/Client
-    void init(const std::string url = "https://127.0.0.1:6060",
-              const std::string ssl_verify = "ssl/ca.pem",
-              const std::string ssl_client_cert = "ssl/client.pem",
-              const std::string ssl_client_certkey = "ssl/client-key.pem",
-              const std::string cookieFile = ""); // cookieFile is not thread-safe
-    void forwardTo(const std::string url = "");
+    void init(const std::string &url = "https://127.0.0.1:6060",
+              const std::string &ssl_verify = "ssl/ca.pem",
+              const std::string &ssl_client_cert = "ssl/client.pem",
+              const std::string &ssl_client_certkey = "ssl/client-key.pem",
+              const std::string &cookieFile = ""); // cookieFile is not thread-safe
+    void forwardTo(const std::string &url = "");
+    const std::string &getForwardTo() const;
 
     // Authentication Management
     std::string login(const std::string &user, const std::string &passwd,
-                      const std::string totp = "", int timeoutSeconds = 0,
-                      std::string audience = "");
+                      const std::string &totp = "", int timeoutSeconds = 0,
+                      const std::string &audience = "");
     void validateTotp(const std::string &user, const std::string &challenge,
-                      const std::string totp, int timeoutSeconds);
+                      const std::string &totp, int timeoutSeconds);
     std::tuple<bool, std::string> authenticate(const std::string &token,
-                                               const std::string permission = "",
-                                               const std::string audience = "",
+                                               const std::string &permission = "",
+                                               const std::string &audience = "",
                                                bool apply = true);
     void logout();
     void renewToken(int timeoutSeconds = 0);
     std::string getTotpSecret();
-    void enableTotp(const std::string totp);
-    void disableTotp(const std::string user = "self");
+    void enableTotp(const std::string &totp);
+    void disableTotp(const std::string &user = "self");
 
     // Application View
     nlohmann::json getApp(const std::string &app) const;
@@ -86,7 +93,7 @@ public:
     AppRun runAppAsync(const nlohmann::json &app,
                        int maxTimeout = 60 * 60 * 24,
                        int lifeCycleSeconds = 60 * 60 * 24 * 2);
-    std::shared_ptr<int> waitForAsyncRun(AppRun *run, int timeout = 0, bool printToSTD = true);
+    std::shared_ptr<int> waitForAsyncRun(AppRun *run, int timeout = 0, bool printToStdout = true);
     std::string runTask(const std::string &app, const nlohmann::json &data, int timeout);
     bool cancelTask(const std::string &app);
 
@@ -99,26 +106,26 @@ public:
     nlohmann::json getConfig() const;
     nlohmann::json setConfig(const nlohmann::json &config);
     std::string setLogLevel(const std::string &level);
-    std::string getMetrics();
+    std::string getMetrics() const;
 
-    // Tag Management
-    nlohmann::json getTags() const;
-    void addTag(const std::string &tag, const std::string &value);
-    void deleteTag(const std::string &tag);
+    // Label Management
+    nlohmann::json getLabels() const;
+    void addLabel(const std::string &label, const std::string &value);
+    void deleteLabel(const std::string &label);
 
     // User Management
-    void updatePassword(const std::string oldPwd, const std::string newPwd, const std::string user = "self");
+    void updatePassword(const std::string &oldPwd, const std::string &newPwd, const std::string &user = "self");
     nlohmann::json getCurrentUser() const;
     nlohmann::json listUsers() const;
     void addUser(const nlohmann::json &user);
     void deleteUser(const std::string &user);
-    void lockUser(const std::string user);
-    void unlockUser(const std::string user);
-    std::set<std::string> getUserPermissions();
-    std::set<std::string> listPermissions();
-    std::map<std::string, std::set<std::string>> listRoles();
-    std::set<std::string> listGroups();
-    void updateRole(const std::string &role, std::set<std::string> rolePermissions);
+    void lockUser(const std::string &user);
+    void unlockUser(const std::string &user);
+    std::set<std::string> getUserPermissions() const;
+    std::set<std::string> listPermissions() const;
+    std::map<std::string, std::set<std::string>> listRoles() const;
+    std::set<std::string> listGroups() const;
+    void updateRole(const std::string &role, const std::set<std::string> &rolePermissions);
     void deleteRole(const std::string &role);
 
 protected:

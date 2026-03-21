@@ -20,6 +20,8 @@ pub const HTTP_HEADER_KEY_X_FILE_MODE: &str = "X-File-Mode";
 pub const HTTP_HEADER_KEY_X_FILE_USER: &str = "X-File-User";
 pub const HTTP_HEADER_KEY_X_FILE_GROUP: &str = "X-File-Group";
 pub const HTTP_HEADER_CONTENT_TYPE: &str = "Content-Type";
+pub const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: &str = "X-Send-File-Socket";
+pub const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: &str = "X-Recv-File-Socket";
 
 // Cookie names
 pub const COOKIE_CSRF_TOKEN: &str = "appmesh_csrf_token";
@@ -54,6 +56,23 @@ pub const JSON_KEY_LOG_LEVEL: &str = "LogLevel";
 // Other constants
 pub const REST_TEXT_TOTP_CHALLENGE_JSON_KEY: &str = "totp_challenge";
 pub const HTTP_USER_AGENT: &str = "appmesh/rust";
+pub const HTTP_USER_AGENT_TCP: &str = "appmesh/rust/tcp";
+pub const HTTP_USER_AGENT_WSS: &str = "appmesh/rust/wss";
 pub const DEFAULT_SSL_CA_CERT_PATH: &str = "/opt/appmesh/ssl/ca.pem";
 pub const DEFAULT_HTTP_URL: &str = "https://127.0.0.1:6060";
-pub const DEFAULT_TCP_URL: (&str, u16) = ("127.0.0.1", 6059);
+pub const DEFAULT_TCP_HOST: &str = "127.0.0.1";
+pub const DEFAULT_TCP_PORT: u16 = 6059;
+pub const DEFAULT_WSS_PORT: u16 = 6058;
+
+// TCP file transfer
+pub const TCP_BLOCK_SIZE: usize = 16 * 1024 - 128;
+
+/// Default token timeout: 1 week in seconds
+#[allow(dead_code)]
+pub const DEFAULT_TOKEN_TIMEOUT_SECONDS: i32 = 604_800;
+/// Token refresh interval: check every 5 minutes
+#[allow(dead_code)]
+pub const TOKEN_REFRESH_INTERVAL_SECS: u64 = 300;
+/// Refresh token 30 seconds before expiry
+#[allow(dead_code)]
+pub const TOKEN_REFRESH_MARGIN_SECS: u64 = 30;

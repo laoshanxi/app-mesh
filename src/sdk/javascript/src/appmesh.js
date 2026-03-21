@@ -1,6 +1,9 @@
 // appmesh.js
 import axios from 'axios';
-import https from 'https';
+
+// Lazy-resolved Node.js https module (null in browser)
+let _https = null;
+let _httpsReady = null; // Promise that resolves when https is loaded
 
 // Constants using Object.freeze to prevent modifications
 const CONSTANTS = Object.freeze({
@@ -135,6 +138,64 @@ function parseDuration(duration) {
 }
 
 /**
+ * Resolve a user name or numeric string to a UID (Node.js/Unix only).
+ * @param {string} user - User name or numeric UID
+ * @returns {Promise<number|null>} UID or null if unresolvable
+ * @private
+ */
+async function _resolveUid(user) {
+  // If already numeric, return directly
+  const num = parseInt(user, 10);
+  if (!isNaN(num) && String(num) === user.trim()) return num;
+  try {
+    const { spawnSync } = await import('child_process');
+    const result = spawnSync('id', ['-u', user], { encoding: 'utf8', timeout: 3000 });
+    if (result.status !== 0 || !result.stdout) return null;
+    return parseInt(result.stdout.trim(), 10);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Resolve a group name or numeric string to a GID (Node.js/Unix only).
+ * @param {string} group - Group name or numeric GID
+ * @returns {Promise<number|null>} GID or null if unresolvable
+ * @private
+ */
+async function _resolveGid(group) {
+  const num = parseInt(group, 10);
+  if (!isNaN(num) && String(num) === group.trim()) return num;
+  try {
+    const { spawnSync } = await import('child_process');
+    // getent group <name> returns "name:x:gid:members"
+    const result = spawnSync('getent', ['group', group], { encoding: 'utf8', timeout: 3000 });
+    if (result.status !== 0 || !result.stdout) return null;
+    const parts = result.stdout.trim().split(':');
+    return parts.length >= 3 ? parseInt(parts[2], 10) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Decode the `exp` field from a JWT without signature verification.
+ * @param {string} token - JWT string (header.payload.signature)
+ * @returns {number|null} Expiry timestamp in seconds, or null
+ * @private
+ */
+function _decodeJwtExp(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(base64Utils.decode(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * AppMesh REST Service client
  */
 class AppMeshClient {
@@ -161,21 +222,19 @@ class AppMeshClient {
     const axiosConfig = {
       baseURL,
       timeout: 300000, // 5 minutes
-      httpsAgent: ENV.isNode && (sslConfig ?
-        new https.Agent({
-          ...sslConfig,
-          keepAlive: true,
-          keepAliveMsecs: 3000
-        }) :
-        new https.Agent({
-          rejectUnauthorized: false,
-          keepAlive: true,
-          keepAliveMsecs: 3000
-        })),
       validateStatus: status => true
     };
 
+    // Store SSL config for deferred agent setup
+    this._sslConfig = sslConfig;
     this._client = axios.create(axiosConfig);
+
+    // Node.js only: start loading https module (resolved before first request)
+    if (ENV.isNode && !_httpsReady) {
+      _httpsReady = import('https').then(mod => {
+        _https = mod.default || mod;
+      }).catch(() => { /* browser bundle — ignore */ });
+    }
 
     // Request interceptor
     this._client.interceptors.request.use(
@@ -257,12 +316,90 @@ class AppMeshClient {
         this._client.defaults.httpsAgent.destroy();
       }
 
+      this._stopAutoRefresh();
+
       // Remove CSRF token and cookies
       if (ENV.isNode) {
         this._client.defaults.headers.Cookie = null;
       } else {
         document.cookie = `${CONSTANTS.HTTP_COOKIE_NAME_CSRF_TOKEN}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict; Secure`;
       }
+    }
+  }
+
+  /**
+   * Enable automatic token refresh before expiration.
+   *
+   * When enabled, a background timer periodically checks the JWT token's `exp`
+   * claim and calls `renew_token()` ~30 seconds before it expires. Works in both
+   * Node.js and browser.
+   *
+   * @param {boolean} enable - true to start, false to stop
+   * @param {string} [jwtToken] - Current JWT token (required for HTTP transport
+   *   where the token lives in cookies; for TCP the token is managed internally)
+   */
+  setAutoRefreshToken(enable, jwtToken = null) {
+    this._stopAutoRefresh();
+    this._autoRefreshEnabled = enable;
+    if (enable) {
+      this._autoRefreshJwt = jwtToken;
+      this._scheduleTokenRefresh();
+    }
+  }
+
+  /** @private */
+  _stopAutoRefresh() {
+    this._autoRefreshEnabled = false;
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+  }
+
+  /** @private */
+  _scheduleTokenRefresh() {
+    if (!this._autoRefreshEnabled) return;
+
+    const REFRESH_INTERVAL = 300; // 5 min default check
+    const REFRESH_MARGIN = 30;    // refresh 30s before expiry
+
+    let delaySec = REFRESH_INTERVAL;
+
+    // Try to compute precise delay from JWT exp
+    const token = this._autoRefreshJwt || this._getAccessToken?.();
+    if (token) {
+      const exp = _decodeJwtExp(token);
+      if (exp) {
+        const now = Math.floor(Date.now() / 1000);
+        const timeToExpiry = exp - now;
+        if (timeToExpiry <= REFRESH_MARGIN) {
+          delaySec = 1; // almost expired, refresh immediately
+        } else {
+          delaySec = Math.min(timeToExpiry - REFRESH_MARGIN, REFRESH_INTERVAL);
+        }
+      }
+    }
+
+    this._refreshTimer = setTimeout(async () => {
+      if (!this._autoRefreshEnabled) return;
+      try {
+        await this.renew_token();
+        // Update stored token from cookie for precise delay calculation (Node.js only;
+        // in browsers the auth cookie is HttpOnly and not accessible via JS)
+        if (ENV.isNode) {
+          const cookieStr = this._client?.defaults?.headers?.Cookie || '';
+          const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='));
+          if (match) this._autoRefreshJwt = match.split('=').slice(1).join('=');
+        }
+      } catch (err) {
+        console.warn("Auto-refresh: token renewal failed:", err.message);
+      }
+      this._scheduleTokenRefresh(); // re-schedule
+    }, delaySec * 1000);
+
+    // Don't block Node.js process exit
+    if (this._refreshTimer.unref) {
+      this._refreshTimer.unref();
     }
   }
 
@@ -351,8 +488,12 @@ class AppMeshClient {
    * @returns {boolean} True if healthy
    */
   async check_app_health(name) {
-    const response = await this._request("get", `/appmesh/app/${name}/health`);
-    return parseInt(response.data) === 0;
+    try {
+      const response = await this._request("get", `/appmesh/app/${name}/health`);
+      return parseInt(response.data, 10) === 0;
+    } catch (_) {
+      return false; // non-200 or missing app → not healthy
+    }
   }
 
   /**
@@ -454,8 +595,8 @@ class AppMeshClient {
 
     const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
     // axios response header use lower case
-    const outPosition = response.headers["X-Output-Position".toLowerCase()] ? parseInt(response.headers["X-Output-Position".toLowerCase()]) : null;
-    const exitCode = response.headers["X-Exit-Code".toLowerCase()] ? parseInt(response.headers["X-Exit-Code".toLowerCase()]) : null;
+    const outPosition = response.headers["X-Output-Position".toLowerCase()] ? parseInt(response.headers["X-Output-Position".toLowerCase()], 10) : null;
+    const exitCode = response.headers["X-Exit-Code".toLowerCase()] ? parseInt(response.headers["X-Exit-Code".toLowerCase()], 10) : null;
     return new AppOutput(response.status, response.data, outPosition, exitCode);
   }
 
@@ -482,7 +623,7 @@ class AppMeshClient {
       }
       // axios response header use lower case
       if (response.headers["X-Exit-Code".toLowerCase()]) {
-        exitCode = parseInt(response.headers["X-Exit-Code".toLowerCase()]);
+        exitCode = parseInt(response.headers["X-Exit-Code".toLowerCase()], 10);
       }
     } else if (outputHandler) {
       outputHandler(response.data);
@@ -608,22 +749,24 @@ class AppMeshClient {
         await fs.writeFile(localFile, Buffer.from(response.data));
 
         if (applyAttrs && process.platform !== 'win32') {
-          const { headers } = response;
-          // axios response header use lower case
+          const respHeaders = response.headers; // avoid shadowing outer `headers`
           try {
-            if (headers["X-File-Mode".toLowerCase()]) {
-              await fs.chmod(localFile, parseInt(headers["X-File-Mode".toLowerCase()], 10));
+            const mode = respHeaders["x-file-mode"];
+            if (mode) {
+              await fs.chmod(localFile, parseInt(mode, 10));
             }
-            // TODO: no user/group name in JS
-            /*if (headers["X-File-User".toLowerCase()] && headers["X-File-Group".toLowerCase()]) {
-              await fs.chown(
-                localFile,
-                parseInt(headers["X-File-User".toLowerCase()]),
-                parseInt(headers["X-File-Group".toLowerCase()])
-              );
-            }*/
+            // chown: resolve user/group names to uid/gid via id(1) command
+            const userName = respHeaders["x-file-user"];
+            const groupName = respHeaders["x-file-group"];
+            if (userName && groupName) {
+              const uid = await _resolveUid(userName);
+              const gid = await _resolveGid(groupName);
+              if (uid !== null && gid !== null) {
+                await fs.chown(localFile, uid, gid);
+              }
+            }
           } catch (ex) {
-            console.warn("Warning: Unable to change owner/group of", localFile, "Operation requires elevated privileges.");
+            console.warn("Warning: Unable to apply file attributes to", localFile, ex.message);
           }
         }
       } catch (error) {
@@ -749,34 +892,37 @@ class AppMeshClient {
   }
 
   /**
-   * Add tag to server
-   * @param {string} tagName - Tag name
-   * @param {string} tagValue - Tag value
+   * Add label to server
+   * @param {string} labelName - Label name
+   * @param {string} labelValue - Label value
    * @returns {boolean} Success status
    */
-  async add_tag(tagName, tagValue) {
-    const response = await this._request("put", `/appmesh/label/${tagName}`, null, { params: { value: tagValue } });
+  async add_label(labelName, labelValue) {
+    const response = await this._request("put", `/appmesh/label/${labelName}`, null, { params: { value: labelValue } });
     return response.status === 200;
   }
 
+
   /**
-   * Delete tag from server
-   * @param {string} tagName - Tag name
+   * Delete label from server
+   * @param {string} labelName - Label name
    * @returns {boolean} Success status
    */
-  async delete_tag(tagName) {
-    const response = await this._request("delete", `/appmesh/label/${tagName}`);
+  async delete_label(labelName) {
+    const response = await this._request("delete", `/appmesh/label/${labelName}`);
     return response.status === 200;
   }
 
+
   /**
-   * Get all server tags
-   * @returns {Promise<Object>} All tags
+   * Get all server labels
+   * @returns {Promise<Object>} All labels
    */
-  async get_tags() {
+  async list_labels() {
     const response = await this._request("get", "/appmesh/labels");
     return response.data;
   }
+
 
   /**
    * Change user password
@@ -973,6 +1119,18 @@ class AppMeshClient {
    * @throws {AppMeshError} If the request fails
    */
   async _request(method, path, body = null, options = {}) {
+    // Ensure HTTPS agent is ready (first-call lazy setup for Node.js ESM)
+    if (ENV.isNode && _httpsReady && !this._client.defaults.httpsAgent) {
+      await _httpsReady;
+      if (_https) {
+        this._client.defaults.httpsAgent = new _https.Agent({
+          ...(this._sslConfig || { rejectUnauthorized: false }),
+          keepAlive: true,
+          keepAliveMsecs: 3000
+        });
+      }
+    }
+
     const { headers = {}, params = {}, config = {} } = options;
 
     try {

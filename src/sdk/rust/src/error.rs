@@ -28,8 +28,55 @@ pub enum AppMeshError {
     IoError(String),
     /// Feature not supported by this transport
     UnsupportedFeature { feature: String, transport: String },
+    /// Transport-level protocol errors (invalid magic, message too large, etc.)
+    Transport(TransportError),
     /// Generic error (use sparingly)
     Other(String),
+}
+
+/// Transport-level error for TCP/WSS framing protocol
+#[derive(Debug)]
+pub enum TransportError {
+    NotConnected,
+    ConnectionFailed(String),
+    ReceiveError(String),
+    InvalidMagic(u32),
+    MessageTooLarge(usize),
+    ConnectionClosed,
+    ConfigError(String),
+    IoError(std::io::Error),
+    TlsError(native_tls::Error),
+}
+
+impl fmt::Display for TransportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use TransportError::*;
+        match self {
+            NotConnected => write!(f, "Not connected"),
+            ConnectionFailed(msg) => write!(f, "Connection failed: {}", msg),
+            ReceiveError(msg) => write!(f, "Receive error: {}", msg),
+            InvalidMagic(magic) => write!(f, "Invalid magic number: 0x{:08X}", magic),
+            MessageTooLarge(sz) => write!(f, "Message too large: {} bytes", sz),
+            ConnectionClosed => write!(f, "Connection closed by peer"),
+            ConfigError(msg) => write!(f, "Configuration error: {}", msg),
+            IoError(err) => write!(f, "IO error: {}", err),
+            TlsError(err) => write!(f, "TLS error: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for TransportError {}
+
+impl From<std::io::Error> for TransportError {
+    fn from(err: std::io::Error) -> Self {
+        TransportError::IoError(err)
+    }
+}
+
+impl From<native_tls::Error> for TransportError {
+    fn from(err: native_tls::Error) -> Self {
+        TransportError::TlsError(err)
+    }
 }
 
 impl fmt::Display for AppMeshError {
@@ -50,6 +97,7 @@ impl fmt::Display for AppMeshError {
             Self::UnsupportedFeature { feature, transport } => {
                 write!(f, "Feature '{}' is not supported by {} transport", feature, transport)
             }
+            Self::Transport(err) => write!(f, "Transport error: {}", err),
             Self::Other(msg) => write!(f, "{}", msg),
         }
     }
@@ -98,5 +146,11 @@ impl From<serde_json::Error> for AppMeshError {
 impl From<base64::DecodeError> for AppMeshError {
     fn from(err: base64::DecodeError) -> Self {
         Self::SerializationError(format!("Base64 decode error: {}", err))
+    }
+}
+
+impl From<TransportError> for AppMeshError {
+    fn from(err: TransportError) -> Self {
+        Self::Transport(err)
     }
 }

@@ -9,6 +9,8 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 
 public class TCPTransport implements AutoCloseable {
+    private static final java.util.logging.Logger LOGGER = java.util.logging.Logger.getLogger(TCPTransport.class.getName());
+
     private final String host;
     private final int port;
     private final SSLSocketFactory socketFactory;
@@ -95,7 +97,7 @@ public class TCPTransport implements AutoCloseable {
             try {
                 this.socket.close();
             } catch (Exception e) {
-                System.err.println("Error closing socket: " + e.getMessage());
+                LOGGER.log(java.util.logging.Level.WARNING, "Error closing socket", e);
             }
             this.socket = null;
         }

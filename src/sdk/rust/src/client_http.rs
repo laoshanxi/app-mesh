@@ -3,15 +3,16 @@
 use async_trait::async_trait;
 use base64::Engine;
 use bytes::Bytes;
-use http;
-use log::{debug, error};
+use log::{debug, error, warn};
 use reqwest::{cookie::CookieStore, cookie::Jar, header::HeaderValue, Client as ReqwestClient, Method, StatusCode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::task::JoinHandle;
 
 use crate::constants::*;
 use crate::error::AppMeshError;
@@ -28,6 +29,22 @@ use nix::unistd::{chown, Gid, Group, Uid, User as UnixUser};
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
+// ---------------------------------------------------------------------------
+// Helper: build small header/query maps without per-call HashMap::new boilerplate
+// ---------------------------------------------------------------------------
+macro_rules! hmap {
+    () => { HashMap::new() };
+    ($($k:expr => $v:expr),+ $(,)?) => {{
+        let mut m = HashMap::with_capacity(8);
+        $(m.insert($k.to_string(), $v.to_string());)+
+        m
+    }};
+}
+
+// ---------------------------------------------------------------------------
+// HTTPRequester
+// ---------------------------------------------------------------------------
+
 /// HTTP-based requester implementation
 pub struct HTTPRequester {
     url: String,
@@ -43,34 +60,47 @@ impl HTTPRequester {
         ssl_verify: Option<String>,
         ssl_client_cert: Option<(String, String)>,
         cookie_file: Option<String>,
+        timeout: Option<Duration>,
+        danger_accept_invalid_certs: bool,
     ) -> Result<Self> {
         // Cookie setup
-        let (cookie_jar, persistent_jar) = if let Some(cookie_file) = &cookie_file {
-            if !cookie_file.is_empty() {
-                let pj = PersistentJar::new(&url, cookie_file)?;
+        let (cookie_jar, persistent_jar) = match &cookie_file {
+            Some(f) if !f.is_empty() => {
+                let pj = PersistentJar::new(&url, f)?;
                 (pj.jar(), Some(pj))
-            } else {
-                (Arc::new(Jar::default()), None)
             }
-        } else {
-            (Arc::new(Jar::default()), None)
+            _ => (Arc::new(Jar::default()), None),
         };
 
-        let mut client_builder =
-            ReqwestClient::builder().cookie_provider(cookie_jar.clone()).timeout(Duration::from_secs(60));
+        let timeout = timeout.unwrap_or(Duration::from_secs(60));
+        let mut client_builder = ReqwestClient::builder()
+            .cookie_provider(cookie_jar.clone())
+            .timeout(timeout);
 
         // SSL setup
-        let ssl_verify = ssl_verify.unwrap_or_else(|| DEFAULT_SSL_CA_CERT_PATH.to_string());
-        let cert_bytes = std::fs::read(ssl_verify)?;
-        client_builder = client_builder.add_root_certificate(reqwest::Certificate::from_pem(&cert_bytes)?);
+        if danger_accept_invalid_certs {
+            client_builder = client_builder.danger_accept_invalid_certs(true);
+        } else {
+            let ca_path = ssl_verify.unwrap_or_else(|| DEFAULT_SSL_CA_CERT_PATH.to_string());
+            if let Ok(cert_bytes) = std::fs::read(&ca_path) {
+                if let Ok(cert) = reqwest::Certificate::from_pem(&cert_bytes) {
+                    client_builder = client_builder.add_root_certificate(cert);
+                }
+            } else {
+                // CA file not found, skip verification
+                client_builder = client_builder.danger_accept_invalid_certs(true);
+            }
+        }
 
         if let Some((cert, key)) = &ssl_client_cert {
-            let cert_content = std::fs::read_to_string(cert)?;
-            let key_content = std::fs::read_to_string(key)?;
-            let pem = format!("{}\n{}", cert_content, key_content);
-            let identity = reqwest::Identity::from_pem(pem.as_bytes())
-                .map_err(|e| AppMeshError::ConfigurationError(e.to_string()))?;
-            client_builder = client_builder.identity(identity);
+            if let (Ok(cert_content), Ok(key_content)) =
+                (std::fs::read_to_string(cert), std::fs::read_to_string(key))
+            {
+                let pem = format!("{}\n{}", cert_content, key_content);
+                if let Ok(identity) = reqwest::Identity::from_pem(pem.as_bytes()) {
+                    client_builder = client_builder.identity(identity);
+                }
+            }
         }
 
         Ok(Self {
@@ -89,18 +119,14 @@ impl HTTPRequester {
         let body = resp.bytes().await?;
 
         let mut builder = http::Response::builder().status(status);
-
-        // Copy all headers to the http::Response
         if let Some(header_map) = builder.headers_mut() {
             *header_map = headers;
         }
 
-        let http_resp = builder.body(body).map_err(|e| AppMeshError::RequestFailed {
+        builder.body(body).map_err(|e| AppMeshError::RequestFailed {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: format!("Failed to build response: {}", e),
-        })?;
-
-        Ok(http_resp)
+        })
     }
 
     fn get_cookie(&self, name: &str) -> Option<String> {
@@ -115,10 +141,10 @@ impl HTTPRequester {
     }
 
     fn add_common_headers(&self, headers: &mut HashMap<String, String>) {
-        // User agent
-        headers.entry(HTTP_HEADER_KEY_USER_AGENT.to_string()).or_insert_with(|| HTTP_USER_AGENT.to_string());
+        headers
+            .entry(HTTP_HEADER_KEY_USER_AGENT.to_string())
+            .or_insert_with(|| HTTP_USER_AGENT.to_string());
 
-        // Forwarding host
         if let Ok(forward_to) = self.forward_to.lock() {
             if let Some(forward_to) = forward_to.as_ref() {
                 let forward_host = if forward_to.contains(':') {
@@ -130,7 +156,6 @@ impl HTTPRequester {
             }
         }
 
-        // CSRF token
         if let Some(csrf_token) = self.get_cookie(COOKIE_CSRF_TOKEN) {
             if !csrf_token.is_empty() && !headers.contains_key(HTTP_HEADER_NAME_CSRF_TOKEN) {
                 headers.insert(HTTP_HEADER_NAME_CSRF_TOKEN.to_string(), csrf_token);
@@ -143,7 +168,7 @@ impl HTTPRequester {
             .ok()
             .and_then(|parsed| parsed.port_or_known_default())
             .map(|port| port.to_string())
-            .unwrap_or_else(|| "6060".to_string()) // Default port
+            .unwrap_or_else(|| "6060".to_string())
     }
 }
 
@@ -163,7 +188,6 @@ impl Requester for HTTPRequester {
 
         let mut req = self.client.request(method.clone(), &url);
 
-        // Add common headers (CSRF token, forwarding, user agent)
         let mut all_headers = headers.unwrap_or_default();
         self.add_common_headers(&mut all_headers);
         for (k, v) in all_headers {
@@ -180,7 +204,6 @@ impl Requester for HTTPRequester {
 
         let resp = req.send().await?;
 
-        // Check for HTTP errors before converting response
         if fail_on_error && !resp.status().is_success() && resp.status() != StatusCode::PRECONDITION_REQUIRED {
             let status = resp.status();
             let text = resp.text().await?;
@@ -188,12 +211,7 @@ impl Requester for HTTPRequester {
             return Err(AppMeshError::RequestFailed { status, message: text });
         }
 
-        let http_resp = Self::to_http_response(resp).await?;
-        Ok(http_resp)
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+        Self::to_http_response(resp).await
     }
 
     fn set_forward_to(&mut self, url: Option<String>) {
@@ -203,30 +221,109 @@ impl Requester for HTTPRequester {
     }
 
     fn handle_token_update(&self, _token: Option<String>) {
-        // For HTTP requester, tokens are stored in cookies automatically
-        // Save cookies to persistent storage if enabled
         if let Some(pj) = &self.persistent_jar {
             if let Err(e) = pj.save() {
                 error!("Failed to save cookies after token update: {}", e);
             }
         }
     }
+
+    fn get_access_token(&self) -> Option<String> {
+        self.get_cookie(COOKIE_TOKEN)
+    }
 }
 
-/// Main AppMesh client for interacting with the AppMesh service
+// ---------------------------------------------------------------------------
+// AppMeshClient
+// ---------------------------------------------------------------------------
+
+/// Main AppMesh client for interacting with the AppMesh service.
+///
+/// Construct via [`crate::ClientBuilder`] (recommended) or [`AppMeshClient::new`].
 pub struct AppMeshClient {
     pub(crate) req: Box<dyn Requester>,
     url: String,
+    /// Whether automatic token refresh is enabled.
+    auto_refresh: AtomicBool,
+    /// Handle to the background token-refresh task (if running).
+    refresh_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl std::fmt::Debug for AppMeshClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AppMeshClient").field("url", &self.url).field("requester", &"<dyn Requester>").finish()
+        f.debug_struct("AppMeshClient")
+            .field("url", &self.url)
+            .field("requester", &"<dyn Requester>")
+            .field("auto_refresh", &self.auto_refresh.load(Ordering::Relaxed))
+            .finish()
     }
 }
 
+// -- Construction -----------------------------------------------------------
+
 impl AppMeshClient {
-    /// Execute a raw request (useful for advanced use cases)
+    /// Create a new HTTP-backed client.
+    pub fn new(
+        url: Option<String>,
+        ssl_verify: Option<String>,
+        ssl_client_cert: Option<(String, String)>,
+        cookie_file: Option<String>,
+        timeout: Option<Duration>,
+        danger_accept_invalid_certs: bool,
+    ) -> Result<Arc<Self>> {
+        let url = url.unwrap_or_else(|| DEFAULT_HTTP_URL.to_string());
+        let requester =
+            HTTPRequester::new(url.clone(), ssl_verify, ssl_client_cert, cookie_file, timeout, danger_accept_invalid_certs)?;
+        Ok(Arc::new(Self {
+            req: Box::new(requester),
+            url,
+            auto_refresh: AtomicBool::new(false),
+            refresh_handle: Mutex::new(None),
+        }))
+    }
+
+    /// Create an `AppMeshClient` with a custom [`Requester`] (for TCP / WSS).
+    pub fn with_requester(requester: Box<dyn Requester>, url: String) -> Arc<Self> {
+        Arc::new(Self {
+            req: requester,
+            url,
+            auto_refresh: AtomicBool::new(false),
+            refresh_handle: Mutex::new(None),
+        })
+    }
+
+    /// Enable or disable automatic JWT token refresh.
+    ///
+    /// When enabled, a background task periodically checks the token's `exp` claim
+    /// and calls [`renew_token`](Self::renew_token) before it expires.
+    pub fn set_auto_refresh_token(&self, enable: bool) {
+        self.auto_refresh.store(enable, Ordering::Relaxed);
+        if !enable {
+            self.cancel_refresh_task();
+        }
+    }
+
+    /// Close the underlying transport and cancel any background refresh task.
+    pub fn close(&self) {
+        self.cancel_refresh_task();
+        self.req.close();
+    }
+
+    /// Cancel the running refresh task, if any.
+    fn cancel_refresh_task(&self) {
+        if let Ok(mut handle) = self.refresh_handle.lock() {
+            if let Some(h) = handle.take() {
+                h.abort();
+            }
+        }
+    }
+
+    /// Set the cluster forwarding host.
+    pub fn forward_to(&mut self, url: Option<String>) {
+        self.req.set_forward_to(url);
+    }
+
+    /// Execute a raw request (useful for advanced use cases).
     pub async fn raw_request(
         &self,
         method: Method,
@@ -240,45 +337,11 @@ impl AppMeshClient {
     }
 }
 
+// -- Authentication ---------------------------------------------------------
+
 impl AppMeshClient {
-    //
-    // Session/Client initialization
-    //
-
-    /// Create a new AppMesh client with the given configuration
-    pub fn new(
-        url: Option<String>,
-        ssl_verify: Option<String>,
-        ssl_client_cert: Option<(String, String)>,
-        cookie_file: Option<String>,
-    ) -> Result<Arc<Self>> {
-        let url = url.unwrap_or_else(|| DEFAULT_HTTP_URL.to_string());
-        let requester = HTTPRequester::new(url.clone(), ssl_verify, ssl_client_cert, cookie_file)?;
-
-        Ok(Arc::new(Self { req: Box::new(requester), url }))
-    }
-
-    /// Create AppMeshClient with custom requester (for TCP or other implementations)
-    pub fn with_requester(requester: Box<dyn Requester>, url: String) -> Arc<Self> {
-        Arc::new(Self { req: requester, url })
-    }
-
-    // Close the requester (if applicable)
-    pub fn close(&self) {
-        self.req.close();
-    }
-
-    /// Set forwarding host for requests
-    pub fn forward_to(&mut self, url: Option<String>) {
-        self.req.set_forward_to(url);
-    }
-
-    //
-    // Authentication Management
-    //
-
-    /// Login with username and password
-    /// Returns TOTP challenge string if TOTP is required, empty string on success
+    /// Login with username and password.
+    /// Returns TOTP challenge string if TOTP is required, empty string on success.
     pub async fn login(
         &self,
         username: &str,
@@ -287,25 +350,23 @@ impl AppMeshClient {
         timeout_seconds: Option<i32>,
         audience: Option<&str>,
     ) -> Result<String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            HTTP_HEADER_JWT_AUTHORIZATION.to_string(),
-            format!(
+        let mut headers = hmap! {
+            HTTP_HEADER_JWT_AUTHORIZATION => format!(
                 "{}{}",
                 HTTP_HEADER_AUTH_BASIC,
                 base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password))
             ),
-        );
-        headers.insert(HTTP_HEADER_JWT_SET_COOKIE.to_string(), "true".to_string());
+            HTTP_HEADER_JWT_SET_COOKIE => "true"
+        };
 
         if let Some(seconds) = timeout_seconds {
-            headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.to_string(), seconds.to_string());
+            headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.into(), seconds.to_string());
         }
         if let Some(aud) = audience {
-            headers.insert(HTTP_HEADER_JWT_AUDIENCE.to_string(), aud.to_string());
+            headers.insert(HTTP_HEADER_JWT_AUDIENCE.into(), aud.to_string());
         }
         if let Some(totp_code) = totp {
-            headers.insert(HTTP_HEADER_JWT_TOTP.to_string(), totp_code.to_string());
+            headers.insert(HTTP_HEADER_JWT_TOTP.into(), totp_code.to_string());
         }
 
         let resp = self.req.send(Method::POST, "/appmesh/login", None, Some(headers), None, false).await?;
@@ -322,18 +383,40 @@ impl AppMeshClient {
             return Err(AppMeshError::AuthenticationFailed(text));
         }
 
-        // Extract token from response and notify requester
         let json: Value = resp.json()?;
         let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
         self.req.handle_token_update(token);
-
-        Ok(String::new()) // success
+        Ok(String::new())
     }
 
-    /// Validate TOTP code with challenge
-    pub async fn validate_totp(&self, username: &str, challenge: &str, totp: &str, timeout_seconds: i32) -> Result<()> {
-        let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_JWT_SET_COOKIE.to_string(), "true".to_string());
+    /// Login and automatically start token refresh if `auto_refresh_token` is enabled.
+    ///
+    /// This is the recommended way to login when using `Arc<AppMeshClient>`, as it
+    /// schedules the background refresh task after a successful login.
+    pub async fn login_and_refresh(
+        self: &Arc<Self>,
+        username: &str,
+        password: &str,
+        totp: Option<&str>,
+        timeout_seconds: Option<i32>,
+        audience: Option<&str>,
+    ) -> Result<String> {
+        let result = self.login(username, password, totp, timeout_seconds, audience).await?;
+        if result.is_empty() && self.auto_refresh.load(Ordering::Relaxed) {
+            self.schedule_token_refresh();
+        }
+        Ok(result)
+    }
+
+    /// Validate TOTP code with challenge.
+    pub async fn validate_totp(
+        &self,
+        username: &str,
+        challenge: &str,
+        totp: &str,
+        timeout_seconds: i32,
+    ) -> Result<()> {
+        let headers = hmap! { HTTP_HEADER_JWT_SET_COOKIE => "true" };
 
         let body = json!({
             HTTP_BODY_KEY_JWT_USERNAME: username,
@@ -341,21 +424,19 @@ impl AppMeshClient {
             HTTP_BODY_KEY_JWT_TOTP_CHALLENGE: challenge,
             HTTP_BODY_KEY_JWT_EXPIRE_SECONDS: timeout_seconds
         });
+        let body_bytes = serde_json::to_vec(&body)?;
 
-        let body_bytes: Vec<u8> = serde_json::to_vec(&body).unwrap();
         let resp =
             self.req.send(Method::POST, "/appmesh/totp/validate", Some(&body_bytes), Some(headers), None, true).await?;
 
-        // Extract token from response and notify requester
         let json: Value = resp.json()?;
         let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
         self.req.handle_token_update(token);
-
         Ok(())
     }
 
-    /// Authenticate with JWT token
-    /// Returns (success, message)
+    /// Authenticate with an existing JWT token.
+    /// Returns `(success, message)`.
     pub async fn authenticate(
         &self,
         token: &str,
@@ -363,17 +444,17 @@ impl AppMeshClient {
         audience: Option<&str>,
         apply: bool,
     ) -> Result<(bool, String)> {
-        let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.to_string(), format!("{}{}", HTTP_HEADER_AUTH_BEARER, token));
+        let mut headers =
+            hmap! { HTTP_HEADER_JWT_AUTHORIZATION => format!("{}{}", HTTP_HEADER_AUTH_BEARER, token) };
 
         if let Some(perm) = permission {
-            headers.insert(HTTP_HEADER_JWT_AUTH_PERMISSION.to_string(), perm.to_string());
+            headers.insert(HTTP_HEADER_JWT_AUTH_PERMISSION.into(), perm.to_string());
         }
         if let Some(aud) = audience {
-            headers.insert(HTTP_HEADER_JWT_AUDIENCE.to_string(), aud.to_string());
+            headers.insert(HTTP_HEADER_JWT_AUDIENCE.into(), aud.to_string());
         }
         if apply {
-            headers.insert(HTTP_HEADER_JWT_SET_COOKIE.to_string(), "true".to_string());
+            headers.insert(HTTP_HEADER_JWT_SET_COOKIE.into(), "true".to_string());
         }
 
         let resp = self.req.send(Method::POST, "/appmesh/auth", None, Some(headers), None, false).await?;
@@ -381,7 +462,6 @@ impl AppMeshClient {
         let is_ok = resp.status() == StatusCode::OK;
         let text = resp.text()?;
 
-        // If authentication succeeded and apply is true, update token
         if is_ok && apply {
             self.req.handle_token_update(Some(token.to_string()));
         }
@@ -389,179 +469,261 @@ impl AppMeshClient {
         Ok((is_ok, text))
     }
 
-    /// Logout from current session
+    /// Logout from the current session.
     pub async fn logout(&self) -> Result<()> {
+        self.cancel_refresh_task();
         self.req.send(Method::POST, "/appmesh/self/logoff", None, None, None, true).await?;
-
-        // Clear token after logout
         self.req.handle_token_update(None);
-
         Ok(())
     }
 
-    /// Renew JWT token
+    /// Renew the JWT token.
     pub async fn renew_token(&self, timeout_seconds: Option<i32>) -> Result<()> {
-        let mut headers = HashMap::new();
-        if let Some(sec) = timeout_seconds {
-            headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.to_string(), sec.to_string());
-        }
+        let headers = timeout_seconds.map(|sec| hmap! { HTTP_HEADER_JWT_EXPIRE_SECONDS => sec });
 
-        let resp = self.req.send(Method::POST, "/appmesh/token/renew", None, Some(headers), None, true).await?;
+        let resp =
+            self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
 
-        // Extract token from response and notify requester
         let json: Value = resp.json()?;
         let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
         self.req.handle_token_update(token);
-
         Ok(())
     }
 
-    /// Get TOTP secret for MFA setup
+    /// Start the automatic token refresh background task.
+    ///
+    /// The task periodically checks the JWT token's `exp` claim and calls
+    /// [`renew_token`](Self::renew_token) before it expires.  The task runs
+    /// until the client is closed, logout is called, or auto-refresh is
+    /// disabled via [`set_auto_refresh_token(false)`](Self::set_auto_refresh_token).
+    ///
+    /// This method requires `&Arc<Self>` because the background task must hold
+    /// a weak reference to the client.
+    pub fn schedule_token_refresh(self: &Arc<Self>) {
+        if !self.auto_refresh.load(Ordering::Relaxed) {
+            return;
+        }
+
+        // Cancel any existing refresh task first
+        self.cancel_refresh_task();
+
+        let weak = Arc::downgrade(self);
+
+        let handle = tokio::spawn(async move {
+            loop {
+                // Determine how long to sleep
+                let sleep_duration = {
+                    let Some(client) = weak.upgrade() else { break };
+                    if !client.auto_refresh.load(Ordering::Relaxed) { break }
+                    Self::compute_refresh_delay(&client)
+                };
+
+                tokio::time::sleep(sleep_duration).await;
+
+                // Re-acquire the client (it may have been dropped)
+                let Some(client) = weak.upgrade() else { break };
+                if !client.auto_refresh.load(Ordering::Relaxed) { break }
+
+                debug!("Auto-refresh: attempting token renewal");
+                match client.renew_token(None).await {
+                    Ok(()) => {
+                        debug!("Auto-refresh: token renewed successfully");
+                        // After renewal, re-schedule via the new token's exp
+                        // (loop continues, will recompute delay)
+                    }
+                    Err(e) => {
+                        warn!("Auto-refresh: token renewal failed: {}", e);
+                        // Back off and retry after the regular interval
+                    }
+                }
+            }
+            debug!("Auto-refresh: background task exiting");
+        });
+
+        if let Ok(mut h) = self.refresh_handle.lock() {
+            *h = Some(handle);
+        }
+    }
+
+    /// Compute how long to sleep before the next refresh attempt.
+    ///
+    /// Decodes the JWT `exp` claim (without verifying the signature) to
+    /// determine time-to-expiry.  Returns a shorter delay if the token is
+    /// close to expiring, or falls back to `TOKEN_REFRESH_INTERVAL_SECS`
+    /// if the token cannot be decoded.
+    fn compute_refresh_delay(client: &AppMeshClient) -> Duration {
+        let default_interval = Duration::from_secs(TOKEN_REFRESH_INTERVAL_SECS);
+
+        let Some(jwt_str) = client.get_stored_token() else {
+            return default_interval;
+        };
+
+        match Self::decode_jwt_exp(&jwt_str) {
+            Some(exp) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                if exp <= now {
+                    // Already expired — refresh immediately (small delay to avoid tight loop)
+                    Duration::from_secs(1)
+                } else {
+                    let time_to_expiry = exp - now;
+                    if time_to_expiry <= TOKEN_REFRESH_MARGIN_SECS {
+                        Duration::from_secs(1)
+                    } else {
+                        // Sleep until TOKEN_REFRESH_MARGIN_SECS before expiry,
+                        // but no longer than TOKEN_REFRESH_INTERVAL_SECS
+                        let wait = time_to_expiry - TOKEN_REFRESH_MARGIN_SECS;
+                        Duration::from_secs(wait.min(TOKEN_REFRESH_INTERVAL_SECS))
+                    }
+                }
+            }
+            None => default_interval,
+        }
+    }
+
+    /// Retrieve the current access token from the underlying transport.
+    fn get_stored_token(&self) -> Option<String> {
+        self.req.get_access_token()
+    }
+
+    /// Decode the `exp` field from a JWT without signature verification.
+    ///
+    /// JWT format: `header.payload.signature` — we only decode the payload (part 1).
+    fn decode_jwt_exp(token: &str) -> Option<u64> {
+        let parts: Vec<&str> = token.split('.').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+
+        // Decode the payload (second part) using base64 URL-safe no-pad
+        let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(parts[1])
+            .ok()?;
+        let payload: Value = serde_json::from_slice(&payload_bytes).ok()?;
+        payload.get("exp")?.as_u64()
+    }
+
+    /// Get TOTP secret for MFA setup (returns the raw secret string).
     pub async fn get_totp_secret(&self) -> Result<String> {
         let resp = self.req.send(Method::POST, "/appmesh/totp/secret", None, None, None, true).await?;
 
         let val: Value = resp.json()?;
         let encoded =
-            val[HTTP_BODY_KEY_MFA_URI].as_str().ok_or_else(|| AppMeshError::Other("Invalid MFA URI".to_string()))?;
+            val[HTTP_BODY_KEY_MFA_URI].as_str().ok_or_else(|| AppMeshError::Other("Invalid MFA URI".into()))?;
 
         let decoded = base64::engine::general_purpose::STANDARD.decode(encoded)?;
         let totp_uri = String::from_utf8_lossy(&decoded).to_string();
-
-        // Parse the TOTP URI to extract the secret
-        let secret = Self::parse_totp_uri(&totp_uri)?;
-        Ok(secret)
+        Self::parse_totp_uri(&totp_uri)
     }
 
-    /// Parse TOTP URI and extract secret
     fn parse_totp_uri(uri: &str) -> Result<String> {
-        // URI format: otpauth://totp/...?secret=XXX&issuer=...
         if let Some(query_start) = uri.find('?') {
-            let query = &uri[query_start + 1..];
-            for param in query.split('&') {
+            for param in uri[query_start + 1..].split('&') {
                 if let Some(eq_pos) = param.find('=') {
-                    let key = &param[..eq_pos];
-                    let value = &param[eq_pos + 1..];
-                    if key == "secret" {
-                        return Ok(value.to_string());
+                    if &param[..eq_pos] == "secret" {
+                        return Ok(param[eq_pos + 1..].to_string());
                     }
                 }
             }
         }
-        Err(AppMeshError::Other("TOTP URI does not contain a 'secret' field".to_string()))
+        Err(AppMeshError::Other("TOTP URI does not contain a 'secret' field".into()))
     }
 
-    /// Enable TOTP with verification code
+    /// Enable TOTP with a verification code.
     pub async fn enable_totp(&self, totp: &str) -> Result<()> {
-        let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_JWT_TOTP.to_string(), totp.to_string());
+        let headers = hmap! { HTTP_HEADER_JWT_TOTP => totp };
 
-        let resp = self.req.send(Method::POST, "/appmesh/totp/setup", None, Some(headers), None, true).await?;
+        let resp =
+            self.req.send(Method::POST, "/appmesh/totp/setup", None, Some(headers), None, true).await?;
 
-        // Extract token from response and notify requester
         let json: Value = resp.json()?;
         let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
         self.req.handle_token_update(token);
-
         Ok(())
     }
 
-    /// Disable TOTP for user
+    /// Disable TOTP for a user (`None` = current user).
     pub async fn disable_totp(&self, user: Option<&str>) -> Result<()> {
         let user = user.unwrap_or("self");
         self.req.send(Method::POST, &format!("/appmesh/totp/{}/disable", user), None, None, None, true).await?;
         Ok(())
     }
+}
 
-    //
-    // User Management
-    //
+// -- User Management --------------------------------------------------------
 
-    /// Update user password
+impl AppMeshClient {
     pub async fn update_password(&self, old: &str, new: &str, user: Option<&str>) -> Result<()> {
         let user = user.unwrap_or("self");
         let body = json!({
             HTTP_BODY_KEY_OLD_PASSWORD: base64::engine::general_purpose::STANDARD.encode(old),
             HTTP_BODY_KEY_NEW_PASSWORD: base64::engine::general_purpose::STANDARD.encode(new)
         });
+        let body_bytes = serde_json::to_vec(&body)?;
 
-        let body_bytes: Vec<u8> = serde_json::to_vec(&body).unwrap();
         self.req
             .send(Method::POST, &format!("/appmesh/user/{}/passwd", user), Some(&body_bytes), None, None, true)
             .await?;
         Ok(())
     }
 
-    /// Get current user information
     pub async fn get_current_user(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/user/self", None, None, None, true).await?;
         Ok(resp.json()?)
     }
 
-    /// List all users
     pub async fn list_users(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/users", None, None, None, true).await?;
         Ok(resp.json()?)
     }
 
-    /// Add a new user
     pub async fn add_user(&self, user: Value) -> Result<()> {
         let name =
-            user["name"].as_str().ok_or_else(|| AppMeshError::ConfigurationError("Missing username".to_string()))?;
-
-        let body_bytes: Vec<u8> = serde_json::to_vec(&user).unwrap();
+            user["name"].as_str().ok_or_else(|| AppMeshError::ConfigurationError("Missing username".into()))?;
+        let body_bytes = serde_json::to_vec(&user)?;
         self.req.send(Method::PUT, &format!("/appmesh/user/{}", name), Some(&body_bytes), None, None, true).await?;
         Ok(())
     }
 
-    /// Delete a user
     pub async fn delete_user(&self, user: &str) -> Result<()> {
         self.req.send(Method::DELETE, &format!("/appmesh/user/{}", user), None, None, None, true).await?;
         Ok(())
     }
 
-    /// Lock a user account
     pub async fn lock_user(&self, user: &str) -> Result<()> {
         self.req.send(Method::POST, &format!("/appmesh/user/{}/lock", user), None, None, None, true).await?;
         Ok(())
     }
 
-    /// Unlock a user account
     pub async fn unlock_user(&self, user: &str) -> Result<()> {
         self.req.send(Method::POST, &format!("/appmesh/user/{}/unlock", user), None, None, None, true).await?;
         Ok(())
     }
 
-    /// List all groups
     pub async fn list_groups(&self) -> Result<Vec<String>> {
         let resp = self.req.send(Method::GET, "/appmesh/user/groups", None, None, None, true).await?;
-
         let json: Value = resp.json()?;
         Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
     }
 
-    /// Get current user's permissions
     pub async fn get_user_permissions(&self) -> Result<Vec<String>> {
         let resp = self.req.send(Method::GET, "/appmesh/user/permissions", None, None, None, true).await?;
-
         let json: Value = resp.json()?;
         Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
     }
 
-    /// List all available permissions
     pub async fn list_permissions(&self) -> Result<Vec<String>> {
         let resp = self.req.send(Method::GET, "/appmesh/permissions", None, None, None, true).await?;
-
         let json: Value = resp.json()?;
         Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
     }
 
-    /// List all roles
     pub async fn list_roles(&self) -> Result<HashMap<String, Vec<String>>> {
         let resp = self.req.send(Method::GET, "/appmesh/roles", None, None, None, true).await?;
-
         let json: Value = resp.json()?;
         let mut roles = HashMap::new();
-
         if let Some(obj) = json.as_object() {
             for (key, value) in obj {
                 if let Some(arr) = value.as_array() {
@@ -570,43 +732,41 @@ impl AppMeshClient {
                 }
             }
         }
-
         Ok(roles)
     }
 
-    /// Update role permissions
     pub async fn update_role(&self, role: &str, permissions: Vec<String>) -> Result<()> {
-        let body = json!(permissions);
-
-        let body_bytes: Vec<u8> = serde_json::to_vec(&body).unwrap();
-        self.req.send(Method::POST, &format!("/appmesh/role/{}", role), Some(&body_bytes), None, None, true).await?;
+        let body_bytes = serde_json::to_vec(&permissions)?;
+        self.req
+            .send(Method::POST, &format!("/appmesh/role/{}", role), Some(&body_bytes), None, None, true)
+            .await?;
         Ok(())
     }
 
-    /// Delete a role
     pub async fn delete_role(&self, role: &str) -> Result<()> {
         self.req.send(Method::DELETE, &format!("/appmesh/role/{}", role), None, None, None, true).await?;
         Ok(())
     }
+}
 
-    //
-    // Application Management
-    //
+// -- Application Management -------------------------------------------------
 
-    /// List all applications
+impl AppMeshClient {
+    /// List all applications.
     pub async fn list_apps(&self) -> Result<Vec<Application>> {
         let resp = self.req.send(Method::GET, "/appmesh/applications", None, None, None, true).await?;
         let apps: Vec<Application> = resp.json()?;
         Ok(apps)
     }
 
-    /// Get application details
+    /// Get a single application by name.
     pub async fn get_app(&self, name: &str) -> Result<Application> {
-        let resp = self.req.send(Method::GET, &format!("/appmesh/app/{}", name), None, None, None, true).await?;
+        let resp =
+            self.req.send(Method::GET, &format!("/appmesh/app/{}", name), None, None, None, true).await?;
         Ok(resp.json()?)
     }
 
-    /// Get application output
+    /// Get application stdout output.
     pub async fn get_app_output(
         &self,
         app: &str,
@@ -616,27 +776,29 @@ impl AppMeshClient {
         process_uuid: Option<&str>,
         timeout: Option<i32>,
     ) -> Result<AppOutput> {
-        let mut query = HashMap::new();
+        let mut query = hmap!();
         if stdout_index > 0 {
-            query.insert(HTTP_QUERY_KEY_STDOUT_INDEX.to_string(), stdout_index.to_string());
+            query.insert(HTTP_QUERY_KEY_STDOUT_INDEX.into(), stdout_index.to_string());
         }
         if stdout_position > 0 {
-            query.insert(HTTP_QUERY_KEY_STDOUT_POSITION.to_string(), stdout_position.to_string());
+            query.insert(HTTP_QUERY_KEY_STDOUT_POSITION.into(), stdout_position.to_string());
         }
         if stdout_maxsize > 0 {
-            query.insert(HTTP_QUERY_KEY_STDOUT_MAXSIZE.to_string(), stdout_maxsize.to_string());
+            query.insert(HTTP_QUERY_KEY_STDOUT_MAXSIZE.into(), stdout_maxsize.to_string());
         }
         if let Some(uuid) = process_uuid {
-            query.insert(HTTP_QUERY_KEY_PROCESS_UUID.to_string(), uuid.to_string());
+            query.insert(HTTP_QUERY_KEY_PROCESS_UUID.into(), uuid.to_string());
         }
-        if let Some(timeout) = timeout {
-            query.insert(HTTP_QUERY_KEY_STDOUT_TIMEOUT.to_string(), timeout.to_string());
+        if let Some(t) = timeout {
+            query.insert(HTTP_QUERY_KEY_STDOUT_TIMEOUT.into(), t.to_string());
         }
 
-        let resp =
-            self.req.send(Method::GET, &format!("/appmesh/app/{}/output", app), None, None, Some(query), false).await?;
+        let resp = self
+            .req
+            .send(Method::GET, &format!("/appmesh/app/{}/output", app), None, None, Some(query), false)
+            .await?;
 
-        let headers = resp.headers().clone();
+        // Now we can read headers *and* body without cloning, thanks to &self on ResponseExt
         let mut out = AppOutput {
             status_code: resp.status().as_u16(),
             output: resp.text()?,
@@ -644,13 +806,12 @@ impl AppMeshClient {
             exit_code: None,
         };
 
-        if let Some(pos) = headers.get(HTTP_HEADER_KEY_OUTPUT_POS) {
+        if let Some(pos) = resp.headers().get(HTTP_HEADER_KEY_OUTPUT_POS) {
             if let Ok(s) = pos.to_str() {
                 out.output_position = s.parse().unwrap_or(0);
             }
         }
-
-        if let Some(code) = headers.get(HTTP_HEADER_KEY_EXIT_CODE) {
+        if let Some(code) = resp.headers().get(HTTP_HEADER_KEY_EXIT_CODE) {
             if let Ok(s) = code.to_str() {
                 out.exit_code = Some(s.parse().unwrap_or(0));
             }
@@ -659,63 +820,75 @@ impl AppMeshClient {
         Ok(out)
     }
 
-    /// Check application health
+    /// Check application health (returns `true` if healthy).
     pub async fn check_app_health(&self, app: &str) -> Result<bool> {
-        let resp = self.req.send(Method::GET, &format!("/appmesh/app/{}/health", app), None, None, None, true).await?;
-
+        let resp =
+            self.req.send(Method::GET, &format!("/appmesh/app/{}/health", app), None, None, None, true).await?;
         let text = resp.text()?;
         Ok(text.trim() == "0")
     }
 
-    //
-    // Application Manage
-    //
-
-    /// Add or update an application
-    pub async fn add_app(&self, app: Value) -> Result<Application> {
-        let name = app[JSON_KEY_APP_NAME]
-            .as_str()
-            .ok_or_else(|| AppMeshError::ConfigurationError("App name required".to_string()))?;
-
-        let body_bytes: Vec<u8> = serde_json::to_vec(&app).unwrap();
+    /// Add or update an application (type-safe).
+    pub async fn add_app(&self, app: &Application) -> Result<Application> {
+        let name = app
+            .name
+            .as_deref()
+            .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
+        let body_bytes = serde_json::to_vec(app)?;
         let resp =
             self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true).await?;
         Ok(resp.json()?)
     }
 
-    /// Delete an application
-    pub async fn delete_app(&self, name: &str) -> Result<bool> {
-        let resp = self.req.send(Method::DELETE, &format!("/appmesh/app/{}", name), None, None, None, false).await?;
+    /// Add or update an application from raw JSON (advanced).
+    pub async fn add_app_raw(&self, app: Value) -> Result<Application> {
+        let name = app[JSON_KEY_APP_NAME]
+            .as_str()
+            .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
+        let body_bytes = serde_json::to_vec(&app)?;
+        let resp =
+            self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true).await?;
+        Ok(resp.json()?)
+    }
 
+    pub async fn delete_app(&self, name: &str) -> Result<bool> {
+        let resp =
+            self.req.send(Method::DELETE, &format!("/appmesh/app/{}", name), None, None, None, false).await?;
         Ok(resp.status() == StatusCode::OK)
     }
 
-    /// Enable an application
     pub async fn enable_app(&self, name: &str) -> Result<()> {
         self.req.send(Method::POST, &format!("/appmesh/app/{}/enable", name), None, None, None, true).await?;
         Ok(())
     }
 
-    /// Disable an application
     pub async fn disable_app(&self, name: &str) -> Result<()> {
         self.req.send(Method::POST, &format!("/appmesh/app/{}/disable", name), None, None, None, true).await?;
         Ok(())
     }
+}
 
-    //
-    // Run Application Operations
-    //
+// -- Run Application --------------------------------------------------------
 
-    /// Run application synchronously
-    /// Returns (exit_code, output)
-    pub async fn run_app_sync(&self, app: Value, max_timeout: i32, lifecycle: i32) -> Result<(Option<i32>, String)> {
-        let mut query = HashMap::new();
-        query.insert(HTTP_QUERY_KEY_TIMEOUT.to_string(), max_timeout.to_string());
-        query.insert(HTTP_QUERY_KEY_LIFECYCLE.to_string(), lifecycle.to_string());
+impl AppMeshClient {
+    /// Run an application synchronously.
+    /// Returns `(exit_code, stdout)`.
+    pub async fn run_app_sync(
+        &self,
+        app: &Application,
+        max_timeout: i32,
+        lifecycle: i32,
+    ) -> Result<(Option<i32>, String)> {
+        let query = hmap! {
+            HTTP_QUERY_KEY_TIMEOUT => max_timeout,
+            HTTP_QUERY_KEY_LIFECYCLE => lifecycle,
+        };
+        let body_bytes = serde_json::to_vec(app)?;
 
-        let body_bytes: Vec<u8> = serde_json::to_vec(&app).unwrap();
-        let resp =
-            self.req.send(Method::POST, "/appmesh/app/syncrun", Some(&body_bytes), None, Some(query), false).await?;
+        let resp = self
+            .req
+            .send(Method::POST, "/appmesh/app/syncrun", Some(&body_bytes), None, Some(query), false)
+            .await?;
 
         let mut code = None;
         if resp.status() == StatusCode::OK {
@@ -725,35 +898,74 @@ impl AppMeshClient {
                 }
             }
         }
-
         Ok((code, resp.text()?))
     }
 
-    /// Run application asynchronously
-    pub async fn run_app_async(self: &Arc<Self>, app: Value, max_timeout: i32, lifecycle: i32) -> Result<AppRun> {
-        let mut query = HashMap::new();
-        query.insert(HTTP_QUERY_KEY_TIMEOUT.to_string(), max_timeout.to_string());
-        query.insert(HTTP_QUERY_KEY_LIFECYCLE.to_string(), lifecycle.to_string());
+    /// Convenience: run a shell command synchronously.
+    pub async fn run_sync(
+        &self,
+        command: &str,
+        max_timeout: i32,
+        lifecycle: i32,
+    ) -> Result<(Option<i32>, String)> {
+        let app = Application::builder("_run_cmd_")
+            .command(command)
+            .shell(true)
+            .build();
+        self.run_app_sync(&app, max_timeout, lifecycle).await
+    }
 
-        let body_bytes: Vec<u8> = serde_json::to_vec(&app).unwrap();
-        let resp = self.req.send(Method::POST, "/appmesh/app/run", Some(&body_bytes), None, Some(query), true).await?;
+    /// Run an application asynchronously (returns an [`AppRun`] handle).
+    pub async fn run_app_async(
+        self: &Arc<Self>,
+        app: &Application,
+        max_timeout: i32,
+        lifecycle: i32,
+    ) -> Result<AppRun> {
+        let query = hmap! {
+            HTTP_QUERY_KEY_TIMEOUT => max_timeout,
+            HTTP_QUERY_KEY_LIFECYCLE => lifecycle,
+        };
+        let body_bytes = serde_json::to_vec(app)?;
+
+        let resp =
+            self.req.send(Method::POST, "/appmesh/app/run", Some(&body_bytes), None, Some(query), true).await?;
 
         let json: Value = resp.json()?;
         Ok(AppRun {
             client: Arc::clone(self),
             app_name: json[JSON_KEY_APP_NAME]
                 .as_str()
-                .ok_or_else(|| AppMeshError::Other("Missing app name".to_string()))?
+                .ok_or_else(|| AppMeshError::Other("Missing app name".into()))?
                 .to_string(),
             proc_uid: json[JSON_KEY_PROCESS_UUID]
                 .as_str()
-                .ok_or_else(|| AppMeshError::Other("Missing process UUID".to_string()))?
+                .ok_or_else(|| AppMeshError::Other("Missing process UUID".into()))?
                 .to_string(),
         })
     }
 
-    /// Wait for async run to complete
-    pub async fn wait_for_async_run(&self, run: &AppRun, timeout: i32, print_to_std: bool) -> Result<Option<i32>> {
+    /// Convenience: run a shell command asynchronously.
+    pub async fn run_async(
+        self: &Arc<Self>,
+        command: &str,
+        max_timeout: i32,
+        lifecycle: i32,
+    ) -> Result<AppRun> {
+        let app = Application::builder("_run_cmd_")
+            .command(command)
+            .shell(true)
+            .build();
+        self.run_app_async(&app, max_timeout, lifecycle).await
+    }
+
+    /// Wait for an async run to complete, optionally printing stdout.
+    pub async fn wait_for_async_run(
+        &self,
+        run: &AppRun,
+        timeout: i32,
+        print_to_std: bool,
+    ) -> Result<Option<i32>> {
         let mut last_output_position = 0i64;
         let start_time = std::time::Instant::now();
 
@@ -774,134 +986,148 @@ impl AppMeshClient {
                 || app_out.status_code != StatusCode::OK.as_u16()
                 || (timeout > 0 && start_time.elapsed().as_secs() >= timeout as u64)
             {
-                // Clean up the temporary app
                 let _ = self.delete_app(&run.app_name).await;
                 return Ok(app_out.exit_code);
             }
 
-            // Small delay before next poll
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
-    /// Run a task
+    /// Run a task (send data to a running app and receive a response).
     pub async fn run_task(&self, app: &str, data: Value, timeout: i32) -> Result<String> {
-        let mut query = HashMap::new();
-        query.insert(HTTP_QUERY_KEY_TIMEOUT.to_string(), timeout.to_string());
+        let query = hmap! { HTTP_QUERY_KEY_TIMEOUT => timeout };
+        let body_bytes = serde_json::to_vec(&data)?;
 
-        let body_bytes: Vec<u8> = serde_json::to_vec(&data).unwrap();
         let resp = self
             .req
             .send(Method::POST, &format!("/appmesh/app/{}/task", app), Some(&body_bytes), None, Some(query), true)
             .await?;
-
         Ok(resp.text()?)
     }
 
-    /// Cancel a running task
+    /// Cancel a running task.
     pub async fn cancel_task(&self, app: &str) -> Result<bool> {
         let resp =
             self.req.send(Method::DELETE, &format!("/appmesh/app/{}/task", app), None, None, None, false).await?;
-
         Ok(resp.status() == StatusCode::OK)
     }
+}
 
-    //
-    // System Management
-    //
+// -- System Management ------------------------------------------------------
 
-    /// Get host resource information
-    pub async fn get_host_resources(&self) -> Result<serde_json::Value> {
+impl AppMeshClient {
+    pub async fn get_host_resources(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/resources", None, None, None, true).await?;
         Ok(resp.json()?)
     }
 
-    /// Get system configuration
     pub async fn get_config(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/config", None, None, None, true).await?;
         Ok(resp.json()?)
     }
 
-    /// Set system configuration
     pub async fn set_config(&self, config: Value) -> Result<Value> {
-        let body_bytes: Vec<u8> = serde_json::to_vec(&config).unwrap();
-        let resp = self.req.send(Method::POST, "/appmesh/config", Some(&body_bytes), None, None, true).await?;
+        let body_bytes = serde_json::to_vec(&config)?;
+        let resp =
+            self.req.send(Method::POST, "/appmesh/config", Some(&body_bytes), None, None, true).await?;
         Ok(resp.json()?)
     }
 
-    /// Set log level
     pub async fn set_log_level(&self, level: &str) -> Result<String> {
-        let cfg = json!({
-            JSON_KEY_BASE_CONFIG: {
-                JSON_KEY_LOG_LEVEL: level
-            }
-        });
-
+        let cfg = json!({ JSON_KEY_BASE_CONFIG: { JSON_KEY_LOG_LEVEL: level } });
         let resp = self.set_config(cfg).await?;
         Ok(resp[JSON_KEY_BASE_CONFIG][JSON_KEY_LOG_LEVEL].as_str().unwrap_or(level).to_string())
     }
 
-    /// Get Prometheus metrics
     pub async fn get_metrics(&self) -> Result<String> {
         let resp = self.req.send(Method::GET, "/appmesh/metrics", None, None, None, true).await?;
         Ok(resp.text()?)
     }
+}
 
-    //
-    // Tag Management
-    //
+// -- Label Management -------------------------------------------------------
 
-    /// Get all tags
-    pub async fn get_tags(&self) -> Result<Value> {
+impl AppMeshClient {
+    pub async fn list_labels(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/labels", None, None, None, true).await?;
         Ok(resp.json()?)
     }
 
-    /// Add a tag
-    pub async fn add_tag(&self, tag: &str, value: &str) -> Result<()> {
-        let mut query = HashMap::new();
-        query.insert(HTTP_QUERY_KEY_VALUE.to_string(), value.to_string());
 
-        self.req.send(Method::PUT, &format!("/appmesh/label/{}", tag), None, None, Some(query), true).await?;
+    pub async fn add_label(&self, label: &str, value: &str) -> Result<()> {
+        let query = hmap! { HTTP_QUERY_KEY_VALUE => value };
+        self.req.send(Method::PUT, &format!("/appmesh/label/{}", label), None, None, Some(query), true).await?;
         Ok(())
     }
 
-    /// Delete a tag
-    pub async fn delete_tag(&self, tag: &str) -> Result<()> {
-        self.req.send(Method::DELETE, &format!("/appmesh/label/{}", tag), None, None, None, true).await?;
+
+    pub async fn delete_label(&self, label: &str) -> Result<()> {
+        self.req.send(Method::DELETE, &format!("/appmesh/label/{}", label), None, None, None, true).await?;
         Ok(())
     }
 
-    //
-    // File Management
-    //
+}
 
-    /// Download a file from remote server
-    pub async fn download_file(&self, remote_file: &str, local_file: &str, preserve_permissions: bool) -> Result<()> {
-        let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.to_string(), remote_file.to_string());
+// -- File Management --------------------------------------------------------
 
-        let resp = self.req.send(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
+impl AppMeshClient {
+    /// Download a file from the remote server.
+    pub async fn download_file(
+        &self,
+        remote_file: &str,
+        local_file: &str,
+        preserve_permissions: bool,
+    ) -> Result<()> {
+        let headers = hmap! { HTTP_HEADER_KEY_X_FILE_PATH => remote_file };
 
-        // Clone headers before consuming the response
-        let resp_headers = resp.headers().clone();
-        let body = resp.bytes();
+        let resp =
+            self.req.send(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
 
-        // Write file content
         let local_path = Path::new(local_file);
-        fs::write(local_path, body)?;
+        fs::write(local_path, resp.bytes())?;
 
-        // Apply file attributes on Unix systems
         if preserve_permissions {
-            let _ = Self::apply_file_attributes(&local_path, &resp_headers);
+            let _ = Self::apply_file_attributes(local_path, resp.headers());
+        }
+        Ok(())
+    }
+
+    /// Upload a file to the remote server.
+    pub async fn upload_file(
+        &self,
+        local_file: &str,
+        remote_file: &str,
+        preserve_permissions: bool,
+    ) -> Result<()> {
+        let local_path = Path::new(local_file);
+        if !local_path.exists() {
+            return Err(AppMeshError::NotFound(format!("Local file not found: {}", local_file)));
         }
 
+        let file_content = fs::read(local_file)?;
+        let file_name = local_path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+
+        let mut headers = hmap! {
+            HTTP_HEADER_KEY_X_FILE_PATH => remote_file,
+            HTTP_HEADER_CONTENT_TYPE => "application/octet-stream",
+            HTTP_HEADER_KEY_X_FILE_NAME => file_name,
+        };
+        if preserve_permissions {
+            Self::get_file_attributes(local_path, &mut headers);
+        }
+
+        self.req
+            .send(Method::POST, "/appmesh/file/upload", Some(&file_content), Some(headers), None, true)
+            .await?;
         Ok(())
     }
 
-    /// Apply file attributes from HTTP headers.
-    /// Supports both name-based and numeric ID lookup for user/group.
-    pub(crate) fn apply_file_attributes(local_file: &Path, headers: &http::HeaderMap) -> Result<()> {
+    /// Apply file attributes (mode, owner, group) from HTTP headers — Unix only.
+    pub(crate) fn apply_file_attributes(
+        local_file: &Path,
+        headers: &http::HeaderMap,
+    ) -> Result<()> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -910,11 +1136,17 @@ impl AppMeshClient {
                 headers.get(HTTP_HEADER_KEY_X_FILE_USER).and_then(|v| v.to_str().ok()),
                 headers.get(HTTP_HEADER_KEY_X_FILE_GROUP).and_then(|v| v.to_str().ok()),
             ) {
-                let uid =
-                    UnixUser::from_name(u).ok().flatten().map(|x| x.uid).or_else(|| u.parse().ok().map(Uid::from_raw));
+                let uid = UnixUser::from_name(u)
+                    .ok()
+                    .flatten()
+                    .map(|x| x.uid)
+                    .or_else(|| u.parse().ok().map(Uid::from_raw));
 
-                let gid =
-                    Group::from_name(g).ok().flatten().map(|x| x.gid).or_else(|| g.parse().ok().map(Gid::from_raw));
+                let gid = Group::from_name(g)
+                    .ok()
+                    .flatten()
+                    .map(|x| x.gid)
+                    .or_else(|| g.parse().ok().map(Gid::from_raw));
 
                 if let (Some(uid), Some(gid)) = (uid, gid) {
                     chown(local_file, Some(uid), Some(gid)).map_err(|e| {
@@ -936,38 +1168,7 @@ impl AppMeshClient {
         Ok(())
     }
 
-    /// Upload a file to remote server
-    pub async fn upload_file(&self, local_file: &str, remote_file: &str, preserve_permissions: bool) -> Result<()> {
-        let local_path = Path::new(local_file);
-        if !local_path.exists() {
-            return Err(AppMeshError::NotFound(format!("Local file not found: {}", local_file)));
-        }
-
-        let file_content = fs::read(local_file)?;
-        let file_name = local_path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-
-        let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.to_string(), remote_file.to_string());
-
-        if preserve_permissions {
-            Self::get_file_attributes(&local_path, &mut headers);
-        }
-
-        // For HTTP requester, we need to access the underlying reqwest client
-        // This is a limitation of the current design - multipart upload needs special handling
-        // You might want to add a specialized method to the Requester trait for file uploads
-
-        // Fallback: use regular POST with binary body
-        headers.insert(HTTP_HEADER_CONTENT_TYPE.to_string(), "application/octet-stream".to_string());
-        headers.insert(HTTP_HEADER_KEY_X_FILE_NAME.to_string(), file_name.to_string());
-
-        self.req.send(Method::POST, "/appmesh/file/upload", Some(&file_content), Some(headers), None, true).await?;
-
-        Ok(())
-    }
-
-    /// Get file attributes and populate headers with mode, user, and group.
-    /// Uses names instead of numeric IDs for cross-system portability.
+    /// Extract file attributes and populate headers — Unix only.
     pub(crate) fn get_file_attributes(local_file: &Path, headers: &mut HashMap<String, String>) {
         #[cfg(unix)]
         {
@@ -992,8 +1193,75 @@ impl AppMeshClient {
 
             headers.insert(
                 HTTP_HEADER_KEY_X_FILE_GROUP.into(),
-                Group::from_gid(Gid::from_raw(gid)).ok().flatten().map(|g| g.name).unwrap_or_else(|| gid.to_string()),
+                Group::from_gid(Gid::from_raw(gid))
+                    .ok()
+                    .flatten()
+                    .map(|g| g.name)
+                    .unwrap_or_else(|| gid.to_string()),
             );
         }
+    }
+}
+
+// -- ISO 8601 Duration Parsing ----------------------------------------------
+
+impl AppMeshClient {
+    /// Parse a timeout value that can be either integer seconds or an ISO 8601
+    /// duration string (e.g., `"P1W"`, `"P2DT12H"`).
+    pub fn parse_duration(timeout: &str) -> Result<i32> {
+        // Try integer first
+        if let Ok(secs) = timeout.parse::<i32>() {
+            return Ok(secs);
+        }
+        // Try ISO 8601
+        let dur = iso8601_duration::Duration::parse(timeout)
+            .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid duration '{}': {:?}", timeout, e)))?;
+        // Approximate conversion (months ≈ 30 days, years ≈ 365 days)
+        let secs = dur.year * 365.0 * 86400.0
+            + dur.month * 30.0 * 86400.0
+            + dur.day * 86400.0
+            + dur.hour * 3600.0
+            + dur.minute * 60.0
+            + dur.second;
+        Ok(secs as i32)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_jwt_exp_valid() {
+        // Build a minimal JWT: header.payload.signature
+        // payload: {"sub":"admin","exp":1700000000}
+        let payload = serde_json::json!({"sub": "admin", "exp": 1700000000u64});
+        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&payload).unwrap());
+        let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(b"{\"alg\":\"HS256\"}");
+        let token = format!("{}.{}.fake_sig", header_b64, payload_b64);
+
+        let exp = AppMeshClient::decode_jwt_exp(&token);
+        assert_eq!(exp, Some(1700000000));
+    }
+
+    #[test]
+    fn test_decode_jwt_exp_missing() {
+        let payload = serde_json::json!({"sub": "admin"});
+        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&payload).unwrap());
+        let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(b"{\"alg\":\"HS256\"}");
+        let token = format!("{}.{}.fake_sig", header_b64, payload_b64);
+
+        assert_eq!(AppMeshClient::decode_jwt_exp(&token), None);
+    }
+
+    #[test]
+    fn test_decode_jwt_exp_invalid_token() {
+        assert_eq!(AppMeshClient::decode_jwt_exp("not-a-jwt"), None);
+        assert_eq!(AppMeshClient::decode_jwt_exp("a.b"), None);
+        assert_eq!(AppMeshClient::decode_jwt_exp(""), None);
     }
 }

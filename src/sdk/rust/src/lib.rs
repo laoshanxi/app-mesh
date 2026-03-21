@@ -13,6 +13,7 @@ mod requester;
 mod response_ext;
 mod tcp_messages;
 mod tcp_transport;
+pub mod tls_config;
 mod wss_transport;
 mod server_http;
 mod server_tcp;
@@ -22,8 +23,11 @@ pub use client_builder::*;
 pub use client_http::AppMeshClient;
 pub use client_tcp::AppMeshClientTCP;
 pub use client_wss::AppMeshClientWSS;
-pub use error::AppMeshError;
-pub use models::{AppOutput, AppRun, Application, User};
+pub use error::{AppMeshError, TransportError};
+pub use models::{
+    AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
+    ExitAction, Permission, ResourceLimitation, User,
+};
 pub use server_http::AppMeshServer;
 pub use server_tcp::AppMeshServerTCP;
 pub use server_wss::AppMeshServerWSS;

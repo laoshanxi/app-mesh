@@ -277,7 +277,7 @@ func (w *WSSRequester) Send(method string, apiPath string, queries url.Values, h
 			req.Header.Set("X-Target-Host", forwardingHost+":"+u.Port())
 		}
 	}
-	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT_TCP)
+	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT_WSS)
 	for k, v := range headers {
 		req.Header.Add(k, v)
 	}
@@ -333,7 +333,7 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 		}
 	}
 
-	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_TCP
+	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_WSS
 
 	buf, err := data.Serialize()
 	if err != nil {

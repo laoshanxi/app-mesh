@@ -234,9 +234,9 @@ class App:
 
     def __str__(self) -> str:
         """Return a JSON string representation of the application."""
-        return json.dumps(self.json())
+        return json.dumps(self.to_dict())
 
-    def json(self) -> Dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert the application data into a JSON-compatible dictionary, removing empty items."""
         output = copy.deepcopy(self.__dict__)
         output["behavior"] = self.behavior.__dict__

@@ -238,8 +238,10 @@ public class AppMeshClientTCP extends AppMeshClient {
     // Minimal HttpURLConnection wrapper around ResponseMessage
     private static class TcpHttpURLConnection extends HttpURLConnection {
         private final ResponseMessage resp;
-        private final Map<String, String> headerMap = new HashMap<>();
-        private byte[] content;
+        // Use case-insensitive map for HTTP header lookups (RFC 7230)
+        private final java.util.TreeMap<String, String> headerMap =
+                new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        private final byte[] content;
 
         protected TcpHttpURLConnection(URL u, ResponseMessage resp) {
             super(u);

@@ -1,11 +1,13 @@
 # wss_transport.py
 """WebSocket Secure (WSS) Transport layer handling WebSocket connections."""
-__all__ = []
+__all__ = ["WSSTransport"]
 
 import ssl
 import socket
 from pathlib import Path
 from typing import Optional, Union, Tuple
+
+from .exceptions import AppMeshConnectionError
 
 try:
     from websocket import create_connection, WebSocketException, WebSocketTimeoutException
@@ -123,7 +125,7 @@ class WSSTransport:
 
         except (socket.timeout, socket.error, ssl.SSLError) as e:
             self._websocket = None
-            raise RuntimeError(f"Failed to connect to {self.address}: {e}") from e
+            raise AppMeshConnectionError(f"Failed to connect to {self.address}: {e}") from e
 
     def close(self) -> None:
         """Close WebSocket connection."""
@@ -143,8 +145,8 @@ class WSSTransport:
             # For websocket-client library, check the connected property
             if hasattr(self._websocket, "connected"):
                 return self._websocket.connected
-            # Fallback: if object exists, assume it's connected
-            return True
+            # Fallback: if property missing, assume disconnected to trigger reconnection
+            return False
         except Exception:  # pylint: disable=broad-exception-caught
             return False
 
@@ -160,7 +162,7 @@ class WSSTransport:
             so we don't need to add a length header. Just send msgpack-serialized data directly.
         """
         if not self._websocket:
-            raise RuntimeError("Cannot send message: not connected")
+            raise AppMeshConnectionError("Cannot send message: not connected")
 
         try:
             # Convert empty list to empty bytes for EOF signal
@@ -169,13 +171,13 @@ class WSSTransport:
 
         except socket.timeout as e:
             self.close()
-            raise TimeoutError(f"Message send timeout after {self._message_timeout}s") from e
+            raise AppMeshConnectionError(f"Message send timeout after {self._message_timeout}s") from e
         except (ConnectionError, WebSocketException) as e:
             self.close()
-            raise ConnectionError(f"WebSocket connection closed: {e}") from e
+            raise AppMeshConnectionError(f"WebSocket connection closed: {e}") from e
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.close()
-            raise RuntimeError(f"Error sending message: {e}") from e
+            raise AppMeshConnectionError(f"Error sending message: {e}") from e
 
     def receive_message(self) -> Optional[bytearray]:
         """
@@ -189,7 +191,7 @@ class WSSTransport:
             to parse a length header like in TCP transport.
         """
         if not self._websocket:
-            raise RuntimeError("Cannot receive message: not connected")
+            raise AppMeshConnectionError("Cannot receive message: not connected")
 
         try:
             # Receive frame directly to handle both text and binary frames
@@ -217,13 +219,13 @@ class WSSTransport:
 
         except socket.timeout as e:
             self.close()
-            raise TimeoutError(f"Message receive timeout after {self._message_timeout}s") from e
+            raise AppMeshConnectionError(f"Message receive timeout after {self._message_timeout}s") from e
         except WebSocketTimeoutException as e:
             self.close()
-            raise TimeoutError(f"WebSocket timeout: {e}") from e
+            raise AppMeshConnectionError(f"WebSocket timeout: {e}") from e
         except (ConnectionError, WebSocketException) as e:
             self.close()
-            raise ConnectionError(f"WebSocket connection closed: {e}") from e
+            raise AppMeshConnectionError(f"WebSocket connection closed: {e}") from e
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.close()
-            raise RuntimeError(f"Error receiving message: {e}") from e
+            raise AppMeshConnectionError(f"Error receiving message: {e}") from e
