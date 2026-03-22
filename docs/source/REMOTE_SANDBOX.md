@@ -1,4 +1,4 @@
-# App Mesh Remote Sandbox
+# Claude Code remote sandbox
 
 A Claude Code skill that provides **remote execution sandboxing** — edit code locally, build/test/run/deploy on a remote App Mesh server in isolation.
 
@@ -25,6 +25,7 @@ Local Mac (Claude Code)                     Remote Linux (App Mesh)
 ```
 
 Two channels:
+
 - **tar + SDK upload**: File sync. `tar czf` locally → `upload_file()` via SDK API → remote `tar xzf`. No SSH required.
 - **appmesh Python SDK**: Command execution via `run_app_async()` with real-time stdout streaming, app lifecycle management.
 
@@ -37,22 +38,21 @@ Two channels:
 
 ## 3. Environment Variables
 
-| Variable | Purpose | Example |
-|---|---|---|
-| `APPMESH_HOST` | App Mesh server URL | `https://192.168.1.100:6060` |
-| `APPMESH_USER` | Login username | `admin` |
-| `APPMESH_PASSWORD` | Login password | `admin123` |
-| `APPMESH_WORKSPACE` | Remote working directory | `/home/dev/app-mesh` |
-| `APPMESH_SSL_VERIFY` | SSL certificate verification | `false` |
-| `APPMESH_SYNC_EXCLUDE` | Extra exclude patterns (comma-separated) | `*.o,dist/` |
+| Variable               | Purpose                                  | Example                      |
+| ---------------------- | ---------------------------------------- | ---------------------------- |
+| `APPMESH_HOST`         | App Mesh server URL                      | `https://192.168.1.100:6060` |
+| `APPMESH_USER`         | Login username                           | `admin`                      |
+| `APPMESH_PASSWORD`     | Login password                           | `PASSWORD`                   |
+| `APPMESH_WORKSPACE`    | Remote working directory                 | `/home/dev/app-mesh`         |
+| `APPMESH_SSL_VERIFY`   | SSL certificate verification             | `false`                      |
+| `APPMESH_SYNC_EXCLUDE` | Extra exclude patterns (comma-separated) | `*.o,dist/`                  |
 
 **Minimum config** (two variables):
+
 ```bash
 export APPMESH_HOST=https://192.168.1.100:6060
 export APPMESH_WORKSPACE=/home/dev/app-mesh
 ```
-
-Password defaults to `admin123`. SSL verify defaults to `false`.
 
 ## 4. Prerequisites
 
@@ -82,6 +82,7 @@ Commands:
 ### Core Functions
 
 **`do_sync(client)`**:
+
 1. `tar czf` local git repo root (excludes `.git`, `build`, `node_modules`, `__pycache__`, `.claude`, `*.o`, `*.pyc`)
 2. SHA-256 hash check — skip upload if unchanged since last sync (override with `--force`)
 3. `client.upload_file()` tar to remote `/tmp/`
@@ -89,6 +90,7 @@ Commands:
 5. Separate cleanup call: `client.run_app_sync("rm -f ...")` — always runs even if extract fails
 
 **`do_exec(client, cmd, timeout, working_dir)`**:
+
 1. `client.run_app_async(App({"command": cmd, "shell": True, "working_dir": workspace}))`
 2. `run.wait(stdout_print=True, timeout=timeout)` — real-time stdout streaming
 3. `KeyboardInterrupt` → disable + delete app, exit 130
@@ -154,25 +156,25 @@ User: "commit and push"
 
 **Remote — needs to "run" something on the OS:**
 
-| User Intent | Subcommand | Sync? | Examples |
-|---|---|---|---|
-| Build / compile | `sync-exec` | Yes | `make`, `cmake --build`, `cargo build`, `go build` |
-| Run tests | `sync-exec` | Yes | `make test`, `pytest`, `go test`, `npm test` |
-| Run program | `sync-exec` | Yes | `python3 app.py`, `./myapp`, `node server.js` |
-| Install packages / system diagnostics | `exec` | No | `apt install`, `uname -a`, `df -h`, `which python3` |
-| Deploy as long-running service | `deploy` | Yes | `deploy my-api "python3 server.py"` |
-| Run a standalone script | `run-script` | No | `run-script /tmp/setup.sh` |
-| Stop / remove a remote app | `cleanup` | No | `cleanup my-api` |
+| User Intent                           | Subcommand   | Sync? | Examples                                            |
+| ------------------------------------- | ------------ | ----- | --------------------------------------------------- |
+| Build / compile                       | `sync-exec`  | Yes   | `make`, `cmake --build`, `cargo build`, `go build`  |
+| Run tests                             | `sync-exec`  | Yes   | `make test`, `pytest`, `go test`, `npm test`        |
+| Run program                           | `sync-exec`  | Yes   | `python3 app.py`, `./myapp`, `node server.js`       |
+| Install packages / system diagnostics | `exec`       | No    | `apt install`, `uname -a`, `df -h`, `which python3` |
+| Deploy as long-running service        | `deploy`     | Yes   | `deploy my-api "python3 server.py"`                 |
+| Run a standalone script               | `run-script` | No    | `run-script /tmp/setup.sh`                          |
+| Stop / remove a remote app            | `cleanup`    | No    | `cleanup my-api`                                    |
 
 **Local — Claude native tools, no remote involvement:**
 
-| User Intent | Tool | Examples |
-|---|---|---|
-| Read / view files | Read | `Read("src/main.cpp")` |
-| Edit / fix code | Edit | `Edit("src/main.cpp", old→new)` |
-| Search code | Grep / Glob | `Grep("segfault")`, `Glob("**/*.py")` |
-| Create new files | Write | `Write("src/new_module.cpp", ...)` |
-| Git operations | Bash | `git add`, `git commit`, `git push`, `git diff` |
+| User Intent       | Tool        | Examples                                        |
+| ----------------- | ----------- | ----------------------------------------------- |
+| Read / view files | Read        | `Read("src/main.cpp")`                          |
+| Edit / fix code   | Edit        | `Edit("src/main.cpp", old→new)`                 |
+| Search code       | Grep / Glob | `Grep("segfault")`, `Glob("**/*.py")`           |
+| Create new files  | Write       | `Write("src/new_module.cpp", ...)`              |
+| Git operations    | Bash        | `git add`, `git commit`, `git push`, `git diff` |
 
 **Quick decision rule:** Does it need to execute on the OS? → Remote. Just reading/writing files or git? → Local.
 
@@ -192,16 +194,16 @@ src/sdk/claude-plugin/
 
 ## 8. Validation
 
-| # | Test | Command | Expected |
-|---|---|---|---|
-| 1 | Sync | `sync` | tar + upload + extract, files appear on remote |
-| 2 | Edit + build | Edit → `sync-exec "make"` | Sync changed files, build succeeds |
-| 3 | Execute only | `exec "uname -a"` | No sync, direct execute |
-| 4 | Run script | `run-script /tmp/test.sh` | Upload + execute + cleanup |
-| 5 | Deploy | `deploy svc "python3 svc.py"` | Sync + register keepalive service |
-| 6 | Cleanup | `cleanup app_name` | Disable + delete app |
-| 7 | Ctrl+C | Interrupt during exec | App disabled + deleted |
-| 8 | Cross-repo | Install plugin in another repo | Set env → works |
+| #   | Test         | Command                        | Expected                                       |
+| --- | ------------ | ------------------------------ | ---------------------------------------------- |
+| 1   | Sync         | `sync`                         | tar + upload + extract, files appear on remote |
+| 2   | Edit + build | Edit → `sync-exec "make"`      | Sync changed files, build succeeds             |
+| 3   | Execute only | `exec "uname -a"`              | No sync, direct execute                        |
+| 4   | Run script   | `run-script /tmp/test.sh`      | Upload + execute + cleanup                     |
+| 5   | Deploy       | `deploy svc "python3 svc.py"`  | Sync + register keepalive service              |
+| 6   | Cleanup      | `cleanup app_name`             | Disable + delete app                           |
+| 7   | Ctrl+C       | Interrupt during exec          | App disabled + deleted                         |
+| 8   | Cross-repo   | Install plugin in another repo | Set env → works                                |
 
 All tests 1-6 verified against live Docker container (2026-03-07).
 
