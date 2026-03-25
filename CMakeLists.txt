@@ -166,10 +166,9 @@ macro(add_catch_test name)
         ENVIRONMENT "${LIB_PATH_VAR}=/usr/local/lib64:/usr/local/lib:$ENV{${LIB_PATH_VAR}}"
     )
 endmacro()
-# add_subdirectory(test)
-
 if(NOT APPMESH_NO_TESTS)
     enable_testing()
+    add_subdirectory(test)
 
     add_custom_target(python_tests
         COMMAND python3 -m unittest

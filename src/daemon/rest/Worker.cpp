@@ -210,8 +210,6 @@ static std::shared_ptr<ForwardingConnection> getOrCreateConnection(const std::st
 	static const char fname[] = "getOrCreateConnection() ";
 
 	std::shared_ptr<ForwardingConnection> conn;
-	if (connectedClients.find(host, conn) == 0 && !conn->closed.load(std::memory_order_relaxed))
-		return conn;
 
 	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, connectedClients.mutex(), nullptr);
 

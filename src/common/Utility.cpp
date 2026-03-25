@@ -1584,18 +1584,17 @@ bool Utility::secureCompare(const std::string &a, const std::string &b)
 	return CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
 }
 
-std::string Utility::stringFormat(const std::string fmt_str, ...)
+std::string Utility::stringFormat(const char *fmt_str, ...)
 {
 	// https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
-	int final_n, n = ((int)fmt_str.size()) * 2; /* Reserve two times as much as the length of the fmt_str */
+	int final_n, n = ((int)strlen(fmt_str)) * 2 + 1; /* Reserve two times as much as the length of the fmt_str */
 	std::unique_ptr<char[]> formatted;
 	va_list ap;
 	while (true)
 	{
 		formatted.reset(new char[n]); /* Wrap the plain char array into the unique_ptr */
-		strcpy(&formatted[0], fmt_str.c_str());
 		va_start(ap, fmt_str);
-		final_n = vsnprintf(&formatted[0], n, fmt_str.c_str(), ap);
+		final_n = vsnprintf(&formatted[0], n, fmt_str, ap);
 		va_end(ap);
 		if (final_n < 0 || final_n >= n)
 			n += abs(final_n - n + 1);

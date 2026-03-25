@@ -691,6 +691,7 @@ namespace WSS
                      ws->subscribe("broadcast"); // Subscribe to the global broadcast topic
 
                      SessionData *data = ws->getUserData();
+                     if (!data) return;
                      auto connection = createConnection(ws, data->subProtocol);
                      data->connectionPtr = connection;
 
