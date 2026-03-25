@@ -664,8 +664,14 @@ std::string Application::runSyncrize(int timeoutSeconds, std::shared_ptr<void> a
 	(*processLock).reset();
 	(*processLock) = allocProcess(true, m_dockerImage, m_name);
 	auto monitorProc = std::dynamic_pointer_cast<MonitoredProcess>(*processLock);
-	assert(monitorProc != nullptr);
-	monitorProc->setAsyncHttpRequest(asyncHttpRequest);
+	if (monitorProc)
+	{
+		monitorProc->setAsyncHttpRequest(asyncHttpRequest);
+	}
+	else
+	{
+		LOG_WAR << fname << "process is not MonitoredProcess for app <" << m_name << ">";
+	}
 
 	return runApp(timeoutSeconds);
 }

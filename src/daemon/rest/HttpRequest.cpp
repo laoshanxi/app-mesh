@@ -387,7 +387,7 @@ bool HttpRequestOutputView::onTimerResponse()
 				{
 					ss << line << "</pre>\n<pre>";
 				}
-				output = Utility::stringFormat(html, app->getName().c_str(), ss.str().c_str());
+				output = Utility::stringFormat(html.c_str(), app->getName().c_str(), ss.str().c_str());
 			}
 			else if (outputJson)
 			{

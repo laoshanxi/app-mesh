@@ -1634,7 +1634,7 @@ int CommandDispatcher::cmdUserMFA()
 		{
 			msg = "2FA already enabled, do you want re-active 2FA for <%s> [y/n]:";
 		}
-		if (this->confirmInput(Utility::stringFormat(msg, userName.c_str()).c_str()))
+		if (this->confirmInput(Utility::stringFormat(msg.c_str(), userName.c_str()).c_str()))
 		{
 			// Generate TOTP secret
 			auto totpUri = this->getTotpSecret();

@@ -208,7 +208,7 @@ public:
 	static std::string hash(const std::string &str);
 	static std::string shortID();
 	static std::string uuid();
-	static std::string stringFormat(const std::string fmt_str, ...);
+	static std::string stringFormat(const char *fmt_str, ...);
 	static std::string strToupper(std::string s);
 	static std::string strTolower(std::string s);
 	static std::string htmlEntitiesDecode(const std::string &str);
