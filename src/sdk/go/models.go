@@ -1,8 +1,12 @@
 package appmesh
 
 import (
+	"fmt"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/rs/xid"
 	"github.com/vmihailenco/msgpack/v5"
@@ -16,6 +20,7 @@ const (
 	HTTP_USER_AGENT_HEADER_NAME        = "User-Agent"
 	HTTP_HEADER_NAME_CSRF_TOKEN        = "X-CSRF-Token"
 	HTTP_HEADER_JWT_SET_COOKIE         = "X-Set-Cookie"
+	COOKIE_TOKEN                       = "appmesh_auth_token"
 	COOKIE_CSRF_TOKEN                  = "appmesh_csrf_token"
 	HTTP_USER_AGENT                    = "appmesh/golang"
 	HTTP_USER_AGENT_TCP                = "appmesh/golang/tcp"
@@ -107,6 +112,7 @@ type Application struct {
 }
 
 // AppRun represents the state of an asynchronous application run.
+// ForwardTo snapshots the client's forwarding target so Wait can keep polling the same node.
 type AppRun struct {
 	AppName   string
 	ProcUid   string
@@ -220,4 +226,40 @@ type Response struct {
 // Deserialize deserializes the byte slice into a Response.
 func (r *Response) Deserialize(data []byte) error {
 	return msgpack.Unmarshal(data, r)
+}
+
+// iso8601DurationRe matches ISO 8601 duration strings like P1W, P2DT12H, PT5M30S, P1Y2M3DT4H5M6S.
+var iso8601DurationRe = regexp.MustCompile(
+	`^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$`,
+)
+
+// ParseDuration parses a duration string that is either an integer (seconds) or an ISO 8601
+// duration (e.g. "P1W", "P2DT12H", "PT5M30S"). Returns the total number of seconds.
+// Approximate conversion: 1 month ≈ 30 days, 1 year ≈ 365 days.
+func ParseDuration(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	// Try integer first
+	if secs, err := strconv.Atoi(s); err == nil {
+		return secs, nil
+	}
+	// Try ISO 8601 duration
+	s = strings.ToUpper(s)
+	m := iso8601DurationRe.FindStringSubmatch(s)
+	if m == nil {
+		return 0, fmt.Errorf("invalid duration: %q (expected integer seconds or ISO 8601 duration like P1W, P2DT12H)", s)
+	}
+	atoi := func(v string) int {
+		n, _ := strconv.Atoi(v)
+		return n
+	}
+	years := atoi(m[1])
+	months := atoi(m[2])
+	weeks := atoi(m[3])
+	days := atoi(m[4])
+	hours := atoi(m[5])
+	minutes := atoi(m[6])
+	seconds := atoi(m[7])
+
+	total := years*365*86400 + months*30*86400 + weeks*7*86400 + days*86400 + hours*3600 + minutes*60 + seconds
+	return total, nil
 }

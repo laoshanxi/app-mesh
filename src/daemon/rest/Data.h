@@ -28,7 +28,7 @@ public:
 	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
 	// HTTP protocol headers and cookies
-	bool handleAuthCookies();
+	bool handleAuthCookies(const HttpHeaderMap *requestHeaders = nullptr);
 	bool setAuthCookie();
 	void applyCorsHeaders();
 	void applySecurityHeaders();

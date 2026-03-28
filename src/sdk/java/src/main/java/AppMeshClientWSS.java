@@ -33,15 +33,16 @@ public class AppMeshClientWSS extends AppMeshClient {
     private final WSSTransport wssTransport;
     private final SSLSocketFactory sslSocketFactory;
 
-    /**
-     * Create a new WSS client with default settings.
-     */
+    /** Create a WSS transport client with default TLS verification behavior. */
     public AppMeshClientWSS(String host, int port) {
         this(host, port, false, null, null, null);
     }
 
     /**
-     * Create a new WSS client with full SSL configuration.
+     * Create a WSS transport client that reuses the standard App Mesh client API.
+     *
+     * <p>Control requests go over WebSocket, while file transfers use an HTTPS side channel
+     * authorized by the WSS control response.
      */
     public AppMeshClientWSS(String host, int port, boolean disableSSLVerification,
             String caCertPath, String clientCertPath, String clientKeyPath) {
@@ -113,6 +114,7 @@ public class AppMeshClientWSS extends AppMeshClient {
         }
     }
 
+    /** Send a request over WSS transport and expose it as an {@link HttpURLConnection}-like object. */
     @Override
     public HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
             Map<String, String> params) throws IOException {
@@ -175,6 +177,12 @@ public class AppMeshClientWSS extends AppMeshClient {
         }
     }
 
+    /**
+     * Download a file through WSS control messages plus an HTTPS data side channel.
+     *
+     * <p>When {@code applyFileAttributes} is true, returned POSIX metadata is applied locally on a
+     * best-effort basis.
+     */
     @Override
     public boolean downloadFile(String remoteFile, String localFile, boolean applyFileAttributes) throws IOException {
         // Step 1: Request download via WSS to get Auth token

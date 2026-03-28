@@ -14,7 +14,7 @@ type AppMeshClientWSS struct {
 	wssReq *WSSRequester
 }
 
-// NewWSSClient creates a new AppMeshClientWSS.
+// NewWSSClient creates a WSS transport client that reuses the standard App Mesh client API.
 func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	uri := options.AppMeshUri
 	if uri == "" {
@@ -56,7 +56,7 @@ func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	return wssClient, nil
 }
 
-// CloseConnection closes the WSS connection.
+// CloseConnection closes only the underlying WebSocket connection.
 func (c *AppMeshClientWSS) CloseConnection() {
 	if c.wssReq != nil {
 		c.wssReq.Close()
@@ -71,8 +71,8 @@ func (c *AppMeshClientWSS) SendMessage(ctx context.Context, buffer []byte) error
 	return c.wssReq.WSSConnection.SendMessage(ctx, buffer)
 }
 
-// FileDownload downloads a file via an HTTP streaming endpoint after obtaining
-// an authorization header through the WSS control channel.
+// FileDownload downloads a file through the WSS control channel plus HTTP(S) streaming data path.
+// When applyFileAttributes is true, returned POSIX metadata is applied locally best-effort.
 func (c *AppMeshClientWSS) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
 	if remoteFile == "" {
 		return fmt.Errorf("remote file path cannot be empty")
@@ -141,8 +141,8 @@ func (c *AppMeshClientWSS) FileDownload(remoteFile, localFile string, applyFileA
 	return nil
 }
 
-// FileUpload uploads a local file via HTTP streaming endpoint after obtaining
-// an authorization header through the WSS control channel.
+// FileUpload uploads a file through the WSS control channel plus HTTP(S) streaming data path.
+// When applyFileAttributes is true, local POSIX metadata is sent so the server can recreate it.
 func (c *AppMeshClientWSS) FileUpload(ctx context.Context, localFile, remoteFile string, applyFileAttributes bool) error {
 	if localFile == "" {
 		return fmt.Errorf("local file path cannot be empty")

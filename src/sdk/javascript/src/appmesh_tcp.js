@@ -19,7 +19,7 @@ const HTTP_HEADER_KEY_X_FILE_PATH = 'X-File-Path'
 const HTTP_HEADER_KEY_AUTH = 'Authorization'
 
 /**
- * TCP Transport handler for secure TLS connections
+ * TCP transport for secure TLS connections and framed App Mesh messages.
  */
 class TCPTransport {
   constructor (address = ['127.0.0.1', 6059], sslConfig = null) {
@@ -30,7 +30,7 @@ class TCPTransport {
   }
 
   /**
-   * Establish TLS connection to the server
+   * Establish a TLS connection to the server if one is not already open.
    */
   connect () {
     if (this.connected()) {
@@ -258,7 +258,7 @@ class ResponseMessage {
 }
 
 /**
- * TCP-based App Mesh Client with optimized file transfer support
+ * TCP-based App Mesh client with optimized file transfer support.
  *
  * Extends AppMeshClient to use TCP transport for better performance
  * with large file transfers while maintaining API compatibility.
@@ -267,7 +267,7 @@ class ResponseMessage {
  */
 class AppMeshClientTCP extends AppMeshClient {
   /**
-   * Create a TCP-based App Mesh client
+   * Create a TCP-based App Mesh client.
    *
    * @param {Object} [sslConfig=null] - SSL configuration object
    * @param {Buffer|string} [sslConfig.ca] - CA certificate
@@ -286,7 +286,7 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Close connections and release resources
+   * Close the TCP transport and release local resources.
    */
   close () {
     if (this.tcpTransport) {
@@ -296,7 +296,7 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Get the current access token
+   * Get the current access token.
    * @returns {string} Current JWT token
    * @private
    * @override
@@ -306,7 +306,7 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Handle token updates
+   * Handle token updates for transports that cannot rely on cookies.
    *
    * This method is called after login, renew_token, and authenticate operations.
    * Since TCP doesn't support cookies, we store the token explicitly.
@@ -324,7 +324,7 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Extract and store token from response
+   * Extract and store a token from a login/renew response body.
    *
    * Since TCP doesn't support Set-Cookie headers, we need to extract
    * the token from response body after login/authenticate operations.
@@ -355,7 +355,7 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Send HTTP request over TCP transport
+   * Send an App Mesh request over TCP transport and normalize the response shape.
    * @private
    * @override
    */
@@ -448,11 +448,12 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Download file from remote server via optimized TCP transfer
+   * Download a file through the TCP file-socket side channel.
    *
    * @param {string} filePath - Remote file path
    * @param {string} localFile - Local destination path
-   * @param {boolean} [applyAttrs=true] - Apply remote file permissions locally
+   * @param {boolean} [applyAttrs=true] - Apply returned mode and best-effort owner/group metadata
+   * on non-Windows Node.js hosts
    * @override
    */
   async download_file (filePath, localFile, applyAttrs = true) {
@@ -516,11 +517,12 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Upload file to remote server via optimized TCP transfer
+   * Upload a file through the TCP file-socket side channel.
    *
    * @param {string} localFile - Local file path
    * @param {string} filePath - Remote destination path
-   * @param {boolean} [applyAttrs=true] - Upload file permissions metadata
+   * @param {boolean} [applyAttrs=true] - Send local mode/uid/gid metadata so the server can
+   * recreate permissions and ownership when supported
    * @override
    */
   async upload_file (localFile, filePath, applyAttrs = true) {

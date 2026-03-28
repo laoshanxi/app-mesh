@@ -31,6 +31,10 @@ pub trait Requester: Send + Sync {
     /// Close the requester (if applicable)
     fn close(&self) {}
 
+    /// Set a cookie value directly into the transport's cookie store.
+    /// HTTP transport sets it in the cookie jar; TCP/WSS store the token in memory.
+    fn set_cookie(&self, _cookie_str: &str) {}
+
     /// Retrieve the current access token (if stored by this transport).
     ///
     /// HTTP transport reads from the cookie jar; TCP/WSS from an in-memory field.

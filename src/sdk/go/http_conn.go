@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/juju/persistent-cookiejar"
@@ -32,26 +31,15 @@ func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile s
 		fmt.Println(err)
 	}
 
-	// Create or load cookie jar (MozillaCookieJar format)
-	var jar *cookiejar.Jar
-	if _, err := os.Stat(cookiePath); err == nil {
-		// Load existing cookie file
-		jar, err = cookiejar.New(&cookiejar.Options{
-			PublicSuffixList: publicsuffix.List,
-			Filename:         cookiePath,
-		})
-		if err != nil {
-			fmt.Println("Error loading cookie jar:", err)
-		}
-	} else {
-		// Create a new cookie jar
-		jar, err = cookiejar.New(&cookiejar.Options{
-			PublicSuffixList: publicsuffix.List,
-			Filename:         cookiePath,
-		})
-		if err != nil {
-			fmt.Println("Error creating cookie jar:", err)
-		}
+	// Create or load cookie jar (persistent-cookiejar format).
+	// The library's load() gracefully handles missing files (returns nil),
+	// and Save() creates the file on first write with 0600 permissions.
+	jar, err := cookiejar.New(&cookiejar.Options{
+		PublicSuffixList: publicsuffix.List,
+		Filename:         cookiePath,
+	})
+	if err != nil {
+		fmt.Println("Error creating cookie jar:", err)
 	}
 
 	// TODO: use session management for better performance
@@ -97,6 +85,13 @@ func (h *HTTPConnection) getCookie(name string, targetURL *url.URL) string {
 		}
 	}
 	return ""
+}
+
+func (h *HTTPConnection) setCookie(name, value string, targetURL *url.URL) {
+	if h.Jar == nil {
+		return
+	}
+	h.Jar.SetCookies(targetURL, []*http.Cookie{{Name: name, Value: value, Path: "/"}})
 }
 
 // SaveCookies persists cookies to the cookie file

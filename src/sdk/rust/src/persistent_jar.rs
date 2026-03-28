@@ -12,8 +12,6 @@ use crate::error::AppMeshError;
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
-const NETSCAPE_HEADER: &str = "# Netscape HTTP Cookie File\n";
-
 /// PersistentJar wraps a reqwest::cookie::Jar and automatically persists cookies
 /// to disk in Netscape/libcurl format with thread safe.
 #[derive(Debug, Clone)]
@@ -30,20 +28,13 @@ impl PersistentJar {
         let url = Url::parse(url).map_err(AppMeshError::from)?;
         let file_path = file_path.as_ref().to_path_buf();
 
-        // Ensure parent directory exists
-        if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // Initialize cookie file if it doesn't exist
-        if !file_path.exists() {
-            fs::write(&file_path, NETSCAPE_HEADER)?;
-        }
-
         let jar = Arc::new(Jar::default());
         let manager = Self { jar: jar.clone(), url, file_path, io_lock: Arc::new(Mutex::new(())) };
 
-        manager.load()?;
+        // Only load if file already exists; defer file creation to first save()
+        if manager.file_path.exists() {
+            manager.load()?;
+        }
         Ok(manager)
     }
 
@@ -75,6 +66,14 @@ impl PersistentJar {
     /// Saves all cookies from the jar to the file.
     pub fn save(&self) -> Result<()> {
         let _guard = self.io_lock.lock().unwrap();
+
+        // Ensure parent directory exists on first write
+        if let Some(parent) = self.file_path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+
         let mut lines = vec!["# Netscape HTTP Cookie File".to_string()];
 
         if let Some(header_value) = self.jar.cookies(&self.url) {

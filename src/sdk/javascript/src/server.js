@@ -102,7 +102,7 @@ class AppMeshServer {
    * that a client pushed to it. This method will retry indefinitely until successful.
    *
    * @async
-   * @returns {Promise<string|Buffer>} The payload provided by the client
+   * @returns {Promise<string|Buffer>} The raw payload bytes/body provided by the invoking client
    *
    * @example
    * const server = new AppMeshServer();
@@ -113,11 +113,10 @@ class AppMeshServer {
     const { processKey, appName } = this._getRuntimeEnv()
     const path = `/appmesh/app/${appName}/task`
 
-    const INITIAL_DELAY = 100
-    const MAX_DELAY = 10000
-    let delay = INITIAL_DELAY
+    const RETRY_DELAY = 100
 
     while (true) {
+      const attemptStart = Date.now()
       try {
         const response = await this._client._request('get', path, null, {
           params: { process_key: processKey }
@@ -127,16 +126,16 @@ class AppMeshServer {
           this._logger.warn(
             `task_fetch failed with status ${response.status}: ${response.data}, retrying...`
           )
-          await this._sleep(delay)
-          delay = Math.min(delay * 2, MAX_DELAY)
-          continue
+        } else {
+          return response.data
         }
-
-        return response.data
       } catch (error) {
         this._logger.warn(`task_fetch error: ${error.message}, retrying...`)
-        await this._sleep(delay)
-        delay = Math.min(delay * 2, MAX_DELAY)
+      }
+
+      const remainingDelay = RETRY_DELAY - (Date.now() - attemptStart)
+      if (remainingDelay > 0) {
+        await this._sleep(remainingDelay)
       }
     }
   }
@@ -148,7 +147,7 @@ class AppMeshServer {
    * after processing payload data so the invoking client can retrieve it.
    *
    * @async
-   * @param {string|Buffer} result - Result payload to be delivered back to the client
+   * @param {string|Buffer} result - Result payload to be delivered back to the client as-is
    * @returns {Promise<void>}
    * @throws {Error} If the task return fails
    *

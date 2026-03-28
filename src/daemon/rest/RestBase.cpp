@@ -226,44 +226,6 @@ const std::string RestBase::generateJwtToken(const std::string &userName, const 
     return token;
 }
 
-const std::string RestBase::replaceXssRiskChars(const std::string &source)
-{
-    static const std::vector<std::pair<boost::regex, std::string>> xssRiskRegexes = {
-        {boost::regex("<", boost::regex::icase), "&lt;"},
-        {boost::regex(">", boost::regex::icase), "&gt;"},
-        {boost::regex("\\(", boost::regex::icase), "&#40;"},
-        {boost::regex("\\)", boost::regex::icase), "&#41;"},
-        {boost::regex("'", boost::regex::icase), "&#39;"},
-        {boost::regex("\"", boost::regex::icase), "&quot;"},
-        {boost::regex("%", boost::regex::icase), "&#37;"}};
-
-    auto result = source;
-    if (source.length())
-    {
-        for (const auto &regex_pair : xssRiskRegexes)
-        {
-            boost::replace_all_regex(result, regex_pair.first, regex_pair.second, boost::match_flag_type::match_default);
-        }
-    }
-    return result;
-}
-
-void RestBase::tranverseJsonTree(nlohmann::json &val)
-{
-    if (val.is_array() || val.is_object())
-    {
-        for (auto &item : val.items())
-        {
-            tranverseJsonTree(item.value());
-        }
-    }
-    else if (val.is_string())
-    {
-        // handle string now
-        val = std::string(RestBase::replaceXssRiskChars((val.get<std::string>())));
-    }
-}
-
 const std::tuple<std::string, std::string, std::set<std::string>> RestBase::verifyToken(const std::string &token, const std::string &audience)
 {
     const static char fname[] = "RestBase::verifyToken() ";

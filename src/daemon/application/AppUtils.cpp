@@ -78,6 +78,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		throw std::runtime_error("Failed to set file permissions.");
 	}
 
+#if !defined(_WIN32)
 	// Get current user
 	static const auto osUser = os::getUsernameByUid();
 
@@ -90,6 +91,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 			throw std::runtime_error("Failed to change file ownership.");
 		}
 	}
+#endif
 
 	// Prepare the shell command
 	m_fileName = Utility::escapeCommandLine(fileName);

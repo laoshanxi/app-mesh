@@ -17,8 +17,8 @@ type AppMeshServerHttpContext struct {
 	client *AppMeshClient
 }
 
-// NewHTTPContext creates a new AppMeshServer instance for interacting with the local App Mesh service.
-// Uses default HTTPS endpoint and SSL settings unless overridden via Option.
+// NewHTTPContext creates a server-side task context backed by the HTTP client.
+// Uses default HTTPS endpoint and TLS settings unless overridden via Option.
 func NewHTTPContext(options Option) (*AppMeshServerHttpContext, error) {
 	httpClient, err := NewHTTPClient(options)
 	if err != nil {
@@ -48,16 +48,15 @@ func (r *AppMeshServerHttpContext) getRuntimeEnv() (key, appName string, err err
 	return key, appName, nil
 }
 
-// TaskFetch fetches task data (payload) from the App Mesh service for the current running application process.
-// Uses context for cancellation support with exponential backoff on retries.
-// Returns the payload string provided by the client.
+// TaskFetch fetches task data (payload) for the current application process.
+// It retries with a short fixed delay until success or caller cancellation.
 func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
 	return r.TaskFetchWithContext(context.Background())
 }
 
 // TaskFetchWithContext fetches task data with context support for cancellation and timeout.
 //
-// Retries with exponential backoff (100ms → 10s cap). Pass a context with timeout/cancel
+// Retries with a fixed 100ms delay on failure. Pass a context with timeout/cancel
 // to limit the retry duration.
 func (r *AppMeshServerHttpContext) TaskFetchWithContext(ctx context.Context) (string, error) {
 	key, appName, err := r.getRuntimeEnv()
@@ -69,13 +68,10 @@ func (r *AppMeshServerHttpContext) TaskFetchWithContext(ctx context.Context) (st
 	query := url.Values{}
 	query.Set("process_key", key)
 
-	const (
-		initialDelay = 100 * time.Millisecond
-		maxDelay     = 10 * time.Second
-	)
-	delay := initialDelay
+	const retryDelay = 100 * time.Millisecond
 
 	for {
+		attemptStart := time.Now()
 		status, body, _, err := r.client.get(path, query, nil)
 		if err != nil {
 			log.Printf("task_fetch request failed: %v, retrying...", err)
@@ -85,25 +81,25 @@ func (r *AppMeshServerHttpContext) TaskFetchWithContext(ctx context.Context) (st
 			log.Printf("task_fetch failed with status %d: %s, retrying...", status, string(body))
 		}
 
-		// Wait with context cancellation support
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return "", fmt.Errorf("task_fetch cancelled: %w", ctx.Err())
-		case <-timer.C:
-		}
-
-		// Exponential backoff with cap
-		delay *= 2
-		if delay > maxDelay {
-			delay = maxDelay
+		if remaining := retryDelay - time.Since(attemptStart); remaining > 0 {
+			timer := time.NewTimer(remaining)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return "", fmt.Errorf("task_fetch cancelled: %w", ctx.Err())
+			case <-timer.C:
+			}
+		} else {
+			select {
+			case <-ctx.Done():
+				return "", fmt.Errorf("task_fetch cancelled: %w", ctx.Err())
+			default:
+			}
 		}
 	}
 }
 
-// TaskReturn sends the result of a processed task back to the original invoking client via App Mesh service.
-// Returns error if the PUT request fails.
+// TaskReturn sends the processed result bytes back to the original invoking client via App Mesh.
 func (r *AppMeshServerHttpContext) TaskReturn(result string) error {
 	processKey, appName, err := r.getRuntimeEnv()
 	if err != nil {

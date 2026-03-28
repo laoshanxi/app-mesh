@@ -702,8 +702,10 @@ int CommandDispatcher::cmdAppDelete()
 				std::string msg = std::string("Are you sure you want to remove the application <") + appName + "> ? [y/n]";
 				if (confirmInput(msg.c_str()))
 				{
-					this->deleteApp(appName);
-					std::cout << "Application <" << appName << "> removed." << std::endl;
+					if (this->deleteApp(appName))
+						std::cout << "Application <" << appName << "> removed." << std::endl;
+					else
+						std::cout << "Application <" << appName << "> not found." << std::endl;
 				}
 			}
 		}

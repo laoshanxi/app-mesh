@@ -158,7 +158,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
 		{
 			// HTTP protocol
-			response->handleAuthCookies();
+			response->handleAuthCookies(&m_headers);
 			response->applyCorsHeaders();
 			response->applySecurityHeaders();
 			m_uwsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));

@@ -262,13 +262,14 @@ class AppMeshClient {
   }
 
   /**
-   * Login with optional 2FA
-   * @param {string} username - Username
-   * @param {string} password - Password
-   * @param {string} [totpCode] - 2FA code
-   * @param {string|number} [expireSeconds] - Token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
-   * @param {string} [audience] - Token audience
-   * @throws {AppMeshError} Invalid credentials or 2FA required (status=428)
+   * Login with username/password and let the server attach the session token cookie.
+   * @param {string} username
+   * @param {string} password
+   * @param {string} [totpCode] - TOTP code if 2FA is enabled
+   * @param {string|number} [expireSeconds] - Token expiry (integer seconds or ISO 8601 string)
+   * @param {string} [audience] - JWT audience
+   * @returns {Promise<void>} Resolves when login succeeds. If the server requires TOTP and no
+   * valid code is supplied, `_request()` rejects with the HTTP 428 response details.
    */
   async login(username, password, totpCode = null, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     // Validate inputs
@@ -289,21 +290,53 @@ class AppMeshClient {
   }
 
   /**
-   * Authenticate cookie token and verify permission
-   * @param {string} [permission] - Permission to verify
-   * @param {string} [audience] - Token audience
-   * @throws {AppMeshError} Authentication failed
+   * Verify the token currently attached to this client/session and optionally check permission.
+   * @param {string} [permission] - Permission to check
+   * @param {string} [audience] - JWT audience
+   * @returns {Promise<{success: boolean, responseText: string}>} Verification result with success flag and response text.
+   * @throws {AppMeshError} If the server rejects the token or permission check fails.
    */
   async authenticate(permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     const headers = {};
     if (permission) headers["X-Permission"] = permission;
     if (audience) headers["X-Audience"] = audience;
-    await this._request("post", "/appmesh/auth", null, { headers });
+    const response = await this._request("post", "/appmesh/auth", null, { headers });
+    const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    return { success: true, responseText };
   }
 
   /**
-   * Logout and invalidate JWT token
-   * @returns {Promise<void>}
+   * Set a JWT token directly without server-side verification.
+   * Use when the token is already known to be valid.
+   * For server-side verification, use authenticate() instead.
+   * @param {string} token - A valid JWT token string. In Node.js this updates the outgoing Cookie
+   * header; in browsers it cannot replace the HttpOnly auth cookie.
+   */
+  set_token(token) {
+    const COOKIE_NAME = 'appmesh_auth_token';
+    if (ENV.isNode) {
+      const existingCookies = this._client.defaults.headers.Cookie || '';
+      const cookies = existingCookies.split('; ').filter(c =>
+        c && !c.startsWith(COOKIE_NAME + '=')
+      );
+      cookies.push(`${COOKIE_NAME}=${token}`);
+      this._client.defaults.headers.Cookie = cookies.join('; ');
+      this._autoRefreshJwt = token;
+      if (this._autoRefreshEnabled) {
+        this._stopAutoRefresh();
+        this._autoRefreshEnabled = true;
+        this._scheduleTokenRefresh();
+      }
+    } else {
+      // Browser: auth token is HttpOnly (set by server via Set-Cookie),
+      // document.cookie cannot access or override HttpOnly cookies.
+      // Use authenticate() for browser-based token verification instead.
+      console.warn('set_token() is not supported in browser mode (auth cookie is HttpOnly). Use authenticate() instead.');
+    }
+  }
+
+  /**
+   * Logout from the current session.
    */
   async logout() {
     try {
@@ -328,21 +361,15 @@ class AppMeshClient {
   }
 
   /**
-   * Enable automatic token refresh before expiration.
-   *
-   * When enabled, a background timer periodically checks the JWT token's `exp`
-   * claim and calls `renew_token()` ~30 seconds before it expires. Works in both
-   * Node.js and browser.
-   *
+   * Enable or disable background token auto-refresh.
    * @param {boolean} enable - true to start, false to stop
-   * @param {string} [jwtToken] - Current JWT token (required for HTTP transport
-   *   where the token lives in cookies; for TCP the token is managed internally)
+   * @param {string} [jwtToken] - Optional token used only to calculate the first refresh delay
    */
   setAutoRefreshToken(enable, jwtToken = null) {
     this._stopAutoRefresh();
     this._autoRefreshEnabled = enable;
     if (enable) {
-      this._autoRefreshJwt = jwtToken;
+      this._autoRefreshJwt = jwtToken || this._getAccessToken?.() || null;
       this._scheduleTokenRefresh();
     }
   }
@@ -404,8 +431,8 @@ class AppMeshClient {
   }
 
   /**
-   * Renew JWT token
-   * @param {string|number} [expireSeconds] - New token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
+   * Renew the current JWT token.
+   * @param {string|number} [expireSeconds] - Token expiry (integer seconds or ISO 8601 string)
    */
   async renew_token(expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {};
@@ -416,8 +443,8 @@ class AppMeshClient {
   }
 
   /**
-   * Get TOTP secret for current user
-   * @returns {Promise<string>} TOTP secret URI
+   * Get the decoded OTP provisioning URI for the current user.
+   * @returns {Promise<string>} Decoded `otpauth://...` URI, not just the raw secret field
    */
   async get_totp_secret() {
     const response = await this._request("post", "/appmesh/totp/secret");
@@ -425,7 +452,7 @@ class AppMeshClient {
   }
 
   /**
-   * Setup 2FA with verification code
+   * Setup 2FA with a verification code and update the current session token cookie.
    * @param {string} totpCode - TOTP verification code
    */
   async enable_totp(totpCode) {
@@ -434,7 +461,7 @@ class AppMeshClient {
   }
 
   /**
-   * Validate TOTP challenge for login
+   * Validate a TOTP login challenge and update the current session token cookie.
    * @param {string} username - Username
    * @param {string} totpChallenge - Server challenge
    * @param {string} totpCode - TOTP code
@@ -550,8 +577,13 @@ class AppMeshClient {
    * @returns {Promise<boolean>} Success status
    */
   async delete_app(name) {
-    const response = await this._request("delete", `/appmesh/app/${name}`);
-    return response.status === 200;
+    try {
+      const response = await this._request("delete", `/appmesh/app/${name}`);
+      return response.status === 200;
+    } catch (error) {
+      if (error.statusCode === 404) return false;
+      throw error;
+    }
   }
 
   /**
@@ -575,14 +607,15 @@ class AppMeshClient {
   }
 
   /**
-   * Get running app output
+   * Get incremental stdout/stderr for a running or completed process.
    * @param {string} app_name - App name
-   * @param {number} [stdout_position=0] - Output start position
-   * @param {number} [stdout_index=0] - Output index
+   * @param {number} [stdout_position=0] - Output cursor; use the previous `AppOutput.outPosition`
+   * value to continue reading
+   * @param {number} [stdout_index=0] - History slot; `0` targets the current process
    * @param {number} [stdout_maxsize=10240] - Max output size
    * @param {string} [process_uuid=""] - Process UUID
-   * @param {number} [timeout=0] - Request timeout
-   * @returns {Promise<AppOutput>} App output
+   * @param {number} [timeout=0] - Server long-poll timeout in seconds
+   * @returns {Promise<AppOutput>} Output body, next cursor, and exit code when available
    */
   async get_app_output(app_name, stdout_position = 0, stdout_index = 0, stdout_maxsize = 10240, process_uuid = "", timeout = 0) {
     const params = {
@@ -601,12 +634,12 @@ class AppMeshClient {
   }
 
   /**
-   * Run app synchronously
+   * Run an app synchronously and stream the returned stdout body to `outputHandler`.
    * @param {Object} app - App configuration
    * @param {Function} [outputHandler=defaultOutputHandler] - Output handler
    * @param {number|string} [maxTimeSeconds] - Max runtime
    * @param {number|string} [lifeCycleSeconds] - Lifecycle time
-   * @returns {Promise<number|null>} Exit code or null
+   * @returns {Promise<number|null>} Exit code parsed from `X-Exit-Code`, or `null` when absent
    */
   async run_app_sync(app, outputHandler = defaultOutputHandler, maxTimeSeconds = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
@@ -633,11 +666,11 @@ class AppMeshClient {
   }
 
   /**
-   * Run app asynchronously
+   * Run an app asynchronously and return a handle for later polling.
    * @param {Object} app - App config
    * @param {string|number} [maxTimeSeconds] - Max runtime
    * @param {string|number} [lifeCycleSeconds] - Lifecycle time
-   * @returns {AppRun} Running app instance
+   * @returns {AppRun} Running app handle that also snapshots the current forwarding host
    */
   async run_app_async(app, maxTimeSeconds = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
@@ -650,11 +683,12 @@ class AppMeshClient {
   }
 
   /**
-   * Wait for async app to complete
+   * Wait for an async app to complete, optionally streaming incremental output.
    * @param {AppRun} run - AppRun object
    * @param {Function} [outputHandler] - Output handler
    * @param {number} [timeout=0] - Max wait time
-   * @returns {Promise<number|null>} Exit code or null
+   * @returns {Promise<number|null>} Exit code, or `null` on timeout/polling failure. On success
+   * the SDK also attempts to delete the temporary run app.
    */
   async wait_for_async_run(run, outputHandler = defaultOutputHandler, timeout = 0) {
     if (run) {
@@ -724,10 +758,11 @@ class AppMeshClient {
   }
 
   /**
-   * Download remote file
+   * Download a remote file.
    * @param {string} filePath - Remote file path
    * @param {string} localFile - Local file path
-   * @param {boolean} [applyAttrs=true] - Apply file permissions
+   * @param {boolean} [applyAttrs=true] - In Node.js, apply returned mode and best-effort owner/group
+   * metadata on non-Windows platforms
    */
   async download_file(filePath, localFile, applyAttrs = true) {
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
@@ -788,10 +823,11 @@ class AppMeshClient {
   }
 
   /**
-   * Upload file to remote server
+   * Upload a file to the remote server.
    * @param {string|File} localFile - Local file path/object
    * @param {string} filePath - Remote target path
-   * @param {boolean} [applyAttrs] - Copy file permissions
+   * @param {boolean} [applyAttrs] - In Node.js, send local permission bits; user/group metadata is
+   * not currently populated by this SDK
    */
   async upload_file(localFile, filePath, applyAttrs = true) {
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
@@ -872,8 +908,8 @@ class AppMeshClient {
   }
 
   /**
-   * Update config section
-   * @param {Object} configJsonSection - Config section
+   * Apply a partial config update and return the merged server config.
+   * @param {Object} configJsonSection - Partial config document to POST to `/appmesh/config`
    * @returns {Object} Updated config
    */
   async set_config(configJsonSection) {
@@ -1057,7 +1093,7 @@ class AppMeshClient {
   }
 
   /**
-   * Get Prometheus metrics data
+   * Get raw Prometheus metrics text from the server.
    * @returns {Promise<string>} Metrics text
    */
   async metrics() {
@@ -1294,7 +1330,7 @@ class AppRun {
   }
 
   /**
-   * Wait for an async run to be finished
+   * Wait for an async run to finish while restoring the saved forwarding host.
    * @param {function} [outputHandler=defaultOutputHandler] - Print remote stdout function
    * @param {number} [timeout=0] - Wait max timeout seconds and return if not finished, 0 means wait until finished
    * @returns {Promise<number|null>} Return exit code if process finished, return null for timeout or exception

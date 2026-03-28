@@ -556,7 +556,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         int status_code = http_resp.http_status > 0 ? http_resp.http_status : HTTP_STATUS_OK;
 
         // Handle authentication cookies (Set-Cookie header)
-        http_resp.handleAuthCookies();
+        http_resp.handleAuthCookies(pss && pss->http_request ? &pss->http_request->headers : nullptr);
         http_resp.applyCorsHeaders();
         http_resp.applySecurityHeaders();
 

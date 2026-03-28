@@ -54,7 +54,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
     ):
-        """Construct an App Mesh client WSS object to communicate securely with an App Mesh server over TLS.
+        """Construct a WSS transport client that reuses the standard App Mesh client API.
 
         Args:
             wss_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6058).
@@ -98,12 +98,12 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             pass  # Never raise in __del__
 
     def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
-        """Copy a remote file to local, preserving file attributes if requested.
+        """Copy a remote file to local through the WSS control channel plus HTTPS data channel.
 
         Args:
             remote_file: Remote file path.
             local_file: Local destination path.
-            preserve_permissions: Apply remote file permissions/ownership locally.
+            preserve_permissions: Apply remote file permissions/ownership locally on a best-effort basis.
         """
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
@@ -133,12 +133,12 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             r.raise_for_status()
 
     def upload_file(self, local_file: str, remote_file: str, preserve_permissions: bool = True) -> None:
-        """Upload a local file to remote server, preserving file attributes if requested.
+        """Upload a local file through the WSS control channel plus HTTPS data channel.
 
         Args:
             local_file: Local file path.
             remote_file: Remote destination path.
-            preserve_permissions: Upload file permissions/ownership metadata.
+            preserve_permissions: Send local file permissions/ownership metadata when available.
         """
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)

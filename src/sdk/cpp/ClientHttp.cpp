@@ -241,10 +241,16 @@ nlohmann::json ClientHttp::addApp(const nlohmann::json &app)
     return nlohmann::json::parse(response->text);
 }
 
-void ClientHttp::deleteApp(const std::string &app)
+bool ClientHttp::deleteApp(const std::string &app)
 {
     const std::string restPath = "/appmesh/app/" + app;
-    requestHttp(true, web::http::methods::DEL, restPath);
+    auto response = requestHttp(false, web::http::methods::DEL, restPath);
+    if (response->status_code == web::http::status_codes::OK)
+        return true;
+    if (response->status_code == web::http::status_codes::NotFound)
+        return false;
+    // Other errors (permission denied, server error, etc.)
+    throw std::invalid_argument(response->text);
 }
 
 void ClientHttp::enableApp(const std::string &app)

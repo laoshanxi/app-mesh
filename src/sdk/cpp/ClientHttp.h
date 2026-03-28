@@ -48,33 +48,49 @@ public:
     virtual ~ClientHttp() = default;
 
     // Session/Client
+    /// Configure the REST endpoint, TLS material, and optional cookie persistence.
+    /// This only prepares the client; it does not authenticate with the server.
     void init(const std::string &url = "https://127.0.0.1:6060",
               const std::string &ssl_verify = "ssl/ca.pem",
               const std::string &ssl_client_cert = "ssl/client.pem",
               const std::string &ssl_client_certkey = "ssl/client-key.pem",
               const std::string &cookieFile = ""); // cookieFile is not thread-safe
+    /// Set the cluster forwarding target used for subsequent requests.
+    /// If the port is omitted, the current service port is used.
     void forwardTo(const std::string &url = "");
     const std::string &getForwardTo() const;
 
     // Authentication Management
+    /// Login with username/password.
+    /// Returns a TOTP challenge string on HTTP 428 when no valid TOTP code is supplied;
+    /// otherwise returns an empty string after updating this client session token.
     std::string login(const std::string &user, const std::string &passwd,
-                      const std::string &totp = "", int timeoutSeconds = 0,
+                      const std::string &totp = "", int timeoutSeconds = 7 * 24 * 60 * 60,
                       const std::string &audience = "");
+    /// Complete a TOTP challenge and store the returned JWT in this client session.
     void validateTotp(const std::string &user, const std::string &challenge,
                       const std::string &totp, int timeoutSeconds);
+    /// Verify a JWT token with the server and optionally check permission/audience.
+    /// When apply is true and verification succeeds, the token is also persisted into this client.
     std::tuple<bool, std::string> authenticate(const std::string &token,
                                                const std::string &permission = "",
                                                const std::string &audience = "",
                                                bool apply = true);
+    /// Log out of the current session and clear locally stored token state.
     void logout();
+    /// Renew the JWT token already attached to this client session.
     void renewToken(int timeoutSeconds = 0);
+    /// Return the raw TOTP secret for the current user.
     std::string getTotpSecret();
+    /// Enable TOTP for the current user and refresh the session token.
     void enableTotp(const std::string &totp);
     void disableTotp(const std::string &user = "self");
 
     // Application View
     nlohmann::json getApp(const std::string &app) const;
     nlohmann::json listApps() const;
+    /// Fetch incremental stdout/stderr for a running or completed process.
+    /// outputPosition is the next cursor to read from; exitCode is populated once the process exits.
     AppOutput getAppOutput(const std::string &app, int outputPosition = 0,
                            int stdoutIndex = 0, int stdoutMaxsize = 10240,
                            const std::string &processUuid = "", int timeout = 0) const;
@@ -82,23 +98,30 @@ public:
 
     // Application Manage
     nlohmann::json addApp(const nlohmann::json &app);
-    void deleteApp(const std::string &app);
+    bool deleteApp(const std::string &app);
     void enableApp(const std::string &app);
     void disableApp(const std::string &app);
 
     // Run Application Operations
+    /// Run an application synchronously and return {exitCode, stdoutText}.
     std::tuple<std::shared_ptr<int>, std::string> runAppSync(const nlohmann::json &app,
-                                                             int maxTimeout = 60 * 60 * 24,
-                                                             int lifeCycleSeconds = 60 * 60 * 24 * 2);
+                                                             int maxTimeout = 60 * 60 * 24 * 2,
+                                                             int lifeCycleSeconds = 60 * 60 * 24 * 2 + 60 * 60 * 12);
+    /// Run an application asynchronously and return a handle that snapshots the current forward target.
     AppRun runAppAsync(const nlohmann::json &app,
-                       int maxTimeout = 60 * 60 * 24,
-                       int lifeCycleSeconds = 60 * 60 * 24 * 2);
+                       int maxTimeout = 60 * 60 * 24 * 2,
+                       int lifeCycleSeconds = 60 * 60 * 24 * 2 + 60 * 60 * 12);
+    /// Poll an async run until completion or timeout.
+    /// On success, the implementation may best-effort remove the temporary run app.
     std::shared_ptr<int> waitForAsyncRun(AppRun *run, int timeout = 0, bool printToStdout = true);
+    /// Send a payload to a running application task endpoint and wait for the response body.
     std::string runTask(const std::string &app, const nlohmann::json &data, int timeout);
     bool cancelTask(const std::string &app);
 
     // File Management
+    /// Download a remote file and optionally apply returned POSIX metadata locally.
     void downloadFile(const std::string &remoteFile, const std::string &localFile, bool preservePermissions = true);
+    /// Upload a local file and optionally send local POSIX metadata for server-side recreation.
     void uploadFile(const std::string &localFile, const std::string &remoteFile, bool preservePermissions = true);
 
     // System Management

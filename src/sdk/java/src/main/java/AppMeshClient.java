@@ -16,6 +16,10 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -57,6 +61,9 @@ public class AppMeshClient implements Closeable {
     private static final String DEFAULT_SSL_CLIENT_CERT = DEFAULT_SSL_DIR + "/client.pem";
     private static final String DEFAULT_SSL_CLIENT_KEY = DEFAULT_SSL_DIR + "/client-key.pem";
 
+    private static final long TOKEN_REFRESH_INTERVAL_SECONDS = 300; // 5 minutes
+    private static final long TOKEN_REFRESH_OFFSET_SECONDS = 30;   // 30 seconds before expiry
+
     private final String baseURL;
     private final AtomicReference<String> jwtToken = new AtomicReference<>(null);
     private volatile String forwardTo;
@@ -69,6 +76,14 @@ public class AppMeshClient implements Closeable {
     private final int connectTimeoutMs;
     private final int readTimeoutMs;
 
+    // Cookie file persistence
+    private final String cookieFile;
+
+    // Token auto-refresh
+    private final boolean autoRefreshToken;
+    private volatile ScheduledExecutorService refreshExecutor;
+    private volatile ScheduledFuture<?> refreshFuture;
+
     /**
      * Internal constructor used by Builder and subclasses.
      */
@@ -78,8 +93,24 @@ public class AppMeshClient implements Closeable {
         this.readTimeoutMs = builder.readTimeoutMs;
         this.disableHostnameVerification = builder.disableSSLVerification;
 
+        this.cookieFile = builder.cookieFile;
+        this.autoRefreshToken = builder.autoRefreshToken;
+
+        // Load token from cookie file if exists
+        if (this.cookieFile != null && !this.cookieFile.isEmpty()) {
+            String savedToken = loadTokenFromFile();
+            if (savedToken != null) {
+                this.jwtToken.set(savedToken);
+            }
+        }
+
         if (builder.jwtToken != null) {
             this.jwtToken.set(builder.jwtToken);
+            onTokenChanged(builder.jwtToken);
+        }
+
+        if (this.autoRefreshToken && this.jwtToken.get() != null && !this.jwtToken.get().isEmpty()) {
+            startTokenRefresh();
         }
 
         // Build per-instance SSLContext
@@ -107,6 +138,8 @@ public class AppMeshClient implements Closeable {
         private String clientCertKeyFilePath;
         private char[] keyPassword;
         private String jwtToken;
+        private String cookieFile;
+        private boolean autoRefreshToken = false;
         private boolean disableSSLVerification = false;
         private int connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private int readTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
@@ -159,9 +192,21 @@ public class AppMeshClient implements Closeable {
             return this;
         }
 
-        /** Initialize with an existing JWT token. */
+        /** Initialize with an existing JWT token (no server verification). */
         public Builder jwtToken(String jwtToken) {
             this.jwtToken = jwtToken;
+            return this;
+        }
+
+        /** Cookie file path for persistent token storage. */
+        public Builder cookieFile(String cookieFile) {
+            this.cookieFile = cookieFile;
+            return this;
+        }
+
+        /** Enable automatic token refresh before expiration. */
+        public Builder autoRefreshToken(boolean enable) {
+            this.autoRefreshToken = enable;
             return this;
         }
 
@@ -251,20 +296,151 @@ public class AppMeshClient implements Closeable {
 
     @Override
     public void close() {
+        stopTokenRefresh();
         this.jwtToken.set(null);
+    }
+
+    // -------- Token Persistence --------
+
+    private void onTokenChanged(String token) {
+        if (cookieFile != null && !cookieFile.isEmpty()) {
+            saveTokenToFile(token);
+        }
+    }
+
+    private void saveTokenToFile(String token) {
+        try {
+            File file = new File(cookieFile);
+            File parent = file.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+            try (java.io.PrintWriter pw = new java.io.PrintWriter(file)) {
+                pw.println("# Netscape HTTP Cookie File");
+                if (token != null && !token.isEmpty()) {
+                    pw.println("localhost\tTRUE\t/\tTRUE\t0\tappmesh_auth_token\t" + token);
+                }
+            }
+            // Set file permissions to 600 on Unix
+            if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+                file.setReadable(false, false);
+                file.setWritable(false, false);
+                file.setReadable(true, true);
+                file.setWritable(true, true);
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to save token to cookie file", e);
+        }
+    }
+
+    private String loadTokenFromFile() {
+        try {
+            File file = new File(cookieFile);
+            if (!file.exists()) {
+                return null;
+            }
+            try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(file))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    line = line.trim();
+                    if (line.isEmpty() || line.startsWith("#")) continue;
+                    String[] parts = line.split("\t");
+                    if (parts.length == 7 && "appmesh_auth_token".equals(parts[5])) {
+                        return parts[6];
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to load token from cookie file", e);
+        }
+        return null;
+    }
+
+    // -------- Token Auto-Refresh --------
+
+    /** Start background token auto-refresh. */
+    public void startTokenRefresh() {
+        if (!autoRefreshToken) return;
+        stopTokenRefresh();
+        refreshExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "appmesh-token-refresh");
+            t.setDaemon(true);
+            return t;
+        });
+        scheduleNextRefresh();
+    }
+
+    /** Stop background token auto-refresh. */
+    public void stopTokenRefresh() {
+        if (refreshFuture != null) {
+            refreshFuture.cancel(false);
+            refreshFuture = null;
+        }
+        if (refreshExecutor != null) {
+            refreshExecutor.shutdownNow();
+            refreshExecutor = null;
+        }
+    }
+
+    private void scheduleNextRefresh() {
+        if (refreshExecutor == null || refreshExecutor.isShutdown()) return;
+        long delaySec = computeRefreshDelay();
+        refreshFuture = refreshExecutor.schedule(() -> {
+            try {
+                renewToken(null);
+                LOGGER.fine("Auto-refresh: token renewed successfully");
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Auto-refresh: token renewal failed", e);
+            }
+            scheduleNextRefresh();
+        }, delaySec, TimeUnit.SECONDS);
+    }
+
+    private long computeRefreshDelay() {
+        String token = this.jwtToken.get();
+        if (token != null) {
+            try {
+                long exp = decodeJwtExp(token);
+                long remaining = exp - System.currentTimeMillis() / 1000;
+                if (remaining <= TOKEN_REFRESH_OFFSET_SECONDS) {
+                    return 1;
+                }
+                return Math.min(remaining - TOKEN_REFRESH_OFFSET_SECONDS, TOKEN_REFRESH_INTERVAL_SECONDS);
+            } catch (Exception ignored) {
+            }
+        }
+        return TOKEN_REFRESH_INTERVAL_SECONDS;
+    }
+
+    private static long decodeJwtExp(String token) {
+        String[] parts = token.split("\\.");
+        if (parts.length < 2) throw new IllegalArgumentException("Invalid JWT");
+        String payload = parts[1];
+        // Add base64 padding
+        switch (payload.length() % 4) {
+            case 2: payload += "=="; break;
+            case 3: payload += "="; break;
+        }
+        byte[] decoded = Base64.getUrlDecoder().decode(payload);
+        JSONObject claims = new JSONObject(new String(decoded, StandardCharsets.UTF_8));
+        return claims.getLong("exp");
     }
 
     // -------- Authentication --------
 
     /**
-     * Login with username and password.
+     * Login with username/password and attach the issued token to this client.
      *
-     * @param username       login name
-     * @param password       login password
-     * @param totpCode       TOTP code (null if not using MFA)
-     * @param expireSeconds  token expiry — integer seconds or ISO 8601 duration string (null = server default)
-     * @param audience       JWT audience (null = default)
-     * @return the JWT token on success
+     * <p>Returns the JWT token on immediate success, or the TOTP challenge string when the
+     * server replies with HTTP 428 and no valid TOTP code was supplied. On success, the token
+     * is persisted to the configured cookie file and background refresh starts when enabled.
+     *
+     * @param username login name
+     * @param password login password
+     * @param totpCode TOTP code (null if not using MFA)
+     * @param expireSeconds token expiry as integer seconds or ISO 8601 duration (null = server default)
+     * @param audience JWT audience (null = default)
+     * @return JWT token on immediate success, or the TOTP challenge string when MFA is required
      * @throws IOException on network or authentication failure
      */
     public String login(String username, String password, String totpCode, Object expireSeconds, String audience)
@@ -292,6 +468,8 @@ public class AppMeshClient implements Closeable {
             JSONObject jsonResponse = new JSONObject(responseContent);
             String token = jsonResponse.getString("access_token");
             this.jwtToken.set(token);
+            onTokenChanged(token);
+            startTokenRefresh();
             return token;
         } else if (statusCode == HTTP_PRECONDITION_REQUIRED) {
             String responseContent = Utils.readResponseSafe(conn);
@@ -311,7 +489,7 @@ public class AppMeshClient implements Closeable {
     }
 
     /**
-     * Validate TOTP challenge code.
+     * Validate a TOTP challenge and store the returned JWT in this client session.
      *
      * @return the JWT token on success
      */
@@ -330,36 +508,51 @@ public class AppMeshClient implements Closeable {
             JSONObject jsonResponse = new JSONObject(responseContent);
             String token = jsonResponse.getString("access_token");
             this.jwtToken.set(token);
+            onTokenChanged(token);
+            startTokenRefresh();
             return token;
         }
         String errorBody = Utils.readResponseSafe(conn);
         throw new IOException("TOTP validation failed: HTTP " + conn.getResponseCode() + " - " + errorBody);
     }
 
-    /** Logout current session from server. */
+    /** Logout from the current session and clear any locally stored token state. */
     public boolean logout() {
+        stopTokenRefresh();
         try {
             HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
             boolean ok = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
             this.jwtToken.set(null);
+            onTokenChanged(null);
             return ok;
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to logoff", e);
             this.jwtToken.set(null);
+            onTokenChanged(null);
             return false;
         }
     }
 
     /**
-     * Authenticate with an existing JWT token.
+     * Set a JWT token directly without server-side verification.
+     * Use when the token is already known to be valid.
+     * For server-side verification, use {@link #authenticate(String, String, String)} instead.
+     */
+    public void setToken(String token) {
+        this.jwtToken.set(token);
+        onTokenChanged(token);
+        startTokenRefresh();
+    }
+
+    /**
+     * Verify only the provided JWT token with the server and optionally check permission.
      *
      * @param token      JWT token to verify
      * @param permission optional permission to check (null to skip)
      * @param audience   optional JWT audience (null to skip)
-     * @return {@code true} if authentication succeeds
+     * @return a pair of (success, responseText)
      */
-    public boolean authenticate(String token, String permission, String audience) throws IOException {
-        this.jwtToken.set(token);
+    public Pair<Boolean, String> authenticate(String token, String permission, String audience) throws IOException {
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         if (audience != null && !audience.isEmpty()) {
@@ -370,16 +563,14 @@ public class AppMeshClient implements Closeable {
         }
         HttpURLConnection conn = request("POST", "/appmesh/auth", null, headers, null);
         boolean ok = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
-        if (!ok) {
-            this.jwtToken.set(null);
-        }
-        return ok;
+        String responseText = Utils.readResponseSafe(conn);
+        return Pair.of(ok, responseText);
     }
 
     /**
      * Renew the current JWT token.
      *
-     * @param expireSeconds token expiry — integer seconds or ISO 8601 duration (null = server default)
+     * @param expireSeconds token expiry duration (integer seconds or ISO 8601 string, null = server default)
      * @return the new JWT token
      */
     public String renewToken(Object expireSeconds) throws IOException {
@@ -392,10 +583,16 @@ public class AppMeshClient implements Closeable {
         JSONObject jsonResponse = new JSONObject(responseContent);
         String token = jsonResponse.getString("access_token");
         this.jwtToken.set(token);
+        onTokenChanged(token);
         return token;
     }
 
-    /** Generate TOTP secret for the current user. Returns the MFA URI. */
+    /**
+     * Return the decoded OTP provisioning URI for the current user.
+     *
+     * <p>Unlike some other SDKs that extract only the raw secret, the Java SDK returns the full
+     * URI decoded from the server's base64 {@code mfa_uri} payload.
+     */
     public String getTotpSecret() throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/totp/secret", null, null, null);
         String responseContent = Utils.readResponse(conn);
@@ -404,7 +601,7 @@ public class AppMeshClient implements Closeable {
         return new String(Base64.getDecoder().decode(mfaUri), StandardCharsets.UTF_8);
     }
 
-    /** Enable TOTP for the current user with a 6-digit verification code. */
+    /** Enable TOTP for the current user with a 6-digit verification code and return the new JWT token. */
     public String enableTotp(String totpCode) throws IOException {
         if (totpCode == null || !totpCode.matches("\\d{6}")) {
             throw new IllegalArgumentException("TOTP code must be a 6-digit number");
@@ -417,6 +614,7 @@ public class AppMeshClient implements Closeable {
             JSONObject jsonResponse = new JSONObject(responseContent);
             String token = jsonResponse.getString("access_token");
             this.jwtToken.set(token);
+            onTokenChanged(token);
             return token;
         }
         String errorBody = Utils.readResponseSafe(conn);
@@ -507,7 +705,13 @@ public class AppMeshClient implements Closeable {
     /** Delete an application. */
     public boolean deleteApp(String appName) throws IOException {
         HttpURLConnection conn = request("DELETE", "/appmesh/app/" + encodeURIComponent(appName), null, null, null);
-        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+        int status = conn.getResponseCode();
+        if (status == HttpURLConnection.HTTP_OK)
+            return true;
+        if (status == HttpURLConnection.HTTP_NOT_FOUND)
+            return false;
+        // Other errors (permission denied, server error, etc.)
+        throw new IOException("deleteApp failed with status " + status + ": " + Utils.readErrorResponse(conn));
     }
 
     /** Register or update an application. */
@@ -518,7 +722,12 @@ public class AppMeshClient implements Closeable {
 
     // -------- Application Output & Execution --------
 
-    /** Get application stdout/stderr output. */
+    /**
+     * Get incremental stdout/stderr output for a running or completed process.
+     *
+     * <p>{@code outputPosition} is the next cursor to read from, {@code exitCode} is populated once
+     * the process has finished, and {@code timeout} lets the server long-poll for new output.
+     */
     public AppOutput getAppOutput(String appName, long stdoutPosition, int stdoutIndex, int stdoutMaxsize,
             String processUuid, int timeout) throws IOException {
         Map<String, String> query = new HashMap<>();
@@ -606,7 +815,12 @@ public class AppMeshClient implements Closeable {
         return new AppRun(this, jsonResponse.getString("name"), jsonResponse.getString("process_uuid"));
     }
 
-    /** Wait for an async run to complete. */
+    /**
+     * Wait for an async run to complete, optionally streaming stdout locally.
+     *
+     * <p>When the process exits, this method makes a best-effort attempt to delete the temporary
+     * run app before returning the exit code.
+     */
     public Integer waitForAsyncRun(AppRun run, boolean stdoutPrint, int timeoutSeconds) throws Exception {
         if (run == null)
             return null;
@@ -639,9 +853,7 @@ public class AppMeshClient implements Closeable {
 
     // -------- Task Management --------
 
-    /**
-     * Send a task to a running application and wait for the result.
-     */
+    /** Send a task payload to a running application and wait for its response body. */
     public String runTask(String appName, String data, int timeout) throws IOException {
         Map<String, String> query = new HashMap<>();
         query.put("timeout", String.valueOf(timeout));
@@ -664,7 +876,12 @@ public class AppMeshClient implements Closeable {
 
     // -------- File Transfer --------
 
-    /** Download a remote file to local disk. */
+    /**
+     * Download a remote file to local disk.
+     *
+     * <p>When {@code applyFileAttributes} is true, POSIX metadata from response headers is applied
+     * locally on a best-effort basis.
+     */
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put("X-File-Path", encodeURIComponent(filePath));
@@ -687,7 +904,12 @@ public class AppMeshClient implements Closeable {
         return true;
     }
 
-    /** Upload a local file to the remote server. */
+    /**
+     * Upload a local file to the remote server.
+     *
+     * <p>When {@code preservePermissions} is true, local file metadata is sent in headers so the
+     * server can recreate permissions and ownership when supported.
+     */
     public boolean uploadFile(Object localFile, String remoteFile, boolean preservePermissions) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put("X-File-Path", encodeURIComponent(remoteFile));

@@ -15,6 +15,78 @@ mod tests {
             .unwrap()
     }
 
+    #[tokio::test]
+    async fn test_set_token_in_memory() {
+        let server = Server::new_async().await;
+
+        // set_token on a new client (in-memory, no cookie file)
+        let client = create_test_client(&server);
+        assert!(client.get_access_token().is_none(), "No token initially");
+
+        client.set_token("test-set-token-value");
+        assert_eq!(client.get_access_token(), Some("test-set-token-value".to_string()));
+
+        // Overwrite
+        client.set_token("test-set-token-value-2");
+        assert_eq!(client.get_access_token(), Some("test-set-token-value-2".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_jwt_token_constructor() {
+        let server = Server::new_async().await;
+
+        // jwt_token via builder
+        let client = ClientBuilder::new()
+            .url(server.url())
+            .danger_accept_invalid_certs(true)
+            .jwt_token("test-constructor-token")
+            .build()
+            .unwrap();
+        assert_eq!(client.get_access_token(), Some("test-constructor-token".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_apply_false_does_not_update_token() {
+        let mut server = Server::new_async().await;
+        server
+            .mock("POST", "/appmesh/auth")
+            .match_header("authorization", "Bearer provided-token")
+            .match_header("x-set-cookie", Matcher::Missing)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"access_token":"verified-token"}"#)
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        client.set_token("existing-token");
+
+        let (ok, _) = client.authenticate("provided-token", None, None, false).await.unwrap();
+        assert!(ok);
+        assert_eq!(client.get_access_token(), Some("existing-token".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_apply_true_updates_token() {
+        let mut server = Server::new_async().await;
+        server
+            .mock("POST", "/appmesh/auth")
+            .match_header("authorization", "Bearer provided-token")
+            .match_header("x-set-cookie", "true")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("set-cookie", "appmesh_auth_token=verified-token; Path=/")
+            .with_body(r#"{"access_token":"verified-token"}"#)
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+
+        let (ok, _) = client.authenticate("provided-token", None, None, true).await.unwrap();
+        assert!(ok);
+        assert_eq!(client.get_access_token(), Some("verified-token".to_string()));
+    }
+
     async fn setup_auth_mock(server: &mut ServerGuard) {
         server
             .mock("POST", "/appmesh/login")

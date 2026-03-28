@@ -17,7 +17,7 @@ from contextlib import suppress
 from datetime import datetime
 from enum import Enum, unique
 from http import HTTPStatus
-from http.cookiejar import CookieJar, MozillaCookieJar
+from http.cookiejar import Cookie, CookieJar, MozillaCookieJar
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib import parse
@@ -232,7 +232,7 @@ class AppMeshClient:
               - str: Single PEM file with cert+key
               - tuple: (cert_path, key_path)
             rest_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.  Default `(60, 300)`.
-            jwt_token: (Deprecate) JWT token for API authentication, overrides cookie file if both provided.
+            jwt_token: JWT token set directly without server verification (no network call).
             rest_cookie_file: Cookie file path for HTTP clients (set this to enable persistent cookie storage).
             auto_refresh_token: Enable automatic token refresh before expiration (supports App Mesh and Keycloak tokens).
         """
@@ -258,7 +258,7 @@ class AppMeshClient:
                 self.start_token_refresh()
 
         if jwt_token:
-            self.authenticate(jwt_token)
+            self.set_token(jwt_token)
 
     @staticmethod
     def _ensure_logging_configured() -> None:
@@ -285,12 +285,8 @@ class AppMeshClient:
         if cookie_path.exists():
             self.session.cookies.load(ignore_discard=True, ignore_expires=True)
             return True
-        else:
-            cookie_path.parent.mkdir(parents=True, exist_ok=True)
-            self.session.cookies.save(ignore_discard=True, ignore_expires=True)
-            if os.name == "posix":
-                cookie_path.chmod(0o600)  # User read/write only
 
+        # Defer empty file creation to _on_token_changed (first actual write)
         return False
 
     @staticmethod
@@ -354,7 +350,7 @@ class AppMeshClient:
                 logger.error("Token refresh failed: %s", e)
 
     def start_token_refresh(self) -> None:
-        """Start the background token refresh thread (idempotent)."""
+        """Start background token auto-refresh."""
         if not self._auto_refresh_token:
             return
         if self._refresh_thread and self._refresh_thread.is_alive():
@@ -365,7 +361,7 @@ class AppMeshClient:
         self._refresh_thread.start()
 
     def stop_token_refresh(self) -> None:
-        """Stop the background token refresh thread."""
+        """Stop background token auto-refresh."""
         self._refresh_stop.set()
         self._refresh_wake.set()  # Wake thread so it exits promptly
         if self._refresh_thread and self._refresh_thread.is_alive():
@@ -373,7 +369,7 @@ class AppMeshClient:
         self._refresh_thread = None
 
     def close(self) -> None:
-        """Close the session and release resources."""
+        """Close the client and release resources."""
         self._auto_refresh_token = False
         self.stop_token_refresh()
         if self.session:
@@ -397,10 +393,19 @@ class AppMeshClient:
 
     def _on_token_changed(self, token: Optional[str]) -> None:
         """Notify that a token was updated: persist cookies and wake refresh thread."""
-        # Persist cookies
+        # Persist cookies (create file on first write)
         if self.cookie_file:
+            cookie_path = Path(self.cookie_file)
+            if not cookie_path.exists():
+                cookie_path.parent.mkdir(parents=True, exist_ok=True)
             with self._lock:
                 self.session.cookies.save(ignore_discard=True, ignore_expires=True)
+            if os.name == "posix":
+                try:
+                    if cookie_path.stat().st_mode & 0o077:
+                        cookie_path.chmod(0o600)
+                except OSError:
+                    pass
         # Wake refresh thread to recompute delay for the new token
         if token:
             self._refresh_wake.set()
@@ -445,7 +450,7 @@ class AppMeshClient:
         timeout_seconds: Union[str, int] = _DURATION_ONE_WEEK_ISO,
         audience: Optional[str] = None,
     ) -> Optional[str]:
-        """Login with user name and password.
+        """Login with user name and password and attach the issued token to this client.
 
         Args:
             user_name: The name of the user.
@@ -455,7 +460,9 @@ class AppMeshClient:
             audience: The audience of the JWT token, should be available by JWT service configuration (default is 'appmesh-service').
 
         Returns:
-            TOTP challenge string if verification is required, otherwise None.
+            TOTP challenge string if the server responds with HTTP 428 and no code was supplied,
+            otherwise ``None``. On success, the session token/cookie is updated and auto-refresh
+            starts when enabled for this client.
         """
         # Standard App Mesh authentication
         self.session.cookies.clear()
@@ -522,7 +529,7 @@ class AppMeshClient:
         self.start_token_refresh()
 
     def logout(self) -> bool:
-        """Log out of the current session from the server."""
+        """Logout from the current session."""
         jwt_token = self._get_access_token()
         if not jwt_token or not isinstance(jwt_token, str):
             return False
@@ -547,21 +554,17 @@ class AppMeshClient:
     def authenticate(
         self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True
     ) -> Tuple[bool, str]:
-        """Authenticate a JWT token and optionally apply it to the current session.
+        """Verify the provided JWT token with the server and optionally apply it to this client.
 
         Args:
-            token: JWT token returned from `login()`.
-            permission: Optional permission ID to verify for the token's user.
-                Can be one of:
-                - Predefined by App Mesh in security.yaml (e.g., 'app-view', 'app-delete')
-                - Defined via `role_update()` or security.yaml.
-            audience: Optional audience value to verify against the JWT token.
-            apply: If True, update the current session with the token upon success.
+            token: JWT token to verify.
+            permission: Optional permission ID to check (e.g., 'app-view', 'app-delete').
+            audience: Optional audience value to verify against the token.
+            apply: When ``False``, only verify the provided token. When ``True``, apply the
+                verified token to the current client session.
 
         Returns:
-            Tuple of (success: bool, message: str), where:
-            - success: True if authentication succeeds (HTTP 200 OK).
-            - message: Response message from the server (e.g., error details).
+            Tuple of ``(success, message)`` where ``message`` is the raw response text.
         """
         # Header auth token takes priority over cookie token
         headers = {self._HTTP_HEADER_KEY_AUTH: f"Bearer {token}"}
@@ -572,20 +575,53 @@ class AppMeshClient:
             headers["X-Permission"] = permission
         if apply:
             headers[self._HTTP_HEADER_JWT_SET_COOKIE] = "true"
-
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/auth", header=headers, raise_on_fail=False)
-
-        if resp.status_code == HTTPStatus.OK:
-            if apply:
-                self._on_token_changed(self._get_access_token())
-
+        if apply and resp.status_code == HTTPStatus.OK:
+            with suppress(Exception):
+                access_token = resp.json().get("access_token")
+                if access_token:
+                    self._on_token_changed(access_token)
         return resp.status_code == HTTPStatus.OK, resp.text
 
-    def renew_token(self, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
-        """Renew the current token.
+    def set_token(self, token: str) -> None:
+        """Set a JWT token directly without server-side verification.
+        Use when the token is already known to be valid.
+        For server-side verification, use authenticate() instead.
 
         Args:
-            timeout: Token expire timeout.
+            token: A valid JWT token string. The token is stored in the client's cookie jar and
+                persisted immediately when `rest_cookie_file` is configured.
+        """
+        # CookieJar.set_cookie() is a base class method, works for both
+        # RequestsCookieJar (in-memory) and MozillaCookieJar (file-backed)
+        cookie = Cookie(
+            version=0,
+            name=self._COOKIE_TOKEN,
+            value=token,
+            port=None,
+            port_specified=False,
+            domain="",
+            domain_specified=False,
+            domain_initial_dot=False,
+            path="/",
+            path_specified=True,
+            secure=False,
+            expires=int(time.time()) + 86400 * 7,
+            discard=False,
+            comment=None,
+            comment_url=None,
+            rest={},
+            rfc2109=False,
+        )
+        self.session.cookies.set_cookie(cookie)
+        self._on_token_changed(token)
+        self.start_token_refresh()
+
+    def renew_token(self, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
+        """Renew the current JWT token.
+
+        Args:
+            timeout: Token expiry duration (integer seconds or ISO 8601 string).
         """
         jwt_token = self._get_access_token()
         if not jwt_token:
@@ -603,7 +639,11 @@ class AppMeshClient:
         self._on_token_changed(resp.json()["access_token"])
 
     def get_totp_secret(self) -> str:
-        """Generate TOTP secret for the current user."""
+        """Return the raw TOTP secret for the current user.
+
+        The server responds with a base64-encoded OTP provisioning URI; this helper parses that
+        URI and returns only the ``secret`` field for QR-code or authenticator setup.
+        """
         resp = self._request_http(method=AppMeshClient._Method.POST, path="/appmesh/totp/secret")
 
         totp_uri = base64.b64decode(resp.json()["mfa_uri"]).decode()
@@ -669,7 +709,7 @@ class AppMeshClient:
         process_uuid: str = "",
         timeout: int = 0,
     ) -> AppOutput:
-        """Get the stdout/stderr of an application.
+        """Get incremental stdout/stderr output for a running or completed application.
 
         Args:
             app_name: the application name
@@ -677,11 +717,12 @@ class AppMeshClient:
             stdout_index: index of history process stdout, 0 means get from current running process,
                 the stdout number depends on 'stdout_cache_size' of the application.
             stdout_maxsize: max buffer size to read.
-            process_uuid: used to get the specified process.
-            timeout: wait for the running process for some time(seconds) to get the output.
+            process_uuid: used to get the specified process instance instead of the latest one.
+            timeout: long-poll wait time in seconds before returning when no new output is available.
 
         Returns:
-            AppOutput object.
+            ``AppOutput`` containing response status, payload text, the next read cursor
+            (``out_position``), and ``exit_code`` when the process has already finished.
         """
         resp = self._request_http(
             AppMeshClient._Method.GET,
@@ -947,7 +988,11 @@ class AppMeshClient:
             return {}
 
     def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
-        """Download a remote file to the local system."""
+        """Download a remote file to the local filesystem.
+
+        When ``preserve_permissions`` is ``True``, POSIX mode/owner/group metadata from App Mesh
+        response headers is applied best-effort on non-Windows platforms.
+        """
         resp = self._request_http(
             AppMeshClient._Method.GET,
             path="/appmesh/file/download",
@@ -965,7 +1010,11 @@ class AppMeshClient:
             self._apply_file_attributes(local_path, resp.headers)
 
     def upload_file(self, local_file: str, remote_file: str, preserve_permissions: bool = True) -> None:
-        """Upload a local file to the remote server."""
+        """Upload a local file to the remote server.
+
+        When ``preserve_permissions`` is ``True``, the client also sends local POSIX metadata
+        in request headers so the server can recreate permissions/ownership when supported.
+        """
         local_path = Path(local_file)
         if not local_path.exists():
             raise FileNotFoundError(f"Local file not found: {local_file}")
@@ -1009,7 +1058,7 @@ class AppMeshClient:
         Args:
             app_name: Name of the target application (as registered in App Mesh).
             data: Payload to deliver to the application. Typically a string.
-            timeout: Maximum time in seconds to wait for a response from the application. Defaults to 60 seconds.
+            timeout: Maximum time in seconds to wait for a response from the application. Defaults to 300 seconds.
 
         Returns:
             str: The HTTP response body returned by the remote application/service.
@@ -1057,7 +1106,8 @@ class AppMeshClient:
                 Accepts ISO 8601 duration format. Defaults to `P2DT12H`.
 
         Returns:
-            AppRun: An application run object that can be used to monitor and retrieve the result of the run.
+            ``AppRun`` handle that captures the current ``forward_to`` target so later polling can
+            continue against the same cluster node.
         """
         if isinstance(app, str):
             app = App({"command": app, "shell": True})
@@ -1084,7 +1134,8 @@ class AppMeshClient:
             timeout : wait max timeout seconds and return if not finished, 0 means wait until finished
 
         Returns:
-            return exit code if process finished, return None for timeout or exception.
+            Exit code if the process finished, otherwise ``None`` on timeout or polling failure.
+            On success, this method also makes a best-effort attempt to delete the temporary run app.
         """
         if not run:
             return None
@@ -1145,7 +1196,8 @@ class AppMeshClient:
                 Supports ISO 8601 duration format. Defaults to DEFAULT_RUN_APP_LIFECYCLE_SECONDS.
 
         Returns:
-            Exit code of the process (None if unavailable) and the stdout text.
+            ``(exit_code, stdout_text)``. ``exit_code`` is ``None`` when the server did not return
+            an ``X-Exit-Code`` header.
         """
         if isinstance(app, str):
             app = App({"command": app, "shell": True})
@@ -1183,15 +1235,18 @@ class AppMeshClient:
         # Prepare headers
         headers = header.copy() if header else {}
 
-        csrf_token = self._get_cookie_value(self.session.cookies, self._COOKIE_CSRF_TOKEN)
-        if csrf_token:
-            # appmesh token
-            headers[self._HTTP_HEADER_NAME_CSRF_TOKEN] = csrf_token
-        else:
-            # OAuth token
-            access_token = self._get_access_token()
-            if access_token:
-                headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {access_token}"
+        has_explicit_auth = self._HTTP_HEADER_KEY_AUTH in headers
+        has_explicit_csrf = self._HTTP_HEADER_NAME_CSRF_TOKEN in headers
+        if not has_explicit_auth and not has_explicit_csrf:
+            csrf_token = self._get_cookie_value(self.session.cookies, self._COOKIE_CSRF_TOKEN)
+            if csrf_token:
+                # appmesh token
+                headers[self._HTTP_HEADER_NAME_CSRF_TOKEN] = csrf_token
+            else:
+                # OAuth token
+                access_token = self._get_access_token()
+                if access_token:
+                    headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {access_token}"
 
         if self.forward_to:
             target_host = self.forward_to

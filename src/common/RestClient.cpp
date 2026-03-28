@@ -1,4 +1,5 @@
 // src/common/RestClient.cpp
+#include <algorithm>
 #include <ctime>
 #include <curl/curl.h>
 #include <fstream>
@@ -396,10 +397,24 @@ std::shared_ptr<CurlResponse> RestClient::request(
 		// Get the HTTP response code
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->status_code);
 
-		// Save cookies after successful request
-		if (response->header.count("Set-Cookie") != 0)
+		// Save cookies after successful request (case-insensitive check for Set-Cookie,
+		// HTTP/2 uses lowercase headers while HTTP/1.1 uses mixed case)
 		{
-			saveCookiesAfterRequest(curl, m_sessionConfig, m_memoryCookies, m_sessionMutex);
+			bool hasCookieHeader = false;
+			for (const auto &h : response->header)
+			{
+				std::string lowerKey = h.first;
+				std::transform(lowerKey.begin(), lowerKey.end(), lowerKey.begin(), ::tolower);
+				if (lowerKey == "set-cookie")
+				{
+					hasCookieHeader = true;
+					break;
+				}
+			}
+			if (hasCookieHeader)
+			{
+				saveCookiesAfterRequest(curl, m_sessionConfig, m_memoryCookies, m_sessionMutex);
+			}
 		}
 	}
 	return response;
