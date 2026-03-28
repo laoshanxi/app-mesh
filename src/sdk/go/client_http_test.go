@@ -2,6 +2,9 @@ package appmesh
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +14,61 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"
 )
+
+type mockAuthRequester struct {
+	storedToken string
+	lastHeaders map[string]string
+	updateCalls []string
+}
+
+func (m *mockAuthRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	m.lastHeaders = make(map[string]string, len(headers))
+	for k, v := range headers {
+		m.lastHeaders[k] = v
+	}
+	resp := []byte(`{"access_token":"verified-token","expires_in":3600,"expire_time":999999999}`)
+	return http.StatusOK, resp, http.Header{}, nil
+}
+
+func (m *mockAuthRequester) Close() {}
+func (m *mockAuthRequester) handleTokenUpdate(token string) {
+	m.updateCalls = append(m.updateCalls, token)
+	if token != "" {
+		m.storedToken = token
+	}
+}
+func (m *mockAuthRequester) setToken(token string)         { m.storedToken = token }
+func (m *mockAuthRequester) getAccessToken() string        { return m.storedToken }
+func (m *mockAuthRequester) setForwardTo(forwardTo string) {}
+func (m *mockAuthRequester) getForwardTo() string          { return "" }
+
+func TestAuthenticateApplyFalseDoesNotMutateHTTPState(t *testing.T) {
+	req := &mockAuthRequester{storedToken: "existing-token"}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	ok, err := client.Authenticate("provided-token", "", "", false)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "Bearer provided-token", req.lastHeaders["Authorization"])
+	require.Empty(t, req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
+	require.Equal(t, "existing-token", req.getAccessToken())
+	require.Empty(t, req.updateCalls)
+}
+
+func TestAuthenticateApplyTrueUpdatesHTTPState(t *testing.T) {
+	req := &mockAuthRequester{}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	ok, err := client.Authenticate("provided-token", "", "", true)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "Bearer provided-token", req.lastHeaders["Authorization"])
+	require.Equal(t, "true", req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
+	require.Equal(t, "verified-token", req.getAccessToken())
+	require.Equal(t, []string{"verified-token"}, req.updateCalls)
+}
 
 func TestAppmeshLogin(t *testing.T) {
 
@@ -33,6 +91,57 @@ func TestAppmeshLogin(t *testing.T) {
 	runApp.Command = &cmd
 	client.RunAppSync(runApp, true, 5, 10)
 	client.RunAppAsync(runApp, 5, 10)
+}
+
+func TestAppmeshSetToken(t *testing.T) {
+	emptyStr := ""
+	// 1. Login to get a valid token
+	client, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	_, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	require.NoError(t, err)
+	token := client.req.getAccessToken()
+	require.NotEmpty(t, token)
+	t.Log("Got token from login")
+
+	// 2. SetToken without cookie file (in-memory)
+	client2, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client2.SetToken(token)
+	apps, err := client2.ListApps()
+	require.NoError(t, err)
+	require.NotEmpty(t, apps)
+	t.Logf("SetToken in-memory: got %d apps", len(apps))
+
+	// 3. JwtToken constructor param without cookie file
+	client3, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr, JwtToken: token})
+	apps3, err := client3.ListApps()
+	require.NoError(t, err)
+	require.Equal(t, len(apps), len(apps3))
+	t.Log("JwtToken constructor: list_apps ok")
+
+	// 4. SetToken with cookie file
+	cookiePath := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
+	defer os.Remove(cookiePath)
+	client4, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr, CookieFile: cookiePath})
+	client4.SetToken(token)
+	apps4, err := client4.ListApps()
+	require.NoError(t, err)
+	require.Equal(t, len(apps), len(apps4))
+	t.Log("SetToken with cookie file: list_apps ok")
+
+	// 5. JwtToken + CookieFile constructor
+	cookiePath2 := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
+	defer os.Remove(cookiePath2)
+	client5, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr, JwtToken: token, CookieFile: cookiePath2})
+	apps5, err := client5.ListApps()
+	require.NoError(t, err)
+	require.Equal(t, len(apps), len(apps5))
+	t.Log("JwtToken + CookieFile constructor: list_apps ok")
+
+	client.Close()
+	client2.Close()
+	client3.Close()
+	client4.Close()
+	client5.Close()
 }
 
 func TestAppmeshFile(t *testing.T) {
@@ -262,4 +371,36 @@ func TestAppmeshAppManagement(t *testing.T) {
 	require.NoError(t, err, "GetUserPermissions failed")
 	require.NotEmpty(t, userPerms, "GetUserPermissions returned empty list")
 	t.Logf("GetUserPermissions: count=%d", len(userPerms))
+}
+
+func TestParseDuration(t *testing.T) {
+	// Integer seconds
+	secs, err := ParseDuration("3600")
+	require.NoError(t, err)
+	require.Equal(t, 3600, secs)
+
+	// ISO 8601: P1W = 7 days
+	secs, err = ParseDuration("P1W")
+	require.NoError(t, err)
+	require.Equal(t, 604800, secs)
+
+	// ISO 8601: P2DT12H = 2 days + 12 hours
+	secs, err = ParseDuration("P2DT12H")
+	require.NoError(t, err)
+	require.Equal(t, 216000, secs)
+
+	// ISO 8601: PT5M30S = 5 min + 30 sec
+	secs, err = ParseDuration("PT5M30S")
+	require.NoError(t, err)
+	require.Equal(t, 330, secs)
+
+	// ISO 8601: P1Y2M3DT4H5M6S
+	secs, err = ParseDuration("P1Y2M3DT4H5M6S")
+	require.NoError(t, err)
+	expected := 365*86400 + 2*30*86400 + 3*86400 + 4*3600 + 5*60 + 6
+	require.Equal(t, expected, secs)
+
+	// Invalid
+	_, err = ParseDuration("invalid")
+	require.Error(t, err)
 }

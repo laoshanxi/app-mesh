@@ -52,7 +52,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
     ):
-        """Construct an App Mesh client TCP object to communicate securely with an App Mesh server over TLS.
+        """Construct a TCP transport client that reuses the standard App Mesh client API.
 
         Args:
             tcp_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6059).
@@ -94,12 +94,12 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             pass  # suppress all exceptions
 
     def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
-        """Copy a remote file to local, preserving file attributes if requested.
+        """Copy a remote file to local through the TCP file-socket side channel.
 
         Args:
             remote_file: Remote file path.
             local_file: Local destination path.
-            preserve_permissions: Apply remote file permissions/ownership locally.
+            preserve_permissions: Apply remote file permissions/ownership locally on a best-effort basis.
         """
         header = {
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
@@ -127,12 +127,12 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             AppMeshClient._apply_file_attributes(local_path, resp.headers)
 
     def upload_file(self, local_file: str, remote_file: str, preserve_permissions: bool = True) -> None:
-        """Upload a local file to remote server, preserving file attributes if requested.
+        """Upload a local file to the remote server through the TCP file-socket side channel.
 
         Args:
             local_file: Local file path.
             remote_file: Remote destination path.
-            preserve_permissions: Upload file permissions/ownership metadata.
+            preserve_permissions: Send local file permissions/ownership metadata when available.
         """
         local_path = Path(local_file)
         if not local_path.exists():

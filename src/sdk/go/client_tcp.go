@@ -23,7 +23,7 @@ type AppMeshClientTCP struct {
 	tcpReq *TCPRequester // Used for file operations.
 }
 
-// NewTCPClient creates a new AppMeshClientTCP instance for interacting with a TCP server.
+// NewTCPClient creates a TCP transport client that reuses the standard App Mesh client API.
 func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 	// Determine the connection URL, defaulting to DEFAULT_TCP_URI if not provided.
 	uri := options.AppMeshUri
@@ -63,7 +63,7 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 	return tcpClient, nil
 }
 
-// CloseConnection closes the TCP connection.
+// CloseConnection closes only the underlying TCP transport connection.
 func (c *AppMeshClientTCP) CloseConnection() {
 	c.tcpReq.Close()
 }
@@ -76,7 +76,8 @@ func (c *AppMeshClientTCP) SendMessage(ctx context.Context, buffer []byte) error
 	return c.tcpReq.TCPConnection.SendMessage(ctx, buffer)
 }
 
-// FileDownload downloads a file from the server to the local file system.
+// FileDownload downloads a file through the TCP file-socket side channel.
+// When applyFileAttributes is true, returned POSIX metadata is applied locally best-effort.
 func (c *AppMeshClientTCP) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
 	if remoteFile == "" {
 		return errors.New("remote file path cannot be empty")
@@ -131,7 +132,8 @@ func (c *AppMeshClientTCP) receiveFile(localFile string, headers http.Header, ap
 	return nil
 }
 
-// FileUpload uploads a local file to the server.
+// FileUpload uploads a file through the TCP file-socket side channel.
+// When applyFileAttributes is true, local POSIX metadata is sent so the server can recreate it.
 func (c *AppMeshClientTCP) FileUpload(ctx context.Context, localFile, remoteFile string, applyFileAttributes bool) error {
 	if localFile == "" {
 		return errors.New("local file path cannot be empty")

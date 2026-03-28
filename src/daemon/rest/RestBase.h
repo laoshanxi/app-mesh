@@ -21,11 +21,6 @@ class RestBase
 public:
     explicit RestBase();
     virtual ~RestBase();
-    // Security: replace XSS risk chars to safe charactor
-    const std::string replaceXssRiskChars(const std::string &source);
-    // Security: go through JSON tree and replace XSS risk chars for string attributes
-    void tranverseJsonTree(nlohmann::json &tree);
-
 protected:
     /// <summary>
     /// Dispatch REST request to specific functions

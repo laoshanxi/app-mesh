@@ -228,6 +228,12 @@ impl Requester for HTTPRequester {
         }
     }
 
+    fn set_cookie(&self, cookie_str: &str) {
+        if let Ok(url) = self.url.parse() {
+            self.cookie_jar.add_cookie_str(cookie_str, &url);
+        }
+    }
+
     fn get_access_token(&self) -> Option<String> {
         self.get_cookie(COOKIE_TOKEN)
     }
@@ -292,18 +298,17 @@ impl AppMeshClient {
         })
     }
 
-    /// Enable or disable automatic JWT token refresh.
-    ///
-    /// When enabled, a background task periodically checks the token's `exp` claim
-    /// and calls [`renew_token`](Self::renew_token) before it expires.
-    pub fn set_auto_refresh_token(&self, enable: bool) {
+    /// Enable or disable background token auto-refresh.
+    pub fn set_auto_refresh_token(self: &Arc<Self>, enable: bool) {
         self.auto_refresh.store(enable, Ordering::Relaxed);
         if !enable {
             self.cancel_refresh_task();
+        } else if self.get_stored_token().is_some() {
+            self.schedule_token_refresh();
         }
     }
 
-    /// Close the underlying transport and cancel any background refresh task.
+    /// Close the client and release resources.
     pub fn close(&self) {
         self.cancel_refresh_task();
         self.req.close();
@@ -340,8 +345,10 @@ impl AppMeshClient {
 // -- Authentication ---------------------------------------------------------
 
 impl AppMeshClient {
-    /// Login with username and password.
-    /// Returns TOTP challenge string if TOTP is required, empty string on success.
+    /// Login with username/password and update this client session on success.
+    ///
+    /// Returns the TOTP challenge string when the server replies with HTTP 428 and no valid code
+    /// was supplied; otherwise returns an empty string after storing the issued JWT/cookie.
     pub async fn login(
         &self,
         username: &str,
@@ -408,7 +415,7 @@ impl AppMeshClient {
         Ok(result)
     }
 
-    /// Validate TOTP code with challenge.
+    /// Validate a TOTP challenge and store the returned JWT in this client session.
     pub async fn validate_totp(
         &self,
         username: &str,
@@ -435,8 +442,24 @@ impl AppMeshClient {
         Ok(())
     }
 
-    /// Authenticate with an existing JWT token.
-    /// Returns `(success, message)`.
+    /// Get the current access token, if any.
+    pub fn get_access_token(&self) -> Option<String> {
+        self.req.get_access_token()
+    }
+
+    /// Set a JWT token directly without server-side verification.
+    /// Use when the token is already known to be valid.
+    /// For server-side verification, use [`authenticate()`] instead.
+    pub fn set_token(self: &Arc<Self>, token: &str) {
+        let cookie_str = format!("{}={}", COOKIE_TOKEN, token);
+        self.req.set_cookie(&cookie_str);
+        self.req.handle_token_update(Some(token.to_string()));
+        if self.auto_refresh.load(Ordering::Relaxed) {
+            self.schedule_token_refresh();
+        }
+    }
+
+    /// Verify the supplied JWT token with the server and optionally apply it to this client.
     pub async fn authenticate(
         &self,
         token: &str,
@@ -454,18 +477,19 @@ impl AppMeshClient {
             headers.insert(HTTP_HEADER_JWT_AUDIENCE.into(), aud.to_string());
         }
         if apply {
-            headers.insert(HTTP_HEADER_JWT_SET_COOKIE.into(), "true".to_string());
+            headers.insert(HTTP_HEADER_JWT_SET_COOKIE.into(), "true".into());
         }
-
         let resp = self.req.send(Method::POST, "/appmesh/auth", None, Some(headers), None, false).await?;
 
         let is_ok = resp.status() == StatusCode::OK;
         let text = resp.text()?;
-
-        if is_ok && apply {
-            self.req.handle_token_update(Some(token.to_string()));
+        if apply && is_ok {
+            if let Ok(json) = serde_json::from_str::<Value>(&text) {
+                if let Some(access_token) = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()) {
+                    self.req.handle_token_update(Some(access_token.to_string()));
+                }
+            }
         }
-
         Ok((is_ok, text))
     }
 
@@ -477,7 +501,7 @@ impl AppMeshClient {
         Ok(())
     }
 
-    /// Renew the JWT token.
+    /// Renew the current JWT token already attached to this client.
     pub async fn renew_token(&self, timeout_seconds: Option<i32>) -> Result<()> {
         let headers = timeout_seconds.map(|sec| hmap! { HTTP_HEADER_JWT_EXPIRE_SECONDS => sec });
 
@@ -490,15 +514,9 @@ impl AppMeshClient {
         Ok(())
     }
 
-    /// Start the automatic token refresh background task.
+    /// Start background token auto-refresh.
     ///
-    /// The task periodically checks the JWT token's `exp` claim and calls
-    /// [`renew_token`](Self::renew_token) before it expires.  The task runs
-    /// until the client is closed, logout is called, or auto-refresh is
-    /// disabled via [`set_auto_refresh_token(false)`](Self::set_auto_refresh_token).
-    ///
-    /// This method requires `&Arc<Self>` because the background task must hold
-    /// a weak reference to the client.
+    /// The refresh loop decodes the JWT `exp` claim and renews shortly before expiry.
     pub fn schedule_token_refresh(self: &Arc<Self>) {
         if !self.auto_refresh.load(Ordering::Relaxed) {
             return;
@@ -605,7 +623,10 @@ impl AppMeshClient {
         payload.get("exp")?.as_u64()
     }
 
-    /// Get TOTP secret for MFA setup (returns the raw secret string).
+    /// Get the raw TOTP secret for MFA setup.
+    ///
+    /// The server returns a base64-encoded provisioning URI; this helper extracts and returns
+    /// only the `secret` query parameter.
     pub async fn get_totp_secret(&self) -> Result<String> {
         let resp = self.req.send(Method::POST, "/appmesh/totp/secret", None, None, None, true).await?;
 
@@ -766,7 +787,10 @@ impl AppMeshClient {
         Ok(resp.json()?)
     }
 
-    /// Get application stdout output.
+    /// Get incremental stdout/stderr for a running or completed process.
+    ///
+    /// `output_position` is the next cursor to read from, and `exit_code` is populated once the
+    /// process has already finished. `timeout` controls server-side long polling.
     pub async fn get_app_output(
         &self,
         app: &str,
@@ -854,7 +878,14 @@ impl AppMeshClient {
     pub async fn delete_app(&self, name: &str) -> Result<bool> {
         let resp =
             self.req.send(Method::DELETE, &format!("/appmesh/app/{}", name), None, None, None, false).await?;
-        Ok(resp.status() == StatusCode::OK)
+        match resp.status() {
+            StatusCode::OK => Ok(true),
+            StatusCode::NOT_FOUND => Ok(false),
+            status => {
+                let text = resp.text()?;
+                Err(crate::error::AppMeshError::RequestFailed { status, message: text })
+            }
+        }
     }
 
     pub async fn enable_app(&self, name: &str) -> Result<()> {
@@ -871,8 +902,9 @@ impl AppMeshClient {
 // -- Run Application --------------------------------------------------------
 
 impl AppMeshClient {
-    /// Run an application synchronously.
-    /// Returns `(exit_code, stdout)`.
+    /// Run an application synchronously and return `(exit_code, stdout)`.
+    ///
+    /// `exit_code` is populated from the `X-Exit-Code` header when present.
     pub async fn run_app_sync(
         &self,
         app: &Application,
@@ -915,7 +947,10 @@ impl AppMeshClient {
         self.run_app_sync(&app, max_timeout, lifecycle).await
     }
 
-    /// Run an application asynchronously (returns an [`AppRun`] handle).
+    /// Run an application asynchronously and return an [`AppRun`] handle.
+    ///
+    /// The handle captures the current forwarding target so later polling can keep talking to the
+    /// same cluster node.
     pub async fn run_app_async(
         self: &Arc<Self>,
         app: &Application,
@@ -959,7 +994,9 @@ impl AppMeshClient {
         self.run_app_async(&app, max_timeout, lifecycle).await
     }
 
-    /// Wait for an async run to complete, optionally printing stdout.
+    /// Wait for an async run to complete, optionally printing incremental stdout.
+    ///
+    /// On success, this method makes a best-effort attempt to delete the temporary run app.
     pub async fn wait_for_async_run(
         &self,
         run: &AppRun,
@@ -990,11 +1027,11 @@ impl AppMeshClient {
                 return Ok(app_out.exit_code);
             }
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
-    /// Run a task (send data to a running app and receive a response).
+    /// Run a task by sending JSON data to a running app and returning its response body.
     pub async fn run_task(&self, app: &str, data: Value, timeout: i32) -> Result<String> {
         let query = hmap! { HTTP_QUERY_KEY_TIMEOUT => timeout };
         let body_bytes = serde_json::to_vec(&data)?;
@@ -1073,6 +1110,9 @@ impl AppMeshClient {
 
 impl AppMeshClient {
     /// Download a file from the remote server.
+    ///
+    /// When `preserve_permissions` is true, POSIX mode/owner/group metadata from response headers
+    /// is applied locally on a best-effort basis.
     pub async fn download_file(
         &self,
         remote_file: &str,
@@ -1094,6 +1134,9 @@ impl AppMeshClient {
     }
 
     /// Upload a file to the remote server.
+    ///
+    /// When `preserve_permissions` is true, local POSIX metadata is sent in headers so the server
+    /// can recreate permissions/ownership when supported.
     pub async fn upload_file(
         &self,
         local_file: &str,

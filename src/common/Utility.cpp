@@ -48,7 +48,6 @@
 #include "DateTime.h"
 #include "Password.h"
 #include "Utility.h"
-#include "json.h"
 #include "os/chown.h"
 #include "os/linux.h"
 
@@ -1482,6 +1481,7 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 		return;
 	}
 
+#if !defined(_WIN32)
 	auto userIt = headers.find(HTTP_HEADER_KEY_file_user);
 	auto groupIt = headers.find(HTTP_HEADER_KEY_file_group);
 	if (userIt != headers.end() && groupIt != headers.end() &&
@@ -1496,6 +1496,7 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 			LOG_WAR << fname << "Invalid user/group ID value: " << userIt->second << "/" << groupIt->second;
 		}
 	}
+#endif
 
 	auto modeIt = headers.find(HTTP_HEADER_KEY_file_mode);
 	if (modeIt != headers.end() && !modeIt->second.empty())
@@ -1730,7 +1731,15 @@ std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::E
 	{
 		*out << j.get<bool>();
 	}
-	else if (j.is_number())
+	else if (j.is_number_integer())
+	{
+		*out << j.get<int64_t>();
+	}
+	else if (j.is_number_unsigned())
+	{
+		*out << j.get<uint64_t>();
+	}
+	else if (j.is_number_float())
 	{
 		*out << j.get<double>();
 	}
@@ -1769,18 +1778,38 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 		if (scalar == "null")
 			return nullptr;
 		if (Utility::isNumber(scalar))
-			return std::stol(scalar);
+		{
+			try
+			{
+				if (!scalar.empty() && scalar[0] == '-')
+					return std::stoll(scalar);
+				return std::stoull(scalar);
+			}
+			catch (const std::out_of_range &)
+			{
+				// Preserve exact integer text instead of demoting to double.
+				return Utility::stdStringTrim(scalar);
+			}
+		}
 		if (Utility::isDouble(scalar))
 			return std::stod(scalar);
 		return Utility::stdStringTrim(scalar);
 	};
 
-	if (node.IsMap())
+	if (node.IsNull())
+	{
+		result = nullptr;
+	}
+	else if (node.IsMap())
 	{
 		for (const auto &pair : node)
 		{
 			const std::string key = pair.first.as<std::string>();
-			if (pair.second.IsScalar())
+			if (pair.second.IsNull())
+			{
+				result[key] = nullptr;
+			}
+			else if (pair.second.IsScalar())
 			{
 				result[key] = parseScalar(pair.second);
 			}

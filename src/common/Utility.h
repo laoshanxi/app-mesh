@@ -91,13 +91,19 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<int>() : 0)
 #define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<int64_t>() : 0L)
 #define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<double>() : 0.0L)
-#define SET_JSON_INT_VALUE(jsonObj, key, value) \
-	if (HAS_JSON_FIELD(jsonObj, key))           \
-		value = GET_JSON_INT_VALUE(jsonObj, key);
+#define SET_JSON_INT_VALUE(jsonObj, key, value)       \
+	do                                                \
+	{                                                 \
+		if (HAS_JSON_FIELD(jsonObj, key))             \
+			value = GET_JSON_INT_VALUE(jsonObj, key); \
+	} while (0)
 #define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<bool>() : false)
-#define SET_JSON_BOOL_VALUE(jsonObj, key, value) \
-	if (HAS_JSON_FIELD(jsonObj, key))            \
-		value = GET_JSON_BOOL_VALUE(jsonObj, key);
+#define SET_JSON_BOOL_VALUE(jsonObj, key, value)       \
+	do                                                 \
+	{                                                  \
+		if (HAS_JSON_FIELD(jsonObj, key))              \
+			value = GET_JSON_BOOL_VALUE(jsonObj, key); \
+	} while (0)
 #define HAS_JSON_FIELD(jsonObj, key) (jsonObj.contains(key) && !jsonObj.at(key).is_null())
 #define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? (jsonObj.at(key).is_string() ? jsonObj.at(key).template get<std::string>() : std::to_string(jsonObj.at(key).template get<int64_t>())) : std::string(""))
 

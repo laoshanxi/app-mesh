@@ -104,7 +104,17 @@ bool Response::setAuthCookie()
 	return true;
 }
 
-bool Response::handleAuthCookies()
+static bool wantsSetCookie(const HttpHeaderMap *requestHeaders)
+{
+	if (requestHeaders == nullptr)
+		return false;
+
+	auto setCookie = Utility::stdStringTrim(requestHeaders->get(HTTP_HEADER_KEY_X_SET_COOKIE));
+	std::transform(setCookie.begin(), setCookie.end(), setCookie.begin(), ::tolower);
+	return setCookie == "true" || setCookie == "1";
+}
+
+bool Response::handleAuthCookies(const HttpHeaderMap *requestHeaders)
 {
 	const static char fname[] = "Response::handleAuthCookies() ";
 
@@ -114,9 +124,13 @@ bool Response::handleAuthCookies()
 
 	// Check if response path indicates a login/auth endpoint (where cookie should be set)
 	const std::string &requestUri = this->request_uri;
-	bool shouldSetCookie = (requestUri == "/appmesh/login" ||
-							requestUri == "/appmesh/auth" ||
-							requestUri == "/appmesh/totp/validate");
+	bool shouldSetCookie = false;
+	if (requestUri == "/appmesh/login" ||
+		requestUri == "/appmesh/auth" ||
+		requestUri == "/appmesh/totp/validate")
+	{
+		shouldSetCookie = wantsSetCookie(requestHeaders);
+	}
 
 	if (!shouldSetCookie)
 		return false;

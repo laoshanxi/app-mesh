@@ -152,6 +152,7 @@ pub struct AppMeshClientWSS {
 }
 
 impl AppMeshClientWSS {
+    /// Create a WSS transport client. Defaults to `127.0.0.1:6058`.
     pub fn new(
         address: Option<(String, u16)>,
         ssl_verify: Option<String>,
@@ -200,11 +201,14 @@ impl AppMeshClientWSS {
         Ok(Arc::new(Self { client, http_client, base_url }))
     }
 
+    /// Get the underlying generic client for shared auth/app/task APIs.
     pub fn client(&self) -> &Arc<AppMeshClient> {
         &self.client
     }
 
-    /// Download file using WSS protocol (WSS control + HTTPS data).
+    /// Download a file using WSS control messages plus an HTTPS data side channel.
+    ///
+    /// When `preserve_permissions` is true, returned POSIX metadata is applied locally best-effort.
     pub async fn download_file(
         &self,
         remote_file: &str,
@@ -263,7 +267,10 @@ impl AppMeshClientWSS {
         Ok(())
     }
 
-    /// Upload file using WSS protocol (WSS control + HTTPS data).
+    /// Upload a file using WSS control messages plus an HTTPS data side channel.
+    ///
+    /// When `preserve_permissions` is true, local POSIX metadata is sent so the server can
+    /// recreate permissions/ownership when supported.
     pub async fn upload_file(
         &self,
         local_file: &str,
@@ -340,8 +347,10 @@ impl AppMeshClientWSS {
         Ok(())
     }
 
-    /// Run application asynchronously (explicit — `&Arc<Self>` receiver cannot
-    /// be delegated through `Deref`).
+    /// Run an application asynchronously and return the standard [`AppRun`] handle.
+    ///
+    /// This method exists explicitly because the `&Arc<Self>` receiver cannot be delegated through
+    /// `Deref`.
     pub async fn run_app_async(
         self: &Arc<Self>,
         app: &Application,

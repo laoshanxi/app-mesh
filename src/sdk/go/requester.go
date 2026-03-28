@@ -17,6 +17,8 @@ type Requester interface {
 	Close()
 
 	handleTokenUpdate(token string)
+	setToken(token string)
+	getAccessToken() string
 	setForwardTo(forwardTo string)
 	getForwardTo() string
 }
@@ -49,9 +51,15 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 		return 0, nil, nil, err
 	}
 
-	// Set authorization header
-	if csrfToken := h.httpClient.getCookie(COOKIE_CSRF_TOKEN, &h.baseURL); csrfToken != "" {
-		req.Header.Set(HTTP_HEADER_NAME_CSRF_TOKEN, csrfToken)
+	// Apply implicit auth only when the caller did not provide explicit auth headers.
+	if _, hasAuth := headers["Authorization"]; !hasAuth {
+		if _, hasCsrf := headers[HTTP_HEADER_NAME_CSRF_TOKEN]; !hasCsrf {
+			if csrfToken := h.httpClient.getCookie(COOKIE_CSRF_TOKEN, &h.baseURL); csrfToken != "" {
+				req.Header.Set(HTTP_HEADER_NAME_CSRF_TOKEN, csrfToken)
+			} else if accessToken := h.httpClient.getCookie(COOKIE_TOKEN, &h.baseURL); accessToken != "" {
+				req.Header.Set("Authorization", "Bearer "+accessToken)
+			}
+		}
 	}
 
 	// Set forwarding header
@@ -108,6 +116,13 @@ func (h *HTTPRequester) Close() {
 func (h *HTTPRequester) handleTokenUpdate(token string) {
 	h.httpClient.SaveCookies()
 }
+func (h *HTTPRequester) setToken(token string) {
+	h.httpClient.setCookie(COOKIE_TOKEN, token, &h.baseURL)
+	h.handleTokenUpdate(token)
+}
+func (h *HTTPRequester) getAccessToken() string {
+	return h.httpClient.getCookie(COOKIE_TOKEN, &h.baseURL)
+}
 func (h *HTTPRequester) setForwardTo(forwardTo string) {
 	h.forwardingHost.Store(forwardTo)
 }
@@ -152,7 +167,7 @@ func (t *TCPRequester) Send(method, apiPath string, queries url.Values, headers 
 	}
 	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT_TCP)
 	for k, v := range headers {
-		req.Header.Add(k, v)
+		req.Header.Set(k, v)
 	}
 
 	resp, err := t.request(req)
@@ -235,6 +250,12 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 func (t *TCPRequester) handleTokenUpdate(token string) {
 	t.token.Store(token)
 }
+func (t *TCPRequester) setToken(token string) {
+	t.token.Store(token)
+}
+func (t *TCPRequester) getAccessToken() string {
+	return t.token.Load()
+}
 func (t *TCPRequester) setForwardTo(forwardTo string) {
 	t.forwardingHost.Store(forwardTo)
 }
@@ -279,7 +300,7 @@ func (w *WSSRequester) Send(method string, apiPath string, queries url.Values, h
 	}
 	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT_WSS)
 	for k, v := range headers {
-		req.Header.Add(k, v)
+		req.Header.Set(k, v)
 	}
 
 	resp, err := w.request(req)
@@ -360,6 +381,12 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 
 func (w *WSSRequester) handleTokenUpdate(token string) {
 	w.token.Store(token)
+}
+func (w *WSSRequester) setToken(token string) {
+	w.token.Store(token)
+}
+func (w *WSSRequester) getAccessToken() string {
+	return w.token.Load()
 }
 func (w *WSSRequester) setForwardTo(forwardTo string) {
 	w.forwardingHost.Store(forwardTo)

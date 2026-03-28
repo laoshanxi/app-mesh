@@ -6,6 +6,7 @@ import stat
 import json
 import unittest
 import tempfile
+from http.cookiejar import Cookie
 from unittest import TestCase
 from pyotp import TOTP
 
@@ -290,15 +291,17 @@ class TestAppMeshClient(TestCase):
             # init empty cookie file
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
             client = AppMeshClient(rest_cookie_file=cookie_path)
+            # Cookie file is NOT created until first token write (lazy creation)
+            self.assertFalse(os.path.exists(cookie_path))
+
+            # cookie set (file created on login)
+            client.login("admin", self.DEFAULT_PASSWORD)
             self.assertTrue(os.path.exists(cookie_path))
 
             # permission check (Unix only)
             if os.name == "posix":
                 mode = stat.S_IMODE(os.stat(cookie_path).st_mode)
                 self.assertEqual(mode, 0o600)
-
-            # cookie set
-            client.login("admin", self.DEFAULT_PASSWORD)
             content = self.read_file_content(cookie_path)
             self.assertIn("appmesh_auth_token", content)
             self.assertIn("appmesh_csrf_token", content)
@@ -365,6 +368,127 @@ class TestAppMeshClient(TestCase):
                 client.disable_totp()
             except Exception:
                 pass
+            os.remove(cookie_path) if os.path.exists(cookie_path) else None
+
+    def test_12_set_token(self):
+        """Test set_token, jwt_token constructor, with and without cookie file"""
+
+        # 1. set_token without cookie file (in-memory)
+        client = AppMeshClient()
+        client.login("admin", self.DEFAULT_PASSWORD)
+        token = client._get_access_token()
+        self.assertIsNotNone(token)
+
+        client2 = AppMeshClient()
+        client2.set_token(token)
+        apps = client2.list_apps()
+        self.assertGreater(len(apps), 0)
+
+        # 2. jwt_token constructor without cookie file
+        client3 = AppMeshClient(jwt_token=token)
+        apps3 = client3.list_apps()
+        self.assertEqual(len(apps3), len(apps))
+
+        # 3. set_token with cookie file (file-backed + persist + reload)
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            cookie_path = tmp.name
+        try:
+            os.remove(cookie_path) if os.path.exists(cookie_path) else None
+
+            client4 = AppMeshClient(rest_cookie_file=cookie_path)
+            # No file created yet
+            self.assertFalse(os.path.exists(cookie_path))
+            client4.set_token(token)
+            # File created on set_token
+            self.assertTrue(os.path.exists(cookie_path))
+            self.assertIn("appmesh_auth_token", self.read_file_content(cookie_path))
+
+            # Reload from file
+            client5 = AppMeshClient(rest_cookie_file=cookie_path)
+            self.assertEqual(client5._get_access_token(), token)
+            apps5 = client5.list_apps()
+            self.assertEqual(len(apps5), len(apps))
+
+            # 4. jwt_token constructor + cookie file
+            os.remove(cookie_path)
+            client6 = AppMeshClient(jwt_token=token, rest_cookie_file=cookie_path)
+            self.assertTrue(os.path.exists(cookie_path))
+            apps6 = client6.list_apps()
+            self.assertEqual(len(apps6), len(apps))
+
+            # Reload
+            client7 = AppMeshClient(rest_cookie_file=cookie_path)
+            self.assertEqual(client7._get_access_token(), token)
+        finally:
+            os.remove(cookie_path) if os.path.exists(cookie_path) else None
+
+    def test_13_authenticate_apply_semantics(self):
+        """authenticate(apply=False) must not mutate state; apply=True must."""
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self.status_code = 200
+                self._payload = payload
+                self.text = json.dumps(payload)
+
+            def json(self):
+                return self._payload
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            cookie_path = tmp.name
+        try:
+            os.remove(cookie_path) if os.path.exists(cookie_path) else None
+
+            client = AppMeshClient(rest_url="https://127.0.0.1:6060", ssl_verify=False, rest_cookie_file=cookie_path)
+            client.set_token("existing-token")
+            before = self.read_file_content(cookie_path)
+
+            seen_auth = []
+            seen_set_cookie = []
+
+            def fake_request(method, path, query=None, header=None, body=None, raise_on_fail=True):
+                self.assertEqual("/appmesh/auth", path)
+                seen_auth.append(header.get("Authorization"))
+                seen_set_cookie.append(header.get("X-Set-Cookie"))
+                if header.get("X-Set-Cookie") == "true":
+                    client.session.cookies.set_cookie(
+                        Cookie(
+                            version=0,
+                            name=client._COOKIE_TOKEN,
+                            value="verified-token",
+                            port=None,
+                            port_specified=False,
+                            domain="",
+                            domain_specified=False,
+                            domain_initial_dot=False,
+                            path="/",
+                            path_specified=True,
+                            secure=False,
+                            expires=None,
+                            discard=False,
+                            comment=None,
+                            comment_url=None,
+                            rest={},
+                            rfc2109=False,
+                        )
+                    )
+                return FakeResponse({"access_token": "verified-token", "expires_in": 3600})
+
+            client._request_http = fake_request
+
+            ok, _ = client.authenticate("provided-token", apply=False)
+            self.assertTrue(ok)
+            self.assertEqual("Bearer provided-token", seen_auth[-1])
+            self.assertIsNone(seen_set_cookie[-1])
+            self.assertEqual("existing-token", client._get_access_token())
+            self.assertEqual(before, self.read_file_content(cookie_path))
+
+            ok, _ = client.authenticate("provided-token", apply=True)
+            self.assertTrue(ok)
+            self.assertEqual("true", seen_set_cookie[-1])
+            self.assertEqual("verified-token", client._get_access_token())
+            self.assertIn("verified-token", self.read_file_content(cookie_path))
+        finally:
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
 
 

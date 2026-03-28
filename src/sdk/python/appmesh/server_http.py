@@ -47,14 +47,15 @@ class AppMeshServer:
         client: Optional[AppMeshClient] = None,
         logger_: Optional[logging.Logger] = None,
     ):
-        """Initialize an App Mesh server for interacting with the App Mesh service.
+        """Initialize a server-side helper for task fetch/return.
 
         Args:
             rest_url: The server's base URI. Defaults to "https://127.0.0.1:6060".
             ssl_verify: SSL server verification mode.
             ssl_client_cert: SSL client certificate file(s).
             rest_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.
-            client: Pre-configured AppMeshClient instance (used by TCP/WSS subclasses).
+            client: Pre-configured AppMeshClient instance (used by TCP/WSS subclasses so all
+                transports share the same task API).
             logger_: Optional logger instance.
         """
         self._client = client or AppMeshClient(rest_url, ssl_verify, ssl_client_cert, rest_timeout)
@@ -83,7 +84,7 @@ class AppMeshServer:
             timeout: Maximum total time in seconds to keep retrying. 0 means no timeout (default).
 
         Returns:
-            The payload provided by the client as returned by the service.
+            The payload bytes provided by the invoking client.
 
         Raises:
             TimeoutError: If timeout is reached before a successful fetch.
@@ -97,24 +98,31 @@ class AppMeshServer:
         start_time = time.time()
 
         while True:
-            resp = self._client._request_http(
-                AppMeshClient._Method.GET,
-                path=path,
-                query=query_params,
-                raise_on_fail=False,
-            )
+            attempt_start = time.monotonic()
+            try:
+                resp = self._client._request_http(
+                    AppMeshClient._Method.GET,
+                    path=path,
+                    query=query_params,
+                    raise_on_fail=False,
+                )
 
-            if resp.status_code == HTTPStatus.OK:
-                return resp.content
+                if resp.status_code == HTTPStatus.OK:
+                    return resp.content
+
+                self._logger.warning("task_fetch failed with status %d: %s, retrying...", resp.status_code, resp.text)
+            except Exception as ex:
+                self._logger.warning("task_fetch request failed: %s, retrying...", ex)
 
             attempts += 1
             if max_retries > 0 and attempts >= max_retries:
-                raise AppMeshError(f"task_fetch failed after {attempts} attempts, last status: {resp.status_code}")
+                raise AppMeshError(f"task_fetch failed after {attempts} attempts")
             if timeout > 0 and (time.time() - start_time) >= timeout:
-                raise TimeoutError(f"task_fetch timed out after {timeout}s, last status: {resp.status_code}")
+                raise TimeoutError(f"task_fetch timed out after {timeout}s")
 
-            self._logger.warning("task_fetch failed with status %d: %s, retrying...", resp.status_code, resp.text)
-            time.sleep(self._RETRY_DELAY_SECONDS)
+            remaining = self._RETRY_DELAY_SECONDS - (time.monotonic() - attempt_start)
+            if remaining > 0:
+                time.sleep(remaining)
 
     def task_return(self, result: Union[str, bytes]) -> None:
         """Return the result of a server-side invocation back to the original client.
@@ -123,7 +131,7 @@ class AppMeshServer:
         after processing payload data so the invoking client can retrieve it.
 
         Args:
-            result: Result payload to be delivered back to the client.
+            result: Result payload to be delivered back to the client exactly as provided.
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"

@@ -49,14 +49,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "428":
           description: Precondition Required - TOTP required.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              description: TOTP authentication challenge metadata.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  WWW-Authenticate:
-                    type: string
-                    example: 'TOTP realm="TOTP Authentication", qop="auth"'
                   totp_challenge:
                     type: string
                     example: "CHALLENGE-ABC"
@@ -78,11 +80,18 @@ paths:
 
   /appmesh/auth:
     post:
-      summary: Verify user token and permission.
+      summary: Verify user token and optionally apply it to HTTP cookie authentication.
       tags: [Authorization]
       security:
         - BearerAuth: []
       parameters:
+        - name: X-Set-Cookie
+          in: header
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Optional to apply the verified token to HTTP cookie authentication.
         - name: X-Permission
           in: header
           schema:
@@ -96,30 +105,11 @@ paths:
           description: JWT audience.
       responses:
         "200":
-          description: Verified successfully.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  permission:
-                    type: string
-                    example: "app-view"
-                  success:
-                    type: boolean
-                    example: true
-                  user:
-                    type: string
-                    example: "admin"
-                  audience:
-                    type: string
-                    example: "appmesh-service"
+          $ref: "#/components/responses/TokenResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
 
   /appmesh/self/logoff:
     post:
@@ -204,9 +194,10 @@ paths:
       parameters:
         - name: X-Set-Cookie
           in: header
+          required: false
           schema:
             type: boolean
-          default: true
+            default: false
           description: Request to set cookie for authentication.
       requestBody:
         description: TOTP validation request.
@@ -1441,6 +1432,9 @@ components:
                   name:
                     type: string
                     example: "admin"
+                  group:
+                    type: string
+                    example: "admin"
                   auth_time:
                     type: integer
                     example: 1704067200
@@ -1450,9 +1444,12 @@ components:
               token_type:
                 type: string
                 example: "Bearer"
+              issued_at:
+                type: integer
+                example: 1704067200
               expire_time:
                 type: integer
                 example: 1704070800
-              expire_seconds:
+              expires_in:
                 type: integer
                 example: 3600

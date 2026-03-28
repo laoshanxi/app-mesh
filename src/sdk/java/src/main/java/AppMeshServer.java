@@ -4,6 +4,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -15,8 +16,7 @@ import java.util.logging.Logger;
  */
 public class AppMeshServer {
     private static final Logger LOGGER = Logger.getLogger(AppMeshServer.class.getName());
-    private static final long INITIAL_RETRY_DELAY_MS = 100;
-    private static final long MAX_RETRY_DELAY_MS = 10_000;
+    private static final long RETRY_DELAY_MS = 100;
 
     /** 0 = unlimited retries (original behavior). */
     private static final int DEFAULT_MAX_RETRIES = 0;
@@ -24,10 +24,12 @@ public class AppMeshServer {
     protected final AppMeshClient client;
     private final int maxRetries;
 
+    /** Create a server-side helper with the default HTTP client and unlimited fetch retries. */
     public AppMeshServer() {
         this(new AppMeshClient.Builder().build(), DEFAULT_MAX_RETRIES);
     }
 
+    /** Create a server-side helper around an existing client with unlimited fetch retries. */
     public AppMeshServer(AppMeshClient client) {
         this(client, DEFAULT_MAX_RETRIES);
     }
@@ -60,10 +62,10 @@ public class AppMeshServer {
     /**
      * Fetch a task payload from the App Mesh service.
      *
-     * <p>Retries on non-OK responses with exponential backoff up to {@code maxRetries}
+     * <p>Retries on non-OK responses with a fixed short delay up to {@code maxRetries}
      * times (0 = unlimited).
      *
-     * @return the task payload bytes
+     * @return the raw task payload bytes provided by the invoking client
      * @throws IOException if the maximum number of retries is exceeded or an unrecoverable error occurs
      */
     public byte[] taskFetch() throws IOException {
@@ -76,9 +78,9 @@ public class AppMeshServer {
         query.put("process_key", pkey);
 
         int attempts = 0;
-        long delay = INITIAL_RETRY_DELAY_MS;
 
         while (true) {
+            long attemptStart = System.nanoTime();
             try {
                 HttpURLConnection conn = client.request("GET", path, null, null, query);
                 int status = conn.getResponseCode();
@@ -95,12 +97,14 @@ public class AppMeshServer {
                 throw new IOException("taskFetch failed after " + attempts + " retries");
             }
 
-            try {
-                Thread.sleep(delay);
-                delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS); // exponential backoff
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Interrupted while waiting to retry taskFetch", e);
+            long remainingMs = RETRY_DELAY_MS - TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - attemptStart);
+            if (remainingMs > 0) {
+                try {
+                    Thread.sleep(remainingMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting to retry taskFetch", e);
+                }
             }
         }
     }
@@ -108,7 +112,7 @@ public class AppMeshServer {
     /**
      * Return a processing result back to the App Mesh service.
      *
-     * @param result the result bytes to return
+     * @param result the result bytes to return to the invoking client as-is
      */
     public void taskReturn(byte[] result) throws IOException {
         String[] env = getRuntimeEnv();

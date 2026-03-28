@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 
 use crate::client_http::AppMeshClient;
 use crate::error::AppMeshError;
@@ -24,7 +25,7 @@ pub struct AppMeshServer {
 }
 
 impl AppMeshServer {
-    /// Create a new HTTP server context which reuses `AppMeshClient`.
+    /// Create a new server-side task context backed by the HTTP client.
     pub fn new(
         rest_url: Option<String>,
         ssl_verify: Option<String>,
@@ -49,7 +50,7 @@ impl AppMeshServer {
         Ok((process_key, app_name))
     }
 
-    /// Create AppMeshServer with a pre-built client.
+    /// Create `AppMeshServer` with a pre-built client.
     pub fn with_client(client: Arc<AppMeshClient>) -> Arc<Self> {
         Arc::new(Self { client, retry_delay: Duration::from_millis(100), max_retries: DEFAULT_MAX_RETRIES })
     }
@@ -59,7 +60,7 @@ impl AppMeshServer {
         Arc::new(Self { client, retry_delay, max_retries })
     }
 
-    /// Fetch a task payload from App Mesh service.
+    /// Fetch a task payload for the current application process.
     ///
     /// Retries on non-OK responses up to `max_retries` times (0 = unlimited).
     pub async fn task_fetch(&self) -> Result<Bytes, AppMeshError> {
@@ -73,29 +74,42 @@ impl AppMeshServer {
         query.insert("process_key".to_string(), pkey);
 
         let mut attempts: u32 = 0;
+        let mut last_status = None;
+        let mut last_message: Option<String>;
         loop {
-            let resp =
-                self.client.raw_request(Method::GET, &path, None, None, Some(query.clone()), false).await?;
-
-            if resp.status() == StatusCode::OK {
-                return Ok(resp.into_bytes());
+            let attempt_start = Instant::now();
+            match self.client.raw_request(Method::GET, &path, None, None, Some(query.clone()), false).await {
+                Ok(resp) => {
+                    if resp.status() == StatusCode::OK {
+                        return Ok(resp.into_bytes());
+                    }
+                    let status = resp.status();
+                    let text = resp.text()?;
+                    warn!("task_fetch attempt {} failed with status {}: retrying...", attempts + 1, status);
+                    last_status = Some(status);
+                    last_message = Some(text);
+                }
+                Err(e) => {
+                    warn!("task_fetch attempt {} request failed: {}: retrying...", attempts + 1, e);
+                    last_message = Some(e.to_string());
+                }
             }
 
             attempts += 1;
             if self.max_retries > 0 && attempts >= self.max_retries {
-                let text = resp.text()?;
                 return Err(AppMeshError::RequestFailed {
-                    status: resp.status(),
-                    message: format!("task_fetch failed after {} retries: {}", attempts, text),
+                    status: last_status.unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                    message: last_message.unwrap_or_else(|| format!("task_fetch failed after {} retries", attempts)),
                 });
             }
 
-            warn!("task_fetch attempt {} failed with status {}: retrying...", attempts, resp.status());
-            sleep(self.retry_delay).await;
+            if let Some(remaining) = self.retry_delay.checked_sub(attempt_start.elapsed()) {
+                sleep(remaining).await;
+            }
         }
     }
 
-    /// Return processing result back to App Mesh service.
+    /// Return the processed result bytes back to App Mesh so the invoker can receive them.
     pub async fn task_return(&self, result: &[u8]) -> Result<(), AppMeshError> {
         use reqwest::Method;
 

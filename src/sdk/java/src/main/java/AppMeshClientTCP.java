@@ -26,10 +26,17 @@ public class AppMeshClientTCP extends AppMeshClient {
     private final TCPTransport tcpTransport;
     private static final int TCP_BLOCK_SIZE = 16 * 1024 - 128; // TLS-optimized chunk size
 
+    /** Create a TCP transport client with default TLS verification behavior. */
     public AppMeshClientTCP(String host, int port) {
         this(host, port, false, null, null, null);
     }
 
+    /**
+     * Create a TCP transport client that reuses the standard App Mesh client API.
+     *
+     * <p>Control requests use the normal SDK surface, while file transfers switch to the TCP
+     * file-socket side channel for larger payloads.
+     */
     public AppMeshClientTCP(String host, int port, boolean disableSSLVerification, String caCertPath,
             String clientCertPath, String clientKeyPath) {
         super(new AppMeshClient.Builder().baseURL("https://" + host + ":" + port));
@@ -43,9 +50,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         }
     }
 
-    /**
-     * Builder for {@link AppMeshClientTCP} to allow fluent configuration.
-     */
+    /** Builder for {@link AppMeshClientTCP} to allow fluent configuration. */
     public static class Builder {
         private String host = "127.0.0.1";
         private int port = 6059;
@@ -90,6 +95,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         }
     }
 
+    /** Send a request over TCP transport and expose it as an {@link HttpURLConnection}-like object. */
     @Override
     public HttpURLConnection request(String method, String path, Object body, java.util.Map<String, String> headers,
             java.util.Map<String, String> params) throws IOException {
@@ -137,6 +143,12 @@ public class AppMeshClientTCP extends AppMeshClient {
         }
     }
 
+    /**
+     * Download a file through the TCP file-socket side channel.
+     *
+     * <p>When {@code applyFileAttributes} is true, returned POSIX metadata is applied locally on a
+     * best-effort basis.
+     */
     @Override
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>();
@@ -173,6 +185,12 @@ public class AppMeshClientTCP extends AppMeshClient {
         return true;
     }
 
+    /**
+     * Upload a file through the TCP file-socket side channel.
+     *
+     * <p>When {@code preservePermissions} is true, local file metadata is sent so the server can
+     * recreate permissions and ownership when supported.
+     */
     @Override
     public boolean uploadFile(Object localFile, String remoteFile, boolean preservePermissions) throws IOException {
         File file;

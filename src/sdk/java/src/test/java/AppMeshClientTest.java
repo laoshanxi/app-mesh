@@ -43,6 +43,73 @@ public class AppMeshClientTest {
     }
 
     @Test
+    public void testSetTokenAndCookieFile() throws IOException {
+        LOGGER.info("testSetTokenAndCookieFile");
+
+        // Login to get a valid token
+        String token = client.login(USERNAME, PASSWORD, null, "P1W", "");
+        assertNotNull(token);
+
+        // 1. setToken without cookie file (in-memory)
+        AppMeshClient client2 = new AppMeshClient.Builder()
+                .baseURL("https://127.0.0.1:6060").disableSSLVerify().build();
+        client2.setToken(token);
+        JSONArray apps = client2.listApps();
+        assertNotNull(apps);
+        assertTrue(apps.length() > 0, "setToken in-memory: should list apps");
+        LOGGER.info("setToken in-memory: " + apps.length() + " apps");
+
+        // 2. jwtToken constructor without cookie file
+        AppMeshClient client3 = new AppMeshClient.Builder()
+                .baseURL("https://127.0.0.1:6060").disableSSLVerify().jwtToken(token).build();
+        JSONArray apps3 = client3.listApps();
+        assertEquals(apps.length(), apps3.length(), "jwtToken constructor: same app count");
+        LOGGER.info("jwtToken constructor: " + apps3.length() + " apps");
+
+        // 3. setToken with cookie file
+        File tmpFile = File.createTempFile("appmesh_java_test_", ".cookie");
+        tmpFile.delete(); // Remove to test lazy creation
+        String cookiePath = tmpFile.getAbsolutePath();
+        try {
+            AppMeshClient client4 = new AppMeshClient.Builder()
+                    .baseURL("https://127.0.0.1:6060").disableSSLVerify()
+                    .cookieFile(cookiePath).build();
+            assertFalse(tmpFile.exists(), "Cookie file should not exist before set_token");
+            client4.setToken(token);
+            assertTrue(tmpFile.exists(), "Cookie file should be created on set_token");
+            JSONArray apps4 = client4.listApps();
+            assertEquals(apps.length(), apps4.length());
+            LOGGER.info("setToken + cookieFile: " + apps4.length() + " apps");
+
+            // 4. Reload from cookie file
+            AppMeshClient client5 = new AppMeshClient.Builder()
+                    .baseURL("https://127.0.0.1:6060").disableSSLVerify()
+                    .cookieFile(cookiePath).build();
+            JSONArray apps5 = client5.listApps();
+            assertEquals(apps.length(), apps5.length(), "Reload from cookie file: same app count");
+            LOGGER.info("Reload from cookieFile: " + apps5.length() + " apps");
+
+            // 5. jwtToken + cookieFile constructor
+            tmpFile.delete();
+            AppMeshClient client6 = new AppMeshClient.Builder()
+                    .baseURL("https://127.0.0.1:6060").disableSSLVerify()
+                    .jwtToken(token).cookieFile(cookiePath).build();
+            assertTrue(tmpFile.exists(), "Cookie file created via jwtToken+cookieFile");
+            JSONArray apps6 = client6.listApps();
+            assertEquals(apps.length(), apps6.length());
+            LOGGER.info("jwtToken + cookieFile: " + apps6.length() + " apps");
+
+            client2.close();
+            client3.close();
+            client4.close();
+            client5.close();
+            client6.close();
+        } finally {
+            tmpFile.delete();
+        }
+    }
+
+    @Test
     public void testLoginAndAuthentication() throws IOException {
         LOGGER.info("testLoginAndAuthentication");
         String token = client.login(USERNAME, PASSWORD, null, "P1W", "");
@@ -56,8 +123,8 @@ public class AppMeshClientTest {
         assertNotNull(apps, "listApps should return a non-null JSONArray");
         LOGGER.info("All applications count: " + apps.length());
 
-        boolean authenticated = client.authenticate(token, "app-view", "");
-        assertTrue(authenticated, "User should be authenticated with the token");
+        Pair<Boolean, String> authResult = client.authenticate(token, "app-view", "");
+        assertTrue(authResult.getLeft(), "User should be authenticated with the token");
 
         boolean loggedOut = client.logout();
         assertTrue(loggedOut, "User should be successfully logged out");

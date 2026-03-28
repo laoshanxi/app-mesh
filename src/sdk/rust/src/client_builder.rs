@@ -35,12 +35,14 @@ pub struct ClientBuilder {
     ssl_client_cert: Option<PathBuf>,
     ssl_client_key: Option<PathBuf>,
     cookie_file: Option<String>,
+    jwt_token: Option<String>,
     timeout: Option<Duration>,
     danger_accept_invalid_certs: bool,
     auto_refresh_token: bool,
 }
 
 impl ClientBuilder {
+    /// Create a builder for the HTTP/HTTPS App Mesh client.
     pub fn new() -> Self {
         Self::default()
     }
@@ -94,6 +96,12 @@ impl ClientBuilder {
         self
     }
 
+    /// Set a JWT token directly without server verification (no network call).
+    pub fn jwt_token(mut self, token: impl Into<String>) -> Self {
+        self.jwt_token = Some(token.into());
+        self
+    }
+
     /// Enable cookie persistence to a file.
     pub fn cookie_file(mut self, path: impl Into<String>) -> Self {
         self.cookie_file = Some(path.into());
@@ -136,6 +144,10 @@ impl ClientBuilder {
     }
 
     /// Build the HTTP client.
+    ///
+    /// If `jwt_token()` was provided, the token is attached locally without a verification request.
+    /// If `auto_refresh_token(true)` was set, refresh is enabled but still requires a successful
+    /// login (or another stored token) before the refresh loop can do useful work.
     pub fn build(self) -> Result<Arc<AppMeshClient>> {
         self.validate()?;
 
@@ -154,6 +166,10 @@ impl ClientBuilder {
             self.timeout,
             self.danger_accept_invalid_certs,
         )?;
+
+        if let Some(token) = &self.jwt_token {
+            client.set_token(token);
+        }
 
         if self.auto_refresh_token {
             client.set_auto_refresh_token(true);
@@ -187,6 +203,7 @@ pub struct ClientBuilderTCP {
 }
 
 impl ClientBuilderTCP {
+    /// Create a builder for the TCP transport client.
     pub fn new() -> Self {
         Self::default()
     }
@@ -198,11 +215,13 @@ impl ClientBuilderTCP {
         self
     }
 
+    /// Set the TCP host (default: `127.0.0.1`).
     pub fn host(mut self, host: impl Into<String>) -> Self {
         self.host = Some(host.into());
         self
     }
 
+    /// Set the TCP port (default: `6059`).
     pub fn port(mut self, port: u16) -> Self {
         self.port = Some(port);
         self
@@ -302,6 +321,7 @@ pub struct ClientBuilderWSS {
 }
 
 impl ClientBuilderWSS {
+    /// Create a builder for the WSS transport client.
     pub fn new() -> Self {
         Self::default()
     }
@@ -313,11 +333,13 @@ impl ClientBuilderWSS {
         self
     }
 
+    /// Set the WSS host (default: `127.0.0.1`).
     pub fn host(mut self, host: impl Into<String>) -> Self {
         self.host = Some(host.into());
         self
     }
 
+    /// Set the WSS port (default: `6058`).
     pub fn port(mut self, port: u16) -> Self {
         self.port = Some(port);
         self

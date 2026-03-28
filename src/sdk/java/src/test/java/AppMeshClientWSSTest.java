@@ -47,8 +47,8 @@ public class AppMeshClientWSSTest {
         assertNotNull(apps);
         LOGGER.info("WSS listApps count: " + apps.length());
 
-        boolean auth = client.authenticate(token, "app-view", "");
-        assertTrue(auth);
+        Pair<Boolean, String> auth = client.authenticate(token, "app-view", "");
+        assertTrue(auth.getLeft());
     }
 
     @Test
