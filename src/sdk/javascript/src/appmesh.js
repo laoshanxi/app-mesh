@@ -290,19 +290,29 @@ class AppMeshClient {
   }
 
   /**
-   * Verify the token currently attached to this client/session and optionally check permission.
-   * @param {string} [permission] - Permission to check
+   * Verify an external JWT token and optionally apply it to this client session.
+   *
+   * @param {string} token - JWT token to verify
+   * @param {string} [permission=null] - Permission to check
    * @param {string} [audience] - JWT audience
+   * @param {boolean} [apply=true] - When true, applies the verified token to this client session
+   *   and updates local auth state on success. When false, the token is only verified and local
+   *   state is unchanged.
    * @returns {Promise<{success: boolean, responseText: string}>} Verification result with success flag and response text.
-   * @throws {AppMeshError} If the server rejects the token or permission check fails.
    */
-  async authenticate(permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
-    const headers = {};
+  async authenticate(token, permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE, apply = true) {
+    const headers = { Authorization: `Bearer ${token}` };
     if (permission) headers["X-Permission"] = permission;
     if (audience) headers["X-Audience"] = audience;
-    const response = await this._request("post", "/appmesh/auth", null, { headers });
-    const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-    return { success: true, responseText };
+    if (apply) headers["X-Set-Cookie"] = "true";
+    try {
+      const response = await this._request("post", "/appmesh/auth", null, { headers });
+      const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+      return { success: true, responseText };
+    } catch (error) {
+      const responseText = error instanceof AppMeshError ? error.message : String(error);
+      return { success: false, responseText };
+    }
   }
 
   /**

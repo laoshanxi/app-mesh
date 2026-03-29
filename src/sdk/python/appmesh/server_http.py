@@ -73,29 +73,20 @@ class AppMeshServer:
             raise AppMeshError("Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.")
         return process_key, app_name
 
-    def task_fetch(self, max_retries: int = 0, timeout: float = 0) -> Union[str, bytes]:
+    def task_fetch(self) -> Union[str, bytes]:
         """Fetch task data in the currently running App Mesh application process.
 
         Used by App Mesh application process to obtain the payload from App Mesh service
-        that a client pushed to it.
-
-        Args:
-            max_retries: Maximum number of retry attempts. 0 means retry forever (default).
-            timeout: Maximum total time in seconds to keep retrying. 0 means no timeout (default).
+        that a client pushed to it. Retries indefinitely until successful.
+        If a request fails within 100ms, sleeps briefly before retrying;
+        otherwise retries immediately.
 
         Returns:
             The payload bytes provided by the invoking client.
-
-        Raises:
-            TimeoutError: If timeout is reached before a successful fetch.
-            AppMeshError: If max_retries is exceeded without a successful fetch.
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
         query_params = {"process_key": pkey}
-
-        attempts = 0
-        start_time = time.time()
 
         while True:
             attempt_start = time.monotonic()
@@ -113,12 +104,6 @@ class AppMeshServer:
                 self._logger.warning("task_fetch failed with status %d: %s, retrying...", resp.status_code, resp.text)
             except Exception as ex:
                 self._logger.warning("task_fetch request failed: %s, retrying...", ex)
-
-            attempts += 1
-            if max_retries > 0 and attempts >= max_retries:
-                raise AppMeshError(f"task_fetch failed after {attempts} attempts")
-            if timeout > 0 and (time.time() - start_time) >= timeout:
-                raise TimeoutError(f"task_fetch timed out after {timeout}s")
 
             remaining = self._RETRY_DELAY_SECONDS - (time.monotonic() - attempt_start)
             if remaining > 0:

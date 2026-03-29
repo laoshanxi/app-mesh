@@ -123,8 +123,19 @@ public class AppMeshClientTest {
         assertNotNull(apps, "listApps should return a non-null JSONArray");
         LOGGER.info("All applications count: " + apps.length());
 
-        Pair<Boolean, String> authResult = client.authenticate(token, "app-view", "");
-        assertTrue(authResult.getLeft(), "User should be authenticated with the token");
+        // authenticate with apply=false (verify only, no token update)
+        Pair<Boolean, String> authResult = client.authenticate(token, "app-view", "", false);
+        assertTrue(authResult.getLeft(), "User should be authenticated with apply=false");
+
+        // authenticate with apply=true (verify and update client token)
+        Pair<Boolean, String> applyResult = client.authenticate(token, "app-view", "", true);
+        assertTrue(applyResult.getLeft(), "User should be authenticated with apply=true");
+        assertNotNull(applyResult.getRight(), "apply=true should return response text");
+        assertFalse(applyResult.getRight().isEmpty(), "apply=true response text should not be empty");
+
+        // backward-compatible 3-arg overload (defaults to apply=true, matching Python SDK)
+        Pair<Boolean, String> compatResult = client.authenticate(token, "app-view", "");
+        assertTrue(compatResult.getLeft(), "User should be authenticated with 3-arg overload");
 
         boolean loggedOut = client.logout();
         assertTrue(loggedOut, "User should be successfully logged out");

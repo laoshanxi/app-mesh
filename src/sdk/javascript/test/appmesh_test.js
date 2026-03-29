@@ -32,8 +32,22 @@ async function test() {
     await client.login(username, password)
   })
 
-  await assert('authenticate', async () => {
-    await client.authenticate()
+  await assert('authenticate (apply=true)', async () => {
+    const cookieStr = client._client?.defaults?.headers?.Cookie || ''
+    const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
+    const token = match ? match.split('=').slice(1).join('=') : null
+    if (!token) throw new Error('expected token after login')
+    const result = await client.authenticate(token)
+    if (!result.success) throw new Error(`authenticate failed: ${result.responseText}`)
+  })
+
+  await assert('authenticate (apply=false)', async () => {
+    const cookieStr = client._client?.defaults?.headers?.Cookie || ''
+    const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
+    const token = match ? match.split('=').slice(1).join('=') : null
+    if (!token) throw new Error('expected token after login')
+    const result = await client.authenticate(token, null, undefined, false)
+    if (!result.success) throw new Error(`authenticate failed: ${result.responseText}`)
   })
 
   await assert('renew_token', async () => {

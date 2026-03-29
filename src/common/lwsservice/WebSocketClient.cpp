@@ -1,5 +1,6 @@
 // src/common/lwsservice/WebSocketClient.cpp
 #include "WebSocketClient.h"
+#include "../JwtHelper.h"
 #include "../UriParser.hpp"
 
 #include <cstring>
@@ -21,8 +22,8 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
         Client *client = (Client *)lws_get_opaque_user_data(wsi);
         if (client && !client->m_config.auth_bearer_token.empty())
         {
-            std::string jwt = "Bearer " + client->m_config.auth_bearer_token;
-            if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_AUTHORIZATION, (unsigned char *)jwt.c_str(), (int)strlen(jwt.c_str()), p, end))
+            std::string jwt = JwtHelper::buildBearerAuthorization(client->m_config.auth_bearer_token);
+            if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_AUTHORIZATION, (unsigned char *)jwt.c_str(), (int)jwt.size(), p, end))
             {
                 return -1;
             }
