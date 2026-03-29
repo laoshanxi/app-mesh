@@ -109,10 +109,6 @@ public class AppMeshClient implements Closeable {
             onTokenChanged(builder.jwtToken);
         }
 
-        if (this.autoRefreshToken && this.jwtToken.get() != null && !this.jwtToken.get().isEmpty()) {
-            startTokenRefresh();
-        }
-
         // Build per-instance SSLContext
         SSLSocketFactory factory = null;
         if (builder.caCertFilePath != null || builder.clientCertFilePath != null || builder.disableSSLVerification) {
@@ -306,6 +302,26 @@ public class AppMeshClient implements Closeable {
         if (cookieFile != null && !cookieFile.isEmpty()) {
             saveTokenToFile(token);
         }
+        if (token != null && !token.isEmpty() && autoRefreshToken) {
+            startTokenRefresh();
+        }
+    }
+
+    /**
+     * Read a successful auth response: extract access_token, apply to this client, persist.
+     *
+     * @return the extracted JWT token
+     */
+    private String applyAuthToken(String responseContent) {
+        JSONObject jsonResponse = new JSONObject(responseContent);
+        String token = jsonResponse.getString("access_token");
+        this.jwtToken.set(token);
+        onTokenChanged(token);
+        return token;
+    }
+
+    private String applyAuthToken(HttpURLConnection conn) throws IOException {
+        return applyAuthToken(Utils.readResponse(conn));
     }
 
     private void saveTokenToFile(String token) {
@@ -464,13 +480,7 @@ public class AppMeshClient implements Closeable {
         int statusCode = conn.getResponseCode();
 
         if (statusCode == HttpURLConnection.HTTP_OK) {
-            String responseContent = Utils.readResponse(conn);
-            JSONObject jsonResponse = new JSONObject(responseContent);
-            String token = jsonResponse.getString("access_token");
-            this.jwtToken.set(token);
-            onTokenChanged(token);
-            startTokenRefresh();
-            return token;
+            return applyAuthToken(conn);
         } else if (statusCode == HTTP_PRECONDITION_REQUIRED) {
             String responseContent = Utils.readResponseSafe(conn);
             JSONObject jsonResponse = new JSONObject(responseContent);
@@ -504,13 +514,7 @@ public class AppMeshClient implements Closeable {
         }
         HttpURLConnection conn = request("POST", "/appmesh/totp/validate", body, null, null);
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
-            String responseContent = Utils.readResponse(conn);
-            JSONObject jsonResponse = new JSONObject(responseContent);
-            String token = jsonResponse.getString("access_token");
-            this.jwtToken.set(token);
-            onTokenChanged(token);
-            startTokenRefresh();
-            return token;
+            return applyAuthToken(conn);
         }
         String errorBody = Utils.readResponseSafe(conn);
         throw new IOException("TOTP validation failed: HTTP " + conn.getResponseCode() + " - " + errorBody);
@@ -527,8 +531,6 @@ public class AppMeshClient implements Closeable {
             return ok;
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to logoff", e);
-            this.jwtToken.set(null);
-            onTokenChanged(null);
             return false;
         }
     }
@@ -536,23 +538,27 @@ public class AppMeshClient implements Closeable {
     /**
      * Set a JWT token directly without server-side verification.
      * Use when the token is already known to be valid.
-     * For server-side verification, use {@link #authenticate(String, String, String)} instead.
+     * For server-side verification, use {@link #authenticate(String, String, String, boolean)} instead.
      */
     public void setToken(String token) {
         this.jwtToken.set(token);
         onTokenChanged(token);
-        startTokenRefresh();
     }
 
     /**
-     * Verify only the provided JWT token with the server and optionally check permission.
+     * Verify the provided JWT token with the server and optionally check permission.
+     *
+     * <p>When {@code apply} is {@code true}, the verified token is applied to this client session
+     * and the stored JWT token is updated on success. When {@code false}, the token is only
+     * verified and the local client state is left unchanged.
      *
      * @param token      JWT token to verify
      * @param permission optional permission to check (null to skip)
      * @param audience   optional JWT audience (null to skip)
+     * @param apply      if true, apply the verified token to this client session on success
      * @return a pair of (success, responseText)
      */
-    public Pair<Boolean, String> authenticate(String token, String permission, String audience) throws IOException {
+    public Pair<Boolean, String> authenticate(String token, String permission, String audience, boolean apply) throws IOException {
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         if (audience != null && !audience.isEmpty()) {
@@ -561,10 +567,29 @@ public class AppMeshClient implements Closeable {
         if (permission != null && !permission.isEmpty()) {
             headers.put("X-Permission", permission);
         }
+        if (apply) {
+            headers.put("X-Set-Cookie", "true");
+        }
         HttpURLConnection conn = request("POST", "/appmesh/auth", null, headers, null);
         boolean ok = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
         String responseText = Utils.readResponseSafe(conn);
+        if (apply && ok) {
+            applyAuthToken(responseText);
+        }
         return Pair.of(ok, responseText);
+    }
+
+    /**
+     * Verify the provided JWT token with the server and optionally check permission.
+     * Defaults to {@code apply=true}, matching the Python SDK behavior.
+     *
+     * @param token      JWT token to verify
+     * @param permission optional permission to check (null to skip)
+     * @param audience   optional JWT audience (null to skip)
+     * @return a pair of (success, responseText)
+     */
+    public Pair<Boolean, String> authenticate(String token, String permission, String audience) throws IOException {
+        return authenticate(token, permission, audience, true);
     }
 
     /**
@@ -579,12 +604,7 @@ public class AppMeshClient implements Closeable {
             headers.put("X-Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
         }
         HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
-        String responseContent = Utils.readResponse(conn);
-        JSONObject jsonResponse = new JSONObject(responseContent);
-        String token = jsonResponse.getString("access_token");
-        this.jwtToken.set(token);
-        onTokenChanged(token);
-        return token;
+        return applyAuthToken(conn);
     }
 
     /**
@@ -610,12 +630,7 @@ public class AppMeshClient implements Closeable {
         headers.put("X-Totp-Code", totpCode);
         HttpURLConnection conn = request("POST", "/appmesh/totp/setup", null, headers, null);
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
-            String responseContent = Utils.readResponse(conn);
-            JSONObject jsonResponse = new JSONObject(responseContent);
-            String token = jsonResponse.getString("access_token");
-            this.jwtToken.set(token);
-            onTokenChanged(token);
-            return token;
+            return applyAuthToken(conn);
         }
         String errorBody = Utils.readResponseSafe(conn);
         throw new IOException("TOTP setup failed: HTTP " + conn.getResponseCode() + " - " + errorBody);

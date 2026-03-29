@@ -1,5 +1,6 @@
 // src/daemon/security/SecurityKeycloak.cpp
 #include "SecurityKeycloak.h"
+#include "../../common/JwtHelper.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
@@ -126,11 +127,13 @@ const std::string SecurityKeycloak::getKeycloakToken(const std::string &userName
         auto response = RestClient::request(m_config->m_keycloakUrl, web::http::methods::POST, path, "", {}, {}, std::move(formData));
         response->raise_for_status();
 
-        // Extract the tokens
-        auto result = nlohmann::json::parse(response->text);
-        const std::string accessToken = result.at("access_token").get<std::string>();
-        const std::string refreshToken = result.at("refresh_token").get<std::string>();
-        return accessToken;
+        JwtHelper::TokenResponse tokenResponse;
+        if (!JwtHelper::extractTokenResponse(response->text, tokenResponse))
+        {
+            throw std::runtime_error("Keycloak token response missing access_token");
+        }
+
+        return tokenResponse.accessToken;
     }
     catch (const std::exception &e)
     {
@@ -149,7 +152,7 @@ const nlohmann::json SecurityKeycloak::getKeycloakUser(const std::string &access
         LOG_DBG << fname << "Get user info from " << m_config->m_keycloakUrl << path;
 
         std::map<std::string, std::string> headers;
-        headers["Authorization"] = "Bearer " + accessToken;
+        headers["Authorization"] = JwtHelper::buildBearerAuthorization(accessToken);
 
         auto response = RestClient::request(m_config->m_keycloakUrl, web::http::methods::GET, path, "", std::move(headers), {});
         response->raise_for_status();

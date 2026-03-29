@@ -92,7 +92,6 @@ class AppMeshClientOAuth(AppMeshClient):
             scope="openid",  # what information to include in the token, such as "openid profile email"
         )
         self._on_token_changed(self._get_access_token())
-        self.start_token_refresh()
 
     def logout(self) -> bool:
         """Log out of the current session from Keycloak and clean up."""

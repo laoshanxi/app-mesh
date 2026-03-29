@@ -2,7 +2,6 @@
 #include <chrono>
 
 #include <boost/algorithm/string_regex.hpp>
-#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
 #include "../../common/DurationParse.h"
 #include "../../common/RestClient.h"
@@ -802,7 +801,7 @@ nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest>
 	nlohmann::json result;
 	result["token_type"] = HTTP_HEADER_JWT_Bearer;
 	result[HTTP_HEADER_JWT_access_token] = token ? *token : generateJwtToken(uname, ugroup, audience, timeoutSeconds);
-	result["expires_in"] = timeoutSeconds;
+	result[HTTP_BODY_KEY_JWT_expires_in] = timeoutSeconds;
 	result["expire_time"] = exp;
 
 	// Optional OpenID/OAuth-style fields
@@ -917,7 +916,7 @@ void RestHandler::apiUserLogoff(const std::shared_ptr<HttpRequest> &message)
 
 	// retire current token
 	const auto token = getJwtToken(message);
-	const auto decodedToken = decodeJwtToken(token);
+	const auto decodedToken = JwtHelper::decode(token);
 	TOKEN_BLACK_LIST::instance()->addToken(token, decodedToken.get_expires_at());
 
 	message->reply(web::http::status_codes::OK);
@@ -945,7 +944,7 @@ void RestHandler::apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message)
 	const auto &userGroup = std::get<1>(verify);
 
 	// TODO: limit renew time, consider setup
-	const auto decodedToken = decodeJwtToken(token);
+	const auto decodedToken = JwtHelper::decode(token);
 	const auto expireTime = decodedToken.get_expires_at();
 	const auto audiences = decodedToken.get_audience();
 	const auto audience = audiences.empty()
@@ -976,7 +975,7 @@ void RestHandler::apiUserAuth(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, permission, audience); // External audience verification
 
 	const auto token = getJwtToken(message);
-	const auto decodedToken = decodeJwtToken(token);
+	const auto decodedToken = JwtHelper::decode(token);
 	const auto expireTime = decodedToken.get_expires_at();
 	const auto audiences = decodedToken.get_audience();
 	audience = audiences.empty() ? audience : *audiences.begin(); // safe copy

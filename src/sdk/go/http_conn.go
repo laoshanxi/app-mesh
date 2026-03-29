@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/juju/persistent-cookiejar"
-	"golang.org/x/net/publicsuffix"
 )
 
 type HTTPConnection struct {
@@ -31,12 +30,12 @@ func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile s
 		fmt.Println(err)
 	}
 
-	// Create or load cookie jar (persistent-cookiejar format).
-	// The library's load() gracefully handles missing files (returns nil),
-	// and Save() creates the file on first write with 0600 permissions.
+	// Create or load cookie jar (persistent-cookiejar).
+	// Do NOT use PublicSuffixList — it rejects cookies for IP addresses (e.g. 127.0.0.1),
+	// causing jar.Save() to serialize as "null". With nil, all cookies are accepted and
+	// persisted correctly regardless of whether the host is a domain name or an IP.
 	jar, err := cookiejar.New(&cookiejar.Options{
-		PublicSuffixList: publicsuffix.List,
-		Filename:         cookiePath,
+		Filename: cookiePath,
 	})
 	if err != nil {
 		fmt.Println("Error creating cookie jar:", err)
@@ -91,10 +90,18 @@ func (h *HTTPConnection) setCookie(name, value string, targetURL *url.URL) {
 	if h.Jar == nil {
 		return
 	}
-	h.Jar.SetCookies(targetURL, []*http.Cookie{{Name: name, Value: value, Path: "/"}})
+	cookie := &http.Cookie{Name: name, Value: value, Path: "/"}
+	// When a cookie file is configured, ensure the cookie is marked as
+	// persistent so the persistent-cookiejar includes it in Save().
+	// If the server already set Max-Age the jar handles it automatically;
+	// this is a fallback for servers that omit Max-Age (session cookies).
+	if h.cookieFile != "" {
+		cookie.Expires = time.Now().Add(7 * 24 * time.Hour)
+	}
+	h.Jar.SetCookies(targetURL, []*http.Cookie{cookie})
 }
 
-// SaveCookies persists cookies to the cookie file
+// SaveCookies persists cookies to the cookie file.
 func (h *HTTPConnection) SaveCookies() error {
 	if h.jar == nil || h.cookieFile == "" {
 		return nil

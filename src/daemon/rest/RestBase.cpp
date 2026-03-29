@@ -144,20 +144,13 @@ const std::string RestBase::getJwtToken(const std::shared_ptr<HttpRequest> &mess
     std::string token;
     if (message->m_headers.count(HTTP_HEADER_JWT_Authorization))
     {
-        token = Utility::stdStringTrim(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
-        token = Utility::stdStringTrim(token, HTTP_HEADER_JWT_BearerSpace, true, false);
-        token = Utility::stdStringTrim(token);
+        token = JwtHelper::normalizeBearerToken(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
     }
     else
     {
         throw std::domain_error("No authentication token provided");
     }
     return token;
-}
-
-const jwt::decoded_jwt<jwt::traits::nlohmann_json> RestBase::decodeJwtToken(const std::string &token)
-{
-    return jwt::decode(token);
 }
 
 const std::string RestBase::generateJwtToken(const std::string &userName, const std::string &userGroup, const std::string &audience, int timeoutSeconds)
@@ -238,7 +231,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
         throw std::domain_error("Token has been revoked");
     }
 
-    const auto decodedToken = decodeJwtToken(token);
+    const auto decodedToken = JwtHelper::decode(token);
 
     // Check if we're using OAuth2/Keycloak or internal authentication
     if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
@@ -321,7 +314,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
 
 const std::string RestBase::getJwtUserName(const std::shared_ptr<HttpRequest> &message)
 {
-    const auto decodedToken = decodeJwtToken(getJwtToken(message));
+    const auto decodedToken = JwtHelper::decode(getJwtToken(message));
 
     if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
     {
@@ -341,7 +334,7 @@ const std::string RestBase::getJwtUserName(const std::shared_ptr<HttpRequest> &m
 
 const std::set<std::string> RestBase::getJwtUserAudience(const std::shared_ptr<HttpRequest> &message)
 {
-    const auto decodedToken = decodeJwtToken(getJwtToken(message));
+    const auto decodedToken = JwtHelper::decode(getJwtToken(message));
 
     if (decodedToken.has_audience())
     {

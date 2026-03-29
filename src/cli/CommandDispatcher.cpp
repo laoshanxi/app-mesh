@@ -15,7 +15,7 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <boost/regex.hpp>
-#include <jwt-cpp/traits/nlohmann-json/defaults.h>
+#include "../common/JwtHelper.h"
 #include <nlohmann/json.hpp>
 #if defined(_WIN32)
 #include <tlhelp32.h>
@@ -224,7 +224,7 @@ void CommandDispatcher::printMainHelp()
 	std::cout << "  loginfo       Display current logged-in user" << std::endl;
 	std::cout << "  passwd        Change user password" << std::endl;
 	std::cout << "  lock          Lock or unlock a user" << std::endl;
-	std::cout << "  user          View user information" << std::endl;
+	std::cout << "  user          Manage users" << std::endl;
 	std::cout << "  mfa           Manage two-factor authentication" << std::endl
 			  << std::endl;
 
@@ -245,7 +245,7 @@ void CommandDispatcher::printMainHelp()
 	std::cout << "System Management:" << std::endl;
 	std::cout << "  resource      Show host resources" << std::endl;
 	std::cout << "  label         Manage host labels" << std::endl;
-	std::cout << "  config        Manage configurations" << std::endl;
+	std::cout << "  config        View configurations" << std::endl;
 	std::cout << "  log           Set log level" << std::endl
 			  << std::endl;
 
@@ -255,14 +255,14 @@ void CommandDispatcher::printMainHelp()
 			  << std::endl;
 
 	std::cout << "Additional Information:" << std::endl;
-	std::cout << "  - Remote CLI use '-H [ --host-url ]' (e.g., -H https://127.0.0.1:6060)" << std::endl;
+	std::cout << "  - Use '-H [ --host-url ]' for remote access (e.g., -H https://192.168.1.1:6060)" << std::endl;
 	std::cout << "  - Use '-h [ --help ]' flag for detailed usage" << std::endl
 			  << std::endl;
 }
 
 int CommandDispatcher::cmdLogin()
 {
-	po::options_description desc("Login to App Mesh \nUsage: appc logon [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("Log in to App Mesh \nUsage: appc logon [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description authenticate("Authentication Options", BOOST_DESC_WIDTH);
 	authenticate.add_options()
@@ -339,7 +339,7 @@ int CommandDispatcher::cmdLogin()
 
 int CommandDispatcher::cmdLogoff()
 {
-	po::options_description desc("Logoff to App Mesh \nUsage: appc logoff [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("Log off from App Mesh \nUsage: appc logoff [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	OTHER_OPTIONS;
 	desc.add(connection).add(other);
@@ -354,7 +354,7 @@ int CommandDispatcher::cmdLogoff()
 
 int CommandDispatcher::cmdLoginUserInfo()
 {
-	po::options_description desc("Print current login user \nUsage: appc loginfo [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("Display current logged-in user \nUsage: appc loginfo [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description user("User Options", BOOST_DESC_WIDTH);
 	user.add_options()
@@ -378,12 +378,7 @@ std::string CommandDispatcher::getLoginUser()
 	auto token = acquireAuthToken();
 	if (token.length())
 	{
-		auto decodedToken = jwt::decode(token);
-		if (decodedToken.has_subject())
-		{
-			// get user info
-			userName = decodedToken.get_subject();
-		}
+		JwtHelper::tryGetSubject(token, userName);
 	}
 	return userName;
 }
@@ -391,7 +386,7 @@ std::string CommandDispatcher::getLoginUser()
 // appName is null means this is a normal application (not a shell application)
 int CommandDispatcher::cmdAppAdd()
 {
-	po::options_description desc("Register a new application \nUsage: appc add [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("Add a new application \nUsage: appc add [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description basic("Basic Configuration Options", BOOST_DESC_WIDTH);
 	basic.add_options()
@@ -426,7 +421,7 @@ int CommandDispatcher::cmdAppAdd()
 	(PERMISSION_ARGS, po::value<int>(), "Permission bits [group & other] (1=deny, 2=read, 3=write)")
 	(METADATA_ARGS, po::value<std::string>(), "Metadata string/JSON (stdin input, '@' for file input)")
 	(ENV_ARGS, po::value<std::vector<std::string>>(), "Environment variables (-e env1=value1 -e env2=value2, APP_DOCKER_OPTS env is used to input docker run parameters)")
-	(SECURITY_ENV_ARGS, po::value<std::vector<std::string>>(), "Encrypted environment variables in server side with application owner's cipher")
+	(SECURITY_ENV_ARGS, po::value<std::vector<std::string>>(), "Encrypted environment variables on server side with application owner's cipher")
 	(STOP_TIMEOUT_ARGS, po::value<std::string>(), "Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')")
 	(EXIT_ARGS, po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "Exit behavior [restart|standby|keepalive|remove]")
 	(CONTROL_ARGS, po::value<std::vector<std::string>>(), "Exit code behaviors (--control CODE:ACTION, overrides default value 0:standby)")
@@ -795,7 +790,7 @@ int CommandDispatcher::cmdAppView()
 
 int CommandDispatcher::cmdHostResources()
 {
-	po::options_description desc("View host resource \nUsage: appc resource [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("View host resources \nUsage: appc resource [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	OTHER_OPTIONS;
 	desc.add(connection).add(other);
@@ -814,8 +809,8 @@ int CommandDispatcher::cmdAppControlState(bool start)
 	CONNECTION_OPTIONS;
 	po::options_description app("Application Options", BOOST_DESC_WIDTH);
 	app.add_options()
-	(APP_ARGS, po::value<std::vector<std::string>>(), "One or more application names to remove")
-	(ALL_ARGS, "Apply to all applications.");
+	(APP_ARGS, po::value<std::vector<std::string>>(), "One or more application names")
+	(ALL_ARGS, "Apply to all applications");
 	OTHER_OPTIONS;
 	desc.add(connection).add(app).add(other);
 	shiftCommandLineArgs(desc);
@@ -879,10 +874,10 @@ int CommandDispatcher::cmdAppRun()
 	(ENV_ARGS, po::value<std::vector<std::string>>(), "Environment variables (e.g., -e env1=value1 -e env2=value2).");
 	po::options_description execution("Execution Options", BOOST_DESC_WIDTH);
 	execution.add_options()
-	(SHELL_ARGS, "Use shell mode; cmd can be multiple shell commands in string format.")
-	(SESSION_LOGIN_ARGS, "Run with session login.")
-	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
+	(SHELL_ARGS, "Use shell mode to support multiple commands")
+	(SESSION_LOGIN_ARGS, "Execute with session login context")
+	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle in seconds or ISO 8601 duration (default: 12 hours)")
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum wait time in seconds or ISO 8601 duration (>0: poll output, <0: wait until exit)");
 	OTHER_OPTIONS;
 	desc.add(connection).add(application).add(execution).add(other);
 	shiftCommandLineArgs(desc);
@@ -1163,10 +1158,10 @@ int CommandDispatcher::cmdExecuteShell()
 	CONNECTION_OPTIONS;
 	po::options_description execute("Execution Options", BOOST_DESC_WIDTH);
 	execute.add_options()
-	(RETRY_ARGS, "Retry command until success.")
-	(SESSION_LOGIN_ARGS, "With session login.")
-	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
+	(RETRY_ARGS, "Retry command until successful")
+	(SESSION_LOGIN_ARGS, "Execute with session login context")
+	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle in seconds or ISO 8601 duration (default: 12 hours)")
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum wait time in seconds or ISO 8601 duration (>0: poll output, <0: wait until exit)");
 	OTHER_OPTIONS;
 	desc.add(connection).add(execute).add(other);
 	shiftCommandLineArgs(desc, true);
@@ -1330,7 +1325,7 @@ int CommandDispatcher::cmdUploadFile()
 	upload.add_options()
 	(REMOTE_ARGS, po::value<std::string>(), "Remote file path to save.")
 	(LOCAL_ARGS, po::value<std::string>(), "Local file to upload.")
-	(COPY_ATTR_ARGS, "Not copy file attributes.");
+	(COPY_ATTR_ARGS, "Copy file attributes");
 	OTHER_OPTIONS;
 	desc.add(connection).add(upload).add(other);
 	shiftCommandLineArgs(desc);
@@ -1497,7 +1492,7 @@ int CommandDispatcher::cmdChangePwd()
 
 int CommandDispatcher::cmdUserLock()
 {
-	po::options_description desc("Control user \nUsage: appc lock [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("Lock or unlock a user \nUsage: appc lock [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description useropt("Lock Options", BOOST_DESC_WIDTH);
 	useropt.add_options()
@@ -1524,7 +1519,7 @@ int CommandDispatcher::cmdUserLock()
 
 int CommandDispatcher::cmdUserManage()
 {
-	po::options_description desc("View/Add users \nUsage: appc user [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("Manage users \nUsage: appc user [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description user("User Options", BOOST_DESC_WIDTH);
 	user.add_options()
@@ -1631,10 +1626,10 @@ int CommandDispatcher::cmdUserMFA()
 	if (m_commandLineVariables.count(ADD))
 	{
 		auto resp = this->getCurrentUser();
-		std::string msg = "Do you want active 2FA for <%s> [y/n]:";
+		std::string msg = "Do you want to activate 2FA for <%s> [y/n]:";
 		if (GET_JSON_BOOL_VALUE(resp, JSON_KEY_USER_mfa_enabled))
 		{
-			msg = "2FA already enabled, do you want re-active 2FA for <%s> [y/n]:";
+			msg = "2FA already enabled, do you want to reactivate 2FA for <%s> [y/n]:";
 		}
 		if (this->confirmInput(Utility::stringFormat(msg.c_str(), userName.c_str()).c_str()))
 		{
@@ -1667,7 +1662,7 @@ int CommandDispatcher::cmdUserMFA()
 	}
 	else if (m_commandLineVariables.count(DELETE))
 	{
-		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s> [y/n]:", userName.c_str()).c_str()))
+		if (this->confirmInput(Utility::stringFormat("Do you want to deactivate 2FA for <%s> [y/n]:", userName.c_str()).c_str()))
 		{
 			this->disableTotp(userName);
 			std::cout << "success" << std::endl;
@@ -1800,11 +1795,9 @@ std::string CommandDispatcher::getAuthenUser()
 			login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), "", 0, m_audience);
 			token = getAuthToken();
 		}
-		auto decodedToken = jwt::decode(token);
-		if (decodedToken.has_subject())
+		std::string userName;
+		if (JwtHelper::tryGetSubject(token, userName))
 		{
-			// get user info
-			auto userName = decodedToken.get_subject();
 			return userName;
 		}
 		throw std::invalid_argument("Failed to get token");

@@ -1,12 +1,13 @@
 // src/daemon/rest/Data.cpp
 #include <algorithm>
-#include <cerrno>
+#include <cctype>
 #include <chrono>
 #include <tuple>
 
 #include <msgpack.hpp>
 #include <nlohmann/json.hpp>
 
+#include "../../common/JwtHelper.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "Data.h"
@@ -46,46 +47,16 @@ bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
 	return false;
 }
 
-// setAuthCookie extracts JWT token from response body and creates a Set-Cookie header
-// Follows agent_response.go setAuthCookie pattern
+// setAuthCookie extracts auth response fields and creates a Set-Cookie header.
+// It does not decode or verify JWT claims; that remains in RestBase.
 bool Response::setAuthCookie()
 {
-	// Parse JWT from response body
-	nlohmann::json jsonResponse;
-	try
-	{
-		jsonResponse = nlohmann::json::parse(this->body);
-	}
-	catch (const std::exception &)
-	{
+	JwtHelper::TokenResponse tokenResponse;
+	if (!JwtHelper::extractTokenResponse(this->body, tokenResponse))
 		return false;
-	}
-
-	std::string accessToken;
-	if (jsonResponse.contains(HTTP_HEADER_JWT_access_token))
-	{
-		accessToken = jsonResponse[HTTP_HEADER_JWT_access_token].get<std::string>();
-	}
-
-	// Validate token presence
-	if (accessToken.empty())
-		return false;
-
-	double expireSeconds = 0;
-	if (jsonResponse.contains(HTTP_BODY_KEY_JWT_expire_seconds))
-	{
-		expireSeconds = jsonResponse[HTTP_BODY_KEY_JWT_expire_seconds].get<double>();
-	}
-
-	// Trim "Bearer " prefix if present
-	const std::string bearerPrefix = HTTP_HEADER_JWT_BearerSpace;
-	if (accessToken.compare(0, bearerPrefix.length(), bearerPrefix) == 0)
-	{
-		accessToken = accessToken.substr(bearerPrefix.length());
-	}
 
 	// Create cookie string
-	std::string cookieValue = std::string(COOKIE_TOKEN) + "=" + accessToken + "; Path=/; HttpOnly; SameSite=Strict";
+	std::string cookieValue = std::string(COOKIE_TOKEN) + "=" + tokenResponse.accessToken + "; Path=/; HttpOnly; SameSite=Strict";
 
 	// TODO: Determine HTTPS dynamically
 	bool isSecure = true;
@@ -95,13 +66,28 @@ bool Response::setAuthCookie()
 	}
 
 	// Set expiration if available
-	if (expireSeconds > 0)
+	if (tokenResponse.expiresIn > 0)
 	{
-		cookieValue += "; Max-Age=" + std::to_string(static_cast<int>(expireSeconds));
+		cookieValue += "; Max-Age=" + std::to_string(tokenResponse.expiresIn);
 	}
 
 	this->headers["Set-Cookie"] = cookieValue;
 	return true;
+}
+
+void Response::clearAuthCookie()
+{
+	// Expire the auth cookie immediately (follows agent_response.go clearAuthCookie pattern)
+	std::string cookieValue = std::string(COOKIE_TOKEN) + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0";
+
+	// TODO: Determine HTTPS dynamically
+	bool isSecure = true;
+	if (isSecure)
+	{
+		cookieValue += "; Secure";
+	}
+
+	this->headers["Set-Cookie"] = cookieValue;
 }
 
 static bool wantsSetCookie(const HttpHeaderMap *requestHeaders)
@@ -114,6 +100,23 @@ static bool wantsSetCookie(const HttpHeaderMap *requestHeaders)
 	return setCookie == "true" || setCookie == "1";
 }
 
+// Forward declaration (defined after Request methods)
+static std::string getCookieValue(const std::string &cookieHeader, const std::string &cookieName);
+
+// Check if the request carries an auth cookie (client is using cookie mode)
+static bool hasAuthCookie(const HttpHeaderMap *requestHeaders)
+{
+	if (requestHeaders == nullptr)
+		return false;
+
+	// HttpHeaderMap uses case-insensitive lookup, so "cookie" matches "Cookie"
+	auto cookieHeader = requestHeaders->get("cookie");
+	if (cookieHeader.empty())
+		return false;
+
+	return !getCookieValue(cookieHeader, COOKIE_TOKEN).empty();
+}
+
 bool Response::handleAuthCookies(const HttpHeaderMap *requestHeaders)
 {
 	const static char fname[] = "Response::handleAuthCookies() ";
@@ -122,22 +125,45 @@ bool Response::handleAuthCookies(const HttpHeaderMap *requestHeaders)
 	if (this->http_status != web::http::status_codes::OK)
 		return false;
 
-	// Check if response path indicates a login/auth endpoint (where cookie should be set)
 	const std::string &requestUri = this->request_uri;
-	bool shouldSetCookie = false;
+
+	// Login/auth/totp_validate: set cookie only when explicitly requested via X-Set-Cookie header
 	if (requestUri == "/appmesh/login" ||
 		requestUri == "/appmesh/auth" ||
 		requestUri == "/appmesh/totp/validate")
 	{
-		shouldSetCookie = wantsSetCookie(requestHeaders);
+		if (!wantsSetCookie(requestHeaders))
+			return false;
+
+		bool result = this->setAuthCookie();
+		LOG_DBG << fname << "setAuthCookie result: " << (result ? "success" : "no cookie set");
+		return result;
 	}
 
-	if (!shouldSetCookie)
-		return false;
+	// Token renew/TOTP setup: always refresh cookie if the request carried one
+	if (requestUri == "/appmesh/token/renew" ||
+		requestUri == "/appmesh/totp/setup")
+	{
+		if (!hasAuthCookie(requestHeaders))
+			return false;
 
-	bool result = this->setAuthCookie();
-	LOG_DBG << fname << "setAuthCookie result: " << (result ? "success" : "no cookie set");
-	return result;
+		bool result = this->setAuthCookie();
+		LOG_DBG << fname << "setAuthCookie (renew/setup) result: " << (result ? "success" : "no cookie set");
+		return result;
+	}
+
+	// Logoff: clear cookie if one exists
+	if (requestUri == "/appmesh/self/logoff")
+	{
+		if (!hasAuthCookie(requestHeaders))
+			return false;
+
+		this->clearAuthCookie();
+		LOG_DBG << fname << "clearAuthCookie on logoff";
+		return true;
+	}
+
+	return false;
 }
 
 void Response::applyCorsHeaders()
@@ -258,7 +284,7 @@ bool Request::convertCookieToAuthorization()
 	// 3. Verify HMAC if both present
 	// For now, we just inject the Authorization header
 	// Inject Authorization header
-	headers[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + authCookieValue;
+	headers[HTTP_HEADER_JWT_Authorization] = JwtHelper::buildBearerAuthorization(authCookieValue);
 
 	LOG_DBG << fname << "Converted cookie to Authorization header for UUID: " << uuid;
 	return true;

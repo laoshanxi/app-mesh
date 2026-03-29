@@ -16,6 +16,13 @@ from .client_http import AppMeshClient
 from .exceptions import AppMeshConnectionError
 from .tcp_messages import RequestMessage, ResponseMessage
 
+# Auth endpoints where the server returns a new access_token in the JSON body.
+# Login/auth/totp_validate: apply token only when X-Set-Cookie header is present
+_AUTH_SET_COOKIE_PATHS = frozenset({"/appmesh/login", "/appmesh/auth", "/appmesh/totp/validate"})
+# Renew/setup: always apply (client already has an active session)
+_AUTH_RENEW_PATHS = frozenset({"/appmesh/token/renew", "/appmesh/totp/setup"})
+_LOGOFF_PATH = "/appmesh/self/logoff"
+
 
 class TransportClientMixin:
     """Mixin providing shared request/response logic for TCP and WSS transport clients.
@@ -52,6 +59,34 @@ class TransportClientMixin:
     def _get_access_token(self) -> Optional[str]:
         """Get the current access token."""
         return self._token
+
+    def _sync_transport_token(self, response, path: str, request_headers: Optional[dict]) -> None:
+        """Extract and apply token from auth endpoint responses (TCP/WSS only).
+
+        HTTP transport relies on Set-Cookie for automatic cookie jar updates;
+        TCP/WSS must extract the token from the JSON response body.
+        """
+        if response.status_code != HTTPStatus.OK:
+            return
+
+        if path == _LOGOFF_PATH:
+            self._on_token_changed(None)
+            return
+
+        # Login/auth/totp_validate: apply only when client requested cookie mode
+        if path in _AUTH_SET_COOKIE_PATHS:
+            if not request_headers or request_headers.get("X-Set-Cookie") != "true":
+                return
+        elif path not in _AUTH_RENEW_PATHS:
+            return
+
+        # Extract access_token from JSON body
+        try:
+            token = response.json().get("access_token")
+            if token:
+                self._on_token_changed(token)
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
     def _request_http(
         self,
@@ -140,5 +175,8 @@ class TransportClientMixin:
             response.reason = str(response._content)
             response.url = f"{str(transport)}/{path.lstrip('/')}"
             response.raise_for_status()
+
+        # Auto-sync token from auth endpoint responses
+        self._sync_transport_token(response, path, header)
 
         return AppMeshClient._EncodingResponse(response)

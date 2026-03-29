@@ -1,9 +1,7 @@
 package appmesh
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -49,16 +47,9 @@ func (r *AppMeshServerHttpContext) getRuntimeEnv() (key, appName string, err err
 }
 
 // TaskFetch fetches task data (payload) for the current application process.
-// It retries with a short fixed delay until success or caller cancellation.
+// It retries indefinitely until success. If a request fails within 100ms,
+// sleeps briefly before retrying; otherwise retries immediately.
 func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
-	return r.TaskFetchWithContext(context.Background())
-}
-
-// TaskFetchWithContext fetches task data with context support for cancellation and timeout.
-//
-// Retries with a fixed 100ms delay on failure. Pass a context with timeout/cancel
-// to limit the retry duration.
-func (r *AppMeshServerHttpContext) TaskFetchWithContext(ctx context.Context) (string, error) {
 	key, appName, err := r.getRuntimeEnv()
 	if err != nil {
 		return "", err
@@ -82,19 +73,7 @@ func (r *AppMeshServerHttpContext) TaskFetchWithContext(ctx context.Context) (st
 		}
 
 		if remaining := retryDelay - time.Since(attemptStart); remaining > 0 {
-			timer := time.NewTimer(remaining)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return "", fmt.Errorf("task_fetch cancelled: %w", ctx.Err())
-			case <-timer.C:
-			}
-		} else {
-			select {
-			case <-ctx.Done():
-				return "", fmt.Errorf("task_fetch cancelled: %w", ctx.Err())
-			default:
-			}
+			time.Sleep(remaining)
 		}
 	}
 }

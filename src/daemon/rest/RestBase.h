@@ -1,10 +1,10 @@
 // src/daemon/rest/RestBase.h
 #pragma once
 
-#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <map>
 #include <memory>
 
+#include "../../common/JwtHelper.h"
 #include "../../common/Utility.h"
 
 class HttpRequest;
@@ -51,7 +51,6 @@ protected:
     const std::string getJwtUserName(const std::shared_ptr<HttpRequest> &message);
     const std::set<std::string> getJwtUserAudience(const std::shared_ptr<HttpRequest> &message);
     const std::string getJwtToken(const std::shared_ptr<HttpRequest> &message);
-    const jwt::decoded_jwt<jwt::traits::nlohmann_json> decodeJwtToken(const std::string &token);
     const std::string generateJwtToken(const std::string &uname, const std::string &userGroup, const std::string &audience, int timeoutSeconds);
 
 protected:

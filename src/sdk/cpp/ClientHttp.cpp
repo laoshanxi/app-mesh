@@ -8,6 +8,7 @@
 #include <ace/OS_NS_time.h>
 #include <nlohmann/json.hpp>
 
+#include "../../common/JwtHelper.h"
 #include "../../common/RestClient.h"
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
@@ -132,7 +133,7 @@ std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
                                                        const std::string &audience, bool apply)
 {
     std::map<std::string, std::string> header = {
-        {HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + token}};
+        {HTTP_HEADER_JWT_Authorization, JwtHelper::buildBearerAuthorization(token)}};
 
     if (!permission.empty())
         header[HTTP_HEADER_JWT_auth_permission] = permission;

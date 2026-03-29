@@ -1,6 +1,7 @@
 package appmesh
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,47 @@ import (
 
 	"go.uber.org/atomic"
 )
+
+// Auth endpoints where the server returns a new access_token in the JSON body.
+var (
+	// Login/auth/totp_validate: apply token only when X-Set-Cookie header is present
+	authSetCookiePaths = map[string]bool{
+		"/appmesh/login":          true,
+		"/appmesh/auth":           true,
+		"/appmesh/totp/validate":  true,
+	}
+	// Renew/setup: always apply (client already has an active session)
+	authRenewPaths = map[string]bool{
+		"/appmesh/token/renew": true,
+		"/appmesh/totp/setup":  true,
+	}
+)
+
+// syncTransportToken extracts and applies token from auth endpoint responses (TCP/WSS).
+// HTTP transport relies on Set-Cookie for automatic cookie jar updates.
+func syncTransportToken(statusCode int, raw []byte, apiPath string, headers map[string]string, r Requester) {
+	if statusCode != http.StatusOK {
+		return
+	}
+
+	if apiPath == "/appmesh/self/logoff" {
+		r.handleTokenUpdate("")
+		return
+	}
+
+	if authSetCookiePaths[apiPath] {
+		if headers == nil || headers[HTTP_HEADER_JWT_SET_COOKIE] != "true" {
+			return
+		}
+	} else if !authRenewPaths[apiPath] {
+		return
+	}
+
+	var result JWTResponse
+	if err := json.Unmarshal(raw, &result); err == nil && result.AccessToken != "" {
+		r.handleTokenUpdate(result.AccessToken)
+	}
+}
 
 // Requester defines the interface for making HTTP requests.
 type Requester interface {
@@ -37,6 +79,9 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 	if h.httpClient == nil {
 		return 0, nil, nil, fmt.Errorf("http client is nil")
 	}
+
+	// Snapshot token before request for change detection
+	oldToken := h.getAccessToken()
 
 	// Build URL
 	u := h.baseURL
@@ -101,6 +146,16 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return resp.StatusCode, nil, resp.Header, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Auto-detect token changes from server Set-Cookie responses.
+	// Re-set via setToken() to ensure persistence: setCookie() adds an
+	// Expires fallback when a cookie file is configured, so the
+	// persistent-cookiejar treats the entry as persistent even if the
+	// server's Set-Cookie omitted Max-Age.
+	newToken := h.getAccessToken()
+	if newToken != oldToken {
+		h.setToken(newToken)
 	}
 
 	return resp.StatusCode, data, resp.Header, nil
@@ -179,6 +234,9 @@ func (t *TCPRequester) Send(method, apiPath string, queries url.Values, headers 
 	for key, value := range resp.Headers {
 		respHeaders.Add(key, value)
 	}
+
+	// Auto-sync token from auth endpoint responses
+	syncTransportToken(resp.HttpStatus, resp.Body, apiPath, headers, t)
 
 	return resp.HttpStatus, resp.Body, respHeaders, nil
 }
@@ -312,6 +370,9 @@ func (w *WSSRequester) Send(method string, apiPath string, queries url.Values, h
 	for key, value := range resp.Headers {
 		respHeaders.Add(key, value)
 	}
+
+	// Auto-sync token from auth endpoint responses
+	syncTransportToken(resp.HttpStatus, resp.Body, apiPath, headers, w)
 
 	return resp.HttpStatus, resp.Body, respHeaders, nil
 }

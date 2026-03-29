@@ -459,6 +459,7 @@ public:
 #define HTTP_BODY_KEY_JWT_totp "totp_code"
 #define HTTP_BODY_KEY_JWT_totp_challenge "totp_challenge"
 #define HTTP_BODY_KEY_JWT_expire_seconds "expire_seconds"
+#define HTTP_BODY_KEY_JWT_expires_in "expires_in"
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"

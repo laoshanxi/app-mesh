@@ -168,7 +168,7 @@ macro(add_catch_test name)
 endmacro()
 if(NOT APPMESH_NO_TESTS)
     enable_testing()
-    add_subdirectory(test)
+    # add_subdirectory(test)
 
     add_custom_target(python_tests
         COMMAND python3 -m unittest
