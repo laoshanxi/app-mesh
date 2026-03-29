@@ -104,6 +104,21 @@ bool Response::setAuthCookie()
 	return true;
 }
 
+void Response::clearAuthCookie()
+{
+	// Expire the auth cookie immediately (follows agent_response.go clearAuthCookie pattern)
+	std::string cookieValue = std::string(COOKIE_TOKEN) + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0";
+
+	// TODO: Determine HTTPS dynamically
+	bool isSecure = true;
+	if (isSecure)
+	{
+		cookieValue += "; Secure";
+	}
+
+	this->headers["Set-Cookie"] = cookieValue;
+}
+
 static bool wantsSetCookie(const HttpHeaderMap *requestHeaders)
 {
 	if (requestHeaders == nullptr)
@@ -114,6 +129,23 @@ static bool wantsSetCookie(const HttpHeaderMap *requestHeaders)
 	return setCookie == "true" || setCookie == "1";
 }
 
+// Forward declaration (defined after Request methods)
+static std::string getCookieValue(const std::string &cookieHeader, const std::string &cookieName);
+
+// Check if the request carries an auth cookie (client is using cookie mode)
+static bool hasAuthCookie(const HttpHeaderMap *requestHeaders)
+{
+	if (requestHeaders == nullptr)
+		return false;
+
+	// HttpHeaderMap uses case-insensitive lookup, so "cookie" matches "Cookie"
+	auto cookieHeader = requestHeaders->get("cookie");
+	if (cookieHeader.empty())
+		return false;
+
+	return !getCookieValue(cookieHeader, COOKIE_TOKEN).empty();
+}
+
 bool Response::handleAuthCookies(const HttpHeaderMap *requestHeaders)
 {
 	const static char fname[] = "Response::handleAuthCookies() ";
@@ -122,22 +154,45 @@ bool Response::handleAuthCookies(const HttpHeaderMap *requestHeaders)
 	if (this->http_status != web::http::status_codes::OK)
 		return false;
 
-	// Check if response path indicates a login/auth endpoint (where cookie should be set)
 	const std::string &requestUri = this->request_uri;
-	bool shouldSetCookie = false;
+
+	// Login/auth/totp_validate: set cookie only when explicitly requested via X-Set-Cookie header
 	if (requestUri == "/appmesh/login" ||
 		requestUri == "/appmesh/auth" ||
 		requestUri == "/appmesh/totp/validate")
 	{
-		shouldSetCookie = wantsSetCookie(requestHeaders);
+		if (!wantsSetCookie(requestHeaders))
+			return false;
+
+		bool result = this->setAuthCookie();
+		LOG_DBG << fname << "setAuthCookie result: " << (result ? "success" : "no cookie set");
+		return result;
 	}
 
-	if (!shouldSetCookie)
-		return false;
+	// Token renew/TOTP setup: always refresh cookie if the request carried one
+	if (requestUri == "/appmesh/token/renew" ||
+		requestUri == "/appmesh/totp/setup")
+	{
+		if (!hasAuthCookie(requestHeaders))
+			return false;
 
-	bool result = this->setAuthCookie();
-	LOG_DBG << fname << "setAuthCookie result: " << (result ? "success" : "no cookie set");
-	return result;
+		bool result = this->setAuthCookie();
+		LOG_DBG << fname << "setAuthCookie (renew/setup) result: " << (result ? "success" : "no cookie set");
+		return result;
+	}
+
+	// Logoff: clear cookie if one exists
+	if (requestUri == "/appmesh/self/logoff")
+	{
+		if (!hasAuthCookie(requestHeaders))
+			return false;
+
+		this->clearAuthCookie();
+		LOG_DBG << fname << "clearAuthCookie on logoff";
+		return true;
+	}
+
+	return false;
 }
 
 void Response::applyCorsHeaders()

@@ -28,7 +28,10 @@ RUN bash -c "ls && apt-get update && \
 	apt-get install -y --no-install-recommends tini gosu && \
 	apt-get install -y ./appmesh*.deb && \
 	pip3 install --break-system-packages --no-cache-dir appmesh && \
-	rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
+	rm -f ./appmesh*.deb && apt-get clean && \
+	rm -rf /var/lib/apt/lists/* /var/cache/* /tmp/* /var/tmp/* \
+		/usr/share/doc /usr/share/man /usr/share/locale /usr/share/info \
+		/var/lib/dpkg/info/*.md5sums && \
 	rm -rf /opt/appmesh/apps/ping.yaml /opt/appmesh/ssl/cfssl* && \
 	(groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh) || true && \
 	ln -s /opt/appmesh/script/docker-entrypoint.sh /entrypoint.sh && \

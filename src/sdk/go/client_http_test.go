@@ -27,7 +27,10 @@ func (m *mockAuthRequester) Send(method string, apiPath string, queries url.Valu
 		m.lastHeaders[k] = v
 	}
 	resp := []byte(`{"access_token":"verified-token","expires_in":3600,"expire_time":999999999}`)
-	return http.StatusOK, resp, http.Header{}, nil
+	code := http.StatusOK
+	// Simulate transport-level token sync (as real requesters do)
+	syncTransportToken(code, resp, apiPath, headers, m)
+	return code, resp, http.Header{}, nil
 }
 
 func (m *mockAuthRequester) Close() {}
@@ -68,6 +71,281 @@ func TestAuthenticateApplyTrueUpdatesHTTPState(t *testing.T) {
 	require.Equal(t, "true", req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
 	require.Equal(t, "verified-token", req.getAccessToken())
 	require.Equal(t, []string{"verified-token"}, req.updateCalls)
+}
+
+// mockTransportRequester simulates a TCP/WSS transport for syncTransportToken tests.
+// Unlike mockAuthRequester (which simulates HTTP), this one records handleTokenUpdate calls
+// and lets tests verify the path-based token extraction logic.
+type mockTransportRequester struct {
+	storedToken string
+	lastHeaders map[string]string
+	updateCalls []string
+	respCode    int    // response status code, default 200
+	respBody    string // response body JSON, default with access_token
+}
+
+func (m *mockTransportRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	m.lastHeaders = make(map[string]string, len(headers))
+	for k, v := range headers {
+		m.lastHeaders[k] = v
+	}
+	code := m.respCode
+	if code == 0 {
+		code = http.StatusOK
+	}
+	respBody := m.respBody
+	if respBody == "" {
+		respBody = `{"access_token":"new-token","expires_in":3600}`
+	}
+	raw := []byte(respBody)
+	// Simulate transport-level token sync (as TCP/WSS requesters do)
+	syncTransportToken(code, raw, apiPath, headers, m)
+	return code, raw, http.Header{}, nil
+}
+
+func (m *mockTransportRequester) Close() {}
+func (m *mockTransportRequester) handleTokenUpdate(token string) {
+	m.updateCalls = append(m.updateCalls, token)
+	m.storedToken = token
+}
+func (m *mockTransportRequester) setToken(token string)         { m.storedToken = token }
+func (m *mockTransportRequester) getAccessToken() string        { return m.storedToken }
+func (m *mockTransportRequester) setForwardTo(forwardTo string) {}
+func (m *mockTransportRequester) getForwardTo() string          { return "" }
+
+func TestSyncTransportToken_LoginWithSetCookie(t *testing.T) {
+	req := &mockTransportRequester{}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	_, err = client.Login("user", "pass", "", 3600, "")
+	require.NoError(t, err)
+	require.Equal(t, "new-token", req.storedToken)
+	require.Contains(t, req.updateCalls, "new-token")
+}
+
+func TestSyncTransportToken_LoginWithoutSetCookie(t *testing.T) {
+	// Login always sends X-Set-Cookie: true, so token should be applied
+	req := &mockTransportRequester{}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	_, err = client.Login("user", "pass", "", 3600, "")
+	require.NoError(t, err)
+	require.Equal(t, "true", req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
+	require.Equal(t, "new-token", req.storedToken)
+}
+
+func TestSyncTransportToken_ValidateTotp(t *testing.T) {
+	req := &mockTransportRequester{}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	err = client.ValidateTotp("user", "challenge", "123456", 3600)
+	require.NoError(t, err)
+	// ValidateTotp sends X-Set-Cookie: true
+	require.Equal(t, "true", req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
+	require.Equal(t, "new-token", req.storedToken)
+}
+
+func TestSyncTransportToken_Logout(t *testing.T) {
+	req := &mockTransportRequester{storedToken: "old-token"}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	ok, err := client.Logout()
+	require.NoError(t, err)
+	require.True(t, ok)
+	// Token should be cleared
+	require.Equal(t, "", req.storedToken)
+	require.Contains(t, req.updateCalls, "")
+}
+
+func TestSyncTransportToken_LogoutFailure(t *testing.T) {
+	req := &mockTransportRequester{storedToken: "old-token", respCode: http.StatusInternalServerError}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	ok, _ := client.Logout()
+	require.False(t, ok)
+	// Token should NOT be cleared on failure
+	require.Equal(t, "old-token", req.storedToken)
+	require.Empty(t, req.updateCalls)
+}
+
+func TestSyncTransportToken_RenewToken(t *testing.T) {
+	req := &mockTransportRequester{storedToken: "old-token"}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	ok, err := client.RenewToken()
+	require.NoError(t, err)
+	require.True(t, ok)
+	// Token should be updated (renew path always applies)
+	require.Equal(t, "new-token", req.storedToken)
+}
+
+func TestSyncTransportToken_EnableTotp(t *testing.T) {
+	req := &mockTransportRequester{storedToken: "old-token"}
+	client, err := newHTTPClientWithRequester(Option{}, req)
+	require.NoError(t, err)
+
+	token, err := client.EnableTotp("123456")
+	require.NoError(t, err)
+	require.Equal(t, "new-token", token)
+	// Token should be updated (setup path always applies)
+	require.Equal(t, "new-token", req.storedToken)
+}
+
+func TestSyncTransportToken_NonAuthPath(t *testing.T) {
+	req := &mockTransportRequester{storedToken: "old-token"}
+	// Call syncTransportToken directly with a non-auth path
+	raw := []byte(`{"access_token":"should-not-apply"}`)
+	syncTransportToken(http.StatusOK, raw, "/appmesh/applications", nil, req)
+	// Token should NOT change
+	require.Equal(t, "old-token", req.storedToken)
+	require.Empty(t, req.updateCalls)
+}
+
+// Integration tests: verify cookie/token state against the live server.
+// These tests require the updated appsvc daemon with Set-Cookie support for renew/logoff.
+
+func TestIntegration_HTTP_RenewToken_UpdatesCookie(t *testing.T) {
+	cookiePath := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
+	defer os.Remove(cookiePath)
+
+	emptyStr := ""
+	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr, CookieFile: cookiePath})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	require.NoError(t, err)
+
+	tokenAfterLogin := client.req.getAccessToken()
+	require.NotEmpty(t, tokenAfterLogin, "should have token after login")
+
+	// Cookie file should contain the token
+	data, err := os.ReadFile(cookiePath)
+	require.NoError(t, err)
+	require.Contains(t, string(data), tokenAfterLogin, "cookie file should contain login token")
+
+	// Renew token
+	ok, err := client.RenewToken()
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	tokenAfterRenew := client.req.getAccessToken()
+	require.NotEmpty(t, tokenAfterRenew, "should have token after renew")
+
+	// Cookie file should be updated with renewed token
+	data, err = os.ReadFile(cookiePath)
+	require.NoError(t, err)
+	require.Contains(t, string(data), tokenAfterRenew, "cookie file should contain renewed token")
+}
+
+func TestIntegration_HTTP_Logout_ClearsCookie(t *testing.T) {
+	cookiePath := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
+	defer os.Remove(cookiePath)
+
+	emptyStr := ""
+	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr, CookieFile: cookiePath})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	require.NoError(t, err)
+	tokenBeforeLogout := client.req.getAccessToken()
+	require.NotEmpty(t, tokenBeforeLogout)
+
+	// Logout
+	ok, err := client.Logout()
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	// Token should be cleared from cookie jar
+	require.Empty(t, client.req.getAccessToken(), "token should be empty after logout")
+
+	// Cookie file should not contain the old token value
+	data, err := os.ReadFile(cookiePath)
+	require.NoError(t, err)
+	require.NotContains(t, string(data), tokenBeforeLogout, "cookie file should not contain the old token after logout")
+}
+
+func TestIntegration_TCP_Logout_ClearsToken(t *testing.T) {
+	emptyStr := ""
+	client, err := NewTCPClient(Option{SslTrustedCA: &emptyStr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, client.req.getAccessToken(), "should have token after TCP login")
+
+	ok, err := client.Logout()
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Empty(t, client.req.getAccessToken(), "TCP token should be empty after logout")
+}
+
+func TestIntegration_WSS_Logout_ClearsToken(t *testing.T) {
+	emptyStr := ""
+	client, err := NewWSSClient(Option{SslTrustedCA: &emptyStr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, client.req.getAccessToken(), "should have token after WSS login")
+
+	ok, err := client.Logout()
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Empty(t, client.req.getAccessToken(), "WSS token should be empty after logout")
+}
+
+func TestIntegration_HTTP_Authenticate_ApplyTrue(t *testing.T) {
+	emptyStr := ""
+	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	// Login to get a token
+	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	require.NoError(t, err)
+	token := client.req.getAccessToken()
+
+	// Create a new client and use authenticate to apply the token
+	client2, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	require.NoError(t, err)
+	defer client2.Close()
+	require.Empty(t, client2.req.getAccessToken())
+
+	ok, err := client2.Authenticate(token, "", "", true)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotEmpty(t, client2.req.getAccessToken(), "token should be applied after authenticate(apply=true)")
+}
+
+func TestIntegration_HTTP_Authenticate_ApplyFalse(t *testing.T) {
+	emptyStr := ""
+	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	require.NoError(t, err)
+	token := client.req.getAccessToken()
+
+	// New client: authenticate(apply=false) should NOT store the token
+	client2, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	require.NoError(t, err)
+	defer client2.Close()
+
+	ok, err := client2.Authenticate(token, "", "", false)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Empty(t, client2.req.getAccessToken(), "token should NOT be applied after authenticate(apply=false)")
 }
 
 func TestAppmeshLogin(t *testing.T) {

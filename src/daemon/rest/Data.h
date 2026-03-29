@@ -30,6 +30,7 @@ public:
 	// HTTP protocol headers and cookies
 	bool handleAuthCookies(const HttpHeaderMap *requestHeaders = nullptr);
 	bool setAuthCookie();
+	void clearAuthCookie();
 	void applyCorsHeaders();
 	void applySecurityHeaders();
 

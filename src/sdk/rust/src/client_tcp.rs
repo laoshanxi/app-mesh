@@ -107,6 +107,8 @@ impl Requester for TCPRequester {
         if let Some(token) = self.get_access_token() {
             req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
         }
+        // Save headers ref before consuming for token sync
+        let req_headers = headers.clone();
         if let Some(h) = headers {
             req.headers.extend(h);
         }
@@ -140,7 +142,12 @@ impl Requester for TCPRequester {
             });
         }
 
-        Self::to_http_response(resp)
+        let http_resp = Self::to_http_response(resp)?;
+
+        // Auto-sync token from auth endpoint responses
+        crate::requester::sync_transport_token(&http_resp, path, &req_headers, self);
+
+        Ok(http_resp)
     }
 
     fn handle_token_update(&self, token: Option<String>) {

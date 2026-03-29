@@ -392,7 +392,7 @@ class AppMeshClient:
             pass  # suppress all exceptions
 
     def _on_token_changed(self, token: Optional[str]) -> None:
-        """Notify that a token was updated: persist cookies and wake refresh thread."""
+        """Notify that a token was updated: persist cookies, start/wake refresh thread."""
         # Persist cookies (create file on first write)
         if self.cookie_file:
             cookie_path = Path(self.cookie_file)
@@ -406,8 +406,9 @@ class AppMeshClient:
                         cookie_path.chmod(0o600)
                 except OSError:
                     pass
-        # Wake refresh thread to recompute delay for the new token
-        if token:
+        # Start refresh thread if needed and wake it to recompute delay
+        if token and self._auto_refresh_token:
+            self.start_token_refresh()
             self._refresh_wake.set()
 
     @property
@@ -484,10 +485,7 @@ class AppMeshClient:
             header=headers,
         )
 
-        if resp.status_code == HTTPStatus.OK:
-            self._on_token_changed(resp.json()["access_token"])
-            self.start_token_refresh()
-        elif resp.status_code == HTTPStatus.PRECONDITION_REQUIRED:
+        if resp.status_code == HTTPStatus.PRECONDITION_REQUIRED:
             # TOTP required (HTTP 428)
             if "totp_challenge" in resp.json():
                 challenge = resp.json()["totp_challenge"]
@@ -518,15 +516,12 @@ class AppMeshClient:
 
         headers = {self._HTTP_HEADER_JWT_SET_COOKIE: "true"}
 
-        resp = self._request_http(
+        self._request_http(
             AppMeshClient._Method.POST,
             path="/appmesh/totp/validate",
             body=body,
             header=headers,
         )
-
-        self._on_token_changed(resp.json()["access_token"])
-        self.start_token_refresh()
 
     def logout(self) -> bool:
         """Logout from the current session."""
@@ -541,7 +536,6 @@ class AppMeshClient:
             return False
 
         self.stop_token_refresh()
-        self._on_token_changed(None)
         return True
 
     def authentication(
@@ -576,11 +570,6 @@ class AppMeshClient:
         if apply:
             headers[self._HTTP_HEADER_JWT_SET_COOKIE] = "true"
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/auth", header=headers, raise_on_fail=False)
-        if apply and resp.status_code == HTTPStatus.OK:
-            with suppress(Exception):
-                access_token = resp.json().get("access_token")
-                if access_token:
-                    self._on_token_changed(access_token)
         return resp.status_code == HTTPStatus.OK, resp.text
 
     def set_token(self, token: str) -> None:
@@ -615,7 +604,6 @@ class AppMeshClient:
         )
         self.session.cookies.set_cookie(cookie)
         self._on_token_changed(token)
-        self.start_token_refresh()
 
     def renew_token(self, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
         """Renew the current JWT token.
@@ -630,13 +618,11 @@ class AppMeshClient:
         if not isinstance(jwt_token, str):
             raise AppMeshAuthError("Unsupported token format")
 
-        resp = self._request_http(
+        self._request_http(
             AppMeshClient._Method.POST,
             path="/appmesh/token/renew",
             header={"X-Expire-Seconds": str(self._parse_duration(timeout))},
         )
-
-        self._on_token_changed(resp.json()["access_token"])
 
     def get_totp_secret(self) -> str:
         """Return the raw TOTP secret for the current user.
@@ -659,13 +645,11 @@ class AppMeshClient:
         Args:
             totp_code: TOTP code.
         """
-        resp = self._request_http(
+        self._request_http(
             method=AppMeshClient._Method.POST,
             path="/appmesh/totp/setup",
             header={"X-Totp-Code": totp_code},
         )
-
-        self._on_token_changed(resp.json()["access_token"])
 
     def disable_totp(self, user: str = "self") -> None:
         """Disable 2FA for the specified user."""
@@ -1265,6 +1249,9 @@ class AppMeshClient:
             headers.setdefault("Content-Type", "application/json")
 
         try:
+            # Snapshot token before request for change detection
+            old_token = self._get_access_token()
+
             request_kwargs = {
                 "url": url,
                 "headers": headers,
@@ -1288,6 +1275,11 @@ class AppMeshClient:
 
             if raise_on_fail and resp.status_code != HTTPStatus.PRECONDITION_REQUIRED:
                 resp.raise_for_status()
+
+            # Auto-detect token changes from server Set-Cookie responses
+            new_token = self._get_access_token()
+            if new_token != old_token:
+                self._on_token_changed(new_token)
 
             # Wrap the response for encoding handling
             return AppMeshClient._EncodingResponse(resp)

@@ -145,11 +145,6 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 	}
 	switch code {
 	case http.StatusOK:
-		result := JWTResponse{}
-		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
-			return "", fmt.Errorf("failed to decode JWT response: %w", err)
-		}
-		r.req.handleTokenUpdate(result.AccessToken)
 		r.StartTokenRefresh()
 		return "", nil
 
@@ -195,16 +190,12 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 	if err != nil {
 		return fmt.Errorf("failed to marshal TOTP request: %w", err)
 	}
-	code, raw, _, err := r.post("/appmesh/totp/validate", nil, nil, body)
+	headers := map[string]string{HTTP_HEADER_JWT_SET_COOKIE: "true"}
+	code, raw, _, err := r.post("/appmesh/totp/validate", nil, headers, body)
 	if err != nil {
 		return fmt.Errorf("TOTP validation request failed: %w", err)
 	}
 	if code == http.StatusOK {
-		result := JWTResponse{}
-		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
-			return fmt.Errorf("failed to decode JWT response: %w", err)
-		}
-		r.req.handleTokenUpdate(result.AccessToken)
 		return nil
 	}
 	return fmt.Errorf("TOTP validation failed with status %d: %s", code, string(raw))
@@ -213,7 +204,7 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 // Logout invalidates the current session on the server and clears the locally stored token.
 func (r *AppMeshClient) Logout() (bool, error) {
 	code, _, _, err := r.post("/appmesh/self/logoff", nil, nil, nil)
-	r.req.handleTokenUpdate("")
+	r.StopTokenRefresh()
 	return code == http.StatusOK, err
 }
 
@@ -244,15 +235,9 @@ func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audienc
 		headers[HTTP_HEADER_JWT_SET_COOKIE] = "true"
 	}
 
-	code, raw, _, err := r.post("/appmesh/auth", nil, headers, nil)
+	code, _, _, err := r.post("/appmesh/auth", nil, headers, nil)
 	if err != nil {
 		return false, fmt.Errorf("authentication request failed: %w", err)
-	}
-	if apply && code == http.StatusOK {
-		result := JWTResponse{}
-		if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err == nil && result.AccessToken != "" {
-			r.req.handleTokenUpdate(result.AccessToken)
-		}
 	}
 	return code == http.StatusOK, nil
 }
@@ -264,11 +249,6 @@ func (r *AppMeshClient) RenewToken() (bool, error) {
 		return false, fmt.Errorf("token renewal request failed: %w", err)
 	}
 	if code == http.StatusOK {
-		result := JWTResponse{}
-		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
-			return false, fmt.Errorf("failed to decode JWT response: %w", err)
-		}
-		r.req.handleTokenUpdate(result.AccessToken)
 		return true, nil
 	}
 	return false, fmt.Errorf("token renewal failed with status %d: %s", code, string(raw))
@@ -318,7 +298,6 @@ func (r *AppMeshClient) EnableTotp(totpCode string) (string, error) {
 		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
 			return "", fmt.Errorf("failed to decode JWT response: %w", err)
 		}
-		r.req.handleTokenUpdate(result.AccessToken)
 		return result.AccessToken, nil
 	}
 	return "", fmt.Errorf("TOTP setup failed with status %d: %s", code, string(raw))

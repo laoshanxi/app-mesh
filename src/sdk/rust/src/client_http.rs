@@ -202,6 +202,9 @@ impl Requester for HTTPRequester {
             req = req.query(&query);
         }
 
+        // Snapshot token before request for change detection
+        let old_token = self.get_access_token();
+
         let resp = req.send().await?;
 
         if fail_on_error && !resp.status().is_success() && resp.status() != StatusCode::PRECONDITION_REQUIRED {
@@ -209,6 +212,12 @@ impl Requester for HTTPRequester {
             let text = resp.text().await?;
             error!("HTTP {} error: {}", status, text);
             return Err(AppMeshError::RequestFailed { status, message: text });
+        }
+
+        // Auto-detect token changes from server Set-Cookie responses
+        let new_token = self.get_access_token();
+        if new_token != old_token {
+            self.handle_token_update(new_token);
         }
 
         Self::to_http_response(resp).await
@@ -390,9 +399,6 @@ impl AppMeshClient {
             return Err(AppMeshError::AuthenticationFailed(text));
         }
 
-        let json: Value = resp.json()?;
-        let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
-        self.req.handle_token_update(token);
         Ok(String::new())
     }
 
@@ -433,12 +439,7 @@ impl AppMeshClient {
         });
         let body_bytes = serde_json::to_vec(&body)?;
 
-        let resp =
-            self.req.send(Method::POST, "/appmesh/totp/validate", Some(&body_bytes), Some(headers), None, true).await?;
-
-        let json: Value = resp.json()?;
-        let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
-        self.req.handle_token_update(token);
+        self.req.send(Method::POST, "/appmesh/totp/validate", Some(&body_bytes), Some(headers), None, true).await?;
         Ok(())
     }
 
@@ -483,13 +484,6 @@ impl AppMeshClient {
 
         let is_ok = resp.status() == StatusCode::OK;
         let text = resp.text()?;
-        if apply && is_ok {
-            if let Ok(json) = serde_json::from_str::<Value>(&text) {
-                if let Some(access_token) = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()) {
-                    self.req.handle_token_update(Some(access_token.to_string()));
-                }
-            }
-        }
         Ok((is_ok, text))
     }
 
@@ -497,7 +491,6 @@ impl AppMeshClient {
     pub async fn logout(&self) -> Result<()> {
         self.cancel_refresh_task();
         self.req.send(Method::POST, "/appmesh/self/logoff", None, None, None, true).await?;
-        self.req.handle_token_update(None);
         Ok(())
     }
 
@@ -505,12 +498,7 @@ impl AppMeshClient {
     pub async fn renew_token(&self, timeout_seconds: Option<i32>) -> Result<()> {
         let headers = timeout_seconds.map(|sec| hmap! { HTTP_HEADER_JWT_EXPIRE_SECONDS => sec });
 
-        let resp =
-            self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
-
-        let json: Value = resp.json()?;
-        let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
-        self.req.handle_token_update(token);
+        self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
         Ok(())
     }
 
@@ -656,12 +644,7 @@ impl AppMeshClient {
     pub async fn enable_totp(&self, totp: &str) -> Result<()> {
         let headers = hmap! { HTTP_HEADER_JWT_TOTP => totp };
 
-        let resp =
-            self.req.send(Method::POST, "/appmesh/totp/setup", None, Some(headers), None, true).await?;
-
-        let json: Value = resp.json()?;
-        let token = json.get(HTTP_BODY_KEY_ACCESS_TOKEN).and_then(|v| v.as_str()).map(String::from);
-        self.req.handle_token_update(token);
+        self.req.send(Method::POST, "/appmesh/totp/setup", None, Some(headers), None, true).await?;
         Ok(())
     }
 

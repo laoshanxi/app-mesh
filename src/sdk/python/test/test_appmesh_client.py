@@ -450,6 +450,7 @@ class TestAppMeshClient(TestCase):
                 self.assertEqual("/appmesh/auth", path)
                 seen_auth.append(header.get("Authorization"))
                 seen_set_cookie.append(header.get("X-Set-Cookie"))
+                old_token = client._get_access_token()
                 if header.get("X-Set-Cookie") == "true":
                     client.session.cookies.set_cookie(
                         Cookie(
@@ -472,6 +473,10 @@ class TestAppMeshClient(TestCase):
                             rfc2109=False,
                         )
                     )
+                # Simulate _request_http before/after token detection
+                new_token = client._get_access_token()
+                if new_token != old_token:
+                    client._on_token_changed(new_token)
                 return FakeResponse({"access_token": "verified-token", "expires_in": 3600})
 
             client._request_http = fake_request
@@ -490,6 +495,100 @@ class TestAppMeshClient(TestCase):
             self.assertIn("verified-token", self.read_file_content(cookie_path))
         finally:
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
+
+
+    def test_14_transport_token_sync(self):
+        """Test _sync_transport_token for TCP/WSS path-based token extraction."""
+        from appmesh.transport_mixin import (
+            TransportClientMixin,
+            _AUTH_SET_COOKIE_PATHS,
+            _AUTH_RENEW_PATHS,
+            _LOGOFF_PATH,
+        )
+
+        class FakeTransportResponse:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self._payload = payload
+
+            def json(self):
+                return self._payload
+
+        class FakeTransportClient(TransportClientMixin, AppMeshClient):
+            """Minimal fake to test _sync_transport_token in isolation."""
+            pass
+
+        client = AppMeshClient(rest_url="https://127.0.0.1:6060", ssl_verify=False)
+        # Use a standalone mixin instance to call _sync_transport_token
+        mixin = TransportClientMixin()
+        mixin._token = None
+        mixin._auto_refresh_token = False
+        # Provide a minimal cookie_file=None and session to satisfy _on_token_changed
+        mixin.cookie_file = None
+
+        def on_token_changed(token):
+            mixin._token = token
+
+        mixin._on_token_changed = on_token_changed
+
+        # 1. Login with X-Set-Cookie: true → token applied
+        resp = FakeTransportResponse(200, {"access_token": "login-token"})
+        mixin._sync_transport_token(resp, "/appmesh/login", {"X-Set-Cookie": "true"})
+        self.assertEqual("login-token", mixin._token)
+
+        # 2. Login without X-Set-Cookie → token NOT applied
+        mixin._token = "old"
+        resp = FakeTransportResponse(200, {"access_token": "should-not-apply"})
+        mixin._sync_transport_token(resp, "/appmesh/login", {})
+        self.assertEqual("old", mixin._token)
+
+        # 3. Login with X-Set-Cookie but non-200 → token NOT applied
+        mixin._token = "old"
+        resp = FakeTransportResponse(401, {"access_token": "should-not-apply"})
+        mixin._sync_transport_token(resp, "/appmesh/login", {"X-Set-Cookie": "true"})
+        self.assertEqual("old", mixin._token)
+
+        # 4. Renew → always applied (no X-Set-Cookie check)
+        mixin._token = "old"
+        resp = FakeTransportResponse(200, {"access_token": "renewed-token"})
+        mixin._sync_transport_token(resp, "/appmesh/token/renew", {})
+        self.assertEqual("renewed-token", mixin._token)
+
+        # 5. TOTP setup → always applied
+        mixin._token = "old"
+        resp = FakeTransportResponse(200, {"access_token": "totp-token"})
+        mixin._sync_transport_token(resp, "/appmesh/totp/setup", {})
+        self.assertEqual("totp-token", mixin._token)
+
+        # 6. Logoff → token cleared
+        mixin._token = "has-token"
+        resp = FakeTransportResponse(200, {})
+        mixin._sync_transport_token(resp, "/appmesh/self/logoff", {})
+        self.assertIsNone(mixin._token)
+
+        # 7. Logoff with non-200 → token NOT cleared
+        mixin._token = "has-token"
+        resp = FakeTransportResponse(500, {})
+        mixin._sync_transport_token(resp, "/appmesh/self/logoff", {})
+        self.assertEqual("has-token", mixin._token)
+
+        # 8. Non-auth path → token NOT changed
+        mixin._token = "old"
+        resp = FakeTransportResponse(200, {"access_token": "should-not-apply"})
+        mixin._sync_transport_token(resp, "/appmesh/applications", {})
+        self.assertEqual("old", mixin._token)
+
+        # 9. Auth path with apply=False (no X-Set-Cookie) → token NOT changed
+        mixin._token = "old"
+        resp = FakeTransportResponse(200, {"access_token": "should-not-apply"})
+        mixin._sync_transport_token(resp, "/appmesh/auth", {"Authorization": "Bearer test"})
+        self.assertEqual("old", mixin._token)
+
+        # 10. Auth path with apply=True (X-Set-Cookie: true) → token applied
+        mixin._token = "old"
+        resp = FakeTransportResponse(200, {"access_token": "auth-token"})
+        mixin._sync_transport_token(resp, "/appmesh/auth", {"X-Set-Cookie": "true"})
+        self.assertEqual("auth-token", mixin._token)
 
 
 if __name__ == "__main__":
