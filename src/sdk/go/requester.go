@@ -148,10 +148,14 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 		return resp.StatusCode, nil, resp.Header, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Auto-detect token changes from server Set-Cookie responses
+	// Auto-detect token changes from server Set-Cookie responses.
+	// Re-set via setToken() to ensure persistence: setCookie() adds an
+	// Expires fallback when a cookie file is configured, so the
+	// persistent-cookiejar treats the entry as persistent even if the
+	// server's Set-Cookie omitted Max-Age.
 	newToken := h.getAccessToken()
 	if newToken != oldToken {
-		h.handleTokenUpdate(newToken)
+		h.setToken(newToken)
 	}
 
 	return resp.StatusCode, data, resp.Header, nil

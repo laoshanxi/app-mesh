@@ -1,12 +1,13 @@
 // src/daemon/rest/Data.cpp
 #include <algorithm>
-#include <cerrno>
+#include <cctype>
 #include <chrono>
 #include <tuple>
 
 #include <msgpack.hpp>
 #include <nlohmann/json.hpp>
 
+#include "../../common/JwtHelper.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "Data.h"
@@ -46,46 +47,16 @@ bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
 	return false;
 }
 
-// setAuthCookie extracts JWT token from response body and creates a Set-Cookie header
-// Follows agent_response.go setAuthCookie pattern
+// setAuthCookie extracts auth response fields and creates a Set-Cookie header.
+// It does not decode or verify JWT claims; that remains in RestBase.
 bool Response::setAuthCookie()
 {
-	// Parse JWT from response body
-	nlohmann::json jsonResponse;
-	try
-	{
-		jsonResponse = nlohmann::json::parse(this->body);
-	}
-	catch (const std::exception &)
-	{
+	JwtHelper::TokenResponse tokenResponse;
+	if (!JwtHelper::extractTokenResponse(this->body, tokenResponse))
 		return false;
-	}
-
-	std::string accessToken;
-	if (jsonResponse.contains(HTTP_HEADER_JWT_access_token))
-	{
-		accessToken = jsonResponse[HTTP_HEADER_JWT_access_token].get<std::string>();
-	}
-
-	// Validate token presence
-	if (accessToken.empty())
-		return false;
-
-	double expireSeconds = 0;
-	if (jsonResponse.contains(HTTP_BODY_KEY_JWT_expire_seconds))
-	{
-		expireSeconds = jsonResponse[HTTP_BODY_KEY_JWT_expire_seconds].get<double>();
-	}
-
-	// Trim "Bearer " prefix if present
-	const std::string bearerPrefix = HTTP_HEADER_JWT_BearerSpace;
-	if (accessToken.compare(0, bearerPrefix.length(), bearerPrefix) == 0)
-	{
-		accessToken = accessToken.substr(bearerPrefix.length());
-	}
 
 	// Create cookie string
-	std::string cookieValue = std::string(COOKIE_TOKEN) + "=" + accessToken + "; Path=/; HttpOnly; SameSite=Strict";
+	std::string cookieValue = std::string(COOKIE_TOKEN) + "=" + tokenResponse.accessToken + "; Path=/; HttpOnly; SameSite=Strict";
 
 	// TODO: Determine HTTPS dynamically
 	bool isSecure = true;
@@ -95,9 +66,9 @@ bool Response::setAuthCookie()
 	}
 
 	// Set expiration if available
-	if (expireSeconds > 0)
+	if (tokenResponse.expiresIn > 0)
 	{
-		cookieValue += "; Max-Age=" + std::to_string(static_cast<int>(expireSeconds));
+		cookieValue += "; Max-Age=" + std::to_string(tokenResponse.expiresIn);
 	}
 
 	this->headers["Set-Cookie"] = cookieValue;
@@ -313,7 +284,7 @@ bool Request::convertCookieToAuthorization()
 	// 3. Verify HMAC if both present
 	// For now, we just inject the Authorization header
 	// Inject Authorization header
-	headers[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + authCookieValue;
+	headers[HTTP_HEADER_JWT_Authorization] = JwtHelper::buildBearerAuthorization(authCookieValue);
 
 	LOG_DBG << fname << "Converted cookie to Authorization header for UUID: " << uuid;
 	return true;

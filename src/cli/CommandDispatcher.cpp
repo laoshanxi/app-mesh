@@ -15,7 +15,7 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <boost/regex.hpp>
-#include <jwt-cpp/traits/nlohmann-json/defaults.h>
+#include "../common/JwtHelper.h"
 #include <nlohmann/json.hpp>
 #if defined(_WIN32)
 #include <tlhelp32.h>
@@ -378,12 +378,7 @@ std::string CommandDispatcher::getLoginUser()
 	auto token = acquireAuthToken();
 	if (token.length())
 	{
-		auto decodedToken = jwt::decode(token);
-		if (decodedToken.has_subject())
-		{
-			// get user info
-			userName = decodedToken.get_subject();
-		}
+		JwtHelper::tryGetSubject(token, userName);
 	}
 	return userName;
 }
@@ -1800,11 +1795,9 @@ std::string CommandDispatcher::getAuthenUser()
 			login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), "", 0, m_audience);
 			token = getAuthToken();
 		}
-		auto decodedToken = jwt::decode(token);
-		if (decodedToken.has_subject())
+		std::string userName;
+		if (JwtHelper::tryGetSubject(token, userName))
 		{
-			// get user info
-			auto userName = decodedToken.get_subject();
 			return userName;
 		}
 		throw std::invalid_argument("Failed to get token");

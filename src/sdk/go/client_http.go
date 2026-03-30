@@ -217,8 +217,9 @@ func (r *AppMeshClient) SetToken(token string) {
 }
 
 // Authenticate validates the provided JWT token with the server.
-// When apply is false, the current client session remains unchanged.
-// When apply is true, the verified token is applied to the current client session.
+// When apply is true, the verified token is applied to the current client session and local auth
+// state is updated on success.
+// When apply is false, the token is only verified and the current client session remains unchanged.
 func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audience string, apply bool) (bool, error) {
 	if jwtToken == "" {
 		return false, fmt.Errorf("JWT token is required")

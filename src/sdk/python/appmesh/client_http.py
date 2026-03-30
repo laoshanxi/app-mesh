@@ -554,8 +554,9 @@ class AppMeshClient:
             token: JWT token to verify.
             permission: Optional permission ID to check (e.g., 'app-view', 'app-delete').
             audience: Optional audience value to verify against the token.
-            apply: When ``False``, only verify the provided token. When ``True``, apply the
-                verified token to the current client session.
+            apply: When ``True``, apply the verified token to the current client session and
+                update local token state on success. When ``False``, only verify the provided
+                token and leave local state unchanged.
 
         Returns:
             Tuple of ``(success, message)`` where ``message`` is the raw response text.
