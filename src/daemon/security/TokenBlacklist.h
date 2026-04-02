@@ -26,7 +26,7 @@ public:
 
 protected:
     void removeExpiredTokens();
-    void clearTokens(size_t numTokens);
+    void clearSoonestExpiring(size_t numTokens);
 
     mutable std::recursive_mutex m_mutex;
     std::unordered_map<std::string, std::chrono::system_clock::time_point> m_tokenSet;

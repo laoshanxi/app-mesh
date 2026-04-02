@@ -102,6 +102,8 @@ if(APPLE)
     endif()
 
     list(PREPEND CMAKE_PREFIX_PATH "${HOMEBREW_PREFIX}")
+    include_directories("${HOMEBREW_PREFIX}/include")
+    link_directories("${HOMEBREW_PREFIX}/lib")
     set(ENV{PKG_CONFIG_PATH} "${HOMEBREW_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 
     # RPATH settings for macOS

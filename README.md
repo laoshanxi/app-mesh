@@ -57,13 +57,13 @@ for i in range(10):
 
 Feature | Description
 ---|---
-App Management  | 🧩 <b>App CURD with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained  Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
+App Management  | 🧩 <b>App CURD with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
 Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
 Security |  🔐 Authentication: [OAuth](src/sdk/python/test/test_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html), YAML-based storage (local or Consul for clustering) <br> 🔐 Authorization: [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html), [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html), multi-tenant isolation <br> 🔐 Protection: SSL/TLS for `TCP`/`HTTP`/`WebSocket`, CSRF tokens, HMAC with PSK for non-token verification
-Cloud Native | 🌩️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
+Cloud Native | 🌩️ [Prometheus Exporter (built-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
 Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download API <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Request Forwarding <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
-Echosystem | LLM: [Model Context Protocol (MCP)](src/sdk/mcp) <br> AI: [Claude Code Plugin](src/sdk/claude-plugin) <br> IoT: [MQTT](src/sdk/mqtt)
-Platform support | X86, ARM
+Ecosystem | LLM: [Model Context Protocol (MCP)](src/sdk/mcp) <br> AI: [Claude Code Plugin](src/sdk/claude-plugin) <br> IoT: [MQTT](src/sdk/mqtt)
+Platform support | Linux, macOS, Windows (X86, ARM)
 SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp), [Rust](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/rust), [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http), [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/client_http.go), [JavaScript](https://www.npmjs.com/package/appmesh), [Java](https://github.com/laoshanxi/app-mesh/packages/2227502), [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
 
 ## 📦 Install
@@ -90,7 +90,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 | Feature                  | App Mesh | [Supervisor](http://supervisord.org/) | [crontab](https://crontab.guru/) |
 | ------------------------ | -------- | ------------------------------------- | -------------------------------- |
 | Accuracy                 | Seconds  | Seconds                               | Minutes                          |
-| Language                 | C++11    | Python                                | C                                |
+| Language                 | C++17    | Python                                | C                                |
 | Web GUI                  | √        | √                                     |
 | Command lines            | √        | √                                     | √                                |
 | SDK                      | √        |                                       |
@@ -119,7 +119,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [Promote native application to microservice application](https://app-mesh.readthedocs.io/en/latest/success/promote_native_app_to_microservice_app.html)
 - [Secure REST file server](https://app-mesh.readthedocs.io/en/latest/success/secure_REST_file_server.html)
 - [Standalone JWT server](https://app-mesh.readthedocs.io/en/latest/success/standalone_JWT_server.html)
-- [Kubernetes run none-container applications](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
+- [Kubernetes run non-container applications](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
 - [Remote execute](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
 - [Python parallel run](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
 - [Secure consul cluster](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
@@ -148,7 +148,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 [language.url]: https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg
 [standard.url]: https://en.wikipedia.org/wiki/C%2B%2B#Standardization
-[standard.badge]: https://img.shields.io/badge/C%2B%2B-11%2F14%2F17-blue.svg
+[standard.badge]: https://img.shields.io/badge/C%2B%2B-14%2F17%2F20-blue.svg
 [release.url]: https://github.com/laoshanxi/app-mesh/releases
 [release.badge]: https://img.shields.io/github/v/release/laoshanxi/app-mesh?label=Github%20package
 [docker.url]: https://hub.docker.com/repository/docker/laoshanxi/appmesh

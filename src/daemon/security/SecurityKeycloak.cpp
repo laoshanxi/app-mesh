@@ -280,30 +280,8 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
             }
         }
 
+        // jwt::verify() checks exp and nbf claims by default
         verifier.verify(decoded);
-
-        // Additional checks for token expiration and not-before time
-        auto currentTime = std::chrono::system_clock::now();
-        auto exp = decoded.get_payload_claim("exp").as_integer();
-        auto expTime = std::chrono::system_clock::from_time_t(exp);
-
-        if (currentTime > expTime)
-        {
-            LOG_WAR << fname << "Token has expired";
-            throw std::domain_error("Token has expired");
-        }
-
-        // Check if token is not yet valid (if nbf claim exists)
-        if (decoded.has_payload_claim("nbf"))
-        {
-            auto nbf = decoded.get_payload_claim("nbf").as_integer();
-            auto nbfTime = std::chrono::system_clock::from_time_t(nbf);
-            if (currentTime < nbfTime)
-            {
-                LOG_WAR << fname << "Token not yet valid";
-                throw std::domain_error("Token not yet valid");
-            }
-        }
 
         // Success - parse user info from token
         LOG_DBG << fname << "Token verification successful";

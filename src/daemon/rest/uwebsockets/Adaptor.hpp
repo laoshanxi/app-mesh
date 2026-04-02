@@ -19,6 +19,7 @@
 
 #include "../../../common/Utility.h"
 #include "../../Configuration.h"
+#include "../../security/JwtToken.h"
 #include "../RestHandler.h"
 #include "../Worker.h"
 #include "Service.h"
@@ -97,7 +98,7 @@ private:
             return false;
         try
         {
-            RESTHANDLER::instance()->verifyToken(std::string(token), audience);
+            JwtToken::verify(std::string(token), audience);
             return true;
         }
         catch (...)
