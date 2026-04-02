@@ -24,8 +24,8 @@ readonly ENV_FILE="$PROG_HOME/appmesh.default"
 ################################################################################
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
-info() { log "INFO $@"; }
-error() { log "ERROR $@"; }
+info() { log "INFO" "$@"; }
+error() { log "ERROR" "$@"; }
 die() { error "$@" && exit 1; }
 
 get_os_type() {
@@ -120,7 +120,7 @@ clean_environment() {
 
 setup_env_file() {
     info "Setting up environment file at $ENV_FILE"
-    : >$ENV_FILE
+    : >"$ENV_FILE"
 
     # Locale setup
     if locale -a 2>/dev/null | grep -iE "^(en_US\.(utf8|UTF-8))$" >/dev/null; then
@@ -189,7 +189,7 @@ install_systemd_service() {
         return 1
     }
 
-    update_appmesh_paths ${PROG_HOME}/script/appmesh.systemd.service
+    update_appmesh_paths "${PROG_HOME}/script/appmesh.systemd.service"
     rm -f "$SYSTEMD_FILE" && cp "$service_template" "$SYSTEMD_FILE"
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER:-}" ]; then
@@ -197,7 +197,7 @@ install_systemd_service() {
         info "Service user set to: ${APPMESH_DAEMON_EXEC_USER}"
     fi
 
-     if [ -n "${APPMESH_DAEMON_EXEC_USER_GROUP:-}" ]; then
+    if [ -n "${APPMESH_DAEMON_EXEC_USER_GROUP:-}" ]; then
         sed -i "s/^Group=.*/Group=${APPMESH_DAEMON_EXEC_USER_GROUP}/" "$SYSTEMD_FILE"
         info "Service group set to: ${APPMESH_DAEMON_EXEC_USER_GROUP}"
     fi
@@ -212,13 +212,13 @@ install_launchd_service() {
 
     [ ! -f "$service_template" ] && die "Service template not found: $service_template"
 
-    update_appmesh_paths ${PROG_HOME}/script/appmesh.launchd.plist
+    update_appmesh_paths "${PROG_HOME}/script/appmesh.launchd.plist"
 
     chown root:wheel "$service_template"
     chmod 644 "$service_template"
     rm -f "$LAUNCHD_FILE" && ln -sf "$service_template" "$LAUNCHD_FILE"
 
-     if [ -n "${APPMESH_DAEMON_EXEC_USER:-}" ]; then
+    if [ -n "${APPMESH_DAEMON_EXEC_USER:-}" ]; then
         sed -i '' "s/<key>UserName<\/key>\n\t<string>.*<\/string>/<key>UserName<\/key>\n\t<string>${APPMESH_DAEMON_EXEC_USER}<\/string>/" "$LAUNCHD_FILE"
         info "Service user set to: ${APPMESH_DAEMON_EXEC_USER}"
     fi

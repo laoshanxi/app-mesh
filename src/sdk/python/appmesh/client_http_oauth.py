@@ -24,10 +24,10 @@ class AppMeshClientOAuth(AppMeshClient):
     def __init__(
         self,
         oauth2: Dict[str, str],  # Required for Keycloak
-        rest_url: str = "https://127.0.0.1:6060",
+        base_url: str = "https://127.0.0.1:6060",
         ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
-        rest_timeout: Tuple[float, float] = (60, 300),
+        request_timeout: Tuple[float, float] = (60, 300),
         auto_refresh_token: bool = True,  # Default to True for Keycloak
     ):
         """Initialize an App Mesh HTTP client with Keycloak support.
@@ -41,15 +41,15 @@ class AppMeshClientOAuth(AppMeshClient):
         """
         # Initialize base class, disabling its Keycloak and auto-refresh logic
         super().__init__(
-            rest_url=rest_url,
+            base_url=base_url,
             ssl_verify=ssl_verify,
             ssl_client_cert=ssl_client_cert,
-            rest_timeout=rest_timeout,
+            request_timeout=request_timeout,
             auto_refresh_token=auto_refresh_token,
         )
 
         # Keycloak integration
-        timeout = (int(rest_timeout) if isinstance(rest_timeout, (int, float)) else int(rest_timeout[0])) if rest_timeout is not None else None
+        timeout = (int(request_timeout) if isinstance(request_timeout, (int, float)) else int(request_timeout[0])) if request_timeout is not None else None
         keycloak_kwargs = {
             "server_url": oauth2.get("auth_server_url"),
             "client_id": oauth2.get("client_id"),
@@ -68,25 +68,25 @@ class AppMeshClientOAuth(AppMeshClient):
 
     def login(
         self,
-        user_name: str,
-        user_pwd: str,
+        username: str,
+        password: str,
         totp_code: Optional[str] = None,
-        timeout_seconds: Union[str, int] = 0,
+        token_expire: Union[str, int] = 0,
         audience: Optional[str] = None,
     ) -> Optional[str]:
-        """Login with user name and password using Keycloak.
+        """Login with username and password using Keycloak.
 
         Args:
-            user_name: The name of the user.
-            user_pwd: The password of the user.
+            username: The name of the user.
+            password: The password of the user.
             totp_code: The TOTP code if enabled for the user.
-            timeout_seconds: Login timeout (unused in Keycloak flow).
+            token_expire: Token expiration duration (unused in Keycloak flow).
             audience: Token audience (unused in Keycloak flow).
         """
         # Keycloak authentication
         self._token = self._keycloak_openid.token(
-            username=user_name,
-            password=user_pwd,
+            username=username,
+            password=password,
             totp=int(totp_code) if totp_code else None,
             grant_type="password",  # grant type for token request: "password" / "client_credentials" / "refresh_token"
             scope="openid",  # what information to include in the token, such as "openid profile email"
@@ -112,7 +112,7 @@ class AppMeshClientOAuth(AppMeshClient):
 
         return result and super_result
 
-    def renew_token(self, timeout: Union[int, str] = 0) -> None:
+    def renew_token(self, token_expire: Union[int, str] = 0) -> None:
         """Renew the current Keycloak token."""
         if not self._token or not isinstance(self._token, dict):
             raise AppMeshAuthError("No valid Keycloak token available")

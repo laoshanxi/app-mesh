@@ -39,16 +39,16 @@ class AppRun:
         finally:
             self._client.forward_to = original_value
 
-    def wait(self, stdout_print: bool = True, timeout: int = 0) -> Optional[int]:
+    def wait(self, print_stdout: bool = True, timeout: int = 0) -> Optional[int]:
         """
         Wait for the asynchronous run to complete with the saved forwarding target restored.
 
         Args:
-            stdout_print: If True, prints remote stdout to local console.
+            print_stdout: If True, prints remote stdout to local console.
             timeout: Maximum time to wait in seconds. 0 means wait indefinitely.
 
         Returns:
             Exit code if the process finishes successfully, or ``None`` on timeout/polling failure.
         """
         with self.forward_to():
-            return self._client.wait_for_async_run(self, stdout_print, timeout)
+            return self._client.wait_for_async_run(self, print_stdout, timeout)

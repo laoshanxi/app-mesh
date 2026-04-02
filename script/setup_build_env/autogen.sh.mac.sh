@@ -7,8 +7,8 @@
 set -euo pipefail
 
 # Define key directories
-SRC_DIR=$(dirname $(dirname $(dirname $(readlink -f "$0"))))
-TMP_DIR=$(mktemp -d $(pwd)/appmesh.tmp)
+SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
+TMP_DIR="$(mktemp -d "$(pwd)/appmesh.tmp.XXXXXX")"
 BUILD_THREADS=$(sysctl -n hw.ncpu || echo 4)
 
 cleanup() {
@@ -25,15 +25,15 @@ cd "${TMP_DIR}"
 
 # brew dependencies
 BREW_PACKAGES=(
-	wget
-	cmake
+    wget
+    cmake
     ninja
-	go
-	openssl@3
-	spdlog
-	cryptopp
-	yaml-cpp
-	nlohmann-json
+    go
+    openssl@3
+    spdlog
+    cryptopp
+    yaml-cpp
+    nlohmann-json
 )
 
 # Ensure brew is available

@@ -308,10 +308,10 @@ impl AppMeshClientTCP {
     pub async fn run_app_async(
         self: &Arc<Self>,
         app: &Application,
-        max_timeout: i32,
+        max_time: i32,
         lifecycle: i32,
     ) -> Result<AppRun> {
-        self.client.run_app_async(app, max_timeout, lifecycle).await
+        self.client.run_app_async(app, max_time, lifecycle).await
     }
 }
 

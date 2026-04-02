@@ -39,10 +39,10 @@ class AppMeshServer:
 
     def __init__(
         self,
-        rest_url: str = "https://127.0.0.1:6060",
+        base_url: str = "https://127.0.0.1:6060",
         ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
-        rest_timeout: Tuple[float, float] = (60, 300),
+        request_timeout: Tuple[float, float] = (60, 300),
         *,
         client: Optional[AppMeshClient] = None,
         logger_: Optional[logging.Logger] = None,
@@ -50,15 +50,15 @@ class AppMeshServer:
         """Initialize a server-side helper for task fetch/return.
 
         Args:
-            rest_url: The server's base URI. Defaults to "https://127.0.0.1:6060".
+            base_url: The server's base URI. Defaults to "https://127.0.0.1:6060".
             ssl_verify: SSL server verification mode.
             ssl_client_cert: SSL client certificate file(s).
-            rest_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.
+            request_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.
             client: Pre-configured AppMeshClient instance (used by TCP/WSS subclasses so all
                 transports share the same task API).
             logger_: Optional logger instance.
         """
-        self._client = client or AppMeshClient(rest_url, ssl_verify, ssl_client_cert, rest_timeout)
+        self._client = client or AppMeshClient(base_url, ssl_verify, ssl_client_cert, request_timeout)
         self._logger = logger_ or logger
 
     @staticmethod

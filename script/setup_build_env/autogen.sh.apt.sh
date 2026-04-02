@@ -13,7 +13,7 @@ case $(uname -m) in
     arm)    dpkg --print-architecture | grep -q "arm64" && architecture="arm64" || architecture="arm" ;;
 esac
 export DEBIAN_FRONTEND=noninteractive
-SRC_DIR=$(dirname $(dirname $(dirname $(readlink -f "$0"))))
+SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
 export ROOTDIR=$(pwd)/appmesh.tmp
 mkdir -p ${ROOTDIR}
 cd ${ROOTDIR}

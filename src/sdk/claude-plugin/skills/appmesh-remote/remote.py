@@ -43,7 +43,7 @@ def get_client():
     """Create and authenticate App Mesh client."""
     from appmesh import AppMeshClient
 
-    client = AppMeshClient(rest_url=HOST, ssl_verify=SSL_VERIFY, ssl_client_cert=None, auto_refresh_token=True)
+    client = AppMeshClient(base_url=HOST, ssl_verify=SSL_VERIFY, ssl_client_cert=None, auto_refresh_token=True)
     try:
         client.login(USER, PASS)
     except Exception as e:
@@ -125,11 +125,11 @@ def do_sync(client, force=False):
         tar_q = shlex.quote(remote_tar)
         exit_code, output = client.run_app_sync(
             f"mkdir -p {ws_q} && tar xzf {tar_q} -C {ws_q}",
-            max_time_seconds=60,
+            max_time=60,
         )
         # Always clean up remote tar, regardless of extract outcome
         try:
-            client.run_app_sync(f"rm -f {tar_q}", max_time_seconds=10)
+            client.run_app_sync(f"rm -f {tar_q}", max_time=10)
         except Exception as e:
             print(f"[warn] remote tar cleanup failed: {e}")
         if exit_code != 0:
@@ -157,11 +157,11 @@ def do_exec(client, cmd, timeout=600, working_dir=None):
         app_dict["working_dir"] = wd
     run = client.run_app_async(
         App(app_dict),
-        max_time_seconds=timeout,
+        max_time=timeout,
     )
     print(f"[app] {run.app_name}")
     try:
-        exit_code = run.wait(stdout_print=True, timeout=timeout)
+        exit_code = run.wait(print_stdout=True, timeout=timeout)
     except KeyboardInterrupt:
         try:
             client.disable_app(run.app_name)
@@ -206,13 +206,13 @@ def cmd_run_script(args):
 
     client.upload_file(args.script, remote_script)
     rs_q = shlex.quote(remote_script)
-    client.run_app_sync(f"chmod +x {rs_q}", max_time_seconds=5)
+    client.run_app_sync(f"chmod +x {rs_q}", max_time=5)
     rc = 1
     try:
         rc = do_exec(client, remote_script, args.timeout)
     finally:
         try:
-            client.run_app_sync(f"rm -f {rs_q}", max_time_seconds=5)
+            client.run_app_sync(f"rm -f {rs_q}", max_time=5)
         except Exception as e:
             print(f"[warn] remote script cleanup failed: {e}")
     return rc

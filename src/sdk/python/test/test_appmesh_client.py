@@ -73,13 +73,13 @@ class TestAppMeshClient(TestCase):
         app_data = {"command": "whoami", "metadata": json.dumps(metadata)}
         self.assertEqual(
             0,
-            client.run_app_sync(app=App(app_data), max_time_seconds=5, life_cycle_seconds=6)[0],
+            client.run_app_sync(app=App(app_data), max_time=5, lifecycle=6)[0],
         )
 
-        exit_code = client.run_app_sync(App({"command": get_long_running_command(), "shell": True}), max_time_seconds=3)[0]
+        exit_code = client.run_app_sync(App({"command": get_long_running_command(), "shell": True}), max_time=3)[0]
         self.assertIsNotNone(exit_code)
         self.assertNotEqual(0, exit_code, "long-running command should be killed by timeout")
-        run = client.run_app_async(App({"command": get_long_running_command(), "shell": True}), max_time_seconds=4)
+        run = client.run_app_async(App({"command": get_long_running_command(), "shell": True}), max_time=4)
         run.wait()
 
     def test_08_file(self):
@@ -279,7 +279,7 @@ class TestAppMeshClient(TestCase):
         try:
             # init empty cookie file
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
-            client = AppMeshClient(rest_cookie_file=cookie_path)
+            client = AppMeshClient(cookie_file=cookie_path)
             # Cookie file is NOT created until first token write (lazy creation)
             self.assertFalse(os.path.exists(cookie_path))
 
@@ -302,14 +302,14 @@ class TestAppMeshClient(TestCase):
             self.assertNotIn("appmesh_csrf_token", content_after)
 
             # re-use cookie: should require login again
-            client = AppMeshClient(rest_cookie_file=cookie_path)
+            client = AppMeshClient(cookie_file=cookie_path)
             with self.assertRaises(Exception):
                 client.list_apps()
 
             # re-login and verify user info
             client.login("admin", self.DEFAULT_PASSWORD)
             token = client._get_access_token()
-            client = AppMeshClient(rest_cookie_file=cookie_path)
+            client = AppMeshClient(cookie_file=cookie_path)
             user_info = client.get_current_user()
             self.assertIn("name", user_info)
             self.assertEqual(user_info["name"], "admin")
@@ -335,7 +335,7 @@ class TestAppMeshClient(TestCase):
             # Use totp code to login
             content_before_totp = self.read_file_content(cookie_path)
 
-            client = AppMeshClient(rest_cookie_file=cookie_path)
+            client = AppMeshClient(cookie_file=cookie_path)
             self.assertTrue(client.logout())
             totp_code = totp.now()
             print(totp_code)
@@ -353,7 +353,7 @@ class TestAppMeshClient(TestCase):
 
         finally:
             try:
-                client = AppMeshClient(rest_cookie_file=cookie_path)
+                client = AppMeshClient(cookie_file=cookie_path)
                 client.disable_totp()
             except Exception:
                 pass
@@ -384,7 +384,7 @@ class TestAppMeshClient(TestCase):
         try:
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
 
-            client4 = AppMeshClient(rest_cookie_file=cookie_path)
+            client4 = AppMeshClient(cookie_file=cookie_path)
             # No file created yet
             self.assertFalse(os.path.exists(cookie_path))
             client4.set_token(token)
@@ -393,26 +393,26 @@ class TestAppMeshClient(TestCase):
             self.assertIn("appmesh_auth_token", self.read_file_content(cookie_path))
 
             # Reload from file
-            client5 = AppMeshClient(rest_cookie_file=cookie_path)
+            client5 = AppMeshClient(cookie_file=cookie_path)
             self.assertEqual(client5._get_access_token(), token)
             apps5 = client5.list_apps()
             self.assertEqual(len(apps5), len(apps))
 
             # 4. jwt_token constructor + cookie file
             os.remove(cookie_path)
-            client6 = AppMeshClient(jwt_token=token, rest_cookie_file=cookie_path)
+            client6 = AppMeshClient(jwt_token=token, cookie_file=cookie_path)
             self.assertTrue(os.path.exists(cookie_path))
             apps6 = client6.list_apps()
             self.assertEqual(len(apps6), len(apps))
 
             # Reload
-            client7 = AppMeshClient(rest_cookie_file=cookie_path)
+            client7 = AppMeshClient(cookie_file=cookie_path)
             self.assertEqual(client7._get_access_token(), token)
         finally:
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
 
-    def test_13_authenticate_apply_semantics(self):
-        """authenticate(apply=False) must not mutate state; apply=True must."""
+    def test_13_authenticate_update_session_semantics(self):
+        """authenticate(update_session=False) must not mutate state; update_session=True must."""
 
         class FakeResponse:
             def __init__(self, payload):
@@ -428,7 +428,7 @@ class TestAppMeshClient(TestCase):
         try:
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
 
-            client = AppMeshClient(rest_url="https://127.0.0.1:6060", ssl_verify=False, rest_cookie_file=cookie_path)
+            client = AppMeshClient(base_url="https://127.0.0.1:6060", ssl_verify=False, cookie_file=cookie_path)
             client.set_token("existing-token")
             before = self.read_file_content(cookie_path)
 
@@ -470,14 +470,14 @@ class TestAppMeshClient(TestCase):
 
             client._request_http = fake_request
 
-            ok, _ = client.authenticate("provided-token", apply=False)
+            ok, _ = client.authenticate("provided-token", update_session=False)
             self.assertTrue(ok)
             self.assertEqual("Bearer provided-token", seen_auth[-1])
             self.assertIsNone(seen_set_cookie[-1])
             self.assertEqual("existing-token", client._get_access_token())
             self.assertEqual(before, self.read_file_content(cookie_path))
 
-            ok, _ = client.authenticate("provided-token", apply=True)
+            ok, _ = client.authenticate("provided-token", update_session=True)
             self.assertTrue(ok)
             self.assertEqual("true", seen_set_cookie[-1])
             self.assertEqual("verified-token", client._get_access_token())
@@ -507,7 +507,7 @@ class TestAppMeshClient(TestCase):
             """Minimal fake to test _sync_transport_token in isolation."""
             pass
 
-        client = AppMeshClient(rest_url="https://127.0.0.1:6060", ssl_verify=False)
+        client = AppMeshClient(base_url="https://127.0.0.1:6060", ssl_verify=False)
         # Use a standalone mixin instance to call _sync_transport_token
         mixin = TransportClientMixin()
         mixin._token = None
@@ -567,13 +567,13 @@ class TestAppMeshClient(TestCase):
         mixin._sync_transport_token(resp, "/appmesh/applications", {})
         self.assertEqual("old", mixin._token)
 
-        # 9. Auth path with apply=False (no X-Set-Cookie) → token NOT changed
+        # 9. Auth path with update_session=False (no X-Set-Cookie) → token NOT changed
         mixin._token = "old"
         resp = FakeTransportResponse(200, {"access_token": "should-not-apply"})
         mixin._sync_transport_token(resp, "/appmesh/auth", {"Authorization": "Bearer test"})
         self.assertEqual("old", mixin._token)
 
-        # 10. Auth path with apply=True (X-Set-Cookie: true) → token applied
+        # 10. Auth path with update_session=True (X-Set-Cookie: true) → token applied
         mixin._token = "old"
         resp = FakeTransportResponse(200, {"access_token": "auth-token"})
         mixin._sync_transport_token(resp, "/appmesh/auth", {"X-Set-Cookie": "true"})

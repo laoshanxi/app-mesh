@@ -9,8 +9,8 @@ export INSTALL_LOCATION="/opt/appmesh"
 export GOARCH=$(go env GOARCH)
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
-info() { log "INFO $@"; }
-die() { log "ERROR $@" && exit 1; }
+info() { log "INFO" "$@"; }
+die() { log "ERROR" "$@" && exit 1; }
 
 [[ -z "${CMAKE_BINARY_DIR:-}" ]] && die "CMAKE_BINARY_DIR is not set"
 [[ ! -d "${CMAKE_BINARY_DIR}" ]] && die "Directory ${CMAKE_BINARY_DIR} does not exist"

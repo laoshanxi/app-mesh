@@ -279,9 +279,9 @@ public class AppMeshClient implements Closeable {
             }
         }
 
-        public Integer wait(boolean stdoutPrint, int timeoutSeconds) throws Exception {
+        public Integer wait(boolean printStdout, int timeoutSeconds) throws Exception {
             try (ForwardingHostManager manager = new ForwardingHostManager()) {
-                return clientRef.waitForAsyncRun(this, stdoutPrint, timeoutSeconds);
+                return clientRef.waitForAsyncRun(this, printStdout, timeoutSeconds);
             }
         }
     }
@@ -454,20 +454,20 @@ public class AppMeshClient implements Closeable {
      * @param username login name
      * @param password login password
      * @param totpCode TOTP code (null if not using MFA)
-     * @param expireSeconds token expiry as integer seconds or ISO 8601 duration (null = server default)
+     * @param tokenExpire token expiry as integer seconds or ISO 8601 duration (null = server default)
      * @param audience JWT audience (null = default)
      * @return JWT token on immediate success, or the TOTP challenge string when MFA is required
      * @throws IOException on network or authentication failure
      */
-    public String login(String username, String password, String totpCode, Object expireSeconds, String audience)
+    public String login(String username, String password, String totpCode, Object tokenExpire, String audience)
             throws IOException {
         Map<String, String> headers = new HashMap<>();
         String basic = BASIC_PREFIX
                 + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
         headers.put(AUTHORIZATION_HEADER, basic);
         headers.put("X-Set-Cookie", "true");
-        if (expireSeconds != null) {
-            headers.put("X-Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
+        if (tokenExpire != null) {
+            headers.put("X-Expire-Seconds", Long.toString(Utils.toSeconds(tokenExpire)));
         }
         if (totpCode != null && !totpCode.isEmpty()) {
             headers.put("X-Totp-Code", totpCode);
@@ -487,7 +487,7 @@ public class AppMeshClient implements Closeable {
             if (jsonResponse.has("totp_challenge")) {
                 if (totpCode != null && !totpCode.isEmpty()) {
                     String challenge = jsonResponse.getString("totp_challenge");
-                    return validateTotp(username, challenge, totpCode, expireSeconds);
+                    return validateTotp(username, challenge, totpCode, tokenExpire);
                 }
                 return jsonResponse.getString("totp_challenge");
             }
@@ -503,14 +503,14 @@ public class AppMeshClient implements Closeable {
      *
      * @return the JWT token on success
      */
-    public String validateTotp(String username, String challenge, String code, Object expireSeconds)
+    public String validateTotp(String username, String challenge, String code, Object tokenExpire)
             throws IOException {
         JSONObject body = new JSONObject();
         body.put("user_name", username);
         body.put("totp_code", code);
         body.put("totp_challenge", challenge);
-        if (expireSeconds != null) {
-            body.put("expire_seconds", Utils.toSeconds(expireSeconds));
+        if (tokenExpire != null) {
+            body.put("expire_seconds", Utils.toSeconds(tokenExpire));
         }
         HttpURLConnection conn = request("POST", "/appmesh/totp/validate", body, null, null);
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
@@ -548,17 +548,17 @@ public class AppMeshClient implements Closeable {
     /**
      * Verify the provided JWT token with the server and optionally check permission.
      *
-     * <p>When {@code apply} is {@code true}, the verified token is applied to this client session
+     * <p>When {@code updateSession} is {@code true}, the verified token is applied to this client session
      * and the stored JWT token is updated on success. When {@code false}, the token is only
      * verified and the local client state is left unchanged.
      *
-     * @param token      JWT token to verify
-     * @param permission optional permission to check (null to skip)
-     * @param audience   optional JWT audience (null to skip)
-     * @param apply      if true, apply the verified token to this client session on success
+     * @param token          JWT token to verify
+     * @param permission     optional permission to check (null to skip)
+     * @param audience       optional JWT audience (null to skip)
+     * @param updateSession  if true, update this client session with the verified token on success
      * @return a pair of (success, responseText)
      */
-    public Pair<Boolean, String> authenticate(String token, String permission, String audience, boolean apply) throws IOException {
+    public Pair<Boolean, String> authenticate(String token, String permission, String audience, boolean updateSession) throws IOException {
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         if (audience != null && !audience.isEmpty()) {
@@ -567,13 +567,13 @@ public class AppMeshClient implements Closeable {
         if (permission != null && !permission.isEmpty()) {
             headers.put("X-Permission", permission);
         }
-        if (apply) {
+        if (updateSession) {
             headers.put("X-Set-Cookie", "true");
         }
         HttpURLConnection conn = request("POST", "/appmesh/auth", null, headers, null);
         boolean ok = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
         String responseText = Utils.readResponseSafe(conn);
-        if (apply && ok) {
+        if (updateSession && ok) {
             applyAuthToken(responseText);
         }
         return Pair.of(ok, responseText);
@@ -581,7 +581,7 @@ public class AppMeshClient implements Closeable {
 
     /**
      * Verify the provided JWT token with the server and optionally check permission.
-     * Defaults to {@code apply=true}, matching the Python SDK behavior.
+     * Defaults to {@code updateSession=true}, matching the Python SDK behavior.
      *
      * @param token      JWT token to verify
      * @param permission optional permission to check (null to skip)
@@ -595,13 +595,13 @@ public class AppMeshClient implements Closeable {
     /**
      * Renew the current JWT token.
      *
-     * @param expireSeconds token expiry duration (integer seconds or ISO 8601 string, null = server default)
+     * @param tokenExpire token expiry duration (integer seconds or ISO 8601 string, null = server default)
      * @return the new JWT token
      */
-    public String renewToken(Object expireSeconds) throws IOException {
+    public String renewToken(Object tokenExpire) throws IOException {
         Map<String, String> headers = new HashMap<>();
-        if (expireSeconds != null) {
-            headers.put("X-Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
+        if (tokenExpire != null) {
+            headers.put("X-Expire-Seconds", Long.toString(Utils.toSeconds(tokenExpire)));
         }
         HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
         return applyAuthToken(conn);
@@ -780,17 +780,17 @@ public class AppMeshClient implements Closeable {
     /**
      * Run an application synchronously (blocking).
      *
-     * @param appJson           application JSON definition
-     * @param maxTimeoutSeconds maximum execution time in seconds
-     * @param lifeCycleSeconds  application lifecycle time (0 = server default)
+     * @param appJson   application JSON definition
+     * @param maxTime   maximum execution time in seconds
+     * @param lifecycle application lifecycle time (0 = server default)
      * @return (exitCode, stdout) pair
      */
-    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTimeoutSeconds, int lifeCycleSeconds)
+    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTime, int lifecycle)
             throws Exception {
         Map<String, String> query = new HashMap<>();
-        query.put("timeout", String.valueOf(maxTimeoutSeconds));
-        if (lifeCycleSeconds > 0) {
-            query.put("lifecycle", String.valueOf(lifeCycleSeconds));
+        query.put("timeout", String.valueOf(maxTime));
+        if (lifecycle > 0) {
+            query.put("lifecycle", String.valueOf(lifecycle));
         }
         HttpURLConnection conn = request("POST", "/appmesh/app/syncrun", appJson, null, query);
         String exitCodeHeader = conn.getHeaderField("X-Exit-Code");
@@ -808,8 +808,8 @@ public class AppMeshClient implements Closeable {
     /**
      * Run an application synchronously (overload without lifecycle).
      */
-    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTimeoutSeconds) throws Exception {
-        return runAppSync(appJson, maxTimeoutSeconds, 0);
+    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTime) throws Exception {
+        return runAppSync(appJson, maxTime, 0);
     }
 
     /**
@@ -817,10 +817,10 @@ public class AppMeshClient implements Closeable {
      *
      * @return an {@link AppRun} handle to track the execution
      */
-    public AppRun runAppAsync(JSONObject appJson, Object maxTimeSeconds, Object lifeCycleSeconds) throws Exception {
+    public AppRun runAppAsync(JSONObject appJson, Object maxTime, Object lifecycle) throws Exception {
         Map<String, String> query = new HashMap<>();
-        query.put("timeout", String.valueOf(Utils.toSeconds(maxTimeSeconds)));
-        query.put("lifecycle", String.valueOf(Utils.toSeconds(lifeCycleSeconds)));
+        query.put("timeout", String.valueOf(Utils.toSeconds(maxTime)));
+        query.put("lifecycle", String.valueOf(Utils.toSeconds(lifecycle)));
         HttpURLConnection conn = request("POST", "/appmesh/app/run", appJson, null, query);
         if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
             String responseBody = Utils.readErrorResponse(conn);
@@ -836,7 +836,7 @@ public class AppMeshClient implements Closeable {
      * <p>When the process exits, this method makes a best-effort attempt to delete the temporary
      * run app before returning the exit code.
      */
-    public Integer waitForAsyncRun(AppRun run, boolean stdoutPrint, int timeoutSeconds) throws Exception {
+    public Integer waitForAsyncRun(AppRun run, boolean printStdout, int timeoutSeconds) throws Exception {
         if (run == null)
             return null;
         long lastOutputPosition = 0;
@@ -845,7 +845,7 @@ public class AppMeshClient implements Closeable {
         while (!run.getProcUid().isEmpty()) {
             AppOutput appOut = this.getAppOutput(run.getAppName(), lastOutputPosition, 0, 10240, run.getProcUid(),
                     interval);
-            if (appOut.httpBody != null && stdoutPrint) {
+            if (appOut.httpBody != null && printStdout) {
                 System.out.print(appOut.httpBody);
             }
             if (appOut.outputPosition != null) {
@@ -987,8 +987,8 @@ public class AppMeshClient implements Closeable {
     }
 
     /** Update configuration (supports partial update). */
-    public JSONObject setConfig(JSONObject configJson) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/config", configJson, null, null);
+    public JSONObject setConfig(JSONObject config) throws IOException {
+        HttpURLConnection conn = request("POST", "/appmesh/config", config, null, null);
         return new JSONObject(Utils.readResponse(conn));
     }
 
@@ -1009,11 +1009,11 @@ public class AppMeshClient implements Closeable {
     // -------- User Management --------
 
     /** Change password for a specific user. */
-    public boolean updatePassword(String oldPassword, String newPassword, String userName) throws IOException {
+    public boolean updatePassword(String oldPassword, String newPassword, String username) throws IOException {
         JSONObject body = new JSONObject();
         body.put("old_password", Base64.getEncoder().encodeToString(oldPassword.getBytes(StandardCharsets.UTF_8)));
         body.put("new_password", Base64.getEncoder().encodeToString(newPassword.getBytes(StandardCharsets.UTF_8)));
-        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(userName) + "/passwd", body,
+        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(username) + "/passwd", body,
                 null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
@@ -1024,27 +1024,27 @@ public class AppMeshClient implements Closeable {
     }
 
     /** Add or update a user. */
-    public boolean addUser(String userName, JSONObject userJson) throws IOException {
-        HttpURLConnection conn = request("PUT", "/appmesh/user/" + encodeURIComponent(userName), userJson, null, null);
+    public boolean addUser(String username, JSONObject userData) throws IOException {
+        HttpURLConnection conn = request("PUT", "/appmesh/user/" + encodeURIComponent(username), userData, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
     /** Delete a user. */
-    public boolean deleteUser(String userName) throws IOException {
-        HttpURLConnection conn = request("DELETE", "/appmesh/user/" + encodeURIComponent(userName), null, null, null);
+    public boolean deleteUser(String username) throws IOException {
+        HttpURLConnection conn = request("DELETE", "/appmesh/user/" + encodeURIComponent(username), null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
     /** Lock a user account. */
-    public boolean lockUser(String userName) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(userName) + "/lock", null, null,
+    public boolean lockUser(String username) throws IOException {
+        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(username) + "/lock", null, null,
                 null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
     /** Unlock a user account. */
-    public boolean unlockUser(String userName) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(userName) + "/unlock", null,
+    public boolean unlockUser(String username) throws IOException {
+        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(username) + "/unlock", null,
                 null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }

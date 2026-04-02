@@ -32,7 +32,7 @@ async function test() {
     await client.login(username, password)
   })
 
-  await assert('authenticate (apply=true)', async () => {
+  await assert('authenticate (updateSession=true)', async () => {
     const cookieStr = client._client?.defaults?.headers?.Cookie || ''
     const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
     const token = match ? match.split('=').slice(1).join('=') : null
@@ -41,13 +41,39 @@ async function test() {
     if (!result.success) throw new Error(`authenticate failed: ${result.responseText}`)
   })
 
-  await assert('authenticate (apply=false)', async () => {
+  await assert('authenticate (updateSession=false)', async () => {
     const cookieStr = client._client?.defaults?.headers?.Cookie || ''
     const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
     const token = match ? match.split('=').slice(1).join('=') : null
     if (!token) throw new Error('expected token after login')
     const result = await client.authenticate(token, null, undefined, false)
     if (!result.success) throw new Error(`authenticate failed: ${result.responseText}`)
+  })
+
+  await assert('authenticate (with permission)', async () => {
+    const cookieStr = client._client?.defaults?.headers?.Cookie || ''
+    const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
+    const token = match ? match.split('=').slice(1).join('=') : null
+    if (!token) throw new Error('expected token after login')
+    const ok = await client.authenticate(token, 'app-view', undefined, false)
+    if (!ok.success) throw new Error(`permission check failed: ${ok.responseText}`)
+    const bad = await client.authenticate(token, 'no-such-perm', undefined, false)
+    if (bad.success) throw new Error('should fail with invalid permission')
+  })
+
+  await assert('authenticate (with audience)', async () => {
+    // re-login with specific audience
+    await client.login(username, password, null, null, 'appmesh-service')
+    const cookieStr = client._client?.defaults?.headers?.Cookie || ''
+    const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
+    const token = match ? match.split('=').slice(1).join('=') : null
+    if (!token) throw new Error('expected token after audience login')
+    const ok = await client.authenticate(token, null, 'appmesh-service', false)
+    if (!ok.success) throw new Error(`audience check failed: ${ok.responseText}`)
+    const bad = await client.authenticate(token, null, 'wrong-audience', false)
+    if (bad.success) throw new Error('should fail with wrong audience')
+    // re-login with default audience for remaining tests
+    await client.login(username, password)
   })
 
   await assert('renew_token', async () => {
