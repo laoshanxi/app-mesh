@@ -266,12 +266,12 @@ class AppMeshClient {
    * @param {string} username
    * @param {string} password
    * @param {string} [totpCode] - TOTP code if 2FA is enabled
-   * @param {string|number} [expireSeconds] - Token expiry (integer seconds or ISO 8601 string)
+   * @param {string|number} [tokenExpire] - Token expiry (integer seconds or ISO 8601 string)
    * @param {string} [audience] - JWT audience
    * @returns {Promise<void>} Resolves when login succeeds. If the server requires TOTP and no
    * valid code is supplied, `_request()` rejects with the HTTP 428 response details.
    */
-  async login(username, password, totpCode = null, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
+  async login(username, password, totpCode = null, tokenExpire = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     // Validate inputs
     if (!username || !password) {
       throw new AppMeshError('Username and password are required', 400, null, 'INVALID_CREDENTIALS');
@@ -283,28 +283,28 @@ class AppMeshClient {
       "X-Set-Cookie": "true"
     };
     if (totpCode) headers["X-Totp-Code"] = totpCode;
-    if (expireSeconds) headers["X-Expire-Seconds"] = parseDuration(expireSeconds);
+    if (tokenExpire) headers["X-Expire-Seconds"] = parseDuration(tokenExpire);
     if (audience) headers["X-Audience"] = audience;
 
     await this._request("post", "/appmesh/login", null, { headers });
   }
 
   /**
-   * Verify an external JWT token and optionally apply it to this client session.
+   * Verify an external JWT token and optionally update this client session.
    *
    * @param {string} token - JWT token to verify
    * @param {string} [permission=null] - Permission to check
    * @param {string} [audience] - JWT audience
-   * @param {boolean} [apply=true] - When true, applies the verified token to this client session
-   *   and updates local auth state on success. When false, the token is only verified and local
-   *   state is unchanged.
+   * @param {boolean} [updateSession=true] - When true, updates this client session with the
+   *   verified token and persists local auth state on success. When false, the token is only
+   *   verified and local state is unchanged.
    * @returns {Promise<{success: boolean, responseText: string}>} Verification result with success flag and response text.
    */
-  async authenticate(token, permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE, apply = true) {
+  async authenticate(token, permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE, updateSession = true) {
     const headers = { Authorization: `Bearer ${token}` };
     if (permission) headers["X-Permission"] = permission;
     if (audience) headers["X-Audience"] = audience;
-    if (apply) headers["X-Set-Cookie"] = "true";
+    if (updateSession) headers["X-Set-Cookie"] = "true";
     try {
       const response = await this._request("post", "/appmesh/auth", null, { headers });
       const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
@@ -442,12 +442,12 @@ class AppMeshClient {
 
   /**
    * Renew the current JWT token.
-   * @param {string|number} [expireSeconds] - Token expiry (integer seconds or ISO 8601 string)
+   * @param {string|number} [tokenExpire] - Token expiry (integer seconds or ISO 8601 string)
    */
-  async renew_token(expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
+  async renew_token(tokenExpire = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {};
-    if (expireSeconds) {
-      headers["X-Expire-Seconds"] = parseDuration(expireSeconds);
+    if (tokenExpire) {
+      headers["X-Expire-Seconds"] = parseDuration(tokenExpire);
     }
     await this._request("post", "/appmesh/token/renew", null, { headers });
   }
@@ -475,14 +475,14 @@ class AppMeshClient {
    * @param {string} username - Username
    * @param {string} totpChallenge - Server challenge
    * @param {string} totpCode - TOTP code
-   * @param {string|number} [expireSeconds] - Token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
+   * @param {string|number} [tokenExpire] - Token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
    */
-  async validate_totp(username, totpChallenge, totpCode, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
+  async validate_totp(username, totpChallenge, totpCode, tokenExpire = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const body = {
       "user_name": username,
       "totp_code": totpCode,
       "totp_challenge": totpChallenge,
-      "expire_seconds": parseDuration(expireSeconds)
+      "expire_seconds": parseDuration(tokenExpire)
     };
     // Set cookie header for browser
     const headers = { "X-Set-Cookie": "true" };
@@ -647,14 +647,14 @@ class AppMeshClient {
    * Run an app synchronously and stream the returned stdout body to `outputHandler`.
    * @param {Object} app - App configuration
    * @param {Function} [outputHandler=defaultOutputHandler] - Output handler
-   * @param {number|string} [maxTimeSeconds] - Max runtime
-   * @param {number|string} [lifeCycleSeconds] - Lifecycle time
+   * @param {number|string} [maxTime] - Max runtime
+   * @param {number|string} [lifecycle] - Lifecycle time
    * @returns {Promise<number|null>} Exit code parsed from `X-Exit-Code`, or `null` when absent
    */
-  async run_app_sync(app, outputHandler = defaultOutputHandler, maxTimeSeconds = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async run_app_sync(app, outputHandler = defaultOutputHandler, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
-      timeout: parseDuration(maxTimeSeconds),
-      lifecycle: parseDuration(lifeCycleSeconds)
+      timeout: parseDuration(maxTime),
+      lifecycle: parseDuration(lifecycle)
     };
 
     const response = await this._request("post", "/appmesh/app/syncrun", app, { params });
@@ -678,14 +678,14 @@ class AppMeshClient {
   /**
    * Run an app asynchronously and return a handle for later polling.
    * @param {Object} app - App config
-   * @param {string|number} [maxTimeSeconds] - Max runtime
-   * @param {string|number} [lifeCycleSeconds] - Lifecycle time
+   * @param {string|number} [maxTime] - Max runtime
+   * @param {string|number} [lifecycle] - Lifecycle time
    * @returns {AppRun} Running app handle that also snapshots the current forwarding host
    */
-  async run_app_async(app, maxTimeSeconds = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async run_app_async(app, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
-      timeout: parseDuration(maxTimeSeconds),
-      lifecycle: parseDuration(lifeCycleSeconds)
+      timeout: parseDuration(maxTime),
+      lifecycle: parseDuration(lifecycle)
     };
 
     const response = await this._request("post", "/appmesh/app/run", app, { params });
@@ -801,10 +801,10 @@ class AppMeshClient {
               await fs.chmod(localFile, parseInt(mode, 10));
             }
             // chown: resolve user/group names to uid/gid via id(1) command
-            const userName = respHeaders["x-file-user"];
+            const username = respHeaders["x-file-user"];
             const groupName = respHeaders["x-file-group"];
-            if (userName && groupName) {
-              const uid = await _resolveUid(userName);
+            if (username && groupName) {
+              const uid = await _resolveUid(username);
               const gid = await _resolveGid(groupName);
               if (uid !== null && gid !== null) {
                 await fs.chown(localFile, uid, gid);
@@ -919,11 +919,11 @@ class AppMeshClient {
 
   /**
    * Apply a partial config update and return the merged server config.
-   * @param {Object} configJsonSection - Partial config document to POST to `/appmesh/config`
+   * @param {Object} config - Partial config document to POST to `/appmesh/config`
    * @returns {Object} Updated config
    */
-  async set_config(configJsonSection) {
-    const response = await this._request("post", "/appmesh/config", configJsonSection);
+  async set_config(config) {
+    const response = await this._request("post", "/appmesh/config", config);
     return response.data;
   }
 
@@ -974,56 +974,56 @@ class AppMeshClient {
    * Change user password
    * @param {string} oldPassword - Old password
    * @param {string} newPassword - New password
-   * @param {string} [userName="self"] - Username
+   * @param {string} [username="self"] - Username
    * @returns {Promise<boolean>} Success status
    */
-  async update_password(oldPassword, newPassword, userName = "self") {
+  async update_password(oldPassword, newPassword, username = "self") {
     const body = {
       "old_password": base64Utils.encode(oldPassword),
       "new_password": base64Utils.encode(newPassword)
     };
-    const response = await this._request("post", `/appmesh/user/${userName}/passwd`, body);
+    const response = await this._request("post", `/appmesh/user/${username}/passwd`, body);
     return response.status === 200;
   }
 
   /**
    * Add new user
-   * @param {string} userName - Username
-   * @param {Object} userJson - User definition
+   * @param {string} username - Username
+   * @param {Object} userData - User definition
    * @returns {Promise<boolean>} Success status
    */
-  async add_user(userName, userJson) {
-    const response = await this._request("put", `/appmesh/user/${userName}`, userJson);
+  async add_user(username, userData) {
+    const response = await this._request("put", `/appmesh/user/${username}`, userData);
     return response.status === 200;
   }
 
   /**
    * Delete user
-   * @param {string} userName - Username
+   * @param {string} username - Username
    * @returns {Promise<boolean>} Success status
    */
-  async delete_user(userName) {
-    const response = await this._request("delete", `/appmesh/user/${userName}`);
+  async delete_user(username) {
+    const response = await this._request("delete", `/appmesh/user/${username}`);
     return response.status === 200;
   }
 
   /**
    * Lock user account
-   * @param {string} userName - Username
+   * @param {string} username - Username
    * @returns {Promise<boolean>} Success status
    */
-  async lock_user(userName) {
-    const response = await this._request("post", `/appmesh/user/${userName}/lock`);
+  async lock_user(username) {
+    const response = await this._request("post", `/appmesh/user/${username}/lock`);
     return response.status === 200;
   }
 
   /**
    * Unlock user account
-   * @param {string} userName - Username
+   * @param {string} username - Username
    * @returns {Promise<boolean>} Success status
    */
-  async unlock_user(userName) {
-    const response = await this._request("post", `/appmesh/user/${userName}/unlock`);
+  async unlock_user(username) {
+    const response = await this._request("post", `/appmesh/user/${username}/unlock`);
     return response.status === 200;
   }
 

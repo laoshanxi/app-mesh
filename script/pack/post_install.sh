@@ -14,8 +14,8 @@ readonly BUILT_IN_PREFIX="/opt/appmesh"
 declare TARGET_INSTALL_PATH="$BUILT_IN_PREFIX"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
-info() { log "INFO $@"; }
-die() { log "ERROR $@" && exit 1; }
+info() { log "INFO" "$@"; }
+die() { log "ERROR" "$@" && exit 1; }
 
 detect_os() {
     case "$(uname -s)" in

@@ -2,7 +2,12 @@
 openapi: 3.1.0
 info:
   title: App Mesh REST API
-  description: API documentation for App Mesh.
+  description: |
+    API documentation for App Mesh.
+
+    **Cluster forwarding:** Any request can include the `X-Target-Host` header
+    (e.g. `hostname:port`) to forward it to another App Mesh node in the cluster.
+    When the port is omitted, the current service port is used.
   version: 2.2.1
 
 paths:
@@ -291,6 +296,15 @@ paths:
       responses:
         "200":
           description: Application output retrieved successfully.
+          headers:
+            X-Output-Position:
+              schema:
+                type: integer
+              description: Next read position for incremental output retrieval.
+            X-Exit-Code:
+              schema:
+                type: integer
+              description: Process exit code (present only when the process has finished).
           content:
             text/plain:
               schema:
@@ -338,11 +352,12 @@ paths:
             type: string
       responses:
         "200":
-          description: Application health status retrieved successfully.
+          description: Application health status (0 means healthy).
           content:
-            application/json:
+            text/plain:
               schema:
-                type: object
+                type: integer
+                example: 0
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -554,6 +569,13 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  name:
+                    type: string
+                    description: Application name assigned to the async run.
+                  process_uuid:
+                    type: string
+                    description: Unique process ID for tracking the async run.
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -601,10 +623,15 @@ paths:
       responses:
         "200":
           description: Application running synchronously.
-          content:
-            application/json:
+          headers:
+            X-Exit-Code:
               schema:
-                type: object
+                type: integer
+              description: Process exit code.
+          content:
+            text/plain:
+              schema:
+                type: string
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -790,6 +817,19 @@ paths:
       responses:
         "200":
           description: File downloaded.
+          headers:
+            X-File-Mode:
+              schema:
+                type: integer
+              description: POSIX file permission bits in decimal (e.g. 493 for 0o755).
+            X-File-User:
+              schema:
+                type: string
+              description: File owner username or UID.
+            X-File-Group:
+              schema:
+                type: string
+              description: File group name or GID.
           content:
             application/octet-stream:
               schema:
@@ -817,6 +857,24 @@ paths:
           schema:
             type: string
           description: The remote file path.
+        - name: X-File-Mode
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: POSIX file permission bits in decimal (e.g. 493 for 0o755).
+        - name: X-File-User
+          in: header
+          required: false
+          schema:
+            type: string
+          description: File owner username or UID.
+        - name: X-File-Group
+          in: header
+          required: false
+          schema:
+            type: string
+          description: File group name or GID.
       requestBody:
         required: true
         content:

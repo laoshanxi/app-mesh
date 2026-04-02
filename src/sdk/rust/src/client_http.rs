@@ -363,7 +363,7 @@ impl AppMeshClient {
         username: &str,
         password: &str,
         totp: Option<&str>,
-        timeout_seconds: Option<i32>,
+        token_expire: Option<i32>,
         audience: Option<&str>,
     ) -> Result<String> {
         let mut headers = hmap! {
@@ -375,7 +375,7 @@ impl AppMeshClient {
             HTTP_HEADER_JWT_SET_COOKIE => "true"
         };
 
-        if let Some(seconds) = timeout_seconds {
+        if let Some(seconds) = token_expire {
             headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.into(), seconds.to_string());
         }
         if let Some(aud) = audience {
@@ -411,10 +411,10 @@ impl AppMeshClient {
         username: &str,
         password: &str,
         totp: Option<&str>,
-        timeout_seconds: Option<i32>,
+        token_expire: Option<i32>,
         audience: Option<&str>,
     ) -> Result<String> {
-        let result = self.login(username, password, totp, timeout_seconds, audience).await?;
+        let result = self.login(username, password, totp, token_expire, audience).await?;
         if result.is_empty() && self.auto_refresh.load(Ordering::Relaxed) {
             self.schedule_token_refresh();
         }
@@ -427,7 +427,7 @@ impl AppMeshClient {
         username: &str,
         challenge: &str,
         totp: &str,
-        timeout_seconds: i32,
+        token_expire: i32,
     ) -> Result<()> {
         let headers = hmap! { HTTP_HEADER_JWT_SET_COOKIE => "true" };
 
@@ -435,7 +435,7 @@ impl AppMeshClient {
             HTTP_BODY_KEY_JWT_USERNAME: username,
             HTTP_BODY_KEY_JWT_TOTP: totp,
             HTTP_BODY_KEY_JWT_TOTP_CHALLENGE: challenge,
-            HTTP_BODY_KEY_JWT_EXPIRE_SECONDS: timeout_seconds
+            HTTP_BODY_KEY_JWT_EXPIRE_SECONDS: token_expire
         });
         let body_bytes = serde_json::to_vec(&body)?;
 
@@ -460,13 +460,13 @@ impl AppMeshClient {
         }
     }
 
-    /// Verify the supplied JWT token with the server and optionally apply it to this client.
+    /// Verify the supplied JWT token with the server and optionally update this client session.
     pub async fn authenticate(
         &self,
         token: &str,
         permission: Option<&str>,
         audience: Option<&str>,
-        apply: bool,
+        update_session: bool,
     ) -> Result<(bool, String)> {
         let mut headers =
             hmap! { HTTP_HEADER_JWT_AUTHORIZATION => format!("{}{}", HTTP_HEADER_AUTH_BEARER, token) };
@@ -477,7 +477,7 @@ impl AppMeshClient {
         if let Some(aud) = audience {
             headers.insert(HTTP_HEADER_JWT_AUDIENCE.into(), aud.to_string());
         }
-        if apply {
+        if update_session {
             headers.insert(HTTP_HEADER_JWT_SET_COOKIE.into(), "true".into());
         }
         let resp = self.req.send(Method::POST, "/appmesh/auth", None, Some(headers), None, false).await?;
@@ -495,8 +495,8 @@ impl AppMeshClient {
     }
 
     /// Renew the current JWT token already attached to this client.
-    pub async fn renew_token(&self, timeout_seconds: Option<i32>) -> Result<()> {
-        let headers = timeout_seconds.map(|sec| hmap! { HTTP_HEADER_JWT_EXPIRE_SECONDS => sec });
+    pub async fn renew_token(&self, token_expire: Option<i32>) -> Result<()> {
+        let headers = token_expire.map(|sec| hmap! { HTTP_HEADER_JWT_EXPIRE_SECONDS => sec });
 
         self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
         Ok(())
@@ -891,11 +891,11 @@ impl AppMeshClient {
     pub async fn run_app_sync(
         &self,
         app: &Application,
-        max_timeout: i32,
+        max_time: i32,
         lifecycle: i32,
     ) -> Result<(Option<i32>, String)> {
         let query = hmap! {
-            HTTP_QUERY_KEY_TIMEOUT => max_timeout,
+            HTTP_QUERY_KEY_TIMEOUT => max_time,
             HTTP_QUERY_KEY_LIFECYCLE => lifecycle,
         };
         let body_bytes = serde_json::to_vec(app)?;
@@ -920,14 +920,14 @@ impl AppMeshClient {
     pub async fn run_sync(
         &self,
         command: &str,
-        max_timeout: i32,
+        max_time: i32,
         lifecycle: i32,
     ) -> Result<(Option<i32>, String)> {
         let app = Application::builder("_run_cmd_")
             .command(command)
             .shell(true)
             .build();
-        self.run_app_sync(&app, max_timeout, lifecycle).await
+        self.run_app_sync(&app, max_time, lifecycle).await
     }
 
     /// Run an application asynchronously and return an [`AppRun`] handle.
@@ -937,11 +937,11 @@ impl AppMeshClient {
     pub async fn run_app_async(
         self: &Arc<Self>,
         app: &Application,
-        max_timeout: i32,
+        max_time: i32,
         lifecycle: i32,
     ) -> Result<AppRun> {
         let query = hmap! {
-            HTTP_QUERY_KEY_TIMEOUT => max_timeout,
+            HTTP_QUERY_KEY_TIMEOUT => max_time,
             HTTP_QUERY_KEY_LIFECYCLE => lifecycle,
         };
         let body_bytes = serde_json::to_vec(app)?;
@@ -967,14 +967,14 @@ impl AppMeshClient {
     pub async fn run_async(
         self: &Arc<Self>,
         command: &str,
-        max_timeout: i32,
+        max_time: i32,
         lifecycle: i32,
     ) -> Result<AppRun> {
         let app = Application::builder("_run_cmd_")
             .command(command)
             .shell(true)
             .build();
-        self.run_app_async(&app, max_timeout, lifecycle).await
+        self.run_app_async(&app, max_time, lifecycle).await
     }
 
     /// Wait for an async run to complete, optionally printing incremental stdout.
@@ -984,7 +984,7 @@ impl AppMeshClient {
         &self,
         run: &AppRun,
         timeout: i32,
-        print_to_std: bool,
+        print_stdout: bool,
     ) -> Result<Option<i32>> {
         let mut last_output_position = 0i64;
         let start_time = std::time::Instant::now();
@@ -996,7 +996,7 @@ impl AppMeshClient {
 
             last_output_position = app_out.output_position;
 
-            if print_to_std && !app_out.output.is_empty() {
+            if print_stdout && !app_out.output.is_empty() {
                 print!("{}", app_out.output);
                 use std::io::Write;
                 std::io::stdout().flush().ok();

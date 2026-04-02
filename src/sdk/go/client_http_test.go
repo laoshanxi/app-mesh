@@ -315,7 +315,7 @@ func TestIntegration_HTTP_Authenticate_ApplyTrue(t *testing.T) {
 	require.NoError(t, err)
 	token := client.req.getAccessToken()
 
-	// Create a new client and use authenticate to apply the token
+	// Create a new client and use authenticate to update the session
 	client2, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
 	require.NoError(t, err)
 	defer client2.Close()
@@ -324,7 +324,7 @@ func TestIntegration_HTTP_Authenticate_ApplyTrue(t *testing.T) {
 	ok, err := client2.Authenticate(token, "", "", true)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.NotEmpty(t, client2.req.getAccessToken(), "token should be applied after authenticate(apply=true)")
+	require.NotEmpty(t, client2.req.getAccessToken(), "token should be applied after authenticate(updateSession=true)")
 }
 
 func TestIntegration_HTTP_Authenticate_ApplyFalse(t *testing.T) {
@@ -337,7 +337,7 @@ func TestIntegration_HTTP_Authenticate_ApplyFalse(t *testing.T) {
 	require.NoError(t, err)
 	token := client.req.getAccessToken()
 
-	// New client: authenticate(apply=false) should NOT store the token
+	// New client: authenticate(updateSession=false) should NOT store the token
 	client2, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
 	require.NoError(t, err)
 	defer client2.Close()
@@ -345,7 +345,50 @@ func TestIntegration_HTTP_Authenticate_ApplyFalse(t *testing.T) {
 	ok, err := client2.Authenticate(token, "", "", false)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Empty(t, client2.req.getAccessToken(), "token should NOT be applied after authenticate(apply=false)")
+	require.Empty(t, client2.req.getAccessToken(), "token should NOT be applied after authenticate(updateSession=false)")
+}
+
+func TestIntegration_HTTP_Authenticate_Permission(t *testing.T) {
+	emptyStr := ""
+	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	require.NoError(t, err)
+	token := client.req.getAccessToken()
+
+	// valid permission
+	ok, err := client.Authenticate(token, "app-view", "", false)
+	require.NoError(t, err)
+	require.True(t, ok, "should succeed with valid permission")
+
+	// invalid permission
+	ok, err = client.Authenticate(token, "no-such-perm", "", false)
+	require.NoError(t, err)
+	require.False(t, ok, "should fail with invalid permission")
+}
+
+func TestIntegration_HTTP_Authenticate_Audience(t *testing.T) {
+	emptyStr := ""
+	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	// login with specific audience
+	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "appmesh-service")
+	require.NoError(t, err)
+	token := client.req.getAccessToken()
+
+	// matching audience
+	ok, err := client.Authenticate(token, "", "appmesh-service", false)
+	require.NoError(t, err)
+	require.True(t, ok, "should succeed with matching audience")
+
+	// mismatched audience
+	ok, err = client.Authenticate(token, "", "wrong-audience", false)
+	require.NoError(t, err)
+	require.False(t, ok, "should fail with wrong audience")
 }
 
 func TestAppmeshLogin(t *testing.T) {

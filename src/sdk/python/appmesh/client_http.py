@@ -208,22 +208,22 @@ class AppMeshClient:
 
     def __init__(
         self,
-        rest_url: str = "https://127.0.0.1:6060",
+        base_url: str = "https://127.0.0.1:6060",
         ssl_verify: Union[bool, str] = _DEFAULT_SSL_CA_CERT_PATH,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (
             (_DEFAULT_SSL_CLIENT_CERT_PATH, _DEFAULT_SSL_CLIENT_KEY_PATH)
             if _DEFAULT_SSL_CLIENT_CERT_PATH
             else None
         ),
-        rest_timeout: Tuple[float, float] = (60, 300),
+        request_timeout: Tuple[float, float] = (60, 300),
         jwt_token: Optional[str] = None,
-        rest_cookie_file: Optional[str] = None,
+        cookie_file: Optional[str] = None,
         auto_refresh_token: bool = False,
     ):
         """Initialize an App Mesh HTTP client for interacting with the App Mesh server via secure HTTPS.
 
         Args:
-            rest_url: The server's base URI. Defaults to "https://127.0.0.1:6060".
+            base_url: The server's base URI. Defaults to "https://127.0.0.1:6060".
             ssl_verify: SSL server verification mode:
               - True: Use system CAs.
               - False: Disable verification (insecure).
@@ -231,16 +231,16 @@ class AppMeshClient:
             ssl_client_cert: SSL client certificate file(s):
               - str: Single PEM file with cert+key
               - tuple: (cert_path, key_path)
-            rest_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.  Default `(60, 300)`.
+            request_timeout: Timeouts `(connect_timeout, read_timeout)` in seconds.  Default `(60, 300)`.
             jwt_token: JWT token set directly without server verification (no network call).
-            rest_cookie_file: Cookie file path for HTTP clients (set this to enable persistent cookie storage).
+            cookie_file: Cookie file path for HTTP clients (set this to enable persistent cookie storage).
             auto_refresh_token: Enable automatic token refresh before expiration (supports App Mesh and Keycloak tokens).
         """
         self._ensure_logging_configured()
-        self.base_url = rest_url
+        self.base_url = base_url
         self.ssl_verify = ssl_verify
         self.ssl_client_cert = ssl_client_cert
-        self.rest_timeout = rest_timeout
+        self.request_timeout = request_timeout
         self._forward_to = None
 
         # Token auto-refresh (single background thread + Event-based wake)
@@ -252,8 +252,8 @@ class AppMeshClient:
         # Session and cookie management
         self._lock = threading.Lock()
         self.session = requests.Session()
-        self.cookie_file = rest_cookie_file
-        if self._load_cookies(rest_cookie_file):
+        self.cookie_file = cookie_file
+        if self._load_cookies(cookie_file):
             if self._auto_refresh_token and self._get_access_token():
                 self.start_token_refresh()
 
@@ -445,19 +445,19 @@ class AppMeshClient:
     ########################################
     def login(
         self,
-        user_name: str,
-        user_pwd: str,
+        username: str,
+        password: str,
         totp_code: Optional[str] = None,
-        timeout_seconds: Union[str, int] = _DURATION_ONE_WEEK_ISO,
+        token_expire: Union[str, int] = _DURATION_ONE_WEEK_ISO,
         audience: Optional[str] = None,
     ) -> Optional[str]:
-        """Login with user name and password and attach the issued token to this client.
+        """Login with username and password and attach the issued token to this client.
 
         Args:
-            user_name: The name of the user.
-            user_pwd: The password of the user.
+            username: The name of the user.
+            password: The password of the user.
             totp_code: The TOTP code if enabled for the user.
-            timeout_seconds: Token expire timeout. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
+            token_expire: Token expiration duration. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
             audience: The audience of the JWT token, should be available by JWT service configuration (default is 'appmesh-service').
 
         Returns:
@@ -468,11 +468,11 @@ class AppMeshClient:
         # Standard App Mesh authentication
         self.session.cookies.clear()
 
-        credentials = f"{user_name}:{user_pwd}".encode()
+        credentials = f"{username}:{password}".encode()
         headers = {
             self._HTTP_HEADER_KEY_AUTH: f"Basic {base64.b64encode(credentials).decode()}",
             self._HTTP_HEADER_JWT_SET_COOKIE: "true",  # Enable cookie token mode
-            "X-Expire-Seconds": str(self._parse_duration(timeout_seconds)),
+            "X-Expire-Seconds": str(self._parse_duration(token_expire)),
         }
         if audience:
             headers["X-Audience"] = audience
@@ -491,10 +491,10 @@ class AppMeshClient:
                 challenge = resp.json()["totp_challenge"]
                 if not totp_code:
                     return challenge
-                self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
+                self.validate_totp(username, challenge, totp_code, token_expire)
 
     def validate_totp(
-        self, username: str, challenge: str, code: str, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO
+        self, username: str, challenge: str, code: str, token_expire: Union[int, str] = _DURATION_ONE_WEEK_ISO
     ) -> None:
         """Validate TOTP challenge and obtain a new JWT token.
 
@@ -502,7 +502,7 @@ class AppMeshClient:
             username: Username to validate.
             challenge: Challenge string from server.
             code: TOTP code to validate.
-            timeout: Token expiration duration, defaults to `_DURATION_ONE_WEEK_ISO` (1 week).
+            token_expire: Token expiration duration, defaults to `_DURATION_ONE_WEEK_ISO` (1 week).
                 Accepts either:
                   - **ISO 8601 duration string** (e.g., `'P1Y2M3DT4H5M6S'`, `'P1W'`)
                   - **Numeric value (seconds)** for simpler cases.
@@ -511,7 +511,7 @@ class AppMeshClient:
             "user_name": username,
             "totp_code": code,
             "totp_challenge": challenge,
-            "expire_seconds": self._parse_duration(timeout),
+            "expire_seconds": self._parse_duration(token_expire),
         }
 
         headers = {self._HTTP_HEADER_JWT_SET_COOKIE: "true"}
@@ -539,24 +539,24 @@ class AppMeshClient:
         return True
 
     def authentication(
-        self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True
+        self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, update_session: bool = True
     ) -> Tuple[bool, str]:
         """Deprecated: Use authenticate() instead."""
         warnings.warn("authentication() is deprecated, use authenticate() instead", DeprecationWarning, stacklevel=2)
-        return self.authenticate(token, permission, audience, apply)
+        return self.authenticate(token, permission, audience, update_session)
 
     def authenticate(
-        self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, apply: bool = True
+        self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, update_session: bool = True
     ) -> Tuple[bool, str]:
-        """Verify the provided JWT token with the server and optionally apply it to this client.
+        """Verify the provided JWT token with the server and optionally update the client session.
 
         Args:
             token: JWT token to verify.
             permission: Optional permission ID to check (e.g., 'app-view', 'app-delete').
             audience: Optional audience value to verify against the token.
-            apply: When ``True``, apply the verified token to the current client session and
-                update local token state on success. When ``False``, only verify the provided
-                token and leave local state unchanged.
+            update_session: When ``True``, update the current client session with the verified
+                token and persist local token state on success. When ``False``, only verify the
+                provided token and leave local state unchanged.
 
         Returns:
             Tuple of ``(success, message)`` where ``message`` is the raw response text.
@@ -568,7 +568,7 @@ class AppMeshClient:
             headers["X-Audience"] = audience
         if permission:
             headers["X-Permission"] = permission
-        if apply:
+        if update_session:
             headers[self._HTTP_HEADER_JWT_SET_COOKIE] = "true"
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/auth", header=headers, raise_on_fail=False)
         return resp.status_code == HTTPStatus.OK, resp.text
@@ -580,7 +580,7 @@ class AppMeshClient:
 
         Args:
             token: A valid JWT token string. The token is stored in the client's cookie jar and
-                persisted immediately when `rest_cookie_file` is configured.
+                persisted immediately when `cookie_file` is configured.
         """
         # CookieJar.set_cookie() is a base class method, works for both
         # RequestsCookieJar (in-memory) and MozillaCookieJar (file-backed)
@@ -606,11 +606,11 @@ class AppMeshClient:
         self.session.cookies.set_cookie(cookie)
         self._on_token_changed(token)
 
-    def renew_token(self, timeout: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
+    def renew_token(self, token_expire: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
         """Renew the current JWT token.
 
         Args:
-            timeout: Token expiry duration (integer seconds or ISO 8601 string).
+            token_expire: Token expiration duration (integer seconds or ISO 8601 string).
         """
         jwt_token = self._get_access_token()
         if not jwt_token:
@@ -622,7 +622,7 @@ class AppMeshClient:
         self._request_http(
             AppMeshClient._Method.POST,
             path="/appmesh/token/renew",
-            header={"X-Expire-Seconds": str(self._parse_duration(timeout))},
+            header={"X-Expire-Seconds": str(self._parse_duration(token_expire))},
         )
 
     def get_totp_secret(self) -> str:
@@ -774,43 +774,43 @@ class AppMeshClient:
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/config")
         return resp.json()
 
-    def set_config(self, config_json: dict) -> Dict[str, Any]:
+    def set_config(self, config: dict) -> Dict[str, Any]:
         """Update the configuration."""
-        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/config", body=config_json)
+        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/config", body=config)
         return resp.json()
 
     def set_log_level(self, level: str = "DEBUG") -> str:
         """Update the log level."""
-        config_dict = self.set_config(config_json={"BaseConfig": {"LogLevel": level}})
+        config_dict = self.set_config(config={"BaseConfig": {"LogLevel": level}})
         return config_dict["BaseConfig"]["LogLevel"]
 
     ########################################
     # User Management
     ########################################
-    def update_password(self, old_password: str, new_password: str, user_name: str = "self") -> None:
+    def update_password(self, old_password: str, new_password: str, username: str = "self") -> None:
         """Change the password of a user."""
         body = {
             "old_password": base64.b64encode(old_password.encode()).decode(),
             "new_password": base64.b64encode(new_password.encode()).decode(),
         }
 
-        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{user_name}/passwd", body=body)
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{username}/passwd", body=body)
 
-    def add_user(self, user_name: str, user_json: dict) -> None:
+    def add_user(self, username: str, user_data: dict) -> None:
         """Add a new user."""
-        self._request_http(method=AppMeshClient._Method.PUT, path=f"/appmesh/user/{user_name}", body=user_json)
+        self._request_http(method=AppMeshClient._Method.PUT, path=f"/appmesh/user/{username}", body=user_data)
 
-    def delete_user(self, user_name: str) -> None:
+    def delete_user(self, username: str) -> None:
         """Delete a user."""
-        self._request_http(method=AppMeshClient._Method.DELETE, path=f"/appmesh/user/{user_name}")
+        self._request_http(method=AppMeshClient._Method.DELETE, path=f"/appmesh/user/{username}")
 
-    def lock_user(self, user_name: str) -> None:
+    def lock_user(self, username: str) -> None:
         """Lock a user."""
-        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{user_name}/lock")
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{username}/lock")
 
-    def unlock_user(self, user_name: str) -> None:
+    def unlock_user(self, username: str) -> None:
         """Unlock a user."""
-        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{user_name}/unlock")
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/user/{username}/unlock")
 
     def list_users(self) -> Dict[str, Any]:
         """Get information about all users."""
@@ -1073,8 +1073,8 @@ class AppMeshClient:
     def run_app_async(
         self,
         app: Union[App, str],
-        max_time_seconds: Union[int, str] = _DURATION_TWO_DAYS_ISO,
-        life_cycle_seconds: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
+        max_time: Union[int, str] = _DURATION_TWO_DAYS_ISO,
+        lifecycle: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
     ) -> AppRun:
         """Run an application asynchronously on a remote system without blocking the API.
 
@@ -1085,10 +1085,10 @@ class AppMeshClient:
                 `App({"command": "<command_string>", "shell": True})`.
                 - If `app` is an `App` object, providing only the `name` attribute (without
                 a command) will run an existing application; otherwise, it is treated as a new application.
-            max_time_seconds: Maximum runtime for the remote process.
-                Accepts ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to `P2D`.
-            life_cycle_seconds: Maximum lifecycle time for the remote process.
-                Accepts ISO 8601 duration format. Defaults to `P2DT12H`.
+            max_time: Maximum runtime for the remote process.
+                Accepts integer seconds or ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to `P2D`.
+            lifecycle: Maximum lifecycle time for the remote process.
+                Accepts integer seconds or ISO 8601 duration format. Defaults to `P2DT12H`.
 
         Returns:
             ``AppRun`` handle that captures the current ``forward_to`` target so later polling can
@@ -1102,20 +1102,20 @@ class AppMeshClient:
             body=app.to_dict(),
             path="/appmesh/app/run",
             query={
-                "timeout": str(self._parse_duration(max_time_seconds)),
-                "lifecycle": str(self._parse_duration(life_cycle_seconds)),
+                "timeout": str(self._parse_duration(max_time)),
+                "lifecycle": str(self._parse_duration(lifecycle)),
             },
         )
 
         response_data = resp.json()
         return AppRun(self, response_data["name"], response_data["process_uuid"])
 
-    def wait_for_async_run(self, run: AppRun, stdout_print: bool = True, timeout: int = 0) -> Optional[int]:
+    def wait_for_async_run(self, run: AppRun, print_stdout: bool = True, timeout: int = 0) -> Optional[int]:
         """Wait for an asynchronous run to finish.
 
         Args:
             run: asyncrized run result from run_async().
-            stdout_print: print remote stdout to local or not.
+            print_stdout: print remote stdout to local or not.
             timeout : wait max timeout seconds and return if not finished, 0 means wait until finished
 
         Returns:
@@ -1138,7 +1138,7 @@ class AppMeshClient:
                 timeout=interval,
             )
 
-            if app_out.output and stdout_print:
+            if app_out.output and print_stdout:
                 print(app_out.output, end="", flush=True)
 
             if app_out.out_position is not None:
@@ -1163,8 +1163,8 @@ class AppMeshClient:
     def run_app_sync(
         self,
         app: Union[App, str],
-        max_time_seconds: Union[int, str] = _DURATION_TWO_DAYS_ISO,
-        life_cycle_seconds: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
+        max_time: Union[int, str] = _DURATION_TWO_DAYS_ISO,
+        lifecycle: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
     ) -> Tuple[Union[int, None], str]:
         """Synchronously run an application remotely, blocking until completion, and return the result.
 
@@ -1175,10 +1175,10 @@ class AppMeshClient:
             app: An App instance or a shell command string.
                 If a string, an App instance is created as:
                 `appmesh.App({"command": "<command_string>", "shell": True})`
-            max_time_seconds: Maximum runtime for the remote process.
-                Supports ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to DEFAULT_RUN_APP_TIMEOUT_SECONDS.
-            life_cycle_seconds: Maximum lifecycle time for the remote process.
-                Supports ISO 8601 duration format. Defaults to DEFAULT_RUN_APP_LIFECYCLE_SECONDS.
+            max_time: Maximum runtime for the remote process.
+                Accepts integer seconds or ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
+            lifecycle: Maximum lifecycle time for the remote process.
+                Accepts integer seconds or ISO 8601 duration format.
 
         Returns:
             ``(exit_code, stdout_text)``. ``exit_code`` is ``None`` when the server did not return
@@ -1192,8 +1192,8 @@ class AppMeshClient:
             body=app.to_dict(),
             path="/appmesh/app/syncrun",
             query={
-                "timeout": str(self._parse_duration(max_time_seconds)),
-                "lifecycle": str(self._parse_duration(life_cycle_seconds)),
+                "timeout": str(self._parse_duration(max_time)),
+                "lifecycle": str(self._parse_duration(lifecycle)),
             },
             raise_on_fail=False,
         )
@@ -1258,7 +1258,7 @@ class AppMeshClient:
                 "headers": headers,
                 "cert": self.ssl_client_cert,
                 "verify": self.ssl_verify,
-                "timeout": self.rest_timeout,
+                "timeout": self.request_timeout,
             }
 
             if method == AppMeshClient._Method.GET:

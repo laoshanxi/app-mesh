@@ -64,22 +64,22 @@ public:
     /// Login with username/password.
     /// Returns a TOTP challenge string on HTTP 428 when no valid TOTP code is supplied;
     /// otherwise returns an empty string after updating this client session token.
-    std::string login(const std::string &user, const std::string &passwd,
-                      const std::string &totp = "", int timeoutSeconds = 7 * 24 * 60 * 60,
+    std::string login(const std::string &username, const std::string &password,
+                      const std::string &totp = "", int tokenExpire = 7 * 24 * 60 * 60,
                       const std::string &audience = "");
     /// Complete a TOTP challenge and store the returned JWT in this client session.
-    void validateTotp(const std::string &user, const std::string &challenge,
-                      const std::string &totp, int timeoutSeconds);
+    void validateTotp(const std::string &username, const std::string &challenge,
+                      const std::string &totp, int tokenExpire);
     /// Verify a JWT token with the server and optionally check permission/audience.
-    /// When apply is true and verification succeeds, the token is also persisted into this client.
+    /// When updateSession is true and verification succeeds, the token is also persisted into this client.
     std::tuple<bool, std::string> authenticate(const std::string &token,
                                                const std::string &permission = "",
                                                const std::string &audience = "",
-                                               bool apply = true);
+                                               bool updateSession = true);
     /// Log out of the current session and clear locally stored token state.
     void logout();
     /// Renew the JWT token already attached to this client session.
-    void renewToken(int timeoutSeconds = 0);
+    void renewToken(int tokenExpire = 0);
     /// Return the raw TOTP secret for the current user.
     std::string getTotpSecret();
     /// Enable TOTP for the current user and refresh the session token.
@@ -105,12 +105,12 @@ public:
     // Run Application Operations
     /// Run an application synchronously and return {exitCode, stdoutText}.
     std::tuple<std::shared_ptr<int>, std::string> runAppSync(const nlohmann::json &app,
-                                                             int maxTimeout = 60 * 60 * 24 * 2,
-                                                             int lifeCycleSeconds = 60 * 60 * 24 * 2 + 60 * 60 * 12);
+                                                             int maxTime = 60 * 60 * 24 * 2,
+                                                             int lifecycle = 60 * 60 * 24 * 2 + 60 * 60 * 12);
     /// Run an application asynchronously and return a handle that snapshots the current forward target.
     AppRun runAppAsync(const nlohmann::json &app,
-                       int maxTimeout = 60 * 60 * 24 * 2,
-                       int lifeCycleSeconds = 60 * 60 * 24 * 2 + 60 * 60 * 12);
+                       int maxTime = 60 * 60 * 24 * 2,
+                       int lifecycle = 60 * 60 * 24 * 2 + 60 * 60 * 12);
     /// Poll an async run until completion or timeout.
     /// On success, the implementation may best-effort remove the temporary run app.
     std::shared_ptr<int> waitForAsyncRun(AppRun *run, int timeout = 0, bool printToStdout = true);

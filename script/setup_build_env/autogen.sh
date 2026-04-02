@@ -14,7 +14,7 @@ case $(uname -m) in
     arm)    dpkg --print-architecture | grep -q "arm64" && architecture="arm64" || architecture="arm" ;;
 esac
 
-SRC_DIR=$(dirname $(dirname $(dirname $(readlink -f "$0"))))
+SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
 export ROOTDIR=$(pwd)/appmesh.tmp
 mkdir -p ${ROOTDIR}
 cd ${ROOTDIR}
@@ -54,7 +54,7 @@ if [ -f "/usr/bin/yum" ]; then
     #export BOOST_INCLUDEDIR=/usr/include/boost169
     #ln -s /usr/include/boost169/boost /usr/local/include/boost
     #ln -s /usr/lib64/boost169/ /usr/local/lib64/boost
-    elif [ -f "/usr/bin/apt" ]; then
+elif [ -f "/usr/bin/apt" ]; then
     #Ubuntu
     # for old archived ubuntu version, the apt update may fail, run below command before update
     # sed -i s/archive.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
@@ -81,7 +81,7 @@ go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go en
 
 # check libssl in case of setup_build_env/update_openssl.sh not executed
 if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then
-    echo 'openssl was alreay installed'
+    echo 'openssl was already installed'
     # set for appmesh cmake
     export OPENSSL_ROOT_DIR=/usr/local/ssl
     # set for ACE SSL: https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#sslinstall
@@ -302,7 +302,7 @@ fi
 
 cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
 rm -rf ${ROOTDIR}
-# memoty test tool
+# memory test tool
 # https://docs.microsoft.com/en-us/cpp/linux/linux-asan-configuration?view=msvc-170#install-the-asan-debug-symbols
 #asanversion="0"
 #case $(gcc -dumpversion) in

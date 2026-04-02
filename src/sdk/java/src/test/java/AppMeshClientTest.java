@@ -123,19 +123,34 @@ public class AppMeshClientTest {
         assertNotNull(apps, "listApps should return a non-null JSONArray");
         LOGGER.info("All applications count: " + apps.length());
 
-        // authenticate with apply=false (verify only, no token update)
+        // authenticate with updateSession=false (verify only, no token update)
         Pair<Boolean, String> authResult = client.authenticate(token, "app-view", "", false);
-        assertTrue(authResult.getLeft(), "User should be authenticated with apply=false");
+        assertTrue(authResult.getLeft(), "User should be authenticated with updateSession=false");
 
-        // authenticate with apply=true (verify and update client token)
+        // authenticate with updateSession=true (verify and update client token)
         Pair<Boolean, String> applyResult = client.authenticate(token, "app-view", "", true);
-        assertTrue(applyResult.getLeft(), "User should be authenticated with apply=true");
-        assertNotNull(applyResult.getRight(), "apply=true should return response text");
-        assertFalse(applyResult.getRight().isEmpty(), "apply=true response text should not be empty");
+        assertTrue(applyResult.getLeft(), "User should be authenticated with updateSession=true");
+        assertNotNull(applyResult.getRight(), "updateSession=true should return response text");
+        assertFalse(applyResult.getRight().isEmpty(), "updateSession=true response text should not be empty");
 
-        // backward-compatible 3-arg overload (defaults to apply=true, matching Python SDK)
+        // backward-compatible 3-arg overload (defaults to updateSession=true, matching Python SDK)
         Pair<Boolean, String> compatResult = client.authenticate(token, "app-view", "");
         assertTrue(compatResult.getLeft(), "User should be authenticated with 3-arg overload");
+
+        // invalid permission should fail
+        Pair<Boolean, String> badPerm = client.authenticate(token, "no-such-perm", "", false);
+        assertFalse(badPerm.getLeft(), "Should fail with invalid permission");
+
+        // audience tests: login with specific audience, then verify
+        client.logout();
+        String token2 = client.login(USERNAME, PASSWORD, null, "P1W", "appmesh-service");
+        assertNotNull(token2);
+
+        Pair<Boolean, String> goodAud = client.authenticate(token2, "", "appmesh-service", false);
+        assertTrue(goodAud.getLeft(), "Should succeed with matching audience");
+
+        Pair<Boolean, String> badAud = client.authenticate(token2, "", "wrong-audience", false);
+        assertFalse(badAud.getLeft(), "Should fail with wrong audience");
 
         boolean loggedOut = client.logout();
         assertTrue(loggedOut, "User should be successfully logged out");

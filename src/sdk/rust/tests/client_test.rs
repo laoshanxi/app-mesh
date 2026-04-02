@@ -46,7 +46,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_authenticate_apply_false_does_not_update_token() {
+    async fn test_authenticate_update_session_false_does_not_update_token() {
         let mut server = Server::new_async().await;
         server
             .mock("POST", "/appmesh/auth")
@@ -67,7 +67,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_authenticate_apply_true_updates_token() {
+    async fn test_authenticate_update_session_true_updates_token() {
         let mut server = Server::new_async().await;
         server
             .mock("POST", "/appmesh/auth")

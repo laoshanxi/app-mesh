@@ -75,18 +75,18 @@ const std::string &ClientHttp::getForwardTo() const
 }
 
 // Authentication Management
-std::string ClientHttp::login(const std::string &user, const std::string &passwd,
-                              const std::string &totp, int timeoutSeconds, const std::string &audience)
+std::string ClientHttp::login(const std::string &username, const std::string &password,
+                              const std::string &totp, int tokenExpire, const std::string &audience)
 {
     RestClient::clearSession();
 
     std::map<std::string, std::string> header;
     header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_Auth_BasicSpace) +
-                                            Utility::encode64(user + ":" + passwd);
+                                            Utility::encode64(username + ":" + password);
     header[HTTP_HEADER_KEY_X_SET_COOKIE] = "true";
 
-    if (timeoutSeconds > 0)
-        header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(timeoutSeconds);
+    if (tokenExpire > 0)
+        header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(tokenExpire);
     if (!audience.empty())
         header[HTTP_HEADER_JWT_audience] = audience;
     if (!totp.empty())
@@ -103,7 +103,7 @@ std::string ClientHttp::login(const std::string &user, const std::string &passwd
             auto totpChallenge = jsonResponse.at(REST_TEXT_TOTP_CHALLENGE_JSON_KEY).get<std::string>();
             if (totp.empty())
                 return totpChallenge;
-            this->validateTotp(user, totpChallenge, totp, timeoutSeconds);
+            this->validateTotp(username, totpChallenge, totp, tokenExpire);
         }
     }
     else if (response->status_code != web::http::status_codes::OK)
@@ -114,23 +114,23 @@ std::string ClientHttp::login(const std::string &user, const std::string &passwd
     return std::string();
 }
 
-void ClientHttp::validateTotp(const std::string &user, const std::string &challenge,
-                              const std::string &totp, int timeoutSeconds)
+void ClientHttp::validateTotp(const std::string &username, const std::string &challenge,
+                              const std::string &totp, int tokenExpire)
 {
     std::map<std::string, std::string> header = {{HTTP_HEADER_KEY_X_SET_COOKIE, "true"}};
 
     nlohmann::json body = {
-        {HTTP_BODY_KEY_JWT_username, user},
+        {HTTP_BODY_KEY_JWT_username, username},
         {HTTP_BODY_KEY_JWT_totp, totp},
         {HTTP_BODY_KEY_JWT_totp_challenge, challenge},
-        {HTTP_BODY_KEY_JWT_expire_seconds, timeoutSeconds}};
+        {HTTP_BODY_KEY_JWT_expire_seconds, tokenExpire}};
 
     this->requestHttp(true, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
 }
 
 std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
                                                        const std::string &permission,
-                                                       const std::string &audience, bool apply)
+                                                       const std::string &audience, bool updateSession)
 {
     std::map<std::string, std::string> header = {
         {HTTP_HEADER_JWT_Authorization, JwtHelper::buildBearerAuthorization(token)}};
@@ -139,7 +139,7 @@ std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
         header[HTTP_HEADER_JWT_auth_permission] = permission;
     if (!audience.empty())
         header[HTTP_HEADER_JWT_audience] = audience;
-    if (apply)
+    if (updateSession)
         header[HTTP_HEADER_KEY_X_SET_COOKIE] = "true";
 
     auto resp = this->requestHttp(false, web::http::methods::POST, "/appmesh/auth", nullptr, header);
@@ -152,11 +152,11 @@ void ClientHttp::logout()
     RestClient::clearSession();
 }
 
-void ClientHttp::renewToken(int timeoutSeconds)
+void ClientHttp::renewToken(int tokenExpire)
 {
     std::map<std::string, std::string> header;
-    if (timeoutSeconds > 0)
-        header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(timeoutSeconds);
+    if (tokenExpire > 0)
+        header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(tokenExpire);
 
     this->requestHttp(true, web::http::methods::POST, "/appmesh/token/renew", nullptr, header);
 }
@@ -268,12 +268,12 @@ void ClientHttp::disableApp(const std::string &app)
 
 // Run Application Operations
 std::tuple<std::shared_ptr<int>, std::string> ClientHttp::runAppSync(const nlohmann::json &app,
-                                                                     int maxTimeout,
-                                                                     int lifeCycleSeconds)
+                                                                     int maxTime,
+                                                                     int lifecycle)
 {
     std::map<std::string, std::string> query = {
-        {HTTP_QUERY_KEY_timeout, std::to_string(std::abs(maxTimeout))},
-        {HTTP_QUERY_KEY_lifecycle, std::to_string(std::abs(lifeCycleSeconds))}};
+        {HTTP_QUERY_KEY_timeout, std::to_string(std::abs(maxTime))},
+        {HTTP_QUERY_KEY_lifecycle, std::to_string(std::abs(lifecycle))}};
 
     auto response = requestHttp(true, web::http::methods::POST, "/appmesh/app/syncrun", &app, {}, query);
 
@@ -284,11 +284,11 @@ std::tuple<std::shared_ptr<int>, std::string> ClientHttp::runAppSync(const nlohm
     return std::make_tuple(returnCode, response->text);
 }
 
-AppRun ClientHttp::runAppAsync(const nlohmann::json &app, int maxTimeout, int lifeCycleSeconds)
+AppRun ClientHttp::runAppAsync(const nlohmann::json &app, int maxTime, int lifecycle)
 {
     std::map<std::string, std::string> query = {
-        {HTTP_QUERY_KEY_timeout, std::to_string(maxTimeout)},
-        {HTTP_QUERY_KEY_lifecycle, std::to_string(lifeCycleSeconds)}};
+        {HTTP_QUERY_KEY_timeout, std::to_string(maxTime)},
+        {HTTP_QUERY_KEY_lifecycle, std::to_string(lifecycle)}};
 
     auto response = requestHttp(true, web::http::methods::POST, "/appmesh/app/run", &app, {}, query);
     auto result = nlohmann::json::parse(response->text);
@@ -468,8 +468,8 @@ nlohmann::json ClientHttp::listUsers() const
 
 void ClientHttp::addUser(const nlohmann::json &user)
 {
-    const std::string userName = user.at(JSON_KEY_USER_readonly_name).get<std::string>();
-    const std::string restPath = "/appmesh/user/" + userName;
+    const std::string username = user.at(JSON_KEY_USER_readonly_name).get<std::string>();
+    const std::string restPath = "/appmesh/user/" + username;
     requestHttp(true, web::http::methods::PUT, restPath, &user);
 }
 

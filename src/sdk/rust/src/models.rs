@@ -82,8 +82,8 @@ impl AppRun {
     /// Wait for this async run to finish by polling through the originating client.
     ///
     /// Returns the process exit code on success, or `None` on timeout/polling failure.
-    pub async fn wait(&self, timeout: i32, print_to_std: bool) -> Result<Option<i32>, AppMeshError> {
-        self.client.wait_for_async_run(self, timeout, print_to_std).await
+    pub async fn wait(&self, timeout: i32, print_stdout: bool) -> Result<Option<i32>, AppMeshError> {
+        self.client.wait_for_async_run(self, timeout, print_stdout).await
     }
 }
 

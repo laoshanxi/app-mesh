@@ -23,11 +23,11 @@ pub struct AppMeshServer {
 impl AppMeshServer {
     /// Create a new server-side task context backed by the HTTP client.
     pub fn new(
-        rest_url: Option<String>,
+        base_url: Option<String>,
         ssl_verify: Option<String>,
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>, AppMeshError> {
-        let client = AppMeshClient::new(rest_url, ssl_verify, ssl_client_cert, None, None, false)?;
+        let client = AppMeshClient::new(base_url, ssl_verify, ssl_client_cert, None, None, false)?;
         Ok(AppMeshServer::with_client(client))
     }
 

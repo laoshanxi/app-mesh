@@ -76,7 +76,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         self._transport_name = "WebSocket"
         # http and websocket share same address
         host, port = wss_address
-        super().__init__(rest_url=f"https://{host}:{port}", ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
+        super().__init__(base_url=f"https://{host}:{port}", ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
 
     @property
     def _transport(self):

@@ -21,7 +21,7 @@ log() {
 }
 
 # Error handling
-error_exit() {
+die() {
     log "ERROR: $1"
     exit 1
 }
@@ -31,7 +31,7 @@ find_binaries() {
     local scan_dir="$1"
     local -a binaries=()
 
-    [[ -d "$scan_dir" ]] || error_exit "Directory $scan_dir does not exist"
+    [[ -d "$scan_dir" ]] || die "Directory $scan_dir does not exist"
 
     log "Scanning directory: $scan_dir"
 
@@ -41,7 +41,7 @@ find_binaries() {
         fi
     done < <(find "$scan_dir" -type f -print0)
 
-    [[ ${#binaries[@]} -gt 0 ]] || error_exit "No binaries found in $scan_dir"
+    [[ ${#binaries[@]} -gt 0 ]] || die "No binaries found in $scan_dir"
 
     log "Found ${#binaries[@]} binaries"
     printf '%s\n' "${binaries[@]}"
@@ -91,7 +91,7 @@ find_packages() {
         fi
     done
 
-    [[ ${#packages[@]} -gt 0 ]] || error_exit "No packages found for any binaries"
+    [[ ${#packages[@]} -gt 0 ]] || die "No packages found for any binaries"
 
     printf '%s\n' "${packages[@]}"
 }
@@ -115,7 +115,7 @@ update_dpkg_database() {
 
     log "Filtering dpkg database..."
     if ! python3 "$script_dir/syft_dpkg_filter.py" "$DPKG_STATUS_FILE" "$TEMP_STATUS_FILE" "$PACKAGE_LIST_FILE"; then
-        error_exit "Failed to filter dpkg database"
+        die "Failed to filter dpkg database"
     fi
 
     # Prepare target directory structure
@@ -124,7 +124,7 @@ update_dpkg_database() {
     # Copy dpkg structure and update status file
     cp -rf --parents /var/lib/dpkg "$OUTPUT_DIR/" || true
     if ! cp "$TEMP_STATUS_FILE" "$OUTPUT_DIR/var/lib/dpkg/status"; then
-        error_exit "Failed to update status file"
+        die "Failed to update status file"
     fi
 
     log "Updated dpkg status file"

@@ -122,14 +122,14 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 // It returns a TOTP challenge string when the server responds with HTTP 428 and no code was
 // provided; otherwise it returns an empty string. When auto refresh is enabled, a successful
 // login also starts the background token refresh loop.
-func (r *AppMeshClient) Login(user string, password string, totpCode string, timeoutSeconds int, audience string) (string, error) {
-	if user == "" || password == "" {
+func (r *AppMeshClient) Login(username string, password string, totpCode string, tokenExpire int, audience string) (string, error) {
+	if username == "" || password == "" {
 		return "", fmt.Errorf("username and password are required")
 	}
 
 	headers := map[string]string{
-		"Authorization":            "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
-		"X-Expire-Seconds":         fmt.Sprintf("%d", timeoutSeconds),
+		"Authorization":            "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password)),
+		"X-Expire-Seconds":         fmt.Sprintf("%d", tokenExpire),
 		HTTP_HEADER_JWT_SET_COOKIE: strconv.FormatBool(true),
 	}
 	if audience != "" && audience != DEFAULT_JWT_AUDIENCE {
@@ -155,7 +155,7 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 				if totpCode == "" {
 					return challenge, nil
 				}
-				if err := r.ValidateTotp(user, challenge, totpCode, timeoutSeconds); err != nil {
+				if err := r.ValidateTotp(username, challenge, totpCode, tokenExpire); err != nil {
 					return "", fmt.Errorf("TOTP validation failed: %w", err)
 				}
 				return "", nil
@@ -169,7 +169,7 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 }
 
 // ValidateTotp completes a TOTP challenge flow and stores the issued JWT in this client.
-func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode string, timeoutSeconds int) error {
+func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode string, tokenExpire int) error {
 	if username == "" || challenge == "" || totpCode == "" {
 		return fmt.Errorf("username, challenge, and TOTP code are required")
 	}
@@ -184,7 +184,7 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 		UserName:      username,
 		TotpCode:      totpCode,
 		TotpChallenge: challenge,
-		ExpireSeconds: timeoutSeconds,
+		ExpireSeconds: tokenExpire,
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -217,10 +217,10 @@ func (r *AppMeshClient) SetToken(token string) {
 }
 
 // Authenticate validates the provided JWT token with the server.
-// When apply is true, the verified token is applied to the current client session and local auth
+// When updateSession is true, the verified token is applied to the current client session and local auth
 // state is updated on success.
-// When apply is false, the token is only verified and the current client session remains unchanged.
-func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audience string, apply bool) (bool, error) {
+// When updateSession is false, the token is only verified and the current client session remains unchanged.
+func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audience string, updateSession bool) (bool, error) {
 	if jwtToken == "" {
 		return false, fmt.Errorf("JWT token is required")
 	}
@@ -232,7 +232,7 @@ func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audienc
 	if audience != "" && audience != DEFAULT_JWT_AUDIENCE {
 		headers["X-Audience"] = audience
 	}
-	if apply {
+	if updateSession {
 		headers[HTTP_HEADER_JWT_SET_COOKIE] = "true"
 	}
 
@@ -530,7 +530,7 @@ func (r *AppMeshClient) CancelTask(appName string) (bool, error) {
 // RunAppAsync starts an application asynchronously and returns a handle for monitoring.
 // The returned AppRun captures the current forward target so Wait can keep polling the same
 // cluster node even if the client forwarding setting changes later.
-func (r *AppMeshClient) RunAppAsync(app Application, maxTimeSeconds int, lifeCycleSeconds int) (*AppRun, error) {
+func (r *AppMeshClient) RunAppAsync(app Application, maxTime int, lifecycle int) (*AppRun, error) {
 	if app.Name == "" {
 		return nil, fmt.Errorf("application name is required")
 	}
@@ -540,8 +540,8 @@ func (r *AppMeshClient) RunAppAsync(app Application, maxTimeSeconds int, lifeCyc
 		return nil, fmt.Errorf("failed to marshal application: %w", err)
 	}
 	q := url.Values{}
-	q.Set("timeout", fmt.Sprintf("%d", maxTimeSeconds))
-	q.Set("lifecycle", fmt.Sprintf("%d", lifeCycleSeconds))
+	q.Set("timeout", fmt.Sprintf("%d", maxTime))
+	q.Set("lifecycle", fmt.Sprintf("%d", lifecycle))
 	code, raw, _, err := r.post("/appmesh/app/run", q, nil, appJson)
 	if err != nil {
 		return nil, fmt.Errorf("run app async request failed: %w", err)
@@ -560,7 +560,7 @@ func (r *AppMeshClient) RunAppAsync(app Application, maxTimeSeconds int, lifeCyc
 
 // Wait polls output for an asynchronous application run until it finishes or times out.
 // On success it best-effort removes the temporary run app and returns the process exit code.
-func (r *AppMeshClient) Wait(asyncRun *AppRun, stdoutPrint bool, timeoutSeconds int) (int, error) {
+func (r *AppMeshClient) Wait(asyncRun *AppRun, printStdout bool, timeoutSeconds int) (int, error) {
 	if asyncRun == nil || asyncRun.ProcUid == "" {
 		return 0, fmt.Errorf("invalid async run object")
 	}
@@ -583,7 +583,7 @@ func (r *AppMeshClient) Wait(asyncRun *AppRun, stdoutPrint bool, timeoutSeconds 
 			return 0, fmt.Errorf("wait timed out: %w", ctx.Err())
 		case <-ticker.C:
 			out := r.GetAppOutput(asyncRun.AppName, lastPos, 0, 10240, asyncRun.ProcUid, int(interval.Seconds()))
-			if out.HttpBody != "" && stdoutPrint {
+			if out.HttpBody != "" && printStdout {
 				fmt.Print(out.HttpBody)
 			}
 			if out.OutputPosition != nil {
@@ -603,7 +603,7 @@ func (r *AppMeshClient) Wait(asyncRun *AppRun, stdoutPrint bool, timeoutSeconds 
 
 // RunAppSync runs an application synchronously and returns the exit code plus collected stdout.
 // The exit code is derived from the X-Exit-Code response header when present.
-func (r *AppMeshClient) RunAppSync(app Application, stdoutPrint bool, maxTimeSeconds int, lifeCycleSeconds int) (int, string, error) {
+func (r *AppMeshClient) RunAppSync(app Application, printStdout bool, maxTime int, lifecycle int) (int, string, error) {
 	if app.Name == "" {
 		return 0, "", fmt.Errorf("application name is required")
 	}
@@ -613,8 +613,8 @@ func (r *AppMeshClient) RunAppSync(app Application, stdoutPrint bool, maxTimeSec
 		return 0, "", fmt.Errorf("failed to marshal application: %w", err)
 	}
 	q := url.Values{}
-	q.Set("timeout", fmt.Sprintf("%d", maxTimeSeconds))
-	q.Set("lifecycle", fmt.Sprintf("%d", lifeCycleSeconds))
+	q.Set("timeout", fmt.Sprintf("%d", maxTime))
+	q.Set("lifecycle", fmt.Sprintf("%d", lifecycle))
 	code, raw, hdr, err := r.post("/appmesh/app/syncrun", q, nil, appJson)
 	if err != nil {
 		return 0, "", fmt.Errorf("run app sync request failed: %w", err)
@@ -626,7 +626,7 @@ func (r *AppMeshClient) RunAppSync(app Application, stdoutPrint bool, maxTimeSec
 		}
 	}
 	out := string(raw)
-	if stdoutPrint {
+	if printStdout {
 		fmt.Print(out)
 	}
 	if code == http.StatusOK {
@@ -733,12 +733,12 @@ func (r *AppMeshClient) GetConfig() (map[string]interface{}, error) {
 }
 
 // SetConfig updates the App Mesh configuration and returns the new configuration.
-func (r *AppMeshClient) SetConfig(configJson map[string]interface{}) (map[string]interface{}, error) {
-	if configJson == nil {
+func (r *AppMeshClient) SetConfig(config map[string]interface{}) (map[string]interface{}, error) {
+	if config == nil {
 		return nil, fmt.Errorf("config JSON is required")
 	}
 
-	body, err := json.Marshal(configJson)
+	body, err := json.Marshal(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -801,13 +801,13 @@ func (r *AppMeshClient) GetMetrics() (string, error) {
 }
 
 // UpdatePassword changes the password for a user (default is "self").
-func (r *AppMeshClient) UpdatePassword(oldPassword, newPassword, userName string) (bool, error) {
+func (r *AppMeshClient) UpdatePassword(oldPassword, newPassword, username string) (bool, error) {
 	if oldPassword == "" || newPassword == "" {
 		return false, fmt.Errorf("old password and new password are required")
 	}
 
-	if userName == "" {
-		userName = "self"
+	if username == "" {
+		username = "self"
 	}
 	payload := map[string]string{
 		"old_password": base64.StdEncoding.EncodeToString([]byte(oldPassword)),
@@ -817,7 +817,7 @@ func (r *AppMeshClient) UpdatePassword(oldPassword, newPassword, userName string
 	if err != nil {
 		return false, fmt.Errorf("failed to marshal password update payload: %w", err)
 	}
-	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/passwd", userName), nil, nil, body)
+	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/passwd", username), nil, nil, body)
 	if err != nil {
 		return false, fmt.Errorf("update password request failed: %w", err)
 	}
@@ -828,19 +828,19 @@ func (r *AppMeshClient) UpdatePassword(oldPassword, newPassword, userName string
 }
 
 // AddUser creates a new user with the specified configuration.
-func (r *AppMeshClient) AddUser(userName string, userJson map[string]interface{}) (bool, error) {
-	if userName == "" {
+func (r *AppMeshClient) AddUser(username string, user map[string]interface{}) (bool, error) {
+	if username == "" {
 		return false, fmt.Errorf("username is required")
 	}
-	if userJson == nil {
+	if user == nil {
 		return false, fmt.Errorf("user JSON is required")
 	}
 
-	body, err := json.Marshal(userJson)
+	body, err := json.Marshal(user)
 	if err != nil {
 		return false, fmt.Errorf("failed to marshal user JSON: %w", err)
 	}
-	code, _, err := r.put(fmt.Sprintf("/appmesh/user/%s", userName), nil, nil, body)
+	code, _, err := r.put(fmt.Sprintf("/appmesh/user/%s", username), nil, nil, body)
 	if err != nil {
 		return false, fmt.Errorf("add user request failed: %w", err)
 	}
@@ -848,12 +848,12 @@ func (r *AppMeshClient) AddUser(userName string, userJson map[string]interface{}
 }
 
 // DeleteUser removes a user from the system.
-func (r *AppMeshClient) DeleteUser(userName string) (bool, error) {
-	if userName == "" {
+func (r *AppMeshClient) DeleteUser(username string) (bool, error) {
+	if username == "" {
 		return false, fmt.Errorf("username is required")
 	}
 
-	code, _, err := r.delete(fmt.Sprintf("/appmesh/user/%s", userName))
+	code, _, err := r.delete(fmt.Sprintf("/appmesh/user/%s", username))
 	if err != nil {
 		return false, fmt.Errorf("delete user request failed: %w", err)
 	}
@@ -861,12 +861,12 @@ func (r *AppMeshClient) DeleteUser(userName string) (bool, error) {
 }
 
 // LockUser disables login for the specified user.
-func (r *AppMeshClient) LockUser(userName string) (bool, error) {
-	if userName == "" {
+func (r *AppMeshClient) LockUser(username string) (bool, error) {
+	if username == "" {
 		return false, fmt.Errorf("username is required")
 	}
 
-	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/lock", userName), nil, nil, nil)
+	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/lock", username), nil, nil, nil)
 	if err != nil {
 		return false, fmt.Errorf("lock user request failed: %w", err)
 	}
@@ -877,12 +877,12 @@ func (r *AppMeshClient) LockUser(userName string) (bool, error) {
 }
 
 // UnlockUser re-enables login for the specified user.
-func (r *AppMeshClient) UnlockUser(userName string) (bool, error) {
-	if userName == "" {
+func (r *AppMeshClient) UnlockUser(username string) (bool, error) {
+	if username == "" {
 		return false, fmt.Errorf("username is required")
 	}
 
-	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/unlock", userName), nil, nil, nil)
+	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/unlock", username), nil, nil, nil)
 	if err != nil {
 		return false, fmt.Errorf("unlock user request failed: %w", err)
 	}

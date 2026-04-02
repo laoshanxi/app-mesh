@@ -1,21 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Input JSON file (replace with the path to your existing file)
-SOURCE_JSON_FILE="../../src/daemon/security/security.yaml"
-
-# Output JSON file for KV initialization
+SOURCE_FILE="../../src/daemon/security/security.yaml"
 OUTPUT_KV_JSON="./initial_kv.json"
 
-# Verify the input file exists
-if [ ! -f $SOURCE_JSON_FILE ]; then
-    echo "Error: Source JSON file '$SOURCE_JSON_FILE' not found!"
+if [ ! -f "$SOURCE_FILE" ]; then
+    echo "Error: Source file '$SOURCE_FILE' not found!"
     exit 1
 fi
 
-# Read the content of the source JSON file
-CONTENT=$(base64 -w 0 "$SOURCE_JSON_FILE")
+# Base64-encode the source file for Consul KV import
+CONTENT=$(base64 -w 0 "$SOURCE_FILE")
 
-# Create the initial_kv.json file with the desired KV path
 cat >"$OUTPUT_KV_JSON" <<EOF
 [
     {

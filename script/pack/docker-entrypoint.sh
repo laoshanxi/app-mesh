@@ -11,8 +11,7 @@ set -eu
 ENTRYPOINT="/opt/appmesh/script/entrypoint.sh"
 
 if [ "${APPMESH_RUN_AS_ROOT:-false}" != "true" ] && id -u appmesh >/dev/null 2>&1 && command -v gosu >/dev/null 2>&1; then
-	exec gosu appmesh "$ENTRYPOINT" "$@"
+    exec gosu appmesh "$ENTRYPOINT" "$@"
 fi
 
-# Fallback: root requested, appmesh user missing, or gosu unavailable
 exec "$ENTRYPOINT" "$@"
