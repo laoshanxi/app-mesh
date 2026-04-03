@@ -12,6 +12,7 @@
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
 #include "../security/ConsulConnection.h"
+#include "../security/JwtToken.h"
 #include "../security/SecurityKeycloak.h"
 #include "../security/TokenBlacklist.h"
 #include "../security/User.h"
@@ -418,7 +419,7 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	else
 	{
 		// Download from WebSocket HTTP
-		headers[HTTP_HEADER_JWT_Authorization] = generateJwtToken(uname, "", WEBSOCKET_FILE_AUDIENCE, WEBSOCKET_FILE_OPERATION_TIMEOUT);
+		headers[HTTP_HEADER_JWT_Authorization] = JwtToken::generate(uname, "", WEBSOCKET_FILE_AUDIENCE, WEBSOCKET_FILE_OPERATION_TIMEOUT);
 	}
 	message->reply(web::http::status_codes::OK, body, headers);
 }
@@ -465,7 +466,7 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 	else
 	{
 		// Upload from WebSocket HTTP
-		headers[HTTP_HEADER_JWT_Authorization] = generateJwtToken(uname, "", WEBSOCKET_FILE_AUDIENCE, WEBSOCKET_FILE_OPERATION_TIMEOUT);
+		headers[HTTP_HEADER_JWT_Authorization] = JwtToken::generate(uname, "", WEBSOCKET_FILE_AUDIENCE, WEBSOCKET_FILE_OPERATION_TIMEOUT);
 	}
 	message->reply(web::http::status_codes::OK, body, headers);
 	// set permission
@@ -521,7 +522,7 @@ void RestHandler::apiLabelDel(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiUserPermissionsView(const std::shared_ptr<HttpRequest> &message)
 {
-	const auto result = verifyToken(getJwtToken(message));
+	const auto result = JwtToken::verify(getJwtToken(message));
 	const auto &userName = std::get<0>(result);
 	const auto &groupName = std::get<1>(result);
 	const auto permissions = Security::instance()->getUserPermissions(userName, groupName);
@@ -800,7 +801,7 @@ nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest>
 
 	nlohmann::json result;
 	result["token_type"] = HTTP_HEADER_JWT_Bearer;
-	result[HTTP_HEADER_JWT_access_token] = token ? *token : generateJwtToken(uname, ugroup, audience, timeoutSeconds);
+	result[HTTP_HEADER_JWT_access_token] = token ? *token : JwtToken::generate(uname, ugroup, audience, timeoutSeconds);
 	result[HTTP_BODY_KEY_JWT_expires_in] = timeoutSeconds;
 	result["expire_time"] = exp;
 
@@ -829,9 +830,10 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 	}
 	authorization = Utility::stdStringTrim(authorization, HTTP_HEADER_Auth_BasicSpace, true, false);
 	authorization = Utility::decode64(authorization);
-	const auto authPair = Utility::splitString(authorization, ":");
-	const auto uname = authPair.size() == 2 ? authPair[0] : "";
-	const auto passwd = authPair.size() == 2 ? authPair[1] : "";
+	// Split on the first ':' only — passwords may contain ':'
+	const auto colonPos = authorization.find(':');
+	const auto uname = (colonPos != std::string::npos) ? authorization.substr(0, colonPos) : "";
+	const auto passwd = (colonPos != std::string::npos) ? authorization.substr(colonPos + 1) : "";
 	// option
 	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 	const auto audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
@@ -879,11 +881,10 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 				auto result = nlohmann::json::object();
 				result["status"] = std::string("TOTP_CHALLENGE_REQUIRED");
 				result["digits"] = 6;
-				result["algorithm"] = Configuration::instance()->getJwt()->m_jwtAlgorithm;
-				result["period"] = 60; // TOTP key refersh period
-				// result["provisioning_uri"] = std::string("otpauth://totp/Example:user@example.com?secret=JBSWY3DNEHXXE5TUN4&issuer=Example");
-				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(generateJwtToken(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
-				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = time_t() + challengeTimeout;
+				result["algorithm"] = std::string("SHA1"); // TOTP hash algorithm (RFC 6238)
+				result["period"] = 30; // TOTP time step in seconds (RFC 6238 default)
+				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(JwtToken::generate(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
+				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = std::time(nullptr) + challengeTimeout;
 				message->reply(web::http::status_codes::PreconditionRequired, std::move(result), std::move(headers));
 				LOG_DBG << fname << "User <" << uname << "> request TOTP key success";
 			}
@@ -911,7 +912,7 @@ void RestHandler::apiUserLogoff(const std::shared_ptr<HttpRequest> &message)
 	// TODO: use refresh token to logout from keyloak
 
 	// verify current token
-	const auto verify = verifyToken(getJwtToken(message));
+	const auto verify = JwtToken::verify(getJwtToken(message));
 	const auto &uname = std::get<0>(verify);
 
 	// retire current token
@@ -939,7 +940,7 @@ void RestHandler::apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message)
 
 	// verify current token
 	const auto token = getJwtToken(message);
-	const auto verify = verifyToken(token);
+	const auto verify = JwtToken::verify(token);
 	const auto &uname = std::get<0>(verify);
 	const auto &userGroup = std::get<1>(verify);
 

@@ -42,8 +42,8 @@ def get_test_paths():
             "server_log": "/opt/appmesh/work/server.log",
             "remote_tmp": "/tmp/2.log",
             "local_tmp": os.path.join(local_tmpdir, "3.log"),
-            "etc_file": "/etc/os-release",
-            "etc_copy": "/tmp/os-release-1",
+            "etc_file": "/etc/hosts",
+            "etc_copy": "/tmp/hosts-copy",
         }
 
 

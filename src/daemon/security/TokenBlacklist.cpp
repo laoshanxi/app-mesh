@@ -1,4 +1,5 @@
 // src/daemon/security/TokenBlacklist.cpp
+#include <algorithm>
 #include <chrono>
 #include <mutex>
 #include <unordered_set>
@@ -23,14 +24,12 @@ void TokenBlacklist::addToken(const std::string &token, const std::chrono::syste
     const static char fname[] = "TokenBlacklist::addToken() ";
 
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
-    // TODO: clean periodic
     removeExpiredTokens();
     if (m_tokenSet.size() >= m_maxSize)
     {
-        // Clear half of the tokens when the maximum size is reached
-        clearTokens(m_maxSize / 2);
+        // Evict tokens closest to expiry (least remaining lifetime first)
+        clearSoonestExpiring(m_maxSize / 2);
     }
-    // m_tokenSet.emplace(token, expiryTime);
     m_tokenSet[token] = expiryTime;
     LOG_DBG << fname << "token black list size: " << m_tokenSet.size();
 }
@@ -71,17 +70,21 @@ bool TokenBlacklist::isTokenBlacklisted(const std::string &token)
     return m_tokenSet.count(token) > 0;
 }
 
-void TokenBlacklist::clearTokens(size_t numTokens)
+void TokenBlacklist::clearSoonestExpiring(size_t numTokens)
 {
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
-    auto it = m_tokenSet.begin();
-    auto maxNum = m_tokenSet.size();
-    for (size_t i = 0; i < numTokens && i < maxNum; ++i)
-        it++;
+    // Collect and sort by expiry time (soonest first) so we evict tokens
+    // that are closest to natural expiration — preserving long-lived revocations
+    std::vector<std::pair<std::chrono::system_clock::time_point, std::string>> sorted;
+    sorted.reserve(m_tokenSet.size());
+    for (const auto &entry : m_tokenSet)
+        sorted.emplace_back(entry.second, entry.first);
+    std::sort(sorted.begin(), sorted.end());
 
-    // Erase the desired elements from the map
-    m_tokenSet.erase(m_tokenSet.begin(), it);
+    const auto count = std::min(numTokens, sorted.size());
+    for (size_t i = 0; i < count; ++i)
+        m_tokenSet.erase(sorted[i].second);
 }
 
 void TokenBlacklist::init(std::unordered_map<std::string, std::chrono::system_clock::time_point> &tokens) noexcept(false)

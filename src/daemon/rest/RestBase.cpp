@@ -5,10 +5,9 @@
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"
-#include "../ResourceCollection.h"
+#include "../security/JwtToken.h"
 #include "../security/Security.h"
 #include "../security/SecurityKeycloak.h"
-#include "../security/TokenBlacklist.h"
 #include "HttpRequest.h"
 #include "RestBase.h"
 
@@ -153,165 +152,6 @@ const std::string RestBase::getJwtToken(const std::shared_ptr<HttpRequest> &mess
     return token;
 }
 
-const std::string RestBase::generateJwtToken(const std::string &userName, const std::string &userGroup, const std::string &audience, int timeoutSeconds)
-{
-    // Input validation
-    if (userName.empty())
-    {
-        throw std::invalid_argument("must provide name to generate token");
-    }
-
-    // Validate audience
-    std::string targetAudience = audience.empty() ? HTTP_HEADER_JWT_Audience_appmesh : audience;
-    if (Configuration::instance()->getJwt()->m_jwtAudience.count(targetAudience) == 0)
-    {
-        throw std::invalid_argument(Utility::stringFormat("Audience <%s> verification failed", targetAudience.c_str()));
-    }
-
-    // Get user permissions and prepare resource access claim
-    auto userRoles = Security::instance()->getUserInfo(userName);
-    nlohmann::json resourceAccess;
-    for (const auto &role : userRoles->getRoles())
-    {
-        resourceAccess[HTTP_HEADER_JWT_Audience_appmesh][JSON_KEY_USER_roles].push_back(role->getName());
-    }
-
-    // Load signing keys (done once due to static variables)
-    const static std::string rsPub = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_RS256_PUBLIC_KEY_FILE).string());
-    const static std::string rsPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_RS256_PRIVATE_KEY_FILE).string());
-    const static std::string ecPub = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PUBLIC_KEY_FILE).string());
-    const static std::string ecPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PRIVATE_KEY_FILE).string());
-
-    // Create token with standard claims
-    const auto now = std::chrono::system_clock::now();
-    const auto jwt = jwt::create()
-                         .set_issuer(Configuration::instance()->getRestJwtIssuer()) // Issuer: identifies token creator
-                         .set_subject(userName)                                     // Subject: user ID
-                         .set_audience(std::move(targetAudience))                   // Audience: intended recipient
-                         .set_issued_at(jwt::date(now))                             // Issued at: token creation time
-                         .set_expires_at(jwt::date(now + std::chrono::seconds{timeoutSeconds}))
-                         .set_id(Utility::shortID())                                        // JWT ID: unique identifier for the token
-                         .set_payload_claim("resource_access", jwt::claim(resourceAccess)); // Custom claim for permissions
-
-    // Sign token with appropriate algorithm
-    std::string token;
-    const auto &algo = Configuration::instance()->getJwt()->m_jwtAlgorithm;
-    if (algo == APPMESH_JWT_ALGORITHM_HS256)
-    {
-        token = jwt.sign(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
-    }
-    else if (algo == APPMESH_JWT_ALGORITHM_RS256)
-    {
-        token = jwt.sign(jwt::algorithm::rs256{rsPub, rsPri});
-    }
-    else if (algo == APPMESH_JWT_ALGORITHM_ES256)
-    {
-        token = jwt.sign(jwt::algorithm::es256{ecPub, ecPri});
-    }
-    else
-    {
-        throw std::invalid_argument("JWT algorithm not supported");
-    }
-
-    // Ensure token is not blacklisted
-    TOKEN_BLACK_LIST::instance()->tryRemoveFromList(token);
-
-    return token;
-}
-
-const std::tuple<std::string, std::string, std::set<std::string>> RestBase::verifyToken(const std::string &token, const std::string &audience)
-{
-    const static char fname[] = "RestBase::verifyToken() ";
-    LOG_DBG << fname << "Verifying token for audience: " << audience;
-
-    // Check if token is blacklisted regardless of authentication method
-    if (TOKEN_BLACK_LIST::instance()->isTokenBlacklisted(token))
-    {
-        LOG_WAR << fname << "Token is blacklisted";
-        throw std::domain_error("Token has been revoked");
-    }
-
-    const auto decodedToken = JwtHelper::decode(token);
-
-    // Check if we're using OAuth2/Keycloak or internal authentication
-    if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
-    {
-        // For OAuth2/Keycloak tokens, delegate to the Keycloak verification method
-        return keycloak->verifyKeycloakToken(decodedToken);
-    }
-
-    // Verify subject claim exists (contains username)
-    if (!decodedToken.has_subject())
-    {
-        LOG_WAR << fname << "Token missing subject claim";
-        throw std::domain_error("No user info in token");
-    }
-
-    // Extract user information
-    const auto userName = decodedToken.get_subject();
-    LOG_DBG << fname << "Verifying token for user: " << userName;
-
-    // Get user details from security system
-    const auto userObj = Security::instance()->getUserInfo(userName);
-
-    // Check if user account is locked
-    if (userObj->locked())
-    {
-        LOG_WAR << fname << "User account is locked: " << userName;
-        throw std::domain_error(Utility::stringFormat("User <%s> was locked", userName.c_str()));
-    }
-
-    // Load crypto keys for verification (done once due to static variables)
-    const static std::string rsPub = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_RS256_PUBLIC_KEY_FILE).string());
-    const static std::string rsPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_RS256_PRIVATE_KEY_FILE).string());
-    const static std::string ecPub = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PUBLIC_KEY_FILE).string());
-    const static std::string ecPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PRIVATE_KEY_FILE).string());
-
-    // Verify token signature and claims
-    try
-    {
-        // Set up token verifier with required claims
-        auto verifier = jwt::verify()
-                            .with_issuer(Configuration::instance()->getRestJwtIssuer())
-                            .with_audience(audience)
-                            .with_subject(userName);
-
-        // Configure algorithm based on configuration
-        const auto &algo = Configuration::instance()->getJwt()->m_jwtAlgorithm;
-        if (algo == APPMESH_JWT_ALGORITHM_HS256)
-        {
-            verifier.allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
-        }
-        else if (algo == APPMESH_JWT_ALGORITHM_RS256)
-        {
-            verifier.allow_algorithm(jwt::algorithm::rs256{rsPub, rsPri});
-        }
-        else if (algo == APPMESH_JWT_ALGORITHM_ES256)
-        {
-            verifier.allow_algorithm(jwt::algorithm::es256{ecPub, ecPri});
-        }
-        else
-        {
-            LOG_ERR << fname << "Unsupported JWT algorithm: " << algo;
-            throw std::domain_error("JWT algorithm not supported");
-        }
-
-        // Perform verification
-        verifier.verify(decodedToken);
-        LOG_DBG << fname << "Token verified successfully";
-    }
-    catch (const std::exception &e)
-    {
-        LOG_WAR << fname << "User <" << userName << "> token verification failed: " << e.what();
-        throw std::domain_error(Utility::stringFormat("Authentication failed: %s", e.what()));
-    }
-
-    std::set<std::string> roles; // App Mesh permission check do not need roles here
-
-    // Return tuple of username, group, and roles
-    return std::make_tuple(userName, userObj->getGroup(), roles);
-}
-
 const std::string RestBase::getJwtUserName(const std::shared_ptr<HttpRequest> &message)
 {
     const auto decodedToken = JwtHelper::decode(getJwtToken(message));
@@ -323,7 +163,6 @@ const std::string RestBase::getJwtUserName(const std::shared_ptr<HttpRequest> &m
 
     if (decodedToken.has_subject())
     {
-        // get user info
         return decodedToken.get_subject();
     }
     else
@@ -353,8 +192,8 @@ const std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &
     // Extract JWT token from HTTP headers
     const auto token = getJwtToken(message);
 
-    // First verify the token's validity with the specified audience
-    const auto tokenValidationResult = verifyToken(token, audience);
+    // Verify the token's validity
+    const auto tokenValidationResult = JwtToken::verify(token, audience);
 
     const auto &userName = std::get<0>(tokenValidationResult);
     const auto &groupName = std::get<1>(tokenValidationResult);
@@ -376,7 +215,6 @@ const std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &
             }
 
             // TODO: on-line permission check follow "Keycloak Authorization API"
-            // curl -H "Authorization: Bearer {access_token}" -X POST "http://localhost:8080/auth/realms/appmesh-realm/protocol/openid-connect/token/introspect"
         }
         else
         {

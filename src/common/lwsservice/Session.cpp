@@ -3,6 +3,7 @@
 #include "../../daemon/rest/HttpRequest.h"
 #include "../../daemon/rest/RestHandler.h"
 #include "../../daemon/rest/Worker.h"
+#include "../../daemon/security/JwtToken.h"
 #include "WebSocketService.h"
 
 void WSRequest::reply(std::vector<std::uint8_t> &&data) const
@@ -30,7 +31,7 @@ bool WebSocketSession::verifyToken(const std::string &token)
 {
     try
     {
-        RESTHANDLER::instance()->verifyToken(token, WEBSOCKET_FILE_AUDIENCE);
+        JwtToken::verify(token, WEBSOCKET_FILE_AUDIENCE);
         return true;
     }
     catch (...)
