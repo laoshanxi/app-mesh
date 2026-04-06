@@ -8,6 +8,7 @@
 #include <ace/OS.h>
 #include <ace/Process_Manager.h>
 #include <boost/filesystem.hpp>
+#include <boost/smart_ptr/make_shared.hpp>
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
@@ -521,7 +522,7 @@ const std::string AppProcess::startError() const
 
 void AppProcess::startError(const std::string &err)
 {
-	m_startError.store(boost::shared_ptr<std::string>(new std::string(err)));
+	m_startError.store(boost::make_shared<std::string>(err));
 }
 
 int AppProcess::validateCommand(const std::string &cmd)

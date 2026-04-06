@@ -46,7 +46,7 @@ appc add -a myapp -c "./run.sh" -Y cron -i "*/5 * * * * *"  # cron
 appc add -a myapp -c "./run.sh" -S "02:00:00+08"          # daily schedule
 appc add -a myapp -c "./run.sh" -M 512 -C 1024            # resource limits
 appc add -a myapp -c "./run.sh" -e "K=V" -e "K2=V2"       # env vars
-appc add -a myapp -c "./run.sh" -H "/usr/bin/curl http://localhost:8080"  # health check
+appc add -a myapp -c "./run.sh" -K "/usr/bin/curl http://localhost:8080"  # health check
 appc add -a myapp -c "./run.sh" -Q keepalive               # exit behavior
 ```
 

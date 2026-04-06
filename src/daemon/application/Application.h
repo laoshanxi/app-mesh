@@ -44,7 +44,6 @@ class Application : public TimerHandler, public AppBehavior
 public:
 	Application();
 	virtual ~Application();
-	virtual bool operator==(const std::shared_ptr<Application> &app);
 
 	// Getters
 	const std::string &getName() const;

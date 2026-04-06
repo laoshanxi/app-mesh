@@ -1,5 +1,4 @@
 // src/daemon/application/Application.cpp
-#include <algorithm>
 #include <cassert>
 #include <limits>
 
@@ -55,37 +54,6 @@ Application::~Application()
 	// #include <boost/stacktrace.hpp>
 	// std::cout << boost::stacktrace::stacktrace();
 	Utility::removeFile(m_stdoutFile);
-}
-
-bool Application::operator==(const std::shared_ptr<Application> &app)
-{
-	if (app->m_dailyLimit && !app->m_dailyLimit->operator==(this->m_dailyLimit))
-		return false;
-	if (this->m_dailyLimit && !this->m_dailyLimit->operator==(app->m_dailyLimit))
-		return false;
-
-	if (app->m_resourceLimit && !app->m_resourceLimit->operator==(this->m_resourceLimit))
-		return false;
-	if (this->m_resourceLimit && !this->m_resourceLimit->operator==(app->m_resourceLimit))
-		return false;
-
-	return (this->m_name == app->m_name &&
-			this->m_shellApp == app->m_shellApp &&
-			this->m_sessionLogin == app->m_sessionLogin &&
-			this->m_commandLine == app->m_commandLine &&
-			this->m_owner == app->m_owner &&
-			this->m_ownerPermission == app->m_ownerPermission &&
-			this->m_dockerImage == app->m_dockerImage &&
-			this->m_version == app->m_version &&
-			this->m_workdir == app->m_workdir &&
-			this->m_stdoutFile == app->m_stdoutFile &&
-			this->m_healthCheckCmd == app->m_healthCheckCmd &&
-			this->m_startTime == app->m_startTime &&
-			this->m_endTime == app->m_endTime &&
-			this->m_startIntervalValue == app->m_startIntervalValue &&
-			this->m_bufferTimeValue == app->m_bufferTimeValue &&
-			this->m_startIntervalValueIsCronExpr == app->m_startIntervalValueIsCronExpr &&
-			this->m_status.load() == app->m_status.load());
 }
 
 const std::string &Application::getName() const
@@ -650,7 +618,7 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 	LOG_DBG << fname << "Entered.";
 
 	auto processLock = m_process.synchronize();
-	(*processLock).reset();
+	terminate(*processLock);
 	(*processLock) = allocProcess(false, m_dockerImage, m_name);
 	return runApp(timeoutSeconds);
 }
@@ -661,7 +629,7 @@ std::string Application::runSyncrize(int timeoutSeconds, std::shared_ptr<void> a
 	LOG_DBG << fname << "Entered.";
 
 	auto processLock = m_process.synchronize();
-	(*processLock).reset();
+	terminate(*processLock);
 	(*processLock) = allocProcess(true, m_dockerImage, m_name);
 	auto monitorProc = std::dynamic_pointer_cast<MonitoredProcess>(*processLock);
 	if (monitorProc)
@@ -1263,14 +1231,18 @@ void Application::terminate(std::shared_ptr<AppProcess> &p)
 {
 	if (p)
 	{
+		// When process is running, p->terminate() triggers:
+		//   AppProcess::onExit() -> onTimerAppExit() -> onExitUpdate() asynchronously
+		// When process is not running, we need to call onExitUpdate() directly
+		const bool wasRunning = p->running();
 		p->terminate();
+		if (!wasRunning)
+		{
+			onExitUpdate(9);
+		}
 	}
 
 	m_task.terminate();
-
-	// Update exit information
-	onExitUpdate(9);
-
 	p.reset();
 }
 
@@ -1403,9 +1375,10 @@ void Application::setInvalidError()
 
 std::map<std::string, std::string> Application::getMergedEnvMap() const
 {
-	std::map<std::string, std::string> envMap;
-	std::merge(m_envMap.begin(), m_envMap.end(),
-			   m_secEnvMap.begin(), m_secEnvMap.end(),
-			   std::inserter(envMap, envMap.begin()));
+	auto envMap = m_envMap;
+	for (const auto &pair : m_secEnvMap)
+	{
+		envMap[pair.first] = pair.second;
+	}
 	return envMap;
 }
