@@ -66,7 +66,7 @@
 #define PERMISSION "permission"
 #define PERMISSION_ARGS "permission,p"
 #define HEALTHCHECK "health-check"
-#define HEALTHCHECK_ARGS "health-check,H"
+#define HEALTHCHECK_ARGS "health-check,K"
 #define DOCKER_IMAGE "docker-image"
 #define DOCKER_IMAGE_ARGS "docker-image,I"
 #define STATUS "status"

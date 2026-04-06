@@ -22,9 +22,9 @@ int main(int argc, char *argv[])
 	{
 		std::cerr << extractErrorMessage(e.what()) << std::endl;
 
-		if (std::any_of(argv + 1, argv + argc,
+		if (argc > 1 && std::any_of(argv + 1, argv + argc,
 						[](const char *arg)
-						{ return std::string(arg) == "-f"; }))
+						{ return std::string(arg) == "--follow" || std::string(arg) == "-f" || std::string(arg) == "--force"; }))
 		{
 			return 0;
 		}

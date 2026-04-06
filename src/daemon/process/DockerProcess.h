@@ -54,5 +54,5 @@ protected:
 	std::string m_containerEngine; // docker or podman
 
 	std::shared_ptr<AppProcess> m_imagePull;
-	mutable std::recursive_mutex m_processMutex;
+	mutable std::recursive_mutex m_dockerMutex;
 };

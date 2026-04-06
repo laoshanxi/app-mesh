@@ -136,7 +136,7 @@ Basic Configuration Options:
 Runtime Options:
   -u [ --shell ]                    Enable shell mode for multiple commands
   -G [ --session-login ]            Execute with session login context
-  -H [ --health-check ] arg         Health check command (returns 0 for healthy)
+  -K [ --health-check ] arg         Health check command (returns 0 for healthy)
   -I [ --docker-image ] arg         Docker image for containerized execution
   -P [ --pid ] arg                  Attach to existing process ID
 

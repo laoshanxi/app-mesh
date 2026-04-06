@@ -79,15 +79,7 @@
 	}                                                                                                                               \
 	setCurrentUrl(m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>()); \
 	forwardTo(m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>());
-#define HELP_ARG_CHECK_WITH_RETURN_ZERO                                                                                             \
-	GET_USER_NAME_PASS                                                                                                              \
-	if (m_commandLineVariables.count(HELP) > 0)                                                                                     \
-	{                                                                                                                               \
-		std::cout << desc << std::endl;                                                                                             \
-		return 0;                                                                                                                   \
-	}                                                                                                                               \
-	setCurrentUrl(m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>()); \
-	forwardTo(m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>());
+#define HELP_ARG_CHECK_WITH_RETURN_ZERO HELP_ARG_CHECK_WITH_RETURN
 // Each user should have its own token path
 const static std::string m_configFile = (fs::path(CommandDispatcher::getAndCreateConfigDir()) / ".appmesh.config").string();
 const static std::string m_shellHistoryFile = (fs::path(CommandDispatcher::getAndCreateConfigDir()) / ".appmesh.shell.history").string();
@@ -307,8 +299,8 @@ int CommandDispatcher::cmdLogin()
 
 	// get token from REST
 	std::string totp;
-	auto challange = this->login(m_username, m_userpwd, totp, m_tokenTimeoutSeconds, m_audience);
-	if (challange.length())
+	auto challenge = this->login(m_username, m_userpwd, totp, m_tokenTimeoutSeconds, m_audience);
+	if (challenge.length())
 	{
 		// Input TOTP key for validation until success
 		do
@@ -317,7 +309,7 @@ int CommandDispatcher::cmdLogin()
 			std::cout << "Enter TOTP key: ";
 			if (std::cin >> totp)
 			{
-				this->validateTotp(m_username, challange, totp, m_tokenTimeoutSeconds);			
+				this->validateTotp(m_username, challenge, totp, m_tokenTimeoutSeconds);			
 				break;
 			}
 		} while (true);
@@ -331,7 +323,7 @@ int CommandDispatcher::cmdLogin()
 	}
 	else
 	{
-		std::cout << "User <" << m_username << "> logon to <" << m_currentUrl << "> success." << std::endl;
+		std::cout << "User <" << m_username << "> logged on to <" << m_currentUrl << "> successfully." << std::endl;
 	}
 
 	return 0;
@@ -348,7 +340,7 @@ int CommandDispatcher::cmdLogoff()
 
 	auto user = this->getAuthenUser();
 	this->logout();
-	std::cout << "User <" << user << "> logoff from " << m_currentUrl << " success." << std::endl;
+	std::cout << "User <" << user << "> logged off from <" << m_currentUrl << "> successfully." << std::endl;
 	return 0;
 }
 
@@ -445,8 +437,8 @@ int CommandDispatcher::cmdAppAdd()
 		if (DurationParse::parse(m_commandLineVariables[INTERVAL].as<std::string>()) <=
 			DurationParse::parse(m_commandLineVariables[STOP_TIMEOUT].as<std::string>()))
 		{
-			std::cout << "The stop-timeout seconds must less than interval." << std::endl;
-			return 0;
+			std::cerr << "The stop-timeout must be less than the interval." << std::endl;
+			return 1;
 		}
 	}
 	nlohmann::json jsonObj;
@@ -467,7 +459,7 @@ int CommandDispatcher::cmdAppAdd()
 	{
 		if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_name))
 		{
-			std::cout << "Can not find application name" << std::endl;
+			std::cerr << "Application name is required." << std::endl;
 			return 0;
 		}
 		appName = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
@@ -476,7 +468,7 @@ int CommandDispatcher::cmdAppAdd()
 	{
 		if (m_commandLineVariables.count(APP) == 0)
 		{
-			std::cout << "Can not find application name" << std::endl;
+			std::cerr << "Application name is required." << std::endl;
 			return 0;
 		}
 		appName = m_commandLineVariables[APP].as<std::string>();
@@ -486,7 +478,7 @@ int CommandDispatcher::cmdAppAdd()
 	{
 		if (m_commandLineVariables.count(FORCE) == 0 && (m_commandLineVariables.count(STDIN) == 0 || m_commandLineVariables[STDIN].as<std::string>() != "std"))
 		{
-			std::cout << "Application already exist, are you sure you want to update the application <" << appName << ">?" << std::endl;
+			std::cout << "Application already exists, are you sure you want to update the application <" << appName << ">?" << std::endl;
 			if (!confirmInput("[y/n]:"))
 			{
 				return 0;
@@ -496,19 +488,19 @@ int CommandDispatcher::cmdAppAdd()
 
 	if (m_commandLineVariables.count(EXIT))
 	{
-		auto hebavior = m_commandLineVariables[EXIT].as<std::string>();
-		if (hebavior == JSON_KEY_APP_behavior_standby ||
-			hebavior == JSON_KEY_APP_behavior_restart ||
-			hebavior == JSON_KEY_APP_behavior_keepalive ||
-			hebavior == JSON_KEY_APP_behavior_remove)
+		auto behavior = m_commandLineVariables[EXIT].as<std::string>();
+		if (behavior == JSON_KEY_APP_behavior_standby ||
+			behavior == JSON_KEY_APP_behavior_restart ||
+			behavior == JSON_KEY_APP_behavior_keepalive ||
+			behavior == JSON_KEY_APP_behavior_remove)
 		{
 			nlohmann::json jsonBehavior;
-			jsonBehavior[JSON_KEY_APP_behavior_exit] = std::string(hebavior);
+			jsonBehavior[JSON_KEY_APP_behavior_exit] = std::string(behavior);
 			jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
 		}
 		else
 		{
-			throw std::invalid_argument(Utility::stringFormat("invalid behavior <%s> for <exit> event", hebavior.c_str()));
+			throw std::invalid_argument(Utility::stringFormat("invalid behavior <%s> for <exit> event", behavior.c_str()));
 		}
 	}
 	if (m_commandLineVariables.count(CONTROL))
@@ -523,17 +515,17 @@ int CommandDispatcher::cmdAppAdd()
 			if (find != std::string::npos)
 			{
 				auto code = Utility::stdStringTrim(control.substr(0, find));
-				auto hebavior = Utility::stdStringTrim(control.substr(find + 1));
-				if (hebavior == JSON_KEY_APP_behavior_standby ||
-					hebavior == JSON_KEY_APP_behavior_restart ||
-					hebavior == JSON_KEY_APP_behavior_keepalive ||
-					hebavior == JSON_KEY_APP_behavior_remove)
+				auto behavior = Utility::stdStringTrim(control.substr(find + 1));
+				if (behavior == JSON_KEY_APP_behavior_standby ||
+					behavior == JSON_KEY_APP_behavior_restart ||
+					behavior == JSON_KEY_APP_behavior_keepalive ||
+					behavior == JSON_KEY_APP_behavior_remove)
 				{
-					objControl[code] = std::string(hebavior);
+					objControl[code] = std::string(behavior);
 				}
 				else
 				{
-					throw std::invalid_argument(Utility::stringFormat("invalid behavior <%s> for <exit> event", hebavior.c_str()));
+					throw std::invalid_argument(Utility::stringFormat("invalid behavior <%s> for <exit> event", behavior.c_str()));
 				}
 			}
 		}
@@ -565,7 +557,7 @@ int CommandDispatcher::cmdAppAdd()
 				auto fileName = metaData.substr(1);
 				if (!Utility::isFileExist(fileName))
 				{
-					throw std::invalid_argument(Utility::stringFormat("input file %s does not exist", fileName.c_str()));
+					throw std::invalid_argument(Utility::stringFormat("Input file '%s' does not exist", fileName.c_str()));
 				}
 				metaData = Utility::readFile(fileName);
 			}
@@ -655,6 +647,10 @@ int CommandDispatcher::cmdAppAdd()
 					auto val = Utility::stdStringTrim(env.substr(find + 1));
 					objEnvs[key] = std::string(val);
 				}
+				else
+				{
+					throw std::invalid_argument(Utility::stringFormat("Invalid environment variable format: %s", env.c_str()));
+				}
 			}
 			jsonObj[JSON_KEY_APP_sec_env] = objEnvs;
 		}
@@ -694,15 +690,16 @@ int CommandDispatcher::cmdAppDelete()
 		{
 			if (m_commandLineVariables.count(FORCE) == 0)
 			{
-				std::string msg = std::string("Are you sure you want to remove the application <") + appName + "> ? [y/n]";
-				if (confirmInput(msg.c_str()))
+				std::string msg = std::string("Are you sure you want to remove the application <") + appName + ">? [y/n]";
+				if (!confirmInput(msg.c_str()))
 				{
-					if (this->deleteApp(appName))
-						std::cout << "Application <" << appName << "> removed." << std::endl;
-					else
-						std::cout << "Application <" << appName << "> not found." << std::endl;
+					continue;
 				}
 			}
+			if (this->deleteApp(appName))
+				std::cout << "Application <" << appName << "> removed." << std::endl;
+			else
+				std::cout << "Application <" << appName << "> remove failed." << std::endl;
 		}
 		else
 		{
@@ -855,7 +852,7 @@ int CommandDispatcher::cmdAppControlState(bool start)
 	}
 	if (appList.size() == 0)
 	{
-		std::cout << "No application processed." << std::endl;
+		std::cout << "No applications processed." << std::endl;
 	}
 	return 0;
 }
@@ -920,7 +917,7 @@ int CommandDispatcher::cmdAppRun()
 				auto fileName = metaData.substr(1);
 				if (!Utility::isFileExist(fileName))
 				{
-					throw std::invalid_argument(Utility::stringFormat("input file %s does not exist", fileName.c_str()));
+					throw std::invalid_argument(Utility::stringFormat("Input file '%s' does not exist", fileName.c_str()));
 				}
 				metaData = Utility::readFile(fileName);
 			}
@@ -952,6 +949,10 @@ int CommandDispatcher::cmdAppRun()
 					auto key = Utility::stdStringTrim(env.substr(0, find));
 					auto val = Utility::stdStringTrim(env.substr(find + 1));
 					objEnvs[key] = std::string(val);
+				}
+				else
+				{
+					throw std::invalid_argument(Utility::stringFormat("Invalid environment variable format: %s", env.c_str()));
 				}
 			}
 			jsonObj[JSON_KEY_APP_env] = objEnvs;
@@ -1192,10 +1193,12 @@ int CommandDispatcher::cmdExecuteShell()
 	for (char **var = environ; *var != nullptr; var++)
 	{
 		std::string e = *var;
-		auto vec = Utility::splitString(e, "=");
-		if (vec.size() > 0)
+		auto find = e.find_first_of('=');
+		if (find != std::string::npos)
 		{
-			objEnvs[vec[0]] = std::string(vec.size() > 1 ? vec[1] : std::string());
+			auto key = e.substr(0, find);
+			auto val = e.substr(find + 1);
+			objEnvs[key] = std::string(val);
 		}
 	}
 
@@ -1342,8 +1345,8 @@ int CommandDispatcher::cmdUploadFile()
 
 	if (!Utility::isFileExist(local))
 	{
-		std::cout << "local file not exist" << std::endl;
-		return 0;
+		std::cerr << "Local file '" << local << "' does not exist." << std::endl;
+		return 1;
 	}
 	local = boost::filesystem::canonical(local).string();
 	auto copyPermission = m_commandLineVariables.count(COPY_ATTR);
@@ -1378,7 +1381,7 @@ int CommandDispatcher::cmdLabelManage()
 		// Process add
 		if (inputTags.empty())
 		{
-			std::cout << "No label specified" << std::endl;
+			std::cerr << "No label specified." << std::endl;
 			return 0;
 		}
 		for (auto &str : inputTags)
@@ -1396,7 +1399,7 @@ int CommandDispatcher::cmdLabelManage()
 		// Process remove
 		if (inputTags.empty())
 		{
-			std::cout << "No label specified" << std::endl;
+			std::cerr << "No label specified." << std::endl;
 			return 0;
 		}
 		for (auto &str : inputTags)
@@ -1486,7 +1489,7 @@ int CommandDispatcher::cmdChangePwd()
 	auto newPwd = inputPasswd("new password for " + user);
 
 	this->updatePassword(oldPwd, newPwd, user);
-	std::cout << "success" << std::endl;
+	std::cout << "Password changed successfully." << std::endl;
 	return 0;
 }
 
@@ -1513,7 +1516,7 @@ int CommandDispatcher::cmdUserLock()
 	auto lock = m_commandLineVariables[LOCK].as<bool>();
 
 	lock ? this->lockUser(user) : this->unlockUser(user);
-	std::cout << "success" << std::endl;
+	std::cout << "User <" << user << "> " << (lock ? "locked" : "unlocked") << " successfully." << std::endl;
 	return 0;
 }
 
@@ -1568,7 +1571,7 @@ int CommandDispatcher::cmdUserManage()
 		}
 
 		this->addUser(jsonObj);
-		std::cout << "success" << std::endl;
+		std::cout << "User <" << userName << "> registered successfully." << std::endl;
 	}
 	return 0;
 }
@@ -1582,11 +1585,9 @@ int CommandDispatcher::cmdEncryptPassword()
 	std::string str;
 	if (opts.size() == 0)
 	{
-		std::cin >> str;
-		while (str.size())
+		while (std::cin >> str)
 		{
 			std::cout << Utility::hash(str) << std::endl;
-			std::cin >> str;
 		}
 	}
 	else
@@ -1619,7 +1620,7 @@ int CommandDispatcher::cmdUserMFA()
 	}
 	if (userName.empty())
 	{
-		std::cout << "No user name specified" << std::endl;
+		std::cerr << "No user name specified." << std::endl;
 		return 0;
 	}
 
@@ -1652,7 +1653,7 @@ int CommandDispatcher::cmdUserMFA()
 					this->enableTotp(totp);
 					validating = false;
 					persistUserConfig(Uri::parse(m_currentUrl).host);
-					std::cout << "TOTP setup for " << userName << " success." << std::endl;
+					std::cout << "TOTP setup for <" << userName << "> successful." << std::endl;
 				}
 				catch (...)
 				{
@@ -1665,7 +1666,7 @@ int CommandDispatcher::cmdUserMFA()
 		if (this->confirmInput(Utility::stringFormat("Do you want to deactivate 2FA for <%s> [y/n]:", userName.c_str()).c_str()))
 		{
 			this->disableTotp(userName);
-			std::cout << "success" << std::endl;
+			std::cout << "2FA deactivated for <" << userName << "> successfully." << std::endl;
 		}
 	}
 	else
@@ -1680,7 +1681,7 @@ int CommandDispatcher::cmdInitRandomPassword()
 	// only for root user generate password for admin user after installation
 	if (ACE_OS::geteuid() != 0 && !Utility::runningInContainer())
 	{
-		std::cerr << "only root user can generate a initial password" << std::endl;
+		std::cerr << "Only root user can generate an initial password." << std::endl;
 		return 0;
 	}
 
@@ -1724,7 +1725,7 @@ int CommandDispatcher::cmdInitRandomPassword()
 			{
 				ofsSec << securityFile;
 				ofsSec.close();
-				std::cout << "!Important! This will only occure once, password for user <admin> is <" << genPassword << ">." << std::endl;
+				std::cout << "Important: This will only occur once, password for user <admin> is <" << genPassword << ">." << std::endl;
 			}
 		}
 	}
