@@ -383,16 +383,9 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 	const auto &file = (message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (file.find("..") != std::string::npos || file.find('\0') != std::string::npos)
+	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
 	{
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
-		return;
-	}
-
-	std::string allowedBaseDir = Configuration::instance()->getFileAllowedBaseDir();
-	if (!allowedBaseDir.empty() && !Utility::isPathTraversalSafe(allowedBaseDir, file))
-	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path - path traversal detected"));
 		return;
 	}
 
@@ -434,16 +427,9 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 	const auto &file = message->m_headers.find(HTTP_HEADER_KEY_file_path)->second;
-	if (file.find("..") != std::string::npos || file.find('\0') != std::string::npos)
+	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
 	{
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
-		return;
-	}
-
-	std::string allowedBaseDir = Configuration::instance()->getFileAllowedBaseDir();
-	if (!allowedBaseDir.empty() && !Utility::isPathTraversalSafe(allowedBaseDir, file))
-	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path - path traversal detected"));
 		return;
 	}
 

@@ -231,7 +231,8 @@ void CommandDispatcher::printMainHelp()
 
 	std::cout << "Execution Commands:" << std::endl;
 	std::cout << "  run           Execute commands or applications and retrieve output" << std::endl;
-	std::cout << "  shell         Execute commands with shell context emulation" << std::endl
+	std::cout << "  exec          Execute a single remote shell command" << std::endl;
+	std::cout << "  shell         Start an interactive remote shell session, optionally with an initial command" << std::endl
 			  << std::endl;
 
 	std::cout << "System Management:" << std::endl;
@@ -258,8 +259,8 @@ int CommandDispatcher::cmdLogin()
 	CONNECTION_OPTIONS;
 	po::options_description authenticate("Authentication Options", BOOST_DESC_WIDTH);
 	authenticate.add_options()
-	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Session duration in seconds or ISO 8601 format [default: PT7D]")
-	(AUDIENCE_ARGS, po::value<std::string>()->default_value(HTTP_HEADER_JWT_Audience_appmesh), "JWT Audience [default: 'appmesh-service']")
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Session duration in seconds or ISO 8601 format.")
+	(AUDIENCE_ARGS, po::value<std::string>()->default_value(HTTP_HEADER_JWT_Audience_appmesh), "JWT audience.")
 	(SHOWTOKEN_ARGS, "Show the authentication token");
 	OTHER_OPTIONS;
 	desc.add(connection).add(authenticate).add(other);
@@ -873,8 +874,8 @@ int CommandDispatcher::cmdAppRun()
 	execution.add_options()
 	(SHELL_ARGS, "Use shell mode to support multiple commands")
 	(SESSION_LOGIN_ARGS, "Execute with session login context")
-	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle in seconds or ISO 8601 duration (default: 12 hours)")
-	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum wait time in seconds or ISO 8601 duration (>0: poll output, <0: wait until exit)");
+	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle in seconds or ISO 8601 duration.")
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum wait time in seconds or ISO 8601 duration (>0: poll output, <0: wait until exit).");
 	OTHER_OPTIONS;
 	desc.add(connection).add(application).add(execution).add(other);
 	shiftCommandLineArgs(desc);
@@ -1155,14 +1156,18 @@ pid_t get_bash_pid()
 
 int CommandDispatcher::cmdExecuteShell()
 {
-	po::options_description desc("Remote Shell Execution \nUsage: appc shell [options]", BOOST_DESC_WIDTH);
+	const std::string invokedCommand =
+		(m_commandLineVariables.count("command") > 0) ? m_commandLineVariables["command"].as<std::string>() : "shell";
+	const bool interactiveShell = (invokedCommand == "shell");
+	const std::string usage = interactiveShell ? "Usage: appc shell [options] [initial-command...]" : "Usage: appc exec [options] <command...>";
+	po::options_description desc("Remote Shell Execution \n" + usage, BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description execute("Execution Options", BOOST_DESC_WIDTH);
 	execute.add_options()
 	(RETRY_ARGS, "Retry command until successful")
 	(SESSION_LOGIN_ARGS, "Execute with session login context")
-	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle in seconds or ISO 8601 duration (default: 12 hours)")
-	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum wait time in seconds or ISO 8601 duration (>0: poll output, <0: wait until exit)");
+	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle in seconds or ISO 8601 duration.")
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum wait time in seconds or ISO 8601 duration (>0: poll output, <0: wait until exit).");
 	OTHER_OPTIONS;
 	desc.add(connection).add(execute).add(other);
 	shiftCommandLineArgs(desc, true);
@@ -1188,6 +1193,13 @@ int CommandDispatcher::cmdExecuteShell()
 	std::vector<std::string> unrecognized = po::collect_unrecognized(parsed.options, po::include_positional);
 	std::string initialCmd = boost::algorithm::join(unrecognized, " ");
 
+	if (!interactiveShell && initialCmd.empty())
+	{
+		std::cerr << "The 'exec' command requires a command to execute." << std::endl;
+		std::cout << desc << std::endl;
+		return 1;
+	}
+
 	// Get current ENV
 	nlohmann::json objEnvs = nlohmann::json::object();
 	for (char **var = environ; *var != nullptr; var++)
@@ -1205,7 +1217,7 @@ int CommandDispatcher::cmdExecuteShell()
 	char buff[MAX_COMMAND_LINE_LENGTH] = {0};
 	char *cwd = ACE_OS::getcwd(buff, sizeof(buff));
 	nlohmann::json jsonObj;
-	jsonObj[JSON_KEY_APP_name] = std::string(G_PENDING_CLEAN_APP_NAME);
+	jsonObj[JSON_KEY_APP_name] = appName;
 	jsonObj[JSON_KEY_APP_shell_mode] = (true);
 	jsonObj[JSON_KEY_APP_session_login] = m_commandLineVariables.count(SESSION_LOGIN) > 0;
 	jsonObj[JSON_KEY_APP_command] = std::string(initialCmd);
@@ -1222,24 +1234,35 @@ int CommandDispatcher::cmdExecuteShell()
 
 	auto sleepSeconds = [](int sec) -> bool
 	{ACE_OS::sleep(sec);	return true; };
-	setupInterruptHandler(appName);
-	// clean
-	try { this->deleteApp(G_PENDING_CLEAN_APP_NAME); } catch (...) {}
-	if (unrecognized.size())
+	auto executeRemoteCommand = [&](const std::string &command)
 	{
-		// run once
+		G_INTERRUPT = false;
+		jsonObj[JSON_KEY_APP_command] = command;
 		do
 		{
 			auto resp = runAsyncApp(jsonObj, timeout, lifecycle);
 			returnCode = resp ? *resp : returnCode;
 		} while (retry && returnCode != 0 && !G_INTERRUPT.load() && sleepSeconds(1));
+	};
+	setupInterruptHandler(appName);
+	// clean
+	try { this->deleteApp(appName); } catch (...) {}
+	if (!interactiveShell)
+	{
+		// exec: run the provided command once
+		executeRemoteCommand(initialCmd);
 	}
 	else
 	{
-		// shell interactive
+		// shell: interactive session
 		auto response = this->getCurrentUser();
 		auto execUser = response[JSON_KEY_USER_exec_user].get<std::string>();
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
+
+		if (!initialCmd.empty())
+		{
+			executeRemoteCommand(initialCmd);
+		}
 
 		linenoiseSetMultiLine(1);
     	linenoiseHistoryLoad(m_shellHistoryFile.c_str());
@@ -1277,13 +1300,7 @@ int CommandDispatcher::cmdExecuteShell()
 					linenoiseClearScreen();
 					continue;
 				}
-				G_INTERRUPT = false;
-				jsonObj[JSON_KEY_APP_command] = cmd;
-				do
-				{
-					auto resp = runAsyncApp(jsonObj, timeout, lifecycle);
-					returnCode = resp ? *resp : returnCode;
-				} while (retry && !G_INTERRUPT && sleepSeconds(1));
+				executeRemoteCommand(cmd);
 			}
 		}
 	}
@@ -1299,7 +1316,7 @@ int CommandDispatcher::cmdDownloadFile()
 	download.add_options()
 	(REMOTE_ARGS, po::value<std::string>(), "Remote file path to download.")
 	(LOCAL_ARGS, po::value<std::string>(), "Local file path to save.")
-	(COPY_ATTR_ARGS, "Copy file attributes.");
+	(COPY_ATTR_ARGS, "Do not copy file attributes.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(download).add(other);
 	shiftCommandLineArgs(desc);
@@ -1313,7 +1330,7 @@ int CommandDispatcher::cmdDownloadFile()
 
 	auto file = m_commandLineVariables[REMOTE].as<std::string>();
 	auto local = m_commandLineVariables[LOCAL].as<std::string>();
-	auto copyPermission = m_commandLineVariables.count(COPY_ATTR);
+	bool copyPermission = (m_commandLineVariables.count(COPY_ATTR) == 0);
 
 	this->downloadFile(file, local, copyPermission);
 	std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
@@ -1328,7 +1345,7 @@ int CommandDispatcher::cmdUploadFile()
 	upload.add_options()
 	(REMOTE_ARGS, po::value<std::string>(), "Remote file path to save.")
 	(LOCAL_ARGS, po::value<std::string>(), "Local file to upload.")
-	(COPY_ATTR_ARGS, "Copy file attributes");
+	(COPY_ATTR_ARGS, "Do not copy file attributes.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(upload).add(other);
 	shiftCommandLineArgs(desc);
@@ -1349,7 +1366,7 @@ int CommandDispatcher::cmdUploadFile()
 		return 1;
 	}
 	local = boost::filesystem::canonical(local).string();
-	auto copyPermission = m_commandLineVariables.count(COPY_ATTR);
+	bool copyPermission = (m_commandLineVariables.count(COPY_ATTR) == 0);
 
 	this->uploadFile(local, file, copyPermission);
 	std::cout << "Uploaded file <" << local << ">" << std::endl;
@@ -1453,11 +1470,11 @@ int CommandDispatcher::cmdLogLevel()
 
 int CommandDispatcher::cmdConfigView()
 {
-	po::options_description desc("View configurations \nUsage: appc config [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("View configurations \nUsage: appc config [--view] [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description log("Configuration Options", BOOST_DESC_WIDTH);
 	log.add_options()
-	(VIEW_ARGS, "View basic configurations in JSON format.");
+	(VIEW_ARGS, "View configurations in JSON format (optional compatibility flag).");
 	OTHER_OPTIONS;
 	desc.add(connection).add(log).add(other);
 	shiftCommandLineArgs(desc);

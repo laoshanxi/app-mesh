@@ -1,19 +1,15 @@
 // src/daemon/rest/SocketServer.h
 #pragma once
 
+#include "Data.h"
+#include "FileTransferHandler.h"
 #include "SocketStream.h"
-#include "Worker.h"
 
-#include <ace/Guard_T.h>
 #include <ace/Map_Manager.h>
 #include <ace/Recursive_Thread_Mutex.h>
 
-#include <atomic>
-#include <fstream>
 #include <memory>
-#include <vector>
 
-struct FileUploadInfo;
 class SocketServer;
 using ServerStreamMap = ACE_Map_Manager<int, SocketServer *, ACE_Recursive_Thread_Mutex>;
 
@@ -35,14 +31,6 @@ public:
     static SocketStreamPtr findClient(int clientId);
 
 private:
-    void checkForUploadFileRequest(std::unique_ptr<Response> &resp);
-    void checkForDownloadFileRequest(std::unique_ptr<Response> &resp);
-    void sendNextDownloadChunk(std::unique_ptr<std::ifstream> &download);
-    void recvNextUploadChunk(std::unique_ptr<FileUploadInfo> &upload, std::vector<std::uint8_t> &&data);
-
-private:
     const int m_id; // Unique, constant ID for this client session.
-
-    std::unique_ptr<FileUploadInfo> m_pendingUploadFile;
-    std::unique_ptr<std::ifstream> m_pendingDownloadFile;
+    FileTransferHandler m_fileTransfer;
 };

@@ -393,8 +393,13 @@ void AppMeshDaemon::initializeRestService()
 	// Initialize SSL for TCP server and client
 	SSLHelper::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
 
-	const auto clientCA = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());
-	SSLHelper::initClientSSL(Global::getClientSSL(), "", "", "" /*clientCA*/);
+	// Client SSL context for forwarding requests to other App Mesh nodes.
+	const bool verifyServer = Configuration::instance()->getSslVerifyServer();
+	const auto clientCA = verifyServer ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath()) : std::string();
+	if (!SSLHelper::initClientSSL(Global::getClientSSL(), "", "", clientCA, verifyServer))
+	{
+		LOG_WAR << fname << "Client SSL initialization failed";
+	}
 
 	// Start REST thread pool
 	startWorkerThreadPool();

@@ -162,7 +162,9 @@ std::shared_ptr<T> make_shared_array(size_t size)
 constexpr size_t TCP_MESSAGE_HEADER_LENGTH = 8;			 // TCP header protocol: 4 bytes magic number + 4 bytes body length
 constexpr uint32_t TCP_MESSAGE_MAGIC = 0x07C707F8;		 // Magic number for message validation (host byte order)
 constexpr size_t TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256; // Chunk block size 16KB (target with 256 bytes reserved for overhead)
-constexpr size_t TCP_MAX_BLOCK_SIZE = 1024 * 1024 * 100; // Maximum allowed block size: 100 MB
+constexpr size_t TCP_MAX_BLOCK_SIZE = 2UL * 1024 * 1024 * 1024; // Maximum allowed block size: 2 GB (file transfer)
+constexpr size_t TCP_MAX_RECV_MSG_SIZE = 200 * 1024 * 1024;    // Maximum single non-file TCP message: 200 MB (DoS protection)
+constexpr size_t MAX_HTTP_BODY_SIZE = 128 * 1024 * 1024;       // Maximum HTTP body size: 128 MB
 constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
@@ -190,6 +192,7 @@ public:
 	static bool isDirExist(const std::string &path);
 	static bool isFileExist(const std::string &path);
 	static bool isPathTraversalSafe(const std::string &baseDir, const std::string &filePath);
+	static bool validateFilePath(const std::string &filePath, const std::string &allowedBaseDir);
 	static bool isPasswordComplex(const std::string &password, std::string &errorMsg);
 	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
 	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);

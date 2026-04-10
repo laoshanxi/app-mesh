@@ -39,11 +39,19 @@ namespace SSLHelper
             return nullptr;
         }
 
-        // Enable forward secrecy for TLS1.2 (ECDH automatic selection)
+        // Enable forward secrecy for TLS1.2 (ECDH curve selection)
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+        // SSL_CTX_set_ecdh_auto is deprecated (no-op) in OpenSSL 1.1+; use explicit curve list
+        if (!SSL_CTX_set1_curves_list(context->context(), "X25519:P-256:P-384"))
+        {
+            LOG_WAR << fname << "SSL_CTX_set1_curves_list failed: " << last_error_msg();
+        }
+#else
         if (!SSL_CTX_set_ecdh_auto(context->context(), 1))
         {
             LOG_WAR << fname << "SSL_CTX_set_ecdh_auto failed: " << last_error_msg();
         }
+#endif
 
         // Configure cipher suites to prioritize security, explicitly excluding weak ciphers
         const char *tls12Ciphers = "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5";
@@ -52,7 +60,6 @@ namespace SSLHelper
             LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << last_error_msg();
         }
 
-        // Set TLS1.3 ciphers separately
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L
         const char *tls13Ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
         if (!SSL_CTX_set_ciphersuites(context->context(), tls13Ciphers))
@@ -67,7 +74,7 @@ namespace SSLHelper
         // Set client certificate verification if required
         if (!ca.empty())
         {
-            context->set_verify_peer(true, 1 /* verify once */, 0 /* verification depth */);
+            context->set_verify_peer(true, 1 /* verify once */, 9 /* standard verification depth */);
 
             // Load trusted CA certificates if the CA path is accessible
             if (ACE_OS::access(ca.c_str(), R_OK) == 0)
@@ -88,22 +95,38 @@ namespace SSLHelper
         }
 
         // Configure session caching and lifetime to improve TLS session resumption performance
+        static const unsigned char sess_id_ctx[] = "appmesh-tcp";
+        SSL_CTX_set_session_id_context(context->context(), sess_id_ctx, sizeof(sess_id_ctx) - 1);
         SSL_CTX_set_session_cache_mode(context->context(), SSL_SESS_CACHE_SERVER);
         SSL_CTX_set_timeout(context->context(), 300); // 5-minute session timeout
 
         return context;
     }
 
-    ACE_SSL_Context *initClientSSL(ACE_SSL_Context *context, const std::string &cert, const std::string &key, const std::string &ca)
+    ACE_SSL_Context *initClientSSL(ACE_SSL_Context *context, const std::string &cert, const std::string &key, const std::string &ca, bool verifyPeer)
     {
         const static char fname[] = "SSL::initClientSSL() ";
 
-        LOG_INF << fname << "Init SSL with CA <" << ca << "> server cert <" << cert << "> server private key <" << key << ">";
+        LOG_INF << fname << "Init SSL with CA <" << ca << "> client cert <" << cert << "> client private key <" << key << "> verifyPeer <" << verifyPeer << ">";
 
         context->set_mode(ACE_SSL_Context::SSLv23_client);
+        context->filter_versions(TCP_SSL_VERSION_LIST);
+
+        const char *tls12Ciphers = "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5";
+        if (!SSL_CTX_set_cipher_list(context->context(), tls12Ciphers))
+        {
+            LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << last_error_msg();
+        }
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+        const char *tls13Ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
+        if (!SSL_CTX_set_ciphersuites(context->context(), tls13Ciphers))
+        {
+            LOG_WAR << fname << "SSL_CTX_set_ciphersuites failed: " << last_error_msg();
+        }
+#endif
+
         if (!ca.empty())
         {
-            // Load trusted CA certificates if the CA path is accessible
             if (ACE_OS::access(ca.c_str(), R_OK) == 0)
             {
                 bool isDir = Utility::isDirExist(ca);
@@ -122,15 +145,24 @@ namespace SSLHelper
 
         if (!cert.empty() && !key.empty())
         {
-            // Load client certificate and private key
             if (context->certificate(cert.c_str(), SSL_FILETYPE_PEM) == -1 ||
                 context->private_key(key.c_str(), SSL_FILETYPE_PEM) == -1)
             {
                 LOG_ERR << fname << "Failed to load certificate " << cert << " and/or private key " << key;
                 return nullptr;
             }
-            // context->set_verify_peer(true); // Verify server certificate
         }
+
+        if (verifyPeer)
+        {
+            context->set_verify_peer(true, 1 /* verify once */, 9 /* standard depth */);
+            LOG_INF << fname << "Peer certificate verification enabled";
+        }
+        else
+        {
+            LOG_INF << fname << "Peer certificate verification disabled";
+        }
+
         return context;
     }
 }

@@ -7,94 +7,43 @@
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "Data.h"
+#include "ForwardingManager.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
 #include "SocketServer.h"
-#include "SocketStream.h"
 #include "uwebsockets/ReplyContext.h"
 
-#include <ace/Handle_Set.h>
-#include <ace/OS_NS_sys_select.h>
-#include <ace/os_include/netinet/os_tcp.h>
-
-#include <atomic>
-#include <cerrno>
-#include <fstream>
-#include <limits>
 #include <memory>
-#include <thread>
 #include <utility>
 
 struct HttpRequestContext
 {
-	HttpRequestContext(ByteBuffer data, int tcpClientId, void *lwsSession, std::shared_ptr<WSS::ReplyContext> uwsReplyCtx)
-		: m_data(std::move(data)), m_tcpClientId(tcpClientId), m_lwsSession(lwsSession), m_uwsReplyContext(std::move(uwsReplyCtx))
+	HttpRequestContext(ByteBuffer data, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> uwsReplyCtx)
+		: m_data(std::move(data)), m_tcpClientId(tcpClientId), m_lwsRef(lwsRef),
+		  m_uwsReplyContext(std::move(uwsReplyCtx))
 	{
 	}
 
 	ByteBuffer m_data;
 
 	const int m_tcpClientId;							  // TCP socket
-	void *const m_lwsSession;							  // libwebsockets
+	const LwsSessionRef m_lwsRef;						  // libwebsockets (wsi + ABA IDs)
 	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext; // uWebsockets
-};
-
-struct ForwardingConnection
-{
-	SocketStreamPtr stream;
-	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Thread_Mutex>;
-	PendingRequestMap pending_requests;
-	std::atomic<bool> closed{false};
-
-	bool addRequest(const std::string &uuid, std::shared_ptr<HttpRequest> request)
-	{
-		if (closed.load(std::memory_order_relaxed))
-			return false;
-		return pending_requests.bind(uuid, std::move(request)) == 0;
-	}
-
-	std::shared_ptr<HttpRequest> takeRequest(const std::string &uuid)
-	{
-		std::shared_ptr<HttpRequest> req;
-		pending_requests.unbind(uuid, req);
-		return req;
-	}
-
-	void failAll(const std::string &msg)
-	{
-		std::vector<std::string> keys;
-		{
-			ACE_GUARD(ACE_Thread_Mutex, guard, pending_requests.mutex());
-			closed.store(true, std::memory_order_relaxed);
-			for (auto iter = pending_requests.begin(); iter != pending_requests.end(); ++iter)
-			{
-				keys.push_back((*iter).ext_id_);
-			}
-		}
-		for (auto &uuid : keys)
-		{
-			std::shared_ptr<HttpRequest> req;
-			if (pending_requests.unbind(uuid, req) == 0 && req)
-			{
-				req->reply(web::http::status_codes::BadGateway, msg);
-			}
-		}
-	}
 };
 
 void Worker::queueTcpRequest(ByteBuffer &&data, int tcpClientId)
 {
-	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), tcpClientId, nullptr, nullptr));
+	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), tcpClientId, LwsSessionRef{}, nullptr));
 }
 
-void Worker::queueLwsRequest(ByteBuffer &&data, void *lwsSession)
+void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
 {
-	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), -1, lwsSession, nullptr));
+	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), -1, lwsRef, nullptr));
 }
 
 void Worker::queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext)
 {
-	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), -1, nullptr, std::move(uwsContext)));
+	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), -1, LwsSessionRef{}, std::move(uwsContext)));
 }
 
 int Worker::svc()
@@ -115,7 +64,7 @@ int Worker::svc()
 			break;
 		}
 
-		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsSession, requestContext->m_uwsReplyContext);
+		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef, requestContext->m_uwsReplyContext);
 
 		if (!request || !process(request))
 		{
@@ -131,7 +80,7 @@ int Worker::svc()
 				requestContext->m_uwsReplyContext->replyWebSocket("500 Internal Server Error", true, false);
 			}
 #else
-			else if (requestContext->m_lwsSession)
+			else if (requestContext->m_lwsRef)
 			{
 				// TODO: handle libwebsockets close to avoid leak
 			}
@@ -201,82 +150,6 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 	return true;
 }
 
-using ForwardingClientMap = ACE_Map_Manager<std::string, std::shared_ptr<ForwardingConnection>, ACE_Recursive_Thread_Mutex>;
-static ForwardingClientMap connectedClients;
-
-/// Returns an existing or newly created ForwardingConnection for the given host.
-static std::shared_ptr<ForwardingConnection> getOrCreateConnection(const std::string &host, int port)
-{
-	static const char fname[] = "getOrCreateConnection() ";
-
-	std::shared_ptr<ForwardingConnection> conn;
-
-	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, connectedClients.mutex(), nullptr);
-
-	// Remove stale closed connection
-	if (connectedClients.find(host, conn) == 0 && conn->closed.load(std::memory_order_relaxed))
-	{
-		connectedClients.unbind(host);
-		conn.reset();
-	}
-
-	// Double-checked locking
-	if (connectedClients.find(host, conn) == 0)
-		return conn;
-
-	conn = std::make_shared<ForwardingConnection>();
-	conn->stream = SocketStream::createConnection(ACE_INET_Addr(port, host.c_str()));
-
-	if (!conn->stream->connected())
-	{
-		LOG_ERR << fname << "Failed to connect to forwarding host: " << host;
-		return nullptr;
-	}
-
-	// Set up callbacks (safe: no requests sent yet, so no data arrives)
-	std::weak_ptr<ForwardingConnection> weakConn = conn;
-
-	conn->stream->onData(
-		[weakConn](std::vector<std::uint8_t> &&data)
-		{
-			auto c = weakConn.lock();
-			if (!c)
-				return;
-			Response r;
-			if (r.deserialize(data.data(), data.size()))
-			{
-				auto req = c->takeRequest(r.uuid);
-				if (req)
-				{
-					req->reply(r.request_uri, r.uuid, r.body, r.headers, r.http_status, r.body_msg_type);
-				}
-				else
-				{
-					LOG_WAR << "getOrCreateConnection() Received response for unknown UUID: " << r.uuid;
-				}
-			}
-			else
-			{
-				LOG_ERR << "getOrCreateConnection() Failed to deserialize forwarded response";
-				c->failAll("Corrupted response from forwarding host");
-			}
-		});
-
-	conn->stream->onClose(
-		[weakConn, host]()
-		{
-			LOG_WAR << "getOrCreateConnection() Forwarding connection to " << host << " closed";
-			if (auto c = weakConn.lock())
-			{
-				c->failAll("Forwarding host connection closed");
-			}
-			connectedClients.unbind(host);
-		});
-
-	connectedClients.bind(host, conn);
-	return conn;
-}
-
 bool Worker::forward(std::string forwardTo, const std::shared_ptr<HttpRequest> &request)
 {
 	static const char fname[] = "Worker::forward() ";
@@ -287,30 +160,5 @@ bool Worker::forward(std::string forwardTo, const std::shared_ptr<HttpRequest> &
 	const std::string host = uri.host;
 	uri.port = (uri.port <= 1024) ? Configuration::instance()->getRestTcpPort() : uri.port;
 
-	auto conn = getOrCreateConnection(host, uri.port);
-	if (!conn)
-	{
-		request->reply(web::http::status_codes::BadGateway, "Failed to connect to forwarding host");
-		return true;
-	}
-
-	// Register request before sending so the response callback can find it
-	if (!conn->addRequest(request->m_uuid, request))
-	{
-		request->reply(web::http::status_codes::BadGateway, "Forwarding connection closed");
-		return true;
-	}
-
-	auto data = request->serialize();
-	if (!conn->stream->send(std::move(data)))
-	{
-		// Send failed — remove pending request and notify caller
-		auto req = conn->takeRequest(request->m_uuid);
-		if (req)
-		{
-			req->reply(web::http::status_codes::BadGateway, "Failed to send to forwarding host");
-		}
-	}
-
-	return true;
+	return ForwardingManager::instance().forward(host, uri.port, request);
 }

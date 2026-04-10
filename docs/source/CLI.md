@@ -28,7 +28,8 @@ Application Management:
 
 Execution Commands:
   run           Execute commands or applications and retrieve output
-  shell         Execute commands with shell context emulation
+  exec          Execute a single remote shell command
+  shell         Start an interactive remote shell session, optionally with an initial command
 
 System Management:
   resource      Show host resources

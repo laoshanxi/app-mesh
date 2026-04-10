@@ -133,6 +133,7 @@ public:
 	bool getDisableExecUser() const;
 	const std::string getWorkDir() const;
 	bool getSslVerifyClient() const;
+	bool getSslVerifyServer() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	std::string getSSLCaPath() const;

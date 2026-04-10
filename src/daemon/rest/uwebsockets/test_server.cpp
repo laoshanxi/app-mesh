@@ -2,7 +2,6 @@
 #include "Service.h"
 
 #include <chrono>
-#include <condition_variable>
 #include <csignal>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -129,15 +128,10 @@ int main()
         replyCtx->replyWebSocket(response.dump(), true);
     });
 
-    // HTTP Route: Regex example - get user's specific resource
-    // Matches: /api/users/123/orders/456
-    server.routeRegex("GET", R"(/api/users/(\d+)/orders/(\d+))", [](auto * /*res*/, auto * /*req*/, auto replyCtx, const auto &match)
+    // HTTP Route: get user's specific order (exact match example)
+    server.route("GET", "/api/users/orders", [](auto * /*res*/, auto * /*req*/, auto replyCtx, const auto & /*match*/)
     {
-        std::string userId = match.getParam(0);
-        std::string orderId = match.getParam(1);
         json response = {
-            {"userId", userId},
-            {"orderId", orderId},
             {"status", "completed"},
             {"total", 99.99}
         };

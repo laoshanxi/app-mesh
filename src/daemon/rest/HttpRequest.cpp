@@ -29,7 +29,7 @@ HttpRequest::HttpRequest(Request &&request, int tcpClientId)
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
-	  m_tcpClientId(tcpClientId), m_lwsSession(0), m_uwsReplyContext(nullptr)
+	  m_tcpClientId(tcpClientId), m_lwsRef{}, m_uwsReplyContext(nullptr)
 {
 }
 
@@ -75,7 +75,7 @@ bool HttpRequest::reply(web::http::status_code status, const std::string &body_d
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, int tcpClientId, const void *wsi, std::shared_ptr<WSS::ReplyContext> ctx)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
@@ -83,7 +83,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, i
 	if (req.deserialize(input))
 	{
 		auto request = std::make_shared<HttpRequest>(std::move(req), tcpClientId);
-		request->m_lwsSession = wsi;
+		request->m_lwsRef = lwsRef;
 		request->m_uwsReplyContext = std::move(ctx);
 		return request;
 	}
@@ -178,12 +178,14 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		}
 	}
 #else
-	else if (m_lwsSession)
+	else if (m_lwsRef)
 	{
 		// WebSocket protocol or HTTP over WebSocketService
 		auto data = response->serialize();
 		auto resp = std::make_unique<WSResponse>();
-		resp->m_session_ref = const_cast<void *>(m_lwsSession);
+		resp->m_session_ref = const_cast<void *>(m_lwsRef.wsi);
+		resp->m_req_id = m_lwsRef.reqId;
+		resp->m_session_id = m_lwsRef.sessionId;
 		resp->m_payload = std::vector<std::uint8_t>(reinterpret_cast<const unsigned char *>(data->data()), reinterpret_cast<const unsigned char *>(data->data()) + data->size());
 		resp->m_is_http = m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) == HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));

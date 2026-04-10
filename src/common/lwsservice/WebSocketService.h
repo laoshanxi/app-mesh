@@ -85,7 +85,7 @@ public:
 
 private:
     // Internal helpers
-    void deliverResponse(const std::unique_ptr<WSResponse> &resp);
+    void deliverResponse(std::unique_ptr<WSResponse> resp);
     void broadcastMessage(const std::string &msg);
 
     // Threads
@@ -114,9 +114,11 @@ private:
     RESPONSE_QUEUE m_outgoing_queue;
 
     std::atomic<bool> m_is_running;
+    std::atomic<bool> m_use_worker_pool{false};
     std::atomic<uint64_t> m_next_request_id;
+    std::atomic<uint64_t> m_next_session_id{1};
 
     mutable std::mutex m_sessions_mutex;
-    std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions; // TODO: use ID to avoid address re-use
-    std::unordered_set<struct lws *> m_valid_http_wsi;
+    std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions;
+    std::unordered_set<struct lws *> m_valid_http_wsi; // IO-thread only
 };

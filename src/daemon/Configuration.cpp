@@ -341,6 +341,12 @@ bool Configuration::getSslVerifyClient() const
 	return m_rest->m_ssl->m_sslVerifyClient;
 }
 
+bool Configuration::getSslVerifyServer() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_ssl->m_sslVerifyServer;
+}
+
 std::string Configuration::getSSLCertificateFile() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);

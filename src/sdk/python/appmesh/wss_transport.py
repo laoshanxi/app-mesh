@@ -76,7 +76,7 @@ class WSSTransport:
     def __str__(self) -> str:
         """Return WSS URI representation."""
         host, port = self.address
-        scheme = "wss" if self.ssl_verify else "ws"
+        scheme = "wss"
         return f"{scheme}://{host}:{port}"
 
     def connect(self) -> None:

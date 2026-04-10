@@ -7,12 +7,10 @@
 #include <condition_variable>
 #include <cstring>
 #include <functional>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <set>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -88,6 +86,44 @@ namespace WSS
     // Forward declaration for ReplyContextPtr
     using ReplyContextPtr = std::shared_ptr<ReplyContext>;
 
+    // Shared guard to safely reference a uWS::Loop* that may be destroyed during shutdown.
+    // Provides atomic check-and-defer to prevent TOCTOU between validity check and loop->defer().
+    struct LoopGuard
+    {
+        explicit LoopGuard(uWS::Loop *l, std::thread::id tid)
+            : m_loop(l), m_threadId(tid) {}
+
+        void invalidate()
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_valid.store(false, std::memory_order_release);
+        }
+
+        bool isValid() const { return m_valid.load(std::memory_order_acquire); }
+
+        // Returns true if the caller is on this guard's event loop thread.
+        // Uses stored thread ID to avoid creating a spurious uWS::Loop on the calling thread.
+        bool isOnLoopThread() const { return std::this_thread::get_id() == m_threadId; }
+
+        // Atomically check validity and defer a function to the loop.
+        // Returns true if the function was successfully deferred.
+        template <typename Func>
+        bool deferIfValid(Func &&func)
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (!m_valid.load(std::memory_order_relaxed))
+                return false;
+            m_loop->defer(std::forward<Func>(func));
+            return true;
+        }
+
+    private:
+        uWS::Loop *m_loop;
+        const std::thread::id m_threadId;
+        std::atomic<bool> m_valid{true};
+        mutable std::mutex m_mutex;
+    };
+
     // Thread-safe WebSocket connection wrapper
     template <bool SSL>
     class WSConnection : public std::enable_shared_from_this<WSConnection<SSL>>
@@ -95,8 +131,8 @@ namespace WSS
     public:
         using WebSocketType = uWS::WebSocket<SSL, true, SessionData>;
 
-        WSConnection(WebSocketType *ws, std::string id, std::string protocol, uWS::Loop *loop)
-            : m_ws(ws), m_id(std::move(id)), m_protocol(std::move(protocol)), m_valid(true), m_loop(loop) {}
+        WSConnection(WebSocketType *ws, std::string id, std::string protocol, std::shared_ptr<LoopGuard> loopGuard)
+            : m_ws(ws), m_id(std::move(id)), m_protocol(std::move(protocol)), m_valid(true), m_loopGuard(std::move(loopGuard)) {}
 
         // Sends data to the client safely from ANY thread.
         void send(std::string &&data, uWS::OpCode opcode = uWS::OpCode::TEXT)
@@ -136,16 +172,17 @@ namespace WSS
         // Getter methods
         const std::string &getId() const { return m_id; }
         const std::string &getProtocol() const { return m_protocol; }
-        uWS::Loop *getLoop() const { return m_loop; }
 
     private:
-        // Helper function to execute a WebSocket operation on the owner thread
-        // The Func is a lambda taking a pointer to WebSocketType*
+        // Helper function to execute a WebSocket operation on the owner thread.
+        // Uses LoopGuard::deferIfValid() to prevent use-after-free on destroyed loops.
         template <typename Func>
         void runOnLoop(Func &&func)
         {
-            // WARNING: Ensure m_loop is valid if called after Server::stop().
-            if (uWS::Loop::get() == m_loop)
+            if (!m_loopGuard)
+                return;
+
+            if (m_loopGuard->isOnLoopThread())
             {
                 // We are on the owner thread, just execute if valid
                 WebSocketType *ws = nullptr;
@@ -162,8 +199,8 @@ namespace WSS
             }
             else
             {
-                // Defer to the owner loop. Capture shared_from_this() to keep object alive.
-                m_loop->defer([self = this->shared_from_this(), func = std::forward<Func>(func)]() mutable
+                // Defer to the owner loop using atomic check-and-defer
+                m_loopGuard->deferIfValid([self = this->shared_from_this(), func = std::forward<Func>(func)]() mutable
                 {
                     // Once inside the defer, we are on the owner thread
                     WebSocketType *ws = nullptr;
@@ -186,7 +223,7 @@ namespace WSS
         const std::string m_id;
         const std::string m_protocol;
         bool m_valid;
-        uWS::Loop *const m_loop;
+        std::shared_ptr<LoopGuard> m_loopGuard;
         mutable std::mutex m_mutex;
     };
 
@@ -212,14 +249,13 @@ namespace WSS
         {
             m_serverThreads.resize(m_numThreads);
             m_listenSockets.resize(m_numThreads, nullptr);
-            m_appLoops.resize(m_numThreads, nullptr);
             m_loopGuards.resize(m_numThreads);
             m_broadcasters.resize(m_numThreads);
         }
 
         ~Server()
         {
-            stop();
+            try { stop(); } catch (...) {} // Never throw from destructor
         }
 
         void checkNotRunning() const
@@ -295,12 +331,12 @@ namespace WSS
 
             for (int i = 0; i < m_numThreads; ++i)
             {
-                uWS::Loop *loop = m_appLoops[i];
                 auto broadcaster = m_broadcasters[i];
-                if (loop && broadcaster)
+                auto guard = m_loopGuards[i];
+                if (guard && broadcaster)
                 {
-                    // shared data to avoid copying for each thread
-                    loop->defer([broadcaster, data, opcode]()
+                    // Use atomic check-and-defer to prevent use-after-free on loop
+                    guard->deferIfValid([broadcaster, data, opcode]()
                     {
                         if (broadcaster && *broadcaster)
                         {
@@ -320,6 +356,8 @@ namespace WSS
 
         void start()
         {
+            std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
+
             if (m_running.exchange(true))
                 return;
 
@@ -339,40 +377,52 @@ namespace WSS
             {
                 int failures = m_listenFailures.load();
                 lock.unlock();
-                stop();
+                stopInternal();
                 throw std::runtime_error("Failed to listen on port " + std::to_string(m_port) + " (" + std::to_string(failures) + " of " + std::to_string(m_numThreads) + " threads failed)");
             }
         }
 
         void stop()
         {
+            std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
+            stopInternal();
+        }
+
+        bool isRunning() const { return m_running.load(); }
+
+    private:
+        void stopInternal()
+        {
+            // Detect stop() called from event loop thread (would deadlock on join).
+            // Check before acquiring state lock so no state is modified on throw.
+            for (int i = 0; i < m_numThreads; ++i)
+            {
+                if (m_loopGuards[i] && m_loopGuards[i]->isOnLoopThread())
+                    throw std::runtime_error("Cannot call stop() from a uWS event loop thread");
+            }
+
             // Take write lock to prevent broadcast/routes from accessing loops during destruction
             std::unique_lock<std::shared_mutex> stateLock(m_stateMutex);
 
-            if (!m_running.exchange(false))
+            if (!m_running.load())
                 return;
 
-            // 0. Invalidate all loop guards (prevents workers from deferring to destroyed loops)
-            for (auto &guard : m_loopGuards)
-            {
-                if (guard)
-                    guard->invalidate();
-            }
+            m_running.store(false);
 
             // 1. Close all listen sockets to prevent new connections
-            for (size_t i = 0; i < m_appLoops.size(); ++i)
+            for (size_t i = 0; i < m_loopGuards.size(); ++i)
             {
-                if (m_appLoops[i] && m_listenSockets[i])
+                if (m_loopGuards[i] && m_listenSockets[i])
                 {
                     us_listen_socket_t *socket = m_listenSockets[i];
-                    m_appLoops[i]->defer([socket]()
+                    m_loopGuards[i]->deferIfValid([socket]()
                     {
                         us_listen_socket_close(0, socket);
                     });
                 }
             }
 
-            // 2. Force close all existing connections
+            // 2. Force close all existing connections (before invalidating loop guards)
             {
                 std::vector<WSConnectionPtr> connectionsToClose;
                 {
@@ -391,10 +441,17 @@ namespace WSS
                 }
             }
 
+            // 3. Invalidate all loop guards (prevents external callers from deferring to destroyed loops)
+            for (auto &guard : m_loopGuards)
+            {
+                if (guard)
+                    guard->invalidate();
+            }
+
             // Release lock here to allow loops to process the close events
             stateLock.unlock();
 
-            // 3. Join threads
+            // 4. Join threads
             for (auto &thread : m_serverThreads)
             {
                 if (thread.joinable())
@@ -405,7 +462,6 @@ namespace WSS
             stateLock.lock();
 
             // Cleanup
-            m_appLoops.assign(m_numThreads, nullptr);
             m_loopGuards.assign(m_numThreads, nullptr);
             m_listenSockets.assign(m_numThreads, nullptr);
 
@@ -420,24 +476,11 @@ namespace WSS
             }
         }
 
-        bool isRunning() const { return m_running.load(); }
-
-    private:
         struct ResponseState
         {
             std::atomic<bool> aborted{false};
             std::atomic<bool> responded{false};
-            bool headersWritten{false};
-        };
-
-        // Shared guard to safely reference a uWS::Loop* that may be destroyed during shutdown.
-        struct LoopGuard
-        {
-            uWS::Loop *loop;
-            std::atomic<bool> valid{true};
-            explicit LoopGuard(uWS::Loop *l) : loop(l) {}
-            void invalidate() { valid.store(false, std::memory_order_release); }
-            bool isValid() const { return valid.load(std::memory_order_acquire); }
+            std::atomic<bool> headersWritten{false};
         };
 
         static std::string toUpperCase(const std::string &str)
@@ -468,7 +511,7 @@ namespace WSS
             auto replyCtx = std::make_shared<ReplyContext>(ReplyContext::ProtocolType::Http,
                 [res, state, loopGuard](std::string &&data, const std::string &status, const std::map<std::string, std::string> &headers, const std::string &contentType, bool isLast, bool /*isBinary*/)
                 {
-                    // Server shutting down, loop no longer valid - silently drop
+                    // Fast-path check (non-atomic, may be stale); deferIfValid() is the real safety gate.
                     if (!loopGuard || !loopGuard->isValid())
                         return;
 
@@ -484,20 +527,20 @@ namespace WSS
                             if (state->aborted || state->responded)
                                 return;
 
-                            if (!state->headersWritten)
+                            if (!state->headersWritten.load(std::memory_order_relaxed))
                             {
                                 res->writeStatus(status);
                                 for (const auto &[key, value] : headers)
                                     res->writeHeader(key, value);
                                 if (!contentType.empty())
                                     res->writeHeader("Content-Type", contentType);
-                                state->headersWritten = true;
+                                state->headersWritten.store(true, std::memory_order_relaxed);
                             }
 
                             if (isLast)
                             {
                                 res->end(data);
-                                state->responded = true;
+                                state->responded.store(true, std::memory_order_relaxed);
                             }
                             else
                             {
@@ -506,20 +549,20 @@ namespace WSS
                         });
                     };
 
-                    // Check if we're on the same thread
-                    if (uWS::Loop::get() == loopGuard->loop)
+                    // Use atomic check-and-defer to prevent use-after-free on loop
+                    if (loopGuard->isOnLoopThread())
                     {
                         writeResponse();
                     }
-                    else if (loopGuard->isValid())
+                    else
                     {
-                        loopGuard->loop->defer(std::move(writeResponse));
+                        loopGuard->deferIfValid(std::move(writeResponse));
                     }
                 });
 
             res->onAborted([state, weakCtx = std::weak_ptr<ReplyContext>(replyCtx)]()
             {
-                state->aborted = true;
+                state->aborted.store(true, std::memory_order_release);
                 if (auto ctx = weakCtx.lock())
                     ctx->markAborted();
             });
@@ -605,21 +648,23 @@ namespace WSS
                     app.publish("broadcast", data, opcode);
                 });
 
-            m_broadcasters[threadId] = std::move(broadcaster);
-
             setupRoutes(app, threadId);
 
-            app.listen(m_port, [this, threadId](auto *socket)
+            app.listen(m_port, [this, threadId, &broadcaster](auto *socket)
             {
-                m_appLoops[threadId] = uWS::Loop::get();
-                m_loopGuards[threadId] = std::make_shared<LoopGuard>(uWS::Loop::get());
-                if (socket)
                 {
-                    m_listenSockets[threadId] = socket;
-                }
-                else
-                {
-                    m_listenFailures.fetch_add(1);
+                    // Synchronize with broadcast()/stop() which read these under m_stateMutex
+                    std::unique_lock<std::shared_mutex> lock(m_stateMutex);
+                    m_broadcasters[threadId] = broadcaster;
+                    m_loopGuards[threadId] = std::make_shared<LoopGuard>(uWS::Loop::get(), std::this_thread::get_id());
+                    if (socket)
+                    {
+                        m_listenSockets[threadId] = socket;
+                    }
+                    else
+                    {
+                        m_listenFailures.fetch_add(1);
+                    }
                 }
                 {
                     std::lock_guard<std::mutex> lock(m_startMutex);
@@ -630,9 +675,13 @@ namespace WSS
 
             app.run();
 
-            // Clear the broadcaster before local app is destroyed.
-            if (m_broadcasters[threadId])
-                *m_broadcasters[threadId] = nullptr;
+            // Clear the broadcaster under lock before local app is destroyed,
+            // to prevent broadcast() from invoking a dangling app reference.
+            {
+                std::unique_lock<std::shared_mutex> lock(m_stateMutex);
+                if (m_broadcasters[threadId])
+                    *m_broadcasters[threadId] = nullptr;
+            }
         }
 
         AppType createApp()
@@ -685,14 +734,14 @@ namespace WSS
                          req->getHeader("sec-websocket-extensions"),
                          context);
                  },
-                 .open = [this](auto *ws)
+                 .open = [this, threadId](auto *ws)
                  {
                      enableTcpNoDelay(ws->getNativeHandle());
                      ws->subscribe("broadcast"); // Subscribe to the global broadcast topic
 
                      SessionData *data = ws->getUserData();
                      if (!data) return;
-                     auto connection = createConnection(ws, data->subProtocol);
+                     auto connection = createConnection(ws, data->subProtocol, threadId);
                      data->connectionPtr = connection;
 
                      if (auto handler = m_wsOpenHandler)
@@ -756,11 +805,10 @@ namespace WSS
             });
         }
 
-        WSConnectionPtr createConnection(WebSocketType *ws, const std::string &subProtocol)
+        WSConnectionPtr createConnection(WebSocketType *ws, const std::string &subProtocol, int threadId)
         {
-            uWS::Loop *currentLoop = uWS::Loop::get();
             std::string connId = "appmesh-ws-" + std::to_string(m_nextConnId.fetch_add(1));
-            auto connection = std::make_shared<WSConnectionType>(ws, connId, subProtocol, currentLoop);
+            auto connection = std::make_shared<WSConnectionType>(ws, connId, subProtocol, m_loopGuards[threadId]);
             std::unique_lock<std::shared_mutex> lock(m_connectionsMutex);
             m_connections[connId] = connection;
             return connection;
@@ -788,13 +836,13 @@ namespace WSS
         std::atomic<int> m_listenFailures{0};
 
         std::vector<std::thread> m_serverThreads;
-        std::vector<uWS::Loop *> m_appLoops;
         std::vector<std::shared_ptr<LoopGuard>> m_loopGuards;
         std::vector<us_listen_socket_t *> m_listenSockets;
         std::vector<std::shared_ptr<std::function<void(std::string_view, uWS::OpCode)>>> m_broadcasters;
 
         std::mutex m_startMutex;
         std::condition_variable m_startCv;
+        std::mutex m_lifecycleMutex; // Serializes start()/stop() calls
 
         std::unordered_map<std::string, HttpHandler> m_exactRoutes;
         std::unordered_map<std::string, HttpHandler> m_fallbackRoutes; // Per-method fallback handlers

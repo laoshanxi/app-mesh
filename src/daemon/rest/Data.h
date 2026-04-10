@@ -1,5 +1,6 @@
 // src/daemon/rest/Data.h
 #pragma once
+#include <cstdint>
 #include <tuple>
 #include <vector>
 
@@ -18,6 +19,16 @@
 #include "../../common/HttpHeaderMap.h"
 
 using ByteBuffer = std::vector<std::uint8_t>;
+
+// Bundles all lws-related fields into a single per-protocol reference.
+// Used by HttpRequest and HttpRequestContext to maintain "one reference per protocol".
+struct LwsSessionRef
+{
+	const void *wsi = nullptr;
+	uint64_t reqId = 0;		// ABA protection for HTTP responses
+	uint64_t sessionId = 0; // ABA protection for WS sessions
+	explicit operator bool() const { return wsi != nullptr; }
+};
 
 class Response
 {
