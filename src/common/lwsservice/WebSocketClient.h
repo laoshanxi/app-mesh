@@ -68,7 +68,7 @@ public:
     Client(const Client &) = delete;
     Client &operator=(const Client &) = delete;
 
-    // Configuration
+    // Configuration (must be called before connect/createContext)
     void setConfig(const ConnectionConfig &config);
 
     // Callbacks
@@ -110,11 +110,13 @@ private:
 
     ConnectionConfig m_config;
     std::vector<struct lws_protocols> m_protocols;
-    struct lws_context *m_context;
-    struct lws *m_wsi;
+    std::atomic<struct lws_context *> m_context{nullptr};
+    std::atomic<struct lws *> m_wsi{nullptr};
 
-    std::atomic<bool> m_connected;
-    std::atomic<bool> m_running;
+    std::atomic<bool> m_connected{false};
+    std::atomic<bool> m_running{false};
+    std::atomic<bool> m_disconnect_requested{false};
+    std::atomic<bool> m_context_created{false};
     std::shared_ptr<std::thread> m_event_thread;
 
     OnConnectCallback m_on_connect;
@@ -122,7 +124,7 @@ private:
     OnMessageCallback m_on_message;
     OnErrorCallback m_on_error;
 
-    std::vector<std::uint8_t> m_receive_buffer;
+    std::vector<std::uint8_t> m_receive_buffer; // IO-thread only
     std::queue<Message> m_message_queue;
     mutable std::mutex m_queue_mutex;
     std::mutex m_callback_mutex;

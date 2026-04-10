@@ -4,7 +4,6 @@
 
 #include <atomic>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <string>
 #include <map>
@@ -48,8 +47,8 @@ namespace WSS
         // Prevents further callbacks and releases captured resources.
         void markAborted()
         {
-            m_aborted.store(true, std::memory_order_release);
             std::lock_guard<std::mutex> lock(m_mutex);
+            m_aborted.store(true, std::memory_order_release);
             m_completed = true;
             m_callback = nullptr;
         }

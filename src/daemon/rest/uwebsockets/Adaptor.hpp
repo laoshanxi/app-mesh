@@ -2,16 +2,12 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <csignal>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <string_view>
-#include <thread>
 #include <vector>
 
 #include <ace/INET_Addr.h>
@@ -20,13 +16,12 @@
 #include "../../../common/Utility.h"
 #include "../../Configuration.h"
 #include "../../security/JwtToken.h"
-#include "../RestHandler.h"
 #include "../Worker.h"
 #include "Service.h"
 
-using json = nlohmann::json;
-static constexpr std::size_t DOWNLOAD_CHUNK_SIZE = 64 * 1024;        // 64KB
-static constexpr std::size_t MAX_HTTP_BODY_SIZE = 500 * 1024 * 1024; // 500MB
+inline constexpr std::size_t DOWNLOAD_CHUNK_SIZE = 64 * 1024;         // 64KB
+inline constexpr std::size_t MAX_UPLOAD_SIZE = 500 * 1024 * 1024;     // 500MB
+inline constexpr std::size_t MAX_JWT_TOKEN_LENGTH = 8 * 1024;         // 8KB
 
 // Manages the lifecycle of the UWebSocket Secure (WSS) server.
 class WebSocketAdaptor
@@ -94,7 +89,7 @@ private:
     // Helper function to verify token
     static bool verifyToken(std::string_view token, const std::string &audience)
     {
-        if (token.empty())
+        if (token.empty() || token.size() > MAX_JWT_TOKEN_LENGTH)
             return false;
         try
         {
@@ -125,12 +120,13 @@ private:
     template <typename Res, typename Req>
     static void addCors(Res *res, Req *req)
     {
-        std::string reqHeaders = std::string(req->getHeader("access-control-request-headers"));
-        res->writeHeader("Access-Control-Allow-Origin", "*")->writeHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        if (!reqHeaders.empty())
-        {
-            res->writeHeader("Access-Control-Allow-Headers", reqHeaders);
-        }
+        if (Configuration::instance()->getCorsDisabled())
+            return;
+
+        res->writeHeader("Access-Control-Allow-Origin", "*")
+            ->writeHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            ->writeHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-File-Path, X-CSRF-Token");
+        (void)req; // CORS headers are now a fixed allow-list, not echoed from request
     }
 
     // State management for async download streaming
@@ -294,7 +290,14 @@ private:
             return;
         }
 
-        std::filesystem::path filePath(filePathHeader);
+        std::string filePathStr(filePathHeader);
+        if (!Utility::validateFilePath(filePathStr, Configuration::instance()->getFileAllowedBaseDir()))
+        {
+            res->writeStatus("403 Forbidden")->end("Invalid file path");
+            return;
+        }
+
+        std::filesystem::path filePath(filePathStr);
         std::error_code ec;
         if (!std::filesystem::exists(filePath, ec))
         {
@@ -326,7 +329,6 @@ private:
         }
 
         std::string fileName = sanitizeFilename(filePath.filename().string());
-        std::string filePathStr = filePath.string();
 
         // Set response headers
         res->writeHeader("Content-Type", "application/octet-stream");
@@ -405,9 +407,13 @@ private:
 
                 offset += bytesRead;
             }
+
+            // If we exit the loop without tryEnd returning done=true (e.g. file truncated),
+            // close the connection instead of calling end() which would conflict with tryEnd's content-length.
             if (!state->finished.exchange(true, std::memory_order_acq_rel))
             {
-                res->end();
+                LOG_WAR << fname << "Download ended without tryEnd completion, closing connection";
+                res->close();
             }
 
             return false; // Deregister handler
@@ -443,17 +449,35 @@ private:
             return;
         }
 
-        std::filesystem::path filePath(filePathHeader);
-        std::string fullPath = filePath.string();
-        std::error_code ec;
-
-        if (std::filesystem::exists(filePath, ec))
+        std::string fullPath(filePathHeader);
+        if (!Utility::validateFilePath(fullPath, Configuration::instance()->getFileAllowedBaseDir()))
         {
-            res->writeStatus("409 Conflict")->end("File already exists");
+            res->writeStatus("403 Forbidden")->end("Invalid file path");
             return;
         }
 
+        std::filesystem::path filePath(fullPath);
+
+        // Check symlink first (catches both existing and dangling symlinks)
+        {
+            std::error_code ec;
+            if (std::filesystem::is_symlink(filePath, ec))
+            {
+                res->writeStatus("400 Bad Request")->end("Symlinks not allowed");
+                return;
+            }
+        }
+        {
+            std::error_code ec;
+            if (std::filesystem::exists(filePath, ec))
+            {
+                res->writeStatus("409 Conflict")->end("File already exists");
+                return;
+            }
+        }
+
         auto parentPath = filePath.parent_path();
+        std::error_code ec;
         if (!parentPath.empty() && !std::filesystem::exists(parentPath, ec))
         {
             if (!std::filesystem::create_directories(parentPath, ec))
@@ -497,6 +521,23 @@ private:
             if (state->hasError.load(std::memory_order_acquire) ||
                 state->responded.load(std::memory_order_acquire))
             {
+                return;
+            }
+
+            // Enforce upload size limit
+            if (state->totalBytes + chunk.length() > MAX_UPLOAD_SIZE)
+            {
+                LOG_ERR << fname << "Upload exceeds size limit for file: " << state->path;
+                state->hasError.store(true, std::memory_order_release);
+                state->file.close();
+
+                std::error_code rmEc;
+                std::filesystem::remove(state->path, rmEc);
+
+                if (!state->responded.exchange(true, std::memory_order_acq_rel))
+                {
+                    res->writeStatus("413 Payload Too Large")->end("Upload exceeds size limit");
+                }
                 return;
             }
 
@@ -546,7 +587,8 @@ private:
 
                 if (!state->responded.exchange(true, std::memory_order_acq_rel))
                 {
-                    json resp = {{"status", "success"}, {"path", state->path}, {"size", state->totalBytes}};
+                    std::string fileName = std::filesystem::path(state->path).filename().string();
+                    nlohmann::json resp = {{"status", "success"}, {"file", fileName}, {"size", state->totalBytes}};
                     res->writeStatus("201 Created");
                     res->writeHeader("Content-Type", "application/json");
                     res->end(resp.dump());

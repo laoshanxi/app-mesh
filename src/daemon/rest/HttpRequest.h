@@ -59,7 +59,7 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
-	static std::shared_ptr<HttpRequest> deserialize(const ByteBuffer &input, int tcpClientId, const void *wsi, std::shared_ptr<WSS::ReplyContext> ctx);
+	static std::shared_ptr<HttpRequest> deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx);
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
@@ -80,7 +80,7 @@ public:
 
 private:
 	const int m_tcpClientId;
-	const void *m_lwsSession;
+	LwsSessionRef m_lwsRef;
 	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;
 };
 

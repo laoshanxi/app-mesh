@@ -3,9 +3,12 @@
 #include "../JwtHelper.h"
 #include "../UriParser.hpp"
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 constexpr int LWS_RX_BUFFER_SIZE = 8192;
+constexpr size_t MAX_CLIENT_MSG_SIZE = 64 * 1024 * 1024; // 64 MB limit
 
 // Protocol callback
 int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
@@ -46,7 +49,7 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
             pss->client->handleConnect();
         }
         break;
-    // 4. recieve data
+    // 4. receive data
     case LWS_CALLBACK_CLIENT_RECEIVE:
     {
         if (!pss || !pss->client)
@@ -61,7 +64,6 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
             pss->client->m_receive_buffer.clear();
         }
 
-        constexpr size_t MAX_CLIENT_MSG_SIZE = 1024 * 1024 * 1024; // 1GB
         if (pss->client->m_receive_buffer.size() + len > MAX_CLIENT_MSG_SIZE)
         {
             lwsl_err("Message size exceeded limit\n");
@@ -83,11 +85,29 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
     }
 
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
-        if (pss && pss->client && pss->client->hasMessages())
+        if (pss && pss->client)
         {
-            // Now we are in the IO thread, safe to request writeable
-            if (pss->client->m_wsi)
-                lws_callback_on_writable(pss->client->m_wsi);
+            // Handle pending disconnect request on the IO thread
+            if (pss->client->m_disconnect_requested.load())
+            {
+                pss->client->m_disconnect_requested.store(false);
+                struct lws *cur_wsi = pss->client->m_wsi.load();
+                pss->client->m_connected.store(false);
+                pss->client->m_wsi.store(nullptr);
+                if (cur_wsi)
+                {
+                    lws_set_opaque_user_data(cur_wsi, nullptr);
+                    lws_set_timeout(cur_wsi, PENDING_TIMEOUT_CLOSE_ACK, 1);
+                }
+                break;
+            }
+            // Handle pending messages
+            if (pss->client->hasMessages())
+            {
+                struct lws *cur_wsi = pss->client->m_wsi.load();
+                if (cur_wsi)
+                    lws_callback_on_writable(cur_wsi);
+            }
         }
         break;
 
@@ -102,6 +122,7 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
         lwsl_user("CLIENT_CLOSED\n");
         if (pss && pss->client)
         {
+            pss->client->m_wsi.store(nullptr);
             pss->client->handleDisconnect();
         }
         break;
@@ -110,6 +131,7 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
         lwsl_err("CLIENT_CONNECTION_ERROR: %s\n", in ? (char *)in : "(null)");
         if (pss && pss->client)
         {
+            pss->client->m_wsi.store(nullptr);
             pss->client->handleError(in ? (char *)in : "Connection error");
             pss->client->handleDisconnect();
         }
@@ -125,19 +147,31 @@ int websocket_callback(struct lws *wsi, enum lws_callback_reasons reason, void *
 // Client implementation
 Client::Client()
     : m_context(nullptr), m_wsi(nullptr),
-      m_connected(false), m_running(false)
+      m_connected(false), m_running(false),
+      m_disconnect_requested(false), m_context_created(false)
 {
 }
 
 Client::~Client()
 {
-    stop();
     disconnect();
+    if (m_event_thread)
+    {
+        // Wait for IO thread to process disconnect (bounded wait to avoid hang)
+        for (int i = 0; i < 50 && m_connected.load(); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    stop();
     destroyContext();
 }
 
+// Guard against setConfig after createContext
 void Client::setConfig(const ConnectionConfig &config)
 {
+    if (m_context_created)
+    {
+        throw std::logic_error("Cannot call setConfig after context is created");
+    }
     m_config = config;
 }
 
@@ -167,7 +201,7 @@ void Client::onError(OnErrorCallback callback)
 
 bool Client::createContext()
 {
-    if (m_context)
+    if (m_context.load())
         return true;
 
     // CLEAR and RESIZE the member vector
@@ -180,7 +214,7 @@ bool Client::createContext()
     m_protocols[0].per_session_data_size = sizeof(ProtocolSession);
     m_protocols[0].rx_buffer_size = LWS_RX_BUFFER_SIZE;
     m_protocols[0].id = 0;
-    m_protocols[0].user = NULL; // in LWS_CALLBACK_PROTOCOL_INIT, cannot use lws_get_opaque_user_data(wsi), can choose this: client = (Client *)lws_context_user(lws_get_context(wsi));
+    m_protocols[0].user = NULL;
     m_protocols[0].tx_packet_size = 0;
 
     // Configure Terminator
@@ -216,28 +250,31 @@ bool Client::createContext()
 
     lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);
 
-    m_context = lws_create_context(&info);
-    if (!m_context)
+    auto *ctx = lws_create_context(&info);
+    if (!ctx)
     {
         lwsl_err("lws_create_context failed\n");
         return false;
     }
 
+    m_context.store(ctx);
+    m_context_created = true;
     return true;
 }
 
 void Client::destroyContext()
 {
-    if (m_context)
+    auto *ctx = m_context.exchange(nullptr);
+    if (ctx)
     {
-        lws_context_destroy(m_context);
-        m_context = nullptr;
+        lws_context_destroy(ctx);
     }
+    m_context_created = false;
 }
 
 bool Client::connect()
 {
-    if (m_connected)
+    if (m_connected.load())
     {
         return true;
     }
@@ -258,7 +295,7 @@ bool Client::connect()
         path_with_query += "?" + u.query;
     }
 
-    info.context = m_context;
+    info.context = m_context.load();
     info.port = u.port;
     info.address = u.host.c_str();
     info.path = path_with_query.c_str();
@@ -266,15 +303,17 @@ bool Client::connect()
     info.origin = info.address;
     info.protocol = m_config.protocol_name.c_str();
     info.ietf_version_or_minus_one = -1;
-    info.pwsi = &m_wsi;
     info.opaque_user_data = this;
+
+    // Use temp variable for pwsi since m_wsi is atomic
+    struct lws *new_wsi = nullptr;
+    info.pwsi = &new_wsi;
 
     // SSL configuration
     info.ssl_connection = 0;
     if (m_config.ssl_config)
     {
         info.ssl_connection = LCCSCF_USE_SSL;
-        // info.sys_tls_client_cert = 0; // 0 means don't use system client cert
         if (!m_config.ssl_config->m_verify_server)
         {
             info.ssl_connection |= LCCSCF_ALLOW_SELFSIGNED |
@@ -301,60 +340,70 @@ bool Client::connect()
         return false;
     }
 
+    // Store atomically. Tiny race window with event loop reading m_wsi is benign:
+    // EVENT_WAIT_CANCELLED checks m_wsi.load() and safely skips if still null.
+    m_wsi.store(new_wsi);
     return true;
 }
 
+// Disconnect via IO thread to avoid calling non-thread-safe lws APIs
 void Client::disconnect()
 {
-    struct lws *wsi_copy = m_wsi;
-    m_connected = false;
-    m_wsi = nullptr; // Clear pointer before timeout
+    if (!m_connected.load() && !m_wsi.load())
+        return;
 
-    if (wsi_copy)
-    {
-        lws_set_opaque_user_data(wsi_copy, nullptr);
-        lws_set_timeout(wsi_copy, PENDING_TIMEOUT_CLOSE_ACK, 1);
-    }
+    m_disconnect_requested.store(true);
+    auto *ctx = m_context.load();
+    if (ctx)
+        lws_cancel_service(ctx);
 }
 
 bool Client::isConnected() const
 {
-    return m_connected;
+    return m_connected.load();
 }
 
 bool Client::sendText(const std::string &message)
 {
-    if (!m_connected || !m_wsi)
+    if (!m_connected.load() || !m_wsi.load())
         return false;
 
     enqueueMessage(Message(message));
 
-    // The loop will then trigger EVENT_WAIT_CANCELLED or process the queue naturally
-    lws_cancel_service(m_context);
+    auto *ctx = m_context.load();
+    if (ctx)
+        lws_cancel_service(ctx);
 
     return true;
 }
 
 bool Client::sendBinary(const std::vector<std::uint8_t> &data)
 {
-    if (!m_connected || !m_wsi)
-    {
+    if (!m_connected.load() || !m_wsi.load())
         return false;
-    }
 
     enqueueMessage(Message(data));
-    lws_cancel_service(m_context);
+    auto *ctx = m_context.load();
+    if (ctx)
+        lws_cancel_service(ctx);
 
     return true;
 }
 
 void Client::run()
 {
-    m_running = true;
-    while (m_running && !lws_service(m_context, 0))
+    m_running.store(true);
+    auto *ctx = m_context.load();
+    while (m_running.load() && ctx && lws_service(ctx, 0) >= 0)
     {
-        // Event loop following official examples
+        ctx = m_context.load();
     }
+    // Handle unexpected exit (lws_service returned < 0)
+    if (m_connected.exchange(false))
+    {
+        handleDisconnect();
+    }
+    m_running.store(false);
 }
 
 void Client::runAsync()
@@ -368,9 +417,13 @@ void Client::runAsync()
                                                    { run(); });
 }
 
+// Call lws_cancel_service to unblock lws_service before joining
 void Client::stop()
 {
-    m_running = false;
+    m_running.store(false);
+    auto *ctx = m_context.load();
+    if (ctx)
+        lws_cancel_service(ctx);
     if (m_event_thread && m_event_thread->joinable())
     {
         m_event_thread->join();
@@ -380,15 +433,16 @@ void Client::stop()
 
 void Client::poll(int timeout_ms)
 {
-    if (m_context)
+    auto *ctx = m_context.load();
+    if (ctx)
     {
-        lws_service(m_context, timeout_ms);
+        lws_service(ctx, timeout_ms);
     }
 }
 
 void Client::handleConnect()
 {
-    m_connected = true;
+    m_connected.store(true);
     std::lock_guard<std::mutex> lock(m_callback_mutex);
     if (m_on_connect)
     {
@@ -398,7 +452,7 @@ void Client::handleConnect()
 
 void Client::handleDisconnect()
 {
-    m_connected = false;
+    m_connected.store(false);
     std::lock_guard<std::mutex> lock(m_callback_mutex);
     if (m_on_disconnect)
     {
@@ -444,7 +498,11 @@ void Client::handleWritable()
     // Determine write flags
     lws_write_protocol protocol = msg.is_binary ? LWS_WRITE_BINARY : LWS_WRITE_TEXT;
 
-    int written = lws_write(m_wsi, buffer.data() + LWS_PRE, msg.data.size(), protocol);
+    struct lws *cur_wsi = m_wsi.load();
+    if (!cur_wsi)
+        return;
+
+    int written = lws_write(cur_wsi, buffer.data() + LWS_PRE, msg.data.size(), protocol);
     if (written < 0)
     {
         lwsl_err("lws_write error\n");
@@ -454,7 +512,7 @@ void Client::handleWritable()
     // Request callback if more messages pending
     if (hasMessages())
     {
-        lws_callback_on_writable(m_wsi);
+        lws_callback_on_writable(cur_wsi);
     }
 }
 

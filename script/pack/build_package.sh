@@ -15,6 +15,34 @@ die() { log "ERROR" "$@" && exit 1; }
 [[ -z "${CMAKE_BINARY_DIR:-}" ]] && die "CMAKE_BINARY_DIR is not set"
 [[ ! -d "${CMAKE_BINARY_DIR}" ]] && die "Directory ${CMAKE_BINARY_DIR} does not exist"
 
+################################################################################
+# macOS Code Signing Function
+################################################################################
+codesign_macos_binaries() {
+    local package_root="$1"
+    [[ -z "$package_root" ]] && die "package_root parameter required"
+    [[ ! -d "$package_root" ]] && die "Package root does not exist: $package_root"
+    
+    info "Ad-hoc code signing binaries and libraries in $package_root..."
+    
+    local signed_count=0
+    local failed_count=0
+    local lib_suffix=".dylib"
+    
+    # Find and sign all dylibs and executable files
+    while IFS= read -r -d '' file; do
+        if codesign --force --sign - "$file" 2>/dev/null; then
+            ((signed_count++))
+        else
+            log "WARNING: Failed to sign: $file"
+            ((failed_count++))
+        fi
+    done < <(find "$package_root" -type f \( -name "*${lib_suffix}" -o -perm -111 \) -print0)
+    
+    info "Code signing completed: $signed_count signed, $failed_count failed"
+    return 0
+}
+
 
 info "Packaging contents of: ${PACKAGE_HOME}"
 # Clean previous artifacts
@@ -56,6 +84,9 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     # We also ensure the BundlePostInstallScriptPath is respected
     plutil -replace BundleIsRelocatable -bool YES "${COMPONENT_PLIST}" 2>/dev/null || \
     sed -i '' 's/<false\/>/<true\/>/g' "${COMPONENT_PLIST}" # Fallback if plutil fails
+
+    # Code sign all binaries and libraries before packaging
+    codesign_macos_binaries "${PACKAGE_HOME}"
 
     info "Building Relocatable PKG..."
     pkgbuild --root "${PACKAGE_HOME}" \

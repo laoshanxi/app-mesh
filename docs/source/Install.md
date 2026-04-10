@@ -52,7 +52,7 @@ sudo -E apt install appmesh_2.2.1_gcc_7_glibc_2.27_x86_64.deb
 # SUSE
 sudo zypper install appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm
 # macOS
-sudo installer -pkg appmesh_2.2.1_clang_16_macos_15_arm64.pkg -target /
+sudo installer -pkg appmesh_2.2.1_clang_17_macos_15_arm64.pkg -target /
 # Note: use sudo -E to pass current environment variables
 ```
 

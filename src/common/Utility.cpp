@@ -278,16 +278,30 @@ bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string 
 	fs::path resolvedPath = fs::canonical(file, ec);
 	if (ec)
 	{
-		// File does not exist yet (e.g. upload target). Canonicalize the parent
-		// directory — which must exist — then append the bare filename.
-		// Never fall back to fs::absolute: it does not resolve symlinks or "..".
-		fs::path canonicalParent = fs::canonical(file.parent_path(), ec);
+		// File does not exist yet (e.g. upload target). Walk up to find the nearest
+		// existing ancestor, canonicalize it, then re-append the remaining components.
+		// This allows uploads to new subdirectories within the allowed base.
+		fs::path remaining;
+		fs::path ancestor = file;
+		while (!ancestor.empty())
+		{
+			fs::path parent = ancestor.parent_path();
+			if (parent == ancestor)
+				break; // reached root
+			remaining = ancestor.filename() / remaining;
+			ancestor = parent;
+			fs::path canonicalAncestor = fs::canonical(ancestor, ec);
+			if (!ec)
+			{
+				resolvedPath = canonicalAncestor / remaining;
+				break;
+			}
+		}
 		if (ec)
 		{
-			// Parent directory does not exist either — reject.
+			// No existing ancestor found — reject.
 			return false;
 		}
-		resolvedPath = canonicalParent / file.filename();
 	}
 
 	// Ensure resolvedPath starts with canonicalBase (prefix check).
@@ -305,6 +319,23 @@ bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string 
 		return false;
 	}
 
+	return true;
+}
+
+bool Utility::validateFilePath(const std::string &filePath, const std::string &allowedBaseDir)
+{
+	// Reject null bytes
+	if (filePath.find('\0') != std::string::npos)
+		return false;
+	// Reject ".." path components (component-level check avoids false positives on names like "..hidden")
+	for (const auto &component : std::filesystem::path(filePath))
+	{
+		if (component == "..")
+			return false;
+	}
+	// Enforce base-directory jail when configured
+	if (!allowedBaseDir.empty() && !isPathTraversalSafe(allowedBaseDir, filePath))
+		return false;
 	return true;
 }
 

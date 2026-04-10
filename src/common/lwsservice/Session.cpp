@@ -1,7 +1,6 @@
 // src/common/lwsservice/Session.cpp
 #include "Session.h"
 #include "../../daemon/rest/HttpRequest.h"
-#include "../../daemon/rest/RestHandler.h"
 #include "../../daemon/rest/Worker.h"
 #include "../../daemon/security/JwtToken.h"
 #include "WebSocketService.h"
@@ -10,20 +9,21 @@ void WSRequest::reply(std::vector<std::uint8_t> &&data) const
 {
     auto resp = std::make_unique<WSResponse>();
     resp->m_session_ref = m_session_ref;
+    resp->m_session_id = m_session_id;
     resp->m_req_id = m_req_id;
     resp->m_payload = std::move(data);
     resp->m_is_http = (m_type == Type::HttpMessage);
     WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 }
 
-WebSocketSession::WebSocketSession(lws *lws)
-    : m_lws(lws), m_connected_at(std::time(nullptr))
+WebSocketSession::WebSocketSession(lws *lws, uint64_t id)
+    : m_lws(lws), m_id(id), m_connected_at(std::time(nullptr))
 {
 }
 
 void WebSocketSession::handleRequest(const WSRequest &req)
 {
-    auto request = HttpRequest::deserialize(req.m_payload, -1, req.m_session_ref, nullptr);
+    auto request = HttpRequest::deserialize(req.m_payload, -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, nullptr);
     WORKER::instance()->process(request);
 }
 
@@ -40,17 +40,20 @@ bool WebSocketSession::verifyToken(const std::string &token)
     return false;
 }
 
-void WebSocketSession::enqueueOutgoingMessage(std::vector<std::uint8_t> &&payload)
+bool WebSocketSession::enqueueOutgoingMessage(std::vector<std::uint8_t> &&payload)
 {
-    // Allocate once: LWS_PRE + Payload
-    // CRITICAL: Reserve space, don't just resize, to ensure vector controls the memory
     std::vector<uint8_t> buffer;
     buffer.reserve(LWS_PRE + payload.size());
-    buffer.resize(LWS_PRE); // Zero init padding (optional but safe)
+    buffer.resize(LWS_PRE);
     buffer.insert(buffer.end(), payload.begin(), payload.end());
 
     std::lock_guard<std::mutex> lock(m_outgoing_mutex);
+    if (m_outgoing_messages.size() >= MAX_OUTGOING_QUEUE_DEPTH)
+    {
+        return false;
+    }
     m_outgoing_messages.push(std::move(buffer));
+    return true;
 }
 
 std::vector<uint8_t> WebSocketSession::popOutgoingMessage()
@@ -74,6 +77,11 @@ struct lws *WebSocketSession::getWsi() const
     return m_lws;
 }
 
+uint64_t WebSocketSession::getId() const
+{
+    return m_id;
+}
+
 std::time_t WebSocketSession::getConnectionAt() const
 {
     return m_connected_at;
@@ -86,9 +94,8 @@ std::vector<std::uint8_t> WebSocketSession::onReceive(const void *in, size_t len
         m_buffer.data.clear();
     }
 
-    // Check limit(e.g., 1024MB)
-    constexpr size_t MAX_MSG_SIZE = 1024 * 1024 * 1024;
-    if (m_buffer.data.size() + len > MAX_MSG_SIZE)
+    // Enforce 64 MB message size limit
+    if (m_buffer.data.size() + len > MAX_WS_MSG_SIZE)
     {
         throw std::invalid_argument("message size reached limitation");
     }

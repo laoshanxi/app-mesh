@@ -6,6 +6,9 @@
 # Fail on any error and undefined variables
 set -euo pipefail
 
+# Disable Homebrew auto-update
+export HOMEBREW_NO_AUTO_UPDATE=1
+
 # Define key directories
 SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
 TMP_DIR="$(mktemp -d "$(pwd)/appmesh.tmp.XXXXXX")"

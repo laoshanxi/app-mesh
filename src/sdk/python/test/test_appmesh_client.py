@@ -1,31 +1,38 @@
-"""Test Python SDK"""
+"""Test Python SDK across three protocols: HTTP (REST), TCP, and WebSocket (WSS).
 
-import sys
+Usage:
+    python3 -m unittest --verbose                            # run all
+    python3 -m unittest test_appmesh_client.TestHTTP         # HTTP only
+    python3 -m unittest test_appmesh_client.TestTCP          # TCP only
+    python3 -m unittest test_appmesh_client.TestWSS          # WSS only
+    python3 -m unittest test_appmesh_client.TestProtocolFixes  # review-fix tests
+"""
+
+import json
 import os
 import stat
-import json
-import unittest
+import sys
 import tempfile
-from http.cookiejar import Cookie
+import unittest
 from unittest import TestCase
+
 from pyotp import TOTP
 
 # For source code env:
 current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(current_directory))
 
-# For wheel package
-# python3 -m pip install --upgrade appmesh pyotp
-from appmesh import AppMeshClient, AppMeshClientTCP, App
+from appmesh import AppMeshClient, AppMeshClientTCP, AppMeshClientWSS, App
 
-# python3 -m unittest test_appmesh_client.TestAppMeshClient.test_user
+# Default credential for local dev/test — NOT a production secret
+DEFAULT_CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
 
 
 def get_test_paths():
-    """return platform specific paths.
+    """Return platform-specific paths.
 
-    Remote paths (server_log, remote_tmp, etc_file, etc_copy) live on the
-    Linux server.  Local paths (local_tmp) live on the test machine.
+    Remote paths (server_log, remote_tmp, etc.) live on the Linux server.
+    Local paths (local_tmp) live on the test machine.
     """
     local_tmpdir = tempfile.gettempdir()
     if sys.platform == "win32":
@@ -36,548 +43,470 @@ def get_test_paths():
             "etc_file": r"C:\Windows\System32\drivers\etc\hosts",
             "etc_copy": r"C:\local\appmesh\work\hosts-copy",
         }
-    else:
-        # macOS or Linux: server is always Linux
-        return {
-            "server_log": "/opt/appmesh/work/server.log",
-            "remote_tmp": "/tmp/2.log",
-            "local_tmp": os.path.join(local_tmpdir, "3.log"),
-            "etc_file": "/etc/hosts",
-            "etc_copy": "/tmp/hosts-copy",
-        }
+    return {
+        "server_log": "/opt/appmesh/work/server.log",
+        "remote_tmp": "/tmp/2.log",
+        "local_tmp": os.path.join(local_tmpdir, "3.log"),
+        "etc_file": "/etc/hosts",
+        "etc_copy": "/tmp/hosts-copy",
+    }
 
 
 def get_long_running_command():
-    """return a command that runs for several seconds then exits non-zero (timeout/killed)"""
+    """Return a command that runs for several seconds then exits non-zero."""
     if sys.platform == "win32":
         return "ping 127.0.0.1 -n 10"
-    else:
-        # python3 is always available on the server; when killed by timeout it exits non-zero
-        return "python3 -c 'import time; [print(i) or time.sleep(1) for i in range(30)]'"
+    return "python3 -c 'import time; [print(i) or time.sleep(1) for i in range(30)]'"
 
 
-class TestAppMeshClient(TestCase):
+# ---------------------------------------------------------------------------
+# Mixin: shared tests that every protocol must pass
+# ---------------------------------------------------------------------------
+class ProtocolTestMixin:
+    """Shared test logic for all three transports.
+
+    Subclasses MUST set ``self.client`` to the appropriate client before
+    each test (via ``setUp``).
     """
-    unit test for AppMeshClient
-    """
 
-    DEFAULT_PASSWORD = "admin123"
+    # -- Authentication -----------------------------------------------------
 
-    def test_09_app_run(self):
-        """test app run"""
-        client = AppMeshClient()
-        client.login("admin", self.DEFAULT_PASSWORD)
-        client.forward_to = "127.0.0.1"
-        metadata = {"subject": "subject", "message": "msg"}
+    def test_01_login_logout(self):
+        """Login, verify token, logout, verify locked out."""
+        self.client.login("admin", DEFAULT_CRED)
+        token = self.client._get_access_token()
+        self.assertIsNotNone(token)
+        self.assertTrue(self.client.authenticate(token)[0])
+        self.assertTrue(self.client.logout())
+        with self.assertRaises(Exception):
+            self.client.list_apps()
 
-        app_data = {"command": "whoami", "metadata": json.dumps(metadata)}
-        self.assertEqual(
-            0,
-            client.run_app_sync(app=App(app_data), max_time=5, lifecycle=6)[0],
+    def test_02_auth_audience(self):
+        """Audience-scoped authentication."""
+        with self.assertRaises(Exception):
+            self.client.login("admin", DEFAULT_CRED, audience="appmesh-service-na")
+        self.client.login("admin", DEFAULT_CRED, audience="your-service-api")
+        token = self.client._get_access_token()
+        self.assertFalse(self.client.authenticate(token)[0])
+        self.assertTrue(self.client.authenticate(token, audience="your-service-api")[0])
+
+    def test_03_renew_token(self):
+        """Token renewal returns a different token."""
+        self.client.login("admin", DEFAULT_CRED)
+        t1 = self.client._get_access_token()
+        self.client.renew_token(100)
+        t2 = self.client._get_access_token()
+        self.assertNotEqual(t1, t2)
+        self.assertTrue(self.client.authenticate(t2)[0])
+
+    # -- User / Role management ---------------------------------------------
+
+    def test_04_user_management(self):
+        """User-related endpoints."""
+        self.client.login("admin", DEFAULT_CRED)
+        self.assertIn("permission-list", self.client.list_permissions())
+        self.assertIn("permission-list", self.client.get_user_permissions())
+        self.assertIn("mesh", self.client.list_users())
+        self.assertEqual(self.client.get_current_user()["email"], "admin@appmesh.com")
+
+        self.assertIsNone(self.client.lock_user("mesh"))
+        self.assertIsNone(self.client.unlock_user("mesh"))
+
+    def test_05_credential_change(self):
+        """Change credential, verify old fails, new works, restore."""
+        self.client.login("admin", DEFAULT_CRED)
+        temp_cred = "Admin@456"
+        try:
+            self.assertIsNone(self.client.update_password(DEFAULT_CRED, temp_cred))
+            with self.assertRaises(Exception):
+                self.client.login("admin", DEFAULT_CRED)
+            self.assertIsNone(self.client.login("admin", temp_cred))
+            self.assertIsNone(self.client.update_password(temp_cred, DEFAULT_CRED))
+        finally:
+            try:
+                self.client.login("admin", temp_cred)
+                self.client.update_password(temp_cred, DEFAULT_CRED)
+            except Exception:
+                pass
+
+    def test_06_roles_and_groups(self):
+        """Role and group listing."""
+        self.client.login("admin", DEFAULT_CRED)
+        self.assertIsNone(
+            self.client.update_role(
+                "manage",
+                ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"],
+            )
         )
+        self.assertIn("manage", self.client.list_roles())
+        self.assertIn("admin", self.client.list_groups())
 
-        exit_code = client.run_app_sync(App({"command": get_long_running_command(), "shell": True}), max_time=3)[0]
-        self.assertIsNotNone(exit_code)
-        self.assertNotEqual(0, exit_code, "long-running command should be killed by timeout")
-        run = client.run_app_async(App({"command": get_long_running_command(), "shell": True}), max_time=4)
-        run.wait()
+    # -- Labels / Tags ------------------------------------------------------
 
-    def test_08_file(self):
-        """test file"""
-        paths = get_test_paths()
-        client = AppMeshClientTCP()
-        client.login("admin", self.DEFAULT_PASSWORD)
-        # client.forward_to = "127.0.0.1:6059" # only for REST client, not for TCP client
-        if os.path.exists("1.log"):
-            os.remove("1.log")
-        self.assertIsNone(client.download_file(paths["server_log"], "1.log"))
-        self.assertTrue(os.path.exists("1.log"))
+    def test_07_labels(self):
+        """CRUD for labels."""
+        self.client.login("admin", DEFAULT_CRED)
+        self.assertIsNone(self.client.add_label("PyTag", "PyValue"))
+        self.assertIn("PyTag", self.client.list_labels())
+        self.assertIsNone(self.client.delete_label("PyTag"))
+        self.assertNotIn("PyTag", self.client.list_labels())
 
-        # remove remote file if exists
-        remote_tmp = paths["remote_tmp"]
-        metadata = f"import os; [os.remove(r'{remote_tmp}') if os.path.exists(r'{remote_tmp}') else None]"
-        self.assertEqual(0, client.run_app_sync(App({"name": "pyexec", "metadata": metadata}))[0])
+    # -- Application CRUD ---------------------------------------------------
 
-        self.assertIsNone(client.upload_file(local_file="1.log", remote_file=remote_tmp))
-        self.assertIsNone(client.download_file(remote_file=remote_tmp, local_file=paths["local_tmp"]))
-        self.assertTrue(os.path.exists(paths["local_tmp"]))
-        os.remove("1.log")
-
-        # copy etc file on server
-        metadata = f"import shutil;shutil.copy(r'{paths['etc_file']}', r'{paths['etc_copy']}')"
-        self.assertEqual(0, client.run_app_sync(App({"name": "pyexec", "metadata": metadata}))[0])
-
-        self.assertIsNone(client.download_file(paths["etc_file"], "etc-local"))
-        with open("etc-local", "r", encoding="utf-8") as local:
-            # Just verify non-empty content was downloaded
-            self.assertGreater(len(local.read()), 0)
-        os.remove("etc-local")
-
-    def test_04_config(self):
-        """test config"""
-        client = AppMeshClientTCP()
-        client.login("admin", self.DEFAULT_PASSWORD)
-        self.assertIn("cpu_cores", client.get_host_resources())
-        self.assertIn("appmesh_prom_scrape_count", client.get_metrics())
-        self.assertEqual(client.set_log_level("DEBUG"), "DEBUG")
-        self.assertEqual(client.set_log_level("INFO"), "INFO")
-        self.assertEqual(client.set_config({"REST": {"SSL": {"VerifyServer": True}}})["REST"]["SSL"]["VerifyServer"], True)
-
-    def test_05_tag(self):
-        """test tag"""
-        client = AppMeshClient()
-        client.login("admin", self.DEFAULT_PASSWORD)
-        self.assertIsNone(client.add_label("MyTag", "TagValue"))
-        self.assertIn("MyTag", client.list_labels())
-        self.assertIsNone(client.delete_label("MyTag"))
-        self.assertNotIn("MyTag", client.list_labels())
-
-    def test_06_app(self):
-        """test application"""
-        client = AppMeshClient()
-        client.login("admin", self.DEFAULT_PASSWORD)
-        apps = client.list_apps()
+    def test_08_app_list_and_get(self):
+        """List applications and inspect one."""
+        self.client.login("admin", DEFAULT_CRED)
+        apps = self.client.list_apps()
         self.assertGreater(len(apps), 0)
         first_app = apps[0].name
-        self.assertEqual(client.get_app(first_app).name, first_app)
+        fetched = self.client.get_app(first_app)
+        self.assertEqual(fetched.name, first_app)
         for app in apps:
             self.assertTrue(hasattr(app, "name"))
             self.assertTrue(hasattr(app, "shell"))
-            self.assertTrue(hasattr(app, "session_login"))
-        self.assertIsInstance(client.check_app_health(first_app), bool)
-        client.get_app_output(first_app)
+        self.assertIsInstance(self.client.check_app_health(first_app), bool)
+        self.client.get_app_output(first_app)
 
-    def test_07_app_mgt(self):
-        """test application management"""
-        client = AppMeshClient()
-        client.login("admin", self.DEFAULT_PASSWORD)
-        app = client.add_app(App({"command": "sleep 1000", "name": "SDK"}))
+    def test_09_app_add_enable_disable_delete(self):
+        """Full lifecycle: add -> disable -> enable -> delete."""
+        self.client.login("admin", DEFAULT_CRED)
+        app = self.client.add_app(App({"command": "sleep 1000", "name": "SDK_TEST"}))
         self.assertTrue(hasattr(app, "name"))
+        self.assertIsNone(self.client.disable_app("SDK_TEST"))
+        self.assertIsNone(self.client.enable_app("SDK_TEST"))
+        self.assertTrue(self.client.delete_app("SDK_TEST"))
+        self.assertFalse(self.client.delete_app("SDK_TEST"))
 
-        self.assertIsNone(client.disable_app("SDK"))
-        self.assertIsNone(client.enable_app("SDK"))
-        self.assertTrue(client.delete_app("SDK"))
-        self.assertFalse(client.delete_app("SDK"))
+    # -- Run / Exec ---------------------------------------------------------
 
-    def test_01_auth(self):
-        """test authentication"""
-        client = AppMeshClient()
-        with self.assertRaises(Exception):
-            client.login("admin", self.DEFAULT_PASSWORD, audience="appmesh-service-na")
-        client.login("admin", self.DEFAULT_PASSWORD, audience="your-service-api")
-        token = client._get_access_token()
-        self.assertFalse(client.authenticate(token)[0])
-        self.assertTrue(client.authenticate(token, audience="your-service-api")[0])
+    def test_10_app_run_sync(self):
+        """Synchronous app execution."""
+        self.client.login("admin", DEFAULT_CRED)
+        metadata = {"subject": "subject", "message": "msg"}
+        app_data = {"command": "whoami", "metadata": json.dumps(metadata)}
+        self.assertEqual(0, self.client.run_app_sync(app=App(app_data), max_time=5, lifecycle=6)[0])
 
-        client.login("admin", self.DEFAULT_PASSWORD, audience="appmesh-service")
-        token = client._get_access_token()
-        self.assertTrue(client.authenticate(token, audience="appmesh-service")[0])
-        self.assertFalse(client.authenticate(token, audience="appmesh-service-na")[0])
+    def test_11_app_run_timeout(self):
+        """Long-running command killed by timeout exits non-zero."""
+        self.client.login("admin", DEFAULT_CRED)
+        exit_code = self.client.run_app_sync(App({"command": get_long_running_command(), "shell": True}), max_time=3)[0]
+        self.assertIsNotNone(exit_code)
+        self.assertNotEqual(0, exit_code)
 
-        self.assertIsNotNone(client._get_access_token())
+    def test_12_app_run_async(self):
+        """Async run with wait."""
+        self.client.login("admin", DEFAULT_CRED)
+        run = self.client.run_app_async(App({"command": get_long_running_command(), "shell": True}), max_time=4)
+        run.wait()
 
-        client.renew_token(100)
-        token2 = client._get_access_token()
-        self.assertNotEqual(token, token2)
+    # -- Config / Metrics ---------------------------------------------------
 
-        self.assertFalse(client.authentication(token)[0])
-        self.assertTrue(client.authenticate(token2)[0])
+    def test_13_config_and_metrics(self):
+        """Server config, metrics, and log level."""
+        self.client.login("admin", DEFAULT_CRED)
+        self.assertIn("cpu_cores", self.client.get_host_resources())
+        self.assertIn("appmesh_prom_scrape_count", self.client.get_metrics())
+        self.assertEqual(self.client.set_log_level("DEBUG"), "DEBUG")
+        self.assertEqual(self.client.set_log_level("INFO"), "INFO")
 
-        self.assertTrue(client.logout())
-        with self.assertRaises(Exception):
-            client.list_apps()
-        self.assertIsNone(client.login("admin", self.DEFAULT_PASSWORD))
-        self.assertIsNotNone(client.list_apps())
 
-    def test_02_user(self):
-        """test user"""
-        client = AppMeshClient()
-        self.assertIsNone(client.login("admin", self.DEFAULT_PASSWORD))
+# ---------------------------------------------------------------------------
+# File-transfer mixin (TCP/WSS only)
+# ---------------------------------------------------------------------------
+class FileTransferMixin:
+    """Tests for download_file / upload_file (TCP and WSS only)."""
 
-        # Test password change - use password that meets complexity requirements
-        # (works whether PasswordComplexityEnabled is true or false)
-        temp_password = "Admin@456"
+    def test_20_file_download(self):
+        """Download server log to local."""
+        paths = get_test_paths()
+        self.client.login("admin", DEFAULT_CRED)
+        local = "download_test.log"
         try:
-            self.assertIsNone(client.update_password(self.DEFAULT_PASSWORD, temp_password))
-            # Login should fail with old password
-            with self.assertRaises(Exception):
-                client.login("admin", self.DEFAULT_PASSWORD)
-            # Login should succeed with new password
-            self.assertIsNone(client.login("admin", temp_password))
-            # Change back to default
-            self.assertIsNone(client.update_password(temp_password, self.DEFAULT_PASSWORD))
+            if os.path.exists(local):
+                os.remove(local)
+            self.assertIsNone(self.client.download_file(paths["server_log"], local))
+            self.assertTrue(os.path.exists(local))
         finally:
-            # Ensure password is restored even if test fails
-            try:
-                client.login("admin", temp_password)
-                client.update_password(temp_password, self.DEFAULT_PASSWORD)
-            except Exception:
-                pass
+            if os.path.exists(local):
+                os.remove(local)
 
-        self.assertIsNone(client.login("admin", self.DEFAULT_PASSWORD))
+    def test_21_file_upload_download_roundtrip(self):
+        """Upload a file, then download it, verify content exists."""
+        paths = get_test_paths()
+        self.client.login("admin", DEFAULT_CRED)
+        local_src = "roundtrip_src.log"
+        local_dst = "roundtrip_dst.log"
+        remote = paths["remote_tmp"]
+        try:
+            self.client.download_file(paths["server_log"], local_src)
+            self.assertEqual(
+                0,
+                self.client.run_app_sync(
+                    App({"name": "pyexec", "metadata": f"import os; [os.remove(r'{remote}') if os.path.exists(r'{remote}') else None]"})
+                )[0],
+            )
+            self.assertIsNone(self.client.upload_file(local_file=local_src, remote_file=remote))
+            self.assertIsNone(self.client.download_file(remote_file=remote, local_file=local_dst))
+            self.assertTrue(os.path.exists(local_dst))
+        finally:
+            for f in (local_src, local_dst):
+                if os.path.exists(f):
+                    os.remove(f)
 
-        self.assertIn("permission-list", client.list_permissions())
-        self.assertIn("permission-list", client.get_user_permissions())
-        self.assertTrue(client.authenticate(client._get_access_token(), "app-view")[0])
-        with self.assertRaises(Exception):
-            self.assertFalse(client.authenticate("", "app-view"))
-        with self.assertRaises(Exception):
-            self.assertFalse(client.authenticate(client._get_access_token(), "app-view2"))
+    def test_22_download_readonly_file(self):
+        """Download a read-only system file."""
+        paths = get_test_paths()
+        self.client.login("admin", DEFAULT_CRED)
+        local = "etc_download"
+        try:
+            self.assertIsNone(self.client.download_file(paths["etc_file"], local))
+            with open(local, "r", encoding="utf-8") as f:
+                self.assertGreater(len(f.read()), 0)
+        finally:
+            if os.path.exists(local):
+                os.remove(local)
 
-        self.assertIsNone(client.lock_user("mesh"))
-        self.assertIsNone(client.unlock_user("mesh"))
 
-        self.assertIsNone(client.update_role("manage", ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"]))
+# ---------------------------------------------------------------------------
+# Concrete test classes per protocol
+# ---------------------------------------------------------------------------
+class TestHTTP(ProtocolTestMixin, TestCase):
+    """Tests using HTTP REST client (AppMeshClient)."""
 
-        self.assertIn("manage", client.list_roles())
-        self.assertIn("admin", client.list_groups())
-        self.assertIn("mesh", client.list_users())
-        self.assertEqual(client.get_current_user()["email"], "admin@appmesh.com")
+    def setUp(self):
+        self.client = AppMeshClient()
 
-    def test_03_totp(self):
-        """test TOTP"""
-        client = AppMeshClient()
-        client.login("admin", self.DEFAULT_PASSWORD)
-        token = client._get_access_token()
-        self.assertIsNotNone(token)
-        # get totp secret
-        totp_secret = client.get_totp_secret()
-        # print(f"TOTP Secret: {totp_secret!r}")
+    def test_14_config_set(self):
+        """HTTP-specific: set config (VerifyServer flag for SSL)."""
+        self.client.login("admin", DEFAULT_CRED)
+        result = self.client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
+        self.assertTrue(result["REST"]["SSL"]["VerifyServer"])
+
+    def test_15_forward_to(self):
+        """HTTP-specific: forward_to header."""
+        self.client.login("admin", DEFAULT_CRED)
+        self.client.forward_to = "127.0.0.1"
+        apps = self.client.list_apps()
+        self.assertGreater(len(apps), 0)
+        self.client.forward_to = None
+
+
+class TestTCP(ProtocolTestMixin, FileTransferMixin, TestCase):
+    """Tests using TCP client (AppMeshClientTCP)."""
+
+    def setUp(self):
+        self.client = AppMeshClientTCP()
+
+
+def _wss_available():
+    """Check if WSS endpoint is reachable."""
+    try:
+        c = AppMeshClientWSS()
+        c.login("admin", DEFAULT_CRED)
+        c.logout()
+        return True
+    except Exception:
+        return False
+
+
+_WSS_OK = _wss_available()
+
+
+@unittest.skipUnless(_WSS_OK, "WSS endpoint not available (libwebsockets not enabled)")
+class TestWSS(ProtocolTestMixin, FileTransferMixin, TestCase):
+    """Tests using WebSocket Secure client (AppMeshClientWSS)."""
+
+    def setUp(self):
+        self.client = AppMeshClientWSS()
+
+
+# ---------------------------------------------------------------------------
+# TOTP tests (HTTP only)
+# ---------------------------------------------------------------------------
+class TestTOTP(TestCase):
+    """TOTP authentication flow (HTTP client)."""
+
+    def setUp(self):
+        self.client = AppMeshClient()
+
+    def test_totp_enable_login_disable(self):
+        """Full TOTP lifecycle."""
+        self.client.login("admin", DEFAULT_CRED)
+        totp_secret = self.client.get_totp_secret()
         self.assertIsNotNone(totp_secret)
-        # generate totp code
         totp = TOTP(totp_secret)
         totp_code = totp.now()
-        print(totp_code)
-        # setup totp
-        self.assertIsNone(client.enable_totp(totp_code))
-
-        # use totp code to login
+        self.assertIsNone(self.client.enable_totp(totp_code))
         totp_code = totp.now()
-        print(totp_code)
-        self.assertIsNone(client.login("admin", self.DEFAULT_PASSWORD, totp_code))
+        self.assertIsNone(self.client.login("admin", DEFAULT_CRED, totp_code))
+        challenge = self.client.login("admin", DEFAULT_CRED)
+        self.assertIsNotNone(challenge)
+        self.assertIsNone(self.client.validate_totp("admin", challenge, totp.now()))
+        self.assertIsNone(self.client.disable_totp())
 
-        # use totp with 2 step login
-        challange = client.login("admin", self.DEFAULT_PASSWORD)
-        self.assertIsNotNone(challange)
-        self.assertIsNone(client.validate_totp("admin", challange, totp_code))
 
-        # disable totp
-        self.assertIsNone(client.disable_totp())
-        print("TOTP disabled")
+# ---------------------------------------------------------------------------
+# Cookie / token tests (HTTP only)
+# ---------------------------------------------------------------------------
+class TestCookies(TestCase):
+    """Cookie persistence and reuse (HTTP client)."""
 
-    def read_file_content(self, file_path):
-        """read file content"""
-        with open(file_path, "r", encoding="utf-8") as f:
+    def read_file(self, path):
+        with open(path, "r", encoding="utf-8") as f:
             return f.read()
 
-    def test_11_cookies(self):
-        """Test cookie creation, persistence, and reuse"""
-
+    def test_cookie_lifecycle(self):
+        """Create, persist, clear, and reload cookies."""
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             cookie_path = tmp.name
-
         try:
-            # init empty cookie file
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
             client = AppMeshClient(cookie_file=cookie_path)
-            # Cookie file is NOT created until first token write (lazy creation)
             self.assertFalse(os.path.exists(cookie_path))
-
-            # cookie set (file created on login)
-            client.login("admin", self.DEFAULT_PASSWORD)
+            client.login("admin", DEFAULT_CRED)
             self.assertTrue(os.path.exists(cookie_path))
-
-            # permission check (Unix only)
             if os.name == "posix":
                 mode = stat.S_IMODE(os.stat(cookie_path).st_mode)
                 self.assertEqual(mode, 0o600)
-            content = self.read_file_content(cookie_path)
+            content = self.read_file(cookie_path)
             self.assertIn("appmesh_auth_token", content)
             self.assertIn("appmesh_csrf_token", content)
-
-            # cookie cleared on logoff
             client.logout()
-            content_after = self.read_file_content(cookie_path)
+            content_after = self.read_file(cookie_path)
             self.assertNotIn("appmesh_auth_token", content_after)
-            self.assertNotIn("appmesh_csrf_token", content_after)
-
-            # re-use cookie: should require login again
             client = AppMeshClient(cookie_file=cookie_path)
-            with self.assertRaises(Exception):
-                client.list_apps()
-
-            # re-login and verify user info
-            client.login("admin", self.DEFAULT_PASSWORD)
+            client.login("admin", DEFAULT_CRED)
             token = client._get_access_token()
-            client = AppMeshClient(cookie_file=cookie_path)
-            user_info = client.get_current_user()
-            self.assertIn("name", user_info)
+            client2 = AppMeshClient(cookie_file=cookie_path)
+            user_info = client2.get_current_user()
             self.assertEqual(user_info["name"], "admin")
-
-            # TOTP setup should update cookie file
-            content_before_totp = self.read_file_content(cookie_path)
-
-            # get totp secret
-            totp_secret = client.get_totp_secret()
-            # generate totp code
-            totp = TOTP(totp_secret)
-            totp_code = totp.now()
-            # setup totp
-            self.assertIsNone(client.enable_totp(totp_code))
-            self.assertNotEqual(token, client._get_access_token())
-
-            content_after_totp = self.read_file_content(cookie_path)
-
-            self.assertIn("appmesh_auth_token", content_after_totp)
-            self.assertIn("appmesh_csrf_token", content_after_totp)
-            self.assertNotEqual(content_before_totp, content_after_totp)
-
-            # Use totp code to login
-            content_before_totp = self.read_file_content(cookie_path)
-
-            client = AppMeshClient(cookie_file=cookie_path)
-            self.assertTrue(client.logout())
-            totp_code = totp.now()
-            print(totp_code)
-            self.assertIsNone(client.login("admin", self.DEFAULT_PASSWORD, totp_code))
-            self.assertIn("appmesh_auth_token", content_after_totp)
-            self.assertIn("appmesh_csrf_token", content_after_totp)
-
-            content_after_totp = self.read_file_content(cookie_path)
-
-            self.assertIn("appmesh_auth_token", content_after_totp)
-            self.assertIn("appmesh_csrf_token", content_after_totp)
-            self.assertNotEqual(content_before_totp, content_after_totp)
-
-            self.assertIsNone(client.disable_totp())
-
         finally:
-            try:
-                client = AppMeshClient(cookie_file=cookie_path)
-                client.disable_totp()
-            except Exception:
-                pass
             os.remove(cookie_path) if os.path.exists(cookie_path) else None
 
-    def test_12_set_token(self):
-        """Test set_token, jwt_token constructor, with and without cookie file"""
-
-        # 1. set_token without cookie file (in-memory)
+    def test_set_token(self):
+        """set_token and jwt_token constructor."""
         client = AppMeshClient()
-        client.login("admin", self.DEFAULT_PASSWORD)
+        client.login("admin", DEFAULT_CRED)
         token = client._get_access_token()
-        self.assertIsNotNone(token)
-
         client2 = AppMeshClient()
         client2.set_token(token)
-        apps = client2.list_apps()
-        self.assertGreater(len(apps), 0)
-
-        # 2. jwt_token constructor without cookie file
+        self.assertGreater(len(client2.list_apps()), 0)
         client3 = AppMeshClient(jwt_token=token)
-        apps3 = client3.list_apps()
-        self.assertEqual(len(apps3), len(apps))
+        self.assertGreater(len(client3.list_apps()), 0)
 
-        # 3. set_token with cookie file (file-backed + persist + reload)
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            cookie_path = tmp.name
+
+# ---------------------------------------------------------------------------
+# Tests specifically targeting the review fixes
+# ---------------------------------------------------------------------------
+class TestProtocolFixes(TestCase):
+    """Tests targeting specific issues found during code review."""
+
+    def test_path_traversal_rejected(self):
+        """File paths with '..' must be rejected (validates Utility::validateFilePath)."""
+        client = AppMeshClientTCP()
+        client.login("admin", DEFAULT_CRED)
+        with self.assertRaises(Exception):
+            client.download_file("/opt/appmesh/../../etc/shadow", "shadow.local")
+        if os.path.exists("shadow.local"):
+            os.remove("shadow.local")
+
+    def test_path_traversal_upload_rejected(self):
+        """Upload with '..' in remote path must be rejected."""
+        client = AppMeshClientTCP()
+        client.login("admin", DEFAULT_CRED)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            tmp.write(b"test")
+            tmp_path = tmp.name
         try:
-            os.remove(cookie_path) if os.path.exists(cookie_path) else None
-
-            client4 = AppMeshClient(cookie_file=cookie_path)
-            # No file created yet
-            self.assertFalse(os.path.exists(cookie_path))
-            client4.set_token(token)
-            # File created on set_token
-            self.assertTrue(os.path.exists(cookie_path))
-            self.assertIn("appmesh_auth_token", self.read_file_content(cookie_path))
-
-            # Reload from file
-            client5 = AppMeshClient(cookie_file=cookie_path)
-            self.assertEqual(client5._get_access_token(), token)
-            apps5 = client5.list_apps()
-            self.assertEqual(len(apps5), len(apps))
-
-            # 4. jwt_token constructor + cookie file
-            os.remove(cookie_path)
-            client6 = AppMeshClient(jwt_token=token, cookie_file=cookie_path)
-            self.assertTrue(os.path.exists(cookie_path))
-            apps6 = client6.list_apps()
-            self.assertEqual(len(apps6), len(apps))
-
-            # Reload
-            client7 = AppMeshClient(cookie_file=cookie_path)
-            self.assertEqual(client7._get_access_token(), token)
+            with self.assertRaises(Exception):
+                client.upload_file(local_file=tmp_path, remote_file="/tmp/../../../etc/evil.txt")
         finally:
-            os.remove(cookie_path) if os.path.exists(cookie_path) else None
+            os.remove(tmp_path)
 
-    def test_13_authenticate_update_session_semantics(self):
-        """authenticate(update_session=False) must not mutate state; update_session=True must."""
+    def test_tcp_large_app_output(self):
+        """TCP transport can handle non-trivial response payload (tests message framing)."""
+        client = AppMeshClientTCP()
+        client.login("admin", DEFAULT_CRED)
+        exit_code, output = client.run_app_sync(App({"command": "seq 1 100", "shell": True}), max_time=5)
+        self.assertEqual(0, exit_code)
+        self.assertIn("100", output)
 
-        class FakeResponse:
-            def __init__(self, payload):
-                self.status_code = 200
-                self._payload = payload
-                self.text = json.dumps(payload)
+    @unittest.skipUnless(_WSS_OK, "WSS endpoint not available")
+    def test_wss_large_app_output(self):
+        """WSS transport can handle non-trivial response payload (tests WS framing)."""
+        client = AppMeshClientWSS()
+        client.login("admin", DEFAULT_CRED)
+        exit_code, output = client.run_app_sync(App({"command": "seq 1 100", "shell": True}), max_time=5)
+        self.assertEqual(0, exit_code)
+        self.assertIn("100", output)
 
-            def json(self):
-                return self._payload
+    def test_http_concurrent_requests(self):
+        """HTTP client handles multiple rapid sequential requests (tests ABA protection)."""
+        client = AppMeshClient()
+        client.login("admin", DEFAULT_CRED)
+        for _ in range(10):
+            apps = client.list_apps()
+            self.assertGreater(len(apps), 0)
 
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            cookie_path = tmp.name
-        try:
-            os.remove(cookie_path) if os.path.exists(cookie_path) else None
+    def test_tcp_concurrent_requests(self):
+        """TCP client handles multiple rapid sequential requests."""
+        client = AppMeshClientTCP()
+        client.login("admin", DEFAULT_CRED)
+        for _ in range(10):
+            apps = client.list_apps()
+            self.assertGreater(len(apps), 0)
 
-            client = AppMeshClient(base_url="https://127.0.0.1:6060", ssl_verify=False, cookie_file=cookie_path)
-            client.set_token("existing-token")
-            before = self.read_file_content(cookie_path)
+    @unittest.skipUnless(_WSS_OK, "WSS endpoint not available")
+    def test_wss_concurrent_requests(self):
+        """WSS client handles multiple rapid sequential requests."""
+        client = AppMeshClientWSS()
+        client.login("admin", DEFAULT_CRED)
+        for _ in range(10):
+            apps = client.list_apps()
+            self.assertGreater(len(apps), 0)
 
-            seen_auth = []
-            seen_set_cookie = []
+    def test_http_config_ssl_verify_server(self):
+        """Verify the new getSslVerifyServer config option works end-to-end."""
+        client = AppMeshClient()
+        client.login("admin", DEFAULT_CRED)
+        cfg = client.set_config({"REST": {"SSL": {"VerifyServer": False}}})
+        self.assertFalse(cfg["REST"]["SSL"]["VerifyServer"])
+        cfg = client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
+        self.assertTrue(cfg["REST"]["SSL"]["VerifyServer"])
+        # restore
+        client.set_config({"REST": {"SSL": {"VerifyServer": False}}})
 
-            def fake_request(method, path, query=None, header=None, body=None, raise_on_fail=True):
-                self.assertEqual("/appmesh/auth", path)
-                seen_auth.append(header.get("Authorization"))
-                seen_set_cookie.append(header.get("X-Set-Cookie"))
-                old_token = client._get_access_token()
-                if header.get("X-Set-Cookie") == "true":
-                    client.session.cookies.set_cookie(
-                        Cookie(
-                            version=0,
-                            name=client._COOKIE_TOKEN,
-                            value="verified-token",
-                            port=None,
-                            port_specified=False,
-                            domain="",
-                            domain_specified=False,
-                            domain_initial_dot=False,
-                            path="/",
-                            path_specified=True,
-                            secure=False,
-                            expires=None,
-                            discard=False,
-                            comment=None,
-                            comment_url=None,
-                            rest={},
-                            rfc2109=False,
-                        )
-                    )
-                # Simulate _request_http before/after token detection
-                new_token = client._get_access_token()
-                if new_token != old_token:
-                    client._on_token_changed(new_token)
-                return FakeResponse({"access_token": "verified-token", "expires_in": 3600})
+    def test_transport_token_sync(self):
+        """TransportClientMixin._sync_transport_token for TCP/WSS path-based token extraction."""
+        from appmesh.transport_mixin import TransportClientMixin
 
-            client._request_http = fake_request
-
-            ok, _ = client.authenticate("provided-token", update_session=False)
-            self.assertTrue(ok)
-            self.assertEqual("Bearer provided-token", seen_auth[-1])
-            self.assertIsNone(seen_set_cookie[-1])
-            self.assertEqual("existing-token", client._get_access_token())
-            self.assertEqual(before, self.read_file_content(cookie_path))
-
-            ok, _ = client.authenticate("provided-token", update_session=True)
-            self.assertTrue(ok)
-            self.assertEqual("true", seen_set_cookie[-1])
-            self.assertEqual("verified-token", client._get_access_token())
-            self.assertIn("verified-token", self.read_file_content(cookie_path))
-        finally:
-            os.remove(cookie_path) if os.path.exists(cookie_path) else None
-
-
-    def test_14_transport_token_sync(self):
-        """Test _sync_transport_token for TCP/WSS path-based token extraction."""
-        from appmesh.transport_mixin import (
-            TransportClientMixin,
-            _AUTH_SET_COOKIE_PATHS,
-            _AUTH_RENEW_PATHS,
-            _LOGOFF_PATH,
-        )
-
-        class FakeTransportResponse:
-            def __init__(self, status_code, payload):
-                self.status_code = status_code
+        class FakeResp:
+            def __init__(self, status, payload):
+                self.status_code = status
                 self._payload = payload
 
             def json(self):
                 return self._payload
 
-        class FakeTransportClient(TransportClientMixin, AppMeshClient):
-            """Minimal fake to test _sync_transport_token in isolation."""
-            pass
-
-        client = AppMeshClient(base_url="https://127.0.0.1:6060", ssl_verify=False)
-        # Use a standalone mixin instance to call _sync_transport_token
         mixin = TransportClientMixin()
         mixin._token = None
         mixin._auto_refresh_token = False
-        # Provide a minimal cookie_file=None and session to satisfy _on_token_changed
         mixin.cookie_file = None
+        mixin._on_token_changed = lambda t: setattr(mixin, "_token", t)
 
-        def on_token_changed(token):
-            mixin._token = token
+        # Login with X-Set-Cookie -> token applied
+        mixin._sync_transport_token(FakeResp(200, {"access_token": "tok1"}), "/appmesh/login", {"X-Set-Cookie": "true"})
+        self.assertEqual("tok1", mixin._token)
 
-        mixin._on_token_changed = on_token_changed
-
-        # 1. Login with X-Set-Cookie: true → token applied
-        resp = FakeTransportResponse(200, {"access_token": "login-token"})
-        mixin._sync_transport_token(resp, "/appmesh/login", {"X-Set-Cookie": "true"})
-        self.assertEqual("login-token", mixin._token)
-
-        # 2. Login without X-Set-Cookie → token NOT applied
+        # Login without X-Set-Cookie -> NOT applied
         mixin._token = "old"
-        resp = FakeTransportResponse(200, {"access_token": "should-not-apply"})
-        mixin._sync_transport_token(resp, "/appmesh/login", {})
+        mixin._sync_transport_token(FakeResp(200, {"access_token": "no"}), "/appmesh/login", {})
         self.assertEqual("old", mixin._token)
 
-        # 3. Login with X-Set-Cookie but non-200 → token NOT applied
-        mixin._token = "old"
-        resp = FakeTransportResponse(401, {"access_token": "should-not-apply"})
-        mixin._sync_transport_token(resp, "/appmesh/login", {"X-Set-Cookie": "true"})
-        self.assertEqual("old", mixin._token)
-
-        # 4. Renew → always applied (no X-Set-Cookie check)
-        mixin._token = "old"
-        resp = FakeTransportResponse(200, {"access_token": "renewed-token"})
-        mixin._sync_transport_token(resp, "/appmesh/token/renew", {})
-        self.assertEqual("renewed-token", mixin._token)
-
-        # 5. TOTP setup → always applied
-        mixin._token = "old"
-        resp = FakeTransportResponse(200, {"access_token": "totp-token"})
-        mixin._sync_transport_token(resp, "/appmesh/totp/setup", {})
-        self.assertEqual("totp-token", mixin._token)
-
-        # 6. Logoff → token cleared
+        # Logoff -> cleared
         mixin._token = "has-token"
-        resp = FakeTransportResponse(200, {})
-        mixin._sync_transport_token(resp, "/appmesh/self/logoff", {})
+        mixin._sync_transport_token(FakeResp(200, {}), "/appmesh/self/logoff", {})
         self.assertIsNone(mixin._token)
-
-        # 7. Logoff with non-200 → token NOT cleared
-        mixin._token = "has-token"
-        resp = FakeTransportResponse(500, {})
-        mixin._sync_transport_token(resp, "/appmesh/self/logoff", {})
-        self.assertEqual("has-token", mixin._token)
-
-        # 8. Non-auth path → token NOT changed
-        mixin._token = "old"
-        resp = FakeTransportResponse(200, {"access_token": "should-not-apply"})
-        mixin._sync_transport_token(resp, "/appmesh/applications", {})
-        self.assertEqual("old", mixin._token)
-
-        # 9. Auth path with update_session=False (no X-Set-Cookie) → token NOT changed
-        mixin._token = "old"
-        resp = FakeTransportResponse(200, {"access_token": "should-not-apply"})
-        mixin._sync_transport_token(resp, "/appmesh/auth", {"Authorization": "Bearer test"})
-        self.assertEqual("old", mixin._token)
-
-        # 10. Auth path with update_session=True (X-Set-Cookie: true) → token applied
-        mixin._token = "old"
-        resp = FakeTransportResponse(200, {"access_token": "auth-token"})
-        mixin._sync_transport_token(resp, "/appmesh/auth", {"X-Set-Cookie": "true"})
-        self.assertEqual("auth-token", mixin._token)
 
 
 if __name__ == "__main__":

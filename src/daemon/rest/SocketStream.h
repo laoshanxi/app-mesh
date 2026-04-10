@@ -50,7 +50,9 @@ static constexpr size_t TCP_MAX_BODY_SIZE = TCP_MAX_BLOCK_SIZE;
 inline uint32_t host_to_net32(uint32_t x) { return ACE_HTONL(x); }
 inline uint32_t net_to_host32(uint32_t x) { return ACE_NTOHL(x); }
 
-// SSL_Stream_Ex: ACE_SSL_SOCK_Stream with customized ACE_SSL_Context
+// SSL_Stream_Ex: Extends ACE_SSL_SOCK_Stream — reuses ACE's handshake/socket management,
+// but send/recv call OpenSSL directly (ACE's wrappers consume the error queue, breaking
+// our WANT_READ/WANT_WRITE detection for SSL renegotiation).
 class SSL_Stream_Ex : public ACE_SSL_SOCK_Stream
 {
 public:
@@ -128,7 +130,7 @@ public:
 
 		if (magic != TCP_MAGIC)
 		{
-			LOG_ERR << fname << "Invalid magic number: 0x" << std::hex;
+			LOG_ERR << fname << "Invalid magic number: 0x" << std::hex << magic << std::dec;
 			return false;
 		}
 
@@ -139,7 +141,15 @@ public:
 		}
 
 		m_expected_body_len = static_cast<size_t>(len);
-		m_body_buf.resize(m_expected_body_len); // TODO: catch exception
+		try
+		{
+			m_body_buf.resize(m_expected_body_len);
+		}
+		catch (const std::bad_alloc &)
+		{
+			LOG_ERR << fname << "Failed to allocate " << m_expected_body_len << " bytes for message body";
+			return false;
+		}
 		m_body_offset = 0;
 		m_phase = READING_BODY;
 		return true;
@@ -234,10 +244,17 @@ private:
 
 class SocketStreamPtr;
 
-// SocketStream: Async TCP/TLS Socket
-// Works with both:
-//   - Server side: ACE_Acceptor<ACE_SSL_SOCK_Stream, ACE_SSL_SOCK_Acceptor>
-//   - Client side: ACE_SSL_SOCK_Connector via connect() method
+// SocketStream: Async TCP/TLS handler on top of ACE_TP_Reactor.
+// Used by:
+//   - Server side: ACE_Acceptor creates SocketServer (subclass) for each inbound connection
+//   - Client side: createConnection() / connect() for outbound connections
+//
+// Key rules:
+//   1. Lock ordering: m_io_mutex → m_cb_mutex → (external callback locks).
+//      Any new lock acquired inside a callback must be below m_cb_mutex in the hierarchy.
+//   2. Callbacks (onData, onSent, ...) run while m_io_mutex is held, so they may
+//      re-enter send()/shutdown(). m_io_mutex MUST stay recursive.
+//   3. All callbacks MUST be set before open(). open() fires onConnect synchronously.
 class SocketStream : public ACE_Svc_Handler<SSL_Stream_Ex, ACE_MT_SYNCH>
 {
 public:
@@ -260,7 +277,7 @@ public:
 	SocketStream(ACE_SSL_Context *ctx = ACE_SSL_Context::instance(), ACE_Reactor *reactor = ACE_Reactor::instance());
 	virtual ~SocketStream();
 
-	// --- Setup ---
+	// --- Setup (all callbacks MUST be set before calling open(), callbacks set after open() may miss events) ---
 	void onData(DataCallback cb) { m_data_cb = std::move(cb); }
 	void onSent(SendCallback cb) { m_send_cb = std::move(cb); }
 	void onConnect(EventCallback cb) { m_connect_cb = std::move(cb); }
@@ -274,7 +291,7 @@ public:
 	bool connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
 
 	/// Create a new client SocketStream and connect to the remote address.
-	/// Always returns a valid SocketStreamPtr; check connected() for success.
+	/// Always returns a valid SocketStreamPtr; caller must check connected() for success.
 	static SocketStreamPtr createConnection(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
 
 	// --- Public API ---
@@ -285,8 +302,6 @@ public:
 	// Close from user side (close function is already used for interface)
 	void shutdown();
 	bool connected() const;
-
-	std::mutex &get_state_mutex() const; // Exposed for Worker::forward
 
 protected:
 	// --- ACE_Svc_Handler Overrides ---
@@ -315,11 +330,35 @@ private:
 	RecvState m_recv_state;
 	SendState m_send_state;
 
-	std::atomic<bool> m_ssl_want_write_for_recv{false};
-	std::atomic<bool> m_ssl_want_read_for_send{false};
+	// Encapsulates SSL cross-direction retry state for both TLS 1.2 renegotiation
+	// and TLS 1.3 KeyUpdate. All fields accessed only under m_io_mutex.
+	struct SSLRetryState
+	{
+		bool want_write_for_recv{false}; // recv got WANT_WRITE → need handle_output
+		bool want_read_for_send{false};  // send got WANT_READ → need handle_input
+		bool in_retry{false};            // Prevents unbounded mutual recursion (depth limit = 1)
 
-	mutable std::recursive_mutex m_io_mutex; // Recursive for SSL renegotiation
-	mutable std::mutex m_cb_mutex;			 // Protects callbacks
+		// RAII guard that resets in_retry on scope exit (exception-safe)
+		struct RetryGuard
+		{
+			bool &flag;
+			explicit RetryGuard(bool &f) : flag(f) { flag = true; }
+			~RetryGuard() { flag = false; }
+		};
+
+		void reset()
+		{
+			want_write_for_recv = false;
+			want_read_for_send = false;
+			in_retry = false;
+		}
+	};
+	SSLRetryState m_ssl_retry;
+
+	// MUST remain recursive: user callbacks (onData, onSent) are invoked while this
+	// lock is held, and those callbacks may re-enter send()/shutdown() on this stream.
+	mutable std::recursive_mutex m_io_mutex;
+	mutable std::mutex m_cb_mutex; // Protects callbacks
 
 	DataCallback m_data_cb;
 	SendCallback m_send_cb;
@@ -333,13 +372,6 @@ class SocketStreamPtr
 public:
 	SocketStreamPtr() = default;
 
-	/// @brief Wraps a raw pointer with optional reference increment.
-	/// @param p The SocketStream instance to manage.
-	///  Note: A new ACE_Event_Handler typically starts with a ref_count of 1.
-	///  Since we already clear the construction reference in SocketStream::open, so always use add_ref=true here to avoid premature deletion.
-	/// @param add_ref Control logic:
-	///  - true (Guard Mode): Use for existing objects to prevent deletion.
-	///  - false (Transfer Mode): Use for 'new' objects to take ownership.
 	explicit SocketStreamPtr(SocketStream *p, bool add_ref = true) : m_var(p)
 	{
 		if (m_var.handler() && add_ref)

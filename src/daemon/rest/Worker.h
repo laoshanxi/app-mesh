@@ -36,7 +36,7 @@ public:
 	bool process(const std::shared_ptr<HttpRequest> &request);
 
 	void queueTcpRequest(ByteBuffer &&data, int tcpClientId);
-	void queueLwsRequest(ByteBuffer &&data, void *lwsSession);
+	void queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef);
 	void queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext);
 
 	void shutdown();

@@ -87,8 +87,9 @@ int main(int argc, char *argv[])
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    client.stop();
+    // Disconnect before stop (disconnect signals IO thread, stop waits for it)
     client.disconnect();
+    client.stop();
 
     return 0;
 }
