@@ -24,6 +24,9 @@ using ByteBuffer = std::vector<std::uint8_t>;
 // Used by HttpRequest and HttpRequestContext to maintain "one reference per protocol".
 struct LwsSessionRef
 {
+	LwsSessionRef() = default;
+	LwsSessionRef(const void *w, uint64_t r, uint64_t s) : wsi(w), reqId(r), sessionId(s) {}
+
 	const void *wsi = nullptr;
 	uint64_t reqId = 0;		// ABA protection for HTTP responses
 	uint64_t sessionId = 0; // ABA protection for WS sessions

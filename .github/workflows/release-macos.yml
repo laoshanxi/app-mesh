@@ -9,6 +9,8 @@ on:
       - "src/**"
       - "script/**"
 
+permissions: read-all
+
 env:
   APPMESH_VERSION: "2.2.1"
 
@@ -24,7 +26,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup Homebrew and Install Dependencies
         run: |
@@ -52,7 +54,7 @@ jobs:
           make pack
 
       - name: Upload packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.os }}-${{ github.sha }}
           path: build/appmesh_*.pkg
@@ -64,13 +66,13 @@ jobs:
         os: [macos-14, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: "stable"
 
       - name: Download packages
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ${{ matrix.os }}-${{ github.sha }}
 
@@ -122,19 +124,28 @@ jobs:
   publish:
     needs: test
     runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Download macos-14 packages
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: macos-14-${{ github.sha }}
 
       - name: Download macos-15 packages
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: macos-15-${{ github.sha }}
 
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: "appmesh_*.pkg"
+
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           name: "Security"
           tag_name: ${{ env.APPMESH_VERSION }}

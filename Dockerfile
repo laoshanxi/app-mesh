@@ -8,14 +8,14 @@
 #  3. Run with root permission (for AI remote execution, pip install, etc.)
 #     docker run -d -e APPMESH_RUN_AS_ROOT=true laoshanxi/appmesh
 ##################################################################################
-FROM laoshanxi/appmesh:build_ubuntu22 AS build_stage
+FROM laoshanxi/appmesh:build_ubuntu22@sha256:69e94d7fd349e67f28749a5ad3fe61c97b8df42b1fd6fe2039617f7445f45662 AS build_stage
 WORKDIR /workspace
 RUN bash -c 'git clone --depth 1 https://github.com/laoshanxi/app-mesh.git && \
     cd app-mesh && \
     cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl -B build -G Ninja && \
     cmake --build build --target pack --parallel'
 
-FROM python:3.13.7-slim-bookworm
+FROM python:3.13.7-slim-bookworm@sha256:adafcc17694d715c905b4c7bebd96907a1fd5cf183395f0ebc4d3428bd22d92d
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
