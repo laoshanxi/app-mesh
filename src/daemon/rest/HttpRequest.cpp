@@ -14,10 +14,7 @@
 #include "RestHandler.h"
 #include "SocketServer.h"
 #include "Worker.h"
-#include "uwebsockets/ReplyContext.h"
-#if !defined(HAVE_UWEBSOCKETS)
 #include "../../common/lwsservice/WebSocketService.h"
-#endif
 
 #include "HttpRequest.h"
 
@@ -29,7 +26,7 @@ HttpRequest::HttpRequest(Request &&request, int tcpClientId)
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
-	  m_tcpClientId(tcpClientId), m_lwsRef{}, m_uwsReplyContext(nullptr)
+	  m_tcpClientId(tcpClientId), m_lwsRef{}
 {
 }
 
@@ -75,7 +72,7 @@ bool HttpRequest::reply(web::http::status_code status, const std::string &body_d
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
@@ -84,7 +81,6 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, i
 	{
 		auto request = std::make_shared<HttpRequest>(std::move(req), tcpClientId);
 		request->m_lwsRef = lwsRef;
-		request->m_uwsReplyContext = std::move(ctx);
 		return request;
 	}
 	else
@@ -152,32 +148,6 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		// TCP protocol
 		return SocketServer::replyTcp(m_tcpClientId, std::move(response));
 	}
-#if defined(HAVE_UWEBSOCKETS)
-	else if (m_uwsReplyContext)
-	{
-		if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
-		{
-			// HTTP protocol
-			response->handleAuthCookies(&m_headers);
-			response->applyCorsHeaders();
-			response->applySecurityHeaders();
-			m_uwsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
-			return true;
-		}
-		else if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
-		{
-			// WebSocket protocol
-			auto data = response->serialize();
-			m_uwsReplyContext->replyWebSocket(std::string(data->data(), data->size()), false, true);
-			return true;
-		}
-		else
-		{
-			LOG_ERR << fname << "Unknown reply context protocol type";
-			return false;
-		}
-	}
-#else
 	else if (m_lwsRef)
 	{
 		// WebSocket protocol or HTTP over WebSocketService
@@ -191,7 +161,6 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 		return true;
 	}
-#endif
 
 	return false;
 }

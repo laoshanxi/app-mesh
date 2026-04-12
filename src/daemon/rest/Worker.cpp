@@ -11,39 +11,31 @@
 #include "HttpRequest.h"
 #include "RestHandler.h"
 #include "SocketServer.h"
-#include "uwebsockets/ReplyContext.h"
 
 #include <memory>
 #include <utility>
 
 struct HttpRequestContext
 {
-	HttpRequestContext(ByteBuffer data, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> uwsReplyCtx)
-		: m_data(std::move(data)), m_tcpClientId(tcpClientId), m_lwsRef(lwsRef),
-		  m_uwsReplyContext(std::move(uwsReplyCtx))
+	HttpRequestContext(ByteBuffer data, int tcpClientId, LwsSessionRef lwsRef)
+		: m_data(std::move(data)), m_tcpClientId(tcpClientId), m_lwsRef(lwsRef)
 	{
 	}
 
 	ByteBuffer m_data;
 
-	const int m_tcpClientId;							  // TCP socket
-	const LwsSessionRef m_lwsRef;						  // libwebsockets (wsi + ABA IDs)
-	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext; // uWebsockets
+	const int m_tcpClientId;	  // TCP socket
+	const LwsSessionRef m_lwsRef; // libwebsockets (wsi + ABA IDs)
 };
 
 void Worker::queueTcpRequest(ByteBuffer &&data, int tcpClientId)
 {
-	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), tcpClientId, LwsSessionRef{}, nullptr));
+	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), tcpClientId, LwsSessionRef{}));
 }
 
 void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
 {
-	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), -1, lwsRef, nullptr));
-}
-
-void Worker::queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext)
-{
-	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), -1, LwsSessionRef{}, std::move(uwsContext)));
+	m_messages.enqueue(std::make_shared<HttpRequestContext>(std::move(data), -1, lwsRef));
 }
 
 int Worker::svc()
@@ -64,7 +56,7 @@ int Worker::svc()
 			break;
 		}
 
-		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef, requestContext->m_uwsReplyContext);
+		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef);
 
 		if (!request || !process(request))
 		{
@@ -74,17 +66,6 @@ int Worker::svc()
 			{
 				SocketServer::closeClient(requestContext->m_tcpClientId);
 			}
-#if defined(HAVE_UWEBSOCKETS)
-			else if (requestContext->m_uwsReplyContext)
-			{
-				requestContext->m_uwsReplyContext->replyWebSocket("500 Internal Server Error", true, false);
-			}
-#else
-			else if (requestContext->m_lwsRef)
-			{
-				// TODO: handle libwebsockets close to avoid leak
-			}
-#endif
 		}
 	}
 

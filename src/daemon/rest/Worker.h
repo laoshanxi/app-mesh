@@ -11,11 +11,6 @@
 #include <memory>
 #include <string>
 
-namespace WSS
-{
-	class ReplyContext;
-}
-
 class HttpRequest;
 struct HttpRequestContext;
 
@@ -37,7 +32,6 @@ public:
 
 	void queueTcpRequest(ByteBuffer &&data, int tcpClientId);
 	void queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef);
-	void queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext);
 
 	void shutdown();
 

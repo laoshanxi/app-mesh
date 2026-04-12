@@ -5,9 +5,9 @@ on:
     branches:
       - main
     paths:
-      - .github/workflows/test-ci.yml
+      - .github/workflows/ci-test.yml
   workflow_run:
-    workflows: ["release-linux-package"]
+    workflows: ["release-linux"]
     types: [completed]
 
 env:

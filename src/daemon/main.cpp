@@ -60,11 +60,7 @@
 #include "../common/Valgrind.h"
 #endif
 
-#if defined(HAVE_UWEBSOCKETS)
-#include "rest/uwebsockets/Adaptor.hpp"
-#else
 #include "../common/lwsservice/WebSocketService.h"
-#endif
 
 using TcpAcceptor = ACE_Acceptor<SocketServer, ACE_SSL_SOCK_Acceptor>;
 
@@ -425,17 +421,10 @@ void AppMeshDaemon::initializeRestService()
 	if (config->getWebSocketPort())
 	{
 		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
-#if defined(HAVE_UWEBSOCKETS)
-		// 3 <IO> threads + shared <WORKER> threads
-		int ioThreadNumber = Configuration::instance()->getIOThreadPoolSize();
-		WebSocketAdaptor::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
-		WebSocketAdaptor::instance()->start();
-#else
 		// 1 <IO> thread + shared <WORKER> threads
 		constexpr int workerThreadNumber = 0; // Use shared thread pool
 		WebSocketService::instance()->initialize(addr, cert, key, ca);
 		WebSocketService::instance()->start(workerThreadNumber);
-#endif
 		LOG_INF << fname << "Initializing Websocket service on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
 	}
 
@@ -643,11 +632,7 @@ void AppMeshDaemon::performShutdown()
 
 	QuitHandler::instance()->requestExit();
 
-#if defined(HAVE_UWEBSOCKETS)
-	WebSocketAdaptor::instance()->stop();
-#else
 	WebSocketService::instance()->stop();
-#endif
 
 	cleanWorkerThreads();
 	cleanupResources();

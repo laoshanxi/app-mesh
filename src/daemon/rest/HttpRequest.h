@@ -12,10 +12,6 @@
 #include "Data.h"
 
 class WebSocketSession;
-namespace WSS
-{
-	class ReplyContext;
-}
 
 // HttpRequest is a wrapper of <web::http::http_request>
 //   - Used for REST server to forward requests to TCP server and wait for TCP result before responding to REST client
@@ -59,7 +55,7 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
-	static std::shared_ptr<HttpRequest> deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx);
+	static std::shared_ptr<HttpRequest> deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef);
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
@@ -81,7 +77,6 @@ public:
 private:
 	const int m_tcpClientId;
 	LwsSessionRef m_lwsRef;
-	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;
 };
 
 class Application;

@@ -1,0 +1,201 @@
+App Mesh
+Copyright 2019-2026 laoshanxi
+
+This product includes software developed by third parties.
+The following is a list of third-party dependencies and their licenses.
+
+================================================================================
+
+Boost C++ Libraries
+  License: Boost Software License 1.0
+  URL: https://www.boost.org/
+  Components: system, filesystem, regex, thread, program_options, date_time
+
+ACE (Adaptive Communication Environment)
+  License: BSD (DOC License)
+  URL: https://github.com/DOCGroup/ACE_TAO
+  Copyright: Copyright (c) Douglas C. Schmidt and his research group
+
+OpenSSL
+  License: Apache License 2.0
+  URL: https://www.openssl.org/
+  Copyright: Copyright (c) The OpenSSL Project Authors
+
+libcurl
+  License: MIT/X (curl license)
+  URL: https://curl.se/
+  Copyright: Copyright (c) Daniel Stenberg
+
+spdlog
+  License: MIT
+  URL: https://github.com/gabime/spdlog
+  Copyright: Copyright (c) Gabi Melman
+
+libwebsockets
+  License: MIT (v4.0+)
+  URL: https://libwebsockets.org/
+  Copyright: Copyright (c) Andy Green
+
+Crypto++ (cryptopp)
+  License: Boost Software License 1.0
+  URL: https://www.cryptopp.com/
+  Copyright: Copyright (c) Wei Dai
+
+yaml-cpp
+  License: MIT
+  URL: https://github.com/jbeder/yaml-cpp
+  Copyright: Copyright (c) Jesse Beder
+
+uriparser
+  License: BSD 3-Clause
+  URL: https://github.com/uriparser/uriparser
+  Copyright: Copyright (c) uriparser contributors
+
+zlib
+  License: zlib License
+  URL: https://www.zlib.net/
+  Copyright: Copyright (c) Jean-loup Gailly and Mark Adler
+
+msgpack-c (C++ implementation)
+  License: Boost Software License 1.0
+  URL: https://github.com/msgpack/msgpack-c
+  Copyright: Copyright (c) Sadayuki Furuhashi
+
+nlohmann/json
+  License: MIT
+  URL: https://github.com/nlohmann/json
+  Copyright: Copyright (c) Niels Lohmann
+
+jwt-cpp
+  License: MIT
+  URL: https://github.com/Thalhammer/jwt-cpp
+  Copyright: Copyright (c) Dominik Thalhammer
+
+croncpp
+  License: MIT
+  URL: https://github.com/mariusbancila/croncpp
+  Copyright: Copyright (c) Marius Bancila
+
+wildcards
+  License: MIT
+  URL: https://github.com/zemasoft/wildcards
+  Copyright: Copyright (c) Nemanja Trifunovic
+
+hashidsxx
+  License: MIT
+  URL: https://github.com/schoentoon/hashidsxx
+  Copyright: Copyright (c) Toon Schoenmakers
+
+prometheus-cpp
+  License: Apache License 2.0
+  URL: https://github.com/jupp0r/prometheus-cpp
+  Copyright: Copyright (c) Jupp Mueller
+
+linenoise-ng
+  License: BSD 3-Clause
+  URL: https://github.com/arangodb/linenoise-ng
+  Copyright: Copyright (c) ArangoDB GmbH
+
+QR-Code-generator
+  License: MIT
+  URL: https://github.com/nayuki/QR-Code-generator
+  Copyright: Copyright (c) Project Nayuki
+
+Catch2
+  License: Boost Software License 1.0
+  URL: https://github.com/catchorg/Catch2
+  Copyright: Copyright (c) Catch2 Authors (test dependency only)
+
+concurrentqueue
+  License: Simplified BSD License
+  URL: https://github.com/cameron314/concurrentqueue
+  Copyright: Copyright (c) Cameron Desrochers
+
+================================================================================
+
+SDK Dependencies
+================================================================================
+
+Python SDK (appmesh):
+  requests - Apache License 2.0
+  websocket-client - LGPLv2.1+
+  msgpack - Apache License 2.0
+  requests_toolbelt - Apache License 2.0
+  aniso8601 - BSD
+  PyJWT - MIT
+
+Go SDK:
+  gorilla/mux - BSD 3-Clause
+  pkg/errors - BSD 2-Clause
+  pquerna/otp - Apache License 2.0
+  uber-go/zap - MIT
+  uber-go/atomic - MIT
+  vmihailenco/msgpack - BSD 2-Clause
+  hashicorp/consul/api - MPL 2.0
+  stretchr/testify - MIT (test dependency only)
+
+Rust SDK (appmesh):
+  reqwest - MIT/Apache 2.0
+  tokio - MIT
+  serde/serde_json - MIT/Apache 2.0
+  base64 - MIT/Apache 2.0
+  uuid - MIT/Apache 2.0
+  tokio-tungstenite - MIT
+  native-tls - MIT/Apache 2.0
+
+Java SDK:
+  org.json - JSON License
+  threeten-extra - BSD 3-Clause
+  commons-lang3 - Apache License 2.0
+  bouncycastle - MIT
+  jackson-dataformat-msgpack - Apache License 2.0
+  Java-WebSocket - MIT
+  junit-jupiter - EPL 2.0 (test dependency only)
+
+JavaScript SDK:
+  axios - MIT
+  base-64 - MIT
+  msgpack-lite - MIT (optional)
+  uuid - MIT (optional)
+
+================================================================================
+
+Build-Time Tools (not distributed with the product)
+================================================================================
+
+  CMake - BSD 3-Clause
+  cfssl/cfssljson - BSD 2-Clause
+  nfpm - MIT
+  Syft (SBOM generator) - Apache License 2.0
+
+================================================================================
+
+Note on Copyleft Dependencies
+================================================================================
+
+The following dependencies use copyleft or restrictive licenses. Users should
+be aware of their obligations when distributing App Mesh or its components.
+
+1. Python websocket-client (LGPLv2.1+)
+   - Used by: Python SDK (appmesh package)
+   - Boundary: Installed as a separate pip package, not bundled or statically
+     linked. End users can replace it via `pip install` without modifying
+     App Mesh source code.
+   - LGPL obligation: The library must remain replaceable by the end user.
+     This is inherently satisfied by pip's package management.
+   - Recommended alternative: `websockets` (MIT) — requires async refactor.
+
+2. hashicorp/consul/api (MPL 2.0)
+   - Used by: Go SDK (consul service discovery)
+   - Boundary: Imported as a Go module dependency. App Mesh does not modify
+     any MPL-licensed source files.
+   - MPL 2.0 obligation: File-level copyleft only. Modifications to the
+     original MPL-licensed files must be shared under MPL. Combining with
+     other-licensed code in separate files is permitted.
+
+3. org.json (JSON License — "Good, not Evil" clause)
+   - Used by: Java SDK
+   - Boundary: Included as a Maven dependency, not bundled.
+   - Risk: The "shall be used for Good, not Evil" clause is considered
+     non-free by some organizations (Debian, FSF, Apache Foundation).
+   - Recommended alternative: Gson (Apache-2.0) or Jackson (Apache-2.0).

@@ -1,0 +1,14 @@
+GNU Lesser General Public License, Version 2.1
+
+(Full text available at: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
+
+This license applies to certain SDK dependencies that are dynamically linked
+and can be replaced by the end user.
+
+---
+
+Used by the following dependencies:
+  - websocket-client (Python SDK dependency)
+
+Note: The LGPL allows linking without requiring the entire work to be LGPL,
+provided the library can be replaced by the end user.

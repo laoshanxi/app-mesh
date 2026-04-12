@@ -1,0 +1,8 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: App Mesh
+Upstream-Contact: laoshanxi <https://github.com/laoshanxi>
+Source: https://github.com/laoshanxi/app-mesh
+
+Files: *
+Copyright: 2019-2026 laoshanxi
+License: MIT

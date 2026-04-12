@@ -3,10 +3,7 @@
 # --- Subdirectories ---
 add_subdirectory(os)
 
-if(NOT CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 17)
-  message(STATUS "C++ standard less than 17: Adding lwsservice")
-  add_subdirectory(lwsservice)
-endif()
+add_subdirectory(lwsservice)
 
 # --- Define library ---
 aux_source_directory(. SRC_LIST)
@@ -36,6 +33,4 @@ target_link_libraries(common
     uriparser::uriparser
     os
 )
-if(NOT CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  target_link_libraries(common PRIVATE lwsservice)
-endif()
+target_link_libraries(common PRIVATE lwsservice)

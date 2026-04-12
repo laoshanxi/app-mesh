@@ -1,11 +1,11 @@
-name: "release-macos-package"
+name: "release-macos"
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/build-macos.yaml"
+      - ".github/workflows/release-macos.yml"
       - "src/**"
       - "script/**"
 

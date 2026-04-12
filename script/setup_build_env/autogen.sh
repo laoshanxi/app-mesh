@@ -272,19 +272,6 @@ else
 fi
 make -j"$(nproc)" && make install
 
-if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    echo "uWebSockets not support C++11"
-else
-    cd $ROOTDIR
-    git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
-    cd uWebSockets
-    export OPENSSL_ROOT_DIR=/usr/local/ssl
-    make default WITH_OPENSSL=1 CFLAGS="-I${OPENSSL_ROOT_DIR}/include" LDFLAGS="-L${OPENSSL_ROOT_DIR}/lib"
-    make install
-    cp uSockets/src/libusockets.h /usr/local/include/
-    cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
-fi
-
 cd $ROOTDIR
 git clone --depth=1 https://github.com/uriparser/uriparser.git
 cd uriparser && mkdir build && cd build
