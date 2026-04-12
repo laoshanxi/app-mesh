@@ -77,9 +77,9 @@ croncpp
   Copyright: Copyright (c) Marius Bancila
 
 wildcards
-  License: MIT
+  License: Boost Software License 1.0
   URL: https://github.com/zemasoft/wildcards
-  Copyright: Copyright (c) Nemanja Trifunovic
+  Copyright: Copyright (c) zemasoft
 
 hashidsxx
   License: MIT
@@ -87,9 +87,9 @@ hashidsxx
   Copyright: Copyright (c) Toon Schoenmakers
 
 prometheus-cpp
-  License: Apache License 2.0
+  License: MIT
   URL: https://github.com/jupp0r/prometheus-cpp
-  Copyright: Copyright (c) Jupp Mueller
+  Copyright: Copyright (c) Jupp Mueller, Gregor Jasny
 
 linenoise-ng
   License: BSD 3-Clause
@@ -118,19 +118,22 @@ SDK Dependencies
 
 Python SDK (appmesh):
   requests - Apache License 2.0
-  websocket-client - LGPLv2.1+
+  websocket-client - Apache License 2.0
   msgpack - Apache License 2.0
   requests_toolbelt - Apache License 2.0
-  aniso8601 - BSD
+  aniso8601 - BSD 3-Clause
   PyJWT - MIT
 
 Go SDK:
   gorilla/mux - BSD 3-Clause
+  juju/persistent-cookiejar - BSD 3-Clause
   pkg/errors - BSD 2-Clause
   pquerna/otp - Apache License 2.0
+  rs/xid - MIT
   uber-go/zap - MIT
   uber-go/atomic - MIT
   vmihailenco/msgpack - BSD 2-Clause
+  golang.org/x/sys - BSD 3-Clause
   hashicorp/consul/api - MPL 2.0
   stretchr/testify - MIT (test dependency only)
 
@@ -142,12 +145,26 @@ Rust SDK (appmesh):
   uuid - MIT/Apache 2.0
   tokio-tungstenite - MIT
   native-tls - MIT/Apache 2.0
+  log - MIT/Apache 2.0
+  url - MIT/Apache 2.0
+  rmp-serde - MIT
+  byteorder - Unlicense/MIT
+  hostname - MIT
+  http - MIT/Apache 2.0
+  bytes - MIT
+  async-trait - MIT/Apache 2.0
+  encoding_rs - (Apache 2.0 OR MIT) AND BSD 3-Clause
+  futures-util - MIT/Apache 2.0
+  serde_bytes - MIT/Apache 2.0
+  iso8601-duration - MIT
+  nix - MIT (unix only)
 
 Java SDK:
   org.json - JSON License
   threeten-extra - BSD 3-Clause
   commons-lang3 - Apache License 2.0
-  bouncycastle - MIT
+  bouncycastle (bcpkix-jdk18on) - MIT
+  jackson-databind - Apache License 2.0
   jackson-dataformat-msgpack - Apache License 2.0
   Java-WebSocket - MIT
   junit-jupiter - EPL 2.0 (test dependency only)
@@ -176,16 +193,7 @@ Note on Copyleft Dependencies
 The following dependencies use copyleft or restrictive licenses. Users should
 be aware of their obligations when distributing App Mesh or its components.
 
-1. Python websocket-client (LGPLv2.1+)
-   - Used by: Python SDK (appmesh package)
-   - Boundary: Installed as a separate pip package, not bundled or statically
-     linked. End users can replace it via `pip install` without modifying
-     App Mesh source code.
-   - LGPL obligation: The library must remain replaceable by the end user.
-     This is inherently satisfied by pip's package management.
-   - Recommended alternative: `websockets` (MIT) — requires async refactor.
-
-2. hashicorp/consul/api (MPL 2.0)
+1. hashicorp/consul/api (MPL 2.0)
    - Used by: Go SDK (consul service discovery)
    - Boundary: Imported as a Go module dependency. App Mesh does not modify
      any MPL-licensed source files.
@@ -193,7 +201,7 @@ be aware of their obligations when distributing App Mesh or its components.
      original MPL-licensed files must be shared under MPL. Combining with
      other-licensed code in separate files is permitted.
 
-3. org.json (JSON License — "Good, not Evil" clause)
+2. org.json (JSON License — "Good, not Evil" clause)
    - Used by: Java SDK
    - Boundary: Included as a Maven dependency, not bundled.
    - Risk: The "shall be used for Good, not Evil" clause is considered

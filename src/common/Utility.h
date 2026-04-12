@@ -73,6 +73,20 @@ namespace std
 #endif
 #endif
 
+// std::exchange polyfill: available since GCC 4.9 / C++14, missing on GCC 4.8.x
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 9))
+namespace std
+{
+	template <typename T, typename U>
+	T exchange(T &obj, U &&new_value)
+	{
+		T old_value = std::move(obj);
+		obj = std::forward<U>(new_value);
+		return old_value;
+	}
+} // namespace std
+#endif
+
 
 template <typename T>
 std::shared_ptr<T> make_shared_array(size_t size)

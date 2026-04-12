@@ -101,7 +101,7 @@ format:
      # include space indention and newlines
      # note: inherits default value from 'format.pretty' or 'false' if parent is unset
      # SYFT_FORMAT_CYCLONEDX_JSON_PRETTY env var
-     pretty: false
+     pretty: true
 
   # all cyclonedx-xml format options
   cyclonedx-xml:

@@ -291,8 +291,8 @@ function Install-HeaderOnlyLibraries {
     git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
     Copy-Item -Recurse "concurrentqueue" "C:\local\include\" -Force
 
-    # libwebsockets
-    git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
+    # libwebsockets (pinned to v4.5.8; main has SMD regression since 58a366b 2026-04-10)
+    git clone --depth=1 -b v4.5.8 https://libwebsockets.org/repo/libwebsockets
     Set-Location "libwebsockets"
     (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int uid_t;', 'typedef long uid_t;' | Set-Content "include\libwebsockets.h"
     (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int gid_t;', 'typedef long gid_t;' | Set-Content "include\libwebsockets.h"
