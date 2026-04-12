@@ -23,7 +23,7 @@ WebSocketSession::WebSocketSession(lws *lws, uint64_t id)
 
 void WebSocketSession::handleRequest(const WSRequest &req)
 {
-    auto request = HttpRequest::deserialize(req.m_payload, -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, nullptr);
+    auto request = HttpRequest::deserialize(req.m_payload, -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id});
     WORKER::instance()->process(request);
 }
 

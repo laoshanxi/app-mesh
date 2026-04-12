@@ -328,7 +328,7 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 	if (filePath.find('\0') != std::string::npos)
 		return false;
 	// Reject ".." path components (component-level check avoids false positives on names like "..hidden")
-	for (const auto &component : std::filesystem::path(filePath))
+	for (const auto &component : fs::path(filePath))
 	{
 		if (component == "..")
 			return false;

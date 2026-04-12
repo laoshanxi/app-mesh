@@ -1,20 +1,21 @@
-name: "ci-docker-ubuntu-24"
+name: "ci-image-ubuntu"
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * 3" # every Thursday at 9:00 UTC
   push:
     branches:
       - main
     paths:
-      - ".github/workflows/build-ubuntu-24.yml"
-      - "docker/Dockerfile.build_ubuntu24"
+      - ".github/workflows/ci-image-ubuntu.yml"
+      - "docker/Dockerfile.build_ubuntu"
       - "script/setup_build_env/autogen.sh*"
-      - "script/setup_build_env/update_openssl.sh"
 
 env:
   DOCKER_REGISTRY: docker.io
   DOCKER_IMAGE: laoshanxi/appmesh
-  IMAGE_TAG: build_ubuntu24
+  IMAGE_TAG: build_ubuntu
 
 permissions:
   contents: read
@@ -42,7 +43,7 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
-          egress-policy: audit
+          egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
       - name: Checkout Github code
         uses: actions/checkout@v6
@@ -68,7 +69,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: docker/Dockerfile.build_ubuntu24
+          file: docker/Dockerfile.build_ubuntu
           no-cache: true
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}

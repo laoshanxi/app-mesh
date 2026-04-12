@@ -1,11 +1,11 @@
-name: "ci-docker-centos-8"
+name: "ci-image-centos8"
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/build-centos-8.yml"
+      - ".github/workflows/ci-image-centos8.yml"
       - "docker/Dockerfile.build_centos8"
       - "script/setup_build_env/autogen.sh"
 

@@ -1,4 +1,4 @@
-name: "release-linux-package"
+name: "release-linux"
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
     paths:
       - "src/**"
       - "script/**"
-      - .github/workflows/release-github-package.yml
+      - .github/workflows/release-linux.yml
 
 env:
   REGISTRY: docker.io
@@ -67,7 +67,9 @@ jobs:
             docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu /bin/bash --login -c "set -e; mkdir syft_${BUILD_DIR}; cd syft_${BUILD_DIR}; cmake ..; make -j'$(nproc)'; make pack; make sbom; ls; make test ARGS='-V'"
             BUILD_DIR_SYFT="${{ github.workspace }}/syft_${BUILD_DIR}"
             SBOM_JSON_FILE="${{ github.workspace }}/appmesh.${{ env.APPMESH_VERSION }}.sbom.spdx.json"
+            SBOM_CDX_FILE="${{ github.workspace }}/appmesh.${{ env.APPMESH_VERSION }}.sbom.cdx.json"
             cp $BUILD_DIR_SYFT/sbom.spdx.json "$SBOM_JSON_FILE"
+            cp $BUILD_DIR_SYFT/sbom.cdx.json "$SBOM_CDX_FILE"
           fi
 
       - name: Build Ubuntu 24
@@ -102,6 +104,7 @@ jobs:
             ubuntu*/*.deb
             ubuntu*/*.rpm
             *.sbom.spdx.json
+            *.sbom.cdx.json
             centos*/*.deb
             centos*/*.rpm
 
@@ -162,10 +165,20 @@ jobs:
           dpkg-sig --sign builder -k appmesh --gpg-options '--batch --pinentry-mode loopback' */*.deb
           dpkg-sig --verify */*.deb
 
-      - name: Attest Build Provenance
+      - name: Attest Build Provenance (RPM)
         uses: actions/attest-build-provenance@v4.1.0
         with:
           subject-path: "*/*.rpm"
+
+      - name: Attest Build Provenance (DEB)
+        uses: actions/attest-build-provenance@v4.1.0
+        with:
+          subject-path: "*/*.deb"
+
+      - name: Attest Build Provenance (SBOM)
+        uses: actions/attest-build-provenance@v4.1.0
+        with:
+          subject-path: "*.sbom.*.json"
 
       - name: Release Packages
         uses: softprops/action-gh-release@v2
@@ -179,6 +192,7 @@ jobs:
             ubuntu*/*.deb
             ubuntu*/*.rpm
             *.sbom.spdx.json
+            *.sbom.cdx.json
             centos*/*.deb
             centos*/*.rpm
             gpg_public.key

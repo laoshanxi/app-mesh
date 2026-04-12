@@ -6,6 +6,7 @@
 # SYFT_OUTPUT env var / -o, --output flags
 output:
   - "spdx-json=sbom.spdx.json"
+  - "cyclonedx-json=sbom.cdx.json"
   - "syft-table"
 
 # suppress all output (except for the SBOM report)

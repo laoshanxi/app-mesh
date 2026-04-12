@@ -1,4 +1,4 @@
-name: "security-coverity-scan"
+name: "security-coverity"
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
     paths:
       - "src/**"
       - "!src/sdk/**"
-      - .github/workflows/code-scan-coverity.yml
+      - .github/workflows/security-coverity.yml
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read

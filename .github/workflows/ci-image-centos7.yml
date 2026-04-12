@@ -1,4 +1,4 @@
-name: "ci-docker-centos-7"
+name: "ci-image-centos7"
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/build-centos-7.yml"
+      - ".github/workflows/ci-image-centos7.yml"
       - "docker/Dockerfile.build_centos7"
       - "script/setup_build_env/autogen.sh"
       - "script/setup_build_env/update_openssl.sh"

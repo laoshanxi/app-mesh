@@ -1,4 +1,4 @@
-name: publish-npm-package
+name: "release-sdk-js"
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - "src/sdk/javascript/**"
-      - ".github/workflows/release-npm-package.yml"
+      - ".github/workflows/release-sdk-js.yml"
 
 permissions:
   contents: read

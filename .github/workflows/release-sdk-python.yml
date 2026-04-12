@@ -1,4 +1,4 @@
-name: publish-pypi-package
+name: "release-sdk-python"
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - "src/sdk/python/**"
-      - .github/workflows/release-pypi-package.yml
+      - .github/workflows/release-sdk-python.yml
 
 permissions:
   contents: read

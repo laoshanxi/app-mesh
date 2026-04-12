@@ -1,4 +1,4 @@
-name: "ci-docker-ubuntu-22"
+name: "ci-image-ubuntu18"
 
 on:
   workflow_dispatch:
@@ -6,15 +6,15 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/build-ubuntu-22.yml"
-      - "docker/Dockerfile.build_ubuntu22"
+      - ".github/workflows/ci-image-ubuntu18.yml"
+      - "docker/Dockerfile.build_ubuntu18"
       - "script/setup_build_env/autogen.sh*"
       - "script/setup_build_env/update_openssl.sh"
 
 env:
   DOCKER_REGISTRY: docker.io
   DOCKER_IMAGE: laoshanxi/appmesh
-  IMAGE_TAG: build_ubuntu22
+  IMAGE_TAG: build_ubuntu18
 
 permissions:
   contents: read
@@ -42,7 +42,7 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
-          egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
+          egress-policy: audit
 
       - name: Checkout Github code
         uses: actions/checkout@v6
@@ -68,7 +68,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: docker/Dockerfile.build_ubuntu22
+          file: docker/Dockerfile.build_ubuntu18
           no-cache: true
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}

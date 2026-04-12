@@ -21,14 +21,6 @@ target_link_libraries(appsvc
     common
 )
 
-if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  if(WIN32)
-    target_link_libraries(appsvc PUBLIC unofficial::uwebsockets::uwebsockets)
-  else()
-    target_link_libraries(appsvc PUBLIC uSockets)
-  endif()
-else()
-  target_link_libraries(appsvc PUBLIC websockets_shared)
-endif()
+target_link_libraries(appsvc PUBLIC websockets_shared)
 
 install_runtime(TARGET appsvc)

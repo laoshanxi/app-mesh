@@ -1,4 +1,4 @@
-name: publish-rust-package
+name: "release-sdk-rust"
 
 on:
   workflow_dispatch:

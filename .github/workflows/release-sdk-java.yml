@@ -1,4 +1,4 @@
-name: publish-jar-package
+name: "release-sdk-java"
 
 # https://docs.github.com/en/actions/publishing-packages/publishing-java-packages-with-maven
 
@@ -8,7 +8,7 @@ on:
     branches: [main]
     paths:
       - "src/sdk/java/**"
-      - .github/workflows/release-jar-package.yml
+      - .github/workflows/release-sdk-java.yml
 
 jobs:
   publish:

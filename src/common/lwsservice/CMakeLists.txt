@@ -10,4 +10,5 @@ target_link_libraries(lwsservice
   PUBLIC
     websockets_shared
     uriparser::uriparser
+    ${OPENSSL_LIBRARIES}
 )

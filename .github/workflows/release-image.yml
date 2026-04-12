@@ -1,4 +1,4 @@
-name: "release-appmesh-image"
+name: "release-image"
 
 on:
   workflow_dispatch:
@@ -7,9 +7,9 @@ on:
       - main
     paths:
       - Dockerfile
-      - .github/workflows/release-appmesh-image.yml
+      - .github/workflows/release-image.yml
   workflow_run:
-    workflows: ["release-linux-package]"]
+    workflows: ["release-linux"]
     types:
       - completed
 
@@ -110,6 +110,15 @@ jobs:
             IMAGE_URL="https://hub.docker.com/v2/repositories/${{ env.DOCKER_IMAGE }}/tags/${{ env.APPMESH_VERSION }}-${arch}/"
             curl -X DELETE -H "Authorization: Bearer ${TOKEN}" ${IMAGE_URL} || echo "Failed to delete ${arch} tag"
           done
+
+      - name: Generate Docker Image SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}
+          format: spdx-json
+          output-file: appmesh-image-sbom.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
 
       - name: Verify Image
         uses: addnab/docker-run-action@v3
