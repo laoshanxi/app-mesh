@@ -5,6 +5,7 @@
        src="https://img.shields.io/coverity/scan/21528.svg"/>
 </a>
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh/badge)](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/12481/baseline)](https://www.bestpractices.dev/projects/12481)
 [![release.badge]][release.url] [![pypi.badge]][pypi.url] [![npm.badge]][npm.url] [![cargo.badge]][cargo.url]
 
 # Advanced Application Management Platform

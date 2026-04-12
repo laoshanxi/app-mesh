@@ -1,6 +1,6 @@
 python-dotenv>=1.2.1
 websockets>=15.0.1
-mcp>=1.20.0
+mcp>=1.23.0
 pydantic>=2.12.4
-fastmcp>=2.13.0.2
+fastmcp>=3.2.0
 appmesh>=2.0.4

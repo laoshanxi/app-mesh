@@ -22,12 +22,12 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@v2
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
       - name: Checkout Github code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Cmake init with Debug mode
         run: |
@@ -38,7 +38,7 @@ jobs:
 
       # https://github.com/vapier/coverity-scan-action
       - name: Coverity scan
-        uses: vapier/coverity-scan-action@v1
+        uses: vapier/coverity-scan-action@2068473c7bdf8c2fb984a6a40ae76ee7facd7a85 # v1
         with:
           project: laoshanxi%2Fapp-mesh
           working-directory: build

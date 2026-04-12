@@ -39,8 +39,15 @@
         <!-- BouncyCastle PKIX for parsing PEM files and handling key pairs -->
         <dependency>
             <groupId>org.bouncycastle</groupId>
-            <artifactId>bcpkix-jdk15on</artifactId>
-            <version>1.70</version>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>1.80</version>
+        </dependency>
+
+        <!-- Jackson Databind (pin transitive dependency for security) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.18.6</version>
         </dependency>
 
         <!-- MessagePack using Jackson dataformat for easy POJO <-> msgpack conversion -->
