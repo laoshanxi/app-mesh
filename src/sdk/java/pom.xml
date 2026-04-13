@@ -40,7 +40,7 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
-            <version>1.80</version>
+            <version>1.83</version>
         </dependency>
 
         <!-- Jackson Databind (pin transitive dependency for security) -->
