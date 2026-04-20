@@ -8,7 +8,7 @@
 #  3. Run with root permission (for AI remote execution, pip install, etc.)
 #     docker run -d -e APPMESH_RUN_AS_ROOT=true laoshanxi/appmesh
 ##################################################################################
-FROM laoshanxi/appmesh:build_ubuntu22@sha256:0aa512205f0efe6a83a63817cc9580219203971754af2da536d5e0fce34aa277 AS build_stage
+FROM laoshanxi/appmesh:build_ubuntu22@sha256:a1a320574cee13c3bc091d4e42644983e11b7f678bfaaf78cb7789834822b211 AS build_stage
 WORKDIR /workspace
 RUN bash -c 'git clone --depth 1 https://github.com/laoshanxi/app-mesh.git && \
     cd app-mesh && \
