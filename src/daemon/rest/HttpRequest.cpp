@@ -150,13 +150,12 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	}
 	else if (m_lwsRef)
 	{
-		// WebSocket protocol or HTTP over WebSocketService
-		auto data = response->serialize();
+		// WebSocket or HTTP-over-lws: move serialized sbuffer in, no body copy.
 		auto resp = std::make_unique<WSResponse>();
 		resp->m_session_ref = const_cast<void *>(m_lwsRef.wsi);
 		resp->m_req_id = m_lwsRef.reqId;
 		resp->m_session_id = m_lwsRef.sessionId;
-		resp->m_payload = std::vector<std::uint8_t>(reinterpret_cast<const unsigned char *>(data->data()), reinterpret_cast<const unsigned char *>(data->data()) + data->size());
+		resp->m_payload = response->serialize();
 		resp->m_is_http = m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) == HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 		return true;

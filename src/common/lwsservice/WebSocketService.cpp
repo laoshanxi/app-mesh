@@ -2,8 +2,8 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <memory>
+#include <sstream>
 
 #include <libwebsockets.h>
 
@@ -16,23 +16,20 @@
 
 constexpr int LWS_RX_BUFFER_SIZE = 8192;
 
-// PSS Structure for HTTP
+// Per-HTTP-connection state; lives in opaque_user_data (standard RAII).
 struct HttpSessionData
 {
     std::unique_ptr<std::ofstream> upload_stream;
     std::unique_ptr<Request> http_request;
-    std::unique_ptr<std::vector<uint8_t>> http_response_data;
+    std::unique_ptr<msgpack::sbuffer> http_response_data; // consumed in HTTP_WRITEABLE phase 1
     uint64_t req_id = 0;
     bool http_pending = false;
     bool headers_sent = false;
     std::vector<uint8_t> response_body;
 
-    HttpSessionData()
-        : http_response_data(std::make_unique<std::vector<uint8_t>>()) {}
-
+    HttpSessionData() = default;
     ~HttpSessionData() { cleanup(); }
 
-    // Prevent copy (placement-new + manual destructor lifecycle)
     HttpSessionData(const HttpSessionData &) = delete;
     HttpSessionData &operator=(const HttpSessionData &) = delete;
 
@@ -48,6 +45,12 @@ struct HttpSessionData
         http_response_data.reset();
     }
 };
+
+// HTTP PSS attached to this wsi; nullptr after close.
+static inline HttpSessionData *http_pss(struct lws *wsi)
+{
+    return static_cast<HttpSessionData *>(lws_get_opaque_user_data(wsi));
+}
 
 // -------------------------------
 // Constructor / Destructor
@@ -216,9 +219,9 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
     return ssnInfo;
 }
 
-Request *WebSocketService::buildHttpRequest(struct lws *wsi)
+std::unique_ptr<Request> WebSocketService::buildHttpRequest(struct lws *wsi)
 {
-    auto *req = new Request();
+    auto req = std::make_unique<Request>();
     auto ssnInfo = getSessionInfo(wsi);
 
     req->uuid = Utility::uuid();
@@ -431,7 +434,7 @@ void WebSocketService::stop()
         lws_context_destroy(ctx);
     }
 
-    // 5. Cleanup sessions and HTTP wsi tracking
+    // 5. Sessions: HTTP PSS freed by lws_context_destroy's DROP_PROTOCOL dispatch.
     {
         std::lock_guard<std::mutex> lock(m_sessions_mutex);
         for (auto &kv : m_sessions)
@@ -442,26 +445,23 @@ void WebSocketService::stop()
         LOG_INF << fname << "Cleaning up " << m_sessions.size() << " sessions";
         m_sessions.clear();
     }
-    m_valid_http_wsi.clear();
 
     LOG_INF << fname << "Shutdown complete";
 }
 
 // -------------------------------
-// HTTP callback (called from C)
+// HTTP callback — IO thread only. PSS lives in opaque_user_data; `user` is unused.
 // -------------------------------
 int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
 {
-    // Cast user data to PSS
-    auto *pss = static_cast<HttpSessionData *>(user);
+    ACE_UNUSED_ARG(user);
+    auto *pss = http_pss(wsi);
 
     switch (reason)
     {
     case LWS_CALLBACK_HTTP_BIND_PROTOCOL:
-        // CRITICAL: Initialize PSS via placement new
-        if (pss)
-            new (pss) HttpSessionData();
-        m_valid_http_wsi.insert(wsi);
+        if (!pss)
+            lws_set_opaque_user_data(wsi, new HttpSessionData());
         return 0;
 
     case LWS_CALLBACK_HTTP:
@@ -512,7 +512,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // 3. Enqueue HTTP request for async processing
         if (pss)
         {
-            pss->http_request.reset(buildHttpRequest(wsi));
+            pss->http_request = buildHttpRequest(wsi);
             if (pss->http_request->contain_body())
             {
                 // Body will arrive via HTTP_BODY callbacks
@@ -602,13 +602,13 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         if (!pss->headers_sent)
         {
             // Phase 1: Write HTTP headers
-            if (!pss->http_response_data || pss->http_response_data->empty())
+            if (!pss->http_response_data || pss->http_response_data->size() == 0)
                 return 0;
 
             Response http_resp;
-            if (!http_resp.deserialize(pss->http_response_data->data(), pss->http_response_data->size()))
+            if (!http_resp.deserialize(reinterpret_cast<const std::uint8_t *>(pss->http_response_data->data()), pss->http_response_data->size()))
             {
-                pss->http_response_data->clear();
+                pss->http_response_data.reset();
                 pss->http_pending = false;
                 return lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, nullptr);
             }
@@ -656,9 +656,13 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             if (n < 0 || n < header_len)
                 return 1;
 
-            // Cache body for phase 2 and clear response data
+            // Prepend LWS_PRE in-place so phase 2 writes directly without a new buffer.
             pss->response_body = std::move(http_resp.body);
-            pss->http_response_data->clear();
+            if (!pss->response_body.empty())
+            {
+                pss->response_body.insert(pss->response_body.begin(), LWS_PRE, 0);
+            }
+            pss->http_response_data.reset();
             pss->headers_sent = true;
 
             // Request another WRITEABLE callback for body
@@ -667,14 +671,16 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         }
         else
         {
-            // Phase 2: Write HTTP body (single lws_write for this callback invocation)
-            if (!pss->response_body.empty())
+            // Phase 2: body is already LWS_PRE-prefixed from phase 1.
+            if (pss->response_body.size() > LWS_PRE)
             {
-                std::vector<unsigned char> body(LWS_PRE + pss->response_body.size());
-                memcpy(body.data() + LWS_PRE, pss->response_body.data(), pss->response_body.size());
-                int n = lws_write(wsi, body.data() + LWS_PRE, pss->response_body.size(), LWS_WRITE_HTTP_FINAL);
-                if (n < 0)
+                const int body_len = static_cast<int>(pss->response_body.size() - LWS_PRE);
+                int n = lws_write(wsi, pss->response_body.data() + LWS_PRE, body_len, LWS_WRITE_HTTP_FINAL);
+                if (n < 0 || n < body_len) // partial HTTP_FINAL is fatal
+                {
+                    LOG_WAR << "HTTP body partial write: requested=" << body_len << " written=" << n;
                     return 1;
+                }
             }
             else
             {
@@ -699,13 +705,12 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
     case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
     case LWS_CALLBACK_CLOSED_HTTP:
     {
-        // CRITICAL: Destruct PSS (guard with m_valid_http_wsi to prevent double destructor call)
-        if (pss && m_valid_http_wsi.count(wsi))
+        // Nulling opaque_user_data makes the second callback a no-op.
+        if (pss)
         {
-            pss->~HttpSessionData();
+            lws_set_opaque_user_data(wsi, nullptr);
+            delete pss;
         }
-        m_valid_http_wsi.erase(wsi);
-        // Return 0 directly — do not fall through to lws_callback_http_dummy after PSS destruction
         return 0;
     }
 
@@ -786,9 +791,13 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
         if (msg.size() <= LWS_PRE)
             break;
 
-        int n = lws_write(wsi, msg.data() + LWS_PRE, msg.size() - LWS_PRE, LWS_WRITE_BINARY);
-        if (n < 0)
+        const int payload_len = static_cast<int>(msg.size() - LWS_PRE);
+        int n = lws_write(wsi, msg.data() + LWS_PRE, payload_len, LWS_WRITE_BINARY);
+        if (n < 0 || n < payload_len) // WS frame is atomic; partial write must close
+        {
+            LOG_WAR << fname << "WS partial write: requested=" << payload_len << " written=" << n << " — closing";
             return -1;
+        }
 
         if (session->hasOutgoingMessages())
             lws_callback_on_writable(wsi);
@@ -840,7 +849,12 @@ void WebSocketService::enqueueOutgoingResponse(std::unique_ptr<WSResponse> &&res
 
     m_outgoing_queue.enqueue(std::move(resp));
 
-    lws_cancel_service(ctx);
+    // CAS coalesces bursty enqueues into a single cancel_service syscall.
+    bool expected = false;
+    if (m_wake_pending.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+    {
+        lws_cancel_service(ctx);
+    }
 }
 
 void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
@@ -859,23 +873,19 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
     }
 }
 
-// Take unique_ptr by value to make ownership transfer explicit
+// IO-thread only. HTTP liveness = opaque_user_data != null; WS via m_sessions.
 void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
 {
-    // HTTP connections use HttpSessionData (per-connection user data), WebSocketSession in m_sessions
     struct lws *wsi = (struct lws *)resp->m_session_ref;
 
     if (resp->m_is_http)
     {
-        if (m_valid_http_wsi.find(wsi) == m_valid_http_wsi.end())
+        auto *pss = http_pss(wsi);
+        if (!pss || !pss->http_pending)
         {
             LOG_WAR << "HTTP Session invalid or closed, dropping response";
             return;
         }
-
-        auto *pss = static_cast<HttpSessionData *>(lws_wsi_user(wsi));
-        if (!pss || !pss->http_pending)
-            return;
 
         // ABA protection — verify request ID matches
         if (pss->req_id != resp->m_req_id)
@@ -884,8 +894,7 @@ void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
             return;
         }
 
-        if (pss->http_response_data)
-            *(pss->http_response_data) = std::move(resp->m_payload);
+        pss->http_response_data = std::move(resp->m_payload);
         lws_callback_on_writable(wsi);
     }
     else
@@ -901,25 +910,6 @@ void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
     }
 }
 
-void WebSocketService::broadcastMessage(const std::string &msg)
-{
-    std::vector<std::shared_ptr<WebSocketSession>> active_connections;
-    {
-        std::lock_guard<std::mutex> lock(m_sessions_mutex);
-        for (auto &session_pair : m_sessions)
-            active_connections.push_back(session_pair.second);
-    }
-
-    for (auto &ssn : active_connections)
-    {
-        auto resp = std::make_unique<WSResponse>();
-        resp->m_session_ref = ssn->getWsi();
-        resp->m_session_id = ssn->getId();
-        resp->m_payload.assign(msg.begin(), msg.end());
-        enqueueOutgoingResponse(std::move(resp));
-    }
-}
-
 // -------------------------------
 // Event loop & workers
 // -------------------------------
@@ -930,6 +920,9 @@ void WebSocketService::runIOEventLoop()
 
     while (m_is_running.load())
     {
+        // Clear BEFORE drain: enqueues during drain trigger a fresh wake.
+        m_wake_pending.store(false, std::memory_order_release);
+
         // Process ALL pending outgoing responses before servicing
         std::unique_ptr<WSResponse> resp;
         while (m_outgoing_queue.try_dequeue(resp) && m_is_running.load())
@@ -970,18 +963,31 @@ void WebSocketService::runWorkerLoop(int worker_id)
             // Closing
             break;
         }
-        else if (req.m_type == WSRequest::Type::WebSocketMessage)
+
+        // Per-request try/catch keeps a thrown handler from tearing down the worker thread.
+        try
         {
-            // WS messages require session
-            if (auto session = findSession((lws *)req.m_session_ref))
-                session->handleRequest(req);
+            if (req.m_type == WSRequest::Type::WebSocketMessage)
+            {
+                // WS messages require session
+                if (auto session = findSession((lws *)req.m_session_ref))
+                    session->handleRequest(req);
+            }
+            else if (req.m_type == WSRequest::Type::HttpMessage)
+            {
+                // HTTP messages do not require session
+                auto request = HttpRequest::deserialize(std::move(req.m_payload), -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id});
+                if (request)
+                    WORKER::instance()->process(request);
+            }
         }
-        else if (req.m_type == WSRequest::Type::HttpMessage)
+        catch (const std::exception &e)
         {
-            // HTTP messages do not require session
-            auto request = HttpRequest::deserialize(std::move(req.m_payload), -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id});
-            if (request)
-                WORKER::instance()->process(request);
+            LOG_ERR << fname << "worker " << worker_id << " exception: " << e.what() << " (req_id=" << req.m_req_id << ")";
+        }
+        catch (...)
+        {
+            LOG_ERR << fname << "worker " << worker_id << " unknown exception (req_id=" << req.m_req_id << ")";
         }
     }
     LOG_INF << fname << "Thread stopped: ID=" << worker_id;
@@ -996,8 +1002,9 @@ bool WebSocketService::createContext(const char *cert_path, const char *key_path
 
     LOG_DBG << fname << "Initializing lws_context";
 
+    // per_session_data_size=0: HTTP state in opaque_user_data, WS state in m_sessions.
     static struct lws_protocols protocols[] = {
-        {"http", &WebSocketService::staticHttpCallback, sizeof(HttpSessionData), 0, 0, nullptr, 0},
+        {"http", &WebSocketService::staticHttpCallback, 0, 0, 0, nullptr, 0},
         {"appmesh-ws", &WebSocketService::staticWebSocketCallback, 0, LWS_RX_BUFFER_SIZE, 0, nullptr, 0},
         {nullptr, nullptr, 0, 0, 0, nullptr, 0}};
 
@@ -1078,14 +1085,14 @@ int WebSocketService::staticHttpCallback(struct lws *wsi, enum lws_callback_reas
     }
     catch (const std::exception &e)
     {
-        if (auto *pss = static_cast<HttpSessionData *>(user))
-            pss->cleanup();
+        if (auto *pss = http_pss(wsi))
+            pss->cleanup(); // object itself deleted on close
         LOG_ERR << fname << "Exception in HTTP Callback: " << e.what();
         return -1; // Close connection on exception
     }
     catch (...)
     {
-        if (auto *pss = static_cast<HttpSessionData *>(user))
+        if (auto *pss = http_pss(wsi))
             pss->cleanup();
         LOG_ERR << fname << "Exception in HTTP Callback";
         return -1;

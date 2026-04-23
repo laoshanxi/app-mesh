@@ -165,6 +165,20 @@ jobs:
           dpkg-sig --sign builder -k appmesh --gpg-options '--batch --pinentry-mode loopback' */*.deb
           dpkg-sig --verify */*.deb
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.8.1 # TODO: Renovate will pin to SHA
+
+      - name: Cosign keyless sign release artifacts
+        run: |
+          set -e
+          shopt -s nullglob
+          for f in ubuntu*/*.deb ubuntu*/*.rpm centos*/*.deb centos*/*.rpm; do
+            [ -f "$f" ] || continue
+            cosign sign-blob --yes \
+              --bundle "${f}.bundle" \
+              "$f"
+          done
+
       - name: Attest Build Provenance (RPM)
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
@@ -191,8 +205,12 @@ jobs:
           files: |
             ubuntu*/*.deb
             ubuntu*/*.rpm
+            ubuntu*/*.deb.bundle
+            ubuntu*/*.rpm.bundle
             *.sbom.spdx.json
             *.sbom.cdx.json
             centos*/*.deb
             centos*/*.rpm
+            centos*/*.deb.bundle
+            centos*/*.rpm.bundle
             gpg_public.key
