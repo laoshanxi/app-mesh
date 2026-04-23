@@ -144,6 +144,20 @@ jobs:
         with:
           subject-path: "appmesh_*.pkg"
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.8.1 # TODO: Renovate will pin to SHA
+
+      - name: Cosign keyless sign release artifacts
+        run: |
+          set -e
+          shopt -s nullglob
+          for f in appmesh_*.pkg; do
+            [ -f "$f" ] || continue
+            cosign sign-blob --yes \
+              --bundle "${f}.bundle" \
+              "$f"
+          done
+
       - name: Publish release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
@@ -151,4 +165,6 @@ jobs:
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}
-          files: appmesh_*.pkg
+          files: |
+            appmesh_*.pkg
+            appmesh_*.pkg.bundle

@@ -37,7 +37,6 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include <ace/INET_Addr.h>
@@ -65,7 +64,7 @@ public:
     void destroySession(struct lws *wsi);
 
     // HTTP request builder
-    Request *buildHttpRequest(struct lws *wsi);
+    std::unique_ptr<Request> buildHttpRequest(struct lws *wsi);
 
     // Initialize without TLS
     bool initialize(ACE_INET_Addr addr);
@@ -86,7 +85,6 @@ public:
 private:
     // Internal helpers
     void deliverResponse(std::unique_ptr<WSResponse> resp);
-    void broadcastMessage(const std::string &msg);
 
     // Threads
     void runIOEventLoop();
@@ -118,7 +116,9 @@ private:
     std::atomic<uint64_t> m_next_request_id;
     std::atomic<uint64_t> m_next_session_id{1};
 
+    // Coalesces lws_cancel_service() wakeups across bursty enqueues.
+    std::atomic<bool> m_wake_pending{false};
+
     mutable std::mutex m_sessions_mutex;
     std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions;
-    std::unordered_set<struct lws *> m_valid_http_wsi; // IO-thread only
 };

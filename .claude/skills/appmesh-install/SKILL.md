@@ -75,3 +75,20 @@ sudo systemctl status appmesh
 appc logon -U admin
 appc ls
 ```
+
+## Release Artifact Signature (optional)
+
+Each GitHub release ships `<artifact>.bundle` (Sigstore cosign keyless bundle — Rekor inclusion proof included, verifiable offline).
+
+```bash
+# One-time, on a networked machine — copy ~/.sigstore to the offline host:
+cosign initialize
+
+# Offline verification:
+cosign verify-blob \
+  --bundle appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm.bundle \
+  --certificate-identity-regexp "^https://github.com/<org>/<repo>/.github/workflows/release-linux.yml@refs/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --offline \
+  appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm
+```

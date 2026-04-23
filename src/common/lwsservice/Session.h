@@ -2,10 +2,13 @@
 #pragma once
 
 #include <ctime>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
 #include <vector>
+
+#include <msgpack.hpp>
 
 struct lws;
 class WebSocketSession;
@@ -34,7 +37,8 @@ struct WSResponse
 {
     void *m_session_ref = nullptr;
     uint64_t m_session_id = 0; // ABA protection: monotonic session/request ID
-    std::vector<std::uint8_t> m_payload;
+    // sbuffer-owning: Response::serialize() result is move-transferred, no body copy.
+    std::unique_ptr<msgpack::sbuffer> m_payload;
     uint64_t m_req_id = 0;
     bool m_is_http = false;
 };
@@ -51,8 +55,6 @@ struct WSRequest
     uint64_t m_req_id = 0;
     uint64_t m_session_id = 0; // ABA protection
     void *m_session_ref = 0;
-
-    void reply(std::vector<std::uint8_t> &&data) const;
 };
 
 struct Buffer
@@ -70,8 +72,8 @@ public:
     void handleRequest(const WSRequest &req);
     static bool verifyToken(const std::string &token);
 
-    // Enqueue outgoing message (from worker thread). Returns false if queue is full.
-    bool enqueueOutgoingMessage(std::vector<std::uint8_t> &&payload);
+    // Enqueue outbound message; false if queue full. Copies into LWS_PRE-prefixed buffer.
+    bool enqueueOutgoingMessage(std::unique_ptr<msgpack::sbuffer> payload);
 
     // Pop and return the front outgoing message (includes LWS_PRE prefix)
     std::vector<std::uint8_t> popOutgoingMessage();
