@@ -25,11 +25,25 @@ struct ConnectionKey
 	};
 
 	Transport transport;
-	int tcpClientId = 0;
-	uint64_t wssSessionId = 0;
+	int tcpClientId;
+	uint64_t wssSessionId;
 
-	static ConnectionKey tcp(int clientId) { return {Transport::TCP, clientId, 0}; }
-	static ConnectionKey wss(uint64_t sessionId) { return {Transport::WSS, 0, sessionId}; }
+	static ConnectionKey tcp(int clientId)
+	{
+		ConnectionKey k;
+		k.transport = Transport::TCP;
+		k.tcpClientId = clientId;
+		k.wssSessionId = 0;
+		return k;
+	}
+	static ConnectionKey wss(uint64_t sessionId)
+	{
+		ConnectionKey k;
+		k.transport = Transport::WSS;
+		k.tcpClientId = 0;
+		k.wssSessionId = sessionId;
+		return k;
+	}
 
 	bool operator<(const ConnectionKey &rhs) const
 	{
@@ -41,7 +55,22 @@ struct ConnectionKey
 	}
 };
 
-using DeliveryCallback = std::function<bool(const nlohmann::json &eventPayload)>;
+struct EventEnvelope
+{
+	std::shared_ptr<nlohmann::json> basePayload;
+	std::string subscriptionId;
+	std::string eventType;
+	std::string appName;
+
+	std::string toJson() const
+	{
+		nlohmann::json payload = *basePayload;
+		payload["subscription_id"] = subscriptionId;
+		return payload.dump();
+	}
+};
+
+using DeliveryCallback = std::function<bool(const EventEnvelope &envelope)>;
 
 struct Subscription
 {

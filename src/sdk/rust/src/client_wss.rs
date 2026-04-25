@@ -5,6 +5,7 @@ use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
 use crate::requester::Requester;
+use crate::subscribe::{MessageDemuxer, MessageReader};
 use crate::tcp_messages::{RequestMessage, ResponseMessage};
 use crate::tls_config::{ClientCert, SslVerify};
 use crate::wss_transport::WSSTransport;
@@ -20,6 +21,22 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+/// Adapts the async `WSSTransport` to the `MessageReader` trait.
+///
+/// Each `read_message` call acquires the tokio mutex, reads one message, and
+/// releases the lock.
+struct WSSMessageReader {
+    transport: Arc<Mutex<WSSTransport>>,
+}
+
+#[async_trait]
+impl MessageReader for WSSMessageReader {
+    async fn read_message(&self) -> Result<Option<Vec<u8>>, AppMeshError> {
+        let mut t = self.transport.lock().await;
+        t.receive_message().await
+    }
+}
+
 /// WSS-based requester implementation.
 ///
 /// Uses `tokio::sync::watch` for token updates so that `handle_token_update`
@@ -27,6 +44,7 @@ use uuid::Uuid;
 pub struct WSSRequester {
     transport: Arc<Mutex<WSSTransport>>,
     token: Arc<std::sync::RwLock<Option<String>>>,
+    demuxer: std::sync::Mutex<Option<Arc<MessageDemuxer>>>,
 }
 
 impl WSSRequester {
@@ -45,6 +63,7 @@ impl WSSRequester {
         Ok(Self {
             transport: Arc::new(Mutex::new(transport)),
             token: Arc::new(std::sync::RwLock::new(None)),
+            demuxer: std::sync::Mutex::new(None),
         })
     }
 
@@ -71,48 +90,67 @@ impl Requester for WSSRequester {
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>, AppMeshError> {
-        let mut transport = self.transport.lock().await;
+        // Build and send the request message.
+        let req_uuid;
+        let req_headers;
+        {
+            let mut transport = self.transport.lock().await;
 
-        if !transport.connected() {
-            transport.connect().await?;
-        }
-
-        let mut req = RequestMessage::new();
-        req.uuid = Uuid::new_v4().to_string();
-        req.http_method = method.to_string();
-        req.request_uri = path.to_string();
-        req.client_addr = "wss-client".to_string();
-        req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_WSS.into());
-
-        if let Some(token) = self.token.read().expect("token lock poisoned").clone() {
-            req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
-        }
-
-        // Save headers ref before consuming for token sync
-        let req_headers = headers.clone();
-        if let Some(h) = headers {
-            req.headers.extend(h);
-        }
-        if let Some(q) = query {
-            req.query.extend(q);
-        }
-        if let Some(b) = body {
-            req.body = b.to_vec();
-        }
-
-        let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
-        transport.send_message(&data).await?;
-
-        let resp_data = match transport.receive_message().await? {
-            Some(data) if !data.is_empty() => data,
-            _ => {
-                transport.close().await;
-                return Err(AppMeshError::ConnectionError("WebSocket connection broken".into()));
+            if !transport.connected() {
+                transport.connect().await?;
             }
+
+            let mut req = RequestMessage::new();
+            req.uuid = Uuid::new_v4().to_string();
+            req.http_method = method.to_string();
+            req.request_uri = path.to_string();
+            req.client_addr = "wss-client".to_string();
+            req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_WSS.into());
+
+            if let Some(token) = self.token.read().expect("token lock poisoned").clone() {
+                req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
+            }
+
+            // Save headers ref before consuming for token sync
+            req_headers = headers.clone();
+            if let Some(h) = headers {
+                req.headers.extend(h);
+            }
+            if let Some(q) = query {
+                req.query.extend(q);
+            }
+            if let Some(b) = body {
+                req.body = b.to_vec();
+            }
+
+            req_uuid = req.uuid.clone();
+            let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
+            transport.send_message(&data).await?;
+        }
+        // Transport lock released here.
+
+        // Check if demuxer is active — if so, route through channel-based response.
+        let demuxer_opt = {
+            self.demuxer.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?.clone()
         };
 
-        let resp =
-            ResponseMessage::deserialize(&resp_data).map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
+        let resp = if let Some(ref demuxer) = demuxer_opt {
+            if demuxer.is_running() {
+                let rx = demuxer.register_request(&req_uuid).await;
+                match rx.await {
+                    Ok(resp) => resp,
+                    Err(_) => {
+                        return Err(AppMeshError::ConnectionError(
+                            "Connection closed while waiting for response".into(),
+                        ));
+                    }
+                }
+            } else {
+                self.read_response_direct().await?
+            }
+        } else {
+            self.read_response_direct().await?
+        };
 
         let status = StatusCode::from_u16(resp.http_status as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
@@ -141,11 +179,52 @@ impl Requester for WSSRequester {
     }
 
     fn close(&self) {
+        // Stop the demuxer first
+        if let Ok(guard) = self.demuxer.lock() {
+            if let Some(ref d) = *guard {
+                d.stop();
+            }
+        }
         let transport = self.transport.clone();
         tokio::spawn(async move {
             let mut t = transport.lock().await;
             t.close().await;
         });
+    }
+
+    fn enable_demuxer(&self) {
+        let mut guard = self.demuxer.lock().expect("demuxer lock poisoned");
+        if guard.is_some() {
+            return; // already enabled
+        }
+        let demuxer = Arc::new(MessageDemuxer::new());
+        let reader = Arc::new(WSSMessageReader {
+            transport: Arc::clone(&self.transport),
+        });
+        demuxer.start(reader);
+        *guard = Some(demuxer);
+    }
+
+    fn get_demuxer(&self) -> Option<Arc<MessageDemuxer>> {
+        self.demuxer.lock().ok().and_then(|g| g.clone())
+    }
+}
+
+impl WSSRequester {
+    /// Direct (legacy) read path: lock the transport and read one response.
+    async fn read_response_direct(&self) -> Result<ResponseMessage, AppMeshError> {
+        let mut transport = self.transport.lock().await;
+
+        let resp_data = match transport.receive_message().await? {
+            Some(data) if !data.is_empty() => data,
+            _ => {
+                transport.close().await;
+                return Err(AppMeshError::ConnectionError("WebSocket connection broken".into()));
+            }
+        };
+
+        ResponseMessage::deserialize(&resp_data)
+            .map_err(|e| AppMeshError::SerializationError(e.to_string()))
     }
 }
 

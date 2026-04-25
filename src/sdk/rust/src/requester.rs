@@ -2,10 +2,12 @@
 
 use crate::constants::*;
 use crate::error::AppMeshError;
+use crate::subscribe::MessageDemuxer;
 use async_trait::async_trait;
 use bytes::Bytes;
 use reqwest::Method;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
@@ -40,6 +42,16 @@ pub trait Requester: Send + Sync {
     ///
     /// HTTP transport reads from the cookie jar; TCP/WSS from an in-memory field.
     fn get_access_token(&self) -> Option<String> {
+        None
+    }
+
+    /// Enable the message demuxer for this transport.
+    ///
+    /// Only TCP and WSS transports support this; HTTP is a no-op.
+    fn enable_demuxer(&self) {}
+
+    /// Get the message demuxer, if enabled.
+    fn get_demuxer(&self) -> Option<Arc<MessageDemuxer>> {
         None
     }
 }

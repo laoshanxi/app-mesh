@@ -16,7 +16,11 @@
 #include "../security/SecurityKeycloak.h"
 #include "../security/TokenBlacklist.h"
 #include "../security/User.h"
+#if defined(HAVE_UWEBSOCKETS)
+#include "uwebsockets/ReplyContext.h"
+#else
 #include "../../common/lwsservice/WebSocketService.h"
+#endif
 #include "EventDispatcher.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
@@ -1350,29 +1354,61 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 	{
 		int clientId = message->tcpClientId();
 		connKey = ConnectionKey::tcp(clientId);
-		deliveryCb = [clientId](const nlohmann::json &eventPayload) -> bool
+		deliveryCb = [clientId](const EventEnvelope &envelope) -> bool
 		{
 			auto resp = std::make_unique<Response>();
 			resp->uuid = Utility::shortID();
 			resp->request_uri = "/appmesh/event";
 			resp->http_status = web::http::status_codes::OK;
 			resp->body_msg_type = web::http::mime_types::application_json;
-			auto bodyStr = eventPayload.dump();
+			auto bodyStr = envelope.toJson();
 			resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
-			resp->headers["X-Subscription-Id"] = eventPayload.value("subscription_id", "");
-			resp->headers["X-Event-Type"] = eventPayload.value("event_type", "");
-			resp->headers["X-App-Name"] = eventPayload.value("app_name", "");
+			resp->headers["X-Subscription-Id"] = envelope.subscriptionId;
+			resp->headers["X-Event-Type"] = envelope.eventType;
+			resp->headers["X-App-Name"] = envelope.appName;
 			return SocketServer::replyTcp(clientId, std::move(resp));
 		};
 		return true;
 	}
+#if defined(HAVE_UWEBSOCKETS)
+	else if (message->uwsReplyContext() && message->uwsReplyContext()->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
+	{
+		auto uwsCtx = message->uwsReplyContext();
+		connKey = ConnectionKey::wss(uwsCtx->getNumericId());
+		deliveryCb = [uwsCtx](const EventEnvelope &envelope) -> bool
+		{
+			if (uwsCtx->isAborted())
+				return false;
+			try
+			{
+				auto resp = std::make_unique<Response>();
+				resp->uuid = Utility::shortID();
+				resp->request_uri = "/appmesh/event";
+				resp->http_status = web::http::status_codes::OK;
+				resp->body_msg_type = web::http::mime_types::application_json;
+				auto bodyStr = envelope.toJson();
+				resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
+				resp->headers["X-Subscription-Id"] = envelope.subscriptionId;
+				resp->headers["X-Event-Type"] = envelope.eventType;
+				resp->headers["X-App-Name"] = envelope.appName;
+
+				auto data = resp->serialize();
+				uwsCtx->replyWebSocket(std::string(data->data(), data->size()), false, true);
+				return true;
+			}
+			catch (...)
+			{
+				return false;
+			}
+		};
+		return true;
+	}
+#else
 	else if (message->lwsRef())
 	{
 		auto lwsRef = message->lwsRef();
 		connKey = ConnectionKey::wss(lwsRef.sessionId);
-		// Dead WSS subscriptions are cleaned up by destroySession → removeByConnection.
-		// We cannot check session validity here (would invert lock order with EventDispatcher).
-		deliveryCb = [lwsRef](const nlohmann::json &eventPayload) -> bool
+		deliveryCb = [lwsRef](const EventEnvelope &envelope) -> bool
 		{
 			try
 			{
@@ -1381,11 +1417,11 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 				resp->request_uri = "/appmesh/event";
 				resp->http_status = web::http::status_codes::OK;
 				resp->body_msg_type = web::http::mime_types::application_json;
-				auto bodyStr = eventPayload.dump();
+				auto bodyStr = envelope.toJson();
 				resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
-				resp->headers["X-Subscription-Id"] = eventPayload.value("subscription_id", "");
-				resp->headers["X-Event-Type"] = eventPayload.value("event_type", "");
-				resp->headers["X-App-Name"] = eventPayload.value("app_name", "");
+				resp->headers["X-Subscription-Id"] = envelope.subscriptionId;
+				resp->headers["X-Event-Type"] = envelope.eventType;
+				resp->headers["X-App-Name"] = envelope.appName;
 
 				auto wsResp = std::make_unique<WSResponse>();
 				wsResp->m_session_ref = const_cast<void *>(lwsRef.wsi);
@@ -1403,6 +1439,7 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 		};
 		return true;
 	}
+#endif
 	return false;
 }
 

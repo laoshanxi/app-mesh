@@ -32,6 +32,7 @@ public class AppMeshClientWSS extends AppMeshClient {
 
     private final WSSTransport wssTransport;
     private final SSLSocketFactory sslSocketFactory;
+    private volatile MessageDemuxer demuxer;
 
     /** Create a WSS transport client with default TLS verification behavior. */
     public AppMeshClientWSS(String host, int port) {
@@ -153,17 +154,30 @@ public class AppMeshClientWSS extends AppMeshClient {
 
             // Send request
             byte[] data = req.serialize();
-            wssTransport.sendMessage(data);
 
-            // Receive response
-            byte[] respBuf = wssTransport.receiveMessage();
-            if (respBuf == null) {
-                wssTransport.close();
-                throw new IOException("WebSocket connection broken");
+            ResponseMessage resp;
+            if (demuxer != null && demuxer.isRunning()) {
+                // Demuxer is active: register before send to avoid race
+                demuxer.registerPending(req.uuid);
+                try {
+                    wssTransport.sendMessage(data);
+                    resp = demuxer.waitForResponse(req.uuid, 60);
+                    if (resp == null) {
+                        throw new IOException("Demuxer response timeout");
+                    }
+                } finally {
+                    demuxer.unregisterPending(req.uuid);
+                }
+            } else {
+                // Legacy synchronous mode: send then read directly
+                wssTransport.sendMessage(data);
+                byte[] respBuf = wssTransport.receiveMessage();
+                if (respBuf == null) {
+                    wssTransport.close();
+                    throw new IOException("WebSocket connection broken");
+                }
+                resp = ResponseMessage.deserialize(respBuf);
             }
-
-            // Parse response
-            ResponseMessage resp = ResponseMessage.deserialize(respBuf);
 
             // Create simulated HTTP connection
             URL fakeUrl = new java.net.URI("https", null, wssTransport.getHost(),
@@ -290,8 +304,31 @@ public class AppMeshClientWSS extends AppMeshClient {
         return true;
     }
 
+    /**
+     * Enable the message demuxer for concurrent request-response and event routing.
+     * Creates and starts the demuxer if not already running.
+     */
+    public synchronized void enableDemuxer() {
+        if (demuxer != null && demuxer.isRunning()) {
+            return;
+        }
+        demuxer = new MessageDemuxer(() -> wssTransport.receiveMessage());
+        demuxer.start();
+    }
+
+    /**
+     * Return the message demuxer instance, or null if not enabled.
+     */
+    public MessageDemuxer getDemuxer() {
+        return demuxer;
+    }
+
     @Override
     public void close() {
+        if (demuxer != null) {
+            demuxer.stop();
+            demuxer = null;
+        }
         try {
             wssTransport.close();
         } catch (Exception ignored) {

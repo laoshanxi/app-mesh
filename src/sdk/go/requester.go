@@ -244,6 +244,10 @@ func (t *TCPRequester) Send(method, apiPath string, queries url.Values, headers 
 
 // Close closes the TCP connection.
 func (t *TCPRequester) Close() {
+	if t.demuxer != nil {
+		t.demuxer.stop()
+		t.demuxer = nil
+	}
 	if t.TCPConnection != nil {
 		t.TCPConnection.Close()
 	}
@@ -404,6 +408,10 @@ func (w *WSSRequester) Send(method string, apiPath string, queries url.Values, h
 
 // Close closes the underlying WSS connection.
 func (w *WSSRequester) Close() {
+	if w.demuxer != nil {
+		w.demuxer.stop()
+		w.demuxer = nil
+	}
 	if w.WSSConnection != nil {
 		w.WSSConnection.Close()
 	}

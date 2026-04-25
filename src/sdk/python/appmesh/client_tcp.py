@@ -51,6 +51,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
         ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+        auto_refresh_token: bool = False,
     ):
         """Construct a TCP transport client that reuses the standard App Mesh client API.
 
@@ -72,7 +73,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         self._token = ""
         self._transport_client_addr = socket.gethostname()
         self._transport_name = "Socket"
-        super().__init__(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
+        super().__init__(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, auto_refresh_token=auto_refresh_token)
 
     @property
     def _transport(self):
@@ -81,9 +82,14 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
 
     def close(self) -> None:
         """Close the connection and release resources."""
+        if hasattr(self, "_demuxer") and self._demuxer:
+            self._demuxer.stop()
         if hasattr(self, "tcp_transport") and self.tcp_transport:
             self.tcp_transport.close()
             self.tcp_transport = None
+        if hasattr(self, "_demuxer") and self._demuxer:
+            self._demuxer.join()
+            self._demuxer = None
         return super().close()
 
     def __del__(self):

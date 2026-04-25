@@ -20,6 +20,7 @@ use crate::models::*;
 use crate::persistent_jar::PersistentJar;
 use crate::requester::Requester;
 use crate::response_ext::ResponseExt;
+use crate::subscribe::EventCallback;
 
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -869,8 +870,17 @@ impl AppMeshClient {
     }
 
     /// Subscribe to real-time events for a specific app (or all apps if name is "*" or empty).
-    /// Requires TCP or WebSocket transport.
-    pub async fn subscribe(&self, app_name: &str, events: Option<&[&str]>) -> Result<SubscriptionResult> {
+    ///
+    /// When a `callback` is provided the underlying transport's message demuxer is
+    /// enabled (TCP/WSS only) and the callback is registered for the returned
+    /// subscription ID.  Events will be dispatched asynchronously until
+    /// [`unsubscribe`] is called.
+    pub async fn subscribe(
+        &self,
+        app_name: &str,
+        events: Option<&[&str]>,
+        callback: Option<EventCallback>,
+    ) -> Result<SubscriptionResult> {
         let path = if !app_name.is_empty() && app_name != "*" {
             format!("/appmesh/app/{}/subscribe", app_name)
         } else {
@@ -882,11 +892,28 @@ impl AppMeshClient {
             q
         });
         let resp = self.req.send(Method::POST, &path, None, None, query, true).await?;
-        Ok(resp.json()?)
+        let result: SubscriptionResult = resp.json()?;
+
+        // Enable demuxer and register callback when provided
+        if let Some(cb) = callback {
+            self.req.enable_demuxer();
+            if let Some(demuxer) = self.req.get_demuxer() {
+                demuxer.register_event_callback(&result.subscription_id, cb);
+            }
+        }
+
+        Ok(result)
     }
 
     /// Unsubscribe from events by subscription ID.
+    ///
+    /// Also unregisters the event callback from the demuxer (if active).
     pub async fn unsubscribe(&self, subscription_id: &str) -> Result<bool> {
+        // Unregister from demuxer first
+        if let Some(demuxer) = self.req.get_demuxer() {
+            demuxer.unregister_event_callback(subscription_id);
+        }
+
         let mut query = HashMap::new();
         query.insert("subscription_id".to_string(), subscription_id.to_string());
         let resp = self.req.send(Method::DELETE, "/appmesh/subscribe", None, None, Some(query), false).await?;

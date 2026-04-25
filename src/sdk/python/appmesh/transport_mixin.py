@@ -12,6 +12,7 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 # Local imports
+from .app import App
 from .client_http import AppMeshClient
 from .exceptions import AppMeshConnectionError
 from .subscribe import AppEvent, EventCallback, MessageDemuxer, SubscriptionResult
@@ -146,18 +147,22 @@ class TransportClientMixin:
         if body_bytes:
             appmesh_request.body = body_bytes
 
-        # Send request
+        # Send request and receive response
         data = appmesh_request.serialize()
-        transport.send_message(data)
 
-        # Receive response
-        resp_data = transport.receive_message()
-        if not resp_data:  # Covers None and empty bytes
-            transport.close()
-            raise AppMeshConnectionError(f"{self._transport_name} connection broken")
-
-        # Parse response
-        appmesh_resp = ResponseMessage.from_bytes(resp_data)
+        if hasattr(self, "_demuxer") and self._demuxer and self._demuxer._running:
+            # Demuxer is active — route through it to avoid concurrent socket reads
+            appmesh_resp = self._demuxer.send_and_receive(appmesh_request.uuid, data, timeout=60.0)
+            if not appmesh_resp:
+                transport.close()
+                raise AppMeshConnectionError(f"{self._transport_name} demuxer response timeout")
+        else:
+            transport.send_message(data)
+            resp_data = transport.receive_message()
+            if not resp_data:  # Covers None and empty bytes
+                transport.close()
+                raise AppMeshConnectionError(f"{self._transport_name} connection broken")
+            appmesh_resp = ResponseMessage.from_bytes(resp_data)
         response = requests.Response()
         response.status_code = appmesh_resp.http_status
         response.headers = CaseInsensitiveDict(appmesh_resp.headers)
@@ -181,6 +186,28 @@ class TransportClientMixin:
         self._sync_transport_token(response, path, header)
 
         return AppMeshClient._EncodingResponse(response)
+
+    def add_app(self, app: App, subscribe_events: Optional[list] = None, callback: Optional[EventCallback] = None) -> App:
+        """Register an app, optionally subscribing atomically with the same call.
+
+        When ``subscribe_events`` and ``callback`` are both supplied, the subscription is registered
+        on the server before the app spawns, so no events are missed; the callback is wired into the
+        local demuxer keyed by the returned subscription_id (also attached to the App as
+        ``app.subscription_id``).
+        """
+        query = {}
+        if subscribe_events:
+            query["subscribe_events"] = ",".join(subscribe_events)
+        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", query=query or None, body=app.to_dict())
+        result_data = resp.json()
+        result_app = App(result_data)
+        sub_id = result_data.get("subscription_id", "") if isinstance(result_data, dict) else ""
+        if sub_id:
+            result_app.subscription_id = sub_id
+            if callback:
+                self._ensure_demuxer()
+                self._demuxer.register_event_callback(sub_id, callback)
+        return result_app
 
     def subscribe(self, app_name: str, events: Optional[list] = None, callback: Optional[EventCallback] = None) -> SubscriptionResult:
         """Subscribe to app events over the transport connection.

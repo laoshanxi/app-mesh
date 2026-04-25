@@ -64,6 +64,9 @@ pub const DEFAULT_TCP_HOST: &str = "127.0.0.1";
 pub const DEFAULT_TCP_PORT: u16 = 6059;
 pub const DEFAULT_WSS_PORT: u16 = 6058;
 
+// Event subscription
+pub const EVENT_URI: &str = "/appmesh/event";
+
 // TCP file transfer
 pub const TCP_BLOCK_SIZE: usize = 16 * 1024 - 128;
 

@@ -762,6 +762,22 @@ public class AppMeshClient implements Closeable {
      * @return JSON with subscription_id, app_name, events
      */
     public JSONObject subscribe(String appName, String... events) throws IOException {
+        return subscribe(appName, null, events);
+    }
+
+    /**
+     * Subscribe to real-time events with a callback for event delivery.
+     * Requires TCP or WebSocket transport. When a callback is provided, the
+     * message demuxer is automatically enabled to route events and API responses
+     * on the shared transport connection.
+     *
+     * @param appName  application name, or null/"*" for all apps
+     * @param callback event callback invoked on a daemon thread for each event, or null
+     * @param events   event types to subscribe, e.g. "process_start", "process_exit", "stdout"
+     * @return JSON with subscription_id, app_name, events
+     */
+    public JSONObject subscribe(String appName, MessageDemuxer.EventCallback callback, String... events)
+            throws IOException {
         String path = "/appmesh/subscribe";
         if (appName != null && !appName.isEmpty() && !"*".equals(appName)) {
             path = "/appmesh/app/" + encodeURIComponent(appName) + "/subscribe";
@@ -772,7 +788,23 @@ public class AppMeshClient implements Closeable {
             query.put("events", String.join(",", events));
         }
         HttpURLConnection conn = request("POST", path, null, null, query);
-        return new JSONObject(Utils.readResponse(conn));
+        JSONObject result = new JSONObject(Utils.readResponse(conn));
+
+        // If a callback is provided and the transport supports demuxing, enable it
+        if (callback != null && result.has("subscription_id")) {
+            String subscriptionId = result.getString("subscription_id");
+            if (this instanceof AppMeshClientTCP) {
+                AppMeshClientTCP tcpClient = (AppMeshClientTCP) this;
+                tcpClient.enableDemuxer();
+                tcpClient.getDemuxer().registerEventCallback(subscriptionId, callback);
+            } else if (this instanceof AppMeshClientWSS) {
+                AppMeshClientWSS wssClient = (AppMeshClientWSS) this;
+                wssClient.enableDemuxer();
+                wssClient.getDemuxer().registerEventCallback(subscriptionId, callback);
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -782,6 +814,19 @@ public class AppMeshClient implements Closeable {
      * @return true if unsubscribed successfully
      */
     public boolean unsubscribe(String subscriptionId) throws IOException {
+        // Unregister from demuxer first
+        if (this instanceof AppMeshClientTCP) {
+            MessageDemuxer d = ((AppMeshClientTCP) this).getDemuxer();
+            if (d != null) {
+                d.unregisterEventCallback(subscriptionId);
+            }
+        } else if (this instanceof AppMeshClientWSS) {
+            MessageDemuxer d = ((AppMeshClientWSS) this).getDemuxer();
+            if (d != null) {
+                d.unregisterEventCallback(subscriptionId);
+            }
+        }
+
         Map<String, String> query = new HashMap<>();
         query.put("subscription_id", subscriptionId);
         HttpURLConnection conn = request("DELETE", "/appmesh/subscribe", null, null, query);

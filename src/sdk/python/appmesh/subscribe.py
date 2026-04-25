@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
 
+from .exceptions import AppMeshTimeoutError
 from .tcp_messages import ResponseMessage
 
 logger = logging.getLogger(__name__)
@@ -59,13 +60,19 @@ class MessageDemuxer:
         self._reader_thread.start()
 
     def stop(self):
-        """Stop the background reader thread."""
+        """Signal the background reader thread to stop and wake pending waiters."""
         self._running = False
         with self._lock:
             for evt in self._pending.values():
                 evt.set()
             self._pending.clear()
             self._pending_responses.clear()
+
+    def join(self, timeout: float = 5.0):
+        """Wait for the reader thread to finish after stop() + transport close."""
+        if self._reader_thread:
+            self._reader_thread.join(timeout=timeout)
+            self._reader_thread = None
 
     def send_and_receive(self, uuid: str, data: bytes, timeout: float = 60.0) -> Optional[ResponseMessage]:
         """Send a request and wait for the matching response via the demuxer."""
@@ -109,6 +116,9 @@ class MessageDemuxer:
                 else:
                     self._dispatch_response(resp)
 
+            except AppMeshTimeoutError:
+                # Idle timeout (no events arrived within transport recv timeout) — keep reading
+                continue
             except Exception as e:
                 if self._running:
                     logger.warning("MessageDemuxer read error: %s", e)

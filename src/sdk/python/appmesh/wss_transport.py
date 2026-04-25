@@ -7,7 +7,7 @@ import socket
 from pathlib import Path
 from typing import Optional, Union, Tuple
 
-from .exceptions import AppMeshConnectionError
+from .exceptions import AppMeshConnectionError, AppMeshTimeoutError
 
 try:
     from websocket import create_connection, WebSocketException, WebSocketTimeoutException
@@ -218,11 +218,10 @@ class WSSTransport:
                 raise TypeError(f"Unexpected data type from WebSocket: {type(data)}")
 
         except socket.timeout as e:
-            self.close()
-            raise AppMeshConnectionError(f"Message receive timeout after {self._message_timeout}s") from e
+            # Idle timeout — connection is still healthy; do NOT close, let caller retry
+            raise AppMeshTimeoutError(f"Message receive timeout after {self._message_timeout}s") from e
         except WebSocketTimeoutException as e:
-            self.close()
-            raise AppMeshConnectionError(f"WebSocket timeout: {e}") from e
+            raise AppMeshTimeoutError(f"WebSocket timeout: {e}") from e
         except (ConnectionError, WebSocketException) as e:
             self.close()
             raise AppMeshConnectionError(f"WebSocket connection closed: {e}") from e

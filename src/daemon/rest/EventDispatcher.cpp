@@ -33,7 +33,7 @@ std::string EventDispatcher::subscribe(const std::string &appName, uint32_t even
 	sub.connKey = connKey;
 
 	{
-		std::lock_guard lock(m_mutex);
+		std::lock_guard<std::recursive_mutex> lock(m_mutex);
 		m_subscriptions.emplace(subId, std::move(sub));
 		m_appIndex.emplace(appName, subId);
 		m_connectionIndex.emplace(connKey, subId);
@@ -52,7 +52,7 @@ bool EventDispatcher::unsubscribe(const std::string &subId, const std::string &u
 {
 	const static char fname[] = "EventDispatcher::unsubscribe() ";
 
-	std::lock_guard lock(m_mutex);
+	std::lock_guard<std::recursive_mutex> lock(m_mutex);
 	auto it = m_subscriptions.find(subId);
 	if (it == m_subscriptions.end())
 		return false;
@@ -89,53 +89,66 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 	eventPayload["sequence"] = seq;
 	eventPayload["data"] = data;
 
-	std::vector<std::string> deadSubscriptions;
+	std::string eventTypeStr = eventTypeToString(type);
+	auto basePayload = std::make_shared<nlohmann::json>(std::move(eventPayload));
+
 	uint32_t typeBit = static_cast<uint32_t>(type);
 
-	// Single lock held for both delivery and cleanup — no TOCTOU.
-	std::lock_guard lock(m_mutex);
-
-	auto deliverToMatchingSubscriptions = [&](const std::string &indexKey)
+	struct PendingDelivery
 	{
-		auto range = m_appIndex.equal_range(indexKey);
-		for (auto it = range.first; it != range.second; ++it)
-		{
-			auto subIt = m_subscriptions.find(it->second);
-			if (subIt == m_subscriptions.end())
-				continue;
-
-			const auto &sub = subIt->second;
-			if (!(sub.eventMask & typeBit))
-				continue;
-
-			nlohmann::json payload = eventPayload;
-			payload["subscription_id"] = sub.subId;
-
-			try
-			{
-				if (!sub.deliveryCb(payload))
-				{
-					deadSubscriptions.push_back(sub.subId);
-				}
-			}
-			catch (const std::exception &e)
-			{
-				LOG_WAR << fname << "Delivery failed for sub=" << sub.subId << ": " << e.what();
-				deadSubscriptions.push_back(sub.subId);
-			}
-		}
+		std::string subId;
+		DeliveryCallback cb;
 	};
-
-	deliverToMatchingSubscriptions(appName);
-	if (appName != "*")
+	std::vector<PendingDelivery> pending;
 	{
-		deliverToMatchingSubscriptions("*");
+		std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+		auto collectMatching = [&](const std::string &indexKey)
+		{
+			auto range = m_appIndex.equal_range(indexKey);
+			for (auto it = range.first; it != range.second; ++it)
+			{
+				auto subIt = m_subscriptions.find(it->second);
+				if (subIt == m_subscriptions.end())
+					continue;
+
+				const auto &sub = subIt->second;
+				if (!(sub.eventMask & typeBit))
+					continue;
+
+				pending.push_back({sub.subId, sub.deliveryCb});
+			}
+		};
+
+		collectMatching(appName);
+		if (appName != "*")
+			collectMatching("*");
 	}
 
-	for (const auto &subId : deadSubscriptions)
+	std::vector<std::string> deadSubscriptions;
+	for (const auto &p : pending)
 	{
-		LOG_WAR << fname << "Removing dead subscription: " << subId;
-		removeSubscriptionLocked(subId);
+		EventEnvelope envelope{basePayload, p.subId, eventTypeStr, appName};
+		try
+		{
+			if (!p.cb(envelope))
+				deadSubscriptions.push_back(p.subId);
+		}
+		catch (const std::exception &e)
+		{
+			LOG_WAR << fname << "Delivery failed for sub=" << p.subId << ": " << e.what();
+			deadSubscriptions.push_back(p.subId);
+		}
+	}
+
+	if (!deadSubscriptions.empty())
+	{
+		std::lock_guard<std::recursive_mutex> lock(m_mutex);
+		for (const auto &subId : deadSubscriptions)
+		{
+			LOG_WAR << fname << "Removing dead subscription: " << subId;
+			removeSubscriptionLocked(subId);
+		}
 	}
 }
 
@@ -143,7 +156,7 @@ void EventDispatcher::removeByConnection(const ConnectionKey &connKey)
 {
 	const static char fname[] = "EventDispatcher::removeByConnection() ";
 
-	std::lock_guard lock(m_mutex);
+	std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
 	auto range = m_connectionIndex.equal_range(connKey);
 	std::vector<std::string> subIds;
@@ -189,7 +202,7 @@ void EventDispatcher::removeByApp(const std::string &appName)
 {
 	const static char fname[] = "EventDispatcher::removeByApp() ";
 
-	std::lock_guard lock(m_mutex);
+	std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
 	auto range = m_appIndex.equal_range(appName);
 	std::vector<std::string> subIds;
@@ -233,7 +246,7 @@ void EventDispatcher::removeByApp(const std::string &appName)
 
 bool EventDispatcher::hasStdoutSubscriber(const std::string &appName) const
 {
-	std::lock_guard lock(m_mutex);
+	std::lock_guard<std::recursive_mutex> lock(m_mutex);
 	auto range = m_appIndex.equal_range(appName);
 	for (auto it = range.first; it != range.second; ++it)
 	{
@@ -325,22 +338,30 @@ void EventDispatcher::updateStdoutWatcherLocked(const std::string &appName, int 
 
 void EventDispatcher::flushStdout(const std::string &appName, Application *app)
 {
-	std::lock_guard lock(m_mutex);
-	auto it = m_stdoutWatchers.find(appName);
-	if (it == m_stdoutWatchers.end())
-		return;
-
-	auto &watcher = it->second;
 	if (!app)
 		return;
 
+	long pos = 0;
+	{
+		std::lock_guard<std::recursive_mutex> lock(m_mutex);
+		auto it = m_stdoutWatchers.find(appName);
+		if (it == m_stdoutWatchers.end())
+			return;
+		pos = it->second->readPosition.load();
+	}
+
 	try
 	{
-		long pos = watcher->readPosition.load();
-		auto [output, finished, exitCode] = app->getOutput(pos, 64 * 1024, "", 0, 0);
+		auto result = app->getOutput(pos, 64 * 1024, "", 0, 0);
+		auto &output = std::get<0>(result);
 		if (!output.empty())
 		{
-			watcher->readPosition.store(pos);
+			{
+				std::lock_guard<std::recursive_mutex> lock(m_mutex);
+				auto it = m_stdoutWatchers.find(appName);
+				if (it != m_stdoutWatchers.end())
+					it->second->readPosition.store(pos);
+			}
 			nlohmann::json data;
 			data["output"] = output;
 			data["position"] = pos;
@@ -363,14 +384,15 @@ bool StdoutWatcher::onTimerStdoutCheck()
 			return true;
 
 		long pos = readPosition.load();
-		auto [output, finished, exitCode] = app->getOutput(pos, 8192, "", 0, 0);
+		auto result = app->getOutput(pos, 8192, "", 0, 0);
+		auto &output = std::get<0>(result);
 		if (!output.empty())
 		{
 			readPosition.store(pos);
 			nlohmann::json data;
 			data["output"] = output;
 			data["position"] = pos;
-			data["finished"] = finished;
+			data["finished"] = std::get<1>(result);
 			EventDispatcher::instance()->dispatch(appName, AppEventType::STDOUT_OUTPUT, data);
 		}
 	}

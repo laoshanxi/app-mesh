@@ -1,0 +1,96 @@
+// src/daemon/rest/uwebsockets/ReplyContext.h
+#ifndef REPLY_CONTEXT_H
+#define REPLY_CONTEXT_H
+
+#include <atomic>
+#include <functional>
+#include <mutex>
+#include <string>
+#include <map>
+
+namespace WSS
+{
+    // Reply context for thread-safe asynchronous responses.
+    class ReplyContext
+    {
+    public:
+        using Headers = std::map<std::string, std::string>;
+        using ReplyCallback = std::function<void(std::string &&data, const std::string &status, const Headers &headers, const std::string &contentType, bool isLast, bool isBinary)>;
+        enum class ProtocolType { Http, WebSocket };
+
+        explicit ReplyContext(ProtocolType protocolType, ReplyCallback callback, std::string connectionId = "", uint64_t numericId = 0)
+            : m_protocolType(protocolType), m_callback(std::move(callback)), m_connectionId(std::move(connectionId)), m_numericId(numericId) {}
+
+        ReplyContext(const ReplyContext &) = delete;
+        ReplyContext &operator=(const ReplyContext &) = delete;
+
+        // Send HTTP response
+        void replyHTTP(std::string &&httpStatus, std::string &&body, Headers &&headers, std::string &&contentType)
+        {
+            invokeCallback(std::move(body), httpStatus, headers, contentType, true, false);
+        }
+
+        // Send WebSocket response
+        void replyWebSocket(std::string &&data, bool isLast = false, bool isBinary = true)
+        {
+            static const Headers emptyHeaders;
+            invokeCallback(std::move(data), "200 OK", emptyHeaders, "text/plain", isLast, isBinary);
+        }
+
+        bool isCompleted() const
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            return m_completed;
+        }
+
+        // Mark the context as aborted (e.g., client disconnected).
+        // Prevents further callbacks and releases captured resources.
+        void markAborted()
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_aborted.store(true, std::memory_order_release);
+            m_completed = true;
+            m_callback = nullptr;
+        }
+
+        bool isAborted() const
+        {
+            return m_aborted.load(std::memory_order_acquire);
+        }
+
+        ProtocolType getProtocolType() const { return m_protocolType; }
+        const std::string &getConnectionId() const { return m_connectionId; }
+        uint64_t getNumericId() const { return m_numericId; }
+
+    private:
+        void invokeCallback(std::string &&data, const std::string &status, const Headers &headers, const std::string &contentType, bool isLast, bool isBinary)
+        {
+            ReplyCallback cb = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                if (!m_completed && m_callback)
+                {
+                    if (isLast)
+                    {
+                        m_completed = true;
+                        cb = std::move(m_callback); // Move out to destroy
+                    }
+                    else
+                    {
+                        cb = m_callback;
+                    }
+                }
+            }
+            if (cb) cb(std::move(data), status, headers, contentType, isLast, isBinary);
+        }
+
+        ProtocolType m_protocolType;
+        ReplyCallback m_callback;
+        std::string m_connectionId;
+        uint64_t m_numericId{0};
+        bool m_completed{false};
+        std::atomic<bool> m_aborted{false};
+        mutable std::mutex m_mutex;
+    };
+}
+#endif

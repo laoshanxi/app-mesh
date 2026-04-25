@@ -19,9 +19,17 @@ target_link_libraries(appsvc
     process
     prometheus
     common
-    rest
 )
 
-target_link_libraries(appsvc PUBLIC websockets_shared)
+if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
+  if(WIN32)
+    target_link_libraries(appsvc PUBLIC unofficial::uwebsockets::uwebsockets)
+  else()
+    find_library(USOCKETS_LIB NAMES uSockets REQUIRED)
+    target_link_libraries(appsvc PUBLIC ${USOCKETS_LIB} ZLIB::ZLIB)
+  endif()
+else()
+  target_link_libraries(appsvc PUBLIC websockets_shared)
+endif()
 
 install_runtime(TARGET appsvc)

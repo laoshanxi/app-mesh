@@ -996,7 +996,7 @@ void WebSocketService::runWorkerLoop(int worker_id)
             else if (req.m_type == WSRequest::Type::HttpMessage)
             {
                 // HTTP messages do not require session
-                auto request = HttpRequest::deserialize(std::move(req.m_payload), -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id});
+                auto request = HttpRequest::deserialize(std::move(req.m_payload), -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, nullptr);
                 if (request)
                     WORKER::instance()->process(request);
             }

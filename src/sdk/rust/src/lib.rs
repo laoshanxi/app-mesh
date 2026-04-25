@@ -11,6 +11,7 @@ mod models;
 mod persistent_jar;
 mod requester;
 mod response_ext;
+mod subscribe;
 mod tcp_messages;
 mod tcp_transport;
 pub mod tls_config;
@@ -31,3 +32,4 @@ pub use models::{
 pub use server_http::AppMeshServer;
 pub use server_tcp::AppMeshServerTCP;
 pub use server_wss::AppMeshServerWSS;
+pub use subscribe::{EventCallback, MessageDemuxer};

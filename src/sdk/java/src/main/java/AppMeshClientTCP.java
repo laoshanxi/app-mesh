@@ -24,6 +24,7 @@ import java.util.Objects;
  */
 public class AppMeshClientTCP extends AppMeshClient {
     private final TCPTransport tcpTransport;
+    private volatile MessageDemuxer demuxer;
     private static final int TCP_BLOCK_SIZE = 16 * 1024 - 128; // TLS-optimized chunk size
 
     /** Create a TCP transport client with default TLS verification behavior. */
@@ -124,13 +125,29 @@ public class AppMeshClientTCP extends AppMeshClient {
             }
 
             byte[] data = req.serialize();
-            tcpTransport.sendMessage(data);
 
-            byte[] respBuf = tcpTransport.receiveMessage();
-            if (respBuf == null) {
-                throw new IOException("EOF from transport");
+            ResponseMessage resp;
+            if (demuxer != null && demuxer.isRunning()) {
+                // Demuxer is active: register before send to avoid race
+                demuxer.registerPending(req.uuid);
+                try {
+                    tcpTransport.sendMessage(data);
+                    resp = demuxer.waitForResponse(req.uuid, 60);
+                    if (resp == null) {
+                        throw new IOException("Demuxer response timeout");
+                    }
+                } finally {
+                    demuxer.unregisterPending(req.uuid);
+                }
+            } else {
+                // Legacy synchronous mode: send then read directly
+                tcpTransport.sendMessage(data);
+                byte[] respBuf = tcpTransport.receiveMessage();
+                if (respBuf == null) {
+                    throw new IOException("EOF from transport");
+                }
+                resp = ResponseMessage.deserialize(respBuf);
             }
-            ResponseMessage resp = ResponseMessage.deserialize(respBuf);
 
             // Build a lightweight HttpURLConnection wrapper
             URL fake = new java.net.URI("http", null, "appmesh.local", -1, path, null, null).toURL();
@@ -244,8 +261,31 @@ public class AppMeshClientTCP extends AppMeshClient {
         return true;
     }
 
+    /**
+     * Enable the message demuxer for concurrent request-response and event routing.
+     * Creates and starts the demuxer if not already running.
+     */
+    public synchronized void enableDemuxer() {
+        if (demuxer != null && demuxer.isRunning()) {
+            return;
+        }
+        demuxer = new MessageDemuxer(() -> tcpTransport.receiveMessage());
+        demuxer.start();
+    }
+
+    /**
+     * Return the message demuxer instance, or null if not enabled.
+     */
+    public MessageDemuxer getDemuxer() {
+        return demuxer;
+    }
+
     @Override
     public void close() {
+        if (demuxer != null) {
+            demuxer.stop();
+            demuxer = null;
+        }
         try {
             tcpTransport.close();
         } catch (Exception ignored) {

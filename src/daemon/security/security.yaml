@@ -36,6 +36,7 @@ Roles:
     - app-control
     - app-delete
     - app-reg
+    - app-subscribe
     - config-set
     - file-download
     - file-upload
