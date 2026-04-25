@@ -64,6 +64,14 @@ pub const DEFAULT_TCP_HOST: &str = "127.0.0.1";
 pub const DEFAULT_TCP_PORT: u16 = 6059;
 pub const DEFAULT_WSS_PORT: u16 = 6058;
 
+// Event subscription
+pub const EVENT_URI: &str = "/appmesh/event";
+
+/// Synthetic event_type pushed to every registered callback when the demuxer
+/// stops or the underlying transport disconnects. Lets long-running waits
+/// (e.g. wait_for_async_run) unblock instead of hanging forever.
+pub const EVENT_TYPE_DISCONNECTED: &str = "__disconnected__";
+
 // TCP file transfer
 pub const TCP_BLOCK_SIZE: usize = 16 * 1024 - 128;
 

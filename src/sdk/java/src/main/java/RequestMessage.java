@@ -74,6 +74,13 @@ class ResponseMessage {
     private static final ObjectMapper MAPPER = new ObjectMapper(new MessagePackFactory());
 
     /**
+     * Serialize response message to msgpack bytes.
+     */
+    public byte[] serialize() throws IOException {
+        return MAPPER.writeValueAsBytes(this);
+    }
+
+    /**
      * Deserialize TCP msgpack buffer.
      * Matches Python's deserialize() method.
      */

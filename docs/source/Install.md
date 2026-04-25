@@ -31,43 +31,95 @@ Configuration:
 
 - The remote TLS connection related certification files are located in `/opt/appmesh/ssl`.
 
-### Native Installation on Linux
+### Native Installation on Linux / macOS
 
-App Mesh can be installed as a systemd service on Linux systems. The following steps outline installation on macOS, CentOS, Ubuntu, and SUSE systems.
-
-- Import the GPG Key (if needed for signature verification)
+App Mesh can be installed as a systemd (Linux) or launchd (macOS) managed service. Import the GPG key first if needed for signature verification:
 
 ```shell
-sudo rpm --import gpg_public.key
-sudo dpkg --import gpg_public.key
+sudo rpm --import gpg_public.key   # RPM-based
+sudo dpkg --import gpg_public.key  # DEB-based
 ```
 
-- Install native package:
+#### RPM Package (CentOS / RHEL / SUSE)
 
 ```shell
-# centos
-sudo yum install appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm
-# ubuntu
-sudo -E apt install appmesh_2.2.1_gcc_7_glibc_2.27_x86_64.deb
-# SUSE
-sudo zypper install appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm
-# macOS
-sudo installer -pkg appmesh_2.2.1_clang_17_macos_15_arm64.pkg -target /
-# Note: use sudo -E to pass current environment variables
-```
+# Install
+sudo yum install appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm       # CentOS/RHEL
+sudo zypper install appmesh_2.2.1_gcc_9_glibc_2.31_x86_64.rpm    # SUSE
 
-- Start and Enable the Service:
-
-```shell
-# Linux
+# Start
 sudo systemctl enable appmesh
 sudo systemctl start appmesh
-sudo systemctl status appmesh
-● appmesh.service - App Mesh daemon service
-   Loaded: loaded (/etc/systemd/system/appmesh.service; enabled; vendor preset: disabled)
 
-# macOS
+# Uninstall
+sudo systemctl stop appmesh
+sudo systemctl disable appmesh
+sudo yum remove appmesh        # CentOS/RHEL
+sudo zypper remove appmesh     # SUSE
+```
+
+#### DEB Package (Ubuntu / Debian)
+
+```shell
+# Install (use sudo -E to pass environment variables)
+sudo -E apt install ./appmesh_2.2.1_gcc_7_glibc_2.27_x86_64.deb
+
+# Start
+sudo systemctl enable appmesh
+sudo systemctl start appmesh
+
+# Uninstall
+sudo systemctl stop appmesh
+sudo systemctl disable appmesh
+sudo apt remove appmesh
+sudo apt purge appmesh          # also remove config files
+```
+
+#### macOS Package (.pkg)
+
+```shell
+# Install
+sudo installer -pkg appmesh_2.2.1_clang_17_macos_15_arm64.pkg -target /
+
+# Start
 sudo launchctl load -w /Library/LaunchDaemons/com.appmesh.appmesh.plist
+
+# Stop
+sudo launchctl unload /Library/LaunchDaemons/com.appmesh.appmesh.plist
+
+# Uninstall
+sudo launchctl unload /Library/LaunchDaemons/com.appmesh.appmesh.plist
+sudo rm -rf /opt/appmesh
+sudo rm /Library/LaunchDaemons/com.appmesh.appmesh.plist
+sudo pkgutil --forget com.laoshanxi.appmesh
+```
+
+#### Docker Container
+
+```shell
+# Install & Start (see Quick Start above)
+docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host \
+  -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
+
+# Stop
+docker stop appmesh
+
+# Uninstall
+docker stop appmesh
+docker rm appmesh
+docker rmi laoshanxi/appmesh:latest   # optional: remove image
+```
+
+#### Verify Installation
+
+```shell
+# Check service status
+sudo systemctl status appmesh          # Linux
+sudo launchctl list | grep appmesh     # macOS
+docker ps | grep appmesh               # Docker
+
+# CLI quick test
+appc ls
 ```
 
 - Web UI Deployment: Access the Web UI at https://{hostname}:

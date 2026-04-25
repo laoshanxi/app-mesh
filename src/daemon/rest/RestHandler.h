@@ -6,6 +6,7 @@
 #include <ace/Null_Mutex.h>
 #include <ace/Singleton.h>
 
+#include "EventDispatcher.h"
 #include "PrometheusRest.h"
 
 class Application;
@@ -89,6 +90,11 @@ protected:
 
 	void apiHealth(const std::shared_ptr<HttpRequest> &message);
 	void apiRestMetrics(const std::shared_ptr<HttpRequest> &message);
+
+	void apiAppSubscribe(const std::shared_ptr<HttpRequest> &message);
+	void apiAppUnsubscribe(const std::shared_ptr<HttpRequest> &message);
+
+	static bool buildDeliveryCallback(const std::shared_ptr<HttpRequest> &message, ConnectionKey &connKey, DeliveryCallback &deliveryCb);
 
 	// Static content handlers
 	void apiOpenApi(const std::shared_ptr<HttpRequest> &message);

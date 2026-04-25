@@ -27,13 +27,17 @@ trap cleanup EXIT
 cd "${TMP_DIR}"
 
 # brew dependencies
+# spdlog is intentionally NOT in this list — see the build-from-source block
+# below. brew tracks the latest spdlog (currently 1.17.x) which has subtly
+# different should_log() behaviour vs the pinned 1.15.3 that Linux uses; pinning
+# all platforms to the same source build makes runtime LOG_DBG behaviour match
+# regardless of where the daemon was built.
 BREW_PACKAGES=(
     wget
     cmake
     ninja
     go
     openssl@3
-    spdlog
     cryptopp
     yaml-cpp
     nlohmann-json
@@ -75,6 +79,29 @@ BUILDFLAGS="-trimpath -buildvcs=false"
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssljson@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+echo "Installing spdlog from source (pinned to v1.17.0)..."
+cd ${TMP_DIR}
+git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git spdlog-src
+cd spdlog-src
+mkdir -p build && cd build
+# Install into /usr/local so we don't sudo-write into $(brew --prefix) (brew
+# refuses to operate on a prefix it doesn't own; subsequent `brew doctor`
+# would flag root-owned files under /opt/homebrew). CMake's default
+# CMAKE_SYSTEM_PREFIX_PATH on macOS includes /usr/local on every arch, so
+# find_package(spdlog) locates this build regardless of brew prefix.
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local \
+         -DSPDLOG_BUILD_SHARED=ON \
+         -DSPDLOG_BUILD_EXAMPLES=OFF \
+         -DSPDLOG_BUILD_TESTS=OFF
+cmake --build . --parallel
+sudo cmake --install .
+# After /usr/local install succeeds, unlink any brew copy so find_package
+# resolves to the pinned v1.17.0 (`brew unlink` keeps the keg around for
+# easy rollback, unlike `uninstall --force` which would have left dependent
+# brew formulae with dangling dylib references on failure).
+brew unlink spdlog 2>/dev/null || true
+cd ${TMP_DIR}
 
 echo "Installing hashidsxx..."
 cd ${TMP_DIR}
@@ -141,6 +168,15 @@ git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
 cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
 make
 sudo make install
+
+echo "Installing uWebSockets..."
+cd $TMP_DIR
+git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
+cd uWebSockets
+make default WITH_OPENSSL=1 CFLAGS="-I/opt/homebrew/include" LDFLAGS="-L/opt/homebrew/lib"
+sudo make install
+sudo cp uSockets/src/libusockets.h /usr/local/include/
+sudo cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
 
 echo "Building and installing uriparser..."
 cd $TMP_DIR

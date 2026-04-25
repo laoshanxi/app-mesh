@@ -14,6 +14,14 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import org.json.JSONObject;
 
 /**
  * Simple TCP (TLS) client wrapper that reuses `AppMeshClient`.
@@ -23,8 +31,10 @@ import java.util.Objects;
  * Python approach of injecting a TCP client while reusing the same public API.
  */
 public class AppMeshClientTCP extends AppMeshClient {
-    private final TCPTransport tcpTransport;
+    private static final Logger LOGGER = Logger.getLogger(AppMeshClientTCP.class.getName());
     private static final int TCP_BLOCK_SIZE = 16 * 1024 - 128; // TLS-optimized chunk size
+    private final TCPTransport tcpTransport;
+    private volatile MessageDemuxer demuxer;
 
     /** Create a TCP transport client with default TLS verification behavior. */
     public AppMeshClientTCP(String host, int port) {
@@ -124,13 +134,29 @@ public class AppMeshClientTCP extends AppMeshClient {
             }
 
             byte[] data = req.serialize();
-            tcpTransport.sendMessage(data);
 
-            byte[] respBuf = tcpTransport.receiveMessage();
-            if (respBuf == null) {
-                throw new IOException("EOF from transport");
+            ResponseMessage resp;
+            if (demuxer != null && demuxer.isRunning()) {
+                // Demuxer is active: register before send to avoid race
+                demuxer.registerPending(req.uuid);
+                try {
+                    tcpTransport.sendMessage(data);
+                    resp = demuxer.waitForResponse(req.uuid, 60);
+                    if (resp == null) {
+                        throw new IOException("Demuxer response timeout");
+                    }
+                } finally {
+                    demuxer.unregisterPending(req.uuid);
+                }
+            } else {
+                // Legacy synchronous mode: send then read directly
+                tcpTransport.sendMessage(data);
+                byte[] respBuf = tcpTransport.receiveMessage();
+                if (respBuf == null) {
+                    throw new IOException("EOF from transport");
+                }
+                resp = ResponseMessage.deserialize(respBuf);
             }
-            ResponseMessage resp = ResponseMessage.deserialize(respBuf);
 
             // Build a lightweight HttpURLConnection wrapper
             URL fake = new java.net.URI("http", null, "appmesh.local", -1, path, null, null).toURL();
@@ -244,8 +270,163 @@ public class AppMeshClientTCP extends AppMeshClient {
         return true;
     }
 
+    /**
+     * Enable the message demuxer for concurrent request-response and event routing.
+     * Creates and starts the demuxer if not already running.
+     */
+    public synchronized void enableDemuxer() {
+        if (demuxer != null && demuxer.isRunning()) {
+            return;
+        }
+        demuxer = new MessageDemuxer(() -> tcpTransport.receiveMessage());
+        demuxer.start();
+    }
+
+    /**
+     * Return the message demuxer instance, or null if not enabled.
+     */
+    public MessageDemuxer getDemuxer() {
+        return demuxer;
+    }
+
+    /**
+     * Subscribe-based override for TCP transport.
+     *
+     * <p>Instead of polling, subscribes to STDOUT/EXIT/REMOVED events, backfills
+     * output emitted before subscribe took effect, deduplicates by byte offset,
+     * and waits for the process to finish or the connection to drop.
+     *
+     * <p>Sentinel exit codes: {@code null} = caller-side timeout,
+     * {@code -1} = REMOVED before EXIT, {@code -2} = demuxer disconnected.
+     */
+    @Override
+    public Integer waitForAsyncRun(AppRun run, boolean printStdout, int timeoutSeconds) throws Exception {
+        if (run == null) {
+            return null;
+        }
+
+        // EXIT_CODE_NONE signals "not yet set"; real exit codes are >= 0,
+        // sentinels are -1 (REMOVED) and -2 (disconnected).
+        final int EXIT_CODE_NONE = Integer.MIN_VALUE;
+        final AtomicInteger exitCode = new AtomicInteger(EXIT_CODE_NONE);
+        final AtomicLong deliveredUntil = new AtomicLong(0);
+        final CountDownLatch done = new CountDownLatch(1);
+        final Object deliverLock = new Object();
+
+        // Event callback: routes STDOUT / EXIT / REMOVED / __disconnected__
+        MessageDemuxer.EventCallback callback = (event) -> {
+            switch (event.eventType) {
+                case "STDOUT":
+                    if (event.data != null) {
+                        long pos = event.data.optLong("position", 0);
+                        String output = event.data.optString("output", "");
+                        deliverOutput(output, pos, deliveredUntil, deliverLock, printStdout);
+                    }
+                    break;
+                case "EXIT":
+                    int code = (event.data != null) ? event.data.optInt("exit_code", -1) : -1;
+                    exitCode.compareAndSet(EXIT_CODE_NONE, code);
+                    done.countDown();
+                    break;
+                case "REMOVED":
+                    exitCode.compareAndSet(EXIT_CODE_NONE, -1);
+                    done.countDown();
+                    break;
+                case MessageDemuxer.EVENT_TYPE_DISCONNECTED:
+                    exitCode.compareAndSet(EXIT_CODE_NONE, -2);
+                    done.countDown();
+                    break;
+                default:
+                    break;
+            }
+        };
+
+        JSONObject sub = this.subscribe(run.getAppName(),
+                new String[] { "STDOUT", "EXIT", "REMOVED" }, callback);
+        String subscriptionId = sub.optString("subscription_id", "");
+
+        try {
+            // Backfill bytes emitted before subscribe took effect
+            try {
+                AppOutput backfill = this.getAppOutput(run.getAppName(), 0, 0, 0,
+                        run.getProcUid(), 0);
+                if (backfill.httpBody != null && !backfill.httpBody.isEmpty()) {
+                    deliverOutput(backfill.httpBody, 0, deliveredUntil, deliverLock, printStdout);
+                }
+                if (backfill.exitCode != null) {
+                    exitCode.compareAndSet(EXIT_CODE_NONE, backfill.exitCode);
+                    done.countDown();
+                }
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Backfill failed for " + run.getAppName(), e);
+            }
+
+            // Wait for done signal
+            if (timeoutSeconds > 0) {
+                done.await(timeoutSeconds, TimeUnit.SECONDS);
+            } else {
+                done.await();
+            }
+        } finally {
+            // Unsubscribe
+            try {
+                if (!subscriptionId.isEmpty()) {
+                    this.unsubscribe(subscriptionId);
+                }
+            } catch (Exception ignored) {
+            }
+            // Best-effort delete on a real exit (>= 0).
+            // Sentinels (-1 REMOVED, -2 disconnected) mean the app is already gone.
+            int finalCode = exitCode.get();
+            if (finalCode != EXIT_CODE_NONE && finalCode >= 0) {
+                try {
+                    this.deleteApp(run.getAppName());
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        int result = exitCode.get();
+        return (result == EXIT_CODE_NONE) ? null : result;
+    }
+
+    /**
+     * Deliver stdout output with deduplication by byte offset.
+     */
+    private static void deliverOutput(String chunk, long pos, AtomicLong deliveredUntil,
+            Object lock, boolean printStdout) {
+        if (chunk == null || chunk.isEmpty()) {
+            return;
+        }
+        byte[] chunkBytes = chunk.getBytes(StandardCharsets.UTF_8);
+        synchronized (lock) {
+            long current = deliveredUntil.get();
+            long end = pos + chunkBytes.length;
+            if (end <= current) {
+                return; // already delivered
+            }
+            String toPrint;
+            if (pos < current) {
+                // Partial overlap: trim the already-delivered prefix
+                int skip = (int) (current - pos);
+                toPrint = new String(chunkBytes, skip, chunkBytes.length - skip, StandardCharsets.UTF_8);
+            } else {
+                toPrint = chunk;
+            }
+            deliveredUntil.set(end);
+            if (printStdout && !toPrint.isEmpty()) {
+                System.out.print(toPrint);
+                System.out.flush();
+            }
+        }
+    }
+
     @Override
     public void close() {
+        if (demuxer != null) {
+            demuxer.stop();
+            demuxer = null;
+        }
         try {
             tcpTransport.close();
         } catch (Exception ignored) {

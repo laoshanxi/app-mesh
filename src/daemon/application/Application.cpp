@@ -21,6 +21,7 @@
 #include "../process/DockerProcess.h"
 #endif
 #include "../process/MonitoredProcess.h"
+#include "../rest/EventDispatcher.h"
 #include "../rest/RestHandler.h"
 #include "../security/HMACVerifier.h"
 #include "../security/Security.h"
@@ -61,9 +62,14 @@ const std::string &Application::getName() const
 	return m_name;
 }
 
-void Application::health(bool health)
+void Application::health(bool newHealth)
 {
-	m_health.store(health);
+	bool oldHealth = m_health.exchange(newHealth);
+	if (oldHealth != newHealth)
+	{
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::HEALTH_CHANGE,
+											  {{"health", newHealth ? 0 : 1}, {"previous_health", oldHealth ? 0 : 1}});
+	}
 }
 
 pid_t Application::getpid() const
@@ -561,6 +567,8 @@ bool Application::onTimerSpawn()
 		if (m_pid.load() > 0)
 		{
 			checkProcStdoutFile = (*processLock);
+			EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START,
+												  {{"pid", m_pid.load()}, {"process_uuid", (*processLock)->getuuid()}});
 		}
 
 		// 3. Post process
@@ -592,13 +600,13 @@ void Application::disable()
 {
 	const static char fname[] = "Application::disable() ";
 
-	this->cancelTimer(m_nextStartTimerId);
-
 	auto enabled = STATUS::ENABLED;
-	if (m_status.compare_exchange_strong(enabled, STATUS::DISABLED))
-	{
-		LOG_INF << fname << "Application <" << m_name << "> disabled.";
-	}
+	if (!m_status.compare_exchange_strong(enabled, STATUS::DISABLED))
+		return; // already disabled — skip side effects to avoid concurrent saves
+
+	this->cancelTimer(m_nextStartTimerId);
+	LOG_INF << fname << "Application <" << m_name << "> disabled.";
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"status", "disabled"}, {"previous_status", "enabled"}});
 
 	terminate(*m_process.synchronize());
 	nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
@@ -608,7 +616,11 @@ void Application::disable()
 void Application::enable()
 {
 	auto disabled = STATUS::DISABLED;
-	m_status.compare_exchange_strong(disabled, STATUS::ENABLED);
+	if (m_status.compare_exchange_strong(disabled, STATUS::ENABLED))
+	{
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE,
+											  {{"status", "enabled"}, {"previous_status", "disabled"}});
+	}
 	save();
 }
 
@@ -670,7 +682,7 @@ std::string Application::runApp(int timeoutSeconds)
 
 	if (m_pid.load() > 0)
 	{
-		m_health.store(true);
+		this->health(true);
 		if (timeoutSeconds > 0)
 		{
 			(*processLock)->delayKill(timeoutSeconds, fname);
@@ -712,7 +724,7 @@ void Application::fetchTask(const std::string &processKey, std::shared_ptr<void>
 	}
 	if (processKey != (*processLock)->getkey())
 	{
-		throw std::invalid_argument("Process key mismatch");
+		throw std::runtime_error("Process key mismatch");
 	}
 	m_task.fetchTask(asyncHttpRequest);
 }
@@ -726,7 +738,7 @@ void Application::replyTask(const std::string &processKey, std::shared_ptr<void>
 	}
 	if (processKey != (*processLock)->getkey())
 	{
-		throw std::invalid_argument("Process key mismatch");
+		throw std::runtime_error("Process key mismatch");
 	}
 	m_task.replyTask(asyncHttpRequest);
 }
@@ -1066,18 +1078,21 @@ void Application::save()
 {
 	const static char fname[] = "Application::save() ";
 
-	if (this->isPersistAble())
+	if (!this->isPersistAble())
+		return;
+
+	// Serialise concurrent save() on the same app — two worker threads writing
+	// the same yaml race at the OS level (truncate + write are not atomic).
+	std::lock_guard<std::mutex> guard(m_saveMutex);
+	const auto appPath = getYamlPath();
+	LOG_DBG << fname << appPath;
+	std::ofstream ofs(appPath, ios::trunc);
+	ofs << std::setw(4) << Utility::jsonToYaml(AsJson(false)) << std::endl;
+	if (ofs.fail())
 	{
-		const auto appPath = getYamlPath();
-		LOG_DBG << fname << appPath;
-		std::ofstream ofs(appPath, ios::trunc);
-		ofs << std::setw(4) << Utility::jsonToYaml(AsJson(false)) << std::endl;
-		if (ofs.fail())
-		{
-			throw std::invalid_argument("failed to save application, please check your app name or folder permission");
-		}
-		LOG_INF << fname << "Saved file: " << appPath;
+		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
 	}
+	LOG_INF << fname << "Saved file: " << appPath;
 }
 
 std::string Application::getYamlPath()
@@ -1186,6 +1201,10 @@ void Application::destroy()
 {
 	const static char fname[] = "Application::destroy() ";
 
+	// Idempotent: concurrent removeApp paths must not double-destroy.
+	if (m_destroying.exchange(true, std::memory_order_acq_rel))
+		return;
+
 	LOG_DBG << fname << "suicide timer ID: " << m_timerRemoveId.load() << " nextStartTimerId: " << m_nextStartTimerId.load();
 	this->disable();
 	this->m_status.store(STATUS::NOTAVIALABLE);
@@ -1211,6 +1230,7 @@ bool Application::onTimerAppRemove()
 
 void Application::onExitUpdate(int code)
 {
+	auto prevPid = m_pid.load();
 	auto process = m_process.get();
 	if (process == nullptr || !process->running())
 	{
@@ -1223,6 +1243,11 @@ void Application::onExitUpdate(int code)
 	{
 		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, process->startError().c_str()));
 	}
+
+	// Resume disk read from where the pump left off so subscribers don't see duplicates.
+	const long dispatchedPos = process ? process->stdoutDispatchedBytes() : 0;
+	EventDispatcher::instance()->flushStdout(m_name, this, dispatchedPos);
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT, {{"exit_code", code}, {"pid", prevPid}, {"last_error", getLastError()}});
 	// immediate error handling (compared with Application::execute)
 	// this->registerTimer(0, 0, fname, std::bind(&Application::handleError, this));
 }

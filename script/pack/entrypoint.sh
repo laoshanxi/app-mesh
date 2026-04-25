@@ -114,5 +114,9 @@ initialize_directory
 prepare_app_start "$@"
 secure_installation_check
 
+# Replace the shell with appsvc so tini (PID 1 in docker) forwards signals
+# directly to the daemon. Restart-on-crash is delegated to the platform:
+# Docker `--restart=on-failure`, systemd `Restart=always`, launchd `KeepAlive`,
+# NSSM `AppExit Default Restart`.
 info "Starting App Mesh service as $(id -un): $PROGRAM"
 exec "$PROGRAM"

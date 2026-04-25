@@ -13,6 +13,7 @@
 #include "Label.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
+#include "rest/EventDispatcher.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
 #include "security/HMACVerifier.h"
@@ -516,6 +517,8 @@ void Configuration::removeApp(const std::string &appName)
 {
 	const static char fname[] = "Configuration::removeApp() ";
 
+	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
+
 	LOG_DBG << fname << appName;
 	std::shared_ptr<Application> app, empty;
 	{
@@ -533,14 +536,17 @@ void Configuration::removeApp(const std::string &appName)
 		LOG_DBG << fname << "removed " << appName;
 	}
 	m_appNameIndexMap.unbind(appName);
+	EventDispatcher::instance()->removeByApp(appName);
 }
 
 void Configuration::saveConfigToDisk()
 {
 	const static char fname[] = "Configuration::saveConfigToDisk() ";
 
-	auto content = this->AsJson();
+	// Hold the lock around AsJson() too, so concurrent hotUpdate() can't
+	// snapshot a torn config mid-write.
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	auto content = this->AsJson();
 	const auto configFilePath = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE, true);
 	auto tmpFile = configFilePath + "." + std::to_string(Utility::getThreadId());
 	if (Utility::runningInContainer())
@@ -990,7 +996,7 @@ Configuration::JsonRest::JsonRest()
 	: m_restEnabled(false), m_passwordComplexityEnabled(false), m_corsDisabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
 	  m_IOThreadPoolSize(DEFAULT_IO_THREAD_POOL_SIZE),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
-	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT)
+	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(0)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 	m_jwt = std::make_shared<JsonJwt>();

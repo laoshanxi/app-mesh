@@ -429,6 +429,16 @@ paths:
           schema:
             type: string
           description: Application name.
+        - name: subscribe_events
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Comma-separated event types to subscribe atomically with app registration.
+            Subscription is created before the app starts to ensure no events are missed.
+            Values: START, EXIT, STDOUT, HEALTH, STATUS, REMOVED, ALL.
+            Requires TCP or WebSocket connection. Response includes subscription_id when active.
       requestBody:
         description: Application definition
         required: true
@@ -1386,6 +1396,139 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
+
+  /appmesh/app/{app_name}/subscribe:
+    post:
+      summary: Subscribe to application events
+      description: |
+        Subscribe to real-time events for a specific application.
+        Requires a persistent connection (TCP or WebSocket).
+        Events are pushed as unsolicited Response messages with request_uri="/appmesh/event".
+      tags: [EventSubscription]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: app_name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Application name.
+        - name: events
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Comma-separated event types to subscribe.
+            Values: START, EXIT, STDOUT, HEALTH, STATUS, REMOVED.
+            Default: all events.
+      responses:
+        "200":
+          description: Subscription created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription_id:
+                    type: string
+                    example: "cqk8g7l4d"
+                  app_name:
+                    type: string
+                    example: "myapp"
+                  events:
+                    type: array
+                    items:
+                      type: string
+                    example: ["START", "EXIT", "STDOUT"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          description: Subscribe requires a persistent connection (TCP or WebSocket).
+    delete:
+      summary: Unsubscribe from application events
+      tags: [EventSubscription]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: app_name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Application name.
+        - name: subscription_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Subscription ID returned by the subscribe endpoint.
+      responses:
+        "200":
+          description: Unsubscribed successfully.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Subscription not found.
+
+  /appmesh/subscribe:
+    post:
+      summary: Subscribe to events from all applications
+      description: |
+        Subscribe to real-time events from all applications (wildcard subscription).
+        Requires a persistent connection (TCP or WebSocket).
+      tags: [EventSubscription]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: events
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Comma-separated event types. Default: all events.
+      responses:
+        "200":
+          description: Subscription created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription_id:
+                    type: string
+                  app_name:
+                    type: string
+                    example: "*"
+                  events:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          description: Subscribe requires a persistent connection (TCP or WebSocket).
+    delete:
+      summary: Unsubscribe from all-app events
+      tags: [EventSubscription]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: subscription_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Subscription ID.
+      responses:
+        "200":
+          description: Unsubscribed successfully.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Subscription not found.
 
 components:
   securitySchemes:

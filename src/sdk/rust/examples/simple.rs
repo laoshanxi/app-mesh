@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let _ = client.delete_app("test-app").await;
 
-    let app = client.add_app(&new_app).await?;
+    let app = client.add_app(&new_app, None).await?;
     println!("New application added: \n{:#?}", app);
 
     let app_output = client.get_app_output("test-app", 0, 0, 1024, None, Some(1)).await?;

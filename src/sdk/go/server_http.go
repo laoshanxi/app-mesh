@@ -68,6 +68,8 @@ func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
 			log.Printf("task_fetch request failed: %v, retrying...", err)
 		} else if status == http.StatusOK {
 			return string(body), nil
+		} else if status == http.StatusPreconditionFailed {
+			log.Fatalf("Process key mismatch (412): this process has been superseded, exiting")
 		} else {
 			log.Printf("task_fetch failed with status %d: %s, retrying...", status, string(body))
 		}

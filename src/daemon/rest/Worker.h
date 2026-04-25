@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Data.h"
+#include "../../common/Utility.h"
 
 #include <ace/Null_Mutex.h>
 #include <ace/Singleton.h>
@@ -10,6 +11,11 @@
 
 #include <memory>
 #include <string>
+
+namespace WSS
+{
+	class ReplyContext;
+}
 
 class HttpRequest;
 struct HttpRequestContext;
@@ -32,6 +38,9 @@ public:
 
 	void queueTcpRequest(ByteBuffer &&data, int tcpClientId);
 	void queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef);
+#if defined(HAVE_UWEBSOCKETS)
+	void queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext);
+#endif
 
 	void shutdown();
 

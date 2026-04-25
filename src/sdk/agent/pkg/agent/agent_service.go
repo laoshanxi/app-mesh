@@ -397,7 +397,9 @@ func HandleDownload(w http.ResponseWriter, r *http.Request, data *Response, file
 		defer os.Remove(data.TempDownloadFilePath)
 	}
 
-	if !utils.IsValidFileName(filePath) {
+	// Path already authorized by the daemon; IsValidFileName's system-path blocklist applies
+	// only to uploads (kept in HandleUpload).
+	if filePath == "" || strings.ContainsAny(filePath, "\x00") {
 		return fmt.Errorf("invalid file name")
 	}
 
@@ -458,7 +460,7 @@ func SaveUploadedFile(w http.ResponseWriter, r *http.Request, filePath string) e
 	bufferSize := 32 * 1024       // 32KB chunks for buffered copying
 
 	// Create the destination file with proper permissions
-	dst, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	dst, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create destination file: %w", err)
 	}

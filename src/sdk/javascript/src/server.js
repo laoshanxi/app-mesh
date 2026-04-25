@@ -122,13 +122,18 @@ class AppMeshServer {
           params: { process_key: processKey }
         })
 
-        if (response.status !== 200) {
-          this._logger.warn(
-            `task_fetch failed with status ${response.status}: ${response.data}, retrying...`
-          )
-        } else {
+        if (response.status === 200) {
           return response.data
         }
+
+        if (response.status === 412) {
+          this._logger.error('Process key mismatch (412): this process has been superseded, exiting')
+          process.exit(1)
+        }
+
+        this._logger.warn(
+          `task_fetch failed with status ${response.status}: ${response.data}, retrying...`
+        )
       } catch (error) {
         this._logger.warn(`task_fetch error: ${error.message}, retrying...`)
       }

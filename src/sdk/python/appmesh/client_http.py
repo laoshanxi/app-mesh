@@ -346,8 +346,17 @@ class AppMeshClient:
             try:
                 self.renew_token()
                 logger.info("Token successfully refreshed")
+            except AppMeshAuthError as e:
+                # Token rejected (401/403) → dead token; retrying only spams logs.
+                logger.warning("Token refresh halted (auth rejected): %s", e)
+                return
             except Exception as e:
-                logger.error("Token refresh failed: %s", e)
+                # Network timeout, daemon down, SSL error, etc. — stop the loop.
+                # The current token stays valid until exp; the next user request
+                # will surface the connection issue with full context. Background
+                # spinning at ~1 Hz once exp approaches only floods the log.
+                logger.warning("Token refresh halted (%s: %s); call login() to resume", type(e).__name__, e)
+                return
 
     def start_token_refresh(self) -> None:
         """Start background token auto-refresh."""
@@ -735,9 +744,15 @@ class AppMeshClient:
     ########################################
     # Application manage
     ########################################
-    def add_app(self, app: App) -> App:
-        """Register a new application."""
-        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", body=app.to_dict())
+    def add_app(self, app: App, subscribe_events: Optional[List[str]] = None) -> App:
+        """Register a new application.
+
+        ``subscribe_events`` only takes effect on a persistent connection (TCP/WSS) and is
+        silently ignored by the HTTP transport (no demuxer to deliver events to). When the
+        daemon creates a subscription, the returned App carries ``subscription_id``.
+        """
+        query = {"subscribe_events": ",".join(subscribe_events)} if subscribe_events else None
+        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", query=query, body=app.to_dict())
         return App(resp.json())
 
     def delete_app(self, app_name: str) -> bool:
@@ -1275,6 +1290,8 @@ class AppMeshClient:
                 raise AppMeshRequestError(f"Invalid http method: {method}")
 
             if raise_on_fail and resp.status_code != HTTPStatus.PRECONDITION_REQUIRED:
+                if resp.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+                    raise AppMeshAuthError(f"HTTP {resp.status_code}: {resp.reason}")
                 resp.raise_for_status()
 
             # Auto-detect token changes from server Set-Cookie responses

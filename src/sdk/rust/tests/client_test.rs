@@ -171,7 +171,7 @@ mod tests {
             .command("echo 'test'")
             .shell(true)
             .build();
-        let result = client.add_app(&app).await.unwrap();
+        let result = client.add_app(&app, None).await.unwrap();
         assert_eq!(result.name, Some("test-app".to_string()));
     }
 
@@ -337,7 +337,7 @@ mod integration {
             .command("sleep 300")
             .shell(true)
             .build();
-        let created = client.add_app(&app).await.expect("add_app failed");
+        let created = client.add_app(&app, None).await.expect("add_app failed");
         assert_eq!(created.name.as_deref(), Some(app_name));
 
         // Disable the app and verify health reflects disabled state.

@@ -250,8 +250,10 @@ class SocketStreamPtr;
 //   - Client side: createConnection() / connect() for outbound connections
 //
 // Key rules:
-//   1. Lock ordering: m_io_mutex → m_cb_mutex → (external callback locks).
-//      Any new lock acquired inside a callback must be below m_cb_mutex in the hierarchy.
+//   1. Lock ordering: reactor token → m_io_mutex → m_cb_mutex → (external locks).
+//      Non-reactor threads must NEVER hold m_io_mutex when calling reactor APIs
+//      (mask_ops, register_handler, etc.) — that inverts the order with handle_close
+//      (which is called by the reactor with its token held).
 //   2. Callbacks (onData, onSent, ...) run while m_io_mutex is held, so they may
 //      re-enter send()/shutdown(). m_io_mutex MUST stay recursive.
 //   3. All callbacks MUST be set before open(). open() fires onConnect synchronously.

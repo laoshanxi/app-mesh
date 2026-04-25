@@ -101,7 +101,13 @@ class AppMeshServer:
                 if resp.status_code == HTTPStatus.OK:
                     return resp.content
 
+                if resp.status_code == HTTPStatus.PRECONDITION_FAILED:
+                    self._logger.error("Process key mismatch (412): this process has been superseded, exiting")
+                    raise SystemExit(1)
+
                 self._logger.warning("task_fetch failed with status %d: %s, retrying...", resp.status_code, resp.text)
+            except SystemExit:
+                raise
             except Exception as ex:
                 self._logger.warning("task_fetch request failed: %s, retrying...", ex)
 

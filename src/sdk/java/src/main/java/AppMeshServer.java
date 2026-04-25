@@ -74,6 +74,10 @@ public class AppMeshServer {
                 if (status == HttpURLConnection.HTTP_OK) {
                     return Utils.readResponseBytes(conn);
                 }
+                if (status == HttpURLConnection.HTTP_PRECON_FAILED) {
+                    LOGGER.log(Level.SEVERE, "Process key mismatch (412): this process has been superseded, exiting");
+                    System.exit(1);
+                }
                 LOGGER.log(Level.WARNING, "taskFetch failed with status {0}: retrying...", status);
             } catch (IOException e) {
                 LOGGER.log(Level.WARNING, "taskFetch request failed, retrying", e);

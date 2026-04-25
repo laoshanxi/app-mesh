@@ -25,6 +25,7 @@ Welcome to AppMesh's documentation!
    Coverity.md
    GrafanaDataSource.md
    RemoteTask.md
+   EventSubscription.md
 
 
 .. toctree::

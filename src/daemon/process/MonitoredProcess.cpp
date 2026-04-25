@@ -1,6 +1,4 @@
 // src/daemon/process/MonitoredProcess.cpp
-#include <ace/Process.h>
-
 #include "../../common/Utility.h"
 #include "../rest/HttpRequest.h"
 #include "MonitoredProcess.h"

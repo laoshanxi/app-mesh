@@ -108,8 +108,8 @@ sed -i -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_
 cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target linenoise && cmake --install .
 cd ${ROOTDIR}
 
-# spdlog - build from source
-git clone --depth 1 https://github.com/gabime/spdlog.git
+# spdlog - build from source (pinned to v1.17.0 for stable behaviour)
+git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git
 cd spdlog || exit 1
 mkdir -p build && cd build || exit 1
 cmake .. -DSPDLOG_BUILD_SHARED=ON -DSPDLOG_BUILD_EXAMPLES=OFF -DSPDLOG_BUILD_TESTS=OFF
@@ -139,6 +139,13 @@ git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
 cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
 make -j"$(nproc)" && make install
 cd ${ROOTDIR}
+
+git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
+cd uWebSockets
+make default WITH_OPENSSL=1 && make install
+cp uSockets/src/libusockets.h /usr/local/include/
+cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
+cd $ROOTDIR
 
 # clean
 go clean -cache -fuzzcache -modcache

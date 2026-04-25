@@ -3,6 +3,8 @@
 
 # Standard library imports
 import json
+import logging
+import threading
 import uuid
 from http import HTTPStatus
 from typing import Optional
@@ -12,9 +14,19 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 # Local imports
+from .app import App
 from .client_http import AppMeshClient
 from .exceptions import AppMeshConnectionError
+from .subscribe import (
+    EVENT_TYPE_DISCONNECTED,
+    AppEvent,
+    EventCallback,
+    MessageDemuxer,
+    SubscriptionResult,
+)
 from .tcp_messages import RequestMessage, ResponseMessage
+
+logger = logging.getLogger(__name__)
 
 # Auth endpoints where the server returns a new access_token in the JSON body.
 # Login/auth/totp_validate: apply token only when X-Set-Cookie header is present
@@ -145,18 +157,22 @@ class TransportClientMixin:
         if body_bytes:
             appmesh_request.body = body_bytes
 
-        # Send request
+        # Send request and receive response
         data = appmesh_request.serialize()
-        transport.send_message(data)
 
-        # Receive response
-        resp_data = transport.receive_message()
-        if not resp_data:  # Covers None and empty bytes
-            transport.close()
-            raise AppMeshConnectionError(f"{self._transport_name} connection broken")
-
-        # Parse response
-        appmesh_resp = ResponseMessage.from_bytes(resp_data)
+        if hasattr(self, "_demuxer") and self._demuxer and self._demuxer._running:
+            # Demuxer is active — route through it to avoid concurrent socket reads
+            appmesh_resp = self._demuxer.send_and_receive(appmesh_request.uuid, data, timeout=60.0)
+            if not appmesh_resp:
+                transport.close()
+                raise AppMeshConnectionError(f"{self._transport_name} demuxer response timeout")
+        else:
+            transport.send_message(data)
+            resp_data = transport.receive_message()
+            if not resp_data:  # Covers None and empty bytes
+                transport.close()
+                raise AppMeshConnectionError(f"{self._transport_name} connection broken")
+            appmesh_resp = ResponseMessage.from_bytes(resp_data)
         response = requests.Response()
         response.status_code = appmesh_resp.http_status
         response.headers = CaseInsensitiveDict(appmesh_resp.headers)
@@ -180,3 +196,170 @@ class TransportClientMixin:
         self._sync_transport_token(response, path, header)
 
         return AppMeshClient._EncodingResponse(response)
+
+    def add_app(self, app: App, subscribe_events: Optional[list] = None, callback: Optional[EventCallback] = None) -> App:
+        """Register an app, optionally subscribing atomically and wiring a local callback.
+
+        Reuses the base ``add_app`` for the HTTP round-trip + ``subscription_id`` parsing,
+        then registers ``callback`` against the local demuxer keyed by the new subscription.
+        """
+        result_app = super().add_app(app, subscribe_events=subscribe_events)
+        if callback and result_app.subscription_id:
+            self._ensure_demuxer()
+            self._demuxer.register_event_callback(result_app.subscription_id, callback)
+        return result_app
+
+    def subscribe(self, app_name: str, events: Optional[list] = None, callback: Optional[EventCallback] = None) -> SubscriptionResult:
+        """Subscribe to app events over the transport connection.
+
+        Args:
+            app_name: Application name, or "*" for all apps.
+            events: List of event types (e.g. ["START", "EXIT", "STDOUT"]).
+            callback: Function called with AppEvent for each received event.
+
+        Returns:
+            SubscriptionResult with subscription_id, app_name, and events.
+        """
+        path = "/appmesh/subscribe"
+        if app_name and app_name != "*":
+            path = f"/appmesh/app/{app_name}/subscribe"
+
+        query = {}
+        if events:
+            query["events"] = ",".join(events)
+
+        resp = self._request_http(AppMeshClient._Method.POST, path=path, query=query)
+        result_data = resp.json()
+        result = SubscriptionResult(
+            subscription_id=result_data.get("subscription_id", ""),
+            app_name=result_data.get("app_name", ""),
+            events=result_data.get("events", []),
+        )
+
+        if callback and result.subscription_id:
+            self._ensure_demuxer()
+            self._demuxer.register_event_callback(result.subscription_id, callback)
+
+        return result
+
+    def unsubscribe(self, subscription_id: str) -> None:
+        """Remove an event subscription.
+
+        Args:
+            subscription_id: The subscription ID returned by subscribe().
+        """
+        query = {"subscription_id": subscription_id}
+        self._request_http(AppMeshClient._Method.DELETE, path="/appmesh/subscribe", query=query)
+
+        if hasattr(self, "_demuxer") and self._demuxer:
+            self._demuxer.unregister_event_callback(subscription_id)
+
+    def _ensure_demuxer(self) -> None:
+        """Start the message demuxer if not already running."""
+        if hasattr(self, "_demuxer") and self._demuxer:
+            return
+        self._demuxer = MessageDemuxer(self._transport)
+        self._demuxer.start()
+
+    def wait_for_async_run(self, run, print_stdout: bool = True, timeout: int = 0) -> Optional[int]:
+        """Override: use subscribe-based streaming on TCP/WSS instead of polling.
+
+        Subscribes to ``STDOUT`` + ``EXIT`` + ``REMOVED``, then does a
+        one-shot ``get_app_output`` to backfill bytes emitted before the subscribe
+        took effect. Stdout events whose ``position`` is already covered by an
+        earlier delivery are deduped (partial overlap → prefix trimmed).
+        """
+        if not run or not run.app_name:
+            return None
+
+        wait_timeout: Optional[float] = None if timeout in (0, None) else float(timeout)
+
+        on_stdout = (lambda s: print(s, end="", flush=True)) if print_stdout else None
+
+        # Sentinel exit codes distinguishable from real ones (>=0):
+        #   None → caller-side timeout (done.wait returned without done.set)
+        #   -1   → REMOVED before EXIT observed
+        #   -2   → demuxer disconnected (transport failure)
+        exit_code: Optional[int] = None
+        delivered_until = 0  # next-byte offset already passed to on_stdout
+        done = threading.Event()
+        lock = threading.Lock()
+
+        def deliver(chunk, pos: int) -> None:
+            nonlocal delivered_until
+            if not chunk:
+                return
+            chunk_bytes = chunk.encode("utf-8") if isinstance(chunk, str) else bytes(chunk)
+            with lock:
+                end = pos + len(chunk_bytes)
+                if end <= delivered_until:
+                    return
+                if pos < delivered_until:
+                    chunk_bytes = chunk_bytes[delivered_until - pos:]
+                delivered_until = end
+            if on_stdout:
+                try:
+                    on_stdout(chunk_bytes.decode("utf-8", errors="replace"))
+                except Exception:
+                    pass
+
+        def on_event(event: AppEvent) -> None:
+            nonlocal exit_code
+            if event.event_type == "STDOUT":
+                try:
+                    pos = int(event.data.get("position", 0))
+                except (TypeError, ValueError):
+                    pos = 0
+                deliver(event.data.get("output", ""), pos)
+            elif event.event_type == "EXIT":
+                try:
+                    exit_code = int(event.data.get("exit_code", -1))
+                except (TypeError, ValueError):
+                    exit_code = -1
+                done.set()
+            elif event.event_type == "REMOVED":
+                if exit_code is None:
+                    exit_code = -1
+                done.set()
+            elif event.event_type == EVENT_TYPE_DISCONNECTED:
+                if exit_code is None:
+                    exit_code = -2
+                done.set()
+
+        sub = self.subscribe(run.app_name, ["STDOUT", "EXIT", "REMOVED"], callback=on_event)
+
+        try:
+            # Backfill bytes emitted before subscribe took effect; also catches
+            # the case where the process already exited.
+            try:
+                backfill = self.get_app_output(
+                    app_name=run.app_name,
+                    stdout_position=0,
+                    stdout_index=0,
+                    process_uuid=run.proc_uid,
+                    timeout=0,
+                )
+                if backfill.output:
+                    deliver(backfill.output, 0)
+                if backfill.exit_code is not None and exit_code is None:
+                    exit_code = backfill.exit_code
+                    done.set()
+            except Exception as exc:
+                logger.warning("backfill failed for %s: %s", run.app_name, exc)
+
+            done.wait(timeout=wait_timeout)
+        finally:
+            try:
+                if sub.subscription_id:
+                    self.unsubscribe(sub.subscription_id)
+            except Exception:
+                pass
+            # Best-effort delete on a real exit. Sentinels (-1 REMOVED, -2 disconnected)
+            # mean the daemon already lost track or the app is gone — don't try to delete.
+            if exit_code is not None and exit_code >= 0:
+                try:
+                    self.delete_app(run.app_name)
+                except Exception:
+                    pass
+
+        return exit_code

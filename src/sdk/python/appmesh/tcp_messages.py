@@ -40,7 +40,9 @@ class ResponseMessage:
     @classmethod
     def from_bytes(cls, buf: bytes) -> "ResponseMessage":
         """Deserialize TCP msgpack buffer with proper type conversion."""
-        data = msgpack.unpackb(buf, raw=False)
+        unpacker = msgpack.Unpacker(raw=False)
+        unpacker.feed(buf)
+        data = unpacker.unpack()
         hints = get_type_hints(cls)
         instance = cls()
 
