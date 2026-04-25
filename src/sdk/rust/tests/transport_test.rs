@@ -218,7 +218,7 @@ mod wss {
             .shell(true)
             .build();
 
-        let created = client.add_app(&app).await.expect("WSS add_app failed");
+        let created = client.add_app(&app, None).await.expect("WSS add_app failed");
         assert_eq!(
             created.name.as_deref(),
             Some(app_name.as_str()),

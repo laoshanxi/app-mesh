@@ -15,16 +15,41 @@ use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
 use crate::requester::Requester;
+use crate::subscribe::{MessageDemuxer, MessageReader};
 use crate::tcp_messages::{RequestMessage, ResponseMessage};
 use crate::tcp_transport::TCPTransport;
 use crate::tls_config::{ClientCert, SslVerify};
 
 pub type Result<T> = std::result::Result<T, AppMeshError>;
 
+/// Adapts the synchronous `TCPTransport` to the async `MessageReader` trait.
+///
+/// Each `read_message` call acquires the lock, reads one framed message, and
+/// releases the lock so other operations (send) can proceed.
+struct TCPMessageReader {
+    transport: Arc<Mutex<TCPTransport>>,
+}
+
+#[async_trait]
+impl MessageReader for TCPMessageReader {
+    async fn read_message(&self) -> Result<Option<Vec<u8>>> {
+        // Offload the blocking TLS read to a thread-pool thread so we do not
+        // block the tokio runtime.
+        let transport = Arc::clone(&self.transport);
+        tokio::task::spawn_blocking(move || {
+            let mut t = transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+            t.receive_message().map_err(AppMeshError::from)
+        })
+        .await
+        .map_err(|e| AppMeshError::ConnectionError(format!("reader task panicked: {}", e)))?
+    }
+}
+
 /// TCP-based requester implementation
 pub struct TCPRequester {
     tcp_transport: Arc<Mutex<TCPTransport>>,
     token: Arc<Mutex<Option<String>>>,
+    demuxer: Mutex<Option<Arc<MessageDemuxer>>>,
 }
 
 impl TCPRequester {
@@ -45,12 +70,17 @@ impl TCPRequester {
         Ok(Self {
             tcp_transport: Arc::new(Mutex::new(tcp_transport)),
             token: Arc::new(Mutex::new(None)),
+            demuxer: Mutex::new(None),
         })
     }
 
     /// Create TCPRequester with shared transport (used internally by AppMeshClientTCP)
     pub fn with_shared_transport(tcp_transport: Arc<Mutex<TCPTransport>>) -> Self {
-        Self { tcp_transport, token: Arc::new(Mutex::new(None)) }
+        Self {
+            tcp_transport,
+            token: Arc::new(Mutex::new(None)),
+            demuxer: Mutex::new(None),
+        }
     }
 
     pub fn set_token(&self, token: Option<String>) {
@@ -76,6 +106,23 @@ impl TCPRequester {
 
         Ok(builder.body(Bytes::from(resp.body)).expect("Building http::Response should not fail"))
     }
+
+    /// Direct (legacy) read path: lock the transport and read one response.
+    fn read_response_direct(&self) -> Result<ResponseMessage> {
+        let mut transport =
+            self.tcp_transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+
+        let resp_data = match transport.receive_message()? {
+            Some(data) if !data.is_empty() => data,
+            _ => {
+                transport.close();
+                return Err(AppMeshError::ConnectionError("Socket connection broken".into()));
+            }
+        };
+
+        ResponseMessage::deserialize(&resp_data)
+            .map_err(|e| AppMeshError::SerializationError(e.to_string()))
+    }
 }
 
 #[async_trait]
@@ -89,49 +136,68 @@ impl Requester for TCPRequester {
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>> {
-        let mut transport =
-            self.tcp_transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+        // Build the request message and send it while holding the transport lock.
+        let (req_uuid, req_headers) = {
+            let mut transport =
+                self.tcp_transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
 
-        if !transport.connected() {
-            transport.connect()?; // TransportError → AppMeshError via From
-        }
-
-        let mut req = RequestMessage::new();
-        req.uuid = Uuid::new_v4().to_string();
-        req.http_method = method.to_string();
-        req.request_uri = path.to_string();
-        req.client_addr =
-            hostname::get().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "unknown".into());
-        req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_TCP.into());
-
-        if let Some(token) = self.get_access_token() {
-            req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
-        }
-        // Save headers ref before consuming for token sync
-        let req_headers = headers.clone();
-        if let Some(h) = headers {
-            req.headers.extend(h);
-        }
-        if let Some(q) = query {
-            req.query.extend(q);
-        }
-        if let Some(b) = body {
-            req.body = b.to_vec();
-        }
-
-        let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
-        transport.send_message(&data)?;
-
-        let resp_data = match transport.receive_message()? {
-            Some(data) if !data.is_empty() => data,
-            _ => {
-                transport.close();
-                return Err(AppMeshError::ConnectionError("Socket connection broken".into()));
+            if !transport.connected() {
+                transport.connect()?; // TransportError → AppMeshError via From
             }
+
+            let mut req = RequestMessage::new();
+            req.uuid = Uuid::new_v4().to_string();
+            req.http_method = method.to_string();
+            req.request_uri = path.to_string();
+            req.client_addr =
+                hostname::get().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "unknown".into());
+            req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_TCP.into());
+
+            if let Some(token) = self.get_access_token() {
+                req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
+            }
+            // Save headers ref before consuming for token sync
+            let req_headers = headers.clone();
+            if let Some(h) = headers {
+                req.headers.extend(h);
+            }
+            if let Some(q) = query {
+                req.query.extend(q);
+            }
+            if let Some(b) = body {
+                req.body = b.to_vec();
+            }
+
+            let uuid = req.uuid.clone();
+            let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
+            transport.send_message(&data)?;
+
+            (uuid, req_headers)
+        };
+        // Transport lock released here.
+
+        // Check if demuxer is active — if so, route through channel-based response.
+        let demuxer_opt = {
+            self.demuxer.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?.clone()
         };
 
-        let resp =
-            ResponseMessage::deserialize(&resp_data).map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
+        let resp = if let Some(ref demuxer) = demuxer_opt {
+            if demuxer.is_running() {
+                let rx = demuxer.register_request(&req_uuid).await;
+                match rx.await {
+                    Ok(resp) => resp,
+                    Err(_) => {
+                        return Err(AppMeshError::ConnectionError(
+                            "Connection closed while waiting for response".into(),
+                        ));
+                    }
+                }
+            } else {
+                self.read_response_direct()?
+            }
+        } else {
+            self.read_response_direct()?
+        };
 
         let status = StatusCode::from_u16(resp.http_status as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
@@ -159,9 +225,32 @@ impl Requester for TCPRequester {
     }
 
     fn close(&self) {
+        // Stop the demuxer first
+        if let Ok(guard) = self.demuxer.lock() {
+            if let Some(ref d) = *guard {
+                d.stop();
+            }
+        }
         if let Ok(mut t) = self.tcp_transport.lock() {
             t.close();
         }
+    }
+
+    fn enable_demuxer(&self) {
+        let mut guard = self.demuxer.lock().expect("demuxer lock poisoned");
+        if guard.is_some() {
+            return; // already enabled
+        }
+        let demuxer = Arc::new(MessageDemuxer::new());
+        let reader = Arc::new(TCPMessageReader {
+            transport: Arc::clone(&self.tcp_transport),
+        });
+        demuxer.start(reader);
+        *guard = Some(demuxer);
+    }
+
+    fn get_demuxer(&self) -> Option<Arc<MessageDemuxer>> {
+        self.demuxer.lock().ok().and_then(|g| g.clone())
     }
 }
 
@@ -312,6 +401,25 @@ impl AppMeshClientTCP {
         lifecycle: i32,
     ) -> Result<AppRun> {
         self.client.run_app_async(app, max_time, lifecycle).await
+    }
+
+    /// Subscribe-based wait for an async run (TCP override).
+    ///
+    /// Instead of polling `get_app_output` in a loop, subscribes to STDOUT/EXIT/REMOVED
+    /// events and does a one-shot backfill to cover output emitted before the subscribe
+    /// took effect.  Deduplicates by byte-position offset.
+    ///
+    /// Sentinel exit codes:
+    ///   `None`  -- caller-side timeout
+    ///   `-1`    -- REMOVED before EXIT observed
+    ///   `-2`    -- demuxer disconnected (transport failure)
+    pub async fn wait_for_async_run(
+        &self,
+        run: &AppRun,
+        timeout: i32,
+        print_stdout: bool,
+    ) -> Result<Option<i32>> {
+        crate::wait_subscribe::wait_for_async_run_subscribe(&self.client, run, timeout, print_stdout).await
     }
 }
 

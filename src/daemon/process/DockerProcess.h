@@ -8,7 +8,7 @@
 #include "AppProcess.h"
 
 // Docker command line process object
-class DockerProcess : public AppProcess, public ACE_Process
+class DockerProcess : public AppProcess
 {
 public:
 	DockerProcess(const std::string &containerName, const std::string &dockerImage);

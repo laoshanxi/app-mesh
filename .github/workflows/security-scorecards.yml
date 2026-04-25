@@ -1,5 +1,6 @@
 name: "security-scorecards"
 on:
+  workflow_dispatch:
   # Only the default branch is supported.
   branch_protection_rule:
   schedule:

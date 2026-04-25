@@ -11,7 +11,9 @@ mod models;
 mod persistent_jar;
 mod requester;
 mod response_ext;
+mod subscribe;
 mod tcp_messages;
+mod wait_subscribe;
 mod tcp_transport;
 pub mod tls_config;
 mod wss_transport;
@@ -25,9 +27,11 @@ pub use client_tcp::AppMeshClientTCP;
 pub use client_wss::AppMeshClientWSS;
 pub use error::{AppMeshError, TransportError};
 pub use models::{
-    AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
-    ExitAction, Permission, ResourceLimitation, User,
+    AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
+    ExitAction, Permission, ResourceLimitation, SubscriptionResult, User,
 };
 pub use server_http::AppMeshServer;
 pub use server_tcp::AppMeshServerTCP;
 pub use server_wss::AppMeshServerWSS;
+pub use constants::EVENT_TYPE_DISCONNECTED;
+pub use subscribe::{EventCallback, MessageDemuxer};

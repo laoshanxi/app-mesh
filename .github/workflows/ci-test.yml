@@ -1,6 +1,7 @@
 name: "ci-test"
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -29,23 +30,65 @@ jobs:
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
-      - name: test ubuntu:22
+      - name: Configure host for daemon coredumps
         run: |
-          docker run --rm \
+          # Kernel writes core files via the HOST's core_pattern even for containerized processes.
+          # Stop the interceptors that pipe cores into apport/systemd-coredump (where the test
+          # script in the container cannot reach them), then point cores at a bind-mounted dir.
+          sudo systemctl stop apport.service 2>/dev/null || true
+          sudo systemctl mask apport.service 2>/dev/null || true
+          sudo systemctl stop systemd-coredump.socket 2>/dev/null || true
+          sudo systemctl mask systemd-coredump.socket 2>/dev/null || true
+          sudo mkdir -p /tmp/host-cores
+          sudo chmod 1777 /tmp/host-cores
+          sudo sh -c 'echo "/tmp/host-cores/core.%e.%p.%t" > /proc/sys/kernel/core_pattern'
+          sudo sysctl -w fs.suid_dumpable=2 || true
+          sudo sysctl -w kernel.core_uses_pid=1 || true
+          echo "host core_pattern: $(cat /proc/sys/kernel/core_pattern)"
+          echo "host suid_dumpable: $(cat /proc/sys/fs/suid_dumpable)"
+          # Fail loud if an interceptor reinstalled itself
+          test "$(cat /proc/sys/kernel/core_pattern)" = "/tmp/host-cores/core.%e.%p.%t"
+
+      - name: test ubuntu:22
+        env:
+          OS_TAG: ubuntu22
+        run: |
+          docker run --rm -e OS_TAG -e APPMESH_BaseConfig_LogLevel=DEBUG \
             -v ${{ github.workspace }}:/work \
+            -v /tmp/host-cores:/cores \
+            --ulimit core=-1 \
+            --cap-add SYS_PTRACE \
             --entrypoint=bash \
             ubuntu:22.04 \
             -c '
+            # Always tail server.log on any exit (success or failure) so CI logs
+            # always contain the daemon`s last words, even if the structured
+            # dump-only path bails out early.
+            # Tail server.log only on non-zero exit, for failed-run diagnostics.
+            trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
+
             apt update
-            apt install -y wget iputils-ping
+            apt install -y wget iputils-ping gdb
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_11_glibc_2.35_x86_64.deb
             apt install -y ./appmesh_*.deb
 
+            ulimit -c unlimited
+
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
             appc resource
+
+            appc logon -U admin -X admin123 || true
+            appc log -L DEBUG || true
+            appc loginfo || true
+
+            apt install -y python3 python3-pip
+            python3 -m pip install --upgrade appmesh pyotp
+            bash /work/script/run_python_test_with_debug.sh \
+              /work/src/sdk/python/test/test_appmesh_client.py \
+              /work/src/sdk/python/sample.py
 
             # test appmesh golang sdk
             apt install -y wget
@@ -54,33 +97,51 @@ jobs:
             wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
             tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
             cd /work/src/sdk/go
-            /usr/local/go/bin/go test -v
-
-            # test appmesh python sdk
-            apt install -y python3 python3-pip
-            python3 -m pip install --upgrade appmesh pyotp
-            python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
-            python3 /work/src/sdk/python/test/test_appmesh_client.py
-            python3 /work/src/sdk/python/sample.py
+            /usr/local/go/bin/go test -v || {
+                bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
+                exit 1
+            }
             '
 
       - name: test ubuntu:24
+        env:
+          OS_TAG: ubuntu24
         run: |
-          docker run --rm \
+          docker run --rm -e OS_TAG -e APPMESH_BaseConfig_LogLevel=DEBUG \
             -v ${{ github.workspace }}:/work \
+            -v /tmp/host-cores:/cores \
+            --ulimit core=-1 \
+            --cap-add SYS_PTRACE \
             --entrypoint=bash \
             ubuntu:24.04 \
             -c '
+            # Tail server.log only on non-zero exit, for failed-run diagnostics.
+            trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
+
             apt update
-            apt install -y wget iputils-ping
+            apt install -y wget iputils-ping gdb
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_13_glibc_2.39_x86_64.deb
             apt install -y ./appmesh_*.deb
 
+            ulimit -c unlimited
+
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
             appc resource
+
+            appc logon -U admin -X admin123 || true
+            appc log -L DEBUG || true
+            appc loginfo || true
+
+            # test appmesh python sdk FIRST — Python wrapper captures full daemon
+            # diagnostics on crash (backtrace / dmesg / server.log).
+            apt install -y python3 python3-pip
+            python3 -m pip install --break-system-packages --upgrade appmesh pyotp
+            bash /work/script/run_python_test_with_debug.sh \
+              /work/src/sdk/python/test/test_appmesh_client.py \
+              /work/src/sdk/python/sample.py
 
             # test appmesh golang sdk
             apt install -y wget
@@ -89,33 +150,49 @@ jobs:
             wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
             tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
             cd /work/src/sdk/go
-            /usr/local/go/bin/go test -v
-
-            # test appmesh python sdk
-            apt install -y python3 python3-pip
-            python3 -m pip install --break-system-packages --upgrade appmesh pyotp
-            python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
-            python3 /work/src/sdk/python/test/test_appmesh_client.py
-            python3 /work/src/sdk/python/sample.py
+            /usr/local/go/bin/go test -v || {
+                bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
+                exit 1
+            }
             '
 
       - name: test ubuntu:18
+        env:
+          OS_TAG: ubuntu18
         run: |
-          docker run --rm \
+          docker run --rm -e OS_TAG -e APPMESH_BaseConfig_LogLevel=DEBUG \
             -v ${{ github.workspace }}:/work \
+            -v /tmp/host-cores:/cores \
+            --ulimit core=-1 \
+            --cap-add SYS_PTRACE \
             --entrypoint=bash \
             ubuntu:18.04 \
             -c '
+            # Tail server.log only on non-zero exit, for failed-run diagnostics.
+            trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
+
             apt update
-            apt install -y wget iputils-ping
+            apt install -y wget iputils-ping gdb
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_7_glibc_2.27_x86_64.deb
             apt install -y ./appmesh_*.deb
+
+            ulimit -c unlimited
 
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
             appc resource
+
+            appc logon -U admin -X admin123 || true
+            appc log -L DEBUG || true
+            appc loginfo || true
+
+            apt install -y python3 python3-pip
+            python3 -m pip install --upgrade appmesh pyotp
+            bash /work/script/run_python_test_with_debug.sh \
+              /work/src/sdk/python/test/test_appmesh_client.py \
+              /work/src/sdk/python/sample.py
 
             # test appmesh golang sdk
             apt install -y wget
@@ -124,23 +201,27 @@ jobs:
             wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
             tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
             cd /work/src/sdk/go
-            /usr/local/go/bin/go test -v
-
-            # test appmesh python sdk
-            apt install -y python3 python3-pip
-            python3 -m pip install --upgrade appmesh pyotp
-            python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
-            python3 /work/src/sdk/python/test/test_appmesh_client.py
-            python3 /work/src/sdk/python/sample.py
+            /usr/local/go/bin/go test -v || {
+                bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
+                exit 1
+            }
             '
 
       - name: test centos:7
+        env:
+          OS_TAG: centos7
         run: |
-          docker run --rm \
+          docker run --rm -e OS_TAG -e APPMESH_BaseConfig_LogLevel=DEBUG \
             -v ${{ github.workspace }}:/work \
+            -v /tmp/host-cores:/cores \
+            --ulimit core=-1 \
+            --cap-add SYS_PTRACE \
             --entrypoint=bash \
             centos:7 \
             -c '
+            # Tail server.log only on non-zero exit, for failed-run diagnostics.
+            trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
+
             # centos 7
             cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
             rm -f /etc/yum.repos.d/*.repo
@@ -149,12 +230,27 @@ jobs:
             yum makecache
 
             yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_4.8.5_glibc_2.17_x86_64.rpm
+            yum install -y gdb
+
+            ulimit -c unlimited
 
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
             appc resource
+
+            appc logon -U admin -X admin123 || true
+            appc log -L DEBUG || true
+            appc loginfo || true
+
+            # test appmesh python sdk FIRST — Python wrapper captures full daemon
+            # diagnostics on crash (backtrace / dmesg / server.log).
+            yum install -y python3 python3-pip
+            python3 -m pip install --upgrade appmesh pyotp
+            bash /work/script/run_python_test_with_debug.sh \
+              /work/src/sdk/python/test/test_appmesh_client.py \
+              /work/src/sdk/python/sample.py
 
             # test appmesh golang sdk
             yum install -y wget
@@ -163,12 +259,8 @@ jobs:
             wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
             tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
             cd /work/src/sdk/go
-            /usr/local/go/bin/go test -v
-
-            # test appmesh python sdk
-            yum install -y python3 python3-pip
-            python3 -m pip install --upgrade appmesh pyotp
-            python3 /work/src/sdk/python/test/test_appmesh_client.py || cat /opt/appmesh/work/server.log
-            python3 /work/src/sdk/python/test/test_appmesh_client.py
-            python3 /work/src/sdk/python/sample.py
+            /usr/local/go/bin/go test -v || {
+                bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
+                exit 1
+            }
             '

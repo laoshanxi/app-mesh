@@ -60,7 +60,11 @@
 #include "../common/Valgrind.h"
 #endif
 
+#if defined(HAVE_UWEBSOCKETS)
+#include "rest/uwebsockets/Adaptor.hpp"
+#else
 #include "../common/lwsservice/WebSocketService.h"
+#endif
 
 using TcpAcceptor = ACE_Acceptor<SocketServer, ACE_SSL_SOCK_Acceptor>;
 
@@ -121,7 +125,6 @@ private:
 
 // Global daemon instance
 static std::unique_ptr<AppMeshDaemon> g_daemon;
-static constexpr int MAX_TCP_ERROR_COUNT = 30;
 
 int main(int argc, char *argv[])
 {
@@ -410,6 +413,12 @@ void AppMeshDaemon::initializeRestService()
 		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getRestTcpPort()) + " with error: " + last_error_msg());
 	}
 
+#if !defined(_WIN32)
+	// Avoid bash children inheriting the listen fd via fork().
+	if (m_acceptor->acceptor().enable(ACE_CLOEXEC) == -1)
+		LOG_WAR << fname << "Failed to set ACE_CLOEXEC on listen socket: " << last_error_msg();
+#endif
+
 	// Setup client connection
 	m_client = std::make_shared<SocketStreamPtr>(SocketStream::createConnection(tcpAddr));
 	if (m_client->stream() && m_client->stream()->connected())
@@ -421,10 +430,17 @@ void AppMeshDaemon::initializeRestService()
 	if (config->getWebSocketPort())
 	{
 		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
+#if defined(HAVE_UWEBSOCKETS)
+		// 3 <IO> threads + shared <WORKER> threads
+		int ioThreadNumber = Configuration::instance()->getIOThreadPoolSize();
+		WebSocketAdaptor::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
+		WebSocketAdaptor::instance()->start();
+#else
 		// 1 <IO> thread + shared <WORKER> threads
 		constexpr int workerThreadNumber = 0; // Use shared thread pool
 		WebSocketService::instance()->initialize(addr, cert, key, ca);
 		WebSocketService::instance()->start(workerThreadNumber);
+#endif
 		LOG_INF << fname << "Initializing Websocket service on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
 	}
 
@@ -561,37 +577,11 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 {
 	const static char fname[] = "AppMeshDaemon::checkTcpConnection() ";
 
-	auto config = Configuration::instance();
-
-	// m_client->stream()->shutdown();
-	// m_client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
-	// m_client->stream()->connect(ACE_INET_Addr(6059, "localhost"));
 	if (m_client && m_client->stream() && !m_client->stream()->connected())
 	{
-		errorCounter++;
-		LOG_WAR << fname << "REST TCP connection test failed, attempt <" << errorCounter << ">";
-
-		if (errorCounter > MAX_TCP_ERROR_COUNT)
-		{
-			LOG_ERR << fname << "REST TCP connection test failed more than " << MAX_TCP_ERROR_COUNT << " times, requesting shutdown";
-			QuitHandler::instance()->requestExit();
-			return false;
-		}
-
-		std::this_thread::sleep_for(std::chrono::seconds(config->getScheduleInterval()));
-
-		// Reconnect
-		ACE_INET_Addr acceptorAddr(config->getRestTcpPort(), config->getRestListenAddress().c_str());
-		if (m_client->stream()->connect(acceptorAddr))
-			LOG_INF << fname << "Test local TCP client reconnected successfully";
-		else
-			LOG_WAR << fname << "Test local TCP client reconnection failed";
+		LOG_WAR << fname << "self-loopback TCP client reports disconnected (passive)";
 	}
-	else
-	{
-		errorCounter = 0;
-	}
-
+	(void)errorCounter;
 	return true;
 }
 
@@ -632,7 +622,11 @@ void AppMeshDaemon::performShutdown()
 
 	QuitHandler::instance()->requestExit();
 
+#if defined(HAVE_UWEBSOCKETS)
+	WebSocketAdaptor::instance()->stop();
+#else
 	WebSocketService::instance()->stop();
+#endif
 
 	cleanWorkerThreads();
 	cleanupResources();

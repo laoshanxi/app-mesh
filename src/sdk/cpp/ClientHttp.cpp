@@ -302,7 +302,7 @@ AppRun ClientHttp::runAppAsync(const nlohmann::json &app, int maxTime, int lifec
 std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool printToStdout)
 {
     int lastOutputPosition = 0;
-    const int startTime = ACE_OS::time();
+    const time_t startTime = ACE_OS::time();
 
     while (true)
     {

@@ -13,7 +13,7 @@
 class HttpRequest;
 
 // Monitor process and reply HTTP request when finished
-class MonitoredProcess : public AppProcess, public ACE_Process
+class MonitoredProcess : public AppProcess
 {
 public:
 	explicit MonitoredProcess(std::weak_ptr<Application> owner);

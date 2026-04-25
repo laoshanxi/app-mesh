@@ -39,6 +39,9 @@ jobs:
           cmake --build build --parallel --config Release --target appsvc
           cmake --build build --parallel --config Release --target install
 
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+
       - name: Build package
         shell: pwsh
         run: .\script\pack\build_package.ps1

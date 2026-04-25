@@ -217,6 +217,8 @@ class App:
         """current task id"""
         self.task_status = _get_str(data, "task_status")
         """task status"""
+        self.subscription_id = _get_str(data, "subscription_id")
+        """subscription id returned by the daemon when add_app is called atomically with subscribe_events on a TCP/WSS client; empty for HTTP or when no subscribe_events was supplied"""
 
     def set_valid_time(self, start: Optional[datetime], end: Optional[datetime]) -> None:
         """Define the valid time window for the application."""

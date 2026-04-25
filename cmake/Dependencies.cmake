@@ -44,7 +44,9 @@ find_package(spdlog REQUIRED)
 ##########################################################################
 # libwebsockets  https://libwebsockets.org/
 ##########################################################################
-find_package(libwebsockets CONFIG REQUIRED)
+if(NOT CMAKE_CXX_STANDARD GREATER_EQUAL 17)
+  find_package(libwebsockets CONFIG REQUIRED)
+endif()
 
 ##########################################################################
 # libcurl
@@ -177,4 +179,8 @@ find_package(uriparser REQUIRED)
 ##########################################################################
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+
+if(WIN32)
+    find_package(unofficial-uwebsockets CONFIG REQUIRED)
+endif()
 

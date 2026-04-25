@@ -175,6 +175,8 @@ protected:
 	std::atomic<int> m_return; // Exit code of last instance
 	std::atomic_bool m_health;
 	std::atomic<STATUS> m_status;
+	std::atomic_bool m_destroying{false}; // First entry to destroy() wins; rest are no-ops.
+	mutable std::mutex m_saveMutex; // Serialise concurrent save() on same app yaml.
 	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_procStartTime;
 	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_procExitTime;
 	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;

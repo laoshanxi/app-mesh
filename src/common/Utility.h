@@ -87,6 +87,9 @@ namespace std
 } // namespace std
 #endif
 
+#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+#define HAVE_UWEBSOCKETS 1
+#endif
 
 template <typename T>
 std::shared_ptr<T> make_shared_array(size_t size)
@@ -528,6 +531,7 @@ public:
 #define PERMISSION_KEY_role_delete "role-delete"
 #define PERMISSION_KEY_role_view "role-view"
 #define PERMISSION_KEY_permission_list "permission-list"
+#define PERMISSION_KEY_app_subscribe "app-subscribe"
 
 namespace web
 {

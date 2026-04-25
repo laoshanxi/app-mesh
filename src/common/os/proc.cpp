@@ -76,63 +76,49 @@ namespace os
 		}
 
 #elif defined(__APPLE__)
-		// macOS implementation - Fixed buffer size calculation
-		constexpr size_t MAX_FDS = 4096; // Reasonable maximum
-		std::vector<proc_fdinfo> fdinfo(MAX_FDS);
-
-		int bytes_returned = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fdinfo.data(),
-										  fdinfo.size() * sizeof(proc_fdinfo));
-
-		if (bytes_returned <= 0)
+		// Two-call pattern: query exact size first to avoid truncation when a
+		// process has more fds than any fixed buffer would hold.
+		const int needed = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nullptr, 0);
+		if (needed <= 0)
 		{
 			if (errno == ESRCH)
-			{
 				LOG_WAR << fname << "Process " << pid << " does not exist";
+			else
+				LOG_WAR << fname << "Failed to size fd list for pid " << pid << ", error: " << last_error_msg();
+		}
+		else
+		{
+			std::vector<proc_fdinfo> fdinfo(static_cast<size_t>(needed) / sizeof(proc_fdinfo));
+			const int got = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fdinfo.data(),
+										 static_cast<int>(fdinfo.size() * sizeof(proc_fdinfo)));
+			if (got <= 0)
+			{
+				LOG_WAR << fname << "Failed to read fd list for pid " << pid << ", error: " << last_error_msg();
 			}
 			else
 			{
-				LOG_WAR << fname << "Failed to get file descriptors info for pid " << pid
-						<< ", error: " << last_error_msg();
+				// PROC_PIDLISTFDS enumerates every open fd. Do NOT also add
+				// pbi_nfiles from PROC_PIDTASKALLINFO — it is the SAME count
+				// (open files), not a distinct memory-mapped-file metric.
+				result = static_cast<size_t>(got) / sizeof(proc_fdinfo);
+				LOG_DBG << fname << "Found " << result << " file descriptors";
 			}
-		}
-		else
-		{
-			// Calculate actual number of file descriptors
-			result = bytes_returned / sizeof(proc_fdinfo);
-			LOG_DBG << fname << "Found " << result << " file descriptors";
-		}
-
-		// Get memory mapped files count
-		char pathbuf[PROC_PIDPATHINFO_MAXSIZE];
-		if (proc_pidpath(pid, pathbuf, sizeof(pathbuf)) <= 0)
-		{
-			LOG_WAR << fname << "Failed to get process path for pid " << pid
-					<< ", error: " << last_error_msg();
-		}
-
-		proc_taskallinfo task_info;
-		if (proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, &task_info, sizeof(task_info)) <= 0)
-		{
-			LOG_WAR << fname << "Failed to get task info for pid " << pid
-					<< ", error: " << last_error_msg();
-		}
-		else
-		{
-			// Add number of memory mapped files
-			result += task_info.pbsd.pbi_nfiles;
-			LOG_DBG << fname << "Total count including memory mapped files: " << result;
 		}
 
 #else
-		// Linux implementation
-		// 1. /proc/pid/fd/
+		// Linux: only count entries in /proc/pid/fd/. /proc/pid/maps lines are
+		// virtual memory regions (libc, .so segments, anon mappings) — NOT file
+		// descriptors. Mixing them in here would inflate the metric by hundreds
+		// per process for no reason matching the function's name/contract.
 		const auto procFdPath = std::string("/proc/") + std::to_string(pid) + "/fd";
 		try
 		{
 			if (boost::filesystem::exists(procFdPath) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
 			{
-				result += std::distance(boost::filesystem::directory_iterator(procFdPath),
-										boost::filesystem::directory_iterator());
+				result = static_cast<size_t>(std::distance(
+					boost::filesystem::directory_iterator(procFdPath),
+					boost::filesystem::directory_iterator()));
+				LOG_DBG << fname << "Found " << result << " file descriptors";
 			}
 			else
 			{
@@ -142,24 +128,6 @@ namespace os
 		catch (const std::exception &e)
 		{
 			LOG_WAR << fname << "Error accessing " << procFdPath << ": " << e.what();
-		}
-
-		// 2. /proc/pid/maps
-		const auto procMapsPath = std::string("/proc/") + std::to_string(pid) + "/maps";
-		std::ifstream maps(procMapsPath, std::ifstream::in);
-		if (maps.is_open())
-		{
-			std::string line;
-			size_t mapCount = 0;
-			while (std::getline(maps, line))
-			{
-				mapCount++;
-			}
-			result += mapCount;
-		}
-		else
-		{
-			LOG_WAR << fname << "failed to open: " << procMapsPath;
 		}
 #endif
 

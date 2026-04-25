@@ -237,6 +237,7 @@ class RequestMessage {
 class ResponseMessage {
   constructor () {
     this.uuid = ''
+    this.requestUri = ''
     this.httpStatus = 0
     this.bodyMsgType = ''
     this.headers = {}
@@ -249,6 +250,7 @@ class ResponseMessage {
   deserialize (data) {
     const decoded = msgpack.decode(data)
     this.uuid = decoded.uuid || ''
+    this.requestUri = decoded.request_uri || ''
     this.httpStatus = decoded.http_status || 0
     this.bodyMsgType = decoded.body_msg_type || ''
     this.headers = decoded.headers || {}
@@ -289,6 +291,10 @@ class AppMeshClientTCP extends AppMeshClient {
    * Close the TCP transport and release local resources.
    */
   close () {
+    if (this._demuxer) {
+      this._demuxer.stop()
+      this._demuxer = null
+    }
     if (this.tcpTransport) {
       this.tcpTransport.close()
       this.tcpTransport = null
@@ -404,14 +410,20 @@ class AppMeshClientTCP extends AppMeshClient {
     const serialized = request.serialize()
     this.tcpTransport.sendMessage(serialized)
 
-    // Receive response
-    const respData = await this.tcpTransport.receiveMessage()
-    if (!respData || respData.length === 0) {
-      this.tcpTransport.close()
-      throw new Error('Socket connection broken')
+    let response
+    if (this._demuxer) {
+      // Demuxer active: route response back via UUID matching.
+      const resp = await this._demuxer.registerRequest(request.uuid)
+      response = resp
+    } else {
+      // Legacy synchronous mode: read directly.
+      const respData = await this.tcpTransport.receiveMessage()
+      if (!respData || respData.length === 0) {
+        this.tcpTransport.close()
+        throw new Error('Socket connection broken')
+      }
+      response = new ResponseMessage().deserialize(respData)
     }
-
-    const response = new ResponseMessage().deserialize(respData)
 
     // Convert to standard response format matching axios structure
     const result = {
@@ -572,5 +584,318 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 }
 
-export { AppMeshClientTCP, TCPTransport, RequestMessage, ResponseMessage }
+const EVENT_URI = '/appmesh/event'
+
+/**
+ * Synthetic event_type pushed to every registered callback when the demuxer
+ * stops or the underlying transport disconnects. Lets long-running waits
+ * (e.g. wait_for_async_run) unblock instead of hanging forever.
+ */
+const EVENT_TYPE_DISCONNECTED = '__disconnected__'
+
+/**
+ * Routes incoming messages to either pending request promises (by UUID) or
+ * event subscription callbacks. Replaces the broken dual-reader pattern.
+ */
+class MessageDemuxer {
+  constructor (transport) {
+    this._transport = transport
+    this._pending = new Map()
+    this._eventCallbacks = new Map()
+    this._running = false
+  }
+
+  start () {
+    if (this._running) return
+    this._running = true
+    this._readLoop()
+  }
+
+  stop () {
+    this._running = false
+    // Broadcast a synthetic disconnect event to all registered event callbacks
+    // so long-running waits can unblock cleanly.
+    this._broadcastDisconnect()
+    for (const [, entry] of this._pending) {
+      entry.reject(new Error('Demuxer stopped'))
+    }
+    this._pending.clear()
+  }
+
+  registerRequest (uuid) {
+    return new Promise((resolve, reject) => {
+      this._pending.set(uuid, { resolve, reject })
+    })
+  }
+
+  unregisterRequest (uuid) {
+    this._pending.delete(uuid)
+  }
+
+  registerEventCallback (subId, callback) {
+    this._eventCallbacks.set(subId, callback)
+  }
+
+  unregisterEventCallback (subId) {
+    this._eventCallbacks.delete(subId)
+  }
+
+  async _readLoop () {
+    while (this._running && this._transport && this._transport.connected()) {
+      try {
+        const data = await this._transport.receiveMessage()
+        if (!data || data.length === 0) break
+
+        const resp = new ResponseMessage().deserialize(data)
+
+        if (resp.requestUri === EVENT_URI) {
+          this._dispatchEvent(resp)
+        } else {
+          this._dispatchResponse(resp)
+        }
+      } catch (e) {
+        break
+      }
+    }
+    // Connection lost — stop() handles broadcast + pending cleanup
+    this.stop()
+  }
+
+  _broadcastDisconnect () {
+    for (const [subId, cb] of this._eventCallbacks) {
+      try {
+        cb({
+          subscription_id: subId,
+          event_type: EVENT_TYPE_DISCONNECTED,
+          app_name: '',
+          timestamp: 0,
+          sequence: 0,
+          data: {}
+        })
+      } catch (e) {
+        console.error('Disconnect callback error:', e)
+      }
+    }
+  }
+
+  _dispatchEvent (resp) {
+    try {
+      const bodyStr = typeof resp.body === 'string' ? resp.body : resp.body.toString('utf-8')
+      const event = JSON.parse(bodyStr)
+      const subId = event.subscription_id || (resp.headers && resp.headers['X-Subscription-Id'])
+      const cb = this._eventCallbacks.get(subId)
+      if (cb) {
+        try { cb(event) } catch (e) { console.error('Event callback error:', e) }
+      }
+    } catch (e) {
+      console.error('Failed to dispatch event:', e)
+    }
+  }
+
+  _dispatchResponse (resp) {
+    const entry = this._pending.get(resp.uuid)
+    if (entry) {
+      this._pending.delete(resp.uuid)
+      entry.resolve(resp)
+    }
+  }
+}
+
+/**
+ * Subscribe to app events over TCP.
+ *
+ * @param {string} appName - Application name, or "*" for all apps.
+ * @param {string[]} [events] - Event types: "START", "EXIT", "STDOUT", etc.
+ * @param {function} callback - Called with event object for each received event.
+ * @returns {Promise<Object>} Subscription result with subscription_id, app_name, events.
+ */
+AppMeshClientTCP.prototype.subscribe = async function (appName, events, callback) {
+  this._enableDemuxer()
+
+  let path = '/appmesh/subscribe'
+  if (appName && appName !== '*') {
+    path = `/appmesh/app/${appName}/subscribe`
+  }
+
+  const params = {}
+  if (events && events.length > 0) {
+    params.events = events.join(',')
+  }
+
+  const response = await this._request('post', path, null, { params })
+  if (response.status !== 200) {
+    throw new Error(`Subscribe failed: ${response.statusText}`)
+  }
+
+  const result = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+
+  if (callback && result.subscription_id) {
+    this._demuxer.registerEventCallback(result.subscription_id, callback)
+  }
+
+  return result
+}
+
+/**
+ * Unsubscribe from app events.
+ *
+ * @param {string} subscriptionId - The subscription ID to remove.
+ * @returns {Promise<void>}
+ */
+AppMeshClientTCP.prototype.unsubscribe = async function (subscriptionId) {
+  await this._request('delete', '/appmesh/subscribe', null, {
+    params: { subscription_id: subscriptionId }
+  })
+
+  if (this._demuxer) {
+    this._demuxer.unregisterEventCallback(subscriptionId)
+  }
+}
+
+/**
+ * Register an app with optional atomic event subscription.
+ *
+ * @param {string} name - Application name.
+ * @param {Object} appJson - Application definition.
+ * @param {string[]} [subscribeEvents] - Event types to subscribe atomically.
+ * @param {function} [callback] - Event callback (required when subscribeEvents is set).
+ * @returns {Promise<Object>} Registered app (includes subscription_id when subscribed).
+ */
+AppMeshClientTCP.prototype.add_app = async function (name, appJson, subscribeEvents, callback) {
+  const options = {}
+  if (subscribeEvents && subscribeEvents.length > 0) {
+    this._enableDemuxer()
+    options.params = { subscribe_events: subscribeEvents.join(',') }
+  }
+
+  const response = await this._request('put', `/appmesh/app/${name}`, appJson, options)
+  const result = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+
+  if (callback && result.subscription_id && this._demuxer) {
+    this._demuxer.registerEventCallback(result.subscription_id, callback)
+  }
+
+  return result
+}
+
+/**
+ * Enable demuxer for concurrent request-response and event routing.
+ * @private
+ */
+AppMeshClientTCP.prototype._enableDemuxer = function () {
+  if (this._demuxer) return
+  this._demuxer = new MessageDemuxer(this.tcpTransport)
+  this._demuxer.start()
+}
+
+/**
+ * Subscribe-based wait for async run (TCP override).
+ *
+ * Instead of polling get_app_output in a loop, subscribes to STDOUT/EXIT/REMOVED
+ * events and does a one-shot backfill to cover output emitted before the subscribe
+ * took effect.  Deduplicates by byte-position offset.
+ *
+ * Sentinel exit codes:
+ *   null  — caller-side timeout
+ *   -1    — REMOVED before EXIT observed
+ *   -2    — demuxer disconnected (transport failure)
+ *
+ * @param {AppRun} run - AppRun object
+ * @param {Function} [outputHandler] - Output handler
+ * @param {number} [timeout=0] - Max wait time in seconds (0 = unlimited)
+ * @returns {Promise<number|null>} Exit code, or null on timeout
+ */
+AppMeshClientTCP.prototype.wait_for_async_run = async function (run, outputHandler, timeout = 0) {
+  if (!run || !run.appName) return null
+
+  let exitCode = null
+  let deliveredUntil = 0 // next-byte offset already delivered
+  let done = false
+  let resolveWait
+
+  const waitPromise = new Promise(resolve => { resolveWait = resolve })
+
+  const deliver = (chunk, pos) => {
+    if (!chunk) return
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf-8') : Buffer.from(chunk)
+    const end = pos + buf.length
+    if (end <= deliveredUntil) return
+    let output = buf
+    if (pos < deliveredUntil) {
+      output = buf.slice(deliveredUntil - pos)
+    }
+    deliveredUntil = end
+    if (outputHandler) {
+      try { outputHandler(output.toString('utf-8')) } catch (_) { /* ignore */ }
+    }
+  }
+
+  const onEvent = (event) => {
+    if (event.event_type === 'STDOUT') {
+      const pos = parseInt(event.data?.position ?? 0, 10) || 0
+      deliver(event.data?.output ?? '', pos)
+    } else if (event.event_type === 'EXIT') {
+      exitCode = parseInt(event.data?.exit_code ?? -1, 10)
+      if (isNaN(exitCode)) exitCode = -1
+      done = true
+      resolveWait()
+    } else if (event.event_type === 'REMOVED') {
+      if (exitCode === null) exitCode = -1
+      done = true
+      resolveWait()
+    } else if (event.event_type === EVENT_TYPE_DISCONNECTED) {
+      if (exitCode === null) exitCode = -2
+      done = true
+      resolveWait()
+    }
+  }
+
+  const sub = await this.subscribe(run.appName, ['STDOUT', 'EXIT', 'REMOVED'], onEvent)
+
+  try {
+    // Backfill output emitted before subscribe took effect
+    try {
+      const backfill = await this.get_app_output(run.appName, 0, 0, 0, run.procUid, 0)
+      if (backfill.output) {
+        deliver(backfill.output, 0)
+      }
+      if (backfill.exitCode !== null && exitCode === null) {
+        exitCode = backfill.exitCode
+        done = true
+        resolveWait()
+      }
+    } catch (_) {
+      // backfill is best-effort
+    }
+
+    if (!done) {
+      if (timeout > 0) {
+        await Promise.race([
+          waitPromise,
+          new Promise(resolve => setTimeout(resolve, timeout * 1000))
+        ])
+      } else {
+        await waitPromise
+      }
+    }
+  } finally {
+    try {
+      if (sub && sub.subscription_id) {
+        await this.unsubscribe(sub.subscription_id)
+      }
+    } catch (_) { /* ignore */ }
+
+    // Best-effort delete on a real exit (>=0).
+    // Sentinels (-1 REMOVED, -2 disconnected) mean the app is already gone.
+    if (exitCode !== null && exitCode >= 0) {
+      try {
+        await this.delete_app(run.appName)
+      } catch (_) { /* ignore */ }
+    }
+  }
+
+  return exitCode
+}
+
+export { AppMeshClientTCP, TCPTransport, RequestMessage, ResponseMessage, MessageDemuxer, EVENT_TYPE_DISCONNECTED }
 export default AppMeshClientTCP

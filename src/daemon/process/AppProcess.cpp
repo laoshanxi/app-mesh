@@ -6,7 +6,10 @@
 #include <ace/Hash_Multi_Map_Manager_T.h>
 #include <ace/Map_Manager.h>
 #include <ace/OS.h>
+#include <ace/OS_NS_fcntl.h>
+#include <ace/Pipe.h>
 #include <ace/Process_Manager.h>
+#include <ace/Reactor.h>
 #include <boost/filesystem.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
 
@@ -22,20 +25,138 @@
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../application/Application.h"
+#include "../rest/EventDispatcher.h"
 #include "../rest/HttpRequest.h"
 #include "AppProcess.h"
 #include "LinuxCgroup.h"
+#include "StdoutStrategy.h"
+#include "TimerStdoutStrategy.h"
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <sys/socket.h>
+#endif
 
 namespace
 {
 	constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
+
+#if !defined(_WIN32)
+	// Create a pipe for child stdout redirection. Returns {readEnd, writeEnd}
+	// or {INVALID, INVALID} on failure. Attempts to size the pipe buffer to 1 MB.
+	std::pair<ACE_HANDLE, ACE_HANDLE> createStdoutPipe()
+	{
+		const static char fname[] = "createStdoutPipe() ";
+		ACE_HANDLE pipeHandles[2] = {ACE_INVALID_HANDLE, ACE_INVALID_HANDLE};
+		ACE_Pipe pipe;
+		if (pipe.open(pipeHandles) != 0)
+		{
+			LOG_ERR << fname << "ACE_Pipe::open failed, errno=" << ACE_OS::last_error();
+			return {ACE_INVALID_HANDLE, ACE_INVALID_HANDLE};
+		}
+
+		bool sizedRead = false, sizedWrite = false;
+		const int desiredSize = 1 << 20;
+#if defined(__linux__) && defined(F_SETPIPE_SZ)
+		if (::fcntl(pipeHandles[0], F_SETPIPE_SZ, desiredSize) >= 0)
+		{
+			sizedRead = sizedWrite = true;
+		}
+#endif
+#if defined(SO_RCVBUFFORCE)
+		if (!sizedRead && ::setsockopt(pipeHandles[0], SOL_SOCKET, SO_RCVBUFFORCE, &desiredSize, sizeof(desiredSize)) == 0)
+			sizedRead = true;
+#endif
+		if (!sizedRead)
+			::setsockopt(pipeHandles[0], SOL_SOCKET, SO_RCVBUF, &desiredSize, sizeof(desiredSize));
+#if defined(SO_SNDBUFFORCE)
+		if (!sizedWrite && ::setsockopt(pipeHandles[1], SOL_SOCKET, SO_SNDBUFFORCE, &desiredSize, sizeof(desiredSize)) == 0)
+			sizedWrite = true;
+#endif
+		if (!sizedWrite)
+			::setsockopt(pipeHandles[1], SOL_SOCKET, SO_SNDBUF, &desiredSize, sizeof(desiredSize));
+
+		const int flags = ::fcntl(pipeHandles[0], F_GETFL, 0);
+		if (flags < 0 || ::fcntl(pipeHandles[0], F_SETFL, flags | O_NONBLOCK) < 0)
+			LOG_WAR << fname << "pipe O_NONBLOCK setup failed, errno=" << ACE_OS::last_error();
+
+		return {pipeHandles[0], pipeHandles[1]};
+	}
+
+	void markInheritedFdsCloseOnExec()
+	{
+#if defined(__linux__) && defined(SYS_close_range)
+		if (::syscall(SYS_close_range, 3U, ~0U, 4U /*CLOSE_RANGE_CLOEXEC*/) == 0)
+			return;
+#endif
+		struct rlimit rl;
+		long upperBound = 4096;
+		if (::getrlimit(RLIMIT_NOFILE, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY)
+			upperBound = std::min<long>(static_cast<long>(rl.rlim_cur), 65536L);
+
+		int consecutiveErrors = 0;
+		for (long fd = 3; fd < upperBound && consecutiveErrors < 256; ++fd)
+		{
+			const int flags = ::fcntl(static_cast<int>(fd), F_GETFD);
+			if (flags == -1)
+			{
+				++consecutiveErrors;
+				continue;
+			}
+			consecutiveErrors = 0;
+			if (!(flags & FD_CLOEXEC))
+				::fcntl(static_cast<int>(fd), F_SETFD, flags | FD_CLOEXEC);
+		}
+	}
+#endif
 }
+
+// ---------------------------------------------------------------------------
+// ExitAdapter — per-process bridge registered as exit_notify_ with PM.
+// Holds weak_ptr<AppProcess>; PM calls handle_close → delete this.
+// ---------------------------------------------------------------------------
+
+class AppProcess::ExitAdapter final : public ACE_Event_Handler
+{
+public:
+	explicit ExitAdapter(std::weak_ptr<AppProcess> target)
+		: m_target(std::move(target)) {}
+
+	int handle_exit(ACE_Process *process) override
+	{
+		const static char fname[] = "ExitAdapter::handle_exit() ";
+		const pid_t pid = process->getpid();
+		const int code = process->return_value();
+		LOG_INF << fname << "Process <" << pid << "> exited with code <" << code << ">";
+
+		if (auto sp = m_target.lock())
+			sp->onExit(code);
+
+		HttpRequestOutputView::onProcessExitResponse(pid);
+		return 0;
+	}
+
+	int handle_close(ACE_HANDLE, ACE_Reactor_Mask) override
+	{
+		LOG_DBG << "ExitAdapter::handle_close() deleting adapter";
+		delete this;
+		return 0;
+	}
+
+private:
+	const std::weak_ptr<AppProcess> m_target;
+};
+
+// ---------------------------------------------------------------------------
+// AppProcess
+// ---------------------------------------------------------------------------
 
 AppProcess::AppProcess(std::weak_ptr<Application> owner)
 	: m_owner(owner),
 	  m_timerTerminateId(INVALID_TIMER_ID),
 	  m_timerCheckStdoutId(INVALID_TIMER_ID),
 	  m_stdOutMaxSize(0),
+	  m_outFileMutex(std::make_shared<std::recursive_mutex>()),
 #if defined(_WIN32)
 	  m_job(nullptr, ::CloseHandle),
 #endif
@@ -58,13 +179,19 @@ AppProcess::~AppProcess()
 	const static char fname[] = "AppProcess::~AppProcess() ";
 	LOG_DBG << fname << "Entered";
 
+	// Kill orphaned child if still alive; terminate() handles waitpid to avoid zombie.
 	if (running())
-	{
 		terminate();
-	}
 
-	// Keep main stdout file, only remove backup
+	// Idempotent — may have been called by onTimerAppExit already.
+	cleanResource();
 	Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+}
+
+long AppProcess::stdoutDispatchedBytes() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
+	return m_stdoutStrategy ? m_stdoutStrategy->dispatchedBytes() : 0;
 }
 
 void AppProcess::attach(int pid, const std::string &stdoutFile)
@@ -107,22 +234,29 @@ void AppProcess::onExit(int exitCode)
 {
 	const static char fname[] = "AppProcess::onExit() ";
 
-	// Update PID and exit code
+	// BUG fix: natural exit (ExitAdapter) and terminate() can race on different
+	// threads; CAS ensures only the first caller proceeds. Without this,
+	// duplicate onExitUpdate events and timer registrations would fire.
+	bool expected = false;
+	if (!m_exitFired.compare_exchange_strong(expected, true))
+	{
+		LOG_DBG << fname << "duplicate onExit blocked by CAS guard";
+		return;
+	}
+
+	LOG_DBG << fname << "exitCode=" << exitCode << " uuid=" << m_uuid;
 	m_pid.store(ACE_INVALID_PID);
 	m_returnValue.store(exitCode);
-
-	// Clean OS resources
-	cleanResource();
-
-	// Notify App exit event asynchronously
 	registerTimer(0, 0, fname, std::bind(&AppProcess::onTimerAppExit, this, exitCode));
 }
 
 bool AppProcess::onTimerAppExit(int exitCode)
 {
+	const static char fname[] = "AppProcess::onTimerAppExit() ";
+	LOG_DBG << fname << "uuid=" << m_uuid << " exitCode=" << exitCode;
+	cleanResource();
 	if (auto owner = m_owner.lock())
 	{
-		// Update application with exit information
 		owner->onExitUpdate(exitCode);
 	}
 	return false;
@@ -135,14 +269,12 @@ bool AppProcess::running() const
 
 bool AppProcess::running(pid_t pid)
 {
-	// Check if process exists using kill signal 0
 	return (pid != ACE_INVALID_PID) && (ACE_OS::kill(pid, 0) == 0 || errno != ESRCH);
 }
 
 pid_t AppProcess::wait(const ACE_Time_Value &tv, ACE_exitcode *status)
 {
-	// Note: Not using timed wait for Process_Manager, which would impact ProcessExitHandler::handle_exit
-	const static ACE_Time_Value SHORT_INTERVAL(0, 10000); // 10 milliseconds
+	const static ACE_Time_Value SHORT_INTERVAL(0, 10000);
 
 	if (tv != ACE_Time_Value::zero)
 	{
@@ -153,9 +285,7 @@ pid_t AppProcess::wait(const ACE_Time_Value &tv, ACE_exitcode *status)
 				ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
 				auto result = Process_Manager::instance()->wait(m_pid.load(), ACE_Time_Value::zero, status);
 				if (result > 0)
-				{
 					return result;
-				}
 			}
 			ACE_OS::sleep(SHORT_INTERVAL);
 		}
@@ -180,6 +310,11 @@ bool AppProcess::onTimerTerminate()
 
 void AppProcess::cleanResource()
 {
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
+		if (m_stdoutStrategy)
+			m_stdoutStrategy->teardown();
+	}
 	m_stdoutHandler.reset();
 	m_stdinHandler.reset();
 	Utility::removeFile(m_stdinFileName);
@@ -204,16 +339,16 @@ void AppProcess::terminate()
 #if defined(_WIN32)
 		const bool killSuccess = os::kill_job(m_job);
 #else
-		// Kill process group with negative PID
+		// Kill the entire process group to include children.
 		const bool killSuccess = (ACE_OS::kill(-pid, SIGKILL) == 0);
 #endif
 
 		if (killSuccess)
 		{
-			// Kill group succeeded
+			// PM::remove → remove_proc → ExitAdapter::handle_close → delete adapter.
+			// waitpid via AttachProcess to prevent zombie.
 			if (Process_Manager::instance()->remove(pid) == 0)
 			{
-				// Removed from Process_Manager, wait outside Process_Manager lock
 				AttachProcess(pid).wait();
 			}
 		}
@@ -221,14 +356,13 @@ void AppProcess::terminate()
 		{
 			LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << last_error_msg();
 
-			// Use Process_Manager terminate and wait
+			// Fallback: PM::terminate sends SIGTERM and reaps internally.
 			if (Process_Manager::instance()->terminate(pid) == 0)
 			{
 				Process_Manager::instance()->wait(pid);
 			}
 			else if (Process_Manager::instance()->remove(pid) == 0)
 			{
-				// Both terminate methods failed, try direct termination
 				ACE::terminate_process(pid);
 				AttachProcess(pid).wait();
 			}
@@ -238,15 +372,16 @@ void AppProcess::terminate()
 	}
 
 	cleanResource();
-	if (terminated)
+	if (terminated && pid > 1)
 	{
-		ProcessExitHandler::terminate(pid);
+		// Synthetic exit notification — onExit CAS ensures no duplicate if natural exit raced.
+		onExit(9);
+		HttpRequestOutputView::onProcessExitResponse(pid);
 	}
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
 {
-	// Reference: https://blog.csdn.net/u011547375/article/details/9851455
 	if (limit)
 	{
 		auto mbToBytes = [](long long mb) -> long long
@@ -289,8 +424,7 @@ void AppProcess::registerCheckStdoutTimer()
 	if (!IS_VALID_TIMER_ID(m_timerCheckStdoutId))
 	{
 		static const int TIMEOUT_SEC = STDOUT_FILE_SIZE_CHECK_INTERVAL;
-		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, TIMEOUT_SEC, fname,
-											 std::bind(&AppProcess::onTimerCheckStdout, this));
+		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, TIMEOUT_SEC, fname, std::bind(&AppProcess::onTimerCheckStdout, this));
 	}
 	else
 	{
@@ -304,6 +438,9 @@ bool AppProcess::onTimerCheckStdout()
 
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 
+	if (m_stdoutStrategy && m_stdoutStrategy->isActive())
+		return IS_VALID_TIMER_ID(m_timerCheckStdoutId);
+
 	if (m_stdoutHandler.valid() && m_stdOutMaxSize)
 	{
 		ACE_stat stat;
@@ -311,29 +448,24 @@ bool AppProcess::onTimerCheckStdout()
 		{
 			if (stat.st_size > m_stdOutMaxSize)
 			{
-				// Acquire exclusive lock on the file
 				ACE_File_Lock fileLock(m_stdoutHandler.get(), false);
 				if (fileLock.acquire() == -1)
 				{
 					LOG_WAR << fname << "acquire exclusive lock on the stdout file failed: " << m_stdoutFileName;
 				}
 
-				// Copy current stdout to backup and truncate original
-				// Reference: https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
 				const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 				fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_options::overwrite_existing);
 				ACE_OS::ftruncate(m_stdoutHandler.get(), 0);
 				fileLock.release();
 
-				LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize
-						<< ", switched stdout file: " << m_stdoutFileName;
+				LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
 			}
 		}
 		else
 		{
 			LOG_ERR << fname << "fstat failed with error : " << last_error_msg();
 #if !defined(_WIN32)
-			// Reopen stdout file descriptor
 			const auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
 			m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
 #endif
@@ -351,22 +483,17 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 
-	// Validate command
 	if (validateCommand(cmd) != 0)
-	{
 		return ACE_INVALID_PID;
-	}
 
-	// Prepare environment variables
 	prepareEnvironment(envMap);
 
 	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0, totalEnvArgs = 0;
 	Utility::getEnvironmentSize(envMap, totalEnvSize, totalEnvArgs);
 
-	ACE_Process_Options option(true /*inherit_environment*/, cmdLength, totalEnvSize, totalEnvArgs);
+	ACE_Process_Options option(true, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
-	// option.avoid_zombies(1); // Not used to allow proper wait() handling
 
 #if !defined(_WIN32)
 	if (!user.empty() && user != "root")
@@ -385,71 +512,70 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			return ACE_INVALID_PID;
 		}
 	}
-	option.setgroup(0); // Set group id with the process id, used to kill process group
+	option.setgroup(0);
 	option.handle_inheritance(0);
 #else
 	option.handle_inheritance(1);
 #endif
 
 	if (workDir.empty())
-	{
 		workDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
-	}
 
 	if (fs::exists(workDir))
-	{
 		option.working_directory(workDir.c_str());
-	}
 	else
 	{
 		startError(Utility::stringFormat("working_directory <%s> does not exist", workDir.c_str()));
 		LOG_WAR << fname << "working_directory <" << workDir << "> does not exist, use default";
 	}
 
-	// Set environment variables
 	for (const auto &pair : envMap)
-	{
 		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
-	}
 
 	option.release_handles();
 
-	// Clean if necessary
+	// Clean prior state
 	m_stdoutHandler.reset();
 	m_stdinHandler.reset();
+	if (m_stdoutStrategy)
+		m_stdoutStrategy->teardown();
+	m_stdoutStrategy.reset();
 	m_stdoutFileName = stdoutFile;
+
+	ACE_HANDLE pipeWriteForChild = ACE_INVALID_HANDLE;
+	ACE_HANDLE pipeReadForDaemon = ACE_INVALID_HANDLE;
 
 	if (!m_stdoutFileName.empty() || stdinFileContent != EMPTY_STR_JSON)
 	{
-		// Setup STDOUT
 		if (!m_stdoutFileName.empty())
 		{
 			m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_TRUNC));
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
 
 			if (!m_stdoutHandler.valid())
-			{
 				LOG_ERR << fname << "Failed to open file: <" << m_stdoutFileName << "> with error: " << ACE_OS::last_error();
-			}
+
+#if !defined(_WIN32)
+			auto pipeFds = createStdoutPipe();
+			pipeReadForDaemon = pipeFds.first;
+			pipeWriteForChild = pipeFds.second;
+#endif
 		}
 		else
 		{
 			m_stdoutHandler.reset(ACE_OS::open(DEV_NULL, O_RDWR));
 		}
 
-		// Setup STDIN
 		if (stdinFileContent != EMPTY_STR_JSON)
 		{
 			const std::string content = stdinFileContent.is_string()
 											? stdinFileContent.get<std::string>()
 											: stdinFileContent.dump();
 			m_stdinFileName = os::createTmpFile(m_stdinFileName, content);
-			m_stdinHandler.reset(ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY)); // Open for reading by child process
+			m_stdinHandler.reset(ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY));
 
 			if (!m_stdinHandler.valid())
-			{
 				startError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
-			}
 			LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
 		}
 		else
@@ -457,24 +583,42 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			m_stdinHandler.reset(ACE_OS::open(DEV_NULL, O_RDONLY));
 		}
 
-		option.set_handles(m_stdinHandler.get(), m_stdoutHandler.get(), m_stdoutHandler.get());
+		const ACE_HANDLE childOutHandle = (pipeWriteForChild != ACE_INVALID_HANDLE) ? pipeWriteForChild : m_stdoutHandler.get();
+		option.set_handles(m_stdinHandler.get(), childOutHandle, childOutHandle);
 	}
 
-	if (spawn(option) >= 0)
+	const bool spawnOk = (spawn(option) >= 0);
+
+	if (pipeWriteForChild != ACE_INVALID_HANDLE)
+	{
+		ACE_OS::close(pipeWriteForChild);
+		pipeWriteForChild = ACE_INVALID_HANDLE;
+	}
+
+	if (spawnOk)
 	{
 		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << m_pid.load() << ">.";
 		setCgroup(limit);
 
 		if (m_stdoutHandler.valid() && maxStdoutSize)
-		{
 			m_stdOutMaxSize = maxStdoutSize;
-		}
+
+		auto owner = m_owner.lock();
+		auto appName = owner ? owner->getName() : std::string();
+		m_stdoutStrategy = StdoutStrategy::create(std::move(appName), pipeReadForDaemon, m_stdoutHandler.get(), m_outFileMutex, m_owner);
+		if (m_stdoutStrategy && m_stdoutStrategy->isActive())
+			pipeReadForDaemon = ACE_INVALID_HANDLE;
+		if (auto *ts = dynamic_cast<TimerStdoutStrategy *>(m_stdoutStrategy.get()))
+			ts->startTimer(*this);
 	}
 	else
 	{
 		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << last_error_msg();
 		startError(Utility::stringFormat("start failed with error <%s>", last_error_msg()));
 	}
+
+	if (pipeReadForDaemon != ACE_INVALID_HANDLE)
+		ACE_OS::close(pipeReadForDaemon);
 
 	return m_pid.load();
 }
@@ -483,24 +627,26 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 {
 	const static char fname[] = "AppProcess::spawn() ";
 
-	pid_t pid = Process_Manager::instance()->spawn(option);
+#if !defined(_WIN32)
+	// Prevent children from inheriting listen socket fd (avoids EADDRINUSE on restart).
+	markInheritedFdsCloseOnExec();
+#endif
+
+	// ExitAdapter holds weak_ptr — prevents UAF if AppProcess dies before child exits.
+	// PM's remove_proc calls handle_close → delete adapter (no leak).
+	auto *adapter = new ExitAdapter(std::dynamic_pointer_cast<AppProcess>(shared_from_this()));
+
+	pid_t pid = Process_Manager::instance()->spawn(option, adapter);
 	if (pid == ACE_INVALID_PID)
 	{
 		LOG_ERR << fname << "spawn failed: " << last_error_msg();
+		delete adapter;
 		return pid;
 	}
 
 	m_pid.store(pid);
 
-	// register handler (THIS is how exit is handled)
-	if (Process_Manager::instance()->register_handler(this, pid) == -1)
-	{
-		LOG_ERR << fname << "Failed to register handler for pid=" << pid << ": " << last_error_msg();
-	}
-
 #if defined(_WIN32)
-	// Create Windows job object and assign process to it
-	// This handle must remain in scope until process is assigned
 	m_job = os::create_job(os::name_job(pid));
 	os::assign_job(m_job, pid);
 #endif
@@ -510,7 +656,7 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 
 const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool readLine)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
+	std::lock_guard<std::recursive_mutex> guard(*m_outFileMutex);
 	return Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine);
 }
 
@@ -553,28 +699,19 @@ int AppProcess::validateCommand(const std::string &cmd)
 void AppProcess::prepareEnvironment(std::map<std::string, std::string> &envMap)
 {
 #if defined(_WIN32)
-	// Windows: ACE setenv replaces env, so merge manually with parent environment
 	const auto currentEnv = Utility::getenvs();
 	for (const auto &kv : currentEnv)
 	{
 		if (!envMap.count(kv.first))
-		{
 			envMap[kv.first] = kv.second;
-		}
 	}
 #endif
 
-	// Add AppMesh built-in environment variables
 	envMap[ENV_APPMESH_PROCESS_KEY] = m_key;
-	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(
-		std::chrono::duration_cast<std::chrono::seconds>(
-			std::chrono::system_clock::now().time_since_epoch())
-			.count());
+	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 
 	if (auto owner = m_owner.lock())
-	{
 		envMap[ENV_APPMESH_APPLICATION_NAME] = owner->getName();
-	}
 }
 
 std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(void *ptree)
@@ -594,16 +731,13 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 		leafPid = tree->findLeafPid();
 	}
 
-	// Calculate CPU usage
-	// Reference: https://stackoverflow.com/questions/1420426/how-to-calculate-the-cpu-usage-of-a-process-by-pid-in-linux-from-c/1424556
 	const auto curSysCpuTime = os::cpuTotalTime();
 	const auto curProcCpuTime = tree ? tree->totalCpuTime() : 0;
-	static const auto cpuNumber = os::cpus().size(); // CPU count
+	static const auto cpuNumber = os::cpus().size();
 
 	float cpuUsage = 0.0f;
 	std::lock_guard<std::recursive_mutex> guard(m_cpuMutex);
 
-	// Only calculate when we have previous CPU time records
 	if (m_lastSysCpuTime && curSysCpuTime && curProcCpuTime)
 	{
 		const auto totalTimeDiff = curSysCpuTime - m_lastSysCpuTime;
@@ -614,72 +748,4 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 	m_lastSysCpuTime = curSysCpuTime;
 
 	return std::make_tuple(true, totalMemory, cpuUsage, totalFileDescriptors, pstreeStr, leafPid);
-}
-
-AttachProcess::AttachProcess(pid_t pid)
-{
-#if defined(_WIN32)
-	process_info_.hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_TERMINATE, FALSE, pid);
-	if (process_info_.hProcess)
-	{
-		process_info_.dwProcessId = pid;
-	}
-#else
-	child_id_ = pid;
-#endif
-}
-
-ACE_Recursive_Thread_Mutex &Process_Manager::mutex()
-{
-	return m_mutex;
-}
-
-Process_Manager *Process_Manager::instance()
-{
-	static Process_Manager pm;
-	return &pm;
-}
-
-int ProcessExitHandler::handle_exit(ACE_Process *process)
-{
-	const static char fname[] = "ProcessExitHandler::handle_exit() ";
-	LOG_INF << fname << "Process <" << process->getpid() << "> exited with code <" << process->return_value() << ">";
-
-	// NOTE: here holds the lock from Process_Manager::instance(), avoid accessing app lock
-
-	const pid_t exitPid = process->getpid();
-	const int exitCode = process->return_value();
-	ProcessExitHandler::onProcessExit(exitPid, exitCode);
-	return 0;
-}
-
-void ProcessExitHandler::terminate(pid_t pid)
-{
-	const static char fname[] = "ProcessExitHandler::terminate() ";
-	LOG_INF << fname << "Process <" << pid << "> killed";
-
-	if (pid > 1)
-	{
-		const int exitCode = 9;
-		onProcessExit(pid, exitCode);
-	}
-}
-
-bool ProcessExitHandler::onProcessExit(pid_t exitPid, int exitCode)
-{
-	const static char fname[] = "ProcessExitHandler::onProcessExit() ";
-
-	// Update exit code
-	if (auto appProcess = dynamic_cast<AppProcess *>(this))
-	{
-		appProcess->onExit(exitCode);
-	}
-	else
-	{
-		LOG_ERR << fname << "cast ProcessExitHandler to AppProcess failed";
-	}
-
-	// Response standby request
-	HttpRequestOutputView::onProcessExitResponse(exitPid);
-	return false;
 }

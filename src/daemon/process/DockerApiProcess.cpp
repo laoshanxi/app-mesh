@@ -49,7 +49,7 @@ void DockerApiProcess::terminate()
 			if (resp->status_code >= web::http::status_codes::BadRequest)
 			{
 				LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
-				ACE_Process::terminate();
+				ACE::terminate_process(this->getpid());
 			}
 
 			// DELETE /containers/{id}?force=true
@@ -192,7 +192,6 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 				auto pid = nlohmann::json::parse(resp->text)["State"]["Pid"].get<int>();
 				// Success
 				this->attach(pid);
-				ACE_Process::child_id_ = pid;
 				LOG_INF << fname << "started pid <" << pid << "> for container: " << m_containerName;
 				return this->getpid();
 			}
