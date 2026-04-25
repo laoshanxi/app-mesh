@@ -74,6 +74,9 @@ public:
 					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
 					   const std::string &bodyType) const;
 
+	int tcpClientId() const { return m_tcpClientId; }
+	const LwsSessionRef &lwsRef() const { return m_lwsRef; }
+
 private:
 	const int m_tcpClientId;
 	LwsSessionRef m_lwsRef;

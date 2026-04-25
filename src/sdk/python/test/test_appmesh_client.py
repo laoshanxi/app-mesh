@@ -1,11 +1,12 @@
-"""Test Python SDK across three protocols: HTTP (REST), TCP, and WebSocket (WSS).
+"""Test Python SDK across four protocols: HTTP (REST), TCP, WebSocket (WSS), and REST-over-WSS.
 
 Usage:
-    python3 -m unittest --verbose                            # run all
-    python3 -m unittest test_appmesh_client.TestHTTP         # HTTP only
-    python3 -m unittest test_appmesh_client.TestTCP          # TCP only
-    python3 -m unittest test_appmesh_client.TestWSS          # WSS only
-    python3 -m unittest test_appmesh_client.TestProtocolFixes  # review-fix tests
+    python3 -m unittest --verbose                                # run all
+    python3 -m unittest test_appmesh_client.TestHTTP             # HTTP only
+    python3 -m unittest test_appmesh_client.TestTCP              # TCP only
+    python3 -m unittest test_appmesh_client.TestWSS              # WSS only
+    python3 -m unittest test_appmesh_client.TestWSSRest          # REST-over-WSS port
+    python3 -m unittest test_appmesh_client.TestProtocolFixes    # review-fix tests
 """
 
 import json
@@ -298,26 +299,22 @@ class TestTCP(ProtocolTestMixin, FileTransferMixin, TestCase):
         self.client = AppMeshClientTCP()
 
 
-def _wss_available():
-    """Check if WSS endpoint is reachable."""
-    try:
-        c = AppMeshClientWSS()
-        c.login("admin", DEFAULT_CRED)
-        c.logout()
-        return True
-    except Exception:
-        return False
-
-
-_WSS_OK = _wss_available()
-
-
-@unittest.skipUnless(_WSS_OK, "WSS endpoint not available (libwebsockets not enabled)")
 class TestWSS(ProtocolTestMixin, FileTransferMixin, TestCase):
     """Tests using WebSocket Secure client (AppMeshClientWSS)."""
 
     def setUp(self):
         self.client = AppMeshClientWSS()
+
+
+# REST requests sent directly to the lws port (HTTP-over-libwebsockets path).
+_WSS_REST_PORT = 6058
+
+
+class TestWSSRest(ProtocolTestMixin, TestCase):
+    """Tests using plain HTTPS REST client against the WSS (lws) port."""
+
+    def setUp(self):
+        self.client = AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}")
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +428,6 @@ class TestProtocolFixes(TestCase):
         self.assertEqual(0, exit_code)
         self.assertIn("100", output)
 
-    @unittest.skipUnless(_WSS_OK, "WSS endpoint not available")
     def test_wss_large_app_output(self):
         """WSS transport can handle non-trivial response payload (tests WS framing)."""
         client = AppMeshClientWSS()
@@ -456,7 +452,6 @@ class TestProtocolFixes(TestCase):
             apps = client.list_apps()
             self.assertGreater(len(apps), 0)
 
-    @unittest.skipUnless(_WSS_OK, "WSS endpoint not available")
     def test_wss_concurrent_requests(self):
         """WSS client handles multiple rapid sequential requests."""
         client = AppMeshClientWSS()
@@ -464,6 +459,22 @@ class TestProtocolFixes(TestCase):
         for _ in range(10):
             apps = client.list_apps()
             self.assertGreater(len(apps), 0)
+
+    def test_wss_rest_concurrent_requests(self):
+        """REST-over-WSS handles rapid sequential requests (tests HTTP PSS lifecycle + ABA)."""
+        client = AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}")
+        client.login("admin", DEFAULT_CRED)
+        for _ in range(10):
+            apps = client.list_apps()
+            self.assertGreater(len(apps), 0)
+
+    def test_wss_rest_large_response(self):
+        """REST-over-WSS returns large payload (tests sbuffer→LWS_PRE body write path)."""
+        client = AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}")
+        client.login("admin", DEFAULT_CRED)
+        exit_code, output = client.run_app_sync(App({"command": "seq 1 500", "shell": True}), max_time=5)
+        self.assertEqual(0, exit_code)
+        self.assertIn("500", output)
 
     def test_http_config_ssl_verify_server(self):
         """Verify the new getSslVerifyServer config option works end-to-end."""

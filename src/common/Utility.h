@@ -528,6 +528,7 @@ public:
 #define PERMISSION_KEY_role_delete "role-delete"
 #define PERMISSION_KEY_role_view "role-view"
 #define PERMISSION_KEY_permission_list "permission-list"
+#define PERMISSION_KEY_app_subscribe "app-subscribe"
 
 namespace web
 {

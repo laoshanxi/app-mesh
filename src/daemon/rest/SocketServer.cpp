@@ -1,4 +1,5 @@
 // src/daemon/rest/SocketServer.cpp
+#include "EventDispatcher.h"
 #include "SocketServer.h"
 #include "Worker.h"
 
@@ -58,6 +59,7 @@ int SocketServer::open(void *acceptor_or_connector)
         [id = m_id]()
         {
             streams.unbind(id);
+            EventDispatcher::instance()->removeByConnection(ConnectionKey::tcp(id));
             LOG_DBG << "SocketServer::onClose() | ClientID=" << id;
         });
 

@@ -25,8 +25,8 @@ pub use client_tcp::AppMeshClientTCP;
 pub use client_wss::AppMeshClientWSS;
 pub use error::{AppMeshError, TransportError};
 pub use models::{
-    AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
-    ExitAction, Permission, ResourceLimitation, User,
+    AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
+    ExitAction, Permission, ResourceLimitation, SubscriptionResult, User,
 };
 pub use server_http::AppMeshServer;
 pub use server_tcp::AppMeshServerTCP;

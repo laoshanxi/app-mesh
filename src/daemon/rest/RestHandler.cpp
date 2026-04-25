@@ -16,9 +16,12 @@
 #include "../security/SecurityKeycloak.h"
 #include "../security/TokenBlacklist.h"
 #include "../security/User.h"
+#include "../../common/lwsservice/WebSocketService.h"
+#include "EventDispatcher.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
 #include "RestHandler.h"
+#include "SocketServer.h"
 
 // Content-type constants
 constexpr auto CONTENT_TYPE_HTML = "text/html; charset=utf-8";
@@ -85,6 +88,10 @@ constexpr auto REST_PATH_SEC_USER_GROUPS_VIEW = "/appmesh/user/groups";
 // 10. resources
 constexpr auto REST_PATH_PROMETHEUS_METRICS = "/appmesh/metrics";
 constexpr auto REST_PATH_RESOURCE_VIEW = "/appmesh/resources";
+
+// 11. Subscribe
+constexpr auto REST_PATH_APP_SUBSCRIBE = R"(/appmesh/app/([^/\*]+)/subscribe)";
+constexpr auto REST_PATH_APP_SUBSCRIBE_ALL = "/appmesh/subscribe";
 
 RestHandler::RestHandler() : PrometheusRest()
 {
@@ -158,6 +165,12 @@ RestHandler::RestHandler() : PrometheusRest()
 	// 10. metrics
 	bindRestMethod(web::http::methods::GET, REST_PATH_PROMETHEUS_METRICS, std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_RESOURCE_VIEW, std::bind(&RestHandler::apiResourceView, this, std::placeholders::_1));
+
+	// 11. Subscribe
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_SUBSCRIBE, std::bind(&RestHandler::apiAppSubscribe, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_SUBSCRIBE_ALL, std::bind(&RestHandler::apiAppSubscribe, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_SUBSCRIBE, std::bind(&RestHandler::apiAppUnsubscribe, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_SUBSCRIBE_ALL, std::bind(&RestHandler::apiAppUnsubscribe, this, std::placeholders::_1));
 }
 
 RestHandler::~RestHandler()
@@ -1287,8 +1300,183 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	{
 		checkAppAccessPermission(message, appName, true);
 	}
+
+	// Atomically subscribe before app registration so no events are missed.
+	auto subscribeEvents = getHttpQueryString(*message, "subscribe_events");
+	std::string subId;
+	if (!subscribeEvents.empty())
+	{
+		uint32_t eventMask = parseEventMask(subscribeEvents);
+		if (eventMask == 0)
+		{
+			message->reply(web::http::status_codes::BadRequest,
+						   Utility::text2json("No valid event types in subscribe_events: " + subscribeEvents));
+			return;
+		}
+		ConnectionKey connKey;
+		DeliveryCallback deliveryCb;
+		if (buildDeliveryCallback(message, connKey, deliveryCb))
+		{
+			subId = EventDispatcher::instance()->subscribe(appName, eventMask, tokenUser, std::move(deliveryCb), connKey);
+		}
+	}
+
 	jsonApp[JSON_KEY_APP_owner] = tokenUser;
-	auto app = Configuration::instance()->addApp(jsonApp);
-	app->save();
-	message->reply(web::http::status_codes::OK, app->AsJson(false));
+	try
+	{
+		auto app = Configuration::instance()->addApp(jsonApp);
+		app->save();
+
+		auto result = app->AsJson(false);
+		if (!subId.empty())
+		{
+			result["subscription_id"] = subId;
+		}
+		message->reply(web::http::status_codes::OK, result);
+	}
+	catch (...)
+	{
+		if (!subId.empty())
+		{
+			EventDispatcher::instance()->unsubscribe(subId);
+		}
+		throw;
+	}
+}
+
+bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &message, ConnectionKey &connKey, DeliveryCallback &deliveryCb)
+{
+	if (message->tcpClientId() > 0)
+	{
+		int clientId = message->tcpClientId();
+		connKey = ConnectionKey::tcp(clientId);
+		deliveryCb = [clientId](const nlohmann::json &eventPayload) -> bool
+		{
+			auto resp = std::make_unique<Response>();
+			resp->uuid = Utility::shortID();
+			resp->request_uri = "/appmesh/event";
+			resp->http_status = web::http::status_codes::OK;
+			resp->body_msg_type = web::http::mime_types::application_json;
+			auto bodyStr = eventPayload.dump();
+			resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
+			resp->headers["X-Subscription-Id"] = eventPayload.value("subscription_id", "");
+			resp->headers["X-Event-Type"] = eventPayload.value("event_type", "");
+			resp->headers["X-App-Name"] = eventPayload.value("app_name", "");
+			return SocketServer::replyTcp(clientId, std::move(resp));
+		};
+		return true;
+	}
+	else if (message->lwsRef())
+	{
+		auto lwsRef = message->lwsRef();
+		connKey = ConnectionKey::wss(lwsRef.sessionId);
+		// Dead WSS subscriptions are cleaned up by destroySession → removeByConnection.
+		// We cannot check session validity here (would invert lock order with EventDispatcher).
+		deliveryCb = [lwsRef](const nlohmann::json &eventPayload) -> bool
+		{
+			try
+			{
+				auto resp = std::make_unique<Response>();
+				resp->uuid = Utility::shortID();
+				resp->request_uri = "/appmesh/event";
+				resp->http_status = web::http::status_codes::OK;
+				resp->body_msg_type = web::http::mime_types::application_json;
+				auto bodyStr = eventPayload.dump();
+				resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
+				resp->headers["X-Subscription-Id"] = eventPayload.value("subscription_id", "");
+				resp->headers["X-Event-Type"] = eventPayload.value("event_type", "");
+				resp->headers["X-App-Name"] = eventPayload.value("app_name", "");
+
+				auto wsResp = std::make_unique<WSResponse>();
+				wsResp->m_session_ref = const_cast<void *>(lwsRef.wsi);
+				wsResp->m_req_id = 0;
+				wsResp->m_session_id = lwsRef.sessionId;
+				wsResp->m_payload = resp->serialize();
+				wsResp->m_is_http = false;
+				WebSocketService::instance()->enqueueOutgoingResponse(std::move(wsResp));
+				return true;
+			}
+			catch (...)
+			{
+				return false;
+			}
+		};
+		return true;
+	}
+	return false;
+}
+
+void RestHandler::apiAppSubscribe(const std::shared_ptr<HttpRequest> &message)
+{
+	REST_INFO_PRINT;
+	const auto userName = permissionCheck(message, PERMISSION_KEY_app_subscribe);
+	const auto path = curlpp::unescape(message->m_relative_uri);
+
+	std::string appName = "*";
+	if (path != REST_PATH_APP_SUBSCRIBE_ALL)
+	{
+		appName = regexSearch(path, REST_PATH_APP_SUBSCRIBE);
+		checkAppAccessPermission(message, appName, false);
+	}
+	else
+	{
+		// Wildcard subscribe requires view-all-app permission
+		permissionCheck(message, PERMISSION_KEY_view_all_app);
+	}
+
+	auto events = getHttpQueryString(*message, "events");
+	uint32_t eventMask = parseEventMask(events);
+	if (eventMask == 0)
+	{
+		message->reply(web::http::status_codes::BadRequest,
+					   Utility::text2json("No valid event types in: " + events));
+		return;
+	}
+
+	ConnectionKey connKey;
+	DeliveryCallback deliveryCb;
+	if (!buildDeliveryCallback(message, connKey, deliveryCb))
+	{
+		message->reply(web::http::status_codes::MethodNotAllowed,
+					   Utility::text2json("Subscribe requires a persistent connection (TCP or WebSocket)"));
+		return;
+	}
+
+	auto subId = EventDispatcher::instance()->subscribe(appName, eventMask, userName, std::move(deliveryCb), connKey);
+
+	nlohmann::json result;
+	result["subscription_id"] = subId;
+	result["app_name"] = appName;
+	nlohmann::json eventList = nlohmann::json::array();
+	for (uint32_t bit = 0x01; bit <= static_cast<uint32_t>(AppEventType::APP_REMOVED); bit <<= 1)
+	{
+		if (eventMask & bit)
+			eventList.push_back(eventTypeToString(static_cast<AppEventType>(bit)));
+	}
+	result["events"] = eventList;
+	message->reply(web::http::status_codes::OK, result);
+}
+
+void RestHandler::apiAppUnsubscribe(const std::shared_ptr<HttpRequest> &message)
+{
+	REST_INFO_PRINT;
+	const auto userName = permissionCheck(message, PERMISSION_KEY_app_subscribe);
+
+	auto subId = getHttpQueryString(*message, "subscription_id");
+	if (subId.empty())
+	{
+		message->reply(web::http::status_codes::BadRequest,
+					   Utility::text2json("Missing query parameter: subscription_id"));
+		return;
+	}
+
+	if (EventDispatcher::instance()->unsubscribe(subId, userName))
+	{
+		message->reply(web::http::status_codes::OK, Utility::text2json("unsubscribed"));
+	}
+	else
+	{
+		message->reply(web::http::status_codes::NotFound,
+					   Utility::text2json(std::string("Subscription not found: ") + subId));
+	}
 }

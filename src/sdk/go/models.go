@@ -107,8 +107,10 @@ type Application struct {
 	Env           *Environments       `json:"env"`
 	SecEnv        *Environments       `json:"sec_env"`
 
-	TaskId     *int        `json:"task_id"`
-	TaskStatus *string    `json:"task_status"`
+	TaskId     *int    `json:"task_id"`
+	TaskStatus *string `json:"task_status"`
+
+	SubscriptionID string `json:"subscription_id,omitempty"`
 }
 
 // AppRun represents the state of an asynchronous application run.
@@ -221,6 +223,11 @@ type Response struct {
 	BodyMsgType string            `msgpack:"body_msg_type"`
 	Body        []byte            `msgpack:"body"`
 	Headers     map[string]string `msgpack:"headers"`
+}
+
+// Serialize serializes the Response into a byte slice.
+func (r *Response) Serialize() ([]byte, error) {
+	return msgpack.Marshal(r)
 }
 
 // Deserialize deserializes the byte slice into a Response.

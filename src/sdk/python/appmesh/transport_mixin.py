@@ -14,6 +14,7 @@ from requests.structures import CaseInsensitiveDict
 # Local imports
 from .client_http import AppMeshClient
 from .exceptions import AppMeshConnectionError
+from .subscribe import AppEvent, EventCallback, MessageDemuxer, SubscriptionResult
 from .tcp_messages import RequestMessage, ResponseMessage
 
 # Auth endpoints where the server returns a new access_token in the JSON body.
@@ -180,3 +181,55 @@ class TransportClientMixin:
         self._sync_transport_token(response, path, header)
 
         return AppMeshClient._EncodingResponse(response)
+
+    def subscribe(self, app_name: str, events: Optional[list] = None, callback: Optional[EventCallback] = None) -> SubscriptionResult:
+        """Subscribe to app events over the transport connection.
+
+        Args:
+            app_name: Application name, or "*" for all apps.
+            events: List of event types (e.g. ["process_start", "process_exit", "stdout"]).
+            callback: Function called with AppEvent for each received event.
+
+        Returns:
+            SubscriptionResult with subscription_id, app_name, and events.
+        """
+        path = "/appmesh/subscribe"
+        if app_name and app_name != "*":
+            path = f"/appmesh/app/{app_name}/subscribe"
+
+        query = {}
+        if events:
+            query["events"] = ",".join(events)
+
+        resp = self._request_http(AppMeshClient._Method.POST, path=path, query=query)
+        result_data = resp.json()
+        result = SubscriptionResult(
+            subscription_id=result_data.get("subscription_id", ""),
+            app_name=result_data.get("app_name", ""),
+            events=result_data.get("events", []),
+        )
+
+        if callback and result.subscription_id:
+            self._ensure_demuxer()
+            self._demuxer.register_event_callback(result.subscription_id, callback)
+
+        return result
+
+    def unsubscribe(self, subscription_id: str) -> None:
+        """Remove an event subscription.
+
+        Args:
+            subscription_id: The subscription ID returned by subscribe().
+        """
+        query = {"subscription_id": subscription_id}
+        self._request_http(AppMeshClient._Method.DELETE, path="/appmesh/subscribe", query=query)
+
+        if hasattr(self, "_demuxer") and self._demuxer:
+            self._demuxer.unregister_event_callback(subscription_id)
+
+    def _ensure_demuxer(self) -> None:
+        """Start the message demuxer if not already running."""
+        if hasattr(self, "_demuxer") and self._demuxer:
+            return
+        self._demuxer = MessageDemuxer(self._transport)
+        self._demuxer.start()

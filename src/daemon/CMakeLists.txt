@@ -19,6 +19,7 @@ target_link_libraries(appsvc
     process
     prometheus
     common
+    rest
 )
 
 target_link_libraries(appsvc PUBLIC websockets_shared)

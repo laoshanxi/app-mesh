@@ -3,6 +3,7 @@
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
 #include "../../src/common/json.h"
+#include "../../src/daemon/rest/EventTypes.h"
 #include <ace/Init_ACE.h>
 #include <ace/Map_Manager.h>
 #include <ace/Message_Block.h>
@@ -203,4 +204,54 @@ TEST_CASE("JSON", "[nlohmann json]")
 	std::string chinese = "新加卷";
 	LOG_INF << "Chinese string byte length: " << chinese.length();
 	LOG_INF << "Chinese string content: " << chinese;
+}
+
+TEST_CASE("EventTypes - eventTypeToString", "[EventTypes]")
+{
+	REQUIRE(std::string(eventTypeToString(AppEventType::PROCESS_START)) == "process_start");
+	REQUIRE(std::string(eventTypeToString(AppEventType::PROCESS_EXIT)) == "process_exit");
+	REQUIRE(std::string(eventTypeToString(AppEventType::STDOUT_OUTPUT)) == "stdout");
+	REQUIRE(std::string(eventTypeToString(AppEventType::HEALTH_CHANGE)) == "health_change");
+	REQUIRE(std::string(eventTypeToString(AppEventType::STATUS_CHANGE)) == "status_change");
+	REQUIRE(std::string(eventTypeToString(AppEventType::APP_REMOVED)) == "app_removed");
+	REQUIRE(std::string(eventTypeToString(AppEventType::ALL_EVENTS)) == "unknown");
+}
+
+TEST_CASE("EventTypes - stringToEventBit", "[EventTypes]")
+{
+	REQUIRE(stringToEventBit("process_start") == static_cast<uint32_t>(AppEventType::PROCESS_START));
+	REQUIRE(stringToEventBit("process_exit") == static_cast<uint32_t>(AppEventType::PROCESS_EXIT));
+	REQUIRE(stringToEventBit("stdout") == static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT));
+	REQUIRE(stringToEventBit("health_change") == static_cast<uint32_t>(AppEventType::HEALTH_CHANGE));
+	REQUIRE(stringToEventBit("status_change") == static_cast<uint32_t>(AppEventType::STATUS_CHANGE));
+	REQUIRE(stringToEventBit("app_removed") == static_cast<uint32_t>(AppEventType::APP_REMOVED));
+	REQUIRE(stringToEventBit("all") == static_cast<uint32_t>(AppEventType::ALL_EVENTS));
+	REQUIRE(stringToEventBit("unknown_junk") == 0);
+	REQUIRE(stringToEventBit("") == 0);
+}
+
+TEST_CASE("EventTypes - parseEventMask", "[EventTypes]")
+{
+	// Empty string -> ALL
+	REQUIRE(parseEventMask("") == static_cast<uint32_t>(AppEventType::ALL_EVENTS));
+
+	// Single event
+	REQUIRE(parseEventMask("stdout") == static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT));
+
+	// Multiple events
+	uint32_t expected = static_cast<uint32_t>(AppEventType::PROCESS_START) | static_cast<uint32_t>(AppEventType::PROCESS_EXIT);
+	REQUIRE(parseEventMask("process_start,process_exit") == expected);
+
+	// "all" keyword
+	REQUIRE(parseEventMask("all") == static_cast<uint32_t>(AppEventType::ALL_EVENTS));
+
+	// Unknown tokens are ignored (return 0), so "junk" alone returns 0 (caller rejects)
+	REQUIRE(parseEventMask("junk") == 0);
+
+	// Unknown mixed with valid: only valid bits set
+	REQUIRE(parseEventMask("stdout,bogus") == static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT));
+
+	// Bitmask correctness
+	REQUIRE((static_cast<uint32_t>(AppEventType::ALL_EVENTS) & static_cast<uint32_t>(AppEventType::PROCESS_START)) != 0);
+	REQUIRE((static_cast<uint32_t>(AppEventType::ALL_EVENTS) & static_cast<uint32_t>(AppEventType::APP_REMOVED)) != 0);
 }

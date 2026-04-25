@@ -735,9 +735,20 @@ class AppMeshClient:
     ########################################
     # Application manage
     ########################################
-    def add_app(self, app: App) -> App:
-        """Register a new application."""
-        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", body=app.to_dict())
+    def add_app(self, app: App, subscribe_events: Optional[List[str]] = None) -> App:
+        """Register a new application.
+
+        Args:
+            app: Application definition.
+            subscribe_events: Optional list of event types to subscribe atomically with registration.
+                Subscription is created before the app starts, ensuring no events are missed.
+                Values: "process_start", "process_exit", "stdout", "health_change", "status_change", "app_removed", "all".
+                Requires TCP or WebSocket connection. Response includes subscription_id when active.
+        """
+        query = {}
+        if subscribe_events:
+            query["subscribe_events"] = ",".join(subscribe_events)
+        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", query=query or None, body=app.to_dict())
         return App(resp.json())
 
     def delete_app(self, app_name: str) -> bool:

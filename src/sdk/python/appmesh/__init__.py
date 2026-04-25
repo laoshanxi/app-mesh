@@ -25,6 +25,8 @@ __all__ = [
     "AppMeshAuthError",
     "AppMeshConnectionError",
     "AppMeshRequestError",
+    "AppEvent",
+    "SubscriptionResult",
 ]
 
 # Lazy import configuration
@@ -41,6 +43,8 @@ _LAZY_IMPORTS = {
     "AppMeshAuthError": ("exceptions", "AppMeshAuthError"),  # from .exceptions import AppMeshAuthError
     "AppMeshConnectionError": ("exceptions", "AppMeshConnectionError"),  # from .exceptions import AppMeshConnectionError
     "AppMeshRequestError": ("exceptions", "AppMeshRequestError"),  # from .exceptions import AppMeshRequestError
+    "AppEvent": ("subscribe", "AppEvent"),  # from .subscribe import AppEvent
+    "SubscriptionResult": ("subscribe", "SubscriptionResult"),  # from .subscribe import SubscriptionResult
 }
 
 if TYPE_CHECKING:
@@ -54,6 +58,7 @@ if TYPE_CHECKING:
     from .server_tcp import AppMeshServerTCP  # noqa: F401
     from .server_wss import AppMeshServerWSS  # noqa: F401
     from .exceptions import AppMeshError, AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError  # noqa: F401
+    from .subscribe import AppEvent, SubscriptionResult  # noqa: F401
 
 
 def _lazy_import(name: str):

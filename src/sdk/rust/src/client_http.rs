@@ -836,14 +836,24 @@ impl AppMeshClient {
     }
 
     /// Add or update an application (type-safe).
-    pub async fn add_app(&self, app: &Application) -> Result<Application> {
+    /// Register or update an application, optionally subscribing to events atomically.
+    ///
+    /// When `subscribe_events` is `Some`, a subscription is created before the app starts,
+    /// ensuring no events are missed. The returned `Application.subscription_id` will be set.
+    /// Requires TCP or WebSocket transport.
+    pub async fn add_app(&self, app: &Application, subscribe_events: Option<&[&str]>) -> Result<Application> {
         let name = app
             .name
             .as_deref()
             .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
         let body_bytes = serde_json::to_vec(app)?;
+        let query = subscribe_events.map(|events| {
+            let mut q = HashMap::new();
+            q.insert("subscribe_events".to_string(), events.join(","));
+            q
+        });
         let resp =
-            self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true).await?;
+            self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, query, true).await?;
         Ok(resp.json()?)
     }
 
@@ -856,6 +866,31 @@ impl AppMeshClient {
         let resp =
             self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true).await?;
         Ok(resp.json()?)
+    }
+
+    /// Subscribe to real-time events for a specific app (or all apps if name is "*" or empty).
+    /// Requires TCP or WebSocket transport.
+    pub async fn subscribe(&self, app_name: &str, events: Option<&[&str]>) -> Result<SubscriptionResult> {
+        let path = if !app_name.is_empty() && app_name != "*" {
+            format!("/appmesh/app/{}/subscribe", app_name)
+        } else {
+            "/appmesh/subscribe".to_string()
+        };
+        let query = events.map(|e| {
+            let mut q = HashMap::new();
+            q.insert("events".to_string(), e.join(","));
+            q
+        });
+        let resp = self.req.send(Method::POST, &path, None, None, query, true).await?;
+        Ok(resp.json()?)
+    }
+
+    /// Unsubscribe from events by subscription ID.
+    pub async fn unsubscribe(&self, subscription_id: &str) -> Result<bool> {
+        let mut query = HashMap::new();
+        query.insert("subscription_id".to_string(), subscription_id.to_string());
+        let resp = self.req.send(Method::DELETE, "/appmesh/subscribe", None, None, Some(query), false).await?;
+        Ok(resp.status() == StatusCode::OK)
     }
 
     pub async fn delete_app(&self, name: &str) -> Result<bool> {

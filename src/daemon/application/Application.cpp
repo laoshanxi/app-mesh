@@ -21,6 +21,7 @@
 #include "../process/DockerProcess.h"
 #endif
 #include "../process/MonitoredProcess.h"
+#include "../rest/EventDispatcher.h"
 #include "../rest/RestHandler.h"
 #include "../security/HMACVerifier.h"
 #include "../security/Security.h"
@@ -61,9 +62,14 @@ const std::string &Application::getName() const
 	return m_name;
 }
 
-void Application::health(bool health)
+void Application::health(bool newHealth)
 {
-	m_health.store(health);
+	bool oldHealth = m_health.exchange(newHealth);
+	if (oldHealth != newHealth)
+	{
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::HEALTH_CHANGE,
+											  {{"health", newHealth ? 0 : 1}, {"previous_health", oldHealth ? 0 : 1}});
+	}
 }
 
 pid_t Application::getpid() const
@@ -561,6 +567,8 @@ bool Application::onTimerSpawn()
 		if (m_pid.load() > 0)
 		{
 			checkProcStdoutFile = (*processLock);
+			EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START,
+												  {{"pid", m_pid.load()}, {"process_uuid", (*processLock)->getuuid()}});
 		}
 
 		// 3. Post process
@@ -598,6 +606,8 @@ void Application::disable()
 	if (m_status.compare_exchange_strong(enabled, STATUS::DISABLED))
 	{
 		LOG_INF << fname << "Application <" << m_name << "> disabled.";
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE,
+											  {{"status", "disabled"}, {"previous_status", "enabled"}});
 	}
 
 	terminate(*m_process.synchronize());
@@ -608,7 +618,11 @@ void Application::disable()
 void Application::enable()
 {
 	auto disabled = STATUS::DISABLED;
-	m_status.compare_exchange_strong(disabled, STATUS::ENABLED);
+	if (m_status.compare_exchange_strong(disabled, STATUS::ENABLED))
+	{
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE,
+											  {{"status", "enabled"}, {"previous_status", "disabled"}});
+	}
 	save();
 }
 
@@ -670,7 +684,7 @@ std::string Application::runApp(int timeoutSeconds)
 
 	if (m_pid.load() > 0)
 	{
-		m_health.store(true);
+		this->health(true);
 		if (timeoutSeconds > 0)
 		{
 			(*processLock)->delayKill(timeoutSeconds, fname);
@@ -712,7 +726,7 @@ void Application::fetchTask(const std::string &processKey, std::shared_ptr<void>
 	}
 	if (processKey != (*processLock)->getkey())
 	{
-		throw std::invalid_argument("Process key mismatch");
+		throw std::runtime_error("Process key mismatch");
 	}
 	m_task.fetchTask(asyncHttpRequest);
 }
@@ -726,7 +740,7 @@ void Application::replyTask(const std::string &processKey, std::shared_ptr<void>
 	}
 	if (processKey != (*processLock)->getkey())
 	{
-		throw std::invalid_argument("Process key mismatch");
+		throw std::runtime_error("Process key mismatch");
 	}
 	m_task.replyTask(asyncHttpRequest);
 }
@@ -1211,6 +1225,7 @@ bool Application::onTimerAppRemove()
 
 void Application::onExitUpdate(int code)
 {
+	auto prevPid = m_pid.load();
 	auto process = m_process.get();
 	if (process == nullptr || !process->running())
 	{
@@ -1223,6 +1238,12 @@ void Application::onExitUpdate(int code)
 	{
 		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, process->startError().c_str()));
 	}
+
+	// Flush remaining stdout to subscribers before exit event
+	EventDispatcher::instance()->flushStdout(m_name, this);
+
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT,
+										  {{"exit_code", code}, {"pid", prevPid}, {"last_error", getLastError()}});
 	// immediate error handling (compared with Application::execute)
 	// this->registerTimer(0, 0, fname, std::bind(&Application::handleError, this));
 }

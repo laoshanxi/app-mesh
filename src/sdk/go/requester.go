@@ -192,6 +192,7 @@ type TCPRequester struct {
 
 	forwardingHost atomic.String
 	token          atomic.String
+	demuxer        *MessageDemuxer
 }
 
 // Send performs a REST-like request over TCP.
@@ -291,7 +292,18 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
-	// Receive the response.
+	// When demuxer is active, use channel-based response routing.
+	if t.demuxer != nil {
+		ch := t.demuxer.registerRequest(data.UUID)
+		defer t.demuxer.unregisterRequest(data.UUID)
+		resp, ok := <-ch
+		if !ok || resp == nil {
+			return nil, fmt.Errorf("connection closed while waiting for response")
+		}
+		return resp, nil
+	}
+
+	// Receive the response directly (legacy synchronous mode).
 	respData, err := t.ReadMessage()
 	if err != nil {
 		return nil, err
@@ -321,6 +333,18 @@ func (h *TCPRequester) getForwardTo() string {
 	return h.forwardingHost.Load()
 }
 
+func (t *TCPRequester) enableDemuxer() {
+	if t.demuxer != nil {
+		return
+	}
+	t.demuxer = newMessageDemuxer(t.TCPConnection.ReadMessage)
+	t.demuxer.start()
+}
+
+func (t *TCPRequester) getDemuxer() *MessageDemuxer {
+	return t.demuxer
+}
+
 // WSSRequester handles REST-like requests over a WSS transport.
 type WSSRequester struct {
 	*WSSConnection
@@ -328,6 +352,7 @@ type WSSRequester struct {
 
 	forwardingHost atomic.String
 	token          atomic.String
+	demuxer        *MessageDemuxer
 }
 
 // Send performs the request over WSS.
@@ -428,6 +453,17 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
+	// When demuxer is active, use channel-based response routing.
+	if w.demuxer != nil {
+		ch := w.demuxer.registerRequest(data.UUID)
+		defer w.demuxer.unregisterRequest(data.UUID)
+		resp, ok := <-ch
+		if !ok || resp == nil {
+			return nil, fmt.Errorf("connection closed while waiting for response")
+		}
+		return resp, nil
+	}
+
 	respData, err := w.ReadMessage()
 	if err != nil {
 		return nil, err
@@ -438,6 +474,18 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 	return respMsg, nil
+}
+
+func (w *WSSRequester) enableDemuxer() {
+	if w.demuxer != nil {
+		return
+	}
+	w.demuxer = newMessageDemuxer(w.WSSConnection.ReadMessage)
+	w.demuxer.start()
+}
+
+func (w *WSSRequester) getDemuxer() *MessageDemuxer {
+	return w.demuxer
 }
 
 func (w *WSSRequester) handleTokenUpdate(token string) {

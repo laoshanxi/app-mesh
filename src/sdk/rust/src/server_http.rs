@@ -74,9 +74,11 @@ impl AppMeshServer {
                         return Ok(resp.into_bytes());
                     }
                     let status = resp.status();
-                    let text = resp.text()?;
+                    if status == StatusCode::PRECONDITION_FAILED {
+                        error!("Process key mismatch (412): this process has been superseded, exiting");
+                        std::process::exit(1);
+                    }
                     warn!("task_fetch attempt {} failed with status {}: retrying...", attempts + 1, status);
-                    let _ = (status, text);
                 }
                 Err(e) => {
                     warn!("task_fetch attempt {} request failed: {}: retrying...", attempts + 1, e);

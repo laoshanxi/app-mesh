@@ -114,6 +114,28 @@ RecvResult RecvState::do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t l
 		return RecvResult::ERR;
 	}
 
+	case SSL_ERROR_SSL:
+	{
+		// SSL_ERROR_SSL often occurs when the peer process is killed (connection
+		// broken without close_notify). Treat as a close, not a fatal error.
+		unsigned long openssl_err = ::ERR_peek_error();
+		if (openssl_err == 0)
+		{
+			LOG_DBG << "Peer connection lost (SSL_ERROR_SSL, no queued error)";
+			return RecvResult::CLOSED;
+		}
+#ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
+		if (ERR_GET_REASON(openssl_err) == SSL_R_UNEXPECTED_EOF_WHILE_READING)
+		{
+			::ERR_clear_error();
+			LOG_DBG << "Peer closed connection without close_notify";
+			return RecvResult::CLOSED;
+		}
+#endif
+		LOG_WAR << "SSL protocol error on recv: " << ::ERR_reason_error_string(openssl_err);
+		return RecvResult::ERR;
+	}
+
 	default:
 		LOG_ERR << "SSL Recv error code: " << ssl_error;
 		return RecvResult::ERR;
@@ -211,8 +233,19 @@ SendResult SendBuffer::send_chunk(SSL_Stream_Ex &stream, const char *data, size_
 		return SendResult::ERR;
 	}
 
+	case SSL_ERROR_SSL:
+	{
+		unsigned long openssl_err = ::ERR_peek_error();
+		if (openssl_err == 0)
+		{
+			LOG_DBG << "Peer connection lost (SSL_ERROR_SSL, no queued error)";
+			return SendResult::CLOSED;
+		}
+		LOG_WAR << "SSL protocol error on send: " << ::ERR_reason_error_string(openssl_err);
+		return SendResult::ERR;
+	}
+
 	default:
-		// SSL_ERROR_SSL and others
 		LOG_ERR << "SSL Send error code: " << ssl_error;
 		return SendResult::ERR;
 	}
@@ -622,19 +655,24 @@ bool SocketStream::send_impl(SendBuffer &&buf)
 	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
 		return false;
 
-	// Acquire m_io_mutex first to maintain consistent lock ordering with handle_close:
-	// Lock order: m_io_mutex → m_send_state.mutex()
-	std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
-
-	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
-		return false;
-
 	{
+		// Lock order: m_io_mutex → m_send_state.mutex()
+		// enable_mask() must be called OUTSIDE m_io_mutex to avoid lock inversion
+		// with reactor dispatch (reactor token → m_io_mutex in handle_close).
+		std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
+
+		if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
+			return false;
+
 		std::lock_guard<std::mutex> lock(m_send_state.mutex());
 		m_send_state.enqueue_unsafe(std::move(buf));
 		LOG_DBG << fname << "Enqueued message for sending";
 	}
 
+	// enable_mask acquires the reactor token — calling it under m_io_mutex
+	// inverts the lock order with handle_close (reactor token → m_io_mutex),
+	// causing deadlock. Safe to call outside the lock: if handle_close races
+	// and closes the connection, mask_ops on a removed handler is a harmless no-op.
 	enable_mask(ACE_Event_Handler::WRITE_MASK);
 
 	return true;

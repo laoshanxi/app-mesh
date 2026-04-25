@@ -9,6 +9,7 @@
 
 #include "../../daemon/Configuration.h"
 #include "../../daemon/rest/Data.h"
+#include "../../daemon/rest/EventDispatcher.h"
 #include "../../daemon/rest/HttpRequest.h"
 #include "../../daemon/rest/Worker.h"
 #include "../Utility.h"
@@ -270,6 +271,31 @@ std::unique_ptr<Request> WebSocketService::buildHttpRequest(struct lws *wsi)
         req->headers[name] = std::string(buf.data(), n);
     }
 
+    // Extract all custom headers (not in lws standard token table)
+    struct CustomHeaderCtx
+    {
+        struct lws *wsi;
+        std::unique_ptr<Request> *req;
+    } ctx{wsi, &req};
+
+    lws_hdr_custom_name_foreach(wsi, [](const char *name, int nlen, void *opaque) {
+        auto *c = static_cast<CustomHeaderCtx *>(opaque);
+        std::string hdr_name(name, nlen);
+        if (hdr_name.empty() || hdr_name.back() != ':')
+            return;
+        // lws_hdr_custom_copy needs "name:" form
+        int hdr_len = lws_hdr_custom_length(c->wsi, hdr_name.c_str(), static_cast<int>(hdr_name.length()));
+        if (hdr_len <= 0)
+            return;
+        std::vector<char> buf(hdr_len + 1);
+        int n = lws_hdr_custom_copy(c->wsi, buf.data(), static_cast<int>(buf.size()), hdr_name.c_str(), static_cast<int>(hdr_name.length()));
+        if (n > 0)
+        {
+            hdr_name.pop_back(); // remove trailing ':'
+            (*c->req)->headers[hdr_name] = std::string(buf.data(), n);
+        }
+    }, &ctx);
+
     // Parse query string (?a=b&c=d)
     if (!ssnInfo->query.empty())
     {
@@ -328,18 +354,24 @@ void WebSocketService::destroySession(struct lws *wsi)
 {
     const static char fname[] = "WebSocketService::destroySession() ";
 
-    std::lock_guard<std::mutex> lock(m_sessions_mutex);
-    auto it = m_sessions.find(wsi);
-    if (it == m_sessions.end())
+    uint64_t sessionId = 0;
+    bool found = false;
     {
-        // Only warn if this was a known session (not just an HTTP one)
-        // LOG_WAR << fname << "Session not found: " << wsi;
+        std::lock_guard<std::mutex> lock(m_sessions_mutex);
+        auto it = m_sessions.find(wsi);
+        if (it != m_sessions.end())
+        {
+            sessionId = it->second->getId();
+            time_t duration = time(nullptr) - it->second->getConnectionAt();
+            m_sessions.erase(it);
+            found = true;
+            LOG_INF << fname << "Session destroyed: " << wsi << " (duration=" << duration << "s, sessions=" << m_sessions.size() << ")";
+        }
     }
-    else
+    // Release m_sessions_mutex before acquiring EventDispatcher lock to avoid lock inversion.
+    if (found)
     {
-        time_t duration = time(nullptr) - it->second->getConnectionAt();
-        m_sessions.erase(it);
-        LOG_INF << fname << "Session destroyed: " << wsi << " (duration=" << duration << "s, sessions=" << m_sessions.size() << ")";
+        EventDispatcher::instance()->removeByConnection(ConnectionKey::wss(sessionId));
     }
 }
 
@@ -736,18 +768,6 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
     const static char fname[] = "WebSocketService::handleWebSocketCallback() ";
     switch (reason)
     {
-    case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
-    {
-        // Require authorization header on WebSocket upgrade
-        auto ssnInfo = getSessionInfo(wsi);
-        if (!ssnInfo || ssnInfo->authorization.empty())
-        {
-            LOG_WAR << fname << "WebSocket upgrade rejected: missing authorization";
-            return -1;
-        }
-        break;
-    }
-
     case LWS_CALLBACK_ESTABLISHED:
     {
         auto ssn = createSession(wsi);

@@ -731,8 +731,61 @@ public class AppMeshClient implements Closeable {
 
     /** Register or update an application. */
     public JSONObject addApp(String appName, JSONObject appJson) throws IOException {
-        HttpURLConnection conn = request("PUT", "/appmesh/app/" + encodeURIComponent(appName), appJson, null, null);
+        return addApp(appName, appJson, (String[]) null);
+    }
+
+    /**
+     * Register or update an application, optionally subscribing to events atomically.
+     *
+     * <p>When {@code subscribeEvents} is non-null, a subscription is created before the app starts,
+     * ensuring no events are missed. The response includes {@code subscription_id} when active.
+     * Requires TCP or WebSocket transport; ignored over HTTP.
+     *
+     * @param subscribeEvents event types: "process_start", "process_exit", "stdout", "all", etc.
+     */
+    public JSONObject addApp(String appName, JSONObject appJson, String... subscribeEvents) throws IOException {
+        Map<String, String> query = null;
+        if (subscribeEvents != null && subscribeEvents.length > 0) {
+            query = new HashMap<>();
+            query.put("subscribe_events", String.join(",", subscribeEvents));
+        }
+        HttpURLConnection conn = request("PUT", "/appmesh/app/" + encodeURIComponent(appName), appJson, null, query);
         return new JSONObject(Utils.readResponse(conn));
+    }
+
+    /**
+     * Subscribe to real-time events for a specific app (or all apps if appName is "*" or null).
+     * Requires TCP or WebSocket transport.
+     *
+     * @param appName application name, or null/"*" for all apps
+     * @param events  event types to subscribe, e.g. "process_start", "process_exit", "stdout"
+     * @return JSON with subscription_id, app_name, events
+     */
+    public JSONObject subscribe(String appName, String... events) throws IOException {
+        String path = "/appmesh/subscribe";
+        if (appName != null && !appName.isEmpty() && !"*".equals(appName)) {
+            path = "/appmesh/app/" + encodeURIComponent(appName) + "/subscribe";
+        }
+        Map<String, String> query = null;
+        if (events != null && events.length > 0) {
+            query = new HashMap<>();
+            query.put("events", String.join(",", events));
+        }
+        HttpURLConnection conn = request("POST", path, null, null, query);
+        return new JSONObject(Utils.readResponse(conn));
+    }
+
+    /**
+     * Unsubscribe from events by subscription ID.
+     *
+     * @param subscriptionId the subscription ID returned by {@link #subscribe}
+     * @return true if unsubscribed successfully
+     */
+    public boolean unsubscribe(String subscriptionId) throws IOException {
+        Map<String, String> query = new HashMap<>();
+        query.put("subscription_id", subscriptionId);
+        HttpURLConnection conn = request("DELETE", "/appmesh/subscribe", null, null, query);
+        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
     // -------- Application Output & Execution --------

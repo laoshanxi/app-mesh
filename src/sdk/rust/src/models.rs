@@ -193,6 +193,28 @@ pub struct Application {
     pub return_code: Option<u32>,
     pub task_id: Option<u32>,
     pub task_status: Option<String>,
+    pub subscription_id: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Event Subscription Types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppEvent {
+    pub subscription_id: String,
+    pub event_type: String,
+    pub app_name: String,
+    pub timestamp: i64,
+    pub sequence: u64,
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscriptionResult {
+    pub subscription_id: String,
+    pub app_name: String,
+    pub events: Vec<String>,
 }
 
 impl Application {

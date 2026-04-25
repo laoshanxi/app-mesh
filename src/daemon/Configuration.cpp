@@ -13,6 +13,7 @@
 #include "Label.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
+#include "rest/EventDispatcher.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
 #include "security/HMACVerifier.h"
@@ -516,6 +517,8 @@ void Configuration::removeApp(const std::string &appName)
 {
 	const static char fname[] = "Configuration::removeApp() ";
 
+	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
+
 	LOG_DBG << fname << appName;
 	std::shared_ptr<Application> app, empty;
 	{
@@ -533,6 +536,7 @@ void Configuration::removeApp(const std::string &appName)
 		LOG_DBG << fname << "removed " << appName;
 	}
 	m_appNameIndexMap.unbind(appName);
+	EventDispatcher::instance()->removeByApp(appName);
 }
 
 void Configuration::saveConfigToDisk()

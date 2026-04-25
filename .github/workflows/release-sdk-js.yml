@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: "src/sdk/javascript/"
-        run: npm ci
+        run: npm install
 
       - name: Publish to npm
         env:

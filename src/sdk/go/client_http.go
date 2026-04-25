@@ -469,7 +469,12 @@ func (r *AppMeshClient) RemoveApp(appName string) (bool, error) {
 }
 
 // AddApp registers a new application or updates an existing one.
-func (r *AppMeshClient) AddApp(app Application) (*Application, error) {
+// AddApp registers or updates an application.
+// Optional subscribeEvents specifies event types to subscribe atomically with registration,
+// ensuring no events are missed. Pass event names like "process_start", "process_exit", "stdout",
+// or "all" for all events. Requires TCP or WSS connection; ignored over HTTP.
+// When subscribeEvents is set, the returned Application.SubscriptionID will be non-empty.
+func (r *AppMeshClient) AddApp(app Application, subscribeEvents ...string) (*Application, error) {
 	if app.Name == "" {
 		return nil, fmt.Errorf("application name is required")
 	}
@@ -478,7 +483,14 @@ func (r *AppMeshClient) AddApp(app Application) (*Application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal application %q: %w", app.Name, err)
 	}
-	code, raw, err := r.put(fmt.Sprintf("/appmesh/app/%s", app.Name), nil, nil, body)
+
+	var params url.Values
+	if len(subscribeEvents) > 0 {
+		params = url.Values{}
+		params.Set("subscribe_events", strings.Join(subscribeEvents, ","))
+	}
+
+	code, raw, err := r.put(fmt.Sprintf("/appmesh/app/%s", app.Name), params, nil, body)
 	if err != nil {
 		return nil, fmt.Errorf("add app request failed: %w", err)
 	}
