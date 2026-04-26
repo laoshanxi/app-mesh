@@ -5,8 +5,11 @@
 ## https://gist.github.com/mrowe/8b617a8b12a6248d48b8
 ################################################################################
 
+# chkconfig: 2345 99 01
+# description: App Mesh Service - controls the App Mesh daemon and its watchdog
+#
 ### BEGIN INIT INFO
-# Provides:          appsvc
+# Provides:          appmesh
 # Required-Start:    $local_fs $remote_fs $network $syslog
 # Required-Stop:     $local_fs $remote_fs $network $syslog
 # Default-Start:     2 3 4 5
@@ -24,9 +27,11 @@ export PROG=${PROG:-"${PROG_HOME}/bin/appsvc"}
 export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/entrypoint.sh"}
 
 # Constants
-readonly TIMEOUT_SECONDS=10                    # Desired timeout in seconds
-readonly SLEEP_INTERVAL=0.2                    # Check interval in seconds
-readonly MAX_ATTEMPTS=$((TIMEOUT_SECONDS * 5)) # 5 attempts per second (1/0.2)
+readonly TIMEOUT_SECONDS=10                              # Start timeout (seconds)
+readonly STOP_TIMEOUT_SECONDS=3                          # Graceful stop timeout (seconds)
+readonly SLEEP_INTERVAL=0.2                              # Check interval (seconds)
+readonly MAX_ATTEMPTS=$((TIMEOUT_SECONDS * 5))           # 5 attempts per second (1/0.2)
+readonly STOP_MAX_ATTEMPTS=$((STOP_TIMEOUT_SECONDS * 5)) # Same cadence as MAX_ATTEMPTS
 readonly ENV_FILE="$PROG_HOME/appmesh.default"
 readonly PIDFile="${PROG_HOME}/appmesh.pid"
 
@@ -51,8 +56,16 @@ log() {
     local timestamp
     timestamp=$(date -Iseconds 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')
 
+    # Map friendly names to POSIX syslog priorities (BusyBox logger rejects 'error'/'warn')
+    local syslog_level
+    case "$level" in
+    error) syslog_level=err ;;
+    warn) syslog_level=warning ;;
+    *) syslog_level="$level" ;;
+    esac
+
     if command -v logger >/dev/null 2>&1; then
-        logger -t "appmesh" -p "daemon.${level}" "${message}"
+        logger -t "appmesh" -p "daemon.${syslog_level}" "${message}" 2>/dev/null || true
     fi
     printf '[%s] [%s] %s\n' "${timestamp}" "${level}" "${message}" >&2
 }
@@ -80,6 +93,13 @@ is_running() {
     local pid
     pid=$(read_pid) || return 1
     kill -0 "$pid" 2>/dev/null || return 1
+
+    # Guard against PID reuse: if /proc is available, verify the process is appsvc
+    if [ -r "/proc/$pid/comm" ]; then
+        local comm
+        read -r comm <"/proc/$pid/comm" 2>/dev/null || comm=""
+        [ "$comm" = "appsvc" ] || return 1
+    fi
     return 0
 }
 
@@ -97,10 +117,13 @@ start_service() {
         return $LSB_NOT_CONFIGURED
     }
 
+    # Enable core dumps. APPMESH_CORE_DUMP=0 opts out.
+    [ "${APPMESH_CORE_DUMP:-1}" != "0" ] && ulimit -c unlimited 2>/dev/null || true
+
     nohup "$PROG_WATCHDOG" </dev/null >/dev/null 2>&1 &
 
     # Wait for process with timeout
-    attempt=0
+    local attempt=0
     sleep 1
     while ! is_running && [ $attempt -lt $MAX_ATTEMPTS ]; do
         sleep $SLEEP_INTERVAL
@@ -122,20 +145,39 @@ stop_service() {
     log "info" "Stopping App Mesh Service..."
 
     local pid
-    pid=$(read_pid)
-    if [ -z "$pid" ]; then
+    pid=$(read_pid) || pid=""
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
         log "info" "App Mesh is not running"
+        rm -f "$PIDFile"
         return $LSB_OK
     fi
 
-    kill "$pid" || true
-    sleep $SLEEP_INTERVAL
+    kill -TERM "$pid" 2>/dev/null || true
 
-    if is_running; then
-        log "info" "Force killing App Mesh process (PID: $pid)"
-        kill -9 "$pid" || true
+    # Wait up to STOP_TIMEOUT_SECONDS for graceful shutdown
+    local attempt=0
+    while kill -0 "$pid" 2>/dev/null && [ $attempt -lt $STOP_MAX_ATTEMPTS ]; do
+        sleep $SLEEP_INTERVAL
+        attempt=$((attempt + 1))
+    done
+
+    if kill -0 "$pid" 2>/dev/null; then
+        log "warn" "Graceful stop timed out after ${STOP_TIMEOUT_SECONDS}s; sending SIGKILL to PID $pid"
+        kill -KILL "$pid" 2>/dev/null || true
+        # Brief wait for the kernel to reap (~1s)
+        attempt=0
+        while kill -0 "$pid" 2>/dev/null && [ $attempt -lt 5 ]; do
+            sleep $SLEEP_INTERVAL
+            attempt=$((attempt + 1))
+        done
     fi
 
+    if kill -0 "$pid" 2>/dev/null; then
+        log "error" "Failed to stop App Mesh (PID: $pid)"
+        return $LSB_NOT_RUNNING
+    fi
+
+    rm -f "$PIDFile"
     log "info" "App Mesh stopped"
     return $LSB_OK
 }
@@ -157,7 +199,7 @@ if [ "$(id -u)" != "0" ]; then
     exit $LSB_NOT_ROOT
 fi
 
-case "$1" in
+case "${1:-}" in
 start)
     start_service
     ;;

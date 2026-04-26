@@ -188,25 +188,15 @@ class TransportClientMixin:
         return AppMeshClient._EncodingResponse(response)
 
     def add_app(self, app: App, subscribe_events: Optional[list] = None, callback: Optional[EventCallback] = None) -> App:
-        """Register an app, optionally subscribing atomically with the same call.
+        """Register an app, optionally subscribing atomically and wiring a local callback.
 
-        When ``subscribe_events`` and ``callback`` are both supplied, the subscription is registered
-        on the server before the app spawns, so no events are missed; the callback is wired into the
-        local demuxer keyed by the returned subscription_id (also attached to the App as
-        ``app.subscription_id``).
+        Reuses the base ``add_app`` for the HTTP round-trip + ``subscription_id`` parsing,
+        then registers ``callback`` against the local demuxer keyed by the new subscription.
         """
-        query = {}
-        if subscribe_events:
-            query["subscribe_events"] = ",".join(subscribe_events)
-        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", query=query or None, body=app.to_dict())
-        result_data = resp.json()
-        result_app = App(result_data)
-        sub_id = result_data.get("subscription_id", "") if isinstance(result_data, dict) else ""
-        if sub_id:
-            result_app.subscription_id = sub_id
-            if callback:
-                self._ensure_demuxer()
-                self._demuxer.register_event_callback(sub_id, callback)
+        result_app = super().add_app(app, subscribe_events=subscribe_events)
+        if callback and result_app.subscription_id:
+            self._ensure_demuxer()
+            self._demuxer.register_event_callback(result_app.subscription_id, callback)
         return result_app
 
     def subscribe(self, app_name: str, events: Optional[list] = None, callback: Optional[EventCallback] = None) -> SubscriptionResult:

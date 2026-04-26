@@ -181,41 +181,26 @@ class WSSTransport:
 
     def receive_message(self) -> Optional[bytearray]:
         """
-        Receive a message from WebSocket.
+        Receive one application message from the WebSocket.
 
-        Returns:
-            Message data as bytearray, or None for EOF signal (empty bytes).
-
-        Note:
-            WebSocket frames are already separated by the protocol, so we don't need
-            to parse a length header like in TCP transport.
+        Uses the high-level ``recv()`` API so that control frames (PING/PONG/CLOSE) are handled
+        inside websocket-client — in particular, PING is auto-replied with PONG, which is what
+        keeps long-idle subscribe connections alive against server-side ``idleTimeout``.
+        Returns the data as bytearray, or an empty bytearray for EOF / non-data frames.
         """
         if not self._websocket:
             raise AppMeshConnectionError("Cannot receive message: not connected")
 
         try:
-            # Receive frame directly to handle both text and binary frames
-            frame = self._websocket.recv_frame()
+            data = self._websocket.recv()
 
-            if not frame:
-                return bytearray()
-
-            # Get the frame data
-            data = frame.data
-
-            # Handle empty data (EOF signal)
             if not data:
                 return bytearray()
-
-            # Handle both text and binary frames
             if isinstance(data, str):
-                # Text frame - convert to bytes
                 return bytearray(data.encode("utf-8"))
-            elif isinstance(data, bytes):
-                # Binary frame - convert to bytearray
+            if isinstance(data, (bytes, bytearray)):
                 return bytearray(data)
-            else:
-                raise TypeError(f"Unexpected data type from WebSocket: {type(data)}")
+            raise TypeError(f"Unexpected data type from WebSocket: {type(data)}")
 
         except socket.timeout as e:
             # Idle timeout — connection is still healthy; do NOT close, let caller retry

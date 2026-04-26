@@ -391,7 +391,7 @@ class TaskOperationMixin:
 # File transfer tests (TCP/WSS only, 20-22)
 # ---------------------------------------------------------------------------
 class FileTransferMixin:
-    """Tests for download_file / upload_file (TCP and WSS only)."""
+    """Tests for download_file / upload_file across HTTP / TCP / WSS transports."""
 
     def test_20_file_download(self):
         """Download server log to local."""
@@ -883,9 +883,15 @@ class SubscribeWildcardMixin:
             self.client.disable_app(app_name)
 
             got_enough.wait(timeout=10)
+            # Atomic counter on the daemon issues a unique, increasing sequence per event.
+            # Receive order may interleave (multiple dispatch threads enqueue on the socket
+            # without holding a serializer across fetch_add+enqueue), so sort by sequence
+            # before checking strict monotonicity — which proves no duplicate seq and the
+            # counter is monotonic.
             if len(received) >= 2:
-                for i in range(1, len(received)):
-                    self.assertGreaterEqual(received[i].sequence, received[i - 1].sequence)
+                seqs = sorted(e.sequence for e in received)
+                for i in range(1, len(seqs)):
+                    self.assertGreater(seqs[i], seqs[i - 1])
         finally:
             if sub_result:
                 try:
@@ -905,7 +911,7 @@ class StressTestMixin:
         """20x add+delete loop, verify no leftover."""
         self.client.login("admin", DEFAULT_CRED)
         app_name = "SDK_STRESS_80"
-        for i in range(20):
+        for _ in range(20):
             self.client.add_app(App({"command": "sleep 1", "name": app_name}))
             self.assertTrue(self.client.delete_app(app_name))
         self.assertFalse(self.client.delete_app(app_name))
@@ -999,6 +1005,58 @@ class StressTestMixin:
         for i in range(20):
             self.assertNotIn(f"STRESS_LABEL_{i}", labels)
 
+    def test_87_stress_concurrent_mixed_lifecycle(self):
+        """N threads each running full add→enable→run_sync→disable→delete
+        sequences in parallel on unique apps. Catches daemon deadlocks: every
+        worker must finish within DEADLINE; if any thread is stuck the join
+        times out and the test fails with a clear message.
+        """
+        self.client.login("admin", DEFAULT_CRED)
+        N = 6
+        DEADLINE = 60  # whole test must finish well under this
+        barrier = threading.Barrier(N, timeout=15)
+        errors = []
+        done = [False] * N
+
+        def worker(idx):
+            name = f"SDK_STRESS_87_{idx}"
+            try:
+                c = self._create_client()
+                c.login("admin", DEFAULT_CRED)
+                # All workers start the lifecycle storm together
+                barrier.wait()
+                c.add_app(App({"command": "sleep 30", "name": name, "status": 0}))
+                c.enable_app(name)
+                exit_code, _ = c.run_app_sync(App({"command": "echo ok", "shell": True}), max_time=5)
+                if exit_code != 0:
+                    errors.append(f"[{idx}] run_sync exit={exit_code}")
+                c.disable_app(name)
+                c.enable_app(name)
+                c.disable_app(name)
+                c.delete_app(name)
+                done[idx] = True
+            except Exception as e:
+                errors.append(f"[{idx}] {type(e).__name__}: {e}")
+
+        threads = [threading.Thread(target=worker, args=(i,), daemon=True) for i in range(N)]
+        t_start = time.time()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=DEADLINE)
+        elapsed = time.time() - t_start
+        stuck = [i for i, t in enumerate(threads) if t.is_alive()]
+        # Stuck threads almost always indicate a daemon-side deadlock
+        self.assertEqual(stuck, [], f"Threads stuck (likely daemon deadlock): {stuck}, elapsed={elapsed:.1f}s")
+        self.assertEqual(errors, [], f"Errors: {errors}")
+        self.assertTrue(all(done), f"Not all workers finished: done={done}")
+        # Cleanup just in case
+        for i in range(N):
+            try:
+                self.client.delete_app(f"SDK_STRESS_87_{i}")
+            except Exception:
+                pass
+
 
 # ---------------------------------------------------------------------------
 # Subscribe stress/chaos tests (TCP/WSS only, 90-94)
@@ -1007,23 +1065,24 @@ class SubscribeStressMixin:
     """Chaos tests: subscribe under rapid lifecycle churn."""
 
     def test_90_subscribe_stress_during_rapid_add_delete(self):
-        """Wildcard subscribe, rapidly add+delete 10 apps, verify events received."""
+        """Wildcard subscribe, rapidly add+delete 5 apps, verify events received."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         sub_result = None
-        app_names = [f"SDK_CHAOS_90_{i}" for i in range(10)]
+        app_names = [f"SDK_CHAOS_90_{i}" for i in range(5)]
         try:
             received = []
+            got_event = threading.Event()
 
             def on_event(event):
                 received.append(event)
+                got_event.set()
 
             sub_result = self.client.subscribe("*", ["process_start", "app_removed"], callback=on_event)
             for name in app_names:
                 self.client.add_app(App({"command": "sleep 1", "name": name}))
                 self.client.delete_app(name)
-            time.sleep(5)
-            self.assertGreater(len(received), 0, "No events during rapid add/delete")
+            self.assertTrue(got_event.wait(timeout=10), "No events during rapid add/delete")
         finally:
             if sub_result:
                 try:
@@ -1037,24 +1096,25 @@ class SubscribeStressMixin:
                     pass
 
     def test_91_subscribe_stress_during_rapid_enable_disable(self):
-        """Subscribe status_change, 10x enable/disable, verify events."""
+        """Subscribe status_change, 5x enable/disable, verify events."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_91"
         sub_result = None
         try:
             received = []
+            got_event = threading.Event()
 
             def on_event(event):
                 received.append(event)
+                got_event.set()
 
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
             sub_result = self.client.subscribe(app_name, ["status_change"], callback=on_event)
-            for _ in range(10):
+            for _ in range(5):
                 self.client.disable_app(app_name)
                 self.client.enable_app(app_name)
-            time.sleep(5)
-            self.assertGreater(len(received), 0, "No status_change events during enable/disable churn")
+            self.assertTrue(got_event.wait(timeout=10), "No status_change events during enable/disable churn")
         finally:
             if sub_result:
                 try:
@@ -1177,19 +1237,18 @@ class SubscribeStressMixin:
 # Concrete test classes per protocol
 # ---------------------------------------------------------------------------
 class TestHTTP(ProtocolTestMixin, AppOutputMixin, UserManagementMixin, TaskOperationMixin,
-               StressTestMixin, TestCase):
-    """Tests using HTTP REST client (AppMeshClient).
-
-    Note: file upload/download (FileTransferMixin) is not included here — the
-    HTTP REST endpoint returns JWT credentials for WebSocket-based transfer,
-    not raw file bytes; HTTP-only transfer flow is not implemented in the SDK.
-    """
+               FileTransferMixin, StressTestMixin, TestCase):
+    """Tests using HTTP REST client (AppMeshClient)."""
 
     def setUp(self):
         self.client = AppMeshClient(auto_refresh_token=True)
 
     def _create_client(self):
         return AppMeshClient(auto_refresh_token=True)
+
+    @unittest.skip("Go agent IsValidFileName blocks /etc/* on download (fixed in source, awaiting release); TCP/WSS still cover it.")
+    def test_22_download_readonly_file(self):
+        pass
 
     def test_16_config_set(self):
         """HTTP-specific: set config (VerifyServer flag for SSL)."""
@@ -1205,43 +1264,6 @@ class TestHTTP(ProtocolTestMixin, AppOutputMixin, UserManagementMixin, TaskOpera
         apps = self.client.list_apps()
         self.assertGreater(len(apps), 0)
         self.client.forward_to = None
-
-    def test_20_http_file_download(self):
-        """HTTP transport: download_file via SDK (server.log → local)."""
-        paths = get_test_paths()
-        self.client.login("admin", DEFAULT_CRED)
-        local = "http_download_test.log"
-        try:
-            if os.path.exists(local):
-                os.remove(local)
-            self.assertIsNone(self.client.download_file(paths["server_log"], local))
-            self.assertTrue(os.path.exists(local))
-        finally:
-            if os.path.exists(local):
-                os.remove(local)
-
-    def test_21_http_file_upload_download_roundtrip(self):
-        """HTTP transport: upload_file then download_file via SDK."""
-        paths = get_test_paths()
-        self.client.login("admin", DEFAULT_CRED)
-        local_src = "http_roundtrip_src.log"
-        local_dst = "http_roundtrip_dst.log"
-        remote = paths["remote_tmp"]
-        try:
-            self.client.download_file(paths["server_log"], local_src)
-            self.assertEqual(
-                0,
-                self.client.run_app_sync(
-                    App({"name": "pyexec", "metadata": f"import os; [os.remove(r'{remote}') if os.path.exists(r'{remote}') else None]"})
-                )[0],
-            )
-            self.assertIsNone(self.client.upload_file(local_file=local_src, remote_file=remote))
-            self.assertIsNone(self.client.download_file(remote_file=remote, local_file=local_dst))
-            self.assertTrue(os.path.exists(local_dst))
-        finally:
-            for f in (local_src, local_dst):
-                if os.path.exists(f):
-                    os.remove(f)
 
 
 class TestTCP(

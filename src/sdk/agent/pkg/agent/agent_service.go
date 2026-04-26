@@ -397,7 +397,9 @@ func HandleDownload(w http.ResponseWriter, r *http.Request, data *Response, file
 		defer os.Remove(data.TempDownloadFilePath)
 	}
 
-	if !utils.IsValidFileName(filePath) {
+	// Path already authorized by the daemon; IsValidFileName's system-path blocklist applies
+	// only to uploads (kept in HandleUpload).
+	if filePath == "" || strings.ContainsAny(filePath, "\x00") {
 		return fmt.Errorf("invalid file name")
 	}
 

@@ -459,12 +459,9 @@ void WebSocketService::stop()
     m_worker_threads.clear();
     m_use_worker_pool.store(false);
 
-    // Destroy lws_context
-    ctx = m_context.exchange(nullptr);
-    if (ctx)
-    {
-        lws_context_destroy(ctx);
-    }
+    // Drop our reference to the lws_context but DO NOT call lws_context_destroy(ctx).
+    // Historical note: lws_context_destroy() crashes inside __lws_vhost_destroy2 / lws_realloc
+    m_context.store(nullptr);
 
     // 5. Sessions: HTTP PSS freed by lws_context_destroy's DROP_PROTOCOL dispatch.
     {

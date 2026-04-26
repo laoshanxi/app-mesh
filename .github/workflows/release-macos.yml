@@ -95,6 +95,13 @@ jobs:
           fi
           cat /var/log/install.log | tail -n 100
 
+          # Enable core dumps so any crash leaves an analyzable artifact (initd.sh also sets ulimit -c).
+          # macOS only honors /cores when sysctl kern.coredump=1 and the directory is writable.
+          sudo sysctl -w kern.coredump=1 || true
+          sudo mkdir -p /cores && sudo chmod 1777 /cores
+          ulimit -c unlimited
+          ulimit -a
+
           # Start App Mesh
           appc -v || true
           sudo bash /opt/appmesh/script/appmesh.initd.sh start || true
@@ -114,12 +121,20 @@ jobs:
 
           # test appmesh python sdk
           python3 -m pip install --break-system-packages --upgrade appmesh pyotp
-          python3 src/sdk/python/test/test_appmesh_client.py || tail /opt/appmesh/work/server.log
-          python3 src/sdk/python/test/test_appmesh_client.py
+          bash script/run_python_test_with_debug.sh src/sdk/python/test/test_appmesh_client.py
+
           python3 src/sdk/python/sample.py
 
           cd src/sdk/go
-          go test -v || tail /opt/appmesh/work/stdout/appmesh.agent.out
+          go test -v || {
+            echo "::group::Go test failed — agent stdout"
+            tail /opt/appmesh/work/stdout/appmesh.agent.out
+            echo "::endgroup::"
+            echo "::group::Go test failed — server.log tail"
+            tail -300 /opt/appmesh/work/server.log
+            echo "::endgroup::"
+            exit 1
+          }
 
   publish:
     needs: test
