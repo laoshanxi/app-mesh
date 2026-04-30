@@ -1200,6 +1200,10 @@ void Application::destroy()
 {
 	const static char fname[] = "Application::destroy() ";
 
+	// Idempotent: concurrent removeApp paths must not double-destroy.
+	if (m_destroying.exchange(true, std::memory_order_acq_rel))
+		return;
+
 	LOG_DBG << fname << "suicide timer ID: " << m_timerRemoveId.load() << " nextStartTimerId: " << m_nextStartTimerId.load();
 	this->disable();
 	this->m_status.store(STATUS::NOTAVIALABLE);
@@ -1239,8 +1243,9 @@ void Application::onExitUpdate(int code)
 		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, process->startError().c_str()));
 	}
 
-	// Flush remaining stdout to subscribers before exit event
-	EventDispatcher::instance()->flushStdout(m_name, this);
+	// Resume disk read from where the pump left off so subscribers don't see duplicates.
+	const long dispatchedPos = process ? process->stdoutDispatchedBytes() : 0;
+	EventDispatcher::instance()->flushStdout(m_name, this, dispatchedPos);
 
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT,
 										  {{"exit_code", code}, {"pid", prevPid}, {"last_error", getLastError()}});

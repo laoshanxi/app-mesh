@@ -11,7 +11,6 @@
 #include <ace/Singleton.h>
 #include <nlohmann/json.hpp>
 
-#include "../../common/TimerHandler.h"
 #include "EventTypes.h"
 
 class Application;
@@ -57,9 +56,7 @@ struct ConnectionKey
 
 struct EventEnvelope
 {
-	// Pre-serialized JSON of the base payload (without subscription_id).
-	// Shared across all subscribers of one dispatch; toJson() avoids the deep
-	// json clone + redundant dump per subscriber by string-splicing the id in.
+	// Pre-serialized JSON (no subscription_id); toJson() splices id by string concat.
 	std::shared_ptr<std::string> basePayloadDump;
 	std::string subscriptionId;
 	std::string eventType;
@@ -100,17 +97,6 @@ struct Subscription
 	ConnectionKey connKey;
 };
 
-// Per-app stdout watcher state (separate from EventDispatcher to avoid shared_from_this issues)
-struct StdoutWatcher : public TimerHandler
-{
-	std::string appName;
-	std::atomic<long> readPosition{0};
-	std::atomic_long timerId{INVALID_TIMER_ID};
-	int subscriberCount = 0;
-
-	bool onTimerStdoutCheck();
-};
-
 class EventDispatcher
 {
 public:
@@ -130,14 +116,13 @@ public:
 
 	bool hasStdoutSubscriber(const std::string &appName) const;
 
-	// Flush remaining stdout from the watcher's current position (called on process exit)
-	void flushStdout(const std::string &appName, Application *app);
+	// Final exit-time drain from `pos` (= AppProcess::stdoutDispatchedBytes) to disk EOF.
+	void flushStdout(const std::string &appName, Application *app, long pos);
 
 	static EventDispatcher *instance();
 
 private:
 	void removeSubscriptionLocked(const std::string &subId);
-	void updateStdoutWatcherLocked(const std::string &appName, int delta);
 
 	mutable std::recursive_mutex m_mutex;
 	std::map<std::string, Subscription> m_subscriptions;
@@ -145,8 +130,6 @@ private:
 	std::multimap<ConnectionKey, std::string> m_connectionIndex;
 
 	std::atomic<uint64_t> m_sequence{0};
-
-	std::map<std::string, std::shared_ptr<StdoutWatcher>> m_stdoutWatchers;
 };
 
 typedef ACE_Singleton<EventDispatcher, ACE_Null_Mutex> EVENT_DISPATCHER;
