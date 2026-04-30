@@ -3,6 +3,8 @@
 
 #include "user.h"
 
+#include <algorithm>
+#include <limits>
 #include <memory>
 #include <pwd.h>
 #include <vector>
@@ -36,6 +38,48 @@ namespace os
 			uid = pwd.pw_uid;
 			groupid = pwd.pw_gid;
 			return true;
+		}
+
+		// Fallback: treat all-digits userName as a numeric UID. The Python SDK's
+		// upload path falls back to str(st.st_uid) when pwd.getpwuid() fails on
+		// the SDK side (typical in containers where the host UID isn't in the
+		// container's passwd db). chown(2) accepts arbitrary numeric UIDs, so
+		// honoring the digit-form lets the upload succeed even when no user
+		// with that UID is registered locally.
+		if (std::all_of(userName.begin(), userName.end(),
+						[](char c) { return c >= '0' && c <= '9'; }))
+		{
+			try
+			{
+				const unsigned long numeric = std::stoul(userName);
+				// Range-check before static_cast<uid_t> so that an oversized
+				// value (e.g. "4294967296" on a 32-bit uid_t platform) does
+				// not silently truncate to 0 / root.
+				if (numeric > std::numeric_limits<uid_t>::max())
+				{
+					LOG_ERR << fname << "Numeric UID out of range: " << userName;
+					return false;
+				}
+				// Try getpwuid first to also resolve the matching primary group;
+				// if that fails too, accept the UID and reuse it as the GID
+				// (Linux UPG convention — caller can still override gid via a
+				// separate group lookup).
+				::getpwuid_r(static_cast<uid_t>(numeric), &pwd, buff.get(), bufsize, &result);
+				if (result)
+				{
+					uid = pwd.pw_uid;
+					groupid = pwd.pw_gid;
+					return true;
+				}
+				uid = static_cast<unsigned int>(numeric);
+				groupid = uid;
+				LOG_DBG << fname << "User name not in passwd db, accepting numeric UID: " << userName;
+				return true;
+			}
+			catch (const std::exception &)
+			{
+				// fall through to the not-found error
+			}
 		}
 
 		LOG_ERR << fname << "User does not exist: " << userName;

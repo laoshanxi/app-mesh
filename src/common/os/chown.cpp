@@ -2,9 +2,11 @@
 #include "chown.h"
 
 #if !defined(_WIN32)
+#include <algorithm>
 #include <cstring>
 #include <fts.h>
 #include <grp.h>
+#include <limits>
 #include <memory>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -168,7 +170,34 @@ namespace os
 			}
 			else if (result == nullptr)
 			{
-				LOG_WAR << fname << "Group '" << group << "' not found";
+				// Mirror getUidByName: if the group name is purely numeric, accept it
+				// as a literal GID. Containers commonly lack a passwd/group entry for
+				// the host UID/GID, but chown(2) still accepts the raw numeric value.
+				if (!group.empty() && std::all_of(group.begin(), group.end(),
+												  [](char c) { return c >= '0' && c <= '9'; }))
+				{
+					try
+					{
+						const unsigned long numeric = std::stoul(group);
+						if (numeric > std::numeric_limits<gid_t>::max())
+						{
+							LOG_WAR << fname << "Numeric GID out of range: " << group;
+						}
+						else
+						{
+							gid = static_cast<gid_t>(numeric);
+							LOG_DBG << fname << "Group not in passwd db, accepting numeric GID: " << group;
+						}
+					}
+					catch (const std::exception &)
+					{
+						LOG_WAR << fname << "Group '" << group << "' not found";
+					}
+				}
+				else
+				{
+					LOG_WAR << fname << "Group '" << group << "' not found";
+				}
 			}
 			else
 			{

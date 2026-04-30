@@ -195,7 +195,9 @@ function Install-VcpkgPackages {
         'boost-lockfree:x64-windows',
         'ace[ssl]:x64-windows',
         'uwebsockets[core,ssl]:x64-windows',
-        'spdlog:x64-windows',
+        # spdlog is intentionally NOT in this list — built from source pinned to
+        # v1.15.3 in Install-SpdlogFromSource below, mirroring the Linux/macOS
+        # path so should_log() behaviour is identical across platforms.
         'cryptopp:x64-windows',
         'curl:x64-windows',
         'yaml-cpp:x64-windows'
@@ -211,9 +213,27 @@ function Install-VcpkgPackages {
     }
 }
 
+function Install-SpdlogFromSource {
+    Write-Host "Installing spdlog from source (pinned to v1.15.3)..." -ForegroundColor Cyan
+    Remove-Item -Recurse -Force "spdlog-src" -ErrorAction Ignore
+    git clone -b v1.15.3 --depth 1 https://github.com/gabime/spdlog.git spdlog-src
+    Set-Location spdlog-src
+    New-Item -ItemType Directory -Force -Path "build" | Out-Null
+    Set-Location build
+    cmake .. -G "Visual Studio 17 2022" -A x64 `
+        -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+        -DCMAKE_INSTALL_PREFIX="C:/local" `
+        -DSPDLOG_BUILD_SHARED=ON `
+        -DSPDLOG_BUILD_EXAMPLES=OFF `
+        -DSPDLOG_BUILD_TESTS=OFF
+    cmake --build . --config Release --parallel
+    cmake --install . --config Release
+    Set-Location $ROOTDIR
+}
+
 function Install-HeaderOnlyLibraries {
     Write-Host "Installing header-only libraries..." -ForegroundColor Cyan
-    
+
     # nlohmann/json
     Write-Host "Installing nlohmann/json..." -ForegroundColor Yellow
     $jsonUrl = "https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip"
@@ -587,6 +607,7 @@ try {
     Install-DevelopmentTools
     Install-Vcpkg
     Install-VcpkgPackages
+    Install-SpdlogFromSource
     Install-HeaderOnlyLibraries
     #Install-Python
     Install-PythonPackages

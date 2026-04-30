@@ -26,38 +26,49 @@ int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *a
 		return -1;
 	}
 
-	// Validate handler
-	if (!m_handler)
-	{
-		LOG_ERR << fname << "timer <" << this << "> has no valid handler";
-		return -1; // Stop timer - will call handle_close()
-	}
-
-	// Execute callback with exception safety
+	// For RECURRING timers ACE_Timer_Queue_T::expire reschedules the heap node
+	// before invoking us and releases its mutex via ACE_Reverse_Lock during the
+	// upcall. A concurrent TimerManager::cancelTimer() from another thread can
+	// therefore succeed and synchronously delete `this` while m_handler() is
+	// running. Snapshot the state we need to read AFTER the callback into stack
+	// locals, and never touch this-> once user code has had a chance to race
+	// with deletion. This makes TimerEvent safe-by-default for every recurring
+	// caller without enabling ACE Reference_Counting_Policy.
+	//
+	// The std::function copy can throw std::bad_alloc, so the snapshot itself
+	// must run inside the try — letting an exception propagate out of
+	// handle_timeout would surface in ACE's expire upcall functor with no
+	// contractual handler.
 	bool shouldContinue = false;
+	bool oneShot = false;
 	try
 	{
-		shouldContinue = m_handler();
+		auto handlerCopy = m_handler;
+		oneShot = m_isOneShot;
+
+		if (!handlerCopy)
+		{
+			LOG_ERR << fname << "timer <" << this << "> has no valid handler";
+			return -1; // Stop timer - will call handle_close()
+		}
+
+		shouldContinue = handlerCopy();
+		// Locals only past this point — `this` may have been freed during handlerCopy().
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_ERR << fname << "timer <" << this << "> callback threw exception: " << ex.what();
-		return -1; // Stop timer on exception
+		LOG_ERR << fname << "timer callback threw exception: " << ex.what();
+		return -1;
 	}
 	catch (...)
 	{
-		LOG_ERR << fname << "timer <" << this << "> callback threw unknown exception";
-		return -1; // Stop timer on exception
+		LOG_ERR << fname << "timer callback threw unknown exception";
+		return -1;
 	}
 
-	// Stop if one-shot or handler returned false
-	if (m_isOneShot || !shouldContinue)
-	{
-		LOG_DBG << fname << "timer <" << this << "> removed due to " << (m_isOneShot ? "one-shot" : "callback returned false");
+	if (oneShot || !shouldContinue)
 		return -1; // Stop timer - will call handle_close()
-	}
-
-	return 0; // Continue till next interval
+	return 0;	   // Continue till next interval
 }
 
 int TimerEvent::handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask)
