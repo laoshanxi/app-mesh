@@ -11,6 +11,7 @@
 #include <ace/Singleton.h>
 #include <nlohmann/json.hpp>
 
+#include "../../common/TimerHandler.h"
 #include "EventTypes.h"
 
 class Application;
@@ -56,32 +57,16 @@ struct ConnectionKey
 
 struct EventEnvelope
 {
-	// Pre-serialized JSON (no subscription_id); toJson() splices id by string concat.
-	std::shared_ptr<std::string> basePayloadDump;
+	std::shared_ptr<nlohmann::json> basePayload;
 	std::string subscriptionId;
 	std::string eventType;
 	std::string appName;
 
 	std::string toJson() const
 	{
-		// basePayloadDump ends with '}'. Insert ,"subscription_id":"<id>" before it.
-		std::string out;
-		const auto &base = *basePayloadDump;
-		out.reserve(base.size() + subscriptionId.size() + 24);
-		if (!base.empty() && base.back() == '}')
-		{
-			out.append(base, 0, base.size() - 1);
-			if (out.size() > 1)
-				out.append(1, ',');
-			out.append("\"subscription_id\":\"");
-			out.append(subscriptionId);
-			out.append("\"}");
-		}
-		else
-		{
-			out = base; // defensive: shouldn't happen with valid JSON
-		}
-		return out;
+		nlohmann::json payload = *basePayload;
+		payload["subscription_id"] = subscriptionId;
+		return payload.dump();
 	}
 };
 
@@ -95,6 +80,17 @@ struct Subscription
 	std::string userName;
 	DeliveryCallback deliveryCb;
 	ConnectionKey connKey;
+};
+
+// Per-app stdout watcher state (separate from EventDispatcher to avoid shared_from_this issues)
+struct StdoutWatcher : public TimerHandler
+{
+	std::string appName;
+	std::atomic<long> readPosition{0};
+	std::atomic_long timerId{INVALID_TIMER_ID};
+	int subscriberCount = 0;
+
+	bool onTimerStdoutCheck();
 };
 
 class EventDispatcher
@@ -116,13 +112,14 @@ public:
 
 	bool hasStdoutSubscriber(const std::string &appName) const;
 
-	// Final exit-time drain from `pos` (= AppProcess::stdoutDispatchedBytes) to disk EOF.
-	void flushStdout(const std::string &appName, Application *app, long pos);
+	// Flush remaining stdout from the watcher's current position (called on process exit)
+	void flushStdout(const std::string &appName, Application *app);
 
 	static EventDispatcher *instance();
 
 private:
 	void removeSubscriptionLocked(const std::string &subId);
+	void updateStdoutWatcherLocked(const std::string &appName, int delta);
 
 	mutable std::recursive_mutex m_mutex;
 	std::map<std::string, Subscription> m_subscriptions;
@@ -130,6 +127,8 @@ private:
 	std::multimap<ConnectionKey, std::string> m_connectionIndex;
 
 	std::atomic<uint64_t> m_sequence{0};
+
+	std::map<std::string, std::shared_ptr<StdoutWatcher>> m_stdoutWatchers;
 };
 
 typedef ACE_Singleton<EventDispatcher, ACE_Null_Mutex> EVENT_DISPATCHER;

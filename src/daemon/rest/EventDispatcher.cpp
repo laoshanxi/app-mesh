@@ -37,6 +37,11 @@ std::string EventDispatcher::subscribe(const std::string &appName, uint32_t even
 		m_subscriptions.emplace(subId, std::move(sub));
 		m_appIndex.emplace(appName, subId);
 		m_connectionIndex.emplace(connKey, subId);
+
+		if (eventMask & static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT))
+		{
+			updateStdoutWatcherLocked(appName, +1);
+		}
 	}
 
 	LOG_INF << fname << "Subscription created: " << subId << " app=" << appName << " user=" << userName;
@@ -55,7 +60,14 @@ bool EventDispatcher::unsubscribe(const std::string &subId, const std::string &u
 	if (!userName.empty() && it->second.userName != userName)
 		return false;
 
+	auto appName = it->second.appName;
+	auto eventMask = it->second.eventMask;
 	removeSubscriptionLocked(subId);
+
+	if (eventMask & static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT))
+	{
+		updateStdoutWatcherLocked(appName, -1);
+	}
 
 	LOG_INF << fname << "Subscription removed: " << subId;
 	return true;
@@ -70,19 +82,15 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 				   std::chrono::system_clock::now().time_since_epoch())
 				   .count();
 
-	std::string eventTypeStr = eventTypeToString(type);
 	nlohmann::json eventPayload;
-	eventPayload["event_type"] = eventTypeStr;
+	eventPayload["event_type"] = eventTypeToString(type);
 	eventPayload["app_name"] = appName;
 	eventPayload["timestamp"] = now;
 	eventPayload["sequence"] = seq;
 	eventPayload["data"] = data;
 
-	// Pre-serialize ONCE; per-subscriber toJson() splices subscription_id in by
-	// string concat instead of cloning the JSON DOM N times.  error_handler::replace
-	// substitutes U+FFFD for invalid UTF-8 bytes (binary stdout) instead of throwing
-	// a type_error.316 that would mark every STDOUT subscriber dead.
-	auto basePayloadDump = std::make_shared<std::string>(eventPayload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
+	std::string eventTypeStr = eventTypeToString(type);
+	auto basePayload = std::make_shared<nlohmann::json>(std::move(eventPayload));
 
 	uint32_t typeBit = static_cast<uint32_t>(type);
 
@@ -120,7 +128,7 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 	std::vector<std::string> deadSubscriptions;
 	for (const auto &p : pending)
 	{
-		EventEnvelope envelope{basePayloadDump, p.subId, eventTypeStr, appName};
+		EventEnvelope envelope{basePayload, p.subId, eventTypeStr, appName};
 		try
 		{
 			if (!p.cb(envelope))
@@ -164,6 +172,7 @@ void EventDispatcher::removeByConnection(const ConnectionKey &connKey)
 		if (subIt != m_subscriptions.end())
 		{
 			auto appName = subIt->second.appName;
+			auto eventMask = subIt->second.eventMask;
 
 			// Remove from app index
 			auto appRange = m_appIndex.equal_range(appName);
@@ -175,6 +184,11 @@ void EventDispatcher::removeByConnection(const ConnectionKey &connKey)
 					++ait;
 			}
 			m_subscriptions.erase(subIt);
+
+			if (eventMask & static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT))
+			{
+				updateStdoutWatcherLocked(appName, -1);
+			}
 		}
 	}
 
@@ -214,6 +228,14 @@ void EventDispatcher::removeByApp(const std::string &appName)
 			}
 			m_subscriptions.erase(subIt);
 		}
+	}
+
+	// Cancel stdout watcher for this app
+	auto watchIt = m_stdoutWatchers.find(appName);
+	if (watchIt != m_stdoutWatchers.end())
+	{
+		watchIt->second->cancelTimer(watchIt->second->timerId);
+		m_stdoutWatchers.erase(watchIt);
 	}
 
 	if (!subIds.empty())
@@ -264,22 +286,85 @@ void EventDispatcher::removeSubscriptionLocked(const std::string &subId)
 	m_subscriptions.erase(it);
 }
 
-void EventDispatcher::flushStdout(const std::string &appName, Application *app, long pos)
+void EventDispatcher::updateStdoutWatcherLocked(const std::string &appName, int delta)
 {
-	// Read [pos, EOF] on disk and emit one final STDOUT_OUTPUT with finished=true.
-	if (!app || !hasStdoutSubscriber(appName)) return;
+	if (appName == "*")
+		return;
+
+	auto it = m_stdoutWatchers.find(appName);
+	if (delta > 0)
+	{
+		if (it != m_stdoutWatchers.end())
+		{
+			it->second->subscriberCount += delta;
+			return;
+		}
+
+		auto watcher = std::make_shared<StdoutWatcher>();
+		watcher->appName = appName;
+		watcher->subscriberCount = 1;
+		watcher->readPosition.store(0);
+
+		// Use weak_ptr in callback to avoid preventing StdoutWatcher destruction
+		std::weak_ptr<StdoutWatcher> weakWatcher = watcher;
+		auto timerId = watcher->registerTimer(
+			0, 500, // 500ms polling interval
+			"StdoutWatcher",
+			[weakWatcher]() -> bool
+			{
+				auto w = weakWatcher.lock();
+				if (!w)
+					return false;
+				return w->onTimerStdoutCheck();
+			});
+		if (timerId == INVALID_TIMER_ID)
+		{
+			LOG_WAR << "EventDispatcher::updateStdoutWatcherLocked() failed to register timer for app=" << appName;
+			return;
+		}
+		watcher->timerId.store(timerId);
+		m_stdoutWatchers.emplace(appName, std::move(watcher));
+	}
+	else if (delta < 0 && it != m_stdoutWatchers.end())
+	{
+		it->second->subscriberCount += delta;
+		if (it->second->subscriberCount <= 0)
+		{
+			it->second->cancelTimer(it->second->timerId);
+			m_stdoutWatchers.erase(it);
+		}
+	}
+}
+
+void EventDispatcher::flushStdout(const std::string &appName, Application *app)
+{
+	if (!app)
+		return;
+
+	long pos = 0;
+	{
+		std::lock_guard<std::recursive_mutex> lock(m_mutex);
+		auto it = m_stdoutWatchers.find(appName);
+		if (it == m_stdoutWatchers.end())
+			return;
+		pos = it->second->readPosition.load();
+	}
+
 	try
 	{
-		// Capture chunk start before getOutput advances `pos` by reference, to keep
-		// `position` semantics consistent with StdoutPump's start-of-chunk convention.
-		const long startPos = pos;
-		auto result = app->getOutput(pos, 1024 * 1024, "", 0, 0);
+		auto result = app->getOutput(pos, 64 * 1024, "", 0, 0);
 		auto &output = std::get<0>(result);
 		if (!output.empty())
 		{
+			{
+				std::lock_guard<std::recursive_mutex> lock(m_mutex);
+				auto it = m_stdoutWatchers.find(appName);
+				if (it != m_stdoutWatchers.end())
+					it->second->readPosition.store(pos);
+			}
 			nlohmann::json data;
 			data["output"] = output;
-			data["position"] = startPos;
+			data["position"] = pos;
 			data["finished"] = true;
 			dispatch(appName, AppEventType::STDOUT_OUTPUT, data);
 		}
@@ -288,4 +373,32 @@ void EventDispatcher::flushStdout(const std::string &appName, Application *app, 
 	{
 		LOG_WAR << "EventDispatcher::flushStdout() error: " << e.what();
 	}
+}
+
+bool StdoutWatcher::onTimerStdoutCheck()
+{
+	try
+	{
+		auto app = Configuration::instance()->getApp(appName, false);
+		if (!app)
+			return true;
+
+		long pos = readPosition.load();
+		auto result = app->getOutput(pos, 8192, "", 0, 0);
+		auto &output = std::get<0>(result);
+		if (!output.empty())
+		{
+			readPosition.store(pos);
+			nlohmann::json data;
+			data["output"] = output;
+			data["position"] = pos;
+			data["finished"] = std::get<1>(result);
+			EventDispatcher::instance()->dispatch(appName, AppEventType::STDOUT_OUTPUT, data);
+		}
+	}
+	catch (const std::exception &e)
+	{
+		LOG_WAR << "StdoutWatcher::onTimerStdoutCheck() error: " << e.what();
+	}
+	return true;
 }

@@ -2,7 +2,6 @@
 #pragma once
 
 #include <map>
-#include <memory>
 #include <string>
 #include <tuple>
 
@@ -14,8 +13,6 @@
 #include "../../common/AtomicHandleGuard.hpp"
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
-
-class StdoutPump;
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
@@ -128,11 +125,6 @@ public:
 	// Timer callback to check and rotate stdout file
 	bool onTimerCheckStdout();
 
-#if defined(_WIN32)
-	// Windows fallback: POSIX uses StdoutPump on a pipe instead.
-	bool onTimerStdoutDispatch();
-#endif
-
 	// Start process with specified configuration
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
@@ -145,9 +137,6 @@ public:
 	// Get stdout content from specified position
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
-	// Bytes the pump already pushed; flushStdout reads tail from this offset.
-	long stdoutDispatchedBytes() const { return m_lastDispatchedBytes.load(std::memory_order_acquire); }
-
 	// Get/set process start error message
 	const std::string startError() const;
 	void startError(const std::string &err);
@@ -159,29 +148,20 @@ private:
 	// Prepare environment variables with built-in AppMesh variables
 	void prepareEnvironment(std::map<std::string, std::string> &envMap);
 
-	// Unregister pump, snapshot acceptedBytes into m_lastDispatchedBytes.
-	void teardownStdoutPump();
-
 protected:
 	const std::weak_ptr<Application> m_owner; // Application owner pointer
 
 private:
-	std::atomic_long m_timerTerminateId;	// Timer ID for delayed kill
-	std::atomic_long m_timerCheckStdoutId;	// Timer ID for stdout check
-#if defined(_WIN32)
-	std::atomic_long m_timerStdoutDispatchId{INVALID_TIMER_ID}; // Windows-only stdout event timer
-#endif
+	std::atomic_long m_timerTerminateId;   // Timer ID for delayed kill
+	std::atomic_long m_timerCheckStdoutId; // Timer ID for stdout check
 	off_t m_stdOutMaxSize;				   // Maximum stdout file size
 	mutable std::recursive_mutex m_processMutex;
 
 	AtomicHandleGuard m_stdinHandler;  // stdin file descriptor
-	AtomicHandleGuard m_stdoutHandler; // disk log file (stdout sink + rotation target)
+	AtomicHandleGuard m_stdoutHandler; // stdout file descriptor
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;
 	mutable std::recursive_mutex m_outFileMutex;
-
-	std::shared_ptr<StdoutPump> m_stdoutPump;       // Daemon side of child stdout pipe; m_processMutex.
-	std::atomic<long> m_lastDispatchedBytes{0};     // Snapshot at teardown for flushStdout.
 #if defined(_WIN32)
 	SharedHandle m_job; // Windows job object handle
 #endif

@@ -239,59 +239,36 @@ dump_macos_system_log() {
 dump_failure_context() {
     local label="$1"
     local off="$2"
-    gha_group "${label} — daemon process state"
+    # One consolidated group: daemon state + crash detection + server.log tail.
+    gha_group "${label} — diagnostics"
+    echo "----- daemon process state -----"
     ps -ef 2>/dev/null | grep -E "appsvc|appmesh\.agent" | grep -v grep || echo "(daemon process not found — likely crashed)"
-    [ -r "${PID_FILE}" ] && echo "appmesh.pid file present: $(cat "${PID_FILE}" 2>/dev/null)" || echo "(pid file missing)"
-    if command -v ss >/dev/null 2>&1; then
-        ss -tln 2>/dev/null | grep -E ':(6058|6059|6060) ' || echo "(no daemon listener on 6058/6059/6060)"
-    elif command -v netstat >/dev/null 2>&1; then
-        netstat -tln 2>/dev/null | grep -E ':(6058|6059|6060) ' || echo "(no daemon listener on 6058/6059/6060)"
-    fi
-    # Crash detection: if pid recorded but process is gone -> daemon crashed
     if [ -r "${PID_FILE}" ]; then
         local pid
         pid=$(cat "${PID_FILE}" 2>/dev/null)
+        echo "pid file: ${pid}"
         if [ -n "${pid}" ] && ! daemon_pid_alive "${pid}"; then
             echo "::error::Daemon pid=${pid} from pid file is dead — DAEMON CRASHED"
         fi
+    else
+        echo "(pid file missing)"
     fi
-    gha_endgroup
-    gha_group "${label} — server.log full delta (since test start)"
-    dump_log_delta_since "${off}"
-    gha_endgroup
-    gha_group "${label} — server.log suspect entries (full file)"
-    dump_suspect_entries
-    gha_endgroup
-    gha_group "${label} — server.log tail (last 200 lines, in case delta/grep missed something)"
+    echo "----- server.log tail (last 200 lines) -----"
     [ -r "${SERVER_LOG}" ] && tail -n 200 "${SERVER_LOG}" || echo "(server.log not readable)"
+    # macOS .ips crash reports / Linux dmesg — only printed when the OS produced one.
+    dump_macos_system_log
+    dump_linux_system_log
     gha_endgroup
-    gha_group "${label} — crash dump backtrace"
-    echo "----- /cores listing -----"
-    ls -la /cores/ 2>&1 || echo "(cannot list /cores)"
+
+    # Second group only if a core file actually exists; skip otherwise to avoid noise.
     local core
     core=$(find_recent_core)
     if [ -n "${core}" ]; then
-        echo "Most recent core dump: ${core}"
+        gha_group "${label} — crash backtrace (${core})"
         ls -la "${core}" 2>&1 || true
         extract_backtrace_from_core "${core}"
-    else
-        echo "(no core dump found in /cores, /tmp, /var/lib/systemd/coredump, /var/crash)"
-        if command -v coredumpctl >/dev/null 2>&1; then
-            echo "----- coredumpctl recent -----"
-            coredumpctl list --no-pager 2>&1 | tail -20 || true
-            coredumpctl info appsvc --no-pager 2>&1 | tail -100 || true
-        fi
+        gha_endgroup
     fi
-    gha_endgroup
-    gha_group "${label} — live daemon thread stacks (if still running)"
-    dump_running_daemon_stack
-    gha_endgroup
-    gha_group "${label} — macOS system log (Darwin only)"
-    dump_macos_system_log
-    gha_endgroup
-    gha_group "${label} — Linux system log (Linux only)"
-    dump_linux_system_log
-    gha_endgroup
 }
 
 # ----- pre-test snapshot -----

@@ -1,34 +1,30 @@
 // src/daemon/process/AppProcess.cpp
+#include <fstream>
+#include <thread>
+
 #include <ace/File_Lock.h>
 #include <ace/Hash_Multi_Map_Manager_T.h>
 #include <ace/Map_Manager.h>
 #include <ace/OS.h>
-#include <ace/OS_NS_fcntl.h>
-#include <ace/Pipe.h>
 #include <ace/Process_Manager.h>
-#include <ace/Reactor.h>
 #include <boost/filesystem.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
 
+#include "../../common/DateTime.h"
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
 #include "../../common/Password.h"
+#include "../../common/os/linux.h"
 #include "../../common/os/pstree.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../application/Application.h"
-#include "../rest/EventDispatcher.h"
 #include "../rest/HttpRequest.h"
 #include "AppProcess.h"
 #include "LinuxCgroup.h"
-#include "StdoutPump.h"
-
-#if !defined(_WIN32)
-#include <fcntl.h>
-#include <sys/socket.h>
-#endif
 
 namespace
 {
@@ -66,9 +62,6 @@ AppProcess::~AppProcess()
 	{
 		terminate();
 	}
-
-	// Always cleanResource() — child-already-exited path must still unregister the pump.
-	cleanResource();
 
 	// Keep main stdout file, only remove backup
 	Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
@@ -118,13 +111,15 @@ void AppProcess::onExit(int exitCode)
 	m_pid.store(ACE_INVALID_PID);
 	m_returnValue.store(exitCode);
 
-	// onExit runs under Process_Manager mutex; defer pump teardown spin to a timer thread.
+	// Clean OS resources
+	cleanResource();
+
+	// Notify App exit event asynchronously
 	registerTimer(0, 0, fname, std::bind(&AppProcess::onTimerAppExit, this, exitCode));
 }
 
 bool AppProcess::onTimerAppExit(int exitCode)
 {
-	cleanResource();
 	if (auto owner = m_owner.lock())
 	{
 		// Update application with exit information
@@ -185,71 +180,12 @@ bool AppProcess::onTimerTerminate()
 
 void AppProcess::cleanResource()
 {
-	teardownStdoutPump();
 	m_stdoutHandler.reset();
 	m_stdinHandler.reset();
 	Utility::removeFile(m_stdinFileName);
 	cancelTimer(m_timerCheckStdoutId);
 	cancelTimer(m_timerTerminateId);
-#if defined(_WIN32)
-	cancelTimer(m_timerStdoutDispatchId);
-#endif
 }
-
-void AppProcess::teardownStdoutPump()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-	if (!m_stdoutPump) return;
-
-	// Order: stop → remove_handler → cancel_timer → waitInflight → flush → snapshot bytes.
-	m_stdoutPump->stop();
-	ACE_Reactor::instance()->remove_handler(m_stdoutPump.get(), ACE_Event_Handler::READ_MASK | ACE_Event_Handler::DONT_CALL);
-	ACE_Reactor::instance()->cancel_timer(m_stdoutPump.get());
-	const bool drained = m_stdoutPump->waitInflight();
-	m_stdoutPump->cancelCoalesceTimerAndFlush();
-	m_lastDispatchedBytes.store(m_stdoutPump->acceptedBytes(), std::memory_order_release);
-	if (!drained)
-	{
-		// Reactor still in upcall after timeout — leak rather than UAF.
-		LOG_ERR << "AppProcess::teardownStdoutPump() handle_input in-flight after timeout; leaking pump";
-		static std::mutex s_leakMutex;
-		static std::vector<std::shared_ptr<StdoutPump>> s_leakedPumps;
-		std::lock_guard<std::mutex> leakGuard(s_leakMutex);
-		s_leakedPumps.push_back(m_stdoutPump);
-	}
-	m_stdoutPump.reset();
-}
-
-#if defined(_WIN32)
-bool AppProcess::onTimerStdoutDispatch()
-{
-	auto owner = m_owner.lock();
-	if (!owner) return true;
-	const auto &appName = owner->getName();
-	if (!EventDispatcher::instance()->hasStdoutSubscriber(appName)) return true;
-	try
-	{
-		long pos = m_lastDispatchedBytes.load(std::memory_order_acquire);
-		const long startPos = pos;
-		auto result = owner->getOutput(pos, 64 * 1024, "", 0, 0);
-		auto &output = std::get<0>(result);
-		if (!output.empty())
-		{
-			nlohmann::json data;
-			data["output"] = output;
-			data["position"] = startPos;
-			data["finished"] = std::get<1>(result);
-			EventDispatcher::instance()->dispatch(appName, AppEventType::STDOUT_OUTPUT, data);
-			m_lastDispatchedBytes.store(pos, std::memory_order_release);
-		}
-	}
-	catch (const std::exception &e)
-	{
-		LOG_WAR << "AppProcess::onTimerStdoutDispatch() dispatch failed for app=" << appName << ": " << e.what();
-	}
-	return true;
-}
-#endif
 
 void AppProcess::terminate()
 {
@@ -353,7 +289,7 @@ void AppProcess::registerCheckStdoutTimer()
 	if (!IS_VALID_TIMER_ID(m_timerCheckStdoutId))
 	{
 		static const int TIMEOUT_SEC = STDOUT_FILE_SIZE_CHECK_INTERVAL;
-		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, 1000L * TIMEOUT_SEC, fname, std::bind(&AppProcess::onTimerCheckStdout, this));
+		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, TIMEOUT_SEC, fname, std::bind(&AppProcess::onTimerCheckStdout, this));
 	}
 	else
 	{
@@ -366,10 +302,6 @@ bool AppProcess::onTimerCheckStdout()
 	const static char fname[] = "AppProcess::onTimerCheckStdout() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-
-	// Pump owns the disk fd and tracks bytes monotonically; ftruncate or fd
-	// re-open would desynchronize m_lastDispatchedBytes from on-disk content.
-	if (m_stdoutPump) return true;
 
 	if (m_stdoutHandler.valid() && m_stdOutMaxSize)
 	{
@@ -484,16 +416,11 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	// Clean if necessary
 	m_stdoutHandler.reset();
 	m_stdinHandler.reset();
-	teardownStdoutPump();
 	m_stdoutFileName = stdoutFile;
-
-	// child writes stdout/stderr to pipeWriteForChild; pump reads from pipeReadForDaemon.
-	ACE_HANDLE pipeWriteForChild = ACE_INVALID_HANDLE;
-	ACE_HANDLE pipeReadForDaemon = ACE_INVALID_HANDLE;
 
 	if (!m_stdoutFileName.empty() || stdinFileContent != EMPTY_STR_JSON)
 	{
-		// Setup STDOUT (disk sink)
+		// Setup STDOUT
 		if (!m_stdoutFileName.empty())
 		{
 			m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_TRUNC));
@@ -503,42 +430,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			{
 				LOG_ERR << fname << "Failed to open file: <" << m_stdoutFileName << "> with error: " << ACE_OS::last_error();
 			}
-
-#if !defined(_WIN32)
-			// Windows ACE_Pipe is socket-based and incompatible with set_handles → legacy direct-file path.
-			ACE_HANDLE pipeHandles[2] = {ACE_INVALID_HANDLE, ACE_INVALID_HANDLE};
-			ACE_Pipe pipe;
-			if (pipe.open(pipeHandles) == 0)
-			{
-				pipeReadForDaemon = pipeHandles[0];
-				pipeWriteForChild = pipeHandles[1];
-
-				// ACE_Pipe may return pipe(2) or socketpair(); try both sizing knobs (1 MB).
-				bool sizedRead = false, sizedWrite = false;
-				const int desiredSize = 1 << 20;
-#if defined(__linux__) && defined(F_SETPIPE_SZ)
-				if (::fcntl(pipeReadForDaemon, F_SETPIPE_SZ, desiredSize) >= 0) { sizedRead = sizedWrite = true; }
-#endif
-#if defined(SO_RCVBUFFORCE)
-				if (!sizedRead && ::setsockopt(pipeReadForDaemon, SOL_SOCKET, SO_RCVBUFFORCE, &desiredSize, sizeof(desiredSize)) == 0) sizedRead = true;
-#endif
-				if (!sizedRead && ::setsockopt(pipeReadForDaemon, SOL_SOCKET, SO_RCVBUF, &desiredSize, sizeof(desiredSize)) == 0) sizedRead = true;
-#if defined(SO_SNDBUFFORCE)
-				if (!sizedWrite && ::setsockopt(pipeWriteForChild, SOL_SOCKET, SO_SNDBUFFORCE, &desiredSize, sizeof(desiredSize)) == 0) sizedWrite = true;
-#endif
-				if (!sizedWrite && ::setsockopt(pipeWriteForChild, SOL_SOCKET, SO_SNDBUF, &desiredSize, sizeof(desiredSize)) == 0) sizedWrite = true;
-				if (!sizedRead && !sizedWrite)
-					LOG_WAR << fname << "stdout pipe stays at default ~64 KB; child may stall on bursts. errno=" << ACE_OS::last_error();
-
-				const int flags = ::fcntl(pipeReadForDaemon, F_GETFL, 0);
-				if (flags < 0 || ::fcntl(pipeReadForDaemon, F_SETFL, flags | O_NONBLOCK) < 0)
-					LOG_WAR << fname << "pipe O_NONBLOCK setup failed; reads may block. errno=" << ACE_OS::last_error();
-			}
-			else
-			{
-				LOG_ERR << fname << "ACE_Pipe::open failed; falling back to direct file stdout. errno=" << ACE_OS::last_error();
-			}
-#endif // !_WIN32
 		}
 		else
 		{
@@ -565,21 +456,10 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			m_stdinHandler.reset(ACE_OS::open(DEV_NULL, O_RDONLY));
 		}
 
-		// Use pipe write end if available, else direct file.
-		const ACE_HANDLE childOutHandle = (pipeWriteForChild != ACE_INVALID_HANDLE) ? pipeWriteForChild : m_stdoutHandler.get();
-		option.set_handles(m_stdinHandler.get(), childOutHandle, childOutHandle);
+		option.set_handles(m_stdinHandler.get(), m_stdoutHandler.get(), m_stdoutHandler.get());
 	}
 
-	const bool spawnOk = (spawn(option) >= 0);
-
-	// Parent closes pipe write end so reader gets EOF when child exits.
-	if (pipeWriteForChild != ACE_INVALID_HANDLE)
-	{
-		ACE_OS::close(pipeWriteForChild);
-		pipeWriteForChild = ACE_INVALID_HANDLE;
-	}
-
-	if (spawnOk)
+	if (spawn(option) >= 0)
 	{
 		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << m_pid.load() << ">.";
 		setCgroup(limit);
@@ -588,47 +468,12 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		{
 			m_stdOutMaxSize = maxStdoutSize;
 		}
-
-		m_lastDispatchedBytes.store(0, std::memory_order_release);
-		if (pipeReadForDaemon != ACE_INVALID_HANDLE && m_stdoutHandler.valid())
-		{
-			auto owner = m_owner.lock();
-			auto appName = owner ? owner->getName() : std::string();
-			auto pump = std::make_shared<StdoutPump>(appName, pipeReadForDaemon, m_stdoutHandler.get(), m_outFileMutex);
-
-			if (ACE_Reactor::instance()->register_handler(pump.get(), ACE_Event_Handler::READ_MASK) == -1)
-			{
-				LOG_WAR << fname << "register_handler for stdout pump failed: " << last_error_msg();
-				pipeReadForDaemon = ACE_INVALID_HANDLE; // pump dtor closes it
-			}
-			else
-			{
-				std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-				m_stdoutPump = std::move(pump);
-				pipeReadForDaemon = ACE_INVALID_HANDLE; // ownership transferred
-			}
-		}
-
-#if defined(_WIN32)
-		// Windows has no pump (ACE_Pipe is socket-based, incompatible with set_handles).
-		// Fall back to polling the on-disk file at 1 Hz so subscribers still get events.
-		if (m_stdoutHandler.valid() && !IS_VALID_TIMER_ID(m_timerStdoutDispatchId))
-		{
-			const long timerId = registerTimer(0, 1000, fname, std::bind(&AppProcess::onTimerStdoutDispatch, this));
-			if (!IS_VALID_TIMER_ID(timerId))
-				LOG_WAR << fname << "registerTimer for stdout dispatch failed; subscribers will only see exit flush";
-			m_timerStdoutDispatchId = timerId;
-		}
-#endif
 	}
 	else
 	{
 		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << last_error_msg();
 		startError(Utility::stringFormat("start failed with error <%s>", last_error_msg()));
 	}
-
-	if (pipeReadForDaemon != ACE_INVALID_HANDLE) // pump didn't take ownership
-		ACE_OS::close(pipeReadForDaemon);
 
 	return m_pid.load();
 }
