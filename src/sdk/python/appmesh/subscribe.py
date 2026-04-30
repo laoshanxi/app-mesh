@@ -1,7 +1,8 @@
 """Event subscription support for TCP and WSS transports."""
-__all__ = ["AppEvent", "SubscriptionResult"]
+__all__ = ["AppEvent", "SubscriptionResult", "EVENT_TYPE_DISCONNECTED"]
 
 import json
+import queue
 import threading
 import logging
 from dataclasses import dataclass, field
@@ -13,6 +14,11 @@ from .tcp_messages import ResponseMessage
 logger = logging.getLogger(__name__)
 
 EVENT_URI = "/appmesh/event"
+
+# Synthetic event_type pushed to every registered callback when the demuxer
+# stops or the underlying transport disconnects. Lets long-running waits
+# (e.g. wait_for_async_run) unblock instead of hanging forever.
+EVENT_TYPE_DISCONNECTED = "__disconnected__"
 
 
 @dataclass
@@ -42,6 +48,9 @@ EventCallback = Callable[[AppEvent], None]
 class MessageDemuxer:
     """Reads messages from transport and routes to pending requests or event callbacks."""
 
+    # Sentinel queued to the dispatch worker to make it exit cleanly.
+    _DISPATCH_STOP = object()
+
     def __init__(self, transport):
         self._transport = transport
         self._lock = threading.Lock()
@@ -50,29 +59,51 @@ class MessageDemuxer:
         self._event_callbacks: Dict[str, EventCallback] = {}
         self._reader_thread: Optional[threading.Thread] = None
         self._running = False
+        # Single-worker FIFO queue serializes user callbacks so events arrive in
+        # transport order, and bounds thread usage to 1 regardless of event rate.
+        self._dispatch_queue: "queue.Queue[Any]" = queue.Queue()
+        self._dispatch_thread: Optional[threading.Thread] = None
 
     def start(self):
-        """Start the background reader thread."""
+        """Start the background reader and dispatch threads."""
         if self._running:
             return
         self._running = True
+        self._dispatch_thread = threading.Thread(target=self._dispatch_loop, daemon=True)
+        self._dispatch_thread.start()
         self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
         self._reader_thread.start()
 
     def stop(self):
-        """Signal the background reader thread to stop and wake pending waiters."""
+        """Signal the demuxer to stop and wake all pending waiters and event subscribers."""
         self._running = False
+        # Fan out a synthetic disconnect event to every registered callback so
+        # long-running waits (wait_for_async_run, custom subscribers) unblock.
+        self._broadcast_disconnect()
+        # Then drain pending request waiters.
         with self._lock:
             for evt in self._pending.values():
                 evt.set()
             self._pending.clear()
             self._pending_responses.clear()
+        # Stop the dispatch worker last so the disconnect event has been delivered.
+        self._dispatch_queue.put(self._DISPATCH_STOP)
 
     def join(self, timeout: float = 5.0):
-        """Wait for the reader thread to finish after stop() + transport close."""
+        """Wait for the reader and dispatch threads to finish."""
         if self._reader_thread:
             self._reader_thread.join(timeout=timeout)
             self._reader_thread = None
+        if self._dispatch_thread:
+            self._dispatch_thread.join(timeout=timeout)
+            self._dispatch_thread = None
+
+    def _broadcast_disconnect(self):
+        """Push a synthetic disconnect event to every registered callback."""
+        with self._lock:
+            entries = list(self._event_callbacks.items())
+        for sub_id, cb in entries:
+            self._dispatch_queue.put((cb, AppEvent(subscription_id=sub_id, event_type=EVENT_TYPE_DISCONNECTED)))
 
     def send_and_receive(self, uuid: str, data: bytes, timeout: float = 60.0) -> Optional[ResponseMessage]:
         """Send a request and wait for the matching response via the demuxer."""
@@ -122,14 +153,11 @@ class MessageDemuxer:
             except Exception as e:
                 if self._running:
                     logger.warning("MessageDemuxer read error: %s", e)
-                    self._running = False
-                    with self._lock:
-                        for evt in self._pending.values():
-                            evt.set()
+                    self.stop()
                     break
 
     def _dispatch_event(self, resp: ResponseMessage):
-        """Route event push to matching subscription callback."""
+        """Route event push to matching subscription callback (via dispatch queue)."""
         try:
             body = resp.body if isinstance(resp.body, str) else resp.body.decode("utf-8", errors="replace")
             event_data = json.loads(body)
@@ -148,10 +176,22 @@ class MessageDemuxer:
                 cb = self._event_callbacks.get(sub_id)
 
             if cb:
-                threading.Thread(target=cb, args=(event,), daemon=True).start()
+                self._dispatch_queue.put((cb, event))
 
         except Exception as e:
             logger.warning("Failed to dispatch event: %s", e)
+
+    def _dispatch_loop(self):
+        """Single worker thread: invokes user callbacks in FIFO order."""
+        while True:
+            item = self._dispatch_queue.get()
+            if item is self._DISPATCH_STOP:
+                return
+            cb, event = item
+            try:
+                cb(event)
+            except Exception as e:
+                logger.warning("Event callback raised: %s", e)
 
     def _dispatch_response(self, resp: ResponseMessage):
         """Route request response to the matching pending waiter."""

@@ -180,7 +180,7 @@ func (d *MessageDemuxer) dispatchResponse(resp *Response) {
 // SubscribeOption configures a subscription request.
 type SubscribeOption struct {
 	AppName string   // App name, or empty/"*" for all apps
-	Events  []string // Event types: "process_start", "process_exit", "stdout", "health_change", "status_change", "app_removed"
+	Events  []string // Event types: "START", "EXIT", "STDOUT", "HEALTH", "STATUS", "REMOVED"
 }
 
 // SubscriptionResult contains the server's response to a subscribe request.

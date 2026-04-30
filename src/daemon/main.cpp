@@ -125,7 +125,6 @@ private:
 
 // Global daemon instance
 static std::unique_ptr<AppMeshDaemon> g_daemon;
-static constexpr int MAX_TCP_ERROR_COUNT = 30;
 
 int main(int argc, char *argv[])
 {
@@ -572,37 +571,11 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 {
 	const static char fname[] = "AppMeshDaemon::checkTcpConnection() ";
 
-	auto config = Configuration::instance();
-
-	// m_client->stream()->shutdown();
-	// m_client = std::make_shared<SocketStreamPtr>(new SocketStream(Global::getClientSSL()));
-	// m_client->stream()->connect(ACE_INET_Addr(6059, "localhost"));
 	if (m_client && m_client->stream() && !m_client->stream()->connected())
 	{
-		errorCounter++;
-		LOG_WAR << fname << "REST TCP connection test failed, attempt <" << errorCounter << ">";
-
-		if (errorCounter > MAX_TCP_ERROR_COUNT)
-		{
-			LOG_ERR << fname << "REST TCP connection test failed more than " << MAX_TCP_ERROR_COUNT << " times, requesting shutdown";
-			QuitHandler::instance()->requestExit();
-			return false;
-		}
-
-		std::this_thread::sleep_for(std::chrono::seconds(config->getScheduleInterval()));
-
-		// Reconnect
-		ACE_INET_Addr acceptorAddr(config->getRestTcpPort(), config->getRestListenAddress().c_str());
-		if (m_client->stream()->connect(acceptorAddr))
-			LOG_INF << fname << "Test local TCP client reconnected successfully";
-		else
-			LOG_WAR << fname << "Test local TCP client reconnection failed";
+		LOG_WAR << fname << "self-loopback TCP client reports disconnected (passive)";
 	}
-	else
-	{
-		errorCounter = 0;
-	}
-
+	(void)errorCounter;
 	return true;
 }
 

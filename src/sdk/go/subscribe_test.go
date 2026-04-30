@@ -12,12 +12,12 @@ import (
 )
 
 func TestAppEventDeserialization(t *testing.T) {
-	raw := `{"subscription_id":"sub123","event_type":"process_exit","app_name":"myapp","timestamp":1714000000,"sequence":42,"data":{"exit_code":1,"pid":12345}}`
+	raw := `{"subscription_id":"sub123","event_type":"EXIT","app_name":"myapp","timestamp":1714000000,"sequence":42,"data":{"exit_code":1,"pid":12345}}`
 	var event AppEvent
 	err := json.Unmarshal([]byte(raw), &event)
 	require.NoError(t, err)
 	assert.Equal(t, "sub123", event.SubscriptionID)
-	assert.Equal(t, "process_exit", event.EventType)
+	assert.Equal(t, "EXIT", event.EventType)
 	assert.Equal(t, "myapp", event.AppName)
 	assert.Equal(t, int64(1714000000), event.Timestamp)
 	assert.Equal(t, uint64(42), event.Sequence)
@@ -49,7 +49,7 @@ func TestMessageDemuxerRouting(t *testing.T) {
 	})
 
 	// Simulate a server-push event message
-	eventBody := `{"subscription_id":"sub-test","event_type":"process_start","app_name":"test-app","timestamp":1714000000,"sequence":1,"data":{"pid":9999}}`
+	eventBody := `{"subscription_id":"sub-test","event_type":"START","app_name":"test-app","timestamp":1714000000,"sequence":1,"data":{"pid":9999}}`
 	resp := &Response{
 		UUID:        "evt-uuid-1",
 		RequestUri:  EVENT_URI,
@@ -72,7 +72,7 @@ func TestMessageDemuxerRouting(t *testing.T) {
 	select {
 	case <-done:
 		assert.Equal(t, "sub-test", receivedEvent.SubscriptionID)
-		assert.Equal(t, "process_start", receivedEvent.EventType)
+		assert.Equal(t, "START", receivedEvent.EventType)
 		assert.Equal(t, "test-app", receivedEvent.AppName)
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for event callback")
@@ -122,7 +122,7 @@ func TestMessageDemuxerRequestResponse(t *testing.T) {
 
 func TestSubscribeOptionPath(t *testing.T) {
 	// Test: specific app path
-	opt := SubscribeOption{AppName: "myapp", Events: []string{"process_start", "stdout"}}
+	opt := SubscribeOption{AppName: "myapp", Events: []string{"START", "STDOUT"}}
 	assert.Equal(t, "myapp", opt.AppName)
 	assert.Len(t, opt.Events, 2)
 

@@ -289,8 +289,7 @@ void AppProcess::registerCheckStdoutTimer()
 	if (!IS_VALID_TIMER_ID(m_timerCheckStdoutId))
 	{
 		static const int TIMEOUT_SEC = STDOUT_FILE_SIZE_CHECK_INTERVAL;
-		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, TIMEOUT_SEC, fname,
-											 std::bind(&AppProcess::onTimerCheckStdout, this));
+		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, 1000L * TIMEOUT_SEC, fname, std::bind(&AppProcess::onTimerCheckStdout, this));
 	}
 	else
 	{

@@ -564,7 +564,15 @@ bool Utility::setLogLevel(const std::string &level)
 	auto it = levelMap.find(level);
 	if (it != levelMap.end())
 	{
+		// Set on the default logger and its sinks too — spdlog::set_level alone has been
+		// observed not to take effect on the logger created via initLogging().
 		spdlog::set_level(it->second);
+		if (auto logger = spdlog::default_logger())
+		{
+			logger->set_level(it->second);
+			for (auto &sink : logger->sinks())
+				sink->set_level(it->second);
+		}
 		LOG_INF << "Setting log level to " << level;
 		return true;
 	}

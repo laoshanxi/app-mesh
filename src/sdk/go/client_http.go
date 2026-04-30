@@ -471,8 +471,8 @@ func (r *AppMeshClient) RemoveApp(appName string) (bool, error) {
 // AddApp registers a new application or updates an existing one.
 // AddApp registers or updates an application.
 // Optional subscribeEvents specifies event types to subscribe atomically with registration,
-// ensuring no events are missed. Pass event names like "process_start", "process_exit", "stdout",
-// or "all" for all events. Requires TCP or WSS connection; ignored over HTTP.
+// ensuring no events are missed. Pass event names like "START", "EXIT", "STDOUT",
+// or "ALL" for all events. Requires TCP or WSS connection; ignored over HTTP.
 // When subscribeEvents is set, the returned Application.SubscriptionID will be non-empty.
 func (r *AppMeshClient) AddApp(app Application, subscribeEvents ...string) (*Application, error) {
 	if app.Name == "" {

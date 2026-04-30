@@ -47,7 +47,7 @@ jobs:
           mkdir -p build && cd build
 
           echo "Running CMake configuration..."
-          cmake ..
+          cmake .. -DBoost_ROOT="$(brew --prefix boost)"
 
           echo "Building the project..."
           make -j"$(sysctl -n hw.ncpu)"
@@ -102,6 +102,9 @@ jobs:
           ulimit -c unlimited
           ulimit -a
 
+          sudo cp -a /opt/appmesh/bin/appsvc /cores/appsvc.macos.bin || true
+          sudo chmod a+r /cores/appsvc.macos.bin 2>/dev/null || true
+
           # Start App Mesh
           appc -v || true
           sudo bash /opt/appmesh/script/appmesh.initd.sh start || true
@@ -119,20 +122,24 @@ jobs:
           appc ls
           appc resource
 
+          # Force daemon LogLevel=DEBUG at runtime via REST API (most reliable).
+          appc logon -U admin -X admin123 || true
+          appc log -L DEBUG || true
+          appc loginfo || true
+
           # test appmesh python sdk
           python3 -m pip install --break-system-packages --upgrade appmesh pyotp
-          bash script/run_python_test_with_debug.sh src/sdk/python/test/test_appmesh_client.py
-
-          python3 src/sdk/python/sample.py
+          # Run both scripts under the same wrapper so a sample.py crash also dumps
+          # daemon backtrace / wrapper log / server.log via dump_failure_context.
+          bash script/run_python_test_with_debug.sh \
+            src/sdk/python/test/test_appmesh_client.py \
+            src/sdk/python/sample.py
 
           cd src/sdk/go
           go test -v || {
-            echo "::group::Go test failed — agent stdout"
-            tail /opt/appmesh/work/stdout/appmesh.agent.out
-            echo "::endgroup::"
-            echo "::group::Go test failed — server.log tail"
-            tail -300 /opt/appmesh/work/server.log
-            echo "::endgroup::"
+            # Use the unified diagnostic wrapper so go-test failures show full
+            # backtrace / dmesg / server.log just like python-test failures do.
+            bash "${GITHUB_WORKSPACE}/script/run_python_test_with_debug.sh" --dump-only "go test failed (macOS)"
             exit 1
           }
 

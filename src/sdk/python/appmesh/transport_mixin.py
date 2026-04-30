@@ -3,6 +3,8 @@
 
 # Standard library imports
 import json
+import logging
+import threading
 import uuid
 from http import HTTPStatus
 from typing import Optional
@@ -15,8 +17,16 @@ from requests.structures import CaseInsensitiveDict
 from .app import App
 from .client_http import AppMeshClient
 from .exceptions import AppMeshConnectionError
-from .subscribe import AppEvent, EventCallback, MessageDemuxer, SubscriptionResult
+from .subscribe import (
+    EVENT_TYPE_DISCONNECTED,
+    AppEvent,
+    EventCallback,
+    MessageDemuxer,
+    SubscriptionResult,
+)
 from .tcp_messages import RequestMessage, ResponseMessage
+
+logger = logging.getLogger(__name__)
 
 # Auth endpoints where the server returns a new access_token in the JSON body.
 # Login/auth/totp_validate: apply token only when X-Set-Cookie header is present
@@ -204,7 +214,7 @@ class TransportClientMixin:
 
         Args:
             app_name: Application name, or "*" for all apps.
-            events: List of event types (e.g. ["process_start", "process_exit", "stdout"]).
+            events: List of event types (e.g. ["START", "EXIT", "STDOUT"]).
             callback: Function called with AppEvent for each received event.
 
         Returns:
@@ -250,3 +260,106 @@ class TransportClientMixin:
             return
         self._demuxer = MessageDemuxer(self._transport)
         self._demuxer.start()
+
+    def wait_for_async_run(self, run, print_stdout: bool = True, timeout: int = 0) -> Optional[int]:
+        """Override: use subscribe-based streaming on TCP/WSS instead of polling.
+
+        Subscribes to ``STDOUT`` + ``EXIT`` + ``REMOVED``, then does a
+        one-shot ``get_app_output`` to backfill bytes emitted before the subscribe
+        took effect. Stdout events whose ``position`` is already covered by an
+        earlier delivery are deduped (partial overlap → prefix trimmed).
+        """
+        if not run or not run.app_name:
+            return None
+
+        wait_timeout: Optional[float] = None if timeout in (0, None) else float(timeout)
+
+        on_stdout = (lambda s: print(s, end="", flush=True)) if print_stdout else None
+
+        # Sentinel exit codes distinguishable from real ones (>=0):
+        #   None → caller-side timeout (done.wait returned without done.set)
+        #   -1   → REMOVED before EXIT observed
+        #   -2   → demuxer disconnected (transport failure)
+        exit_code: Optional[int] = None
+        delivered_until = 0  # next-byte offset already passed to on_stdout
+        done = threading.Event()
+        lock = threading.Lock()
+
+        def deliver(chunk, pos: int) -> None:
+            nonlocal delivered_until
+            if not chunk:
+                return
+            chunk_bytes = chunk.encode("utf-8") if isinstance(chunk, str) else bytes(chunk)
+            with lock:
+                end = pos + len(chunk_bytes)
+                if end <= delivered_until:
+                    return
+                if pos < delivered_until:
+                    chunk_bytes = chunk_bytes[delivered_until - pos:]
+                delivered_until = end
+            if on_stdout:
+                try:
+                    on_stdout(chunk_bytes.decode("utf-8", errors="replace"))
+                except Exception:
+                    pass
+
+        def on_event(event: AppEvent) -> None:
+            nonlocal exit_code
+            if event.event_type == "STDOUT":
+                try:
+                    pos = int(event.data.get("position", 0))
+                except (TypeError, ValueError):
+                    pos = 0
+                deliver(event.data.get("output", ""), pos)
+            elif event.event_type == "EXIT":
+                try:
+                    exit_code = int(event.data.get("exit_code", -1))
+                except (TypeError, ValueError):
+                    exit_code = -1
+                done.set()
+            elif event.event_type == "REMOVED":
+                if exit_code is None:
+                    exit_code = -1
+                done.set()
+            elif event.event_type == EVENT_TYPE_DISCONNECTED:
+                if exit_code is None:
+                    exit_code = -2
+                done.set()
+
+        sub = self.subscribe(run.app_name, ["STDOUT", "EXIT", "REMOVED"], callback=on_event)
+
+        try:
+            # Backfill bytes emitted before subscribe took effect; also catches
+            # the case where the process already exited.
+            try:
+                backfill = self.get_app_output(
+                    app_name=run.app_name,
+                    stdout_position=0,
+                    stdout_index=0,
+                    process_uuid=run.proc_uid,
+                    timeout=0,
+                )
+                if backfill.output:
+                    deliver(backfill.output, 0)
+                if backfill.exit_code is not None and exit_code is None:
+                    exit_code = backfill.exit_code
+                    done.set()
+            except Exception as exc:
+                logger.warning("backfill failed for %s: %s", run.app_name, exc)
+
+            done.wait(timeout=wait_timeout)
+        finally:
+            try:
+                if sub.subscription_id:
+                    self.unsubscribe(sub.subscription_id)
+            except Exception:
+                pass
+            # Best-effort delete on a real exit. Sentinels (-1 REMOVED, -2 disconnected)
+            # mean the daemon already lost track or the app is gone — don't try to delete.
+            if exit_code is not None and exit_code >= 0:
+                try:
+                    self.delete_app(run.app_name)
+                except Exception:
+                    pass
+
+        return exit_code

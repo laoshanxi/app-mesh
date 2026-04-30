@@ -88,7 +88,7 @@ TimerManager::~TimerManager()
 	m_timerQueue.wait();
 }
 
-long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, std::string from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
+long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, std::string from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
 {
 	const static char fname[] = "TimerManager::registerTimer() ";
 
@@ -101,14 +101,14 @@ long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalSec
 
 	// Calculate future time for first trigger
 	ACE_Time_Value future = (delayMilliseconds == 0) ? ACE_Time_Value::zero : ACE_OS::gettimeofday() + ACE_Time_Value(delayMilliseconds / 1000, (delayMilliseconds % 1000) * 1000);
-	ACE_Time_Value interval(intervalSeconds);
+	ACE_Time_Value interval(intervalMilliseconds / 1000, (intervalMilliseconds % 1000) * 1000);
 
 	// TimerEvent passed as both handler and 'magic cookie' act; released in handle_close()
-	bool isOneShot = (intervalSeconds == 0);
+	bool isOneShot = (intervalMilliseconds == 0);
 	auto *timer = new TimerEvent(isOneShot, std::move(timerObj), handler);
 	long timerId = m_timerQueue.schedule(timer, timer, future, interval);
 
-	LOG_DBG << fname << from << " registered timer ID <" << timerId << ">, delay <" << delayMilliseconds << ">ms interval <" << intervalSeconds << ">s";
+	LOG_DBG << fname << from << " registered timer ID <" << timerId << ">, delay <" << delayMilliseconds << ">ms interval <" << intervalMilliseconds << ">ms";
 
 	if (timerId < 0)
 	{
@@ -119,9 +119,9 @@ long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalSec
 	return timerId;
 }
 
-long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, std::string from, const TimerCallback &handler)
+long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, std::string from, const TimerCallback &handler)
 {
-	return registerTimer(delayMilliseconds, intervalSeconds, std::move(from), nullptr, handler);
+	return registerTimer(delayMilliseconds, intervalMilliseconds, std::move(from), nullptr, handler);
 }
 
 bool TimerManager::cancelTimer(long &timerId)
@@ -167,9 +167,9 @@ bool TimerManager::cancelTimer(std::atomic_long &timerId)
 /// TimerHandler
 ////////////////////////////////////////////////////////////////
 
-long TimerHandler::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const std::string from, const TimerCallback &handler)
+long TimerHandler::registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string from, const TimerCallback &handler)
 {
-	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalSeconds, from, shared_from_this(), handler);
+	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalMilliseconds, from, shared_from_this(), handler);
 }
 
 bool TimerHandler::cancelTimer(std::atomic_long &timerId)
@@ -181,9 +181,9 @@ bool TimerHandler::cancelTimer(std::atomic_long &timerId)
 /// Standalone Functions
 ////////////////////////////////////////////////////////////////
 
-long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const std::string &from, const TimerCallback &handler)
+long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler)
 {
-	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalSeconds, from, nullptr, handler);
+	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalMilliseconds, from, nullptr, handler);
 }
 
 bool cancelTimer(std::atomic_long &timerId)

@@ -741,7 +741,7 @@ public class AppMeshClient implements Closeable {
      * ensuring no events are missed. The response includes {@code subscription_id} when active.
      * Requires TCP or WebSocket transport; ignored over HTTP.
      *
-     * @param subscribeEvents event types: "process_start", "process_exit", "stdout", "all", etc.
+     * @param subscribeEvents event types: "START", "EXIT", "STDOUT", "ALL", etc.
      */
     public JSONObject addApp(String appName, JSONObject appJson, String... subscribeEvents) throws IOException {
         Map<String, String> query = null;
@@ -758,7 +758,7 @@ public class AppMeshClient implements Closeable {
      * Requires TCP or WebSocket transport.
      *
      * @param appName application name, or null/"*" for all apps
-     * @param events  event types to subscribe, e.g. "process_start", "process_exit", "stdout"
+     * @param events  event types to subscribe, e.g. "START", "EXIT", "STDOUT"
      * @return JSON with subscription_id, app_name, events
      */
     public JSONObject subscribe(String appName, String... events) throws IOException {
@@ -773,7 +773,7 @@ public class AppMeshClient implements Closeable {
      *
      * @param appName  application name, or null/"*" for all apps
      * @param callback event callback invoked on a daemon thread for each event, or null
-     * @param events   event types to subscribe, e.g. "process_start", "process_exit", "stdout"
+     * @param events   event types to subscribe, e.g. "START", "EXIT", "STDOUT"
      * @return JSON with subscription_id, app_name, events
      */
     public JSONObject subscribe(String appName, MessageDemuxer.EventCallback callback, String... events)

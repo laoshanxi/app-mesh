@@ -31,17 +31,17 @@ inline const char *eventTypeToString(AppEventType type)
 	switch (type)
 	{
 	case AppEventType::PROCESS_START:
-		return "process_start";
+		return "START";
 	case AppEventType::PROCESS_EXIT:
-		return "process_exit";
+		return "EXIT";
 	case AppEventType::STDOUT_OUTPUT:
-		return "stdout";
+		return "STDOUT";
 	case AppEventType::HEALTH_CHANGE:
-		return "health_change";
+		return "HEALTH";
 	case AppEventType::STATUS_CHANGE:
-		return "status_change";
+		return "STATUS";
 	case AppEventType::APP_REMOVED:
-		return "app_removed";
+		return "REMOVED";
 	default:
 		return "unknown";
 	}
@@ -50,19 +50,19 @@ inline const char *eventTypeToString(AppEventType type)
 // Returns 0 for unknown event type strings (not ALL_EVENTS).
 inline uint32_t stringToEventBit(const std::string &str)
 {
-	if (str == "process_start")
+	if (str == "START")
 		return static_cast<uint32_t>(AppEventType::PROCESS_START);
-	if (str == "process_exit")
+	if (str == "EXIT")
 		return static_cast<uint32_t>(AppEventType::PROCESS_EXIT);
-	if (str == "stdout")
+	if (str == "STDOUT")
 		return static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT);
-	if (str == "health_change")
+	if (str == "HEALTH")
 		return static_cast<uint32_t>(AppEventType::HEALTH_CHANGE);
-	if (str == "status_change")
+	if (str == "STATUS")
 		return static_cast<uint32_t>(AppEventType::STATUS_CHANGE);
-	if (str == "app_removed")
+	if (str == "REMOVED")
 		return static_cast<uint32_t>(AppEventType::APP_REMOVED);
-	if (str == "all")
+	if (str == "ALL")
 		return static_cast<uint32_t>(AppEventType::ALL_EVENTS);
 	return 0;
 }

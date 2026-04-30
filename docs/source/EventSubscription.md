@@ -6,19 +6,19 @@ App Mesh supports real-time event subscription over persistent connections (TCP 
 
 | Event | Description | Data Fields |
 |---|---|---|
-| `process_start` | Process spawned | `pid`, `process_uuid` |
-| `process_exit` | Process exited | `pid`, `exit_code`, `last_error` |
-| `stdout` | Stdout output available | `output`, `position`, `finished` |
-| `health_change` | Health status changed | `health` (0=healthy, 1=unhealthy), `previous_health` |
-| `status_change` | App enabled/disabled | `status`, `previous_status` |
-| `app_removed` | App deleted | (empty) |
+| `START` | Process spawned | `pid`, `process_uuid` |
+| `EXIT` | Process exited | `pid`, `exit_code`, `last_error` |
+| `STDOUT` | Stdout output available | `output`, `position`, `finished` |
+| `HEALTH` | Health status changed | `health` (0=healthy, 1=unhealthy), `previous_health` |
+| `STATUS` | App enabled/disabled | `status`, `previous_status` |
+| `REMOVED` | App deleted | (empty) |
 
 ## REST API
 
 ### Subscribe (per-app)
 
 ```
-POST /appmesh/app/{app_name}/subscribe?events=process_start,process_exit,stdout
+POST /appmesh/app/{app_name}/subscribe?events=START,EXIT,STDOUT
 Authorization: Bearer <JWT>
 ```
 
@@ -27,14 +27,14 @@ Authorization: Bearer <JWT>
 {
   "subscription_id": "cqk8g7l4d",
   "app_name": "myapp",
-  "events": ["process_start", "process_exit", "stdout"]
+  "events": ["START", "EXIT", "STDOUT"]
 }
 ```
 
 ### Subscribe (all apps)
 
 ```
-POST /appmesh/subscribe?events=process_start,process_exit
+POST /appmesh/subscribe?events=START,EXIT
 ```
 
 ### Unsubscribe
@@ -48,7 +48,7 @@ DELETE /appmesh/app/{app_name}/subscribe?subscription_id=cqk8g7l4d
 Register an app and subscribe atomically (no events missed):
 
 ```
-PUT /appmesh/app/{app_name}?subscribe_events=process_start,process_exit,stdout
+PUT /appmesh/app/{app_name}?subscribe_events=START,EXIT,STDOUT
 Content-Type: application/json
 
 { "name": "myapp", "command": "python3 server.py" }
@@ -69,7 +69,7 @@ Response {
   http_status:  200
   body: {
     "subscription_id": "cqk8g7l4d",
-    "event_type": "process_exit",
+    "event_type": "EXIT",
     "app_name": "myapp",
     "timestamp": 1714000000,
     "sequence": 42,
@@ -77,7 +77,7 @@ Response {
   }
   headers: {
     "X-Subscription-Id": "cqk8g7l4d",
-    "X-Event-Type": "process_exit",
+    "X-Event-Type": "EXIT",
     "X-App-Name": "myapp"
   }
 }
@@ -114,7 +114,7 @@ Response {
 
 - `unsubscribe()` verifies the requesting user matches the subscription owner
 - Connection disconnect auto-removes all subscriptions for that connection
-- App deletion dispatches `APP_REMOVED` event then purges all subscriptions
+- App deletion dispatches `REMOVED` event then purges all subscriptions
 
 ## SDK Usage
 
@@ -129,7 +129,7 @@ client.Login("admin", "admin123", "", 0, "")
 
 result, _ := client.Subscribe(appmesh.SubscribeOption{
     AppName: "myapp",
-    Events:  []string{"process_start", "process_exit"},
+    Events:  []string{"START", "EXIT"},
 }, func(event appmesh.AppEvent) {
     fmt.Printf("Event: %s app=%s\n", event.EventType, event.AppName)
 })
@@ -138,7 +138,7 @@ result, _ := client.Subscribe(appmesh.SubscribeOption{
 app, _ := client.AddApp(appmesh.Application{
     Name:    "myapp",
     Command: ptr("ping github.com"),
-}, "process_start", "process_exit", "stdout")
+}, "START", "EXIT", "STDOUT")
 fmt.Println("subscription_id:", app.SubscriptionID)
 
 // Unsubscribe
@@ -157,12 +157,12 @@ client.login("admin", "admin123")
 def on_event(event):
     print(f"Event: {event.event_type} app={event.app_name}")
 
-result = client.subscribe("myapp", ["process_start", "process_exit"], on_event)
+result = client.subscribe("myapp", ["START", "EXIT"], on_event)
 
 # Register app with atomic subscribe
 app = client.add_app(
     App({"name": "myapp", "command": "ping github.com"}),
-    subscribe_events=["process_start", "process_exit", "stdout"]
+    subscribe_events=["START", "EXIT", "STDOUT"]
 )
 
 # Unsubscribe
@@ -178,7 +178,7 @@ const client = new AppMeshClientTCP()
 await client.login('admin', 'admin123')
 
 // Subscribe
-const result = await client.subscribe('myapp', ['process_start', 'process_exit'], (event) => {
+const result = await client.subscribe('myapp', ['START', 'EXIT'], (event) => {
   console.log(`Event: ${event.event_type} app=${event.app_name}`)
 })
 
@@ -193,12 +193,12 @@ AppMeshClientTCP client = new AppMeshClientTCP.Builder().disableSSLVerify().buil
 client.login("admin", "admin123");
 
 // Subscribe to events
-JSONObject result = client.subscribe("myapp", "process_start", "process_exit");
+JSONObject result = client.subscribe("myapp", "START", "EXIT");
 String subId = result.getString("subscription_id");
 
 // Register app with atomic subscribe
 JSONObject app = new JSONObject().put("name", "myapp").put("command", "ping github.com");
-JSONObject appResult = client.addApp("myapp", app, "process_start", "process_exit", "stdout");
+JSONObject appResult = client.addApp("myapp", app, "START", "EXIT", "STDOUT");
 // appResult has "subscription_id" when active
 
 // Unsubscribe
@@ -212,11 +212,11 @@ let client = ClientBuilderTCP::new().danger_accept_invalid_certs(true).build()?;
 client.login("admin", "admin123", None, None, None).await?;
 
 // Subscribe to events
-let result = client.subscribe("myapp", Some(&["process_start", "process_exit"])).await?;
+let result = client.subscribe("myapp", Some(&["START", "EXIT"])).await?;
 
 // Register app with atomic subscribe
 let app = Application::builder("myapp").command("ping github.com").build();
-let created = client.add_app(&app, Some(&["process_start", "stdout"])).await?;
+let created = client.add_app(&app, Some(&["START", "STDOUT"])).await?;
 println!("subscription_id: {:?}", created.subscription_id);
 
 // Unsubscribe
@@ -226,6 +226,6 @@ client.unsubscribe(&result.subscription_id).await?;
 ## Limitations
 
 - **REST/HTTP** does not support subscriptions (no persistent connection). Use TCP or WebSocket.
-- **Wildcard stdout** (`/appmesh/subscribe?events=stdout`) is not supported — stdout polling requires a specific app name.
+- **Wildcard stdout** (`/appmesh/subscribe?events=STDOUT`) is not supported — stdout polling requires a specific app name.
 - **Server restart** clears all subscriptions (in-memory only). Clients must re-subscribe after reconnecting.
 - **Event ordering** is guaranteed per-subscription via a monotonic `sequence` counter. Cross-subscription ordering is not guaranteed.

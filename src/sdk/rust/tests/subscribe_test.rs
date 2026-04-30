@@ -26,7 +26,7 @@ mod tests {
     fn test_app_event_deserialization() {
         let raw = r#"{
             "subscription_id": "sub123",
-            "event_type": "process_exit",
+            "event_type": "EXIT",
             "app_name": "myapp",
             "timestamp": 1714000000,
             "sequence": 42,
@@ -35,7 +35,7 @@ mod tests {
 
         let event: AppEvent = serde_json::from_str(raw).expect("Failed to deserialize AppEvent");
         assert_eq!(event.subscription_id, "sub123");
-        assert_eq!(event.event_type, "process_exit");
+        assert_eq!(event.event_type, "EXIT");
         assert_eq!(event.app_name, "myapp");
         assert_eq!(event.timestamp, 1714000000);
         assert_eq!(event.sequence, 42);
@@ -47,7 +47,7 @@ mod tests {
     fn test_app_event_serialization_roundtrip() {
         let event = AppEvent {
             subscription_id: "sub-rt".to_string(),
-            event_type: "process_start".to_string(),
+            event_type: "START".to_string(),
             app_name: "test-app".to_string(),
             timestamp: 1714000000,
             sequence: 1,
@@ -74,12 +74,12 @@ mod tests {
     #[test]
     fn test_event_types() {
         let valid_types = vec![
-            "process_start",
-            "process_exit",
-            "stdout",
-            "health_change",
-            "status_change",
-            "app_removed",
+            "START",
+            "EXIT",
+            "STDOUT",
+            "HEALTH",
+            "STATUS",
+            "REMOVED",
         ];
 
         for event_type in &valid_types {
@@ -100,11 +100,11 @@ mod tests {
     fn test_event_with_headers() {
         let mut headers: HashMap<String, String> = HashMap::new();
         headers.insert("X-Subscription-Id".to_string(), "sub-hdr".to_string());
-        headers.insert("X-Event-Type".to_string(), "process_exit".to_string());
+        headers.insert("X-Event-Type".to_string(), "EXIT".to_string());
         headers.insert("X-App-Name".to_string(), "myapp".to_string());
 
         assert_eq!(headers.get("X-Subscription-Id"), Some(&"sub-hdr".to_string()));
-        assert_eq!(headers.get("X-Event-Type"), Some(&"process_exit".to_string()));
+        assert_eq!(headers.get("X-Event-Type"), Some(&"EXIT".to_string()));
         assert_eq!(headers.get("X-App-Name"), Some(&"myapp".to_string()));
     }
 
@@ -113,7 +113,7 @@ mod tests {
         let raw = r#"{
             "subscription_id": "cqk8g7l4d",
             "app_name": "myapp",
-            "events": ["process_start", "process_exit", "stdout"]
+            "events": ["START", "EXIT", "STDOUT"]
         }"#;
 
         #[derive(Debug, Deserialize)]
@@ -127,6 +127,6 @@ mod tests {
         assert_eq!(result.subscription_id, "cqk8g7l4d");
         assert_eq!(result.app_name, "myapp");
         assert_eq!(result.events.len(), 3);
-        assert!(result.events.contains(&"stdout".to_string()));
+        assert!(result.events.contains(&"STDOUT".to_string()));
     }
 }

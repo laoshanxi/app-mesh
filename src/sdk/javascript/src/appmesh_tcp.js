@@ -681,7 +681,7 @@ class MessageDemuxer {
  * Subscribe to app events over TCP.
  *
  * @param {string} appName - Application name, or "*" for all apps.
- * @param {string[]} [events] - Event types: "process_start", "process_exit", "stdout", etc.
+ * @param {string[]} [events] - Event types: "START", "EXIT", "STDOUT", etc.
  * @param {function} callback - Called with event object for each received event.
  * @returns {Promise<Object>} Subscription result with subscription_id, app_name, events.
  */

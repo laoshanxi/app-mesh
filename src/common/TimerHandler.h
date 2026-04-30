@@ -41,7 +41,7 @@ public:
 	 * @brief Registers a timer bound to this object.
 	 *
 	 * @param delayMilliseconds Initial delay in milliseconds.
-	 * @param intervalSeconds Interval in seconds. 0 for one-shot timer.
+	 * @param intervalMilliseconds Interval in milliseconds. 0 for one-shot timer.
 	 * @param from Source identifier for logging.
 	 * @param handler Callback invoked on expiration.
 	 * @return Timer ID, or INVALID_TIMER_ID on failure.
@@ -49,7 +49,7 @@ public:
 	 *
 	 * @note Timer IDs will be reused to maintain a compact range. Ensure to reset your timer ID variable
 	 */
-	long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const std::string from, const TimerCallback &handler);
+	long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string from, const TimerCallback &handler);
 
 	/**
 	 * @brief Cancels a timer.
@@ -119,16 +119,16 @@ public:
 	 * @brief Registers a timer with optional TimerHandler binding.
 	 *
 	 * @param delayMilliseconds Initial delay in milliseconds.
-	 * @param intervalSeconds Interval in seconds. 0 for one-shot.
+	 * @param intervalMilliseconds Interval in milliseconds. 0 for one-shot.
 	 * @param from Source identifier for logging.
 	 * @param timerObj Optional shared_ptr to TimerHandler (nullptr for lambda-only), kept alive until the timer stops.
 	 * @param handler Callback invoked on expiration.
 	 * @return Timer ID, or INVALID_TIMER_ID on failure.
 	 */
-	long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, std::string from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
+	long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, std::string from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
 
 	/// @brief Convenience overload for lambda-only timers.
-	long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, std::string from, const TimerCallback &handler);
+	long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, std::string from, const TimerCallback &handler);
 
 	/// @brief Cancels timer (non-thread-safe).
 	bool cancelTimer(long &timerId);
@@ -153,20 +153,20 @@ using TIMER_MANAGER = ACE_Singleton<TimerManager, ACE_Null_Mutex>;
  * @brief Standalone timer registration for lambda-only timers.
  *
  * @param delayMilliseconds Initial delay in milliseconds.
- * @param intervalSeconds Interval in seconds. 0 for one-shot.
+ * @param intervalMilliseconds Interval in milliseconds. 0 for one-shot.
  * @param from Source identifier for logging.
  * @param handler Callback invoked on expiration.
  * @return Timer ID, or INVALID_TIMER_ID on failure.
  *
  * @example
  *   std::atomic_long timerId{INVALID_TIMER_ID};
- *   timerId = registerTimer(1000, 5, "my_lambda_timer", []() {
+ *   timerId = registerTimer(1000, 5000, "my_lambda_timer", []() {
  *       std::cout << "Timer fired!" << std::endl;
  *       return true; // Continue timer
  *   });
  *   cancelTimer(timerId);
  */
-long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const std::string &from, const TimerCallback &handler);
+long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler);
 
 /**
  * @brief Standalone timer cancellation.

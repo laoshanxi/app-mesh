@@ -26,8 +26,8 @@ POST| /appmesh/app/${APP-NAME}/enable | | Enable an application
 POST| /appmesh/app/${APP-NAME}/disable | | Disable an application
 DELETE| /appmesh/app/${APP-NAME} | | Deregister an application
 -|-|-|-
-POST| /appmesh/app/${APP-NAME}/subscribe?events=process_start,stdout | | Subscribe to app events (TCP/WSS only), [detail](EventSubscription.md)
-POST| /appmesh/subscribe?events=process_start,stdout | | Subscribe to events from all apps (TCP/WSS only)
+POST| /appmesh/app/${APP-NAME}/subscribe?events=START,STDOUT | | Subscribe to app events (TCP/WSS only), [detail](EventSubscription.md)
+POST| /appmesh/subscribe?events=START,STDOUT | | Subscribe to events from all apps (TCP/WSS only)
 DELETE| /appmesh/app/${APP-NAME}/subscribe?subscription_id=abc | | Unsubscribe from app events
 DELETE| /appmesh/subscribe?subscription_id=abc | | Unsubscribe from all-app events
 -|-|-|-

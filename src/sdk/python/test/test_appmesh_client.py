@@ -15,6 +15,8 @@ Usage:
 """
 
 import concurrent.futures
+import contextlib
+import io
 import json
 import os
 import stat
@@ -206,8 +208,8 @@ class ProtocolTestMixin:
         self.client.login("admin", DEFAULT_CRED)
         self.assertIn("cpu_cores", self.client.get_host_resources())
         self.assertIn("appmesh_prom_scrape_count", self.client.get_metrics())
-        self.assertEqual(self.client.set_log_level("DEBUG"), "DEBUG")
         self.assertEqual(self.client.set_log_level("INFO"), "INFO")
+        self.assertEqual(self.client.set_log_level("DEBUG"), "DEBUG")
 
     def test_14_get_config_roundtrip(self):
         """get_config / set_config roundtrip."""
@@ -472,7 +474,7 @@ class SubscribeMixin:
             SubscribeMixin._subscribe_permission_granted = True
 
     def test_60_subscribe_process_start(self):
-        """Subscribe to process_start, enable a disabled app, verify event."""
+        """Subscribe to START, enable a disabled app, verify event."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_60"
@@ -486,11 +488,11 @@ class SubscribeMixin:
                 received.append(event)
                 barrier.set()
 
-            sub_result = self.client.subscribe(app_name, ["process_start"], callback=on_event)
+            sub_result = self.client.subscribe(app_name, ["START"], callback=on_event)
             self.assertTrue(sub_result.subscription_id)
             self.client.enable_app(app_name)
-            self.assertTrue(barrier.wait(timeout=10), "process_start event not received")
-            self.assertEqual(received[0].event_type, "process_start")
+            self.assertTrue(barrier.wait(timeout=10), "START event not received")
+            self.assertEqual(received[0].event_type, "START")
             self.assertEqual(received[0].app_name, app_name)
         finally:
             if sub_result:
@@ -501,7 +503,7 @@ class SubscribeMixin:
             self.client.delete_app(app_name)
 
     def test_61_subscribe_process_exit(self):
-        """Subscribe to process_exit, verify exit event with exit_code."""
+        """Subscribe to EXIT, verify exit event with exit_code."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_61"
@@ -513,22 +515,22 @@ class SubscribeMixin:
 
             def on_event(event):
                 received.append(event)
-                if event.event_type == "process_start":
+                if event.event_type == "START":
                     got_start.set()
-                elif event.event_type == "process_exit":
+                elif event.event_type == "EXIT":
                     got_exit.set()
 
             registered = self.client.add_app(
                 App({"command": "sleep 30", "name": app_name, "status": 0}),
-                subscribe_events=["process_start", "process_exit"],
+                subscribe_events=["START", "EXIT"],
                 callback=on_event,
             )
             sub_id = getattr(registered, "subscription_id", None)
             self.client.enable_app(app_name)
-            self.assertTrue(got_start.wait(timeout=10), "process_start event not received")
+            self.assertTrue(got_start.wait(timeout=10), "START event not received")
             self.client.disable_app(app_name)
-            self.assertTrue(got_exit.wait(timeout=10), "process_exit event not received")
-            self.assertTrue(any(e.event_type == "process_exit" for e in received))
+            self.assertTrue(got_exit.wait(timeout=10), "EXIT event not received")
+            self.assertTrue(any(e.event_type == "EXIT" for e in received))
         finally:
             if sub_id:
                 try:
@@ -555,10 +557,10 @@ class SubscribeMixin:
                 "command": "python3 -c 'import time; [print(i, flush=True) or time.sleep(0.5) for i in range(10)]'",
                 "name": app_name, "shell": True,
             }))
-            sub_result = self.client.subscribe(app_name, ["stdout"], callback=on_event)
-            self.assertTrue(barrier.wait(timeout=10), "stdout event not received")
+            sub_result = self.client.subscribe(app_name, ["STDOUT"], callback=on_event)
+            self.assertTrue(barrier.wait(timeout=10), "STDOUT event not received")
             self.assertGreater(len(received), 0)
-            self.assertEqual(received[0].event_type, "stdout")
+            self.assertEqual(received[0].event_type, "STDOUT")
         finally:
             if sub_result:
                 try:
@@ -582,7 +584,7 @@ class SubscribeMixin:
                 barrier.set()
 
             self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
-            sub_result = self.client.subscribe(app_name, ["process_start"], callback=on_event)
+            sub_result = self.client.subscribe(app_name, ["START"], callback=on_event)
             self.client.enable_app(app_name)
             self.assertTrue(barrier.wait(timeout=10), "First event not received")
             count_after_first = len(received)
@@ -611,7 +613,7 @@ class SubscribeMixin:
         sub_result = None
         try:
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
-            sub_result = self.client.subscribe(app_name, ["process_start", "process_exit"])
+            sub_result = self.client.subscribe(app_name, ["START", "EXIT"])
             self.assertTrue(sub_result.subscription_id)
             self.assertEqual(sub_result.app_name, app_name)
             self.assertIsInstance(sub_result.events, list)
@@ -625,7 +627,7 @@ class SubscribeMixin:
             self.client.delete_app(app_name)
 
     def test_65_subscribe_multiple_event_types(self):
-        """Subscribe to both process_start and process_exit, verify both arrive."""
+        """Subscribe to both START and EXIT, verify both arrive."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_65"
@@ -637,20 +639,20 @@ class SubscribeMixin:
 
             def on_event(event):
                 received.append(event)
-                if event.event_type == "process_start":
+                if event.event_type == "START":
                     got_start.set()
-                elif event.event_type == "process_exit":
+                elif event.event_type == "EXIT":
                     got_exit.set()
 
             self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
-            sub_result = self.client.subscribe(app_name, ["process_start", "process_exit"], callback=on_event)
+            sub_result = self.client.subscribe(app_name, ["START", "EXIT"], callback=on_event)
             self.client.enable_app(app_name)
-            self.assertTrue(got_start.wait(timeout=10), "process_start not received")
+            self.assertTrue(got_start.wait(timeout=10), "START not received")
             self.client.disable_app(app_name)
-            self.assertTrue(got_exit.wait(timeout=10), "process_exit not received")
+            self.assertTrue(got_exit.wait(timeout=10), "EXIT not received")
             event_types = {e.event_type for e in received}
-            self.assertIn("process_start", event_types)
-            self.assertIn("process_exit", event_types)
+            self.assertIn("START", event_types)
+            self.assertIn("EXIT", event_types)
         finally:
             if sub_result:
                 try:
@@ -674,7 +676,7 @@ class SubscribeMixin:
 
             app = self.client.add_app(
                 App({"command": "echo sub_test_66", "name": app_name, "shell": True}),
-                subscribe_events=["process_start", "stdout"],
+                subscribe_events=["START", "STDOUT"],
             )
             self.assertTrue(hasattr(app, "name"))
             # Events from atomic subscribe arrive on the transport's demuxer
@@ -685,7 +687,7 @@ class SubscribeMixin:
             self.client.delete_app(app_name)
 
     def test_67_subscribe_app_removed(self):
-        """Subscribe to app_removed, delete app, verify event."""
+        """Subscribe to REMOVED, delete app, verify event."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_67"
@@ -699,10 +701,10 @@ class SubscribeMixin:
                 barrier.set()
 
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
-            sub_result = self.client.subscribe(app_name, ["app_removed"], callback=on_event)
+            sub_result = self.client.subscribe(app_name, ["REMOVED"], callback=on_event)
             self.client.delete_app(app_name)
-            self.assertTrue(barrier.wait(timeout=10), "app_removed event not received")
-            self.assertEqual(received[0].event_type, "app_removed")
+            self.assertTrue(barrier.wait(timeout=10), "REMOVED event not received")
+            self.assertEqual(received[0].event_type, "REMOVED")
         finally:
             if sub_result:
                 try:
@@ -715,7 +717,7 @@ class SubscribeMixin:
                 pass
 
     def test_68_subscribe_status_change(self):
-        """Subscribe to status_change, enable/disable, verify event."""
+        """Subscribe to STATUS, enable/disable, verify event."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_68"
@@ -729,10 +731,10 @@ class SubscribeMixin:
                 barrier.set()
 
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
-            sub_result = self.client.subscribe(app_name, ["status_change"], callback=on_event)
+            sub_result = self.client.subscribe(app_name, ["STATUS"], callback=on_event)
             self.client.disable_app(app_name)
-            self.assertTrue(barrier.wait(timeout=10), "status_change event not received")
-            self.assertEqual(received[0].event_type, "status_change")
+            self.assertTrue(barrier.wait(timeout=10), "STATUS event not received")
+            self.assertEqual(received[0].event_type, "STATUS")
         finally:
             if sub_result:
                 try:
@@ -740,6 +742,31 @@ class SubscribeMixin:
                 except Exception:
                     pass
             self.client.delete_app(app_name)
+
+    def test_69_wait_for_async_run_streaming(self):
+        """On TCP/WSS, wait_for_async_run is overridden to use subscribe-based streaming.
+
+        Captures stdout to assert the subscribe/dispatch path actually delivered the
+        process output (not just that the run exited with 0).
+        """
+        self.client.login("admin", DEFAULT_CRED)
+        self._ensure_subscribe_permission()
+        run = self.client.run_app_async(
+            App({"command": "echo streaming-ok && exit 0", "shell": True}),
+            max_time=5,
+        )
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                exit_code = run.wait(print_stdout=True, timeout=10)
+            self.assertEqual(exit_code, 0)
+            self.assertIn("streaming-ok", buf.getvalue())
+        except Exception:
+            try:
+                self.client.delete_app(run.app_name)
+            except Exception:
+                pass
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +776,7 @@ class SubscribeWildcardMixin:
     """Wildcard subscribe and multi-subscription tests."""
 
     def test_70_wildcard_subscribe_all(self):
-        """Subscribe '*' to process_start, register 2 apps, verify events from both."""
+        """Subscribe '*' to START, register 2 apps, verify events from both."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app1 = "SDK_WILD_70A"
@@ -765,7 +792,7 @@ class SubscribeWildcardMixin:
                 if app1 in apps_seen and app2 in apps_seen:
                     got_both.set()
 
-            sub_result = self.client.subscribe("*", ["process_start"], callback=on_event)
+            sub_result = self.client.subscribe("*", ["START"], callback=on_event)
             self.client.add_app(App({"command": "sleep 30", "name": app1}))
             self.client.add_app(App({"command": "sleep 30", "name": app2}))
             self.assertTrue(got_both.wait(timeout=10), "Events from both apps not received")
@@ -792,7 +819,7 @@ class SubscribeWildcardMixin:
                 received.append(event)
                 barrier.set()
 
-            sub_result = self.client.subscribe("*", ["process_start"], callback=on_event)
+            sub_result = self.client.subscribe("*", ["START"], callback=on_event)
             self.client.add_app(App({"command": "sleep 30", "name": app_name}))
             self.assertTrue(barrier.wait(timeout=10))
             count = len(received)
@@ -833,8 +860,8 @@ class SubscribeWildcardMixin:
                 got_exit.set()
 
             self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
-            sub1 = self.client.subscribe(app_name, ["process_start"], callback=on_start)
-            sub2 = self.client.subscribe(app_name, ["process_exit"], callback=on_exit)
+            sub1 = self.client.subscribe(app_name, ["START"], callback=on_start)
+            sub2 = self.client.subscribe(app_name, ["EXIT"], callback=on_exit)
             self.client.enable_app(app_name)
             self.assertTrue(got_start.wait(timeout=10))
             self.assertGreater(len(start_events), 0)
@@ -844,9 +871,9 @@ class SubscribeWildcardMixin:
             self.assertTrue(got_exit.wait(timeout=10))
             self.assertGreater(len(exit_events), 0)
             for e in start_events:
-                self.assertEqual(e.event_type, "process_start")
+                self.assertEqual(e.event_type, "START")
             for e in exit_events:
-                self.assertEqual(e.event_type, "process_exit")
+                self.assertEqual(e.event_type, "EXIT")
         finally:
             for s in (sub1, sub2):
                 if s:
@@ -872,7 +899,7 @@ class SubscribeWildcardMixin:
                     got_enough.set()
 
             self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
-            sub_result = self.client.subscribe(app_name, ["process_start", "status_change", "process_exit"], callback=on_event)
+            sub_result = self.client.subscribe(app_name, ["START", "STATUS", "EXIT"], callback=on_event)
 
             self.client.enable_app(app_name)
             time.sleep(1)
@@ -1078,7 +1105,7 @@ class SubscribeStressMixin:
                 received.append(event)
                 got_event.set()
 
-            sub_result = self.client.subscribe("*", ["process_start", "app_removed"], callback=on_event)
+            sub_result = self.client.subscribe("*", ["START", "REMOVED"], callback=on_event)
             for name in app_names:
                 self.client.add_app(App({"command": "sleep 1", "name": name}))
                 self.client.delete_app(name)
@@ -1096,7 +1123,7 @@ class SubscribeStressMixin:
                     pass
 
     def test_91_subscribe_stress_during_rapid_enable_disable(self):
-        """Subscribe status_change, 5x enable/disable, verify events."""
+        """Subscribe STATUS, 5x enable/disable, verify events."""
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_91"
@@ -1110,11 +1137,11 @@ class SubscribeStressMixin:
                 got_event.set()
 
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
-            sub_result = self.client.subscribe(app_name, ["status_change"], callback=on_event)
+            sub_result = self.client.subscribe(app_name, ["STATUS"], callback=on_event)
             for _ in range(5):
                 self.client.disable_app(app_name)
                 self.client.enable_app(app_name)
-            self.assertTrue(got_event.wait(timeout=10), "No status_change events during enable/disable churn")
+            self.assertTrue(got_event.wait(timeout=10), "No STATUS events during enable/disable churn")
         finally:
             if sub_result:
                 try:
@@ -1142,7 +1169,7 @@ class SubscribeStressMixin:
                         bar.set()
                     return cb
 
-                sub = self.client.subscribe(name, ["process_start"], callback=make_cb(name, barriers[idx]))
+                sub = self.client.subscribe(name, ["START"], callback=make_cb(name, barriers[idx]))
                 subs.append(sub)
 
             for name in app_names:
@@ -1180,7 +1207,7 @@ class SubscribeStressMixin:
                 barrier.set()
 
             self.client.add_app(App({"command": "sleep 30", "name": app_name}))
-            sub_result = self.client.subscribe("*", ["process_start", "app_removed"], callback=on_event)
+            sub_result = self.client.subscribe("*", ["START", "REMOVED"], callback=on_event)
             self.client.delete_app(app_name)
             time.sleep(2)
 
@@ -1189,7 +1216,7 @@ class SubscribeStressMixin:
             barrier.wait(timeout=10)
 
             event_types = [e.event_type for e in received]
-            self.assertIn("app_removed", event_types)
+            self.assertIn("REMOVED", event_types)
         finally:
             if sub_result:
                 try:
@@ -1221,7 +1248,7 @@ class SubscribeStressMixin:
                 "name": app_name,
                 "shell": True,
             }))
-            sub_result = self.client.subscribe(app_name, ["stdout"], callback=on_event)
+            sub_result = self.client.subscribe(app_name, ["STDOUT"], callback=on_event)
             done.wait(timeout=15)
             self.assertGreater(len(received), 0, "No stdout events for high-volume output")
         finally:

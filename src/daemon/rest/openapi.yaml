@@ -437,7 +437,7 @@ paths:
           description: |
             Comma-separated event types to subscribe atomically with app registration.
             Subscription is created before the app starts to ensure no events are missed.
-            Values: process_start, process_exit, stdout, health_change, status_change, app_removed, all.
+            Values: START, EXIT, STDOUT, HEALTH, STATUS, REMOVED, ALL.
             Requires TCP or WebSocket connection. Response includes subscription_id when active.
       requestBody:
         description: Application definition
@@ -1421,7 +1421,7 @@ paths:
             type: string
           description: |
             Comma-separated event types to subscribe.
-            Values: process_start, process_exit, stdout, health_change, status_change, app_removed.
+            Values: START, EXIT, STDOUT, HEALTH, STATUS, REMOVED.
             Default: all events.
       responses:
         "200":
@@ -1441,7 +1441,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    example: ["process_start", "process_exit", "stdout"]
+                    example: ["START", "EXIT", "STDOUT"]
         "401":
           $ref: "#/components/responses/Unauthorized"
         "405":

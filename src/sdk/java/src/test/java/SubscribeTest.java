@@ -29,7 +29,7 @@ public class SubscribeTest {
 
         JSONObject eventBody = new JSONObject();
         eventBody.put("subscription_id", "sub-test");
-        eventBody.put("event_type", "process_exit");
+        eventBody.put("event_type", "EXIT");
         eventBody.put("app_name", "myapp");
         eventBody.put("timestamp", 1714000000);
         eventBody.put("sequence", 42);
@@ -38,7 +38,7 @@ public class SubscribeTest {
         original.body = eventBody.toString().getBytes("UTF-8");
         original.headers = new HashMap<>();
         original.headers.put("X-Subscription-Id", "sub-test");
-        original.headers.put("X-Event-Type", "process_exit");
+        original.headers.put("X-Event-Type", "EXIT");
         original.headers.put("X-App-Name", "myapp");
 
         // Serialize and deserialize
@@ -51,14 +51,14 @@ public class SubscribeTest {
         assertEquals(EVENT_URI, decoded.request_uri);
         assertEquals(200, decoded.http_status);
         assertEquals("sub-test", decoded.headers.get("X-Subscription-Id"));
-        assertEquals("process_exit", decoded.headers.get("X-Event-Type"));
+        assertEquals("EXIT", decoded.headers.get("X-Event-Type"));
         assertEquals("myapp", decoded.headers.get("X-App-Name"));
 
         // Parse the body back as JSON
         String bodyStr = new String(decoded.body, "UTF-8");
         JSONObject parsedBody = new JSONObject(bodyStr);
         assertEquals("sub-test", parsedBody.getString("subscription_id"));
-        assertEquals("process_exit", parsedBody.getString("event_type"));
+        assertEquals("EXIT", parsedBody.getString("event_type"));
         assertEquals("myapp", parsedBody.getString("app_name"));
         assertEquals(1, parsedBody.getJSONObject("data").getInt("exit_code"));
     }
@@ -79,7 +79,7 @@ public class SubscribeTest {
         req.headers = new HashMap<>();
         req.headers.put("Authorization", "Bearer test-token");
         req.query = new HashMap<>();
-        req.query.put("events", "process_start,process_exit,stdout");
+        req.query.put("events", "START,EXIT,STDOUT");
 
         byte[] serialized = req.serialize();
         assertNotNull(serialized);
@@ -95,14 +95,14 @@ public class SubscribeTest {
         resp.body = "{}".getBytes("UTF-8");
         resp.headers = new HashMap<>();
         resp.headers.put("X-Subscription-Id", "sub-123");
-        resp.headers.put("X-Event-Type", "health_change");
+        resp.headers.put("X-Event-Type", "HEALTH");
         resp.headers.put("X-App-Name", "test-app");
 
         byte[] buf = resp.serialize();
         ResponseMessage decoded = ResponseMessage.deserialize(buf);
 
         assertEquals("sub-123", decoded.headers.get("X-Subscription-Id"));
-        assertEquals("health_change", decoded.headers.get("X-Event-Type"));
+        assertEquals("HEALTH", decoded.headers.get("X-Event-Type"));
         assertEquals("test-app", decoded.headers.get("X-App-Name"));
     }
 }

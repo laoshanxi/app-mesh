@@ -57,16 +57,34 @@ struct ConnectionKey
 
 struct EventEnvelope
 {
-	std::shared_ptr<nlohmann::json> basePayload;
+	// Pre-serialized JSON of the base payload (without subscription_id).
+	// Shared across all subscribers of one dispatch; toJson() avoids the deep
+	// json clone + redundant dump per subscriber by string-splicing the id in.
+	std::shared_ptr<std::string> basePayloadDump;
 	std::string subscriptionId;
 	std::string eventType;
 	std::string appName;
 
 	std::string toJson() const
 	{
-		nlohmann::json payload = *basePayload;
-		payload["subscription_id"] = subscriptionId;
-		return payload.dump();
+		// basePayloadDump ends with '}'. Insert ,"subscription_id":"<id>" before it.
+		std::string out;
+		const auto &base = *basePayloadDump;
+		out.reserve(base.size() + subscriptionId.size() + 24);
+		if (!base.empty() && base.back() == '}')
+		{
+			out.append(base, 0, base.size() - 1);
+			if (out.size() > 1)
+				out.append(1, ',');
+			out.append("\"subscription_id\":\"");
+			out.append(subscriptionId);
+			out.append("\"}");
+		}
+		else
+		{
+			out = base; // defensive: shouldn't happen with valid JSON
+		}
+		return out;
 	}
 };
 

@@ -42,10 +42,10 @@ assert('EVENT_URI constant', () => {
 })
 
 assert('AppEvent JSON parsing', () => {
-  const raw = '{"subscription_id":"sub123","event_type":"process_exit","app_name":"myapp","timestamp":1714000000,"sequence":42,"data":{"exit_code":1,"pid":12345}}'
+  const raw = '{"subscription_id":"sub123","event_type":"EXIT","app_name":"myapp","timestamp":1714000000,"sequence":42,"data":{"exit_code":1,"pid":12345}}'
   const event = JSON.parse(raw)
   if (event.subscription_id !== 'sub123') throw new Error('subscription_id mismatch')
-  if (event.event_type !== 'process_exit') throw new Error('event_type mismatch')
+  if (event.event_type !== 'EXIT') throw new Error('event_type mismatch')
   if (event.app_name !== 'myapp') throw new Error('app_name mismatch')
   if (event.timestamp !== 1714000000) throw new Error('timestamp mismatch')
   if (event.sequence !== 42) throw new Error('sequence mismatch')
@@ -53,7 +53,7 @@ assert('AppEvent JSON parsing', () => {
 })
 
 assert('Event type strings', () => {
-  const validTypes = ['process_start', 'process_exit', 'stdout', 'health_change', 'status_change', 'app_removed']
+  const validTypes = ['START', 'EXIT', 'STDOUT', 'HEALTH', 'STATUS', 'REMOVED']
   for (const t of validTypes) {
     const event = { subscription_id: 's', event_type: t, app_name: 'a', timestamp: 0, sequence: 0, data: {} }
     const json = JSON.stringify(event)
@@ -62,12 +62,12 @@ assert('Event type strings', () => {
 })
 
 assert('Subscribe result JSON parsing', () => {
-  const raw = '{"subscription_id":"cqk8g7l4d","app_name":"myapp","events":["process_start","process_exit","stdout"]}'
+  const raw = '{"subscription_id":"cqk8g7l4d","app_name":"myapp","events":["START","EXIT","STDOUT"]}'
   const result = JSON.parse(raw)
   if (result.subscription_id !== 'cqk8g7l4d') throw new Error('subscription_id mismatch')
   if (result.app_name !== 'myapp') throw new Error('app_name mismatch')
   if (result.events.length !== 3) throw new Error('events count mismatch')
-  if (!result.events.includes('stdout')) throw new Error('stdout not in events')
+  if (!result.events.includes('STDOUT')) throw new Error('stdout not in events')
 })
 
 assert('Event identification by request_uri', () => {
@@ -89,13 +89,13 @@ assert('MessageDemuxer routes event callbacks', () => {
   demuxer.registerEventCallback('sub1', (event) => { received = event })
 
   const fakeResp = { requestUri: EVENT_URI, body: Buffer.from(JSON.stringify({
-    subscription_id: 'sub1', event_type: 'process_exit', app_name: 'test',
+    subscription_id: 'sub1', event_type: 'EXIT', app_name: 'test',
     timestamp: 0, sequence: 1, data: { exit_code: 0 }
   }))}
   demuxer._dispatchEvent(fakeResp)
 
   if (!received) throw new Error('Event callback not called')
-  if (received.event_type !== 'process_exit') throw new Error('Wrong event_type')
+  if (received.event_type !== 'EXIT') throw new Error('Wrong event_type')
   if (received.app_name !== 'test') throw new Error('Wrong app_name')
 })
 
@@ -117,7 +117,7 @@ assert('MessageDemuxer ignores events for unknown subscriptions', () => {
   demuxer.registerEventCallback('sub1', () => { called = true })
 
   const fakeResp = { requestUri: EVENT_URI, body: Buffer.from(JSON.stringify({
-    subscription_id: 'unknown_sub', event_type: 'process_exit', app_name: 'test',
+    subscription_id: 'unknown_sub', event_type: 'EXIT', app_name: 'test',
     timestamp: 0, sequence: 1, data: {}
   }))}
   demuxer._dispatchEvent(fakeResp)
@@ -131,7 +131,7 @@ assert('MessageDemuxer unregister removes callback', () => {
   demuxer.registerEventCallback('sub1', () => { callCount++ })
 
   const makeEvent = () => ({ requestUri: EVENT_URI, body: Buffer.from(JSON.stringify({
-    subscription_id: 'sub1', event_type: 'process_start', app_name: 'a',
+    subscription_id: 'sub1', event_type: 'START', app_name: 'a',
     timestamp: 0, sequence: 0, data: {}
   }))})
 

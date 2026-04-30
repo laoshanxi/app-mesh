@@ -78,13 +78,9 @@ namespace os
 
 	pid_t ProcessTree::findLeafPid() const
 	{
-		// recurse into children
-		for (const auto &child : this->children)
-		{
-			return child.findLeafPid();
-		}
-
-		// no child - this is a leaf
+		// Follow the first-child chain down to a leaf.
+		if (!this->children.empty())
+			return this->children.front().findLeafPid();
 		return this->process.pid;
 	}
 

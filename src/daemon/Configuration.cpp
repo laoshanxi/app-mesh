@@ -994,7 +994,7 @@ Configuration::JsonRest::JsonRest()
 	: m_restEnabled(false), m_passwordComplexityEnabled(false), m_corsDisabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
 	  m_IOThreadPoolSize(DEFAULT_IO_THREAD_POOL_SIZE),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
-	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT)
+	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(0)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 	m_jwt = std::make_shared<JsonJwt>();

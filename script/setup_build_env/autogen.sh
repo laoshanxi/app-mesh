@@ -146,8 +146,8 @@ if [ -n "$GCC_MAJOR_VER" ] && [ "$GCC_MAJOR_VER" -lt 8 ]; then
     echo "GCC < 8: build spdlog from v1.9.2 branch"
     git clone -b v1.9.2 --depth 1 https://github.com/gabime/spdlog.git
 else
-    echo "GCC >= 8: build spdlog from default branch"
-    git clone --depth 1 https://github.com/gabime/spdlog.git
+    echo "GCC >= 8: build spdlog from v1.15.3 tag"
+    git clone -b v1.15.3 --depth 1 https://github.com/gabime/spdlog.git
 fi
 cd spdlog || exit 1
 mkdir -p build && cd build || exit 1
@@ -264,7 +264,7 @@ git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
 cp -rf concurrentqueue /usr/local/include/
 
 cd $ROOTDIR
-git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
+git clone --depth=1 https://github.com/warmcat/libwebsockets.git
 if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
     cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
 else

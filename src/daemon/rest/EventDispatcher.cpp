@@ -82,15 +82,19 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 				   std::chrono::system_clock::now().time_since_epoch())
 				   .count();
 
+	std::string eventTypeStr = eventTypeToString(type);
 	nlohmann::json eventPayload;
-	eventPayload["event_type"] = eventTypeToString(type);
+	eventPayload["event_type"] = eventTypeStr;
 	eventPayload["app_name"] = appName;
 	eventPayload["timestamp"] = now;
 	eventPayload["sequence"] = seq;
 	eventPayload["data"] = data;
 
-	std::string eventTypeStr = eventTypeToString(type);
-	auto basePayload = std::make_shared<nlohmann::json>(std::move(eventPayload));
+	// Pre-serialize ONCE; per-subscriber toJson() splices subscription_id in by
+	// string concat instead of cloning the JSON DOM N times.  error_handler::replace
+	// substitutes U+FFFD for invalid UTF-8 bytes (binary stdout) instead of throwing
+	// a type_error.316 that would mark every STDOUT subscriber dead.
+	auto basePayloadDump = std::make_shared<std::string>(eventPayload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
 
 	uint32_t typeBit = static_cast<uint32_t>(type);
 
@@ -128,7 +132,7 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 	std::vector<std::string> deadSubscriptions;
 	for (const auto &p : pending)
 	{
-		EventEnvelope envelope{basePayload, p.subId, eventTypeStr, appName};
+		EventEnvelope envelope{basePayloadDump, p.subId, eventTypeStr, appName};
 		try
 		{
 			if (!p.cb(envelope))
@@ -308,7 +312,7 @@ void EventDispatcher::updateStdoutWatcherLocked(const std::string &appName, int 
 		// Use weak_ptr in callback to avoid preventing StdoutWatcher destruction
 		std::weak_ptr<StdoutWatcher> weakWatcher = watcher;
 		auto timerId = watcher->registerTimer(
-			0, 1, // 1-second interval (TimerHandler uses seconds)
+			0, 500, // 500 ms interval
 			"StdoutWatcher",
 			[weakWatcher]() -> bool
 			{
