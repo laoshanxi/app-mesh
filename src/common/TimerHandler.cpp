@@ -26,19 +26,8 @@ int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *a
 		return -1;
 	}
 
-	// For RECURRING timers ACE_Timer_Queue_T::expire reschedules the heap node
-	// before invoking us and releases its mutex via ACE_Reverse_Lock during the
-	// upcall. A concurrent TimerManager::cancelTimer() from another thread can
-	// therefore succeed and synchronously delete `this` while m_handler() is
-	// running. Snapshot the state we need to read AFTER the callback into stack
-	// locals, and never touch this-> once user code has had a chance to race
-	// with deletion. This makes TimerEvent safe-by-default for every recurring
-	// caller without enabling ACE Reference_Counting_Policy.
-	//
-	// The std::function copy can throw std::bad_alloc, so the snapshot itself
-	// must run inside the try — letting an exception propagate out of
-	// handle_timeout would surface in ACE's expire upcall functor with no
-	// contractual handler.
+	// Snapshot before upcall: concurrent cancelTimer() can delete `this`
+	// while m_handler() runs (ACE expire releases queue lock during upcall).
 	bool shouldContinue = false;
 	bool oneShot = false;
 	try
@@ -53,7 +42,7 @@ int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *a
 		}
 
 		shouldContinue = handlerCopy();
-		// Locals only past this point — `this` may have been freed during handlerCopy().
+		// `this` may be freed past this point — locals only.
 	}
 	catch (const std::exception &ex)
 	{

@@ -114,23 +114,9 @@ initialize_directory
 prepare_app_start "$@"
 secure_installation_check
 
-# CI sets APPMESH_NO_RESTART=1 to fail-fast on crash so test diagnostics aren't
-# masked by a silent restart. Production paths (init.d, docker) leave it unset
-# and rely on the loop below as the only supervisor (systemd / launchd / NSSM
-# don't invoke this script — they spawn appsvc directly with their own restart).
-if [ "${APPMESH_NO_RESTART:-0}" = "1" ]; then
-	info "Starting App Mesh service as $(id -un): $PROGRAM (restart disabled)"
-	exec "$PROGRAM"
-fi
-
-attempt=0
-while :; do
-	info "Starting App Mesh service as $(id -un): $PROGRAM (attempt $attempt)"
-	rc=0
-	# `|| rc=$?` keeps `set -e` from killing the loop on appsvc non-zero exit.
-	"$PROGRAM" || rc=$?
-	info "App Mesh service exited rc=$rc"
-	[ "$rc" = 0 ] && break
-	attempt=$((attempt + 1))
-	sleep $(( attempt < 5 ? 1 : 5 ))
-done
+# Replace the shell with appsvc so tini (PID 1 in docker) forwards signals
+# directly to the daemon. Restart-on-crash is delegated to the platform:
+# Docker `--restart=on-failure`, systemd `Restart=always`, launchd `KeepAlive`,
+# NSSM `AppExit Default Restart`.
+info "Starting App Mesh service as $(id -un): $PROGRAM"
+exec "$PROGRAM"

@@ -146,8 +146,8 @@ if [ -n "$GCC_MAJOR_VER" ] && [ "$GCC_MAJOR_VER" -lt 8 ]; then
     echo "GCC < 8: build spdlog from v1.9.2 branch"
     git clone -b v1.9.2 --depth 1 https://github.com/gabime/spdlog.git
 else
-    echo "GCC >= 8: build spdlog from v1.15.3 tag"
-    git clone -b v1.15.3 --depth 1 https://github.com/gabime/spdlog.git
+    echo "GCC >= 8: build spdlog from v1.17.0 tag"
+    git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git
 fi
 cd spdlog || exit 1
 mkdir -p build && cd build || exit 1

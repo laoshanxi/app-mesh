@@ -63,6 +63,24 @@ AppProcess::~AppProcess()
 		terminate();
 	}
 
+	// Belt-and-suspenders: ACE still keeps `this` registered for any pid we
+	// haven't yet unregistered (zombie/reaped window where terminate() didn't
+	// run). A queued handle_exit upcall on a freed `this` is the test_87 stress
+	// crash. remove(pid) is serialised with any in-flight upcall via ACE's
+	// internal mutex; if the entry is already gone it returns -1 (no-op).
+	const pid_t pidSnapshot = m_pid.exchange(ACE_INVALID_PID);
+	if (pidSnapshot != ACE_INVALID_PID)
+	{
+		try
+		{
+			Process_Manager::instance()->remove(pidSnapshot);
+		}
+		catch (...)
+		{
+			LOG_WAR << fname << "Process_Manager::remove threw; ignored";
+		}
+	}
+
 	// Keep main stdout file, only remove backup
 	Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 }

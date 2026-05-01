@@ -195,8 +195,6 @@ function Install-VcpkgPackages {
         'boost-lockfree:x64-windows',
         'ace[ssl]:x64-windows',
         'uwebsockets[core,ssl]:x64-windows',
-        # spdlog is intentionally NOT in this list — built from source pinned to
-        # v1.15.3 in Install-SpdlogFromSource below, mirroring the Linux/macOS
         # path so should_log() behaviour is identical across platforms.
         'cryptopp:x64-windows',
         'curl:x64-windows',
@@ -214,9 +212,9 @@ function Install-VcpkgPackages {
 }
 
 function Install-SpdlogFromSource {
-    Write-Host "Installing spdlog from source (pinned to v1.15.3)..." -ForegroundColor Cyan
+    Write-Host "Installing spdlog from source (pinned to v1.17.0)..." -ForegroundColor Cyan
     Remove-Item -Recurse -Force "spdlog-src" -ErrorAction Ignore
-    git clone -b v1.15.3 --depth 1 https://github.com/gabime/spdlog.git spdlog-src
+    git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git spdlog-src
     Set-Location spdlog-src
     New-Item -ItemType Directory -Force -Path "build" | Out-Null
     Set-Location build

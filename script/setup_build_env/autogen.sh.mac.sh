@@ -80,9 +80,9 @@ go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssljson@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
-echo "Installing spdlog from source (pinned to v1.15.3)..."
+echo "Installing spdlog from source (pinned to v1.17.0)..."
 cd ${TMP_DIR}
-git clone -b v1.15.3 --depth 1 https://github.com/gabime/spdlog.git spdlog-src
+git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git spdlog-src
 cd spdlog-src
 mkdir -p build && cd build
 # Install into /usr/local so we don't sudo-write into $(brew --prefix) (brew
@@ -97,7 +97,7 @@ cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local \
 cmake --build . --parallel
 sudo cmake --install .
 # After /usr/local install succeeds, unlink any brew copy so find_package
-# resolves to the pinned v1.15.3 (`brew unlink` keeps the keg around for
+# resolves to the pinned v1.17.0 (`brew unlink` keeps the keg around for
 # easy rollback, unlike `uninstall --force` which would have left dependent
 # brew formulae with dangling dylib references on failure).
 brew unlink spdlog 2>/dev/null || true
