@@ -28,14 +28,9 @@ void QuitHandler::requestExit()
     const static char fname[] = "QuitHandler::requestExit() ";
 
     bool expected = false;
-    // Atomically set the flag if it was false
     if (m_exit_flag.compare_exchange_strong(expected, true))
     {
-        // Only log and wake the reactor on the first call
         LOG_INF << fname << "Exit requested.";
-
-        // Wake up reactor if it's blocking in handle_events
-        // This is crucial for applications that block in the reactor loop
         if (auto r = reactor())
             r->end_reactor_event_loop();
     }
@@ -43,12 +38,25 @@ void QuitHandler::requestExit()
 
 int QuitHandler::handle_signal(int signum, siginfo_t *, ucontext_t *)
 {
-    const static char fname[] = "QuitHandler::handle_signal() ";
+    // Async-signal-safe only — spdlog locks a mutex, calling it from a signal
+    // handler deadlocks. Main loop logs the shutdown.
+    // Only exit signals trigger termination; reload-style signals (SIGHUP,
+    // SIGUSR1/2) must be handled elsewhere and must NOT set the exit flag.
+    switch (signum)
+    {
+    case SIGTERM:
+    case SIGINT:
+#ifdef SIGQUIT
+    case SIGQUIT:
+#endif
+        break;
+    default:
+        return 0;
+    }
 
-    LOG_INF << fname << "QuitHandler: Signal received:" << signum;
-    requestExit();
-
-    // Return 0 to stay registered, -1 to unregister (usually 0 is preferred)
+    m_exit_flag.store(true, std::memory_order_release);
+    if (auto r = reactor())
+        r->end_reactor_event_loop();
     return 0;
 }
 

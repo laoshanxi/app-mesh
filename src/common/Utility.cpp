@@ -537,7 +537,7 @@ void Utility::initLogging(const std::string &name)
 	logger->flush_on(spdlog::level::info);
 
 	// Pattern
-	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] %l: %v");
+	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] %L: %v");
 
 	// Log level from env
 	auto levelEnv = Utility::getenv("LOG_LEVEL");
