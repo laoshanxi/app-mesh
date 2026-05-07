@@ -79,6 +79,26 @@ rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
 go version
 go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 
+# Rust (for CLI build)
+if ! command -v cargo >/dev/null 2>&1; then
+    RUST_ARCH=$(uname -m)
+    case "$RUST_ARCH" in
+        x86_64)  RUST_ARCH="x86_64-unknown-linux-gnu" ;;
+        aarch64) RUST_ARCH="aarch64-unknown-linux-gnu" ;;
+        armv7l)  RUST_ARCH="armv7-unknown-linux-gnueabihf" ;;
+    esac
+    $WGET_A -O /tmp/rustup-init "https://static.rust-lang.org/rustup/dist/${RUST_ARCH}/rustup-init"
+    chmod +x /tmp/rustup-init
+    /tmp/rustup-init -y --default-toolchain stable --no-modify-path
+    rm -f /tmp/rustup-init
+    export PATH="$HOME/.cargo/bin:$PATH"
+    ln -sf "$HOME/.cargo/bin/rustc" /usr/local/bin/rustc
+    ln -sf "$HOME/.cargo/bin/cargo" /usr/local/bin/cargo
+    ln -sf "$HOME/.cargo/bin/rustup" /usr/local/bin/rustup
+fi
+rustup update stable
+rustc --version
+
 # check libssl in case of setup_build_env/update_openssl.sh not executed
 if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then
     echo 'openssl was already installed'
@@ -236,10 +256,6 @@ cat << EOF > /usr/local/include/prometheus/detail/core_export.h
 #endif
 EOF
 
-git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
-sed -i -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_required(VERSION 3.20)/' linenoise-ng/CMakeLists.txt
-cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target linenoise && cmake --install .
-
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 
@@ -250,10 +266,6 @@ if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
     while ! make; do make clean && git reset --hard HEAD^ && cmake -DBUILD_SHARED_LIBS=ON ..; sleep 0.5; done
 fi
 make && make install
-
-cd $ROOTDIR
-git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
-cd QR-Code-generator/cpp && cp qrcodegen.* /usr/local/include/ && make && cp libqrcodegencpp.a /usr/local/lib/
 
 cd $ROOTDIR
 git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git

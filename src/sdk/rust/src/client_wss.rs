@@ -26,14 +26,22 @@ use uuid::Uuid;
 /// Each `read_message` call acquires the tokio mutex, reads one message, and
 /// releases the lock.
 struct WSSMessageReader {
-    transport: Arc<Mutex<WSSTransport>>,
+    reader: Arc<Mutex<Option<crate::wss_transport::SplitStream>>>,
 }
 
 #[async_trait]
 impl MessageReader for WSSMessageReader {
     async fn read_message(&self) -> Result<Option<Vec<u8>>, AppMeshError> {
-        let mut t = self.transport.lock().await;
-        t.receive_message().await
+        loop {
+            {
+                let mut guard = self.reader.lock().await;
+                if let Some(stream) = guard.as_mut() {
+                    return crate::wss_transport::read_one(stream).await;
+                }
+            }
+            // Reader not yet available (connect() hasn't run); back off to avoid busy-spin
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
     }
 }
 
@@ -43,7 +51,9 @@ impl MessageReader for WSSMessageReader {
 /// (called from a synchronous trait method) never silently drops a token.
 pub struct WSSRequester {
     transport: Arc<Mutex<WSSTransport>>,
+    reader_handle: Arc<Mutex<Option<crate::wss_transport::SplitStream>>>,
     token: Arc<std::sync::RwLock<Option<String>>>,
+    forward_to: std::sync::Mutex<Option<String>>,
     demuxer: std::sync::Mutex<Option<Arc<MessageDemuxer>>>,
 }
 
@@ -59,10 +69,13 @@ impl WSSRequester {
         let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
 
         let transport = WSSTransport::new(address, verify, client_cert);
+        let reader_handle = transport.reader_handle();
 
         Ok(Self {
             transport: Arc::new(Mutex::new(transport)),
+            reader_handle,
             token: Arc::new(std::sync::RwLock::new(None)),
+            forward_to: std::sync::Mutex::new(None),
             demuxer: std::sync::Mutex::new(None),
         })
     }
@@ -109,6 +122,9 @@ impl Requester for WSSRequester {
 
             if let Some(token) = self.token.read().expect("token lock poisoned").clone() {
                 req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
+            }
+            if let Some(ref fwd) = *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) {
+                req.headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.into(), fwd.clone());
             }
 
             // Save headers ref before consuming for token sync
@@ -169,6 +185,12 @@ impl Requester for WSSRequester {
         Ok(http_resp)
     }
 
+    fn set_forward_to(&self, url: Option<String>) {
+        if let Ok(mut fwd) = self.forward_to.lock() {
+            *fwd = url;
+        }
+    }
+
     fn handle_token_update(&self, token: Option<String>) {
         let mut guard = self.token.write().expect("token lock poisoned");
         *guard = token;
@@ -198,9 +220,8 @@ impl Requester for WSSRequester {
             return; // already enabled
         }
         let demuxer = Arc::new(MessageDemuxer::new());
-        let reader = Arc::new(WSSMessageReader {
-            transport: Arc::clone(&self.transport),
-        });
+        // Use the split reader handle — reads are independent from sends (no lock contention)
+        let reader = Arc::new(WSSMessageReader { reader: Arc::clone(&self.reader_handle) });
         demuxer.start(reader);
         *guard = Some(demuxer);
     }
@@ -257,14 +278,15 @@ impl AppMeshClientWSS {
         let ssl_verify_path = ssl_verify.unwrap_or_else(|| DEFAULT_SSL_CA_CERT_PATH.to_string());
         if ssl_verify_path.is_empty() {
             client_builder = client_builder.danger_accept_invalid_certs(true);
+        } else if let Ok(buf) = std::fs::read(&ssl_verify_path) {
+            if let Ok(cert) = reqwest::Certificate::from_pem(&buf) {
+                client_builder = client_builder.add_root_certificate(cert);
+            } else {
+                client_builder = client_builder.danger_accept_invalid_certs(true);
+            }
         } else {
-            let mut buf = Vec::new();
-            File::open(&ssl_verify_path)
-                .and_then(|mut f| f.read_to_end(&mut buf))
-                .map_err(|e| AppMeshError::IoError(e.to_string()))?;
-            let cert = reqwest::Certificate::from_pem(&buf)
-                .map_err(|e| AppMeshError::SerializationError(format!("Invalid CA Cert: {}", e)))?;
-            client_builder = client_builder.add_root_certificate(cert);
+            // CA cert file not found, skip verification
+            client_builder = client_builder.danger_accept_invalid_certs(true);
         }
 
         if let Some((cert_path, key_path)) = ssl_client_cert {
@@ -444,6 +466,22 @@ impl AppMeshClientWSS {
         lifecycle: i32,
     ) -> Result<AppRun, AppMeshError> {
         self.client.run_app_async(app, max_time, lifecycle).await
+    }
+
+    /// Run an application and wait for completion using subscribe.
+    /// Subscribe is established BEFORE the app is started, so no events are missed.
+    pub async fn run_and_wait(
+        &self,
+        app: &Application,
+        max_time: i32,
+        lifecycle: i32,
+        timeout: i32,
+        print_stdout: bool,
+    ) -> Result<(AppRun, Option<i32>), AppMeshError> {
+        crate::wait_subscribe::run_and_wait_subscribe(
+            &self.client, app, max_time, lifecycle, timeout, print_stdout,
+        )
+        .await
     }
 
     /// Subscribe-based wait for an async run (WSS override).

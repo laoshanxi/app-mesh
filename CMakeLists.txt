@@ -188,6 +188,33 @@ if(NOT APPMESH_NO_TESTS)
 endif()
 
 # =============================================================================
+# Rust CLI (appc). Usage: make appc / make rust_tests
+# =============================================================================
+set(RUST_CLI_DIR "${CMAKE_SOURCE_DIR}/src/cli")
+set(RUST_CLI_BINARY "${RUST_CLI_DIR}/target/release/appc${CMAKE_EXECUTABLE_SUFFIX}")
+
+add_custom_target(appc
+    COMMAND cargo build --release
+    WORKING_DIRECTORY "${RUST_CLI_DIR}"
+    COMMENT "Building Rust CLI (appc)..."
+    VERBATIM
+)
+
+install(PROGRAMS "${RUST_CLI_BINARY}"
+    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    OPTIONAL
+)
+
+if(NOT APPMESH_NO_TESTS)
+    add_custom_target(rust_tests
+        COMMAND cargo test
+        WORKING_DIRECTORY "${RUST_CLI_DIR}"
+        COMMENT "Running Rust CLI tests..."
+        VERBATIM
+    )
+endif()
+
+# =============================================================================
 # Packaging. Usage: make pack
 # =============================================================================
 if(WIN32)
@@ -202,13 +229,22 @@ endif()
 add_custom_target(pack
     COMMENT "Creating distribution package..."
 
-    # 1. make install using all CPU cores
+    # 0. Build Rust CLI (appc)
+    COMMAND cargo build --release
+            --manifest-path "${RUST_CLI_DIR}/Cargo.toml"
+
+    # 1. make install (C++ daemon + libs)
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
             --target install
             --parallel ${PARALLEL_BUILD}
             --config $<CONFIG>
 
-    # 2. packaging
+    # 2. Copy Rust CLI binary into package
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${RUST_CLI_BINARY}"
+            "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/"
+
+    # 3. packaging
     COMMAND ${CMAKE_COMMAND} -E env
         PROJECT_NAME=${PROJECT_NAME}
         PROJECT_VERSION=${PROJECT_VERSION}

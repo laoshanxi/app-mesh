@@ -149,50 +149,93 @@ pub struct ResourceLimitation {
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Application {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shell: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub session_login: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub docker_image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stdout_cache_num: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_interval_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cron: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub daily_limitation: Option<DailyLimitation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub retention: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub health_check_cmd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub permission: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub behavior: Option<Behavior>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sec_env: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_limit: Option<ResourceLimitation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub register_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub starts: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
-    #[serde(rename = "pid_user")]
+    #[serde(rename = "pid_user", skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pstree: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub container_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub memory: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fd: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stdout_cache_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_start_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_exit_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_start_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub health: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub return_code: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub subscription_id: Option<String>,
 }
 

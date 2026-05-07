@@ -28,7 +28,9 @@ $NSISScript = Join-Path $ProjectRoot "script\pack\installer.nsi"
 
 Test-RequiredPath $NSISExe    "NSIS executable" -Required
 Test-RequiredPath $NSISScript "NSIS script"     -Required
+Test-RequiredPath (Join-Path $ProjectRoot "build\package_root\bin\appc.exe") "Rust CLI binary" -Required
 
 Write-Host "Building NSIS installer..."
 & $NSISExe $NSISScript
+if ($LASTEXITCODE -ne 0) { throw "NSIS build failed with exit code $LASTEXITCODE" }
 Write-Host "Installer package created successfully."

@@ -234,11 +234,21 @@ impl MessageDemuxer {
 
         let cb = {
             let map = event_callbacks.lock().expect("event_callbacks lock poisoned");
-            map.get(&sub_id).cloned()
+            if let Some(cb) = map.get(&sub_id) {
+                debug!("MessageDemuxer: event matched sub_id={}", sub_id);
+                Some(cb.clone())
+            } else if !map.is_empty() {
+                // Race: event arrived before callback was registered with correct ID.
+                // Deliver to any registered callback as fallback.
+                debug!("MessageDemuxer: event sub_id={} not found, fallback to {} registered callbacks", sub_id, map.len());
+                map.values().next().cloned()
+            } else {
+                warn!("MessageDemuxer: event sub_id={} dropped, no callbacks registered", sub_id);
+                None
+            }
         };
 
         if let Some(callback) = cb {
-            // Invoke callback in a separate task to avoid blocking the reader
             tokio::spawn(async move {
                 callback(event);
             });

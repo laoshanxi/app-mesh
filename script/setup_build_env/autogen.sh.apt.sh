@@ -67,6 +67,15 @@ else
     go version
     go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 fi
+
+# Rust (for CLI build)
+if ! command -v cargo >/dev/null 2>&1; then
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    . "$HOME/.cargo/env"
+fi
+rustup update stable
+rustc --version
+
 # Golang third party library
 export CGO_ENABLED=0
 LDFLAGS="-s -w"
@@ -103,11 +112,6 @@ cat <<EOF >/usr/local/include/prometheus/detail/core_export.h
 #endif
 EOF
 
-git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
-sed -i -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_required(VERSION 3.20)/' linenoise-ng/CMakeLists.txt
-cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target linenoise && cmake --install .
-cd ${ROOTDIR}
-
 # spdlog - build from source (pinned to v1.17.0 for stable behaviour)
 git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git
 cd spdlog || exit 1
@@ -119,9 +123,6 @@ cd ${ROOTDIR}
 
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
-
-git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
-cd QR-Code-generator/cpp && cp qrcodegen.* /usr/local/include/ && make && cp libqrcodegencpp.a /usr/local/lib/
 
 git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
 cp Catch2/single_include/catch2/catch.hpp /usr/local/include/

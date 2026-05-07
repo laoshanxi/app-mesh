@@ -30,4 +30,3 @@ Used by the following dependencies:
   - croncpp (Copyright (c) Marius Bancila)
   - wildcards (Copyright (c) Nemanja Trifunovic)
   - hashidsxx (Copyright (c) Toon Schoenmakers)
-  - QR-Code-generator (Copyright (c) Project Nayuki)

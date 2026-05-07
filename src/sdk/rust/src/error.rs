@@ -45,7 +45,7 @@ pub enum TransportError {
     ConnectionClosed,
     ConfigError(String),
     IoError(std::io::Error),
-    TlsError(native_tls::Error),
+    TlsError(String),
 }
 
 impl fmt::Display for TransportError {
@@ -73,9 +73,9 @@ impl From<std::io::Error> for TransportError {
     }
 }
 
-impl From<native_tls::Error> for TransportError {
-    fn from(err: native_tls::Error) -> Self {
-        TransportError::TlsError(err)
+impl From<rustls::Error> for TransportError {
+    fn from(err: rustls::Error) -> Self {
+        TransportError::TlsError(err.to_string())
     }
 }
 

@@ -106,7 +106,7 @@ jobs:
           sudo chmod a+r /cores/appsvc.macos.bin 2>/dev/null || true
 
           # Start App Mesh
-          appc -v || true
+          appc -V || true
           sudo bash /opt/appmesh/script/appmesh.initd.sh start || true
 
           # Check

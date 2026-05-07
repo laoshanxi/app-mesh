@@ -33,6 +33,7 @@ jobs:
       - name: Build binaries
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
           cmake --build build --parallel --config Release --target agent
           cmake --build build --parallel --config Release --target appc

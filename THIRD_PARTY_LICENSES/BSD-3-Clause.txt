@@ -29,4 +29,3 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Used by the following dependencies:
   - uriparser (Copyright (c) uriparser contributors)
-  - linenoise-ng (Copyright (c) ArangoDB GmbH)

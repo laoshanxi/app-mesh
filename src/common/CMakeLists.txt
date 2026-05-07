@@ -32,7 +32,6 @@ target_link_libraries(common
     Boost::filesystem
     Boost::program_options
     ${OPENSSL_LIBRARIES}
-    qrcodegencpp
     uriparser::uriparser
     os
 )

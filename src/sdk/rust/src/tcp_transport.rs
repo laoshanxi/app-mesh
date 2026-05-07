@@ -7,9 +7,10 @@
 //!   + payload bytes
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use native_tls::TlsStream;
+use rustls::StreamOwned;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::sync::Arc;
 
 use crate::error::TransportError;
 pub use crate::tls_config::{ClientCert, SslVerify};
@@ -25,7 +26,7 @@ pub struct TCPTransport {
     address: (String, u16),
     ssl_verify: SslVerify,
     ssl_client_cert: Option<ClientCert>,
-    socket: Option<TlsStream<TcpStream>>,
+    socket: Option<StreamOwned<rustls::ClientConnection, TcpStream>>,
 }
 
 impl TCPTransport {
@@ -39,11 +40,12 @@ impl TCPTransport {
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
         tcp.set_nodelay(true).map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
 
-        let tls_connector =
-            crate::tls_config::build_tls_connector(&self.ssl_verify, self.ssl_client_cert.as_ref())?;
-        let tls_stream = tls_connector
-            .connect(&self.address.0, tcp)
+        let tls_config = build_rustls_client_config(&self.ssl_verify, self.ssl_client_cert.as_ref())?;
+        let server_name = rustls::pki_types::ServerName::try_from(self.address.0.clone())
+            .map_err(|e| TransportError::ConfigError(format!("Invalid server name: {}", e)))?;
+        let tls_conn = rustls::ClientConnection::new(Arc::new(tls_config), server_name)
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
+        let tls_stream = StreamOwned::new(tls_conn, tcp);
 
         self.socket = Some(tls_stream);
         Ok(())
@@ -51,7 +53,8 @@ impl TCPTransport {
 
     pub fn close(&mut self) {
         if let Some(mut socket) = self.socket.take() {
-            let _ = socket.shutdown();
+            socket.conn.send_close_notify();
+            let _ = socket.conn.complete_io(&mut socket.sock);
         }
     }
 
@@ -115,5 +118,37 @@ impl TCPTransport {
 impl Drop for TCPTransport {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+fn build_rustls_client_config(
+    ssl_verify: &SslVerify,
+    _ssl_client_cert: Option<&ClientCert>,
+) -> Result<rustls::ClientConfig> {
+    let disable_verify = matches!(ssl_verify, SslVerify::False)
+        || matches!(ssl_verify, SslVerify::Path(p) if !std::path::Path::new(p).exists());
+
+    if disable_verify {
+        Ok(rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(crate::wss_transport::NoVerifier))
+            .with_no_client_auth())
+    } else if let SslVerify::Path(path) = ssl_verify {
+        let p = std::path::Path::new(path);
+        let mut root_store = rustls::RootCertStore::empty();
+        if p.is_file() {
+            let pem = std::fs::read(p).map_err(|e| TransportError::ConfigError(e.to_string()))?;
+            for cert in rustls_pemfile::certs(&mut &pem[..]).flatten() {
+                root_store.add(cert).map_err(|e| TransportError::ConfigError(e.to_string()))?;
+            }
+        }
+        Ok(rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth())
+    } else {
+        let root_store = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        Ok(rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth())
     }
 }

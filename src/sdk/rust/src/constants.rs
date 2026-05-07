@@ -16,8 +16,11 @@ pub const HTTP_HEADER_KEY_EXIT_CODE: &str = "X-Exit-Code";
 pub const HTTP_HEADER_KEY_USER_AGENT: &str = "User-Agent";
 pub const HTTP_HEADER_KEY_X_FILE_PATH: &str = "X-File-Path";
 pub const HTTP_HEADER_KEY_X_FILE_NAME: &str = "X-File-Name";
+#[cfg(unix)]
 pub const HTTP_HEADER_KEY_X_FILE_MODE: &str = "X-File-Mode";
+#[cfg(unix)]
 pub const HTTP_HEADER_KEY_X_FILE_USER: &str = "X-File-User";
+#[cfg(unix)]
 pub const HTTP_HEADER_KEY_X_FILE_GROUP: &str = "X-File-Group";
 pub const HTTP_HEADER_CONTENT_TYPE: &str = "Content-Type";
 pub const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: &str = "X-Send-File-Socket";
