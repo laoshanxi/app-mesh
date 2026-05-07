@@ -177,10 +177,10 @@ dump_running_daemon_stack() {
     fi
     if command -v gdb >/dev/null 2>&1; then
         echo "----- gdb live thread stacks (pid ${pid}) -----"
-        run_maybe_sudo gdb -batch -ex "set pagination off" -ex "thread apply all bt" -ex "detach" -ex "quit" -p "${pid}" 2>&1 | tail -200 || true
+        run_maybe_sudo gdb -batch -ex "set pagination off" -ex "thread apply all bt" -ex "detach" -ex "quit" -p "${pid}" 2>&1 | tail -500 || true
     elif command -v lldb >/dev/null 2>&1; then
         echo "----- lldb live thread stacks (pid ${pid}) -----"
-        run_maybe_sudo lldb -b -p "${pid}" -o "thread backtrace all" -o "detach" -o "quit" 2>&1 | tail -200 || true
+        run_maybe_sudo lldb -b -p "${pid}" -o "thread backtrace all" -o "detach" -o "quit" 2>&1 | tail -500 || true
     else
         echo "(neither gdb nor lldb available; cannot capture live stacks)"
     fi
@@ -247,7 +247,12 @@ dump_failure_context() {
         local pid
         pid=$(cat "${PID_FILE}" 2>/dev/null)
         echo "pid file: ${pid}"
-        if [ -n "${pid}" ] && ! daemon_pid_alive "${pid}"; then
+        if [ -n "${pid}" ] && daemon_pid_alive "${pid}"; then
+            echo "----- daemon fd count / threads (pid ${pid}) -----"
+            ls /proc/${pid}/fd 2>/dev/null | wc -l | xargs -I{} echo "open fds: {}" || true
+            ls /proc/${pid}/task 2>/dev/null | wc -l | xargs -I{} echo "threads: {}" || true
+            cat /proc/${pid}/status 2>/dev/null | grep -E "^(Threads|VmRSS|FDSize|voluntary)" || true
+        elif [ -n "${pid}" ]; then
             echo "::error::Daemon pid=${pid} from pid file is dead — DAEMON CRASHED"
         fi
     else
@@ -255,6 +260,8 @@ dump_failure_context() {
     fi
     echo "----- server.log tail (last 200 lines) -----"
     [ -r "${SERVER_LOG}" ] && tail -n 200 "${SERVER_LOG}" || echo "(server.log not readable)"
+    # If daemon is alive but stuck, dump all thread stacks to diagnose hangs.
+    dump_running_daemon_stack
     # macOS .ips crash reports / Linux dmesg — only printed when the OS produced one.
     dump_macos_system_log
     dump_linux_system_log
@@ -298,11 +305,75 @@ if ! preflight_daemon_ok; then
     exit 97
 fi
 
+# ----- background watchdog: periodically probe daemon, dump stacks on hang -----
+WATCHDOG_PID=""
+start_watchdog() {
+    local interval="${1:-60}"
+    local daemon_port=6060
+    (
+        trap 'exit 0' TERM
+        local tick=0
+        local consecutive_fail=0
+        while true; do
+            sleep "${interval}"
+            tick=$((tick + 1))
+            local pid=""
+            [ -r "${PID_FILE}" ] && pid=$(cat "${PID_FILE}" 2>/dev/null)
+            if [ -z "${pid}" ] || ! daemon_pid_alive "${pid}"; then
+                echo "[watchdog ${tick}] daemon not running"
+                continue
+            fi
+
+            # Periodic heartbeat every tick — always print brief status
+            local fds threads
+            fds=$(ls /proc/${pid}/fd 2>/dev/null | wc -l)
+            threads=$(ls /proc/${pid}/task 2>/dev/null | wc -l)
+            local healthy="FAIL"
+            local probe_url="https://127.0.0.1:${daemon_port}/appmesh/resources"
+            local probe_ok=1
+            if command -v curl >/dev/null 2>&1; then
+                timeout 5 curl -sk -o /dev/null "${probe_url}" >/dev/null 2>&1 && probe_ok=0
+            else
+                # wget returns non-zero for HTTP 401; check for any HTTP response instead
+                timeout 5 wget --no-check-certificate --server-response -O /dev/null "${probe_url}" 2>&1 | grep -q "HTTP/" && probe_ok=0
+            fi
+            if [ "${probe_ok}" -eq 0 ]; then
+                healthy="OK"
+                consecutive_fail=0
+            else
+                consecutive_fail=$((consecutive_fail + 1))
+            fi
+            echo "[watchdog ${tick}] pid=${pid} health=${healthy} fds=${fds} threads=${threads} elapsed=$((tick * interval))s"
+
+            # Dump full thread stacks on consecutive failures
+            if [ ${consecutive_fail} -ge 2 ]; then
+                echo "::warning::WATCHDOG: daemon unresponsive for $((consecutive_fail * interval))s — dumping thread stacks"
+                cat /proc/${pid}/status 2>/dev/null | grep -E "^(Threads|VmRSS|FDSize|voluntary)" || true
+                dump_running_daemon_stack
+                echo "----- watchdog: server.log tail -----"
+                tail -100 "${SERVER_LOG}" 2>/dev/null || true
+                consecutive_fail=0
+            fi
+        done
+    ) &
+    WATCHDOG_PID=$!
+}
+
+stop_watchdog() {
+    if [ -n "${WATCHDOG_PID}" ] && kill -0 "${WATCHDOG_PID}" 2>/dev/null; then
+        kill "${WATCHDOG_PID}" 2>/dev/null || true
+        wait "${WATCHDOG_PID}" 2>/dev/null || true
+    fi
+    WATCHDOG_PID=""
+}
+
 # ----- run each script in order, stop + dump on the first failure -----
 # Multi-script support is so callers can chain e.g. test_appmesh_client.py + sample.py
 # under one wrapper; without this, sample.py crashes lose all daemon diagnostics.
 off=$(snapshot_log_offset)
 gha_notice "Python test run starts at $(date '+%F %T')"
+start_watchdog 60
+trap 'stop_watchdog' EXIT
 for script in "$@"; do
     gha_notice "Running ${script}"
     set +e
@@ -310,6 +381,7 @@ for script in "$@"; do
     rc=$?
     set -e
     if [ ${rc} -ne 0 ]; then
+        stop_watchdog
         # Surface the headline error outside any group so it's visible without expanding folds.
         crashed_pid=""
         [ -r "${PID_FILE}" ] && crashed_pid=$(cat "${PID_FILE}" 2>/dev/null)
@@ -322,4 +394,5 @@ for script in "$@"; do
         exit ${rc}
     fi
 done
+stop_watchdog
 exit 0

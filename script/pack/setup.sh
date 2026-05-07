@@ -11,7 +11,16 @@ set -e # Exit on error
 
 # Constants and paths
 readonly PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
-[[ "$(uname)" == "Darwin" ]] && readonly BASH_COMPLETION_DIR="/opt/homebrew/etc/bash_completion.d" || readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
+if [[ "$(uname)" == "Darwin" ]]; then
+    readonly BASH_COMPLETION_DIR="$(brew --prefix 2>/dev/null || echo /opt/homebrew)/etc/bash_completion.d"
+else
+    # Prefer modern path, fallback to legacy
+    if [[ -d /usr/share/bash-completion/completions ]]; then
+        readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
+    else
+        readonly BASH_COMPLETION_DIR="/etc/bash_completion.d"
+    fi
+fi
 readonly BASH_COMPLETION_PATH="$BASH_COMPLETION_DIR/appc"
 readonly APPC_SOFTLINK=/usr/local/bin/appc
 readonly INITD_SOFTLINK=/etc/init.d/appmesh

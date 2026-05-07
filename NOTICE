@@ -91,16 +91,6 @@ prometheus-cpp
   URL: https://github.com/jupp0r/prometheus-cpp
   Copyright: Copyright (c) Jupp Mueller, Gregor Jasny
 
-linenoise-ng
-  License: BSD 3-Clause
-  URL: https://github.com/arangodb/linenoise-ng
-  Copyright: Copyright (c) ArangoDB GmbH
-
-QR-Code-generator
-  License: MIT
-  URL: https://github.com/nayuki/QR-Code-generator
-  Copyright: Copyright (c) Project Nayuki
-
 Catch2
   License: Boost Software License 1.0
   URL: https://github.com/catchorg/Catch2

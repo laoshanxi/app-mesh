@@ -37,6 +37,7 @@ BREW_PACKAGES=(
     cmake
     ninja
     go
+    rust
     openssl@3
     cryptopp
     yaml-cpp
@@ -132,25 +133,10 @@ sudo tee /usr/local/include/prometheus/detail/core_export.h <<EOF
 #endif
 EOF
 
-echo "Installing linenoise-ng..."
-cd ${TMP_DIR}
-git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
-sed -i '' -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_required(VERSION 3.20)/' linenoise-ng/CMakeLists.txt
-cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make linenoise && sudo make install
-
 echo "Installing jwt-cpp..."
 cd ${TMP_DIR}
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 sudo cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
-
-echo "Building and installing QR-Code-generator..."
-cd ${TMP_DIR}
-git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
-cd QR-Code-generator/cpp
-sed -i '' 's/\$(AR) -crs $@ --/\$(AR) -crs $@/' Makefile
-make
-sudo cp qrcodegen.hpp /usr/local/include/
-sudo cp libqrcodegencpp.a /usr/local/lib/
 
 echo "Installing Catch2..."
 cd ${TMP_DIR}

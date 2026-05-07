@@ -273,24 +273,6 @@ function Install-HeaderOnlyLibraries {
     Copy-Item -Recurse "prometheus-cpp\core\src\*" "C:\local\src\prometheus\" -Force
     Copy-Item -Recurse "prometheus-cpp\core\include\prometheus" "C:\local\include\" -Force
 
-    # linenoise-ng
-    Remove-Item -Recurse -Force "linenoise-ng" -ErrorAction Ignore
-    git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
-    Set-Location linenoise-ng
-    New-Item -ItemType Directory -Force -Path "build" | Out-Null
-    Set-Location build
-    # Patch CMakeLists.txt
-    $cmakeFile = "..\CMakeLists.txt"
-    if (Test-Path $cmakeFile) {
-        $lines = Get-Content $cmakeFile
-        $lines = $lines -replace '^\s*cmake_minimum_required\s*\(.*\)', 'cmake_minimum_required(VERSION 3.20)'
-        Set-Content $cmakeFile $lines
-    }
-    cmake .. -Wno-dev -G "Visual Studio 17 2022" -A x64 -DCMAKE_INSTALL_PREFIX="C:/local"
-    cmake --build . --config Release --target linenoise
-    cmake --install . --config Release
-    Set-Location $ROOTDIR
-
     # Create prometheus export header
     @"
 #ifndef PROMETHEUS_CPP_CORE_EXPORT
@@ -334,15 +316,6 @@ function Install-HeaderOnlyLibraries {
     cmake --install . --config Release
     Set-Location $ROOTDIR
 
-    # QR Code Generator
-    git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
-    Set-Location "QR-Code-generator\cpp"
-    cmd /c "`"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat`" -arch=amd64 && cl /EHsc /MD /c qrcodegen.cpp && lib qrcodegen.obj /OUT:qrcodegencpp.lib"
-    Copy-Item "qrcodegen.hpp" "C:\local\include\" -Force
-    Copy-Item "qrcodegen.cpp" "C:\local\include\" -Force
-    Copy-Item "qrcodegencpp.lib" "C:\local\lib\" -Force
-    Set-Location $ROOTDIR
-    
     Write-Host "Header-only libraries installed successfully" -ForegroundColor Green
 }
 
@@ -484,6 +457,20 @@ function Install-Go {
     }
 }
 
+function Install-Rust {
+    Write-Host "Installing Rust toolchain..." -ForegroundColor Cyan
+
+    if (!(Get-Command rustup -ErrorAction SilentlyContinue)) {
+        $rustupUrl = "https://win.rustup.rs/x86_64"
+        Save-File $rustupUrl "rustup-init.exe"
+        Start-Process -FilePath ".\rustup-init.exe" -ArgumentList "-y --default-toolchain stable" -Wait -NoNewWindow
+        $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+        [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Machine)
+    }
+    rustup update stable
+    Write-Host "Rust installed: $(rustc --version)" -ForegroundColor Green
+}
+
 function Install-GoTools {
     Write-Host "Installing Go tools (min binary size)..." -ForegroundColor Cyan
 
@@ -611,6 +598,7 @@ try {
     Install-PythonPackages
     Install-Go
     Install-GoTools
+    Install-Rust
     Install-NsisPlugin
     Build-NativeLibraries
     Set-EnvironmentVariables

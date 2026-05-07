@@ -13,7 +13,6 @@
 #include <ace/OS.h>
 #include <boost/filesystem.hpp>
 #include <nlohmann/json.hpp>
-#include <qrcodegen.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include "HttpHeaderMap.h"
@@ -159,7 +158,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
 #define DEFAULT_SCHEDULE_INTERVAL 2
-#define DEFAULT_WORKER_THREAD_POOL_SIZE 2
+#define DEFAULT_WORKER_THREAD_POOL_SIZE 4
 #define DEFAULT_IO_THREAD_POOL_SIZE 2
 #define REST_REQUEST_TIMEOUT_SECONDS 60
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
@@ -226,22 +225,17 @@ public:
 	static bool endWith(const std::string &str, const std::string &end);
 	static size_t charCount(const std::string &str, char c);
 	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos = 0);
-	static std::string humanReadableSize(long double bytesSize);
-	static std::string humanReadableDuration(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime = std::chrono::system_clock::now());
 	static std::string hash(const std::string &str);
 	static std::string shortID();
 	static std::string uuid();
 	static std::string stringFormat(const char *fmt_str, ...);
 	static std::string strToupper(std::string s);
 	static std::string strTolower(std::string s);
-	static std::string htmlEntitiesDecode(const std::string &str);
+	static bool containsSpecialCharacters(const std::string &str);
 	static std::vector<std::string> str2argv(const std::string &commandLine);
 	static nlohmann::json text2json(const std::string &str);
-	static bool containsSpecialCharacters(const std::string &str);
 	static std::string jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out = nullptr);
 	static nlohmann::json yamlToJson(const YAML::Node &node);
-	static void printQRcode(const std::string &src);
-
 	static void initLogging(const std::string &name);
 	static bool setLogLevel(const std::string &level);
 
@@ -265,12 +259,11 @@ public:
 	static std::string readFileCpp(const std::string &path, long *position, long maxSize, bool readLine = false);
 
 	// Locale encoding
-	static std::string fileBytesToUtf8(const std::string &input);	  // Used for read text file on windows
+	static std::string fileBytesToUtf8(const std::string &input);     // Used for read text file on windows
 	static std::string localEncodingToUtf8(const std::string &input); // Used for read windows system attributes
 	static std::string utf8ToLocalEncoding(const std::string &input); // Used for CLI correct display
 	static bool isValidUTF8(const std::string &str);
 	static std::string convertToUTF8(const std::string &input, unsigned int codepage);
-
 	static bool createPidFile();
 	static void appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key);
 	static void appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key);

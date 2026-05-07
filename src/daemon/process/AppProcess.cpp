@@ -335,37 +335,42 @@ void AppProcess::terminate()
 		terminated = true;
 		LOG_INF << fname << "kill process <" << pid << ">.";
 
-		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
+		bool needWaitpid = false;
+		{
+			ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
 #if defined(_WIN32)
-		const bool killSuccess = os::kill_job(m_job);
+			const bool killSuccess = os::kill_job(m_job);
 #else
-		// Kill the entire process group to include children.
-		const bool killSuccess = (ACE_OS::kill(-pid, SIGKILL) == 0);
+			// Kill the entire process group to include children.
+			const bool killSuccess = (ACE_OS::kill(-pid, SIGKILL) == 0);
 #endif
 
-		if (killSuccess)
-		{
-			// PM::remove → remove_proc → ExitAdapter::handle_close → delete adapter.
-			// waitpid via AttachProcess to prevent zombie.
-			if (Process_Manager::instance()->remove(pid) == 0)
+			if (killSuccess)
 			{
-				AttachProcess(pid).wait();
+				// PM::remove → remove_proc → ExitAdapter::handle_close → delete adapter.
+				needWaitpid = (Process_Manager::instance()->remove(pid) == 0);
+			}
+			else
+			{
+				LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << last_error_msg();
+
+				// Fallback: PM::terminate sends SIGTERM and reaps internally.
+				if (Process_Manager::instance()->terminate(pid) == 0)
+				{
+					Process_Manager::instance()->wait(pid);
+				}
+				else if (Process_Manager::instance()->remove(pid) == 0)
+				{
+					ACE::terminate_process(pid);
+					needWaitpid = true;
+				}
 			}
 		}
-		else
+		// Reap zombie outside PM lock to avoid blocking concurrent terminate() calls.
+		// Reactor SIGCHLD may race and reap first; waitpid returns ECHILD harmlessly.
+		if (needWaitpid)
 		{
-			LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << last_error_msg();
-
-			// Fallback: PM::terminate sends SIGTERM and reaps internally.
-			if (Process_Manager::instance()->terminate(pid) == 0)
-			{
-				Process_Manager::instance()->wait(pid);
-			}
-			else if (Process_Manager::instance()->remove(pid) == 0)
-			{
-				ACE::terminate_process(pid);
-				AttachProcess(pid).wait();
-			}
+			AttachProcess(pid).wait();
 		}
 
 		LOG_DBG << fname << "process <" << pid << "> killed";

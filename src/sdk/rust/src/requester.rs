@@ -28,8 +28,8 @@ pub trait Requester: Send + Sync {
     /// Handle token updates (called after successful authentication)
     fn handle_token_update(&self, token: Option<String>);
 
-    /// Set the forward_to URL (TCP/WSS implementations may ignore this)
-    fn set_forward_to(&mut self, _url: Option<String>) {}
+    /// Set the forward_to URL
+    fn set_forward_to(&self, _url: Option<String>) {}
 
     /// Close the requester (if applicable)
     fn close(&self) {}
