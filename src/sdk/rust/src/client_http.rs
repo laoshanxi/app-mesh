@@ -224,7 +224,7 @@ impl Requester for HTTPRequester {
         Self::to_http_response(resp).await
     }
 
-    fn set_forward_to(&mut self, url: Option<String>) {
+    fn set_forward_to(&self, url: Option<String>) {
         if let Ok(mut forward) = self.forward_to.lock() {
             *forward = url;
         }
@@ -334,7 +334,7 @@ impl AppMeshClient {
     }
 
     /// Set the cluster forwarding host.
-    pub fn forward_to(&mut self, url: Option<String>) {
+    pub fn forward_to(&self, url: Option<String>) {
         self.req.set_forward_to(url);
     }
 
@@ -676,12 +676,12 @@ impl AppMeshClient {
 
     pub async fn get_current_user(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/user/self", None, None, None, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
     pub async fn list_users(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/users", None, None, None, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
     pub async fn add_user(&self, user: Value) -> Result<()> {
@@ -768,7 +768,7 @@ impl AppMeshClient {
     pub async fn get_app(&self, name: &str) -> Result<Application> {
         let resp =
             self.req.send(Method::GET, &format!("/appmesh/app/{}", name), None, None, None, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
     /// Get incremental stdout/stderr for a running or completed process.
@@ -855,7 +855,7 @@ impl AppMeshClient {
         });
         let resp =
             self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, query, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
     /// Add or update an application from raw JSON (advanced).
@@ -866,7 +866,7 @@ impl AppMeshClient {
         let body_bytes = serde_json::to_vec(&app)?;
         let resp =
             self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
     /// Subscribe to real-time events for a specific app (or all apps if name is "*" or empty).
@@ -891,14 +891,25 @@ impl AppMeshClient {
             q.insert("events".to_string(), e.join(","));
             q
         });
+        // Enable demuxer and pre-register callback with a temporary key so events
+        // arriving between server processing and response delivery are captured.
+        let pending_key = format!("__pending_{}", uuid::Uuid::new_v4());
+        if let Some(ref cb) = callback {
+            self.req.enable_demuxer();
+            if let Some(demuxer) = self.req.get_demuxer() {
+                demuxer.register_event_callback(&pending_key, cb.clone());
+            }
+        }
+
         let resp = self.req.send(Method::POST, &path, None, None, query, true).await?;
         let result: SubscriptionResult = resp.json()?;
 
-        // Enable demuxer and register callback when provided
+        // Re-register callback with the actual subscription_id from server
         if let Some(cb) = callback {
-            self.req.enable_demuxer();
             if let Some(demuxer) = self.req.get_demuxer() {
+                // Register new key first, then remove pending — no gap where neither exists
                 demuxer.register_event_callback(&result.subscription_id, cb);
+                demuxer.unregister_event_callback(&pending_key);
             }
         }
 
@@ -1085,7 +1096,7 @@ impl AppMeshClient {
             .req
             .send(Method::POST, &format!("/appmesh/app/{}/task", app), Some(&body_bytes), None, Some(query), true)
             .await?;
-        Ok(resp.text()?)
+        resp.text()
     }
 
     /// Cancel a running task.
@@ -1101,19 +1112,19 @@ impl AppMeshClient {
 impl AppMeshClient {
     pub async fn get_host_resources(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/resources", None, None, None, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
     pub async fn get_config(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/config", None, None, None, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
     pub async fn set_config(&self, config: Value) -> Result<Value> {
         let body_bytes = serde_json::to_vec(&config)?;
         let resp =
             self.req.send(Method::POST, "/appmesh/config", Some(&body_bytes), None, None, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
     pub async fn set_log_level(&self, level: &str) -> Result<String> {
@@ -1124,7 +1135,7 @@ impl AppMeshClient {
 
     pub async fn get_metrics(&self) -> Result<String> {
         let resp = self.req.send(Method::GET, "/appmesh/metrics", None, None, None, true).await?;
-        Ok(resp.text()?)
+        resp.text()
     }
 }
 
@@ -1133,7 +1144,7 @@ impl AppMeshClient {
 impl AppMeshClient {
     pub async fn list_labels(&self) -> Result<Value> {
         let resp = self.req.send(Method::GET, "/appmesh/labels", None, None, None, true).await?;
-        Ok(resp.json()?)
+        resp.json()
     }
 
 

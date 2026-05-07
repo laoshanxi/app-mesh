@@ -1,6 +1,6 @@
 [package]
 name = "appmesh"
-version = "0.2.2"
+version = "1.0.1"
 edition = "2021"
 description = "AppMesh SDK for Rust"
 license = "MIT"
@@ -16,38 +16,34 @@ name = "appmesh"
 path = "src/lib.rs"
 
 [dependencies]
-reqwest = { version = "0.13.1", features = [
-    "json",
-    "cookies",
-    "multipart",
-    "query",
-] }
-tokio = { version = "1.47", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+reqwest = { version = "0.13", features = ["json", "cookies", "multipart", "query"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 base64 = "0.22"
 log = "0.4"
-url = "2.5"
-rmp-serde = "1.1"
-native-tls = "0.2"
-byteorder = "1.4"
-uuid = { version = "1.0", features = ["v4", "fast-rng"] }
+url = "2"
+rmp-serde = "1"
+byteorder = "1"
+uuid = { version = "1", features = ["v4", "fast-rng"] }
 hostname = "0.4"
-http = "1.3"
-bytes = "1.10.1"
-async-trait = "0.1.89"
-encoding_rs = "0.8.35"
-tokio-tungstenite = { version = "0.29.0", features = ["native-tls"] }
-futures-util = "0.3.31"
-serde_bytes = "0.11.19"
+http = "1"
+bytes = "1"
+async-trait = "0.1"
+encoding_rs = "0.8"
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+serde_bytes = "0.11"
 iso8601-duration = "0.2"
+rustls = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2"
+webpki-roots = "1"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.0", features = ["user", "fs"] }
+nix = { version = "0.31", features = ["user", "fs"] }
 
 [dev-dependencies]
-mockito = "1.7"
-tokio = { version = "1.47", features = ["full"] }
-serde_json = "1.0"
+mockito = "1"
+serde_json = "1"
 env_logger = "0.11"
-tempfile = "3.23.0"
+tempfile = "3"

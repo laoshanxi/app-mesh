@@ -79,34 +79,6 @@ bool Utility::isNumber(const std::string &str)
 	return std::all_of(s.begin() + start, s.end(), ::isdigit);
 }
 
-bool Utility::isDouble(const std::string &str)
-{
-	std::string s = str;
-	if (s.empty())
-		return false;
-
-	// Handle optional leading sign
-	size_t start = (s[0] == '-' || s[0] == '+') ? 1 : 0;
-	if (start == 1 && s.size() == 1)
-		return false; // Only a sign
-
-	bool decimalPointSeen = false;
-	for (size_t i = start; i < s.size(); ++i)
-	{
-		if (s[i] == '.')
-		{
-			if (decimalPointSeen)
-				return false; // Multiple decimal points
-			decimalPointSeen = true;
-		}
-		else if (!std::isdigit(s[i]))
-		{
-			return false;
-		}
-	}
-	return true;
-}
-
 std::string Utility::stdStringTrim(const std::string &str)
 {
 	auto front = std::find_if_not(str.begin(), str.end(), [](int c)
@@ -259,67 +231,6 @@ bool Utility::isFileExist(const std::string &path)
 {
 	boost::system::error_code ec;
 	return fs::exists(path, ec) && !fs::is_directory(path, ec);
-}
-
-bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string &filePath)
-{
-	boost::system::error_code ec;
-
-	// Resolve the allowed base directory — must exist and be canonical.
-	fs::path canonicalBase = fs::canonical(fs::path(baseDir), ec);
-	if (ec)
-	{
-		return false;
-	}
-
-	fs::path file(filePath);
-
-	// Try to canonicalize the full path directly (works when file already exists).
-	fs::path resolvedPath = fs::canonical(file, ec);
-	if (ec)
-	{
-		// File does not exist yet (e.g. upload target). Walk up to find the nearest
-		// existing ancestor, canonicalize it, then re-append the remaining components.
-		// This allows uploads to new subdirectories within the allowed base.
-		fs::path remaining;
-		fs::path ancestor = file;
-		while (!ancestor.empty())
-		{
-			fs::path parent = ancestor.parent_path();
-			if (parent == ancestor)
-				break; // reached root
-			remaining = ancestor.filename() / remaining;
-			ancestor = parent;
-			fs::path canonicalAncestor = fs::canonical(ancestor, ec);
-			if (!ec)
-			{
-				resolvedPath = canonicalAncestor / remaining;
-				break;
-			}
-		}
-		if (ec)
-		{
-			// No existing ancestor found — reject.
-			return false;
-		}
-	}
-
-	// Ensure resolvedPath starts with canonicalBase (prefix check).
-	// Append trailing separator to base so "/opt" does not match "/opt2/…".
-	std::string baseStr = canonicalBase.string();
-	if (baseStr.back() != fs::path::preferred_separator)
-	{
-		baseStr += fs::path::preferred_separator;
-	}
-	std::string resolvedStr = resolvedPath.string();
-
-	// Allow exact match to base dir itself or any path inside it.
-	if (resolvedStr != canonicalBase.string() && resolvedStr.find(baseStr) != 0)
-	{
-		return false;
-	}
-
-	return true;
 }
 
 bool Utility::validateFilePath(const std::string &filePath, const std::string &allowedBaseDir)
@@ -845,168 +756,8 @@ std::string detectAndConvertToUTF8(const std::string& input) {
 	return result;
 }
 */
-std::string Utility::fileBytesToUtf8(const std::string &input)
-{
-#ifdef _WIN32
-	if (input.empty())
-		return input;
-
-	// Check for UTF-8 BOM
-	if (input.size() >= 3 &&
-		static_cast<unsigned char>(input[0]) == 0xEF &&
-		static_cast<unsigned char>(input[1]) == 0xBB &&
-		static_cast<unsigned char>(input[2]) == 0xBF)
-	{
-		return input.substr(3);
-	}
-
-	// Check for UTF-16 LE BOM
-	if (input.size() >= 2 &&
-		static_cast<unsigned char>(input[0]) == 0xFF &&
-		static_cast<unsigned char>(input[1]) == 0xFE)
-	{
-		const wchar_t *wstr = reinterpret_cast<const wchar_t *>(input.data() + 2);
-		int len = (input.size() - 2) / 2;
-
-		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, len, nullptr, 0, nullptr, nullptr);
-		if (utf8Len == 0)
-			return input;
-
-		std::string result(utf8Len, 0);
-		WideCharToMultiByte(CP_UTF8, 0, wstr, len, &result[0], utf8Len, nullptr, nullptr);
-		return result;
-	}
-
-	// Check for UTF-16 BE BOM
-	if (input.size() >= 2 &&
-		static_cast<unsigned char>(input[0]) == 0xFE &&
-		static_cast<unsigned char>(input[1]) == 0xFF)
-	{
-		std::wstring wstr;
-		wstr.resize((input.size() - 2) / 2);
-		for (size_t i = 0; i < wstr.size(); ++i)
-		{
-			wstr[i] = static_cast<wchar_t>(
-				(static_cast<unsigned char>(input[2 + i * 2]) << 8) |
-				static_cast<unsigned char>(input[2 + i * 2 + 1]));
-		}
-
-		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), nullptr, 0, nullptr, nullptr);
-		if (utf8Len == 0)
-			return input;
-
-		std::string result(utf8Len, 0);
-		WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), &result[0], utf8Len, nullptr, nullptr);
-		return result;
-	}
-
-	// Try to detect and convert from various encodings
-	// First, try to validate if it's already valid UTF-8
-	if (isValidUTF8(input))
-	{
-		return input;
-	}
-
-	// Try common Windows codepages in order of likelihood
-	std::vector<UINT> codepages = {
-		936,   // GBK/GB2312 (Simplified Chinese)
-		950,   // Big5 (Traditional Chinese)
-		932,   // Shift-JIS (Japanese)
-		949,   // EUC-KR (Korean)
-		1252,  // Windows-1252 (Western European)
-		1251,  // Windows-1251 (Cyrillic)
-		CP_ACP // System default ANSI codepage
-	};
-
-	for (UINT codepage : codepages)
-	{
-		std::string result = convertToUTF8(input, codepage);
-		if (!result.empty())
-		{
-			return result;
-		}
-	}
-
-	// If all else fails, return original
-	return input;
-#else
-	return input;
-#endif
-}
-
 // Helper function to validate UTF-8
-bool Utility::isValidUTF8(const std::string &str)
-{
-	const unsigned char *bytes = reinterpret_cast<const unsigned char *>(str.c_str());
-	size_t len = str.length();
-
-	for (size_t i = 0; i < len;)
-	{
-		if (bytes[i] < 0x80)
-		{
-			i++;
-		}
-		else if ((bytes[i] & 0xE0) == 0xC0)
-		{
-			if (i + 1 >= len || (bytes[i + 1] & 0xC0) != 0x80)
-				return false;
-			i += 2;
-		}
-		else if ((bytes[i] & 0xF0) == 0xE0)
-		{
-			if (i + 2 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80)
-				return false;
-			i += 3;
-		}
-		else if ((bytes[i] & 0xF8) == 0xF0)
-		{
-			if (i + 3 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80 || (bytes[i + 3] & 0xC0) != 0x80)
-				return false;
-			i += 4;
-		}
-		else
-		{
-			return false;
-		}
-	}
-	return true;
-}
-
 // Helper function to convert from specific codepage to UTF-8
-std::string Utility::convertToUTF8(const std::string &input, unsigned int codepage)
-{
-#ifdef _WIN32
-	if (input.empty())
-		return "";
-
-	// Convert from codepage to wide string
-	int wideLen = MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), nullptr, 0);
-	if (wideLen == 0)
-		return "";
-
-	std::wstring wideStr(wideLen, 0);
-	if (MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), &wideStr[0], wideLen) == 0)
-	{
-		return "";
-	}
-
-	// Convert from wide string to UTF-8
-	int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), nullptr, 0, nullptr, nullptr);
-	if (utf8Len == 0)
-		return "";
-
-	std::string result(utf8Len, 0);
-	if (WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), &result[0], utf8Len, nullptr, nullptr) == 0)
-	{
-		return "";
-	}
-
-	return result;
-#else
-	return "";
-#endif
-}
-
 std::string Utility::readFileCpp(const std::string &path, long *position, long maxSize, bool readLine)
 {
 	const static char fname[] = "Utility::readFileCPP() ";
@@ -1293,22 +1044,6 @@ bool Utility::createPidFile()
 #endif
 }
 
-void Utility::appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key)
-{
-	if (HAS_JSON_FIELD(jsonObj, key))
-	{
-		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
-	}
-}
-
-void Utility::appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key)
-{
-	if (HAS_JSON_FIELD(jsonObj, key))
-	{
-		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = std::string(splitString(DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T").back());
-	}
-}
-
 void Utility::addExtraAppTimeReferStr(nlohmann::json &appJson)
 {
 	// append extra string format for time values
@@ -1399,100 +1134,6 @@ std::string Utility::stringReplace(const std::string &strBase, const std::string
 		position += dstLen;
 	}
 	return str;
-}
-
-std::string Utility::humanReadableSize(long double bytesSize)
-{
-	static constexpr int base = 1024;
-	static constexpr const char *fmt[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"};
-	static constexpr size_t fmtSize = sizeof(fmt) / sizeof(fmt[0]);
-
-	// Handle invalid cases
-	if (bytesSize < 0 || std::isnan(bytesSize) || std::isinf(bytesSize))
-	{
-		return "N/A";
-	}
-
-	// Handle zero case
-	if (bytesSize == 0)
-	{
-		return "0 B";
-	}
-
-	std::size_t units = 0;
-	long double n = std::abs(bytesSize);
-
-	// Find appropriate unit
-	while (n >= base && units + 1 < fmtSize)
-	{
-		units++;
-		n /= base;
-	}
-
-	// Format with 1 decimal place and handle the .0 case directly
-	std::ostringstream ss;
-	ss.precision(1);
-	ss << std::fixed << n;
-	std::string result = ss.str();
-
-	// Remove ".0" if present
-	if (result.size() > 2 && result.substr(result.size() - 2) == ".0")
-	{
-		result.resize(result.size() - 2);
-	}
-
-	// Add unit
-	result += " " + std::string(fmt[units]);
-
-	return result;
-}
-
-std::string Utility::humanReadableDuration(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime)
-{
-	std::string result;
-	std::list<std::string> steps;
-
-	if (endTime < startTime)
-	{
-		result = "N/A";
-		return result;
-	}
-	const auto duration = endTime - startTime;
-
-	const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count() % 60;
-	if (seconds)
-	{
-		steps.push_back(std::to_string(seconds).append("s"));
-	}
-	const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(duration).count() % 60;
-	if (minutes)
-	{
-		steps.push_back(std::to_string(minutes).append("m"));
-	}
-	const auto hours = std::chrono::duration_cast<std::chrono::hours>(duration).count() % 24;
-	if (hours)
-	{
-		steps.clear();
-		steps.push_back(std::to_string(hours).append("h"));
-	}
-	const auto days = std::chrono::duration_cast<std::chrono::hours>(duration).count() / 24;
-	if (days)
-	{
-		steps.clear();
-		steps.push_back(std::to_string(days).append("d"));
-	}
-
-	while (steps.size() > 2)
-	{
-		steps.pop_front();
-	}
-	while (steps.size())
-	{
-		result.append(steps.back());
-		steps.pop_back();
-	}
-
-	return result;
 }
 
 void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs)
@@ -1645,63 +1286,11 @@ std::string Utility::stringFormat(const char *fmt_str, ...)
 	return std::string(formatted.get());
 }
 
-std::string Utility::strToupper(std::string s)
-{
-	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
-				   { return std::toupper(c); });
-	return s;
-}
-
 std::string Utility::strTolower(std::string s)
 {
 	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
 				   { return std::tolower(c); });
 	return s;
-}
-
-std::string Utility::htmlEntitiesDecode(const std::string &str)
-{
-	// https://forums.codeguru.com/showthread.php?448809-C-Replacing-HTML-Character-Entities
-	// https://wanghi.cn/202003/20836.html
-
-	const static std::vector<std::string> subs = {
-		"&#34;", "& #34;", "&quot;", "&34;",
-		"&#39;", "& #39;", "&apos;", "&39;",
-		"&#38;", "& #38;", "&amp;", "&38;",
-		"&#60;", "& #60;", "&lt;", "&60;",
-		"&#62;", "& #62;", "&gt;", "&62;",
-		"&#32;", "& #32;", "&nbsp;", "&32;", "%20",
-		"&ndash;", "\u2013",
-		"&#40;", "& #40;",
-		"&#41;", "& #41;"};
-
-	const static std::vector<std::string> reps = {
-		"\"", "\"", "\"", "\"",
-		"'", "'", "'", "'",
-		"&", "&", "&", "&",
-		"<", "<", "<", "<",
-		">", ">", ">", ">",
-		" ", " ", " ", " ", " ",
-		"-", "-",
-		"(", "(",
-		")", ")"};
-
-	assert(subs.size() == reps.size());
-
-	std::string result = str;
-	for (size_t j = 0; j < reps.size(); j++)
-	{
-		const std::string &match = subs[j];
-		const std::string &repl = reps[j];
-		// Replace all matches
-		std::string::size_type start = result.find_first_of(match);
-		while (start != std::string::npos)
-		{
-			result.replace(start, match.size(), repl);
-			start = result.find_first_of(match, start + repl.size());
-		}
-	}
-	return result;
 }
 
 std::vector<std::string> Utility::str2argv(const std::string &commandLine)
@@ -1720,25 +1309,6 @@ nlohmann::json Utility::text2json(const std::string &str)
 	nlohmann::json result;
 	result[REST_TEXT_MESSAGE_JSON_KEY] = std::string(str);
 	return result;
-}
-
-bool Utility::containsSpecialCharacters(const std::string &str)
-{
-	for (const char &c : str)
-	{
-		// Check for common special characters and escape sequences
-		if (c == '\n' || c == '\t' || c == '\\' || c == '\"' || c == '\b' || c == '\f' || c == '\r' || c == ',')
-		{
-			return true;
-		}
-
-		// Check for UTF-8 non-printable characters
-		if ((unsigned char)c < 32 || (unsigned char)c == 127)
-		{
-			return true;
-		}
-	}
-	return false;
 }
 
 std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out)
@@ -1889,23 +1459,6 @@ const std::string Utility::readStdin2End()
 	return ss.str();
 }
 
-void Utility::printQRcode(const std::string &src)
-{
-	// https://www.nayuki.io/page/qr-code-generator-library#cpp
-	auto qr = qrcodegen::QrCode::encodeText(src.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
-
-	int border = 2;
-	for (int y = -border; y < qr.getSize() + border; y++)
-	{
-		for (int x = -border; x < qr.getSize() + border; x++)
-		{
-			std::cout << (qr.getModule(x, y) ? "██" : "  ");
-		}
-		std::cout << std::endl;
-	}
-	std::cout << std::endl;
-}
-
 std::string Utility::escapeCommandLine(const std::string &input)
 {
 	std::string output;
@@ -2020,3 +1573,306 @@ namespace Global
 		return &sslContext;
 	}
 }
+
+// Restored functions used internally by other Utility methods
+
+bool Utility::isDouble(const std::string &str)
+{
+	std::string s = str;
+	if (s.empty())
+		return false;
+
+	// Handle optional leading sign
+	size_t start = (s[0] == '-' || s[0] == '+') ? 1 : 0;
+	if (start == 1 && s.size() == 1)
+		return false; // Only a sign
+
+	bool decimalPointSeen = false;
+	for (size_t i = start; i < s.size(); ++i)
+	{
+		if (s[i] == '.')
+		{
+			if (decimalPointSeen)
+				return false; // Multiple decimal points
+			decimalPointSeen = true;
+		}
+		else if (!std::isdigit(s[i]))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+
+bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string &filePath)
+{
+	boost::system::error_code ec;
+
+	// Resolve the allowed base directory — must exist and be canonical.
+	fs::path canonicalBase = fs::canonical(fs::path(baseDir), ec);
+	if (ec)
+	{
+		return false;
+	}
+
+	fs::path file(filePath);
+
+	// Try to canonicalize the full path directly (works when file already exists).
+	fs::path resolvedPath = fs::canonical(file, ec);
+	if (ec)
+	{
+		// File does not exist yet (e.g. upload target). Walk up to find the nearest
+		// existing ancestor, canonicalize it, then re-append the remaining components.
+		// This allows uploads to new subdirectories within the allowed base.
+		fs::path remaining;
+		fs::path ancestor = file;
+		while (!ancestor.empty())
+		{
+			fs::path parent = ancestor.parent_path();
+			if (parent == ancestor)
+				break; // reached root
+			remaining = ancestor.filename() / remaining;
+			ancestor = parent;
+			fs::path canonicalAncestor = fs::canonical(ancestor, ec);
+			if (!ec)
+			{
+				resolvedPath = canonicalAncestor / remaining;
+				break;
+			}
+		}
+		if (ec)
+		{
+			// No existing ancestor found — reject.
+			return false;
+		}
+	}
+
+	// Ensure resolvedPath starts with canonicalBase (prefix check).
+	// Append trailing separator to base so "/opt" does not match "/opt2/…".
+	std::string baseStr = canonicalBase.string();
+	if (baseStr.back() != fs::path::preferred_separator)
+	{
+		baseStr += fs::path::preferred_separator;
+	}
+	std::string resolvedStr = resolvedPath.string();
+
+	// Allow exact match to base dir itself or any path inside it.
+	if (resolvedStr != canonicalBase.string() && resolvedStr.find(baseStr) != 0)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+
+std::string Utility::fileBytesToUtf8(const std::string &input)
+{
+#ifdef _WIN32
+	if (input.empty())
+		return input;
+
+	// Check for UTF-8 BOM
+	if (input.size() >= 3 &&
+		static_cast<unsigned char>(input[0]) == 0xEF &&
+		static_cast<unsigned char>(input[1]) == 0xBB &&
+		static_cast<unsigned char>(input[2]) == 0xBF)
+	{
+		return input.substr(3);
+	}
+
+	// Check for UTF-16 LE BOM
+	if (input.size() >= 2 &&
+		static_cast<unsigned char>(input[0]) == 0xFF &&
+		static_cast<unsigned char>(input[1]) == 0xFE)
+	{
+		const wchar_t *wstr = reinterpret_cast<const wchar_t *>(input.data() + 2);
+		int len = (input.size() - 2) / 2;
+
+		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, len, nullptr, 0, nullptr, nullptr);
+		if (utf8Len == 0)
+			return input;
+
+		std::string result(utf8Len, 0);
+		WideCharToMultiByte(CP_UTF8, 0, wstr, len, &result[0], utf8Len, nullptr, nullptr);
+		return result;
+	}
+
+	// Check for UTF-16 BE BOM
+	if (input.size() >= 2 &&
+		static_cast<unsigned char>(input[0]) == 0xFE &&
+		static_cast<unsigned char>(input[1]) == 0xFF)
+	{
+		std::wstring wstr;
+		wstr.resize((input.size() - 2) / 2);
+		for (size_t i = 0; i < wstr.size(); ++i)
+		{
+			wstr[i] = static_cast<wchar_t>(
+				(static_cast<unsigned char>(input[2 + i * 2]) << 8) |
+				static_cast<unsigned char>(input[2 + i * 2 + 1]));
+		}
+
+		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), nullptr, 0, nullptr, nullptr);
+		if (utf8Len == 0)
+			return input;
+
+		std::string result(utf8Len, 0);
+		WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), &result[0], utf8Len, nullptr, nullptr);
+		return result;
+	}
+
+	// Try to detect and convert from various encodings
+	// First, try to validate if it's already valid UTF-8
+	if (isValidUTF8(input))
+	{
+		return input;
+	}
+
+	// Try common Windows codepages in order of likelihood
+	std::vector<UINT> codepages = {
+		936,   // GBK/GB2312 (Simplified Chinese)
+		950,   // Big5 (Traditional Chinese)
+		932,   // Shift-JIS (Japanese)
+		949,   // EUC-KR (Korean)
+		1252,  // Windows-1252 (Western European)
+		1251,  // Windows-1251 (Cyrillic)
+		CP_ACP // System default ANSI codepage
+	};
+
+	for (UINT codepage : codepages)
+	{
+		std::string result = convertToUTF8(input, codepage);
+		if (!result.empty())
+		{
+			return result;
+		}
+	}
+
+	// If all else fails, return original
+	return input;
+#else
+	return input;
+#endif
+}
+
+
+void Utility::appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key)
+{
+	if (HAS_JSON_FIELD(jsonObj, key))
+	{
+		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
+	}
+}
+
+
+void Utility::appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key)
+{
+	if (HAS_JSON_FIELD(jsonObj, key))
+	{
+		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = std::string(splitString(DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T").back());
+	}
+}
+
+
+bool Utility::containsSpecialCharacters(const std::string &str)
+{
+	for (const char &c : str)
+	{
+		// Check for common special characters and escape sequences
+		if (c == '\n' || c == '\t' || c == '\\' || c == '\"' || c == '\b' || c == '\f' || c == '\r' || c == ',')
+		{
+			return true;
+		}
+
+		// Check for UTF-8 non-printable characters
+		if ((unsigned char)c < 32 || (unsigned char)c == 127)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+std::string Utility::strToupper(std::string s)
+{
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
+				   { return std::toupper(c); });
+	return s;
+}
+
+
+bool Utility::isValidUTF8(const std::string &str)
+{
+	const unsigned char *bytes = reinterpret_cast<const unsigned char *>(str.c_str());
+	size_t len = str.length();
+
+	for (size_t i = 0; i < len;)
+	{
+		if (bytes[i] < 0x80)
+		{
+			i++;
+		}
+		else if ((bytes[i] & 0xE0) == 0xC0)
+		{
+			if (i + 1 >= len || (bytes[i + 1] & 0xC0) != 0x80)
+				return false;
+			i += 2;
+		}
+		else if ((bytes[i] & 0xF0) == 0xE0)
+		{
+			if (i + 2 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80)
+				return false;
+			i += 3;
+		}
+		else if ((bytes[i] & 0xF8) == 0xF0)
+		{
+			if (i + 3 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80 || (bytes[i + 3] & 0xC0) != 0x80)
+				return false;
+			i += 4;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+
+std::string Utility::convertToUTF8(const std::string &input, unsigned int codepage)
+{
+#ifdef _WIN32
+	if (input.empty())
+		return "";
+
+	// Convert from codepage to wide string
+	int wideLen = MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), nullptr, 0);
+	if (wideLen == 0)
+		return "";
+
+	std::wstring wideStr(wideLen, 0);
+	if (MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), &wideStr[0], wideLen) == 0)
+	{
+		return "";
+	}
+
+	// Convert from wide string to UTF-8
+	int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), nullptr, 0, nullptr, nullptr);
+	if (utf8Len == 0)
+		return "";
+
+	std::string result(utf8Len, 0);
+	if (WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), &result[0], utf8Len, nullptr, nullptr) == 0)
+	{
+		return "";
+	}
+
+	return result;
+#else
+	return "";
+#endif
+}
+
+
