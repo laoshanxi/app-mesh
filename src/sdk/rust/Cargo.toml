@@ -43,7 +43,7 @@ webpki-roots = "1"
 nix = { version = "0.31", features = ["user", "fs"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Globalization"] }
+windows = { version = "0.62", features = ["Win32_Globalization"] }
 
 [dev-dependencies]
 mockito = "1"
