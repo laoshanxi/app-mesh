@@ -96,12 +96,16 @@ message(STATUS "Found CURL_LIB: ${CURL_LIB}")
 find_package(OpenSSL REQUIRED)
 if (OPENSSL_FOUND)
     include_directories(${OPENSSL_INCLUDE_DIR})
-    # Ensure linker can resolve bare -lssl/-lcrypto from third-party libs (e.g. libwebsockets)
-    # when OpenSSL is installed in a non-standard path like /usr/local/ssl
-    get_filename_component(_openssl_lib_dir "${OPENSSL_SSL_LIBRARY}" DIRECTORY)
-    link_directories("${_openssl_lib_dir}")
+    if(NOT WIN32)
+        # Ensure linker can resolve bare -lssl/-lcrypto from third-party libs (e.g. libwebsockets)
+        # when OpenSSL is installed in a non-standard path like /usr/local/ssl
+        # Skip on Windows: vcpkg toolchain handles library paths, and OPENSSL_SSL_LIBRARY
+        # contains optimized/debug generator expressions that break get_filename_component.
+        get_filename_component(_openssl_lib_dir "${OPENSSL_SSL_LIBRARY}" DIRECTORY)
+        link_directories("${_openssl_lib_dir}")
+        message(STATUS "openssl library dir: ${_openssl_lib_dir}")
+    endif()
     message(STATUS "openssl include dir: ${OPENSSL_INCLUDE_DIR}")
-    message(STATUS "openssl library dir: ${_openssl_lib_dir}")
     message(STATUS "openssl library ver: ${OPENSSL_VERSION}.")
 else()
     message(FATAL_ERROR "openssl library not found")

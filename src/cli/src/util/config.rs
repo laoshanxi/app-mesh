@@ -191,7 +191,12 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
         (host, wss_port.unwrap_or(DEFAULT_WSS_PORT))
     });
 
-    let home = appmesh_home.unwrap_or_else(|| PathBuf::from("/opt/appmesh"));
+    let home = appmesh_home.unwrap_or_else(|| {
+        #[cfg(unix)]
+        { PathBuf::from("/opt/appmesh") }
+        #[cfg(windows)]
+        { PathBuf::from(r"C:\local\appmesh") }
+    });
     let tls = DaemonTlsConfig {
         ca_cert: ca_cert.map(|p| resolve_path(&home, &p)),
         client_cert: client_cert.map(|p| resolve_path(&home, &p)),
@@ -209,9 +214,19 @@ fn detect_appmesh_home() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let path = PathBuf::from("/opt/appmesh");
-    if path.exists() {
-        return Some(path);
+    #[cfg(unix)]
+    {
+        let path = PathBuf::from("/opt/appmesh");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    #[cfg(windows)]
+    {
+        let path = PathBuf::from(r"C:\local\appmesh");
+        if path.exists() {
+            return Some(path);
+        }
     }
     let exe = std::env::current_exe().ok()?;
     exe.parent()?.parent().map(Path::to_path_buf)
