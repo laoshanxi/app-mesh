@@ -147,9 +147,19 @@ fn detect_appmesh_home() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let path = PathBuf::from("/opt/appmesh");
-    if path.exists() {
-        return Some(path);
+    #[cfg(unix)]
+    {
+        let path = PathBuf::from("/opt/appmesh");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    #[cfg(windows)]
+    {
+        let path = PathBuf::from(r"C:\local\appmesh");
+        if path.exists() {
+            return Some(path);
+        }
     }
     let exe = std::env::current_exe().ok()?;
     exe.parent()?.parent().map(Path::to_path_buf)
@@ -168,6 +178,7 @@ fn find_config_file(home: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
+#[cfg(unix)]
 fn running_in_container() -> bool {
     Path::new("/.dockerenv").exists()
         || std::fs::read_to_string("/proc/1/cgroup")

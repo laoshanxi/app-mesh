@@ -1224,8 +1224,8 @@ impl AppMeshClient {
 
     /// Apply file attributes (mode, owner, group) from HTTP headers — Unix only.
     pub(crate) fn apply_file_attributes(
-        local_file: &Path,
-        headers: &http::HeaderMap,
+        #[cfg_attr(not(unix), allow(unused))] local_file: &Path,
+        #[cfg_attr(not(unix), allow(unused))] headers: &http::HeaderMap,
     ) -> Result<()> {
         #[cfg(unix)]
         {
@@ -1268,7 +1268,10 @@ impl AppMeshClient {
     }
 
     /// Extract file attributes and populate headers — Unix only.
-    pub(crate) fn get_file_attributes(local_file: &Path, headers: &mut HashMap<String, String>) {
+    pub(crate) fn get_file_attributes(
+        #[cfg_attr(not(unix), allow(unused))] local_file: &Path,
+        #[cfg_attr(not(unix), allow(unused))] headers: &mut HashMap<String, String>,
+    ) {
         #[cfg(unix)]
         {
             let m = match fs::metadata(local_file) {
