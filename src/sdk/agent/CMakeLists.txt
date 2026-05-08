@@ -13,13 +13,11 @@ endif()
 
 set(AGENT_BIN "${AGENT_OUTPUT_DIR}/agent${CMAKE_EXECUTABLE_SUFFIX}")
 
-set(GO_BASE_LDFLAGS "-X main.version=${PROJECT_VERSION}")
-
-set(GO_DEBUG_FLAGS "-gcflags=all=-N -l") 
-set(GO_DEBUG_LDFLAGS "${GO_BASE_LDFLAGS}")
+set(GO_DEBUG_FLAGS "-gcflags=all=-N -l")
+set(GO_DEBUG_LDFLAGS "-X main.buildTag=${BUILD_TAG}")
 
 set(GO_RELEASE_FLAGS "-trimpath")
-set(GO_RELEASE_LDFLAGS "-s -w ${GO_BASE_LDFLAGS}")
+set(GO_RELEASE_LDFLAGS "-s -w -X main.buildTag=${BUILD_TAG}")
 
 add_custom_target(agent ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${AGENT_OUTPUT_DIR}"

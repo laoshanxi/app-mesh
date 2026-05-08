@@ -39,11 +39,11 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 #define __MICRO_KEY__(str) #str				  // No expand micro
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
 
-#define PRINT_VERSION()                                                                                                   \
-	if (argc >= 2 && (std::string("version") == argv[1] || std::string("-v") == argv[1] || std::string("-V") == argv[1])) \
-	{                                                                                                                     \
-		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                                                  \
-		return 0;                                                                                                         \
+#define PRINT_VERSION()                                                  \
+	if (argc >= 2 && std::string("-V") == argv[1])                       \
+	{                                                                    \
+		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl; \
+		return 0;                                                        \
 	}
 
 #define SET_COMPARE(x, y)                                           \

@@ -20,6 +20,8 @@ const (
 	minPort             = 1024
 )
 
+var buildTag string
+
 var logger = utils.GetLogger()
 var parentPID = os.Getppid()
 
@@ -131,6 +133,10 @@ func main() {
 	//go func() {
 	//    log.Println(http.ListenAndServe("localhost:7070", nil))
 	//}()
+	if buildTag == "" {
+		buildTag = "dev"
+	}
+	logger.Info("Build: ", buildTag)
 	logger.Info("Starting agent with PID:", os.Getpid())
 	cwd, _ := os.Getwd()
 	logger.Info("Current working directory:", cwd)

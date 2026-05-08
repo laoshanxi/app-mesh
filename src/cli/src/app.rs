@@ -1,7 +1,12 @@
 use clap::{Parser, Subcommand};
 
+const BUILD_TAG: &str = match option_env!("BUILD_TAG") {
+    Some(tag) => tag,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 #[derive(Parser)]
-#[command(name = "appc", about = "App Mesh CLI", version)]
+#[command(name = "appc", about = "App Mesh CLI", version = BUILD_TAG)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
