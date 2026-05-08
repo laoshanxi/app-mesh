@@ -460,7 +460,7 @@ function Install-Go {
 function Install-Rust {
     Write-Host "Installing Rust toolchain..." -ForegroundColor Cyan
 
-    if (!(Get-Command cargo -ErrorAction SilentlyContinue)) {
+    if (!(Get-Command rustup -ErrorAction SilentlyContinue)) {
         $rustupUrl = "https://win.rustup.rs/x86_64"
         Save-File $rustupUrl "rustup-init.exe"
         Start-Process -FilePath ".\rustup-init.exe" -ArgumentList "-y --default-toolchain stable" -Wait -NoNewWindow
