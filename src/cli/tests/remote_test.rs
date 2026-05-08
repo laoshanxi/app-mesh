@@ -576,7 +576,6 @@ async fn sdk_12b_run_async_short_cmd() {
 #[tokio::test]
 #[ignore]
 async fn sdk_12c_run_async_captures_output() {
-    use std::sync::{Arc, Mutex};
     let c = authed().await;
     let app = Application::builder("_test_output_")
         .command("echo captured_text_xyz")

@@ -25,6 +25,8 @@ project(appmesh
 # =============================================================================
 if(WIN32)
     set(CMAKE_CXX_STANDARD 20)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
+    set(CMAKE_CXX_STANDARD 11)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
     set(CMAKE_CXX_STANDARD 14)
 else()
@@ -191,12 +193,13 @@ endif()
 # Rust CLI (appc). Usage: make appc / make rust_tests
 # =============================================================================
 set(RUST_CLI_DIR "${CMAKE_SOURCE_DIR}/src/cli")
-set(RUST_CLI_BINARY "${RUST_CLI_DIR}/target/release/appc${CMAKE_EXECUTABLE_SUFFIX}")
+set(RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo-target")
+set(RUST_CLI_BINARY "${RUST_TARGET_DIR}/release/appc${CMAKE_EXECUTABLE_SUFFIX}")
 
 add_custom_target(appc
-    COMMAND cargo build --release
+    COMMAND ${CMAKE_COMMAND} -E env BUILD_TAG=${BUILD_TAG} cargo build --release --target-dir "${RUST_TARGET_DIR}"
     WORKING_DIRECTORY "${RUST_CLI_DIR}"
-    COMMENT "Building Rust CLI (appc)..."
+    COMMENT "Building Rust CLI (appc) with BUILD_TAG=${BUILD_TAG}..."
     VERBATIM
 )
 
@@ -207,7 +210,7 @@ install(PROGRAMS "${RUST_CLI_BINARY}"
 
 if(NOT APPMESH_NO_TESTS)
     add_custom_target(rust_tests
-        COMMAND cargo test
+        COMMAND cargo test --target-dir "${RUST_TARGET_DIR}"
         WORKING_DIRECTORY "${RUST_CLI_DIR}"
         COMMENT "Running Rust CLI tests..."
         VERBATIM
@@ -230,8 +233,9 @@ add_custom_target(pack
     COMMENT "Creating distribution package..."
 
     # 0. Build Rust CLI (appc)
-    COMMAND cargo build --release
+    COMMAND ${CMAKE_COMMAND} -E env BUILD_TAG=${BUILD_TAG} cargo build --release
             --manifest-path "${RUST_CLI_DIR}/Cargo.toml"
+            --target-dir "${RUST_TARGET_DIR}"
 
     # 1. make install (C++ daemon + libs)
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}

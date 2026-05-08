@@ -14,6 +14,7 @@ case $(uname -m) in
     arm)    dpkg --print-architecture | grep -q "arm64" && architecture="arm64" || architecture="arm" ;;
 esac
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
 export ROOTDIR=$(pwd)/appmesh.tmp
 mkdir -p ${ROOTDIR}
@@ -69,37 +70,14 @@ elif [ -f "/usr/bin/apt" ]; then
 fi
 python3 -m pip install --upgrade pip || python3 -m pip install --break-system-packages --upgrade pip || true
 
-# yum install -y golang
-# apt install -y golang
-GO_ARCH=$architecture
-GO_VER=1.25.3
-$WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
-rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
-rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
-go version
+# Golang
+bash "$SCRIPT_DIR/install_golang.sh"
 go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 
 # Rust (for CLI build)
-if ! command -v cargo >/dev/null 2>&1; then
-    RUST_ARCH=$(uname -m)
-    case "$RUST_ARCH" in
-        x86_64)  RUST_ARCH="x86_64-unknown-linux-gnu" ;;
-        aarch64) RUST_ARCH="aarch64-unknown-linux-gnu" ;;
-        armv7l)  RUST_ARCH="armv7-unknown-linux-gnueabihf" ;;
-    esac
-    $WGET_A -O /tmp/rustup-init "https://static.rust-lang.org/rustup/dist/${RUST_ARCH}/rustup-init"
-    chmod +x /tmp/rustup-init
-    /tmp/rustup-init -y --default-toolchain stable --no-modify-path
-    rm -f /tmp/rustup-init
-    export PATH="$HOME/.cargo/bin:$PATH"
-    ln -sf "$HOME/.cargo/bin/rustc" /usr/local/bin/rustc
-    ln -sf "$HOME/.cargo/bin/cargo" /usr/local/bin/cargo
-    ln -sf "$HOME/.cargo/bin/rustup" /usr/local/bin/rustup
-fi
-rustup update stable
-rustc --version
+bash "$SCRIPT_DIR/install_rust.sh"
 
-# check libssl in case of setup_build_env/update_openssl.sh not executed
+# check libssl in case of bootstrap/install_openssl.sh not executed
 if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then
     echo 'openssl was already installed'
     # set for appmesh cmake

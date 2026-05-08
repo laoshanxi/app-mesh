@@ -19,7 +19,7 @@ git clone https://github.com/laoshanxi/app-mesh.git
 cd app-mesh
 
 # Install build dependencies (Ubuntu)
-# See script/setup_build_env/ for platform-specific setup
+# See script/bootstrap/ for platform-specific setup
 
 # Build
 mkdir build && cd build

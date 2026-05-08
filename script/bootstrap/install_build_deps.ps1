@@ -293,7 +293,7 @@ function Install-HeaderOnlyLibraries {
     Copy-Item -Recurse "concurrentqueue" "C:\local\include\" -Force
 
     # libwebsockets (pinned to v4.5.8; main has SMD regression since 58a366b 2026-04-10)
-    git clone --depth=1 -b v4.5.8 https://libwebsockets.org/repo/libwebsockets
+    git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
     Set-Location "libwebsockets"
     (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int uid_t;', 'typedef long uid_t;' | Set-Content "include\libwebsockets.h"
     (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int gid_t;', 'typedef long gid_t;' | Set-Content "include\libwebsockets.h"
@@ -443,7 +443,7 @@ function Install-Go {
     Write-Host "Installing Go programming language..." -ForegroundColor Cyan
     
     if (!(Get-Command go -ErrorAction SilentlyContinue)) {
-        $goVersion = "1.25.3"
+        $goVersion = "1.25.10"
         $goArch = if ($architecture -eq "arm64") { "arm64" } else { "amd64" }
         $goUrl = "https://go.dev/dl/go$goVersion.windows-$goArch.zip"
         Save-File $goUrl "go.zip"

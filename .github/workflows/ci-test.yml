@@ -91,16 +91,17 @@ jobs:
               /work/src/sdk/python/sample.py
 
             # test appmesh golang sdk
-            apt install -y wget
-            GO_ARCH=amd64
-            GO_VER=1.25.3
-            wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
-            tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+            bash /work/script/bootstrap/install_golang.sh
             cd /work/src/sdk/go
             /usr/local/go/bin/go test -v || {
                 bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
                 exit 1
             }
+
+            # test appmesh rust cli + sdk
+            bash /work/script/bootstrap/install_rust.sh
+            cd /work/src/cli
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu22 cargo test --test remote_test -- --ignored --test-threads=1
             '
 
       - name: test ubuntu:24
@@ -144,16 +145,17 @@ jobs:
               /work/src/sdk/python/sample.py
 
             # test appmesh golang sdk
-            apt install -y wget
-            GO_ARCH=amd64
-            GO_VER=1.25.3
-            wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
-            tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+            bash /work/script/bootstrap/install_golang.sh
             cd /work/src/sdk/go
             /usr/local/go/bin/go test -v || {
                 bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
                 exit 1
             }
+
+            # test appmesh rust cli + sdk
+            bash /work/script/bootstrap/install_rust.sh
+            cd /work/src/cli
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test --test remote_test -- --ignored --test-threads=1
             '
 
       - name: test ubuntu:18
@@ -195,16 +197,17 @@ jobs:
               /work/src/sdk/python/sample.py
 
             # test appmesh golang sdk
-            apt install -y wget
-            GO_ARCH=amd64
-            GO_VER=1.25.3
-            wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
-            tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+            bash /work/script/bootstrap/install_golang.sh
             cd /work/src/sdk/go
             /usr/local/go/bin/go test -v || {
                 bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
                 exit 1
             }
+
+            # test appmesh rust cli + sdk
+            bash /work/script/bootstrap/install_rust.sh
+            cd /work/src/cli
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu18 cargo test --test remote_test -- --ignored --test-threads=1
             '
 
       - name: test centos:7
@@ -254,13 +257,15 @@ jobs:
 
             # test appmesh golang sdk
             yum install -y wget
-            GO_ARCH=amd64
-            GO_VER=1.25.3
-            wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
-            tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+            bash /work/script/bootstrap/install_golang.sh
             cd /work/src/sdk/go
             /usr/local/go/bin/go test -v || {
                 bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
                 exit 1
             }
+
+            # test appmesh rust cli + sdk
+            bash /work/script/bootstrap/install_rust.sh
+            cd /work/src/cli
+            CARGO_TARGET_DIR=/tmp/cargo-target-centos7 cargo test --test remote_test -- --ignored --test-threads=1
             '

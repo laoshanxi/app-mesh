@@ -8,8 +8,7 @@ on:
     paths:
       - ".github/workflows/ci-image-ubuntu24.yml"
       - "docker/Dockerfile.build_ubuntu24"
-      - "script/setup_build_env/autogen.sh*"
-      - "script/setup_build_env/update_openssl.sh"
+      - "script/bootstrap/*"
 
 env:
   DOCKER_REGISTRY: docker.io

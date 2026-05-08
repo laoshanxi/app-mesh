@@ -37,7 +37,7 @@ RUN bash -c "ls && apt-get update && \
 	ln -s /opt/appmesh/script/docker-entrypoint.sh /entrypoint.sh && \
 	touch /opt/appmesh/appmesh.pid && \
 	(id -u appmesh >/dev/null 2>&1 && chown -R appmesh:appmesh /opt/appmesh/) || true && \
-	ldd /usr/local/bin/appc && /usr/local/bin/appc -V && /opt/appmesh/bin/appsvc -v"
+	ldd /usr/local/bin/appc && /usr/local/bin/appc -V && /opt/appmesh/bin/appsvc -V"
 EXPOSE 6060
 # USER is determined at runtime by docker-entrypoint.sh via gosu:
 #   default: drops to 'appmesh' user (secure)

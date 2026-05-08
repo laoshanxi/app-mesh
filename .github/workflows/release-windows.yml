@@ -28,7 +28,7 @@ jobs:
 
       - name: Setup Build Environment
         shell: pwsh
-        run: .\script\setup_build_env\autogen.ps1
+        run: .\script\bootstrap\install_build_deps.ps1
 
       - name: Build binaries
         shell: pwsh

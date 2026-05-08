@@ -7,7 +7,7 @@ on:
     paths:
       - ".github/workflows/ci-image-centos8.yml"
       - "docker/Dockerfile.build_centos8"
-      - "script/setup_build_env/autogen.sh"
+      - "script/bootstrap/*"
 
 env:
   REGISTRY: docker.io

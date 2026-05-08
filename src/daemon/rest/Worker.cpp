@@ -3,6 +3,7 @@
 #include "Worker.h"
 
 #include "../../common/QuitHandler.h"
+#include "../../common/os/sigchld_guard.h"
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
@@ -58,6 +59,8 @@ int Worker::svc()
 {
 	static const char fname[] = "Worker::svc() ";
 	LOG_INF << fname;
+
+	BLOCK_SIGCHLD_FOR_THREAD();
 
 	while (!QuitHandler::instance()->shouldExit())
 	{
