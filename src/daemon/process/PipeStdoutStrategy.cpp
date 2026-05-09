@@ -6,6 +6,7 @@
 
 #include "../../common/StreamLogger.h"
 #include "../../common/Utility.h"
+#include "../../common/os/sigchld_guard.h"
 
 PipeStdoutStrategy::PipeStdoutStrategy(
 	std::string appName, ACE_HANDLE pipeRead,
@@ -15,6 +16,7 @@ PipeStdoutStrategy::PipeStdoutStrategy(
 
 	auto *pump = new StdoutPump(std::move(appName), pipeRead, diskWrite, std::move(diskMutex));
 
+	SCOPED_SIGCHLD_BLOCK;
 	if (ACE_Reactor::instance()->register_handler(pump, ACE_Event_Handler::READ_MASK) == -1)
 	{
 		LOG_WAR << fname << "register_handler failed: " << last_error_msg();
@@ -52,13 +54,16 @@ void PipeStdoutStrategy::teardown()
 	const static char fname[] = "PipeStdoutStrategy::teardown() ";
 
 	pump->stop();
-	ACE_Reactor::instance()->cancel_timer(pump);
-	// Drain BEFORE remove_handler: remove_handler triggers handle_close
-	// which closes the pipe fd; draining after would lose buffered bytes.
-	pump->finalSyncDrain();
-	pump->cancelCoalesceTimerAndFlush();
-	m_snapshotBytes.store(pump->acceptedBytes(), std::memory_order_release);
-	ACE_Reactor::instance()->remove_handler(pump, ACE_Event_Handler::READ_MASK);
+
+	{
+		SCOPED_SIGCHLD_BLOCK;
+		ACE_Reactor::instance()->cancel_timer(pump);
+		pump->finalSyncDrain();
+		pump->cancelCoalesceTimerAndFlush();
+		m_snapshotBytes.store(pump->acceptedBytes(), std::memory_order_release);
+		ACE_Reactor::instance()->remove_handler(pump, ACE_Event_Handler::READ_MASK);
+	}
+
 	pump->remove_reference();
 	LOG_DBG << fname << "bytes=" << m_snapshotBytes.load();
 }

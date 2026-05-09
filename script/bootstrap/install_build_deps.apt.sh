@@ -13,6 +13,7 @@ case $(uname -m) in
     arm)    dpkg --print-architecture | grep -q "arm64" && architecture="arm64" || architecture="arm" ;;
 esac
 export DEBIAN_FRONTEND=noninteractive
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
 export ROOTDIR=$(pwd)/appmesh.tmp
 mkdir -p ${ROOTDIR}
@@ -55,26 +56,11 @@ mv include/nlohmann /usr/local/include/
 curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
 # Golang
-# apt install -y golang
-if command -v go >/dev/null 2>&1; then
-    echo "Go is installed: $(go version)"
-else
-    GO_ARCH=$architecture
-    GO_VER=1.25.3
-    $WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
-    rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
-    rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
-    go version
-    go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
-fi
+bash "$SCRIPT_DIR/install_golang.sh"
+go env -w GOPROXY=https://goproxy.cn,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 
 # Rust (for CLI build)
-if ! command -v cargo >/dev/null 2>&1; then
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-    . "$HOME/.cargo/env"
-fi
-rustup update stable
-rustc --version
+bash "$SCRIPT_DIR/install_rust.sh"
 
 # Golang third party library
 export CGO_ENABLED=0
@@ -136,7 +122,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_D
 make && make install
 cd ${ROOTDIR}
 
-git clone --depth=1 https://libwebsockets.org/repo/libwebsockets
+git clone --depth=1 https://github.com/warmcat/libwebsockets.git
 cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
 make -j"$(nproc)" && make install
 cd ${ROOTDIR}

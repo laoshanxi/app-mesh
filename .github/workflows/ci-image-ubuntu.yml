@@ -10,7 +10,7 @@ on:
     paths:
       - ".github/workflows/ci-image-ubuntu.yml"
       - "docker/Dockerfile.build_ubuntu"
-      - "script/setup_build_env/autogen.sh*"
+      - "script/bootstrap/*"
 
 env:
   DOCKER_REGISTRY: docker.io

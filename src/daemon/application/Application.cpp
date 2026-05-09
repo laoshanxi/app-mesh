@@ -67,8 +67,7 @@ void Application::health(bool newHealth)
 	bool oldHealth = m_health.exchange(newHealth);
 	if (oldHealth != newHealth)
 	{
-		EventDispatcher::instance()->dispatch(m_name, AppEventType::HEALTH_CHANGE,
-											  {{"health", newHealth ? 0 : 1}, {"previous_health", oldHealth ? 0 : 1}});
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::HEALTH_CHANGE, {{"health", newHealth ? 0 : 1}, {"previous_health", oldHealth ? 0 : 1}});
 	}
 }
 
@@ -535,6 +534,8 @@ bool Application::onTimerSpawn()
 	}
 
 	std::shared_ptr<AppProcess> checkProcStdoutFile;
+	pid_t spawnedPid = 0;
+	std::string processUuid;
 	if (this->isEnabled())
 	{
 		auto processLock = m_process.synchronize();
@@ -567,8 +568,8 @@ bool Application::onTimerSpawn()
 		if (m_pid.load() > 0)
 		{
 			checkProcStdoutFile = (*processLock);
-			EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START,
-												  {{"pid", m_pid.load()}, {"process_uuid", (*processLock)->getuuid()}});
+			spawnedPid = m_pid.load();
+			processUuid = (*processLock)->getuuid();
 		}
 
 		// 3. Post process
@@ -577,6 +578,12 @@ bool Application::onTimerSpawn()
 		{
 			m_metricStartCount->metric().Increment();
 		}
+	}
+
+	// Dispatch event outside m_process lock to avoid blocking other threads
+	if (spawnedPid > 0)
+	{
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START, {{"pid", spawnedPid}, {"process_uuid", processUuid}});
 	}
 
 	// 4. Schedule next run for period run (if next have not scheduled)
@@ -618,8 +625,7 @@ void Application::enable()
 	auto disabled = STATUS::DISABLED;
 	if (m_status.compare_exchange_strong(disabled, STATUS::ENABLED))
 	{
-		EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE,
-											  {{"status", "enabled"}, {"previous_status", "disabled"}});
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"status", "enabled"}, {"previous_status", "disabled"}});
 	}
 	save();
 }

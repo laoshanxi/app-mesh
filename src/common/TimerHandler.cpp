@@ -4,6 +4,7 @@
 
 #include "../common/Utility.h"
 #include "TimerHandler.h"
+#include "os/sigchld_guard.h"
 
 ////////////////////////////////////////////////////////////////
 /// TimerEvent
@@ -18,6 +19,11 @@ TimerEvent::TimerEvent(bool isOneShot, std::shared_ptr<TimerHandler> timerObj, T
 int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *act)
 {
 	const static char fname[] = "TimerEvent::handle_timeout() ";
+
+	// Block SIGCHLD once per thread; the comma-operator initializer runs
+	// BLOCK_SIGCHLD_FOR_THREAD() on the first call and is a no-op thereafter.
+	static thread_local const bool s_sigchld = (BLOCK_SIGCHLD_FOR_THREAD(), true);
+	(void)s_sigchld;
 
 	// Validate act 'magic cookie'
 	if (act != static_cast<const void *>(this))

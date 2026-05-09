@@ -132,37 +132,24 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
         name.push_back(':'); // Add colon to header name
 
         int header_len = lws_hdr_custom_length(wsi, name.c_str(), name.length());
-        if (header_len <= 0)
-        {
+        if (header_len > 0 && static_cast<size_t>(header_len) > maxLen)
             return {};
-        }
-
-        if (static_cast<size_t>(header_len) > maxLen)
+        if (header_len > 0)
         {
-            return {}; // reject oversized header
+            std::vector<char> buf(header_len + 1);
+            int len = lws_hdr_custom_copy(wsi, buf.data(), buf.size(), name.c_str(), name.length());
+            if (len > 0)
+            {
+                return std::string(buf.data(), len);
+            }
         }
-
-        std::vector<char> buf(header_len + 1);
-
-        int len = lws_hdr_custom_copy(wsi, buf.data(), buf.size(), name.c_str(), name.length());
-        if (len <= 0)
-        {
-            return {};
-        }
-
-        return std::string(buf.data(), len);
+        return {};
     };
 
-    // ---- Method + Path ----
+    // ---- Method + Path (HTTP/1.1 only — h2 ALPN is disabled) ----
 
-    // Check HTTP/2 Pseudo-headers
-    if (lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_COLON_METHOD))
-    {
-        ssnInfo->method = grabToken(WSI_TOKEN_HTTP_COLON_METHOD);
-        ssnInfo->path = grabToken(WSI_TOKEN_HTTP_COLON_PATH);
-    }
     // Check HTTP/1.1 GET
-    else if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI))
+    if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI))
     {
         ssnInfo->method = "GET";
         ssnInfo->path = grabToken(WSI_TOKEN_GET_URI);
@@ -256,13 +243,7 @@ std::unique_ptr<Request> WebSocketService::buildHttpRequest(struct lws *wsi)
             name.pop_back();
 
         // Skip non-header tokens (URI tokens and request-line metadata)
-        // URI tokens end with "_URI" (GET_URI, PUT_URI, etc.)
-        // Also skip HTTP/2 pseudo-headers and version information
-        if (name.empty() ||
-            (name.find("_URI") != std::string::npos) ||
-            (name.find("HTTP/") != std::string::npos) ||
-            (name.find(":method") == 0) ||
-            (name.find(":path") == 0))
+        if (name.empty() || (name.find("_URI") != std::string::npos) || (name.find("HTTP/") != std::string::npos))
         {
             continue;
         }
@@ -713,7 +694,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             }
             else
             {
-                /* HTTP/2 requires explicit stream finalization */
+                // Empty body: send zero-length final write to signal end of response
                 unsigned char dummy[LWS_PRE + 1] = {};
                 lws_write(wsi, dummy + LWS_PRE, 0, LWS_WRITE_HTTP_FINAL);
             }
@@ -1033,13 +1014,16 @@ bool WebSocketService::createContext(const char *cert_path, const char *key_path
     info.gid = -1;
     info.uid = -1;
 
-    // ALLOW_HTTP_ON_HTTPS_LISTENER for HTTP/2 support
+    // ALLOW_HTTP_ON_HTTPS_LISTENER lets lws serve plain HTTP on the TLS port.
+    // Do NOT advertise h2 via ALPN: lws custom header APIs (lws_hdr_custom_length,
+    // lws_hdr_custom_copy, lws_hdr_custom_name_foreach) all return -1 for HTTP/2
+    // streams (mux_substream guard), and the HPACK decoder silently discards
+    // non-tokenized headers. File transfer depends on the custom X-File-Path header.
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
                    LWS_SERVER_OPTION_HTTP_HEADERS_SECURITY_BEST_PRACTICES_ENFORCE |
                    LWS_SERVER_OPTION_ALLOW_HTTP_ON_HTTPS_LISTENER;
 
-    // For HTTP/2, we need to set ALPN protocols
-    static const char *alpn_protos = "h2,http/1.1";
+    static const char *alpn_protos = "http/1.1";
     info.alpn = alpn_protos;
 
     // client cert verify enable/disable

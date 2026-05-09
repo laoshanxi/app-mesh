@@ -44,7 +44,7 @@ REST:
   PrometheusExporterListenPort: 0
 
   # Number of threads to handle HTTP requests.
-  WorkerThreadPoolSize: 4
+  WorkerThreadPoolSize: 2
   # Number of threads to handle I/O operations.
   IOThreadPoolSize: 2
 

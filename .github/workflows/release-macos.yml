@@ -38,7 +38,7 @@ jobs:
 
       - name: Setup Build Environment
         run: |
-          bash script/setup_build_env/autogen.sh.mac.sh
+          bash script/bootstrap/install_build_deps.mac.sh
 
       - name: Build project
         if: always()

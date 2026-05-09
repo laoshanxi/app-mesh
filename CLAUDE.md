@@ -34,13 +34,22 @@ make cppcheck
 docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_ubuntu22 \
   sh -c "mkdir build && cd build && cmake .. && make && make pack"
 
+# CLI build (Rust)
+cd src/cli && cargo build --release
+
+# CLI unit tests
+cd src/cli && cargo test
+
+# CLI integration tests (requires running daemon)
+cd src/cli && cargo test --test remote_test -- --ignored --test-threads=1
+
 # SDK tests
 cd src/sdk/python/test && python3 -m unittest --verbose
 go test ./src/sdk/go/ -test.v
 cd src/sdk/rust && cargo test
 ```
 
-CMake targets `python_tests` and `go_tests` also exist (`make python_tests`, `make go_tests`).
+CMake targets `python_tests`, `go_tests`, and `rust_tests` also exist.
 
 ## Architecture
 
@@ -73,7 +82,7 @@ Other singletons use `static instance()`: `Configuration`, `Security`, `Resource
 
 ### Common Library (`src/common/`)
 
-Shared across daemon and CLI. Notable:
+Shared C++ library used by the daemon. Notable:
 - `StreamLogger.h` — logging macros (`LOG_DBG`, `LOG_INF`, `LOG_WAR`, `LOG_ERR`) wrapping spdlog
 - `Utility.h` — string ops, file helpers, ID generation
 - `DateTime.h` / `DurationParse.h` — time and duration parsing
@@ -83,16 +92,36 @@ Shared across daemon and CLI. Notable:
 
 ### CLI (`src/cli/`)
 
-`appc` command-line tool. `CommandDispatcher.cpp` handles all subcommands, communicating with the daemon over HTTP.
+`appc` command-line tool, written in Rust. Uses clap for argument parsing and the Rust SDK (`src/sdk/rust`) for WSS communication with the daemon. Key structure:
+- `src/main.rs` — entry point, clap command definitions
+- `src/commands/` — subcommand handlers (app management, user, config, file, run)
+- `tests/integration_test.rs` — CLI argument parsing and subcommand tests (no daemon needed)
+- `tests/remote_test.rs` — integration tests against a running daemon (run with `--ignored`)
+
+### Agent (`src/sdk/agent/`)
+
+REST proxy service for the daemon (`appsvc`), written in Go. Accepts HTTP requests from clients and forwards them to the daemon via TCP, offloading traffic and reducing pressure on the C++ core. Also provides a Docker daemon reverse proxy (`/appmesh/docker/*`), Prometheus metrics exporter, and Consul service registration.
 
 ### SDKs (`src/sdk/`)
 
-Each SDK (Python, Go, Rust, Java, JavaScript) provides HTTP, TCP, and/or WebSocket clients plus a server-side interface for receiving tasks. The Go agent (`src/sdk/agent/`) adds cluster orchestration. MCP integration lives in `src/sdk/mcp/`.
+| SDK | Language | Transport |
+|-----|----------|-----------|
+| `rust/` | Rust | HTTP, TCP, WSS |
+| `python/` | Python | HTTP, TCP, WSS |
+| `go/` | Go | HTTP, TCP, WSS |
+| `java/` | Java | HTTP, TCP, WSS |
+| `javascript/` | JavaScript | HTTP, TCP |
+| `cpp/` | C++ | HTTP |
+
+Each SDK provides client libraries for interacting with the daemon plus a server-side interface for receiving tasks.
+
+### MCP (`src/sdk/mcp/`)
+
+Model Context Protocol integration. Exposes App Mesh as an MCP tool server, enabling AI agents to manage applications via the MCP protocol.
 
 ## Code Conventions
 
-- C++17 (C++20 on Windows, C++14 on older GCC). `-Wall` enabled.
-- **C++11 compatibility**: CentOS 7 builds with GCC 4.8. Avoid C++14/17-only features; `std::make_unique` polyfill is in `src/common/Utility.h`.
+- C++ standard tiers: C++11 (GCC < 5), C++14 (GCC 5–7), C++17 (GCC 8+), C++20 (Windows). `-Wall` enabled. Code must compile under C++11 for CentOS 7 (GCC 4.8.5); polyfills for `std::make_unique` and `std::exchange` are in `src/common/Utility.h`.
 - CamelCase for classes, `m_` prefix for member variables.
 - Logging: `LOG_DBG << "msg";` — never `std::cout` or `printf`.
 - Config env overrides: `APPMESH_<Section>_<Key>` (e.g. `APPMESH_REST_RestListenPort=6060`).
@@ -101,4 +130,8 @@ Each SDK (Python, Go, Rust, Java, JavaScript) provides HTTP, TCP, and/or WebSock
 
 ## Key Dependencies
 
-C++: ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, libwebsockets, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
+C++ (daemon): ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, uWebSockets (C++17+, libwebsockets as fallback for older GCC), libcurl, uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
+
+Rust (CLI): clap, tokio, rustls, serde/serde_json/serde_yaml, anyhow. The CLI depends on the Rust SDK crate (`src/sdk/rust`).
+
+Go (agent): gorilla/mux, gorilla/websocket, consul/api, viper, zap, msgpack.
