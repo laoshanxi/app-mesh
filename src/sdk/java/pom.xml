@@ -54,7 +54,7 @@
         <dependency>
             <groupId>org.msgpack</groupId>
             <artifactId>jackson-dataformat-msgpack</artifactId>
-            <version>0.9.11</version>
+            <version>0.9.12</version>
         </dependency>
 
         <!-- Java WebSocket client (blocking client wrapper will use this) -->
