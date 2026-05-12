@@ -23,6 +23,8 @@
 #include <ace/OS.h>
 #include <ace/UUID.h>
 #include <openssl/crypto.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
@@ -1254,6 +1256,135 @@ std::string Utility::hash(const std::string &str)
 	}
 
 	return std::string("H") + std::to_string(hash);
+}
+
+const std::string Utility::PBKDF2_PREFIX = "$pbkdf2$";
+static const int PBKDF2_SALT_LEN = 16;
+static const int PBKDF2_KEY_LEN = 32;
+static const int PBKDF2_ITERATIONS = 100000;
+
+static std::string toHex(const unsigned char *data, int len)
+{
+	std::string result;
+	result.reserve(len * 2);
+	for (int i = 0; i < len; i++)
+	{
+		char buf[3];
+		snprintf(buf, sizeof(buf), "%02x", data[i]);
+		result.append(buf);
+	}
+	return result;
+}
+
+static int fromHex(const std::string &hex, unsigned char *out, int maxLen)
+{
+	if (hex.empty() || hex.size() % 2 != 0)
+		return -1;
+	int len = static_cast<int>(hex.size()) / 2;
+	if (len > maxLen)
+		return -1;
+	for (int i = 0; i < len; i++)
+	{
+		unsigned int byte;
+		if (sscanf(hex.c_str() + i * 2, "%02x", &byte) != 1)
+			return -1;
+		out[i] = static_cast<unsigned char>(byte);
+	}
+	return len;
+}
+
+std::string Utility::hashPassword(const std::string &password)
+{
+	unsigned char salt[PBKDF2_SALT_LEN];
+	if (RAND_bytes(salt, PBKDF2_SALT_LEN) != 1)
+		throw std::runtime_error("Failed to generate random salt");
+
+	unsigned char key[PBKDF2_KEY_LEN];
+	if (PKCS5_PBKDF2_HMAC(password.c_str(), static_cast<int>(password.size()),
+						   salt, PBKDF2_SALT_LEN, PBKDF2_ITERATIONS, EVP_sha256(), PBKDF2_KEY_LEN, key) != 1)
+		throw std::runtime_error("PBKDF2 failed");
+
+	return PBKDF2_PREFIX + std::to_string(PBKDF2_ITERATIONS) + "$" + toHex(salt, PBKDF2_SALT_LEN) + "$" + toHex(key, PBKDF2_KEY_LEN);
+}
+
+bool Utility::isValidPasswordHash(const std::string &str)
+{
+	if (!startWith(str, PBKDF2_PREFIX))
+		return false;
+
+	// Expect: $pbkdf2$<iterations>$<32-char-hex-salt>$<64-char-hex-key>
+	std::string remainder = str.substr(PBKDF2_PREFIX.size());
+	if (charCount(remainder, '$') != 2)
+		return false;
+
+	auto pos1 = remainder.find('$');
+	auto pos2 = remainder.find('$', pos1 + 1);
+	std::string iterStr = remainder.substr(0, pos1);
+	std::string saltHex = remainder.substr(pos1 + 1, pos2 - pos1 - 1);
+	std::string keyHex = remainder.substr(pos2 + 1);
+
+	if (!isNumber(iterStr) || iterStr.size() > 7)
+		return false;
+	int iterations = std::stoi(iterStr);
+	if (iterations < PBKDF2_ITERATIONS || iterations > 1000000)
+		return false;
+
+	if (saltHex.size() != static_cast<size_t>(PBKDF2_SALT_LEN * 2) ||
+		keyHex.size() != static_cast<size_t>(PBKDF2_KEY_LEN * 2))
+		return false;
+
+	auto isHex = [](const std::string &s) -> bool
+	{
+		for (size_t i = 0; i < s.size(); i++)
+		{
+			char c = s[i];
+			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+				return false;
+		}
+		return true;
+	};
+	return isHex(saltHex) && isHex(keyHex);
+}
+
+bool Utility::verifyPassword(const std::string &password, const std::string &stored)
+{
+	if (!isValidPasswordHash(stored))
+		return false;
+
+	// Parse: $pbkdf2$<iterations>$<hex-salt>$<hex-key>
+	std::string remainder = stored.substr(PBKDF2_PREFIX.size());
+	auto pos1 = remainder.find('$');
+	auto pos2 = remainder.find('$', pos1 + 1);
+
+	std::string iterStr = remainder.substr(0, pos1);
+	std::string saltHex = remainder.substr(pos1 + 1, pos2 - pos1 - 1);
+	std::string keyHex = remainder.substr(pos2 + 1);
+
+	size_t pos = 0;
+	int iterations = 0;
+	try
+	{
+		iterations = std::stoi(iterStr, &pos);
+	}
+	catch (const std::exception &)
+	{
+		return false;
+	}
+	if (pos != iterStr.size() || iterations <= 0 || iterations > 1000000)
+		return false;
+
+	unsigned char salt[64], expectedKey[64];
+	int saltLen = fromHex(saltHex, salt, sizeof(salt));
+	int keyLen = fromHex(keyHex, expectedKey, sizeof(expectedKey));
+	if (saltLen != PBKDF2_SALT_LEN || keyLen != PBKDF2_KEY_LEN)
+		return false;
+
+	unsigned char derivedKey[64];
+	if (PKCS5_PBKDF2_HMAC(password.c_str(), static_cast<int>(password.size()),
+						   salt, saltLen, iterations, EVP_sha256(), keyLen, derivedKey) != 1)
+		return false;
+
+	return CRYPTO_memcmp(expectedKey, derivedKey, keyLen) == 0;
 }
 
 bool Utility::secureCompare(const std::string &a, const std::string &b)

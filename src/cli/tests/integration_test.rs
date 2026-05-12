@@ -294,41 +294,51 @@ fn test_view_invalid_log_index_type() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// appmgpwd — local SHA-256 utility (no daemon)
+// appmgpwd — local PBKDF2 password hashing utility (no daemon)
 // ═══════════════════════════════════════════════════════════════════════════
+
+fn assert_pbkdf2_format(hash: &str) {
+    assert!(hash.starts_with("$pbkdf2$100000$"), "expected PBKDF2 prefix, got: {}", hash);
+    let parts: Vec<&str> = hash[8..].split('$').collect();
+    assert_eq!(parts.len(), 3);
+    assert_eq!(parts[1].len(), 32); // 16-byte salt hex
+    assert_eq!(parts[2].len(), 64); // 32-byte key hex
+    assert!(parts[1].chars().all(|c| c.is_ascii_hexdigit()));
+    assert!(parts[2].chars().all(|c| c.is_ascii_hexdigit()));
+}
 
 #[test]
 fn test_appmgpwd_single() {
     let s = stdout_of(&["appmgpwd", "admin"]);
-    assert_eq!(s.trim(), "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918");
+    assert_pbkdf2_format(s.trim());
 }
 
 #[test]
 fn test_appmgpwd_multiple() {
     let lines = stdout_lines(&["appmgpwd", "admin", "test"]);
     assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918");
-    assert_eq!(lines[1], "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
+    assert_pbkdf2_format(&lines[0]);
+    assert_pbkdf2_format(&lines[1]);
+    assert_ne!(lines[0], lines[1]);
 }
 
 #[test]
 fn test_appmgpwd_empty_string() {
     let s = stdout_of(&["appmgpwd", ""]);
-    assert_eq!(s.trim(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    assert_pbkdf2_format(s.trim());
 }
 
 #[test]
 fn test_appmgpwd_special_chars() {
     let s = stdout_of(&["appmgpwd", "p@ss!word#123"]);
-    assert!(s.trim().len() == 64); // valid SHA-256 hex
-    assert!(s.trim().chars().all(|c| c.is_ascii_hexdigit()));
+    assert_pbkdf2_format(s.trim());
 }
 
 #[test]
-fn test_appmgpwd_known_hash_mesh123() {
-    let s = stdout_of(&["appmgpwd", "mesh123"]);
-    // SHA-256("mesh123")
-    assert_eq!(s.trim(), "1fc5f695d166602f3cdbf93995c73075ed19fc246676e3feece8fc092bcc5a29");
+fn test_appmgpwd_unique_salt() {
+    let h1 = stdout_of(&["appmgpwd", "admin"]);
+    let h2 = stdout_of(&["appmgpwd", "admin"]);
+    assert_ne!(h1.trim(), h2.trim());
 }
 
 #[test]
@@ -337,8 +347,8 @@ fn test_appmgpwd_stdin_mode() {
     assert!(out.status.success());
     let lines = lines_of(&out.stdout);
     assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918");
-    assert_eq!(lines[1], "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
+    assert_pbkdf2_format(&lines[0]);
+    assert_pbkdf2_format(&lines[1]);
 }
 
 #[test]
@@ -347,14 +357,7 @@ fn test_appmgpwd_stdin_skips_blank_lines() {
     assert!(out.status.success());
     let lines = lines_of(&out.stdout);
     assert_eq!(lines.len(), 1);
-}
-
-#[test]
-fn test_appmgpwd_output_is_lowercase_hex() {
-    let s = stdout_of(&["appmgpwd", "hello"]);
-    let hash = s.trim();
-    assert_eq!(hash.len(), 64);
-    assert!(hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')));
+    assert_pbkdf2_format(&lines[0]);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

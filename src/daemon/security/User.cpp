@@ -225,7 +225,11 @@ void User::updateKey(const std::string &passwd)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (Security::instance()->encryptKey())
 	{
-		m_key = Utility::hash(passwd);
+		// Skip re-hashing if already a valid PBKDF2 hash (loaded from file)
+		if (Utility::isValidPasswordHash(passwd))
+			m_key = passwd;
+		else
+			m_key = Utility::hashPassword(passwd);
 	}
 	else
 	{
@@ -513,9 +517,9 @@ bool User::verifyKey(const std::string &key)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (Security::instance()->encryptKey())
 	{
-		return Utility::secureCompare(m_key, Utility::hash(key));  // Use constant-time comparison
+		return Utility::verifyPassword(key, m_key);
 	}
-	return Utility::secureCompare(m_key, key);  // Use constant-time comparison
+	return Utility::secureCompare(m_key, key);
 }
 
 const std::string &User::getMfaKey()
@@ -557,26 +561,30 @@ bool User::hasPermission(const std::string &permission)
 	return false;
 }
 
+std::string User::getKeyMaterial() const
+{
+	// For PBKDF2 hashes, extract the derived key hex portion (after last '$')
+	// to avoid using the fixed "$pbkdf2$100000$" prefix as AES key material
+	if (Utility::isValidPasswordHash(m_key))
+	{
+		auto pos = m_key.rfind('$');
+		if (pos != std::string::npos)
+			return m_key.substr(pos + 1);
+	}
+	return m_key;
+}
+
 const std::string User::encrypt(const std::string &message)
 {
-	// https://www.cryptopp.com/wiki/Advanced_Encryption_Standard
-	// https://github.com/weidai11/cryptopp/blob/master/Install.txt
-	// https://github.com/shanet/Crypto-Example/blob/master/crypto_example.cpp
-
-	// #include <cryptopp/osrng.h>
-	//  AutoSeededRandomPool rnd;
-	//  Generate a random key
-	//  rnd.GenerateBlock(key, key.size());
-
 	using namespace CryptoPP;
-	// prepare Key & IV
+	const std::string keyMaterial = getKeyMaterial();
 	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
 	size_t size = 0;
 	while (size < key.size())
 	{
-		for (size_t i = 0; i < m_key.length(); i++)
+		for (size_t i = 0; i < keyMaterial.length(); i++)
 		{
-			key[size++] = m_key[i];
+			key[size++] = keyMaterial[i];
 			if (size >= key.size())
 			{
 				break;
@@ -614,17 +622,16 @@ const std::string User::encrypt(const std::string &message)
 const std::string User::decrypt(const std::string &encryptedMessage)
 {
 	using namespace CryptoPP;
-	// decode base64
 	std::string message = Utility::decode64(encryptedMessage);
 
-	// prepare Key & IV
+	const std::string keyMaterial = getKeyMaterial();
 	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
 	size_t size = 0;
 	while (size < key.size())
 	{
-		for (size_t i = 0; i < m_key.length(); i++)
+		for (size_t i = 0; i < keyMaterial.length(); i++)
 		{
-			key[size++] = m_key[i];
+			key[size++] = keyMaterial[i];
 			if (size >= key.size())
 			{
 				break;
