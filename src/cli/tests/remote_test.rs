@@ -516,10 +516,8 @@ fn cli_64_file_put_get() {
 fn cli_65_appmgpwd() {
     let out = appc().args(["appmgpwd", "admin"]).output().unwrap();
     assert!(out.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
-    );
+    let hash = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    assert!(hash.starts_with("$pbkdf2$100000$"), "expected PBKDF2 format, got: {}", hash);
 }
 
 // ─── CLI negative cases ─────────────────────────────────────────────────────

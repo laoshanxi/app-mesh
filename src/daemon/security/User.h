@@ -66,6 +66,7 @@ public:
 	const std::string decrypt(const std::string &msg);
 
 private:
+	std::string getKeyMaterial() const;
 	std::string m_key;
 	bool m_locked;
 	bool m_enableMfa;

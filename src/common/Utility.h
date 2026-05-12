@@ -226,6 +226,10 @@ public:
 	static size_t charCount(const std::string &str, char c);
 	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos = 0);
 	static std::string hash(const std::string &str);
+	static const std::string PBKDF2_PREFIX;
+	static std::string hashPassword(const std::string &password);
+	static bool isValidPasswordHash(const std::string &str);
+	static bool verifyPassword(const std::string &password, const std::string &stored);
 	static std::string shortID();
 	static std::string uuid();
 	static std::string stringFormat(const char *fmt_str, ...);

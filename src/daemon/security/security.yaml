@@ -6,7 +6,7 @@ Users:
     email: admin@appmesh.com
     exec_user: ""
     group: admin
-    key: H17197393981645110028
+    key: $pbkdf2$100000$104d24c65e1095a363e2ba82885825c7$e070fe2ece1aceebf8d5ef66d03ba58483925113a07558b226bb604fb9d50616
     locked: false
     mfa_enabled: false
     mfa_key: ""
@@ -19,7 +19,7 @@ Users:
     email: mesh@appmesh.com
     exec_user: ""
     group: user
-    key: H15079608314932066436
+    key: $pbkdf2$100000$805b5735085f625281e076d773a08610$f56efc9d5e244cc8b32cbbbb3956ef3271d3866eb02469c51c6daa5d10207e04
     locked: false
     roles:
       - view
@@ -27,7 +27,7 @@ Users:
     email: test@appmesh.com
     exec_user: appmesh
     group: user
-    key: H15910623431124983003
+    key: $pbkdf2$100000$5349b9a29bfabf7c0aebba6ae8d4d533$998197cb44b68777ac128c5b81229b5e5d18dee3306ef7ae2a82c492aab65a42
     locked: false
     roles: []
 

@@ -506,6 +506,11 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		unsigned int gid, uid;
 		if (os::getUidByName(user, uid, gid))
 		{
+			if (uid == 0)
+			{
+				startError(Utility::stringFormat("exec_user <%s> resolved to root (uid=0), which is not permitted", user.c_str()));
+				return ACE_INVALID_PID;
+			}
 			option.seteuid(uid);
 			option.setruid(uid);
 			option.setegid(gid);

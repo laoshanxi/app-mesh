@@ -15,21 +15,20 @@ RUN bash -c 'git clone --depth 1 https://github.com/laoshanxi/app-mesh.git && \
     cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl -B build -G Ninja && \
     cmake --build build --target pack --parallel'
 
-FROM python:3.13.7-slim-bookworm@sha256:adafcc17694d715c905b4c7bebd96907a1fd5cf183395f0ebc4d3428bd22d92d
+FROM python:3.13.13-slim-bookworm@sha256:cfdfc1c32835000e04bf476b7679121da79b4a1e21e2a352985b40b3c275c0c8
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
 ENV APPMESH_BaseConfig_DisableExecUser=true
 # not only listen 127.0.0.1
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
-COPY --from=build_stage /workspace/app-mesh/build/appmesh*.deb .
 COPY --from=build_stage /workspace/app-mesh/script/pack/docker-entrypoint.sh /opt/appmesh/script/
-RUN bash -c "ls && apt-get update && \
-	apt-get install -y --no-install-recommends tini gosu && \
-	apt-get install -y ./appmesh*.deb && \
+RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/tmp/build \
+	apt-get update && \
+	apt-get install -y --no-install-recommends tini /tmp/build/appmesh*.deb && \
 	pip3 install --break-system-packages --no-cache-dir appmesh && \
-	rm -f ./appmesh*.deb && apt-get clean && \
-	rm -rf /var/lib/apt/lists/* /var/cache/* /tmp/* /var/tmp/* \
+	apt-get clean && \
+	rm -rf /var/lib/apt/lists/* /var/cache/* /var/tmp/* \
 		/usr/share/doc /usr/share/man /usr/share/locale /usr/share/info \
 		/var/lib/dpkg/info/*.md5sums && \
 	rm -rf /opt/appmesh/apps/ping.yaml /opt/appmesh/ssl/cfssl* && \
@@ -37,9 +36,9 @@ RUN bash -c "ls && apt-get update && \
 	ln -s /opt/appmesh/script/docker-entrypoint.sh /entrypoint.sh && \
 	touch /opt/appmesh/appmesh.pid && \
 	(id -u appmesh >/dev/null 2>&1 && chown -R appmesh:appmesh /opt/appmesh/) || true && \
-	ldd /usr/local/bin/appc && /usr/local/bin/appc -V && /opt/appmesh/bin/appsvc -V"
+	ldd /usr/local/bin/appc && /usr/local/bin/appc -V && /opt/appmesh/bin/appsvc -V
 EXPOSE 6060
-# USER is determined at runtime by docker-entrypoint.sh via gosu:
+# USER is determined at runtime by docker-entrypoint.sh via setpriv:
 #   default: drops to 'appmesh' user (secure)
 #   APPMESH_RUN_AS_ROOT=true: stays as root (for pip/apt/AI execution)
 WORKDIR /opt/appmesh/work/

@@ -947,6 +947,10 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
 		throw std::invalid_argument("No such OS user for default execution");
 	}
+	if (!config->m_disableExecUser && os::get_uid() != 0)
+	{
+		LOG_WAR << "Daemon is not running as root, user switching (exec_user/DefaultExecUser) will not take effect";
+	}
 #endif
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
 	{

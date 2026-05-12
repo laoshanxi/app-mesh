@@ -1,5 +1,7 @@
 use anyhow::{bail, Context, Result};
-use sha2::{Digest, Sha256};
+use pbkdf2::pbkdf2_hmac;
+use rand::Rng;
+use sha2::Sha256;
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 
@@ -114,27 +116,25 @@ pub fn appmginit() -> Result<i32> {
 }
 
 fn hash_password(password: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(password.as_bytes());
-    format!("{:x}", hasher.finalize())
+    const SALT_LEN: usize = 16;
+    const KEY_LEN: usize = 32;
+    const ITERATIONS: u32 = 100000;
+
+    let mut salt = [0u8; SALT_LEN];
+    rand::thread_rng().fill(&mut salt);
+
+    let mut key = [0u8; KEY_LEN];
+    pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, ITERATIONS, &mut key);
+
+    format!("$pbkdf2${}${}${}", ITERATIONS, hex::encode(salt), hex::encode(key))
 }
 
 fn generate_password(length: usize) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     let charset = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let mut seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    // Mix in PID for extra entropy
-    seed ^= std::process::id() as u64;
-
+    let mut rng = rand::thread_rng();
     let mut password = String::with_capacity(length);
-    for i in 0..length {
-        // Simple LCG PRNG (not cryptographic, matches C++ generatePassword intent)
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        let idx = ((seed >> (16 + i as u64)) as usize) % charset.len();
+    for _ in 0..length {
+        let idx = rng.gen_range(0..charset.len());
         password.push(charset[idx] as char);
     }
     password
@@ -191,21 +191,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hash_password() {
+    fn test_hash_password_format() {
         let hash = hash_password("admin");
-        assert_eq!(
-            hash,
-            "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
-        );
+        assert!(hash.starts_with("$pbkdf2$100000$"));
+        let parts: Vec<&str> = hash[8..].split('$').collect();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[1].len(), 32); // 16 bytes hex
+        assert_eq!(parts[2].len(), 64); // 32 bytes hex
     }
 
     #[test]
-    fn test_hash_password_empty() {
-        let hash = hash_password("");
-        assert_eq!(
-            hash,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
+    fn test_hash_password_unique_salt() {
+        let h1 = hash_password("admin");
+        let h2 = hash_password("admin");
+        assert_ne!(h1, h2); // different salt each time
     }
 
     #[test]
@@ -218,7 +217,6 @@ mod tests {
     #[test]
     fn test_generate_password_unique() {
         let p1 = generate_password(16);
-        std::thread::sleep(std::time::Duration::from_millis(1));
         let p2 = generate_password(16);
         assert_ne!(p1, p2);
     }

@@ -20,7 +20,9 @@
 #include <spdlog/spdlog.h>
 
 #if defined(_WIN32)
-#include "ace/WFMO_Reactor.h" // For windows ACE_Process_Manager
+#include <ace/WFMO_Reactor.h>
+#else
+#include <ace/Select_Reactor.h>
 #endif
 
 #ifdef __has_include
@@ -97,6 +99,7 @@ public:
 	// Reactor management
 	void startReactorThreads(ACE_Reactor *reactor, size_t threadCount);
 	void runReactorEvent(ACE_Reactor *reactor);
+	void runProcessReactorLoop();
 
 	// REST service management
 	void initializeRestService();
@@ -121,6 +124,7 @@ private:
 	std::shared_ptr<SocketStreamPtr> m_client;
 	std::unique_ptr<TcpAcceptor> m_acceptor;
 	std::list<os::Process> m_ptree;
+	ACE_Reactor *m_processReactor = nullptr;
 };
 
 // Global daemon instance
@@ -302,16 +306,18 @@ void AppMeshDaemon::setupSignalHandlers()
 
 	setupQuitHandler(ACE_Reactor::instance());
 
+	// Dedicated reactor for Process_Manager: sharing the main TP_Reactor causes
+	// SIGCHLD deadlock on the notification queue mutex during Token contention.
 #if defined(_WIN32)
-	static auto processReactor = new ACE_Reactor(new ACE_WFMO_Reactor(), 1);
+	m_processReactor = new ACE_Reactor(new ACE_WFMO_Reactor(), 1);
+#else
+	m_processReactor = new ACE_Reactor(new ACE_Select_Reactor(), 1);
+	m_processReactor->restart(1);
+#endif
 	m_threadPool.emplace_back(std::make_unique<std::thread>(
 		[this]()
-		{ runReactorEvent(processReactor); }));
-#else
-	static auto processReactor = ACE_Reactor::instance();
-#endif
-
-	Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, processReactor);
+		{ runProcessReactorLoop(); }));
+	Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, m_processReactor);
 
 	LOG_INF << fname << "Signal handlers configured";
 }
@@ -352,21 +358,28 @@ void AppMeshDaemon::runReactorEvent(ACE_Reactor *reactor)
 {
 	const static char fname[] = "AppMeshDaemon::runReactorEvent() ";
 
-	LOG_DBG << fname << "Reactor event thread started";
-
-	// reactor->owner(ACE_OS::thr_self());
+	LOG_INF << fname << "Reactor event thread started";
 
 	while (!QuitHandler::instance()->shouldExit() && !reactor->reactor_event_loop_done())
 	{
 		reactor->run_reactor_event_loop();
-		if (QuitHandler::instance()->shouldExit())
-		{
-			break;
-		}
-		LOG_WAR << fname << "Reactor event loop interrupted, checking quit flag";
 	}
 
-	LOG_WAR << fname << "Reactor event thread exiting";
+	LOG_INF << fname << "Reactor event thread exiting";
+}
+
+void AppMeshDaemon::runProcessReactorLoop()
+{
+	const static char fname[] = "AppMeshDaemon::runProcessReactorLoop() ";
+	LOG_INF << fname << "Process reactor thread started";
+	m_processReactor->owner(ACE_OS::thr_self());
+
+	// handle_events() instead of run_reactor_event_loop(): the latter exits on
+	// handle_events returning -1 (SIGCHLD), causing a busy loop.
+	while (!QuitHandler::instance()->shouldExit() && !m_processReactor->reactor_event_loop_done())
+		m_processReactor->handle_events();
+
+	LOG_INF << fname << "Process reactor thread exiting";
 }
 
 void AppMeshDaemon::initializeRestService()
@@ -621,6 +634,8 @@ void AppMeshDaemon::performShutdown()
 	LOG_INF << fname << "Beginning shutdown sequence";
 
 	QuitHandler::instance()->requestExit();
+	if (m_processReactor)
+		m_processReactor->end_reactor_event_loop();
 
 #if defined(HAVE_UWEBSOCKETS)
 	WebSocketAdaptor::instance()->stop();
