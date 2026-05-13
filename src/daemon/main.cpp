@@ -376,8 +376,22 @@ void AppMeshDaemon::runProcessReactorLoop()
 
 	// handle_events() instead of run_reactor_event_loop(): the latter exits on
 	// handle_events returning -1 (SIGCHLD), causing a busy loop.
+	// On error, fall back to timeout-based polling to prevent busy-looping.
+	ACE_Time_Value fallbackTimeout(1);
+	ACE_Time_Value *timeout = nullptr;
 	while (!QuitHandler::instance()->shouldExit() && !m_processReactor->reactor_event_loop_done())
-		m_processReactor->handle_events();
+	{
+		if (m_processReactor->handle_events(timeout) >= 0)
+		{
+			timeout = nullptr;
+		}
+		else if (timeout == nullptr)
+		{
+			LOG_WAR << fname << "handle_events returned -1, switching to timeout mode";
+			fallbackTimeout = ACE_Time_Value(1);
+			timeout = &fallbackTimeout;
+		}
+	}
 
 	LOG_INF << fname << "Process reactor thread exiting";
 }
