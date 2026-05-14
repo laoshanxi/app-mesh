@@ -216,7 +216,7 @@ pub struct AddArgs {
 
     /// CPU shares (relative weight)
     #[arg(short = 'C', long = "cpu-shares")]
-    pub cpu_shares: Option<f64>,
+    pub cpu_shares: Option<i32>,
 
     /// Number of stdout cache files
     #[arg(short = 'N', long = "log-cache-size")]

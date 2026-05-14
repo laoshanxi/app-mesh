@@ -123,13 +123,14 @@ type AppRun struct {
 
 // Behavior represents the behavior configuration of an application.
 type Behavior struct {
-	Exit string `json:"exit"`
+	Exit    string            `json:"exit"`
+	Control map[string]string `json:"control,omitempty"`
 }
 
 // DailyLimitation represents the daily time limitation for an application.
 type DailyLimitation struct {
-	DailyStart string `json:"daily_start"`
-	DailyEnd   string `json:"daily_end"`
+	DailyStart *int64 `json:"daily_start"`
+	DailyEnd   *int64 `json:"daily_end"`
 }
 
 // ResourceLimitation represents the CPU and memory limitations for an application.

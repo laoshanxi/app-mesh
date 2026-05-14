@@ -138,6 +138,31 @@ daemon_pid_alive() {
     kill -0 "${pid}" 2>/dev/null
 }
 
+# Platform-aware open-fd and thread count for a given pid.
+# Sets caller-visible variables: _fds and _threads.
+get_process_metrics() {
+    local pid="$1"
+    _fds="n/a"; _threads="n/a"
+    if [ -d "/proc/${pid}/fd" ]; then
+        _fds=$(ls "/proc/${pid}/fd" 2>/dev/null | wc -l | tr -d ' ')
+    elif command -v lsof >/dev/null 2>&1; then
+        _fds=$(lsof -p "${pid}" 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
+    fi
+    if [ -d "/proc/${pid}/task" ]; then
+        _threads=$(ls "/proc/${pid}/task" 2>/dev/null | wc -l | tr -d ' ')
+    elif [ "$(uname -s)" = "Darwin" ]; then
+        _threads=$(ps -M -p "${pid}" 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
+    fi
+}
+
+# Platform-aware /proc/PID/status summary (Linux only; no-op elsewhere).
+dump_proc_status() {
+    local pid="$1"
+    if [ -r "/proc/${pid}/status" ]; then
+        grep -E "^(Threads|VmRSS|FDSize|voluntary)" "/proc/${pid}/status" 2>/dev/null || true
+    fi
+}
+
 extract_backtrace_from_core() {
     local core="$1"
     if [ -z "${core}" ]; then echo "(no core path supplied)"; return 1; fi
@@ -249,9 +274,10 @@ dump_failure_context() {
         echo "pid file: ${pid}"
         if [ -n "${pid}" ] && daemon_pid_alive "${pid}"; then
             echo "----- daemon fd count / threads (pid ${pid}) -----"
-            ls /proc/${pid}/fd 2>/dev/null | wc -l | xargs -I{} echo "open fds: {}" || true
-            ls /proc/${pid}/task 2>/dev/null | wc -l | xargs -I{} echo "threads: {}" || true
-            cat /proc/${pid}/status 2>/dev/null | grep -E "^(Threads|VmRSS|FDSize|voluntary)" || true
+            get_process_metrics "${pid}"
+            echo "open fds: ${_fds}"
+            echo "threads: ${_threads}"
+            dump_proc_status "${pid}"
         elif [ -n "${pid}" ]; then
             echo "::error::Daemon pid=${pid} from pid file is dead — DAEMON CRASHED"
         fi
@@ -326,8 +352,8 @@ start_watchdog() {
 
             # Periodic heartbeat every tick — always print brief status
             local fds threads
-            fds=$(ls /proc/${pid}/fd 2>/dev/null | wc -l)
-            threads=$(ls /proc/${pid}/task 2>/dev/null | wc -l)
+            get_process_metrics "${pid}"
+            fds="${_fds}"; threads="${_threads}"
             local healthy="FAIL"
             local probe_url="https://127.0.0.1:${daemon_port}/appmesh/resources"
             local probe_ok=1
@@ -348,7 +374,7 @@ start_watchdog() {
             # Dump full thread stacks on consecutive failures
             if [ ${consecutive_fail} -ge 2 ]; then
                 echo "::warning::WATCHDOG: daemon unresponsive for $((consecutive_fail * interval))s — dumping thread stacks"
-                cat /proc/${pid}/status 2>/dev/null | grep -E "^(Threads|VmRSS|FDSize|voluntary)" || true
+                dump_proc_status "${pid}"
                 dump_running_daemon_stack
                 echo "----- watchdog: server.log tail -----"
                 tail -100 "${SERVER_LOG}" 2>/dev/null || true

@@ -19,7 +19,10 @@ void MonitoredProcess::onExit(int exitCode)
 	// Call parent class exit handler first
 	AppProcess::onExit(exitCode);
 
-	// Reply to any pending async HTTP request
+	// Flush pipe to disk before reading — fast-exit processes may still have
+	// buffered stdout when the async timer hasn't fired yet (idempotent).
+	cleanResource();
+
 	replyAsyncRequest();
 }
 

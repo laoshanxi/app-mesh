@@ -131,7 +131,7 @@ impl DailyLimitation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceLimitation {
-    pub cpu_shares: Option<f64>,
+    pub cpu_shares: Option<i32>,
     pub memory_mb: Option<u64>,
     pub memory_virt_mb: Option<u64>,
 }
@@ -176,7 +176,7 @@ pub struct Application {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_interval_seconds: Option<u64>,
+    pub start_interval_seconds: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cron: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -230,7 +230,7 @@ pub struct Application {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub return_code: Option<u32>,
+    pub return_code: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -332,8 +332,8 @@ impl ApplicationBuilder {
         self
     }
 
-    pub fn start_interval_seconds(mut self, secs: u64) -> Self {
-        self.app.start_interval_seconds = Some(secs);
+    pub fn start_interval_seconds(mut self, interval: &str) -> Self {
+        self.app.start_interval_seconds = Some(interval.to_string());
         self
     }
 
@@ -358,7 +358,7 @@ impl ApplicationBuilder {
 
     /// Set RBAC permission (encoded as `group_permission * 100 + others_permission`).
     pub fn permission(mut self, group: Permission, others: Permission) -> Self {
-        self.app.permission = Some(group as u32 * 100 + others as u32);
+        self.app.permission = Some(others as u32 * 10 + group as u32);
         self
     }
 
@@ -390,7 +390,7 @@ impl ApplicationBuilder {
     }
 
     /// Set resource limits.
-    pub fn resource_limit(mut self, cpu_shares: Option<f64>, memory_mb: Option<u64>, memory_virt_mb: Option<u64>) -> Self {
+    pub fn resource_limit(mut self, cpu_shares: Option<i32>, memory_mb: Option<u64>, memory_virt_mb: Option<u64>) -> Self {
         self.app.resource_limit =
             Some(ResourceLimitation { cpu_shares, memory_mb, memory_virt_mb });
         self
