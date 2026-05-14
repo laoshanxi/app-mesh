@@ -29,6 +29,16 @@ def _get_int(data: Optional[dict], key: str) -> Optional[int]:
     return None
 
 
+def _get_number(data: Optional[dict], key: str):
+    """Retrieve a numeric value (int or float) from a dictionary by key."""
+    if not data or key not in data or data[key] is None:
+        return None
+    value = data[key]
+    if isinstance(value, (int, float)):
+        return value
+    return None
+
+
 def _get_bool(data: Optional[dict], key: str) -> Optional[bool]:
     """Retrieve a boolean value from a dictionary by key, if it exists and is boolean-like."""
     if not data or key not in data or data[key] is None:
@@ -157,8 +167,8 @@ class App:
         """start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')"""
         self.end_time = _get_int(data, "end_time")
         """end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')"""
-        self.start_interval_seconds = _get_int(data, "start_interval_seconds")
-        """start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')"""
+        self.start_interval_seconds = _get_item(data, "start_interval_seconds")
+        """start interval seconds for short running app, support integer seconds, ISO 8601 durations and cron expression (e.g., 30, 'P1Y2M3DT4H5M6S', 'P5W', '* */5 * * * *')"""
         self.cron = _get_bool(data, "cron")
         """Whether the interval is specified as a cron expression"""
         self.daily_limitation = App.DailyLimitation(_get_item(data, "daily_limitation"))
@@ -193,7 +203,7 @@ class App:
         """docker container id"""
         self.memory = _get_int(data, "memory")
         """memory usage"""
-        self.cpu = _get_int(data, "cpu")
+        self.cpu = _get_number(data, "cpu")
         """cpu usage"""
         self.fd = _get_int(data, "fd")
         """file descriptor usage"""
@@ -232,7 +242,7 @@ class App:
 
     def set_permission(self, group_user: Permission, others_user: Permission) -> None:
         """Define application permissions based on user roles."""
-        self.permission = int(group_user.value + others_user.value)
+        self.permission = int(others_user.value) * 10 + int(group_user.value)
 
     def __str__(self) -> str:
         """Return a JSON string representation of the application."""

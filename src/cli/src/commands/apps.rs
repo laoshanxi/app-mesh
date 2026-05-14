@@ -49,14 +49,7 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
         }
     }
 
-    let result = if let (true, Some(ref cron_expr)) = (args.cron, &args.interval) {
-        // Cron mode: server expects raw cron string in the interval field
-        let mut json_app = serde_json::to_value(&app)?;
-        json_app["start_interval_seconds"] = serde_json::Value::String(cron_expr.clone());
-        client.add_app_raw(json_app).await.context("Failed to add application")?
-    } else {
-        client.add_app(&app, None).await.context("Failed to add application")?
-    };
+    let result = client.add_app(&app, None).await.context("Failed to add application")?;
     let json = serde_json::to_value(&result)?;
     format::print_yaml(&json)?;
     Ok(0)
@@ -110,14 +103,11 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
     if let Some(ref interval) = args.interval {
         if args.cron {
             builder = builder.cron(true);
-        }
-        // For non-cron intervals, parse to seconds; cron expressions are handled
-        // by the server via the raw Application JSON serialization
-        if !args.cron {
-            let secs = AppMeshClient::parse_duration(interval)
+        } else {
+            AppMeshClient::parse_duration(interval)
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
-            builder = builder.start_interval_seconds(secs as u64);
         }
+        builder = builder.start_interval_seconds(interval);
     }
 
     if let Some(ref retention) = args.stop_timeout {
