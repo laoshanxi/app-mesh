@@ -1,4 +1,4 @@
-FROM python:3.13.13-slim-bookworm@sha256:cfdfc1c32835000e04bf476b7679121da79b4a1e21e2a352985b40b3c275c0c8 AS build_stage
+FROM python:3.14.5-slim-bookworm@sha256:a3974109d36f164ca70024bc0d0828ac706e4ccda849f8638d879e91f79e90ec AS build_stage
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -17,7 +17,7 @@ RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir appmesh && \
     wget --no-check-certificate https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/cli/appmesh_agent.py -P /appmesh/
 
-FROM python:3.13.13-slim-bookworm@sha256:cfdfc1c32835000e04bf476b7679121da79b4a1e21e2a352985b40b3c275c0c8
+FROM python:3.14.5-slim-bookworm@sha256:a3974109d36f164ca70024bc0d0828ac706e4ccda849f8638d879e91f79e90ec
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
