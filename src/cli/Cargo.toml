@@ -22,7 +22,7 @@ terminal_size = "0.4"
 log = "0.4"
 env_logger = "0.11"
 anyhow = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 pbkdf2 = { version = "0.12", features = ["hmac"] }
 rand = "0.8"
 hex = "0.4"
