@@ -1447,6 +1447,12 @@ class TestWSSRest(ProtocolTestMixin, AppOutputMixin, UserManagementMixin, TaskOp
     def setUp(self):
         self.client = AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}", auto_refresh_token=True)
 
+    def tearDown(self):
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
     def _create_client(self):
         return AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}", auto_refresh_token=True)
 

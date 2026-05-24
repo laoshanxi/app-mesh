@@ -64,7 +64,7 @@ The core service. Initialization flows through `main.cpp`: ACE framework init â†
 | `rest/` | HTTP/WebSocket/TCP server, REST endpoint routing, worker thread pool, event pub/sub |
 | `application/` | App lifecycle (spawn, enable/disable, schedule, health), cron support, task messaging |
 | `process/` | Process wrappers: native (`AppProcess`), Docker CLI (`DockerProcess`), Docker API (`DockerApiProcess`), cgroup resource limits (`LinuxCgroup`) |
-| `security/` | Pluggable auth backends: local JSON, Consul, Keycloak/OAuth2, LDAP. JWT tokens, RBAC, HMAC PSK |
+| `security/` | Pluggable auth backends: local JSON, Consul, Keycloak/OAuth2. JWT tokens, RBAC, HMAC PSK |
 
 **Singletons** (ACE_Singleton pattern, access via `::instance()`):
 
