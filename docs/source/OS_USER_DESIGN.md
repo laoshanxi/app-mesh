@@ -4,7 +4,7 @@
 
 App Mesh has two types of users:
 
-- **API Users** control *what you can do* — login identity with password, roles, and permissions (e.g., `admin`, `mesh`, `test`). Configured in `security.yaml` or via LDAP/OAuth2/Consul.
+- **API Users** control *what you can do* — login identity with password, roles, and permissions (e.g., `admin`, `mesh`, `test`). Configured in `security.yaml` or via OAuth2/Consul.
 - **OS Users** control *who runs your applications* — the Linux/macOS user identity (UID/GID) under which child processes execute. Each API user can be mapped to an OS user via the `exec_user` field.
 
 ```
