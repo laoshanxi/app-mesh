@@ -69,7 +69,7 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
 
     // Async mode: subscribe + run + wait
     let (app_run, exit_code) = client
-        .run_and_wait(&app, timeout, lifecycle, timeout, true)
+        .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
         .await
         .context("Run failed")?;
 
@@ -105,7 +105,7 @@ pub async fn exec(cli: &Cli, args: &ExecArgs) -> Result<i32> {
         let app = build_exec_app(&app_name, &command, args.session_login, &args.env);
 
         let (_app_run, exit_code) = client
-            .run_and_wait(&app, timeout, lifecycle, timeout, true)
+            .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
             .await
             .context("Exec failed")?;
 
@@ -216,7 +216,7 @@ async fn execute_shell_command(
     let app = build_exec_app(app_name, command, args.session_login, &args.env);
 
     let (_app_run, exit_code) = client
-        .run_and_wait(&app, timeout, lifecycle, timeout, true)
+        .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
         .await
         .context("Shell command failed")?;
 

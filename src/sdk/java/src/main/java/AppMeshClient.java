@@ -223,6 +223,13 @@ public class AppMeshClient implements Closeable {
         }
     }
 
+    @FunctionalInterface
+    public interface OutputHandler {
+        void handle(String data, long position);
+    }
+
+    public static final OutputHandler PRINT_OUTPUT_HANDLER = (data, position) -> System.out.print(data);
+
     /** Application output container for {@link #getAppOutput}. */
     public static class AppOutput {
         public boolean httpSuccess;
@@ -279,9 +286,9 @@ public class AppMeshClient implements Closeable {
             }
         }
 
-        public Integer wait(boolean printStdout, int timeoutSeconds) throws Exception {
+        public Integer wait(OutputHandler stdoutHandler, int timeoutSeconds) throws Exception {
             try (ForwardingHostManager manager = new ForwardingHostManager()) {
-                return clientRef.waitForAsyncRun(this, printStdout, timeoutSeconds);
+                return clientRef.waitForAsyncRun(this, stdoutHandler, timeoutSeconds);
             }
         }
     }
@@ -931,7 +938,7 @@ public class AppMeshClient implements Closeable {
      * <p>When the process exits, this method makes a best-effort attempt to delete the temporary
      * run app before returning the exit code.
      */
-    public Integer waitForAsyncRun(AppRun run, boolean printStdout, int timeoutSeconds) throws Exception {
+    public Integer waitForAsyncRun(AppRun run, OutputHandler stdoutHandler, int timeoutSeconds) throws Exception {
         if (run == null)
             return null;
         long lastOutputPosition = 0;
@@ -940,8 +947,8 @@ public class AppMeshClient implements Closeable {
         while (!run.getProcUid().isEmpty()) {
             AppOutput appOut = this.getAppOutput(run.getAppName(), lastOutputPosition, 0, 10240, run.getProcUid(),
                     interval);
-            if (appOut.httpBody != null && printStdout) {
-                System.out.print(appOut.httpBody);
+            if (appOut.httpBody != null && stdoutHandler != null) {
+                stdoutHandler.handle(appOut.httpBody, lastOutputPosition);
             }
             if (appOut.outputPosition != null) {
                 lastOutputPosition = appOut.outputPosition;

@@ -564,8 +564,7 @@ async fn sdk_12b_run_async_short_cmd() {
         .shell(true)
         .build();
     let start = std::time::Instant::now();
-    // print_stdout=true so output goes to stdout
-    let (_run, code) = c.run_and_wait(&app, 5, 30, 5, true).await.unwrap();
+    let (_run, code) = c.run_and_wait(&app, 5, 30, appmesh::print_output_handler(), 5).await.unwrap();
     let elapsed = start.elapsed();
     assert_eq!(code, Some(0));
     assert!(elapsed.as_secs() < 3, "should finish quickly, took {}s", elapsed.as_secs());
@@ -581,7 +580,7 @@ async fn sdk_12c_run_async_captures_output() {
         .build();
     // Use run_app_async + wait_for_async_run to test subscribe output delivery
     let run = c.run_app_async(&app, 5, 30).await.unwrap();
-    let code = c.wait_for_async_run(&run, 5, true).await.unwrap();
+    let code = c.wait_for_async_run(&run, appmesh::print_output_handler(), 5).await.unwrap();
     assert_eq!(code, Some(0));
 }
 
@@ -637,7 +636,7 @@ async fn sdk_95_run_and_wait_short_output() {
     let c = authed().await;
     let app = Application::builder("_rw_short_").command("echo rw_output_test").shell(true).build();
     let start = std::time::Instant::now();
-    let (_run, code) = c.run_and_wait(&app, 10, 30, 10, true).await.unwrap();
+    let (_run, code) = c.run_and_wait(&app, 10, 30, appmesh::print_output_handler(), 10).await.unwrap();
     let elapsed = start.elapsed();
     assert_eq!(code, Some(0));
     assert!(elapsed.as_secs() < 3, "run_and_wait should be fast, took {}s", elapsed.as_secs());
@@ -648,7 +647,7 @@ async fn sdk_95_run_and_wait_short_output() {
 async fn sdk_96_run_and_wait_exit_code() {
     let c = authed().await;
     let app = Application::builder("_rw_exit_").command("exit 7").shell(true).build();
-    let (_run, code) = c.run_and_wait(&app, 10, 30, 10, false).await.unwrap();
+    let (_run, code) = c.run_and_wait(&app, 10, 30, None, 10).await.unwrap();
     assert_eq!(code, Some(7));
 }
 
@@ -659,7 +658,7 @@ async fn sdk_97_subscribe_receives_exit() {
     let app = Application::builder("_sub_exit_").command("true").shell(true).build();
     let run = c.run_app_async(&app, 5, 30).await.unwrap();
     let start = std::time::Instant::now();
-    let code = c.wait_for_async_run(&run, 5, false).await.unwrap();
+    let code = c.wait_for_async_run(&run, None, 5).await.unwrap();
     let elapsed = start.elapsed();
     assert_eq!(code, Some(0));
     assert!(elapsed.as_secs() < 3, "subscribe should catch EXIT fast, took {}s", elapsed.as_secs());
