@@ -5,8 +5,10 @@ type AppMeshServerWssContext struct {
 	AppMeshServerHttpContext
 }
 
-// NewWSSContext creates a new AppMeshServer that routes all HTTP requests through a WSS-based executor.
+// NewWSSContext creates a server-side task context over WSS. Server endpoints
+// authenticate via APP_MESH_PROCESS_KEY, not JWT, so token refresh is forced off.
 func NewWSSContext(options Option) (*AppMeshServerWssContext, error) {
+	options.AutoRefreshToken = false
 	wssClient, err := NewWSSClient(options)
 	if err != nil {
 		return nil, err

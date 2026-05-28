@@ -1,0 +1,19 @@
+# Pre-installed App definition for the workflow engine.
+# Placed in /opt/appmesh/work/apps/ during package installation.
+# Daemon auto-loads and starts this App on boot.
+#
+# sec_env values are encrypted with the default admin key.
+# To change credentials: appc add -a workflow -z APPMESH_PASSWORD=<new>
+
+command: ../../bin/wf-engine
+name: workflow
+owner: admin
+description: Workflow engine
+behavior:
+  exit: restart
+sec_env:
+  APPMESH_USER: 4EfiWHZL
+  APPMESH_PASSWORD: 4EfiWHZ6JZjG
+metadata:
+  type: workflow-system
+status: 1

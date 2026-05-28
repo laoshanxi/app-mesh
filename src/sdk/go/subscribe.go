@@ -1,7 +1,9 @@
 package appmesh
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,6 +11,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+)
+
+// Sentinel errors returned by WaitForAsyncRun to disambiguate non-EXIT terminations
+// from real (possibly negative) process exit codes (e.g. -SIGINT = -2).
+var (
+	ErrTransportDisconnected = errors.New("transport disconnected before exit")
+	ErrAppRemoved            = errors.New("app removed before exit")
 )
 
 const (
@@ -36,25 +45,34 @@ type EventCallback func(event AppEvent)
 
 // MessageDemuxer reads messages from a transport connection and routes them
 // to either pending request channels (by UUID) or event subscription callbacks.
+// Event callbacks are dispatched serially via a single worker goroutine, so
+// per-subscription event ordering is preserved (matching Python/Java SDKs).
 type MessageDemuxer struct {
 	mu       sync.Mutex
 	pending  map[string]chan *Response // uuid -> response channel
-	eventCBs map[string]EventCallback // subscription_id -> callback
+	eventCBs map[string]EventCallback  // subscription_id -> callback
 	started  bool
 	stopCh   chan struct{}
+	eventQ   chan dispatchTask
 	readMsg  func() ([]byte, error) // transport-specific read function
+}
+
+type dispatchTask struct {
+	cb    EventCallback
+	event AppEvent
 }
 
 func newMessageDemuxer(readMsg func() ([]byte, error)) *MessageDemuxer {
 	return &MessageDemuxer{
-		pending: make(map[string]chan *Response),
+		pending:  make(map[string]chan *Response),
 		eventCBs: make(map[string]EventCallback),
-		stopCh:  make(chan struct{}),
-		readMsg: readMsg,
+		stopCh:   make(chan struct{}),
+		eventQ:   make(chan dispatchTask, 256),
+		readMsg:  readMsg,
 	}
 }
 
-// start begins the background reader goroutine.
+// start begins the background reader and dispatch goroutines.
 func (d *MessageDemuxer) start() {
 	d.mu.Lock()
 	if d.started {
@@ -65,6 +83,27 @@ func (d *MessageDemuxer) start() {
 	d.mu.Unlock()
 
 	go d.readLoop()
+	go d.dispatchWorker()
+}
+
+// dispatchWorker invokes event callbacks serially in arrival order.
+// One slow callback delays subsequent events but never the socket reader.
+func (d *MessageDemuxer) dispatchWorker() {
+	for {
+		select {
+		case <-d.stopCh:
+			return
+		case task := <-d.eventQ:
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("dispatchWorker: callback panic: %v", r)
+					}
+				}()
+				task.cb(task.event)
+			}()
+		}
+	}
 }
 
 // stop terminates the background reader.
@@ -138,7 +177,6 @@ func (d *MessageDemuxer) unregisterEventCallback(subID string) {
 	d.mu.Unlock()
 }
 
-
 // readLoop continuously reads messages and routes them.
 func (d *MessageDemuxer) readLoop() {
 	for {
@@ -186,8 +224,14 @@ func (d *MessageDemuxer) dispatchEvent(resp *Response) {
 	cb, ok := d.eventCBs[subID]
 	d.mu.Unlock()
 
-	if ok && cb != nil {
-		go cb(event) // invoke callback in a separate goroutine to avoid blocking the reader
+	if !ok || cb == nil {
+		return
+	}
+	// Enqueue for serial dispatch. Order matters — STDOUT dedup by byte-position
+	// in WaitForAsyncRun assumes events arrive in the order the daemon emitted them.
+	select {
+	case d.eventQ <- dispatchTask{cb: cb, event: event}:
+	case <-d.stopCh:
 	}
 }
 
@@ -244,11 +288,16 @@ func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse subscribe response: %w", err)
 	}
+	if result.SubscriptionID == "" {
+		return nil, fmt.Errorf("server returned empty subscription_id")
+	}
 
-	// Register the callback with the demuxer (if transport supports it)
+	// Register the callback with the demuxer (if transport supports it).
 	if sub, ok := c.req.(subscribableRequester); ok {
 		sub.enableDemuxer()
-		sub.getDemuxer().registerEventCallback(result.SubscriptionID, callback)
+		if d := sub.getDemuxer(); d != nil {
+			d.registerEventCallback(result.SubscriptionID, callback)
+		}
 	}
 
 	return &result, nil
@@ -267,9 +316,11 @@ func (c *AppMeshClient) Unsubscribe(subscriptionID string) error {
 		return fmt.Errorf("unsubscribe failed with status %d: %s", status, string(raw))
 	}
 
-	// Unregister from demuxer
+	// Unregister from demuxer (no-op if transport is closed or demuxer not enabled).
 	if sub, ok := c.req.(subscribableRequester); ok {
-		sub.getDemuxer().unregisterEventCallback(subscriptionID)
+		if d := sub.getDemuxer(); d != nil {
+			d.unregisterEventCallback(subscriptionID)
+		}
 	}
 
 	return nil
@@ -281,29 +332,49 @@ func (c *AppMeshClient) Unsubscribe(subscriptionID string) error {
 // took effect. Stdout is deduplicated by byte position to handle overlap between
 // the backfill and live events.
 //
-// Returns the process exit code, or a sentinel:
-//   - nil:  caller-side timeout (no EXIT/REMOVED observed within the deadline)
-//   - -1:   REMOVED before EXIT observed
-//   - -2:   transport disconnected
-//
-// When exit_code >= 0 the temporary run app is deleted as best-effort cleanup.
-func (c *AppMeshClient) WaitForAsyncRun(run *AppRun, printStdout bool, timeout time.Duration) *int {
+// Return values:
+//   - (&code, nil):                  process exited normally (code may be negative for signal kills)
+//   - (nil, nil):                    timeout or context cancelled
+//   - (nil, ErrAppRemoved):          app removed before EXIT observed
+//   - (nil, ErrTransportDisconnected): TCP/WSS connection lost
+//   - (nil, err):                    subscribe failed
+func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdoutHandler OutputHandler, timeout time.Duration) (*int, error) {
 	if run == nil || run.AppName == "" {
-		return nil
+		return nil, fmt.Errorf("invalid async run")
 	}
 
 	var (
-		exitCode       *int           // nil until EXIT, REMOVED, or disconnect
-		deliveredUntil int64          // next-byte offset already printed
-		mu             sync.Mutex     // guards exitCode and deliveredUntil
+		exitCode       *int       // set on EXIT
+		waitErr        error      // first non-EXIT termination reason
+		disconnected   bool       // transport-dead flag (set even if waitErr is already populated)
+		deliveredUntil int64      // next-byte offset already delivered to handler
+		mu             sync.Mutex // guards all of the above
 		done           = make(chan struct{})
 		doneOnce       sync.Once
 	)
 
 	signalDone := func() { doneOnce.Do(func() { close(done) }) }
 
-	// deliver outputs the portion of chunk that has not yet been printed,
-	// based on the byte-position dedup logic from the Python reference.
+	setExit := func(code int) {
+		mu.Lock()
+		if exitCode == nil && waitErr == nil {
+			exitCode = &code
+		}
+		mu.Unlock()
+		signalDone()
+	}
+
+	setErr := func(e error) {
+		mu.Lock()
+		if exitCode == nil && waitErr == nil {
+			waitErr = e
+		}
+		mu.Unlock()
+		signalDone()
+	}
+
+	// deliver passes the not-yet-seen portion of chunk to the handler,
+	// using byte-position dedup to bridge backfill ↔ live events.
 	deliver := func(chunk string, pos int64) {
 		if len(chunk) == 0 {
 			return
@@ -314,18 +385,19 @@ func (c *AppMeshClient) WaitForAsyncRun(run *AppRun, printStdout bool, timeout t
 			mu.Unlock()
 			return
 		}
+		startPos := pos
 		if pos < deliveredUntil {
 			chunk = chunk[deliveredUntil-pos:]
+			startPos = deliveredUntil
 		}
 		deliveredUntil = end
 		mu.Unlock()
 
-		if printStdout {
-			fmt.Print(chunk)
+		if stdoutHandler != nil {
+			stdoutHandler(chunk, startPos)
 		}
 	}
 
-	// Event callback invoked by the demuxer for each subscribed event.
 	onEvent := func(event AppEvent) {
 		switch event.EventType {
 		case "STDOUT":
@@ -340,33 +412,33 @@ func (c *AppMeshClient) WaitForAsyncRun(run *AppRun, printStdout bool, timeout t
 
 		case "EXIT":
 			var data struct {
-				ExitCode int `json:"exit_code"`
+				ExitCode *int `json:"exit_code"`
 			}
-			code := -1
-			if err := json.Unmarshal(event.Data, &data); err == nil {
-				code = data.ExitCode
+			if err := json.Unmarshal(event.Data, &data); err == nil && data.ExitCode != nil {
+				setExit(*data.ExitCode)
+			} else {
+				setErr(fmt.Errorf("EXIT event missing exit_code"))
 			}
-			mu.Lock()
-			if exitCode == nil {
-				exitCode = &code
-			}
-			mu.Unlock()
-			signalDone()
 
 		case "REMOVED":
-			mu.Lock()
-			if exitCode == nil {
-				code := -1
-				exitCode = &code
-			}
-			mu.Unlock()
-			signalDone()
+			setErr(ErrAppRemoved)
 
 		case EventTypeDisconnected:
+			// Always mark disconnected (even if waitErr already set) so the
+			// defer below skips Unsubscribe on a dead connection.
 			mu.Lock()
-			if exitCode == nil {
-				code := -2
-				exitCode = &code
+			disconnected = true
+			switch {
+			case exitCode != nil:
+				// Exit already reported — leave it alone, the process finished
+				// successfully (or with a normal code) before the transport died.
+			case waitErr == nil:
+				waitErr = ErrTransportDisconnected
+			default:
+				// Wrap the existing reason so callers using errors.Is can still
+				// detect ErrTransportDisconnected (race: REMOVED/malformed-EXIT
+				// arrived just before the transport dropped).
+				waitErr = fmt.Errorf("%w (also: %w)", waitErr, ErrTransportDisconnected)
 			}
 			mu.Unlock()
 			signalDone()
@@ -377,57 +449,64 @@ func (c *AppMeshClient) WaitForAsyncRun(run *AppRun, printStdout bool, timeout t
 		AppName: run.AppName,
 		Events:  []string{"STDOUT", "EXIT", "REMOVED"},
 	}, onEvent)
-
 	if err != nil {
 		log.Printf("WaitForAsyncRun: subscribe failed for %s: %v", run.AppName, err)
-		return nil
+		return nil, fmt.Errorf("subscribe: %w", err)
 	}
 
 	defer func() {
-		// Unsubscribe
+		mu.Lock()
+		disc := disconnected
+		mu.Unlock()
+		// On disconnect the demuxer is stopped; calling Unsubscribe would
+		// register a request channel that never gets a response.
+		if disc {
+			return
+		}
 		if sub.SubscriptionID != "" {
 			_ = c.Unsubscribe(sub.SubscriptionID)
 		}
-		// Best-effort delete on a real exit. Sentinels (-1 REMOVED, -2 disconnected)
-		// mean the daemon already lost track or the app is gone -- don't try to delete.
-		mu.Lock()
-		ec := exitCode
-		mu.Unlock()
-		if ec != nil && *ec >= 0 {
-			_, _ = c.RemoveApp(run.AppName)
-		}
 	}()
 
-	// Backfill: fetch output emitted before the subscribe took effect.
-	// Also catches the case where the process already exited.
+	// Backfill: fetch output emitted before the subscribe took effect, and
+	// detect a process that already exited.
 	backfill := c.GetAppOutput(run.AppName, 0, 0, 0, run.ProcUid, 0)
 	if backfill.HttpBody != "" {
 		deliver(backfill.HttpBody, 0)
 	}
 	if backfill.ExitCode != nil {
-		mu.Lock()
-		if exitCode == nil {
-			ec := *backfill.ExitCode
-			exitCode = &ec
-		}
-		mu.Unlock()
-		signalDone()
+		setExit(*backfill.ExitCode)
 	}
 
-	// Wait for completion or timeout.
+	// Wait for completion, timeout, or context cancellation.
 	if timeout <= 0 {
-		<-done
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
 	} else {
 		select {
 		case <-done:
 		case <-time.After(timeout):
+		case <-ctx.Done():
 		}
 	}
 
 	mu.Lock()
-	result := exitCode
-	mu.Unlock()
-	return result
+	defer mu.Unlock()
+	return exitCode, waitErr
+}
+
+// EnableConcurrency makes this client's transport safe for concurrent use by multiple
+// goroutines. It starts the response demuxer, which correlates each reply to its request
+// by UUID; without it a TCP/WSS connection shared across goroutines uses a synchronous
+// send-then-read that can cross-wire responses (e.g. a token-renew reply consumed by an
+// unrelated call, leaving a stale/revoked token in place). No-op on transports without
+// multiplexing (HTTP) and idempotent (Subscribe also enables it on demand).
+func (c *AppMeshClient) EnableConcurrency() {
+	if sub, ok := c.req.(subscribableRequester); ok {
+		sub.enableDemuxer()
+	}
 }
 
 // subscribableRequester is implemented by transports that support event subscriptions.

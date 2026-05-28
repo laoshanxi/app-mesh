@@ -609,6 +609,15 @@ void RestHandler::apiUserChangePwd(const std::shared_ptr<HttpRequest> &message)
 	Security::instance()->changeUserPasswd(targetUser, newPasswd);
 	Security::instance()->save();
 
+	// Re-encrypt sec_env for all apps owned by the changed user (key material changed).
+	for (const auto &app : Configuration::instance()->getApps())
+	{
+		if (app->getOwner() && app->getOwner()->getName() == targetUser)
+		{
+			app->save();
+		}
+	}
+
 	LOG_INF << fname << "User <" << targetUser << "> changed password by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("password changed success"));
 }
@@ -1104,6 +1113,8 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 	const static char fname[] = "RestHandler::parseAndRegRunApp() ";
 
 	auto jsonApp = message->extractJson();
+	// from_recover is a server-internal flag; never trust it from REST input.
+	jsonApp.erase(JSON_KEY_APP_from_recover);
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	std::shared_ptr<Application> fromApp;
 	if (clientProvideAppName.length() > 0)
@@ -1132,7 +1143,25 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 			}
 			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_sec_env))
 			{
+				// Client provided fresh plaintext sec_env — leave as plaintext, no recover flag.
 				existApp[JSON_KEY_APP_sec_env] = jsonApp[JSON_KEY_APP_sec_env];
+			}
+			else if (HAS_JSON_FIELD(existApp, JSON_KEY_APP_sec_env))
+			{
+				// Inherited sec_env from AsJson is encrypted with the SOURCE app's owner key.
+				// Decrypt back to plaintext here (we still have the source owner); FromJson
+				// will store as-is since from_recover is not set, and AsJson re-encrypts
+				// later with the NEW owner's key when this copy is persisted.
+				auto srcOwner = fromApp->getOwner();
+				if (srcOwner)
+				{
+					nlohmann::json decrypted = nlohmann::json::object();
+					for (auto &env : existApp[JSON_KEY_APP_sec_env].items())
+					{
+						decrypted[env.key()] = srcOwner->decrypt(env.value().get<std::string>());
+					}
+					existApp[JSON_KEY_APP_sec_env] = std::move(decrypted);
+				}
 			}
 			existApp[JSON_KEY_APP_name] = Configuration::instance()->generateRunAppName(clientProvideAppName);
 			existApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
@@ -1207,7 +1236,8 @@ void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_task);
 
-	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
+	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
+	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
@@ -1297,6 +1327,8 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	{
 		throw std::invalid_argument("Empty json input");
 	}
+	// from_recover is a server-internal flag; never trust it from REST input.
+	jsonApp.erase(JSON_KEY_APP_from_recover);
 	LOG_DBG << fname << jsonApp;
 
 	auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
@@ -1331,7 +1363,8 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 		auto app = Configuration::instance()->addApp(jsonApp);
 		app->save();
 
-		auto result = app->AsJson(false);
+		// Use returnRuntimeInfo=true so the response strips encrypted sec_env.
+		auto result = app->AsJson(true);
 		if (!subId.empty())
 		{
 			result["subscription_id"] = subId;

@@ -475,11 +475,11 @@ impl AppMeshClientWSS {
         app: &Application,
         max_time: i32,
         lifecycle: i32,
+        stdout_handler: OutputHandler,
         timeout: i32,
-        print_stdout: bool,
     ) -> Result<(AppRun, Option<i32>), AppMeshError> {
         crate::wait_subscribe::run_and_wait_subscribe(
-            &self.client, app, max_time, lifecycle, timeout, print_stdout,
+            &self.client, app, max_time, lifecycle, stdout_handler, timeout,
         )
         .await
     }
@@ -497,10 +497,10 @@ impl AppMeshClientWSS {
     pub async fn wait_for_async_run(
         &self,
         run: &AppRun,
+        stdout_handler: OutputHandler,
         timeout: i32,
-        print_stdout: bool,
     ) -> Result<Option<i32>, AppMeshError> {
-        crate::wait_subscribe::wait_for_async_run_subscribe(&self.client, run, timeout, print_stdout).await
+        crate::wait_subscribe::wait_for_async_run_subscribe(&self.client, run, stdout_handler, timeout).await
     }
 }
 

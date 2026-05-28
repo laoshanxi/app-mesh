@@ -216,6 +216,11 @@ func (r *AppMeshClient) SetToken(token string) {
 	r.StartTokenRefresh()
 }
 
+// GetToken returns the current JWT access token, or empty if not authenticated.
+func (r *AppMeshClient) GetToken() string {
+	return r.req.getAccessToken()
+}
+
 // Authenticate validates the provided JWT token with the server.
 // When updateSession is true, the verified token is applied to the current client session and local auth
 // state is updated on success.
@@ -572,10 +577,17 @@ func (r *AppMeshClient) RunAppAsync(app Application, maxTime int, lifecycle int)
 
 // Wait polls output for an asynchronous application run until it finishes or times out.
 // On success it best-effort removes the temporary run app and returns the process exit code.
-func (r *AppMeshClient) Wait(asyncRun *AppRun, printStdout bool, timeoutSeconds int) (int, error) {
+func (r *AppMeshClient) Wait(asyncRun *AppRun, stdoutHandler OutputHandler, timeoutSeconds int) (int, error) {
 	if asyncRun == nil || asyncRun.ProcUid == "" {
 		return 0, fmt.Errorf("invalid async run object")
 	}
+
+	// Poll the node the run was started on (captured at RunAppAsync), restoring the
+	// prior target afterward. forwardTo is shared client state: for concurrent waits
+	// give each run its own client.
+	prevForward := r.getForwardTo()
+	r.updateForwardTo(asyncRun.ForwardTo)
+	defer r.updateForwardTo(prevForward)
 
 	ctx := context.Background()
 	var cancel context.CancelFunc
@@ -595,8 +607,8 @@ func (r *AppMeshClient) Wait(asyncRun *AppRun, printStdout bool, timeoutSeconds 
 			return 0, fmt.Errorf("wait timed out: %w", ctx.Err())
 		case <-ticker.C:
 			out := r.GetAppOutput(asyncRun.AppName, lastPos, 0, 10240, asyncRun.ProcUid, int(interval.Seconds()))
-			if out.HttpBody != "" && printStdout {
-				fmt.Print(out.HttpBody)
+			if out.HttpBody != "" && stdoutHandler != nil {
+				stdoutHandler(out.HttpBody, lastPos)
 			}
 			if out.OutputPosition != nil {
 				lastPos = *out.OutputPosition
@@ -615,11 +627,7 @@ func (r *AppMeshClient) Wait(asyncRun *AppRun, printStdout bool, timeoutSeconds 
 
 // RunAppSync runs an application synchronously and returns the exit code plus collected stdout.
 // The exit code is derived from the X-Exit-Code response header when present.
-func (r *AppMeshClient) RunAppSync(app Application, printStdout bool, maxTime int, lifecycle int) (int, string, error) {
-	if app.Name == "" {
-		return 0, "", fmt.Errorf("application name is required")
-	}
-
+func (r *AppMeshClient) RunAppSync(app Application, maxTime int, lifecycle int) (int, string, error) {
 	appJson, err := json.Marshal(app)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to marshal application: %w", err)
@@ -638,9 +646,6 @@ func (r *AppMeshClient) RunAppSync(app Application, printStdout bool, maxTime in
 		}
 	}
 	out := string(raw)
-	if printStdout {
-		fmt.Print(out)
-	}
 	if code == http.StatusOK {
 		return exit, out, nil
 	}
@@ -1149,12 +1154,15 @@ func (r *AppMeshClient) computeRefreshDelay() time.Duration {
 
 // StartTokenRefresh starts background token auto-refresh when AutoRefreshToken is enabled.
 // The refresh loop decodes the JWT exp claim and renews shortly before expiration.
+// Concurrent calls atomically stop any existing refresh goroutine before starting a new one.
 func (r *AppMeshClient) StartTokenRefresh() {
 	if !r.autoRefreshToken {
 		return
 	}
-	r.StopTokenRefresh()
 	r.refreshMu.Lock()
+	if r.refreshStop != nil {
+		close(r.refreshStop)
+	}
 	stop := make(chan struct{})
 	r.refreshStop = stop
 	r.refreshMu.Unlock()

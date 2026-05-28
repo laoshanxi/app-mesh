@@ -273,7 +273,9 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 				LOG_INF << fname << "loading <" << path << ">.";
 				try
 				{
-					auto app = this->parseApp(Utility::yamlToJson(YAML::LoadFile(path)));
+					auto jsonObj = Utility::yamlToJson(YAML::LoadFile(path));
+					jsonObj[JSON_KEY_APP_from_recover] = true;
+					auto app = this->parseApp(jsonObj);
 					this->addApp2Map(app);
 				}
 				catch (const std::exception &e)
@@ -285,12 +287,21 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 		// parse JSON format
 		for (const auto &jsonFile : fs::directory_iterator(appDir))
 		{
-			auto path = jsonFile.path().filename().string();
+			auto path = jsonFile.path().string();
 			if (Utility::isFileExist(path) && Utility::endWith(path, ".json"))
 			{
 				LOG_INF << fname << "loading <" << path << ">.";
-				auto app = this->parseApp(nlohmann::json::parse(std::ifstream(path)));
-				this->addApp2Map(app);
+				try
+				{
+					auto jsonObj = nlohmann::json::parse(std::ifstream(path));
+					jsonObj[JSON_KEY_APP_from_recover] = true;
+					auto app = this->parseApp(jsonObj);
+					this->addApp2Map(app);
+				}
+				catch (const std::exception &e)
+				{
+					LOG_ERR << fname << "Failed load application file <" << path << ">, error: " << e.what();
+				}
 			}
 		}
 	}

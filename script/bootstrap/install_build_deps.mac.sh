@@ -150,7 +150,7 @@ sudo cp -rf concurrentqueue /usr/local/include/
 
 echo "Building and installing libwebsockets..."
 cd $TMP_DIR
-git clone --depth=1 https://github.com/warmcat/libwebsockets.git
+git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
 cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
 make
 sudo make install

@@ -42,7 +42,10 @@ void FileTransferHandler::prepareTransfer(std::unique_ptr<Response> &resp, int c
 			return;
 		}
 
-		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, resp->file_upload_request_headers);
+		// Temp file lives in the destination's own directory (append a unique suffix to the
+		// full path) so the final rename stays on the same filesystem and is atomic.
+		const auto tempName = fileName + "." + Utility::shortID() + ".part";
+		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp->file_upload_request_headers);
 		if (!uploadInfo->m_file.is_open())
 		{
 			auto msg = Utility::text2json("Failed open file").dump();
@@ -119,15 +122,28 @@ void FileTransferHandler::recvNextUploadChunk(std::vector<std::uint8_t> &data, i
 		if (!m_pendingUpload->m_file.good())
 		{
 			LOG_ERR << fname << "File write operation failed during upload | ClientID=" << clientId << " | FilePath=" << m_pendingUpload->m_filePath;
-			auto filePath = m_pendingUpload->m_filePath;
-			m_pendingUpload.reset();
-			std::remove(filePath.c_str()); // Clean up partial file
+			m_pendingUpload.reset(); // FileUploadInfo dtor closes and removes the partial temp file
 		}
 	}
 	else
 	{
-		LOG_INF << fname << "File upload completed successfully | ClientID=" << clientId << " | Destination=" << m_pendingUpload->m_filePath;
-		Utility::applyFilePermission(m_pendingUpload->m_filePath, m_pendingUpload->m_requestHeaders);
+		// EOF: commit atomically. Temp and destination share a directory (same filesystem),
+		// so a successful rename publishes the complete file in one step; on failure the
+		// dtor removes the temp and the destination is left untouched.
+		const auto dst = m_pendingUpload->m_filePath;
+		const auto tmp = m_pendingUpload->m_tempPath;
+		m_pendingUpload->m_file.flush();
+		m_pendingUpload->m_file.close();
+		if (std::rename(tmp.c_str(), dst.c_str()) == 0)
+		{
+			m_pendingUpload->m_committed = true; // already in place; dtor must not remove it
+			Utility::applyFilePermission(dst, m_pendingUpload->m_requestHeaders);
+			LOG_INF << fname << "File upload completed successfully | ClientID=" << clientId << " | Destination=" << dst;
+		}
+		else
+		{
+			LOG_ERR << fname << "Failed to commit uploaded file via rename | ClientID=" << clientId << " | Destination=" << dst;
+		}
 		m_pendingUpload.reset();
 	}
 }

@@ -294,6 +294,7 @@ public:
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 2)		// run app default timeout 2 days
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
 #define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)			// run app max timeout 3 days
+#define DEFAULT_RUN_TASK_TIMEOUT_SECONDS int(300)					// run_task (sync message) default 5 min
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M

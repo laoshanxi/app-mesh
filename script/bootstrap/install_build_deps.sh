@@ -254,7 +254,7 @@ git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
 cp -rf concurrentqueue /usr/local/include/
 
 cd $ROOTDIR
-git clone --depth=1 https://github.com/warmcat/libwebsockets.git
+git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
 if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
     cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
 else

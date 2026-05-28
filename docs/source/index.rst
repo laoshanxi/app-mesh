@@ -26,6 +26,7 @@ Welcome to AppMesh's documentation!
    GrafanaDataSource.md
    RemoteTask.md
    EventSubscription.md
+   Workflow.md
 
 
 .. toctree::

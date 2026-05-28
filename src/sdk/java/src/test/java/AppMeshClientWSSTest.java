@@ -87,7 +87,7 @@ public class AppMeshClientWSSTest {
         AppMeshClient.AppRun run = client.runAppAsync(
                 new JSONObject().put("command", "echo wss_async"), 10, 10);
         assertNotNull(run);
-        Integer exitCode = run.wait(true, 15);
+        Integer exitCode = run.wait(AppMeshClient.PRINT_OUTPUT_HANDLER, 15);
         LOGGER.info("WSS async exit code: " + exitCode);
     }
 

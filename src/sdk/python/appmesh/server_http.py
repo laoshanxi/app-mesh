@@ -58,7 +58,7 @@ class AppMeshServer:
                 transports share the same task API).
             logger_: Optional logger instance.
         """
-        self._client = client or AppMeshClient(base_url, ssl_verify, ssl_client_cert, request_timeout)
+        self._client = client or AppMeshClient(base_url, ssl_verify, ssl_client_cert, request_timeout, auto_refresh_token=False)  # Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
         self._logger = logger_ or logger
 
     @staticmethod

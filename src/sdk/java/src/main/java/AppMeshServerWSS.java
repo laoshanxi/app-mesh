@@ -11,6 +11,7 @@ public class AppMeshServerWSS extends AppMeshServer {
     }
 
     public AppMeshServerWSS(String host, int port) {
+        // Server endpoints use APP_MESH_PROCESS_KEY; AppMeshClient Builder defaults autoRefreshToken=false.
         super(new AppMeshClientWSS(host, port));
     }
 

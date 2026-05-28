@@ -61,7 +61,7 @@ func TestAppmeshWSSOperations(t *testing.T) {
 		Command:   &cmd,
 		ShellMode: &shellMode,
 	}
-	exitCode, output, err := client.RunAppSync(runApp, false, 10, 15)
+	exitCode, output, err := client.RunAppSync(runApp, 10, 15)
 	require.NoError(t, err, "WSS RunAppSync should succeed")
 	require.Equal(t, 0, exitCode, "WSS RunAppSync exit code should be 0")
 	require.Contains(t, output, "hello_wss", "WSS RunAppSync output should contain echoed text")

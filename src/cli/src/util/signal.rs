@@ -33,7 +33,12 @@ pub fn register_cleanup(client: Arc<AppMeshClientWSS>, app_name: String) {
 
         let pair = { CLEANUP_APP.lock().ok().and_then(|mut guard| guard.take()) };
         if let Some((client, app_name)) = pair {
-            let _ = client.delete_app(&app_name).await;
+            // Bound the cleanup so a stuck connection can never block the exit.
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                client.delete_app(&app_name),
+            )
+            .await;
         }
         std::process::exit(130);
     });

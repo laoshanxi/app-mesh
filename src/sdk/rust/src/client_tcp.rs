@@ -416,10 +416,10 @@ impl AppMeshClientTCP {
     pub async fn wait_for_async_run(
         &self,
         run: &AppRun,
+        stdout_handler: OutputHandler,
         timeout: i32,
-        print_stdout: bool,
     ) -> Result<Option<i32>> {
-        crate::wait_subscribe::wait_for_async_run_subscribe(&self.client, run, timeout, print_stdout).await
+        crate::wait_subscribe::wait_for_async_run_subscribe(&self.client, run, stdout_handler, timeout).await
     }
 }
 

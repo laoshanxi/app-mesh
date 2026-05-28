@@ -204,114 +204,45 @@ fn parse_control(ctrl: &str) -> Result<(i32, ExitAction)> {
     Ok((code, action))
 }
 
-/// Parse ISO 8601 datetime string to epoch seconds.
+/// Parse an ISO 8601 datetime to epoch seconds. Accepts an explicit offset or
+/// `Z` (an absolute instant), a zoneless datetime (interpreted in the system
+/// local timezone, matching the C++ CLI), or a bare integer (epoch seconds).
 fn parse_iso8601_datetime(s: &str) -> Result<u64> {
-    // Try common formats: "2020-10-11T09:22:05", "2020-10-11T09:22:05+08:00"
-    // Simple approach: parse as RFC3339 or custom format
-    if let Ok(dt) = chrono_parse_datetime(s) {
-        return Ok(dt);
+    let s = s.trim();
+    if let Ok(epoch) = parse_datetime_to_epoch(s) {
+        return Ok(epoch.max(0) as u64);
     }
-
-    // Try as epoch seconds directly
     if let Ok(secs) = s.parse::<u64>() {
         return Ok(secs);
     }
-
     bail!("Cannot parse datetime '{}'. Use ISO 8601 format: '2020-10-11T09:22:05'", s)
 }
 
-fn chrono_parse_datetime(s: &str) -> Result<u64> {
-    // Manual RFC3339/ISO8601-ish parsing without adding chrono dependency
-    // Format: "2020-10-11T09:22:05" or "2020-10-11T09:22:05+08:00"
-    let s = s.trim();
-    let parts: Vec<&str> = s.split('T').collect();
-    if parts.len() != 2 {
-        bail!("Invalid datetime format");
+/// Convert an ISO 8601 datetime string to a UTC epoch second using `jiff`.
+fn parse_datetime_to_epoch(s: &str) -> Result<i64> {
+    use std::str::FromStr;
+    // An explicit offset (e.g. "+08:00", "+08") or trailing "Z" is an absolute instant.
+    if let Ok(ts) = jiff::Timestamp::from_str(s) {
+        return Ok(ts.as_second());
     }
-
-    let date_parts: Vec<u32> = parts[0]
-        .split('-')
-        .map(|p| p.parse::<u32>())
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .context("Invalid date")?;
-    if date_parts.len() != 3 {
-        bail!("Invalid date format");
-    }
-
-    let time_str = parts[1];
-    let (time_part, _tz_offset) = if let Some(pos) = time_str.find('+').or_else(|| {
-        let idx = time_str.rfind('-')?;
-        if idx > 0 { Some(idx) } else { None }
-    }) {
-        (&time_str[..pos], &time_str[pos..])
-    } else {
-        (time_str, "+00:00")
-    };
-
-    let time_parts: Vec<u32> = time_part
-        .split(':')
-        .map(|p| p.parse::<u32>())
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .context("Invalid time")?;
-    if time_parts.len() < 2 {
-        bail!("Invalid time format");
-    }
-
-    // Simplified: compute seconds since epoch assuming UTC
-    let year = date_parts[0];
-    let month = date_parts[1];
-    let day = date_parts[2];
-    let hour = time_parts[0];
-    let min = time_parts[1];
-    let sec = if time_parts.len() > 2 { time_parts[2] } else { 0 };
-
-    // Days from year 1970
-    let mut days: i64 = 0;
-    for y in 1970..year {
-        days += if is_leap_year(y) { 366 } else { 365 };
-    }
-    let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    for m in 1..month {
-        days += i64::from(month_days[m as usize]);
-        if m == 2 && is_leap_year(year) {
-            days += 1;
-        }
-    }
-    days += i64::from(day - 1);
-
-    let secs = days * 86400 + i64::from(hour) * 3600 + i64::from(min) * 60 + i64::from(sec);
-    Ok(secs as u64)
+    // Otherwise it is zoneless: interpret it in the system local timezone.
+    let dt = jiff::civil::DateTime::from_str(s)
+        .map_err(|e| anyhow::anyhow!("invalid datetime '{}': {}", s, e))?;
+    let zoned = dt
+        .to_zoned(jiff::tz::TimeZone::system())
+        .map_err(|e| anyhow::anyhow!("invalid datetime '{}': {}", s, e))?;
+    Ok(zoned.timestamp().as_second())
 }
 
-fn is_leap_year(y: u32) -> bool {
-    (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
-}
-
-/// Parse daily time like "09:00:00+08" into seconds from midnight UTC.
+/// Parse a daily time like "09:00:00+08" or "20:00:00" into seconds-of-day in
+/// UTC. An explicit offset is honored; without one the time is interpreted in
+/// the system local timezone (matching the C++ CLI's `parseDayTimeUtcDuration`).
 fn parse_daily_time(s: &str) -> Result<u64> {
     let s = s.trim();
-    // Strip timezone offset if present
-    let time_part = if let Some(pos) = s.find('+').or_else(|| s.rfind('-')) {
-        &s[..pos]
-    } else {
-        s
-    };
-
-    let parts: Vec<u64> = time_part
-        .split(':')
-        .map(|p| p.parse::<u64>())
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .context("Invalid daily time format")?;
-
-    if parts.len() < 2 {
-        bail!("Invalid daily time format: '{}'", s);
-    }
-
-    let hours = parts[0];
-    let minutes = parts[1];
-    let seconds = if parts.len() > 2 { parts[2] } else { 0 };
-
-    Ok(hours * 3600 + minutes * 60 + seconds)
+    // Reuse the datetime parser on a fixed reference date, then take the UTC time-of-day.
+    let epoch = parse_datetime_to_epoch(&format!("2000-01-01T{}", s))
+        .with_context(|| format!("Invalid daily time format: '{}'", s))?;
+    Ok(epoch.rem_euclid(86400) as u64)
 }
 
 pub async fn rm(cli: &Cli, args: &RmArgs) -> Result<i32> {
@@ -514,5 +445,42 @@ async fn get_app_names(
         bail!("No application name specified. Use -a <name> or -A for all.");
     } else {
         Ok(explicit.to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn datetime_offset_is_absolute() {
+        // Explicit offsets / "Z" are absolute instants regardless of the system timezone.
+        let utc = parse_iso8601_datetime("2020-10-11T09:22:05Z").unwrap();
+        let plus8 = parse_iso8601_datetime("2020-10-11T09:22:05+08:00").unwrap();
+        let short = parse_iso8601_datetime("2020-10-11T09:22:05+08").unwrap();
+        assert_eq!(utc - plus8, 8 * 3600);
+        assert_eq!(plus8, short); // "+08" and "+08:00" are equivalent
+    }
+
+    #[test]
+    fn datetime_accepts_epoch_seconds() {
+        assert_eq!(parse_iso8601_datetime("1602379325").unwrap(), 1602379325);
+    }
+
+    #[test]
+    fn daily_time_applies_offset_to_utc() {
+        // 09:00:00 at +08 == 01:00:00 UTC == 3600s, matching C++ parseDayTimeUtcDuration.
+        assert_eq!(parse_daily_time("09:00:00+08").unwrap(), 3600);
+        assert_eq!(parse_daily_time("09:00:00+08:00").unwrap(), 3600);
+        // Wrap-around: 04:00:00 at +08 == 20:00:00 UTC the previous day.
+        assert_eq!(parse_daily_time("04:00:00+08").unwrap(), 20 * 3600);
+    }
+
+    #[test]
+    fn offsetless_inputs_parse_in_local_zone() {
+        // Value depends on the system timezone, but parsing must succeed (civil fallback).
+        assert!(parse_iso8601_datetime("2020-10-11T09:22:05").is_ok());
+        let d = parse_daily_time("09:00:00").unwrap();
+        assert!(d < 86400);
     }
 }

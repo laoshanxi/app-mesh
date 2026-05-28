@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Run a command asynchronously using the convenience method
     let ping_app = Application::builder("ping").build();
     let run = client.run_app_async(&ping_app, 5, 10).await?;
-    let _ = run.wait(10, true).await;
+    let _ = run.wait(appmesh::print_output_handler(), 10).await;
 
     // Run a command synchronously using the string shortcut
     let (exit_code, output) = client.run_sync("echo 'hello world'", 5, 10).await?;

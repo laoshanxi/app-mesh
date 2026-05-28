@@ -75,6 +75,7 @@ async fn run(cli: &Cli) -> Result<i32> {
         Commands::Mfa(args) => commands::user::mfa(cli, args).await,
         Commands::Appmgpwd(args) => commands::admin::appmgpwd(args),
         Commands::Appmginit(_) => commands::admin::appmginit(),
+        Commands::Workflow(args) => commands::workflow::workflow(cli, args).await,
     }
 }
 

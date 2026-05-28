@@ -56,6 +56,11 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     let lifecycle = AppMeshClient::parse_duration(&args.lifetime)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+    // When the user named the run, clean up the transient app on Ctrl+C (matches C++).
+    if let Some(ref name) = args.app {
+        signal::register_cleanup(client.clone(), name.clone());
+    }
+
     if timeout < 0 {
         let (exit_code, output) = client
             .run_app_sync(&app, timeout.abs(), lifecycle)
@@ -64,12 +69,13 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
         if !output.is_empty() {
             print!("{}", output);
         }
+        signal::clear_cleanup();
         return Ok(parse::normalize_exit_code(exit_code));
     }
 
     // Async mode: subscribe + run + wait
     let (app_run, exit_code) = client
-        .run_and_wait(&app, timeout, lifecycle, timeout, true)
+        .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
         .await
         .context("Run failed")?;
 
@@ -78,6 +84,7 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
         let _ = client.delete_app(&app_run.app_name).await;
     }
 
+    signal::clear_cleanup();
     Ok(parse::normalize_exit_code(exit_code))
 }
 
@@ -105,7 +112,7 @@ pub async fn exec(cli: &Cli, args: &ExecArgs) -> Result<i32> {
         let app = build_exec_app(&app_name, &command, args.session_login, &args.env);
 
         let (_app_run, exit_code) = client
-            .run_and_wait(&app, timeout, lifecycle, timeout, true)
+            .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
             .await
             .context("Exec failed")?;
 
@@ -125,7 +132,6 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
     let app_name = derive_exec_app_name(&client).await;
 
     let _ = client.delete_app(&app_name).await;
-    signal::register_cleanup(client.clone(), app_name.clone());
 
     let timeout = AppMeshClient::parse_duration(&args.timeout)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -200,7 +206,6 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
     }
 
     let _ = rl.save_history(&history_path);
-    signal::clear_cleanup();
     let _ = client.delete_app(&app_name).await;
     Ok(return_code)
 }
@@ -215,11 +220,31 @@ async fn execute_shell_command(
 ) -> Result<i32> {
     let app = build_exec_app(app_name, command, args.session_login, &args.env);
 
-    let (_app_run, exit_code) = client
-        .run_and_wait(&app, timeout, lifecycle, timeout, true)
-        .await
-        .context("Shell command failed")?;
+    // On Ctrl+C, delete the app so the in-flight run observes REMOVED and returns
+    // cleanly (unsubscribing itself); the shell then drops back to the prompt instead
+    // of exiting the whole session. A background watcher does the delete so run_and_wait
+    // is never cancelled mid-flight (which would leak its subscription). The delete is
+    // bounded so a stuck connection can't wedge the prompt.
+    let watcher = {
+        let client = Arc::clone(client);
+        let app_name = app_name.to_string();
+        tokio::spawn(async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    client.delete_app(&app_name),
+                )
+                .await;
+            }
+        })
+    };
 
+    let result = client
+        .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
+        .await;
+    watcher.abort();
+
+    let (_app_run, exit_code) = result.context("Shell command failed")?;
     Ok(parse::normalize_exit_code(exit_code))
 }
 

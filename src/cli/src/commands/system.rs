@@ -9,23 +9,19 @@ pub async fn label(cli: &Cli, args: &LabelArgs) -> Result<i32> {
 
     if args.add {
         for lbl in &args.label {
-            let (key, value) = lbl
-                .split_once('=')
-                .ok_or_else(|| anyhow::anyhow!("Invalid label format '{}'. Use key=value", lbl))?;
-            client.add_label(key, value).await.context("Failed to add label")?;
+            // C++ silently skips entries that are not exactly key=value.
+            if let Some((key, value)) = lbl.split_once('=') {
+                client.add_label(key, value).await.context("Failed to add label")?;
+            }
         }
-        return Ok(0);
-    }
-
-    if args.delete {
+    } else if args.delete {
         for lbl in &args.label {
             let key = lbl.split('=').next().unwrap_or(lbl);
             client.delete_label(key).await.context("Failed to delete label")?;
         }
-        return Ok(0);
     }
 
-    // Default: view labels (output as key=value text like C++)
+    // Always print the resulting labels (C++ prints labels after add/delete/view).
     let labels = client.list_labels().await.context("Failed to list labels")?;
     if let Some(obj) = labels.as_object() {
         for (k, v) in obj {

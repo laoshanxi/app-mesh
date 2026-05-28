@@ -2,10 +2,18 @@
 """Application run object for remote application execution."""
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from .client_http import AppMeshClient
+
+# Type alias for stdout callback: (data, position) -> None
+OutputHandler = Optional[Callable[[str, int], None]]
+
+
+def print_output_handler(data: str, position: int) -> None:
+    """Pre-built OutputHandler that prints data to stdout."""
+    print(data, end="", flush=True)
 
 
 class AppRun:
@@ -39,16 +47,17 @@ class AppRun:
         finally:
             self._client.forward_to = original_value
 
-    def wait(self, print_stdout: bool = True, timeout: int = 0) -> Optional[int]:
+    def wait(self, stdout_handler: OutputHandler = None, timeout: int = 0) -> Optional[int]:
         """
         Wait for the asynchronous run to complete with the saved forwarding target restored.
 
         Args:
-            print_stdout: If True, prints remote stdout to local console.
+            stdout_handler: optional callback ``(data, position) -> None`` invoked with each
+                chunk of stdout. Use ``print_output_handler`` for console output.
             timeout: Maximum time to wait in seconds. 0 means wait indefinitely.
 
         Returns:
             Exit code if the process finishes successfully, or ``None`` on timeout/polling failure.
         """
         with self.forward_to():
-            return self._client.wait_for_async_run(self, print_stdout, timeout)
+            return self._client.wait_for_async_run(self, stdout_handler, timeout)

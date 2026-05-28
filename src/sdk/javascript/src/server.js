@@ -51,6 +51,12 @@ class AppMeshServer {
    * @param {boolean} [sslConfig.rejectUnauthorized=true] - Whether to verify SSL
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
+   * @param {AppMeshClient} [options.client] - Optional pre-built `AppMeshClient` instance to reuse.
+   *   When supplied, `baseURL` and `sslConfig` are ignored and the server shares the caller's
+   *   client (and therefore its token-refresh state). Use this when a single process needs both
+   *   client (outbound calls like `AddApp`) and server (`task_fetch`/`task_return`) roles to
+   *   avoid two independent `/token/renew` loops fighting each other — the daemon blacklists
+   *   the previous token on every renew, so the slower refresher gets 401 "Token has been revoked".
    *
    * @example
    * import fs from 'fs';
@@ -61,13 +67,24 @@ class AppMeshServer {
    *   rejectUnauthorized: true
    * };
    * const server = new AppMeshServer('https://127.0.0.1:6060', sslConfig);
+   *
+   * @example
+   * // Share a single client between client-role and server-role usage:
+   * const client = new AppMeshClient('https://127.0.0.1:6060', sslConfig);
+   * await client.login('user', 'pass');
+   * const server = new AppMeshServer('https://127.0.0.1:6060', sslConfig, { client });
    */
   constructor (
     baseURL = 'https://127.0.0.1:6060',
     sslConfig = null,
     options = {}
   ) {
-    this._client = new AppMeshClient(baseURL, sslConfig)
+    if (options.client) {
+      this._client = options.client
+    } else {
+      this._client = new AppMeshClient(baseURL, sslConfig)
+      this._client.setAutoRefreshToken(false) // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+    }
     this._logger = options.logger || console
   }
 
@@ -219,6 +236,12 @@ class AppMeshServerTCP extends AppMeshServer {
    * @param {Array<string, number>} [tcpAddress=['127.0.0.1', 6059]] - TCP server address [host, port]
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
+   * @param {AppMeshClientTCP} [options.client] - Optional pre-built `AppMeshClientTCP` instance to reuse.
+   *   When supplied, `sslConfig` and `tcpAddress` are ignored and the server shares the caller's
+   *   client (and therefore its token-refresh state). Use this when a single process needs both
+   *   client and server roles to avoid two independent `/token/renew` loops fighting each other —
+   *   the daemon blacklists the previous token on every renew, so the slower refresher gets
+   *   401 "Token has been revoked".
    *
    * @example
    * import fs from 'fs';
@@ -228,6 +251,13 @@ class AppMeshServerTCP extends AppMeshServer {
    *   key: fs.readFileSync('/opt/appmesh/ssl/client-key.pem')
    * };
    * const server = new AppMeshServerTCP(sslConfig, ['127.0.0.1', 6059]);
+   *
+   * @example
+   * // Share a single TCP client between client-role and server-role usage:
+   * import { AppMeshClientTCP } from 'appmesh/src/appmesh_tcp.js';
+   * const client = new AppMeshClientTCP(sslConfig, ['127.0.0.1', 6059]);
+   * await client.login('user', 'pass');
+   * const server = new AppMeshServerTCP(sslConfig, ['127.0.0.1', 6059], { client });
    */
   constructor (
     sslConfig = null,
@@ -238,7 +268,7 @@ class AppMeshServerTCP extends AppMeshServer {
     this._logger = options.logger || console
     this._sslConfig = sslConfig
     this._tcpAddress = tcpAddress
-    this._client = null
+    this._client = options.client ?? null
   }
 
   /**
@@ -249,6 +279,7 @@ class AppMeshServerTCP extends AppMeshServer {
     if (!this._client) {
       const { AppMeshClientTCP } = await import('./appmesh_tcp.js')
       this._client = new AppMeshClientTCP(this._sslConfig, this._tcpAddress)
+      this._client.setAutoRefreshToken(false) // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
     }
     return this._client
   }

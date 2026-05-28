@@ -5,19 +5,17 @@ type AppMeshServerTcpContext struct {
 	AppMeshServerHttpContext
 }
 
-// NewTCPContext creates a new AppMeshServer that routes all HTTP requests through a TCP-based executor.
+// NewTCPContext creates a server-side task context over TCP. Server endpoints
+// authenticate via APP_MESH_PROCESS_KEY, not JWT, so token refresh is forced off.
 func NewTCPContext(options Option) (*AppMeshServerTcpContext, error) {
-	tcpClient, err := NewTCPClient(options) // Use TCP Executor from TcpClient
+	options.AutoRefreshToken = false
+	tcpClient, err := NewTCPClient(options)
 	if err != nil {
 		return nil, err
 	}
-
-	server, err := newHTTPContextWithRequester(options, tcpClient.tcpReq)
-	if err != nil {
-		return nil, err
-	}
-
-	return &AppMeshServerTcpContext{AppMeshServerHttpContext: *server}, err
+	return &AppMeshServerTcpContext{
+		AppMeshServerHttpContext: AppMeshServerHttpContext{client: tcpClient.AppMeshClient},
+	}, nil
 }
 
 // CloseConnection closes the TCP connection.

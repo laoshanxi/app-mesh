@@ -82,8 +82,8 @@ impl AppRun {
     /// Wait for this async run to finish by polling through the originating client.
     ///
     /// Returns the process exit code on success, or `None` on timeout/polling failure.
-    pub async fn wait(&self, timeout: i32, print_stdout: bool) -> Result<Option<i32>, AppMeshError> {
-        self.client.wait_for_async_run(self, timeout, print_stdout).await
+    pub async fn wait(&self, stdout_handler: OutputHandler, timeout: i32) -> Result<Option<i32>, AppMeshError> {
+        self.client.wait_for_async_run(self, stdout_handler, timeout).await
     }
 }
 
@@ -258,6 +258,23 @@ pub struct SubscriptionResult {
     pub subscription_id: String,
     pub app_name: String,
     pub events: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Output Handler
+// ---------------------------------------------------------------------------
+
+/// Callback for incremental stdout output.
+/// Parameters: (data, position) where data is the text chunk and position is the byte offset.
+pub type OutputHandler = Option<Arc<dyn Fn(&str, i64) + Send + Sync>>;
+
+/// Pre-built OutputHandler that prints data to stdout.
+pub fn print_output_handler() -> OutputHandler {
+    Some(Arc::new(|data: &str, _position: i64| {
+        print!("{}", data);
+        use std::io::Write;
+        std::io::stdout().flush().ok();
+    }))
 }
 
 impl Application {

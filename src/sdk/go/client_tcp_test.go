@@ -64,7 +64,7 @@ func TestAppmeshTCPOperations(t *testing.T) {
 		Command:   &cmd,
 		ShellMode: &shellMode,
 	}
-	exitCode, output, err := client.RunAppSync(runApp, false, 10, 15)
+	exitCode, output, err := client.RunAppSync(runApp, 10, 15)
 	require.NoError(t, err, "TCP RunAppSync should succeed")
 	require.Equal(t, 0, exitCode, "TCP RunAppSync exit code should be 0")
 	require.Contains(t, output, "hello_tcp", "TCP RunAppSync output should contain echoed text")

@@ -1050,14 +1050,14 @@ impl AppMeshClient {
         self.run_app_async(&app, max_time, lifecycle).await
     }
 
-    /// Wait for an async run to complete, optionally printing incremental stdout.
+    /// Wait for an async run to complete, optionally invoking a callback with incremental stdout.
     ///
     /// On success, this method makes a best-effort attempt to delete the temporary run app.
     pub async fn wait_for_async_run(
         &self,
         run: &AppRun,
+        stdout_handler: OutputHandler,
         timeout: i32,
-        print_stdout: bool,
     ) -> Result<Option<i32>> {
         let mut last_output_position = 0i64;
         let start_time = std::time::Instant::now();
@@ -1069,18 +1069,24 @@ impl AppMeshClient {
 
             last_output_position = app_out.output_position;
 
-            if print_stdout && !app_out.output.is_empty() {
-                print!("{}", app_out.output);
-                use std::io::Write;
-                std::io::stdout().flush().ok();
+            if !app_out.output.is_empty() {
+                if let Some(ref handler) = stdout_handler {
+                    handler(&app_out.output, last_output_position);
+                }
             }
 
-            if app_out.exit_code.is_some()
-                || app_out.status_code != StatusCode::OK.as_u16()
-                || (timeout > 0 && start_time.elapsed().as_secs() >= timeout as u64)
-            {
+            // Real completion: clean up the temp run app.
+            if app_out.exit_code.is_some() {
                 let _ = self.delete_app(&run.app_name).await;
                 return Ok(app_out.exit_code);
+            }
+
+            // Transport error or timeout: the app may still be running, so do not
+            // delete it (matches the Go SDK, which removes the app only on a real exit).
+            if app_out.status_code != StatusCode::OK.as_u16()
+                || (timeout > 0 && start_time.elapsed().as_secs() >= timeout as u64)
+            {
+                return Ok(None);
             }
 
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -1089,6 +1095,7 @@ impl AppMeshClient {
 
     /// Run a task by sending JSON data to a running app and returning its response body.
     pub async fn run_task(&self, app: &str, data: Value, timeout: i32) -> Result<String> {
+        let timeout = if timeout <= 0 { 300 } else { timeout };
         let query = hmap! { HTTP_QUERY_KEY_TIMEOUT => timeout };
         let body_bytes = serde_json::to_vec(&data)?;
 

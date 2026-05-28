@@ -19,6 +19,8 @@ impl AppMeshServerTCP {
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>, AppMeshError> {
         let client = AppMeshClientTCP::new(tcp_address, ssl_verify, ssl_client_cert)?;
+        // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+        client.client().set_auto_refresh_token(false);
         Ok(Arc::new(Self { server: AppMeshServer::with_client(client.client().clone()) }))
     }
 }

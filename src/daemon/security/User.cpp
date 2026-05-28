@@ -615,14 +615,21 @@ const std::string User::encrypt(const std::string &message)
 	CFB_Mode<AES>::Encryption cfbEncryption(key, key.size(), iv);
 	cfbEncryption.ProcessData(&(*plainText), (const byte *)message.c_str(), messageLen);
 
-	// use base64 for persist
-	return Utility::encode64((char *)(&(*plainText)));
+	// use base64 for persist (explicit length to preserve embedded 0x00 bytes in ciphertext)
+	return Utility::encode64(std::string((char *)(&(*plainText)), messageLen));
 }
 
 const std::string User::decrypt(const std::string &encryptedMessage)
 {
 	using namespace CryptoPP;
 	std::string message = Utility::decode64(encryptedMessage);
+	// decode64 strips trailing null bytes, but ciphertext may legitimately end with 0x00.
+	// Restore the exact original length computed from the base64 encoding.
+	{
+		size_t b64Len = encryptedMessage.size();
+		size_t padChars = (b64Len > 0 && encryptedMessage[b64Len - 1] == '=') + (b64Len > 1 && encryptedMessage[b64Len - 2] == '=');
+		message.resize((b64Len / 4) * 3 - padChars, '\0');
+	}
 
 	const std::string keyMaterial = getKeyMaterial();
 	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
@@ -653,15 +660,16 @@ const std::string User::decrypt(const std::string &encryptedMessage)
 		}
 	}
 
-	size_t messageLen = std::strlen(message.c_str()) + 1;
+	size_t messageLen = message.size();
 	std::shared_ptr<byte> plainText = make_shared_array<byte>(messageLen);
 
 	//////////////////////////////////////////////////////////////////////////
 	// Decrypt
 	//////////////////////////////////////////////////////////////////////////
 	CFB_Mode<AES>::Decryption cfbDecryption(key, key.size(), iv);
-	cfbDecryption.ProcessData(&(*plainText), (const byte *)message.c_str(), messageLen);
+	cfbDecryption.ProcessData(&(*plainText), (const byte *)message.data(), messageLen);
 
+	// The original plaintext was null-terminated; stop at the first null.
 	return std::string((char *)(&(*plainText)));
 }
 

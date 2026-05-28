@@ -29,5 +29,5 @@ class AppMeshServerTCP(AppMeshServer):
         Args:
             follows the same parameters as `AppMeshClientTCP`.
         """
-        tcp_client = AppMeshClientTCP(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, tcp_address=tcp_address)
+        tcp_client = AppMeshClientTCP(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, tcp_address=tcp_address, auto_refresh_token=False)  # Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
         super().__init__(client=tcp_client, logger_=logger_)

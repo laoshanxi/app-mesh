@@ -475,8 +475,20 @@ paths:
                 - name
                 - command
       responses:
-        "201":
+        "200":
           description: Application added successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: |
+                  The registered application definition (runtime info, encrypted
+                  sec_env stripped). Includes subscription_id when subscribe_events
+                  created a subscription on a persistent connection.
+                properties:
+                  subscription_id:
+                    type: string
+                    description: Present only when subscribe_events created a subscription.
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -891,7 +903,11 @@ paths:
           multipart/form-data:
             schema:
               type: object
+              required: [filename, file]
               properties:
+                filename:
+                  type: string
+                  description: Base name of the file on the remote server.
                 file:
                   type: string
                   format: binary
@@ -1545,6 +1561,16 @@ components:
       description: |
         Username and password for initial authentication.
         Only used for login endpoint.
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: appmesh_auth_token
+      description: |
+        Cookie-based authentication. When a request to /appmesh/login, /appmesh/auth,
+        or /appmesh/totp/validate carries the `X-Set-Cookie: true` header, the server
+        issues the JWT via a Set-Cookie `appmesh_auth_token` and a companion
+        `appmesh_csrf_token`. Subsequent state-changing requests authenticated by cookie
+        must echo the CSRF token in the `X-CSRF-Token` header.
 
   schemas:
     ErrorResponse:
@@ -1622,6 +1648,14 @@ components:
 
     TokenResponse:
       description: Successful token generation.
+      headers:
+        Set-Cookie:
+          schema:
+            type: string
+          description: |
+            Present only when the request carried `X-Set-Cookie: true`. Sets the
+            `appmesh_auth_token` JWT cookie and an `appmesh_csrf_token` companion
+            cookie for subsequent cookie-based authentication.
       content:
         application/json:
           schema:
