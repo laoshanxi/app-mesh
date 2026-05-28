@@ -10,7 +10,7 @@ use tokio::sync::watch;
 use crate::client_http::AppMeshClient;
 use crate::constants::EVENT_TYPE_DISCONNECTED;
 use crate::error::AppMeshError;
-use crate::models::{AppEvent, AppRun, Application};
+use crate::models::{AppEvent, AppRun, Application, OutputHandler};
 
 /// Run an application asynchronously and wait for completion using subscribe.
 ///
@@ -22,8 +22,8 @@ pub(crate) async fn run_and_wait_subscribe(
     app: &Application,
     max_time: i32,
     lifecycle: i32,
+    stdout_handler: OutputHandler,
     timeout: i32,
-    print_stdout: bool,
 ) -> Result<(AppRun, Option<i32>), AppMeshError> {
     let delivered_until = Arc::new(AtomicI64::new(0));
     let (done_tx, done_rx) = watch::channel(None::<i32>);
@@ -31,6 +31,7 @@ pub(crate) async fn run_and_wait_subscribe(
 
     let delivered_until_cb = Arc::clone(&delivered_until);
     let done_tx_cb = Arc::clone(&done_tx);
+    let stdout_handler_cb = stdout_handler.clone();
 
     let on_event: crate::subscribe::EventCallback = Arc::new(move |event: AppEvent| {
         match event.event_type.as_str() {
@@ -38,7 +39,7 @@ pub(crate) async fn run_and_wait_subscribe(
                 let pos = event.data.get("position").and_then(|v| v.as_i64()).unwrap_or(0);
                 let output = event.data.get("output").and_then(|v| v.as_str()).unwrap_or("");
                 if !output.is_empty() {
-                    deliver(output.as_bytes(), pos, &delivered_until_cb, print_stdout);
+                    deliver(output.as_bytes(), pos, &delivered_until_cb, &stdout_handler_cb);
                 }
             }
             "EXIT" => {
@@ -77,7 +78,7 @@ pub(crate) async fn run_and_wait_subscribe(
         {
             Ok(backfill) => {
                 if !backfill.output.is_empty() {
-                    deliver(backfill.output.as_bytes(), 0, &delivered_until, print_stdout);
+                    deliver(backfill.output.as_bytes(), 0, &delivered_until, &stdout_handler);
                 }
                 if let Some(code) = backfill.exit_code {
                     if let Some(tx) = done_tx.lock().ok().and_then(|mut g| g.take()) {
@@ -120,8 +121,8 @@ pub(crate) async fn run_and_wait_subscribe(
 pub(crate) async fn wait_for_async_run_subscribe(
     client: &Arc<AppMeshClient>,
     run: &AppRun,
+    stdout_handler: OutputHandler,
     timeout: i32,
-    print_stdout: bool,
 ) -> Result<Option<i32>, AppMeshError> {
     let delivered_until = Arc::new(AtomicI64::new(0));
     let (done_tx, done_rx) = watch::channel(None::<i32>);
@@ -129,6 +130,7 @@ pub(crate) async fn wait_for_async_run_subscribe(
 
     let delivered_until_cb = Arc::clone(&delivered_until);
     let done_tx_cb = Arc::clone(&done_tx);
+    let stdout_handler_cb = stdout_handler.clone();
 
     let on_event: crate::subscribe::EventCallback = Arc::new(move |event: AppEvent| {
         match event.event_type.as_str() {
@@ -136,7 +138,7 @@ pub(crate) async fn wait_for_async_run_subscribe(
                 let pos = event.data.get("position").and_then(|v| v.as_i64()).unwrap_or(0);
                 let output = event.data.get("output").and_then(|v| v.as_str()).unwrap_or("");
                 if !output.is_empty() {
-                    deliver(output.as_bytes(), pos, &delivered_until_cb, print_stdout);
+                    deliver(output.as_bytes(), pos, &delivered_until_cb, &stdout_handler_cb);
                 }
             }
             "EXIT" => {
@@ -167,7 +169,7 @@ pub(crate) async fn wait_for_async_run_subscribe(
         match client.get_app_output(&run.app_name, 0, 0, 0, Some(&run.proc_uid), Some(0)).await {
             Ok(backfill) => {
                 if !backfill.output.is_empty() {
-                    deliver(backfill.output.as_bytes(), 0, &delivered_until, print_stdout);
+                    deliver(backfill.output.as_bytes(), 0, &delivered_until, &stdout_handler);
                 }
                 if let Some(code) = backfill.exit_code {
                     if let Some(tx) = done_tx.lock().ok().and_then(|mut g| g.take()) {
@@ -204,7 +206,7 @@ pub(crate) async fn wait_for_async_run_subscribe(
     Ok(result)
 }
 
-fn deliver(chunk: &[u8], pos: i64, delivered_until: &AtomicI64, print_stdout: bool) {
+fn deliver(chunk: &[u8], pos: i64, delivered_until: &AtomicI64, stdout_handler: &OutputHandler) {
     if chunk.is_empty() {
         return;
     }
@@ -219,12 +221,11 @@ fn deliver(chunk: &[u8], pos: i64, delivered_until: &AtomicI64, print_stdout: bo
             .compare_exchange(current, end, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
-            if print_stdout {
+            if let Some(ref handler) = stdout_handler {
                 let start = if pos < current { (current - pos) as usize } else { 0 };
+                let start_pos = if pos < current { current } else { pos };
                 let text = String::from_utf8_lossy(&chunk[start..]);
-                print!("{}", text);
-                use std::io::Write;
-                std::io::stdout().flush().ok();
+                handler(&text, start_pos);
             }
             return;
         }

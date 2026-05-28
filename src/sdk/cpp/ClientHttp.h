@@ -1,6 +1,8 @@
 // src/sdk/cpp/ClientHttp.h
 #pragma once
 
+#include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -23,6 +25,11 @@ struct AppOutput
 
 class ClientHttp;
 
+/// Callback for incremental stdout output.
+/// @param data  text chunk
+/// @param position  byte offset in the full output stream
+using OutputHandler = std::function<void(const std::string &data, int64_t position)>;
+
 /// Result of an asynchronous application run, used to monitor and retrieve output.
 struct AppRun
 {
@@ -35,7 +42,7 @@ struct AppRun
     /// Wait for the asynchronous run to complete.
     /// Temporarily restores the forward_to target that was active at run creation,
     /// ensuring output queries reach the correct cluster node.
-    std::shared_ptr<int> wait(int timeout = 0, bool printToStdout = true);
+    std::shared_ptr<int> wait(OutputHandler stdoutHandler = nullptr, int timeout = 0);
 
 private:
     std::string m_forwardTo; ///< Saved forward_to target from run creation time
@@ -113,7 +120,7 @@ public:
                        int lifecycle = 60 * 60 * 24 * 2 + 60 * 60 * 12);
     /// Poll an async run until completion or timeout.
     /// On success, the implementation may best-effort remove the temporary run app.
-    std::shared_ptr<int> waitForAsyncRun(AppRun *run, int timeout = 0, bool printToStdout = true);
+    std::shared_ptr<int> waitForAsyncRun(AppRun *run, OutputHandler stdoutHandler = nullptr, int timeout = 0);
     /// Send a payload to a running application task endpoint and wait for the response body.
     std::string runTask(const std::string &app, const nlohmann::json &data, int timeout);
     bool cancelTask(const std::string &app);

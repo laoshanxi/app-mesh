@@ -3,6 +3,7 @@
 
 #include <map>
 #include <memory>
+#include <queue>
 
 #include <nlohmann/json.hpp>
 
@@ -162,6 +163,10 @@ private:
 
 // Manages task request/response communication between client and server
 // Coordinates message flow for bidirectional task handling
+// Manages task communication between multiple clients and a single server process.
+// Clients send tasks via sendTask (queued); the server fetches one at a time via fetchTask
+// and returns results via replyTask. Each client connection gets its own queue slot,
+// so concurrent run_task calls no longer overwrite each other.
 class TaskRequest
 {
 public:
@@ -180,8 +185,9 @@ private:
 	void cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request);
 
 private:
-	std::shared_ptr<HttpRequestWithTimeout> m_taskRequest;
-	std::shared_ptr<HttpRequestWithTimeout> m_fetchTask;
-	std::shared_ptr<HttpRequestWithTimeout> m_replyTask;
+	std::queue<std::shared_ptr<HttpRequestWithTimeout>> m_taskQueue; // pending client requests
+	std::shared_ptr<HttpRequestWithTimeout> m_activeTask;            // task currently being processed by server
+	std::shared_ptr<HttpRequestWithTimeout> m_fetchTask;             // server blocking on GET waiting for next task
+	std::shared_ptr<HttpRequestWithTimeout> m_replyTask;             // server PUT with response payload
 	std::atomic_int m_taskId{0};
 };

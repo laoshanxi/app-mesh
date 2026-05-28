@@ -29,5 +29,5 @@ class AppMeshServerWSS(AppMeshServer):
         Args:
             follows the same parameters as `AppMeshClientWSS`.
         """
-        wss_client = AppMeshClientWSS(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, wss_address=wss_address)
+        wss_client = AppMeshClientWSS(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, wss_address=wss_address, auto_refresh_token=False)  # Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
         super().__init__(client=wss_client, logger_=logger_)

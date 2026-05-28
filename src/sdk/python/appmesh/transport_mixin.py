@@ -15,6 +15,7 @@ from requests.structures import CaseInsensitiveDict
 
 # Local imports
 from .app import App
+from .app_run import OutputHandler
 from .client_http import AppMeshClient
 from .exceptions import AppMeshConnectionError
 from .subscribe import (
@@ -261,7 +262,7 @@ class TransportClientMixin:
         self._demuxer = MessageDemuxer(self._transport)
         self._demuxer.start()
 
-    def wait_for_async_run(self, run, print_stdout: bool = True, timeout: int = 0) -> Optional[int]:
+    def wait_for_async_run(self, run, stdout_handler: OutputHandler = None, timeout: int = 0) -> Optional[int]:
         """Override: use subscribe-based streaming on TCP/WSS instead of polling.
 
         Subscribes to ``STDOUT`` + ``EXIT`` + ``REMOVED``, then does a
@@ -274,14 +275,12 @@ class TransportClientMixin:
 
         wait_timeout: Optional[float] = None if timeout in (0, None) else float(timeout)
 
-        on_stdout = (lambda s: print(s, end="", flush=True)) if print_stdout else None
-
         # Sentinel exit codes distinguishable from real ones (>=0):
         #   None → caller-side timeout (done.wait returned without done.set)
         #   -1   → REMOVED before EXIT observed
         #   -2   → demuxer disconnected (transport failure)
         exit_code: Optional[int] = None
-        delivered_until = 0  # next-byte offset already passed to on_stdout
+        delivered_until = 0  # next-byte offset already passed to stdout_handler
         done = threading.Event()
         lock = threading.Lock()
 
@@ -294,12 +293,14 @@ class TransportClientMixin:
                 end = pos + len(chunk_bytes)
                 if end <= delivered_until:
                     return
+                start_pos = pos
                 if pos < delivered_until:
                     chunk_bytes = chunk_bytes[delivered_until - pos:]
+                    start_pos = delivered_until
                 delivered_until = end
-            if on_stdout:
+            if stdout_handler is not None:
                 try:
-                    on_stdout(chunk_bytes.decode("utf-8", errors="replace"))
+                    stdout_handler(chunk_bytes.decode("utf-8", errors="replace"), start_pos)
                 except Exception:
                     pass
 

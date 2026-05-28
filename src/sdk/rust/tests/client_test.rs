@@ -454,9 +454,9 @@ mod integration {
         assert!(!run_handle.app_name.is_empty(), "app_name must not be empty");
         assert!(!run_handle.proc_uid.is_empty(), "proc_uid must not be empty");
 
-        // Wait for the command to finish (30 s budget, don't stream to stdout).
+        // Wait for the command to finish (30 s budget, no stdout handler).
         let exit_code = run_handle
-            .wait(30, false)
+            .wait(None, 30)
             .await
             .expect("AppRun::wait failed");
 

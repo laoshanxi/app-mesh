@@ -1,0 +1,75 @@
+name: data-pipeline
+owner: admin
+permission: 200
+
+on:
+  app_event:
+    app: "data-collector"
+    events: [EXIT]
+    condition: "exit_code == 0"
+  schedule:
+    - cron: "0 2 * * *"
+  manual:
+    inputs:
+      env:
+        type: string
+        default: "staging"
+        description: "Target environment"
+
+concurrency:
+  group: "data-pipeline"
+  cancel-in-progress: false
+
+env:
+  PIPELINE_VERSION: "2.0"
+
+jobs:
+  build:
+    steps:
+      - name: compile
+        command: "echo v1.2.3"
+        timeout: 600
+        retry:
+          max: 2
+          backoff: exponential
+          interval: 5
+
+  test-unit:
+    needs: [build]
+    steps:
+      - name: run-tests
+        command: "echo tests passed"
+        continue-on-error: true
+
+  test-e2e:
+    needs: [build]
+    steps:
+      - name: run-e2e
+        command: "echo e2e passed"
+        timeout: 300
+
+  deploy:
+    needs: [test-unit, test-e2e]
+    if: "success()"
+    steps:
+      - name: deploy-prod
+        command: "echo deploying ${{ inputs.env }}"
+        timeout: 600
+        env:
+          TARGET: "${{ inputs.env }}"
+
+      - name: verify
+        command: "echo healthy"
+        if: "steps.deploy-prod.exit_code == 0"
+
+      - name: rollback
+        command: "echo rolling back"
+        if: "steps.deploy-prod.exit_code != 0"
+
+    finally:
+      - name: cleanup
+        command: "rm -rf /tmp/workflow/${{ workflow.run_id }}"
+      - name: notify
+        message:
+          app: "slack-bot"
+          payload: '{"status": "${{ job.status }}"}'

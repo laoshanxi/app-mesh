@@ -32,7 +32,7 @@ from pyotp import TOTP
 current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(current_directory))
 
-from appmesh import AppMeshClient, AppMeshClientTCP, AppMeshClientWSS, App
+from appmesh import AppMeshClient, AppMeshClientTCP, AppMeshClientWSS, App, print_output_handler
 
 DEFAULT_CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
 _WSS_REST_PORT = 6058
@@ -797,7 +797,7 @@ class SubscribeMixin:
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf):
-                exit_code = run.wait(print_stdout=True, timeout=10)
+                exit_code = run.wait(stdout_handler=print_output_handler, timeout=10)
             self.assertEqual(exit_code, 0)
             self.assertIn("streaming-ok", buf.getvalue())
         except Exception:

@@ -342,7 +342,7 @@ public class AppMeshClientWSS extends AppMeshClient {
      * {@code -1} = REMOVED before EXIT, {@code -2} = demuxer disconnected.
      */
     @Override
-    public Integer waitForAsyncRun(AppRun run, boolean printStdout, int timeoutSeconds) throws Exception {
+    public Integer waitForAsyncRun(AppRun run, OutputHandler stdoutHandler, int timeoutSeconds) throws Exception {
         if (run == null) {
             return null;
         }
@@ -362,7 +362,7 @@ public class AppMeshClientWSS extends AppMeshClient {
                     if (event.data != null) {
                         long pos = event.data.optLong("position", 0);
                         String output = event.data.optString("output", "");
-                        deliverOutput(output, pos, deliveredUntil, deliverLock, printStdout);
+                        deliverOutput(output, pos, deliveredUntil, deliverLock, stdoutHandler);
                     }
                     break;
                 case "EXIT":
@@ -393,7 +393,7 @@ public class AppMeshClientWSS extends AppMeshClient {
                 AppOutput backfill = this.getAppOutput(run.getAppName(), 0, 0, 0,
                         run.getProcUid(), 0);
                 if (backfill.httpBody != null && !backfill.httpBody.isEmpty()) {
-                    deliverOutput(backfill.httpBody, 0, deliveredUntil, deliverLock, printStdout);
+                    deliverOutput(backfill.httpBody, 0, deliveredUntil, deliverLock, stdoutHandler);
                 }
                 if (backfill.exitCode != null) {
                     exitCode.compareAndSet(EXIT_CODE_NONE, backfill.exitCode);
@@ -436,7 +436,7 @@ public class AppMeshClientWSS extends AppMeshClient {
      * Deliver stdout output with deduplication by byte offset.
      */
     private static void deliverOutput(String chunk, long pos, AtomicLong deliveredUntil,
-            Object lock, boolean printStdout) {
+            Object lock, OutputHandler stdoutHandler) {
         if (chunk == null || chunk.isEmpty()) {
             return;
         }
@@ -447,18 +447,20 @@ public class AppMeshClientWSS extends AppMeshClient {
             if (end <= current) {
                 return; // already delivered
             }
-            String toPrint;
+            long startPos;
+            String toDeliver;
             if (pos < current) {
                 // Partial overlap: trim the already-delivered prefix
                 int skip = (int) (current - pos);
-                toPrint = new String(chunkBytes, skip, chunkBytes.length - skip, StandardCharsets.UTF_8);
+                startPos = current;
+                toDeliver = new String(chunkBytes, skip, chunkBytes.length - skip, StandardCharsets.UTF_8);
             } else {
-                toPrint = chunk;
+                startPos = pos;
+                toDeliver = chunk;
             }
             deliveredUntil.set(end);
-            if (printStdout && !toPrint.isEmpty()) {
-                System.out.print(toPrint);
-                System.out.flush();
+            if (stdoutHandler != null && !toDeliver.isEmpty()) {
+                stdoutHandler.handle(toDeliver, startPos);
             }
         }
     }

@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laoshanxi/app-mesh/workflow-schema.json",
+  "title": "App Mesh Workflow",
+  "description": "Schema for App Mesh Workflow YAML pipeline definitions.",
+  "type": "object",
+  "required": ["name", "jobs"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "description": "Unique workflow identifier."
+    },
+    "owner": {
+      "type": "string",
+      "description": "User who owns this workflow. Execution identity for all steps."
+    },
+    "permission": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Permission level. Same semantics as App Mesh App permission."
+    },
+    "on": {
+      "$ref": "#/$defs/TriggerConfig"
+    },
+    "concurrency": {
+      "$ref": "#/$defs/ConcurrencyConfig"
+    },
+    "env": {
+      "$ref": "#/$defs/EnvMap",
+      "description": "Global environment variables inherited by all steps."
+    },
+    "sec_env": {
+      "$ref": "#/$defs/EnvMap",
+      "description": "Global encrypted environment variables."
+    },
+    "jobs": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/Job"
+      },
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9_-]+$"
+      },
+      "description": "Map of job names to Job definitions."
+    }
+  },
+  "$defs": {
+    "TriggerConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Trigger configuration. Multiple types can coexist.",
+      "properties": {
+        "app_event": {
+          "$ref": "#/$defs/AppEventTrigger"
+        },
+        "schedule": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["cron"],
+            "additionalProperties": false,
+            "properties": {
+              "cron": {
+                "type": "string",
+                "description": "Cron expression. NOTE: Not dispatched by engine — use an external App Mesh cron app."
+              }
+            }
+          },
+          "description": "Declares intended cron schedule. Not dispatched by engine; use external cron App (see ADR 0004)."
+        },
+        "manual": {
+          "$ref": "#/$defs/ManualTrigger"
+        },
+        "workflow_call": {
+          "$ref": "#/$defs/WorkflowCallTrigger"
+        }
+      }
+    },
+    "AppEventTrigger": {
+      "type": "object",
+      "required": ["app", "events"],
+      "additionalProperties": false,
+      "properties": {
+        "app": {
+          "type": "string",
+          "description": "Name of the App to watch."
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["START", "EXIT", "HEALTH", "STATUS", "REMOVED"]
+          },
+          "minItems": 1,
+          "description": "Event types to match."
+        },
+        "condition": {
+          "type": "string",
+          "description": "Expression evaluated against event data. Available: exit_code, pid, status."
+        }
+      }
+    },
+    "ManualTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+          "additionalProperties": {
+            "$ref": "#/$defs/InputParam"
+          }
+        }
+      }
+    },
+    "WorkflowCallTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+          "additionalProperties": {
+            "$ref": "#/$defs/InputParam"
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/OutputParam"
+          }
+        }
+      }
+    },
+    "InputParam": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "number", "boolean"]
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "default": {},
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "OutputParam": {
+      "type": "object",
+      "required": ["value"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "Expression resolving to the output value."
+        }
+      }
+    },
+    "ConcurrencyConfig": {
+      "type": "object",
+      "required": ["group"],
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "type": "string",
+          "description": "Concurrency group name. Supports ${{ }} expressions."
+        },
+        "cancel-in-progress": {
+          "type": "boolean",
+          "default": false,
+          "description": "true: cancel running run. false: queue behind it."
+        }
+      }
+    },
+    "Job": {
+      "type": "object",
+      "required": ["steps"],
+      "additionalProperties": false,
+      "properties": {
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Job names that must complete before this job starts."
+        },
+        "if": {
+          "type": "string",
+          "description": "Expression. Job runs only if true. Functions: success(), failure(), always()."
+        },
+        "node_label": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Label selector for target node. Routed via X-Target-Host."
+        },
+        "env": {
+          "$ref": "#/$defs/EnvMap"
+        },
+        "sec_env": {
+          "$ref": "#/$defs/EnvMap"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "minItems": 1
+        },
+        "finally": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "description": "Steps that run after all steps complete, regardless of outcome."
+        }
+      }
+    },
+    "Step": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "description": "Must contain exactly one of: command, app, message, workflow.",
+      "oneOf": [
+        { "required": ["command"] },
+        { "required": ["app"] },
+        { "required": ["message"] },
+        { "required": ["workflow"] }
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "description": "Unique within the job. Used in ${{ steps.<name>.* }} references."
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command to execute as a temporary process."
+        },
+        "app": {
+          "type": "string",
+          "description": "Name of a registered App to run."
+        },
+        "message": {
+          "$ref": "#/$defs/MessageStep",
+          "description": "Send payload to a running App via Task API."
+        },
+        "workflow": {
+          "type": "string",
+          "description": "Name of a workflow with on.workflow_call to invoke."
+        },
+        "with": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+          "additionalProperties": { "type": "string" },
+          "description": "Input values for workflow step. Keys must match [a-zA-Z_][a-zA-Z0-9_]* and target workflow_call inputs."
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Working directory (command step only)."
+        },
+        "shell": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run through shell interpreter (command step only)."
+        },
+        "docker_image": {
+          "type": "string",
+          "description": "Docker image for command execution (command step only)."
+        },
+        "if": {
+          "type": "string",
+          "description": "Expression. Step runs only if true."
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Max execution seconds. 0 = no limit."
+        },
+        "retry": {
+          "$ref": "#/$defs/RetryPolicy"
+        },
+        "continue-on-error": {
+          "type": "boolean",
+          "default": false,
+          "description": "true: mark step as failed but continue to next step."
+        },
+        "env": {
+          "$ref": "#/$defs/EnvMap"
+        },
+        "sec_env": {
+          "$ref": "#/$defs/EnvMap"
+        }
+      }
+    },
+    "MessageStep": {
+      "type": "object",
+      "required": ["app", "payload"],
+      "additionalProperties": false,
+      "properties": {
+        "app": {
+          "type": "string",
+          "description": "Name of the running App to send the message to."
+        },
+        "payload": {
+          "type": "string",
+          "description": "Request payload. Supports ${{ }} expressions."
+        }
+      }
+    },
+    "RetryPolicy": {
+      "type": "object",
+      "required": ["max"],
+      "additionalProperties": false,
+      "properties": {
+        "max": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum retry attempts (not counting initial run)."
+        },
+        "backoff": {
+          "type": "string",
+          "enum": ["fixed", "exponential"],
+          "default": "fixed",
+          "description": "fixed: constant interval. exponential: interval * 2^attempt."
+        },
+        "interval": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Base wait time in seconds between retries."
+        }
+      }
+    },
+    "EnvMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Key-value environment variables. Values support ${{ }} expressions."
+    }
+  }
+}
