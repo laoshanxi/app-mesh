@@ -801,11 +801,11 @@ AppMeshClientTCP.prototype._enableDemuxer = function () {
  *   -2    — demuxer disconnected (transport failure)
  *
  * @param {AppRun} run - AppRun object
- * @param {Function} [outputHandler] - Output handler
+ * @param {Function} [stdoutHandler] - Stdout handler callback(data, position)
  * @param {number} [timeout=0] - Max wait time in seconds (0 = unlimited)
  * @returns {Promise<number|null>} Exit code, or null on timeout
  */
-AppMeshClientTCP.prototype.wait_for_async_run = async function (run, outputHandler, timeout = 0) {
+AppMeshClientTCP.prototype.wait_for_async_run = async function (run, stdoutHandler, timeout = 0) {
   if (!run || !run.appName) return null
 
   let exitCode = null
@@ -821,12 +821,14 @@ AppMeshClientTCP.prototype.wait_for_async_run = async function (run, outputHandl
     const end = pos + buf.length
     if (end <= deliveredUntil) return
     let output = buf
+    let startPos = pos
     if (pos < deliveredUntil) {
       output = buf.slice(deliveredUntil - pos)
+      startPos = deliveredUntil
     }
     deliveredUntil = end
-    if (outputHandler) {
-      try { outputHandler(output.toString('utf-8')) } catch (_) { /* ignore */ }
+    if (stdoutHandler) {
+      try { stdoutHandler(output.toString('utf-8'), startPos) } catch (_) { /* ignore */ }
     }
   }
 

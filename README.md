@@ -59,7 +59,7 @@ for i in range(10):
 Feature | Description
 ---|---
 App Management  | 🧩 <b>App CURD with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
-Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
+Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html) <br> 🔄 [Workflow Pipeline](https://app-mesh.readthedocs.io/en/latest/Workflow.html) — GitHub Actions-style CI/CD with DAG, retry, conditions, and remote execution
 Security |  🔐 Authentication: [OAuth](src/sdk/python/test/test_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html), YAML-based storage (local or Consul for clustering) <br> 🔐 Authorization: [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html), [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html), multi-tenant isolation <br> 🔐 Protection: SSL/TLS for `TCP`/`HTTP`/`WebSocket`, CSRF tokens, HMAC with PSK for non-token verification
 Cloud Native | 🌩️ [Prometheus Exporter (built-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
 Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download API <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Request Forwarding <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
@@ -77,12 +77,29 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
+## 🔄 Workflow Pipeline
+
+App Mesh includes a built-in [Workflow Engine](https://app-mesh.readthedocs.io/en/latest/Workflow.html) for defining CI/CD pipelines as YAML — similar to GitHub Actions but running natively on App Mesh.
+
+- **DAG scheduling** — jobs run in dependency order, independent jobs in parallel
+- **4 step types** — shell commands, existing Apps, Task API messages, sub-workflows
+- **Error handling** — retry with exponential backoff, `continue-on-error`, `finally` cleanup blocks
+- **Expressions** — `${{ inputs.env }}`, `${{ steps.build.stdout }}`, `success()`, `failure()`, `always()`
+- **Remote execution** — target specific nodes by label or hostname
+
+```bash
+appc workflow add -f pipeline.yaml        # register
+appc workflow run pipeline -e env=prod -f # run and follow output
+appc workflow runs pipeline               # view history
+```
+
 ## 📚 Documentation
 
 - [Read the Docs](https://app-mesh.readthedocs.io/)
 - [REST API](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis)
 - [Command lines](https://app-mesh.readthedocs.io/en/latest/CLI.html)
 - [Security](https://app-mesh.readthedocs.io/en/latest/Security.html)
+- [Workflow Guide](https://app-mesh.readthedocs.io/en/latest/Workflow.html)
 
 ## 🆚 Comparison
 

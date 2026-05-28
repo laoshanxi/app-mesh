@@ -1050,14 +1050,14 @@ impl AppMeshClient {
         self.run_app_async(&app, max_time, lifecycle).await
     }
 
-    /// Wait for an async run to complete, optionally printing incremental stdout.
+    /// Wait for an async run to complete, optionally invoking a callback with incremental stdout.
     ///
     /// On success, this method makes a best-effort attempt to delete the temporary run app.
     pub async fn wait_for_async_run(
         &self,
         run: &AppRun,
+        stdout_handler: OutputHandler,
         timeout: i32,
-        print_stdout: bool,
     ) -> Result<Option<i32>> {
         let mut last_output_position = 0i64;
         let start_time = std::time::Instant::now();
@@ -1069,10 +1069,10 @@ impl AppMeshClient {
 
             last_output_position = app_out.output_position;
 
-            if print_stdout && !app_out.output.is_empty() {
-                print!("{}", app_out.output);
-                use std::io::Write;
-                std::io::stdout().flush().ok();
+            if !app_out.output.is_empty() {
+                if let Some(ref handler) = stdout_handler {
+                    handler(&app_out.output, last_output_position);
+                }
             }
 
             if app_out.exit_code.is_some()

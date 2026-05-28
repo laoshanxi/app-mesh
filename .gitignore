@@ -272,7 +272,7 @@ b/
 c/
 _build
 .cache
-api/
+/api/
 docs/source/README.md
 venv
 

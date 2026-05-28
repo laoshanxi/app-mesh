@@ -109,6 +109,10 @@ pub enum Commands {
 
     /// Initialize admin password (root-only)
     Appmginit(AppmginitArgs),
+
+    /// Manage workflows
+    #[command(alias = "wf")]
+    Workflow(WorkflowArgs),
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -559,3 +563,142 @@ pub struct AppmgpwdArgs {
 
 #[derive(Parser)]
 pub struct AppmginitArgs {}
+
+// ─── Workflow Management ───────────────────────────────────────────────────
+
+#[derive(Parser)]
+pub struct WorkflowArgs {
+    #[command(subcommand)]
+    pub command: WorkflowCommand,
+}
+
+#[derive(Subcommand)]
+pub enum WorkflowCommand {
+    /// Register a workflow from a YAML file
+    Add(WorkflowAddArgs),
+
+    /// Show a workflow definition
+    Get(WorkflowGetArgs),
+
+    /// List all registered workflows
+    #[command(alias = "ls")]
+    List(WorkflowListArgs),
+
+    /// Remove a workflow
+    #[command(alias = "remove")]
+    Rm(WorkflowRmArgs),
+
+    /// Trigger a workflow run
+    Run(WorkflowRunArgs),
+
+    /// List run history for a workflow
+    Runs(WorkflowRunsArgs),
+
+    /// View workflow run flow log
+    Logs(WorkflowLogsArgs),
+
+    /// View step stdout output
+    Output(WorkflowOutputArgs),
+
+    /// Cancel a running workflow
+    Cancel(WorkflowCancelArgs),
+
+    /// Re-run a previous workflow run with the same inputs
+    Rerun(WorkflowRerunArgs),
+
+    /// Show detailed run status (per-job/step breakdown)
+    Detail(WorkflowDetailArgs),
+
+    /// Show input parameters for a workflow
+    Inputs(WorkflowInputsArgs),
+}
+
+#[derive(Parser)]
+pub struct WorkflowAddArgs {
+    /// Path to workflow YAML file
+    #[arg(short = 'f', long = "file", required = true)]
+    pub file: String,
+}
+
+#[derive(Parser)]
+pub struct WorkflowGetArgs {
+    /// Workflow name
+    #[arg(required = true)]
+    pub name: String,
+}
+
+#[derive(Parser)]
+pub struct WorkflowListArgs {}
+
+#[derive(Parser)]
+pub struct WorkflowRmArgs {
+    /// Workflow name
+    #[arg(required = true)]
+    pub name: String,
+}
+
+#[derive(Parser)]
+pub struct WorkflowRunArgs {
+    /// Workflow name
+    #[arg(required = true)]
+    pub name: String,
+
+    /// Input values (repeatable: -e key=value)
+    #[arg(short = 'e', long = "input")]
+    pub input: Vec<String>,
+
+    /// Follow output in real-time
+    #[arg(short = 'f', long = "follow")]
+    pub follow: bool,
+}
+
+#[derive(Parser)]
+pub struct WorkflowRunsArgs {
+    /// Workflow name
+    #[arg(required = true)]
+    pub name: String,
+}
+
+pub type WorkflowLogsArgs = WorkflowRunRef;
+
+#[derive(Parser)]
+pub struct WorkflowOutputArgs {
+    /// Workflow name
+    #[arg(short = 'w', long = "workflow", required = true)]
+    pub workflow: String,
+
+    /// Run ID
+    #[arg(required = true)]
+    pub run_id: String,
+
+    /// Job name
+    #[arg(short = 'j', long = "job", required = true)]
+    pub job: String,
+
+    /// Step name
+    #[arg(short = 's', long = "step", required = true)]
+    pub step: String,
+}
+
+/// Shared args for commands that operate on a specific workflow run.
+#[derive(Parser)]
+pub struct WorkflowRunRef {
+    /// Workflow name
+    #[arg(short = 'w', long = "workflow", required = true)]
+    pub workflow: String,
+
+    /// Run ID
+    #[arg(required = true)]
+    pub run_id: String,
+}
+
+pub type WorkflowCancelArgs = WorkflowRunRef;
+pub type WorkflowRerunArgs = WorkflowRunRef;
+pub type WorkflowDetailArgs = WorkflowRunRef;
+
+#[derive(Parser)]
+pub struct WorkflowInputsArgs {
+    /// Workflow name
+    #[arg(required = true)]
+    pub name: String,
+}

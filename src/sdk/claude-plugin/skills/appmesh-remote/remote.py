@@ -148,7 +148,7 @@ def do_sync(client, force=False):
 
 def do_exec(client, cmd, timeout=600, working_dir=None):
     """Execute command on remote with streaming stdout."""
-    from appmesh import App
+    from appmesh import App, print_output_handler
 
     print(f"[exec] {cmd}")
     app_dict = {"command": cmd, "shell": True}
@@ -161,7 +161,7 @@ def do_exec(client, cmd, timeout=600, working_dir=None):
     )
     print(f"[app] {run.app_name}")
     try:
-        exit_code = run.wait(print_stdout=True, timeout=timeout)
+        exit_code = run.wait(stdout_handler=print_output_handler, timeout=timeout)
     except KeyboardInterrupt:
         try:
             client.disable_app(run.app_name)

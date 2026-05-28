@@ -433,45 +433,65 @@ void HttpRequestOutputView::onProcessExitResponse(pid_t pid)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// TaskRequest - manages task request/response flow between client and server
+// TaskRequest - manages task request/response flow between clients and server.
+// Multiple clients can queue tasks concurrently; the server process fetches
+// and replies to them one at a time in FIFO order.
 ////////////////////////////////////////////////////////////////////////////////
 
 void TaskRequest::terminate()
 {
 	m_fetchTask.reset();
 	m_replyTask.reset();
-	m_taskRequest.reset();
+	m_activeTask.reset();
+	while (!m_taskQueue.empty())
+	{
+		m_taskQueue.front()->interrupt();
+		m_taskQueue.pop();
+	}
 }
 
 void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 {
 	const static char fname[] = "TaskRequest::sendTask() ";
 
-	m_taskRequest = taskRequest;
-	m_taskRequest->id(++m_taskId);
+	taskRequest->id(++m_taskId);
 
-	// Clear any pending response task
-	m_replyTask.reset();
-
-	// If fetch request already waiting, respond immediately with the task
+	// If the server is already waiting for a task, deliver immediately.
 	if (m_fetchTask)
 	{
-		LOG_INF << fname << "respond: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
-		auto task = std::static_pointer_cast<HttpRequestWithTimeout>(taskRequest);
-		m_fetchTask->reply(web::http::status_codes::OK, *task->m_body);
+		m_activeTask = taskRequest;
+		m_replyTask.reset();
+		LOG_INF << fname << "deliver to waiting fetch: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
+		m_fetchTask->reply(web::http::status_codes::OK, *taskRequest->m_body);
 		m_fetchTask.reset();
+	}
+	else
+	{
+		if (m_taskQueue.size() >= 512)
+		{
+			LOG_WAR << fname << "task queue full (" << m_taskQueue.size() << "), rejecting";
+			taskRequest->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json("task queue full, try again later"));
+			return;
+		}
+		m_taskQueue.push(taskRequest);
+		LOG_INF << fname << "queued task (queue size: " << m_taskQueue.size() << ")";
 	}
 }
 
 bool TaskRequest::deleteTask()
 {
-	bool result = false;
-	if (m_taskRequest)
+	// Cancel only the in-flight (active) task — the one currently dispatched to
+	// the server process. Queued tasks belong to other clients still blocking on
+	// their own requests and each carry their own timeout, so they are left
+	// intact: one client's cancel must not abort everyone else's pending work.
+	// Full teardown of the queue happens in terminate() on app stop/remove.
+	if (m_activeTask)
 	{
-		result = m_taskRequest->interrupt();
-		m_taskRequest.reset();
+		bool result = m_activeTask->interrupt();
+		m_activeTask.reset();
+		return result;
 	}
-	return result;
+	return false;
 }
 
 void TaskRequest::fetchTask(std::shared_ptr<void> &serverRequest)
@@ -479,20 +499,28 @@ void TaskRequest::fetchTask(std::shared_ptr<void> &serverRequest)
 	const static char fname[] = "TaskRequest::fetchTask() ";
 
 	m_fetchTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
-
-	// Clear any pending response task
 	m_replyTask.reset();
 
-	// Fetch request may arrive before or after send request
-	// Respond immediately if task is already available
-	cleanupRepliedRequest(m_taskRequest);
-	if (m_taskRequest)
+	// If there are queued tasks, deliver the next one immediately.
+	if (!m_taskQueue.empty())
 	{
-		LOG_INF << fname << "respond: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
-		m_fetchTask->reply(web::http::status_codes::OK, *m_taskRequest->m_body);
+		m_activeTask = m_taskQueue.front();
+		m_taskQueue.pop();
+		LOG_INF << fname << "deliver queued task: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
+		m_fetchTask->reply(web::http::status_codes::OK, *m_activeTask->m_body);
 		m_fetchTask.reset();
-		// Allow fetch for multiple times in case process restarted
+		return;
 	}
+
+	// Allow re-fetch of active task in case the server process restarted.
+	cleanupRepliedRequest(m_activeTask);
+	if (m_activeTask)
+	{
+		LOG_INF << fname << "re-deliver active task: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
+		m_fetchTask->reply(web::http::status_codes::OK, *m_activeTask->m_body);
+		m_fetchTask.reset();
+	}
+	// Otherwise m_fetchTask stays set — will be satisfied by the next sendTask.
 }
 
 void TaskRequest::replyTask(std::shared_ptr<void> &serverRequest)
@@ -501,22 +529,22 @@ void TaskRequest::replyTask(std::shared_ptr<void> &serverRequest)
 
 	m_replyTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
 
-	cleanupRepliedRequest(m_taskRequest);
-	if (m_taskRequest == nullptr)
+	cleanupRepliedRequest(m_activeTask);
+	if (m_activeTask == nullptr)
 	{
-		LOG_WAR << fname << "no message request from client waiting for response";
+		LOG_WAR << fname << "no client request waiting for response";
 		m_replyTask->reply(web::http::status_codes::ExpectationFailed, Utility::text2json("no message request from client waiting for response"));
 		m_replyTask.reset();
 		return;
 	}
 
-	LOG_INF << fname << "respond: " << m_taskRequest->m_method << " " << m_taskRequest->m_relative_uri;
+	LOG_INF << fname << "respond to client: " << m_activeTask->m_method << " " << m_activeTask->m_relative_uri;
 
-	// Forward reply to original client request
-	m_taskRequest->reply(web::http::status_codes::OK, *m_replyTask->m_body);
-	m_taskRequest.reset();
+	// Forward the server's reply to the original client request.
+	m_activeTask->reply(web::http::status_codes::OK, *m_replyTask->m_body);
+	m_activeTask.reset();
 
-	// Acknowledge server's reply
+	// Acknowledge server's reply.
 	m_replyTask->reply(web::http::status_codes::OK);
 	m_replyTask.reset();
 }
@@ -534,17 +562,17 @@ void TaskRequest::cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> 
 
 std::tuple<int, std::string> TaskRequest::taskStatus()
 {
-	cleanupRepliedRequest(m_taskRequest);
+	cleanupRepliedRequest(m_activeTask);
 
 	if (m_fetchTask)
 	{
-		return std::make_tuple(m_taskId.load(), "idle"); // Service is ready and waiting for a task
+		return std::make_tuple(m_taskId.load(), "idle");
 	}
 
-	if (m_taskRequest)
+	if (m_activeTask || !m_taskQueue.empty())
 	{
-		return std::make_tuple(m_taskRequest->id(), "busy"); // A task has been dispatched and is still processing
+		return std::make_tuple(m_taskId.load(), "busy");
 	}
 
-	return std::make_tuple(m_taskId.load(), ""); // No active message or task, state unavailable
+	return std::make_tuple(m_taskId.load(), "");
 }

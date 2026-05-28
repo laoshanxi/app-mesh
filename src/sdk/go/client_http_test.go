@@ -410,7 +410,7 @@ func TestAppmeshLogin(t *testing.T) {
 	runApp := Application{}
 	cmd := "ping cloudflare.com -w 3"
 	runApp.Command = &cmd
-	client.RunAppSync(runApp, true, 5, 10)
+	client.RunAppSync(runApp, 5, 10)
 	client.RunAppAsync(runApp, 5, 10)
 }
 

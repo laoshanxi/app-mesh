@@ -1,7 +1,6 @@
 // src/sdk/cpp/ClientHttp.cpp
 #include "ClientHttp.h"
 
-#include <iostream>
 #include <map>
 #include <string>
 
@@ -21,7 +20,7 @@ AppRun::AppRun(ClientHttp *client, const std::string &appName, const std::string
 {
 }
 
-std::shared_ptr<int> AppRun::wait(int timeout, bool printToStdout)
+std::shared_ptr<int> AppRun::wait(OutputHandler stdoutHandler, int timeout)
 {
     // Temporarily restore the forward_to target that was active at run creation,
     // ensuring output queries reach the correct cluster node.
@@ -30,7 +29,7 @@ std::shared_ptr<int> AppRun::wait(int timeout, bool printToStdout)
     m_client->forwardTo(m_forwardTo);
     try
     {
-        auto result = m_client->waitForAsyncRun(this, timeout, printToStdout);
+        auto result = m_client->waitForAsyncRun(this, stdoutHandler, timeout);
         m_client->forwardTo(originalForwardTo);
         return result;
     }
@@ -299,7 +298,7 @@ AppRun ClientHttp::runAppAsync(const nlohmann::json &app, int maxTime, int lifec
     return AppRun(this, appName, procUid);
 }
 
-std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool printToStdout)
+std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, OutputHandler stdoutHandler, int timeout)
 {
     int lastOutputPosition = 0;
     const time_t startTime = ACE_OS::time();
@@ -309,9 +308,9 @@ std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool 
         auto response = this->getAppOutput(run->m_appName, lastOutputPosition, 0, 10240,
                                            run->m_procUid, timeout);
 
+        if (stdoutHandler && !response.output.empty())
+            stdoutHandler(response.output, lastOutputPosition);
         lastOutputPosition = response.outputPosition;
-        if (printToStdout && !response.output.empty())
-            std::cout << response.output << std::flush;
 
         if (response.exitCode ||
             response.statusCode != web::http::status_codes::OK ||
