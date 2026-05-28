@@ -198,7 +198,7 @@ async fn sdk_12_run_async() {
     let c = authed().await;
     let app = Application::builder("_async_").command("echo async_ok").shell(true).build();
     let run = c.run_app_async(&app, 10, 30).await.unwrap();
-    let code = run.wait(10, false).await.unwrap();
+    let code = run.wait(None, 10).await.unwrap();
     assert!(code.is_some());
 }
 

@@ -39,6 +39,7 @@ jobs:
 
       - name: URL encode Coverity project name
         id: coverity-project
+        shell: bash
         run: |
           project="${COVERITY_PROJECT//\//%2F}"
           project="${project// /%20}"
@@ -46,6 +47,7 @@ jobs:
 
       - name: Lookup Coverity Build Tool hash
         id: coverity-cache-lookup
+        shell: bash
         env:
           TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
         run: |

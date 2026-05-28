@@ -86,13 +86,11 @@ App Mesh includes a built-in [Workflow Engine](https://app-mesh.readthedocs.io/e
 - **Error handling** — retry with exponential backoff, `continue-on-error`, `finally` cleanup blocks
 - **Expressions** — `${{ inputs.env }}`, `${{ steps.build.stdout }}`, `success()`, `failure()`, `always()`
 - **Remote execution** — target specific nodes by label or hostname
-- **Concurrency control** — queue or cancel-in-progress per group
-- **Crash recovery** — checkpoint-based resume after engine restart
 
 ```bash
-appc workflow add -f pipeline.yaml       # register
+appc workflow add -f pipeline.yaml        # register
 appc workflow run pipeline -e env=prod -f # run and follow output
-appc workflow runs pipeline              # view history
+appc workflow runs pipeline               # view history
 ```
 
 ## 📚 Documentation
