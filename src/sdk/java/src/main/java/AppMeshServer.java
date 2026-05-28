@@ -22,7 +22,8 @@ public class AppMeshServer {
 
     /** Create a server-side helper with the default HTTP client. */
     public AppMeshServer() {
-        this(new AppMeshClient.Builder().build());
+        // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+        this(new AppMeshClient.Builder().autoRefreshToken(false).build());
     }
 
     /** Create a server-side helper around an existing client. */

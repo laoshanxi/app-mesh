@@ -11,6 +11,7 @@ public class AppMeshServerTCP extends AppMeshServer {
     }
 
     public AppMeshServerTCP(String host, int port) {
+        // Server endpoints use APP_MESH_PROCESS_KEY; AppMeshClient Builder defaults autoRefreshToken=false.
         super(new AppMeshClientTCP(host, port));
     }
 

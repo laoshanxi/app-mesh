@@ -15,9 +15,10 @@ type AppMeshServerHttpContext struct {
 	client *AppMeshClient
 }
 
-// NewHTTPContext creates a server-side task context backed by the HTTP client.
-// Uses default HTTPS endpoint and TLS settings unless overridden via Option.
+// NewHTTPContext creates a server-side task context over HTTP. Server endpoints
+// authenticate via APP_MESH_PROCESS_KEY, not JWT, so token refresh is forced off.
 func NewHTTPContext(options Option) (*AppMeshServerHttpContext, error) {
+	options.AutoRefreshToken = false
 	httpClient, err := NewHTTPClient(options)
 	if err != nil {
 		return nil, err
@@ -25,6 +26,7 @@ func NewHTTPContext(options Option) (*AppMeshServerHttpContext, error) {
 	return &AppMeshServerHttpContext{client: httpClient}, nil
 }
 func newHTTPContextWithRequester(options Option, r Requester) (*AppMeshServerHttpContext, error) {
+	options.AutoRefreshToken = false
 	httpClient, err := newHTTPClientWithRequester(options, r)
 	if err != nil {
 		return nil, err
@@ -59,23 +61,29 @@ func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
 	query := url.Values{}
 	query.Set("process_key", key)
 
-	const retryDelay = 100 * time.Millisecond
+	const (
+		baseDelay = 100 * time.Millisecond
+		maxDelay  = 30 * time.Second
+	)
+	delay := baseDelay
 
 	for {
-		attemptStart := time.Now()
 		status, body, _, err := r.client.get(path, query, nil)
 		if err != nil {
-			log.Printf("task_fetch request failed: %v, retrying...", err)
+			log.Printf("task_fetch request failed: %v, retrying in %v...", err, delay)
 		} else if status == http.StatusOK {
 			return string(body), nil
 		} else if status == http.StatusPreconditionFailed {
 			log.Fatalf("Process key mismatch (412): this process has been superseded, exiting")
 		} else {
-			log.Printf("task_fetch failed with status %d: %s, retrying...", status, string(body))
+			log.Printf("task_fetch failed with status %d: %s, retrying in %v...", status, string(body), delay)
 		}
 
-		if remaining := retryDelay - time.Since(attemptStart); remaining > 0 {
-			time.Sleep(remaining)
+		time.Sleep(delay)
+		// Exponential backoff capped at maxDelay; reset to baseDelay on success path above.
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
 		}
 	}
 }

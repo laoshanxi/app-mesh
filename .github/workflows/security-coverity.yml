@@ -14,6 +14,7 @@ permissions: # added using https://github.com/step-security/secure-workflows
 
 env:
   APPMESH_VERSION: "2.2.1"
+  COVERITY_PROJECT: "laoshanxi/app-mesh"
 
 jobs:
   coverity-cpp-code-scan:
@@ -22,7 +23,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -36,12 +37,76 @@ jobs:
           export OPENSSL_ROOT_DIR=/usr/local/ssl
           cmake -DCMAKE_BUILD_TYPE=Debug ..
 
-      # https://github.com/vapier/coverity-scan-action
-      - name: Coverity scan
-        uses: vapier/coverity-scan-action@2068473c7bdf8c2fb984a6a40ae76ee7facd7a85 # v1
+      - name: URL encode Coverity project name
+        id: coverity-project
+        shell: bash
+        run: |
+          project="${COVERITY_PROJECT//\//%2F}"
+          project="${project// /%20}"
+          echo "project=${project}" >> "$GITHUB_OUTPUT"
+
+      - name: Lookup Coverity Build Tool hash
+        id: coverity-cache-lookup
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+        run: |
+          response_file="$(mktemp)"
+          http_code=$(curl --silent --show-error --location \
+            --output "$response_file" \
+            --write-out "%{http_code}" \
+            https://scan.coverity.com/download/cxx/linux64 \
+            --data "token=${TOKEN}&project=${{ steps.coverity-project.outputs.project }}&md5=1")
+          hash="$(tr -d '\r\n' < "$response_file")"
+
+          if [[ "$http_code" != "200" || ! "$hash" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "::error::Coverity build tool hash lookup failed (HTTP ${http_code}). Check COVERITY_SCAN_TOKEN and the Coverity project registration for ${COVERITY_PROJECT}."
+            head -c 1000 "$response_file" | sed 's/^/Coverity response: /'
+            exit 1
+          fi
+
+          echo "hash=${hash}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Coverity Build Tool
+        id: cov-build-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          project: laoshanxi%2Fapp-mesh
-          working-directory: build
-          token: ${{ secrets.COVERITY_SCAN_TOKEN }}
-          email: ${{ secrets.COVERITY_SCAN_EMAIL }}
-          version: ${{ env.APPMESH_VERSION }}
+          path: build/cov-analysis
+          key: cov-build-cxx-linux64-${{ steps.coverity-cache-lookup.outputs.hash }}
+
+      - name: Download Coverity Build Tool
+        if: steps.cov-build-cache.outputs.cache-hit != 'true'
+        working-directory: build
+        env:
+          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+        run: |
+          curl --fail --silent --show-error --location \
+            --output cov-analysis.tar.gz \
+            https://scan.coverity.com/download/cxx/linux64 \
+            --data "token=${TOKEN}&project=${{ steps.coverity-project.outputs.project }}"
+          mkdir cov-analysis
+          tar -xzf cov-analysis.tar.gz --strip 1 -C cov-analysis
+          test -x cov-analysis/bin/cov-build
+
+      - name: Build with cov-build
+        working-directory: build
+        run: |
+          export PATH="${PWD}/cov-analysis/bin:${PATH}"
+          cov-build --dir cov-int make
+
+      - name: Archive Coverity results
+        working-directory: build
+        run: tar -czf cov-int.tgz cov-int
+
+      - name: Submit Coverity results
+        working-directory: build
+        env:
+          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+        run: |
+          curl --fail --silent --show-error \
+            --form token="${TOKEN}" \
+            --form email="${{ secrets.COVERITY_SCAN_EMAIL }}" \
+            --form file=@cov-int.tgz \
+            --form version="${{ env.APPMESH_VERSION }}" \
+            --form description="coverity-scan-action ${{ github.repository }} / ${{ github.ref }}" \
+            "https://scan.coverity.com/builds?project=${{ steps.coverity-project.outputs.project }}"

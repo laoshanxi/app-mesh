@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 
 	"go.uber.org/atomic"
 )
@@ -16,9 +17,9 @@ import (
 var (
 	// Login/auth/totp_validate: apply token only when X-Set-Cookie header is present
 	authSetCookiePaths = map[string]bool{
-		"/appmesh/login":          true,
-		"/appmesh/auth":           true,
-		"/appmesh/totp/validate":  true,
+		"/appmesh/login":         true,
+		"/appmesh/auth":          true,
+		"/appmesh/totp/validate": true,
 	}
 	// Renew/setup: always apply (client already has an active session)
 	authRenewPaths = map[string]bool{
@@ -192,6 +193,7 @@ type TCPRequester struct {
 
 	forwardingHost atomic.String
 	token          atomic.String
+	demuxerMu      sync.Mutex
 	demuxer        *MessageDemuxer
 }
 
@@ -244,10 +246,12 @@ func (t *TCPRequester) Send(method, apiPath string, queries url.Values, headers 
 
 // Close closes the TCP connection.
 func (t *TCPRequester) Close() {
+	t.demuxerMu.Lock()
 	if t.demuxer != nil {
 		t.demuxer.stop()
 		t.demuxer = nil
 	}
+	t.demuxerMu.Unlock()
 	if t.TCPConnection != nil {
 		t.TCPConnection.Close()
 	}
@@ -291,20 +295,26 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
-	// Send the data over TCP.
-	if err := t.SendMessage(req.Context(), buf); err != nil {
-		return nil, err
-	}
+	// When demuxer is active, register BEFORE send so the response cannot arrive
+	// and be dropped before the channel is in place.
+	demux := t.getDemuxer()
+	if demux != nil {
+		ch := demux.registerRequest(data.UUID)
+		defer demux.unregisterRequest(data.UUID)
 
-	// When demuxer is active, use channel-based response routing.
-	if t.demuxer != nil {
-		ch := t.demuxer.registerRequest(data.UUID)
-		defer t.demuxer.unregisterRequest(data.UUID)
+		if err := t.SendMessage(req.Context(), buf); err != nil {
+			return nil, err
+		}
+
 		resp, ok := <-ch
 		if !ok || resp == nil {
 			return nil, fmt.Errorf("connection closed while waiting for response")
 		}
 		return resp, nil
+	}
+
+	if err := t.SendMessage(req.Context(), buf); err != nil {
+		return nil, err
 	}
 
 	// Receive the response directly (legacy synchronous mode).
@@ -338,6 +348,8 @@ func (h *TCPRequester) getForwardTo() string {
 }
 
 func (t *TCPRequester) enableDemuxer() {
+	t.demuxerMu.Lock()
+	defer t.demuxerMu.Unlock()
 	if t.demuxer != nil {
 		return
 	}
@@ -346,6 +358,8 @@ func (t *TCPRequester) enableDemuxer() {
 }
 
 func (t *TCPRequester) getDemuxer() *MessageDemuxer {
+	t.demuxerMu.Lock()
+	defer t.demuxerMu.Unlock()
 	return t.demuxer
 }
 
@@ -356,6 +370,7 @@ type WSSRequester struct {
 
 	forwardingHost atomic.String
 	token          atomic.String
+	demuxerMu      sync.Mutex
 	demuxer        *MessageDemuxer
 }
 
@@ -408,10 +423,12 @@ func (w *WSSRequester) Send(method string, apiPath string, queries url.Values, h
 
 // Close closes the underlying WSS connection.
 func (w *WSSRequester) Close() {
+	w.demuxerMu.Lock()
 	if w.demuxer != nil {
 		w.demuxer.stop()
 		w.demuxer = nil
 	}
+	w.demuxerMu.Unlock()
 	if w.WSSConnection != nil {
 		w.WSSConnection.Close()
 	}
@@ -455,21 +472,28 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
-	// send via WSSConnection
 	ctx := req.Context()
-	if err := w.SendMessage(ctx, buf); err != nil {
-		return nil, err
-	}
 
-	// When demuxer is active, use channel-based response routing.
-	if w.demuxer != nil {
-		ch := w.demuxer.registerRequest(data.UUID)
-		defer w.demuxer.unregisterRequest(data.UUID)
+	// When demuxer is active, register BEFORE send so the response cannot arrive
+	// and be dropped before the channel is in place.
+	demux := w.getDemuxer()
+	if demux != nil {
+		ch := demux.registerRequest(data.UUID)
+		defer demux.unregisterRequest(data.UUID)
+
+		if err := w.SendMessage(ctx, buf); err != nil {
+			return nil, err
+		}
+
 		resp, ok := <-ch
 		if !ok || resp == nil {
 			return nil, fmt.Errorf("connection closed while waiting for response")
 		}
 		return resp, nil
+	}
+
+	if err := w.SendMessage(ctx, buf); err != nil {
+		return nil, err
 	}
 
 	respData, err := w.ReadMessage()
@@ -485,6 +509,8 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 }
 
 func (w *WSSRequester) enableDemuxer() {
+	w.demuxerMu.Lock()
+	defer w.demuxerMu.Unlock()
 	if w.demuxer != nil {
 		return
 	}
@@ -493,6 +519,8 @@ func (w *WSSRequester) enableDemuxer() {
 }
 
 func (w *WSSRequester) getDemuxer() *MessageDemuxer {
+	w.demuxerMu.Lock()
+	defer w.demuxerMu.Unlock()
 	return w.demuxer
 }
 

@@ -188,7 +188,7 @@ public class AppMeshClientTest {
         asyncApp.put("command", "echo hello_async");
         AppMeshClient.AppRun run = client.runAppAsync(asyncApp, 10, 10);
         assertNotNull(run, "runAppAsync should return AppRun");
-        Integer exitCode = run.wait(true, 15);
+        Integer exitCode = run.wait(AppMeshClient.PRINT_OUTPUT_HANDLER, 15);
         LOGGER.info("Async run exit code: " + exitCode);
     }
 

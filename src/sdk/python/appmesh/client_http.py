@@ -1063,6 +1063,8 @@ class AppMeshClient:
         Returns:
             str: The HTTP response body returned by the remote application/service.
         """
+        if timeout <= 0:
+            timeout = 300
         resp = self._request_http(
             AppMeshClient._Method.POST,
             path=f"/appmesh/app/{app_name}/task",
@@ -1169,7 +1171,7 @@ class AppMeshClient:
                 # failed
                 break
 
-            if timeout > 0 and (datetime.now() - start).seconds > timeout:
+            if timeout > 0 and (datetime.now() - start).total_seconds() > timeout:
                 # timeout
                 break
 

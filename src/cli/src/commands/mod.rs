@@ -5,3 +5,4 @@ pub mod file;
 pub mod run;
 pub mod system;
 pub mod user;
+pub mod workflow;

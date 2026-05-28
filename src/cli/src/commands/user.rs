@@ -59,12 +59,6 @@ pub async fn user(cli: &Cli, args: &UserArgs) -> Result<i32> {
             .unwrap_or("unknown")
             .to_string();
 
-        // Prompt for password if not in JSON
-        if user_data.get("password").is_none() || user_data["password"].is_null() {
-            let pwd = password::prompt_password(&format!("Password for user '{}': ", name))?;
-            user_data["password"] = serde_json::Value::String(pwd);
-        }
-
         if !args.force
             && !confirm::confirm(&format!(
                 "Confirm to register user <{}> ? [y/n]:",
@@ -72,6 +66,13 @@ pub async fn user(cli: &Cli, args: &UserArgs) -> Result<i32> {
             ))
         {
             return Ok(0);
+        }
+
+        // Prompt for the password if not in JSON. The server reads the password
+        // from the "key" field (JSON_KEY_USER_key), not "password".
+        if user_data.get("key").is_none() || user_data["key"].is_null() {
+            let pwd = password::prompt_password(&format!("Password for user '{}': ", name))?;
+            user_data["key"] = serde_json::Value::String(pwd);
         }
 
         client

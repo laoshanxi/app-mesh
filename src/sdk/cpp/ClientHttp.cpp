@@ -1,7 +1,6 @@
 // src/sdk/cpp/ClientHttp.cpp
 #include "ClientHttp.h"
 
-#include <iostream>
 #include <map>
 #include <string>
 
@@ -21,7 +20,7 @@ AppRun::AppRun(ClientHttp *client, const std::string &appName, const std::string
 {
 }
 
-std::shared_ptr<int> AppRun::wait(int timeout, bool printToStdout)
+std::shared_ptr<int> AppRun::wait(OutputHandler stdoutHandler, int timeout)
 {
     // Temporarily restore the forward_to target that was active at run creation,
     // ensuring output queries reach the correct cluster node.
@@ -30,7 +29,7 @@ std::shared_ptr<int> AppRun::wait(int timeout, bool printToStdout)
     m_client->forwardTo(m_forwardTo);
     try
     {
-        auto result = m_client->waitForAsyncRun(this, timeout, printToStdout);
+        auto result = m_client->waitForAsyncRun(this, stdoutHandler, timeout);
         m_client->forwardTo(originalForwardTo);
         return result;
     }
@@ -272,8 +271,8 @@ std::tuple<std::shared_ptr<int>, std::string> ClientHttp::runAppSync(const nlohm
                                                                      int lifecycle)
 {
     std::map<std::string, std::string> query = {
-        {HTTP_QUERY_KEY_timeout, std::to_string(std::abs(maxTime))},
-        {HTTP_QUERY_KEY_lifecycle, std::to_string(std::abs(lifecycle))}};
+        {HTTP_QUERY_KEY_timeout, std::to_string(maxTime)},
+        {HTTP_QUERY_KEY_lifecycle, std::to_string(lifecycle)}};
 
     auto response = requestHttp(true, web::http::methods::POST, "/appmesh/app/syncrun", &app, {}, query);
 
@@ -299,7 +298,7 @@ AppRun ClientHttp::runAppAsync(const nlohmann::json &app, int maxTime, int lifec
     return AppRun(this, appName, procUid);
 }
 
-std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool printToStdout)
+std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, OutputHandler stdoutHandler, int timeout)
 {
     int lastOutputPosition = 0;
     const time_t startTime = ACE_OS::time();
@@ -309,12 +308,19 @@ std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool 
         auto response = this->getAppOutput(run->m_appName, lastOutputPosition, 0, 10240,
                                            run->m_procUid, timeout);
 
+        if (stdoutHandler && !response.output.empty())
+            stdoutHandler(response.output, lastOutputPosition);
         lastOutputPosition = response.outputPosition;
-        if (printToStdout && !response.output.empty())
-            std::cout << response.output << std::flush;
 
-        if (response.exitCode ||
-            response.statusCode != web::http::status_codes::OK ||
+        // Real completion: clean up the temp run app (best-effort).
+        if (response.exitCode)
+        {
+            try { this->deleteApp(run->m_appName); } catch (...) {}
+            return response.exitCode;
+        }
+
+        // Transport error or timeout: the app may still be running, so do not delete it.
+        if (response.statusCode != web::http::status_codes::OK ||
             (timeout > 0 && ACE_OS::time() - startTime >= timeout))
         {
             return response.exitCode;
@@ -324,6 +330,8 @@ std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, int timeout, bool 
 
 std::string ClientHttp::runTask(const std::string &app, const nlohmann::json &data, int timeout)
 {
+    if (timeout <= 0)
+        timeout = 300;
     const std::string restPath = "/appmesh/app/" + app + "/task";
     std::map<std::string, std::string> query = {{"timeout", std::to_string(timeout)}};
 

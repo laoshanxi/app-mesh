@@ -4,6 +4,7 @@
 #include "../../common/HttpHeaderMap.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -15,15 +16,31 @@ class Response;
 
 struct FileUploadInfo
 {
-	FileUploadInfo(const std::string &uploadFilePath, const HttpHeaderMap &requestHeaders)
-		: m_filePath(uploadFilePath), m_requestHeaders(requestHeaders),
-		  m_file(uploadFilePath, std::ios::binary | std::ios::out | std::ios::trunc)
+	// Stream bytes into a temp file in the SAME directory as the destination, then
+	// atomically rename it into place on success (same directory => same filesystem,
+	// so rename is atomic). The destination only ever appears as a complete file.
+	FileUploadInfo(const std::string &uploadFilePath, const std::string &tempFilePath, const HttpHeaderMap &requestHeaders)
+		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders),
+		  m_file(tempFilePath, std::ios::binary | std::ios::out | std::ios::trunc)
 	{
 	}
 
+	// Unless the upload committed (was renamed into place), drop the partial temp file.
+	// Covers write errors, client disconnects, and aborted transfers, so the destination
+	// never holds a partial/corrupt file and a retry is never blocked by a leftover.
+	~FileUploadInfo()
+	{
+		if (m_file.is_open())
+			m_file.close();
+		if (!m_committed && !m_tempPath.empty())
+			std::remove(m_tempPath.c_str());
+	}
+
 	std::string m_filePath;
+	std::string m_tempPath;
 	HttpHeaderMap m_requestHeaders;
 	std::ofstream m_file;
+	bool m_committed = false;
 };
 
 /// Manages file upload/download state for a single connection.

@@ -710,7 +710,6 @@ void Application::sendTask(std::shared_ptr<void> asyncHttpRequest)
 		throw std::invalid_argument("No process running");
 	}
 
-	// TODO: if previous one not finished, discard current? restart process? pending in queue?
 	auto taskRequest = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
 	m_task.sendTask(taskRequest);
 }
@@ -1015,14 +1014,20 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		result[JSON_KEY_APP_env] = std::move(envs);
 	}
 
-	if (m_secEnvMap.size())
+	if (m_secEnvMap.size() && !returnRuntimeInfo)
 	{
-		nlohmann::json envs = nlohmann::json::object();
+		// Only include sec_env when saving to disk (not in API responses).
 		auto owner = getOwner();
+		if (!owner)
+		{
+			// Refuse to persist sec_env without an owner — we would have to write
+			// plaintext to disk, which silently leaks secrets.
+			throw std::invalid_argument("cannot persist sec_env for application <" + m_name + "> without an owner");
+		}
+		nlohmann::json envs = nlohmann::json::object();
 		for (const auto &pair : m_secEnvMap)
 		{
-			auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
-			envs[pair.first] = std::move(encryptedEnvValue);
+			envs[pair.first] = owner->encrypt(pair.second);
 		}
 		result[JSON_KEY_APP_sec_env] = std::move(envs);
 	}
@@ -1087,8 +1092,10 @@ void Application::save()
 	if (!this->isPersistAble())
 		return;
 
-	// Serialise concurrent save() on the same app — two worker threads writing
-	// the same yaml race at the OS level (truncate + write are not atomic).
+	// Serialise concurrent save() on the same app. We intentionally write
+	// in place (truncate+write) rather than via temp+rename so deployments
+	// that bind-mount a single yaml file into the container keep working:
+	// rename cannot replace a bind-mounted file (kernel pins the inode).
 	std::lock_guard<std::mutex> guard(m_saveMutex);
 	const auto appPath = getYamlPath();
 	LOG_DBG << fname << appPath;

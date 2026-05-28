@@ -55,8 +55,12 @@ class AppMeshError extends Error {
 }
 
 // Default output handler
-const defaultOutputHandler = (output) => {
-  console.log(output);
+const defaultOutputHandler = (output, position) => {
+  if (ENV.isNode) {
+    process.stdout.write(output);
+  } else {
+    console.log(output);
+  }
 };
 
 /**
@@ -644,14 +648,14 @@ class AppMeshClient {
   }
 
   /**
-   * Run an app synchronously and stream the returned stdout body to `outputHandler`.
+   * Run an app synchronously and stream the returned stdout body to `stdoutHandler`.
    * @param {Object} app - App configuration
-   * @param {Function} [outputHandler=defaultOutputHandler] - Output handler
+   * @param {Function} [stdoutHandler=defaultOutputHandler] - Stdout handler callback(data, position)
    * @param {number|string} [maxTime] - Max runtime
    * @param {number|string} [lifecycle] - Lifecycle time
    * @returns {Promise<number|null>} Exit code parsed from `X-Exit-Code`, or `null` when absent
    */
-  async run_app_sync(app, outputHandler = defaultOutputHandler, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async run_app_sync(app, stdoutHandler = defaultOutputHandler, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
       timeout: parseDuration(maxTime),
       lifecycle: parseDuration(lifecycle)
@@ -661,15 +665,15 @@ class AppMeshClient {
     let exitCode = null;
 
     if (response.status === 200) {
-      if (outputHandler) {
-        outputHandler(response.data);
+      if (stdoutHandler) {
+        stdoutHandler(response.data, 0);
       }
       // axios response header use lower case
       if (response.headers["X-Exit-Code".toLowerCase()]) {
         exitCode = parseInt(response.headers["X-Exit-Code".toLowerCase()], 10);
       }
-    } else if (outputHandler) {
-      outputHandler(response.data);
+    } else if (stdoutHandler) {
+      stdoutHandler(response.data, 0);
     }
 
     return exitCode;
@@ -695,12 +699,12 @@ class AppMeshClient {
   /**
    * Wait for an async app to complete, optionally streaming incremental output.
    * @param {AppRun} run - AppRun object
-   * @param {Function} [outputHandler] - Output handler
+   * @param {Function} [stdoutHandler=defaultOutputHandler] - Stdout handler callback(data, position)
    * @param {number} [timeout=0] - Max wait time
    * @returns {Promise<number|null>} Exit code, or `null` on timeout/polling failure. On success
    * the SDK also attempts to delete the temporary run app.
    */
-  async wait_for_async_run(run, outputHandler = defaultOutputHandler, timeout = 0) {
+  async wait_for_async_run(run, stdoutHandler = defaultOutputHandler, timeout = 0) {
     if (run) {
       let lastOutputPosition = 0;
       const start = new Date();
@@ -709,8 +713,8 @@ class AppMeshClient {
       while (run.procUid.length > 0) {
         try {
           const appOut = await this.get_app_output(run.appName, lastOutputPosition, 0, 20480, run.procUid, interval);
-          if (appOut.output && outputHandler) {
-            outputHandler(appOut.output);
+          if (appOut.output && stdoutHandler) {
+            stdoutHandler(appOut.output, lastOutputPosition);
           }
 
           if (appOut.outPosition !== null) {
@@ -751,6 +755,9 @@ class AppMeshClient {
    * @returns {Promise<string>} Response from app
    */
   async run_task(appName, data, timeout = 300) {
+    if (timeout <= 0) {
+      timeout = 300;
+    }
     const response = await this._request("post", `/appmesh/app/${appName}/task`, data, {
       params: { timeout: timeout.toString() }
     });
@@ -1341,13 +1348,13 @@ class AppRun {
 
   /**
    * Wait for an async run to finish while restoring the saved forwarding host.
-   * @param {function} [outputHandler=defaultOutputHandler] - Print remote stdout function
+   * @param {function} [stdoutHandler=defaultOutputHandler] - Stdout handler callback(data, position)
    * @param {number} [timeout=0] - Wait max timeout seconds and return if not finished, 0 means wait until finished
    * @returns {Promise<number|null>} Return exit code if process finished, return null for timeout or exception
    */
-  async wait(outputHandler = defaultOutputHandler, timeout = 0) {
+  async wait(stdoutHandler = defaultOutputHandler, timeout = 0) {
     return this.withForwardingHost(() =>
-      this._client.wait_for_async_run(this, outputHandler, timeout)
+      this._client.wait_for_async_run(this, stdoutHandler, timeout)
     );
   }
 }

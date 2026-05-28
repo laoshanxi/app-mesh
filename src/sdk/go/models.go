@@ -1,6 +1,7 @@
 package appmesh
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -66,7 +67,7 @@ type Application struct {
 	HealthCheckCMD *string `json:"health_check_cmd"`
 	Status         int     `json:"status"`
 	StdoutCacheNum *int    `json:"stdout_cache_num"`
-	Metadata       *string `json:"metadata"`
+	Metadata       *json.RawMessage `json:"metadata,omitempty"`
 
 	// Time
 	StartTime     *int64 `json:"start_time"`
@@ -169,6 +170,15 @@ type Labels = map[string]string
 
 // Headers represents a map of HTTP headers.
 type Headers = map[string]string
+
+// OutputHandler is a callback for incremental stdout output.
+// data is the text chunk; position is the byte offset in the full output stream.
+type OutputHandler func(data string, position int64)
+
+// PrintOutputHandler is a convenience OutputHandler that prints data to stdout.
+func PrintOutputHandler(data string, position int64) {
+	fmt.Print(data)
+}
 
 // SSLConfig represents the SSL configuration.
 type SSLConfig struct {
