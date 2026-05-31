@@ -38,7 +38,11 @@ import unittest
 current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(current_directory))
 
-from appmesh import AppMeshClient
+from appmesh import AppMeshClientWSS
+
+# WSS transport carries run_task/REST calls over a single persistent websocket (msgpack),
+# not urllib3 — so ssl_verify=False emits no per-request InsecureRequestWarning noise.
+WSS_ADDRESS = ("127.0.0.1", 6058)
 
 DEFAULT_CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
 WF_APP = "workflow"           # engine App name (default install)
@@ -52,8 +56,15 @@ class TestWorkflowEngine(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.client = AppMeshClient(base_url="https://127.0.0.1:6060", ssl_verify=False)
+        cls.client = AppMeshClientWSS(wss_address=WSS_ADDRESS, ssl_verify=False)
         cls.client.login("admin", DEFAULT_CRED)
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.client.close()
+        except Exception:
+            pass
 
     def setUp(self):
         """Health probe: fail fast if the engine session is unhealthy, so a dead session
@@ -829,7 +840,6 @@ jobs:
 # already hold `app-run-task`, else the suite skips. By default it provisions two
 # throwaway non-admin users and removes them afterwards.
 
-BASE_URL = "https://127.0.0.1:6060"
 USER_PWD = os.environ.get("APPMESH_TEST_USER_PWD") or DEFAULT_CRED  # reused, never generated
 USER1 = os.environ.get("APPMESH_TEST_USER1", "wf-alice")
 USER2 = os.environ.get("APPMESH_TEST_USER2", "wf-bob")
@@ -865,7 +875,7 @@ class TestWorkflowAuthz(unittest.TestCase):
     def setUpClass(cls):
         cls._created = []        # only users this run created — never touch pre-existing ones
         cls._made_role = False
-        cls.admin = AppMeshClient(base_url=BASE_URL, ssl_verify=False)
+        cls.admin = AppMeshClientWSS(wss_address=WSS_ADDRESS, ssl_verify=False)
         cls.admin.login("admin", DEFAULT_CRED)
 
         # Prereq 1: is the deployed engine token-aware? An old engine accepts a
@@ -906,7 +916,13 @@ class TestWorkflowAuthz(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls._cleanup()
+        cls._cleanup()  # needs cls.admin alive — close the websockets after
+        for c in (getattr(cls, "admin", None), getattr(cls, "alice", None), getattr(cls, "bob", None)):
+            if c is not None:
+                try:
+                    c.close()
+                except Exception:
+                    pass
 
     @classmethod
     def _make_user(cls, name, pwd):
@@ -915,7 +931,7 @@ class TestWorkflowAuthz(unittest.TestCase):
         if name not in (cls.admin.list_users() or {}):
             cls.admin.add_user(name, {"name": name, "key": pwd, "roles": [WF_RUNNER_ROLE], "group": "user"})
             cls._created.append(name)
-        c = AppMeshClient(base_url=BASE_URL, ssl_verify=False)
+        c = AppMeshClientWSS(wss_address=WSS_ADDRESS, ssl_verify=False)
         c.login(name, pwd)
         return c
 
