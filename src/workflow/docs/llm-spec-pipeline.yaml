@@ -1,0 +1,210 @@
+# LLM spec-driven development pipeline (App Mesh workflow-engine)
+#
+# Layering (see the discussion that produced this):
+#   - workflow-engine  = orchestration layer  (this DAG: sequencing, retries, fan-out, gates)
+#   - OpenSpec         = artifact layer        (specs/changes/<id>/ committed to git, the contract between stages)
+#   - claude/codex (+gstack/superpowers skills) = agent-behavior layer (runs INSIDE a step)
+#
+# Notes:
+#   * Steps run as the *triggering caller* (Phase 2), in the workflow workdir. cd into the repo first.
+#   * The engine DAG is ACYCLIC — there is no literal "loop back". Bounded iteration is expressed via
+#     `retry` (re-run a step until its acceptance gate passes) and a `if: failure()` rework job.
+#   * LLM/API keys come from the App's sec_env (encrypted at rest), exposed to steps as env vars.
+#   * A step's stdout is consumable downstream via ${{ steps.X.stdout }} / ${{ jobs.J.steps.X.stdout }}.
+
+name: llm-spec-pipeline
+
+on:
+  manual:
+    inputs:
+      feature:
+        type: string
+        required: true            # the requirement (text, or path to a requirements file in the repo)
+      repo_url:
+        type: string
+        required: true
+      base_branch:
+        type: string
+        default: main
+
+env:
+  WORKDIR: "./checkout"           # repo checkout lives in the run's workdir (per-run isolated)
+  MODEL: "claude-opus-4-8"
+  OPENSPEC: "openspec"            # spec CLI on PATH
+
+jobs:
+
+  # ---- 0. Prepare an isolated checkout of the target repo ----
+  checkout:
+    steps:
+      - name: clone
+        command: |
+          set -e
+          rm -rf "$WORKDIR" && git clone "${{ inputs.repo_url }}" "$WORKDIR"
+          cd "$WORKDIR" && git checkout -b "wf/${{ workflow.run_id }}" "${{ inputs.base_branch }}"
+          echo "checked out ${{ inputs.repo_url }} @ ${{ inputs.base_branch }}"
+        timeout: 120
+
+  # ---- 1. Clarify requirements into a normalized brief ----
+  clarify:
+    needs: [checkout]
+    steps:
+      - name: brief
+        command: |
+          set -e
+          cd "$WORKDIR"
+          claude -p --model "$MODEL" "Read this requirement and produce a concise, testable requirements brief
+                  with explicit acceptance criteria. Write it to requirements.md.
+                  Requirement: ${{ inputs.feature }}"
+          test -s requirements.md && echo "brief written"
+        timeout: 600
+
+  # ---- 2. OpenSpec change proposal — the durable artifact the rest of the pipeline consumes ----
+  spec:
+    needs: [clarify]
+    steps:
+      - name: propose
+        # The change id is emitted on stdout so later jobs can reference the artifact path.
+        command: |
+          set -e
+          cd "$WORKDIR"
+          CHANGE="$($OPENSPEC change new --from requirements.md --print-id)"
+          claude -p --model "$MODEL" "Flesh out the OpenSpec change '$CHANGE' from requirements.md: spec deltas,
+                  tasks, and tests. Keep it as the source-of-truth proposal."
+          $OPENSPEC validate "$CHANGE"
+          echo "$CHANGE"
+        retry:                    # bounded "until the proposal validates" loop
+          max: 2
+          backoff: fixed
+          interval: 3
+        timeout: 600
+
+  # ---- 3. Parallel review gates (fan-out) — gstack-style specialist reviewers ----
+  #        Each reviewer FAILS the job (non-zero exit) if it rejects the spec.
+  review_eng:
+    needs: [spec]
+    steps:
+      - name: review
+        command: |
+          cd "$WORKDIR"
+          claude -p --model "$MODEL" "ENG review of OpenSpec change ${{ jobs.spec.steps.propose.stdout }}:
+                  feasibility, correctness, test coverage. Print VERDICT=APPROVE or VERDICT=REJECT
+                  with reasons to review-eng.md. Exit 1 if REJECT."
+        timeout: 400
+  review_design:
+    needs: [spec]
+    steps:
+      - name: review
+        command: |
+          cd "$WORKDIR"
+          claude -p --model "$MODEL" "DESIGN/UX review of change ${{ jobs.spec.steps.propose.stdout }}.
+                  Write review-design.md. Exit 1 if REJECT."
+        timeout: 400
+  review_devex:
+    needs: [spec]
+    steps:
+      - name: review
+        command: |
+          cd "$WORKDIR"
+          claude -p --model "$MODEL" "DEVEX/API-ergonomics review of change ${{ jobs.spec.steps.propose.stdout }}.
+                  Write review-devex.md. Exit 1 if REJECT."
+        timeout: 400
+
+  # ---- 3b. Rework path: runs ONLY if any reviewer rejected (escalation, one bounded pass) ----
+  rework_spec:
+    needs: [review_eng, review_design, review_devex]
+    if: "failure()"
+    steps:
+      - name: revise
+        command: |
+          cd "$WORKDIR"
+          claude -p --model "$MODEL" "Revise OpenSpec change ${{ jobs.spec.steps.propose.stdout }} to address ALL
+                  rejections in review-eng.md / review-design.md / review-devex.md, then re-validate."
+          $OPENSPEC validate ${{ jobs.spec.steps.propose.stdout }}
+        timeout: 600
+    # NOTE: a true multi-round loop is not expressible in an acyclic DAG. For more rounds,
+    # either re-trigger the workflow (rerun) or run the review/revise loop INSIDE this step.
+
+  # ---- 4. Plan — only when all reviews passed (default: skipped if any `needs` failed) ----
+  plan:
+    needs: [review_eng, review_design, review_devex]
+    steps:
+      - name: plan
+        command: |
+          cd "$WORKDIR"
+          claude -p --model "$MODEL" "Produce an implementation plan for the APPROVED change
+                  ${{ jobs.spec.steps.propose.stdout }}. Write plan.md."
+        timeout: 400
+
+  # ---- 5. Implement — agent does TDD against the spec; retry = bounded "until acceptance gate passes" ----
+  implement:
+    needs: [plan]
+    steps:
+      - name: code
+        command: |
+          set -e
+          cd "$WORKDIR"
+          # Run the agent (superpowers TDD discipline can live here), then a fast acceptance gate.
+          # Non-zero exit triggers `retry`, so the step re-runs on the partially-built worktree.
+          claude -p --model "$MODEL" "Implement the approved change ${{ jobs.spec.steps.propose.stdout }} per plan.md,
+                  test-first. Make the project build."
+          ./scripts/build.sh
+        retry:
+          max: 3
+          backoff: exponential
+          interval: 5
+        timeout: 1800
+
+  # ---- 6. Test gate — the repo's own suite (a plain command step) ----
+  test:
+    needs: [implement]
+    steps:
+      - name: suite
+        command: |
+          set -e
+          cd "$WORKDIR"
+          ./scripts/test.sh
+        timeout: 1800
+
+  # ---- 7. Code review gate ----
+  code_review:
+    needs: [test]
+    steps:
+      - name: review
+        command: |
+          cd "$WORKDIR"
+          claude -p --model "$MODEL" "Pre-landing code review of the diff vs ${{ inputs.base_branch }}.
+                  Block (exit 1) on correctness/security issues; otherwise approve."
+        timeout: 600
+
+  # ---- 8. Archive the change into source-of-truth specs + open the PR ----
+  ship:
+    needs: [code_review]
+    steps:
+      - name: archive
+        command: |
+          set -e
+          cd "$WORKDIR"
+          $OPENSPEC archive ${{ jobs.spec.steps.propose.stdout }}   # fold proposal into the living spec
+          git add -A && git commit -m "feat: ${{ inputs.feature }} (${{ jobs.spec.steps.propose.stdout }})"
+          git push origin "wf/${{ workflow.run_id }}"
+        timeout: 300
+      - name: open_pr
+        command: |
+          cd "$WORKDIR"
+          gh pr create --base "${{ inputs.base_branch }}" --fill || echo "PR step optional"
+        continue-on-error: true
+
+  # ---- 9. Always-run finalizer: status summary, regardless of outcome ----
+  finalize:
+    needs: [ship]
+    if: "always()"
+    steps:
+      - name: summary
+        command: |
+          echo "run=${{ workflow.run_id }} change=${{ jobs.spec.steps.propose.stdout }}"
+          echo "spec=${{ jobs.spec.status }} reviews=eng:${{ jobs.review_eng.status }},design:${{ jobs.review_design.status }},devex:${{ jobs.review_devex.status }}"
+          echo "implement=${{ jobs.implement.status }} test=${{ jobs.test.status }} ship=${{ jobs.ship.status }}"
+    finally:
+      - name: cleanup
+        command: 'echo "pipeline finished job=${{ job.status }}"'

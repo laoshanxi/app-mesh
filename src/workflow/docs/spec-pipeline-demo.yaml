@@ -1,0 +1,154 @@
+# Runnable demo of the LLM spec-driven pipeline (App Mesh workflow-engine).
+#
+# This mirrors llm-spec-pipeline.yaml job-for-job, but every step uses only plain shell
+# so it runs end-to-end on any daemon (no claude/openspec/network needed). Swap the shell
+# bodies for real `claude`/`openspec`/build/test commands to make it production.
+#
+# It exercises every engine feature the real pipeline relies on:
+#   - cross-job artifacts on a shared, run-scoped dir ($RUNDIR/<run_id>)
+#   - stdout passing: the change-id flows via ${{ jobs.spec.steps.propose.stdout }}
+#   - parallel review fan-out (review_eng/design/devex)
+#   - dependency-failure gating: a REJECT skips plan/implement/... and triggers rework
+#   - retry-as-bounded-loop: `implement` fails attempt 1, passes attempt 2
+#   - if: failure() (rework_spec) and if: always() (finalize) + step-level finally
+#
+# Try it:
+#   default            -> all reviews APPROVE, pipeline goes green
+#   demo_reject="true" -> review_eng REJECTs -> plan/.../ship skipped, rework_spec runs
+
+name: spec-pipeline-demo
+
+on:
+  manual:
+    inputs:
+      feature:
+        type: string
+        default: "Add a /healthz endpoint returning 200 OK"
+      demo_reject:
+        type: string
+        default: "false"   # set "true" to exercise the review-rejection -> rework path
+
+env:
+  RUNDIR: "/tmp/specdemo"   # per-run subdir uses ${{ workflow.run_id }} so jobs share files
+
+jobs:
+
+  checkout:
+    steps:
+      - name: init
+        command: |
+          set -e
+          D="$RUNDIR/${{ workflow.run_id }}"; mkdir -p "$D"
+          echo "${{ inputs.feature }}" > "$D/requirement.txt"
+          echo "workspace ready: $D"
+
+  clarify:
+    needs: [checkout]
+    steps:
+      - name: brief
+        command: |
+          set -e
+          D="$RUNDIR/${{ workflow.run_id }}"
+          printf 'Requirement: %s\nAcceptance:\n- returns 200\n- documented\n' "$(cat "$D/requirement.txt")" > "$D/requirements.md"
+          echo "brief written"
+
+  spec:
+    needs: [clarify]
+    steps:
+      - name: propose
+        # The change-id is the ONLY thing printed, so downstream ${{ ...propose.stdout }} is clean.
+        command: |
+          set -e
+          D="$RUNDIR/${{ workflow.run_id }}"
+          CHANGE="change-$(date +%s)"
+          mkdir -p "$D/specs/changes/$CHANGE"
+          cp "$D/requirements.md" "$D/specs/changes/$CHANGE/proposal.md"
+          echo "$CHANGE"
+        retry: { max: 2, backoff: fixed, interval: 1 }
+
+  review_eng:
+    needs: [spec]
+    steps:
+      - name: review
+        command: |
+          D="$RUNDIR/${{ workflow.run_id }}"
+          echo "ENG reviewing ${{ jobs.spec.steps.propose.stdout }}"
+          if [ "${{ inputs.demo_reject }}" = "true" ]; then echo "VERDICT=REJECT" > "$D/review-eng.md"; exit 1; fi
+          echo "VERDICT=APPROVE" > "$D/review-eng.md"
+  review_design:
+    needs: [spec]
+    steps:
+      - name: review
+        command: |
+          D="$RUNDIR/${{ workflow.run_id }}"
+          echo "VERDICT=APPROVE" > "$D/review-design.md"; echo "DESIGN approve"
+  review_devex:
+    needs: [spec]
+    steps:
+      - name: review
+        command: |
+          D="$RUNDIR/${{ workflow.run_id }}"
+          echo "VERDICT=APPROVE" > "$D/review-devex.md"; echo "DEVEX approve"
+
+  rework_spec:
+    needs: [review_eng, review_design, review_devex]
+    if: "failure()"
+    steps:
+      - name: revise
+        command: 'echo "reworking ${{ jobs.spec.steps.propose.stdout }} to address review rejections"'
+
+  plan:
+    needs: [review_eng, review_design, review_devex]
+    steps:
+      - name: plan
+        command: |
+          D="$RUNDIR/${{ workflow.run_id }}"
+          echo "plan for ${{ jobs.spec.steps.propose.stdout }}" > "$D/plan.md"
+          echo "planned"
+
+  implement:
+    needs: [plan]
+    steps:
+      - name: code
+        # Demonstrates retry-as-bounded-loop: attempt 1 "fails the acceptance gate", attempt 2 passes.
+        command: |
+          set -e
+          D="$RUNDIR/${{ workflow.run_id }}"; M="$D/attempt"
+          n=$(cat "$M" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$M"
+          echo "implement attempt $n for ${{ jobs.spec.steps.propose.stdout }}"
+          [ "$n" -ge 2 ]   # non-zero on attempt 1 -> retry re-runs the step
+        retry: { max: 3, backoff: fixed, interval: 1 }
+
+  test:
+    needs: [implement]
+    steps:
+      - name: suite
+        command: 'echo "all tests pass"'
+
+  code_review:
+    needs: [test]
+    steps:
+      - name: review
+        command: 'echo "code review APPROVE"'
+
+  ship:
+    needs: [code_review]
+    steps:
+      - name: archive
+        command: |
+          D="$RUNDIR/${{ workflow.run_id }}"
+          echo "archived ${{ jobs.spec.steps.propose.stdout }} into living spec; artifacts:"
+          ls "$D/specs/changes"
+
+  finalize:
+    needs: [ship]
+    if: "always()"
+    steps:
+      - name: summary
+        command: |
+          echo "run=${{ workflow.run_id }} change=${{ jobs.spec.steps.propose.stdout }}"
+          echo "reviews eng=${{ jobs.review_eng.status }} design=${{ jobs.review_design.status }} devex=${{ jobs.review_devex.status }}"
+          echo "implement=${{ jobs.implement.status }} ship=${{ jobs.ship.status }}"
+    finally:
+      - name: cleanup
+        command: 'echo "pipeline finished: job=${{ job.status }}"'

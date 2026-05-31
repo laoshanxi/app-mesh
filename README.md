@@ -93,6 +93,8 @@ appc workflow run pipeline -e env=prod -f # run and follow output
 appc workflow runs pipeline               # view history
 ```
 
+> 📄 **LLM spec-driven**  — [`development pipeline`](docs/source/spec-pipeline.md).
+
 ## 📚 Documentation
 
 - [Read the Docs](https://app-mesh.readthedocs.io/)

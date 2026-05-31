@@ -27,6 +27,7 @@ Welcome to AppMesh's documentation!
    RemoteTask.md
    EventSubscription.md
    Workflow.md
+   spec-pipeline.md
 
 
 .. toctree::
