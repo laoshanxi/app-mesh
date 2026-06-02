@@ -3,7 +3,6 @@
 
 #include "process.h"
 
-#include <queue>
 #include <unordered_map>
 #include <vector>
 
@@ -251,10 +250,10 @@ namespace os
 		LARGE_INTEGER OtherTransferCount;
 	} SYSTEM_PROCESS_INFORMATION, *PSYSTEM_PROCESS_INFORMATION;
 
-	std::unordered_set<pid_t> child_pids(pid_t rootPid)
+	std::list<Process> processSnapshot(pid_t rootPid)
 	{
-		const static char fname[] = "proc::child_pids() ";
-		std::unordered_set<pid_t> result;
+		const static char fname[] = "proc::processSnapshot() ";
+		std::list<Process> result;
 
 		HMODULE hNtdll = GetNtdll();
 		using _NtQuerySystemInformation = NTSTATUS(NTAPI *)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
@@ -266,9 +265,7 @@ namespace os
 		}
 
 		ULONG bufferSize = 256 * 1024;
-		std::vector<BYTE> buffer;
-		buffer.resize(bufferSize);
-
+		std::vector<BYTE> buffer(bufferSize);
 		NTSTATUS ntStatus;
 		ULONG needed = 0;
 		while ((ntStatus = NtQuerySystemInformation(SystemProcessInformation, buffer.data(), bufferSize, &needed)) == STATUS_INFO_LENGTH_MISMATCH)
@@ -276,14 +273,27 @@ namespace os
 			bufferSize = needed + 16 * 1024;
 			buffer.resize(bufferSize);
 		}
-
 		if (ntStatus < 0)
 		{
 			LOG_ERR << fname << "NtQuerySystemInformation failed: " << last_error_msg();
 			return result;
 		}
 
-		std::unordered_map<DWORD, std::vector<DWORD>> tree;
+		// SYSTEM_PROCESS_INFORMATION already carries times, memory, image name
+		// and ppid for every process, so the per-process OpenProcess +
+		// GetProcessTimes + GetProcessMemoryInfo + Toolhelp snapshot that
+		// status() performed (the redundant re-query) is no longer needed.
+		struct Light
+		{
+			pid_t ppid;
+			unsigned long utime;
+			unsigned long stime;
+			long rss;
+			std::string comm;
+		};
+		std::unordered_map<pid_t, Light> byPid;
+		std::unordered_map<pid_t, std::vector<pid_t>> children;
+
 		BYTE *ptr = buffer.data();
 		while (true)
 		{
@@ -293,7 +303,27 @@ namespace os
 
 			if (pid != 0 && pid != 4)
 			{
-				tree[ppid].push_back(pid);
+				std::string comm;
+				if (spi->ImageName.Buffer != nullptr && spi->ImageName.Length > 0)
+				{
+					const int wlen = static_cast<int>(spi->ImageName.Length / sizeof(wchar_t));
+					const int need8 = WideCharToMultiByte(CP_UTF8, 0, spi->ImageName.Buffer, wlen, nullptr, 0, nullptr, nullptr);
+					if (need8 > 0)
+					{
+						comm.resize(need8);
+						WideCharToMultiByte(CP_UTF8, 0, spi->ImageName.Buffer, wlen, &comm[0], need8, nullptr, nullptr);
+					}
+				}
+
+				Light l;
+				l.ppid = static_cast<pid_t>(ppid);
+				// 100ns units -> ms, matching status()'s fileTimeToTicks.
+				l.utime = static_cast<unsigned long>(spi->UserTime.QuadPart / 10000);
+				l.stime = static_cast<unsigned long>(spi->KernelTime.QuadPart / 10000);
+				l.rss = static_cast<long>(spi->WorkingSetSize / os::pagesize());
+				l.comm = comm;
+				byPid[static_cast<pid_t>(pid)] = l;
+				children[static_cast<pid_t>(ppid)].push_back(static_cast<pid_t>(pid));
 			}
 
 			if (spi->NextEntryOffset == 0)
@@ -301,22 +331,20 @@ namespace os
 			ptr += spi->NextEntryOffset;
 		}
 
-		std::queue<DWORD> q;
-		q.push(static_cast<DWORD>(rootPid));
-		while (!q.empty())
-		{
-			DWORD parent = q.front();
-			q.pop();
-			auto it = tree.find(parent);
-			if (it == tree.end())
-				continue;
-			for (DWORD c : it->second)
-			{
-				if (result.insert(static_cast<pid_t>(c)).second)
-					q.push(c);
-			}
-		}
+		auto selected = collectDescendants(rootPid, children);
+		selected.insert(rootPid);
 
+		// command from cmdline (PEB) when available, else the image base name.
+		// starttime/vsize are unused by Process, so passed as 0.
+		for (pid_t pid : selected)
+		{
+			auto it = byPid.find(pid);
+			if (it == byPid.end())
+				continue;
+			const Light &l = it->second;
+			ProcessStatus st(pid, l.comm, 'R', l.ppid, 0, 0, l.utime, l.stime, 0, 0, 0, 0, l.rss);
+			result.push_back(makeProcess(st, os::cmdline(pid)));
+		}
 		return result;
 	}
 

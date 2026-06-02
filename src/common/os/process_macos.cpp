@@ -5,7 +5,6 @@
 
 #include <cstring>
 #include <libproc.h>
-#include <queue>
 #include <unordered_map>
 #include <sys/proc_info.h>
 #include <sys/sysctl.h>
@@ -136,44 +135,84 @@ namespace os
 		return out;
 	}
 
-	std::unordered_set<pid_t> child_pids(pid_t rootPid)
+	std::list<Process> processSnapshot(pid_t rootPid)
 	{
-		std::unordered_set<pid_t> result;
-		std::unordered_map<pid_t, std::vector<pid_t>> children;
-
+		// One bulk sysctl(KERN_PROC_ALL) for the whole table: it already
+		// carries ppid/pgid/state/comm, so status()'s per-process
+		// PROC_PIDTBSDINFO (which re-fetched the same fields) is dropped.
 		int mib[3] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL};
 		size_t size = 0;
 		if (sysctl(mib, 3, nullptr, &size, nullptr, 0) != 0)
-			return result;
+			return {};
 
 		std::vector<char> buf(size + sizeof(struct kinfo_proc) * 10);
 		if (sysctl(mib, 3, buf.data(), &size, nullptr, 0) != 0)
-			return result;
+			return {};
 
 		size_t nproc = size / sizeof(struct kinfo_proc);
 		struct kinfo_proc *procs = reinterpret_cast<struct kinfo_proc *>(buf.data());
+
+		struct Light
+		{
+			pid_t ppid;
+			pid_t pgid;
+			char state;
+			std::string comm;
+		};
+		std::unordered_map<pid_t, Light> byPid;
+		std::unordered_map<pid_t, std::vector<pid_t>> children;
 
 		for (size_t i = 0; i < nproc; ++i)
 		{
 			pid_t pid = procs[i].kp_proc.p_pid;
 			pid_t ppid = procs[i].kp_eproc.e_ppid;
+
+			char state;
+			switch (procs[i].kp_proc.p_stat)
+			{
+			case SSLEEP:
+				state = 'S';
+				break;
+			case SRUN:
+				state = 'R';
+				break;
+			case SSTOP:
+				state = 'T';
+				break;
+			case SZOMB:
+				state = 'Z';
+				break;
+			default:
+				state = 'U';
+				break;
+			}
+
+			byPid[pid] = Light{ppid, procs[i].kp_eproc.e_pgid, state, std::string(procs[i].kp_proc.p_comm)};
 			children[ppid].push_back(pid);
 		}
 
-		std::queue<pid_t> q;
-		q.push(rootPid);
-		while (!q.empty())
+		auto selected = collectDescendants(rootPid, children);
+		selected.insert(rootPid);
+
+		// Detail fetch only for the selected set: PROC_PIDTASKINFO (rss/cpu,
+		// not in kinfo_proc). Excludes a process whose task info fails (e.g. zombie),
+		// matching status(). starttime/vsize are unused by Process, so passed as 0.
+		std::list<Process> result;
+		for (pid_t pid : selected)
 		{
-			pid_t p = q.front();
-			q.pop();
-			auto it = children.find(p);
-			if (it == children.end())
+			auto it = byPid.find(pid);
+			if (it == byPid.end())
 				continue;
-			for (pid_t c : it->second)
-			{
-				if (result.insert(c).second)
-					q.push(c);
-			}
+
+			struct proc_taskinfo task_info;
+			if (proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task_info, sizeof(task_info)) <= 0)
+				continue;
+
+			const Light &l = it->second;
+			ProcessStatus st(pid, l.comm, l.state, l.ppid, l.pgid, 0,
+							 task_info.pti_total_user, task_info.pti_total_system, 0, 0,
+							 0, 0, task_info.pti_resident_size / getpagesize());
+			result.push_back(makeProcess(st, os::cmdline(pid)));
 		}
 		return result;
 	}

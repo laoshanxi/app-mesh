@@ -3,68 +3,46 @@
 
 #include "process.h"
 
-#include <algorithm>
 #include <list>
+#include <queue>
 
 namespace os
 {
 
-	std::unordered_set<pid_t> pids(pid_t rootPid /* = ACE_OS::getpid() */)
-	{
-		auto result = child_pids(rootPid);
-		result.insert(rootPid);
-		return result;
-	}
-
-	std::shared_ptr<Process> process(pid_t pid)
+	Process makeProcess(const ProcessStatus &status, const std::string &cmdline)
 	{
 		static const size_t pageSize = os::pagesize();
-
-		const std::shared_ptr<os::ProcessStatus> processStatus = os::status(pid);
-		if (nullptr == processStatus)
-		{
-			return nullptr;
-		}
-
-		std::string commandLine = os::cmdline(pid);
-
-		return std::make_shared<Process>(
-			processStatus->pid,
-			processStatus->ppid,
-			processStatus->pgrp,
-			processStatus->session,
-			processStatus->rss * pageSize,
-			processStatus->utime,
-			processStatus->stime,
-			processStatus->cutime,
-			processStatus->cstime,
-			commandLine.length() ? commandLine : processStatus->comm,
-			processStatus->state == 'Z');
+		return Process(
+			status.pid, status.ppid, status.pgrp, status.session,
+			static_cast<uint64_t>(status.rss) * pageSize,
+			status.utime, status.stime, status.cutime, status.cstime,
+			cmdline.length() ? cmdline : status.comm,
+			status.state == 'Z');
 	}
 
-	std::shared_ptr<Process> process(pid_t pid, const std::list<Process> &processes)
+	std::unordered_set<pid_t> collectDescendants(pid_t rootPid, const std::unordered_map<pid_t, std::vector<pid_t>> &children)
 	{
-		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p)
-									   { return p.pid == pid; });
-		if (iter != processes.end())
-			return std::make_shared<Process>(*iter);
-		return nullptr;
+		std::unordered_set<pid_t> result;
+		std::queue<pid_t> q;
+		q.push(rootPid);
+		while (!q.empty())
+		{
+			const pid_t p = q.front();
+			q.pop();
+			const auto it = children.find(p);
+			if (it == children.end())
+				continue;
+			for (const pid_t c : it->second)
+				if (result.insert(c).second)
+					q.push(c);
+		}
+		return result;
 	}
 
 	std::list<Process> processes()
 	{
-		const auto pidList = os::pids();
-
-		std::list<Process> result;
-		for (pid_t pid : pidList)
-		{
-			auto processPtr = os::process(pid);
-			if (processPtr != nullptr)
-			{
-				result.push_back(*(processPtr.get()));
-			}
-		}
-		return result;
+		// This process and all its descendants, gathered in one bulk query.
+		return processSnapshot(ACE_OS::getpid());
 	}
 
 } // namespace os
