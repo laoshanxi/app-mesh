@@ -4,10 +4,8 @@
 #include "process.h"
 
 #include <cstdio>
-#include <cstring>
 #include <dirent.h>
 #include <fstream>
-#include <queue>
 #include <unordered_map>
 #include <unistd.h>
 
@@ -145,15 +143,16 @@ namespace os
 		return result;
 	}
 
-	std::unordered_set<pid_t> child_pids(pid_t rootPid)
+	std::list<Process> processSnapshot(pid_t rootPid)
 	{
-		std::unordered_set<pid_t> result;
+		// Single /proc sweep: read each /proc/<pid>/stat exactly once via status().
+		std::unordered_map<pid_t, std::shared_ptr<ProcessStatus>> byPid;
 		std::unordered_map<pid_t, std::vector<pid_t>> children;
 
 		std::unique_ptr<DIR, void (*)(DIR *)> proc(opendir("/proc"), [](DIR *d)
 												   { if(d) closedir(d); });
 		if (!proc)
-			return result;
+			return {};
 
 		struct dirent *entry;
 		while ((entry = readdir(proc.get())) != nullptr)
@@ -163,45 +162,22 @@ namespace os
 			if (!endptr || *endptr != '\0' || lpid <= 0)
 				continue;
 
-			pid_t pid = static_cast<pid_t>(lpid);
-			char statPath[64];
-			snprintf(statPath, sizeof(statPath), "/proc/%ld/stat", lpid);
-
-			std::unique_ptr<FILE, void (*)(FILE *)> f(fopen(statPath, "r"), [](FILE *fp)
-													  { if (fp) fclose(fp); });
-			if (!f)
+			auto st = status(static_cast<pid_t>(lpid));
+			if (!st)
 				continue;
-
-			char line[1024];
-			if (fgets(line, sizeof(line), f.get()) != nullptr)
-			{
-				char *rparen = strrchr(line, ')');
-				if (rparen)
-				{
-					int ppid = 0;
-					char state = 0;
-					if (sscanf(rparen + 1, " %c %d", &state, &ppid) == 2)
-					{
-						children[static_cast<pid_t>(ppid)].push_back(pid);
-					}
-				}
-			}
+			children[st->ppid].push_back(st->pid);
+			byPid.emplace(st->pid, st);
 		}
 
-		std::queue<pid_t> q;
-		q.push(rootPid);
-		while (!q.empty())
+		auto selected = collectDescendants(rootPid, children);
+		selected.insert(rootPid);
+
+		std::list<Process> result;
+		for (pid_t pid : selected)
 		{
-			pid_t p = q.front();
-			q.pop();
-			auto it = children.find(p);
-			if (it == children.end())
-				continue;
-			for (pid_t c : it->second)
-			{
-				if (result.insert(c).second)
-					q.push(c);
-			}
+			auto it = byPid.find(pid);
+			if (it != byPid.end())
+				result.push_back(makeProcess(*it->second, os::cmdline(pid)));
 		}
 		return result;
 	}

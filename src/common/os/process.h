@@ -4,7 +4,9 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <ace/OS.h>
 #include <ace/OS_NS_unistd.h>
@@ -20,22 +22,19 @@ namespace os
 	/// Get the command line of a process.
 	std::string cmdline(pid_t pid = 0);
 
-	/// Get the set of process IDs for the descendants of a given process.
-	std::unordered_set<pid_t> child_pids(pid_t rootPid);
-
-	/// Get the set of process IDs for the given process and its descendants.
-	std::unordered_set<pid_t> pids(pid_t rootPid = ACE_OS::getpid());
-
 	/// Cross-platform page size.
 	size_t pagesize();
 
-	/// Get process information for a given PID.
-	std::shared_ptr<Process> process(pid_t pid);
-
-	/// Get process information for a given PID from a pre-fetched list.
-	std::shared_ptr<Process> process(pid_t pid, const std::list<Process> &processes);
-
-	/// Get all processes.
+	/// Get this process and all its descendants.
 	std::list<Process> processes();
+
+	/// Single bulk-query snapshot of rootPid and its descendants (platform-implemented).
+	std::list<Process> processSnapshot(pid_t rootPid);
+
+	/// Build a Process from a status snapshot (command falls back to comm when cmdline is empty).
+	Process makeProcess(const ProcessStatus &status, const std::string &cmdline);
+
+	/// BFS a parent->children map; returns every descendant of rootPid (rootPid excluded).
+	std::unordered_set<pid_t> collectDescendants(pid_t rootPid, const std::unordered_map<pid_t, std::vector<pid_t>> &children);
 
 } // namespace os
