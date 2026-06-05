@@ -69,7 +69,7 @@ jobs:
 
       - name: Cache Coverity Build Tool
         id: cov-build-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: build/cov-analysis
           key: cov-build-cxx-linux64-${{ steps.coverity-cache-lookup.outputs.hash }}
