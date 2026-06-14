@@ -37,6 +37,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <ace/INET_Addr.h>
@@ -121,4 +122,10 @@ private:
 
     mutable std::mutex m_sessions_mutex;
     std::unordered_map<struct lws *, std::shared_ptr<WebSocketSession>> m_sessions;
+
+    // Live HTTP connections (m_sessions equivalent for HTTP). deliverResponse() checks
+    // membership by pointer before touching the wsi, so a worker-captured wsi already
+    // freed by lws is dropped instead of dereferenced (use-after-free). No lock: only
+    // touched on the single m_event_loop_thread (HTTP bind/drop callbacks + the drain).
+    std::unordered_set<struct lws *> m_http_live;
 };

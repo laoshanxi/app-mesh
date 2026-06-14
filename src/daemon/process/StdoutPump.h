@@ -36,27 +36,36 @@ public:
 	void stop() { m_stopped.store(true, std::memory_order_release); }
 
 	// Synchronously drain remaining pipe bytes when the reactor never woke up
-	// (fast-exit child). Call after stop() + remove_handler.
+	// (fast-exit child). Call after stop() + remove_handler; waits out any
+	// in-flight handle_input.
 	void finalSyncDrain();
 
 private:
 	// Caller must hold m_coalesceMu; releases timer + swaps buffer out.
 	void extractBatchLocked(std::string &out, long &start);
 	void scheduleCoalesceTimerLocked();
+	// Extract + dispatch under m_dispatchMu: keeps events in position order.
+	void flushBatch();
 	void dispatchPayload(long start, std::string &&payload);
 
 	const std::string m_appName;
-	ACE_HANDLE m_pipeRead;
+	ACE_HANDLE m_pipeRead; // written only in the ctor; closed only by the dtor
 	ACE_HANDLE m_diskWrite;
 	// shared_ptr so the mutex outlives whichever (pump or AppProcess) destructs first.
 	std::shared_ptr<std::recursive_mutex> m_diskMutex;
 	std::atomic<long> m_acceptedBytes;
 	std::atomic<bool> m_stopped;
 
+	// Serializes pipe readers (handle_input vs finalSyncDrain).
+	// Lock order: m_pipeMu -> m_dispatchMu -> m_coalesceMu.
+	std::mutex m_pipeMu;
+	// Held across extract+dispatch so flushes cannot reorder.
+	std::mutex m_dispatchMu;
+
 	// Coalesce window — collects reads into a single STDOUT_OUTPUT event,
 	// flushed on byte threshold, timer, or teardown.
 	std::mutex m_coalesceMu;
 	std::string m_batch;
 	long m_batchStart{0};
-	long m_timerId{-1};
+	bool m_timerArmed{false};
 };

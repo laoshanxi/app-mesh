@@ -93,7 +93,7 @@ namespace JwtToken
 		// Delegate to Keycloak if configured
 		if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
 		{
-			return keycloak->verifyKeycloakToken(decodedToken);
+			return keycloak->verifyKeycloakToken(decodedToken, audience);
 		}
 
 		// Verify subject claim exists
@@ -124,7 +124,8 @@ namespace JwtToken
 			auto verifier = jwt::verify()
 								.with_issuer(Configuration::instance()->getRestJwtIssuer())
 								.with_audience(audience)
-								.with_subject(userName);
+								.with_subject(userName)
+								.leeway(JWT_CLOCK_LEEWAY_SECONDS); // tolerate clock skew on exp/nbf/iat
 
 			const auto &algo = Configuration::instance()->getJwt()->m_jwtAlgorithm;
 			if (algo == APPMESH_JWT_ALGORITHM_HS256)

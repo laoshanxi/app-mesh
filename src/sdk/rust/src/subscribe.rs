@@ -6,7 +6,7 @@
 //!   - `/appmesh/event` -> dispatched to the registered event callback
 //!   - anything else    -> dispatched to the pending oneshot channel by UUID
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -30,10 +30,28 @@ pub(crate) trait MessageReader: Send + Sync {
     async fn read_message(&self) -> Result<Option<Vec<u8>>, AppMeshError>;
 }
 
+/// Bound the pre-registration event buffer (atomic-subscribe race window) so a
+/// subscription whose callback never registers cannot grow memory without limit.
+const MAX_BUFFERED_SUBS: usize = 64;
+const MAX_BUFFERED_EVENTS_PER_SUB: usize = 1000;
+
+/// State protected together by a single mutex so the callback map and the
+/// pre-registration event buffer stay consistent (events buffered while a
+/// callback is absent are flushed atomically on registration, preserving order
+/// vs. concurrent live events).
+struct EventState {
+    callbacks: HashMap<String, EventCallback>,
+    /// Events that arrive between the server-side subscription and the client
+    /// registering its callback (e.g. atomic add_app(subscribe_events) on a fast
+    /// app, whose output is pushed before the response returns). Held per sub_id
+    /// and flushed on register_event_callback so no events are lost.
+    buffers: HashMap<String, VecDeque<AppEvent>>,
+}
+
 /// Routes incoming messages to pending request channels or event callbacks.
 pub struct MessageDemuxer {
     pending: Arc<Mutex<HashMap<String, oneshot::Sender<ResponseMessage>>>>,
-    event_callbacks: Arc<std::sync::Mutex<HashMap<String, EventCallback>>>,
+    event_state: Arc<std::sync::Mutex<EventState>>,
     stop_tx: std::sync::Mutex<Option<watch::Sender<bool>>>,
     running: Arc<AtomicBool>,
 }
@@ -43,7 +61,10 @@ impl MessageDemuxer {
     pub fn new() -> Self {
         Self {
             pending: Arc::new(Mutex::new(HashMap::new())),
-            event_callbacks: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            event_state: Arc::new(std::sync::Mutex::new(EventState {
+                callbacks: HashMap::new(),
+                buffers: HashMap::new(),
+            })),
             stop_tx: std::sync::Mutex::new(None),
             running: Arc::new(AtomicBool::new(false)),
         }
@@ -62,11 +83,11 @@ impl MessageDemuxer {
         }
 
         let pending = Arc::clone(&self.pending);
-        let event_callbacks = Arc::clone(&self.event_callbacks);
+        let event_state = Arc::clone(&self.event_state);
         let running = Arc::clone(&self.running);
 
         tokio::spawn(async move {
-            Self::read_loop(reader, stop_rx, pending, event_callbacks, running).await;
+            Self::read_loop(reader, stop_rx, pending, event_state, running).await;
         });
     }
 
@@ -77,8 +98,9 @@ impl MessageDemuxer {
         }
 
         // Broadcast a synthetic disconnect event to all registered event
-        // callbacks so long-running waits can unblock cleanly.
-        Self::broadcast_disconnect(&self.event_callbacks);
+        // callbacks so long-running waits can unblock cleanly, and discard any
+        // events buffered for never-registered subs so nothing leaks.
+        Self::broadcast_disconnect(&self.event_state);
 
         // Signal the read loop to exit
         if let Ok(mut guard) = self.stop_tx.lock() {
@@ -112,16 +134,32 @@ impl MessageDemuxer {
         map.remove(uuid);
     }
 
-    /// Register an event callback for a subscription id.
+    /// Register an event callback for a subscription id, flushing any events
+    /// that arrived before registration (atomic-subscribe race).
     pub fn register_event_callback(&self, sub_id: &str, callback: EventCallback) {
-        let mut map = self.event_callbacks.lock().expect("event_callbacks lock poisoned");
-        map.insert(sub_id.to_string(), callback);
+        // Take buffered events under the lock so they precede later live events,
+        // then spawn the dispatches after releasing it (callbacks may run long).
+        let buffered = {
+            let mut state = self.event_state.lock().expect("event_state lock poisoned");
+            state.callbacks.insert(sub_id.to_string(), callback.clone());
+            state.buffers.remove(sub_id)
+        };
+
+        if let Some(buffered) = buffered {
+            for event in buffered {
+                let cb = callback.clone();
+                tokio::spawn(async move {
+                    cb(event);
+                });
+            }
+        }
     }
 
-    /// Remove an event callback.
+    /// Remove an event callback and discard any events buffered for it.
     pub fn unregister_event_callback(&self, sub_id: &str) {
-        let mut map = self.event_callbacks.lock().expect("event_callbacks lock poisoned");
-        map.remove(sub_id);
+        let mut state = self.event_state.lock().expect("event_state lock poisoned");
+        state.callbacks.remove(sub_id);
+        state.buffers.remove(sub_id);
     }
 
     /// Whether the background reader is currently running.
@@ -131,13 +169,13 @@ impl MessageDemuxer {
 
     // -- internal -------------------------------------------------------------
 
-    /// Push a synthetic disconnect event to every registered event callback.
-    fn broadcast_disconnect(
-        event_callbacks: &Arc<std::sync::Mutex<HashMap<String, EventCallback>>>,
-    ) {
+    /// Push a synthetic disconnect event to every registered event callback,
+    /// and discard any events buffered for never-registered subs.
+    fn broadcast_disconnect(event_state: &Arc<std::sync::Mutex<EventState>>) {
         let entries: Vec<(String, EventCallback)> = {
-            let map = event_callbacks.lock().expect("event_callbacks lock poisoned");
-            map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            let mut state = event_state.lock().expect("event_state lock poisoned");
+            state.buffers.clear();
+            state.callbacks.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         };
 
         for (sub_id, callback) in entries {
@@ -159,7 +197,7 @@ impl MessageDemuxer {
         reader: Arc<dyn MessageReader>,
         mut stop_rx: watch::Receiver<bool>,
         pending: Arc<Mutex<HashMap<String, oneshot::Sender<ResponseMessage>>>>,
-        event_callbacks: Arc<std::sync::Mutex<HashMap<String, EventCallback>>>,
+        event_state: Arc<std::sync::Mutex<EventState>>,
         running: Arc<AtomicBool>,
     ) {
         debug!("MessageDemuxer: read loop started");
@@ -180,7 +218,7 @@ impl MessageDemuxer {
                     match ResponseMessage::deserialize(&data) {
                         Ok(resp) => {
                             if resp.request_uri == EVENT_URI {
-                                Self::dispatch_event(&resp, &event_callbacks);
+                                Self::dispatch_event(&resp, &event_state);
                             } else {
                                 Self::dispatch_response(resp, &pending).await;
                             }
@@ -204,7 +242,7 @@ impl MessageDemuxer {
 
         // Only broadcast if stop() hasn't already done so
         if running.swap(false, Ordering::SeqCst) {
-            Self::broadcast_disconnect(&event_callbacks);
+            Self::broadcast_disconnect(&event_state);
         }
 
         let mut map = pending.lock().await;
@@ -213,10 +251,7 @@ impl MessageDemuxer {
         debug!("MessageDemuxer: read loop exited");
     }
 
-    fn dispatch_event(
-        resp: &ResponseMessage,
-        event_callbacks: &Arc<std::sync::Mutex<HashMap<String, EventCallback>>>,
-    ) {
+    fn dispatch_event(resp: &ResponseMessage, event_state: &Arc<std::sync::Mutex<EventState>>) {
         let event: AppEvent = match serde_json::from_slice(&resp.body) {
             Ok(e) => e,
             Err(e) => {
@@ -233,18 +268,19 @@ impl MessageDemuxer {
         }
 
         let cb = {
-            let map = event_callbacks.lock().expect("event_callbacks lock poisoned");
-            if let Some(cb) = map.get(&sub_id) {
+            let mut state = event_state.lock().expect("event_state lock poisoned");
+            if let Some(cb) = state.callbacks.get(&sub_id) {
                 debug!("MessageDemuxer: event matched sub_id={}", sub_id);
                 Some(cb.clone())
-            } else if !map.is_empty() {
-                // Race: event arrived before callback was registered with correct ID.
-                // Deliver to any registered callback as fallback.
-                debug!("MessageDemuxer: event sub_id={} not found, fallback to {} registered callbacks", sub_id, map.len());
-                map.values().next().cloned()
+            } else if !sub_id.is_empty() {
+                // Race: event arrived before its callback registered (e.g. atomic
+                // add_app(subscribe_events) on a fast app). Buffer it (bounded) so
+                // register_event_callback can flush it instead of dropping it.
+                Self::buffer_event(&mut state, &sub_id, event);
+                return;
             } else {
-                warn!("MessageDemuxer: event sub_id={} dropped, no callbacks registered", sub_id);
-                None
+                warn!("MessageDemuxer: event dropped, empty sub_id");
+                return;
             }
         };
 
@@ -253,6 +289,24 @@ impl MessageDemuxer {
                 callback(event);
             });
         }
+    }
+
+    /// Hold an event whose callback has not registered yet (caller holds the lock).
+    fn buffer_event(state: &mut EventState, sub_id: &str, event: AppEvent) {
+        let buf = match state.buffers.get_mut(sub_id) {
+            Some(buf) => buf,
+            None => {
+                if state.buffers.len() >= MAX_BUFFERED_SUBS {
+                    debug!("MessageDemuxer: event sub_id={} dropped, buffer cap reached", sub_id);
+                    return; // cap distinct unregistered subs to bound memory
+                }
+                state.buffers.entry(sub_id.to_string()).or_default()
+            }
+        };
+        if buf.len() >= MAX_BUFFERED_EVENTS_PER_SUB {
+            buf.pop_front(); // drop-oldest
+        }
+        buf.push_back(event);
     }
 
     async fn dispatch_response(

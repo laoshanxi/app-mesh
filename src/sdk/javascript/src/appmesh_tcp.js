@@ -598,10 +598,20 @@ const EVENT_TYPE_DISCONNECTED = '__disconnected__'
  * event subscription callbacks. Replaces the broken dual-reader pattern.
  */
 class MessageDemuxer {
+  // Bound the pre-registration event buffer (atomic-subscribe race window) so a
+  // subscription whose callback never registers cannot grow memory without limit.
+  static _MAX_BUFFERED_SUBS = 64
+  static _MAX_BUFFERED_EVENTS_PER_SUB = 1000
+
   constructor (transport) {
     this._transport = transport
     this._pending = new Map()
     this._eventCallbacks = new Map()
+    // Events that arrive between server-side subscription and the client
+    // registering its callback (e.g. atomic add_app(subscribe_events) on a fast
+    // app, whose output is pushed before add_app returns). Held per subId and
+    // flushed on registerEventCallback so no events are lost.
+    this._eventBuffers = new Map()
     this._running = false
   }
 
@@ -620,6 +630,7 @@ class MessageDemuxer {
       entry.reject(new Error('Demuxer stopped'))
     }
     this._pending.clear()
+    this._eventBuffers.clear() // drop events buffered for never-registered subs
   }
 
   registerRequest (uuid) {
@@ -634,10 +645,21 @@ class MessageDemuxer {
 
   registerEventCallback (subId, callback) {
     this._eventCallbacks.set(subId, callback)
+    // Flush events that arrived before this callback registered (atomic-subscribe
+    // race). Buffered events precede later live events: this runs synchronously at
+    // register time, before any subsequent live event for subId can be dispatched.
+    const buffered = this._eventBuffers.get(subId)
+    if (buffered) {
+      this._eventBuffers.delete(subId)
+      for (const event of buffered) {
+        try { callback(event) } catch (e) { console.error('Event callback error:', e) }
+      }
+    }
   }
 
   unregisterEventCallback (subId) {
     this._eventCallbacks.delete(subId)
+    this._eventBuffers.delete(subId)
   }
 
   async _readLoop () {
@@ -686,10 +708,32 @@ class MessageDemuxer {
       const cb = this._eventCallbacks.get(subId)
       if (cb) {
         try { cb(event) } catch (e) { console.error('Event callback error:', e) }
+      } else if (subId) {
+        this._bufferEvent(subId, event)
       }
     } catch (e) {
       console.error('Failed to dispatch event:', e)
     }
+  }
+
+  /**
+   * Hold an event whose callback has not registered yet, bounded to avoid
+   * unbounded growth when a callback never registers.
+   * @private
+   */
+  _bufferEvent (subId, event) {
+    let buf = this._eventBuffers.get(subId)
+    if (!buf) {
+      if (this._eventBuffers.size >= MessageDemuxer._MAX_BUFFERED_SUBS) {
+        return // cap distinct unregistered subs to bound memory
+      }
+      buf = []
+      this._eventBuffers.set(subId, buf)
+    }
+    if (buf.length >= MessageDemuxer._MAX_BUFFERED_EVENTS_PER_SUB) {
+      buf.shift() // drop-oldest
+    }
+    buf.push(event)
   }
 
   _dispatchResponse (resp) {

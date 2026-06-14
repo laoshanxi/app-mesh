@@ -65,6 +65,11 @@ done
 # Install curl and ace from custom formulas
 TAP_PATH="$(brew --repo)/Library/Taps/laoshanxi/homebrew-custom-core/Formula"
 mkdir -p "$TAP_PATH"
+# Newer Homebrew refuses to load formulae from a tap it doesn't trust. This tap
+# is created by writing files directly (never `brew tap`-ed), so mark it trusted
+# before building from it. `brew trust` is a no-op on Homebrew versions without
+# the trust mechanism.
+brew trust laoshanxi/custom-core 2>/dev/null || true
 for formula in curl ace boost; do
     wget -q -O "${TAP_PATH}/${formula}.rb" "https://github.com/laoshanxi/homebrew-core/raw/refs/heads/master/Formula/${formula:0:1}/${formula}.rb"
     HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew reinstall --build-from-source --verbose "laoshanxi/homebrew-custom-core/${formula}"

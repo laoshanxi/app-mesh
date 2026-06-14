@@ -443,38 +443,56 @@ void Client::poll(int timeout_ms)
 void Client::handleConnect()
 {
     m_connected.store(true);
-    std::lock_guard<std::mutex> lock(m_callback_mutex);
-    if (m_on_connect)
+    // Copy under lock, invoke outside: m_callback_mutex is non-recursive, so a
+    // callback that re-enters a setter (onConnect/onMessage/...) would self-deadlock.
+    OnConnectCallback callback;
     {
-        m_on_connect();
+        std::lock_guard<std::mutex> lock(m_callback_mutex);
+        callback = m_on_connect;
+    }
+    if (callback)
+    {
+        callback();
     }
 }
 
 void Client::handleDisconnect()
 {
     m_connected.store(false);
-    std::lock_guard<std::mutex> lock(m_callback_mutex);
-    if (m_on_disconnect)
+    OnDisconnectCallback callback;
     {
-        m_on_disconnect();
+        std::lock_guard<std::mutex> lock(m_callback_mutex);
+        callback = m_on_disconnect;
+    }
+    if (callback)
+    {
+        callback();
     }
 }
 
 void Client::handleMessage(const uint8_t *data, size_t length, bool is_binary)
 {
-    std::lock_guard<std::mutex> lock(m_callback_mutex);
-    if (m_on_message)
+    OnMessageCallback callback;
     {
-        m_on_message(data, length, is_binary);
+        std::lock_guard<std::mutex> lock(m_callback_mutex);
+        callback = m_on_message;
+    }
+    if (callback)
+    {
+        callback(data, length, is_binary);
     }
 }
 
 void Client::handleError(const std::string &error)
 {
-    std::lock_guard<std::mutex> lock(m_callback_mutex);
-    if (m_on_error)
+    OnErrorCallback callback;
     {
-        m_on_error(error);
+        std::lock_guard<std::mutex> lock(m_callback_mutex);
+        callback = m_on_error;
+    }
+    if (callback)
+    {
+        callback(error);
     }
 }
 

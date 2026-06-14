@@ -291,6 +291,7 @@ public:
 #define ENV_APPMESH_PREFIX "APPMESH_"
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24))		// default 7 days // TODO: limit max token expire time
+#define JWT_CLOCK_LEEWAY_SECONDS 60									// tolerate up to 60s of clock skew on exp/nbf/iat verification
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 2)		// run app default timeout 2 days
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
 #define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)			// run app max timeout 3 days
@@ -450,8 +451,10 @@ public:
 #define HTTP_HEADER_JWT_BearerSpace "Bearer "
 #define HTTP_HEADER_Auth_BasicSpace "Basic "
 #define HTTP_HEADER_JWT_access_token "access_token"
+#define HTTP_HEADER_JWT_refresh_token_key "refresh_token"
 
 #define HTTP_HEADER_JWT_expire_seconds "X-Expire-Seconds"
+#define HTTP_HEADER_JWT_refresh_token "X-Refresh-Token"
 #define HTTP_HEADER_JWT_audience "X-Audience"
 #define HTTP_HEADER_JWT_totp "X-Totp-Code"
 #define HTTP_HEADER_JWT_auth_permission "X-Permission"

@@ -4,7 +4,6 @@
 #include <boost/algorithm/string_regex.hpp>
 
 #include "../../common/Utility.h"
-#include "../Configuration.h"
 #include "../security/JwtToken.h"
 #include "../security/Security.h"
 #include "../security/SecurityKeycloak.h"
@@ -202,19 +201,13 @@ const std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &
     if (!permission.empty())
     {
         std::set<std::string> userPermissions;
-        if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
+        if (dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
         {
-            // For OAuth2(Keycloak): extract permissions from roles in the token
-            const auto &userRoles = std::get<2>(tokenValidationResult);
-            // Collect permissions from all roles the user has
-            for (const auto &roleName : userRoles)
-            {
-                const auto roleObj = Security::instance()->getRole(roleName);
-                const auto rolePermissions = roleObj->getPermissions();
-                userPermissions.insert(rolePermissions.begin(), rolePermissions.end());
-            }
-
-            // TODO: on-line permission check follow "Keycloak Authorization API"
+            // For OAuth2(Keycloak): the client roles carried in the token ARE the permission
+            // set. Each App Mesh permission key (e.g. "app-view", "app-reg") is modeled as a
+            // Keycloak client role; there is no local role->permission mapping. See the
+            // OAuth2 section of docs/source/Security.md for the role list and setup.
+            userPermissions = std::get<2>(tokenValidationResult);
         }
         else
         {

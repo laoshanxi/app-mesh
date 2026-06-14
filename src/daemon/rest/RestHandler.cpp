@@ -11,7 +11,6 @@
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
-#include "../security/ConsulConnection.h"
 #include "../security/JwtToken.h"
 #include "../security/SecurityKeycloak.h"
 #include "../security/TokenBlacklist.h"
@@ -376,7 +375,11 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 	{
 		auto app = Configuration::instance()->getApp(appName);
 
-		if (!(app->getOwner() && app->getOwner()->getName() == getJwtUserName(message)))
+		// Establish a VERIFIED identity before the owner shortcut. getJwtUserName() only
+		// decodes the token and is forgeable; relying on it here would let a crafted token
+		// claim to be the app owner and skip the delete-permission check entirely.
+		const auto tokenUser = permissionCheck(message, "");
+		if (!(app->getOwner() && app->getOwner()->getName() == tokenUser))
 		{
 			// only check delete permission for none-self app
 			permissionCheck(message, PERMISSION_KEY_app_delete);
@@ -806,7 +809,7 @@ void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 	PrometheusRest::apiMetrics(message);
 }
 
-nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token)
+nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token, const std::string *refreshToken)
 {
 	const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	const auto exp = now + timeoutSeconds;
@@ -814,6 +817,8 @@ nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest>
 	nlohmann::json result;
 	result["token_type"] = HTTP_HEADER_JWT_Bearer;
 	result[HTTP_HEADER_JWT_access_token] = token ? *token : JwtToken::generate(uname, ugroup, audience, timeoutSeconds);
+	if (refreshToken && !refreshToken->empty())
+		result[HTTP_HEADER_JWT_refresh_token_key] = *refreshToken;
 	result[HTTP_BODY_KEY_JWT_expires_in] = timeoutSeconds;
 	result["expire_time"] = exp;
 
@@ -857,15 +862,12 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 		throw std::invalid_argument("illegal audience");
 	}
 
-	if (message->m_headers.count(HTTP_HEADER_JWT_Authorization) == 0)
+	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
 	{
-		message->reply(web::http::status_codes::NetworkAuthenticationRequired, Utility::text2json("Username or Password missing"));
-	}
-	else if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
-	{
-		auto token = keycloak->getKeycloakToken(uname, passwd, totp, timeoutSeconds);
-		message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, "Keyloak", audience, &token));
-		LOG_DBG << fname << "User <" << uname << "> login from Keyloak success";
+		const auto tokenResp = keycloak->getKeycloakToken(uname, passwd, totp, timeoutSeconds);
+		const int expiresIn = tokenResp.expiresIn > 0 ? static_cast<int>(tokenResp.expiresIn) : timeoutSeconds;
+		message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, expiresIn, "Keycloak", audience, &tokenResp.accessToken, &tokenResp.refreshToken));
+		LOG_DBG << fname << "User <" << uname << "> login from Keycloak success";
 	}
 	else
 	{
@@ -921,16 +923,42 @@ void RestHandler::apiUserLogoff(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiUserLogoff() ";
 
-	// TODO: use refresh token to logout from keyloak
-
 	// verify current token
 	const auto verify = JwtToken::verify(getJwtToken(message));
 	const auto &uname = std::get<0>(verify);
 
-	// retire current token
+	// retire current token (local blacklist only)
 	const auto token = getJwtToken(message);
 	const auto decodedToken = JwtHelper::decode(token);
 	TOKEN_BLACK_LIST::instance()->addToken(token, decodedToken.get_expires_at());
+
+	// Under OAuth2 the local blacklist only blocks this access token on this daemon. To end
+	// the Keycloak-side session, the client supplies its refresh token via X-Refresh-Token
+	// and we call the Keycloak end-session endpoint. The header is optional so logoff still
+	// succeeds (local revoke) when the client cannot present the refresh token.
+	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
+	{
+		const auto refreshToken = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_refresh_token);
+		if (!refreshToken.empty())
+		{
+			try
+			{
+				keycloak->logoutKeycloak(refreshToken);
+				LOG_DBG << fname << "User <" << uname << "> Keycloak session revoked";
+			}
+			catch (const std::exception &e)
+			{
+				LOG_WAR << fname << "User <" << uname << "> Keycloak end-session failed: " << e.what();
+			}
+		}
+		else
+		{
+			LOG_WAR << fname << "User <" << uname << "> logoff without refresh token; Keycloak session remains active until expiry";
+		}
+		message->reply(web::http::status_codes::OK);
+		LOG_DBG << fname << "User <" << uname << "> logoff success";
+		return;
+	}
 
 	message->reply(web::http::status_codes::OK);
 	LOG_DBG << fname << "User <" << uname << "> logoff success";
@@ -946,8 +974,19 @@ void RestHandler::apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message)
 
 	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
 	{
-		// TODO: use refresh_token as claim and do refresh here
-		throw std::invalid_argument("Token renewal is not supported with OAuth2");
+		// OAuth2 renewal exchanges the Keycloak refresh token for a fresh access token.
+		// The client supplies the refresh token it received at login via X-Refresh-Token.
+		const auto refreshToken = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_refresh_token);
+		if (refreshToken.empty())
+		{
+			throw std::invalid_argument("Token renewal requires the refresh token in the X-Refresh-Token header");
+		}
+
+		const auto tokenResp = keycloak->refreshKeycloakToken(refreshToken, timeoutSeconds);
+		const int expiresIn = tokenResp.expiresIn > 0 ? static_cast<int>(tokenResp.expiresIn) : timeoutSeconds;
+		message->reply(web::http::status_codes::OK, createJwtResponse(message, tokenUser, expiresIn, "Keycloak", "", &tokenResp.accessToken, &tokenResp.refreshToken));
+		LOG_DBG << fname << "User <" << tokenUser << "> renew Keycloak token success";
+		return;
 	}
 
 	// verify current token
@@ -1193,7 +1232,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 	if (lifecycle == 0)
 		throw std::invalid_argument("Zero timeout and lifecycle speficied");
 
-	jsonApp[JSON_KEY_APP_status] = (static_cast<int>(STATUS::NOTAVIALABLE));
+	jsonApp[JSON_KEY_APP_status] = (static_cast<int>(STATUS::NOTAVAILABLE));
 	jsonApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
 	auto app = Configuration::instance()->addApp(jsonApp, fromApp, false);
 	if (fromApp)
@@ -1213,7 +1252,7 @@ void RestHandler::apiRunAsync(const std::shared_ptr<HttpRequest> &message)
 	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
-	auto processUuid = appObj->runAsyncrize(timeout);
+	auto processUuid = appObj->runAsync(timeout);
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_APP_name] = appObj->getName();
 	result[HTTP_QUERY_KEY_process_uuid] = std::move(processUuid);
@@ -1229,7 +1268,7 @@ void RestHandler::apiRunSync(const std::shared_ptr<HttpRequest> &message)
 
 	// Use async reply here
 	auto asyncRequest = std::make_shared<HttpRequestAutoCleanup>(message, appObj);
-	appObj->runSyncrize(timeout, asyncRequest);
+	appObj->runSync(timeout, asyncRequest);
 }
 
 void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)

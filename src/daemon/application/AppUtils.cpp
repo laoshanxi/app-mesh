@@ -176,8 +176,9 @@ LogFileQueue::~LogFileQueue()
 
 void LogFileQueue::enqueue()
 {
+	std::lock_guard<std::mutex> guard(m_mutex);
 	// pop last
-	if (this->size() >= m_queueSize)
+	if (static_cast<int>(m_fileQueue.size()) >= m_queueSize)
 	{
 		m_fileQueue.pop_back();
 	}
@@ -193,14 +194,34 @@ void LogFileQueue::enqueue()
 
 int LogFileQueue::size()
 {
-	return m_fileQueue.size();
+	std::lock_guard<std::mutex> guard(m_mutex);
+	return static_cast<int>(m_fileQueue.size());
 }
 
 const std::string LogFileQueue::getFileName(int index)
 {
-	if (index >= 0 && index < size())
+	std::lock_guard<std::mutex> guard(m_mutex);
+	if (index >= 0 && index < static_cast<int>(m_fileQueue.size()))
 	{
 		return m_fileQueue[index]->getFileName();
 	}
 	throw NotFoundException(Utility::stringFormat("no such index <%d> of stdout log file for <%s>", index, baseFileName.c_str()));
+}
+
+std::chrono::seconds RestartBackoff::onExit(std::chrono::seconds ranFor)
+{
+	constexpr long BASE_SECONDS = 1;	 // first backoff step
+	constexpr long MAX_SECONDS = 300;	 // cap (5 min), as in k8s CrashLoopBackOff
+	constexpr long STABLE_SECONDS = 60;	 // a run lasting this long is healthy -> reset
+	constexpr int MAX_SHIFT = 9;		 // 1<<9 already exceeds the cap; avoids overflow
+
+	if (ranFor.count() >= STABLE_SECONDS)
+	{
+		m_failures = 0; // healthy run: next restart is immediate
+		return std::chrono::seconds(0);
+	}
+
+	const long secs = BASE_SECONDS << std::min(m_failures, MAX_SHIFT);
+	++m_failures;
+	return std::chrono::seconds(std::min(secs, MAX_SECONDS));
 }

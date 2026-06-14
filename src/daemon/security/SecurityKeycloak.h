@@ -1,6 +1,7 @@
 // src/daemon/security/SecurityKeycloak.h
 #pragma once
 #include "SecurityJson.h"
+#include "../../common/JwtHelper.h"
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
 class SecurityKeycloak : public SecurityJson
@@ -25,8 +26,10 @@ public:
 public:
     // Keycloak
     const std::tuple<std::string, std::string, std::set<std::string>> extractUserInfo(const jwt::decoded_jwt<jwt::traits::nlohmann_json> &decoded);
-    const std::tuple<std::string, std::string, std::set<std::string>> verifyKeycloakToken(const jwt::decoded_jwt<jwt::traits::nlohmann_json> &decoded);
-    const std::string getKeycloakToken(const std::string &userName, const std::string &password, const std::string &totp, int timeout);
+    const std::tuple<std::string, std::string, std::set<std::string>> verifyKeycloakToken(const jwt::decoded_jwt<jwt::traits::nlohmann_json> &decoded, const std::string &audience);
+    const JwtHelper::TokenResponse getKeycloakToken(const std::string &userName, const std::string &password, const std::string &totp, int timeout);
+    const JwtHelper::TokenResponse refreshKeycloakToken(const std::string &refreshToken, int timeout);
+    void logoutKeycloak(const std::string &refreshToken);
     const nlohmann::json getKeycloakUser(const std::string &accessToken);
 
 private:

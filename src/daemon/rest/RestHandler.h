@@ -31,7 +31,7 @@ protected:
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 
-	nlohmann::json createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token = nullptr);
+	nlohmann::json createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token = nullptr, const std::string *refreshToken = nullptr);
 	void apiUserLogin(const std::shared_ptr<HttpRequest> &message);
 	void apiUserLogoff(const std::shared_ptr<HttpRequest> &message);
 	void apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message);

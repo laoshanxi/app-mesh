@@ -2,6 +2,7 @@
 #include <chrono>
 #include <openssl/hmac.h>
 #include <sstream>
+#include <thread>
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
@@ -65,6 +66,25 @@ bool HMACVerifier::waitPSKRead()
     bool result = m_shmPtr->waitForFlag(10); // Wait for the flag to be set by the child process
     m_shmPtr->cleanup();                     // Clear the shared memory pointer after reading
     return result;
+}
+
+void HMACVerifier::waitPSKReadAsync()
+{
+    const static char fname[] = "HMACVerifier::waitPSKReadAsync() ";
+
+    // Snapshot and release the SHM so a later writePSKToSHM never races this round's
+    // wait/cleanup; the wait runs off-thread to keep the timer-dispatch thread free.
+    auto shm = m_shmPtr;
+    m_shmPtr.reset();
+    if (!shm)
+    {
+        LOG_ERR << fname << "Shared memory pointer is not initialized";
+        return;
+    }
+    std::thread([shm] {
+        shm->waitForFlag(10); // Wait for the flag to be set by the child process
+        shm->cleanup();
+    }).detach();
 }
 
 const std::string HMACVerifier::getShmName()

@@ -55,6 +55,10 @@ public:
 	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> getProcessDetails(void *ptree = nullptr);
 
 	void attach(int pid, const std::string &stdoutFile = "");
+	// Recovered (attached) processes are not our children — no SIGCHLD; Application::refresh
+	// polls and synthesizes the exit. Set ONLY by Application::attach (Docker must not opt in).
+	void markRecovered() { m_recovered.store(true); }
+	bool isRecovered() const { return m_recovered.load(); }
 	void detach();
 	virtual void terminate();
 	bool onTimerTerminate();
@@ -113,6 +117,10 @@ private:
 	std::atomic<int> m_returnValue;
 	// BUG fix: CAS guard prevents double onExit when terminate() races with natural exit.
 	std::atomic<bool> m_exitFired{false};
+	// True once we deliberately kill this process; marks its exit as not-natural (no restart).
+	std::atomic<bool> m_terminating{false};
+	// True for a daemon-restart recovered (attached) process; enables tick-side exit polling.
+	std::atomic<bool> m_recovered{false};
 
 	boost::atomic_shared_ptr<std::string> m_startError;
 

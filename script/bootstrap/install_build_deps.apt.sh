@@ -122,7 +122,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_D
 make && make install
 cd ${ROOTDIR}
 
-git clone --depth=1 https://github.com/warmcat/libwebsockets.git
+git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
 cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
 make -j"$(nproc)" && make install
 cd ${ROOTDIR}

@@ -81,6 +81,11 @@ bool extractTokenResponse(const nlohmann::json &jsonResponse, TokenResponse &tok
 	if (tokenResponse.accessToken.empty())
 		return false;
 
+	tokenResponse.refreshToken.clear();
+	const auto refreshIt = jsonResponse.find(HTTP_HEADER_JWT_refresh_token_key);
+	if (refreshIt != jsonResponse.end() && refreshIt->is_string())
+		tokenResponse.refreshToken = refreshIt->get<std::string>();
+
 	tokenResponse.expiresIn = 0;
 	const auto expireIt = jsonResponse.find(HTTP_BODY_KEY_JWT_expires_in);
 	if (expireIt == jsonResponse.end())
