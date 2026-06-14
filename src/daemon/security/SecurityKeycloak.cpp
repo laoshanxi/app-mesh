@@ -5,9 +5,6 @@
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 
-#include "ConsulConnection.h"
-#include <fstream>
-#include <iostream>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <nlohmann/json.hpp>
 
@@ -102,7 +99,7 @@ const std::string SecurityKeycloak::fetchKeycloakPublicKeys(const std::string &k
     }
 }
 
-const std::string SecurityKeycloak::getKeycloakToken(const std::string &userName, const std::string &password, const std::string &totp, int timeout)
+const JwtHelper::TokenResponse SecurityKeycloak::getKeycloakToken(const std::string &userName, const std::string &password, const std::string &totp, int timeout)
 {
     const static char fname[] = "SecurityKeycloak::getKeycloakToken() ";
 
@@ -133,12 +130,73 @@ const std::string SecurityKeycloak::getKeycloakToken(const std::string &userName
             throw std::runtime_error("Keycloak token response missing access_token");
         }
 
-        return tokenResponse.accessToken;
+        return tokenResponse;
     }
     catch (const std::exception &e)
     {
         LOG_ERR << fname << "Failed to fetch Keycloak token: " << e.what();
         throw std::runtime_error(Utility::stringFormat("Failed to fetch Keycloak token: %s", e.what()));
+    }
+}
+
+const JwtHelper::TokenResponse SecurityKeycloak::refreshKeycloakToken(const std::string &refreshToken, int timeout)
+{
+    const static char fname[] = "SecurityKeycloak::refreshKeycloakToken() ";
+
+    try
+    {
+        const auto path = "/realms/" + m_config->m_keycloakRealm + "/protocol/openid-connect/token";
+        LOG_DBG << fname << "Refresh user token from " << m_config->m_keycloakUrl << path;
+
+        std::map<std::string, std::string> formData;
+        formData["client_id"] = m_config->m_keycloakClientId;
+        formData["grant_type"] = "refresh_token";
+        formData["refresh_token"] = refreshToken;
+        if (m_config->m_keycloakClientSecret.length())
+            formData["client_secret"] = m_config->m_keycloakClientSecret;
+        if (timeout)
+            formData["requested_token_lifespan"] = std::to_string(timeout);
+
+        auto response = RestClient::request(m_config->m_keycloakUrl, web::http::methods::POST, path, "", {}, {}, std::move(formData));
+        response->raise_for_status();
+
+        JwtHelper::TokenResponse tokenResponse;
+        if (!JwtHelper::extractTokenResponse(response->text, tokenResponse))
+        {
+            throw std::runtime_error("Keycloak refresh response missing access_token");
+        }
+
+        return tokenResponse;
+    }
+    catch (const std::exception &e)
+    {
+        LOG_ERR << fname << "Failed to refresh Keycloak token: " << e.what();
+        throw std::runtime_error(Utility::stringFormat("Failed to refresh Keycloak token: %s", e.what()));
+    }
+}
+
+void SecurityKeycloak::logoutKeycloak(const std::string &refreshToken)
+{
+    const static char fname[] = "SecurityKeycloak::logoutKeycloak() ";
+
+    try
+    {
+        const auto path = "/realms/" + m_config->m_keycloakRealm + "/protocol/openid-connect/logout";
+        LOG_DBG << fname << "Logout user from " << m_config->m_keycloakUrl << path;
+
+        std::map<std::string, std::string> formData;
+        formData["client_id"] = m_config->m_keycloakClientId;
+        formData["refresh_token"] = refreshToken;
+        if (m_config->m_keycloakClientSecret.length())
+            formData["client_secret"] = m_config->m_keycloakClientSecret;
+
+        auto response = RestClient::request(m_config->m_keycloakUrl, web::http::methods::POST, path, "", {}, {}, std::move(formData));
+        response->raise_for_status();
+    }
+    catch (const std::exception &e)
+    {
+        LOG_ERR << fname << "Failed to logout from Keycloak: " << e.what();
+        throw std::runtime_error(Utility::stringFormat("Failed to logout from Keycloak: %s", e.what()));
     }
 }
 
@@ -202,18 +260,19 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
         }
     }
 
-    // Extract roles from resource_access
+    // Extract roles only from THIS client's resource_access entry.
+    // Iterating all clients would mix in roles granted on unrelated clients in the
+    // same realm, which could be mapped to local permissions and cause privilege bleed.
     if (decoded.has_payload_claim("resource_access"))
     {
         auto resource_access = decoded.get_payload_claim("resource_access").to_json();
-        for (const auto &item : resource_access.items())
+        if (resource_access.contains(m_config->m_keycloakClientId))
         {
-            const auto &client_data = item.value();
+            const auto &client_data = resource_access[m_config->m_keycloakClientId];
             if (client_data.contains("roles") && client_data["roles"].is_array())
             {
                 for (const auto &role : client_data["roles"])
                 {
-                    // Add client-prefixed role for better context
                     roles.insert(role.get<std::string>());
                 }
             }
@@ -226,7 +285,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
 
 // Main function to verify a Keycloak token
 const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeycloak::verifyKeycloakToken(
-    const jwt::decoded_jwt<jwt::traits::nlohmann_json> &decoded)
+    const jwt::decoded_jwt<jwt::traits::nlohmann_json> &decoded, const std::string &audience)
 {
     const static char fname[] = "SecurityKeycloak::verifyKeycloakToken() ";
 
@@ -234,31 +293,69 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
     {
         LOG_DBG << fname << "Verifying token for realm: " << m_config->m_keycloakRealm;
 
+        // appmesh audience semantics encode a target host (e.g. remote run isolation).
+        // A Keycloak access token cannot carry that claim, so any request that asks for a
+        // specific non-default audience cannot be honored under OAuth2 - reject explicitly
+        // instead of silently passing, which would bypass host-level isolation.
+        if (!audience.empty() && audience != HTTP_HEADER_JWT_Audience_appmesh)
+        {
+            throw std::domain_error(Utility::stringFormat("Audience <%s> isolation is not supported in OAuth2 mode", audience.c_str()));
+        }
+
         // Get the key ID from the token header
         std::string kid = decoded.get_header_claim("kid").as_string();
         LOG_DBG << fname << "Token key ID: " << kid;
 
-        // Fetch Keycloak public keys
-        // Use a static mutex for thread safety and static map to cache keys
+        // Fetch Keycloak public keys with a thread-safe, time-bounded cache.
+        // Positive entries expire so realm key rotation is eventually picked up; a short
+        // negative cache prevents forged/unknown kids from triggering a network fetch on
+        // every request (DoS amplification toward the Keycloak server).
+        struct KeyEntry
+        {
+            std::string pem;
+            std::chrono::steady_clock::time_point fetchedAt;
+        };
         static std::mutex keysLock;
-        static std::unordered_map<std::string, std::string> keyCache;
+        static std::unordered_map<std::string, KeyEntry> keyCache;
+        static std::unordered_map<std::string, std::chrono::steady_clock::time_point> negativeCache;
+        const auto POSITIVE_TTL = std::chrono::hours(1);
+        const auto NEGATIVE_TTL = std::chrono::seconds(30);
 
         std::string pem;
         {
             // Thread-safe access to the key cache
             std::lock_guard<std::mutex> lock(keysLock);
+            const auto now = std::chrono::steady_clock::now();
+
+            auto neg = negativeCache.find(kid);
+            if (neg != negativeCache.end())
+            {
+                if (now - neg->second < NEGATIVE_TTL)
+                {
+                    throw std::domain_error(Utility::stringFormat("Key ID <%s> recently failed to resolve", kid.c_str()));
+                }
+                negativeCache.erase(neg);
+            }
+
             auto it = keyCache.find(kid);
-            if (it != keyCache.end())
+            if (it != keyCache.end() && (now - it->second.fetchedAt) < POSITIVE_TTL)
             {
                 LOG_DBG << fname << "Using cached public key for kid: " << kid;
-                pem = it->second;
+                pem = it->second.pem;
             }
             else
             {
                 LOG_DBG << fname << "Fetching new public key for kid: " << kid;
-                keyCache.clear();
-                pem = fetchKeycloakPublicKeys(kid);
-                keyCache[kid] = pem;
+                try
+                {
+                    pem = fetchKeycloakPublicKeys(kid);
+                }
+                catch (const std::exception &)
+                {
+                    negativeCache[kid] = now;
+                    throw;
+                }
+                keyCache[kid] = KeyEntry{pem, now};
             }
         }
 
@@ -266,22 +363,52 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
         std::string issuer = (fs::path(m_config->m_keycloakUrl) / "realms" / m_config->m_keycloakRealm).string();
         issuer = Utility::stringReplace(issuer, "\\", "/"); // fix windows path issue
 
-        // Verify the token
-        const auto verifier = jwt::verify()
-                                  .allow_algorithm(jwt::algorithm::rs256{pem})
-                                  .with_issuer(issuer);
+        // Verify signature, issuer, and (by default) exp/nbf claims.
+        // Select the algorithm from the token header but restrict to asymmetric families
+        // only (RS/ES/PS). Never accept HS* here: the verification key is a public key, so
+        // allowing HMAC would enable the classic "alg confusion" forgery.
+        const std::string alg = decoded.get_algorithm();
+        auto verifier = jwt::verify().with_issuer(issuer).leeway(JWT_CLOCK_LEEWAY_SECONDS); // tolerate clock skew vs Keycloak
+        if (alg == "RS256")
+            verifier.allow_algorithm(jwt::algorithm::rs256{pem});
+        else if (alg == "RS384")
+            verifier.allow_algorithm(jwt::algorithm::rs384{pem});
+        else if (alg == "RS512")
+            verifier.allow_algorithm(jwt::algorithm::rs512{pem});
+        else if (alg == "ES256")
+            verifier.allow_algorithm(jwt::algorithm::es256{pem});
+        else if (alg == "ES384")
+            verifier.allow_algorithm(jwt::algorithm::es384{pem});
+        else if (alg == "ES512")
+            verifier.allow_algorithm(jwt::algorithm::es512{pem});
+        else if (alg == "PS256")
+            verifier.allow_algorithm(jwt::algorithm::ps256{pem});
+        else if (alg == "PS384")
+            verifier.allow_algorithm(jwt::algorithm::ps384{pem});
+        else if (alg == "PS512")
+            verifier.allow_algorithm(jwt::algorithm::ps512{pem});
+        else
+            throw std::domain_error(Utility::stringFormat("Unsupported or insecure JWT algorithm: %s", alg.c_str()));
+        verifier.verify(decoded);
 
-        // Verify client-id; TODO: check aud instead of azp
+        // Mandatory client binding: the token must be issued for / target this client.
+        // Accept a match in either 'azp' (authorized party) or 'aud' (audience, string or
+        // array). A token from another client in the same realm must NOT be accepted.
+        bool clientMatched = false;
         if (decoded.has_payload_claim("azp"))
         {
-            if (m_config->m_keycloakClientId != decoded.get_payload_claim("azp").as_string())
-            {
-                throw std::domain_error("JWT 'azp' claim does not match the expected client ID");
-            }
+            clientMatched = (m_config->m_keycloakClientId == decoded.get_payload_claim("azp").as_string());
         }
-
-        // jwt::verify() checks exp and nbf claims by default
-        verifier.verify(decoded);
+        if (!clientMatched && decoded.has_audience())
+        {
+            // get_audience() normalizes both the string and array forms into a set
+            const auto auds = decoded.get_audience();
+            clientMatched = (auds.count(m_config->m_keycloakClientId) > 0);
+        }
+        if (!clientMatched)
+        {
+            throw std::domain_error("JWT client binding (azp/aud) does not match the expected client ID");
+        }
 
         // Success - parse user info from token
         LOG_DBG << fname << "Token verification successful";

@@ -14,6 +14,7 @@ using DecodedJwt = jwt::decoded_jwt<jwt::traits::nlohmann_json>;
 struct TokenResponse
 {
 	std::string accessToken;
+	std::string refreshToken;
 	long long expiresIn{0};
 };
 

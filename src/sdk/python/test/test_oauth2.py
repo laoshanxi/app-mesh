@@ -17,9 +17,14 @@ Setup:
         Temporary password = OFF
     - [Clients] → [Create client]: create <appmesh-client>
         Enable Client authentication & Direct access grants
-        Client Roles: create <manage>, <view> roles for client scope
-        Copy Client Secret: <2gn0Ekis6Lwp7OSaEnMYgyoXK3y1s5dO>
-    - [Users] → [mesh] → [Role Mappings] → [Assign Client roles]: assign roles <appmesh-client→manage>, <appmesh-client→view>.
+        Copy Client Secret and export it as APPMESH_Keycloak_client_secret (do not hardcode)
+    - [Clients] → [appmesh-client] → [Roles]: create client roles named exactly as the
+        App Mesh permission keys the user needs (e.g. app-view, app-view-all, app-reg,
+        app-control, app-run-sync, ...). Optionally bundle them into a composite role
+        such as <appmesh-admin>. Full key list: docs/source/Security.md (OAuth2 section).
+    - [Users] → [mesh] → [Role Mappings] → [Assign Client roles]: assign the permission
+        roles (or the composite role) to the user. App Mesh uses these roles directly as
+        permissions; there is no local role mapping.
     - Set SecurityInterface in config.yaml to oauth2
     - Config oauth2.yaml
 """
@@ -119,7 +124,7 @@ def main():
         "auth_server_url": "http://172.26.246.205:8080",
         "realm": "appmesh-realm",
         "client_id": "appmesh-client",
-        "client_secret": "2gn0Ekis6Lwp7OSaEnMYgyoXK3y1s5dO",  # For confidential clients
+        "client_secret": os.environ.get("APPMESH_Keycloak_client_secret", ""),  # For confidential clients; set via env
     }
 
     # Create App Mesh client

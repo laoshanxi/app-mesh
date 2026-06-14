@@ -30,6 +30,7 @@
 #include "AppProcess.h"
 #include "LinuxCgroup.h"
 #include "StdoutStrategy.h"
+#include "PipeStdoutStrategy.h"
 #include "TimerStdoutStrategy.h"
 
 #if !defined(_WIN32)
@@ -257,7 +258,10 @@ bool AppProcess::onTimerAppExit(int exitCode)
 	cleanResource();
 	if (auto owner = m_owner.lock())
 	{
-		owner->onExitUpdate(exitCode);
+		// Record-only on the timer thread (set latch); the scheduler tick drives restart.
+		// driveLifecycle is lock-holding/multi-step, must not run on the single timer thread.
+		// Flip triggerLifecycle=true to re-enable immediate restart. naturalExit=false if we killed it.
+		owner->onExitUpdate(exitCode, /*triggerLifecycle*/ false, /*naturalExit*/ !m_terminating.load(), /*reporter*/ this);
 	}
 	return false;
 }
@@ -325,6 +329,10 @@ void AppProcess::cleanResource()
 void AppProcess::terminate()
 {
 	const static char fname[] = "AppProcess::terminate() ";
+
+	// Mark before killing so the resulting exit notification (synthetic onExit(9), or a
+	// natural SIGCHLD that races it) is reported as a deliberate kill, not a natural exit.
+	m_terminating.store(true);
 
 	bool terminated = false;
 	pid_t pid = m_pid.exchange(ACE_INVALID_PID);
@@ -616,7 +624,9 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		auto owner = m_owner.lock();
 		auto appName = owner ? owner->getName() : std::string();
 		m_stdoutStrategy = StdoutStrategy::create(std::move(appName), pipeReadForDaemon, m_stdoutHandler.get(), m_outFileMutex, m_owner);
-		if (m_stdoutStrategy && m_stdoutStrategy->isActive())
+		// PipeStdoutStrategy owns the fd even when registration failed (pump dtor
+		// closes it) — closing here too would double-close a recycled fd.
+		if (dynamic_cast<PipeStdoutStrategy *>(m_stdoutStrategy.get()))
 			pipeReadForDaemon = ACE_INVALID_HANDLE;
 		if (auto *ts = dynamic_cast<TimerStdoutStrategy *>(m_stdoutStrategy.get()))
 			ts->startTimer(*this);

@@ -27,7 +27,7 @@ protected:
     std::chrono::system_clock::time_point checkStartTime(const std::chrono::system_clock::time_point &target);
 
 public:
-    static std::chrono::system_clock::time_point EPOCH_ZERO_TIME;
+    static std::chrono::system_clock::time_point TIME_UNSET;
 
 protected:
     const std::chrono::system_clock::time_point m_startTime;

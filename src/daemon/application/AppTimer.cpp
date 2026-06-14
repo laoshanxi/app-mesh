@@ -6,28 +6,28 @@
 #include "../DailyLimitation.h"
 #include "AppTimer.h"
 
-std::chrono::system_clock::time_point AppTimer::EPOCH_ZERO_TIME = std::chrono::system_clock::time_point::min();
+std::chrono::system_clock::time_point AppTimer::TIME_UNSET = std::chrono::system_clock::time_point::min();
 
 //////////////////////////////////////////////////////////////////////////
 /// Calculate Application next start time
 //////////////////////////////////////////////////////////////////////////
 AppTimer::AppTimer(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime,
                    std::shared_ptr<DailyLimitation> dailyLimit)
-    : m_startTime(startTime == EPOCH_ZERO_TIME ? (std::chrono::system_clock::now() - std::chrono::hours(24)) : startTime),
-      m_endTime(endTime == EPOCH_ZERO_TIME ? std::chrono::system_clock::time_point::max() : endTime),
+    : m_startTime(startTime == TIME_UNSET ? (std::chrono::system_clock::now() - std::chrono::hours(24)) : startTime),
+      m_endTime(endTime == TIME_UNSET ? std::chrono::system_clock::time_point::max() : endTime),
       m_dailyLimit(std::move(dailyLimit))
 {
 }
 
 std::chrono::system_clock::time_point AppTimer::nextTime(const std::chrono::system_clock::time_point &startFrom)
 {
-    auto nextTime = checkStartTime(startFrom);
+    auto next = checkStartTime(startFrom);
     // check end
-    if (nextTime > m_endTime)
+    if (next > m_endTime)
     {
-        return EPOCH_ZERO_TIME;
+        return TIME_UNSET;
     }
-    return nextTime;
+    return next;
 }
 
 std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono::system_clock::time_point target)
@@ -146,7 +146,7 @@ std::chrono::system_clock::time_point AppTimerPeriod::nextTime(const std::chrono
             return startTime;
         }
     }
-    return EPOCH_ZERO_TIME;
+    return TIME_UNSET;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -161,25 +161,25 @@ AppTimerCron::AppTimerCron(const std::chrono::system_clock::time_point &startTim
 
 std::chrono::system_clock::time_point AppTimerCron::nextTime(const std::chrono::system_clock::time_point &startFrom)
 {
-    auto nextTime = checkStartTime(startFrom);
+    auto next = checkStartTime(startFrom);
     // check end
-    if (nextTime < m_endTime)
+    if (next < m_endTime)
     {
-        auto nextStartTimeT = std::chrono::system_clock::to_time_t(nextTime);
+        auto nextStartTimeT = std::chrono::system_clock::to_time_t(next);
         auto nextTimeT = cron::cron_next(m_cron, nextStartTimeT);
         auto offsetSeconds = std::abs(nextTimeT - nextStartTimeT);
         if (offsetSeconds == 1)
         {
             // cron min unit is 1 minute, add 1 minutes to start to calculate again
-            auto beginTime = nextTime + std::chrono::minutes(1);
+            auto beginTime = next + std::chrono::minutes(1);
             nextTimeT = cron::cron_next(m_cron, std::chrono::system_clock::to_time_t(beginTime));
         }
         // again, make sure the target is in daily range
-        nextTime = adjustDailyTimeRange(std::chrono::system_clock::from_time_t(nextTimeT));
-        if (nextTime <= m_endTime)
+        next = adjustDailyTimeRange(std::chrono::system_clock::from_time_t(nextTimeT));
+        if (next <= m_endTime)
         {
-            return nextTime;
+            return next;
         }
     }
-    return EPOCH_ZERO_TIME;
+    return TIME_UNSET;
 }

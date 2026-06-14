@@ -1332,28 +1332,26 @@ class SubscribeStressMixin:
         self.client.login("admin", DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_94"
-        sub_result = None
+        result = None
         try:
             received = []
             done = threading.Event()
 
             def on_event(event):
                 received.append(event)
-                if len(received) >= 3:
-                    done.set()
+                done.set()  # the assertion is >0; wake on the first event
 
-            self.client.add_app(App({
-                "command": "seq 1 500",
-                "name": app_name,
-                "shell": True,
-            }))
-            sub_result = self.client.subscribe(app_name, ["STDOUT"], callback=on_event)
+            # Subscribe atomically with registration (before the process spawns): stdout events
+            # aren't replayed to late subscribers, so a separate subscribe() races a fast app.
+            result = self.client.add_app(
+                App({"command": "seq 1 500", "name": app_name, "shell": True}),
+                subscribe_events=["STDOUT"], callback=on_event)
             done.wait(timeout=15)
             self.assertGreater(len(received), 0, "No stdout events for high-volume output")
         finally:
-            if sub_result:
+            if result and result.subscription_id:
                 try:
-                    self.client.unsubscribe(sub_result.subscription_id)
+                    self.client.unsubscribe(result.subscription_id)
                 except Exception:
                     pass
             self.client.delete_app(app_name)
