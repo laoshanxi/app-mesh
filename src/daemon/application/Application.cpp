@@ -13,7 +13,6 @@
 #include "../../common/os/proc.h"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"
-#include "../ResourceCollection.h"
 #include "../ResourceLimitation.h"
 #include "../process/AppProcess.h"
 #if !defined(_WIN32)
@@ -32,19 +31,25 @@
 namespace
 {
 	constexpr int INVALID_RETURN_CODE = std::numeric_limits<int>::min();
+	// Gap before a periodic app's next self-armed spawn: the current run already started this
+	// second, so arm from the next second to avoid a same-second double computation.
+	constexpr std::chrono::seconds PERIODIC_RESPAWN_GAP{1};
 }
 
 Application::Application()
 	: m_persistAble(true), m_ownerPermission(0), m_metadata(EMPTY_STR_JSON),
-	  m_shellApp(false), m_sessionLogin(false), m_stdoutCacheNum(0), m_stdoutCacheSize(0),
-	  m_startTime(AppTimer::EPOCH_ZERO_TIME), m_endTime(std::chrono::system_clock::time_point::max()),
+	  m_shellApp(false), m_sessionLogin(false), m_stdoutCacheNum(0),
+	  m_startTime(AppTimer::TIME_UNSET), m_endTime(std::chrono::system_clock::time_point::max()),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false),
-	  m_nextStartTimerId(INVALID_TIMER_ID), m_regTime(std::chrono::system_clock::now()),
+	  m_regTime(std::chrono::system_clock::now()),
 	  m_appId(Utility::shortID()), m_version(0), m_timerRemoveId(INVALID_TIMER_ID),
-	  m_pid(ACE_INVALID_PID), m_return(INVALID_RETURN_CODE), m_health(true),
-	  m_status(STATUS::ENABLED), m_starts(std::make_shared<prometheus::Counter>())
+	  m_health(true),
+	  m_status(STATUS::ENABLED), m_starts(std::make_shared<std::atomic<unsigned long long>>(0ULL))
 {
 	const static char fname[] = "Application::Application() ";
+	m_run.pid = ACE_INVALID_PID;
+	m_run.returnCode = INVALID_RETURN_CODE;
+	m_needsSchedule.store(true); // never scheduled yet
 	LOG_DBG << fname << "Entered.";
 }
 
@@ -73,7 +78,7 @@ void Application::health(bool newHealth)
 
 pid_t Application::getpid() const
 {
-	return m_pid.load();
+	return loadRunState().pid;
 }
 
 int Application::health() const
@@ -118,20 +123,16 @@ void Application::setUnPersistable()
 
 void Application::nextLaunchTime(const std::chrono::system_clock::time_point &time)
 {
-	if (time == AppTimer::EPOCH_ZERO_TIME)
-	{
-		m_nextLaunchTime.store(nullptr);
-	}
-	else
-	{
-		m_nextLaunchTime.store(boost::make_shared<std::chrono::system_clock::time_point>(time));
-	}
+	auto value = (time == AppTimer::TIME_UNSET)
+					 ? boost::shared_ptr<std::chrono::system_clock::time_point>()
+					 : boost::make_shared<std::chrono::system_clock::time_point>(time);
+	updateRunState([&](RunState &r) { r.nextLaunch = value; });
 }
 
 bool Application::available(const std::chrono::system_clock::time_point &now)
 {
 	// Check if expired
-	if (m_endTime != AppTimer::EPOCH_ZERO_TIME &&
+	if (m_endTime != AppTimer::TIME_UNSET &&
 		m_endTime != std::chrono::system_clock::time_point::max() &&
 		now >= m_endTime)
 	{
@@ -181,7 +182,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	app->m_stdoutFile = (outputDir / fileName).string();
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
-	app->m_stdoutCacheSize = app->m_stdoutFileQueue->size();
 
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)
 	{
@@ -254,7 +254,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	{
 		// Docker app does not support reserve more output backup files
 		app->m_stdoutCacheNum = 0;
-		app->m_stdoutCacheSize = 0;
 	}
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_time))
@@ -330,7 +329,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	}
 }
 
-void Application::refresh(void *ptree)
+void Application::refresh()
 {
 	{
 		auto lock = m_process.synchronize();
@@ -338,205 +337,241 @@ void Application::refresh(void *ptree)
 		{
 			m_bufferProcess.reset();
 		}
+		// A recovered (attached) process is not our child: poll and synthesize its exit
+		// (real code unknowable -> 0); onExit's CAS guard keeps this idempotent.
+		if ((*lock) && (*lock)->isRecovered() && !(*lock)->running())
+		{
+			(*lock)->onExit(0);
+		}
 	}
 
 	// Health check
 	healthCheck();
+}
 
-	// Prometheus
-	if (Configuration::instance()->prometheusEnabled() && RESTHANDLER::instance()->collected())
+void Application::collectMetrics(void *ptree)
+{
+	if (!(Configuration::instance()->prometheusEnabled() && RESTHANDLER::instance()->collected()))
 	{
-		auto process = m_process.get();
-		if (m_metricMemory && process)
+		return;
+	}
+
+	// Snapshot handles under the lock (initMetrics reassigns them there), then read /proc unlocked.
+	std::shared_ptr<AppProcess> process;
+	std::shared_ptr<GaugeMetric> mem, cpu, fileDesc, appPid;
+	{
+		auto lock = m_process.synchronize();
+		process = *lock;
+		mem = m_metricMemory;
+		cpu = m_metricCpu;
+		fileDesc = m_metricFileDesc;
+		appPid = m_metricAppPid;
+	}
+
+	if (mem && process)
+	{
+		auto usage = process->getProcessDetails(ptree);
+		mem->metric().Set(std::get<1>(usage));
+		cpu->metric().Set(std::get<2>(usage));
+		if (fileDesc)
 		{
-			auto usage = process->getProcessDetails(ptree);
-			m_metricMemory->metric().Set(std::get<1>(usage));
-			m_metricCpu->metric().Set(std::get<2>(usage));
-			if (m_metricFileDesc)
-			{
-				m_metricFileDesc->metric().Set(std::get<3>(usage));
-			}
+			fileDesc->metric().Set(std::get<3>(usage));
 		}
-		if (m_metricAppPid)
-		{
-			m_metricAppPid->metric().Set(m_pid.load());
-		}
+	}
+	if (appPid)
+	{
+		appPid->metric().Set(loadRunState().pid);
 	}
 }
 
+// Recovery entry (FromJson registration and main.cpp snapshot recovery); moving these calls
+// up into the registration flow is deferred. Returns true when the recovered process is alive.
 bool Application::attach(int pid)
 {
 	const static char fname[] = "Application::attach() ";
 
-	std::shared_ptr<AppProcess> checkProcStdoutFile;
-	if (pid > 1)
+	if (pid <= 1)
+	{
+		return false;
+	}
+
+	// 1. Replace the current process with an attached (non-child) one
+	std::shared_ptr<AppProcess> attached;
 	{
 		auto processLock = m_process.synchronize();
+		// Idempotent: re-attaching the pid we already hold alive must not kill it.
+		if ((*processLock) && (*processLock)->getpid() == pid && (*processLock)->running())
+		{
+			return true;
+		}
 		this->terminate(*processLock);
 		(*processLock) = allocProcess(false, m_dockerImage, m_name);
 		(*processLock)->attach(pid, m_stdoutFile);
-		m_pid.store((*processLock)->getpid());
-
-		auto procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-#if defined(_WIN32)
-		// TODO: For Windows, implement process status check
-#else
-		auto stat = os::status(m_pid.load());
-		if (stat)
-		{
-			// Recover m_nextLaunchTime to avoid restart
-			procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(stat->get_starttime());
-			nextLaunchTime(stat->get_starttime());
-		}
-#endif
-		m_procStartTime.store(procStartTime);
-		LOG_INF << fname << "Attached pid <" << pid << "> to application " << m_name
-				<< ", last start on: " << DateTime::formatLocalTime(*procStartTime);
-		if ((*processLock)->running())
-		{
-			checkProcStdoutFile = (*processLock);
-		}
+		(*processLock)->markRecovered(); // not our child: refresh() polls for its exit
+		attached = (*processLock);
 	}
 
-	// registerCheckStdoutTimer() outside of m_appMutex
-	if (checkProcStdoutFile)
+	// 2. Probe liveness (Windows: no probe -> treated as dead)
+	const pid_t attachedPid = attached->getpid();
+	auto procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+	bool live = false;
+#if !defined(_WIN32)
+	if (auto stat = os::status(attachedPid))
 	{
-		checkProcStdoutFile->registerCheckStdoutTimer();
+		live = true;
+		procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(stat->get_starttime());
 	}
-	return true;
+#endif
+
+	// 3. Publish the recovered run-state as one consistent snapshot
+	updateRunState([&](RunState &r) {
+		r.pid = attachedPid;
+		r.startTime = procStartTime;
+		r.returnCode = INVALID_RETURN_CODE;
+		r.exitTime = nullptr;
+		r.exitPending = false;
+	});
+	if (live)
+	{
+		// Already running: suppress (re)scheduling so we don't restart what we attached to.
+		nextLaunchTime(*procStartTime);
+		m_needsSchedule.store(false);
+	} // dead: intent stays true, the tick starts it normally
+
+	LOG_INF << fname << "Attached pid <" << pid << "> to application " << m_name
+			<< ", last start on: " << DateTime::formatLocalTime(*procStartTime);
+
+	// 4. Stdout follow-up, outside the m_process lock
+	if (live && attached->running())
+	{
+		attached->registerCheckStdoutTimer();
+	}
+	return live;
 }
 
 void Application::handleUnavailable(const std::chrono::system_clock::time_point &now)
 {
 	const static char fname[] = "Application::handleUnavailable() ";
 
-	// [1]: An Application can only be <available> or <not available>
 	if (this->available(now))
 	{
-		// [1.1]: Check if current time is within the application's daily time range
-		auto inDailyRange = m_timer->isInDailyTimeRange(now);
-		auto processLock = m_process.synchronize();
-		if ((*processLock) && (*processLock)->running() && !inDailyRange)
+		// Running outside the daily time range: stop until the range re-opens.
+		if (!m_timer->isInDailyTimeRange(now) && forceStop())
 		{
-			// Terminate running process if it's outside the valid time range
 			LOG_INF << fname << "Application <" << m_name << "> is not in start time, startTime: "
 					<< DateTime::formatLocalTime(m_startTime) << " endTime: " << DateTime::formatLocalTime(m_endTime)
 					<< " now: " << DateTime::formatLocalTime(now);
-			terminate(*processLock);
-			setInvalidError();
-			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 		}
 	}
-	else if (getStatus() != STATUS::NOTAVIALABLE) // Ignore NOTAVIALABLE status, which is used for runApp and destroying
+	else if (getStatus() != STATUS::NOTAVAILABLE) // NOTAVAILABLE: runApp temp apps and destroying
 	{
-		// [1.3]: Terminate process for <not available> application
-		auto processLock = m_process.synchronize();
-		if ((*processLock) && (*processLock)->running())
+		if (forceStop())
 		{
 			LOG_INF << fname << "Application <" << m_name << "> is not available";
-			terminate(*processLock);
-			setInvalidError();
-			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 		}
 	}
 }
 
-boost::shared_ptr<std::chrono::system_clock::time_point> Application::handleScheduling(const std::chrono::system_clock::time_point &now)
+bool Application::forceStop()
 {
-	if (this->available(now))
+	auto processLock = m_process.synchronize();
+	if (!(*processLock) || !(*processLock)->running())
 	{
-		// [1.2]: If not scheduled yet, set flag to trigger the first run for a normal application
-		auto doSchedule = (m_nextLaunchTime.load() == nullptr);
-
-		if (doSchedule)
-		{
-			// Trigger first run (without holding app lock)
-			auto scheduleTime = scheduleNext(now);
-
-			// For periodic applications, simulate a previous run so error handling logic can work
-			if (m_startInterval && scheduleTime && m_return.load() == INVALID_RETURN_CODE &&
-				m_procExitTime.load() == nullptr && m_procStartTime.load() == nullptr)
-			{
-				m_return.store(0); // Simulate a successful return code for periodic run
-				m_procExitTime.store(boost::make_shared<std::chrono::system_clock::time_point>(now));
-				m_procStartTime.store(boost::make_shared<std::chrono::system_clock::time_point>(now - std::chrono::hours(1)));
-				scheduleTime.reset();
-			}
-
-			return scheduleTime;
-		}
+		return false;
 	}
-	return nullptr;
+	terminate(*processLock);
+	setInvalidError();
+	nextLaunchTime(AppTimer::TIME_UNSET);
+	m_needsSchedule.store(true); // (re)schedule when eligible again
+	return true;
 }
 
-bool Application::hasExited(const std::chrono::system_clock::time_point &now) const
+void Application::handleScheduling(const std::chrono::system_clock::time_point &now)
+{
+	// (re)schedule when the intent flag is set (first run, or after a force-stop). Periodic
+	// apps self-arm their next run in spawnNow, cron apps re-arm via handleError's RESTART,
+	// so no fabricated "previous run" is needed here.
+	if (this->available(now) && m_needsSchedule.load())
+	{
+		scheduleNext(now);
+	}
+}
+
+bool Application::consumePendingExit()
 {
 	if (getStatus() != STATUS::ENABLED)
 	{
-		return false;
+		return false; // disabled apps do not auto-handle exits
 	}
 
 	auto process = m_process.get();
 	if (process && process->running())
 	{
-		return false; // Still running
+		// Defensive: a new run may have started between the exit and this check.
+		return false;
 	}
 
-	if (m_return.load() == INVALID_RETURN_CODE)
-	{
-		return false; // No return code yet
-	}
-
-	auto exitTime = m_procExitTime.load();
-	auto startTime = m_procStartTime.load();
-	if (!exitTime || !startTime)
-	{
-		return false; // Not start or not exit yet
-	}
-
-	// Note: m_procExitTime and m_procStartTime may not be set in a guaranteed order due to asynchronous execution.
-	//   - m_procExitTime is set in Application::onExitUpdate (by terminate).
-	//   - m_procStartTime is set in Application::onTimerSpawn (by scheduleNext).
-	//   - so: m_procStartTime might delay small time, add 1 second buffer to check
-	return (now > (*startTime + std::chrono::seconds(1)));
+	// Test-and-clear the latch: handleError() runs exactly once per genuine exit.
+	bool consumed = false;
+	updateRunState([&](RunState &r) {
+		if (r.exitPending)
+		{
+			r.exitPending = false;
+			consumed = true;
+		}
+	});
+	return consumed;
 }
 
 void Application::execute(void *ptree)
 {
-	auto now = std::chrono::system_clock::now();
+	// Periodic tick trigger.
+	driveLifecycle(std::chrono::system_clock::now());
+	// Outside m_lifecycleMutex: a slow /proc read must not stall an exit-driven driveLifecycle.
+	collectMetrics(ptree);
+}
 
-	// Terminates running processes when the app is unavailable or outside its daily time range
+void Application::driveLifecycle(const std::chrono::system_clock::time_point &now)
+{
+	// Serialize driveLifecycle for this app (tick vs. exit-driven). Lock order:
+	// m_lifecycleMutex -> m_process -> m_runMutex. Timer-queue ops below are safe under it
+	// because timer upcalls release the queue lock before invoking handlers.
+	std::lock_guard<std::mutex> lifecycleGuard(m_lifecycleMutex);
+
+	// [1] Terminates running processes when the app is unavailable or outside its daily time range
 	handleUnavailable(now);
 
-	// Manages first-time scheduling and initializes state for periodic apps
-	auto scheduleTime = handleScheduling(now);
+	// [2] First-time / post-stop scheduling.
+	handleScheduling(now);
 
-	// Refresh application state (health checks, metrics, cleanup)
-	refresh(ptree);
+	// [3] Refresh application state (health check + buffer-process cleanup)
+	refresh();
 
-	// Handle error if process exited
-	if (scheduleTime == nullptr && hasExited(now))
+	// [4] Apply the exit behavior exactly once per genuine exit (latch test-and-clear).
+	if (consumePendingExit())
 	{
 		handleError();
 	}
+
+	// [5] Start the process if its scheduled launch is now due (on this scheduler thread,
+	//     not the shared timer thread). Runs last so a just-scheduled "due now" starts here.
+	spawnIfDue(now);
 }
 
-bool Application::onTimerSpawn()
+void Application::spawnNow()
 {
-	const static char fname[] = "Application::onTimerSpawn() ";
+	const static char fname[] = "Application::spawnNow() ";
 
-	m_nextStartTimerIdEvent.wait();
-	auto timerId = m_nextStartTimerId.exchange(INVALID_TIMER_ID);
-	if (!IS_VALID_TIMER_ID(timerId))
-	{
-		LOG_WAR << fname << "Application <" << m_name << "> not available anymore, skip spawn.";
-		return false;
-	}
-
+	// Runs on the scheduler-tick thread (via spawnIfDue), never the shared timer thread.
 	std::shared_ptr<AppProcess> checkProcStdoutFile;
 	pid_t spawnedPid = 0;
 	std::string processUuid;
-	if (this->isEnabled())
+	if (!this->isEnabled())
+	{
+		// Skipped while disabled: restore the intent so a later enable() re-arms via the tick.
+		m_needsSchedule.store(true);
+	}
+	else
 	{
 		auto processLock = m_process.synchronize();
 
@@ -560,24 +595,32 @@ bool Application::onTimerSpawn()
 		(*processLock).reset();
 		(*processLock) = allocProcess(false, m_dockerImage, m_name);
 
-		m_procStartTime.store(boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now()));
+		// Publish a clean Running state so no stale return/exitTime is observable for the new run.
+		updateRunState([&](RunState &r) {
+			r.startTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+			r.returnCode = INVALID_RETURN_CODE;
+			r.exitTime = nullptr;
+			r.exitPending = false;
+		});
 		const auto execUser = (m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : getExecUser();
 		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << execUser;
 
-		m_pid.store((*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE));
-		if (m_pid.load() > 0)
+		const pid_t newPid = (*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
+		updateRunState([&](RunState &r) { r.pid = newPid; });
+		if (newPid > 0)
 		{
 			checkProcStdoutFile = (*processLock);
-			spawnedPid = m_pid.load();
+			spawnedPid = newPid;
 			processUuid = (*processLock)->getuuid();
+		}
+		else
+		{
+			// Spawn failed: no process and no exit upcall, so restore the intent for a tick retry.
+			m_needsSchedule.store(true);
 		}
 
 		// 3. Post process
 		setLastError((*processLock)->startError());
-		if (m_metricStartCount)
-		{
-			m_metricStartCount->metric().Increment();
-		}
 	}
 
 	// Dispatch event outside m_process lock to avoid blocking other threads
@@ -586,21 +629,17 @@ bool Application::onTimerSpawn()
 		EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START, {{"pid", spawnedPid}, {"process_uuid", processUuid}});
 	}
 
-	// 4. Schedule next run for period run (if next have not scheduled)
-	if (this->isEnabled() && m_startInterval > 0 && m_nextStartTimerId.load() == INVALID_TIMER_ID)
+	// 4. Record the next periodic occurrence (the tick spawns it when due).
+	if (this->isEnabled() && m_startInterval > 0)
 	{
-		// Note: timer lock can hold app lock, app lock should not hold timer lock
-		// Make sure next run start from next second (while current start already begin)
-		this->scheduleNext(std::chrono::system_clock::now() + std::chrono::seconds(1));
+		this->scheduleNext(std::chrono::system_clock::now() + PERIODIC_RESPAWN_GAP);
 	}
 
-	// 5. registerCheckStdoutTimer() outside of m_appMutex
+	// 5. registerCheckStdoutTimer() outside the m_process lock
 	if (checkProcStdoutFile)
 	{
 		checkProcStdoutFile->registerCheckStdoutTimer();
 	}
-
-	return false;
 }
 
 void Application::disable()
@@ -611,12 +650,13 @@ void Application::disable()
 	if (!m_status.compare_exchange_strong(enabled, STATUS::DISABLED))
 		return; // already disabled — skip side effects to avoid concurrent saves
 
-	this->cancelTimer(m_nextStartTimerId);
 	LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"status", "disabled"}, {"previous_status", "enabled"}});
 
 	terminate(*m_process.synchronize());
-	nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
+	// Clear the scheduled launch so the tick won't start it; status=DISABLED also gates spawnIfDue.
+	nextLaunchTime(AppTimer::TIME_UNSET);
+	m_needsSchedule.store(true); // so a later enable() reschedules (gated by available())
 	save();
 }
 
@@ -630,10 +670,16 @@ void Application::enable()
 	save();
 }
 
-std::string Application::runAsyncrize(int timeoutSeconds)
+std::string Application::runAsync(int timeoutSeconds)
 {
-	const static char fname[] = "Application::runAsyncrize() ";
+	const static char fname[] = "Application::runAsync() ";
 	LOG_DBG << fname << "Entered.";
+
+	// Guard before terminate(): must not destroy the existing process and then throw.
+	if (m_status.load() == STATUS::ENABLED)
+	{
+		throw std::invalid_argument("runApp is only for on-demand run apps, not an enabled application");
+	}
 
 	auto processLock = m_process.synchronize();
 	terminate(*processLock);
@@ -641,10 +687,16 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 	return runApp(timeoutSeconds);
 }
 
-std::string Application::runSyncrize(int timeoutSeconds, std::shared_ptr<void> asyncHttpRequest)
+std::string Application::runSync(int timeoutSeconds, std::shared_ptr<HttpRequest> asyncHttpRequest)
 {
-	const static char fname[] = "Application::runSyncrize() ";
+	const static char fname[] = "Application::runSync() ";
 	LOG_DBG << fname << "Entered.";
+
+	// Guard before terminate(): must not destroy the existing process and then throw.
+	if (m_status.load() == STATUS::ENABLED)
+	{
+		throw std::invalid_argument("runApp is only for on-demand run apps, not an enabled application");
+	}
 
 	auto processLock = m_process.synchronize();
 	terminate(*processLock);
@@ -672,21 +724,29 @@ std::string Application::runApp(int timeoutSeconds)
 	{
 		throw std::invalid_argument("Docker application does not support this API");
 	}
-	assert(m_status.load() != STATUS::ENABLED);
+	// Run-on-demand only: parseAndRegRunApp registers these apps as NOTAVAILABLE. Guard always-on
+	// (not a debug assert) so an ENABLED/managed app can never be hijacked into a one-off run.
+	if (m_status.load() == STATUS::ENABLED)
+	{
+		throw std::invalid_argument("runApp is only for on-demand run apps, not an enabled application");
+	}
 
 	const auto execUser = getExecUser();
 	LOG_INF << fname << "Running application <" << m_name << "> with timeout <" << timeoutSeconds << "> seconds";
 
-	m_procStartTime.store(boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now()));
-	m_pid.store((*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE));
+	// New run begins: publish a clean Running state (see spawnNow for rationale).
+	updateRunState([&](RunState &r) {
+		r.startTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+		r.returnCode = INVALID_RETURN_CODE;
+		r.exitTime = nullptr;
+		r.exitPending = false;
+	});
+	const pid_t newPid = (*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
+	updateRunState([&](RunState &r) { r.pid = newPid; });
 
 	setLastError((*processLock)->startError());
-	if (m_metricStartCount)
-	{
-		m_metricStartCount->metric().Increment();
-	}
 
-	if (m_pid.load() > 0)
+	if (newPid > 0)
 	{
 		this->health(true);
 		if (timeoutSeconds > 0)
@@ -702,7 +762,7 @@ std::string Application::runApp(int timeoutSeconds)
 	return (*processLock)->getuuid();
 }
 
-void Application::sendTask(std::shared_ptr<void> asyncHttpRequest)
+void Application::sendTask(std::shared_ptr<HttpRequest> asyncHttpRequest)
 {
 	auto processLock = m_process.synchronize();
 	if (*processLock == nullptr)
@@ -720,7 +780,7 @@ bool Application::deleteTask()
 	return m_task.deleteTask();
 }
 
-void Application::fetchTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest)
+void Application::fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest)
 {
 	auto processLock = m_process.synchronize();
 	if (*processLock == nullptr || !(*processLock)->running())
@@ -731,10 +791,11 @@ void Application::fetchTask(const std::string &processKey, std::shared_ptr<void>
 	{
 		throw std::runtime_error("Process key mismatch");
 	}
-	m_task.fetchTask(asyncHttpRequest);
+	std::shared_ptr<void> req = asyncHttpRequest; // TaskRequest takes shared_ptr<void>&
+	m_task.fetchTask(req);
 }
 
-void Application::replyTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest)
+void Application::replyTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest)
 {
 	auto processLock = m_process.synchronize();
 	if (*processLock == nullptr || !(*processLock)->running())
@@ -745,7 +806,8 @@ void Application::replyTask(const std::string &processKey, std::shared_ptr<void>
 	{
 		throw std::runtime_error("Process key mismatch");
 	}
-	m_task.replyTask(asyncHttpRequest);
+	std::shared_ptr<void> req = asyncHttpRequest; // TaskRequest takes shared_ptr<void>&
+	m_task.replyTask(req);
 }
 
 std::tuple<int, std::string> Application::taskStatus()
@@ -796,7 +858,8 @@ void Application::healthCheck()
 {
 	if (m_healthCheckCmd.empty())
 	{
-		auto health = (getpid() > 0) || (m_return.load() != INVALID_RETURN_CODE && m_return.load() == 0);
+		auto run = loadRunState();
+		auto health = (run.pid > 0) || (run.returnCode == 0); // returnCode==0 already excludes INVALID_RETURN_CODE
 		this->health(health);
 	}
 }
@@ -913,6 +976,10 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	{
 		result[JSON_KEY_APP_session_login] = (m_sessionLogin);
 	}
+	if (m_metadata != EMPTY_STR_JSON)
+	{
+		result[JSON_KEY_APP_metadata] = m_metadata;
+	}
 	if (!m_commandLine.empty())
 	{
 		result[(JSON_KEY_APP_command)] = std::string(m_commandLine);
@@ -920,6 +987,10 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (!m_description.empty())
 	{
 		result[(JSON_KEY_APP_description)] = std::string(m_description);
+	}
+	if (m_stdoutCacheNum)
+	{
+		result[JSON_KEY_APP_stdout_cache_num] = (m_stdoutCacheNum);
 	}
 	if (!m_healthCheckCmd.empty())
 	{
@@ -930,22 +1001,79 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		result[JSON_KEY_APP_working_dir] = std::string(m_workdir);
 	}
 	result[JSON_KEY_APP_status] = (int)m_status.load();
-	if (m_stdoutCacheNum)
+	if (m_resourceLimit)
 	{
-		result[JSON_KEY_APP_stdout_cache_num] = (m_stdoutCacheNum);
+		result[JSON_KEY_APP_resource_limit] = m_resourceLimit->AsJson();
 	}
-	if (m_metadata != EMPTY_STR_JSON)
+	if (m_envMap.size())
 	{
-		result[JSON_KEY_APP_metadata] = m_metadata;
+		nlohmann::json envs = nlohmann::json::object();
+		for (const auto &pair : m_envMap)
+		{
+			envs[pair.first] = std::string(pair.second);
+		}
+		result[JSON_KEY_APP_env] = std::move(envs);
+	}
+	if (m_secEnvMap.size() && !returnRuntimeInfo)
+	{
+		// Only include sec_env when saving to disk (not in API responses).
+		auto owner = getOwner();
+		if (!owner)
+		{
+			// Refuse to persist sec_env without an owner — we would have to write
+			// plaintext to disk, which silently leaks secrets.
+			throw std::invalid_argument("cannot persist sec_env for application <" + m_name + "> without an owner");
+		}
+		nlohmann::json envs = nlohmann::json::object();
+		for (const auto &pair : m_secEnvMap)
+		{
+			envs[pair.first] = owner->encrypt(pair.second);
+		}
+		result[JSON_KEY_APP_sec_env] = std::move(envs);
+	}
+	if (!m_dockerImage.empty())
+	{
+		result[JSON_KEY_APP_docker_image] = std::string(m_dockerImage);
+	}
+	if (m_version)
+	{
+		result[JSON_KEY_APP_version] = (m_version);
+	}
+	if (m_startTime.time_since_epoch().count() && m_startTime != std::chrono::system_clock::time_point::min())
+	{
+		result[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
+	}
+	if (m_endTime.time_since_epoch().count() && m_endTime != std::chrono::system_clock::time_point::max())
+	{
+		result[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
+	}
+	if (m_dailyLimit)
+	{
+		result[JSON_KEY_APP_daily_limitation] = m_dailyLimit->AsJson();
+	}
+	result[JSON_KEY_APP_REG_TIME] = (std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
+	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
+	if (m_bufferTime)
+	{
+		result[JSON_KEY_APP_retention] = std::string(m_bufferTimeValue);
+	}
+	if (m_startIntervalValueIsCronExpr)
+	{
+		result[JSON_KEY_SHORT_APP_cron_interval] = (m_startIntervalValueIsCronExpr);
+	}
+	if (!m_startIntervalValue.empty())
+	{
+		result[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_startIntervalValue);
 	}
 
 	if (returnRuntimeInfo)
 	{
-		if (m_return.load() != INVALID_RETURN_CODE)
-		{
-			result[JSON_KEY_APP_return] = m_return.load();
-		}
+		auto run = loadRunState();
 		auto process = m_process.get();
+		if (run.returnCode != INVALID_RETURN_CODE)
+		{
+			result[JSON_KEY_APP_return] = run.returnCode;
+		}
 		if (process && process->running())
 		{
 			{
@@ -954,8 +1082,13 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 				result[JSON_KEY_APP_task_id] = std::get<0>(status);
 				result[JSON_KEY_APP_task_status] = std::get<1>(status);
 			}
-			result[JSON_KEY_APP_pid] = m_pid.load();
-			result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(m_pid.load()));
+			// Spawn races the run-state store: the process can be running before r.pid is
+			// published (still ACE_INVALID_PID from the previous exit). Omit pid until valid.
+			if (run.pid != ACE_INVALID_PID)
+			{
+				result[JSON_KEY_APP_pid] = run.pid;
+				result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(run.pid));
+			}
 
 			auto usage = process->getProcessDetails(ptree);
 			if (std::get<0>(usage))
@@ -974,12 +1107,12 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 				}
 			}
 		}
-		auto startTime = m_procStartTime.load();
+		auto startTime = run.startTime;
 		if (startTime && std::chrono::time_point_cast<std::chrono::hours>(*startTime).time_since_epoch().count() > 24)
 		{
 			result[JSON_KEY_APP_last_start] = std::chrono::duration_cast<std::chrono::seconds>((*startTime).time_since_epoch()).count();
 		}
-		auto exitTime = m_procExitTime.load();
+		auto exitTime = run.exitTime;
 		if (exitTime && std::chrono::time_point_cast<std::chrono::hours>(*exitTime).time_since_epoch().count() > 24)
 		{
 			result[JSON_KEY_APP_last_exit] = std::chrono::duration_cast<std::chrono::seconds>((*exitTime).time_since_epoch()).count();
@@ -993,92 +1126,17 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		{
 			result[JSON_KEY_APP_stdout_cache_size] = (m_stdoutFileQueue->size());
 		}
-	}
-
-	if (m_dailyLimit)
-	{
-		result[JSON_KEY_APP_daily_limitation] = m_dailyLimit->AsJson();
-	}
-	if (m_resourceLimit)
-	{
-		result[JSON_KEY_APP_resource_limit] = m_resourceLimit->AsJson();
-	}
-
-	if (m_envMap.size())
-	{
-		nlohmann::json envs = nlohmann::json::object();
-		for (const auto &pair : m_envMap)
-		{
-			envs[pair.first] = std::string(pair.second);
-		}
-		result[JSON_KEY_APP_env] = std::move(envs);
-	}
-
-	if (m_secEnvMap.size() && !returnRuntimeInfo)
-	{
-		// Only include sec_env when saving to disk (not in API responses).
-		auto owner = getOwner();
-		if (!owner)
-		{
-			// Refuse to persist sec_env without an owner — we would have to write
-			// plaintext to disk, which silently leaks secrets.
-			throw std::invalid_argument("cannot persist sec_env for application <" + m_name + "> without an owner");
-		}
-		nlohmann::json envs = nlohmann::json::object();
-		for (const auto &pair : m_secEnvMap)
-		{
-			envs[pair.first] = owner->encrypt(pair.second);
-		}
-		result[JSON_KEY_APP_sec_env] = std::move(envs);
-	}
-
-	if (!m_dockerImage.empty())
-	{
-		result[JSON_KEY_APP_docker_image] = std::string(m_dockerImage);
-	}
-	if (m_version)
-	{
-		result[JSON_KEY_APP_version] = (m_version);
-	}
-
-	if (m_startTime.time_since_epoch().count() && m_startTime != std::chrono::system_clock::time_point::min())
-	{
-		result[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
-	}
-	if (m_endTime.time_since_epoch().count() && m_endTime != std::chrono::system_clock::time_point::max())
-	{
-		result[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
-	}
-	result[JSON_KEY_APP_REG_TIME] = (std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
-
-	if (returnRuntimeInfo)
-	{
 		auto err = getLastError();
 		if (!err.empty())
 		{
 			result[JSON_KEY_APP_last_error] = std::string(err);
 		}
-		result[JSON_KEY_APP_starts] = static_cast<long long>(m_starts->Value());
-	}
-
-	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
-	if (m_bufferTime)
-	{
-		result[JSON_KEY_APP_retention] = std::string(m_bufferTimeValue);
-	}
-	if (m_startIntervalValueIsCronExpr)
-	{
-		result[JSON_KEY_SHORT_APP_cron_interval] = (m_startIntervalValueIsCronExpr);
-	}
-	if (!m_startIntervalValue.empty())
-	{
-		result[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_startIntervalValue);
-	}
-
-	auto nextLaunchTime = m_nextLaunchTime.load();
-	if (returnRuntimeInfo && nextLaunchTime)
-	{
-		result[JSON_KEY_SHORT_APP_next_start_time] = std::chrono::duration_cast<std::chrono::seconds>((*nextLaunchTime).time_since_epoch()).count();
+		result[JSON_KEY_APP_starts] = static_cast<long long>(m_starts->load());
+		auto nextLaunch = run.nextLaunch;
+		if (nextLaunch)
+		{
+			result[JSON_KEY_SHORT_APP_next_start_time] = std::chrono::duration_cast<std::chrono::seconds>((*nextLaunch).time_since_epoch()).count();
+		}
 	}
 
 	Utility::addExtraAppTimeReferStr(result);
@@ -1137,25 +1195,26 @@ void Application::dump()
 	}
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << (int)m_status.load();
-	if (m_pid.load() != ACE_INVALID_PID)
+	const auto dumpPid = loadRunState().pid;
+	if (dumpPid != ACE_INVALID_PID)
 	{
-		LOG_DBG << fname << "m_pid:" << m_pid.load();
+		LOG_DBG << fname << "m_pid:" << dumpPid;
 	}
 	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatLocalTime(m_startTime);
 	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatLocalTime(m_endTime);
 	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
-	LOG_DBG << fname << "m_starts:" << m_starts->Value();
+	LOG_DBG << fname << "m_starts:" << m_starts->load();
 	LOG_DBG << fname << "m_version:" << m_version;
 	LOG_DBG << fname << "m_lastError:" << getLastError();
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
 
-	auto nextLaunchTime = m_nextLaunchTime.load();
+	auto nextLaunchTime = loadRunState().nextLaunch;
 	if (nextLaunchTime)
 	{
-		LOG_DBG << fname << "m_nextLaunchTime:" << DateTime::formatLocalTime(*nextLaunchTime);
+		LOG_DBG << fname << "nextLaunch:" << DateTime::formatLocalTime(*nextLaunchTime);
 	}
 	if (m_dailyLimit)
 	{
@@ -1171,7 +1230,13 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 {
 	std::shared_ptr<AppProcess> process;
 	m_stdoutFileQueue->enqueue();
-	m_starts->Increment();
+	// Single increment site keeps JSON (m_starts) and Prometheus counters consistent;
+	// attach/recovery intentionally counts as a start (long-standing JSON behavior).
+	m_starts->fetch_add(1, std::memory_order_relaxed);
+	if (m_metricStartCount)
+	{
+		m_metricStartCount->metric().Increment();
+	}
 
 	if ((m_shellApp || m_sessionLogin) && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 	{
@@ -1218,11 +1283,10 @@ void Application::destroy()
 	if (m_destroying.exchange(true, std::memory_order_acq_rel))
 		return;
 
-	LOG_DBG << fname << "suicide timer ID: " << m_timerRemoveId.load() << " nextStartTimerId: " << m_nextStartTimerId.load();
-	this->disable();
-	this->m_status.store(STATUS::NOTAVIALABLE);
+	LOG_DBG << fname << "suicide timer ID: " << m_timerRemoveId.load();
+	this->disable(); // clears nextLaunch + sets DISABLED, so the tick won't start it
+	this->m_status.store(STATUS::NOTAVAILABLE);
 	this->cancelTimer(m_timerRemoveId);
-	this->cancelTimer(m_nextStartTimerId);
 }
 
 bool Application::onTimerAppRemove()
@@ -1241,16 +1305,25 @@ bool Application::onTimerAppRemove()
 	return false;
 }
 
-void Application::onExitUpdate(int code)
+void Application::onExitUpdate(int code, bool triggerLifecycle, bool naturalExit, const AppProcess *reporter)
 {
-	auto prevPid = m_pid.load();
 	auto process = m_process.get();
-	if (process == nullptr || !process->running())
-	{
-		m_pid.store(ACE_INVALID_PID);
-	}
-	m_procExitTime.store(boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now()));
-	m_return.store(code);
+	const bool stillRunning = (process != nullptr && process->running());
+	// Only the current run may mint the latch — a buffer exiting after the current run ended
+	// would otherwise re-run handleError with the buffer's exit code.
+	const bool isCurrentProcess = (reporter == nullptr || reporter == process.get());
+	pid_t prevPid = ACE_INVALID_PID;
+	updateRunState([&](RunState &r) {
+		prevPid = r.pid;
+		if (!stillRunning)
+		{
+			r.pid = ACE_INVALID_PID;
+		}
+		r.exitTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+		r.returnCode = code;
+		// A deliberate kill passes naturalExit=false, which also clears any stale latch.
+		r.exitPending = naturalExit && !stillRunning && isCurrentProcess;
+	});
 
 	if (code != 0 && process)
 	{
@@ -1261,8 +1334,13 @@ void Application::onExitUpdate(int code)
 	const long dispatchedPos = process ? process->stdoutDispatchedBytes() : 0;
 	EventDispatcher::instance()->flushStdout(m_name, this, dispatchedPos);
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT, {{"exit_code", code}, {"pid", prevPid}, {"last_error", getLastError()}});
-	// immediate error handling (compared with Application::execute)
-	// this->registerTimer(0, 0, fname, std::bind(&Application::handleError, this));
+
+	// Immediate restart on the caller's thread; currently unused (restart is tick-driven, to
+	// keep driveLifecycle off the timer thread). Kept so it can be re-enabled later.
+	if (triggerLifecycle)
+	{
+		driveLifecycle(std::chrono::system_clock::now());
+	}
 }
 
 void Application::terminate(std::shared_ptr<AppProcess> &p)
@@ -1289,7 +1367,7 @@ void Application::handleError()
 	const static char fname[] = "Application::handleError() ";
 	bool psk = false;
 
-	switch (this->exitAction(m_return.load()))
+	switch (this->exitAction(loadRunState().returnCode))
 	{
 	case AppBehavior::Action::STANDBY:
 		// do nothing
@@ -1305,21 +1383,20 @@ void Application::handleError()
 			}
 		}
 
-		// do restart
-		this->scheduleNext();
+		// Restart after the crash-loop backoff delay (0 for a healthy run).
+		this->scheduleNext(std::chrono::system_clock::now() + restartDelay());
 		LOG_DBG << fname << "Next action for <" << m_name << "> is RESTART";
 
 		if (psk)
 		{
-			HMACVerifierSingleton::instance()->waitPSKRead();
+			// Async: we may BE the single timer-dispatch thread, which must stay free to fire
+			// the spawn armed above; a blocking wait here would deadlock the PSK handshake.
+			HMACVerifierSingleton::instance()->waitPSKReadAsync();
 		}
 		break;
 	case AppBehavior::Action::KEEPALIVE:
-		// keep alive always, used for period run
-		nextLaunchTime(std::chrono::system_clock::now());
-		m_nextStartTimerIdEvent.reset();
-		m_nextStartTimerId.store(this->registerTimer(0, 0, fname, std::bind(&Application::onTimerSpawn, this)));
-		m_nextStartTimerIdEvent.signal();
+		// Restart unconditionally (bypasses m_timer), still throttled by the crash-loop backoff.
+		scheduleSpawnAt(std::chrono::system_clock::now() + restartDelay());
 		LOG_DBG << fname << "Next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
@@ -1331,37 +1408,65 @@ void Application::handleError()
 	}
 }
 
-boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext(std::chrono::system_clock::time_point startFrom)
+std::chrono::seconds Application::restartDelay()
 {
-	const static char fname[] = "Application::scheduleNext() ";
-
-	auto next = m_timer->nextTime(startFrom);
-
-	// Avoid frequency issue
-	auto startTime = m_procStartTime.load();
-	auto distanceSeconds = std::abs(std::chrono::duration_cast<std::chrono::seconds>(
-										next - (startTime ? *startTime : AppTimer::EPOCH_ZERO_TIME))
-										.count());
-	if (distanceSeconds < 1)
+	// Crash-loop backoff applies only to long-running apps. Periodic/cron runs are already
+	// spaced by their own schedule (and are typically short), so adding backoff would skip
+	// occurrences and wrongly penalize healthy short tasks.
+	if (m_startInterval > 0 || m_startIntervalValueIsCronExpr)
 	{
-		next += std::chrono::milliseconds(500); // add 0.5s buffer if target start is now
+		return std::chrono::seconds(0);
 	}
 
-	// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
-	nextLaunchTime(next);
+	auto run = loadRunState();
+	const auto ranFor = (run.startTime && run.exitTime)
+							? std::chrono::duration_cast<std::chrono::seconds>(*run.exitTime - *run.startTime)
+							: std::chrono::seconds(0);
+	return m_restartBackoff.onExit(ranFor);
+}
 
-	if (next != AppTimer::EPOCH_ZERO_TIME)
+void Application::scheduleSpawnAt(const std::chrono::system_clock::time_point &when)
+{
+	const static char fname[] = "Application::scheduleSpawnAt() ";
+
+	// Record-only: no timer. The scheduler tick (spawnIfDue) starts the process when `when`
+	// is reached, on its own thread — keeping fork/exec off the shared timer thread.
+	nextLaunchTime(when);
+	m_needsSchedule.store(false);
+	LOG_DBG << fname << "Next start for <" << m_name << "> scheduled at " << DateTime::formatLocalTime(when);
+}
+
+void Application::spawnIfDue(const std::chrono::system_clock::time_point &now)
+{
+	if (!this->isEnabled())
 	{
-		// 2. register timer
-		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
-		m_nextStartTimerIdEvent.reset();
-		m_nextStartTimerId.store(this->registerTimer(delay, 0, fname, std::bind(&Application::onTimerSpawn, this)));
-		m_nextStartTimerIdEvent.signal();
-		LOG_DBG << fname << "Next start for <" << m_name << "> is " << DateTime::formatLocalTime(next)
-				<< " start timer ID <" << m_nextStartTimerId.load() << ">";
+		return;
 	}
+	const auto next = loadRunState().nextLaunch;
+	if (!next || now < *next)
+	{
+		return; // nothing scheduled, or not due yet
+	}
+	auto process = m_process.get();
+	if (process && process->running())
+	{
+		return; // a run is already active
+	}
+	nextLaunchTime(AppTimer::TIME_UNSET); // consume the due launch (periodic re-arms in spawnNow)
+	spawnNow();
+}
 
-	return m_nextLaunchTime.load();
+void Application::scheduleNext(std::chrono::system_clock::time_point startFrom)
+{
+	// Resolve the start-form's next occurrence; backoff spacing is already baked into startFrom.
+	const auto next = m_timer->nextTime(startFrom);
+	if (next == AppTimer::TIME_UNSET)
+	{
+		nextLaunchTime(next);
+		m_needsSchedule.store(true); // no valid next time: a later tick retries
+		return;
+	}
+	scheduleSpawnAt(next);
 }
 
 void Application::regSuicideTimer(int timeoutSeconds)

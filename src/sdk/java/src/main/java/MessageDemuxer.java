@@ -1,5 +1,8 @@
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,9 +33,28 @@ public class MessageDemuxer {
      */
     public static final String EVENT_TYPE_DISCONNECTED = "__disconnected__";
 
+    /**
+     * Bound the pre-registration event buffer (atomic-subscribe race window) so a
+     * subscription whose callback never registers cannot grow memory without limit.
+     */
+    private static final int MAX_BUFFERED_SUBS = 64;
+    private static final int MAX_BUFFERED_EVENTS_PER_SUB = 1000;
+
     private final MessageReader reader;
     private final ConcurrentHashMap<String, PendingRequest> pending = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, EventCallback> eventCallbacks = new ConcurrentHashMap<>();
+    /**
+     * Guards the callback-map / buffer interaction so flush-on-register cannot
+     * reorder buffered events with concurrent live events for the same sub_id.
+     */
+    private final Object eventLock = new Object();
+    /**
+     * Events that arrive between server-side subscription and the client registering
+     * its callback (e.g. atomic addApp(subscribeEvents) on a fast app, whose output is
+     * pushed before addApp returns). Held per sub_id and flushed on
+     * registerEventCallback so no events are lost. Guarded by {@link #eventLock}.
+     */
+    private final Map<String, Deque<AppEvent>> eventBuffers = new HashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private volatile Thread readerThread;
 
@@ -138,6 +160,11 @@ public class MessageDemuxer {
         // Broadcast a synthetic disconnect event to all registered event callbacks
         // so long-running waits can unblock cleanly.
         broadcastDisconnect();
+
+        // Drop events buffered for subs whose callback never registered.
+        synchronized (eventLock) {
+            eventBuffers.clear();
+        }
 
         Thread t = readerThread;
         if (t != null) {
@@ -249,7 +276,18 @@ public class MessageDemuxer {
      * @param callback       invoked on a daemon thread for each matching event
      */
     public void registerEventCallback(String subscriptionId, EventCallback callback) {
-        eventCallbacks.put(subscriptionId, callback);
+        synchronized (eventLock) {
+            eventCallbacks.put(subscriptionId, callback);
+            // Flush events that arrived before registration (atomic-subscribe race).
+            // Dispatched under the lock so the buffered callback threads are started
+            // before any concurrent live event for this sub_id can pass the lock.
+            Deque<AppEvent> buf = eventBuffers.remove(subscriptionId);
+            if (buf != null) {
+                for (AppEvent event : buf) {
+                    deliver(subscriptionId, callback, event);
+                }
+            }
+        }
     }
 
     /**
@@ -258,7 +296,10 @@ public class MessageDemuxer {
      * @param subscriptionId the subscription ID to unregister
      */
     public void unregisterEventCallback(String subscriptionId) {
-        eventCallbacks.remove(subscriptionId);
+        synchronized (eventLock) {
+            eventCallbacks.remove(subscriptionId);
+            eventBuffers.remove(subscriptionId); // discard any buffered events
+        }
     }
 
     /**
@@ -320,22 +361,54 @@ public class MessageDemuxer {
             }
 
             final String subId = resolvedSubId;
-            EventCallback cb = eventCallbacks.get(subId);
+            EventCallback cb;
+            synchronized (eventLock) {
+                cb = eventCallbacks.get(subId);
+                if (cb == null && !subId.isEmpty()) {
+                    // Callback not registered yet (atomic-subscribe race): buffer
+                    // instead of dropping. Flushed on registerEventCallback.
+                    bufferEventLocked(subId, event);
+                }
+            }
             if (cb != null) {
-                // Invoke callback on a separate daemon thread to avoid blocking the reader
-                Thread callbackThread = new Thread(() -> {
-                    try {
-                        cb.onEvent(event);
-                    } catch (Exception e) {
-                        LOGGER.log(Level.WARNING, "Event callback error for subscription " + subId, e);
-                    }
-                }, "appmesh-event-" + subId);
-                callbackThread.setDaemon(true);
-                callbackThread.start();
+                deliver(subId, cb, event);
             }
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to dispatch event", e);
         }
+    }
+
+    /**
+     * Buffer an event whose callback has not registered yet. Caller holds {@link #eventLock}.
+     */
+    private void bufferEventLocked(String subId, AppEvent event) {
+        Deque<AppEvent> buf = eventBuffers.get(subId);
+        if (buf == null) {
+            if (eventBuffers.size() >= MAX_BUFFERED_SUBS) {
+                return; // cap distinct unregistered subs to bound memory
+            }
+            buf = new ArrayDeque<>();
+            eventBuffers.put(subId, buf);
+        }
+        if (buf.size() >= MAX_BUFFERED_EVENTS_PER_SUB) {
+            buf.pollFirst(); // drop-oldest
+        }
+        buf.addLast(event);
+    }
+
+    /**
+     * Invoke the callback on a separate daemon thread to avoid blocking the reader.
+     */
+    private void deliver(String subId, EventCallback cb, AppEvent event) {
+        Thread callbackThread = new Thread(() -> {
+            try {
+                cb.onEvent(event);
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Event callback error for subscription " + subId, e);
+            }
+        }, "appmesh-event-" + subId);
+        callbackThread.setDaemon(true);
+        callbackThread.start();
     }
 
     /**

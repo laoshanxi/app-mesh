@@ -53,11 +53,14 @@ void PipeStdoutStrategy::teardown()
 
 	pump->stop();
 
+	// Deregister BEFORE draining: no new upcall can start, finalSyncDrain() waits
+	// out any in-flight one. DONT_CALL keeps the fd open for the drain.
+	ACE_Reactor::instance()->remove_handler(pump, ACE_Event_Handler::READ_MASK | ACE_Event_Handler::DONT_CALL);
+
 	pump->finalSyncDrain();
 	pump->cancelCoalesceTimerAndFlush();
 	m_snapshotBytes.store(pump->acceptedBytes(), std::memory_order_release);
 	ACE_Reactor::instance()->cancel_timer(pump);
-	ACE_Reactor::instance()->remove_handler(pump, ACE_Event_Handler::READ_MASK);
 
 	pump->remove_reference();
 	LOG_DBG << fname << "bytes=" << m_snapshotBytes.load();

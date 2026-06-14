@@ -122,6 +122,13 @@ paths:
       tags: [Identity]
       security:
         - BearerAuth: []
+      parameters:
+        - name: X-Refresh-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: OAuth2 (Keycloak) mode only. The refresh token issued at login; when supplied the Keycloak session is revoked server-side, otherwise only the local session is revoked.
       responses:
         "200":
           description: User logged out successfully.
@@ -142,6 +149,12 @@ paths:
             type: integer
             default: 3600
           description: Optional token expiration time in seconds.
+        - name: X-Refresh-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Required in OAuth2 (Keycloak) mode. The refresh token issued at login, exchanged for a fresh access token.
       responses:
         "200":
           $ref: "#/components/responses/TokenResponse"
@@ -1675,6 +1688,10 @@ components:
                     example: 1704067200
               access_token:
                 type: string
+                example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              refresh_token:
+                type: string
+                description: Present only in OAuth2 (Keycloak) mode. Supply it back via the X-Refresh-Token header to renew or to revoke the Keycloak session on logoff.
                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
               token_type:
                 type: string

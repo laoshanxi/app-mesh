@@ -5,6 +5,7 @@ import json
 import queue
 import threading
 import logging
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
 
@@ -51,12 +52,22 @@ class MessageDemuxer:
     # Sentinel queued to the dispatch worker to make it exit cleanly.
     _DISPATCH_STOP = object()
 
+    # Bound the pre-registration event buffer (atomic-subscribe race window) so a
+    # subscription whose callback never registers cannot grow memory without limit.
+    _MAX_BUFFERED_SUBS = 64
+    _MAX_BUFFERED_EVENTS_PER_SUB = 1000
+
     def __init__(self, transport):
         self._transport = transport
         self._lock = threading.Lock()
         self._pending: Dict[str, threading.Event] = {}
         self._pending_responses: Dict[str, Optional[ResponseMessage]] = {}
         self._event_callbacks: Dict[str, EventCallback] = {}
+        # Events that arrive between server-side subscription and the client
+        # registering its callback (e.g. atomic add_app(subscribe_events) on a fast
+        # app, whose output is pushed before add_app returns). Held per sub_id and
+        # flushed on register_event_callback so no events are lost.
+        self._event_buffers: Dict[str, "deque[AppEvent]"] = {}
         self._reader_thread: Optional[threading.Thread] = None
         self._running = False
         # Single-worker FIFO queue serializes user callbacks so events arrive in
@@ -86,6 +97,7 @@ class MessageDemuxer:
                 evt.set()
             self._pending.clear()
             self._pending_responses.clear()
+            self._event_buffers.clear()  # drop events buffered for never-registered subs
         # Stop the dispatch worker last so the disconnect event has been delivered.
         self._dispatch_queue.put(self._DISPATCH_STOP)
 
@@ -123,14 +135,21 @@ class MessageDemuxer:
         return resp
 
     def register_event_callback(self, sub_id: str, callback: EventCallback):
-        """Register a callback for a subscription ID."""
+        """Register a callback for a subscription ID, flushing any events that
+        arrived before registration (atomic-subscribe race)."""
         with self._lock:
             self._event_callbacks[sub_id] = callback
+            buffered = self._event_buffers.pop(sub_id, None)
+            # Enqueue under the lock so buffered events precede later live events.
+            if buffered:
+                for event in buffered:
+                    self._dispatch_queue.put((callback, event))
 
     def unregister_event_callback(self, sub_id: str):
         """Remove a callback for a subscription ID."""
         with self._lock:
             self._event_callbacks.pop(sub_id, None)
+            self._event_buffers.pop(sub_id, None)
 
     def _read_loop(self):
         """Background thread: continuously reads and routes messages."""
@@ -174,12 +193,23 @@ class MessageDemuxer:
 
             with self._lock:
                 cb = self._event_callbacks.get(sub_id)
+                if cb is None and sub_id:
+                    self._buffer_event_locked(sub_id, event)
 
             if cb:
                 self._dispatch_queue.put((cb, event))
 
         except Exception as e:
             logger.warning("Failed to dispatch event: %s", e)
+
+    def _buffer_event_locked(self, sub_id: str, event: "AppEvent"):
+        """Hold an event whose callback has not registered yet (caller holds _lock)."""
+        buf = self._event_buffers.get(sub_id)
+        if buf is None:
+            if len(self._event_buffers) >= self._MAX_BUFFERED_SUBS:
+                return  # cap distinct unregistered subs to bound memory
+            buf = self._event_buffers[sub_id] = deque(maxlen=self._MAX_BUFFERED_EVENTS_PER_SUB)
+        buf.append(event)
 
     def _dispatch_loop(self):
         """Single worker thread: invokes user callbacks in FIFO order."""

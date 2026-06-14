@@ -26,7 +26,8 @@ public:
 
     // Pre-Shared-Key operations
     std::string writePSKToSHM();
-    bool waitPSKRead();
+    bool waitPSKRead();      // blocking, returns handshake result; startup fail-fast (never call on the timer thread)
+    void waitPSKReadAsync(); // fire-and-forget; for agent-restart paths that may run on the timer-dispatch thread
     const std::string getShmName();
 
 private:

@@ -456,6 +456,8 @@ void WebSocketService::stop()
         m_sessions.clear();
     }
 
+    m_http_live.clear(); // IO thread joined; drop stale wsi pointers before any restart
+
     LOG_INF << fname << "Shutdown complete";
 }
 
@@ -471,7 +473,10 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
     {
     case LWS_CALLBACK_HTTP_BIND_PROTOCOL:
         if (!pss)
+        {
             lws_set_opaque_user_data(wsi, new HttpSessionData());
+            m_http_live.insert(wsi); // mark live for deliverResponse() (see header)
+        }
         return 0;
 
     case LWS_CALLBACK_HTTP:
@@ -715,6 +720,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
     case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
     case LWS_CALLBACK_CLOSED_HTTP:
     {
+        m_http_live.erase(wsi); // unmark before the wsi is freed; queued responses now dropped
         // Nulling opaque_user_data makes the second callback a no-op.
         if (pss)
         {
@@ -878,6 +884,14 @@ void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
 
     if (resp->m_is_http)
     {
+        // Liveness gate by pointer compare BEFORE any deref: the wsi may have been closed+freed
+        // since the worker captured it, making http_pss(wsi) a use-after-free.
+        if (m_http_live.find(wsi) == m_http_live.end())
+        {
+            LOG_WAR << "HTTP connection closed before response, dropping response";
+            return;
+        }
+
         auto *pss = http_pss(wsi);
         if (!pss || !pss->http_pending)
         {

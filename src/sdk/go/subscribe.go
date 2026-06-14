@@ -51,11 +51,23 @@ type MessageDemuxer struct {
 	mu       sync.Mutex
 	pending  map[string]chan *Response // uuid -> response channel
 	eventCBs map[string]EventCallback  // subscription_id -> callback
-	started  bool
-	stopCh   chan struct{}
-	eventQ   chan dispatchTask
-	readMsg  func() ([]byte, error) // transport-specific read function
+	// Events that arrive between server-side subscription and the client
+	// registering its callback (e.g. atomic add_app(subscribe_events) on a fast
+	// app, whose output is pushed before add_app returns). Held per subID and
+	// flushed on registerEventCallback so no events are lost.
+	eventBufs map[string][]AppEvent
+	started   bool
+	stopCh    chan struct{}
+	eventQ    chan dispatchTask
+	readMsg   func() ([]byte, error) // transport-specific read function
 }
+
+// Bound the pre-registration event buffer (atomic-subscribe race window) so a
+// subscription whose callback never registers cannot grow memory without limit.
+const (
+	maxBufferedSubs         = 64
+	maxBufferedEventsPerSub = 1000
+)
 
 type dispatchTask struct {
 	cb    EventCallback
@@ -64,11 +76,12 @@ type dispatchTask struct {
 
 func newMessageDemuxer(readMsg func() ([]byte, error)) *MessageDemuxer {
 	return &MessageDemuxer{
-		pending:  make(map[string]chan *Response),
-		eventCBs: make(map[string]EventCallback),
-		stopCh:   make(chan struct{}),
-		eventQ:   make(chan dispatchTask, 256),
-		readMsg:  readMsg,
+		pending:   make(map[string]chan *Response),
+		eventCBs:  make(map[string]EventCallback),
+		eventBufs: make(map[string][]AppEvent),
+		stopCh:    make(chan struct{}),
+		eventQ:    make(chan dispatchTask, 256),
+		readMsg:   readMsg,
 	}
 }
 
@@ -127,6 +140,7 @@ func (d *MessageDemuxer) stop() {
 	}
 	pendingCopy := d.pending
 	d.pending = make(map[string]chan *Response)
+	d.eventBufs = make(map[string][]AppEvent) // drop events buffered for never-registered subs
 	d.mu.Unlock()
 
 	// Close pending channels (outside lock)
@@ -163,10 +177,20 @@ func (d *MessageDemuxer) unregisterRequest(uuid string) {
 	d.mu.Unlock()
 }
 
-// registerEventCallback registers a callback for a subscription ID.
+// registerEventCallback registers a callback for a subscription ID, flushing any
+// events that arrived before registration (atomic-subscribe race).
 func (d *MessageDemuxer) registerEventCallback(subID string, cb EventCallback) {
 	d.mu.Lock()
 	d.eventCBs[subID] = cb
+	buffered := d.eventBufs[subID]
+	delete(d.eventBufs, subID)
+	// Enqueue under the lock so buffered events precede later live events.
+	for _, event := range buffered {
+		select {
+		case d.eventQ <- dispatchTask{cb: cb, event: event}:
+		case <-d.stopCh:
+		}
+	}
 	d.mu.Unlock()
 }
 
@@ -174,6 +198,7 @@ func (d *MessageDemuxer) registerEventCallback(subID string, cb EventCallback) {
 func (d *MessageDemuxer) unregisterEventCallback(subID string) {
 	d.mu.Lock()
 	delete(d.eventCBs, subID)
+	delete(d.eventBufs, subID)
 	d.mu.Unlock()
 }
 
@@ -222,6 +247,13 @@ func (d *MessageDemuxer) dispatchEvent(resp *Response) {
 
 	d.mu.Lock()
 	cb, ok := d.eventCBs[subID]
+	if (!ok || cb == nil) && subID != "" {
+		// No callback yet: buffer the event so an atomic add_app(subscribe_events)
+		// on a fast app does not lose output pushed before the client registers.
+		d.bufferEventLocked(subID, event)
+		d.mu.Unlock()
+		return
+	}
 	d.mu.Unlock()
 
 	if !ok || cb == nil {
@@ -233,6 +265,21 @@ func (d *MessageDemuxer) dispatchEvent(resp *Response) {
 	case d.eventQ <- dispatchTask{cb: cb, event: event}:
 	case <-d.stopCh:
 	}
+}
+
+// bufferEventLocked holds an event whose callback has not registered yet.
+// The caller must hold d.mu. Bounded: caps distinct buffered subIDs and uses
+// drop-oldest per subID so a never-registered subscription cannot grow memory
+// without limit.
+func (d *MessageDemuxer) bufferEventLocked(subID string, event AppEvent) {
+	buf, exists := d.eventBufs[subID]
+	if !exists && len(d.eventBufs) >= maxBufferedSubs {
+		return // cap distinct unregistered subs to bound memory
+	}
+	if len(buf) >= maxBufferedEventsPerSub {
+		buf = buf[1:] // drop oldest
+	}
+	d.eventBufs[subID] = append(buf, event)
 }
 
 // dispatchResponse routes a request response to the matching pending channel.

@@ -3,14 +3,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <tuple>
 
-#include <ace/Event.h>
-#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <boost/smart_ptr/shared_ptr.hpp>
 #include <boost/thread/recursive_mutex.hpp>
 #include <boost/thread/synchronized_value.hpp>
@@ -31,11 +30,8 @@ class DailyLimitation;
 class ResourceLimitation;
 class TaskRequest;
 
-namespace prometheus
-{
-	class Counter;
-};
-
+// Recursive mutex is REQUIRED: terminate() under a synchronize() scope re-enters via
+// onExitUpdate() -> m_process.get() (e.g. disabling an exited app); plain mutex would self-deadlock.
 using AppMeshProcess = boost::synchronized_value<std::shared_ptr<AppProcess>, boost::recursive_mutex>;
 
 // An Application defines and manages a process job
@@ -80,23 +76,25 @@ public:
 	void destroy();
 
 	// Behavior
-	boost::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point startFrom = std::chrono::system_clock::now());
+	void scheduleNext(std::chrono::system_clock::time_point startFrom = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
 	bool onTimerAppRemove();
 	void handleError();
-	void onExitUpdate(int code);
+	// triggerLifecycle: inline immediate restart; currently always false (restart is tick-driven).
+	// naturalExit: latch for restart (vs. deliberate kill). reporter: latch only if it's the current m_process.
+	void onExitUpdate(int code, bool triggerLifecycle = false, bool naturalExit = false, const AppProcess *reporter = nullptr);
 	void terminate(std::shared_ptr<AppProcess> &process);
 
 	// Run operations
-	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
-	std::string runSyncrize(int timeoutSeconds, std::shared_ptr<void> asyncHttpRequest) noexcept(false);
+	std::string runAsync(int timeoutSeconds) noexcept(false);
+	std::string runSync(int timeoutSeconds, std::shared_ptr<HttpRequest> asyncHttpRequest) noexcept(false);
 	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "", int index = 0, size_t timeout = 0);
 
 	// Task operations
-	void sendTask(std::shared_ptr<void> asyncHttpRequest);
+	void sendTask(std::shared_ptr<HttpRequest> asyncHttpRequest);
 	bool deleteTask();
-	void fetchTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest);
-	void replyTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest);
+	void fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
+	void replyTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	std::tuple<int, std::string> taskStatus();
 
 	// Prometheus metrics
@@ -111,8 +109,9 @@ protected:
 
 	// Process management
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
-	bool onTimerSpawn();
-	void refresh(void *ptree = nullptr);
+	void spawnNow(); // start the process now (called by spawnIfDue on the scheduler thread)
+	void refresh();
+	void collectMetrics(void *ptree = nullptr); // Prometheus process-stat sampling; runs outside m_lifecycleMutex
 	void healthCheck();
 
 	std::string runApp(int timeoutSeconds) noexcept(false);
@@ -120,9 +119,19 @@ protected:
 	const std::string &getCmdLine() const;
 	std::map<std::string, std::string> getMergedEnvMap() const;
 
+	// Single convergence point for the lifecycle state machine. Triggered by the periodic
+	// tick (execute) and by a process-exit upcall (onExitUpdate, for immediate restart).
+	void driveLifecycle(const std::chrono::system_clock::time_point &now);
 	void handleUnavailable(const std::chrono::system_clock::time_point &now);
-	boost::shared_ptr<std::chrono::system_clock::time_point> handleScheduling(const std::chrono::system_clock::time_point &now);
-	bool hasExited(const std::chrono::system_clock::time_point &now) const;
+	// Terminate the running process (if any) and return next-start ownership to the tick.
+	bool forceStop();
+	void handleScheduling(const std::chrono::system_clock::time_point &now);
+	// Crash-loop backoff delay for the next restart (see RestartBackoff); 0 for periodic/cron.
+	std::chrono::seconds restartDelay();
+	// Record the next launch time (no timer); the tick's spawnIfDue starts it when due.
+	void scheduleSpawnAt(const std::chrono::system_clock::time_point &when);
+	void spawnIfDue(const std::chrono::system_clock::time_point &now); // start if nextLaunch reached
+	bool consumePendingExit(); // test-and-clear the exit latch; true => caller should run handleError()
 
 protected:
 	std::shared_ptr<AppTimer> m_timer;
@@ -139,7 +148,6 @@ protected:
 	bool m_shellApp;
 	bool m_sessionLogin;
 	int m_stdoutCacheNum;
-	int m_stdoutCacheSize;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
 	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
 
@@ -153,9 +161,6 @@ protected:
 	int m_bufferTime;
 	bool m_startIntervalValueIsCronExpr;
 	std::shared_ptr<AppProcess> m_bufferProcess;
-
-	std::atomic_long m_nextStartTimerId;
-	ACE_Event m_nextStartTimerIdEvent;
 
 	std::chrono::system_clock::time_point m_regTime;
 	std::string m_healthCheckCmd;
@@ -171,15 +176,49 @@ protected:
 
 	// Runtime dynamic variables
 	AppMeshProcess m_process;
-	std::atomic<pid_t> m_pid;
-	std::atomic<int> m_return; // Exit code of last instance
 	std::atomic_bool m_health;
 	std::atomic<STATUS> m_status;
 	std::atomic_bool m_destroying{false}; // First entry to destroy() wins; rest are no-ops.
 	mutable std::mutex m_saveMutex; // Serialise concurrent save() on same app yaml.
-	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_procStartTime;
-	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_procExitTime;
-	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
+
+	// Schedule intent: true when no one owns the next start (initial, force-stop, failed arm);
+	// cleared by scheduleSpawnAt(). handleScheduling triggers off this.
+	std::atomic_bool m_needsSchedule;
+
+	// ---- Consolidated runtime run-state (struct + lock + accessors, keep together) ----
+	// Guarded by m_runMutex so readers see a consistent snapshot.
+	// Lock order: m_process -> m_runMutex; never hold m_runMutex across timer/m_process ops.
+	struct RunState
+	{
+		pid_t pid = 0;      // real default (ACE_INVALID_PID) set in Application ctor
+		int returnCode = 0; // real default (INVALID_RETURN_CODE) set in Application ctor
+		boost::shared_ptr<std::chrono::system_clock::time_point> startTime; // null = not started
+		boost::shared_ptr<std::chrono::system_clock::time_point> exitTime;  // null = not exited
+		boost::shared_ptr<std::chrono::system_clock::time_point> nextLaunch; // next planned launch (display data); null = none
+		bool exitPending = false; // an exit was recorded and not yet handled by driveLifecycle
+	};
+	mutable std::mutex m_runMutex;
+	RunState m_run; // guarded by m_runMutex
+
+	template <typename Fn>
+	void updateRunState(Fn &&fn) // grouped mutation under the run lock
+	{
+		std::lock_guard<std::mutex> guard(m_runMutex);
+		fn(m_run);
+	}
+	RunState loadRunState() const // consistent copy for readers
+	{
+		std::lock_guard<std::mutex> guard(m_runMutex);
+		return m_run;
+	}
+	// ------------------------------------------------------------------------------------
+
+	// Serializes driveLifecycle() across its trigger threads (periodic tick + the
+	// exit-driven call). Lock order: m_lifecycleMutex -> m_process -> m_runMutex.
+	std::mutex m_lifecycleMutex;
+
+	// Crash-loop restart backoff; only touched from handleError (under m_lifecycleMutex).
+	RestartBackoff m_restartBackoff;
 
 	// Error message
 	boost::synchronized_value<std::string> m_lastError;
@@ -193,5 +232,8 @@ protected:
 	std::shared_ptr<GaugeMetric> m_metricCpu;
 	std::shared_ptr<GaugeMetric> m_metricAppPid;
 	std::shared_ptr<GaugeMetric> m_metricFileDesc;
-	std::shared_ptr<prometheus::Counter> m_starts;
+	// Always-on start counter reported by AsJson (independent of Prometheus). shared_ptr so an
+	// updated app inherits the prior object's count (see initMetrics). atomic, not a prometheus
+	// type, to keep this off the Prometheus dependency when metrics are disabled.
+	std::shared_ptr<std::atomic<unsigned long long>> m_starts;
 };
