@@ -1,8 +1,8 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-fn appc() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_appc"))
+fn appm() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_appm"))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -11,7 +11,7 @@ fn appc() -> Command {
 
 #[test]
 fn test_help_lists_all_22_commands() {
-    let out = appc().arg("--help").output().unwrap();
+    let out = appm().arg("--help").output().unwrap();
     assert!(out.status.success());
     let s = String::from_utf8_lossy(&out.stdout);
     for cmd in [
@@ -25,14 +25,14 @@ fn test_help_lists_all_22_commands() {
 
 #[test]
 fn test_version_output() {
-    let out = appc().arg("--version").output().unwrap();
+    let out = appm().arg("--version").output().unwrap();
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("appc"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("appm"));
 }
 
 #[test]
 fn test_short_help_flag() {
-    let out = appc().arg("-h").output().unwrap();
+    let out = appm().arg("-h").output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("App Mesh CLI"));
 }
@@ -52,7 +52,7 @@ fn test_global_flags_in_help() {
 #[test]
 fn test_global_short_flags_accepted() {
     // All short global flags before subcommand + --help
-    let out = appc()
+    let out = appm()
         .args(["-H", "localhost:6058", "-U", "admin", "-X", "pass", "-v", "logon", "--help"])
         .output()
         .unwrap();
@@ -61,7 +61,7 @@ fn test_global_short_flags_accepted() {
 
 #[test]
 fn test_unknown_global_flag_rejected() {
-    let out = appc().args(["--nonexistent-flag", "view"]).output().unwrap();
+    let out = appm().args(["--nonexistent-flag", "view"]).output().unwrap();
     assert!(!out.status.success());
 }
 
@@ -70,22 +70,22 @@ fn test_unknown_global_flag_rejected() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_alias_ls()     { assert!(appc().args(["ls",     "--help"]).output().unwrap().status.success()); }
+fn test_alias_ls()     { assert!(appm().args(["ls",     "--help"]).output().unwrap().status.success()); }
 #[test]
-fn test_alias_list()   { assert!(appc().args(["list",   "--help"]).output().unwrap().status.success()); }
+fn test_alias_list()   { assert!(appm().args(["list",   "--help"]).output().unwrap().status.success()); }
 #[test]
-fn test_alias_reg()    { assert!(appc().args(["reg",    "--help"]).output().unwrap().status.success()); }
+fn test_alias_reg()    { assert!(appm().args(["reg",    "--help"]).output().unwrap().status.success()); }
 #[test]
-fn test_alias_remove() { assert!(appc().args(["remove", "--help"]).output().unwrap().status.success()); }
+fn test_alias_remove() { assert!(appm().args(["remove", "--help"]).output().unwrap().status.success()); }
 #[test]
-fn test_alias_unreg()  { assert!(appc().args(["unreg",  "--help"]).output().unwrap().status.success()); }
+fn test_alias_unreg()  { assert!(appm().args(["unreg",  "--help"]).output().unwrap().status.success()); }
 #[test]
-fn test_alias_logout() { assert!(appc().args(["logout", "--help"]).output().unwrap().status.success()); }
+fn test_alias_logout() { assert!(appm().args(["logout", "--help"]).output().unwrap().status.success()); }
 
 #[test]
 fn test_alias_content_matches_primary() {
-    let rm_help  = String::from_utf8_lossy(&appc().args(["rm",     "--help"]).output().unwrap().stdout).to_string();
-    let rem_help = String::from_utf8_lossy(&appc().args(["remove", "--help"]).output().unwrap().stdout).to_string();
+    let rm_help  = String::from_utf8_lossy(&appm().args(["rm",     "--help"]).output().unwrap().stdout).to_string();
+    let rem_help = String::from_utf8_lossy(&appm().args(["remove", "--help"]).output().unwrap().stdout).to_string();
     // Both should list the same flags
     assert!(rm_help.contains("--app") && rem_help.contains("--app"));
     assert!(rm_help.contains("--force") && rem_help.contains("--force"));
@@ -231,9 +231,9 @@ fn test_help_mfa_all_flags() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_missing_subcommand()        { assert!(!appc().output().unwrap().status.success()); }
+fn test_missing_subcommand()        { assert!(!appm().output().unwrap().status.success()); }
 #[test]
-fn test_invalid_subcommand()        { assert!(!appc().arg("xyz").output().unwrap().status.success()); }
+fn test_invalid_subcommand()        { assert!(!appm().arg("xyz").output().unwrap().status.success()); }
 #[test]
 fn test_rm_requires_app()           { assert_err_contains(&["rm", "-f"], "--app"); }
 #[test]
@@ -251,7 +251,7 @@ fn test_lock_requires_target()      { assert_err_contains(&["lock", "--lock", "t
 #[test]
 fn test_lock_requires_lock_flag()   { assert_err_contains(&["lock", "--target", "admin"], "--lock"); }
 #[test]
-fn test_exec_requires_command()     { assert!(!appc().args(["exec"]).output().unwrap().status.success()); }
+fn test_exec_requires_command()     { assert!(!appm().args(["exec"]).output().unwrap().status.success()); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Clap type validation
@@ -259,37 +259,37 @@ fn test_exec_requires_command()     { assert!(!appc().args(["exec"]).output().un
 
 #[test]
 fn test_lock_invalid_bool() {
-    let out = appc().args(["lock", "--target", "admin", "--lock", "notbool"]).output().unwrap();
+    let out = appm().args(["lock", "--target", "admin", "--lock", "notbool"]).output().unwrap();
     assert!(!out.status.success());
 }
 
 #[test]
 fn test_add_invalid_status_bool() {
-    let out = appc().args(["add", "-a", "x", "-c", "y", "--status", "notbool"]).output().unwrap();
+    let out = appm().args(["add", "-a", "x", "-c", "y", "--status", "notbool"]).output().unwrap();
     assert!(!out.status.success());
 }
 
 #[test]
 fn test_add_invalid_pid_type() {
-    let out = appc().args(["add", "-a", "x", "-c", "y", "--pid", "abc"]).output().unwrap();
+    let out = appm().args(["add", "-a", "x", "-c", "y", "--pid", "abc"]).output().unwrap();
     assert!(!out.status.success());
 }
 
 #[test]
 fn test_add_invalid_memory_limit_type() {
-    let out = appc().args(["add", "-a", "x", "-c", "y", "--memory-limit", "abc"]).output().unwrap();
+    let out = appm().args(["add", "-a", "x", "-c", "y", "--memory-limit", "abc"]).output().unwrap();
     assert!(!out.status.success());
 }
 
 #[test]
 fn test_add_invalid_permission_type() {
-    let out = appc().args(["add", "-a", "x", "-c", "y", "--permission", "abc"]).output().unwrap();
+    let out = appm().args(["add", "-a", "x", "-c", "y", "--permission", "abc"]).output().unwrap();
     assert!(!out.status.success());
 }
 
 #[test]
 fn test_view_invalid_log_index_type() {
-    let out = appc().args(["view", "-a", "x", "-i", "abc"]).output().unwrap();
+    let out = appm().args(["view", "-a", "x", "-i", "abc"]).output().unwrap();
     assert!(!out.status.success());
 }
 
@@ -366,13 +366,13 @@ fn test_appmgpwd_stdin_skips_blank_lines() {
 
 #[test]
 fn test_appmginit_exit_code_1() {
-    let out = appc().args(["appmginit"]).output().unwrap();
+    let out = appm().args(["appmginit"]).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
 fn test_appmginit_error_message_non_root() {
-    let out = appc().args(["appmginit"]).output().unwrap();
+    let out = appm().args(["appmginit"]).output().unwrap();
     let err = String::from_utf8_lossy(&out.stderr);
     // Non-root: "Only root user can generate an initial password."
     // or: "Cannot detect App Mesh installation directory"
@@ -385,7 +385,7 @@ fn test_appmginit_error_message_non_root() {
 
 #[test]
 fn test_appmginit_help() {
-    let out = appc().args(["appmginit", "--help"]).output().unwrap();
+    let out = appm().args(["appmginit", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
@@ -395,14 +395,14 @@ fn test_appmginit_help() {
 
 #[test]
 fn test_error_exits_1() {
-    let out = appc().args(["-H", "127.0.0.1:1", "config"]).output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "config"]).output().unwrap();
     assert!(!out.status.success());
     assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
 fn test_error_with_force_flag_exits_zero() {
-    let out = appc()
+    let out = appm()
         .args(["-H", "127.0.0.1:1", "rm", "-a", "nonexist", "--force"])
         .output().unwrap();
     assert_eq!(out.status.code(), Some(0));
@@ -411,7 +411,7 @@ fn test_error_with_force_flag_exits_zero() {
 #[cfg(unix)]
 #[test]
 fn test_error_with_follow_flag_exits_zero() {
-    let out = appc()
+    let out = appm()
         .args(["-H", "127.0.0.1:1", "view", "-a", "nonexist", "--follow"])
         .output().unwrap();
     assert_eq!(out.status.code(), Some(0));
@@ -421,7 +421,7 @@ fn test_error_with_follow_flag_exits_zero() {
 #[test]
 fn test_error_with_short_f_flag_exits_zero() {
     // -f on rm is --force; raw argv scan sees "-f"
-    let out = appc()
+    let out = appm()
         .args(["-H", "127.0.0.1:1", "rm", "-a", "nonexist", "-f"])
         .output().unwrap();
     assert_eq!(out.status.code(), Some(0));
@@ -432,7 +432,7 @@ fn test_help_always_exits_zero() {
     for cmd in ["logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable",
                 "restart", "run", "exec", "shell", "get", "put", "label", "log",
                 "config", "resource", "passwd", "lock", "user", "mfa", "appmgpwd", "appmginit"] {
-        let out = appc().args([cmd, "--help"]).output().unwrap();
+        let out = appm().args([cmd, "--help"]).output().unwrap();
         assert!(out.status.success(), "{} --help should exit 0", cmd);
     }
 }
@@ -468,7 +468,7 @@ fn test_default_shell_lifetime() {
 #[cfg(unix)]
 #[test]
 fn test_put_nonexistent_local_file() {
-    let out = appc()
+    let out = appm()
         .args(["-H", "127.0.0.1:1", "put", "--remote", "/tmp/r", "--local", "/no/such/file.txt"])
         .output().unwrap();
     assert!(!out.status.success());
@@ -483,7 +483,7 @@ fn test_put_nonexistent_local_file() {
 #[cfg(unix)]
 #[test]
 fn test_user_json_nonexistent_file() {
-    let out = appc()
+    let out = appm()
         .args(["-H", "127.0.0.1:1", "user", "--json", "/no/such/user.json"])
         .output().unwrap();
     assert!(!out.status.success());
@@ -498,7 +498,7 @@ fn test_user_json_nonexistent_file() {
 #[test]
 fn test_add_multiple_env_flags_accepted() {
     // Should parse successfully (daemon-dependent for actual operation)
-    let out = appc()
+    let out = appm()
         .args(["add", "-a", "test", "-c", "echo", "-e", "K1=V1", "-e", "K2=V2", "--help"])
         .output().unwrap();
     // --help always exits 0; this verifies -e can appear multiple times
@@ -507,7 +507,7 @@ fn test_add_multiple_env_flags_accepted() {
 
 #[test]
 fn test_add_multiple_control_flags_accepted() {
-    let out = appc()
+    let out = appm()
         .args(["add", "-a", "x", "-c", "y", "--control", "0:standby", "--control", "1:restart", "--help"])
         .output().unwrap();
     assert!(out.status.success());
@@ -520,7 +520,7 @@ fn test_add_multiple_control_flags_accepted() {
 #[test]
 fn test_add_stdin_nonexistent_file() {
     // No --force: raw argv won't contain --force, so exit code is -1 (255)
-    let out = appc()
+    let out = appm()
         .args(["-H", "127.0.0.1:1", "add", "--stdin", "/no/such/app.yaml"])
         .output().unwrap();
     assert!(!out.status.success());
@@ -535,7 +535,7 @@ fn test_add_stdin_valid_yaml_file() {
     std::fs::write(&yaml_path, "name: testapp\ncommand: echo hello\n").unwrap();
 
     // Will fail at network level but should parse YAML successfully
-    let out = appc()
+    let out = appm()
         .args([
             "-H", "127.0.0.1:1",
             "add", "--stdin", yaml_path.to_str().unwrap(), "--force",
@@ -557,7 +557,7 @@ fn test_add_stdin_valid_yaml_file() {
 #[test]
 fn test_add_metadata_file_not_found() {
     // No --force so error exit code is not suppressed
-    let out = appc()
+    let out = appm()
         .args(["-H", "127.0.0.1:1", "add", "-a", "x", "-c", "y", "-m", "@/nonexistent.json"])
         .output().unwrap();
     assert!(!out.status.success());
@@ -571,7 +571,7 @@ fn test_add_metadata_valid_json_file() {
     let meta_path = dir.path().join("meta.json");
     std::fs::write(&meta_path, r#"{"key":"value"}"#).unwrap();
 
-    let out = appc()
+    let out = appm()
         .args([
             "-H", "127.0.0.1:1",
             "add", "-a", "x", "-c", "y",
@@ -591,7 +591,7 @@ fn test_add_metadata_valid_json_file() {
 #[test]
 fn test_rm_multiple_apps_flag() {
     // Verify multiple -a flags are accepted by clap
-    let out = appc()
+    let out = appm()
         .args(["rm", "-a", "app1", "-a", "app2", "-a", "app3", "--help"])
         .output().unwrap();
     assert!(out.status.success());
@@ -603,19 +603,19 @@ fn test_rm_multiple_apps_flag() {
 
 #[test]
 fn test_enable_all_flag_accepted() {
-    let out = appc().args(["enable", "--all", "--help"]).output().unwrap();
+    let out = appm().args(["enable", "--all", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
 #[test]
 fn test_disable_all_flag_accepted() {
-    let out = appc().args(["disable", "--all", "--help"]).output().unwrap();
+    let out = appm().args(["disable", "--all", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
 #[test]
 fn test_restart_all_flag_accepted() {
-    let out = appc().args(["restart", "--all", "--help"]).output().unwrap();
+    let out = appm().args(["restart", "--all", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
@@ -625,7 +625,7 @@ fn test_restart_all_flag_accepted() {
 
 #[test]
 fn test_label_multiple_label_flags_accepted() {
-    let out = appc()
+    let out = appm()
         .args(["label", "--add", "-l", "os=linux", "-l", "arch=x86", "--help"])
         .output().unwrap();
     assert!(out.status.success());
@@ -638,7 +638,7 @@ fn test_label_multiple_label_flags_accepted() {
 #[test]
 fn test_exec_trailing_args_accepted() {
     // exec uses trailing_var_arg; verify clap accepts it
-    let out = appc()
+    let out = appm()
         .args(["exec", "--help"])
         .output().unwrap();
     assert!(out.status.success());
@@ -651,7 +651,7 @@ fn test_exec_trailing_args_accepted() {
 
 #[test]
 fn test_shell_trailing_args_optional() {
-    let out = appc().args(["shell", "--help"]).output().unwrap();
+    let out = appm().args(["shell", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
@@ -660,7 +660,7 @@ fn test_shell_trailing_args_optional() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn stdout_of(args: &[&str]) -> String {
-    String::from_utf8_lossy(&appc().args(args).output().unwrap().stdout).to_string()
+    String::from_utf8_lossy(&appm().args(args).output().unwrap().stdout).to_string()
 }
 
 fn stdout_lines(args: &[&str]) -> Vec<String> {
@@ -676,7 +676,7 @@ fn lines_of(raw: &[u8]) -> Vec<String> {
 }
 
 fn pipe_stdin(args: &[&str], input: &[u8]) -> std::process::Output {
-    let mut child = appc()
+    let mut child = appm()
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -688,7 +688,7 @@ fn pipe_stdin(args: &[&str], input: &[u8]) -> std::process::Output {
 }
 
 fn assert_err_contains(args: &[&str], needle: &str) {
-    let out = appc().args(args).output().unwrap();
+    let out = appm().args(args).output().unwrap();
     assert!(!out.status.success(), "expected failure for {:?}", args);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains(needle), "stderr for {:?} should contain '{}', got: {}", args, needle, stderr);

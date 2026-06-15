@@ -4,7 +4,7 @@
 #  1. Run docker container and register a long running application
 #     docker run -d laoshanxi/appmesh ping github.com
 #  2. Run docker container and excute an external cmd
-#     docker run -d laoshanxi/appmesh appc ls
+#     docker run -d laoshanxi/appmesh appm ls
 #  3. Run with root permission (for AI remote execution, pip install, etc.)
 #     docker run -d -e APPMESH_RUN_AS_ROOT=true laoshanxi/appmesh
 ##################################################################################
@@ -36,7 +36,7 @@ RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/
 	ln -s /opt/appmesh/script/docker-entrypoint.sh /entrypoint.sh && \
 	touch /opt/appmesh/appmesh.pid && \
 	(id -u appmesh >/dev/null 2>&1 && chown -R appmesh:appmesh /opt/appmesh/) || true && \
-	ldd /usr/local/bin/appc && /usr/local/bin/appc -V && /opt/appmesh/bin/appsvc -V
+	ldd /usr/local/bin/appm && /usr/local/bin/appm -V && /opt/appmesh/bin/appsvc -V
 EXPOSE 6060
 # USER is determined at runtime by docker-entrypoint.sh via setpriv:
 #   default: drops to 'appmesh' user (secure)

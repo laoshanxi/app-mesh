@@ -73,6 +73,6 @@ Step references are scoped to the current Job. Cross-job references use the `job
 |----------------|-----------------|-------------------|
 | Task | Request-response message API (`/app/{name}/task`) | Do not use. Use "Step" or "message step" instead. |
 | App | A real managed process | In v1, workflow is registered as a special App for CRUD/RBAC. Not a runnable App. |
-| Run | `POST /app/run` executes an App (App Run) | `appc workflow run` creates a Workflow Run. Internally each step creates an App Run. |
+| Run | `POST /app/run` executes an App (App Run) | `appm workflow run` creates a Workflow Run. Internally each step creates an App Run. |
 | Owner | App Mesh user who owns an App | Resource Owner — who owns the workflow definition. v1: no actor/execution_identity split. |
 | Trigger | Not a concept in App Mesh core | v1: built-in event listener. v2: external App Mesh cron/event apps. |

@@ -36,7 +36,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
           cmake --build build --parallel --config Release --target agent
-          cmake --build build --parallel --config Release --target appc
+          cmake --build build --parallel --config Release --target appm
           cmake --build build --parallel --config Release --target appsvc
           cmake --build build --parallel --config Release --target install
 
@@ -93,9 +93,9 @@ jobs:
           ls "C:\local\appmesh"
           cat "C:\local\appmesh\work\server.log"
 
-          C:\local\appmesh\bin\appc -V
-          & "C:\local\appmesh\bin\appc.exe" ls
-          & "C:\local\appmesh\bin\appc.exe" resource
+          C:\local\appmesh\bin\appm -V
+          & "C:\local\appmesh\bin\appm.exe" ls
+          & "C:\local\appmesh\bin\appm.exe" resource
 
           ls "C:\local\appmesh\work\stdout"
           cat "C:\local\appmesh\work\stdout\*.out"

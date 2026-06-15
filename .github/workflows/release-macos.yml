@@ -106,7 +106,7 @@ jobs:
           sudo chmod a+r /cores/appsvc.macos.bin 2>/dev/null || true
 
           # Start App Mesh
-          appc -V || true
+          appm -V || true
           sudo bash /opt/appmesh/script/appmesh.initd.sh start || true
 
           # Check
@@ -119,13 +119,13 @@ jobs:
           tail /opt/appmesh/work/server.log
           tail /opt/appmesh/work/stdout/appmesh.agent.out
           # sudo lldb -p $(cat /opt/appmesh/appmesh.pid) -o "thread backtrace all" -o "quit" || true
-          appc ls
-          appc resource
+          appm ls
+          appm resource
 
           # Force daemon LogLevel=DEBUG at runtime via REST API (most reliable).
-          appc logon -U admin -X admin123 || true
-          appc log -L DEBUG || true
-          appc loginfo || true
+          appm logon -U admin -X admin123 || true
+          appm log -L DEBUG || true
+          appm loginfo || true
 
           # test appmesh python sdk
           python3 -m pip install --break-system-packages --upgrade appmesh pyotp

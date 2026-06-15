@@ -59,7 +59,7 @@ export APPMESH_WORKSPACE=/home/dev/app-mesh
 1. **Local**: `pip install appmesh` (Python SDK)
 2. **Local**: `tar` (macOS/Linux ship with it)
 3. **Remote**: App Mesh daemon running
-4. No SSH access needed. No rsync needed. No appc CLI needed.
+4. No SSH access needed. No rsync needed. No appm CLI needed.
 
 ## 5. Implementation: `remote.py`
 

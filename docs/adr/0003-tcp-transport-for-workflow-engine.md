@@ -27,7 +27,7 @@ The workflow engine uses **TCP transport exclusively** for all daemon communicat
 
 ### Benefits
 
-- **Step stdout archival**: after step completion, `GetAppOutput` fetches full stdout and writes to `{workdir}/steps/{job}.{step}.log`. Real-time output during execution is available directly via `appc app output -n wf-cmd-<id> -f` on the daemon.
+- **Step stdout archival**: after step completion, `GetAppOutput` fetches full stdout and writes to `{workdir}/steps/{job}.{step}.log`. Real-time output during execution is available directly via `appm app output -n wf-cmd-<id> -f` on the daemon.
 - **Efficient exit detection**: subscribe to EXIT event instead of polling `GetAppOutput` in a loop.
 - **Single protocol**: no mixed HTTP+TCP client management. One connection type, one set of abstractions.
 - **Lower overhead**: binary msgpack is more compact than HTTP+JSON for high-frequency stdout chunks.

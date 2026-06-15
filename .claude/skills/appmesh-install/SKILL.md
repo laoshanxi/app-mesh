@@ -72,8 +72,8 @@ Runtime config overrides use the same `APPMESH_<Section>_<Key>=VALUE` format.
 
 ```bash
 sudo systemctl status appmesh
-appc logon -U admin
-appc ls
+appm logon -U admin
+appm ls
 ```
 
 ## Release Artifact Signature (optional)

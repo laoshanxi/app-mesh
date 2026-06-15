@@ -68,7 +68,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
-name = "appc"
+name = "appm"
 version = "2.2.1"
 dependencies = [
  "anyhow",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "appmesh"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "async-trait",
  "base64",

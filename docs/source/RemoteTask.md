@@ -49,7 +49,7 @@ if __name__ == "__main__":
 ### Demo
 
 ```shell
-$ appc ls
+$ appm ls
 ID  NAME    OWNER  STATUS    HEALTH  PID    USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
 1   pytask  mesh   enabled   OK      16412        32.7 MiB  0     1       8h             2       "python.exe ../../bi*"
 2   pyexec  mesh   disabled  -       -      -     -         -     -       8h   -         0       "python.exe ../../bi*"
@@ -67,7 +67,7 @@ $ python3 sample.py
 36
 45
 
-$ appc ls -a pytask | grep task_
+$ appm ls -a pytask | grep task_
 task_id: 23
 task_status: busy
 ```

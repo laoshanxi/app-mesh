@@ -31,14 +31,14 @@ async fn authed() -> Arc<appmesh::AppMeshClientWSS> {
     c
 }
 
-fn appc() -> std::process::Command {
-    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_appc"));
+fn appm() -> std::process::Command {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_appm"));
     cmd.args(["-H", &format!("{}:{}", wss_host(), wss_port())]);
     cmd
 }
 
 fn cli_login() {
-    let out = appc().args(["logon", "-U", "admin", "-X", &cred()]).output().unwrap();
+    let out = appm().args(["logon", "-U", "admin", "-X", &cred()]).output().unwrap();
     assert!(out.status.success(), "CLI login: {}", String::from_utf8_lossy(&out.stderr));
 }
 
@@ -374,7 +374,7 @@ async fn sdk_93_upload_nonexistent_local() {
 #[ignore]
 fn cli_50_logon_logoff() {
     cli_login();
-    let out = appc().args(["logoff"]).output().unwrap();
+    let out = appm().args(["logoff"]).output().unwrap();
     assert!(out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("logged off"));
@@ -383,7 +383,7 @@ fn cli_50_logon_logoff() {
 #[test]
 #[ignore]
 fn cli_51_logon_show_token() {
-    let out = appc().args(["logon", "-U", "admin", "-X", &cred(), "--show-token"]).output().unwrap();
+    let out = appm().args(["logon", "-U", "admin", "-X", &cred(), "--show-token"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains('.'), "JWT should contain dots");
 }
@@ -392,7 +392,7 @@ fn cli_51_logon_show_token() {
 #[ignore]
 fn cli_52_loginfo() {
     cli_login();
-    let out = appc().args(["loginfo"]).output().unwrap();
+    let out = appm().args(["loginfo"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("User:"));
 }
@@ -401,7 +401,7 @@ fn cli_52_loginfo() {
 #[ignore]
 fn cli_53_view_table() {
     cli_login();
-    let out = appc().args(["view"]).output().unwrap();
+    let out = appm().args(["view"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("NAME"));
 }
@@ -410,7 +410,7 @@ fn cli_53_view_table() {
 #[ignore]
 fn cli_54_view_json() {
     cli_login();
-    let out = appc().args(["view", "--json"]).output().unwrap();
+    let out = appm().args(["view", "--json"]).output().unwrap();
     assert!(out.status.success());
     let _: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
 }
@@ -419,18 +419,18 @@ fn cli_54_view_json() {
 #[ignore]
 fn cli_55_add_disable_enable_restart_rm() {
     cli_login();
-    assert!(appc().args(["add", "-a", "CLI_ALL", "-c", "sleep 999", "--force"]).output().unwrap().status.success());
-    assert!(appc().args(["disable", "-a", "CLI_ALL"]).output().unwrap().status.success());
-    assert!(appc().args(["enable", "-a", "CLI_ALL"]).output().unwrap().status.success());
-    assert!(appc().args(["restart", "-a", "CLI_ALL"]).output().unwrap().status.success());
-    assert!(appc().args(["rm", "-a", "CLI_ALL", "--force"]).output().unwrap().status.success());
+    assert!(appm().args(["add", "-a", "CLI_ALL", "-c", "sleep 999", "--force"]).output().unwrap().status.success());
+    assert!(appm().args(["disable", "-a", "CLI_ALL"]).output().unwrap().status.success());
+    assert!(appm().args(["enable", "-a", "CLI_ALL"]).output().unwrap().status.success());
+    assert!(appm().args(["restart", "-a", "CLI_ALL"]).output().unwrap().status.success());
+    assert!(appm().args(["rm", "-a", "CLI_ALL", "--force"]).output().unwrap().status.success());
 }
 
 #[test]
 #[ignore]
 fn cli_56_run_sync() {
     cli_login();
-    let out = appc().args(["run", "-c", "echo cli_run", "-u", "--timeout=-5"]).output().unwrap();
+    let out = appm().args(["run", "-c", "echo cli_run", "-u", "--timeout=-5"]).output().unwrap();
     assert!(out.status.success(), "run: {}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stdout).contains("cli_run"));
 }
@@ -439,7 +439,7 @@ fn cli_56_run_sync() {
 #[ignore]
 fn cli_57_run_exit_code() {
     cli_login();
-    let out = appc().args(["run", "-c", "exit 7", "-u", "--timeout=-5"]).output().unwrap();
+    let out = appm().args(["run", "-c", "exit 7", "-u", "--timeout=-5"]).output().unwrap();
     assert_eq!(out.status.code(), Some(7));
 }
 
@@ -447,7 +447,7 @@ fn cli_57_run_exit_code() {
 #[ignore]
 fn cli_58_config() {
     cli_login();
-    let out = appc().args(["config"]).output().unwrap();
+    let out = appm().args(["config"]).output().unwrap();
     assert!(out.status.success());
     let j: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(j.get("REST").is_some());
@@ -457,7 +457,7 @@ fn cli_58_config() {
 #[ignore]
 fn cli_59_resource() {
     cli_login();
-    let out = appc().args(["resource"]).output().unwrap();
+    let out = appm().args(["resource"]).output().unwrap();
     assert!(out.status.success());
     let _: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
 }
@@ -466,25 +466,25 @@ fn cli_59_resource() {
 #[ignore]
 fn cli_60_label_crud() {
     cli_login();
-    assert!(appc().args(["label", "--add", "-l", "ck=cv"]).output().unwrap().status.success());
-    let out = appc().args(["label"]).output().unwrap();
+    assert!(appm().args(["label", "--add", "-l", "ck=cv"]).output().unwrap().status.success());
+    let out = appm().args(["label"]).output().unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("ck=cv"));
-    assert!(appc().args(["label", "--delete", "-l", "ck"]).output().unwrap().status.success());
+    assert!(appm().args(["label", "--delete", "-l", "ck"]).output().unwrap().status.success());
 }
 
 #[test]
 #[ignore]
 fn cli_61_log_level() {
     cli_login();
-    assert!(appc().args(["log", "-L", "DEBUG"]).output().unwrap().status.success());
-    appc().args(["log", "-L", "INFO"]).output().ok();
+    assert!(appm().args(["log", "-L", "DEBUG"]).output().unwrap().status.success());
+    appm().args(["log", "-L", "INFO"]).output().ok();
 }
 
 #[test]
 #[ignore]
 fn cli_62_user_info() {
     cli_login();
-    let out = appc().args(["user"]).output().unwrap();
+    let out = appm().args(["user"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("admin"));
 }
@@ -493,7 +493,7 @@ fn cli_62_user_info() {
 #[ignore]
 fn cli_63_user_list_all() {
     cli_login();
-    let out = appc().args(["user", "--all"]).output().unwrap();
+    let out = appm().args(["user", "--all"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("mesh"));
 }
@@ -506,15 +506,15 @@ fn cli_64_file_put_get() {
     let src = dir.path().join("up.txt");
     let dst = dir.path().join("down.txt");
     std::fs::write(&src, "cli_file_test").unwrap();
-    assert!(appc().args(["put", "-l", src.to_str().unwrap(), "-r", "/tmp/cli_ft.txt"]).output().unwrap().status.success());
-    assert!(appc().args(["get", "-r", "/tmp/cli_ft.txt", "-l", dst.to_str().unwrap()]).output().unwrap().status.success());
+    assert!(appm().args(["put", "-l", src.to_str().unwrap(), "-r", "/tmp/cli_ft.txt"]).output().unwrap().status.success());
+    assert!(appm().args(["get", "-r", "/tmp/cli_ft.txt", "-l", dst.to_str().unwrap()]).output().unwrap().status.success());
     assert_eq!(std::fs::read_to_string(&dst).unwrap(), "cli_file_test");
 }
 
 #[test]
 #[ignore]
 fn cli_65_appmgpwd() {
-    let out = appc().args(["appmgpwd", "admin"]).output().unwrap();
+    let out = appm().args(["appmgpwd", "admin"]).output().unwrap();
     assert!(out.status.success());
     let hash = String::from_utf8_lossy(&out.stdout).trim().to_string();
     assert!(hash.starts_with("$pbkdf2$100000$"), "expected PBKDF2 format, got: {}", hash);
@@ -525,7 +525,7 @@ fn cli_65_appmgpwd() {
 #[test]
 #[ignore]
 fn cli_80_logon_wrong_password() {
-    let out = appc().args(["logon", "-U", "admin", "-X", "WRONG"]).output().unwrap();
+    let out = appm().args(["logon", "-U", "admin", "-X", "WRONG"]).output().unwrap();
     assert!(!out.status.success());
 }
 
@@ -534,7 +534,7 @@ fn cli_80_logon_wrong_password() {
 fn cli_81_rm_nonexistent() {
     cli_login();
     // rm of nonexistent should fail (SDK returns error)
-    let out = appc().args(["rm", "-a", "NONEXISTENT_XYZ", "--force"]).output().unwrap();
+    let out = appm().args(["rm", "-a", "NONEXISTENT_XYZ", "--force"]).output().unwrap();
     // delete_app returns false but doesn't error — exit 0
     assert!(out.status.success());
 }
@@ -543,7 +543,7 @@ fn cli_81_rm_nonexistent() {
 #[ignore]
 fn cli_82_view_nonexistent_app() {
     cli_login();
-    let out = appc().args(["view", "-a", "NONEXISTENT_XYZ"]).output().unwrap();
+    let out = appm().args(["view", "-a", "NONEXISTENT_XYZ"]).output().unwrap();
     assert!(!out.status.success());
 }
 
@@ -551,7 +551,7 @@ fn cli_82_view_nonexistent_app() {
 #[ignore]
 fn cli_83_log_invalid_level() {
     cli_login();
-    let out = appc().args(["log", "-L", "INVALID"]).output().unwrap();
+    let out = appm().args(["log", "-L", "INVALID"]).output().unwrap();
     assert!(!out.status.success());
 }
 
@@ -593,7 +593,7 @@ async fn sdk_12c_run_async_captures_output() {
 fn cli_90_run_positive_timeout_fast() {
     cli_login();
     let start = std::time::Instant::now();
-    let out = appc().args(["run", "-c", "echo timeout_pos", "-u", "-t", "10"]).output().unwrap();
+    let out = appm().args(["run", "-c", "echo timeout_pos", "-u", "-t", "10"]).output().unwrap();
     let elapsed = start.elapsed();
     assert!(out.status.success(), "run -t 10: {}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stdout).contains("timeout_pos"));
@@ -605,7 +605,7 @@ fn cli_90_run_positive_timeout_fast() {
 fn cli_91_run_negative_timeout_fast() {
     cli_login();
     let start = std::time::Instant::now();
-    let out = appc().args(["run", "-c", "echo timeout_neg", "-u", "--timeout=-10"]).output().unwrap();
+    let out = appm().args(["run", "-c", "echo timeout_neg", "-u", "--timeout=-10"]).output().unwrap();
     let elapsed = start.elapsed();
     assert!(out.status.success(), "run -t -10: {}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stdout).contains("timeout_neg"));
@@ -617,7 +617,7 @@ fn cli_91_run_negative_timeout_fast() {
 fn cli_92_run_no_name_no_leak() {
     cli_login();
     // Run without -a: server assigns random name, should not leave _run_cmd_ residue
-    let out = appc().args(["run", "-c", "echo no_name", "-u", "--timeout=-5"]).output().unwrap();
+    let out = appm().args(["run", "-c", "echo no_name", "-u", "--timeout=-5"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("no_name"));
 }
@@ -626,7 +626,7 @@ fn cli_92_run_no_name_no_leak() {
 #[ignore]
 fn cli_93_logon_no_double_login() {
     // logon should use build_client (not build_client_with_auth) to avoid double login
-    let out = appc().args(["logon", "-U", "admin", "-X", &cred()]).output().unwrap();
+    let out = appm().args(["logon", "-U", "admin", "-X", &cred()]).output().unwrap();
     assert!(out.status.success());
 }
 

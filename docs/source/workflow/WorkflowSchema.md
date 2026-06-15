@@ -173,7 +173,7 @@ on:
 
 ### `on.schedule` — Cron Trigger (External)
 
-> **Note:** The workflow engine does NOT dispatch cron schedules internally. To schedule a workflow on a cron, register an App Mesh cron App whose command is `appc workflow run <name>`. The `on.schedule` field is parsed for documentation/validation purposes but a warning is emitted at parse time.
+> **Note:** The workflow engine does NOT dispatch cron schedules internally. To schedule a workflow on a cron, register an App Mesh cron App whose command is `appm workflow run <name>`. The `on.schedule` field is parsed for documentation/validation purposes but a warning is emitted at parse time.
 
 Declares the intended cron schedule.
 
@@ -220,12 +220,12 @@ on:
 
 Trigger via CLI:
 ```bash
-appc workflow run data-pipeline --input environment=prod --input dry_run=false
+appm workflow run data-pipeline --input environment=prod --input dry_run=false
 ```
 
 ### `on.workflow_call` — Callable by Other Workflows
 
-Declares this workflow as callable from another workflow's `workflow` step type. A workflow with only `on.workflow_call` is intended as a reusable sub-workflow. Note: the engine does not currently enforce trigger eligibility, so such a workflow can still be started via `appc workflow run`.
+Declares this workflow as callable from another workflow's `workflow` step type. A workflow with only `on.workflow_call` is intended as a reusable sub-workflow. Note: the engine does not currently enforce trigger eligibility, so such a workflow can still be started via `appm workflow run`.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -568,13 +568,13 @@ The workflow engine writes structured log lines to a per-run flow log file. View
 
 ```bash
 # List run history
-appc workflow runs data-pipeline
+appm workflow runs data-pipeline
 
 # View flow log for a specific run
-appc workflow logs -w data-pipeline <run-id>
+appm workflow logs -w data-pipeline <run-id>
 
 # View step stdout
-appc workflow output -w data-pipeline <run-id> -j build -s compile
+appm workflow output -w data-pipeline <run-id> -j build -s compile
 ```
 
 Log format (in flow.log):
@@ -666,15 +666,15 @@ Each workflow has a dedicated directory on the server:
 
 | Command | Description |
 |---------|-------------|
-| `appc workflow add -f <yaml>` | Register workflow (validates YAML, creates pseudo App) |
-| `appc workflow get <name>` | Download and display workflow YAML definition |
-| `appc workflow list` | List all registered workflows (with last run status) |
-| `appc workflow rm <name>` | Remove a workflow registration |
-| `appc workflow run <name> [-e k=v] [-f]` | Trigger a workflow run; `-f` follows output |
-| `appc workflow runs <name>` | List run history (ID, status, time, duration) |
-| `appc workflow logs -w <name> <run-id>` | View flow log for a specific run |
-| `appc workflow output -w <name> <run-id> -j <job> -s <step>` | View step stdout archive |
-| `appc workflow cancel -w <name> <run-id>` | Cancel a running workflow |
-| `appc workflow rerun -w <name> <run-id>` | Re-run with original inputs |
-| `appc workflow detail -w <name> <run-id>` | Show run detail (per-job/step breakdown) |
-| `appc workflow inputs <name>` | Show input parameters for manual trigger |
+| `appm workflow add -f <yaml>` | Register workflow (validates YAML, creates pseudo App) |
+| `appm workflow get <name>` | Download and display workflow YAML definition |
+| `appm workflow list` | List all registered workflows (with last run status) |
+| `appm workflow rm <name>` | Remove a workflow registration |
+| `appm workflow run <name> [-e k=v] [-f]` | Trigger a workflow run; `-f` follows output |
+| `appm workflow runs <name>` | List run history (ID, status, time, duration) |
+| `appm workflow logs -w <name> <run-id>` | View flow log for a specific run |
+| `appm workflow output -w <name> <run-id> -j <job> -s <step>` | View step stdout archive |
+| `appm workflow cancel -w <name> <run-id>` | Cancel a running workflow |
+| `appm workflow rerun -w <name> <run-id>` | Re-run with original inputs |
+| `appm workflow detail -w <name> <run-id>` | Show run detail (per-job/step breakdown) |
+| `appm workflow inputs <name>` | Show input parameters for manual trigger |

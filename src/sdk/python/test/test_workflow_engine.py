@@ -2,7 +2,7 @@
 
 Drives the running ``workflow`` engine App through its Task API (``run_task``)
 exactly like the CLI does — sending JSON action payloads and asserting on the
-returned run state, flow logs, and per-step stdout. No ``appc`` binary needed.
+returned run state, flow logs, and per-step stdout. No ``appm`` binary needed.
 
 Requires a running App Mesh daemon with the workflow engine App installed and
 enabled (it ships in the default config as the ``workflow`` App).

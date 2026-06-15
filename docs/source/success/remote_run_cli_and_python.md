@@ -5,14 +5,14 @@ App Mesh support remote run a command, a script, and even a section of Python sc
 ## Run commands
 
 ```shell
-# appc run -c whoami
+# appm run -c whoami
 root
 ```
 
 Run a command with normal exit:
 
 ```shell
-# appc run -c 'ping github.com -w 2' -t 5; echo $?
+# appm run -c 'ping github.com -w 2' -t 5; echo $?
 PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=1 ttl=55 time=31.8 ms
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=2 ttl=55 time=31.9 ms
@@ -26,7 +26,7 @@ rtt min/avg/max/mdev = 31.844/31.850/31.857/0.006 ms
 Run a command and exit due to timeout:
 
 ```shell
-# appc run -c 'ping github.com -w 2' -t 5
+# appm run -c 'ping github.com -w 2' -t 5
 PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=1 ttl=55 time=31.9 ms
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=2 ttl=55 time=31.7 ms
@@ -34,7 +34,7 @@ PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 --- www.a.shifen.com ping statistics ---
 2 packets transmitted, 2 received, 0% packet loss, time 1001ms
 rtt min/avg/max/mdev = 31.722/31.827/31.933/0.105 ms
-(base) root@appmesh:~# appc run -c 'ping github.com -w 20' -t 5; echo $?
+(base) root@appmesh:~# appm run -c 'ping github.com -w 20' -t 5; echo $?
 PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=1 ttl=55 time=31.8 ms
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=2 ttl=55 time=31.8 ms
@@ -49,7 +49,7 @@ PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 Use metadata to input python script which would be executed on remote side:
 
 ```shell
-# appc run -n  pyexec -g "print(99); print(2+9)" -t -1
+# appm run -n  pyexec -g "print(99); print(2+9)" -t -1
 99
 11
 ```

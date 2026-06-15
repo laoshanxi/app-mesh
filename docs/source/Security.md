@@ -13,7 +13,7 @@ App Mesh has built-in user management. Each user can define a process execution 
 * Roles
 
 ```bash
-$ appc user
+$ appm user
 {
   "email": "admin@appmesh.com",
   "exec_user": "root",

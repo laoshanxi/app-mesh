@@ -108,7 +108,7 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 
 	// Warn about features that are parsed but not dispatched by the engine.
 	if wf.On != nil && len(wf.On.Schedule) > 0 {
-		fmt.Fprintf(os.Stderr, "WARNING: workflow %q has on.schedule triggers, but cron is not handled by the engine. Use an external App Mesh cron app to call 'appc workflow run %s' instead.\n", wf.Name, wf.Name)
+		fmt.Fprintf(os.Stderr, "WARNING: workflow %q has on.schedule triggers, but cron is not handled by the engine. Use an external App Mesh cron app to call 'appm workflow run %s' instead.\n", wf.Name, wf.Name)
 	}
 
 	return &wf, nil

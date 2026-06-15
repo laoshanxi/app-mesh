@@ -240,7 +240,7 @@ Step names are job-scoped. Cross-job references must use `jobs.<job>.steps.<step
 
 ### Manual
 
-`appc workflow run <name>` sends a Task RPC with action `run` to the `workflow` App. The engine's trigger service starts the run as a goroutine with a unique run ID. Inputs are passed as a JSON map in the Task payload — no shell involved, no injection risk.
+`appm workflow run <name>` sends a Task RPC with action `run` to the `workflow` App. The engine's trigger service starts the run as a goroutine with a unique run ID. Inputs are passed as a JSON map in the Task payload — no shell involved, no injection risk.
 
 ### App Event
 
@@ -252,7 +252,7 @@ The trigger service subscribes to daemon app events and triggers matching workfl
 
 ### Schedule
 
-`on.schedule` is parsed and documented, but the engine does not dispatch cron internally. Cron should be modeled as an external App Mesh cron App that invokes `appc workflow run <name>`.
+`on.schedule` is parsed and documented, but the engine does not dispatch cron internally. Cron should be modeled as an external App Mesh cron App that invokes `appm workflow run <name>`.
 
 This keeps "when to trigger" outside the workflow engine.
 
@@ -297,7 +297,7 @@ The engine authenticates with the local daemon via password-based login. The pas
 **Setup:**
 
 ```bash
-appc add -a workflow -z APPMESH_PASSWORD=<password>
+appm add -a workflow -z APPMESH_PASSWORD=<password>
 ```
 
 **Runtime flow:**

@@ -61,18 +61,18 @@ checkout
 
 ## Run it
 
-The engine is driven through the `run_task` Task API (the `appc` CLI and SDKs wrap this).
+The engine is driven through the `run_task` Task API (the `appm` CLI and SDKs wrap this).
 Every call carries the **caller's JWT**; the engine authenticates it, enforces per-workflow
 ownership, and runs the steps **as the caller** (recorded as `actor`).
 
 ### Via the CLI
 
 ```bash
-appc workflow add  -f src/workflow/docs/spec-pipeline-demo.yaml
-appc workflow run  spec-pipeline-demo                       # green path
-appc workflow run  spec-pipeline-demo -i demo_reject=true   # exercise the rework path
-appc workflow runs spec-pipeline-demo                       # list runs
-appc workflow logs spec-pipeline-demo <run_id>              # flow log
+appm workflow add  -f src/workflow/docs/spec-pipeline-demo.yaml
+appm workflow run  spec-pipeline-demo                       # green path
+appm workflow run  spec-pipeline-demo -i demo_reject=true   # exercise the rework path
+appm workflow runs spec-pipeline-demo                       # list runs
+appm workflow logs spec-pipeline-demo <run_id>              # flow log
 ```
 
 ### Via an SDK (Python)

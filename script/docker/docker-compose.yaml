@@ -55,7 +55,7 @@ services:
     container_name: appmesh_slave1
     restart: always
     image: laoshanxi/appmesh
-    command: appc rm -n ping -f
+    command: appm rm -n ping -f
     mem_limit: 4G
     environment:
       - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
@@ -80,7 +80,7 @@ services:
     container_name: appmesh_slave2
     restart: always
     image: laoshanxi/appmesh
-    command: appc rm -n ping -f
+    command: appm rm -n ping -f
     mem_limit: 3G
     environment:
       - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
@@ -105,7 +105,7 @@ services:
     container_name: appmesh_slave3
     restart: always
     image: laoshanxi/appmesh
-    command: appc rm -n ping -f
+    command: appm rm -n ping -f
     mem_limit: 3G
     environment:
       - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER

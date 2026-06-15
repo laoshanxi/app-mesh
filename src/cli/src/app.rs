@@ -6,7 +6,7 @@ const BUILD_TAG: &str = match option_env!("BUILD_TAG") {
 };
 
 #[derive(Parser)]
-#[command(name = "appc", about = "App Mesh CLI", version = BUILD_TAG)]
+#[command(name = "appm", about = "App Mesh CLI", version = BUILD_TAG)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

@@ -42,9 +42,9 @@ cov-build --dir cov-int make
   ├─cov-build --dir cov-int make
   └─make
       └─make -f CMakeFiles/Makefile2 all
-          └─make -f src/cli/CMakeFiles/appc.dir/build.make src/cli/CMakeFiles/appc.dir/build
+          └─make -f src/cli/CMakeFiles/appm.dir/build.make src/cli/CMakeFiles/appm.dir/build
               └─sh -c...
-                  └─cov-translate /usr/bin/c++ -I/usr/local/include -DBUILD_TAG=appmesh--2020-07-29T09:31 -std=c++11 -o CMakeFiles/appc.dir/main.cpp.o
+                  └─cov-translate /usr/bin/c++ -I/usr/local/include -DBUILD_TAG=appmesh--2020-07-29T09:31 -std=c++11 -o CMakeFiles/appm.dir/main.cpp.o
                       └─cov-emit --dir=/root/code/app-mesh/build/cov-int --ignore_path=/tmp/cov-root/6802e08fa63b8588bc3755d3c8f8273a/cov-configure--ignor
 
 cov-build --dir cov-int make

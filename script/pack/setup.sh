@@ -21,8 +21,8 @@ else
         readonly BASH_COMPLETION_DIR="/etc/bash_completion.d"
     fi
 fi
-readonly BASH_COMPLETION_PATH="$BASH_COMPLETION_DIR/appc"
-readonly APPC_SOFTLINK=/usr/local/bin/appc
+readonly BASH_COMPLETION_PATH="$BASH_COMPLETION_DIR/appm"
+readonly APPM_SOFTLINK=/usr/local/bin/appm
 readonly INITD_SOFTLINK=/etc/init.d/appmesh
 readonly SYSTEMD_FILE=/etc/systemd/system/appmesh.service
 readonly LAUNCHD_FILE=/Library/LaunchDaemons/com.appmesh.appmesh.plist
@@ -178,14 +178,14 @@ setup_service() {
         error "$BASH_COMPLETION_DIR not found. Skipping bash completion installation"
     fi
 
-    # Create appc symlink
-    rm -f "$APPC_SOFTLINK" && ln -sf "${PROG_HOME}/bin/appc" "$APPC_SOFTLINK"
-    info "Symlink for appc created at $APPC_SOFTLINK"
+    # Create appm symlink
+    rm -f "$APPM_SOFTLINK" && ln -sf "${PROG_HOME}/bin/appm" "$APPM_SOFTLINK"
+    info "Symlink for appm created at $APPM_SOFTLINK"
 
     # Initialize secure installation if needed
     if [ "${APPMESH_SECURE_INSTALLATION:-}" = "Y" ]; then
         info "Performing secure installation initialization"
-        "$APPC_SOFTLINK" appmginit
+        "$APPM_SOFTLINK" appmginit
     fi
 }
 
@@ -235,7 +235,7 @@ install_launchd_service() {
     rm -f "${LAUNCHD_FILE}.bak"
 
     # Remove macOS quarantine attributes
-    for binary in appsvc appc agent; do
+    for binary in appsvc appm agent; do
         xattr -d com.apple.quarantine "${PROG_HOME}/bin/${binary}" 2>/dev/null || true
     done
 
