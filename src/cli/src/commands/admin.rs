@@ -42,7 +42,7 @@ pub fn appmginit() -> Result<i32> {
     let work_dir = appmesh_home.join("work");
     let flag_file = work_dir.join(".appmginit");
     if flag_file.exists() {
-        bail!("The 'appc appmginit' should only run once.");
+        bail!("The 'appm appmginit' should only run once.");
     }
 
     // Read config.yaml

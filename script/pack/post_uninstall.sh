@@ -42,8 +42,8 @@ setup_platform_vars() {
         readonly LAUNCHD_FILE=""
     fi
 
-    readonly BASH_COMPLETION_PATH="${BASH_COMPLETION_DIR}/appc"
-    readonly APPC_SOFTLINK="/usr/local/bin/appc"
+    readonly BASH_COMPLETION_PATH="${BASH_COMPLETION_DIR}/appm"
+    readonly APPM_SOFTLINK="/usr/local/bin/appm"
 }
 
 cleanup_linux_systemd_service() {
@@ -137,9 +137,9 @@ cleanup_temp_files() {
 }
 
 cleanup_binary() {
-    if [[ -L "$APPC_SOFTLINK" ]]; then
+    if [[ -L "$APPM_SOFTLINK" ]]; then
         info "Removing symbolic link to binary"
-        rm -f "$APPC_SOFTLINK"
+        rm -f "$APPM_SOFTLINK"
     fi
 }
 

@@ -20,20 +20,20 @@ Manages user-defined processes in a way similar to systemd services or Docker-ma
 
 ```shell
 # List registered applications
-$ appc ls
+$ appm ls
 ID  NAME    OWNER  STATUS    HEALTH  PID  USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
 1   pyexec  mesh   disabled  -       -    -     -         -     -       37s  -         0       "python3 ../../bin/py_exec.py"
 2   ping    mesh   enabled   OK      747  root  5.9 MiB   0     -       37s  37s       1       "ping cloudflare.com"
 3   pytask  mesh   enabled   OK      748  root  29.7 MiB  0     -       37s  37s       1       "python3 ../../bin/py_task.py"
 # Add app
-$ appc add -a myapp -c "ping www.baidu.com"
+$ appm add -a myapp -c "ping www.baidu.com"
 # View app
-$ appc ls -a myapp -o
+$ appm ls -a myapp -o
 PING www.baidu.com (183.2.172.17) 56(84) bytes of data.
 64 bytes from 183.2.172.17 (183.2.172.17): icmp_seq=1 ttl=52 time=34.9 ms
 64 bytes from 183.2.172.17 (183.2.172.17): icmp_seq=2 ttl=52 time=35.1 ms
 64 bytes from 183.2.172.17 (183.2.172.17): icmp_seq=3 ttl=52 time=35.3 ms
-# appc -h for more usage
+# appm -h for more usage
 ```
 
 Supports not only long-running services, but also scheduled and policy-driven executions, with remote control and execution status tracking.
@@ -88,9 +88,9 @@ App Mesh includes a built-in [Workflow Engine](https://app-mesh.readthedocs.io/e
 - **Remote execution** — target specific nodes by label or hostname
 
 ```bash
-appc workflow add -f pipeline.yaml        # register
-appc workflow run pipeline -e env=prod -f # run and follow output
-appc workflow runs pipeline               # view history
+appm workflow add -f pipeline.yaml        # register
+appm workflow run pipeline -e env=prod -f # run and follow output
+appm workflow runs pipeline               # view history
 ```
 
 > 📄 **LLM spec-driven**  — [`development pipeline`](docs/source/spec-pipeline.md).

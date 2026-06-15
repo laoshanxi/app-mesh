@@ -10,7 +10,7 @@ external-trigger model are not. ADRs 0001–0003 describe the implemented archit
 
 The engine has two separate execution paths:
 
-1. **CLI path**: `appc workflow run` → registers a temporary App running `wf-engine run` → daemon manages the process.
+1. **CLI path**: `appm workflow run` → registers a temporary App running `wf-engine run` → daemon manages the process.
 2. **Serve path**: `wf-engine serve` → internal goroutine calls `engine.Run` directly.
 
 These paths have different run lifecycle management, different logging, and different cancel semantics. The event listener is baked into the engine binary, making the engine responsible for both "what to run" and "when to run" — two orthogonal concerns.
@@ -49,7 +49,7 @@ All trigger sources produce the same action — create a Run record:
 
 | Source | How it creates a Run |
 |--------|---------------------|
-| CLI | `appc workflow run <name>` → calls Run API |
+| CLI | `appm workflow run <name>` → calls Run API |
 | REST API | `POST /appmesh/workflow/{name}/run` (future daemon endpoint, or engine HTTP API) |
 | App Event | A small event-watcher App calls Run API on matching events |
 | workflow_call | Parent engine calls Run API for sub-workflow |
@@ -79,7 +79,7 @@ Cron and event triggers are separate lightweight Apps, not part of the engine:
 ```yaml
 # Cron trigger — a regular App Mesh cron app
 name: cron-data-pipeline
-command: "appc workflow run data-pipeline"
+command: "appm workflow run data-pipeline"
 start_interval_seconds: "0 2 * * *"
 cron: true
 

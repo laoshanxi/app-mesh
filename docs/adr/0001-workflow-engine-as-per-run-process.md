@@ -24,7 +24,7 @@ Three architectural options were considered:
 **Option 3 — single Go binary, two modes:**
 
 - `wf-engine serve` — long-running mode. Scans for workflow definitions, subscribes to App events, and runs triggered workflows as goroutines within the same process. Registered as an App Mesh App (`behavior.exit: restart`).
-- `wf-engine run <workflow.yaml>` — single-shot mode. Executes one workflow and exits. Used by `appc workflow run` for CLI-triggered ad-hoc runs and for testing.
+- `wf-engine run <workflow.yaml>` — single-shot mode. Executes one workflow and exits. Used by `appm workflow run` for CLI-triggered ad-hoc runs and for testing.
 
 Both modes share the same Go packages (parser, expression, DAG, executor, engine). The `serve` mode additionally includes the trigger subsystem (registry, event listener, concurrency manager).
 

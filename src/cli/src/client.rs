@@ -79,7 +79,7 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
         // Try default credentials; if that also fails, give a clear message
         if client.login("mesh", "mesh123", None, None, None).await.is_err() {
             anyhow::bail!(
-                "Not logged in. Run 'appc logon -U <user> -X <password>' first, \
+                "Not logged in. Run 'appm logon -U <user> -X <password>' first, \
                  or pass -U/-X on the command line."
             );
         }

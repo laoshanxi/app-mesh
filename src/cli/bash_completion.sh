@@ -1,8 +1,8 @@
-# bash/zsh completion for appmesh CLI (appc) -*- shell-script -*-
+# bash/zsh completion for appmesh CLI (appm) -*- shell-script -*-
 
-_appc_global_flags="-H --host-url -F --forward-to -U --user -X --password -v --verbose -h --help -V --version"
+_appm_global_flags="-H --host-url -F --forward-to -U --user -X --password -v --verbose -h --help -V --version"
 
-_appc() {
+_appm() {
     local cur prev words cword
 
     if declare -f _init_completion >/dev/null 2>&1; then
@@ -45,7 +45,7 @@ _appc() {
             case "${words[1]}" in
                 view|list|ls|rm|remove|unreg|enable|disable|restart|add|reg|run)
                     local apps
-                    apps="$(appc ls 2>/dev/null | awk 'NR>1 {print $2}')"
+                    apps="$(appm ls 2>/dev/null | awk 'NR>1 {print $2}')"
                     COMPREPLY=( $(compgen -W "${apps}" -- "${cur}") )
                     ;;
             esac
@@ -92,7 +92,7 @@ _appc() {
             user)                       cmd_flags="${flags_user}" ;;
             mfa)                        cmd_flags="${flags_mfa}" ;;
         esac
-        COMPREPLY=( $(compgen -W "${cmd_flags} ${_appc_global_flags}" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "${cmd_flags} ${_appm_global_flags}" -- "${cur}") )
         return
     fi
 
@@ -108,7 +108,7 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
     if ! type bashcompinit >/dev/null 2>&1; then
         autoload -Uz bashcompinit && bashcompinit
     fi
-    complete -F _appc appc
+    complete -F _appm appm
 elif [[ -n "${BASH_VERSION:-}" ]]; then
-    complete -F _appc appc
+    complete -F _appm appm
 fi

@@ -55,7 +55,7 @@ find_install_dir() {
 
 setup_platform_vars() {
     readonly INSTALL_DIR=$(find_install_dir)
-    readonly APPC_BIN="${INSTALL_DIR}/bin/appc"
+    readonly APPM_BIN="${INSTALL_DIR}/bin/appm"
     readonly APPS_DIR="${INSTALL_DIR}/work/apps"
     readonly BACKUP_DIR="${INSTALL_DIR}/work/.apps_backup"
 }
@@ -78,9 +78,9 @@ stop_applications() {
     info "Stopping all active applications"
 
     if [[ -n "${SUDO_USER:-}" ]]; then
-        sudo -u "$SUDO_USER" "$APPC_BIN" disable --all
+        sudo -u "$SUDO_USER" "$APPM_BIN" disable --all
     else
-        "$APPC_BIN" disable --all
+        "$APPM_BIN" disable --all
     fi
 }
 

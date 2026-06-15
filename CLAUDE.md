@@ -155,7 +155,7 @@ Shared C++ library used by the daemon. Notable:
 
 ### CLI (`src/cli/`)
 
-`appc` command-line tool, written in Rust. Uses clap for argument parsing and the Rust SDK (`src/sdk/rust`) for WSS communication with the daemon. Key structure:
+`appm` command-line tool, written in Rust. Uses clap for argument parsing and the Rust SDK (`src/sdk/rust`) for WSS communication with the daemon. Key structure:
 - `src/main.rs` — entry point, clap command definitions
 - `src/commands/` — subcommand handlers (app management, user, config, file, run)
 - `tests/integration_test.rs` — CLI argument parsing and subcommand tests (no daemon needed)

@@ -3,7 +3,7 @@
 # Daemon auto-loads and starts this App on boot.
 #
 # sec_env values are encrypted with the default admin key.
-# To change credentials: appc add -a workflow -z APPMESH_PASSWORD=<new>
+# To change credentials: appm add -a workflow -z APPMESH_PASSWORD=<new>
 
 command: ../../bin/wf-engine
 name: workflow

@@ -63,8 +63,8 @@ initialize_directory() {
 # Function: Prepare and register the initial app
 prepare_app_start() {
 	if [ $# -gt 0 ]; then
-		# Check if the first argument is "appc"
-		if [ "$1" = "appc" ]; then
+		# Check if the first argument is "appm"
+		if [ "$1" = "appm" ]; then
 			shift
 			info "Executing native command: $*"
 			exec "$@"
@@ -99,7 +99,7 @@ secure_installation_check() {
 
 		if [ ! -f "$flag_file" ]; then
 			info "Initializing secure installation"
-			"${PROG_HOME}/bin/appc" appmginit
+			"${PROG_HOME}/bin/appm" appmginit
 			touch "$flag_file" && chmod 600 "$flag_file"
 		fi
 	fi

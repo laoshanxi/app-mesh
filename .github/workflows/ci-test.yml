@@ -79,12 +79,12 @@ jobs:
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
-            appc ls
-            appc resource
+            appm ls
+            appm resource
 
-            appc logon -U admin -X admin123 || true
-            appc log -L DEBUG || true
-            appc loginfo || true
+            appm logon -U admin -X admin123 || true
+            appm log -L DEBUG || true
+            appm loginfo || true
 
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
@@ -132,12 +132,12 @@ jobs:
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
-            appc ls
-            appc resource
+            appm ls
+            appm resource
 
-            appc logon -U admin -X admin123 || true
-            appc log -L DEBUG || true
-            appc loginfo || true
+            appm logon -U admin -X admin123 || true
+            appm log -L DEBUG || true
+            appm loginfo || true
 
             # test appmesh python sdk FIRST — Python wrapper captures full daemon
             # diagnostics on crash (backtrace / dmesg / server.log).
@@ -187,12 +187,12 @@ jobs:
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
-            appc ls
-            appc resource
+            appm ls
+            appm resource
 
-            appc logon -U admin -X admin123 || true
-            appc log -L DEBUG || true
-            appc loginfo || true
+            appm logon -U admin -X admin123 || true
+            appm log -L DEBUG || true
+            appm loginfo || true
 
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
@@ -245,12 +245,12 @@ jobs:
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
-            appc ls
-            appc resource
+            appm ls
+            appm resource
 
-            appc logon -U admin -X admin123 || true
-            appc log -L DEBUG || true
-            appc loginfo || true
+            appm logon -U admin -X admin123 || true
+            appm log -L DEBUG || true
+            appm loginfo || true
 
             # test appmesh python sdk FIRST — Python wrapper captures full daemon
             # diagnostics on crash (backtrace / dmesg / server.log).

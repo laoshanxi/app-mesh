@@ -23,25 +23,25 @@ jobs:
 
 ```bash
 # Register
-appc workflow add -f hello.yaml
+appm workflow add -f hello.yaml
 
 # Trigger a run (note the run_id printed in the message)
-appc workflow run hello-world
+appm workflow run hello-world
 
 # List runs
-appc workflow runs hello-world
+appm workflow runs hello-world
 
 # Trigger a new run and tail its log until terminal
-appc workflow run hello-world -f
+appm workflow run hello-world -f
 
 # Read the run's flow log
-appc workflow logs -w hello-world <run_id>
+appm workflow logs -w hello-world <run_id>
 
 # Read a step's stdout
-appc workflow output -w hello-world <run_id> -j greet -s say-hello
+appm workflow output -w hello-world <run_id> -j greet -s say-hello
 
 # Clean up
-appc workflow rm hello-world
+appm workflow rm hello-world
 ```
 
 ## Concepts
@@ -82,9 +82,9 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f command-demo.yaml
-appc workflow run command-demo -f
-appc workflow rm command-demo
+appm workflow add -f command-demo.yaml
+appm workflow run command-demo -f
+appm workflow rm command-demo
 ```
 
 The `command` runs in a shell, so a YAML block scalar (`|`) gives you a full multi-line script — variables, loops, and conditionals all work:
@@ -105,9 +105,9 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f multiline-demo.yaml
-appc workflow run multiline-demo -f
-appc workflow rm multiline-demo
+appm workflow add -f multiline-demo.yaml
+appm workflow run multiline-demo -f
+appm workflow rm multiline-demo
 ```
 
 > When passing a step's output into another command via `${{ steps.x.stdout }}`, prefer single-line values — a multi-line stdout substituted into a one-line command will have its later lines executed as separate shell commands. Emit a single line (e.g. `echo "$RESULT"`) for values you intend to interpolate.
@@ -129,11 +129,11 @@ jobs:
 
 ```bash
 # Make sure the target App exists first (ping is shipped with the daemon)
-appc ls | grep ping
+appm ls | grep ping
 
-appc workflow add -f app-step-demo.yaml
-appc workflow run app-step-demo -f
-appc workflow rm app-step-demo
+appm workflow add -f app-step-demo.yaml
+appm workflow run app-step-demo -f
+appm workflow rm app-step-demo
 ```
 
 ### Message Step
@@ -154,9 +154,9 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f message-demo.yaml
-appc workflow run message-demo -f
-appc workflow rm message-demo
+appm workflow add -f message-demo.yaml
+appm workflow run message-demo -f
+appm workflow rm message-demo
 ```
 
 ### Sub-workflow Step
@@ -202,12 +202,12 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f deploy-service.yaml
-appc workflow add -f release.yaml
-appc workflow run release -f
+appm workflow add -f deploy-service.yaml
+appm workflow add -f release.yaml
+appm workflow run release -f
 
-appc workflow rm release
-appc workflow rm deploy-service
+appm workflow rm release
+appm workflow rm deploy-service
 ```
 
 ## Job Dependencies (DAG)
@@ -237,10 +237,10 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f dag-demo.yaml
-appc workflow run dag-demo -f
-appc workflow detail -w dag-demo <run_id>   # see per-job status
-appc workflow rm dag-demo
+appm workflow add -f dag-demo.yaml
+appm workflow run dag-demo -f
+appm workflow detail -w dag-demo <run_id>   # see per-job status
+appm workflow rm dag-demo
 ```
 
 Execution order: `build` → `test` → `deploy`. If `build` fails, `test` and `deploy` are skipped.
@@ -276,9 +276,9 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f conditions-demo.yaml
-appc workflow run conditions-demo -f
-appc workflow rm conditions-demo
+appm workflow add -f conditions-demo.yaml
+appm workflow run conditions-demo -f
+appm workflow rm conditions-demo
 ```
 
 > **Failure handling must go in `finally`.** A failed step stops the job (see [Error Handling](#error-handling)), so a *later step in the main `steps:` list* — even one with `if: failure()` or `if: "…exit_code != 0"` — is never reached. Put rollback/recovery logic in `finally` (its steps always run and do evaluate `if`), or set `continue-on-error: true` on the step that may fail so the following step's `if` is evaluated.
@@ -328,10 +328,10 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f stop-on-fail-demo.yaml
-appc workflow run stop-on-fail-demo -f
-appc workflow detail -w stop-on-fail-demo <run_id>
-appc workflow rm stop-on-fail-demo
+appm workflow add -f stop-on-fail-demo.yaml
+appm workflow run stop-on-fail-demo -f
+appm workflow detail -w stop-on-fail-demo <run_id>
+appm workflow rm stop-on-fail-demo
 ```
 
 ### Continue on Error
@@ -353,9 +353,9 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f continue-on-error-demo.yaml
-appc workflow run continue-on-error-demo -f
-appc workflow rm continue-on-error-demo
+appm workflow add -f continue-on-error-demo.yaml
+appm workflow run continue-on-error-demo -f
+appm workflow rm continue-on-error-demo
 ```
 
 ### Retry
@@ -377,9 +377,9 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f retry-demo.yaml
-appc workflow run retry-demo -f
-appc workflow rm retry-demo
+appm workflow add -f retry-demo.yaml
+appm workflow run retry-demo -f
+appm workflow rm retry-demo
 ```
 
 ### Finally
@@ -403,9 +403,9 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f finally-demo.yaml
-appc workflow run finally-demo -f
-appc workflow rm finally-demo
+appm workflow add -f finally-demo.yaml
+appm workflow run finally-demo -f
+appm workflow rm finally-demo
 ```
 
 ## Inputs
@@ -435,15 +435,15 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f inputs-demo.yaml
+appm workflow add -f inputs-demo.yaml
 
 # Show declared inputs
-appc workflow inputs inputs-demo
+appm workflow inputs inputs-demo
 
 # Required input must be provided
-appc workflow run inputs-demo -e environment=production -e dry_run=true -f
+appm workflow run inputs-demo -e environment=production -e dry_run=true -f
 
-appc workflow rm inputs-demo
+appm workflow rm inputs-demo
 ```
 
 > Input keys must match `[A-Za-z_][A-Za-z0-9_]*` (env-var-safe).
@@ -474,18 +474,18 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f concurrency-demo.yaml
+appm workflow add -f concurrency-demo.yaml
 
 # First run blocks (5s sleep) — follow it in the background
-appc workflow run concurrency-demo -e env=prod -f &
+appm workflow run concurrency-demo -e env=prod -f &
 sleep 1   # let the first run claim the group slot
 # Second run with same group key prints status=pending and queues
-appc workflow run concurrency-demo -e env=prod
+appm workflow run concurrency-demo -e env=prod
 
 wait
 # Inspect: the queued run started after the first one completed
-appc workflow runs concurrency-demo
-appc workflow rm concurrency-demo
+appm workflow runs concurrency-demo
+appm workflow rm concurrency-demo
 ```
 
 Semantics:
@@ -498,7 +498,7 @@ Semantics:
 
 Execute jobs on remote App Mesh nodes using label selectors.
 
-By node label (configure labels on each daemon via `appc label add -l role=test-server`):
+By node label (configure labels on each daemon via `appm label add -l role=test-server`):
 
 ```yaml
 # remote-label-demo.yaml
@@ -527,16 +527,16 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f remote-label-demo.yaml
-appc workflow run remote-label-demo -f
-appc workflow rm remote-label-demo
+appm workflow add -f remote-label-demo.yaml
+appm workflow run remote-label-demo -f
+appm workflow rm remote-label-demo
 ```
 
 ## Triggers
 
 ### Manual
 
-The default — triggered by `appc workflow run`.
+The default — triggered by `appm workflow run`.
 
 ### App Event
 
@@ -559,10 +559,10 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f trigger-on-event.yaml
+appm workflow add -f trigger-on-event.yaml
 # Whenever data-collector emits EXIT with exit_code 0, this workflow runs.
-appc workflow runs trigger-on-event           # check accumulated runs
-appc workflow rm trigger-on-event
+appm workflow runs trigger-on-event           # check accumulated runs
+appm workflow rm trigger-on-event
 ```
 
 ### Schedule (External)
@@ -571,13 +571,13 @@ Cron scheduling is **not** built into the workflow engine. Use App Mesh's native
 
 ```bash
 # Run hello-world every day at 02:00
-appc add -a cron-hello -c "appc workflow run hello-world" -Y "0 2 * * *"
+appm add -a cron-hello -c "appm workflow run hello-world" -Y "0 2 * * *"
 
 # Or, drive on an interval (ISO 8601 duration)
-appc add -a tick-hello -c "appc workflow run hello-world" -i PT5M
+appm add -a tick-hello -c "appm workflow run hello-world" -i PT5M
 
-appc rm -n cron-hello
-appc rm -n tick-hello
+appm rm -n cron-hello
+appm rm -n tick-hello
 ```
 
 ### Workflow Call
@@ -618,27 +618,27 @@ jobs:
 ```
 
 ```bash
-appc workflow add -f secrets-demo.yaml
-appc workflow run secrets-demo -f
-appc workflow rm secrets-demo
+appm workflow add -f secrets-demo.yaml
+appm workflow run secrets-demo -f
+appm workflow rm secrets-demo
 ```
 
 ## CLI Reference
 
 | Command | Description |
 |---------|-------------|
-| `appc workflow add -f <file>` | Register a workflow from YAML (must contain `name:` and `jobs:`) |
-| `appc workflow list` | List all registered workflows |
-| `appc workflow get <name>` | Print a workflow's YAML |
-| `appc workflow rm <name>` | Remove a workflow |
-| `appc workflow run <name> [-e key=val] [-f]` | Trigger a run; `-f` follows output until terminal |
-| `appc workflow runs <name>` | List run history |
-| `appc workflow logs -w <name> <run_id>` | View the run's flow log |
-| `appc workflow output -w <name> <run_id> -j <job> -s <step>` | View a step's stdout |
-| `appc workflow detail -w <name> <run_id>` | Show run detail (per-job status, steps) |
-| `appc workflow cancel -w <name> <run_id>` | Cancel a running workflow |
-| `appc workflow rerun -w <name> <run_id>` | Re-run with the same inputs |
-| `appc workflow inputs <name>` | Show input parameters defined by the workflow |
+| `appm workflow add -f <file>` | Register a workflow from YAML (must contain `name:` and `jobs:`) |
+| `appm workflow list` | List all registered workflows |
+| `appm workflow get <name>` | Print a workflow's YAML |
+| `appm workflow rm <name>` | Remove a workflow |
+| `appm workflow run <name> [-e key=val] [-f]` | Trigger a run; `-f` follows output until terminal |
+| `appm workflow runs <name>` | List run history |
+| `appm workflow logs -w <name> <run_id>` | View the run's flow log |
+| `appm workflow output -w <name> <run_id> -j <job> -s <step>` | View a step's stdout |
+| `appm workflow detail -w <name> <run_id>` | Show run detail (per-job status, steps) |
+| `appm workflow cancel -w <name> <run_id>` | Cancel a running workflow |
+| `appm workflow rerun -w <name> <run_id>` | Re-run with the same inputs |
+| `appm workflow inputs <name>` | Show input parameters defined by the workflow |
 
 ## Complete Example
 
@@ -717,23 +717,23 @@ jobs:
 
 ```bash
 # Register
-appc workflow add -f ci-cd.yaml
+appm workflow add -f ci-cd.yaml
 
 # View declared inputs
-appc workflow inputs ci-cd
+appm workflow inputs ci-cd
 
 # Run end-to-end and follow live (note the run_id printed)
-appc workflow run ci-cd -e branch=release-v2 -e environment=staging -f
+appm workflow run ci-cd -e branch=release-v2 -e environment=staging -f
 
 # After completion, inspect details
-appc workflow runs ci-cd
-appc workflow detail -w ci-cd <run_id>
-appc workflow logs -w ci-cd <run_id>
-appc workflow output -w ci-cd <run_id> -j deploy -s deploy
+appm workflow runs ci-cd
+appm workflow detail -w ci-cd <run_id>
+appm workflow logs -w ci-cd <run_id>
+appm workflow output -w ci-cd <run_id> -j deploy -s deploy
 
 # Re-run with same inputs
-appc workflow rerun -w ci-cd <run_id>
+appm workflow rerun -w ci-cd <run_id>
 
 # Clean up
-appc workflow rm ci-cd
+appm workflow rm ci-cd
 ```

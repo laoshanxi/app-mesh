@@ -132,4 +132,4 @@ jobs:
           run: |
             timeout 30s /entrypoint.sh &
             sleep 5
-            appc ls && appc resource
+            appm ls && appm resource

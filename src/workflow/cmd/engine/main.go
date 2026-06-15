@@ -43,7 +43,7 @@ func main() {
 	if password == "" && token == "" {
 		fmt.Fprintln(os.Stderr, "Authentication required."+
 			"\n  Set APPMESH_PASSWORD via App sec_env (recommended):"+
-			"\n    appc add -a workflow -z APPMESH_PASSWORD=<password>"+
+			"\n    appm add -a workflow -z APPMESH_PASSWORD=<password>"+
 			"\n  Or set APPMESH_JWT_TOKEN env var (fallback).")
 		os.Exit(1)
 	}

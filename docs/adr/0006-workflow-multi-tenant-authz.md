@@ -4,7 +4,7 @@
 
 Accepted — implemented (Phase 1 + 2). The engine enforces per-workflow ownership and
 runs steps under the triggering caller's identity; the Go SDK (`EnableConcurrency`),
-the workflow engine, and the Rust CLI (`appc workflow`, all 14 actions) now carry the
+the workflow engine, and the Rust CLI (`appm workflow`, all 14 actions) now carry the
 caller token in the run_task payload. This is a concrete, simplified subset of the
 identity model in ADR 0004; the full `execution_identity` / automatic-trigger model
 (Phase 3 below) remains the longer-term target and is still Proposed in ADR 0004.

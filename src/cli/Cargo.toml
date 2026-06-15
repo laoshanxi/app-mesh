@@ -1,11 +1,11 @@
 [package]
-name = "appc"
+name = "appm"
 version = "2.2.1"
 edition = "2021"
 description = "App Mesh CLI - Rust implementation using WSS transport"
 
 [[bin]]
-name = "appc"
+name = "appm"
 path = "src/main.rs"
 
 [dependencies]
