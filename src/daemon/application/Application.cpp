@@ -630,7 +630,8 @@ void Application::spawnNow()
 	}
 
 	// 4. Record the next periodic occurrence (the tick spawns it when due).
-	if (this->isEnabled() && m_startInterval > 0)
+	// Cron schedules carry m_startInterval == 0, so check the cron flag too (cf. restartDelay()).
+	if (this->isEnabled() && (m_startInterval > 0 || m_startIntervalValueIsCronExpr))
 	{
 		this->scheduleNext(std::chrono::system_clock::now() + PERIODIC_RESPAWN_GAP);
 	}

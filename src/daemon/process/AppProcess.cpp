@@ -736,39 +736,52 @@ void AppProcess::prepareEnvironment(std::map<std::string, std::string> &envMap)
 
 std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(void *ptree)
 {
-	auto tree = os::pstree(getpid(), ptree);
-
-	const auto totalMemory = tree ? tree->totalRssMemBytes() : 0;
-	const auto totalFileDescriptors = tree ? tree->totalFileDescriptors() : 0;
-	std::string pstreeStr;
-	pid_t leafPid = ACE_INVALID_PID;
-
-	if (tree)
+	const static char fname[] = "AppProcess::getProcessDetails() ";
+	try
 	{
-		std::stringstream ss;
-		ss << *tree;
-		pstreeStr = ss.str();
-		leafPid = tree->findLeafPid();
+		auto tree = os::pstree(getpid(), ptree);
+
+		const auto totalMemory = tree ? tree->totalRssMemBytes() : 0;
+		const auto totalFileDescriptors = tree ? tree->totalFileDescriptors() : 0;
+		std::string pstreeStr;
+		pid_t leafPid = ACE_INVALID_PID;
+
+		if (tree)
+		{
+			std::stringstream ss;
+			ss << *tree;
+			pstreeStr = ss.str();
+			leafPid = tree->findLeafPid();
+		}
+
+		const auto curSysCpuTime = os::cpuTotalTime();
+		const auto curProcCpuTime = tree ? tree->totalCpuTime() : 0;
+		static const auto cpuNumber = os::cpus().size();
+
+		float cpuUsage = 0.0f;
+		std::lock_guard<std::recursive_mutex> guard(m_cpuMutex);
+
+		if (m_lastSysCpuTime && curSysCpuTime && curProcCpuTime)
+		{
+			const auto totalTimeDiff = curSysCpuTime - m_lastSysCpuTime;
+			cpuUsage = 100.0f * cpuNumber * (curProcCpuTime - m_lastProcCpuTime) / totalTimeDiff;
+		}
+
+		m_lastProcCpuTime = curProcCpuTime;
+		m_lastSysCpuTime = curSysCpuTime;
+
+		// tree is null when the process exited between the running() check and detail
+		// collection (benign race). Report failure so callers skip stale runtime details
+		// instead of resolving uid/user for an invalid leaf pid.
+		return std::make_tuple(tree != nullptr, totalMemory, cpuUsage, totalFileDescriptors, pstreeStr, leafPid);
 	}
-
-	const auto curSysCpuTime = os::cpuTotalTime();
-	const auto curProcCpuTime = tree ? tree->totalCpuTime() : 0;
-	static const auto cpuNumber = os::cpus().size();
-
-	float cpuUsage = 0.0f;
-	std::lock_guard<std::recursive_mutex> guard(m_cpuMutex);
-
-	if (m_lastSysCpuTime && curSysCpuTime && curProcCpuTime)
+	catch (const std::exception &e)
 	{
-		const auto totalTimeDiff = curSysCpuTime - m_lastSysCpuTime;
-		cpuUsage = 100.0f * cpuNumber * (curProcCpuTime - m_lastProcCpuTime) / totalTimeDiff;
+		// A monitored child can exit mid-sweep, making a /proc read fail (e.g. ESRCH /
+		// truncated read -> "basic_filebuf::underflow"). Same benign "process gone" race as
+		// the null-tree case: report failure so get_app/enable/metrics skip runtime details
+		// instead of surfacing a 412 to the client.
+		LOG_WAR << fname << "proc-read race, skipping runtime details: " << e.what();
+		return std::make_tuple(false, static_cast<uint64_t>(0), 0.0f, static_cast<uint64_t>(0), std::string(), static_cast<pid_t>(ACE_INVALID_PID));
 	}
-
-	m_lastProcCpuTime = curProcCpuTime;
-	m_lastSysCpuTime = curSysCpuTime;
-
-	// tree is null when the process exited between the running() check and detail
-	// collection (benign race). Report failure so callers skip stale runtime details
-	// instead of resolving uid/user for an invalid leaf pid.
-	return std::make_tuple(tree != nullptr, totalMemory, cpuUsage, totalFileDescriptors, pstreeStr, leafPid);
 }
