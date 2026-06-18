@@ -1,0 +1,7 @@
+# llm-agent runtime dependencies (installed into the App Mesh Docker image, and the
+# single source of truth for `pip install -r`).
+appmesh
+# Backend SDKs for LLMAGENT_BACKEND=anthropic / openai. Bundled out of the box so a
+# real backend works without extra steps; the default `fake` backend needs only appmesh.
+anthropic
+openai

@@ -401,6 +401,7 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
 |-------|------|----------|---------|-------------|
 | `message.app` | string | yes | — | Name of the running App to send the message to. |
 | `message.payload` | string | yes | — | Request payload. Supports `${{ }}` expressions. |
+| `message.forward_token` | boolean | no | `false` | Inject the run's caller JWT into the JSON payload's `token` field before sending. For identity-forwarding targets (e.g. `llm-agent`) that read the caller token from the payload body. No-op when the payload isn't a JSON object, when an author-set `token` is already present, or for automatic/recovered runs (which carry no caller token). |
 
 ```yaml
 - name: inference
@@ -408,12 +409,32 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
     app: "ml-model"
     payload: '{"data": "${{ steps.prepare.stdout }}", "model": "v3"}'
   timeout: 60
+
+# Driving an llm-agent (Scenario A) — forward_token injects the caller's JWT so the
+# agent acts as the triggering user (RBAC-scoped tools, owner-checked session):
+- name: ask
+  message:
+    app: "llm-agent"
+    payload: '{"action": "session_send", "session_id": "${{ inputs.sid }}", "input": "${{ inputs.q }}"}'
+    forward_token: true
 ```
+
+> **Note:** Only a **manual** run carries a caller token, so a workflow that drives
+> `llm-agent` via `forward_token` must be triggered by a user. Automatic triggers
+> (event/cron) have no caller identity to forward and the agent will reject the call
+> with `token required`.
 
 **Outputs available:**
 - `${{ steps.<name>.response }}` — response body from the App
 - `${{ steps.<name>.exit_code }}` — 0 if response received, non-zero on timeout/error
 - `${{ steps.<name>.status }}` — `"success"`, `"failure"`, or `"skipped"`
+
+**App-level errors fail the step.** If the App's response is the platform error envelope
+`{"status": "error", "message": "..."}`, the step is marked **failed** (the message
+becomes the failure reason) rather than a swallowed success — so `if:`/`needs`,
+`continue-on-error`, and retry behave correctly. The full body is still available as
+`${{ steps.<name>.response }}`. Responses that are not a JSON object with `status:"error"`
+(other JSON, plain text) are unaffected and remain successes on a received reply.
 
 ---
 

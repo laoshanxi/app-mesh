@@ -338,14 +338,14 @@ id name        user  status   health pid    memory  return last_start_time     c
 - Download a file from server
 
 ```text
-$ # appm get -r /opt/appmesh/log/appsvc.log -l ./1.log
+$ # appm get -r /opt/appmesh/work/server.log -l ./1.log
 file <./1.log> size <10.4 M>
 ```
 
 - Upload a local file to server
 
 ```text
-$ # appm put -r /opt/appmesh/log/appsvc.log -l ./1.log
+$ # appm put -r /opt/appmesh/work/server.log -l ./1.log
 Success
 ```
 

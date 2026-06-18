@@ -59,11 +59,11 @@ for i in range(10):
 Feature | Description
 ---|---
 App Management  | 🧩 <b>App CURD with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
-Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html) <br> 🔄 [Workflow Pipeline](https://app-mesh.readthedocs.io/en/latest/Workflow.html) — GitHub Actions-style CI/CD with DAG, retry, conditions, and remote execution
+Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html) <br> 🔄 [Workflow Pipeline](https://app-mesh.readthedocs.io/en/latest/Workflow.html) — GitHub Actions-style CI/CD with DAG workflow
 Security |  🔐 Authentication: [OAuth](src/sdk/python/test/test_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html), YAML-based storage (local or Consul for clustering) <br> 🔐 Authorization: [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html), [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html), multi-tenant isolation <br> 🔐 Protection: SSL/TLS for `TCP`/`HTTP`/`WebSocket`, CSRF tokens, HMAC with PSK for non-token verification
 Cloud Native | 🌩️ [Prometheus Exporter (built-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
 Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download API <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Request Forwarding <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
-Ecosystem | LLM: [Model Context Protocol (MCP)](src/sdk/mcp) <br> AI: [Claude Code Plugin](src/sdk/claude-plugin) <br> IoT: [MQTT](src/sdk/mqtt)
+Ecosystem | LLM: [Model Context Protocol (MCP)](src/sdk/mcp), [LLM Agent](src/sdk/llm-agent) <br> AI: [Claude Code Plugin](src/sdk/claude-plugin) <br> IoT: [MQTT](src/sdk/mqtt)
 Platform support | Linux, macOS, Windows (X86, ARM)
 SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp), [Rust](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/rust), [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http), [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/client_http.go), [JavaScript](https://www.npmjs.com/package/appmesh), [Java](https://github.com/laoshanxi/app-mesh/packages/2227502), [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
 
@@ -71,9 +71,9 @@ SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp), [Rust]
 
 Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Install.html), this covers:
 
- - Docker Compose setup
- - Native installation
- - Cluster initialization
+- Docker Compose setup
+- Native installation
+- Cluster initialization
 
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
@@ -93,7 +93,7 @@ appm workflow run pipeline -e env=prod -f # run and follow output
 appm workflow runs pipeline               # view history
 ```
 
-> 📄 **LLM spec-driven**  — [`development pipeline`](docs/source/spec-pipeline.md).
+> 📄 **LLM RAG Agent workflow**  — [LLM Agent](src/sdk/llm-agent)
 
 ## 📚 Documentation
 

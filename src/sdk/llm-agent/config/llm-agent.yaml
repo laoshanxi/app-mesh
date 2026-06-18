@@ -1,0 +1,36 @@
+# Pre-installed App definition for llm-agent (the Scenario A handler).
+# One App per tenant: the default-tenant instance is named `llm-agent` (no suffix); a
+# named tenant uses `llm-agent-<tenant>`. The daemon auto-loads and starts it on boot
+# (status: 1), like the workflow engine.
+#
+# No daemon credentials are needed: the task RPC authenticates with the daemon-
+# injected APP_MESH_PROCESS_KEY, and every other daemon call runs under the CALLER's
+# token from the request payload. With the default `fake` backend it starts and
+# serves out of the box (deterministic "stub: <input>" answers, no network).
+#
+# `working_dir` must contain the llm_agent package (so `python3 -m llm_agent` finds
+# it) and the daemon's python3 must have the `appmesh` SDK importable. Adjust the
+# path to where you deploy the package.
+#
+# Real backend (e.g. Anthropic tenant "acme"):
+#   appm add -a llm-agent-acme -z ANTHROPIC_API_KEY=<key> \
+#     -e APPMESH_TENANT=acme -e LLMAGENT_BACKEND=anthropic
+#
+# Scenario B (interactive, streaming) uses a separate worker App an admin provisions
+# per session — see config/llm-agent-worker.yaml.
+
+name: llm-agent
+owner: admin
+description: llm-agent — Scenario A handler (default tenant)
+working_dir: /opt/appmesh/lib/llm-agent          # packaged-install location; EDIT for a custom prefix or manual deploy (must contain the llm_agent package)
+command: python3 -m llm_agent --server 127.0.0.1:6059
+behavior:
+  exit: restart
+env:
+  APPMESH_TENANT: default
+  LLMAGENT_BACKEND: fake
+  LLMAGENT_SESSION_DIR: ./llm-agent-sessions
+  LLMAGENT_WORKSPACE_DIR: ./llm-agent-workspace
+metadata:
+  type: llm-agent-system
+status: 1

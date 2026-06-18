@@ -41,7 +41,7 @@ docker-compose -f docker-compose-all-in-one.yaml rm -f
 Loki is a log aggregation system, component `loki` run as Server and `promtail` run as log connect and push agent. `promtail` is always run as daemon-set on each log collection node. For appmesh node, bellow logs need to be collected together:
 
 1. Default system log in /var/log
-2. appmesh service log in /opt/appmesh/log/appsvc.log
+2. appmesh service log in /opt/appmesh/work/server.log
 3. Managed application output log in /opt/appmesh/work/*.log
 So override promtail configuration (/etc/promtail/config.yml) to combine the 3 log target in one promtail configuration, each node only start one `promtail` docker container.
 

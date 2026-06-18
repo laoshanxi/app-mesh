@@ -113,6 +113,7 @@ type Options struct {
 	ActiveSteps       *ActiveSteps                          // cancel tracking (nil = no tracking)
 	CancelCtx         context.Context                       // workflow cancel context (passed to executors)
 	WorkflowBaseDir   string                                // base directory for workflow YAML files
+	CallerToken       string                                // run's caller JWT (empty for auto/recovered runs); injected into forward_token message payloads
 }
 
 func (o *Options) log() logger.Log {
@@ -252,6 +253,7 @@ func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int,
 		ClusterNodes: opts.ClusterNodes,
 		ServerURI:    opts.ServerURI,
 		CancelCtx:    opts.CancelCtx,
+		CallerToken:  opts.CallerToken,
 	}
 	exec.RunSubWorkflow = func(ctx context.Context, wfName string, inputs map[string]string, subDepth int) (int, map[string]string) {
 		subOpts := opts
@@ -601,6 +603,7 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 		Log:               opts.Log,
 		WorkflowBaseDir:   opts.WorkflowBaseDir,
 		ActiveSteps:       opts.ActiveSteps,
+		CallerToken:       opts.CallerToken, // forward caller identity into sub-workflow message steps
 	}
 
 	exitCode, subCtx := RunWithContext(ctx, wf, client, inputs, runID, depth, subOpts)

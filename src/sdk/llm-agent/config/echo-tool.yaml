@@ -1,0 +1,27 @@
+# Example agent tool for llm-agent.
+#
+# A tool is any registered App carrying a `metadata.tool` schema; llm-agent
+# advertises it to the model and invokes it via run_task under the caller's identity.
+# This 'echo' App returns its JSON arguments (incl. the session_id llm-agent injects).
+# It is what the `fake` backend calls when a user message says "use tool echo {}".
+#
+# Deploy echo_tool.py on the daemon host (python3 must have the `appmesh` SDK), set
+# `command` to its absolute path, then:  appm add -D @config/echo-tool.yaml
+# The caller whose token llm-agent uses must be able to see/run this App (L3).
+
+name: echo
+owner: admin
+description: Echo tool — returns its JSON arguments (demo).
+command: python3 /ABSOLUTE/PATH/TO/echo_tool.py   # REQUIRED edit; placeholder won't exist
+behavior:
+  exit: restart
+metadata:
+  tool:
+    description: Echo back the provided arguments.
+    parameters:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Any text to echo back.
+status: 1

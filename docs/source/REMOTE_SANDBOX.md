@@ -17,7 +17,7 @@ Local Mac (Claude Code)                     Remote Linux (App Mesh)
 │ Grep/Glob/Git           │                │  APPMESH_WORKSPACE/     │
 │   ↓ local files         │  tar + upload  │    (code mirror)        │
 │                         │ ─────────────→ │                         │
-│ remote.py               │  SDK API       │  appsvc daemon          │
+│ remote.py               │  SDK API       │  appmesh daemon          │
 │   sync-exec "make"      │ ─────────────→ │    ↓ execute cmd        │
 │                         │                │    ↓ stdout             │
 │ real-time stdout        │ ←───────────── │    ↓ stream back        │
@@ -139,7 +139,7 @@ User: "build"
     [sync] Done.
     [exec] cd build && make -j8
     [ 12%] Building CXX object ...
-    [100%] Built target appsvc
+    [100%] Built target appmesh
     [exit] 0
 
 User: "run the tests"

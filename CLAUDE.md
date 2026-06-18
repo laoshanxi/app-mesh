@@ -163,7 +163,7 @@ Shared C++ library used by the daemon. Notable:
 
 ### Agent (`src/sdk/agent/`)
 
-REST proxy service for the daemon (`appsvc`), written in Go. Accepts HTTP requests from clients and forwards them to the daemon via TCP, offloading traffic and reducing pressure on the C++ core. Also provides a Docker daemon reverse proxy (`/appmesh/docker/*`), Prometheus metrics exporter, and Consul service registration.
+REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP requests from clients and forwards them to the daemon via TCP, offloading traffic and reducing pressure on the C++ core. Also provides a Docker daemon reverse proxy (`/appmesh/docker/*`), Prometheus metrics exporter, and Consul service registration.
 
 ### SDKs (`src/sdk/`)
 
@@ -181,6 +181,10 @@ Each SDK provides client libraries for interacting with the daemon plus a server
 ### MCP (`src/sdk/mcp/`)
 
 Model Context Protocol integration. Exposes App Mesh as an MCP tool server, enabling AI agents to manage applications via the MCP protocol.
+
+### LLM Agent (`src/sdk/llm-agent/`)
+
+LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`). A thin reason→act→observe loop over the official provider SDKs (`anthropic`/`openai`, plus a network-free `fake` for tests) that adds App Mesh identity, RBAC, sessions, and tools. Tools are ordinary App Mesh Apps carrying a `metadata.tool` schema, invoked via `run_task` under the caller's token (no MCP on the core path). Two roles: a shared per-tenant App for batch/DAG use (Scenario A) and an admin-provisioned per-session worker App for interactive streaming (Scenario B). Holds no daemon credentials — task RPC uses the daemon-injected `APP_MESH_PROCESS_KEY`; every other call runs under the caller's token from the request payload. See `src/sdk/llm-agent/README.md` and `docs/source/workflow/LLMAgentWorkflowDesign.md`.
 
 ## Code Conventions
 

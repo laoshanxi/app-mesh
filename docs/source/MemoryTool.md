@@ -12,7 +12,7 @@ cmake -DCMAKE_BUILD_TYPE=ASAN ..
 
 ```shell
 cd /opt/appmesh
-ASAN_OPTIONS=verbosity=1 bin/appsvc 2> output.txt
+ASAN_OPTIONS=verbosity=1 bin/appmesh 2> output.txt
 
 ```
 
@@ -27,7 +27,7 @@ the asan output (stderr) was redirected to local file `output.txt`
 ### enable valgrind attach for appmesh daemon
 
 ```shell
-sudo touch /opt/appmesh/bin/appsvc.valgrind
+sudo touch /opt/appmesh/bin/appmesh.valgrind
 sudo systemctl restart appmesh
 ```
 
@@ -36,7 +36,7 @@ sudo systemctl restart appmesh
 ### stop valgrind test and generate report
 
 ```shell
-touch /opt/appmesh/bin/appsvc.valgrind.stop
+touch /opt/appmesh/bin/appmesh.valgrind.stop
 ```
 
-the valgrind report can be found from `/opt/appmesh/bin/appsvc.valgrind.$pid.log`
+the valgrind report can be found from `/opt/appmesh/bin/appmesh.valgrind.$pid.log`

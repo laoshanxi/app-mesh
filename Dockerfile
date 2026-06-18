@@ -26,7 +26,7 @@ COPY --from=build_stage /workspace/app-mesh/script/pack/docker-entrypoint.sh /op
 RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/tmp/build \
 	apt-get update && \
 	apt-get install -y --no-install-recommends tini /tmp/build/appmesh*.deb && \
-	pip3 install --break-system-packages --no-cache-dir appmesh && \
+	pip3 install --break-system-packages --no-cache-dir -r /opt/appmesh/lib/llm-agent/requirements.txt && \
 	apt-get clean && \
 	rm -rf /var/lib/apt/lists/* /var/cache/* /var/tmp/* \
 		/usr/share/doc /usr/share/man /usr/share/locale /usr/share/info \
@@ -36,7 +36,7 @@ RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/
 	ln -s /opt/appmesh/script/docker-entrypoint.sh /entrypoint.sh && \
 	touch /opt/appmesh/appmesh.pid && \
 	(id -u appmesh >/dev/null 2>&1 && chown -R appmesh:appmesh /opt/appmesh/) || true && \
-	ldd /usr/local/bin/appm && /usr/local/bin/appm -V && /opt/appmesh/bin/appsvc -V
+	ldd /usr/local/bin/appm && /usr/local/bin/appm -V && /opt/appmesh/bin/appmesh -V
 EXPOSE 6060
 # USER is determined at runtime by docker-entrypoint.sh via setpriv:
 #   default: drops to 'appmesh' user (secure)
