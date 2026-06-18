@@ -1,0 +1,34 @@
+# Example agent tool for model-env.
+#
+# A tool is any registered App that carries a `metadata.tool` schema; model-env
+# advertises it to the model and invokes it via run_task. This 'echo' App returns
+# its JSON arguments (including the session_id model-env injects). It is what the
+# stub backend calls when a user message says "use tool echo {}".
+#
+# Register it (enabled, long-running task App). Deploy echo_tool.py first and point
+# `command` at it:
+#   appm add -D @config/echo-tool.yaml
+#
+# The caller whose token model-env uses must be able to see/run this App (L3); the
+# tool catalog is automatically scoped to that.
+
+name: echo
+owner: admin
+description: Echo tool — returns its JSON arguments (demo).
+# REQUIRED edit: absolute path to echo_tool.py on the daemon host, and the daemon's
+# python3 must have the `appmesh` SDK importable. The default below is a placeholder
+# that will NOT exist in a packaged install — `appm add` succeeds but the App fails
+# to start until you fix this.
+command: python3 /ABSOLUTE/PATH/TO/echo_tool.py
+behavior:
+  exit: restart
+metadata:
+  tool:
+    description: Echo back the provided arguments. A trivial demo tool.
+    parameters:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Any text to echo back.
+status: 1

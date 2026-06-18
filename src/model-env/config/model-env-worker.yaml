@@ -1,0 +1,45 @@
+# Template for a Scenario B (interactive, streaming) session worker App.
+#
+# An admin provisions one per interactive session: it runs the model-env binary in
+# --session-worker mode, serving exactly one session over its own clean stdout (a
+# client subscribing to its STDOUT sees only this session's tokens). behavior
+# exit=remove makes the daemon remove the App whenever the worker exits (explicit
+# session_close, idle/lifetime reap, or crash).
+#
+# No daemon credentials needed (APP_MESH_PROCESS_KEY for the task RPC; the caller's
+# token from each request for everything else). Paths are RELATIVE, resolved from
+# the daemon's default App working directory — the SAME base as the Scenario A App
+# (config/model-env.yaml). Do NOT add a `working_dir:` (a non-existent one is
+# ignored, falling back to the default; a different cwd would break the relative
+# command/paths).
+#
+# This template matches the shipped Scenario A App (tenant "default", owner admin)
+# so the two SHARE one per-tenant quota — the ledger file is <MODELENV_LEDGER_DIR>/
+# <tenant>.ledger.json, so sharing requires the SAME tenant AND the SAME ledger dir.
+# For a real tenant, change APPMESH_TENANT here AND run a matching Scenario A App
+# (appm add -a model-env-<tenant> -e APPMESH_TENANT=<tenant> …) with the same dir.
+#
+# `owner` MUST be an existing daemon user — it is the session owner; only that user
+# (or an admin) may use the session (L2). Registration fails if the user is unknown.
+#
+# Provision (then the client talks to it directly: run_task("model-env-default-sess-S1",
+# {"action":"session_send","session_id":"S1","token":"<jwt>","stream":true}) + Subscribe(STDOUT)):
+#   appm add -D @config/model-env-worker.yaml
+
+name: model-env-default-sess-S1              # globally-unique; convention: model-env-<tenant>-sess-<id>
+owner: admin                                 # the session owner — must be an existing daemon user
+command: ../../bin/model-env --session-worker --session-id=S1 --server=127.0.0.1:6059
+description: model-env interactive session worker (tenant=default session=S1)
+stdout_cache_num: 1000                       # let a late STDOUT subscriber still see recent tokens
+behavior:
+  exit: remove                               # daemon removes the App on any exit
+env:
+  APPMESH_SESSION_OWNER: admin               # must equal `owner`
+  APPMESH_TENANT: default                    # same tenant as the Scenario A App → shared quota
+  MODELENV_BACKEND: stub
+  MODELENV_SESSION_DIR: ./model-env-workspace/default/S1/sessions  # this session's history (isolated)
+  MODELENV_WORKSPACE_DIR: ./model-env-workspace                    # same base as the Scenario A App
+  MODELENV_LEDGER_DIR: ./model-env-sessions                        # MUST match the Scenario A App → one per-tenant quota
+  MODELENV_SESSION_IDLE_MINUTES: "30"        # exit after idle (0 disables)
+  MODELENV_SESSION_MAX_HOURS: "8"            # absolute lifetime cap (0 disables)
+status: 1

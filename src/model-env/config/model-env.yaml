@@ -1,0 +1,34 @@
+# Pre-installed App definition for the LLM agent model-environment (the per-tenant
+# Scenario A handler). One App per tenant; this is the default-tenant instance.
+# The daemon auto-loads and starts it on boot (status: 1), like the workflow engine.
+#
+# No daemon credentials are needed: model-env authenticates the task RPC with the
+# daemon-injected APP_MESH_PROCESS_KEY, and runs every other daemon call (token
+# validation, tools) under the CALLER's token from the request payload. So with the
+# default stub backend this starts and serves out of the box.
+#
+# For a real backend, add the backend secret/endpoint (sec_env is encrypted at rest):
+#   Anthropic tenant "acme":
+#     appm add -a model-env-acme -z ANTHROPIC_API_KEY=<key> \
+#       -e APPMESH_TENANT=acme -e MODELENV_BACKEND=anthropic
+#   Local inference (a vLLM App on this node):
+#     appm add -a model-env-acme -e APPMESH_TENANT=acme -e MODELENV_BACKEND=local \
+#       -e MODELENV_LOCAL_BASE_URL=http://127.0.0.1:8000/v1 -e MODELENV_MODEL=<served-model>
+#
+# Scenario B (interactive, streaming) uses a separate worker App that an admin
+# provisions per session — see config/model-env-worker.yaml.
+
+command: ../../bin/model-env
+name: model-env-default
+owner: admin
+description: LLM agent model-environment — Scenario A handler (one App per tenant)
+behavior:
+  exit: restart
+env:
+  APPMESH_TENANT: default
+  MODELENV_BACKEND: stub
+  MODELENV_SESSION_DIR: ./model-env-sessions
+  MODELENV_WORKSPACE_DIR: ./model-env-workspace
+metadata:
+  type: model-env-system
+status: 1

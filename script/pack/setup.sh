@@ -235,7 +235,7 @@ install_launchd_service() {
     rm -f "${LAUNCHD_FILE}.bak"
 
     # Remove macOS quarantine attributes
-    for binary in appsvc appm agent; do
+    for binary in appmesh appm agent; do
         xattr -d com.apple.quarantine "${PROG_HOME}/bin/${binary}" 2>/dev/null || true
     done
 

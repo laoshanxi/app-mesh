@@ -36,7 +36,7 @@ RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/
 	ln -s /opt/appmesh/script/docker-entrypoint.sh /entrypoint.sh && \
 	touch /opt/appmesh/appmesh.pid && \
 	(id -u appmesh >/dev/null 2>&1 && chown -R appmesh:appmesh /opt/appmesh/) || true && \
-	ldd /usr/local/bin/appm && /usr/local/bin/appm -V && /opt/appmesh/bin/appsvc -V
+	ldd /usr/local/bin/appm && /usr/local/bin/appm -V && /opt/appmesh/bin/appmesh -V
 EXPOSE 6060
 # USER is determined at runtime by docker-entrypoint.sh via setpriv:
 #   default: drops to 'appmesh' user (secure)

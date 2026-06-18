@@ -163,7 +163,7 @@ Shared C++ library used by the daemon. Notable:
 
 ### Agent (`src/sdk/agent/`)
 
-REST proxy service for the daemon (`appsvc`), written in Go. Accepts HTTP requests from clients and forwards them to the daemon via TCP, offloading traffic and reducing pressure on the C++ core. Also provides a Docker daemon reverse proxy (`/appmesh/docker/*`), Prometheus metrics exporter, and Consul service registration.
+REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP requests from clients and forwards them to the daemon via TCP, offloading traffic and reducing pressure on the C++ core. Also provides a Docker daemon reverse proxy (`/appmesh/docker/*`), Prometheus metrics exporter, and Consul service registration.
 
 ### SDKs (`src/sdk/`)
 

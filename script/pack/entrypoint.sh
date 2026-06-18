@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 ################################################################################
 # App Mesh Entrypoint Script
-# Initializes the App Mesh service (appsvc) for init.d or as a Docker entrypoint.
+# Initializes the App Mesh service (appmesh) for init.d or as a Docker entrypoint.
 ################################################################################
 
 set -e # Exit on error
@@ -9,7 +9,7 @@ set -u # Exit on undefined variables
 
 # Environment Variables
 export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
-export PROGRAM="${PROG_HOME}/bin/appsvc"
+export PROGRAM="${PROG_HOME}/bin/appmesh"
 
 # Function: Logging Utility
 log() {
@@ -114,7 +114,7 @@ initialize_directory
 prepare_app_start "$@"
 secure_installation_check
 
-# Replace the shell with appsvc so tini (PID 1 in docker) forwards signals
+# Replace the shell with appmesh so tini (PID 1 in docker) forwards signals
 # directly to the daemon. Restart-on-crash is delegated to the platform:
 # Docker `--restart=on-failure`, systemd `Restart=always`, launchd `KeepAlive`,
 # NSSM `AppExit Default Restart`.
