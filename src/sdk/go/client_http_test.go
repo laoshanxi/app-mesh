@@ -208,7 +208,7 @@ func TestSyncTransportToken_NonAuthPath(t *testing.T) {
 }
 
 // Integration tests: verify cookie/token state against the live server.
-// These tests require the updated appsvc daemon with Set-Cookie support for renew/logoff.
+// These tests require the updated appmesh daemon with Set-Cookie support for renew/logoff.
 
 func TestIntegration_HTTP_RenewToken_UpdatesCookie(t *testing.T) {
 	cookiePath := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
@@ -473,13 +473,13 @@ func TestAppmeshFile(t *testing.T) {
 
 	var remotePath, localFile, tempFile string
 	if runtime.GOOS == "windows" {
-		remotePath = `C:\local\appmesh\bin\appsvc.exe`
-		localFile = "appsvc.exe"
-		tempFile = filepath.Join(os.TempDir(), fmt.Sprintf("appsvc_%d.exe", os.Getpid()))
+		remotePath = `C:\local\appmesh\bin\appmesh.exe`
+		localFile = "appmesh.exe"
+		tempFile = filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_%d.exe", os.Getpid()))
 	} else {
-		remotePath = "/opt/appmesh/bin/appsvc"
-		localFile = "appsvc"
-		tempFile = fmt.Sprintf("/tmp/appsvc_%d", os.Getpid())
+		remotePath = "/opt/appmesh/bin/appmesh"
+		localFile = "appmesh"
+		tempFile = fmt.Sprintf("/tmp/appmesh_%d", os.Getpid())
 	}
 
 	_ = os.Remove(localFile)

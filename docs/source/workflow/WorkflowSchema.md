@@ -401,6 +401,7 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
 |-------|------|----------|---------|-------------|
 | `message.app` | string | yes | — | Name of the running App to send the message to. |
 | `message.payload` | string | yes | — | Request payload. Supports `${{ }}` expressions. |
+| `message.forward_token` | boolean | no | `false` | Inject the run's caller JWT into the JSON payload's `token` field before sending. For a target App that reads the caller token from the payload body. No-op when the payload isn't a JSON object, when an author-set `token` is already present, or for automatic/recovered runs (which carry no caller token). |
 
 ```yaml
 - name: inference
@@ -408,12 +409,32 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
     app: "ml-model"
     payload: '{"data": "${{ steps.prepare.stdout }}", "model": "v3"}'
   timeout: 60
+
+# Driving an llm-agent (Scenario A). The daemon authorizes the call via RBAC; llm-agent
+# reads no caller token of its own, so forward_token is not needed here. session_send
+# get-or-creates the session, so the step need not pre-open one; "${{ workflow.run_id }}"
+# gives a fresh per-run session (reuse a stable id to continue a conversation):
+- name: ask
+  message:
+    app: "llm-agent"
+    payload: '{"action": "session_send", "session_id": "${{ workflow.run_id }}", "input": "${{ inputs.q }}"}'
 ```
+
+> **Note:** llm-agent performs no token check of its own, so **automatic triggers
+> (event/cron) drive it the same as manual runs** — access is gated by the daemon's RBAC
+> on `run_task` (and, for a Scenario B worker, the App's `permission`).
 
 **Outputs available:**
 - `${{ steps.<name>.response }}` — response body from the App
 - `${{ steps.<name>.exit_code }}` — 0 if response received, non-zero on timeout/error
 - `${{ steps.<name>.status }}` — `"success"`, `"failure"`, or `"skipped"`
+
+**App-level errors fail the step.** If the App's response is the platform error envelope
+`{"status": "error", "message": "..."}`, the step is marked **failed** (the message
+becomes the failure reason) rather than a swallowed success — so `if:`/`needs`,
+`continue-on-error`, and retry behave correctly. The full body is still available as
+`${{ steps.<name>.response }}`. Responses that are not a JSON object with `status:"error"`
+(other JSON, plain text) are unaffected and remain successes on a received reply.
 
 ---
 

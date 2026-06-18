@@ -439,6 +439,7 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 		code, _ := engine.RunWithContext(ctx, wf, execClient, inputs, runID, 0, engine.Options{
 			ClusterNodes:    s.clusterNodes,
 			ServerURI:       s.serverURI,
+			CallerToken:     token,  // injected only into forward_token message payloads
 			CompletedJobs:   completedJobs,
 			RecoveredSteps:  recoveredSteps,
 			Log:             log,

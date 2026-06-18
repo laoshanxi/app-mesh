@@ -23,7 +23,7 @@ set -u # Exit on undefined variables
 
 # Environment variables with fallback defaults
 export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
-export PROG=${PROG:-"${PROG_HOME}/bin/appsvc"}
+export PROG=${PROG:-"${PROG_HOME}/bin/appmesh"}
 export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/entrypoint.sh"}
 
 # Constants
@@ -94,11 +94,11 @@ is_running() {
     pid=$(read_pid) || return 1
     kill -0 "$pid" 2>/dev/null || return 1
 
-    # Guard against PID reuse: if /proc is available, verify the process is appsvc
+    # Guard against PID reuse: if /proc is available, verify the process is appmesh
     if [ -r "/proc/$pid/comm" ]; then
         local comm
         read -r comm <"/proc/$pid/comm" 2>/dev/null || comm=""
-        [ "$comm" = "appsvc" ] || return 1
+        [ "$comm" = "appmesh" ] || return 1
     fi
     return 0
 }

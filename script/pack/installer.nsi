@@ -14,7 +14,7 @@ ShowInstDetails show
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
 
-Var START_APPSVC
+Var START_APPMESH
 Var NSSM_PATH
 Var SILENT_MODE
 
@@ -49,7 +49,7 @@ Section "Install"
     SetOutPath "$INSTDIR"
     File /r "..\..\build\package_root\*"
 
-    StrCpy $START_APPSVC "$INSTDIR\bin\appsvc.exe"
+    StrCpy $START_APPMESH "$INSTDIR\bin\appmesh.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"
 
     ; Generate SSL certs
@@ -71,7 +71,7 @@ Section "Install"
     nsExec::ExecToLog '"$NSSM_PATH" remove AppMeshService confirm'
 
     ; Install service
-    nsExec::ExecToLog '"$NSSM_PATH" install AppMeshService "$START_APPSVC"'
+    nsExec::ExecToLog '"$NSSM_PATH" install AppMeshService "$START_APPMESH"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppDirectory "$INSTDIR"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Start SERVICE_AUTO_START'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Type SERVICE_WIN32_OWN_PROCESS'

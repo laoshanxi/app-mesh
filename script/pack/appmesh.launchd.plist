@@ -9,7 +9,7 @@
         <!-- Program arguments, defining the command to be executed -->
         <key>ProgramArguments</key>
         <array>
-            <string>/opt/appmesh/bin/appsvc</string>
+            <string>/opt/appmesh/bin/appmesh</string>
         </array>
 
         <!-- Working directory, defining the working directory for the service -->

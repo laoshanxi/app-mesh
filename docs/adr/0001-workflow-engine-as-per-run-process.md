@@ -37,7 +37,7 @@ Both modes share the same Go packages (parser, expression, DAG, executor, engine
 - **Shared TCP connection**: all workflow runs share one persistent TCP connection to the daemon, enabling event subscriptions (EXIT/START) for workflow triggers and reducing connection overhead.
 - **One process to manage**: App Mesh registers and monitors a single `wf-engine` App, not N+1 processes.
 - **Fault isolation via `recover()`**: each goroutine is wrapped in `defer recover()` to contain panics without crashing other runs.
-- **Consistent with Agent**: the Go Agent (`appsvc`) follows the same single-binary-with-goroutines pattern, keeping architectural consistency.
+- **Consistent with Agent**: the Go Agent (`agent`) follows the same single-binary-with-goroutines pattern, keeping architectural consistency.
 
 ### Trade-offs
 

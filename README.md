@@ -59,11 +59,11 @@ for i in range(10):
 Feature | Description
 ---|---
 App Management  | 🧩 <b>App CURD with Full Remote Control</b> – including cgroup, OS user, environment variables, Docker, stdin, and stdout – along with comprehensive monitoring (start counts, exit codes, error messages, health checks). <br> 🧩 <b>Fine-Grained Behavior Control & Scheduling</b> – supports long- and short-running tasks, periodic jobs, cron schedules, custom timings, and robust error handling. <br> 🧩 <b>Multi-Tenancy</b> –  built-in user ownership model and access controls. <br> 🧩 <b>Unified Access Interface</b> – interact via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) or [WebGUI](https://github.com/laoshanxi/app-mesh-ui).<br>
-Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html) <br> 🔄 [Workflow Pipeline](https://app-mesh.readthedocs.io/en/latest/Workflow.html) — GitHub Actions-style CI/CD with DAG, retry, conditions, and remote execution
+Computing | 🚀 [High-performance in-memory computing](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) <br> ▶️ [Remote execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html) <br> 🔄 [Workflow Pipeline](https://app-mesh.readthedocs.io/en/latest/Workflow.html) — GitHub Actions-style CI/CD with DAG workflow
 Security |  🔐 Authentication: [OAuth](src/sdk/python/test/test_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html), YAML-based storage (local or Consul for clustering) <br> 🔐 Authorization: [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html), [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html), multi-tenant isolation <br> 🔐 Protection: SSL/TLS for `TCP`/`HTTP`/`WebSocket`, CSRF tokens, HMAC with PSK for non-token verification
 Cloud Native | 🌩️ [Prometheus Exporter (built-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> 🌩️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> 🌩️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> 🌩️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile) <br> 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
 Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download API <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Request Forwarding <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
-Ecosystem | LLM: [Model Context Protocol (MCP)](src/sdk/mcp) <br> AI: [Claude Code Plugin](src/sdk/claude-plugin) <br> IoT: [MQTT](src/sdk/mqtt)
+Ecosystem | LLM: [Model Context Protocol (MCP)](src/sdk/mcp_server), [LLM Agent](src/sdk/llm-agent) <br> AI: [Claude Code Plugin](src/sdk/claude-plugin) <br> IoT: [MQTT](src/sdk/mqtt)
 Platform support | Linux, macOS, Windows (X86, ARM)
 SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp), [Rust](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/rust), [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http), [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/client_http.go), [JavaScript](https://www.npmjs.com/package/appmesh), [Java](https://github.com/laoshanxi/app-mesh/packages/2227502), [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
 
@@ -71,9 +71,9 @@ SDK | [C++](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/cpp), [Rust]
 
 Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Install.html), this covers:
 
- - Docker Compose setup
- - Native installation
- - Cluster initialization
+- Docker Compose setup
+- Native installation
+- Cluster initialization
 
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
@@ -93,7 +93,7 @@ appm workflow run pipeline -e env=prod -f # run and follow output
 appm workflow runs pipeline               # view history
 ```
 
-> 📄 **LLM spec-driven**  — [`development pipeline`](docs/source/spec-pipeline.md).
+> 📄 **LLM RAG Agent workflow**  — [LLM Agent](src/sdk/llm-agent)
 
 ## 📚 Documentation
 
@@ -132,18 +132,22 @@ appm workflow runs pipeline               # view history
 
 ## 💡 Success
 
-- [In-memory remote task execute](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
-- [Build a powerful monitor system with Grafana/Prometheus/Loki](https://app-mesh.readthedocs.io/en/latest/success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.html)
-- [Customize application start behavior](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)
-- [Open service broker support local PV for Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
-- [Promote native application to microservice application](https://app-mesh.readthedocs.io/en/latest/success/promote_native_app_to_microservice_app.html)
-- [Secure REST file server](https://app-mesh.readthedocs.io/en/latest/success/secure_REST_file_server.html)
-- [Standalone JWT server](https://app-mesh.readthedocs.io/en/latest/success/standalone_JWT_server.html)
-- [Kubernetes run non-container applications](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
-- [Remote execute](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
-- [Python parallel run](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
-- [Secure consul cluster](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
-- [JWT service with REST and UI](https://github.com/laoshanxi/app-mesh/blob/main/script/docker-compose-auth-service.yaml)
+- [Remote build-and-run sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)
+- [LLM agent runtime hosted as an App Mesh app](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/llm-agent)
+- [LLM agent architecture and workflow design](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/workflow/LLMAgentWorkflowDesign.md)
+- [Manage App Mesh from AI clients via MCP (HTTP + OAuth)](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp_server)
+- [In-memory remote task execution](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
+- [Observability stack with Grafana, Prometheus, and Loki](https://app-mesh.readthedocs.io/en/latest/success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.html)
+- [Customize application startup and exit behavior](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)
+- [Kubernetes local-PV provisioning via Open Service Broker](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
+- [Promote a native application into a managed microservice](https://app-mesh.readthedocs.io/en/latest/success/promote_native_app_to_microservice_app.html)
+- [Secure REST-based file server](https://app-mesh.readthedocs.io/en/latest/success/secure_REST_file_server.html)
+- [Standalone JWT authentication server](https://app-mesh.readthedocs.io/en/latest/success/standalone_JWT_server.html)
+- [Run non-container applications on Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
+- [Remote command and Python script execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
+- [Parallel task execution with the Python SDK](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
+- [Secure multi-node cluster with Consul](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
+- [JWT auth service with REST API and web UI](https://github.com/laoshanxi/app-mesh/blob/main/script/docker-compose-auth-service.yaml)
 
 ---
 

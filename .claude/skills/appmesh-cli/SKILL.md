@@ -75,7 +75,7 @@ appm shell ps aux                             # one-shot via shell
 appm resource                          # CPU, memory, disk
 appm config                            # view config
 appm log -L DEBUG                      # set log level (DEBUG/INFO/WARN/ERROR)
-appm label -v                          # view labels
+appm label --view                      # view labels
 appm label -a -l key=value             # add label
 appm label -d -l key                   # delete label
 ```

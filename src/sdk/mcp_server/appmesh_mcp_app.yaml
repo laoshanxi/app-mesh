@@ -1,0 +1,39 @@
+---
+# App Mesh App definition that hosts the MCP server itself.
+#
+# Register it so App Mesh keeps the MCP server alive, and so you can
+# enable / disable / remove it at any time, decoupled from the daemon:
+#
+#   appm add --stdin appmesh_mcp_app.yaml   # register from this file
+#   appm disable -a mcp-server              # stop serving MCP
+#   appm enable  -a mcp-server              # resume
+#   appm rm      -a mcp-server              # remove entirely ("don't want it anymore")
+#
+# Adjust paths to where this directory is deployed (default assumes
+# /opt/appmesh/sdk/mcp_server) and run `pip install -r requirements.txt` first.
+name: mcp-server
+description: App Mesh MCP Server (Streamable HTTP, OAuth bridge)
+command: python3 appmesh_server.py
+working_dir: /opt/appmesh/sdk/mcp_server
+shell: false
+owner: mesh
+permission: 11
+env:
+  # App Mesh REST endpoint the MCP server forwards tool calls to.
+  APPMESH_URL: https://127.0.0.1:6060
+  # Verify the daemon's TLS cert; set the CA path, or "false" for loopback dev.
+  APPMESH_CA: /opt/appmesh/ssl/ca.pem
+  # MCP listener.
+  APPMESH_MCP_HOST: 0.0.0.0
+  APPMESH_MCP_PORT: "6071"
+  # Public base URL advertised in OAuth metadata (what clients connect to).
+  APPMESH_MCP_PUBLIC_URL: https://your-host:6071
+  # Enable HTTPS for the MCP endpoint (recommended for remote clients).
+  APPMESH_MCP_TLS_CERT: /opt/appmesh/ssl/server.pem
+  APPMESH_MCP_TLS_KEY: /opt/appmesh/ssl/server-key.pem
+behavior:
+  # Keep the long-running MCP server alive.
+  exit: keepalive
+# Liveness probe: the OAuth discovery endpoint is always served.
+# Verifies TLS against the App Mesh CA (matches APPMESH_CA above).
+health_check_cmd: curl -sf --cacert /opt/appmesh/ssl/ca.pem https://127.0.0.1:6071/.well-known/oauth-authorization-server -o /dev/null

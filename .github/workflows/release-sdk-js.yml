@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # Required for OIDC trusted publishing
 
 jobs:
   publish:
@@ -27,15 +28,62 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: "18" # specify the version of Node.js you want to use
+          node-version: "20"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm to support trusted publishing
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         working-directory: "src/sdk/javascript/"
         run: npm install
 
-      - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm (OIDC, no token required)
         working-directory: "src/sdk/javascript/"
-        run: npm publish --access public --registry=https://registry.npmjs.org
+        run: npm publish --access public
+
+      - name: Clean up old versions (keep latest 5)
+        if: success()
+        continue-on-error: true # Never fail the workflow if the token expires or cleanup fails
+        working-directory: "src/sdk/javascript/"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # Required for unpublish
+        run: |
+          set -u
+
+          # Skip if the token is not configured
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::warning::NPM_TOKEN is not configured. Skipping old version cleanup."
+            exit 0
+          fi
+
+          # Skip if the token is expired or invalid
+          if ! npm whoami >/dev/null 2>&1; then
+            echo "::warning::NPM_TOKEN is expired or invalid. Skipping old version cleanup. Please update the secret."
+            exit 0
+          fi
+
+          PKG=$(node -p "require('./package.json').name")
+          echo "Package: $PKG"
+
+          # Wait for the registry to synchronize the newly published version
+          sleep 5
+
+          # npm returns versions in ascending semver order.
+          # Remove all but the latest 5 versions.
+          OLD_VERSIONS=$(npm view "$PKG" versions --json \
+            | jq -r 'if length > 5 then .[0:length-5][] else empty end')
+
+          if [ -z "$OLD_VERSIONS" ]; then
+            echo "There are 5 or fewer versions. No cleanup is required."
+            exit 0
+          fi
+
+          echo "The following versions will be removed:"
+          echo "$OLD_VERSIONS"
+
+          for v in $OLD_VERSIONS; do
+            echo ">>> Unpublishing $PKG@$v"
+            npm unpublish "$PKG@$v" \
+              || echo "::warning::Failed to remove $PKG@$v. Skipping."
+          done

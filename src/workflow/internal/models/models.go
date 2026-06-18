@@ -28,6 +28,11 @@ type RetryPolicy struct {
 type MessageConfig struct {
 	App     string `yaml:"app"`
 	Payload string `yaml:"payload"`
+	// ForwardToken injects the run's caller JWT into the JSON payload's "token" field
+	// before RunTask (opt-in). Used by identity-forwarding targets like llm-agent that
+	// read the caller token from the payload body. No-op for auto/recovered runs (no
+	// caller token) or non-object payloads; an author-set "token" wins.
+	ForwardToken bool `yaml:"forward_token,omitempty"`
 }
 
 type StepResult struct {

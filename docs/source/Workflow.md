@@ -498,7 +498,7 @@ Semantics:
 
 Execute jobs on remote App Mesh nodes using label selectors.
 
-By node label (configure labels on each daemon via `appm label add -l role=test-server`):
+By node label (configure labels on each daemon via `appm label -a -l role=test-server`):
 
 ```yaml
 # remote-label-demo.yaml
@@ -576,8 +576,8 @@ appm add -a cron-hello -c "appm workflow run hello-world" -Y "0 2 * * *"
 # Or, drive on an interval (ISO 8601 duration)
 appm add -a tick-hello -c "appm workflow run hello-world" -i PT5M
 
-appm rm -n cron-hello
-appm rm -n tick-hello
+appm rm -a cron-hello
+appm rm -a tick-hello
 ```
 
 ### Workflow Call

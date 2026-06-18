@@ -21,13 +21,13 @@ func TestAppmeshTCPFile(t *testing.T) {
 
 	var remotePath, localFile, tempFile string
 	if runtime.GOOS == "windows" {
-		remotePath = `C:\local\appmesh\bin\appsvc.exe`
-		localFile = "appsvc.exe"
-		tempFile = filepath.Join(os.TempDir(), "appsvc.exe")
+		remotePath = `C:\local\appmesh\bin\appmesh.exe`
+		localFile = "appmesh.exe"
+		tempFile = filepath.Join(os.TempDir(), "appmesh.exe")
 	} else {
-		remotePath = "/opt/appmesh/bin/appsvc"
-		localFile = "appsvc"
-		tempFile = "/tmp/appsvc"
+		remotePath = "/opt/appmesh/bin/appmesh"
+		localFile = "appmesh"
+		tempFile = "/tmp/appmesh"
 	}
 
 	_ = os.Remove(localFile)
