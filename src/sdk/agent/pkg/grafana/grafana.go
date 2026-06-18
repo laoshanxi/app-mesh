@@ -2,6 +2,7 @@ package grafana
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -23,13 +24,16 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 	if header, ok := ctx.Value(requestHeadersKey).(http.Header); ok {
 		authKey = header.Get("Authorization")
 	}
-	client, _ := appmesh.NewHTTPClient(appmesh.Option{})
-	client.Authenticate(authKey, "", "", true)
+	client, err := appmesh.NewHTTPClient(appmesh.Option{})
+	if err != nil {
+		return nil, fmt.Errorf("create app mesh client: %w", err)
+	}
+	if _, err := client.Authenticate(authKey, "", "", true); err != nil {
+		return nil, fmt.Errorf("authenticate: %w", err)
+	}
 	apps, err := client.ListApps()
-
-	result := make([]TableColumn, len(apps))
-	for i := 0; i < len(apps); i++ {
-		result[i] = TableColumn{}
+	if err != nil {
+		return nil, fmt.Errorf("list apps: %w", err)
 	}
 
 	var regTimes TableTimeColumn
@@ -56,7 +60,7 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 		appStatus = append(appStatus, float64(meshApp.Status))
 		appHealth = append(appHealth, float64(*meshApp.Health))
 		if meshApp.Pid != nil {
-			appPid = append(appPid, float64(*meshApp.Health))
+			appPid = append(appPid, float64(*meshApp.Pid))
 		} else {
 			appPid = append(appPid, 0)
 		}

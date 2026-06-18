@@ -1,0 +1,36 @@
+# Pre-installed App definition for llm-agent — the shared handler (Scenario A, batch/DAG).
+# The daemon auto-loads it on boot but does NOT start it (status: 0); enable on demand:
+#   appm enable -a llm-agent
+#
+# It runs the Claude Agent SDK; the SDK inherits this App's env and passes it to the
+# bundled Claude Code CLI, so the model/provider is chosen purely via env (CLI uses no
+# native non-Anthropic provider — point a gateway at it for OpenAI/Gemini/etc.):
+#   - Anthropic API:  -z ANTHROPIC_API_KEY=<key> -e LLMAGENT_MODEL=claude-opus-4-8
+#                     (optional -e ANTHROPIC_BASE_URL=<proxy/gateway url>)
+#   - Amazon Bedrock: -e CLAUDE_CODE_USE_BEDROCK=1 -e AWS_REGION=us-east-1
+#                     (-e AWS_ACCESS_KEY_ID=<id> -z AWS_SECRET_ACCESS_KEY=<secret>, or an instance role)
+#   - Google Vertex:  -e CLAUDE_CODE_USE_VERTEX=1 -e CLOUD_ML_REGION=us-east5
+#                     -e ANTHROPIC_VERTEX_PROJECT_ID=<proj> (auth via ADC / GOOGLE_APPLICATION_CREDENTIALS)
+#   - Gateway (OpenAI-compatible / others): an Anthropic-Messages-API-compatible gateway is
+#                     REQUIRED — -e ANTHROPIC_BASE_URL=<gateway> -z ANTHROPIC_AUTH_TOKEN=<cred>
+#                     -e LLMAGENT_MODEL=<gateway model name, e.g. gpt-4o>
+# Credentials must be SECURED env (-z, never in this file). The web UI (app-mesh-ui →
+# Agents → Register) writes the same env/sec_env from a guided provider form.
+#   - the `claude-agent-sdk` wheel (in requirements.txt) bundles the Claude Code CLI it
+#     drives as a subprocess — no Node.js needed.
+#
+# `working_dir` must contain the llm_agent package and have `claude-agent-sdk` importable.
+name: llm-agent
+owner: admin
+description: llm-agent — Claude Agent SDK handler (shared, Scenario A)
+working_dir: /opt/appmesh/lib/llm-agent          # packaged-install location; EDIT for a custom prefix
+command: python3 -m llm_agent --server 127.0.0.1:6059
+behavior:
+  exit: restart
+env:
+  LLMAGENT_WORKSPACE_DIR: ./llm-agent-workspace
+  # Optional: LLMAGENT_MODEL (e.g. claude-opus-4-8), LLMAGENT_SYSTEM_PROMPT,
+  #           LLMAGENT_ALLOWED_TOOLS, LLMAGENT_PERMISSION_MODE, LLMAGENT_MAX_ITERATIONS.
+metadata:
+  type: llm-agent-system
+status: 0

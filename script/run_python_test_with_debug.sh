@@ -33,7 +33,7 @@ fi
 
 SERVER_LOG="${APPMESH_SERVER_LOG:-/opt/appmesh/work/server.log}"
 PID_FILE="${APPMESH_PID_FILE:-/opt/appmesh/appmesh.pid}"
-DAEMON_BIN="${APPMESH_DAEMON_BIN:-/opt/appmesh/bin/appsvc}"
+DAEMON_BIN="${APPMESH_DAEMON_BIN:-/opt/appmesh/bin/appmesh}"
 SUSPECT_PATTERNS='500 InternalServerError|412 RuntimeError|404 NotFound|apiFileDownload|/etc/hosts|fileStat|file_download|throw|exception|deadlock|aborted|abort|crash|core dumped|signal|backtrace|terminate called|SIGSEGV|SIGABRT|error:'
 
 # GitHub Actions log group helpers (plain text outside GHA)
@@ -99,7 +99,7 @@ dump_environment_snapshot() {
     fi
     head -3 /etc/hosts 2>&1 || true
     echo "----- daemon process -----"
-    ps -ef 2>/dev/null | grep -E "appsvc|appmesh\.agent" | grep -v grep || true
+    ps -ef 2>/dev/null | grep -E "appmesh" | grep -v grep || true
     [ -r "${PID_FILE}" ] && echo "appmesh.pid=$(cat "${PID_FILE}" 2>/dev/null)" || true
     echo "----- daemon work dir -----"
     ls -la /opt/appmesh/work/ 2>&1 | head -20 || true
@@ -222,13 +222,13 @@ dump_linux_system_log() {
             || dmesg 2>/dev/null | tail -80 \
             || echo "(dmesg unavailable — typical inside docker without --privileged)"
     fi
-    echo "----- recent appsvc/app-mesh hits in dmesg -----"
-    run_maybe_sudo dmesg 2>/dev/null | grep -iE "appsvc|app-mesh|killed process|out of memory|oom-killer" | tail -40 \
+    echo "----- recent appmesh/app-mesh hits in dmesg -----"
+    run_maybe_sudo dmesg 2>/dev/null | grep -iE "appmesh|app-mesh|killed process|out of memory|oom-killer" | tail -40 \
         || true
     echo "----- /proc/meminfo (last few key lines) -----"
     [ -r /proc/meminfo ] && head -5 /proc/meminfo || true
     echo "----- daemon process tree (if anything left) -----"
-    ps -elf 2>/dev/null | grep -E "appsvc|gdb|appmesh" | grep -v grep || echo "(no appsvc/gdb processes alive)"
+    ps -elf 2>/dev/null | grep -E "appmesh|gdb" | grep -v grep || echo "(no appmesh/gdb processes alive)"
 }
 
 dump_macos_system_log() {
@@ -238,24 +238,24 @@ dump_macos_system_log() {
     # have neither; this is a no-op there.
     [ "$(uname -s)" = "Darwin" ] || return 0
     if command -v log >/dev/null 2>&1; then
-        echo "----- macOS unified log (last 5m, appsvc events) -----"
+        echo "----- macOS unified log (last 5m, appmesh events) -----"
         # `log show` requires sudo to read system events on recent macOS.
         run_maybe_sudo log show --last 5m --style compact \
-            --predicate 'process == "appsvc" OR senderImagePath CONTAINS "appsvc"' 2>&1 | tail -200 \
+            --predicate 'process == "appmesh" OR senderImagePath CONTAINS "appmesh"' 2>&1 | tail -200 \
             || echo "(log show failed)"
     fi
-    echo "----- macOS DiagnosticReports for appsvc -----"
+    echo "----- macOS DiagnosticReports for appmesh -----"
     for d in /Library/Logs/DiagnosticReports "$HOME/Library/Logs/DiagnosticReports"; do
         if [ -d "$d" ]; then
             local reports
-            reports=$(run_maybe_sudo find "$d" -maxdepth 1 -type f \( -name 'appsvc*' -o -name 'appmesh*' \) -mtime -1 2>/dev/null)
+            reports=$(run_maybe_sudo find "$d" -maxdepth 1 -type f -name 'appmesh*' -mtime -1 2>/dev/null)
             if [ -n "$reports" ]; then
                 echo "$reports" | while read -r r; do
                     echo "--- $r ---"
                     run_maybe_sudo cat "$r" 2>/dev/null | tail -120 || true
                 done
             else
-                echo "(no recent appsvc/appmesh reports in $d)"
+                echo "(no recent appmesh reports in $d)"
             fi
         fi
     done
@@ -267,7 +267,7 @@ dump_failure_context() {
     # One consolidated group: daemon state + crash detection + server.log tail.
     gha_group "${label} — diagnostics"
     echo "----- daemon process state -----"
-    ps -ef 2>/dev/null | grep -E "appsvc|appmesh\.agent" | grep -v grep || echo "(daemon process not found — likely crashed)"
+    ps -ef 2>/dev/null | grep -E "appmesh" | grep -v grep || echo "(daemon process not found — likely crashed)"
     if [ -r "${PID_FILE}" ]; then
         local pid
         pid=$(cat "${PID_FILE}" 2>/dev/null)

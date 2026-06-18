@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-const TCP_CONNECT_TIMEOUT_SECONDS = 30
+const TCP_CONNECT_TIMEOUT_SECONDS = 10
 
 // IsFileExist checks if the file at the given path exists.
 func IsFileExist(path string) bool {

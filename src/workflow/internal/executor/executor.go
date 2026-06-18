@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +34,7 @@ type StepExecutor struct {
 	Ctx            *expression.Context
 	JobName        string
 	Depth          int
+	CallerToken    string // run's caller JWT (empty for auto/recovered runs); for message forward_token
 	ClusterNodes   []string // known cluster node addresses for label-based routing
 	TargetHost     string   // resolved target host for current job (set by engine per-job)
 	ServerURI      string   // base server URI for creating forwarding clients
@@ -110,6 +112,9 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 		return fail(1, "no message config", 0)
 	}
 	payload := expression.SubstituteForJob(step.Message.Payload, e.Ctx, e.JobName)
+	if step.Message.ForwardToken && e.CallerToken != "" {
+		payload = injectToken(payload, e.CallerToken)  // identity for llm-agent-style targets; never logged
+	}
 	timeout := step.Timeout
 	if timeout <= 0 {
 		timeout = 300
@@ -137,6 +142,16 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 		if r.err != nil {
 			return fail(1, r.err.Error(), dur)
 		}
+		// App-level error: a target that follows the platform task-response convention
+		// ({"status":"error","message":...}, used by llm-agent and the engine itself)
+		// reports a logical failure with a transport-success RPC. Surface it as a failed
+		// step so downstream `if:`/`needs` see it, instead of silently treating it as
+		// success. Non-conforming responses (other JSON, plain text) are unaffected.
+		if msg, isErr := appLevelError(r.resp); isErr {
+			res := fail(1, msg, dur)
+			res.Response = r.resp // keep the full body for ${{ steps.<name>.response }}
+			return res
+		}
 		code := 0
 		return models.StepResult{
 			Status:   models.StatusSuccess,
@@ -148,6 +163,47 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 	case <-ctx.Done():
 		return fail(1, "cancelled", time.Since(start).Seconds())
 	}
+}
+
+// appLevelError reports whether a message-step response is the platform error envelope
+// {"status":"error", ...} and returns its message. Only a JSON object whose "status" is
+// exactly "error" counts; non-JSON, arrays, or other statuses are not failures.
+func appLevelError(resp string) (string, bool) {
+	var env struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(resp), &env); err != nil || env.Status != "error" {
+		return "", false
+	}
+	if env.Message == "" {
+		return "app returned status=error", true
+	}
+	return env.Message, true
+}
+
+// injectToken adds the caller JWT as the "token" field of a JSON-object payload, for
+// message steps with forward_token. It is a no-op when the payload is not a JSON object
+// or already carries a "token" (an author-set value wins). Field order is not preserved
+// (irrelevant for JSON). The caller guarantees token != "".
+func injectToken(payload, token string) string {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(payload), &obj); err != nil || obj == nil {
+		return payload // not a JSON object → leave untouched
+	}
+	if _, ok := obj["token"]; ok {
+		return payload // explicit author value wins
+	}
+	tok, err := json.Marshal(token)
+	if err != nil {
+		return payload
+	}
+	obj["token"] = tok
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return payload
+	}
+	return string(out)
 }
 
 func (e *StepExecutor) execWorkflow(step *models.Step, _, _ map[string]string) models.StepResult {

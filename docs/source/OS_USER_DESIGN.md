@@ -109,7 +109,7 @@ tini (PID 1)
   → docker-entrypoint.sh
     → setpriv --reuid=appmesh --regid=appmesh --init-groups --no-new-privs
       → entrypoint.sh
-        → exec appsvc  (runs as appmesh:482)
+        → exec appmesh  (runs as appmesh:482)
 ```
 
 The Dockerfile pre-creates the `appmesh` user with fixed UID/GID 482 and sets `DisableExecUser=true`. When `APPMESH_RUN_AS_ROOT=true`, the `setpriv` step is skipped.

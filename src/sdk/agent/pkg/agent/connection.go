@@ -33,8 +33,10 @@ type Connection struct {
 
 // getOrCreateConnection returns an existing connection or creates a new one.
 func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (*Connection, error) {
+	key := tcpAddress.String()
+
 	// Check if connection already exists (without holding lock during creation)
-	if conn, ok := remoteConnections.Load(tcpAddress); ok {
+	if conn, ok := remoteConnections.Load(key); ok {
 		return conn.(*Connection), nil
 	}
 
@@ -42,7 +44,7 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 	defer remoteConnectionsMutex.Unlock()
 
 	// Double-check after acquiring lock
-	if conn, ok := remoteConnections.Load(tcpAddress); ok {
+	if conn, ok := remoteConnections.Load(key); ok {
 		return conn.(*Connection), nil
 	}
 
@@ -66,7 +68,7 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 		return nil, fmt.Errorf("connect to %s: %w", tcpAddress, err)
 	}
 
-	remoteConnections.Store(sConn.addr, sConn)
+	remoteConnections.Store(key, sConn)
 
 	go func() {
 		logger.Infof("Monitoring response from: %s", tcpAddress)
@@ -226,7 +228,7 @@ func (c *Connection) sendFileDataWithContext(ctx context.Context, localFile stri
 
 // deleteConnection closes and removes a connection from the pool.
 func deleteConnection(target *Connection) {
-	if value, ok := remoteConnections.LoadAndDelete(target.addr); ok {
+	if value, ok := remoteConnections.LoadAndDelete(target.addr.String()); ok {
 		if conn, ok := value.(*Connection); ok {
 			conn.close()
 			logger.Infof("Removed connection: %s", target)

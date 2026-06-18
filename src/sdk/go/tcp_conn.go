@@ -59,7 +59,8 @@ func (r *TCPConnection) Connect(tcpAddr net.Addr, sslClientCert string, sslClien
 	}
 
 	// Establish connection
-	dialer := net.Dialer{Timeout: TCP_CONNECT_TIMEOUT_SECONDS * time.Second}
+	// KeepAlive so a half-open peer (host crash / partition) is detected, not hung on forever.
+	dialer := net.Dialer{Timeout: TCP_CONNECT_TIMEOUT_SECONDS * time.Second, KeepAlive: 30 * time.Second}
 	conn, err := tls.DialWithDialer(&dialer, "tcp", tcpAddr.String(), conf)
 	if err != nil {
 		if conn != nil {

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -56,31 +57,37 @@ var (
 	REST_PATH_TASK  = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
 	localConnection *Connection // TCP connection to the local server
 
-	delegatePool sync.Pool
+	delegateClient     *http.Client
+	delegateClientOnce sync.Once
 )
 
-// Initialize the delegate pool using net/http.Client
-func init() {
-	delegatePool = sync.Pool{
-		New: func() interface{} {
-			// Load custom CA if server verification is enabled
-			var serverCA *x509.CertPool
-			if config.ConfigData.REST.SSL.VerifyServerDelegate {
-				serverCA, _ = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
+// getDelegateClient lazily builds the shared HTTP client for forwarding requests
+// (http.Client is concurrency-safe and pools connections, so one instance suffices).
+func getDelegateClient() *http.Client {
+	delegateClientOnce.Do(func() {
+		// Load custom CA if server verification is enabled
+		var serverCA *x509.CertPool
+		if config.ConfigData.REST.SSL.VerifyServerDelegate {
+			var err error
+			if serverCA, err = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCaPath); err != nil {
+				logger.Warnf("Failed to load delegate CA from %q: %v", config.ConfigData.REST.SSL.SSLCaPath, err)
 			}
+		}
 
-			// Return the new *http.Client with the TLS config
-			return &http.Client{
-				Timeout: 2 * time.Minute,
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						InsecureSkipVerify: !(config.ConfigData.REST.SSL.VerifyServerDelegate),
-						RootCAs:            serverCA, // Use the custom CA if available
-					},
+		delegateClient = &http.Client{
+			// No overall/header timeout: the async backend may legitimately delay the
+			// response (long-poll, async run/wait, large transfers); only connect is bounded.
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: !config.ConfigData.REST.SSL.VerifyServerDelegate,
+					RootCAs:            serverCA, // Use the custom CA if available
 				},
-			}
-		},
-	}
+				DialContext:     (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+				IdleConnTimeout: 90 * time.Second,
+			},
+		}
+	})
+	return delegateClient
 }
 
 // MonitorConnectionResponse continuously reads messages from a connection and forwards responses
@@ -110,7 +117,7 @@ func MonitorConnectionResponse(conn *Connection, allowError bool) {
 }
 
 // ListenAndServeREST starts the REST API server
-func ListenAndServeREST() error {
+func ListenAndServeREST(ctx context.Context) error {
 	var listenAddr = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
 	var hostPort = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
 
@@ -155,11 +162,11 @@ func ListenAndServeREST() error {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	return StartHTTPSServer(listenAddr, router)
+	return StartHTTPSServer(ctx, listenAddr, router)
 }
 
 // StartHTTPSServer starts the HTTPS server with the provided router
-func StartHTTPSServer(restAgentAddr string, router *mux.Router) error {
+func StartHTTPSServer(ctx context.Context, restAgentAddr string, router *mux.Router) error {
 	// Load server certificate and key
 	serverCA, err := appmesh.LoadCertificatePair(
 		config.ConfigData.REST.SSL.SSLCertificateFile,
@@ -181,18 +188,11 @@ func StartHTTPSServer(restAgentAddr string, router *mux.Router) error {
 
 	// TLS configuration
 	tlsConfig := &tls.Config{
-		MinVersion:               tls.VersionTLS12,
-		InsecureSkipVerify:       !config.ConfigData.REST.SSL.VerifyServer, // Client verifies the server certificate chain
-		Certificates:             []tls.Certificate{serverCA},
-		CurvePreferences:         []tls.CurveID{tls.CurveP256, tls.CurveP384}, // Remove P521 for performance
-		PreferServerCipherSuites: true,
+		MinVersion:       tls.VersionTLS12,
+		Certificates:     []tls.Certificate{serverCA},
+		CurvePreferences: []tls.CurveID{tls.CurveP256, tls.CurveP384}, // Remove P521 for performance
+		// CipherSuites only applies to TLS 1.2; TLS 1.3 suites are not configurable in Go.
 		CipherSuites: []uint16{
-			// TLS 1.3 ciphers
-			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_CHACHA20_POLY1305_SHA256,
-			tls.TLS_AES_256_GCM_SHA384,
-
-			// TLS 1.2 (fallback and broader compatibility)
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
@@ -203,9 +203,8 @@ func StartHTTPSServer(restAgentAddr string, router *mux.Router) error {
 		ClientAuth: clientAuth,
 		ClientCAs:  clientCA,
 
-		// Optimize session resumption
+		// Server-side session resumption via session tickets (enabled by default).
 		SessionTicketsDisabled: false,
-		ClientSessionCache:     tls.NewLRUClientSessionCache(128),
 
 		// Enable HTTP/2 and HTTP/1.1
 		// NextProtos: []string{"h2", "http/1.1"},
@@ -214,26 +213,37 @@ func StartHTTPSServer(restAgentAddr string, router *mux.Router) error {
 
 	// HTTP server configuration
 	server := &http.Server{
-		Addr:              restAgentAddr,
-		Handler:           router,
-		TLSConfig:         tlsConfig,
-		ReadTimeout:       5 * time.Minute, // Increase to handle slow uploads
-		WriteTimeout:      5 * time.Minute, // Increase to handle large file downloads
-		IdleTimeout:       2 * time.Minute, // Keep-alive timeout for idle connections
-		ReadHeaderTimeout: 1 * time.Minute, // Limit time to read headers for security
-		MaxHeaderBytes:    64 << 10,        // 64 KB (max header size)
+		Addr:      restAgentAddr,
+		Handler:   router,
+		TLSConfig: tlsConfig,
+		// No Read/WriteTimeout: large file transfers must not be capped. Slowloris is
+		// bounded by ReadHeaderTimeout, idle keep-alive by IdleTimeout.
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10, // 64 KB (max header size)
 	}
 
 	// Start HTTPS server
-	return ListenAndServeTLS(restAgentAddr, server)
+	return serveTLS(ctx, restAgentAddr, server)
 }
 
-// ListenAndServeTLS starts the TLS server
-func ListenAndServeTLS(address string, server *http.Server) error {
+// serveTLS serves the server over TLS and shuts it down gracefully on ctx cancel.
+// (Not named ListenAndServeTLS to avoid the stdlib method's cert-path contract.)
+func serveTLS(ctx context.Context, address string, server *http.Server) error {
 	ln, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", address, err)
 	}
+
+	// Gracefully drain in-flight requests when the context is canceled.
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Warnf("Graceful shutdown failed: %v", err)
+		}
+	}()
 
 	logger.Infof("<App Mesh Agent> Listening on %s", address)
 	tlsListener := tls.NewListener(ln, server.TLSConfig)
@@ -255,12 +265,14 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 
 		forwardingURL, err := appmesh.ParseURL(forwardingHost)
 		if err != nil {
-			utils.HttpError(w, err.Error(), http.StatusInternalServerError)
+			logger.Errorf("Failed to parse target host %q: %v", forwardingHost, err)
+			utils.HttpError(w, "invalid target host", http.StatusBadRequest)
 			return
 		}
 		forwardingAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(forwardingURL.Hostname(), forwardingURL.Port()))
 		if err != nil {
-			utils.HttpError(w, err.Error(), http.StatusInternalServerError)
+			logger.Errorf("Failed to resolve target host %q: %v", forwardingHost, err)
+			utils.HttpError(w, "invalid target host", http.StatusBadRequest)
 			return
 		}
 
@@ -270,11 +282,11 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			ForwardAppMeshRequest(w, r, forwardingURL)
 			return
 		} else {
-			// Forward with TCP protocol
+			// Forward with TCP protocol over a pooled connection
 			targetConnection, err = getOrCreateConnection(forwardingAddr, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
-				utils.HttpError(w, err.Error(), http.StatusInternalServerError)
+				utils.HttpError(w, "failed to connect to target host", http.StatusBadGateway)
 				return
 			}
 		}
@@ -311,7 +323,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			deleteConnection(targetConnection)
 		}
 
-		utils.HttpError(w, sendErr.Error(), http.StatusInternalServerError)
+		utils.HttpError(w, "failed to process request", http.StatusBadGateway)
 		return
 	}
 
@@ -341,18 +353,16 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
 	if err != nil {
 		logger.Errorf("Failed to create forward request: %v", err)
-		utils.HttpError(w, "Failed to create forward request: "+err.Error(), http.StatusInternalServerError)
+		utils.HttpError(w, "failed to create forward request", http.StatusInternalServerError)
 		return
 	}
 	req.Header = r.Header.Clone() // Copy headers from the original request
 
-	// Forward the request to the target server
-	delegateClient := delegatePool.Get().(*http.Client)
-	defer delegatePool.Put(delegateClient)
-	resp, err := delegateClient.Do(req)
+	// Forward the request to the target server using the shared HTTP client
+	resp, err := getDelegateClient().Do(req)
 	if err != nil {
 		logger.Errorf("Forward request failed with error: %v", err)
-		utils.HttpError(w, "Failed to forward request: "+err.Error(), http.StatusInternalServerError)
+		utils.HttpError(w, "failed to forward request", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close() // Ensure the response body is closed after use

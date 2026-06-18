@@ -1,0 +1,29 @@
+# Template for a Scenario B (interactive, streaming) session worker App. An admin
+# provisions one per interactive session: it runs llm_agent in --session-worker mode,
+# serving exactly one session over its own clean stdout (a client subscribing to its
+# STDOUT sees only this session's tokens). behavior exit=remove makes the daemon remove
+# the App whenever the worker exits (session_close, idle/lifetime reap, or crash).
+#
+# Runs the Claude Agent SDK (Claude Code-based): needs a model credential (a SECURED env var,
+# not in this file). The claude-agent-sdk wheel bundles the Claude Code CLI — no Node.js
+# needed. Substitute the session id (S1) and working_dir, then:
+#   appm add -D @config/llm-agent-worker.yaml -z ANTHROPIC_API_KEY=<key>
+# The client then talks to this App directly:
+#   run_task("llm-agent-sess-S1", {"action":"session_send","session_id":"S1","stream":true}) + Subscribe(STDOUT).
+name: llm-agent-sess-S1                          # convention: <shared-app>-sess-<id>
+owner: admin                                     # session owner — must be an existing daemon user
+permission: 11                                   # access gate: the daemon's owner-permission decides who may
+#                                                  run_task/subscribe. ones digit = group, tens digit = other;
+#                                                  1=deny 2=read 3=write. 11 = owner(+admin) only; 0/unset = no
+#                                                  owner-scoping (anyone the RBAC role allows).
+working_dir: /opt/appmesh/lib/llm-agent          # REQUIRED edit: dir containing the llm_agent package
+command: python3 -m llm_agent --session-worker --session-id=S1 --server=127.0.0.1:6059
+description: llm-agent interactive session worker (session=S1)
+stdout_cache_num: 1000                           # let a late STDOUT subscriber still see recent tokens
+behavior:
+  exit: remove
+env:
+  LLMAGENT_WORKSPACE_DIR: ./llm-agent-workspace
+  LLMAGENT_SESSION_IDLE_MINUTES: "30"
+  LLMAGENT_SESSION_MAX_HOURS: "8"
+status: 1

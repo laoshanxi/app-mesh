@@ -315,6 +315,11 @@
         "payload": {
           "type": "string",
           "description": "Request payload. Supports ${{ }} expressions."
+        },
+        "forward_token": {
+          "type": "boolean",
+          "default": false,
+          "description": "Inject the run's caller JWT into the JSON payload's \"token\" field before sending. For identity-forwarding targets (e.g. llm-agent) that read the caller token from the payload body. No-op for non-object payloads, when an author-set \"token\" is present, or for automatic/recovered runs (no caller token)."
         }
       }
     },

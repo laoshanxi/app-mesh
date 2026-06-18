@@ -22,10 +22,10 @@ const (
 	DockerPathPrefix         = "/appmesh/docker"
 	DOCKER_REQUEST_ID_HEADER = "X-Request-ID"
 
-	ReadTimeout     = 30 * time.Second
-	WriteTimeout    = 30 * time.Second
-	IdleConnTimeout = 30 * time.Second
-	MaxIdleConns    = 100
+	// Bounds time-to-first-byte from dockerd, not the (possibly streaming) body.
+	responseHeaderTimeout = 30 * time.Second
+	idleConnTimeout       = 30 * time.Second
+	maxIdleConns          = 100
 )
 
 // DockerProxy handles the reverse proxy for Docker requests.
@@ -39,9 +39,9 @@ func NewDockerProxy() *DockerProxy {
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return net.Dial("unix", DockerSocketFilePath)
 		},
-		ResponseHeaderTimeout: ReadTimeout,
-		IdleConnTimeout:       IdleConnTimeout,
-		MaxIdleConns:          MaxIdleConns,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+		IdleConnTimeout:       idleConnTimeout,
+		MaxIdleConns:          maxIdleConns,
 	}
 
 	return &DockerProxy{transport: transport}
@@ -76,6 +76,8 @@ func (dp *DockerProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // CreateReverseProxy creates a reverse proxy for Docker with custom transport and error handling.
 func (dp *DockerProxy) CreateReverseProxy() *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
+		// Flush immediately so streaming responses (pull/logs/events) aren't buffered.
+		FlushInterval: -1,
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"
 			req.URL.Host = DockerSocketFilePath

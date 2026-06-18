@@ -1,0 +1,8 @@
+# llm-agent runtime dependencies (installed into the App Mesh Docker image, and the
+# single source of truth for `pip install -r`).
+appmesh
+# The agent loop is delegated to the official Claude Agent SDK (Claude Code-based). Its
+# platform wheel BUNDLES the Claude Code CLI binary it drives as a subprocess — no Node.js
+# needed. The Claude API key comes from ANTHROPIC_API_KEY in the App's secured env
+# (Bedrock/Vertex via the usual CLAUDE_CODE_USE_* env).
+claude-agent-sdk

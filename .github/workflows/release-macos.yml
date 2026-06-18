@@ -67,7 +67,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "stable"
 
@@ -102,15 +102,15 @@ jobs:
           ulimit -c unlimited
           ulimit -a
 
-          sudo cp -a /opt/appmesh/bin/appsvc /cores/appsvc.macos.bin || true
-          sudo chmod a+r /cores/appsvc.macos.bin 2>/dev/null || true
+          sudo cp -a /opt/appmesh/bin/appmesh /cores/appmesh.macos.bin || true
+          sudo chmod a+r /cores/appmesh.macos.bin 2>/dev/null || true
 
           # Start App Mesh
           appm -V || true
           sudo bash /opt/appmesh/script/appmesh.initd.sh start || true
 
           # Check
-          sudo otool /opt/appmesh/bin/appsvc -L
+          sudo otool /opt/appmesh/bin/appmesh -L
 
           # hostname resolve need some time
           sleep 10
