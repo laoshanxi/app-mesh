@@ -58,7 +58,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.23.0",
-    "@babel/preset-env": "^7.23.0",
+    "@babel/preset-env": "^8.0.2",
     "@babel/runtime": "^7.23.0",
     "babel-loader": "^9.2.1",
     "buffer": "^6.0.3",
