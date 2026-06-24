@@ -40,7 +40,7 @@ from fastmcp.server.auth import AccessToken
 
 from appmesh import App, AppMeshClient
 
-from auth import AppMeshOAuthProvider, make_appmesh_client
+from auth import AppMeshOAuthProvider, appmesh_url, make_appmesh_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("AppMesh-MCP")
@@ -181,6 +181,46 @@ def get_host_resources(token: AccessToken = CurrentAccessToken()) -> dict:
 @mcp.tool(description="Get Prometheus-format metrics text from the App Mesh daemon.")
 def get_metrics(token: AccessToken = CurrentAccessToken()) -> dict:
     return {"metrics": _client(token).get_metrics()}
+
+
+# --------------------------------------------------------------------------- #
+# Files (the MCP server never touches the bytes — it returns a curl recipe the
+# client runs itself, so the transfer streams daemon<->client directly, with no
+# file content in MCP memory or the LLM context, and no size limit)
+# --------------------------------------------------------------------------- #
+def _daemon_public_url() -> str:
+    """Daemon URL the CLIENT should hit (may differ from the server-side APPMESH_URL)."""
+    return os.environ.get("APPMESH_DAEMON_PUBLIC_URL", appmesh_url()).rstrip("/")
+
+
+_CURL_TOKEN_NOTE = (
+    "Set APPMESH_TOKEN to your App Mesh JWT before running (the same token this MCP "
+    "session authenticated with, or `appm logon -U <user> --show-token`). "
+    "Add -k if the daemon uses a self-signed certificate."
+)
+
+
+@mcp.tool(description="Return a ready-to-run curl command that downloads a file DIRECTLY from the App Mesh daemon to the client machine. The MCP server never reads the file — bytes stream daemon->client, never entering MCP memory or the LLM context. Works for any size.")
+def file_download_command(remote_file: str, local_file: str = "", token: AccessToken = CurrentAccessToken()) -> dict:
+    dst = local_file or os.path.basename(remote_file.rstrip("/")) or "download.bin"
+    url = _daemon_public_url() + "/appmesh/file/download"
+    command = (
+        f'curl -fSL -H "Authorization: Bearer $APPMESH_TOKEN" '
+        f'-H "X-File-Path: {remote_file}" "{url}" -o "{dst}"'
+    )
+    return {"command": command, "remote_file": remote_file, "local_file": dst, "note": _CURL_TOKEN_NOTE}
+
+
+@mcp.tool(description="Return a ready-to-run curl command that uploads a local file DIRECTLY to the App Mesh daemon. The MCP server never reads the file — bytes stream client->daemon, never entering MCP memory. Works for any size.")
+def file_upload_command(local_file: str, remote_file: str, token: AccessToken = CurrentAccessToken()) -> dict:
+    from urllib.parse import quote
+
+    url = _daemon_public_url() + "/appmesh/file/upload"
+    command = (
+        f'curl -fSL -X POST -H "Authorization: Bearer $APPMESH_TOKEN" '
+        f'-H "X-File-Path: {quote(remote_file)}" -F "file=@{local_file}" "{url}"'
+    )
+    return {"command": command, "local_file": local_file, "remote_file": remote_file, "note": _CURL_TOKEN_NOTE}
 
 
 # --------------------------------------------------------------------------- #

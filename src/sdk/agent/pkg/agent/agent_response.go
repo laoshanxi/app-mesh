@@ -101,7 +101,7 @@ func (r *Response) prepareFileUpload(encodedPath string) error {
 // readFileFromConn reads file data from the connection and writes it to the target file path
 func (r *Response) readFileFromConn(conn *Connection, targetFilePath string) error {
 	// No need lock here, as ReadAppMeshResponse() is a single thread
-	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}

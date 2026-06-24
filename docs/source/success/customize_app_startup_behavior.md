@@ -12,7 +12,7 @@ App Mesh support monitor both long-running and short-running applications, for m
 By default, you can register your application simply by specify start command:
 
 ```shell
-appm add -n myapp--perm 11  -c 'sh /root/data/deploy/myapp.sh'
+appm add -a myapp -p 11 -c 'sh /root/data/deploy/myapp.sh'
 ```
 
 ### Integrate to application installation script
@@ -20,5 +20,5 @@ appm add -n myapp--perm 11  -c 'sh /root/data/deploy/myapp.sh'
 If your application package was pack yourself, you can add the startup behavior to post-installation script, with this, your app will be monitored and started automatically without any missing.
 
 ```shell
-appm add -n mysql--perm 11  -c 'mysqld'
+appm add -a mysql -p 11 -c 'mysqld'
 ```
