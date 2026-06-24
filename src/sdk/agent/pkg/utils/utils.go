@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -11,36 +10,6 @@ import (
 	"runtime"
 	"strings"
 )
-
-func MoveFile(src string, dst string) error {
-
-	buf := make([]byte, 1024)
-	fin, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-
-	defer fin.Close()
-	fout, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-
-	defer fout.Close()
-	for {
-		n, err := fin.Read(buf)
-		if err != nil && err != io.EOF {
-			return err
-		}
-		if n == 0 {
-			break
-		}
-		if _, err := fout.Write(buf[:n]); err != nil {
-			return err
-		}
-	}
-	return os.Remove(src)
-}
 
 func GetCurrentAbPath() string {
 	dir := getCurrentAbPathByExecutable()
@@ -75,15 +44,6 @@ func getCurrentAbPathByCaller() string {
 		abPath = path.Dir(filename)
 	}
 	return abPath
-}
-
-func substr(s string, pos, length int) string {
-	runes := []rune(s)
-	l := pos + length
-	if l > len(runes) {
-		l = len(runes)
-	}
-	return string(runes[pos:l])
 }
 
 func GetParentDir(directory string) string {
@@ -123,21 +83,6 @@ func IsValidFileName(fileName string) bool {
 	}
 
 	return true
-}
-
-func SaveStreamToFile(src io.Reader, filePath string) error {
-	dst, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("error creating file: %w", err)
-	}
-	defer dst.Close()
-
-	_, err = io.Copy(dst, src)
-	if err != nil {
-		return fmt.Errorf("error copying data to file: %w", err)
-	}
-
-	return nil
 }
 
 // MaskSecret masks the input secret, keeping `visibleChars` at the beginning and end, replacing the middle with `mask`.

@@ -61,15 +61,21 @@ func monitorParentProcess(ctx context.Context, stop context.CancelFunc) {
 }
 
 // initializeServices starts all necessary services based on the configuration.
-func initializeServices(ctx context.Context) {
+// The returned channel is closed once the REST server has fully stopped.
+func initializeServices(ctx context.Context) <-chan struct{} {
+	restDone := make(chan struct{})
+
 	// REST proxy
 	logger.Infof("RestEnabled: %t", config.ConfigData.REST.RestEnabled)
 	if config.ConfigData.REST.RestEnabled {
 		go func() {
-			if err := agent.ListenAndServeREST(); err != nil {
+			defer close(restDone)
+			if err := agent.ListenAndServeREST(ctx); err != nil {
 				logger.Fatalf("REST agent failed: %v", err)
 			}
 		}()
+	} else {
+		close(restDone)
 	}
 
 	// Prometheus exporter
@@ -90,6 +96,8 @@ func initializeServices(ctx context.Context) {
 			logger.Errorf("Host resource reporting failed: %v", err)
 		}
 	}()
+
+	return restDone
 }
 
 // createSignalContext sets up signal handling for exit
@@ -161,7 +169,7 @@ func main() {
 	cloud.HMAC_SDKToAgent = cloud.NewHMACVerify(salt)
 
 	// Start all services
-	initializeServices(ctx)
+	restDone := initializeServices(ctx)
 	go monitorParentProcess(ctx, stop)
 
 	changeWorkDir(path.Join(config.GetAppMeshHomeDir(), "work", "tmp"))
@@ -170,7 +178,11 @@ func main() {
 	<-ctx.Done()
 	logger.Info("Received shutdown signal, initiating graceful shutdown...")
 
-	// shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// defer cancel()
-	// Do clean with timeout here
+	// Wait for the REST server to drain in-flight requests (bounded).
+	select {
+	case <-restDone:
+		logger.Info("Graceful shutdown complete")
+	case <-time.After(3 * time.Second):
+		logger.Warn("Graceful shutdown timed out")
+	}
 }

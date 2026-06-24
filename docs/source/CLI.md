@@ -5,46 +5,50 @@ The App Mesh Command Line Interface (CLI) provides equivalent functionality to t
 ## Basic Usage
 
 ```text
-$ appm
-App Mesh CLI - Command Line Interface
-Usage: appm [COMMAND] [ARG...] [flags]
+$ appm --help
+App Mesh CLI
 
-Authentication Commands:
-  logon         Log in to App Mesh for a specified duration
-  logoff        Clear current user session
-  loginfo       Display current logged-in user
-  passwd        Change user password
-  lock          Lock or unlock a user
-  user          View user information
-  mfa           Manage two-factor authentication
+Usage: appm [OPTIONS] <COMMAND>
 
-Application Management:
-  view          List all applications
-  add           Add a new application
-  rm            Remove an application
-  enable        Enable an application
-  disable       Disable an application
-  restart       Restart an application
+Commands:
+  logon      Login to App Mesh
+  logoff     Logout from App Mesh
+  loginfo    Display current logged-in user
+  add        Register a new application
+  rm         Remove an application
+  view       List applications
+  enable     Enable applications
+  disable    Disable applications
+  restart    Restart applications (disable then enable)
+  run        Run a command or application
+  exec       Execute a single remote command
+  shell      Interactive remote shell
+  get        Download a remote file
+  put        Upload a local file
+  label      Manage host labels
+  log        Set log level
+  config     View server configuration
+  resource   Show host resources
+  passwd     Change user password
+  lock       Lock or unlock a user
+  user       Manage users
+  mfa        Two-factor authentication management
+  appmgpwd   Encrypt password (local utility)
+  appmginit  Initialize admin password (root-only)
+  workflow   Manage workflows
+  help       Print this message or the help of the given subcommand(s)
 
-Execution Commands:
-  run           Execute commands or applications and retrieve output
-  exec          Execute a single remote shell command
-  shell         Start an interactive remote shell session, optionally with an initial command
+Options:
+  -H, --host-url <HOST_URL>      Server host URL (default: last used or wss://127.0.0.1:6058)
+  -F, --forward-to <FORWARD_TO>  Forward request to target host
+  -U, --user <USER>              Login username
+  -X, --password <PASSWORD>      Login password
+  -v, --verbose                  Enable debug logging
+  -h, --help                     Print help
+  -V, --version                  Print version
 
-System Management:
-  resource      Show host resources
-  label         Manage host labels
-  config        Manage configurations
-  log           Set log level
-
-File Operations:
-  get           Download a remote file
-  put           Upload a local file to server
-
-Additional Information:
-  - Run 'appm COMMAND --help' for detailed command usage
-  - Remote connection: Use '-b $server_url' (e.g., https://127.0.0.1:6060)
-  - All commands support --help flag for detailed options
+# Run 'appm <COMMAND> --help' for detailed command usage.
+# Remote connection: -H <server_url> (e.g., -H https://127.0.0.1:6060).
 ```
 
 ---
@@ -64,7 +68,7 @@ ID  NAME           OWNER STATUS   HEALTH PID     USER  MEMORY   %CPU RETURN AGE 
 - Register a New Application and View Output
 
 ```text
-$ appm add -n ping -c 'ping github.com'
+$ appm add -a ping -c 'ping github.com'
   behavior:
     exit: standby
   command: ping github.com
@@ -75,7 +79,7 @@ $ appm add -n ping -c 'ping github.com'
   status: 1
   stdout_cache_num: 3
 
-$ appm ls -n ping
+$ appm ls -a ping
   behavior:
     control:
       0: standby
@@ -102,7 +106,7 @@ $ appm ls -n ping
   stdout_cache_size: 1
 
 
-$ appm ls -n ping -o
+$ appm ls -a ping -o
   PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
   64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=1 ttl=54 time=35.5 ms
   64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=2 ttl=54 time=35.5 ms
@@ -118,62 +122,51 @@ $ appm ls -n ping -o
 - Register a new application
 
 ```text
-$ appm add
-Register a new application 
-Usage: appm add [options]:
+$ appm add --help
+Register a new application
 
-Connection Options:
-  -H [ --host-url ] arg             Server URL [default: https://localhost:6060]
-  -F [ --forward-to ] arg           Forward requests to target host[:port]
-  -U [ --user ] arg                 User name for authentication
+Usage: appm add [OPTIONS]
 
-Basic Configuration Options:
-  -a [ --app ] arg                  Application name (required)
-  -c [ --cmd ] arg                  Command line with arguments (required)
-  -w [ --working-dir ] arg          Working directory path
-  -d [ --description ] arg          Application description
-  -s [ --status ] arg (=1)          Initial status (true=enabled, false=disabled)
-
-Runtime Options:
-  -u [ --shell ]                    Enable shell mode for multiple commands
-  -G [ --session-login ]            Execute with session login context
-  -K [ --health-check ] arg         Health check command (returns 0 for healthy)
-  -I [ --docker-image ] arg         Docker image for containerized execution
-  -P [ --pid ] arg                  Attach to existing process ID
-
-Schedule Options:
-  -B [ --begin-time ] arg           Start time (ISO8601: '2020-10-11T09:22:05')
-  -X [ --end-time ] arg             End time (ISO8601: '2020-10-11T10:22:05')
-  -S [ --daily-begin ] arg          Daily start time ('09:00:00+08')
-  -E [ --daily-end ] arg            Daily end time ('20:00:00+08')
-  -i [ --interval ] arg             Start interval (ISO8601 duration or cron: 'P1Y2M3DT4H5M6S', '* */5 * * * *')
-  -Y [ --cron ]                     Use cron expression for interval
-
-Resource Limits Options:
-  -M [ --memory-limit ] arg         Memory limit (MB)
-  -V [ --virtual-memory ] arg       Virtual memory limit (MB)
-  -C [ --cpu-shares ] arg           CPU shares (relative weight)
-  -N [ --log-cache-size ] arg (=3)  Number of stdout cache files
-
-Advanced Options:
-  -p [ --permission ] arg           Permission bits [group & other] (1=deny, 2=read, 3=write)
-  -m [ --metadata ] arg             Metadata string/JSON (stdin input, '@' for file input)
-  -e [ --env ] arg                  Environment variables (-e env1=value1 -e env2=value2, APP_DOCKER_OPTS env is used to input 
-                                    docker run parameters)
-  -z [ --security-env ] arg         Encrypted environment variables in server side with application owner's cipher
-  -R [ --stop-timeout ] arg         Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')
-  -Q [ --exit ] arg (=standby)      Exit behavior [restart|standby|keepalive|remove]
-  -T [ --control ] arg              Exit code behaviors (--control CODE:ACTION, overrides default exit)
-  -D [ --stdin ] arg                Read YAML from stdin ('std') or file
-
-Other Options:
-  -v [ --verbose ]                  Enable verbose output
-  -h [ --help ]                     Display command usage and exit
-  -f [ --force ]                    Skip confirmation prompts
+Options:
+  -a, --app <APP>                        Application name
+  -c, --cmd <CMD>                        Command with arguments
+  -d, --description <DESCRIPTION>        Application description
+  -w, --working-dir <WORKING_DIR>        Working directory
+  -s, --status <STATUS>                  Initial status [possible values: true, false]
+  -u, --shell                            Enable shell mode
+  -G, --session-login                    Execute with session login context
+  -K, --health-check <HEALTH_CHECK>      Health check command
+  -I, --docker-image <DOCKER_IMAGE>      Docker image
+  -P, --pid <PID>                        Attach to existing process ID
+  -b, --begin-time <BEGIN_TIME>          Start time (ISO 8601)
+  -x, --end-time <END_TIME>              End time (ISO 8601)
+  -S, --daily-begin <DAILY_BEGIN>        Daily start time (e.g., '09:00:00+08')
+  -E, --daily-end <DAILY_END>            Daily end time (e.g., '20:00:00+08')
+  -i, --interval <INTERVAL>              Start interval (ISO 8601 duration or cron expression)
+  -Y, --cron                             Use cron expression for interval
+  -M, --memory-limit <MEMORY_LIMIT>      Memory limit in MB
+  -V, --virtual-memory <VIRTUAL_MEMORY>  Virtual memory limit in MB
+  -C, --cpu-shares <CPU_SHARES>          CPU shares (relative weight)
+  -N, --log-cache-size <LOG_CACHE_SIZE>  Number of stdout cache files
+  -p, --permission <PERMISSION>          Permission bits
+  -m, --metadata <METADATA>              Metadata (string/JSON, '@' prefix for file)
+  -e, --env <ENV>                        Environment variables (repeatable: -e K=V)
+  -z, --security-env <SECURITY_ENV>      Encrypted environment variables (repeatable: -z K=V)
+  -R, --stop-timeout <STOP_TIMEOUT>      Process stop timeout (ISO 8601 duration)
+  -Q, --exit <EXIT>                      Exit behavior: restart|standby|keepalive|remove
+  -T, --control <CONTROL>                Exit code behavior (repeatable: --control CODE:ACTION)
+  -D, --stdin <STDIN>                    Read YAML from stdin ('std') or file
+  -H, --host-url <HOST_URL>              Server host URL
+  -F, --forward-to <FORWARD_TO>          Forward request to target host
+  -U, --user <USER>                      Login username
+  -X, --password <PASSWORD>              Login password
+  -f, --force                            Skip confirmation
+  -v, --verbose                          Enable debug logging
+  -h, --help                             Print help
 
 
 # register a app with a native command
-$ appm add -n ping -u kfc -c 'ping www.google.com' -w /opt
+$ appm add -a ping -c 'ping www.google.com' -w /opt
   Application already exist, are you sure you want to update the application (y/n)?
   [y/n]:y
   behavior:
@@ -188,7 +181,7 @@ $ appm add -n ping -u kfc -c 'ping www.google.com' -w /opt
   working_dir: /opt
 
 # register a docker container app
-$ appm add -n mydocker -c 'sleep 30' -d ubuntu
+$ appm add -a mydocker -c 'sleep 30' -I ubuntu
   behavior:
     exit: standby
   command: sleep 30
@@ -212,7 +205,7 @@ b1277a31333f   ubuntu    "sleep 30"   9 seconds ago   Up 7 seconds             m
 - Remove an application
 
 ```text
-appm rm -n ping
+appm rm -a ping
 Are you sure you want to remove the application (y/n)?
 y
 Success
@@ -221,9 +214,9 @@ Success
 - Enable/Disable an application
 
 ```text
-appm enable -n ping
-appm disable -n ping
-appm restart -n ping
+appm enable -a ping
+appm disable -a ping
+appm restart -a ping
 ```
 
 ---
@@ -293,7 +286,7 @@ $ appm resource
 - View application resource (application process tree memory usage) with json or yaml format
 
 ```text
-$ appm ls -n ping --json
+$ appm ls -a ping -j
 {
         "command" : "/bin/sleep 60",
         "last_start_time" : 1568893521,
@@ -312,7 +305,7 @@ $ appm ls -n ping --json
 - Run remote application and get stdout
 
 ```text
-$ appm run -n ping -t 5
+$ appm run -a ping -t 5
 PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 64 bytes from 220.181.112.244: icmp_seq=1 ttl=55 time=20.0 ms
 64 bytes from 220.181.112.244: icmp_seq=2 ttl=55 time=20.1 ms
@@ -356,17 +349,17 @@ Success
 - Manage labels
 
 ```text
-# list label
-$ appm label
+# list labels
+$ appm label --view
 arch=x86_64
 os_version=centos7.6
 
-# remove label
-$ appm label -r -t arch
+# remove a label
+$ appm label -d -l arch
 os_version=centos7.6
 
-# add label
-$ appm label --add --label mytag=abc
+# add a label
+$ appm label -a -l mytag=abc
 mytag=abc
 os_version=centos7.6
 ```

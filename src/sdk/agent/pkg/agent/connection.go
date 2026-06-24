@@ -31,21 +31,8 @@ type Connection struct {
 	closeOnce sync.Once
 }
 
-// getOrCreateConnection returns an existing connection or creates a new one.
-func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (*Connection, error) {
-	// Check if connection already exists (without holding lock during creation)
-	if conn, ok := remoteConnections.Load(tcpAddress); ok {
-		return conn.(*Connection), nil
-	}
-
-	remoteConnectionsMutex.Lock()
-	defer remoteConnectionsMutex.Unlock()
-
-	// Double-check after acquiring lock
-	if conn, ok := remoteConnections.Load(tcpAddress); ok {
-		return conn.(*Connection), nil
-	}
-
+// dialConnection builds and connects a Connection without registering it.
+func dialConnection(tcpAddress net.Addr, verifyServer bool) (*Connection, error) {
 	sConn := &Connection{
 		addr:          tcpAddress,
 		TCPConnection: appmesh.NewTCPConnection(),
@@ -62,17 +49,46 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 
 	logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", tcpAddress, caPath, clientCert, clientCertKey)
 	if err := sConn.Connect(tcpAddress, clientCert, clientCertKey, caPath); err != nil {
-		logger.Errorf("Failed to connect to %s: %v", tcpAddress, err)
 		return nil, fmt.Errorf("connect to %s: %w", tcpAddress, err)
 	}
+	return sConn, nil
+}
 
-	remoteConnections.Store(sConn.addr, sConn)
+// getOrCreateConnection returns a pooled connection, creating one if needed.
+func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (*Connection, error) {
+	// Key by canonical string: net.Addr is a pointer, so a pointer key never hits the pool.
+	key := tcpAddress.String()
 
-	go func() {
-		logger.Infof("Monitoring response from: %s", tcpAddress)
-		MonitorConnectionResponse(sConn, allowError)
-	}()
+	if conn, ok := remoteConnections.Load(key); ok {
+		return conn.(*Connection), nil
+	}
 
+	remoteConnectionsMutex.Lock()
+	defer remoteConnectionsMutex.Unlock()
+
+	if conn, ok := remoteConnections.Load(key); ok {
+		return conn.(*Connection), nil
+	}
+
+	sConn, err := dialConnection(tcpAddress, verifyServer)
+	if err != nil {
+		logger.Errorf("Failed to connect to %s: %v", tcpAddress, err)
+		return nil, err
+	}
+
+	remoteConnections.Store(key, sConn)
+	go MonitorConnectionResponse(sConn, allowError)
+	return sConn, nil
+}
+
+// newDedicatedConnection returns an unpooled single-use connection (isolates the
+// daemon's per-connection file-transfer state). The caller must close it.
+func newDedicatedConnection(tcpAddress net.Addr, verifyServer bool) (*Connection, error) {
+	sConn, err := dialConnection(tcpAddress, verifyServer)
+	if err != nil {
+		return nil, err
+	}
+	go MonitorConnectionResponse(sConn, true)
 	return sConn, nil
 }
 
@@ -226,7 +242,7 @@ func (c *Connection) sendFileDataWithContext(ctx context.Context, localFile stri
 
 // deleteConnection closes and removes a connection from the pool.
 func deleteConnection(target *Connection) {
-	if value, ok := remoteConnections.LoadAndDelete(target.addr); ok {
+	if value, ok := remoteConnections.LoadAndDelete(target.addr.String()); ok {
 		if conn, ok := value.(*Connection); ok {
 			conn.close()
 			logger.Infof("Removed connection: %s", target)

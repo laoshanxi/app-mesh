@@ -4,10 +4,10 @@
 # Register it so App Mesh keeps the MCP server alive, and so you can
 # enable / disable / remove it at any time, decoupled from the daemon:
 #
-#   appc add  -s appmesh_mcp_app.yaml
-#   appc disable -n mcp-server      # stop serving MCP
-#   appc enable  -n mcp-server      # resume
-#   appc rm   -n mcp-server         # remove entirely ("don't want it anymore")
+#   appm add --stdin appmesh_mcp_app.yaml   # register from this file
+#   appm disable -a mcp-server              # stop serving MCP
+#   appm enable  -a mcp-server              # resume
+#   appm rm      -a mcp-server              # remove entirely ("don't want it anymore")
 #
 # Adjust paths to where this directory is deployed (default assumes
 # /opt/appmesh/sdk/mcp_server) and run `pip install -r requirements.txt` first.

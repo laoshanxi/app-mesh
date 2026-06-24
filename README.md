@@ -132,18 +132,22 @@ appm workflow runs pipeline               # view history
 
 ## 💡 Success
 
-- [In-memory remote task execute](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
-- [Build a powerful monitor system with Grafana/Prometheus/Loki](https://app-mesh.readthedocs.io/en/latest/success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.html)
-- [Customize application start behavior](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)
-- [Open service broker support local PV for Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
-- [Promote native application to microservice application](https://app-mesh.readthedocs.io/en/latest/success/promote_native_app_to_microservice_app.html)
-- [Secure REST file server](https://app-mesh.readthedocs.io/en/latest/success/secure_REST_file_server.html)
-- [Standalone JWT server](https://app-mesh.readthedocs.io/en/latest/success/standalone_JWT_server.html)
-- [Kubernetes run non-container applications](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
-- [Remote execute](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
-- [Python parallel run](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
-- [Secure consul cluster](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
-- [JWT service with REST and UI](https://github.com/laoshanxi/app-mesh/blob/main/script/docker-compose-auth-service.yaml)
+- [Remote build-and-run sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)
+- [LLM agent runtime hosted as an App Mesh app](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/llm-agent)
+- [LLM agent architecture and workflow design](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/workflow/LLMAgentWorkflowDesign.md)
+- [Manage App Mesh from AI clients via MCP (HTTP + OAuth)](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp_server)
+- [In-memory remote task execution](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
+- [Observability stack with Grafana, Prometheus, and Loki](https://app-mesh.readthedocs.io/en/latest/success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.html)
+- [Customize application startup and exit behavior](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)
+- [Kubernetes local-PV provisioning via Open Service Broker](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
+- [Promote a native application into a managed microservice](https://app-mesh.readthedocs.io/en/latest/success/promote_native_app_to_microservice_app.html)
+- [Secure REST-based file server](https://app-mesh.readthedocs.io/en/latest/success/secure_REST_file_server.html)
+- [Standalone JWT authentication server](https://app-mesh.readthedocs.io/en/latest/success/standalone_JWT_server.html)
+- [Run non-container applications on Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
+- [Remote command and Python script execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
+- [Parallel task execution with the Python SDK](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
+- [Secure multi-node cluster with Consul](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
+- [JWT auth service with REST API and web UI](https://github.com/laoshanxi/app-mesh/blob/main/script/docker-compose-auth-service.yaml)
 
 ---
 
