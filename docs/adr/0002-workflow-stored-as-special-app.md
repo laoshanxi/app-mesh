@@ -35,6 +35,6 @@ Workflows are registered as **special Apps** (label `type=workflow`) for CRUD an
 
 ### Trade-offs
 
-- **Mixed App list**: `appm app list` shows workflow pseudo-Apps alongside real Apps. Accepted — naming convention (`workflow-` prefix) is sufficient.
+- **Mixed App list**: `appm view` shows workflow pseudo-Apps alongside real Apps. Accepted — naming convention (`workflow-` prefix) is sufficient.
 - **Two-step registration**: CLI must upload the YAML file and register the App in sequence, not atomically.
 - **YAML size not in metadata**: avoids bloating the App metadata field, but means the trigger/engine must read the file separately.

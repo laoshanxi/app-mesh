@@ -126,7 +126,7 @@ appm ls
 
 ```shell
 appm logon -U admin # Input default password: admin123
-appm add -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmesh/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro" -d laoshanxi/appmesh-ui:2.2.1 -f
+appm add -a appweb -p 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmesh/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro" -I laoshanxi/appmesh-ui:2.2.1 -f
 ```
 
 ### Docker Compose Installation with UI and Consul Service
