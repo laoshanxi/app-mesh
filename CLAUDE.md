@@ -178,9 +178,11 @@ REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP reque
 
 Each SDK provides client libraries for interacting with the daemon plus a server-side interface for receiving tasks.
 
-### MCP (`src/sdk/mcp/`)
+### MCP (`src/sdk/mcp_server/`, `src/sdk/mcp_bridge/`)
 
-Model Context Protocol integration. Exposes App Mesh as an MCP tool server, enabling AI agents to manage applications via the MCP protocol.
+Model Context Protocol integration, enabling AI agents to manage applications via MCP. Two flavors:
+- `mcp_server/` — standalone MCP server over **Streamable HTTP** with an **OAuth 2.1** bridge (clients log in once and auto-refresh; the App Mesh JWT is the access token, RBAC enforced by the daemon). Exposes the Python SDK's daemon operations as tools. Designed to run as an App Mesh App.
+- `mcp_bridge/` — a stdio MCP server plus `mcp_pipe.py`, a stdio↔WebSocket tunnel for relaying a local MCP server out to a remote LLM gateway.
 
 ### LLM Agent (`src/sdk/llm-agent/`)
 
