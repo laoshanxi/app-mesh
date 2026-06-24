@@ -1,4 +1,4 @@
-# Kubernetes run none-container applications
+# Kubernetes run non-container applications
 
 [Demo video](https://asciinema.org/a/685tfnMjbnxjTB1sKbqs5Qv99)
 
