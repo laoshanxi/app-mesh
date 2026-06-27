@@ -136,11 +136,15 @@ env var on the App (e.g. `appm add -z ANTHROPIC_API_KEY=<key> ...`).
 ## Wire protocol (run_task payload)
 
 ```jsonc
-// session_open  — Scenario A only. On a worker App it returns an error; the worker
-//                 already serves its pre-assigned session_id, so send to it directly.
+// session_open  — Scenario A only, optional. Mints a fresh session_id; use it for an
+//                 explicit/long-lived session. (session_send also get-or-creates an
+//                 unknown session_id, so pre-opening is not required — see below.) On a
+//                 worker App it returns an error; the worker already serves its
+//                 pre-assigned session_id, so send to it directly.
 { "action": "session_open", "token": "<jwt>" }            → { "status":"ok", "data": { "session_id": "..." } }
 
-// session_send
+// session_send  — an unknown session_id is created on first use (owner = caller),
+//                 so a caller need not pre-open a session.
 { "action": "session_send", "token": "<jwt>", "session_id": "...",
   "input": "hello", "stream": false,                       // stream only on a worker App
   "max_iterations": 0, "max_tokens": 0 }                   → { "status":"ok",
@@ -211,9 +215,15 @@ jobs:
       - name: ask
         message:
           app: llm-agent
-          payload: '{"action": "session_send", "session_id": "${{ inputs.sid }}", "input": "${{ inputs.q }}"}'
+          payload: '{"action": "session_send", "session_id": "${{ workflow.run_id }}", "input": "${{ inputs.q }}"}'
           forward_token: true        # without this the agent rejects the call: "token required"
 ```
+
+`session_send` **get-or-creates** the session, so the step need not pre-open one or
+thread a session id in from outside: an unknown `session_id` is created on first use
+(owner = the caller). Using `"${{ workflow.run_id }}"` gives a fresh per-run session.
+Reuse a stable id across steps/runs to continue a conversation, or call `session_open`
+explicitly for a long-lived session id.
 
 Only a **manual** run carries a caller token to forward; **automatic** triggers
 (event/cron) have no caller identity, so they cannot drive llm-agent (the agent fails

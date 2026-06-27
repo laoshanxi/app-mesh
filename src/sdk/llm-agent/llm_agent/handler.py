@@ -168,7 +168,14 @@ class Handler:
         try:
             s = self.store.get(sid, caller, self._is_admin(caller), self.tenant)
         except NotFound:
-            return _err("session not found")
+            # Auto-create on first use so a caller need not pre-open a session: a workflow
+            # DAG step can use session_id="${{ workflow.run_id }}" and the session is created
+            # on the first turn (owner = caller). store.create() is get-or-create but does not
+            # enforce tenant/owner, so re-assert both here — a shared session dir keys the
+            # in-memory map by id alone, and we must not adopt another tenant's/owner's session.
+            s = self.store.create(sid, caller, self.tenant)
+            if s.tenant != self.tenant or (not self._is_admin(caller) and s.owner != caller):
+                return _err("session not found")
         except Forbidden as e:
             return _err(str(e))
 

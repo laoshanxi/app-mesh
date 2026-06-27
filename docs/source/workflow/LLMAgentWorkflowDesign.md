@@ -120,6 +120,11 @@ engine unchanged. A worker process gets its own `APP_MESH_PROCESS_KEY`, so its
 
 - A session is addressed by `session_id`, **lives across workflow runs**, and is
   reclaimed by **idle TTL**.
+- **Get-or-create:** `session_send` creates an unknown `session_id` on first use
+  (owner = caller), so a caller need not pre-open one or thread a session id in from
+  outside. A workflow `message` step can therefore use
+  `session_id: "${{ workflow.run_id }}"` for a fresh per-run session. `session_open`
+  remains available to mint an explicit/long-lived id (e.g. for the direct SDK client).
 - Session state (conversation history, token cost) is **persisted to disk** by the App
   (`<dir>/<tenant>/<id>.json`), namespaced per tenant.
 - **Recovery semantics:** after a restart the session is **rebuilt from the persisted
@@ -131,7 +136,8 @@ engine unchanged. A worker process gets its own `APP_MESH_PROCESS_KEY`, so its
 - **Scenario A (batch): one shared App per tenant** (`llm-agent` for the default tenant,
   `llm-agent-<tenant>` for a named one). Many
   sessions multiplexed in-process — cheap, no isolation needed for request/response
-  steps. It is the entry point for `session_open`.
+  steps. It serves `session_send` (which get-or-creates the session) and the optional
+  `session_open`.
 - **Scenario B (interactive): one admin-provisioned worker App per session.** The same
   binary run with `--session-worker --session-id=X` serves exactly that session; the
   client drives it directly (`RunTask` + `Subscribe(STDOUT)`). This gives a clean

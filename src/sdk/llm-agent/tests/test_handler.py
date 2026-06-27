@@ -74,6 +74,16 @@ class HandlerTest(unittest.TestCase):
         r = self._send(action="session_send", input="hi")
         self.assertEqual(r["status"], "error")
 
+    def test_send_auto_creates_unknown_session(self):
+        # A caller (e.g. a workflow step using ${{ workflow.run_id }}) need not pre-open:
+        # session_send to an unknown id creates it on first use and is reusable across turns,
+        # so the workflow author never has to manage a session_id.
+        r = self._send(action="session_send", session_id="run-123", input="hi")
+        self.assertEqual(r["status"], "ok")
+        self.assertTrue(r["data"]["answer"].startswith("stub:"))
+        r2 = self._send(action="session_send", session_id="run-123", input="again")
+        self.assertEqual(r2["status"], "ok")
+
 
 def _jwt(claims):
     """Build an unsigned JWT-shaped string with the given claims payload."""

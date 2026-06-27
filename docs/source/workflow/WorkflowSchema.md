@@ -411,11 +411,13 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
   timeout: 60
 
 # Driving an llm-agent (Scenario A) — forward_token injects the caller's JWT so the
-# agent acts as the triggering user (RBAC-scoped tools, owner-checked session):
+# agent acts as the triggering user (RBAC-scoped tools, owner-checked session).
+# session_send get-or-creates the session, so the step need not pre-open one or pass a
+# session id in; "${{ workflow.run_id }}" gives a fresh per-run session created on first use:
 - name: ask
   message:
     app: "llm-agent"
-    payload: '{"action": "session_send", "session_id": "${{ inputs.sid }}", "input": "${{ inputs.q }}"}'
+    payload: '{"action": "session_send", "session_id": "${{ workflow.run_id }}", "input": "${{ inputs.q }}"}'
     forward_token: true
 ```
 
