@@ -2,18 +2,25 @@
 
 ## Status
 
-Implemented (first cut) in **`src/sdk/llm-agent/`** (Python package `llm_agent`). This
-document captures the agreed design for running LLM agents on top of App Mesh, reusing
-the existing Workflow Engine ([WorkflowDesign.md](WorkflowDesign.md)) and the daemon's
-App / Task / Event substrate. Sections marked **Deferred** or **Out of scope** are not
-in the first cut; sections marked **Design-only** describe agreed intent that the first
-cut does not yet implement.
+> **⚠️ Superseded — read [`src/sdk/llm-agent/README.md`](../../../src/sdk/llm-agent/README.md) for the shipped design.**
+> The implementation was later simplified to a **thin wrapper around the official Claude
+> Agent SDK** (Claude-only). The agent loop, tools (Claude Code's built-in tools), and
+> conversation history are now the SDK's; llm-agent only routes `session_send`/`session_close`
+> and gives each session a stable workdir. As a result the sections below describing a
+> hand-rolled reason→act→observe loop, **multiple provider backends**, **tools-as-Apps**,
+> **per-turn/per-tenant budgets**, and **multi-tenant L1/L2/L3 identity** no longer match the
+> code — they record the original design rationale. The README is authoritative.
 
-**LLM mechanics are delegated to the official provider SDKs** (`anthropic`, `openai`) —
-the agent does not hand-roll provider HTTP, SSE streaming, or tool-calling wire formats.
-The only genuinely custom code is the App Mesh integration (sessions, tools-as-Apps,
-budgets, identity, streaming). **MCP is not used on the core path**: tools are ordinary
-App Mesh Apps invoked in-process under the caller's token (see *Tools*).
+This document captures the originally agreed design for running LLM agents on top of App
+Mesh, reusing the existing Workflow Engine ([WorkflowDesign.md](WorkflowDesign.md)) and
+the daemon's App / Task / Event substrate.
+
+**The shipped agent delegates the entire loop to the Claude Agent SDK** (Claude-only); the
+agent loop, tools, and conversation history are the SDK's. The text below describes the
+*original* cut, which delegated only LLM mechanics to provider SDKs and kept a custom App
+Mesh integration (sessions, **tools-as-Apps**, budgets, multi-tenant identity, streaming) —
+**none of that tools-as-Apps / budget / multi-provider machinery exists in the shipped code;
+see the README.**
 
 **Scenario B as a separate worker App.** Scenario A (batch) runs many sessions
 in-process on one per-tenant App. Scenario B (interactive, streaming) needs a clean
@@ -22,14 +29,16 @@ its own **worker App** (the same binary with `--session-worker`). Both Apps are
 **admin-provisioned**; `llm-agent` registers nothing itself (no dynamic spawn, no
 `AddApp`). It holds **no daemon credentials**: the task RPC uses the daemon-injected
 `APP_MESH_PROCESS_KEY`, and every other daemon call runs under the caller's token from
-the request payload. See *Process topology* and *Identity*.
+the request payload. See *Process topology* and *Identity & Multi-Tenancy*.
 
-The first cut (`src/sdk/llm-agent/llm_agent/`) implements: the per-tenant handler App,
-disk-persisted session store with TTL reaping, the reason→act→observe loop, the
-tools-as-Apps catalog, per-turn + per-tenant budgets, worker lifecycle, and the Task RPC
-loop (`session_open` / `session_send` / `session_close`). Backends: `fake` (network-free,
-for tests/dev), `anthropic` (official SDK), and `openai` (official SDK; also any
-OpenAI-compatible endpoint — vLLM / Ollama / TGI — via `OPENAI_BASE_URL`). See
+The original first cut (since superseded — see the banner above) implemented: a
+per-tenant handler App, a disk-persisted session store with TTL reaping, a hand-rolled
+reason→act→observe loop, a tools-as-Apps catalog, per-turn + per-tenant budgets, worker
+lifecycle, and the Task RPC loop (`session_open` / `session_send` / `session_close`).
+Its backends were: `fake` (network-free,
+for tests/dev), `anthropic` (official SDK), `openai` (official SDK; also any
+OpenAI-compatible endpoint — vLLM / Ollama / TGI / DeepSeek — via `OPENAI_BASE_URL`), and
+`gemini` (official `google-genai` SDK). See
 [`src/sdk/llm-agent/README.md`](../../../src/sdk/llm-agent/README.md).
 
 The guiding constraint, inherited from the workflow engine, is **reuse App Mesh as the
@@ -107,7 +116,7 @@ engine unchanged. A worker process gets its own `APP_MESH_PROCESS_KEY`, so its
   engine uses to store workflows as Apps with `metadata.type=workflow`.
 - The catalog (`llm_agent/tools.py`) is built by **listing Apps under the caller's
   token** and filtering to those with a `metadata.tool` schema. Because tool discovery
-  and invocation both run under the caller's token (see *Identity*), the catalog is
+  and invocation both run under the caller's token (see *Identity & Multi-Tenancy*), the catalog is
   **automatically scoped to what the tenant could already run directly** — no separate
   allowlist to maintain.
 - **Tool I/O contract:** tools are task Apps invoked via `RunTask`. The agent's JSON
@@ -239,7 +248,7 @@ the loop (iteration counts), and the tenant identity together.
 ## Inference Backend
 
 - The first cut selects a backend per tenant via `LLMAGENT_BACKEND` (`fake` / `anthropic`
-  / `openai`) with credentials/endpoint from the (secured) environment. A self-hosted
+  / `openai` / `gemini`) with credentials/endpoint from the (secured) environment. A self-hosted
   OpenAI-compatible server (vLLM / Ollama / TGI) is reached by pointing `OPENAI_BASE_URL`
   at it — no extra code.
 - **Design-only:** modeling the inference service as **an App Mesh App** (App Mesh
@@ -286,7 +295,7 @@ First cut reuses the engine's existing facilities; no new subsystem.
 | Identity | No service credentials: task RPC via `APP_MESH_PROCESS_KEY`; every other call under the caller's token (validated per request); session = data owned by the App (L1/L2/L3) |
 | Streaming | Scenario B only; out-of-band `Subscribe(STDOUT)` on the worker = a clean per-session stream; rejected on the shared App |
 | Budget | per-turn (operator ceiling, caller may only lower) + per-tenant file-locked ledger; hard ceilings |
-| Backends | `fake` / `anthropic` / `openai` (+ OpenAI-compatible via base URL); key as secured env |
+| Backends | `fake` / `anthropic` / `openai` (+ OpenAI-compatible via base URL) / `gemini`; key as secured env |
 | Context | **Design-only**: auto summarization + truncation fallback; not in first cut |
 | Inference | env-selected backend per tenant; inference-as-App + routing table **design-only**; no GPU scheduling |
 | Control | **Design-only**: stop-current-turn; first cut relies on per-turn ceilings + tool timeout + worker removal |

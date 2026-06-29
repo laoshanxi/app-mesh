@@ -1,7 +1,8 @@
 # llm-agent runtime dependencies (installed into the App Mesh Docker image, and the
 # single source of truth for `pip install -r`).
 appmesh
-# Backend SDKs for LLMAGENT_BACKEND=anthropic / openai. Bundled out of the box so a
-# real backend works without extra steps; the default `fake` backend needs only appmesh.
-anthropic
-openai
+# The agent loop is delegated to the official Claude Agent SDK (Claude-only). Its
+# platform wheel BUNDLES the Claude Code CLI binary it drives as a subprocess — no Node.js
+# needed. The Claude API key comes from ANTHROPIC_API_KEY in the App's secured env
+# (Bedrock/Vertex via the usual CLAUDE_CODE_USE_* env).
+claude-agent-sdk

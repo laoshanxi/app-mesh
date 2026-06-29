@@ -1,36 +1,26 @@
-# Pre-installed App definition for llm-agent (the Scenario A handler).
-# One App per tenant: the default-tenant instance is named `llm-agent` (no suffix); a
-# named tenant uses `llm-agent-<tenant>`. The daemon auto-loads and starts it on boot
-# (status: 1), like the workflow engine.
+# Pre-installed App definition for llm-agent — the shared handler (Scenario A, batch/DAG).
+# The daemon auto-loads it on boot but does NOT start it (status: 0); enable on demand:
+#   appm enable -a llm-agent
 #
-# No daemon credentials are needed: the task RPC authenticates with the daemon-
-# injected APP_MESH_PROCESS_KEY, and every other daemon call runs under the CALLER's
-# token from the request payload. With the default `fake` backend it starts and
-# serves out of the box (deterministic "stub: <input>" answers, no network).
+# It runs the Claude Agent SDK (Claude-only), so two things are required at runtime:
+#   - ANTHROPIC_API_KEY as a SECURED env var (never in this file), e.g.:
+#       appm add -a llm-agent -z ANTHROPIC_API_KEY=<key> -e LLMAGENT_MODEL=claude-opus-4-8
+#     (Bedrock/Vertex instead: set the usual CLAUDE_CODE_USE_BEDROCK / _VERTEX env.)
+#   - the `claude-agent-sdk` wheel (in requirements.txt) bundles the Claude Code CLI it
+#     drives as a subprocess — no Node.js needed.
 #
-# `working_dir` must contain the llm_agent package (so `python3 -m llm_agent` finds
-# it) and the daemon's python3 must have the `appmesh` SDK importable. Adjust the
-# path to where you deploy the package.
-#
-# Real backend (e.g. Anthropic tenant "acme"):
-#   appm add -a llm-agent-acme -z ANTHROPIC_API_KEY=<key> \
-#     -e APPMESH_TENANT=acme -e LLMAGENT_BACKEND=anthropic
-#
-# Scenario B (interactive, streaming) uses a separate worker App an admin provisions
-# per session — see config/llm-agent-worker.yaml.
-
+# `working_dir` must contain the llm_agent package and have `claude-agent-sdk` importable.
 name: llm-agent
 owner: admin
-description: llm-agent — Scenario A handler (default tenant)
-working_dir: /opt/appmesh/lib/llm-agent          # packaged-install location; EDIT for a custom prefix or manual deploy (must contain the llm_agent package)
+description: llm-agent — Claude Agent SDK handler (shared, Scenario A)
+working_dir: /opt/appmesh/lib/llm-agent          # packaged-install location; EDIT for a custom prefix
 command: python3 -m llm_agent --server 127.0.0.1:6059
 behavior:
   exit: restart
 env:
-  APPMESH_TENANT: default
-  LLMAGENT_BACKEND: fake
-  LLMAGENT_SESSION_DIR: ./llm-agent-sessions
   LLMAGENT_WORKSPACE_DIR: ./llm-agent-workspace
+  # Optional: LLMAGENT_MODEL (e.g. claude-opus-4-8), LLMAGENT_SYSTEM_PROMPT,
+  #           LLMAGENT_ALLOWED_TOOLS, LLMAGENT_PERMISSION_MODE, LLMAGENT_MAX_ITERATIONS.
 metadata:
   type: llm-agent-system
-status: 1
+status: 0

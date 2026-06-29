@@ -18,6 +18,8 @@ RUN bash -c 'git clone --depth 1 https://github.com/laoshanxi/app-mesh.git && \
 FROM python:slim-bookworm
 ARG AM_UID="482"
 ARG AM_GID="482"
+# Note: the llm-agent App's Claude Code CLI ships inside the `claude-agent-sdk` wheel
+# (installed via llm-agent's requirements.txt below) — no Node.js install is needed.
 # not enable exec user in container
 ENV APPMESH_BaseConfig_DisableExecUser=true
 # not only listen 127.0.0.1

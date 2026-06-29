@@ -34,6 +34,6 @@ install(FILES "${LLMAGENT_SRC}/config/llm-agent.yaml"
     COMPONENT configs
 )
 
-# Scenario B worker template, example tool, and examples are operator-deployed by
-# hand (per-session worker, demo tool), so they are documentation/templates — not
-# auto-registered here. See config/llm-agent-worker.yaml and examples/.
+# The Scenario B worker template and the client examples are operator-deployed by hand,
+# so they are documentation/templates — not auto-registered here. See
+# config/llm-agent-worker.yaml and examples/.
