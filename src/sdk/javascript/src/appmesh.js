@@ -1,9 +1,10 @@
 // appmesh.js
 import axios from 'axios';
 
-// Lazy-resolved Node.js https module (null in browser)
+// Lazy-resolved Node.js https/fs modules (null in browser)
 let _https = null;
-let _httpsReady = null; // Promise that resolves when https is loaded
+let _fs = null;
+let _httpsReady = null; // Promise that resolves when https/fs are loaded
 
 // Constants using Object.freeze to prevent modifications
 const CONSTANTS = Object.freeze({
@@ -44,13 +45,65 @@ class AppMeshError extends Error {
    * @param {string} message - Error message
    * @param {number|null} statusCode - HTTP status code
    * @param {any} responseData - Raw response data
+   * @param {string|null} errorCode - Machine-readable error code
    */
-  constructor(message, statusCode = null, responseData = null) {
+  constructor(message, statusCode = null, responseData = null, errorCode = null) {
     super(message);
     this.name = 'AppMeshError';
     this.statusCode = statusCode;
     this.responseData = responseData;
+    this.errorCode = errorCode;
     this.timestamp = new Date().toISOString();
+  }
+}
+
+/**
+ * Error thrown when the server requires a TOTP code to complete login (HTTP 428).
+ *
+ * Subclasses AppMeshError with `statusCode` fixed to 428, so existing catch-based
+ * callers keep working. Carries the server-issued challenge as `totpChallenge`,
+ * ready to pass to `validate_totp(username, totpChallenge, totpCode)`.
+ */
+class TotpRequiredError extends AppMeshError {
+  /**
+   * @param {string} message - Error message
+   * @param {any} responseData - Raw 428 response body (object or JSON string containing `totp_challenge`)
+   */
+  constructor(message, responseData = null) {
+    super(message, 428, responseData, 'TOTP_REQUIRED');
+    this.name = 'TotpRequiredError';
+    let data = responseData;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (_) { data = null; }
+    }
+    /** @type {string|null} Server-issued TOTP challenge for validate_totp() */
+    this.totpChallenge = (data && typeof data === 'object' && typeof data.totp_challenge === 'string')
+      ? data.totp_challenge
+      : null;
+  }
+}
+
+/**
+ * App removed before its async-run exit was observed. Typed replacement for the
+ * old -1 sentinel, keeping real (possibly negative) exit codes unambiguous.
+ */
+class AppRemovedError extends AppMeshError {
+  /** @param {string} message - Error message */
+  constructor(message) {
+    super(message, null, null, 'APP_REMOVED');
+    this.name = 'AppRemovedError';
+  }
+}
+
+/**
+ * Transport disconnected while waiting for an async run, or the daemon delivered
+ * an unparseable exit code. Typed replacement for the old -2 sentinel exit code.
+ */
+class TransportDisconnectedError extends AppMeshError {
+  /** @param {string} message - Error message */
+  constructor(message) {
+    super(message, null, null, 'TRANSPORT_DISCONNECTED');
+    this.name = 'TransportDisconnectedError';
   }
 }
 
@@ -142,6 +195,20 @@ function parseDuration(duration) {
 }
 
 /**
+ * Case-insensitive header lookup (axios lowercases names; the TCP transport keeps the daemon's case).
+ * @param {Object} headers - Response headers
+ * @param {string} name - Header name (any case)
+ * @returns {*} Header value or undefined
+ * @private
+ */
+function _getHeader(headers, name) {
+  if (!headers) return undefined;
+  const lower = name.toLowerCase();
+  const key = Object.keys(headers).find(k => k.toLowerCase() === lower);
+  return key === undefined ? undefined : headers[key];
+}
+
+/**
  * Resolve a user name or numeric string to a UID (Node.js/Unix only).
  * @param {string} user - User name or numeric UID
  * @returns {Promise<number|null>} UID or null if unresolvable
@@ -199,6 +266,31 @@ function _decodeJwtExp(token) {
   }
 }
 
+// Default App Mesh CA bundle, preferred when no sslConfig is given and the file exists
+const DEFAULT_CA_FILE = '/opt/appmesh/ssl/ca.pem';
+
+// PEM material: Buffers/inline PEM pass through; any other string is a file path —
+// a missing path is a hard error, never a silent no-verify fallback.
+function _loadPem(value) {
+  return (typeof value === 'string' && !value.includes('-----BEGIN')) ? _fs.readFileSync(value) : value;
+}
+
+// Resolve the sslConfig tri-state into https.Agent TLS options (Node.js only):
+// null/undefined = App Mesh default CA if installed else system CAs; false = explicit
+// insecure; object = custom ca/cert/key (rejectUnauthorized defaults to true).
+function _resolveSslOptions(sslConfig) {
+  if (sslConfig === false) return { rejectUnauthorized: false };
+  if (!sslConfig) {
+    return _fs.existsSync(DEFAULT_CA_FILE)
+      ? { ca: _fs.readFileSync(DEFAULT_CA_FILE), rejectUnauthorized: true }
+      : { rejectUnauthorized: true }; // fall back to system trust roots, verification stays on
+  }
+  const opts = { ...sslConfig };
+  for (const k of ['ca', 'cert', 'key']) if (opts[k]) opts[k] = _loadPem(opts[k]);
+  if (typeof opts.rejectUnauthorized !== 'boolean') opts.rejectUnauthorized = true;
+  return opts;
+}
+
 /**
  * AppMesh REST Service client
  */
@@ -206,7 +298,10 @@ class AppMeshClient {
   /**
    * Initialize AppMesh client
    * @param {string} baseURL - Service URL
-   * @param {Object} [sslConfig] - SSL config 
+   * @param {Object|false|null} [sslConfig] - SSL tri-state: `null`/`undefined` (default) verifies
+   *   against the App Mesh default CA (/opt/appmesh/ssl/ca.pem) if installed, else the system CAs;
+   *   `false` disables verification; an object supplies custom `ca`/`cert`/`key` (Buffer, inline
+   *   PEM, or file path — a missing path is a hard error).
    * @example
    * const sslConfig = {
    *   cert: fs.readFileSync("client.pem"),
@@ -222,6 +317,10 @@ class AppMeshClient {
     // Host to forward requests to
     this.forwardingHost = null;
 
+    // Current JWT token known to this client (single token store; transports
+    // sync from it via _handleTokenUpdate/_getAccessToken)
+    this._token = null;
+
     // Configure axios instance
     const axiosConfig = {
       baseURL,
@@ -233,10 +332,11 @@ class AppMeshClient {
     this._sslConfig = sslConfig;
     this._client = axios.create(axiosConfig);
 
-    // Node.js only: start loading https module (resolved before first request)
+    // Node.js only: start loading https/fs modules (resolved before first request)
     if (ENV.isNode && !_httpsReady) {
-      _httpsReady = import('https').then(mod => {
-        _https = mod.default || mod;
+      _httpsReady = Promise.all([import('https'), import('fs')]).then(([h, f]) => {
+        _https = h.default || h;
+        _fs = f.default || f;
       }).catch(() => { /* browser bundle — ignore */ });
     }
 
@@ -258,9 +358,10 @@ class AppMeshClient {
     this._client.interceptors.response.use(
       response => response,
       error => {
-        // Handle response errors
-        const err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status, error.response?.data);
-        return Promise.resolve(err);
+        // Network-level failure (DNS, connection refused, timeout, ...)
+        const err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status ?? null, error.response?.data ?? null);
+        err.cause = error;
+        return Promise.reject(err);
       }
     );
   }
@@ -272,8 +373,20 @@ class AppMeshClient {
    * @param {string} [totpCode] - TOTP code if 2FA is enabled
    * @param {string|number} [tokenExpire] - Token expiry (integer seconds or ISO 8601 string)
    * @param {string} [audience] - JWT audience
-   * @returns {Promise<void>} Resolves when login succeeds. If the server requires TOTP and no
-   * valid code is supplied, `_request()` rejects with the HTTP 428 response details.
+   * @returns {Promise<void>} Resolves when login succeeds.
+   * @throws {TotpRequiredError} When the server requires TOTP (HTTP 428) and no valid code was
+   * supplied. Catch it, read `error.totpChallenge`, then complete the login with
+   * `validate_totp(username, error.totpChallenge, totpCode)`:
+   * @example
+   * try {
+   *   await client.login(user, pass);
+   * } catch (err) {
+   *   if (err instanceof TotpRequiredError) {
+   *     await client.validate_totp(user, err.totpChallenge, totpCode);
+   *   } else {
+   *     throw err;
+   *   }
+   * }
    */
   async login(username, password, totpCode = null, tokenExpire = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     // Validate inputs
@@ -302,21 +415,17 @@ class AppMeshClient {
    * @param {boolean} [updateSession=true] - When true, updates this client session with the
    *   verified token and persists local auth state on success. When false, the token is only
    *   verified and local state is unchanged.
-   * @returns {Promise<{success: boolean, responseText: string}>} Verification result with success flag and response text.
+   * @returns {Promise<{success: boolean, responseText: string}>} Verification result (success is always true).
+   * @throws {AppMeshError} If verification fails (invalid token, permission or audience mismatch, network error).
    */
   async authenticate(token, permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE, updateSession = true) {
     const headers = { Authorization: `Bearer ${token}` };
     if (permission) headers["X-Permission"] = permission;
     if (audience) headers["X-Audience"] = audience;
     if (updateSession) headers["X-Set-Cookie"] = "true";
-    try {
-      const response = await this._request("post", "/appmesh/auth", null, { headers });
-      const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-      return { success: true, responseText };
-    } catch (error) {
-      const responseText = error instanceof AppMeshError ? error.message : String(error);
-      return { success: false, responseText };
-    }
+    const response = await this._request("post", "/appmesh/auth", null, { headers });
+    const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    return { success: true, responseText };
   }
 
   /**
@@ -327,25 +436,48 @@ class AppMeshClient {
    * header; in browsers it cannot replace the HttpOnly auth cookie.
    */
   set_token(token) {
-    const COOKIE_NAME = 'appmesh_auth_token';
     if (ENV.isNode) {
-      const existingCookies = this._client.defaults.headers.Cookie || '';
-      const cookies = existingCookies.split('; ').filter(c =>
-        c && !c.startsWith(COOKIE_NAME + '=')
-      );
-      cookies.push(`${COOKIE_NAME}=${token}`);
-      this._client.defaults.headers.Cookie = cookies.join('; ');
-      this._autoRefreshJwt = token;
-      if (this._autoRefreshEnabled) {
-        this._stopAutoRefresh();
-        this._autoRefreshEnabled = true;
-        this._scheduleTokenRefresh();
-      }
+      this._handleTokenUpdate(token);
     } else {
       // Browser: auth token is HttpOnly (set by server via Set-Cookie),
       // document.cookie cannot access or override HttpOnly cookies.
       // Use authenticate() for browser-based token verification instead.
       console.warn('set_token() is not supported in browser mode (auth cookie is HttpOnly). Use authenticate() instead.');
+    }
+  }
+
+  /**
+   * Get the current access token known to this client.
+   * @returns {string|null} Current JWT token or null
+   * @protected
+   */
+  _getAccessToken() {
+    return this._token || null;
+  }
+
+  /**
+   * Store a new access token and propagate it to the transport layer.
+   * Called after login/renew/authenticate responses and by set_token().
+   * Base implementation keeps the token in memory, syncs the Node.js outgoing
+   * Cookie header, and reschedules auto-refresh when enabled.
+   * Subclasses using other transports (e.g. TCP) override this to sync their own store.
+   * @param {string|null} token - New JWT token (falsy clears the in-memory token)
+   * @protected
+   */
+  _handleTokenUpdate(token) {
+    const COOKIE_NAME = 'appmesh_auth_token';
+    this._token = token || null;
+    if (ENV.isNode && this._token) {
+      const existingCookies = this._client.defaults.headers.Cookie || '';
+      const cookies = existingCookies.split('; ').filter(c =>
+        c && !c.startsWith(COOKIE_NAME + '=')
+      );
+      cookies.push(`${COOKIE_NAME}=${this._token}`);
+      this._client.defaults.headers.Cookie = cookies.join('; ');
+    }
+    this._autoRefreshJwt = this._token;
+    if (this._autoRefreshEnabled) {
+      this._scheduleTokenRefresh();
     }
   }
 
@@ -364,6 +496,7 @@ class AppMeshClient {
       }
 
       this._stopAutoRefresh();
+      this._token = null;
 
       // Remove CSRF token and cookies
       if (ENV.isNode) {
@@ -379,11 +512,11 @@ class AppMeshClient {
    * @param {boolean} enable - true to start, false to stop
    * @param {string} [jwtToken] - Optional token used only to calculate the first refresh delay
    */
-  setAutoRefreshToken(enable, jwtToken = null) {
+  set_auto_refresh_token(enable, jwtToken = null) {
     this._stopAutoRefresh();
     this._autoRefreshEnabled = enable;
     if (enable) {
-      this._autoRefreshJwt = jwtToken || this._getAccessToken?.() || null;
+      this._autoRefreshJwt = jwtToken || this._getAccessToken() || null;
       this._scheduleTokenRefresh();
     }
   }
@@ -401,13 +534,19 @@ class AppMeshClient {
   _scheduleTokenRefresh() {
     if (!this._autoRefreshEnabled) return;
 
+    // Replace any pending timer so re-scheduling (e.g. from _handleTokenUpdate) never stacks timers
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+
     const REFRESH_INTERVAL = 300; // 5 min default check
     const REFRESH_MARGIN = 30;    // refresh 30s before expiry
 
     let delaySec = REFRESH_INTERVAL;
 
     // Try to compute precise delay from JWT exp
-    const token = this._autoRefreshJwt || this._getAccessToken?.();
+    const token = this._autoRefreshJwt || this._getAccessToken();
     if (token) {
       const exp = _decodeJwtExp(token);
       if (exp) {
@@ -424,14 +563,9 @@ class AppMeshClient {
     this._refreshTimer = setTimeout(async () => {
       if (!this._autoRefreshEnabled) return;
       try {
+        // _request captures the renewed token cookie and routes it through
+        // _handleTokenUpdate, which updates _autoRefreshJwt for precise delays
         await this.renew_token();
-        // Update stored token from cookie for precise delay calculation (Node.js only;
-        // in browsers the auth cookie is HttpOnly and not accessible via JS)
-        if (ENV.isNode) {
-          const cookieStr = this._client?.defaults?.headers?.Cookie || '';
-          const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='));
-          if (match) this._autoRefreshJwt = match.split('=').slice(1).join('=');
-        }
       } catch (err) {
         console.warn("Auto-refresh: token renewal failed:", err.message);
       }
@@ -460,7 +594,7 @@ class AppMeshClient {
    * Get the decoded OTP provisioning URI for the current user.
    * @returns {Promise<string>} Decoded `otpauth://...` URI, not just the raw secret field
    */
-  async get_totp_secret() {
+  async get_totp_uri() {
     const response = await this._request("post", "/appmesh/totp/secret");
     return base64Utils.decode(response.data["mfa_uri"]);
   }
@@ -497,11 +631,11 @@ class AppMeshClient {
   /**
    * Disable TOTP for user
    * @param {string} [user='self'] - Username
-   * @returns {boolean} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async disable_totp(user = "self") {
-    const response = await this._request("post", `/appmesh/totp/${user}/disable`);
-    return response.status === 200;
+    await this._request("post", `/appmesh/totp/${user}/disable`);
+    return true;
   }
 
   /**
@@ -603,21 +737,21 @@ class AppMeshClient {
   /**
    * Enable application
    * @param {string} name - App name
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async enable_app(name) {
-    const response = await this._request("post", `/appmesh/app/${name}/enable`);
-    return response.status === 200;
+    await this._request("post", `/appmesh/app/${name}/enable`);
+    return true;
   }
 
   /**
    * Disable application
    * @param {string} name - App name
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async disable_app(name) {
-    const response = await this._request("post", `/appmesh/app/${name}/disable`);
-    return response.status === 200;
+    await this._request("post", `/appmesh/app/${name}/disable`);
+    return true;
   }
 
   /**
@@ -641,9 +775,11 @@ class AppMeshClient {
     };
 
     const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
-    // axios response header use lower case
-    const outPosition = response.headers["X-Output-Position".toLowerCase()] ? parseInt(response.headers["X-Output-Position".toLowerCase()], 10) : null;
-    const exitCode = response.headers["X-Exit-Code".toLowerCase()] ? parseInt(response.headers["X-Exit-Code".toLowerCase()], 10) : null;
+    // axios lowercases header names; the TCP transport keeps the daemon's exact case
+    const outPositionHeader = _getHeader(response.headers, "X-Output-Position");
+    const exitCodeHeader = _getHeader(response.headers, "X-Exit-Code");
+    const outPosition = outPositionHeader ? parseInt(outPositionHeader, 10) : null;
+    const exitCode = exitCodeHeader ? parseInt(exitCodeHeader, 10) : null;
     return new AppOutput(response.status, response.data, outPosition, exitCode);
   }
 
@@ -668,9 +804,10 @@ class AppMeshClient {
       if (stdoutHandler) {
         stdoutHandler(response.data, 0);
       }
-      // axios response header use lower case
-      if (response.headers["X-Exit-Code".toLowerCase()]) {
-        exitCode = parseInt(response.headers["X-Exit-Code".toLowerCase()], 10);
+      // axios lowercases header names; the TCP transport keeps the daemon's exact case
+      const exitCodeHeader = _getHeader(response.headers, "X-Exit-Code");
+      if (exitCodeHeader) {
+        exitCode = parseInt(exitCodeHeader, 10);
       }
     } else if (stdoutHandler) {
       stdoutHandler(response.data, 0);
@@ -701,8 +838,9 @@ class AppMeshClient {
    * @param {AppRun} run - AppRun object
    * @param {Function} [stdoutHandler=defaultOutputHandler] - Stdout handler callback(data, position)
    * @param {number} [timeout=0] - Max wait time
-   * @returns {Promise<number|null>} Exit code, or `null` on timeout/polling failure. On success
+   * @returns {Promise<number|null>} Exit code, or `null` only on timeout. On success
    * the SDK also attempts to delete the temporary run app.
+   * @throws {AppMeshError} If polling the app output fails.
    */
   async wait_for_async_run(run, stdoutHandler = defaultOutputHandler, timeout = 0) {
     if (run) {
@@ -711,37 +849,27 @@ class AppMeshClient {
       const interval = 1;
 
       while (run.procUid.length > 0) {
-        try {
-          const appOut = await this.get_app_output(run.appName, lastOutputPosition, 0, 20480, run.procUid, interval);
-          if (appOut.output && stdoutHandler) {
-            stdoutHandler(appOut.output, lastOutputPosition);
-          }
+        const appOut = await this.get_app_output(run.appName, lastOutputPosition, 0, 20480, run.procUid, interval);
+        if (appOut.output && stdoutHandler) {
+          stdoutHandler(appOut.output, lastOutputPosition);
+        }
 
-          if (appOut.outPosition !== null) {
-            lastOutputPosition = appOut.outPosition;
-          }
+        if (appOut.outPosition !== null) {
+          lastOutputPosition = appOut.outPosition;
+        }
 
-          if (appOut.exitCode !== null) {
-            // Process finished
-            await this.delete_app(run.appName);
-            return appOut.exitCode;
-          }
+        if (appOut.exitCode !== null) {
+          // Process finished
+          await this.delete_app(run.appName);
+          return appOut.exitCode;
+        }
 
-          if (appOut.statusCode !== 200) {
-            // Request failed
-            break;
-          }
-
-          if (timeout > 0 && (new Date() - start) / 1000 > timeout) {
-            // Timeout reached
-            break;
-          }
-          // Small delay to prevent tight looping
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        } catch (error) {
-          console.error(error);
+        if (timeout > 0 && (new Date() - start) / 1000 > timeout) {
+          // Timeout reached
           break;
         }
+        // Small delay to prevent tight looping
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
     return null;
@@ -767,19 +895,27 @@ class AppMeshClient {
   /**
    * Cancel running task
    * @param {string} appName - App name
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async cancel_task(appName) {
-    const response = await this._request("delete", `/appmesh/app/${appName}/task`);
-    return response.status === 200;
+    await this._request("delete", `/appmesh/app/${appName}/task`);
+    return true;
   }
 
   /**
-   * Download a remote file.
+   * Download a remote file. Behavior differs by environment:
+   *
+   * - **Node.js**: `localFile` is a filesystem path — the response body is written to it,
+   *   and when `applyAttrs` is true the returned mode and best-effort owner/group metadata
+   *   are applied on non-Windows platforms.
+   * - **Browser**: `localFile` is only the *suggested download filename* (its basename is
+   *   used); no path is honored — the browser's download UI decides where the file goes,
+   *   and `applyAttrs` has no effect.
+   *
    * @param {string} filePath - Remote file path
-   * @param {string} localFile - Local file path
-   * @param {boolean} [applyAttrs=true] - In Node.js, apply returned mode and best-effort owner/group
-   * metadata on non-Windows platforms
+   * @param {string} localFile - Local file path (Node.js) or suggested filename (browser)
+   * @param {boolean} [applyAttrs=true] - Node.js only: apply returned mode and best-effort
+   * owner/group metadata on non-Windows platforms
    */
   async download_file(filePath, localFile, applyAttrs = true) {
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
@@ -948,22 +1084,22 @@ class AppMeshClient {
    * Add label to server
    * @param {string} labelName - Label name
    * @param {string} labelValue - Label value
-   * @returns {boolean} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async add_label(labelName, labelValue) {
-    const response = await this._request("put", `/appmesh/label/${labelName}`, null, { params: { value: labelValue } });
-    return response.status === 200;
+    await this._request("put", `/appmesh/label/${labelName}`, null, { params: { value: labelValue } });
+    return true;
   }
 
 
   /**
    * Delete label from server
    * @param {string} labelName - Label name
-   * @returns {boolean} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async delete_label(labelName) {
-    const response = await this._request("delete", `/appmesh/label/${labelName}`);
-    return response.status === 200;
+    await this._request("delete", `/appmesh/label/${labelName}`);
+    return true;
   }
 
 
@@ -982,56 +1118,56 @@ class AppMeshClient {
    * @param {string} oldPassword - Old password
    * @param {string} newPassword - New password
    * @param {string} [username="self"] - Username
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async update_password(oldPassword, newPassword, username = "self") {
     const body = {
       "old_password": base64Utils.encode(oldPassword),
       "new_password": base64Utils.encode(newPassword)
     };
-    const response = await this._request("post", `/appmesh/user/${username}/passwd`, body);
-    return response.status === 200;
+    await this._request("post", `/appmesh/user/${username}/passwd`, body);
+    return true;
   }
 
   /**
    * Add new user
    * @param {string} username - Username
    * @param {Object} userData - User definition
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async add_user(username, userData) {
-    const response = await this._request("put", `/appmesh/user/${username}`, userData);
-    return response.status === 200;
+    await this._request("put", `/appmesh/user/${username}`, userData);
+    return true;
   }
 
   /**
    * Delete user
    * @param {string} username - Username
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async delete_user(username) {
-    const response = await this._request("delete", `/appmesh/user/${username}`);
-    return response.status === 200;
+    await this._request("delete", `/appmesh/user/${username}`);
+    return true;
   }
 
   /**
    * Lock user account
    * @param {string} username - Username
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async lock_user(username) {
-    const response = await this._request("post", `/appmesh/user/${username}/lock`);
-    return response.status === 200;
+    await this._request("post", `/appmesh/user/${username}/lock`);
+    return true;
   }
 
   /**
    * Unlock user account
    * @param {string} username - Username
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async unlock_user(username) {
-    const response = await this._request("post", `/appmesh/user/${username}/unlock`);
-    return response.status === 200;
+    await this._request("post", `/appmesh/user/${username}/unlock`);
+    return true;
   }
 
   /**
@@ -1092,32 +1228,62 @@ class AppMeshClient {
    * Update or add role
    * @param {string} roleName - Role name
    * @param {Object} rolePermissionJson - Permission IDs
-   * @returns {Promise<boolean>} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async update_role(roleName, rolePermissionJson) {
-    const response = await this._request("post", `/appmesh/role/${roleName}`, rolePermissionJson);
-    return response.status === 200;
+    await this._request("post", `/appmesh/role/${roleName}`, rolePermissionJson);
+    return true;
   }
 
   /**
    * Delete role
    * @param {string} roleName - Role name
-   * @returns {boolean} Success status
+   * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
   async delete_role(roleName) {
-    const response = await this._request("delete", `/appmesh/role/${roleName}`);
-    return response.status === 200;
+    await this._request("delete", `/appmesh/role/${roleName}`);
+    return true;
   }
 
   /**
    * Get raw Prometheus metrics text from the server.
    * @returns {Promise<string>} Metrics text
    */
-  async metrics() {
+  async get_metrics() {
     const response = await this._request("get", "/appmesh/metrics", null, {
       config: { responseType: "text" }
     });
     return response.data;
+  }
+
+  /**
+   * Event subscription is only available over the TCP transport.
+   * @throws {AppMeshError} Always — use AppMeshClientTCP for event subscriptions.
+   */
+  async subscribe() {
+    throw new AppMeshError("subscribe requires the TCP client (AppMeshClientTCP, imported from 'appmesh/tcp'); the HTTP client does not support event subscriptions");
+  }
+
+  /**
+   * Event subscription is only available over the TCP transport.
+   * @throws {AppMeshError} Always — use AppMeshClientTCP for event subscriptions.
+   */
+  async unsubscribe() {
+    throw new AppMeshError("unsubscribe requires the TCP client (AppMeshClientTCP, imported from 'appmesh/tcp'); the HTTP client does not support event subscriptions");
+  }
+
+  /**
+   * Perform a raw App Mesh REST request using this client's transport, auth and error handling.
+   * Stable seam for worker-role wrappers (AppMeshWorker) and advanced callers.
+   * @param {string} method - HTTP method (get, post, put, delete, ...)
+   * @param {string} path - Endpoint path (e.g. "/appmesh/applications")
+   * @param {Object|string|Buffer} [body=null] - Request payload
+   * @param {Object} [options={}] - Request options: { headers, params, config }
+   * @returns {Promise<any>} Response object ({ status, headers, data, ... })
+   * @throws {AppMeshError} If the request fails (non-2xx)
+   */
+  async request(method, path, body = null, options = {}) {
+    return this._request(method, path, body, options);
   }
 
   /**
@@ -1177,7 +1343,7 @@ class AppMeshClient {
       await _httpsReady;
       if (_https) {
         this._client.defaults.httpsAgent = new _https.Agent({
-          ...(this._sslConfig || { rejectUnauthorized: false }),
+          ..._resolveSslOptions(this._sslConfig),
           keepAlive: true,
           keepAliveMsecs: 3000
         });
@@ -1202,10 +1368,10 @@ class AppMeshClient {
 
       const response = await this._client(requestConfig);
       if (response.status !== 200) {
-        if (path === "/appmesh/self/logoff") {
-          return response;  // Allow logoff to "fail" gracefully
-        }
         const errMsg = this._extractErrorMessage(response.data);
+        if (response.status === CONSTANTS.HTTP_STATUS_PRECONDITION_REQUIRED) {
+          throw new TotpRequiredError(errMsg, response.data);
+        }
         throw new AppMeshError(errMsg, response.status, response.data);
       }
 
@@ -1218,16 +1384,21 @@ class AppMeshClient {
 
         // Join all cookies with semicolon separator
         this._client.defaults.headers.Cookie = cookies.join('; ');
+
+        // Keep the in-memory token store in sync with the server-issued cookie
+        // (login, renew, authenticate, TOTP setup/validate)
+        const authCookie = cookies
+          .map(c => c.split(';')[0].trim())
+          .find(c => c.startsWith('appmesh_auth_token='));
+        if (authCookie) {
+          this._handleTokenUpdate(authCookie.substring('appmesh_auth_token='.length));
+        }
       }
 
       return response;
     } catch (error) {
       if (error instanceof AppMeshError && error.statusCode === CONSTANTS.HTTP_STATUS_PRECONDITION_REQUIRED) {
         throw error;
-      }
-      if (path === "/appmesh/self/logoff") {
-        // console.log("Logoff error:", error.message);
-        return;
       }
       throw this.onError(error);
     }
@@ -1332,11 +1503,14 @@ class AppRun {
   }
 
   /**
-   * Context manager for forward host override to self._client
+   * Context manager for forward host override to self._client.
+   * Note: this temporarily mutates the shared client's forwardingHost for the duration of the
+   * callback — do not run concurrent requests on the same client that rely on a different
+   * forwarding host.
    * @param {function} callback - Function to execute within the forward host context
    * @returns {Promise<*>} Result of the callback function
    */
-  async withForwardingHost(callback) {
+  async with_forwarding_host(callback) {
     const originalValue = this._client.forwardingHost;
     this._client.forwardingHost = this._forwardingHost;
     try {
@@ -1353,12 +1527,12 @@ class AppRun {
    * @returns {Promise<number|null>} Return exit code if process finished, return null for timeout or exception
    */
   async wait(stdoutHandler = defaultOutputHandler, timeout = 0) {
-    return this.withForwardingHost(() =>
+    return this.with_forwarding_host(() =>
       this._client.wait_for_async_run(this, stdoutHandler, timeout)
     );
   }
 }
 
 // Export the main classes
-export { AppMeshClient, AppOutput, AppRun, AppMeshError };
+export { AppMeshClient, AppOutput, AppRun, AppMeshError, TotpRequiredError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE };
 export default AppMeshClient;

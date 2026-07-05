@@ -23,7 +23,7 @@ Client (CLI / GUI / SDK)
   ▼
 App Mesh daemon
   │
-  │  task_fetch / task_return loop
+  │  FetchTask / SendTaskResult loop
   ▼
 wf-engine (Go, single long-lived process)
   ├── Task RPC handler  — 12 actions for CRUD + run + observability
@@ -34,7 +34,7 @@ wf-engine (Go, single long-lived process)
         ▼
   App Mesh daemon APIs
         │
-        │  RunAppAsync, Wait, Subscribe, GetAppOutput, RunTask, RemoveApp
+        │  RunAppAsync, Wait, Subscribe, GetAppOutput, RunTask, DeleteApp
 ```
 
 The `wf-engine` binary is a pre-installed App (named `workflow`) that auto-starts on daemon boot. All workflow operations — registration, execution, cancellation, querying — go through the Task API. There is one execution path: goroutines.
@@ -151,7 +151,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 
 **Behavior by step type:**
 
-- **command** (`execCommand`): Creates a temporary App (`wf-cmd-*`), subscribes to `STDOUT`+`EXIT`+`REMOVED` events **before** `RunAppAsync` (so no events are missed), waits for completion, then calls `Unsubscribe` + `RemoveApp` to clean up.
+- **command** (`execCommand`): Creates a temporary App (`wf-cmd-*`), subscribes to `STDOUT`+`EXIT`+`REMOVED` events **before** `RunAppAsync` (so no events are missed), waits for completion, then calls `Unsubscribe` + `DeleteApp` to clean up.
 - **app** (`execApp`): Runs an existing App via `RunAppAsync`. Subscribes **after** the call (because the daemon generates a new run name). Immediately does a backfill `GetAppOutput` check after subscribe to handle fast-exit apps whose EXIT event arrived before the subscription connected. If the app already exited, `collector.backfill` signals completion immediately.
 - **message** (`execMessage`): Calls `RunTask` in a goroutine with a buffered channel. A `select` on `ctx.Done()` provides cancel support — if cancelled, the function returns immediately while the goroutine drains to the buffered channel.
 - **workflow** (`execWorkflow`): Creates a `context.WithTimeout` from the step's timeout config, passes it to `RunSubWorkflow`. The sub-workflow respects the timeout at DAG layer boundaries.
@@ -180,7 +180,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 
 **Behavior:**
 
-- `TaskHandler.Run()` is a blocking `task_fetch`/`task_return` loop. Each request is parsed as JSON, validated (safe ID regex on workflow/run_id/job/step fields), dispatched to one of 12 action handlers, and the response is marshaled back. Marshal errors produce a fixed error JSON to avoid silent drops.
+- `TaskHandler.Run()` is a blocking `FetchTask`/`SendTaskResult` loop. Each request is parsed as JSON, validated (safe ID regex on workflow/run_id/job/step fields), dispatched to one of 12 action handlers, and the response is marshaled back. Marshal errors produce a fixed error JSON to avoid silent drops.
 - **CRUD actions** (`workflow_add/get/list/rm/inputs`): Operate on YAML files and daemon Apps. `workflow_add` validates YAML via temp file + parser, preserves old YAML for rollback on `AddApp` failure, and updates the registry immediately. `workflow_rm` removes from registry, drains concurrency queues, cancels active runs, removes daemon App, then removes directory. `workflow_inputs` returns `on.manual.inputs` with fallback to `on.workflow_call.inputs`.
 - **Run actions** (`run/cancel/rerun`): Delegate to Layer 2's `TriggerManual`, `CancelByRunID`, etc. `rerun` reads original inputs from `runs.json` with fallback to checkpoint.
 - **Observability actions** (`runs/run_detail/log/step_log`): Read from `runs.json` index, checkpoint files, and log files. `runs` returns `[]` (not `null`) when no runs exist. `log` returns distinct errors for not-found vs. read failure.
@@ -413,7 +413,7 @@ The workdir retains 10 runs per workflow by default. Cleanup runs when a new run
 
 ## Workflow API (Task RPC)
 
-CLI, GUI, and any external system interact with the workflow engine through the App Mesh **Task API** (`run_task`). The `workflow` App runs a task_fetch/task_return loop to process requests.
+CLI, GUI, and any external system interact with the workflow engine through the App Mesh **Task API** (`run_task`). The `workflow` App runs a FetchTask/SendTaskResult loop to process requests.
 
 ### Transport
 
@@ -429,7 +429,7 @@ App Mesh daemon
   ▼
 wf-engine (Go)
   │
-  │  task_fetch() → dispatch(action) → task_return(json_response)
+  │  FetchTask() → dispatch(action) → SendTaskResult(json_response)
 ```
 
 ### Actions
@@ -556,7 +556,7 @@ All actions return errors in the same format:
 - **Timeout:** Second parameter of `run_task` controls how long the client waits for a response.
 - **Idempotent reads:** `runs`, `run_detail`, `log`, `step_log`, `workflow_get`, `workflow_list`, `workflow_inputs` are read-only and idempotent.
 - **Non-idempotent writes:** `run` creates a new run each time. `cancel` is idempotent (cancelling an already-done run returns an error).
-- **Concurrency:** The daemon Task API uses a per-App FIFO queue (max 512 pending requests). Multiple clients can call `run_task` concurrently; requests are queued and processed one at a time by the engine's `task_fetch`/`task_return` loop. All handlers complete in single-digit milliseconds (non-blocking), so queue depth stays near zero under normal use. Event-triggered runs (`on.app_event`) bypass the Task API entirely.
+- **Concurrency:** The daemon Task API uses a per-App FIFO queue (max 512 pending requests). Multiple clients can call `run_task` concurrently; requests are queued and processed one at a time by the engine's `FetchTask`/`SendTaskResult` loop. All handlers complete in single-digit milliseconds (non-blocking), so queue depth stays near zero under normal use. Event-triggered runs (`on.app_event`) bypass the Task API entirely.
 
 ## Known Limitations
 
@@ -574,7 +574,7 @@ All actions return errors in the same format:
 
 | ADR | Decision |
 |-----|----------|
-| [0001](../../adr/0001-workflow-engine-as-per-run-process.md) | Single Go binary with goroutines |
+| [0001](../../adr/0001-workflow-engine-single-process-goroutines.md) | Single Go binary with goroutines |
 | [0002](../../adr/0002-workflow-stored-as-special-app.md) | Workflow stored as special App |
 | [0003](../../adr/0003-tcp-transport-for-workflow-engine.md) | TCP transport for daemon communication |
 | [0004](../../adr/0004-unified-run-management-model.md) | Unified Run management model target |

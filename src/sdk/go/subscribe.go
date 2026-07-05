@@ -13,11 +13,14 @@ import (
 	"time"
 )
 
-// Sentinel errors returned by WaitForAsyncRun to disambiguate non-EXIT terminations
-// from real (possibly negative) process exit codes (e.g. -SIGINT = -2).
+// Sentinel errors returned by WaitForAsyncRun and Wait/WaitContext to disambiguate
+// non-EXIT terminations from real (possibly negative) process exit codes (e.g. -SIGINT = -2).
 var (
 	ErrTransportDisconnected = errors.New("transport disconnected before exit")
 	ErrAppRemoved            = errors.New("app removed before exit")
+	// ErrWaitTimeout is wrapped by Wait/WaitContext errors when the wait deadline
+	// expires or the context is cancelled before the process exits.
+	ErrWaitTimeout = errors.New("wait timed out before process exit")
 )
 
 const (
@@ -58,8 +61,14 @@ type MessageDemuxer struct {
 	eventBufs map[string][]AppEvent
 	started   bool
 	stopCh    chan struct{}
-	eventQ    chan dispatchTask
 	readMsg   func() ([]byte, error) // transport-specific read function
+
+	// Unbounded dispatch queue (slice + cond): enqueue never blocks, so a slow
+	// callback can never stall the socket reader (SDKContract rule). Memory is
+	// bounded upstream by the pre-registration buffer caps and event volume.
+	qMu   sync.Mutex
+	qCond *sync.Cond
+	queue []dispatchTask
 }
 
 // Bound the pre-registration event buffer (atomic-subscribe race window) so a
@@ -72,17 +81,28 @@ const (
 type dispatchTask struct {
 	cb    EventCallback
 	event AppEvent
+	stop  bool // sentinel: dispatchWorker exits after draining all earlier tasks
 }
 
 func newMessageDemuxer(readMsg func() ([]byte, error)) *MessageDemuxer {
-	return &MessageDemuxer{
+	d := &MessageDemuxer{
 		pending:   make(map[string]chan *Response),
 		eventCBs:  make(map[string]EventCallback),
 		eventBufs: make(map[string][]AppEvent),
 		stopCh:    make(chan struct{}),
-		eventQ:    make(chan dispatchTask, 256),
 		readMsg:   readMsg,
 	}
+	d.qCond = sync.NewCond(&d.qMu)
+	return d
+}
+
+// enqueueTask appends a task to the dispatch queue. Never blocks, so it is
+// safe to call from the readLoop and while holding d.mu.
+func (d *MessageDemuxer) enqueueTask(task dispatchTask) {
+	d.qMu.Lock()
+	d.queue = append(d.queue, task)
+	d.qMu.Unlock()
+	d.qCond.Signal()
 }
 
 // start begins the background reader and dispatch goroutines.
@@ -101,22 +121,40 @@ func (d *MessageDemuxer) start() {
 
 // dispatchWorker invokes event callbacks serially in arrival order.
 // One slow callback delays subsequent events but never the socket reader.
+// It exits only on the stop sentinel enqueued by stop(), draining all earlier
+// tasks first so a terminal event (e.g. the final EXIT read just before a
+// transport error) is delivered before the DISCONNECTED broadcast.
 func (d *MessageDemuxer) dispatchWorker() {
 	for {
-		select {
-		case <-d.stopCh:
-			return
-		case task := <-d.eventQ:
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Printf("dispatchWorker: callback panic: %v", r)
-					}
-				}()
-				task.cb(task.event)
-			}()
+		d.qMu.Lock()
+		for len(d.queue) == 0 {
+			d.qCond.Wait()
 		}
+		task := d.queue[0]
+		d.queue = d.queue[1:]
+		d.qMu.Unlock()
+
+		if task.stop {
+			return
+		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("dispatchWorker: callback panic: %v", r)
+				}
+			}()
+			task.cb(task.event)
+		}()
 	}
+}
+
+// isRunning reports whether the demuxer read loop is still active. A stopped
+// demuxer stays attached to the requester, so requesters must not register new
+// pending requests on it (nothing would ever deliver to, or close, the channel).
+func (d *MessageDemuxer) isRunning() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.started
 }
 
 // stop terminates the background reader.
@@ -148,17 +186,14 @@ func (d *MessageDemuxer) stop() {
 		close(ch)
 	}
 
-	// Broadcast disconnect (outside lock — no deadlock from re-entrant callbacks)
+	// Broadcast disconnect through the dispatch queue (behind any already-queued
+	// events, preserving arrival order), then a stop sentinel so dispatchWorker
+	// drains everything before exiting. Callbacks stay serialized on the worker
+	// goroutine — never invoked on the stopping goroutine.
 	for _, e := range snapshot {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("broadcastDisconnect: callback panic: %v", r)
-				}
-			}()
-			e.cb(AppEvent{SubscriptionID: e.subID, EventType: EventTypeDisconnected})
-		}()
+		d.enqueueTask(dispatchTask{cb: e.cb, event: AppEvent{SubscriptionID: e.subID, EventType: EventTypeDisconnected}})
 	}
+	d.enqueueTask(dispatchTask{stop: true})
 }
 
 // registerRequest creates a channel for a pending request identified by UUID.
@@ -184,12 +219,10 @@ func (d *MessageDemuxer) registerEventCallback(subID string, cb EventCallback) {
 	d.eventCBs[subID] = cb
 	buffered := d.eventBufs[subID]
 	delete(d.eventBufs, subID)
-	// Enqueue under the lock so buffered events precede later live events.
+	// Enqueue under the lock so buffered events precede later live events;
+	// enqueueTask never blocks, so holding d.mu here cannot deadlock.
 	for _, event := range buffered {
-		select {
-		case d.eventQ <- dispatchTask{cb: cb, event: event}:
-		case <-d.stopCh:
-		}
+		d.enqueueTask(dispatchTask{cb: cb, event: event})
 	}
 	d.mu.Unlock()
 }
@@ -261,10 +294,7 @@ func (d *MessageDemuxer) dispatchEvent(resp *Response) {
 	}
 	// Enqueue for serial dispatch. Order matters — STDOUT dedup by byte-position
 	// in WaitForAsyncRun assumes events arrive in the order the daemon emitted them.
-	select {
-	case d.eventQ <- dispatchTask{cb: cb, event: event}:
-	case <-d.stopCh:
-	}
+	d.enqueueTask(dispatchTask{cb: cb, event: event})
 }
 
 // bufferEventLocked holds an event whose callback has not registered yet.
@@ -310,7 +340,8 @@ type SubscriptionResult struct {
 }
 
 // Subscribe registers for events on a named app (or all apps if AppName is empty/"*").
-// The callback is invoked in a separate goroutine for each event.
+// Callbacks are dispatched serially on a single goroutine, preserving per-subscription
+// event order; a slow callback delays subsequent events but never the socket reader.
 // Returns the subscription ID and any error.
 func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
 	apiPath := "/appmesh/subscribe"
@@ -385,6 +416,9 @@ func (c *AppMeshClient) Unsubscribe(subscriptionID string) error {
 //   - (nil, ErrAppRemoved):          app removed before EXIT observed
 //   - (nil, ErrTransportDisconnected): TCP/WSS connection lost
 //   - (nil, err):                    subscribe failed
+//
+// WaitForAsyncRun requires a subscription-capable transport (TCP/WSS); Wait and
+// WaitContext are the HTTP-polling equivalents usable on any transport.
 func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdoutHandler OutputHandler, timeout time.Duration) (*int, error) {
 	if run == nil || run.AppName == "" {
 		return nil, fmt.Errorf("invalid async run")
@@ -504,6 +538,7 @@ func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 	defer func() {
 		mu.Lock()
 		disc := disconnected
+		exited := exitCode != nil
 		mu.Unlock()
 		// On disconnect the demuxer is stopped; calling Unsubscribe would
 		// register a request channel that never gets a response.
@@ -512,6 +547,11 @@ func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 		}
 		if sub.SubscriptionID != "" {
 			_ = c.Unsubscribe(sub.SubscriptionID)
+		}
+		// Best-effort delete of the temporary run app on a real exit (as in
+		// WaitContext); skipped on REMOVED/timeout (app gone or possibly still running).
+		if exited {
+			_, _ = c.DeleteApp(run.AppName)
 		}
 	}()
 

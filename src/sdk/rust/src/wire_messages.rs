@@ -1,7 +1,13 @@
-// tcp_messages.rs
+// wire_messages.rs
+//! MessagePack wire protocol messages (`RequestMessage`/`ResponseMessage`)
+//! shared by both the TCP and WSS transports.
 
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use crate::constants::HTTP_HEADER_CONTENT_TYPE;
+use crate::error::AppMeshError;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RequestMessage {
@@ -77,5 +83,17 @@ impl ResponseMessage {
     /// Deserialize from MessagePack format
     pub fn deserialize(buf: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
         rmp_serde::from_slice(buf)
+    }
+
+    /// Convert this transport-level response into an `http::Response` (shared by TCP/WSS).
+    pub(crate) fn into_http_response(self) -> Result<http::Response<Bytes>, AppMeshError> {
+        let mut builder = http::Response::builder().status(self.http_status as u16);
+        for (k, v) in &self.headers {
+            builder = builder.header(k, v);
+        }
+        if !self.body_msg_type.is_empty() && !self.headers.contains_key(HTTP_HEADER_CONTENT_TYPE) {
+            builder = builder.header(HTTP_HEADER_CONTENT_TYPE, &self.body_msg_type);
+        }
+        Ok(builder.body(Bytes::from(self.body)).expect("Building http::Response should not fail"))
     }
 }

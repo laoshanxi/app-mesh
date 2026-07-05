@@ -139,8 +139,10 @@ func evalEventCondition(condition string, data json.RawMessage) bool {
 	}
 
 	// Simple evaluation: replace known variable names with values.
+	// return_code is accepted as an alias since event payloads use either key.
 	expr := condition
 	expr = replaceVar(expr, "exit_code", strconv.Itoa(exitCode))
+	expr = replaceVar(expr, "return_code", strconv.Itoa(exitCode))
 
 	// Evaluate simple "N == M" / "N != M" patterns.
 	return evalSimple(expr)

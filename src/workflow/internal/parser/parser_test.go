@@ -364,3 +364,102 @@ func TestFullExample(t *testing.T) {
 		t.Errorf("jobs: %d", len(wf.Jobs))
 	}
 }
+
+// Strict decoding: a typoed field must be rejected at parse time, not silently
+// dropped (a lost `needs:` would silently change execution order).
+func TestUnknownFieldRejected(t *testing.T) {
+	path := writeTmp(t, `
+name: typo
+jobs:
+  build:
+    neeeds: [other]
+    steps:
+      - name: greet
+        command: "echo hello"
+`)
+	if _, err := LoadWorkflow(path); err == nil {
+		t.Fatal("misspelled field 'neeeds' must fail strict parsing")
+	}
+}
+
+func TestUnknownStepFieldRejected(t *testing.T) {
+	path := writeTmp(t, `
+name: typo2
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: "echo hello"
+        retires: {max: 3}
+`)
+	if _, err := LoadWorkflow(path); err == nil {
+		t.Fatal("misspelled field 'retires' must fail strict parsing")
+	}
+}
+
+// Documented input schema: type must be string/number/boolean when given.
+func TestInputTypeValidated(t *testing.T) {
+	path := writeTmp(t, `
+name: badtype
+on:
+  manual:
+    inputs:
+      env:
+        type: integer
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: "echo hello"
+`)
+	if _, err := LoadWorkflow(path); err == nil {
+		t.Fatal("invalid input type must be rejected")
+	}
+}
+
+// An app_event trigger without app/events can never fire — reject at parse.
+func TestAppEventRequiresAppAndEvents(t *testing.T) {
+	path := writeTmp(t, `
+name: badevent
+on:
+  app_event:
+    app: ""
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: "echo hello"
+`)
+	if _, err := LoadWorkflow(path); err == nil {
+		t.Fatal("app_event without app/events must be rejected")
+	}
+}
+
+// execution_identity must be a plausible username when set.
+func TestExecutionIdentityValidated(t *testing.T) {
+	good := writeTmp(t, `
+name: with-identity
+execution_identity: svc-pipeline
+jobs:
+  a:
+    steps:
+      - name: s
+        command: "true"
+`)
+	if _, err := LoadWorkflow(good); err != nil {
+		t.Fatalf("valid execution_identity rejected: %v", err)
+	}
+
+	bad := writeTmp(t, `
+name: bad-identity
+execution_identity: "has space"
+jobs:
+  a:
+    steps:
+      - name: s
+        command: "true"
+`)
+	if _, err := LoadWorkflow(bad); err == nil {
+		t.Fatal("execution_identity with a space must be rejected")
+	}
+}

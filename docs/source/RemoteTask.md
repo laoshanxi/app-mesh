@@ -16,33 +16,33 @@ The client sends a payload (task data) to App Mesh and waits for the response.
 from appmesh import AppMeshClient
 # Initialize the App Mesh Client
 client = AppMeshClient()
-if client.login("admin", "admin123"):
-    count_in_server = "0"
-    for i in range(10):
-        # task data
-        task_data = f"print({count_in_server}+{i}, end='')"
-        # remote invoke and get result
-        count_in_server = client.run_task(app_name="pytask", data=task_data)
-        # print
-        print(count_in_server)
+client.login("admin", "admin123")  # raises on failure
+count_in_server = "0"
+for i in range(10):
+    # task data
+    task_data = f"print({count_in_server}+{i}, end='')"
+    # remote invoke and get result
+    count_in_server = client.run_task(app_name="pytask", data=task_data)
+    # print
+    print(count_in_server)
 ```
 
 ### Server
 
-The server is the application process managed by App Mesh. It receives the payload, processes it, and returns the result.
+The worker is the application process managed by App Mesh. It receives the payload, processes it, and returns the result.
 
 ```python
-from appmesh import AppMeshServer
+from appmesh import AppMeshWorker
 if __name__ == "__main__":
     # Minimal server loop: fetch a payload, execute it, return the output.
-    context = AppMeshServer()
+    context = AppMeshWorker()
     while True:
         # Block fetch invocation payload.
-        payload = context.task_fetch()
+        payload = context.fetch_task()
         # Execute with payload and capture prints.
         output = exec_with_output(payload)
         # Return the result to the client
-        context.task_return(output)
+        context.send_task_result(output)
 
 ```
 
@@ -90,5 +90,5 @@ Note: Use AppMeshClient (HTTP) for short-lived requests and AppMeshClientTCP (TC
 
 Server:
 
-- task_fetch(): retrieve a task data in the currently running App Mesh application process
-- task_return(): response the result of a server-side invocation back to the original client.
+- fetch_task(): retrieve a task data in the currently running App Mesh application process
+- send_task_result(): send the result of a server-side invocation back to the original client.

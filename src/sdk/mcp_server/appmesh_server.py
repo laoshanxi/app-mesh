@@ -33,6 +33,7 @@ Environment:
 import logging
 import os
 from typing import Optional
+from urllib import parse
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken
@@ -126,7 +127,7 @@ def get_app_output(
     token: AccessToken = CurrentAccessToken(),
 ) -> dict:
     out = _client(token).get_app_output(app_name, stdout_position, stdout_index, stdout_maxsize, process_uuid, timeout)
-    return {"status_code": out.status_code, "output": out.output, "out_position": out.out_position, "exit_code": out.exit_code}
+    return {"status_code": out.status_code, "output": out.output, "output_position": out.output_position, "exit_code": out.exit_code}
 
 
 @mcp.tool(description="Run a command or application synchronously, blocking until completion. Provide either 'command' (shell command) or 'app' (definition dict). Returns exit_code and stdout.")
@@ -144,7 +145,7 @@ def run_app_sync(
     return {"exit_code": exit_code, "output": output}
 
 
-@mcp.tool(description="Run a command or application asynchronously. Returns app_name and proc_uid to poll with get_app_output. Provide 'command' or 'app'.")
+@mcp.tool(description="Run a command or application asynchronously. Returns app_name and process_uuid to poll with get_app_output. Provide 'command' or 'app'.")
 def run_app_async(
     command: Optional[str] = None,
     app: Optional[dict] = None,
@@ -154,7 +155,7 @@ def run_app_async(
         raise ValueError("provide either 'command' or 'app'")
     definition = App({"command": command, "shell": True}) if command else App(app)
     run = _client(token).run_app_async(definition)
-    return {"app_name": run.app_name, "proc_uid": run.proc_uid}
+    return {"app_name": run.app_name, "process_uuid": run.process_uuid}
 
 
 # --------------------------------------------------------------------------- #
@@ -338,7 +339,11 @@ def update_password(old_password: str, new_password: str, username: str = "self"
 
 @mcp.tool(description="Get the TOTP (2FA) secret for the current user.")
 def get_totp_secret(token: AccessToken = CurrentAccessToken()) -> dict:
-    return {"secret": _client(token).get_totp_secret()}
+    totp_uri = _client(token).get_totp_uri()
+    secret = parse.parse_qs(parse.urlparse(totp_uri).query).get("secret")
+    if not secret:
+        raise ValueError("TOTP URI does not contain a 'secret' field")
+    return {"secret": secret[0]}
 
 
 @mcp.tool(description="Enable TOTP (2FA) for the current user using a valid TOTP code.")
@@ -349,7 +354,7 @@ def enable_totp(totp_code: str, token: AccessToken = CurrentAccessToken()) -> di
 
 @mcp.tool(description="Disable TOTP (2FA) for the specified user (default 'self').")
 def disable_totp(user: str = "self", token: AccessToken = CurrentAccessToken()) -> dict:
-    _client(token).disable_totp(user)
+    _client(token).disable_totp(username=user)
     return {"success": True}
 
 

@@ -2,11 +2,11 @@
 
 #[cfg(test)]
 mod tests {
-    use appmesh::{AppMeshServer, ClientBuilder};
+    use appmesh::{AppMeshWorker, ClientBuilder};
     use mockito::{Matcher, Server};
 
     #[tokio::test]
-    async fn test_task_fetch_success() {
+    async fn test_fetch_task_success() {
         let mut server = Server::new_async().await;
 
         std::env::set_var("APP_MESH_PROCESS_KEY", "abc");
@@ -25,14 +25,14 @@ mod tests {
             .danger_accept_invalid_certs(true)
             .build()
             .unwrap();
-        let srv = AppMeshServer::with_client(client);
+        let srv = AppMeshWorker::with_client(client);
 
-        let payload = srv.task_fetch().await.unwrap();
+        let payload = srv.fetch_task().await.unwrap();
         assert_eq!(payload, bytes::Bytes::from("payload"));
     }
 
     #[tokio::test]
-    async fn test_task_return_error() {
+    async fn test_send_task_result_error() {
         let mut server = Server::new_async().await;
 
         std::env::set_var("APP_MESH_PROCESS_KEY", "abc");
@@ -51,9 +51,9 @@ mod tests {
             .danger_accept_invalid_certs(true)
             .build()
             .unwrap();
-        let srv = AppMeshServer::with_client(client);
+        let srv = AppMeshWorker::with_client(client);
 
-        let result = srv.task_return(b"ok").await;
+        let result = srv.send_task_result(b"ok").await;
         assert!(result.is_err());
     }
 }

@@ -17,16 +17,13 @@ Three architectural options were considered:
 
 2. **Per-run process (Go)**: Same model but with Go binaries. Lower overhead (~5-10MB, ~20ms startup) and zero-dependency deployment, but still spawns OS processes per run.
 
-3. **Single Go process with goroutines**: One long-running `wf-engine serve` process handles event subscriptions and executes each workflow run as a goroutine (~8KB, ~1μs startup). A standalone `wf-engine run` mode exists for CLI ad-hoc execution and testing.
+3. **Single Go process with goroutines**: One long-running `wf-engine` process handles event subscriptions and executes each workflow run as a goroutine (~8KB, ~1μs startup).
 
 ## Decision
 
-**Option 3 — single Go binary, two modes:**
+**Option 3 — single Go binary, one long-running mode.** The `wf-engine` process (flags: `-server`, `-cluster-nodes`) scans for workflow definitions, subscribes to App events, serves the workflow Task API, and runs every workflow — event-triggered *and* CLI/GUI-triggered — as a goroutine within the same process. It is registered as an App Mesh App (`behavior.exit: restart`).
 
-- `wf-engine serve` — long-running mode. Scans for workflow definitions, subscribes to App events, and runs triggered workflows as goroutines within the same process. Registered as an App Mesh App (`behavior.exit: restart`).
-- `wf-engine run <workflow.yaml>` — single-shot mode. Executes one workflow and exits. Used by `appm workflow run` for CLI-triggered ad-hoc runs and for testing.
-
-Both modes share the same Go packages (parser, expression, DAG, executor, engine). The `serve` mode additionally includes the trigger subsystem (registry, event listener, concurrency manager).
+There is no separate single-shot mode: `appm workflow run` sends a `run` action over the daemon's `run_task` to this long-running engine (see ADR 0003/0006), which is what carries the caller's identity into the run.
 
 ## Consequences
 

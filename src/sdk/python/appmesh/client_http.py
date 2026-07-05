@@ -32,8 +32,8 @@ from requests.structures import CaseInsensitiveDict
 # Local imports
 from .app import App
 from .app_output import AppOutput
-from .app_run import AppRun
-from .exceptions import AppMeshAuthError, AppMeshRequestError
+from .app_run import AppRun, OutputHandler
+from .exceptions import AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ class AppMeshClient:
         - authenticate()
         - renew_token()
         - disable_totp()
+        - get_totp_uri()
         - get_totp_secret()
         - enable_totp()
 
@@ -80,6 +81,10 @@ class AppMeshClient:
         - run_app_sync()
         - run_task()
         - cancel_task()
+
+        # Event Subscription (AppMeshClientTCP/AppMeshClientWSS only; see `supports_events`)
+        - subscribe()
+        - unsubscribe()
 
         # System Management
         - forward_to
@@ -120,8 +125,11 @@ class AppMeshClient:
         >>> response = client.get_app(app_name='ping')
     """
 
-    # Polling interval for wait_for_async_run (seconds for HTTP, overridden by TCP/WSS)
+    # Polling interval for wait_for_async_run (seconds)
     _POLL_INTERVAL = 1
+
+    # Whether this client can deliver app events (True on TCP/WSS transports only)
+    supports_events = False
 
     # Duration constants
     _DURATION_ONE_WEEK_ISO = "P1W"
@@ -133,11 +141,9 @@ class AppMeshClient:
     # Platform-aware default SSL paths (only used if directory exists)
     _DEFAULT_SSL_DIR = Path("c:/local/appmesh/ssl" if os.name == "nt" else "/opt/appmesh/ssl")
     if _DEFAULT_SSL_DIR.is_dir():
-        _DEFAULT_SSL_CA_CERT_PATH = str(_DEFAULT_SSL_DIR / "ca.pem")
         _DEFAULT_SSL_CLIENT_CERT_PATH = str(_DEFAULT_SSL_DIR / "client.pem")
         _DEFAULT_SSL_CLIENT_KEY_PATH = str(_DEFAULT_SSL_DIR / "client-key.pem")
     else:
-        _DEFAULT_SSL_CA_CERT_PATH = False  # No certs available, skip verification
         _DEFAULT_SSL_CLIENT_CERT_PATH = None
         _DEFAULT_SSL_CLIENT_KEY_PATH = None
 
@@ -206,10 +212,26 @@ class AppMeshClient:
                 return self._converted_text
             return super().text
 
+    @classmethod
+    def _resolve_ssl_verify(cls, ssl_verify: Union[bool, str, None]) -> Union[bool, str]:
+        """Resolve the ``ssl_verify`` value: ``None`` (auto) selects the App Mesh CA bundle when
+        installed, otherwise the system CAs. Verification is never disabled implicitly; a
+        non-empty CA path that does not exist is a hard error, while the legacy empty-string
+        form means explicit disable (like ``False``).
+        """
+        if ssl_verify is None:
+            ca_path = cls._DEFAULT_SSL_DIR / "ca.pem"
+            return str(ca_path) if ca_path.exists() else True
+        if ssl_verify == "":  # legacy empty-path form: explicit disable
+            return False
+        if isinstance(ssl_verify, str) and not os.path.exists(ssl_verify):
+            raise ValueError(f"ssl_verify path '{ssl_verify}' does not exist")
+        return ssl_verify
+
     def __init__(
         self,
         base_url: str = "https://127.0.0.1:6060",
-        ssl_verify: Union[bool, str] = _DEFAULT_SSL_CA_CERT_PATH,
+        ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = (
             (_DEFAULT_SSL_CLIENT_CERT_PATH, _DEFAULT_SSL_CLIENT_KEY_PATH)
             if _DEFAULT_SSL_CLIENT_CERT_PATH
@@ -225,9 +247,10 @@ class AppMeshClient:
         Args:
             base_url: The server's base URI. Defaults to "https://127.0.0.1:6060".
             ssl_verify: SSL server verification mode:
+              - None (default): Auto — use the App Mesh CA bundle if installed, otherwise system CAs.
               - True: Use system CAs.
-              - False: Disable verification (insecure).
-              - str: Path to custom CA or directory. To include system CAs, combine them into one file (e.g., cat custom_ca.pem /etc/ssl/certs/ca-certificates.crt > combined_ca.pem).
+              - False: Disable verification (insecure, must be requested explicitly).
+              - str: Path to custom CA or directory (must exist). To include system CAs, combine them into one file (e.g., cat custom_ca.pem /etc/ssl/certs/ca-certificates.crt > combined_ca.pem).
             ssl_client_cert: SSL client certificate file(s):
               - str: Single PEM file with cert+key
               - tuple: (cert_path, key_path)
@@ -238,7 +261,7 @@ class AppMeshClient:
         """
         self._ensure_logging_configured()
         self.base_url = base_url
-        self.ssl_verify = ssl_verify
+        self.ssl_verify = self._resolve_ssl_verify(ssl_verify)
         self.ssl_client_cert = ssl_client_cert
         self.request_timeout = request_timeout
         self._forward_to = None
@@ -435,6 +458,10 @@ class AppMeshClient:
             For JWT sharing across the cluster:
             - All nodes must use the same `JWTSalt` and `Issuer` for JWT settings
             - If port is omitted, current service port is used
+
+        Warning:
+            Shared, per-client state read by every request; ``AppRun.wait()`` temporarily
+            overrides it. Use separate client instances for concurrent multi-host access.
         """
         return self._forward_to or ""
 
@@ -533,7 +560,12 @@ class AppMeshClient:
         )
 
     def logout(self) -> bool:
-        """Logout from the current session."""
+        """Logout from the current session.
+
+        Returns:
+            bool: ``True`` on success; ``False`` when no token was set locally or the server
+            rejected the logoff (logged as a warning). Never raises for a failed logoff.
+        """
         jwt_token = self._get_access_token()
         if not jwt_token or not isinstance(jwt_token, str):
             return False
@@ -546,13 +578,6 @@ class AppMeshClient:
 
         self.stop_token_refresh()
         return True
-
-    def authentication(
-        self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, update_session: bool = True
-    ) -> Tuple[bool, str]:
-        """Deprecated: Use authenticate() instead."""
-        warnings.warn("authentication() is deprecated, use authenticate() instead", DeprecationWarning, stacklevel=2)
-        return self.authenticate(token, permission, audience, update_session)
 
     def authenticate(
         self, token: str, permission: Optional[str] = None, audience: Optional[str] = None, update_session: bool = True
@@ -569,6 +594,7 @@ class AppMeshClient:
 
         Returns:
             Tuple of ``(success, message)`` where ``message`` is the raw response text.
+            ``(False, message)`` covers every non-OK status; never raises for a failed verification.
         """
         # Header auth token takes priority over cookie token
         headers = {self._HTTP_HEADER_KEY_AUTH: f"Bearer {token}"}
@@ -589,8 +615,16 @@ class AppMeshClient:
 
         Args:
             token: A valid JWT token string. The token is stored in the client's cookie jar and
-                persisted immediately when `cookie_file` is configured.
+                persisted immediately when `cookie_file` is configured. The cookie expiry follows
+                the token's ``exp`` claim, falling back to 7 days when absent or undecodable.
         """
+        # Cookie expiry follows the token's exp claim, else 7 days
+        expires = int(time.time()) + 86400 * 7
+        with suppress(Exception):
+            exp = jwt.decode(token, options={"verify_signature": False}).get("exp")
+            if exp:
+                expires = int(exp)
+
         # CookieJar.set_cookie() is a base class method, works for both
         # RequestsCookieJar (in-memory) and MozillaCookieJar (file-backed)
         cookie = Cookie(
@@ -605,7 +639,7 @@ class AppMeshClient:
             path="/",
             path_specified=True,
             secure=False,
-            expires=int(time.time()) + 86400 * 7,
+            expires=expires,
             discard=False,
             comment=None,
             comment_url=None,
@@ -634,16 +668,21 @@ class AppMeshClient:
             header={"X-Expire-Seconds": str(self._parse_duration(token_expire))},
         )
 
+    def get_totp_uri(self) -> str:
+        """Return the TOTP provisioning URI (``otpauth://...``) for the current user,
+        decoded from the server's base64 ``mfa_uri`` payload, e.g. for rendering a QR code
+        in an authenticator app.
+        """
+        resp = self._request_http(method=AppMeshClient._Method.POST, path="/appmesh/totp/secret")
+        return base64.b64decode(resp.json()["mfa_uri"]).decode()
+
     def get_totp_secret(self) -> str:
         """Return the raw TOTP secret for the current user.
 
         The server responds with a base64-encoded OTP provisioning URI; this helper parses that
-        URI and returns only the ``secret`` field for QR-code or authenticator setup.
+        URI and returns only the ``secret`` field. Use :meth:`get_totp_uri` for the full URI.
         """
-        resp = self._request_http(method=AppMeshClient._Method.POST, path="/appmesh/totp/secret")
-
-        totp_uri = base64.b64decode(resp.json()["mfa_uri"]).decode()
-        parsed_uri = self._parse_totp_uri(totp_uri)
+        parsed_uri = self._parse_totp_uri(self.get_totp_uri())
         secret = parsed_uri.get("secret")
         if secret is None:
             raise AppMeshAuthError("TOTP URI does not contain a 'secret' field")
@@ -661,9 +700,14 @@ class AppMeshClient:
             header={"X-Totp-Code": totp_code},
         )
 
-    def disable_totp(self, user: str = "self") -> None:
-        """Disable 2FA for the specified user."""
-        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/totp/{user}/disable")
+    def disable_totp(self, username: Optional[str] = None) -> None:
+        """Disable 2FA for the specified user.
+
+        Args:
+            username: Target user name; defaults to "self" (the current user).
+        """
+        target = username or "self"
+        self._request_http(method=AppMeshClient._Method.POST, path=f"/appmesh/totp/{target}/disable")
 
     @staticmethod
     def _parse_totp_uri(totp_uri: str) -> dict:
@@ -716,7 +760,7 @@ class AppMeshClient:
 
         Returns:
             ``AppOutput`` containing response status, payload text, the next read cursor
-            (``out_position``), and ``exit_code`` when the process has already finished.
+            (``output_position``), and ``exit_code`` when the process has already finished.
         """
         resp = self._request_http(
             AppMeshClient._Method.GET,
@@ -731,10 +775,10 @@ class AppMeshClient:
             raise_on_fail=False,
         )
 
-        out_position = int(resp.headers["X-Output-Position"]) if "X-Output-Position" in resp.headers else None
+        output_position = int(resp.headers["X-Output-Position"]) if "X-Output-Position" in resp.headers else None
         exit_code = int(resp.headers["X-Exit-Code"]) if "X-Exit-Code" in resp.headers else None
 
-        return AppOutput(status_code=resp.status_code, output=resp.text, out_position=out_position, exit_code=exit_code)
+        return AppOutput(status_code=resp.status_code, output=resp.text, output_position=output_position, exit_code=exit_code)
 
     def check_app_health(self, app_name: str) -> bool:
         """Check the health status of an application."""
@@ -748,15 +792,23 @@ class AppMeshClient:
         """Register a new application.
 
         ``subscribe_events`` only takes effect on a persistent connection (TCP/WSS) and is
-        silently ignored by the HTTP transport (no demuxer to deliver events to). When the
-        daemon creates a subscription, the returned App carries ``subscription_id``.
+        ignored by the HTTP transport (no demuxer to deliver events to; a ``RuntimeWarning``
+        is emitted). When the daemon creates a subscription, the returned App carries
+        ``subscription_id``.
         """
+        if subscribe_events and not self.supports_events:
+            warnings.warn("subscribe_events has no effect over HTTP; use AppMeshClientTCP/AppMeshClientWSS to receive events", RuntimeWarning, stacklevel=2)
         query = {"subscribe_events": ",".join(subscribe_events)} if subscribe_events else None
         resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", query=query, body=app.to_dict())
         return App(resp.json())
 
     def delete_app(self, app_name: str) -> bool:
-        """Remove an application."""
+        """Remove an application.
+
+        Returns:
+            bool: ``True`` when the app was deleted, ``False`` when it did not exist (404).
+            Any other non-OK status is logged and raised as an HTTP error.
+        """
         resp = self._request_http(AppMeshClient._Method.DELETE, path=f"/appmesh/app/{app_name}", raise_on_fail=False)
 
         if resp.status_code == HTTPStatus.OK:
@@ -1080,11 +1132,15 @@ class AppMeshClient:
             app_name: Name of the target application (as registered in App Mesh).
 
         Returns:
-            bool: Task exist and cancelled status.
+            bool: ``True`` if a task existed and was cancelled. ``False`` means no task
+            was found (404) or the request failed for another reason (e.g. 401/403);
+            non-404 failures are logged as warnings, never raised.
         """
         resp = self._request_http(
             AppMeshClient._Method.DELETE, path=f"/appmesh/app/{app_name}/task", raise_on_fail=False
         )
+        if resp.status_code not in (HTTPStatus.OK, HTTPStatus.NOT_FOUND):
+            logger.warning("Failed to cancel task for app '%s' with status %d: %s", app_name, resp.status_code, resp.text)
         return resp.status_code == HTTPStatus.OK
 
     def run_app_async(
@@ -1102,9 +1158,12 @@ class AppMeshClient:
                 `App({"command": "<command_string>", "shell": True})`.
                 - If `app` is an `App` object, providing only the `name` attribute (without
                 a command) will run an existing application; otherwise, it is treated as a new application.
-            max_time: Maximum runtime for the remote process.
+            max_time: Maximum runtime for the remote process, after which the daemon kills it
+                (sent as the wire query parameter ``timeout``).
                 Accepts integer seconds or ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to `P2D`.
-            lifecycle: Maximum lifecycle time for the remote process.
+            lifecycle: Total retention window for the temporary run app, after which the daemon
+                purges it (including its cached output); must cover ``max_time`` plus the time
+                needed to collect results (sent as the wire query parameter ``lifecycle``).
                 Accepts integer seconds or ISO 8601 duration format. Defaults to `P2DT12H`.
 
         Returns:
@@ -1127,17 +1186,21 @@ class AppMeshClient:
         response_data = resp.json()
         return AppRun(self, response_data["name"], response_data["process_uuid"])
 
-    def wait_for_async_run(self, run: AppRun, print_stdout: bool = True, timeout: int = 0) -> Optional[int]:
+    def wait_for_async_run(self, run: AppRun, stdout_handler: Optional[OutputHandler] = None, timeout: int = 0) -> Optional[int]:
         """Wait for an asynchronous run to finish.
 
         Args:
-            run: asyncrized run result from run_async().
-            print_stdout: print remote stdout to local or not.
-            timeout : wait max timeout seconds and return if not finished, 0 means wait until finished
+            run: asynchronous run handle returned by run_app_async().
+            stdout_handler: optional callback ``(data, position) -> None`` invoked with each
+                chunk of remote stdout (``print_output_handler`` prints to console).
+            timeout: wait max timeout seconds and return if not finished, 0 means wait until finished
 
         Returns:
-            Exit code if the process finished, otherwise ``None`` on timeout or polling failure.
+            Exit code if the process finished, or ``None`` when ``timeout`` elapsed first.
             On success, this method also makes a best-effort attempt to delete the temporary run app.
+
+        Raises:
+            AppMeshConnectionError: If polling the app output fails (non-OK response).
         """
         if not run:
             return None
@@ -1146,20 +1209,20 @@ class AppMeshClient:
         start = datetime.now()
         interval = self._POLL_INTERVAL
 
-        while run.proc_uid:
+        while run.process_uuid:
             app_out = self.get_app_output(
                 app_name=run.app_name,
                 stdout_position=last_output_position,
                 stdout_index=0,
-                process_uuid=run.proc_uid,
+                process_uuid=run.process_uuid,
                 timeout=interval,
             )
 
-            if app_out.output and print_stdout:
-                print(app_out.output, end="", flush=True)
+            if app_out.output and stdout_handler is not None:
+                stdout_handler(app_out.output, last_output_position)
 
-            if app_out.out_position is not None:
-                last_output_position = app_out.out_position
+            if app_out.output_position is not None:
+                last_output_position = app_out.output_position
 
             if app_out.exit_code is not None:
                 # success
@@ -1168,8 +1231,7 @@ class AppMeshClient:
                 return app_out.exit_code
 
             if app_out.status_code != HTTPStatus.OK:
-                # failed
-                break
+                raise AppMeshConnectionError(f"wait_for_async_run polling failed for '{run.app_name}' with status {app_out.status_code}: {app_out.output}")
 
             if timeout > 0 and (datetime.now() - start).total_seconds() > timeout:
                 # timeout
@@ -1192,9 +1254,11 @@ class AppMeshClient:
             app: An App instance or a shell command string.
                 If a string, an App instance is created as:
                 `appmesh.App({"command": "<command_string>", "shell": True})`
-            max_time: Maximum runtime for the remote process.
+            max_time: Maximum runtime for the remote process, after which the daemon kills it
+                (sent as the wire query parameter ``timeout``).
                 Accepts integer seconds or ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
-            lifecycle: Maximum lifecycle time for the remote process.
+            lifecycle: Total retention window for the temporary run app, after which the daemon
+                purges it (sent as the wire query parameter ``lifecycle``).
                 Accepts integer seconds or ISO 8601 duration format.
 
         Returns:

@@ -87,6 +87,8 @@ class MessageDemuxer:
 
     def stop(self):
         """Signal the demuxer to stop and wake all pending waiters and event subscribers."""
+        # Flip _running before draining _pending: send_and_receive's locked check
+        # relies on this ordering to avoid registering a never-woken waiter.
         self._running = False
         # Fan out a synthetic disconnect event to every registered callback so
         # long-running waits (wait_for_async_run, custom subscribers) unblock.
@@ -117,10 +119,17 @@ class MessageDemuxer:
         for sub_id, cb in entries:
             self._dispatch_queue.put((cb, AppEvent(subscription_id=sub_id, event_type=EVENT_TYPE_DISCONNECTED)))
 
-    def send_and_receive(self, uuid: str, data: bytes, timeout: float = 60.0) -> Optional[ResponseMessage]:
-        """Send a request and wait for the matching response via the demuxer."""
+    def send_and_receive(self, uuid: str, data: bytes, timeout: Optional[float] = None) -> Optional[ResponseMessage]:
+        """Send a request and wait for the matching response via the demuxer.
+
+        ``timeout=None`` waits indefinitely (long-blocking calls like ``run_app_sync`` can
+        exceed any fixed cap); ``stop()`` wakes all pending waiters on disconnect."""
         evt = threading.Event()
         with self._lock:
+            # Race with stop(): stop() flips _running before locking to drain _pending,
+            # so a locked check observing True guarantees the drain will set this event.
+            if not self._running:
+                return None
             self._pending[uuid] = evt
             self._pending_responses[uuid] = None
 

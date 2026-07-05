@@ -5,14 +5,14 @@ use std::sync::Arc;
 
 use crate::client_wss::AppMeshClientWSS;
 use crate::error::AppMeshError;
-use crate::server_http::AppMeshServer;
+use crate::server_http::AppMeshWorker;
 
 /// Server-side helper for applications using WSS transport
-pub struct AppMeshServerWSS {
-    server: Arc<AppMeshServer>,
+pub struct AppMeshWorkerWSS {
+    server: Arc<AppMeshWorker>,
 }
 
-impl AppMeshServerWSS {
+impl AppMeshWorkerWSS {
     pub fn new(
         wss_address: Option<(String, u16)>,
         ssl_verify: Option<String>,
@@ -21,12 +21,12 @@ impl AppMeshServerWSS {
         let client = AppMeshClientWSS::new(wss_address, ssl_verify, ssl_client_cert)?;
         // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
         client.client().set_auto_refresh_token(false);
-        Ok(Arc::new(Self { server: AppMeshServer::with_client(client.client().clone()) }))
+        Ok(Arc::new(Self { server: AppMeshWorker::with_client(client.client().clone()) }))
     }
 }
 
-impl std::ops::Deref for AppMeshServerWSS {
-    type Target = AppMeshServer;
+impl std::ops::Deref for AppMeshWorkerWSS {
+    type Target = AppMeshWorker;
 
     fn deref(&self) -> &Self::Target {
         &self.server

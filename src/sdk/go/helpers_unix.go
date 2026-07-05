@@ -12,24 +12,21 @@ import (
 	"syscall"
 )
 
-// GetFileAttributes populates a map with file mode, owner, and group.
-func GetFileAttributes(filePath string, headers ...map[string]string) (map[string]string, error) {
-	h := make(map[string]string)
-	if len(headers) > 0 && headers[0] != nil {
-		h = headers[0]
-	}
-
+// fileAttributes returns a fresh map with the file's mode, owner, and group headers.
+func fileAttributes(filePath string) (map[string]string, error) {
 	info, err := os.Stat(filePath)
 	if err != nil {
-		return h, err
+		return nil, err
 	}
 
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return h, fmt.Errorf("unsupported stat type")
+		return nil, fmt.Errorf("unsupported stat type")
 	}
 
-	h["X-File-Mode"] = strconv.FormatUint(uint64(info.Mode().Perm()), 10)
+	h := map[string]string{
+		"X-File-Mode": strconv.FormatUint(uint64(info.Mode().Perm()), 10),
+	}
 
 	// Resolve User
 	if u, err := user.LookupId(strconv.Itoa(int(stat.Uid))); err == nil {

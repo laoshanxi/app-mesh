@@ -29,7 +29,7 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 - **Checkpoint** — A JSON file (`checkpoint.json`) in the run directory. Records per-job completion status for crash recovery. On restart, completed jobs are skipped.
 - **runs.json** — Per-workflow run history index (separate from checkpoint).
 - **Trigger (v1)** — Built into the workflow engine: event listener subscribes to App events, fires workflow runs as goroutines. Cron is NOT built in — `on.schedule` in YAML is parsed but a warning is emitted; use external App Mesh cron apps instead.
-- **Cancel** — `cancelRun` cancels the goroutine context AND calls `KillAll()` on tracked active step Apps via `RemoveApp`.
+- **Cancel** — `cancelRun` cancels the goroutine context AND calls `KillAll()` on tracked active step Apps via `DeleteApp`.
 - **Identity** — v1 uses the workflow App's `owner` field as execution identity. No separate actor/execution_identity distinction.
 
 ### v2 Target (ADR 0004 — not yet implemented)

@@ -255,12 +255,12 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 	{
 		const auto &value = querymap.find((key))->second;
 		rt = DurationParse::parse(value);
-		if (rt > 0)
-		{
-			if (min < max && (rt < min || rt > max))
-				rt = defaultValue;
-		}
-		// if rt less than zero, do not update here.
+		// Negative is never valid for these params; fall back to default so it can't wrap
+		// into size_t or drive negative offsets/overflowing timers downstream.
+		if (rt < 0)
+			rt = defaultValue;
+		else if (min < max && (rt < min || rt > max))
+			rt = defaultValue;
 	}
 	// LOG_DBG << fname << key << "=" << rt;
 	return rt;
@@ -1050,10 +1050,12 @@ void RestHandler::apiUserTotpSecret(const std::shared_ptr<HttpRequest> &message)
 
 	auto result = nlohmann::json();
 	result[HTTP_BODY_KEY_MFA_URI] = nlohmann::json(Utility::encode64(totpUri));
-	message->reply(web::http::status_codes::OK, result);
 
-	// save secret
+	// Persist before replying: a save() failure must surface as an error, not double-reply
+	// (RestBase re-replies on exception) after a success was already sent.
 	Security::instance()->save();
+
+	message->reply(web::http::status_codes::OK, result);
 
 	LOG_DBG << fname << "User <" << tokenUser << "> get TOTP secret";
 }
@@ -1070,12 +1072,13 @@ void RestHandler::apiUserTotpSetup(const std::shared_ptr<HttpRequest> &message)
 		throw std::invalid_argument("please generate TOTP secret first");
 	user->totpValidateCode(totp);
 
-	// re-new token
-	apiUserTokenRenew(message);
-
-	// persist
+	// Persist before renewing (renew sends the reply): a save() failure after the reply
+	// would double-reply. Token renewal doesn't read totpActive, so order is preserved.
 	user->totpActive(true);
 	Security::instance()->save();
+
+	// re-new token (sends the success reply)
+	apiUserTokenRenew(message);
 
 	LOG_DBG << fname << "User <" << tokenUser << "> setup TOTP success";
 }

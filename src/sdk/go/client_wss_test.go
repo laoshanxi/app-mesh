@@ -8,22 +8,21 @@ import (
 )
 
 func TestAppmeshWSSLogin(t *testing.T) {
-	noVerify := ""
 	client, err := NewWSSClient(Option{
-		AppMeshUri:   "https://127.0.0.1:6058",
-		SslTrustedCA: &noVerify,
+		AppMeshUri:         "https://127.0.0.1:6058",
+		InsecureSkipVerify: true,
 	})
 	require.NoError(t, err)
 	defer client.CloseConnection()
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 
 	apps, err := client.ListApps()
 	require.NoError(t, err)
 	t.Logf("WSS ListApps count: %d", len(apps))
 
-	tags, err := client.GetLabels()
+	tags, err := client.ListLabels()
 	require.NoError(t, err)
 	t.Logf("WSS labels: %v", tags)
 
@@ -41,16 +40,15 @@ func TestAppmeshWSSLogin(t *testing.T) {
 }
 
 func TestAppmeshWSSOperations(t *testing.T) {
-	noVerify := ""
 	client, err := NewWSSClient(Option{
-		AppMeshUri:   "https://127.0.0.1:6058",
-		SslTrustedCA: &noVerify,
+		AppMeshUri:         "https://127.0.0.1:6058",
+		InsecureSkipVerify: true,
 	})
 	require.NoError(t, err)
 	defer client.CloseConnection()
 
 	// 1. Login
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err, "WSS login should succeed")
 
 	// 2. RunAppSync - echo command, verify exit code 0
@@ -75,9 +73,9 @@ func TestAppmeshWSSOperations(t *testing.T) {
 		Command: &appCmd,
 	}
 	// ensure clean state at the start and on any exit
-	_, _ = client.RemoveApp(testAppName)
+	_, _ = client.DeleteApp(testAppName)
 	defer func() {
-		_, _ = client.RemoveApp(testAppName)
+		_, _ = client.DeleteApp(testAppName)
 	}()
 
 	addedApp, err := client.AddApp(newApp)
@@ -94,9 +92,9 @@ func TestAppmeshWSSOperations(t *testing.T) {
 	require.NoError(t, err, "WSS EnableApp should succeed")
 	require.True(t, enabled, "WSS EnableApp should return true")
 
-	removed, err := client.RemoveApp(testAppName)
-	require.NoError(t, err, "WSS RemoveApp should succeed")
-	require.True(t, removed, "WSS RemoveApp should return true")
+	removed, err := client.DeleteApp(testAppName)
+	require.NoError(t, err, "WSS DeleteApp should succeed")
+	require.True(t, removed, "WSS DeleteApp should return true")
 
 	// 4. GetConfig
 	cfg, err := client.GetConfig()

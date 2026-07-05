@@ -4,7 +4,7 @@ Python does not support real threads to run something parallel, with App Mesh, P
 
 ## Solution
 
-Use SDK AppMeshClient.run_async() to run process or Python code segment by App Mesh.
+Use SDK AppMeshClient.run_app_async() to run process or Python code segment by App Mesh.
 
 ### 1. Install App Mesh
 
@@ -27,14 +27,14 @@ start_time = datetime.now()
 runs = []
 for i in range(100):
     # example: 100 run shell command:
-    runs.append(client.run_async(appmesh.App({"command": "ping cloudflare.com -w {0}".format(i), "shell": True}), max_time_seconds=8))
+    runs.append(client.run_app_async(appmesh.App({"command": "ping cloudflare.com -w {0}".format(i), "shell": True}), max_time=8))
     # example: 100 run python code segment:
-    runs.append(client.run_async(appmesh.App({"name": "pyexec", "metadata": "import time;print({0});time.sleep({0})".format(i)}), max_time_seconds=10))
+    runs.append(client.run_app_async(appmesh.App({"name": "pyexec", "metadata": "import time;print({0});time.sleep({0})".format(i)}), max_time=10))
 
 # wait all async runs to be finished
 for run in runs:
     # wait each run flexible
-    exit_code = run.wait(stdout_print=False)
+    exit_code = run.wait()
     print(exit_code)
 
 print(datetime.now() - start_time)

@@ -7,9 +7,6 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 from urllib import parse
 
-# Third-party imports
-import requests
-
 # Local imports
 from .client_http import AppMeshClient
 from .wss_transport import WSSTransport
@@ -45,13 +42,10 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
     _WSS_BLOCK_SIZE = 64 * 1024
     _HTTP_USER_AGENT_TRANSPORT = "appmesh/python/wss"
 
-    # Polling interval for wait_for_async_run (seconds)
-    _POLL_INTERVAL = 1
-
     def __init__(
         self,
         wss_address: Tuple[str, int] = ("127.0.0.1", 6058),
-        ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         auto_refresh_token: bool = False,
     ):
@@ -59,10 +53,11 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
 
         Args:
             wss_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6058).
-            ssl_verify: SSL certificate verification behavior. Can be True, False, or a path to CA bundle.
+            ssl_verify: SSL certificate verification behavior. Can be None, True, False, or a path to CA bundle.
+              - None (default): Auto — use the App Mesh CA bundle if installed, otherwise system CAs
               - True: Use system CA certificates (e.g., /etc/ssl/certs/ on Linux)
-              - False: Disable verification (insecure)
-              - str: Path to custom CA bundle or directory
+              - False: Disable verification (insecure, must be requested explicitly)
+              - str: Path to custom CA bundle or directory (must exist)
             ssl_client_cert: SSL client certificate:
               - str: Path to single PEM with cert+key
               - tuple: (cert_path, key_path)
@@ -71,6 +66,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             WSS connections require an explicit full-chain CA specification for certificate validation,
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
+        ssl_verify = AppMeshClient._resolve_ssl_verify(ssl_verify)
         self.wss_transport = WSSTransport(address=wss_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
         self._token = ""
         self._transport_client_addr = "wss-client"
@@ -86,12 +82,12 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
 
     def close(self) -> None:
         """Close the connection and release resources."""
-        if hasattr(self, "_demuxer") and self._demuxer:
+        if self._demuxer:
             self._demuxer.stop()
         if hasattr(self, "wss_transport") and self.wss_transport:
             self.wss_transport.close()
             self.wss_transport = None
-        if hasattr(self, "_demuxer") and self._demuxer:
+        if self._demuxer:
             self._demuxer.join()
             self._demuxer = None
         return super().close()
@@ -124,7 +120,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         }
         path = "/appmesh/file/download/ws"
         rest_url = parse.urljoin(self.base_url, path)
-        r = requests.get(url=rest_url, stream=True, timeout=120, headers=header, verify=self.ssl_verify)
+        r = self.session.get(url=rest_url, stream=True, timeout=self.request_timeout, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify)
         if r.status_code == HTTPStatus.OK:
             # Write file in chunks
             with local_path.open("wb") as fp:
@@ -166,5 +162,5 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         rest_url = parse.urljoin(self.base_url, path)
 
         with local_path.open("rb") as fp:
-            r = requests.post(url=rest_url, stream=True, data=fp, timeout=120, headers=header, verify=self.ssl_verify)
+            r = self.session.post(url=rest_url, stream=True, data=fp, timeout=self.request_timeout, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify)
             r.raise_for_status()

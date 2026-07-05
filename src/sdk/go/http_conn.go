@@ -18,16 +18,31 @@ type HTTPConnection struct {
 	jar        *cookiejar.Jar
 }
 
-func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile string, cookiePath string) *HTTPConnection {
-	// Load client certificate and key
-	clientCert, err := LoadCertificatePair(clientCertFile, clientCertKeyFile)
-	if err != nil {
-		fmt.Println(err)
+func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile string, cookiePath string) (*HTTPConnection, error) {
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+
+	// Server verification: a configured but missing/unreadable CA is a hard error;
+	// an empty CA path (InsecureSkipVerify or legacy SslTrustedCA = "") disables it.
+	switch caFile {
+	case caSystemTrust:
+		// Verify against the system trust store (RootCAs left nil); see caSystemTrust.
+	case "":
+		tlsConfig.InsecureSkipVerify = true
+	default:
+		caCert, err := LoadCA(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load server CA: %w", err)
+		}
+		tlsConfig.RootCAs = caCert
 	}
-	// Load server CA
-	caCert, err := LoadCA(caFile)
-	if err != nil {
-		fmt.Println(err)
+
+	// Client certificate for mutual TLS (optional)
+	if clientCertFile != "" && clientCertKeyFile != "" {
+		clientCert, err := LoadCertificatePair(clientCertFile, clientCertKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{clientCert}
 	}
 
 	// Create or load cookie jar (persistent-cookiejar).
@@ -38,7 +53,7 @@ func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile s
 		Filename: cookiePath,
 	})
 	if err != nil {
-		fmt.Println("Error creating cookie jar:", err)
+		return nil, fmt.Errorf("failed to create cookie jar: %w", err)
 	}
 
 	// TODO: use session management for better performance
@@ -46,12 +61,7 @@ func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile s
 		Timeout: 2 * time.Minute, // Overall timeout for the entire request
 		Jar:     jar,             // Cookie jar for session management
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				RootCAs:            caCert,                        // Trusted root CAs
-				InsecureSkipVerify: (caCert == nil),               // Skip verification if no CA provided
-				Certificates:       []tls.Certificate{clientCert}, // Client certificates for mutual TLS
-				MinVersion:         tls.VersionTLS12,
-			},
+			TLSClientConfig: tlsConfig,
 
 			// Connection pooling configuration
 			MaxIdleConns:        100,              // Good default for moderate traffic
@@ -69,7 +79,7 @@ func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile s
 		Client:     client,
 		cookieFile: cookiePath,
 		jar:        jar,
-	}
+	}, nil
 }
 
 func (h *HTTPConnection) getCookie(name string, targetURL *url.URL) string {

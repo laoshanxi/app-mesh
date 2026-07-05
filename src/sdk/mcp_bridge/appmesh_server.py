@@ -58,6 +58,28 @@ if sys.platform == "win32":
 mcp = FastMCP("AppMesh")
 
 
+def _ssl_verify():
+    """SSL verification setting for the App Mesh client (mirrors mcp_server/auth.py).
+
+    ``APPMESH_CA`` may be a CA file/dir path; ``APPMESH_SSL_VERIFY=false`` disables
+    verification (needed off daemon hosts where /opt/appmesh/ssl is absent and the
+    daemon uses a self-signed cert). Default None keeps the SDK auto behavior.
+    """
+    ca = os.environ.get("APPMESH_CA")
+    if ca:
+        return ca
+    if os.environ.get("APPMESH_SSL_VERIFY", "").lower() in ("false", "0", "no"):
+        return False
+    return None
+
+
+def _make_client() -> AppMeshClient:
+    """Create an authenticated App Mesh client for tool handlers."""
+    client = AppMeshClient(base_url=os.environ.get("APPMESH_URL", "https://127.0.0.1:6060"), ssl_verify=_ssl_verify())
+    client.login("admin", "admin123")
+    return client
+
+
 @mcp.tool(description="Retrieve detailed information about a single application by name.")
 def get_application(app_name: str) -> dict:
     """
@@ -78,8 +100,7 @@ def get_application(app_name: str) -> dict:
         message: str (user-friendly explanation)
     """
     try:
-        client = AppMeshClient()
-        client.login("admin", "admin123")
+        client = _make_client()
         app = client.get_app(app_name)
 
         logger.info("Retrieved information for application: %s", app_name)
@@ -113,8 +134,7 @@ def list_applications(filter_status: Optional[str] = None) -> dict:
         error/message on failure
     """
     try:
-        client = AppMeshClient()
-        client.login("admin", "admin123")
+        client = _make_client()
         apps = client.list_apps()
 
         applications = []
@@ -153,8 +173,7 @@ def get_application_summary() -> dict:
         application_names : list[str]
     """
     try:
-        client = AppMeshClient()
-        client.login("admin", "admin123")
+        client = _make_client()
         apps = client.list_apps()
 
         total_count = len(apps)

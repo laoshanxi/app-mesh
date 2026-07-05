@@ -17,7 +17,7 @@ pub use crate::tls_config::{ClientCert, SslVerify};
 
 /// Protocol constants
 const TCP_MESSAGE_MAGIC: u32 = 0x07C707F8;
-const TCP_MAX_BLOCK_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+const TCP_MAX_BLOCK_SIZE: usize = 1024 * 1024 * 1024; // 1 GB
 
 pub type Result<T> = std::result::Result<T, TransportError>;
 
@@ -31,6 +31,7 @@ pub struct TCPTransport {
 
 impl TCPTransport {
     pub fn new(address: (String, u16), ssl_verify: SslVerify, ssl_client_cert: Option<ClientCert>) -> Self {
+        crate::tls_config::ensure_crypto_provider();
         Self { address, ssl_verify, ssl_client_cert, socket: None }
     }
 
@@ -123,32 +124,69 @@ impl Drop for TCPTransport {
 
 fn build_rustls_client_config(
     ssl_verify: &SslVerify,
-    _ssl_client_cert: Option<&ClientCert>,
+    ssl_client_cert: Option<&ClientCert>,
 ) -> Result<rustls::ClientConfig> {
-    let disable_verify = matches!(ssl_verify, SslVerify::False)
-        || matches!(ssl_verify, SslVerify::Path(p) if !std::path::Path::new(p).exists());
-
-    if disable_verify {
-        Ok(rustls::ClientConfig::builder()
+    let builder = if matches!(ssl_verify, SslVerify::False) {
+        // Insecure mode is only reachable via the explicit SslVerify::False flag
+        rustls::ClientConfig::builder()
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(crate::wss_transport::NoVerifier))
-            .with_no_client_auth())
+            .with_custom_certificate_verifier(Arc::new(crate::tls_config::NoVerifier))
     } else if let SslVerify::Path(path) = ssl_verify {
         let p = std::path::Path::new(path);
         let mut root_store = rustls::RootCertStore::empty();
         if p.is_file() {
-            let pem = std::fs::read(p).map_err(|e| TransportError::ConfigError(e.to_string()))?;
-            for cert in rustls_pemfile::certs(&mut &pem[..]).flatten() {
+            let pem = std::fs::read(p)
+                .map_err(|e| TransportError::ConfigError(format!("Failed to read CA certificate '{}': {}", path, e)))?;
+            for cert in rustls_pemfile::certs(&mut &pem[..]) {
+                let cert = cert
+                    .map_err(|e| TransportError::ConfigError(format!("Invalid CA certificate '{}': {}", path, e)))?;
                 root_store.add(cert).map_err(|e| TransportError::ConfigError(e.to_string()))?;
             }
+        } else if p.is_dir() {
+            // Directory of PEM files (see SslVerify::Path doc); mirrors the WSS transport.
+            for entry in std::fs::read_dir(p).map_err(|e| TransportError::ConfigError(e.to_string()))? {
+                let entry_path = entry.map_err(|e| TransportError::ConfigError(e.to_string()))?.path();
+                if entry_path.extension().and_then(|s| s.to_str()) == Some("pem") {
+                    let pem = std::fs::read(&entry_path).map_err(|e| {
+                        TransportError::ConfigError(format!(
+                            "Failed to read CA certificate '{}': {}",
+                            entry_path.display(),
+                            e
+                        ))
+                    })?;
+                    for cert in rustls_pemfile::certs(&mut &pem[..]).flatten() {
+                        let _ = root_store.add(cert);
+                    }
+                }
+            }
+        } else {
+            // A configured CA path that is missing/unreadable is a hard error,
+            // never a silent fallback to no-verification.
+            return Err(TransportError::ConfigError(format!(
+                "CA certificate path '{}' not found",
+                path
+            )));
         }
-        Ok(rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth())
+        if root_store.is_empty() {
+            return Err(TransportError::ConfigError(format!(
+                "CA certificate path '{}' contains no valid certificates",
+                path
+            )));
+        }
+        rustls::ClientConfig::builder().with_root_certificates(root_store)
     } else {
         let root_store = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        Ok(rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth())
+        rustls::ClientConfig::builder().with_root_certificates(root_store)
+    };
+
+    match ssl_client_cert {
+        Some(client_cert) => {
+            let (chain, key) =
+                crate::tls_config::load_client_auth(client_cert).map_err(TransportError::ConfigError)?;
+            builder
+                .with_client_auth_cert(chain, key)
+                .map_err(|e| TransportError::ConfigError(format!("Invalid client certificate/key: {}", e)))
+        }
+        None => Ok(builder.with_no_client_auth()),
     }
 }

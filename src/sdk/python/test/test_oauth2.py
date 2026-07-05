@@ -80,7 +80,7 @@ class KeycloakTokenVerifier:
             print(f"Error fetching public keys: {e}")
             raise
 
-    def verify_token(self, access_token):
+    def validate_keycloak_token(self, access_token):
         """
         Verify the signature and claims of a Keycloak access token
 
@@ -142,7 +142,7 @@ def main():
         print("Verifying token...")
         token = client._token
         verifier = KeycloakTokenVerifier(keycloak_config["auth_server_url"], keycloak_config["realm"])
-        is_valid, result = verifier.verify_token(token.get("access_token"))
+        is_valid, result = verifier.validate_keycloak_token(token.get("access_token"))
 
         if is_valid:
             print("Token verification successful!")

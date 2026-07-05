@@ -1,10 +1,18 @@
+package appmesh;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
@@ -84,6 +92,74 @@ public class SubscribeTest {
         byte[] serialized = req.serialize();
         assertNotNull(serialized);
         assertTrue(serialized.length > 0);
+    }
+
+    /** Scripted mock transport: framed messages fed through a queue; an empty array reads as EOF. */
+    private static MessageDemuxer.MessageReader queueReader(BlockingQueue<byte[]> queue) {
+        return () -> {
+            byte[] data = queue.take();
+            return data.length == 0 ? null : data;
+        };
+    }
+
+    // Conformance: S7 (partial) — waiter registered before the response arrives is routed by UUID (docs/source/SDKContract.md)
+    @Test
+    public void testDemuxerRoutesResponseToPreRegisteredWaiter() throws Exception {
+        BlockingQueue<byte[]> queue = new LinkedBlockingQueue<>();
+        MessageDemuxer demuxer = new MessageDemuxer(queueReader(queue));
+        demuxer.start();
+        try {
+            ResponseMessage resp = new ResponseMessage();
+            resp.uuid = "req-s7";
+            resp.request_uri = "/appmesh/app/test";
+            resp.http_status = 200;
+            resp.body = "{}".getBytes("UTF-8");
+            resp.headers = new HashMap<>();
+
+            demuxer.registerPending("req-s7");
+            queue.put(resp.serialize()); // response arrives right after "send"
+
+            ResponseMessage got = demuxer.waitForResponse("req-s7");
+            assertNotNull(got, "response arriving right after send must not be dropped");
+            assertEquals("req-s7", got.uuid);
+            assertEquals(200, got.http_status);
+        } finally {
+            demuxer.stop();
+        }
+    }
+
+    // Conformance: S2 (demuxer) — transport EOF broadcasts __disconnected__ to every callback
+    // and wakes pending waiters with null instead of hanging (docs/source/SDKContract.md)
+    @Test
+    public void testDemuxerDisconnectBroadcastUnblocksWaiters() throws Exception {
+        BlockingQueue<byte[]> queue = new LinkedBlockingQueue<>();
+        MessageDemuxer demuxer = new MessageDemuxer(queueReader(queue));
+        demuxer.start();
+
+        final CountDownLatch disconnected = new CountDownLatch(1);
+        final AtomicReference<MessageDemuxer.AppEvent> received = new AtomicReference<>();
+        demuxer.registerEventCallback("sub-s2", event -> {
+            received.set(event);
+            disconnected.countDown();
+        });
+
+        demuxer.registerPending("req-s2");
+        final CountDownLatch waiterDone = new CountDownLatch(1);
+        final AtomicReference<ResponseMessage> waiterResult = new AtomicReference<>();
+        Thread waiter = new Thread(() -> {
+            waiterResult.set(demuxer.waitForResponse("req-s2"));
+            waiterDone.countDown();
+        });
+        waiter.start();
+
+        queue.put(new byte[0]); // transport EOF
+
+        assertTrue(disconnected.await(5, TimeUnit.SECONDS), "disconnect broadcast not delivered");
+        assertEquals(MessageDemuxer.EVENT_TYPE_DISCONNECTED, received.get().eventType);
+        assertEquals("sub-s2", received.get().subscriptionId);
+
+        assertTrue(waiterDone.await(5, TimeUnit.SECONDS), "pending waiter not woken on disconnect");
+        assertNull(waiterResult.get(), "disconnect wakes the waiter with null, never a response");
     }
 
     @Test

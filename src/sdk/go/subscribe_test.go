@@ -1,8 +1,13 @@
 package appmesh
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -44,6 +49,9 @@ func TestMessageDemuxerRouting(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	demuxer.registerEventCallback("sub-test", func(event AppEvent) {
+		if event.EventType == EventTypeDisconnected {
+			return // stop() broadcasts Disconnected; only count the real event
+		}
 		receivedEvent = event
 		wg.Done()
 	})
@@ -79,6 +87,8 @@ func TestMessageDemuxerRouting(t *testing.T) {
 	}
 }
 
+// Conformance: S7 (partial) — pending waiter registered before the response
+// arrives is routed by UUID; see docs/source/SDKContract.md.
 func TestMessageDemuxerRequestResponse(t *testing.T) {
 	msgCh := make(chan []byte, 10)
 	readFn := func() ([]byte, error) {
@@ -118,6 +128,143 @@ func TestMessageDemuxerRequestResponse(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for response")
 	}
+}
+
+// Conformance: S2 (demuxer) — transport EOF wakes pending request waiters
+// (closed channel) and broadcasts EventTypeDisconnected to every registered
+// event callback; see docs/source/SDKContract.md.
+func TestMessageDemuxerDisconnectBroadcast(t *testing.T) {
+	msgCh := make(chan []byte, 10)
+	readFn := func() ([]byte, error) {
+		data, ok := <-msgCh
+		if !ok {
+			return nil, fmt.Errorf("connection closed")
+		}
+		return data, nil
+	}
+
+	demuxer := newMessageDemuxer(readFn)
+	demuxer.start()
+
+	eventCh := make(chan AppEvent, 1)
+	demuxer.registerEventCallback("sub-disc", func(event AppEvent) {
+		eventCh <- event
+	})
+	pending := demuxer.registerRequest("req-disc")
+
+	close(msgCh) // transport EOF
+
+	select {
+	case event := <-eventCh:
+		assert.Equal(t, EventTypeDisconnected, event.EventType)
+		assert.Equal(t, "sub-disc", event.SubscriptionID)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for disconnect broadcast")
+	}
+
+	select {
+	case resp, ok := <-pending:
+		assert.Nil(t, resp)
+		assert.False(t, ok, "pending channel should be closed on disconnect")
+	case <-time.After(2 * time.Second):
+		t.Fatal("pending waiter not woken on disconnect")
+	}
+}
+
+// fakeWaitRequester scripts the request/response half of WaitForAsyncRun while
+// a real MessageDemuxer (fed through msgCh) delivers server-push events.
+type fakeWaitRequester struct {
+	demuxer *MessageDemuxer
+}
+
+func (f *fakeWaitRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	return f.SendContext(context.Background(), method, apiPath, queries, headers, body)
+}
+
+func (f *fakeWaitRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	switch {
+	case method == http.MethodPost && strings.HasSuffix(apiPath, "/subscribe"):
+		return http.StatusOK, []byte(`{"subscription_id":"sub-wait","app_name":"waitapp","events":["STDOUT","EXIT","REMOVED"]}`), http.Header{}, nil
+	default:
+		// Backfill output (no data, process still running), unsubscribe, delete.
+		return http.StatusOK, []byte(""), http.Header{}, nil
+	}
+}
+
+func (f *fakeWaitRequester) Close()                      {}
+func (f *fakeWaitRequester) handleTokenUpdate(string)    {}
+func (f *fakeWaitRequester) setToken(string)             {}
+func (f *fakeWaitRequester) getAccessToken() string      { return "" }
+func (f *fakeWaitRequester) setForwardTo(string)         {}
+func (f *fakeWaitRequester) getForwardTo() string        { return "" }
+func (f *fakeWaitRequester) enableDemuxer()              {}
+func (f *fakeWaitRequester) getDemuxer() *MessageDemuxer { return f.demuxer }
+
+// newWaitHarness wires an AppMeshClient to a scripted requester and a live
+// demuxer whose transport is the returned channel (close = EOF).
+func newWaitHarness() (*AppMeshClient, chan []byte) {
+	msgCh := make(chan []byte, 10)
+	readFn := func() ([]byte, error) {
+		data, ok := <-msgCh
+		if !ok {
+			return nil, fmt.Errorf("connection closed")
+		}
+		return data, nil
+	}
+	demuxer := newMessageDemuxer(readFn)
+	demuxer.start()
+	return &AppMeshClient{req: &fakeWaitRequester{demuxer: demuxer}}, msgCh
+}
+
+// pushEvent frames an event push for subID onto the mock transport.
+func pushEvent(t *testing.T, msgCh chan []byte, subID string, eventType string, data string) {
+	t.Helper()
+	body := fmt.Sprintf(`{"subscription_id":"%s","event_type":"%s","app_name":"waitapp","timestamp":0,"sequence":1,"data":%s}`, subID, eventType, data)
+	resp := &Response{
+		UUID:        "evt-" + eventType,
+		RequestUri:  EVENT_URI,
+		HttpStatus:  200,
+		BodyMsgType: "application/json",
+		Body:        []byte(body),
+	}
+	buf, err := resp.Serialize()
+	require.NoError(t, err)
+	msgCh <- buf
+}
+
+// Conformance: S6 — a negative exit code (signal kill, e.g. -2 = SIGINT) is
+// returned as the exit code, never conflated with an error sentinel; see
+// docs/source/SDKContract.md.
+func TestWaitForAsyncRunNegativeExitCode(t *testing.T) {
+	client, msgCh := newWaitHarness()
+
+	// The pre-registration buffer makes this safe even if the event is read
+	// before WaitForAsyncRun registers its callback.
+	pushEvent(t, msgCh, "sub-wait", "EXIT", `{"exit_code":-2}`)
+
+	code, err := client.WaitForAsyncRun(context.Background(), &AppRun{AppName: "waitapp", ProcUid: "proc-1"}, nil, 5*time.Second)
+	require.NoError(t, err)
+	require.NotNil(t, code)
+	assert.Equal(t, -2, *code)
+}
+
+// Conformance: S2 — transport disconnect mid-WaitForAsyncRun unblocks the wait
+// promptly with ErrTransportDisconnected instead of hanging; see
+// docs/source/SDKContract.md.
+func TestWaitForAsyncRunDisconnectUnblocks(t *testing.T) {
+	client, msgCh := newWaitHarness()
+
+	go func() {
+		// Let the wait subscribe and block first, then kill the transport.
+		time.Sleep(100 * time.Millisecond)
+		close(msgCh)
+	}()
+
+	start := time.Now()
+	code, err := client.WaitForAsyncRun(context.Background(), &AppRun{AppName: "waitapp", ProcUid: "proc-1"}, nil, 30*time.Second)
+	require.ErrorIs(t, err, ErrTransportDisconnected)
+	assert.Nil(t, code)
+	assert.Less(t, time.Since(start), 10*time.Second, "disconnect must unblock the wait, not run into the timeout")
 }
 
 func TestSubscribeOptionPath(t *testing.T) {

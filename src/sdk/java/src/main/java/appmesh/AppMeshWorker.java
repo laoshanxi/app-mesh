@@ -1,3 +1,5 @@
+package appmesh;
+
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URLEncoder;
@@ -9,25 +11,26 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * App Mesh server SDK for Java (HTTP transport).
+ * App Mesh worker SDK for Java (HTTP transport).
  *
- * <p>Provides methods {@link #taskFetch()} and {@link #taskReturn(byte[])} for application
- * processes to receive payloads from and return results to the App Mesh service.
+ * <p>Server-side task-loop helper: {@link #fetchTask()} and {@link #sendTaskResult(byte[])} let
+ * application processes receive payloads from and return results to the App Mesh service.
  */
-public class AppMeshServer {
-    private static final Logger LOGGER = Logger.getLogger(AppMeshServer.class.getName());
+public class AppMeshWorker {
+    private static final Logger LOGGER = Logger.getLogger(AppMeshWorker.class.getName());
     private static final long RETRY_DELAY_MS = 100;
 
     protected final AppMeshClient client;
+    private volatile boolean stopped = false;
 
-    /** Create a server-side helper with the default HTTP client. */
-    public AppMeshServer() {
+    /** Create a worker-side helper with the default HTTP client. */
+    public AppMeshWorker() {
         // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
         this(new AppMeshClient.Builder().autoRefreshToken(false).build());
     }
 
-    /** Create a server-side helper around an existing client. */
-    public AppMeshServer(AppMeshClient client) {
+    /** Create a worker-side helper around an existing client. */
+    public AppMeshWorker(AppMeshClient client) {
         this.client = client;
     }
 
@@ -46,14 +49,29 @@ public class AppMeshServer {
     }
 
     /**
+     * Request cancellation of the {@link #fetchTask()} retry loop.
+     *
+     * <p>Safe to call from any thread. A blocked {@code fetchTask()} returns
+     * {@code null} at its next retry iteration (interrupting the fetching thread
+     * makes it return immediately).
+     */
+    public void stop() {
+        stopped = true;
+    }
+
+    /**
      * Fetch a task payload from the App Mesh service.
      *
-     * <p>Retries indefinitely until successful. If a request fails within 100ms,
-     * sleeps briefly before retrying; otherwise retries immediately.
+     * <p>Retries until successful or cancelled via {@link #stop()} (or thread
+     * interruption), in which case {@code null} is returned. If a request fails
+     * within 100ms, sleeps briefly before retrying; otherwise retries immediately.
      *
-     * @return the raw task payload bytes provided by the invoking client
+     * @return the raw task payload bytes provided by the invoking client, or
+     *         {@code null} when the fetch loop was cancelled
+     * @throws ProcessSupersededException when the service reports (HTTP 412) that
+     *         this process key is no longer valid and the task loop must stop
      */
-    public byte[] taskFetch() {
+    public byte[] fetchTask() {
         String[] env = getRuntimeEnv();
         String pkey = env[0];
         String appName = env[1];
@@ -67,7 +85,7 @@ public class AppMeshServer {
         Map<String, String> query = new HashMap<>();
         query.put("process_key", pkey);
 
-        while (true) {
+        while (!stopped) {
             long attemptStart = System.nanoTime();
             try {
                 HttpURLConnection conn = client.request("GET", path, null, null, query);
@@ -76,12 +94,13 @@ public class AppMeshServer {
                     return Utils.readResponseBytes(conn);
                 }
                 if (status == HttpURLConnection.HTTP_PRECON_FAILED) {
-                    LOGGER.log(Level.SEVERE, "Process key mismatch (412): this process has been superseded, exiting");
-                    System.exit(1);
+                    LOGGER.log(Level.SEVERE, "Process key mismatch (412): this process has been superseded");
+                    throw new ProcessSupersededException(
+                            "Process key mismatch (412): this process has been superseded by a newer instance");
                 }
-                LOGGER.log(Level.WARNING, "taskFetch failed with status {0}: retrying...", status);
+                LOGGER.log(Level.WARNING, "fetchTask failed with status {0}: retrying...", status);
             } catch (IOException e) {
-                LOGGER.log(Level.WARNING, "taskFetch request failed, retrying", e);
+                LOGGER.log(Level.WARNING, "fetchTask request failed, retrying", e);
             }
 
             long remainingMs = RETRY_DELAY_MS - TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - attemptStart);
@@ -90,9 +109,11 @@ public class AppMeshServer {
                     Thread.sleep(remainingMs);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    return null; // interruption doubles as cancellation
                 }
             }
         }
+        return null; // cancelled via stop()
     }
 
     /**
@@ -100,7 +121,7 @@ public class AppMeshServer {
      *
      * @param result the result bytes to return to the invoking client as-is
      */
-    public void taskReturn(byte[] result) throws IOException {
+    public void sendTaskResult(byte[] result) throws IOException {
         String[] env = getRuntimeEnv();
         String pkey = env[0];
         String appName = env[1];
@@ -114,8 +135,8 @@ public class AppMeshServer {
         int status = conn.getResponseCode();
         if (status != HttpURLConnection.HTTP_OK) {
             String err = Utils.readErrorResponse(conn);
-            LOGGER.log(Level.SEVERE, "taskReturn failed with status {0}: {1}", new Object[] { status, err });
-            throw new IOException("taskReturn failed with status " + status + ": " + err);
+            LOGGER.log(Level.SEVERE, "sendTaskResult failed with status {0}: {1}", new Object[] { status, err });
+            throw new IOException("sendTaskResult failed with status " + status + ": " + err);
         }
     }
 }

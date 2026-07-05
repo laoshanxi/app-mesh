@@ -3,13 +3,18 @@
 // via the App Mesh Task API (run_task).
 //
 // Authentication via sec_env (set on the workflow App definition):
-//   APPMESH_USER     — login username (default: admin)
-//   APPMESH_PASSWORD — login password
+//
+//	APPMESH_USER     — login username (default: admin)
+//	APPMESH_PASSWORD — login password
+//	APPMESH_EXEC_IDENTITIES — optional JSON map {"user":"password", ...} of
+//	                  execution identities a workflow may run as (ADR 0004).
+//
 // The daemon decrypts sec_env at rest and passes plain env vars to this process.
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -80,6 +85,14 @@ func main() {
 	}
 	svc := trigger.NewService(tcpClient.AppMeshClient, server, parseCSV(clusterNodes), workflowDir)
 
+	if creds, err := parseExecIdentities(os.Getenv("APPMESH_EXEC_IDENTITIES")); err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid APPMESH_EXEC_IDENTITIES: %v\n", err)
+		os.Exit(1)
+	} else if len(creds) > 0 {
+		svc.SetExecIdentities(creds)
+		logger.Info(fmt.Sprintf("Loaded %d execution identities for execution_identity workflows", len(creds)))
+	}
+
 	if password != "" {
 		svc.SetReAuth(func() error {
 			_, err := tcpClient.Login(user, password, "", 86400, "")
@@ -87,11 +100,10 @@ func main() {
 		})
 	}
 
-	noVerifyTask := ""
 	taskHandler, taskErr := api.NewTaskHandler(svc, svc.Wdir(), tcpClient.AppMeshClient, appmesh.Option{
-		AppMeshUri:   server,
-		JwtToken:     tcpClient.GetToken(),
-		SslTrustedCA: &noVerifyTask,
+		AppMeshUri:         server,
+		JwtToken:           tcpClient.GetToken(),
+		InsecureSkipVerify: true,
 	})
 	if taskErr != nil {
 		logger.Error("Task handler init failed: " + taskErr.Error())
@@ -114,17 +126,36 @@ func main() {
 }
 
 func newTCPClient(server, token string) (*appmesh.AppMeshClientTCP, error) {
-	noVerify := ""
 	return appmesh.NewTCPClient(appmesh.Option{
-		AppMeshUri:   server,
-		JwtToken:     token,
-		SslTrustedCA: &noVerify,
+		AppMeshUri:         server,
+		JwtToken:           token,
+		InsecureSkipVerify: true,
 		// Auto-refresh keeps the long-lived engine session valid. It is safe because the
 		// shared connection enables the demuxer (see EnableConcurrency in main): the renew
 		// reply is correlated by UUID and the new token is installed correctly, so the
 		// prior cross-wiring that left a revoked token in place (-> 401) cannot occur.
 		AutoRefreshToken: true,
 	})
+}
+
+// parseExecIdentities parses the APPMESH_EXEC_IDENTITIES secured env var: a JSON
+// object mapping execution-identity usernames to passwords. Empty/unset yields a
+// nil map (no identities configured). Credentials are never logged.
+func parseExecIdentities(s string) (map[string]string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	var creds map[string]string
+	if err := json.Unmarshal([]byte(s), &creds); err != nil {
+		return nil, fmt.Errorf("expected a JSON object {\"user\":\"password\"}: %w", err)
+	}
+	for user, pwd := range creds {
+		if user == "" || pwd == "" {
+			return nil, fmt.Errorf("execution identity entries must have a non-empty user and password")
+		}
+	}
+	return creds, nil
 }
 
 func parseCSV(s string) []string {

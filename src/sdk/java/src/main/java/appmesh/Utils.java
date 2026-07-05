@@ -1,3 +1,5 @@
+package appmesh;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -36,8 +38,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
@@ -55,37 +55,12 @@ import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
 import org.bouncycastle.openssl.jcajce.JcePEMDecryptorProviderBuilder;
 import org.threeten.extra.PeriodDuration;
 
+/**
+ * SDK helper functions. Public surface is limited to {@link #createSSLContext} and
+ * {@link #toSeconds}; the remaining helpers are internal to the SDK package.
+ */
 public class Utils {
     private static final Logger LOGGER = Logger.getLogger(Utils.class.getName());
-
-    /**
-     * Disable SSL verification globally. Insecure — development only.
-     *
-     * @deprecated Use {@link #createSSLContext(String, String, String, boolean)} with
-     *             per-connection SSL instead of modifying global defaults.
-     */
-    @Deprecated
-    public static void disableSSLVerification() throws Exception {
-        LOGGER.log(Level.WARNING,
-                "SSL verification is disabled globally. This is insecure and should only be used in development environments.");
-        SSLContext sc = createSSLContext(null, null, null, true);
-        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-        HostnameVerifier allHostsValid = (hostname, session) -> true;
-        HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
-    }
-
-    /**
-     * Enable custom SSL certificates globally.
-     *
-     * @deprecated Use {@link #createSSLContext(String, String, String, boolean)} with
-     *             per-connection SSL instead of modifying global defaults.
-     */
-    @Deprecated
-    public static void enableSSLCertificates(String caCertFilePath, String clientCertFilePath,
-            String clientCertKeyFilePath) throws Exception {
-        SSLContext sc = createSSLContext(caCertFilePath, clientCertFilePath, clientCertKeyFilePath, false);
-        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-    }
 
     /**
      * Create a per-instance SSLContext. This does NOT modify JVM global defaults.
@@ -133,8 +108,12 @@ public class Utils {
                 public void checkServerTrusted(X509Certificate[] certs, String authType) {
                 }
             } };
+            // Keep mTLS client cert working even when server verification is disabled
+            KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+            ks.load(null, null);
+            KeyManager[] kms = createKeyManagers(ks, clientCertFilePath, clientCertKeyFilePath, keyPassword);
             SSLContext sc = SSLContext.getInstance("TLS");
-            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            sc.init(kms, trustAllCerts, new java.security.SecureRandom());
             return sc;
         }
 
@@ -156,7 +135,7 @@ public class Utils {
             X509Certificate caCert = loadCertificate(caCertFilePath);
             keyStore.setCertificateEntry("caCert", caCert);
         } else if (caCertFilePath != null) {
-            LOGGER.log(Level.INFO, "CA certificate not provided. Using system default CA trust store.");
+            LOGGER.log(Level.WARNING, "CA certificate not found. Falling back to system default CA trust store.");
         }
 
         TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
@@ -237,26 +216,19 @@ public class Utils {
     }
 
     /**
-     * Parse a duration value: accepts integer seconds or ISO 8601 duration string
-     * (e.g., {@code "P1W"}, {@code "P2DT12H"}).
+     * Parse an ISO 8601 duration string (e.g., {@code "P1W"}, {@code "P2DT12H"}) to seconds.
      */
-    public static long toSeconds(Object input) {
-        if (input instanceof Number) {
-            return ((Number) input).longValue();
+    public static long toSeconds(String input) {
+        try {
+            return PeriodDuration.parse(input).getDuration().getSeconds();
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "toSeconds", e);
+            throw new IllegalArgumentException("Invalid ISO 8601 duration string", e);
         }
-        if (input instanceof String) {
-            try {
-                return PeriodDuration.parse((String) input).getDuration().getSeconds();
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "toSeconds", e);
-                throw new IllegalArgumentException("Invalid ISO 8601 duration string", e);
-            }
-        }
-        throw new IllegalArgumentException("Invalid input type. Expected number or ISO 8601 duration string.");
     }
 
     /** Safely convert a URL string to a {@link URL} via URI. */
-    public static URL toUrl(String url) throws IOException {
+    static URL toUrl(String url) throws IOException {
         try {
             URI uri = new URI(url);
             return uri.toURL();
@@ -296,7 +268,7 @@ public class Utils {
     }
 
     /** Extract POSIX file attributes as HTTP header key-value pairs. */
-    public static Map<String, String> getFileAttributes(File file) {
+    static Map<String, String> getFileAttributes(File file) {
         Map<String, String> attributes = new HashMap<>();
         Path path = file.toPath();
 
@@ -324,7 +296,7 @@ public class Utils {
     }
 
     /** Apply POSIX file attributes (owner, group, mode) from HTTP response headers. */
-    public static void applyFileAttributes(String localFile, HttpURLConnection conn) {
+    static void applyFileAttributes(String localFile, HttpURLConnection conn) {
         Path path = Paths.get(localFile);
         if (!Files.exists(path)) {
             LOGGER.log(Level.WARNING, "File does not exist: " + localFile);
@@ -380,12 +352,12 @@ public class Utils {
     // ---- HTTP Utilities ----
 
     /** Generate a multipart form boundary string. */
-    public static String generateBoundary() {
+    static String generateBoundary() {
         return "----WebKitFormBoundary" + Long.toHexString(System.currentTimeMillis());
     }
 
     /** Write a file as multipart/form-data to the output stream. */
-    public static void writeMultipartFormData(OutputStream output, String boundary, File file) throws IOException {
+    static void writeMultipartFormData(OutputStream output, String boundary, File file) throws IOException {
         String LINE_FEED = "\r\n";
         String fileName = file.getName();
 
@@ -410,7 +382,7 @@ public class Utils {
      * Read the error stream from an HTTP connection.
      * Returns empty string if the error stream is null.
      */
-    public static String readErrorResponse(HttpURLConnection conn) {
+    static String readErrorResponse(HttpURLConnection conn) {
         try {
             InputStream errorStream = conn.getErrorStream();
             if (errorStream == null) {
@@ -441,14 +413,14 @@ public class Utils {
     }
 
     /** Read the response body as a UTF-8 string. */
-    public static String readResponse(HttpURLConnection conn) throws IOException {
+    static String readResponse(HttpURLConnection conn) throws IOException {
         try (InputStream inputStream = conn.getInputStream()) {
             return new String(readAllBytes(inputStream), StandardCharsets.UTF_8);
         }
     }
 
     /** Read the response body as raw bytes. */
-    public static byte[] readResponseBytes(HttpURLConnection conn) throws IOException {
+    static byte[] readResponseBytes(HttpURLConnection conn) throws IOException {
         try (InputStream inputStream = conn.getInputStream()) {
             return readAllBytes(inputStream);
         }
@@ -458,7 +430,7 @@ public class Utils {
      * Read response body regardless of status code: uses getInputStream() for 2xx,
      * getErrorStream() otherwise.
      */
-    public static String readResponseSafe(HttpURLConnection conn) throws IOException {
+    static String readResponseSafe(HttpURLConnection conn) throws IOException {
         int code = conn.getResponseCode();
         if (code >= 200 && code < 300) {
             return readResponse(conn);

@@ -48,16 +48,21 @@ type Option struct {
 	SslClientCertificateKeyFile string // Path to the client certificate private key (PEM format), leave empty to disable client authentication.
 
 	// SslTrustedCA controls server certificate verification:
-	//   - Empty string (""): disables server certificate verification
-	//   - nil: uses default App Mesh CA at /opt/appmesh/ssl/ca.pem
-	//   - File path: uses custom CA file or directory
-	// Note: System CAs are not included by default. Create a combined CA bundle if needed.
+	//   - nil: default App Mesh CA (/opt/appmesh/ssl/ca.pem) if present, else the system trust store
+	//   - File path: custom CA file or directory; a missing/unreadable path is a hard error
+	//   - Empty string (""): disables verification (legacy form of InsecureSkipVerify)
+	// When a CA file/dir is used, system CAs are not included; combine bundles if needed.
 	SslTrustedCA *string
 
-	JwtToken           string         // JWT token set directly without server verification (no network call).
-	HttpTimeoutMinutes *time.Duration // Timeout for http.Client requests in minutes.
-	AutoRefreshToken   bool           // Enable automatic token refresh before expiration.
-	tcpOnly            *bool          // Indicates if the client is for TCP connections only, skip create http.Client.
+	// InsecureSkipVerify disables server certificate verification (testing only; same as SslTrustedCA = "").
+	InsecureSkipVerify bool
+
+	JwtToken string // JWT token set directly without server verification (no network call).
+
+	// HTTPTimeout is the overall timeout for http.Client requests; honored when non-zero.
+	HTTPTimeout time.Duration
+
+	AutoRefreshToken bool // Enable automatic token refresh before expiration.
 }
 
 // NewHTTPClient builds an HTTP-backed client for App Mesh REST APIs.
@@ -69,14 +74,22 @@ func NewHTTPClient(options Option) (*AppMeshClient, error) {
 func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, error) {
 	clientCertFile := options.SslClientCertificateFile
 	clientCertKeyFile := options.SslClientCertificateKeyFile
-	caFile := DEFAULT_CA_FILE
-	if options.SslTrustedCA != nil {
+	caFile := DefaultCAFile
+	if options.InsecureSkipVerify {
+		// Explicit insecure mode: an empty CA path signals skip-verify to the transports.
+		caFile = ""
+	} else if options.SslTrustedCA != nil {
+		// Legacy form: an explicit empty CA path ("") also disables verification.
 		caFile = *options.SslTrustedCA
+	} else if !IsFileExist(DefaultCAFile) {
+		// No local App Mesh install: fall back to the system trust store.
+		// An explicitly configured CA path that is missing remains a hard error.
+		caFile = caSystemTrust
 	}
 
 	baseURL := options.AppMeshUri
 	if baseURL == "" {
-		baseURL = DEFAULT_HTTP_URI
+		baseURL = DefaultHTTPURI
 	}
 	parsed, err := ParseURL(baseURL)
 	if err != nil {
@@ -87,13 +100,12 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	if r != nil {
 		req = r
 	} else {
-		var httpClient *HTTPConnection
-
-		if options.tcpOnly == nil || !*options.tcpOnly {
-			httpClient = newHTTPConnection(clientCertFile, clientCertKeyFile, caFile, options.CookieFile)
-			if options.HttpTimeoutMinutes != nil {
-				httpClient.Timeout = *options.HttpTimeoutMinutes
-			}
+		httpClient, err := newHTTPConnection(clientCertFile, clientCertKeyFile, caFile, options.CookieFile)
+		if err != nil {
+			return nil, err
+		}
+		if options.HTTPTimeout > 0 {
+			httpClient.Timeout = options.HTTPTimeout
 		}
 
 		req = &HTTPRequester{
@@ -105,6 +117,7 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 
 	c := &AppMeshClient{
 		req:              req,
+		cookieFile:       options.CookieFile,
 		sslClientCert:    clientCertFile,
 		sslClientCertKey: clientCertKeyFile,
 		sslCAFile:        caFile,
@@ -120,19 +133,22 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 
 // Login authenticates with username/password and updates this client session on success.
 // It returns a TOTP challenge string when the server responds with HTTP 428 and no code was
-// provided; otherwise it returns an empty string. When auto refresh is enabled, a successful
-// login also starts the background token refresh loop.
+// provided; otherwise it returns an empty string. An empty challenge with a nil error means
+// the client is fully authenticated. When auto refresh is enabled, a successful login also
+// starts the background token refresh loop.
+// On a non-empty challenge, either retry Login with the TOTP code or pass the
+// challenge to ValidateTotp.
 func (r *AppMeshClient) Login(username string, password string, totpCode string, tokenExpire int, audience string) (string, error) {
 	if username == "" || password == "" {
 		return "", fmt.Errorf("username and password are required")
 	}
 
 	headers := map[string]string{
-		"Authorization":            "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password)),
-		"X-Expire-Seconds":         fmt.Sprintf("%d", tokenExpire),
-		HTTP_HEADER_JWT_SET_COOKIE: strconv.FormatBool(true),
+		"Authorization":    "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password)),
+		"X-Expire-Seconds": fmt.Sprintf("%d", tokenExpire),
+		headerJWTSetCookie: strconv.FormatBool(true),
 	}
-	if audience != "" && audience != DEFAULT_JWT_AUDIENCE {
+	if audience != "" && audience != DefaultJWTAudience {
 		headers["X-Audience"] = audience
 	}
 	if totpCode != "" {
@@ -190,7 +206,7 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 	if err != nil {
 		return fmt.Errorf("failed to marshal TOTP request: %w", err)
 	}
-	headers := map[string]string{HTTP_HEADER_JWT_SET_COOKIE: "true"}
+	headers := map[string]string{headerJWTSetCookie: "true"}
 	code, raw, _, err := r.post("/appmesh/totp/validate", nil, headers, body)
 	if err != nil {
 		return fmt.Errorf("TOTP validation request failed: %w", err)
@@ -203,9 +219,15 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 
 // Logout invalidates the current session on the server and clears the locally stored token.
 func (r *AppMeshClient) Logout() (bool, error) {
-	code, _, _, err := r.post("/appmesh/self/logoff", nil, nil, nil)
+	code, raw, _, err := r.post("/appmesh/self/logoff", nil, nil, nil)
 	r.StopTokenRefresh()
-	return code == http.StatusOK, err
+	if err != nil {
+		return false, fmt.Errorf("logout request failed: %w", err)
+	}
+	if code != http.StatusOK {
+		return false, fmt.Errorf("logout failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
 // SetToken sets a JWT token directly without server-side verification.
@@ -234,18 +256,21 @@ func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audienc
 	if permission != "" {
 		headers["X-Permission"] = permission
 	}
-	if audience != "" && audience != DEFAULT_JWT_AUDIENCE {
+	if audience != "" && audience != DefaultJWTAudience {
 		headers["X-Audience"] = audience
 	}
 	if updateSession {
-		headers[HTTP_HEADER_JWT_SET_COOKIE] = "true"
+		headers[headerJWTSetCookie] = "true"
 	}
 
-	code, _, _, err := r.post("/appmesh/auth", nil, headers, nil)
+	code, raw, _, err := r.post("/appmesh/auth", nil, headers, nil)
 	if err != nil {
 		return false, fmt.Errorf("authentication request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("authentication failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
 // RenewToken renews the current JWT token already attached to this client session.
@@ -260,32 +285,41 @@ func (r *AppMeshClient) RenewToken() (bool, error) {
 	return false, fmt.Errorf("token renewal failed with status %d: %s", code, string(raw))
 }
 
-// GetTotpSecret retrieves the raw TOTP secret for setting up 2FA authentication.
-// The server returns a base64-encoded provisioning URI; this helper extracts and returns only
-// the secret component.
-func (r *AppMeshClient) GetTotpSecret() (string, error) {
+// GetTotpUri retrieves the TOTP provisioning URI (otpauth://...) for setting up 2FA
+// authentication, e.g. for rendering a QR code in an authenticator app.
+func (r *AppMeshClient) GetTotpUri() (string, error) {
 	code, raw, _, err := r.post("/appmesh/totp/secret", nil, nil, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to get TOTP secret: %w", err)
+		return "", fmt.Errorf("failed to get TOTP URI: %w", err)
 	}
 	if code == http.StatusOK {
 		var resp map[string]interface{}
 		if err := json.Unmarshal(raw, &resp); err != nil {
-			return "", fmt.Errorf("failed to unmarshal TOTP secret response: %w", err)
+			return "", fmt.Errorf("failed to unmarshal TOTP URI response: %w", err)
 		}
 		if mfa, ok := resp["mfa_uri"].(string); ok {
 			decoded, err := base64.StdEncoding.DecodeString(mfa)
 			if err != nil {
 				return "", fmt.Errorf("failed to decode MFA URI: %w", err)
 			}
-			key, err := otp.NewKeyFromURL(string(decoded))
-			if err != nil {
-				return "", fmt.Errorf("failed to parse OTP key from URL: %w", err)
-			}
-			return key.Secret(), nil
+			return string(decoded), nil
 		}
 	}
-	return "", fmt.Errorf("failed to get TOTP secret with status %d: %s", code, string(raw))
+	return "", fmt.Errorf("failed to get TOTP URI with status %d: %s", code, string(raw))
+}
+
+// GetTotpSecret retrieves the TOTP provisioning URI and extracts only the raw secret component.
+// Use GetTotpUri for the full otpauth:// provisioning URI.
+func (r *AppMeshClient) GetTotpSecret() (string, error) {
+	uri, err := r.GetTotpUri()
+	if err != nil {
+		return "", err
+	}
+	key, err := otp.NewKeyFromURL(uri)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse OTP key from URL: %w", err)
+	}
+	return key.Secret(), nil
 }
 
 // EnableTotp configures TOTP 2FA for the current user and returns a new token.
@@ -315,39 +349,45 @@ func (r *AppMeshClient) DisableTotp(user string) (bool, error) {
 		user = "self"
 	}
 	path := fmt.Sprintf("/appmesh/totp/%s/disable", user)
-	code, _, _, err := r.post(path, nil, nil, nil)
+	code, raw, _, err := r.post(path, nil, nil, nil)
 	if err != nil {
 		return false, fmt.Errorf("disable TOTP request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("disable TOTP failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
-// GetLabels retrieves all available labels from the server.
-func (r *AppMeshClient) GetLabels() (Labels, error) {
+// ListLabels retrieves all available labels from the server.
+func (r *AppMeshClient) ListLabels() (Labels, error) {
 	code, raw, _, err := r.get("/appmesh/labels", nil, nil)
-	labels := Labels{}
 	if err != nil {
-		return labels, fmt.Errorf("view labels request failed: %w", err)
+		return nil, fmt.Errorf("view labels request failed: %w", err)
 	}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &labels); err != nil {
-			return labels, fmt.Errorf("failed to unmarshal labels: %w", err)
-		}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("list labels failed with status %d: %s", code, string(raw))
+	}
+	labels := Labels{}
+	if err := json.Unmarshal(raw, &labels); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal labels: %w", err)
 	}
 	return labels, nil
 }
 
-// GetHostResources retrieves system resource information (CPU, memory, disk).
+// GetHostResources retrieves system resource information (CPU, memory, disk)
+// as the daemon's raw JSON document (schema is daemon-owned).
 func (r *AppMeshClient) GetHostResources() (map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/resources", nil, nil)
-	res := map[string]interface{}{}
 	if err != nil {
-		return res, fmt.Errorf("view host resources request failed: %w", err)
+		return nil, fmt.Errorf("view host resources request failed: %w", err)
 	}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &res); err != nil {
-			return res, fmt.Errorf("failed to unmarshal host resources: %w", err)
-		}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("view host resources failed with status %d: %s", code, string(raw))
+	}
+	res := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal host resources: %w", err)
 	}
 	return res, nil
 }
@@ -355,14 +395,15 @@ func (r *AppMeshClient) GetHostResources() (map[string]interface{}, error) {
 // ListApps returns all applications visible to the current user.
 func (r *AppMeshClient) ListApps() ([]Application, error) {
 	code, raw, _, err := r.get("/appmesh/applications", nil, nil)
-	apps := []Application{}
 	if err != nil {
-		return apps, fmt.Errorf("view all apps request failed: %w", err)
+		return nil, fmt.Errorf("view all apps request failed: %w", err)
 	}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &apps); err != nil {
-			return apps, fmt.Errorf("failed to unmarshal applications: %w", err)
-		}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("list apps failed with status %d: %s", code, string(raw))
+	}
+	apps := []Application{}
+	if err := json.Unmarshal(raw, &apps); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal applications: %w", err)
 	}
 	return apps, nil
 }
@@ -391,7 +432,19 @@ func (r *AppMeshClient) GetApp(appName string) (*Application, error) {
 // GetAppOutput fetches incremental stdout/stderr from a running or completed application.
 // OutputPosition is the next cursor to read from, and ExitCode is populated once the process
 // has finished. timeout controls how long the server may long-poll for new output.
+// AppOutput.Error is non-nil on transport failure or any non-200 HTTP status.
 func (r *AppMeshClient) GetAppOutput(appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string, timeout int) AppOutput {
+	return r.GetAppOutputContext(context.Background(), appName, stdoutPosition, stdoutIndex, stdoutMaxsize, processUuid, timeout)
+}
+
+// GetAppOutputContext is GetAppOutput with a caller-supplied context controlling cancellation.
+func (r *AppMeshClient) GetAppOutputContext(ctx context.Context, appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string, timeout int) AppOutput {
+	return r.getAppOutput(ctx, appName, stdoutPosition, stdoutIndex, stdoutMaxsize, processUuid, timeout, nil)
+}
+
+// getAppOutput implements the output fetch; extraHeaders allows per-request
+// X-Target-Host overrides without mutating shared client state.
+func (r *AppMeshClient) getAppOutput(ctx context.Context, appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string, timeout int, extraHeaders Headers) AppOutput {
 	if appName == "" {
 		return AppOutput{
 			Error:       fmt.Errorf("application name is required"),
@@ -406,7 +459,10 @@ func (r *AppMeshClient) GetAppOutput(appName string, stdoutPosition int64, stdou
 	q.Set("process_uuid", processUuid)
 	q.Set("timeout", strconv.Itoa(timeout))
 
-	code, body, hdr, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), q, nil)
+	code, body, hdr, err := r.req.SendContext(ctx, http.MethodGet, fmt.Sprintf("/appmesh/app/%s/output", appName), q, extraHeaders, nil)
+	if err == nil && code != http.StatusOK {
+		err = fmt.Errorf("get app output failed with status %d: %s", code, string(body))
+	}
 	resp := AppOutput{
 		Error:       err,
 		HttpSuccess: code == http.StatusOK,
@@ -432,11 +488,14 @@ func (r *AppMeshClient) EnableApp(appName string) (bool, error) {
 		return false, fmt.Errorf("application name is required")
 	}
 
-	code, _, _, err := r.post(fmt.Sprintf("/appmesh/app/%s/enable", appName), nil, nil, nil)
+	code, raw, _, err := r.post(fmt.Sprintf("/appmesh/app/%s/enable", appName), nil, nil, nil)
 	if err != nil {
 		return false, fmt.Errorf("enable app request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("enable app failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
 // DisableApp stops or disables the specified application.
@@ -445,20 +504,31 @@ func (r *AppMeshClient) DisableApp(appName string) (bool, error) {
 		return false, fmt.Errorf("application name is required")
 	}
 
-	code, _, _, err := r.post(fmt.Sprintf("/appmesh/app/%s/disable", appName), nil, nil, nil)
+	code, raw, _, err := r.post(fmt.Sprintf("/appmesh/app/%s/disable", appName), nil, nil, nil)
 	if err != nil {
 		return false, fmt.Errorf("disable app request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("disable app failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
-// RemoveApp deletes an application from the system.
-func (r *AppMeshClient) RemoveApp(appName string) (bool, error) {
+// DeleteApp deletes an application from the system.
+// A 404 (app does not exist) is not an error: it returns (false, nil) so callers can
+// distinguish "removed now" from "was already absent". Any other non-2xx status is an error.
+func (r *AppMeshClient) DeleteApp(appName string) (bool, error) {
+	return r.deleteApp(appName, nil)
+}
+
+// deleteApp implements DeleteApp; extraHeaders allows per-request
+// X-Target-Host overrides without mutating shared client state.
+func (r *AppMeshClient) deleteApp(appName string, extraHeaders Headers) (bool, error) {
 	if appName == "" {
 		return false, fmt.Errorf("application name is required")
 	}
 
-	code, _, err := r.delete(fmt.Sprintf("/appmesh/app/%s", appName))
+	code, _, _, err := r.req.Send(http.MethodDelete, fmt.Sprintf("/appmesh/app/%s", appName), nil, extraHeaders, nil)
 	if err != nil {
 		return false, fmt.Errorf("remove app request failed: %w", err)
 	}
@@ -474,7 +544,6 @@ func (r *AppMeshClient) RemoveApp(appName string) (bool, error) {
 }
 
 // AddApp registers a new application or updates an existing one.
-// AddApp registers or updates an application.
 // Optional subscribeEvents specifies event types to subscribe atomically with registration,
 // ensuring no events are missed. Pass event names like "START", "EXIT", "STDOUT",
 // or "ALL" for all events. Requires TCP or WSS connection; ignored over HTTP.
@@ -512,6 +581,11 @@ func (r *AppMeshClient) AddApp(app Application, subscribeEvents ...string) (*App
 // RunTask sends a payload to a running application instance and waits for its response.
 // A non-positive timeout falls back to 300 seconds.
 func (r *AppMeshClient) RunTask(appName string, payload string, timeout int) (string, error) {
+	return r.RunTaskContext(context.Background(), appName, payload, timeout)
+}
+
+// RunTaskContext is RunTask with a caller-supplied context controlling cancellation.
+func (r *AppMeshClient) RunTaskContext(ctx context.Context, appName string, payload string, timeout int) (string, error) {
 	if appName == "" {
 		return "", fmt.Errorf("application name is required")
 	}
@@ -521,7 +595,7 @@ func (r *AppMeshClient) RunTask(appName string, payload string, timeout int) (st
 	}
 	q := url.Values{}
 	q.Set("timeout", strconv.Itoa(timeout))
-	code, raw, _, err := r.post(fmt.Sprintf("/appmesh/app/%s/task", appName), q, nil, []byte(payload))
+	code, raw, _, err := r.req.SendContext(ctx, http.MethodPost, fmt.Sprintf("/appmesh/app/%s/task", appName), q, nil, bytes.NewBufferString(payload))
 	if err != nil {
 		return "", fmt.Errorf("run task request failed: %w", err)
 	}
@@ -537,11 +611,14 @@ func (r *AppMeshClient) CancelTask(appName string) (bool, error) {
 		return false, fmt.Errorf("application name is required")
 	}
 
-	code, _, err := r.delete(fmt.Sprintf("/appmesh/app/%s/task", appName))
+	code, raw, err := r.delete(fmt.Sprintf("/appmesh/app/%s/task", appName))
 	if err != nil {
 		return false, fmt.Errorf("cancel task request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("cancel task failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
 // RunAppAsync starts an application asynchronously and returns a handle for monitoring.
@@ -575,26 +652,32 @@ func (r *AppMeshClient) RunAppAsync(app Application, maxTime int, lifecycle int)
 	return nil, fmt.Errorf("run async failed with status %d: %s", code, string(raw))
 }
 
-// Wait polls output for an asynchronous application run until it finishes or times out.
-// On success it best-effort removes the temporary run app and returns the process exit code.
+// Wait polls output for an asynchronous application run until it finishes or times out
+// (timeoutSeconds <= 0 waits forever). On success it best-effort removes the temporary run
+// app and returns the process exit code. On timeout/cancellation it returns 0 with an
+// error wrapping ErrWaitTimeout; the exit code is only meaningful when err is nil.
+// Safe for concurrent use: it polls the node captured at RunAppAsync via a per-request
+// forwarding override. Works on any transport; for TCP/WSS streaming see WaitForAsyncRun.
 func (r *AppMeshClient) Wait(asyncRun *AppRun, stdoutHandler OutputHandler, timeoutSeconds int) (int, error) {
-	if asyncRun == nil || asyncRun.ProcUid == "" {
-		return 0, fmt.Errorf("invalid async run object")
-	}
-
-	// Poll the node the run was started on (captured at RunAppAsync), restoring the
-	// prior target afterward. forwardTo is shared client state: for concurrent waits
-	// give each run its own client.
-	prevForward := r.getForwardTo()
-	r.updateForwardTo(asyncRun.ForwardTo)
-	defer r.updateForwardTo(prevForward)
-
 	ctx := context.Background()
 	var cancel context.CancelFunc
 	if timeoutSeconds > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 		defer cancel()
 	}
+	return r.WaitContext(ctx, asyncRun, stdoutHandler)
+}
+
+// WaitContext is Wait with a caller-supplied context controlling timeout/cancellation.
+func (r *AppMeshClient) WaitContext(ctx context.Context, asyncRun *AppRun, stdoutHandler OutputHandler) (int, error) {
+	if asyncRun == nil || asyncRun.ProcUid == "" {
+		return 0, fmt.Errorf("invalid async run object")
+	}
+
+	// Poll the node the run was started on (captured at RunAppAsync) via a per-request
+	// X-Target-Host override; an empty ForwardTo explicitly disables forwarding for
+	// these requests regardless of the client-wide setting.
+	forwardHeaders := Headers{headerTargetHost: asyncRun.ForwardTo}
 
 	lastPos := int64(0)
 	interval := 1 * time.Second
@@ -604,9 +687,9 @@ func (r *AppMeshClient) Wait(asyncRun *AppRun, stdoutHandler OutputHandler, time
 	for {
 		select {
 		case <-ctx.Done():
-			return 0, fmt.Errorf("wait timed out: %w", ctx.Err())
+			return 0, fmt.Errorf("%w: %v", ErrWaitTimeout, ctx.Err())
 		case <-ticker.C:
-			out := r.GetAppOutput(asyncRun.AppName, lastPos, 0, 10240, asyncRun.ProcUid, int(interval.Seconds()))
+			out := r.getAppOutput(ctx, asyncRun.AppName, lastPos, 0, 10240, asyncRun.ProcUid, int(interval.Seconds()), forwardHeaders)
 			if out.HttpBody != "" && stdoutHandler != nil {
 				stdoutHandler(out.HttpBody, lastPos)
 			}
@@ -614,8 +697,8 @@ func (r *AppMeshClient) Wait(asyncRun *AppRun, stdoutHandler OutputHandler, time
 				lastPos = *out.OutputPosition
 			}
 			if out.ExitCode != nil {
-				// best-effort cleanup
-				_, _ = r.RemoveApp(asyncRun.AppName)
+				// best-effort cleanup on the same node
+				_, _ = r.deleteApp(asyncRun.AppName, forwardHeaders)
 				return *out.ExitCode, nil
 			}
 			if !out.HttpSuccess {
@@ -689,7 +772,13 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 	}
 	// Optionally include attributes (placeholder — server must support)
 	if applyFileAttributes {
-		headers, _ = GetFileAttributes(localFile, headers)
+		attrs, err := fileAttributes(localFile)
+		if err != nil {
+			return fmt.Errorf("failed to read file attributes of %q: %w", localFile, err)
+		}
+		for key, value := range attrs {
+			headers[key] = value
+		}
 	}
 
 	code, raw, _, err := r.post("/appmesh/file/upload", nil, headers, body.Bytes())
@@ -734,22 +823,25 @@ func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttr
 	return nil
 }
 
-// GetConfig retrieves the current App Mesh configuration.
+// GetConfig retrieves the current App Mesh configuration as the daemon's raw
+// JSON document (schema is daemon-owned).
 func (r *AppMeshClient) GetConfig() (map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/config", nil, nil)
-	cfg := map[string]interface{}{}
 	if err != nil {
-		return cfg, fmt.Errorf("view config request failed: %w", err)
+		return nil, fmt.Errorf("view config request failed: %w", err)
 	}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			return cfg, fmt.Errorf("failed to unmarshal config: %w", err)
-		}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("view config failed with status %d: %s", code, string(raw))
+	}
+	cfg := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 	return cfg, nil
 }
 
 // SetConfig updates the App Mesh configuration and returns the new configuration.
+// Input and return value are the daemon's raw JSON config document (see GetConfig).
 func (r *AppMeshClient) SetConfig(config map[string]interface{}) (map[string]interface{}, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config JSON is required")
@@ -857,11 +949,14 @@ func (r *AppMeshClient) AddUser(username string, user map[string]interface{}) (b
 	if err != nil {
 		return false, fmt.Errorf("failed to marshal user JSON: %w", err)
 	}
-	code, _, err := r.put(fmt.Sprintf("/appmesh/user/%s", username), nil, nil, body)
+	code, raw, err := r.put(fmt.Sprintf("/appmesh/user/%s", username), nil, nil, body)
 	if err != nil {
 		return false, fmt.Errorf("add user request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("add user failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
 // DeleteUser removes a user from the system.
@@ -870,11 +965,14 @@ func (r *AppMeshClient) DeleteUser(username string) (bool, error) {
 		return false, fmt.Errorf("username is required")
 	}
 
-	code, _, err := r.delete(fmt.Sprintf("/appmesh/user/%s", username))
+	code, raw, err := r.delete(fmt.Sprintf("/appmesh/user/%s", username))
 	if err != nil {
 		return false, fmt.Errorf("delete user request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("delete user failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
 // LockUser disables login for the specified user.
@@ -909,7 +1007,8 @@ func (r *AppMeshClient) UnlockUser(username string) (bool, error) {
 	return true, nil
 }
 
-// ListUsers retrieves information about all users visible to the current user.
+// ListUsers retrieves all users visible to the current user as the daemon's raw
+// JSON document keyed by user name (schema is daemon-owned).
 func (r *AppMeshClient) ListUsers() (map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/users", nil, nil)
 	if err != nil {
@@ -925,7 +1024,8 @@ func (r *AppMeshClient) ListUsers() (map[string]interface{}, error) {
 	return users, nil
 }
 
-// GetCurrentUser retrieves information about the current authenticated user.
+// GetCurrentUser retrieves the current authenticated user as the daemon's raw
+// JSON document (schema is daemon-owned).
 func (r *AppMeshClient) GetCurrentUser() (map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/user/self", nil, nil)
 	if err != nil {
@@ -941,7 +1041,8 @@ func (r *AppMeshClient) GetCurrentUser() (map[string]interface{}, error) {
 	return nil, fmt.Errorf("view self failed with status %d", code)
 }
 
-// ListGroups retrieves information about all user groups.
+// ListGroups retrieves all user groups; each element is the daemon's raw JSON
+// group document (schema is daemon-owned).
 func (r *AppMeshClient) ListGroups() ([]map[string]interface{}, error) {
 	code, raw, _, err := r.get("/appmesh/user/groups", nil, nil)
 	if err != nil {
@@ -957,8 +1058,8 @@ func (r *AppMeshClient) ListGroups() ([]map[string]interface{}, error) {
 	return groups, nil
 }
 
-// ViewPermissions retrieves all available permissions in the system.
-func (r *AppMeshClient) ViewPermissions() ([]string, error) {
+// ListPermissions retrieves all available permissions in the system.
+func (r *AppMeshClient) ListPermissions() ([]string, error) {
 	code, raw, _, err := r.get("/appmesh/permissions", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view permissions request failed: %w", err)
@@ -996,11 +1097,12 @@ func (r *AppMeshClient) ListRoles() (map[string][]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("view roles request failed: %w", err)
 	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("list roles failed with status %d: %s", code, string(raw))
+	}
 	roles := map[string][]string{}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &roles); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal roles: %w", err)
-		}
+	if err := json.Unmarshal(raw, &roles); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal roles: %w", err)
 	}
 	return roles, nil
 }
@@ -1049,11 +1151,14 @@ func (r *AppMeshClient) AddLabel(labelName string, labelValue string) (bool, err
 
 	q := url.Values{}
 	q.Set("value", labelValue)
-	code, _, err := r.put(fmt.Sprintf("/appmesh/label/%s", url.PathEscape(labelName)), q, nil, nil)
+	code, raw, err := r.put(fmt.Sprintf("/appmesh/label/%s", url.PathEscape(labelName)), q, nil, nil)
 	if err != nil {
 		return false, fmt.Errorf("add label request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("add label failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
 // DeleteLabel removes a label from the system.
@@ -1062,11 +1167,14 @@ func (r *AppMeshClient) DeleteLabel(labelName string) (bool, error) {
 		return false, fmt.Errorf("label name is required")
 	}
 
-	code, _, err := r.delete(fmt.Sprintf("/appmesh/label/%s", url.PathEscape(labelName)))
+	code, raw, err := r.delete(fmt.Sprintf("/appmesh/label/%s", url.PathEscape(labelName)))
 	if err != nil {
 		return false, fmt.Errorf("delete label request failed: %w", err)
 	}
-	return code == http.StatusOK, nil
+	if code != http.StatusOK {
+		return false, fmt.Errorf("delete label failed with status %d: %s", code, string(raw))
+	}
+	return true, nil
 }
 
 // Close the client and release resources.
@@ -1139,17 +1247,17 @@ func (r *AppMeshClient) computeRefreshDelay() time.Duration {
 	if token != "" {
 		if exp, err := decodeJwtExp(token); err == nil {
 			remaining := time.Until(time.Unix(exp, 0))
-			if remaining <= TOKEN_REFRESH_OFFSET_SECONDS*time.Second {
+			if remaining <= tokenRefreshOffsetSeconds*time.Second {
 				return 1 * time.Second // Expiring soon, refresh immediately
 			}
-			delay := remaining - TOKEN_REFRESH_OFFSET_SECONDS*time.Second
-			if delay > TOKEN_REFRESH_INTERVAL_SECONDS*time.Second {
-				delay = TOKEN_REFRESH_INTERVAL_SECONDS * time.Second
+			delay := remaining - tokenRefreshOffsetSeconds*time.Second
+			if delay > tokenRefreshIntervalSeconds*time.Second {
+				delay = tokenRefreshIntervalSeconds * time.Second
 			}
 			return delay
 		}
 	}
-	return TOKEN_REFRESH_INTERVAL_SECONDS * time.Second
+	return tokenRefreshIntervalSeconds * time.Second
 }
 
 // StartTokenRefresh starts background token auto-refresh when AutoRefreshToken is enabled.

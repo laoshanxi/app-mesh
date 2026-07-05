@@ -1,9 +1,9 @@
 // Package api implements a Task API RPC handler for all workflow operations.
-// The workflow engine process runs a task_fetch/task_return loop
+// The workflow engine process runs a fetch_task/send_task_result loop
 // to receive requests from CLI/GUI via daemon's RunTask API.
 //
 // Protocol: client sends JSON payload via run_task("workflow", payload).
-// Handler parses action, dispatches, and returns JSON response via task_return.
+// Handler parses action, dispatches, and returns JSON response via send_task_result.
 //
 // 12 actions covering workflow CRUD + run management + observability:
 //
@@ -15,6 +15,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"github.com/laoshanxi/app-mesh/src/workflow/internal/dag"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/parser"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/trigger"
@@ -48,19 +50,19 @@ type Request struct {
 	Token string `json:"token,omitempty"`
 }
 
-// Response is the JSON returned via task_return.
+// Response is the JSON returned via send_task_result.
 type Response struct {
 	Status  string      `json:"status"` // "ok" or "error"
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// TaskHandler runs the task_fetch/task_return loop.
+// TaskHandler runs the fetch_task/send_task_result loop.
 type TaskHandler struct {
 	svc    *trigger.Service
 	wdir   *workdir.Manager
 	client *appmesh.AppMeshClient // daemon client for CRUD operations (uses JWT)
-	server *appmesh.AppMeshServerTcpContext
+	server *appmesh.WorkerTCPContext
 	admins map[string]bool // workflow admins (manage all workflows)
 }
 
@@ -90,16 +92,23 @@ func parseAdmins() map[string]bool {
 	return admins
 }
 
-// Run starts the task_fetch/task_return loop. Blocks forever.
+// Run starts the fetch_task/send_task_result loop. Blocks forever, except when the
+// daemon reports this engine instance superseded (HTTP 412) — then the process exits.
 func (h *TaskHandler) Run() {
 	logger.Info("TASK handler started — accepting RPC via run_task")
 	const maxBackoff = 30 * time.Second
 	backoff := time.Second
 	for {
-		payload, err := h.server.TaskFetch()
+		payload, err := h.server.FetchTask()
 		if err != nil {
+			if errors.Is(err, appmesh.ErrProcessSuperseded) {
+				// A newer engine instance replaced this one; staying alive would
+				// double-fire triggers alongside the replacement, so terminate.
+				logger.Error("fetch_task: engine instance superseded, exiting: " + err.Error())
+				os.Exit(1)
+			}
 			// Back off on persistent errors (daemon down/restart) to avoid a tight CPU/log loop.
-			logger.Error("task_fetch error: " + err.Error())
+			logger.Error("fetch_task error: " + err.Error())
 			time.Sleep(backoff)
 			backoff *= 2
 			if backoff > maxBackoff {
@@ -116,8 +125,8 @@ func (h *TaskHandler) Run() {
 			logger.Error("response marshal error: " + err.Error())
 			data = []byte(`{"status":"error","message":"internal marshal error"}`)
 		}
-		if err := h.server.TaskReturn(string(data)); err != nil {
-			logger.Error("task_return error: " + err.Error())
+		if err := h.server.SendTaskResult(string(data)); err != nil {
+			logger.Error("send_task_result error: " + err.Error())
 		}
 	}
 }
@@ -316,6 +325,22 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, caller string) Response {
 	if req.Workflow != wf.Name {
 		return Response{Status: "error", Message: fmt.Sprintf("request name %q does not match YAML name %q", req.Workflow, wf.Name)}
 	}
+	// Reject cycles / unknown `needs` references at registration instead of
+	// letting the workflow fail only when it is first run.
+	if _, err := dag.TopoSort(wf.Jobs); err != nil {
+		return Response{Status: "error", Message: "invalid workflow DAG: " + err.Error()}
+	}
+
+	// Authorize execution_identity binding (ADR 0004): engine must hold the credential,
+	// and only that identity itself or a workflow admin may bind it.
+	if wf.ExecutionIdentity != "" {
+		if !h.svc.IsKnownIdentity(wf.ExecutionIdentity) {
+			return Response{Status: "error", Message: fmt.Sprintf("execution_identity %q is not configured on the engine; ask an admin to provision its credential (APPMESH_EXEC_IDENTITIES)", wf.ExecutionIdentity)}
+		}
+		if wf.ExecutionIdentity != caller && !h.isAdmin(caller) {
+			return Response{Status: "error", Message: fmt.Sprintf("not allowed to bind execution_identity %q (only that identity or a workflow admin can)", wf.ExecutionIdentity)}
+		}
+	}
 
 	// Register the daemon App FIRST. If it succeeds, we then write the YAML.
 	// This order avoids orphan YAML on crash between write and AddApp.
@@ -363,7 +388,7 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, caller string) Response {
 		return nil
 	}
 	if err := writeYaml(); err != nil {
-		h.client.RemoveApp(appName)
+		h.client.DeleteApp(appName)
 		return Response{Status: "error", Message: err.Error()}
 	}
 
@@ -437,7 +462,7 @@ func (h *TaskHandler) handleWorkflowRm(req Request) Response {
 	h.svc.CancelByWorkflow(req.Workflow)
 	h.svc.Registry().Remove(req.Workflow)
 	appName := workflowAppPrefix + req.Workflow
-	if _, err := h.client.RemoveApp(appName); err != nil {
+	if _, err := h.client.DeleteApp(appName); err != nil {
 		return Response{Status: "error", Message: "failed to remove App: " + err.Error()}
 	}
 	wfDir := filepath.Join(h.wdir.BaseDir(), req.Workflow)
@@ -483,6 +508,12 @@ func (h *TaskHandler) handleRun(req Request, token, actor string) Response {
 func (h *TaskHandler) handleCancel(req Request) Response {
 	if req.RunID == "" {
 		return Response{Status: "error", Message: "run_id required"}
+	}
+	// If the client also names a workflow (CLI -w), verify it matches the run_id.
+	if req.Workflow != "" {
+		if actual := h.workflowOfRun(req.RunID); actual != "" && actual != req.Workflow {
+			return Response{Status: "error", Message: fmt.Sprintf("run '%s' belongs to workflow '%s', not '%s'", req.RunID, actual, req.Workflow)}
+		}
 	}
 	if err := h.svc.CancelByRunID(req.RunID); err != nil {
 		return Response{Status: "error", Message: err.Error()}
@@ -578,7 +609,7 @@ func (h *TaskHandler) handleStepLog(req Request) Response {
 	return Response{Status: "ok", Data: content}
 }
 
-// Close closes the server-side TCP connection used for task_fetch / task_return.
+// Close closes the server-side TCP connection used for fetch_task / send_task_result.
 func (h *TaskHandler) Close() {
 	h.server.CloseConnection()
 }

@@ -177,7 +177,7 @@ class App:
         self.health_check_cmd = _get_str(data, "health_check_cmd")
         """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
         self.permission = _get_int(data, "permission")
-        """app user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3."""
+        """app user permission, two decimal digits [others][group], each digit deny:1, read:2, write:3 (see ``set_permission()``, ``group_permission``/``others_permission``)."""
         self.behavior = App.Behavior(_get_item(data, "behavior"))
 
         self.env = data.get("env", {}) if data else {}
@@ -196,7 +196,7 @@ class App:
         self.owner = _get_str(data, "owner")
         """owner name of app mesh user who created the app"""
         self.user = _get_str(data, "pid_user")
-        """process OS user name"""
+        """process OS user name (wire field ``pid_user``); distinct from ``owner``, the App Mesh user who created the app"""
         self.pstree = _get_str(data, "pstree")
         """process tree"""
         self.container_id = _get_str(data, "container_id")
@@ -230,6 +230,29 @@ class App:
         self.subscription_id = _get_str(data, "subscription_id")
         """subscription id returned by the daemon when add_app is called atomically with subscribe_events on a TCP/WSS client; empty for HTTP or when no subscribe_events was supplied"""
 
+    @property
+    def is_enabled(self) -> Optional[bool]:
+        """Typed view of ``status``: ``True`` when enabled (1), ``False`` when disabled (0), ``None`` when unset."""
+        return None if self.status is None else self.status == 1
+
+    @staticmethod
+    def _permission_digit(digit: int) -> Optional["App.Permission"]:
+        """Map a single permission digit to a ``Permission`` enum value, or None when out of range."""
+        try:
+            return App.Permission(str(digit))
+        except ValueError:
+            return None
+
+    @property
+    def group_permission(self) -> Optional["App.Permission"]:
+        """Typed view of the group-user digit (ones place) of the ``permission`` int."""
+        return None if self.permission is None else self._permission_digit(self.permission % 10)
+
+    @property
+    def others_permission(self) -> Optional["App.Permission"]:
+        """Typed view of the other-users digit (tens place) of the ``permission`` int."""
+        return None if self.permission is None else self._permission_digit(self.permission // 10 % 10)
+
     def set_valid_time(self, start: Optional[datetime], end: Optional[datetime]) -> None:
         """Define the valid time window for the application."""
         self.start_time = int(start.timestamp()) if start else None
@@ -249,11 +272,13 @@ class App:
         return json.dumps(self.to_dict())
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert the application data into a JSON-compatible dictionary, removing empty items."""
+        """Convert the application data into a JSON-compatible dictionary, removing empty items.
+        Attributes are serialized under their wire names (``user`` -> ``pid_user``)."""
         output = copy.deepcopy(self.__dict__)
         output["behavior"] = self.behavior.__dict__
         output["daily_limitation"] = self.daily_limitation.__dict__
         output["resource_limit"] = self.resource_limit.__dict__
+        output["pid_user"] = output.pop("user", None)
 
         self._clean_empty(output)
         return output

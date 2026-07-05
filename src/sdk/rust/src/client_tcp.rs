@@ -16,9 +16,9 @@ use crate::error::AppMeshError;
 use crate::models::*;
 use crate::requester::Requester;
 use crate::subscribe::{MessageDemuxer, MessageReader};
-use crate::tcp_messages::{RequestMessage, ResponseMessage};
+use crate::wire_messages::{RequestMessage, ResponseMessage};
 use crate::tcp_transport::TCPTransport;
-use crate::tls_config::{ClientCert, SslVerify};
+use crate::tls_config::ClientCert;
 
 pub type Result<T> = std::result::Result<T, AppMeshError>;
 
@@ -37,7 +37,8 @@ impl MessageReader for TCPMessageReader {
         // block the tokio runtime.
         let transport = Arc::clone(&self.transport);
         tokio::task::spawn_blocking(move || {
-            let mut t = transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+            // Poisoning is benign here (guarded state stays valid), so recover the guard.
+            let mut t = transport.lock().unwrap_or_else(|e| e.into_inner());
             t.receive_message().map_err(AppMeshError::from)
         })
         .await
@@ -53,27 +54,6 @@ pub struct TCPRequester {
 }
 
 impl TCPRequester {
-    #[allow(dead_code)]
-    pub fn new(
-        tcp_address: Option<(String, u16)>,
-        ssl_verify: Option<String>,
-        ssl_client_cert: Option<(String, String)>,
-    ) -> Result<Self> {
-        let tcp_address =
-            tcp_address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_TCP_PORT));
-        let ssl_verify_str = ssl_verify.unwrap_or_else(|| DEFAULT_SSL_CA_CERT_PATH.to_string());
-        let verify = if ssl_verify_str.is_empty() { SslVerify::False } else { SslVerify::Path(ssl_verify_str) };
-        let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
-
-        let tcp_transport = TCPTransport::new(tcp_address, verify, client_cert);
-
-        Ok(Self {
-            tcp_transport: Arc::new(Mutex::new(tcp_transport)),
-            token: Arc::new(Mutex::new(None)),
-            demuxer: Mutex::new(None),
-        })
-    }
-
     /// Create TCPRequester with shared transport (used internally by AppMeshClientTCP)
     pub fn with_shared_transport(tcp_transport: Arc<Mutex<TCPTransport>>) -> Self {
         Self {
@@ -84,33 +64,16 @@ impl TCPRequester {
     }
 
     pub fn set_token(&self, token: Option<String>) {
-        if let Ok(mut t) = self.token.lock() {
-            *t = token;
-        }
+        *self.token.lock().unwrap_or_else(|e| e.into_inner()) = token;
     }
 
     pub fn get_access_token(&self) -> Option<String> {
-        self.token.lock().ok().and_then(|t| t.clone())
-    }
-
-    /// Convert internal TCP `ResponseMessage` into an `http::Response`
-    fn to_http_response(resp: ResponseMessage) -> Result<http::Response<Bytes>> {
-        let mut builder = http::Response::builder().status(resp.http_status as u16);
-
-        for (k, v) in &resp.headers {
-            builder = builder.header(k, v);
-        }
-        if !resp.body_msg_type.is_empty() && !resp.headers.contains_key(HTTP_HEADER_CONTENT_TYPE) {
-            builder = builder.header(HTTP_HEADER_CONTENT_TYPE, &resp.body_msg_type);
-        }
-
-        Ok(builder.body(Bytes::from(resp.body)).expect("Building http::Response should not fail"))
+        self.token.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Direct (legacy) read path: lock the transport and read one response.
     fn read_response_direct(&self) -> Result<ResponseMessage> {
-        let mut transport =
-            self.tcp_transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+        let mut transport = self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner());
 
         let resp_data = match transport.receive_message()? {
             Some(data) if !data.is_empty() => data,
@@ -136,19 +99,30 @@ impl Requester for TCPRequester {
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>> {
+        let req_uuid = Uuid::new_v4().to_string();
+
+        // Register the pending request BEFORE sending so the demuxer read loop
+        // cannot drop the response before a receiver exists (Go/Java SDK ordering).
+        let demuxer_opt = self.demuxer.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let active_demuxer = demuxer_opt.filter(|d| d.is_running());
+        let rx = match &active_demuxer {
+            Some(demuxer) => Some(demuxer.register_request(&req_uuid).await),
+            None => None,
+        };
+
         // Build the request message and send it while holding the transport lock.
-        let (req_uuid, req_headers) = {
-            let mut transport =
-                self.tcp_transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+        let send_result: Result<Option<HashMap<String, String>>> = (|| {
+            let mut transport = self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner());
 
             if !transport.connected() {
                 transport.connect()?; // TransportError → AppMeshError via From
             }
 
             let mut req = RequestMessage::new();
-            req.uuid = Uuid::new_v4().to_string();
+            req.uuid = req_uuid.clone();
             req.http_method = method.to_string();
             req.request_uri = path.to_string();
+            // Informational; hostname on TCP vs "wss-client" on WSS, per the Python reference SDK.
             req.client_addr =
                 hostname::get().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "unknown".into());
             req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_TCP.into());
@@ -168,32 +142,32 @@ impl Requester for TCPRequester {
                 req.body = b.to_vec();
             }
 
-            let uuid = req.uuid.clone();
             let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
             transport.send_message(&data)?;
 
-            (uuid, req_headers)
-        };
+            Ok(req_headers)
+        })();
         // Transport lock released here.
 
-        // Check if demuxer is active — if so, route through channel-based response.
-        let demuxer_opt = {
-            self.demuxer.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?.clone()
+        let req_headers = match send_result {
+            Ok(h) => h,
+            Err(e) => {
+                // Nothing was sent; remove the pending entry so it cannot leak.
+                if let Some(ref demuxer) = active_demuxer {
+                    demuxer.unregister_request(&req_uuid).await;
+                }
+                return Err(e);
+            }
         };
 
-        let resp = if let Some(ref demuxer) = demuxer_opt {
-            if demuxer.is_running() {
-                let rx = demuxer.register_request(&req_uuid).await;
-                match rx.await {
-                    Ok(resp) => resp,
-                    Err(_) => {
-                        return Err(AppMeshError::ConnectionError(
-                            "Connection closed while waiting for response".into(),
-                        ));
-                    }
+        let resp = if let Some(rx) = rx {
+            match rx.await {
+                Ok(resp) => resp,
+                Err(_) => {
+                    return Err(AppMeshError::ConnectionError(
+                        "Connection closed while waiting for response".into(),
+                    ));
                 }
-            } else {
-                self.read_response_direct()?
             }
         } else {
             self.read_response_direct()?
@@ -208,7 +182,7 @@ impl Requester for TCPRequester {
             });
         }
 
-        let http_resp = Self::to_http_response(resp)?;
+        let http_resp = resp.into_http_response()?;
 
         // Auto-sync token from auth endpoint responses
         crate::requester::sync_transport_token(&http_resp, path, &req_headers, self);
@@ -221,23 +195,19 @@ impl Requester for TCPRequester {
     }
 
     fn get_access_token(&self) -> Option<String> {
-        self.token.lock().ok().and_then(|t| t.clone())
+        self.token.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn close(&self) {
         // Stop the demuxer first
-        if let Ok(guard) = self.demuxer.lock() {
-            if let Some(ref d) = *guard {
-                d.stop();
-            }
+        if let Some(ref d) = *self.demuxer.lock().unwrap_or_else(|e| e.into_inner()) {
+            d.stop();
         }
-        if let Ok(mut t) = self.tcp_transport.lock() {
-            t.close();
-        }
+        self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner()).close();
     }
 
     fn enable_demuxer(&self) {
-        let mut guard = self.demuxer.lock().expect("demuxer lock poisoned");
+        let mut guard = self.demuxer.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_some() {
             return; // already enabled
         }
@@ -250,7 +220,11 @@ impl Requester for TCPRequester {
     }
 
     fn get_demuxer(&self) -> Option<Arc<MessageDemuxer>> {
-        self.demuxer.lock().ok().and_then(|g| g.clone())
+        self.demuxer.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn supports_demuxer(&self) -> bool {
+        true
     }
 }
 
@@ -265,15 +239,26 @@ pub struct AppMeshClientTCP {
 
 impl AppMeshClientTCP {
     /// Create a TCP transport client. Defaults to `127.0.0.1:6059`.
+    /// An empty `ssl_verify` path is the legacy verification-disable form; prefer
+    /// [`crate::ClientBuilderTCP`]'s explicit `danger_accept_invalid_certs(true)`.
     pub fn new(
         tcp_address: Option<(String, u16)>,
         ssl_verify: Option<String>,
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>> {
+        let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
+        Self::new_with_verify(tcp_address, verify, ssl_client_cert)
+    }
+
+    /// Create a TCP transport client with an explicit `SslVerify` mode (used by the
+    /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
+    pub(crate) fn new_with_verify(
+        tcp_address: Option<(String, u16)>,
+        verify: crate::tls_config::SslVerify,
+        ssl_client_cert: Option<(String, String)>,
+    ) -> Result<Arc<Self>> {
         let tcp_address =
             tcp_address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_TCP_PORT));
-        let ssl_verify_path = ssl_verify.unwrap_or_else(|| DEFAULT_SSL_CA_CERT_PATH.to_string());
-        let verify = if ssl_verify_path.is_empty() { SslVerify::False } else { SslVerify::Path(ssl_verify_path) };
         let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
 
         let tcp_transport = Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify, client_cert)));
@@ -317,8 +302,7 @@ impl AppMeshClientTCP {
         let local_path = Path::new(local_file);
         let mut file = File::create(local_path)?;
 
-        let mut transport =
-            self.tcp_transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+        let mut transport = self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner());
 
         loop {
             match transport.receive_message()? {
@@ -373,8 +357,7 @@ impl AppMeshClientTCP {
         let mut file = File::open(local_path)?;
         let mut buffer = vec![0u8; TCP_BLOCK_SIZE];
 
-        let mut transport =
-            self.tcp_transport.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+        let mut transport = self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner());
 
         loop {
             match file.read(&mut buffer)? {
@@ -409,10 +392,11 @@ impl AppMeshClientTCP {
     /// events and does a one-shot backfill to cover output emitted before the subscribe
     /// took effect.  Deduplicates by byte-position offset.
     ///
-    /// Sentinel exit codes:
-    ///   `None`  -- caller-side timeout
-    ///   `-1`    -- REMOVED before EXIT observed
-    ///   `-2`    -- demuxer disconnected (transport failure)
+    /// Returns:
+    ///   `Ok(Some(code))` -- process exited (code may be negative for signal kills)
+    ///   `Ok(None)`       -- caller-side timeout
+    ///   `Err(AppMeshError::AppRemoved)`            -- REMOVED before EXIT observed
+    ///   `Err(AppMeshError::TransportDisconnected)` -- demuxer disconnected (transport failure)
     pub async fn wait_for_async_run(
         &self,
         run: &AppRun,
@@ -423,6 +407,9 @@ impl AppMeshClientTCP {
     }
 }
 
+/// NOTE: Deref gives ergonomic access to the shared [`AppMeshClient`] API.
+/// Inherent methods here (e.g. `wait_for_async_run`) shadow same-named deref-target
+/// methods, but both resolve to the same subscribe-based wait semantics.
 impl std::ops::Deref for AppMeshClientTCP {
     type Target = AppMeshClient;
     fn deref(&self) -> &Self::Target {

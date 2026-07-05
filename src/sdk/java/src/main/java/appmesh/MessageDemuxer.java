@@ -1,3 +1,5 @@
+package appmesh;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -7,6 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
@@ -55,6 +60,11 @@ public class MessageDemuxer {
      * registerEventCallback so no events are lost. Guarded by {@link #eventLock}.
      */
     private final Map<String, Deque<AppEvent>> eventBuffers = new HashMap<>();
+    /**
+     * One single-threaded executor per subscription so events of a subscription are
+     * delivered to its callback in arrival order. Guarded by {@link #eventLock}.
+     */
+    private final Map<String, ExecutorService> eventExecutors = new HashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private volatile Thread readerThread;
 
@@ -161,9 +171,14 @@ public class MessageDemuxer {
         // so long-running waits can unblock cleanly.
         broadcastDisconnect();
 
-        // Drop events buffered for subs whose callback never registered.
+        // Drop events buffered for subs whose callback never registered, and let
+        // per-subscription executors drain their queued events then terminate.
         synchronized (eventLock) {
             eventBuffers.clear();
+            for (ExecutorService exec : eventExecutors.values()) {
+                exec.shutdown();
+            }
+            eventExecutors.clear();
         }
 
         Thread t = readerThread;
@@ -193,16 +208,9 @@ public class MessageDemuxer {
             event.timestamp = 0;
             event.sequence = 0;
             event.data = null;
-            final EventCallback cb = entry.getValue();
-            Thread t = new Thread(() -> {
-                try {
-                    cb.onEvent(event);
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Disconnect callback error for " + event.subscriptionId, e);
-                }
-            });
-            t.setDaemon(true);
-            t.start();
+            // Route through deliver() so the disconnect event is ordered after
+            // any events already queued for the same subscription.
+            deliver(entry.getKey(), entry.getValue(), event);
         }
     }
 
@@ -222,7 +230,7 @@ public class MessageDemuxer {
      *   demuxer.registerPending(uuid);
      *   try {
      *       transport.sendMessage(data);
-     *       ResponseMessage resp = demuxer.waitForResponse(uuid, 60);
+     *       ResponseMessage resp = demuxer.waitForResponse(uuid);
      *   } finally {
      *       demuxer.unregisterPending(uuid);
      *   }
@@ -244,23 +252,21 @@ public class MessageDemuxer {
     }
 
     /**
-     * Wait for the matching response by UUID. The request must be registered
-     * via {@link #registerPending(String)} before calling this method.
+     * Wait for the matching response by UUID with no client-side wait cap; null means the
+     * demuxer stopped (disconnect), never a slow request — {@link #stop()} counts down every
+     * pending latch. Register via {@link #registerPending(String)} before calling.
      *
-     * @param uuid           the request UUID to match
-     * @param timeoutSeconds maximum time to wait for the response
-     * @return the matched response, or null on timeout or if not registered
+     * @param uuid the request UUID to match
+     * @return the matched response, or null on disconnect/interrupt or if not registered
      */
-    public ResponseMessage waitForResponse(String uuid, int timeoutSeconds) {
+    public ResponseMessage waitForResponse(String uuid) {
         PendingRequest pr = pending.get(uuid);
         if (pr == null) {
             return null;
         }
         try {
-            if (pr.latch.await(timeoutSeconds, TimeUnit.SECONDS)) {
-                return pr.response;
-            }
-            return null;
+            pr.latch.await();
+            return pr.response;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return null;
@@ -299,6 +305,10 @@ public class MessageDemuxer {
         synchronized (eventLock) {
             eventCallbacks.remove(subscriptionId);
             eventBuffers.remove(subscriptionId); // discard any buffered events
+            ExecutorService exec = eventExecutors.remove(subscriptionId);
+            if (exec != null) {
+                exec.shutdown(); // drain already-queued events, then terminate
+            }
         }
     }
 
@@ -397,18 +407,36 @@ public class MessageDemuxer {
     }
 
     /**
-     * Invoke the callback on a separate daemon thread to avoid blocking the reader.
+     * Queue the callback on the subscription's single-threaded executor: the reader
+     * thread is never blocked and events of one subscription keep arrival order.
      */
-    private void deliver(String subId, EventCallback cb, AppEvent event) {
-        Thread callbackThread = new Thread(() -> {
-            try {
-                cb.onEvent(event);
-            } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Event callback error for subscription " + subId, e);
+    private void deliver(final String subId, final EventCallback cb, final AppEvent event) {
+        ExecutorService exec;
+        synchronized (eventLock) {
+            exec = eventExecutors.get(subId);
+            if (exec == null) {
+                if (!eventCallbacks.containsKey(subId)) {
+                    return; // unregistered concurrently — drop the event
+                }
+                exec = Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "appmesh-event-" + subId);
+                    t.setDaemon(true);
+                    return t;
+                });
+                eventExecutors.put(subId, exec);
             }
-        }, "appmesh-event-" + subId);
-        callbackThread.setDaemon(true);
-        callbackThread.start();
+        }
+        try {
+            exec.execute(() -> {
+                try {
+                    cb.onEvent(event);
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Event callback error for subscription " + subId, e);
+                }
+            });
+        } catch (RejectedExecutionException ignored) {
+            // Executor shut down concurrently (unsubscribe/stop)
+        }
     }
 
     /**

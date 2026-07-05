@@ -33,14 +33,19 @@
 
 #include <uWebSockets/App.h>
 #include "ReplyContext.h"
+#include "../../../common/StreamLogger.h"
 
 namespace WSS
 {
     // Configuration constants
     namespace Config
     {
-        constexpr size_t MAX_PAYLOAD_LENGTH = 64 * 1024 * 1024; // 64 MB
-        constexpr unsigned int IDLE_TIMEOUT = 120;              // seconds
+        constexpr size_t MAX_PAYLOAD_LENGTH = 64 * 1024 * 1024;  // 64 MB
+        constexpr unsigned int IDLE_TIMEOUT = 120;               // seconds
+        // Per-connection outbound cap. uWS default (64 KB) is too small for streamed
+        // STDOUT / slow clients; 16 MB absorbs bursts yet bounds memory. Exceeding it
+        // means the client isn't draining → the connection is closed.
+        constexpr unsigned int MAX_BACKPRESSURE = 16 * 1024 * 1024; // 16 MB
         constexpr int DEFAULT_CLOSE_CODE = 1000;
     }
 
@@ -137,11 +142,15 @@ namespace WSS
         // Sends data to the client safely from ANY thread.
         void send(std::string &&data, uWS::OpCode opcode = uWS::OpCode::TEXT)
         {
-            runOnLoop([data = std::move(data), opcode](WebSocketType *ws) mutable
+            const std::string id = m_id;
+            runOnLoop([data = std::move(data), opcode, id](WebSocketType *ws) mutable
             {
-                if (ws->send(std::move(data), opcode) != WebSocketType::SendStatus::SUCCESS)
+                // DROPPED = backpressure exceeded, message discarded → client would hang → close
+                // (RFC 6455 1013). BACKPRESSURE = buffered, will send, so left alone.
+                if (ws->send(std::move(data), opcode) == WebSocketType::SendStatus::DROPPED)
                 {
-                    // TODO: drop / close / downgrade
+                    LOG_WAR << "WSConnection::send() dropped message (backpressure exceeded), closing conn " << id;
+                    ws->end(1013, "backpressure limit exceeded");
                 }
             });
         }
@@ -704,6 +713,7 @@ namespace WSS
                 {.compression = uWS::SHARED_COMPRESSOR,
                  .maxPayloadLength = Config::MAX_PAYLOAD_LENGTH,
                  .idleTimeout = Config::IDLE_TIMEOUT,
+                 .maxBackpressure = Config::MAX_BACKPRESSURE,
                  .upgrade = [this](auto *res, auto *req, auto *context)
                  {
                      // Protocol negotiation logic

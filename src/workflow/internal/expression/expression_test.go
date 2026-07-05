@@ -249,3 +249,50 @@ func TestEvalConditionForJobWithStatus_UsesJobStatusFunctions(t *testing.T) {
 		t.Error("failure() should use supplied job status function")
 	}
 }
+
+// Boolean literals and truthiness follow GitHub Actions semantics: an `if`
+// that evaluates to false/0/"" must skip, not silently run.
+func TestEvalConditionForJob_BooleanLiterals(t *testing.T) {
+	ctx := NewContext()
+	if EvalConditionForJob("false", ctx, "") {
+		t.Error("`if: false` must be false")
+	}
+	if !EvalConditionForJob("true", ctx, "") {
+		t.Error("`if: true` must be true")
+	}
+	if EvalConditionForJob("0", ctx, "") {
+		t.Error("`if: 0` must be false")
+	}
+	ctx.Inputs = map[string]string{"enabled": "false", "flag": "true"}
+	if EvalConditionForJob("${{ inputs.enabled }}", ctx, "") {
+		t.Error("input resolved to 'false' must be falsy")
+	}
+	if !EvalConditionForJob("${{ inputs.flag }}", ctx, "") {
+		t.Error("input resolved to 'true' must be truthy")
+	}
+}
+
+func TestEvalConditionForJob_BooleanComparison(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{"enabled": "true"}
+	if !EvalConditionForJob("inputs.enabled == true", ctx, "") {
+		t.Error("string 'true' should compare equal to boolean literal true")
+	}
+	if EvalConditionForJob("inputs.enabled == false", ctx, "") {
+		t.Error("string 'true' should not equal boolean literal false")
+	}
+}
+
+// A quoted literal 'success()' is an operand, not a status function — jobs with
+// failed deps must still be skipped when the condition has no real status call.
+func TestHasStatusFunction(t *testing.T) {
+	if !HasStatusFunction("failure() || always()") {
+		t.Error("bare status function should be detected")
+	}
+	if HasStatusFunction(`steps.x.stdout == 'success()'`) {
+		t.Error("quoted literal must not count as a status function")
+	}
+	if HasStatusFunction("steps.x.stdout == 'ok'") {
+		t.Error("no status function present")
+	}
+}

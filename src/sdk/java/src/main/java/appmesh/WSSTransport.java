@@ -1,3 +1,5 @@
+package appmesh;
+
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.drafts.Draft_6455;
 import org.java_websocket.handshake.ServerHandshake;
@@ -37,6 +39,8 @@ public class WSSTransport implements AutoCloseable {
     private final AtomicReference<Exception> lastError = new AtomicReference<>();
 
     private int connectTimeout = WSS_CONNECT_TIMEOUT;
+    // null = follow connectTimeout (legacy coupling kept for backward compatibility)
+    private Integer connectionLostTimeout;
 
     public WSSTransport(String host, int port) {
         this(host, port, null);
@@ -51,8 +55,24 @@ public class WSSTransport implements AutoCloseable {
                 Collections.<IProtocol>singletonList(new Protocol("appmesh-ws")));
     }
 
+    /**
+     * Set the blocking-connect timeout in seconds.
+     *
+     * <p>When no connection-lost timeout was set explicitly via
+     * {@link #setConnectionLostTimeout(int)}, this value is also used as the
+     * connection-lost (ping/pong) interval for backward compatibility.
+     */
     public WSSTransport setConnectTimeout(int seconds) {
         this.connectTimeout = seconds;
+        return this;
+    }
+
+    /**
+     * Set the WebSocket connection-lost (ping/pong keepalive) interval in seconds.
+     * When unset, the connect timeout is used.
+     */
+    public WSSTransport setConnectionLostTimeout(int seconds) {
+        this.connectionLostTimeout = seconds;
         return this;
     }
 
@@ -112,8 +132,9 @@ public class WSSTransport implements AutoCloseable {
             client.setSocketFactory(sslSocketFactory);
         }
 
-        // Set connection timeout
-        client.setConnectionLostTimeout(connectTimeout);
+        // Connection-lost (ping/pong) interval: dedicated knob when set, else legacy
+        // coupling to the connect timeout.
+        client.setConnectionLostTimeout(connectionLostTimeout != null ? connectionLostTimeout : connectTimeout);
 
         // Blocking connect with timeout
         boolean success = client.connectBlocking(connectTimeout, TimeUnit.SECONDS);
@@ -145,7 +166,7 @@ public class WSSTransport implements AutoCloseable {
 
     public void sendMessage(byte[] data) throws IOException {
         if (!connected())
-            throw new IllegalStateException("Not connected");
+            throw new IOException("Not connected");
 
         byte[] messageData = (data != null) ? data : new byte[0];
         client.send(messageData);
@@ -153,23 +174,44 @@ public class WSSTransport implements AutoCloseable {
 
     /**
      * Receive a message, blocking indefinitely until data arrives.
+     *
+     * @return received bytes (an empty array is a genuine empty message)
+     * @throws InterruptedException if the thread is interrupted
+     * @throws IOException          if the connection was closed or hit a transport error
      */
-    public byte[] receiveMessage() throws InterruptedException {
-        return recvQueue.take();
+    public byte[] receiveMessage() throws InterruptedException, IOException {
+        return checkEofSentinel(recvQueue.take());
     }
 
     /**
      * Receive a message with a timeout.
      *
      * @param timeoutSeconds maximum seconds to wait
-     * @return received bytes, or null if timed out
+     * @return received bytes (an empty array is a genuine empty message)
      * @throws InterruptedException if the thread is interrupted
-     * @throws IOException          if the receive times out
+     * @throws IOException          if the receive times out, the connection was closed
+     *                              or a transport error occurred
      */
     public byte[] receiveMessage(int timeoutSeconds) throws InterruptedException, IOException {
         byte[] data = recvQueue.poll(timeoutSeconds, TimeUnit.SECONDS);
         if (data == null) {
             throw new IOException("WebSocket receive timed out after " + timeoutSeconds + " seconds");
+        }
+        return checkEofSentinel(data);
+    }
+
+    /**
+     * onClose/onError enqueue an empty frame to wake receivers; when the client is no
+     * longer OPEN that sentinel means EOF or error — surface the real cause instead of
+     * returning an ambiguous empty array.
+     */
+    private byte[] checkEofSentinel(byte[] data) throws IOException {
+        if (data.length == 0 && !connected()) {
+            Exception cause = lastError.getAndSet(null);
+            if (cause != null) {
+                throw new IOException("WebSocket transport error: " + cause.getMessage(), cause);
+            }
+            throw new IOException("Connection closed by peer");
         }
         return data;
     }

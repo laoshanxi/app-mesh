@@ -71,6 +71,9 @@ pub struct AppOutput {
     pub exit_code: Option<i32>,
 }
 
+/// Handle for an asynchronous application run started via [`AppMeshClient::run_app_async`].
+/// Retains an `Arc` to its originating client so [`AppRun::wait`] can self-serve
+/// (subscribe-based on TCP/WSS, output polling on HTTP).
 #[derive(Debug, Clone)]
 pub struct AppRun {
     pub(crate) client: Arc<AppMeshClient>,
@@ -79,9 +82,9 @@ pub struct AppRun {
 }
 
 impl AppRun {
-    /// Wait for this async run to finish by polling through the originating client.
-    ///
-    /// Returns the process exit code on success, or `None` on timeout/polling failure.
+    /// Wait for this async run to finish through the originating client; see
+    /// [`AppMeshClient::wait_for_async_run`] for the full result semantics.
+    /// Returns the process exit code on success, or `None` on caller-side timeout.
     pub async fn wait(&self, stdout_handler: OutputHandler, timeout: i32) -> Result<Option<i32>, AppMeshError> {
         self.client.wait_for_async_run(self, stdout_handler, timeout).await
     }
@@ -266,7 +269,11 @@ pub struct SubscriptionResult {
 
 /// Callback for incremental stdout output.
 /// Parameters: (data, position) where data is the text chunk and position is the byte offset.
-pub type OutputHandler = Option<Arc<dyn Fn(&str, i64) + Send + Sync>>;
+pub type OutputFn = Arc<dyn Fn(&str, i64) + Send + Sync>;
+
+/// Optional [`OutputFn`]; `None` discards output.
+/// Prefer spelling `Option<OutputFn>` in new signatures so optionality is visible.
+pub type OutputHandler = Option<OutputFn>;
 
 /// Pre-built OutputHandler that prints data to stdout.
 pub fn print_output_handler() -> OutputHandler {
@@ -373,7 +380,8 @@ impl ApplicationBuilder {
         self
     }
 
-    /// Set RBAC permission (encoded as `group_permission * 100 + others_permission`).
+    /// Set RBAC permission (encoded as `others_permission * 10 + group_permission`:
+    /// ones digit = group, tens digit = others — matches the daemon's `checkOwnerPermission`).
     pub fn permission(mut self, group: Permission, others: Permission) -> Self {
         self.app.permission = Some(others as u32 * 10 + group as u32);
         self

@@ -30,6 +30,7 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(current_directory))
 
 from appmesh import AppMeshClient, App
+import sslconf  # noqa: F401  # APPMESH_TEST_SSL_VERIFY override for self-signed daemons
 
 DEFAULT_CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
 BASE_URL = os.environ.get("APPMESH_TEST_URL")  # None -> SDK default (https://127.0.0.1:6060)

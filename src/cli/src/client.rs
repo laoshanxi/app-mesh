@@ -46,7 +46,7 @@ pub async fn build_client(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> {
 
     // Set forward-to if specified
     if let Some(ref fwd) = cli.forward_to {
-        client.client().forward_to(Some(fwd.clone()));
+        client.client().set_forward_to(Some(fwd.clone()));
     }
 
     // Authenticate if credentials provided inline
@@ -100,7 +100,10 @@ fn build_wss(
     port: u16,
     tls: &config::DaemonTlsConfig,
 ) -> Result<Arc<AppMeshClientWSS>> {
-    let skip_verify = !tls.verify_server || tls.ca_cert.is_none();
+    // Only skip verification when the daemon config explicitly disables it. With
+    // no CA configured, leave ssl_ca_cert unset so the SDK's auto default applies
+    // (App Mesh CA bundle if installed, else system CAs) — never silently disable.
+    let skip_verify = !tls.verify_server;
 
     let mut builder = ClientBuilderWSS::new()
         .address(&host, port)

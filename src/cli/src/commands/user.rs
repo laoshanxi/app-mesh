@@ -127,6 +127,7 @@ pub async fn mfa(cli: &Cli, args: &MfaArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
 
     if args.add {
+        // The CLI shows the raw secret for manual authenticator entry.
         let secret = client
             .get_totp_secret()
             .await

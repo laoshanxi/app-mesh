@@ -345,6 +345,11 @@ bool HttpRequestOutputView::onTimerResponse()
 {
 	const static char fname[] = "HttpRequestOutputView::onTimerResponse() ";
 	LOG_DBG << fname;
+	// Keep alive: unbind may drop the last reference.
+	auto self = std::static_pointer_cast<HttpRequestOutputView>(shared_from_this());
+	// Remove our entry so completed timed polls don't accumulate while the process runs
+	// (map is otherwise only cleared on exit). No-op if never bound / already removed.
+	APP_OUT_VIEW_MAP.unbind(m_pid, self);
 	try
 	{
 		CLEAR_TIMER_ID(m_timerResponseId);

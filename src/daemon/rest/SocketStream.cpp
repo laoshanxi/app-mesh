@@ -1,6 +1,8 @@
 // src/daemon/rest/SocketStream.cpp
 #include "SocketStream.h"
 
+#include <climits>
+
 // SSL_Stream_Ex methods
 void SSL_Stream_Ex::set_ssl_context(ACE_SSL_Context *ctx)
 {
@@ -28,7 +30,9 @@ ssize_t SSL_Stream_Ex::send(const void *buf, size_t len, int *out_ssl_error)
 
 	// Call SSL_write directly to avoid ACE's internal SSL_get_error consumption,
 	// which would leave the error queue stale for our query.
-	int n = ::SSL_write(this->ssl(), buf, static_cast<int>(len));
+	// Clamp to INT_MAX: len may reach 2 GB (== INT_MAX + 1) and wrap negative; loop sends the rest.
+	const int chunk = len > static_cast<size_t>(INT_MAX) ? INT_MAX : static_cast<int>(len);
+	int n = ::SSL_write(this->ssl(), buf, chunk);
 	int err = SSL_ERROR_NONE;
 
 	if (n <= 0)
@@ -55,7 +59,9 @@ ssize_t SSL_Stream_Ex::recv(void *buf, size_t len, int *out_ssl_error)
 	}
 
 	// Call SSL_read directly to avoid ACE's internal SSL_get_error consumption.
-	int n = ::SSL_read(this->ssl(), buf, static_cast<int>(len));
+	// Clamp to INT_MAX: len may reach 2 GB (== INT_MAX + 1) and wrap negative; loop reads the rest.
+	const int chunk = len > static_cast<size_t>(INT_MAX) ? INT_MAX : static_cast<int>(len);
+	int n = ::SSL_read(this->ssl(), buf, chunk);
 	int err = SSL_ERROR_NONE;
 
 	if (n <= 0)
@@ -107,7 +113,8 @@ RecvResult RecvState::do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t l
 		}
 
 		const int err = ACE_OS::last_error();
-		if (err == EWOULDBLOCK || err == EAGAIN)
+		// EINTR: interrupted by a signal — retry instead of closing the connection.
+		if (err == EWOULDBLOCK || err == EAGAIN || err == EINTR)
 			return RecvResult::WOULD_BLOCK;
 
 		LOG_ERR << "Receive syscall failed: " << last_error_msg();
@@ -226,7 +233,8 @@ SendResult SendBuffer::send_chunk(SSL_Stream_Ex &stream, const char *data, size_
 		}
 
 		const int err = ACE_OS::last_error();
-		if (err == EWOULDBLOCK || err == EAGAIN)
+		// EINTR: interrupted by a signal — retry instead of closing the connection.
+		if (err == EWOULDBLOCK || err == EAGAIN || err == EINTR)
 			return SendResult::WOULD_BLOCK;
 
 		LOG_ERR << "Send syscall failed: " << last_error_msg();
@@ -375,9 +383,9 @@ bool SocketStream::connect(const ACE_INET_Addr &remote, const ACE_Time_Value *ti
 bool SocketStream::send(const std::string &data) { return send(data.data(), data.size()); }
 bool SocketStream::send(const char *data, size_t len)
 {
-	if (len > TCP_MAX_BODY_SIZE)
+	if (len > TCP_MAX_RECV_BODY_SIZE)
 	{
-		LOG_ERR << "SocketStream::send() Message too large: " << len << " bytes, limit: " << TCP_MAX_BODY_SIZE;
+		LOG_ERR << "SocketStream::send() Message too large: " << len << " bytes, limit: " << TCP_MAX_RECV_BODY_SIZE;
 		return false;
 	}
 	return send_impl(SendBuffer(data, len));
@@ -385,9 +393,9 @@ bool SocketStream::send(const char *data, size_t len)
 bool SocketStream::send(std::unique_ptr<msgpack::sbuffer> &&data)
 {
 	const size_t len = data ? data->size() : 0;
-	if (len > TCP_MAX_BODY_SIZE)
+	if (len > TCP_MAX_RECV_BODY_SIZE)
 	{
-		LOG_ERR << "SocketStream::send() Message too large: " << len << " bytes, limit: " << TCP_MAX_BODY_SIZE;
+		LOG_ERR << "SocketStream::send() Message too large: " << len << " bytes, limit: " << TCP_MAX_RECV_BODY_SIZE;
 		return false;
 	}
 	return send_impl(SendBuffer(std::move(data)));

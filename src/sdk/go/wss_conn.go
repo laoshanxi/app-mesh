@@ -29,9 +29,12 @@ func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, ssl
 	tlsConf := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 	}
-	if sslCAPath == "" {
+	switch sslCAPath {
+	case caSystemTrust:
+		// Verify against the system trust store (RootCAs left nil); see caSystemTrust.
+	case "":
 		tlsConf.InsecureSkipVerify = true
-	} else {
+	default:
 		caPool, err := LoadCA(sslCAPath)
 		if err != nil {
 			return fmt.Errorf("failed to load CA: %w", err)

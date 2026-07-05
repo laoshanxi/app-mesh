@@ -1,47 +1,85 @@
-// server.js - App Mesh Server SDK for Node.js
+// server.js - App Mesh Worker SDK for Node.js
 // This is a Node.js-only module - not included in browser builds
 
 // Environment check - only works in Node.js
 if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
   throw new Error(
-    'AppMeshServer is only available in Node.js environment. Use AppMeshClient for browser applications.'
+    'AppMeshWorker is only available in Node.js environment. Use AppMeshClient for browser applications.'
   )
 }
 
-import AppMeshClient from './appmesh.js'
+import AppMeshClient, { AppMeshError } from './appmesh.js'
 
 /**
- * Server SDK for App Mesh application interacting with the local App Mesh REST service over HTTPS.
+ * Error thrown when the daemon reports HTTP 412: this process key was superseded
+ * by a newer process instance and the caller should stop serving.
+ *
+ * Subclasses AppMeshError with `statusCode` fixed to 412, so existing catch-based
+ * callers keep working. Counterpart of Python `AppMeshProcessSupersededError`,
+ * Go `ErrProcessSuperseded` and Rust `AppMeshError::ProcessSuperseded`.
+ */
+class ProcessSupersededError extends AppMeshError {
+  /**
+   * @param {string} message - Error message
+   * @param {any} responseData - Raw 412 response body
+   */
+  constructor (message, responseData = null) {
+    super(message, 412, responseData, 'PROCESS_SUPERSEDED')
+    this.name = 'ProcessSupersededError'
+  }
+}
+
+/**
+ * True when `value` looks like a {host, port} address object rather than an SSL config.
+ * Mirrors the acceptance logic in appmesh_tcp.js (kept local: appmesh_tcp.js is lazy-imported).
+ * @private
+ */
+function _isTcpAddressObject (value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && !Buffer.isBuffer(value) &&
+    ('host' in value || 'port' in value) &&
+    !('ca' in value) && !('cert' in value) && !('key' in value) && !('rejectUnauthorized' in value)
+}
+
+/**
+ * Internal sentinel: AppMeshWorkerTCP passes this as `options.client` to tell the base
+ * constructor to skip building a default HTTP client (the TCP client is created lazily
+ * by _ensureClient()). Callers passing `client: null`/`undefined` still get the default.
+ * @private
+ */
+const _DEFER_CLIENT = Symbol('appmesh.deferClient')
+
+/**
+ * Worker SDK for App Mesh application interacting with the local App Mesh REST service over HTTPS.
  *
  * Build-in runtime environment variables required:
  *   - APP_MESH_PROCESS_KEY
  *   - APP_MESH_APPLICATION_NAME
  *
  * @example
- * // HTTP Server Example
- * import { AppMeshServer } from 'appmesh/server';
+ * // HTTP Worker Example
+ * import { AppMeshWorker } from 'appmesh/server';
  *
- * const server = new AppMeshServer();
- * const payload = await server.task_fetch();
+ * const worker = new AppMeshWorker();
+ * const payload = await worker.fetch_task();
  * const result = processPayload(payload);
- * await server.task_return(result);
+ * await worker.send_task_result(result);
  *
  * @example
- * // TCP Server Example
- * import { AppMeshServerTCP } from 'appmesh/server';
+ * // TCP Worker Example
+ * import { AppMeshWorkerTCP } from 'appmesh/server';
  *
- * const server = new AppMeshServerTCP();
+ * const worker = new AppMeshWorkerTCP();
  * try {
- *   const payload = await server.task_fetch();
+ *   const payload = await worker.fetch_task();
  *   const result = processPayload(payload);
- *   await server.task_return(result);
+ *   await worker.send_task_result(result);
  * } finally {
- *   server.close();
+ *   worker.close();
  * }
  */
-class AppMeshServer {
+class AppMeshWorker {
   /**
-   * Initialize an App Mesh HTTP Server for interacting with the App Mesh service via secure HTTPS.
+   * Initialize an App Mesh HTTP Worker for interacting with the App Mesh service via secure HTTPS.
    *
    * @param {string} [baseURL='https://127.0.0.1:6060'] - The server's base URI
    * @param {Object} [sslConfig=null] - SSL configuration object
@@ -52,9 +90,9 @@ class AppMeshServer {
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
    * @param {AppMeshClient} [options.client] - Optional pre-built `AppMeshClient` instance to reuse.
-   *   When supplied, `baseURL` and `sslConfig` are ignored and the server shares the caller's
+   *   When supplied, `baseURL` and `sslConfig` are ignored and the worker shares the caller's
    *   client (and therefore its token-refresh state). Use this when a single process needs both
-   *   client (outbound calls like `AddApp`) and server (`task_fetch`/`task_return`) roles to
+   *   client (outbound calls like `AddApp`) and worker (`fetch_task`/`send_task_result`) roles to
    *   avoid two independent `/token/renew` loops fighting each other — the daemon blacklists
    *   the previous token on every renew, so the slower refresher gets 401 "Token has been revoked".
    *
@@ -66,26 +104,39 @@ class AppMeshServer {
    *   ca: fs.readFileSync('/opt/appmesh/ssl/ca.pem'),
    *   rejectUnauthorized: true
    * };
-   * const server = new AppMeshServer('https://127.0.0.1:6060', sslConfig);
+   * const worker = new AppMeshWorker('https://127.0.0.1:6060', sslConfig);
    *
    * @example
-   * // Share a single client between client-role and server-role usage:
+   * // Share a single client between client-role and worker-role usage:
    * const client = new AppMeshClient('https://127.0.0.1:6060', sslConfig);
    * await client.login('user', 'pass');
-   * const server = new AppMeshServer('https://127.0.0.1:6060', sslConfig, { client });
+   * const worker = new AppMeshWorker('https://127.0.0.1:6060', sslConfig, { client });
    */
   constructor (
     baseURL = 'https://127.0.0.1:6060',
     sslConfig = null,
     options = {}
   ) {
-    if (options.client) {
+    if (options.client === _DEFER_CLIENT) {
+      // Subclass (AppMeshWorkerTCP) creates its own client lazily — do not build a
+      // throwaway HTTP client here.
+      this._client = null
+    } else if (options.client) {
       this._client = options.client
     } else {
       this._client = new AppMeshClient(baseURL, sslConfig)
-      this._client.setAutoRefreshToken(false) // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+      this._client.set_auto_refresh_token(false) // Task endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
     }
     this._logger = options.logger || console
+    this._stopped = false
+  }
+
+  /**
+   * Request cancellation of the fetch_task retry loop (safe to call at any time);
+   * a pending fetch_task resolves `null` at its next retry iteration.
+   */
+  stop () {
+    this._stopped = true
   }
 
   /**
@@ -116,26 +167,31 @@ class AppMeshServer {
    * Fetch task data in the currently running App Mesh application process.
    *
    * Used by App Mesh application process to obtain the payload from App Mesh service
-   * that a client pushed to it. This method will retry indefinitely until successful.
+   * that a client pushed to it. This method will retry indefinitely until successful
+   * or cancelled via {@link AppMeshWorker#stop}, in which case `null` is resolved.
    *
    * @async
-   * @returns {Promise<string|Buffer>} The raw payload bytes/body provided by the invoking client
+   * @returns {Promise<string|Buffer|null>} The raw payload bytes/body provided by the
+   *   invoking client, or `null` when the fetch loop was cancelled via stop()
+   * @throws {ProcessSupersededError} The daemon reported HTTP 412 — this process key was
+   *   superseded by a newer process instance; the caller should stop serving (an app
+   *   entry point typically catches this and exits).
    *
    * @example
-   * const server = new AppMeshServer();
-   * const payload = await server.task_fetch();
+   * const worker = new AppMeshWorker();
+   * const payload = await worker.fetch_task();
    * console.log('Received payload:', payload);
    */
-  async task_fetch () {
+  async fetch_task () {
     const { processKey, appName } = this._getRuntimeEnv()
     const path = `/appmesh/app/${appName}/task`
 
     const RETRY_DELAY = 100
 
-    while (true) {
+    while (!this._stopped) {
       const attemptStart = Date.now()
       try {
-        const response = await this._client._request('get', path, null, {
+        const response = await this._client.request('get', path, null, {
           params: { process_key: processKey }
         })
 
@@ -143,16 +199,31 @@ class AppMeshServer {
           return response.data
         }
 
+        // request() throws on non-200; this branch only guards injected clients
+        // that resolve with non-200 responses.
         if (response.status === 412) {
-          this._logger.error('Process key mismatch (412): this process has been superseded, exiting')
-          process.exit(1)
+          throw new ProcessSupersededError(
+            'Process key mismatch (412): this process has been superseded by a newer instance',
+            response.data
+          )
         }
 
         this._logger.warn(
-          `task_fetch failed with status ${response.status}: ${response.data}, retrying...`
+          `fetch_task failed with status ${response.status}: ${response.data}, retrying...`
         )
       } catch (error) {
-        this._logger.warn(`task_fetch error: ${error.message}, retrying...`)
+        // ProcessSupersededError fixes statusCode to 412, so this covers both the
+        // branch above and 412 AppMeshErrors thrown by request().
+        if (error.statusCode === 412) {
+          this._logger.error('Process key mismatch (412): this process has been superseded')
+          throw error instanceof ProcessSupersededError
+            ? error
+            : new ProcessSupersededError(
+              'Process key mismatch (412): this process has been superseded by a newer instance',
+              error.responseData
+            )
+        }
+        this._logger.warn(`fetch_task error: ${error.message}, retrying...`)
       }
 
       const remainingDelay = RETRY_DELAY - (Date.now() - attemptStart)
@@ -160,6 +231,7 @@ class AppMeshServer {
         await this._sleep(remainingDelay)
       }
     }
+    return null // cancelled via stop()
   }
 
   /**
@@ -174,20 +246,27 @@ class AppMeshServer {
    * @throws {Error} If the task return fails
    *
    * @example
-   * const server = new AppMeshServer();
+   * const worker = new AppMeshWorker();
    * const result = { status: 'success', data: processedData };
-   * await server.task_return(JSON.stringify(result));
+   * await worker.send_task_result(JSON.stringify(result));
    */
-  async task_return (result) {
+  async send_task_result (result) {
     const { processKey, appName } = this._getRuntimeEnv()
     const path = `/appmesh/app/${appName}/task`
 
-    const response = await this._client._request('put', path, result, {
-      params: { process_key: processKey }
-    })
+    let response
+    try {
+      response = await this._client.request('put', path, result, {
+        params: { process_key: processKey }
+      })
+    } catch (error) {
+      // request() throws AppMeshError on non-200
+      this._logger.error(`send_task_result failed with status ${error.statusCode}: ${error.message}`)
+      throw error
+    }
 
     if (response.status !== 200) {
-      const msg = `task_return failed with status ${response.status}: ${response.data}`
+      const msg = `send_task_result failed with status ${response.status}: ${response.data}`
       this._logger.error(msg)
       throw new Error(msg)
     }
@@ -205,41 +284,45 @@ class AppMeshServer {
 }
 
 /**
- * Server SDK for interacting with the local App Mesh service over TCP (TLS).
+ * Worker SDK for interacting with the local App Mesh service over TCP (TLS).
  *
- * This class extends AppMeshServer to use TCP transport instead of HTTP.
+ * This class extends AppMeshWorker to use TCP transport instead of HTTP.
  * Requires the AppMeshClientTCP implementation.
  *
- * @extends AppMeshServer
+ * @extends AppMeshWorker
  *
  * @example
- * import { AppMeshServerTCP } from 'appmesh/server';
+ * import { AppMeshWorkerTCP } from 'appmesh/server';
  *
- * const server = new AppMeshServerTCP();
+ * const worker = new AppMeshWorkerTCP();
  * try {
- *   const payload = await server.task_fetch();
+ *   const payload = await worker.fetch_task();
  *   const result = await processPayload(payload);
- *   await server.task_return(result);
+ *   await worker.send_task_result(result);
  * } finally {
- *   server.close();
+ *   worker.close();
  * }
  */
-class AppMeshServerTCP extends AppMeshServer {
+class AppMeshWorkerTCP extends AppMeshWorker {
   /**
-   * Construct an App Mesh server TCP object to communicate securely with an App Mesh server over TLS.
+   * Construct an App Mesh worker TCP object to communicate securely with an App Mesh server over TLS.
    *
-   * @param {Object} [sslConfig=null] - SSL configuration
+   * Like AppMeshClientTCP, the TCP address may be given as a legacy `[host, port]` array or an
+   * explicit `{host, port}` object, in either of the first two positions:
+   * `new AppMeshWorkerTCP(sslConfig, [host, port])` or `new AppMeshWorkerTCP({host, port}, sslConfig)`.
+   *
+   * @param {Object} [sslConfig=null] - SSL configuration (or `{host, port}` address)
    * @param {Buffer|string} [sslConfig.ca] - CA certificate for verification
    * @param {Buffer|string} [sslConfig.cert] - Client certificate
    * @param {Buffer|string} [sslConfig.key] - Client key
    * @param {boolean} [sslConfig.rejectUnauthorized=true] - Whether to verify SSL
-   * @param {Array<string, number>} [tcpAddress=['127.0.0.1', 6059]] - TCP server address [host, port]
+   * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
    * @param {AppMeshClientTCP} [options.client] - Optional pre-built `AppMeshClientTCP` instance to reuse.
-   *   When supplied, `sslConfig` and `tcpAddress` are ignored and the server shares the caller's
+   *   When supplied, `sslConfig` and `tcpAddress` are ignored and the worker shares the caller's
    *   client (and therefore its token-refresh state). Use this when a single process needs both
-   *   client and server roles to avoid two independent `/token/renew` loops fighting each other —
+   *   client and worker roles to avoid two independent `/token/renew` loops fighting each other —
    *   the daemon blacklists the previous token on every renew, so the slower refresher gets
    *   401 "Token has been revoked".
    *
@@ -250,25 +333,31 @@ class AppMeshServerTCP extends AppMeshServer {
    *   cert: fs.readFileSync('/opt/appmesh/ssl/client.pem'),
    *   key: fs.readFileSync('/opt/appmesh/ssl/client-key.pem')
    * };
-   * const server = new AppMeshServerTCP(sslConfig, ['127.0.0.1', 6059]);
+   * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6059]);
    *
    * @example
-   * // Share a single TCP client between client-role and server-role usage:
-   * import { AppMeshClientTCP } from 'appmesh/src/appmesh_tcp.js';
+   * // Share a single TCP client between client-role and worker-role usage:
+   * import { AppMeshClientTCP } from 'appmesh/tcp';
    * const client = new AppMeshClientTCP(sslConfig, ['127.0.0.1', 6059]);
    * await client.login('user', 'pass');
-   * const server = new AppMeshServerTCP(sslConfig, ['127.0.0.1', 6059], { client });
+   * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6059], { client });
    */
   constructor (
     sslConfig = null,
     tcpAddress = ['127.0.0.1', 6059],
     options = {}
   ) {
-    super(undefined, sslConfig)
-    this._logger = options.logger || console
+    // Accept the address-first object form: new AppMeshWorkerTCP({host, port}, sslConfig)
+    if (_isTcpAddressObject(sslConfig)) {
+      const addr = sslConfig
+      sslConfig = (Array.isArray(tcpAddress) || _isTcpAddressObject(tcpAddress)) ? null : tcpAddress
+      tcpAddress = addr
+    }
+    // The TCP client is created lazily by _ensureClient(); the sentinel tells the
+    // parent not to construct a throwaway HTTP client.
+    super(undefined, sslConfig, { ...options, client: options.client || _DEFER_CLIENT })
     this._sslConfig = sslConfig
     this._tcpAddress = tcpAddress
-    this._client = options.client ?? null
   }
 
   /**
@@ -279,7 +368,7 @@ class AppMeshServerTCP extends AppMeshServer {
     if (!this._client) {
       const { AppMeshClientTCP } = await import('./appmesh_tcp.js')
       this._client = new AppMeshClientTCP(this._sslConfig, this._tcpAddress)
-      this._client.setAutoRefreshToken(false) // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+      this._client.set_auto_refresh_token(false) // Task endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
     }
     return this._client
   }
@@ -287,17 +376,17 @@ class AppMeshServerTCP extends AppMeshServer {
   /**
    * Fetch task data (overrides parent to ensure TCP client is initialized)
    */
-  async task_fetch () {
+  async fetch_task () {
     await this._ensureClient()
-    return super.task_fetch()
+    return super.fetch_task()
   }
 
   /**
    * Return task result (overrides parent to ensure TCP client is initialized)
    */
-  async task_return (result) {
+  async send_task_result (result) {
     await this._ensureClient()
-    return super.task_return(result)
+    return super.send_task_result(result)
   }
 
   /**
@@ -305,11 +394,11 @@ class AppMeshServerTCP extends AppMeshServer {
    * Should be called when done using the server.
    *
    * @example
-   * const server = new AppMeshServerTCP();
+   * const worker = new AppMeshWorkerTCP();
    * try {
-   *   // Use server...
+   *   // Use worker...
    * } finally {
-   *   server.close();
+   *   worker.close();
    * }
    */
   close () {
@@ -320,22 +409,22 @@ class AppMeshServerTCP extends AppMeshServer {
 }
 
 /**
- * Context manager helper for AppMeshServer
+ * Context manager helper for AppMeshWorker
  * Provides automatic resource cleanup
  *
- * @param {Function} serverFactory - Function that creates a server instance
- * @param {Function} callback - Async function to execute with the server
+ * @param {Function} serverFactory - Function that creates a worker instance
+ * @param {Function} callback - Async function to execute with the worker
  * @returns {Promise<any>} Result from callback
  *
  * @example
- * import { withServer, AppMeshServerTCP } from 'appmesh/server';
+ * import { withServer, AppMeshWorkerTCP } from 'appmesh/server';
  *
  * await withServer(
- *   () => new AppMeshServerTCP(),
- *   async (server) => {
- *     const payload = await server.task_fetch();
+ *   () => new AppMeshWorkerTCP(),
+ *   async (worker) => {
+ *     const payload = await worker.fetch_task();
  *     const result = process(payload);
- *     await server.task_return(result);
+ *     await worker.send_task_result(result);
  *   }
  * );
  */
@@ -350,5 +439,10 @@ async function withServer (serverFactory, callback) {
   }
 }
 
-export { AppMeshServer, AppMeshServerTCP, withServer }
-export default AppMeshServer
+export {
+  AppMeshWorker,
+  AppMeshWorkerTCP,
+  ProcessSupersededError,
+  withServer
+}
+export default AppMeshWorker

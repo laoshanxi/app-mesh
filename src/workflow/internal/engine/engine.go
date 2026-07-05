@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -77,20 +76,19 @@ func (a *ActiveSteps) KillAll() {
 			continue
 		}
 		if app.targetHost == "" {
-			a.client.RemoveApp(app.appName)
+			a.client.DeleteApp(app.appName)
 		} else {
 			wg.Add(1)
 			go func(aa activeApp) {
 				defer wg.Done()
-				noVerify := ""
 				c, err := appmesh.NewTCPClient(appmesh.Option{
-					AppMeshUri:   a.serverURI,
-					ForwardTo:    aa.targetHost,
-					JwtToken:     a.client.GetToken(),
-					SslTrustedCA: &noVerify,
+					AppMeshUri:         a.serverURI,
+					ForwardTo:          aa.targetHost,
+					JwtToken:           a.client.GetToken(),
+					InsecureSkipVerify: true,
 				})
 				if err == nil {
-					c.RemoveApp(aa.appName)
+					c.DeleteApp(aa.appName)
 					c.CloseConnection()
 				}
 			}(app)
@@ -314,7 +312,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 
 	needsSucceeded, needsFailed, depReason := evaluateNeeds(job, wf, statusMu)
 	if job.Condition != "" {
-		if !needsSucceeded && !hasStatusFunction(job.Condition) {
+		if !needsSucceeded && !expression.HasStatusFunction(job.Condition) {
 			return skipJob(job, ectx, statusMu, opts, log, depReason)
 		}
 		if !expression.EvalConditionForJobWithStatus(
@@ -452,11 +450,14 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 				}
 			}
 			log.StepRetry(step.Name, attempt, step.Retry.Max)
-			if opts.CancelCtx != nil {
+			// Gate on the executor's context, not opts.CancelCtx: for finally
+			// steps the executor is detached from the workflow cancel context
+			// so their retries must survive cancellation too.
+			if exec.CancelCtx != nil {
 				timer := time.NewTimer(time.Duration(wait) * time.Second)
 				select {
 				case <-timer.C:
-				case <-opts.CancelCtx.Done():
+				case <-exec.CancelCtx.Done():
 					timer.Stop()
 					return false
 				}
@@ -497,8 +498,9 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 			return true
 		}
 		log.StepFailed(step.Name, exitCode, result.Duration)
-		// Don't burn through remaining retry attempts after cancel.
-		if opts.CancelCtx != nil && opts.CancelCtx.Err() != nil {
+		// Don't burn through remaining retry attempts after cancel (finally
+		// steps use a detached executor context, so their retries proceed).
+		if exec.CancelCtx != nil && exec.CancelCtx.Err() != nil {
 			break
 		}
 	}
@@ -559,12 +561,6 @@ func evaluateNeeds(job *models.Job, wf *models.Workflow, statusMu *sync.RWMutex)
 		}
 	}
 	return succeeded, failed, reason
-}
-
-func hasStatusFunction(condition string) bool {
-	return strings.Contains(condition, "always()") ||
-		strings.Contains(condition, "success()") ||
-		strings.Contains(condition, "failure()")
 }
 
 // runSubWorkflow executes a sub-workflow in-process and returns exit code + outputs.

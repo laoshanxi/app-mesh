@@ -1,3 +1,5 @@
+package appmesh;
+
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import java.io.DataInputStream;
@@ -22,7 +24,7 @@ public class TCPTransport implements AutoCloseable {
     // Must match C++ service and Python implementation
     public static final int TCP_MESSAGE_HEADER_LENGTH = 8;
     public static final int TCP_MESSAGE_MAGIC = 0x07C707F8;
-    public static final int TCP_MAX_BLOCK_SIZE = 100 * 1024 * 1024; // 100MB
+    public static final int TCP_MAX_BLOCK_SIZE = 1024 * 1024 * 1024; // 1GB
 
     public TCPTransport(String host, int port, SSLSocketFactory socketFactory) {
         this.host = host;
@@ -54,7 +56,8 @@ public class TCPTransport implements AutoCloseable {
             // Disable Nagle's algorithm (matches Python: socket.TCP_NODELAY)
             this.socket.setTcpNoDelay(true);
 
-            // Set read timeout for recv/send
+            // Read timeout for synchronous request-response recv; cleared via setReadTimeout(0)
+            // once a demuxer owns the read side (idle subscriptions must block indefinitely)
             this.socket.setSoTimeout(30000);
 
             // Use buffered streams for performance
@@ -105,6 +108,16 @@ public class TCPTransport implements AutoCloseable {
 
     public synchronized boolean connected() {
         return this.socket != null && !this.socket.isClosed() && this.socket.isConnected();
+    }
+
+    /**
+     * Set the socket read timeout in milliseconds ({@code 0} = block indefinitely).
+     * No-op when not connected.
+     */
+    public synchronized void setReadTimeout(int millis) throws IOException {
+        if (this.socket != null) {
+            this.socket.setSoTimeout(millis);
+        }
     }
 
     /**

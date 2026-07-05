@@ -79,8 +79,9 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
         .await
         .context("Run failed")?;
 
-    // Best-effort delete if run_and_wait didn't already clean up
-    if exit_code.is_none() || exit_code == Some(-2) {
+    // Best-effort delete if run_and_wait didn't already clean up; terminal failures
+    // (app removed / transport disconnect) surface as typed errors and propagate above.
+    if exit_code.is_none() {
         let _ = client.delete_app(&app_run.app_name).await;
     }
 

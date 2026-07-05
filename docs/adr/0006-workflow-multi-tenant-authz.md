@@ -4,7 +4,7 @@
 
 Accepted — implemented (Phase 1 + 2). The engine enforces per-workflow ownership and
 runs steps under the triggering caller's identity; the Go SDK (`EnableConcurrency`),
-the workflow engine, and the Rust CLI (`appm workflow`, all 14 actions) now carry the
+the workflow engine, and the Rust CLI (`appm workflow`, all 12 actions) now carry the
 caller token in the run_task payload. This is a concrete, simplified subset of the
 identity model in ADR 0004; the full `execution_identity` / automatic-trigger model
 (Phase 3 below) remains the longer-term target and is still Proposed in ADR 0004.
@@ -151,7 +151,7 @@ Note: this is distinct from the engine App's `sec_env` login (`APPMESH_USER`/
 | Engine concurrency | `internal/trigger/concurrency.go` | carry token in the in-memory `pendingRun` queue entry | ✅ done |
 | Engine main | `cmd/engine/main.go` | `EnableConcurrency()` on the shared mgmt connection; **auto-refresh kept** (safe once the demuxer is on) | ✅ done |
 | Go SDK | `src/sdk/go/subscribe.go` | public `EnableConcurrency()` (proactively start the response demuxer) | ✅ done |
-| CLI | `src/cli/src/commands/workflow.rs` | `with_token()` helper; inject caller JWT into all 14 action payloads | ✅ done |
+| CLI | `src/cli/src/commands/workflow.rs` | `with_token()` helper; inject caller JWT into every payload (14 injection sites across the 12 actions — `follow` reuses `log`/`run_detail`) | ✅ done |
 | Tests | `src/sdk/python/test/test_workflow_engine.py` | `TestWorkflowAuthz` class; token in `call()`; health-probe `setUp` | ✅ done |
 | Run record | `internal/workdir` + `internal/trigger/checkpoint.go` | `actor` (triggering user) on `RunRecord` + `RunIndex`, threaded `TriggerManual→…→SaveRunning`; surfaced via `run_detail`/`runs` | ✅ done |
 | Daemon (C++) | — | **none** | — |
@@ -167,19 +167,22 @@ Note: this is distinct from the engine App's `sec_env` login (`APPMESH_USER`/
   in-memory registry hit (no `GetApp`).
 - **Crash recovery:** manual (caller-initiated) runs are **not** resumed after an engine
   restart — the in-memory caller token is gone, and resuming under the engine identity
-  would be an escalation. They are marked `cancelled` ("re-run required"); automatic
-  (event/cron) runs, which always ran as the engine, resume normally. True per-owner
-  resume needs act-as (Phase 3).
+  would be an escalation. They are marked `cancelled` ("re-run required"). (Update: since
+  `execution_identity` shipped (ADR 0004), a run resumes only if the workflow declares an
+  `execution_identity` the engine can re-authenticate as; otherwise it fails closed — the
+  engine identity is never used to resume.)
 - **−** Long-running workflows are bounded by token validity (expiry deferred).
 - **−** Trigger clients must use a non-renewing token (operational discipline + docs).
-- Automatic (cron/event) triggers have no caller token; running those under the
-  workflow owner needs the daemon `act-as` / `execution_identity` capability — that is
-  **Phase 3**, tracked by ADR 0004, still Proposed.
+- Automatic (cron/event) triggers have no caller token. They now run under a declared
+  `execution_identity` (service-account model, shipped in ADR 0004) or fail closed.
+  Running them under the workflow *owner* without stored credentials still needs a daemon
+  `act-as` / token-exchange capability — that part remains **Phase 3**, tracked by ADR 0004.
 
 ## References
 
 - ADR 0002 — workflow stored as special App (ownership metadata; "stored but not
   enforced" note).
 - ADR 0004 — unified run management / identity model (resource_owner / actor /
-  execution_identity); longer-term target, still Proposed.
+  execution_identity); partially implemented (`execution_identity` shipped; unified Run
+  API and daemon act-as still Proposed).
 - ADR 0005 — `run_task` messaging and the L1 gate.

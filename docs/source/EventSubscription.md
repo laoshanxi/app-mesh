@@ -118,7 +118,9 @@ Response {
 
 ## SDK Usage
 
-> **Note:** Event subscription requires a persistent connection (TCP or WebSocket). The C++ SDK (`ClientHttp`) is HTTP-only and does not support subscriptions.
+> **Note:** Event subscription requires a persistent connection (TCP or WebSocket). The C++ SDK (`AppMeshClient`) is HTTP-only and does not support subscriptions.
+>
+> Client-side delivery guarantees (event ordering, the synthetic `__disconnected__` event, pre-registration buffering, timeout and cleanup policy) are normatively defined in [SDKContract.md](SDKContract.md).
 
 ### Go
 
@@ -172,7 +174,7 @@ client.unsubscribe(result.subscription_id)
 ### JavaScript
 
 ```javascript
-import { AppMeshClientTCP } from 'appmesh'
+import { AppMeshClientTCP } from 'appmesh/tcp'
 
 const client = new AppMeshClientTCP()
 await client.login('admin', 'admin123')

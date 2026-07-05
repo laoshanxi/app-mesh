@@ -31,8 +31,22 @@ async fn authed() -> Arc<appmesh::AppMeshClientWSS> {
     c
 }
 
+/// APPMESH_HOME with a config.yaml disabling server cert verification —
+/// the test daemon uses a self-signed cert (CLI equivalent of the SDK's
+/// danger_accept_invalid_certs above).
+fn test_appmesh_home() -> &'static std::path::Path {
+    static HOME: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    HOME.get_or_init(|| {
+        let dir = std::env::temp_dir().join("appmesh-cli-remote-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.yaml"), "REST:\n  SSL:\n    VerifyServer: false\n").unwrap();
+        dir
+    })
+}
+
 fn appm() -> std::process::Command {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_appm"));
+    cmd.env("APPMESH_HOME", test_appmesh_home());
     cmd.args(["-H", &format!("{}:{}", wss_host(), wss_port())]);
     cmd
 }
@@ -245,6 +259,9 @@ async fn sdk_21_file_roundtrip() {
     let src = dir.path().join("up.txt");
     let dst = dir.path().join("down.txt");
     std::fs::write(&src, "rust_file_roundtrip").unwrap();
+    // remove any leftover from a previous run — the daemon rejects overwrite
+    let rm = Application::builder("_rt_clean_").command("rm -f /tmp/rust_rt.txt").shell(true).build();
+    let _ = c.run_app_sync(&rm, 5, 10).await;
     c.upload_file(src.to_str().unwrap(), "/tmp/rust_rt.txt", false).await.unwrap();
     c.download_file("/tmp/rust_rt.txt", dst.to_str().unwrap(), false).await.unwrap();
     assert_eq!(std::fs::read_to_string(&dst).unwrap(), "rust_file_roundtrip");
@@ -506,6 +523,8 @@ fn cli_64_file_put_get() {
     let src = dir.path().join("up.txt");
     let dst = dir.path().join("down.txt");
     std::fs::write(&src, "cli_file_test").unwrap();
+    // remove any leftover from a previous run — the daemon rejects overwrite
+    let _ = appm().args(["run", "-c", "rm -f /tmp/cli_ft.txt", "-u", "--timeout=-5"]).output();
     assert!(appm().args(["put", "-l", src.to_str().unwrap(), "-r", "/tmp/cli_ft.txt"]).output().unwrap().status.success());
     assert!(appm().args(["get", "-r", "/tmp/cli_ft.txt", "-l", dst.to_str().unwrap()]).output().unwrap().status.success());
     assert_eq!(std::fs::read_to_string(&dst).unwrap(), "cli_file_test");

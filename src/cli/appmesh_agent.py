@@ -85,8 +85,8 @@ def main():
     command = " ".join(sys.argv[1:])
 
     try:
-        # Initialize appmesh
-        appmesh_client = appmesh.AppMeshClient()
+        # Initialize appmesh (container image has no CA bundle; daemon uses a self-signed cert)
+        appmesh_client = appmesh.AppMeshClient(ssl_verify=False)
         appmesh_client.login(DEFAULT_USERNAME, DEFAULT_PASSWORD)
 
         # Start monitor application
@@ -97,8 +97,8 @@ def main():
         native_app = create_native_app(native_app_name, command)
         run_handle = appmesh_client.run_app_async(app=native_app)
 
-        # Wait shadow application exit
-        exit_code = appmesh_client.wait_for_async_run(run_handle)
+        # Wait shadow application exit, relaying its stdout to container stdout (pod logs)
+        exit_code = appmesh_client.wait_for_async_run(run_handle, stdout_handler=appmesh.print_output_handler)
         sys.exit(exit_code)
 
     except Exception as e:

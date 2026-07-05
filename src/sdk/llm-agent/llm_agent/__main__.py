@@ -1,4 +1,4 @@
-"""Entry point — runs the task_fetch/task_return loop in one of two roles.
+"""Entry point — runs the fetch_task/send_task_result loop in one of two roles.
 
 Both are ordinary, admin-provisioned App Mesh Apps (this binary registers nothing):
 
@@ -99,17 +99,21 @@ def _run_worker(args, common):
 
 
 def _serve(handler: Handler):
-    """task_fetch → dispatch → task_return loop (serial). The request is bracketed
+    """fetch_task → dispatch → send_task_result loop (serial). The request is bracketed
     in-flight so a worker reaper never exits mid-request."""
     import json
-    from appmesh import AppMeshServerTCP
-    ctx = AppMeshServerTCP()
+    from appmesh import AppMeshProcessSupersededError, AppMeshWorkerTCP
+    ctx = AppMeshWorkerTCP()
     backoff = 1.0
     while True:
         try:
-            payload = ctx.task_fetch()
+            payload = ctx.fetch_task()
+        except AppMeshProcessSupersededError:
+            # App entry point: exit non-zero so the daemon treats the superseded worker as terminated.
+            log.error("process key superseded — exiting session worker")
+            sys.exit(1)
         except Exception as e:
-            log.warning("task_fetch error: %s; retrying in %.0fs", e, backoff)
+            log.warning("fetch_task error: %s; retrying in %.0fs", e, backoff)
             time.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
             continue
@@ -117,7 +121,7 @@ def _serve(handler: Handler):
         handler.begin_request()
         try:
             resp = handler.dispatch(payload)
-            ctx.task_return(json.dumps(resp))
+            ctx.send_task_result(json.dumps(resp))
         except Exception as e:
             log.error("unhandled error in request cycle: %s", e, exc_info=True)
         finally:
