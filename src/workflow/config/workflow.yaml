@@ -4,6 +4,11 @@
 #
 # sec_env values are encrypted with the default admin key.
 # To change credentials: appm add -a workflow -z APPMESH_PASSWORD=<new>
+#
+# To let workflows declare `execution_identity: <user>` (ADR 0004), provision
+# the identities' credentials as a JSON map in a secured env var:
+#   appm add -a workflow -z 'APPMESH_EXEC_IDENTITIES={"svc-pipeline":"<password>"}'
+# Only identities listed here can be bound by a workflow's execution_identity.
 
 command: ../../bin/wf-engine
 name: workflow

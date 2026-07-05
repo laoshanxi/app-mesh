@@ -26,7 +26,7 @@ const (
 
 // StepAppPrefix tags daemon Apps spawned for command steps. The trigger service
 // uses it to sweep orphans on startup; the executor uses it to decide whether
-// to RemoveApp at step end.
+// to DeleteApp at step end.
 const StepAppPrefix = "wf-cmd-"
 
 type StepExecutor struct {
@@ -34,7 +34,7 @@ type StepExecutor struct {
 	Ctx            *expression.Context
 	JobName        string
 	Depth          int
-	CallerToken    string // run's caller JWT (empty for auto/recovered runs); for message forward_token
+	CallerToken    string   // execution-identity token (caller for manual runs, else execution_identity; empty for recovered); injected into forward_token payloads
 	ClusterNodes   []string // known cluster node addresses for label-based routing
 	TargetHost     string   // resolved target host for current job (set by engine per-job)
 	ServerURI      string   // base server URI for creating forwarding clients
@@ -113,7 +113,7 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 	}
 	payload := expression.SubstituteForJob(step.Message.Payload, e.Ctx, e.JobName)
 	if step.Message.ForwardToken && e.CallerToken != "" {
-		payload = injectToken(payload, e.CallerToken)  // identity for llm-agent-style targets; never logged
+		payload = injectToken(payload, e.CallerToken) // identity for llm-agent-style targets; never logged
 	}
 	timeout := step.Timeout
 	if timeout <= 0 {
@@ -161,6 +161,17 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 			Duration: dur,
 		}
 	case <-ctx.Done():
+		// Best-effort cancel: the DELETE task API can't abort the target's in-flight work
+		// (and may hit another caller's task on a shared App). Drain the abandoned RunTask
+		// so its eventual result is logged, not leaked.
+		go func() {
+			r := <-ch
+			if r.err != nil {
+				logger.Info("cancelled message step to app '" + step.Message.App + "' finished with error: " + r.err.Error())
+			} else {
+				logger.Info("cancelled message step to app '" + step.Message.App + "' completed after cancellation; response discarded")
+			}
+		}()
 		return fail(1, "cancelled", time.Since(start).Seconds())
 	}
 }
@@ -333,7 +344,7 @@ func (e *StepExecutor) runAndWait(app appmesh.Application, timeout int) models.S
 			e.remoteClient = nil
 		}
 	} else if isNewApp {
-		client.RemoveApp(run.AppName)
+		client.DeleteApp(run.AppName)
 	}
 
 	status := models.StatusSuccess
@@ -370,12 +381,11 @@ func (e *StepExecutor) clientForTarget() (*appmesh.AppMeshClient, error) {
 		e.remoteClient.SetToken(token)
 		return e.remoteClient.AppMeshClient, nil
 	}
-	noVerify := ""
 	c, err := appmesh.NewTCPClient(appmesh.Option{
-		AppMeshUri:   e.ServerURI,
-		ForwardTo:    e.TargetHost,
-		JwtToken:     token,
-		SslTrustedCA: &noVerify,
+		AppMeshUri:         e.ServerURI,
+		ForwardTo:          e.TargetHost,
+		JwtToken:           token,
+		InsecureSkipVerify: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("connect to remote node %s: %w", e.TargetHost, err)

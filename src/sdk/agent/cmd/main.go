@@ -91,7 +91,11 @@ func initializeServices(ctx context.Context) <-chan struct{} {
 
 	// Cloud resource reporting
 	go func() {
-		c := cloud.NewCloud()
+		c, err := cloud.NewCloud()
+		if err != nil {
+			// Process-exit decision lives in main, not in library code.
+			logger.Fatalf("Failed to initialize cloud operator: %v", err)
+		}
 		if err := c.ReportHostMetricsPeriodically(ctx); err != nil {
 			logger.Errorf("Host resource reporting failed: %v", err)
 		}

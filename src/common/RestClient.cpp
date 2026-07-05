@@ -1,5 +1,4 @@
 // src/common/RestClient.cpp
-#include <algorithm>
 #include <ctime>
 #include <curl/curl.h>
 #include <fstream>
@@ -156,19 +155,17 @@ size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *use
 }
 
 // Header callback to parse headers
-size_t HeaderCallback(char *buffer, size_t size, size_t nitems, std::map<std::string, std::string> *userHeader)
+size_t HeaderCallback(char *buffer, size_t size, size_t nitems, HttpHeaderMap *userHeader)
 {
 	const std::string header(buffer, size * nitems);
-	// Skip empty lines and HTTP status line
-	if (header.find(':') != std::string::npos && userHeader != nullptr)
+	// Split on the first colon only: header values may contain colons (URLs, dates, Set-Cookie).
+	const auto colonPos = header.find(':');
+	if (colonPos != std::string::npos && userHeader != nullptr)
 	{
-		auto pair = Utility::splitString(header, ":");
-		if (pair.size() == 2)
-		{
-			auto key = Utility::stdStringTrim(pair[0]);
-			auto value = Utility::stdStringTrim(pair[1]);
+		auto key = Utility::stdStringTrim(header.substr(0, colonPos));
+		auto value = Utility::stdStringTrim(header.substr(colonPos + 1));
+		if (!key.empty())
 			(*userHeader)[key] = value;
-		}
 	}
 	return size * nitems;
 }
@@ -397,24 +394,10 @@ std::shared_ptr<CurlResponse> RestClient::request(
 		// Get the HTTP response code
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->status_code);
 
-		// Save cookies after successful request (case-insensitive check for Set-Cookie,
-		// HTTP/2 uses lowercase headers while HTTP/1.1 uses mixed case)
+		// header map is case-insensitive, so count() matches any Set-Cookie casing
+		if (response->header.count("set-cookie") > 0)
 		{
-			bool hasCookieHeader = false;
-			for (const auto &h : response->header)
-			{
-				std::string lowerKey = h.first;
-				std::transform(lowerKey.begin(), lowerKey.end(), lowerKey.begin(), ::tolower);
-				if (lowerKey == "set-cookie")
-				{
-					hasCookieHeader = true;
-					break;
-				}
-			}
-			if (hasCookieHeader)
-			{
-				saveCookiesAfterRequest(curl, m_sessionConfig, m_memoryCookies, m_sessionMutex);
-			}
+			saveCookiesAfterRequest(curl, m_sessionConfig, m_memoryCookies, m_sessionMutex);
 		}
 	}
 	return response;
@@ -606,9 +589,8 @@ void RestClient::setSslConfig(CURL *curl)
 	curl_easy_setopt(curl, CURLOPT_SSLVERSION, m_sslConfig.m_ssl_version);
 
 #if defined(_WIN32)
-	// Disable Windows certificate store
-	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
-	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NO_REVOKE);
+	// CURLOPT_SSL_OPTIONS is a bitmask replaced on each call: both flags must be OR'd in one setopt.
+	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA | CURLSSLOPT_NO_REVOKE);
 #endif
 
 	// Client certificate configuration

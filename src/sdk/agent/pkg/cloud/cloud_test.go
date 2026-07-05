@@ -9,12 +9,18 @@ import (
 )
 
 func TestLeader(t *testing.T) {
-	consul := NewCloud()
+	consul, err := NewCloud()
+	if err != nil {
+		t.Skipf("daemon not available: %v", err)
+	}
 	logger.Info(consul.getLeader())
 }
 
 func TestRegisterSelf(t *testing.T) {
-	consul := NewCloud()
+	consul, err := NewCloud()
+	if err != nil {
+		t.Skipf("daemon not available: %v", err)
+	}
 	logger.Info(consul.registerHttpService())
 }
 

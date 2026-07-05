@@ -24,27 +24,26 @@ func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nod
 	}
 
 	if localClient != nil {
-		if labels, err := localClient.GetLabels(); err == nil && labelsMatch(labels, nodeLabel) {
+		if labels, err := localClient.ListLabels(); err == nil && labelsMatch(labels, nodeLabel) {
 			return "", nil
 		}
 	}
 
-	noVerify := ""
 	token := ""
 	if localClient != nil {
 		token = localClient.GetToken()
 	}
 	for _, node := range clusterNodes {
 		probe, err := appmesh.NewTCPClient(appmesh.Option{
-			AppMeshUri:   serverURI,
-			ForwardTo:    node,
-			JwtToken:     token,
-			SslTrustedCA: &noVerify,
+			AppMeshUri:         serverURI,
+			ForwardTo:          node,
+			JwtToken:           token,
+			InsecureSkipVerify: true,
 		})
 		if err != nil {
 			continue
 		}
-		remoteLabels, err := probe.GetLabels()
+		remoteLabels, err := probe.ListLabels()
 		probe.CloseConnection()
 		if err != nil {
 			continue

@@ -7,19 +7,22 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"sync"
 	"time"
 )
 
 const (
-	TCP_MESSAGE_HEADER_LENGTH = 8                  // 8 bytes TCP message header: 4 bytes Magic number + 4 bytes Body length
-	TCP_MESSAGE_MAGIC         = uint32(0x07C707F8) // 4-byte magic number used to identify and validate TCP messages.
-	TCP_CHUNK_BLOCK_SIZE      = 16*1024 - 256      // Target block size: 16KB, with 256 bytes reserved for protocol overhead or alignment.
-	TCP_MAX_BLOCK_SIZE        = 1024 * 1024 * 100  // Maximum allowed block size: 100 MB
+	tcpMessageHeaderLength = 8                  // 8 bytes TCP message header: 4 bytes Magic number + 4 bytes Body length
+	tcpMessageMagic        = uint32(0x07C707F8) // 4-byte magic number used to identify and validate TCP messages.
+	TCPChunkBlockSize      = 16*1024 - 256      // Target block size: 16KB, with 256 bytes reserved for protocol overhead or alignment.
+	tcpMaxBlockSize        = 1024 * 1024 * 1024 // Maximum allowed block size: 1 GB
 )
 
-// TCPConnection represents a non-thread-safe TCP connection wrapper.
+// TCPConnection is a TCP connection wrapper safe for concurrent use:
+// sends and reads are serialized by separate mutexes, allowing one
+// in-flight send and one in-flight read at a time.
 type TCPConnection struct {
 	conn   net.Conn
 	muSend sync.Mutex
@@ -39,14 +42,17 @@ func (r *TCPConnection) Connect(tcpAddr net.Addr, sslClientCert string, sslClien
 	}
 
 	// Configure server verification
-	if sslCAPath != "" {
+	switch sslCAPath {
+	case caSystemTrust:
+		// Verify against the system trust store (RootCAs left nil); see caSystemTrust.
+	case "":
+		conf.InsecureSkipVerify = true
+	default:
 		serverCA, err := LoadCA(sslCAPath)
 		if err != nil {
 			return fmt.Errorf("failed to load server CA: %w", err)
 		}
 		conf.RootCAs = serverCA
-	} else {
-		conf.InsecureSkipVerify = true
 	}
 
 	// Configure client certificate
@@ -60,7 +66,7 @@ func (r *TCPConnection) Connect(tcpAddr net.Addr, sslClientCert string, sslClien
 
 	// Establish connection
 	// KeepAlive so a half-open peer (host crash / partition) is detected, not hung on forever.
-	dialer := net.Dialer{Timeout: TCP_CONNECT_TIMEOUT_SECONDS * time.Second, KeepAlive: 30 * time.Second}
+	dialer := net.Dialer{Timeout: tcpConnectTimeoutSeconds * time.Second, KeepAlive: 30 * time.Second}
 	conn, err := tls.DialWithDialer(&dialer, "tcp", tcpAddr.String(), conf)
 	if err != nil {
 		if conn != nil {
@@ -70,8 +76,8 @@ func (r *TCPConnection) Connect(tcpAddr net.Addr, sslClientCert string, sslClien
 	}
 
 	// Set TCP_NODELAY for low-latency communication.
-	if err := SetTcpNoDelay(conn); err != nil {
-		fmt.Printf("warning: failed to set TCP_NODELAY: %v\n", err)
+	if err := setTCPNoDelay(conn); err != nil {
+		log.Printf("warning: failed to set TCP_NODELAY: %v", err)
 	}
 
 	r.conn = conn
@@ -100,14 +106,14 @@ func (r *TCPConnection) ReadMessage() ([]byte, error) {
 
 // readHeader reads and parses the 8-byte message header.
 func (r *TCPConnection) readHeader() (uint32, error) {
-	headerBuf, err := r.readBytes(TCP_MESSAGE_HEADER_LENGTH)
+	headerBuf, err := r.readBytes(tcpMessageHeaderLength)
 	if err != nil {
 		return 0, err
 	}
 
 	// Extract and validate the magic number (first 4 bytes).
 	magic := binary.BigEndian.Uint32(headerBuf[:4])
-	if magic != TCP_MESSAGE_MAGIC {
+	if magic != tcpMessageMagic {
 		return 0, fmt.Errorf("invalid message: incorrect magic number")
 	}
 
@@ -121,8 +127,8 @@ func (r *TCPConnection) readBytes(msgLength uint32) ([]byte, error) {
 		return []byte{}, nil
 	}
 
-	if msgLength > TCP_MAX_BLOCK_SIZE {
-		return nil, fmt.Errorf("read message size %d exceeds maximum allowed size %d", msgLength, TCP_MAX_BLOCK_SIZE)
+	if msgLength > tcpMaxBlockSize {
+		return nil, fmt.Errorf("read message size %d exceeds maximum allowed size %d", msgLength, tcpMaxBlockSize)
 	}
 
 	data := make([]byte, msgLength)
@@ -154,9 +160,9 @@ func (r *TCPConnection) SendMessage(ctx context.Context, buffer []byte) error {
 	}
 
 	// --- Prepare header (stack allocated) ---
-	var header [TCP_MESSAGE_HEADER_LENGTH]byte
+	var header [tcpMessageHeaderLength]byte
 	// Write the magic number to the first 4 bytes in network byte order.
-	binary.BigEndian.PutUint32(header[:4], TCP_MESSAGE_MAGIC)
+	binary.BigEndian.PutUint32(header[:4], tcpMessageMagic)
 	// Write the body length to the next 4 bytes in network byte order.
 	binary.BigEndian.PutUint32(header[4:], uint32(len(buffer)))
 

@@ -3,7 +3,9 @@
 use reqwest::StatusCode;
 use std::fmt;
 
-/// Main error type for AppMesh SDK operations
+/// Main error type for AppMesh SDK operations.
+/// String payloads are display-only diagnostics (do not parse); the underlying
+/// cause, when preserved (e.g. `Transport(TransportError::IoError)`), is available via `source()`.
 #[derive(Debug)]
 pub enum AppMeshError {
     /// Parse URL failed
@@ -30,6 +32,14 @@ pub enum AppMeshError {
     UnsupportedFeature { feature: String, transport: String },
     /// Transport-level protocol errors (invalid magic, message too large, etc.)
     Transport(TransportError),
+    /// This server process has been superseded by a newer instance (daemon returned HTTP 412)
+    ProcessSuperseded(String),
+    /// App was removed before an EXIT event was observed (wait_for_async_run)
+    AppRemoved,
+    /// Transport disconnected before an EXIT event was observed (wait_for_async_run)
+    TransportDisconnected,
+    /// Operation cancelled by the caller (e.g. AppMeshWorker::stop)
+    Cancelled,
     /// Generic error (use sparingly)
     Other(String),
 }
@@ -65,7 +75,14 @@ impl fmt::Display for TransportError {
     }
 }
 
-impl std::error::Error for TransportError {}
+impl std::error::Error for TransportError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            TransportError::IoError(err) => Some(err),
+            _ => None,
+        }
+    }
+}
 
 impl From<std::io::Error> for TransportError {
     fn from(err: std::io::Error) -> Self {
@@ -98,12 +115,23 @@ impl fmt::Display for AppMeshError {
                 write!(f, "Feature '{}' is not supported by {} transport", feature, transport)
             }
             Self::Transport(err) => write!(f, "Transport error: {}", err),
+            Self::ProcessSuperseded(msg) => write!(f, "Process superseded: {}", msg),
+            Self::AppRemoved => write!(f, "App removed before exit"),
+            Self::TransportDisconnected => write!(f, "Transport disconnected before exit"),
+            Self::Cancelled => write!(f, "Operation cancelled"),
             Self::Other(msg) => write!(f, "{}", msg),
         }
     }
 }
 
-impl std::error::Error for AppMeshError {}
+impl std::error::Error for AppMeshError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Transport(err) => Some(err),
+            _ => None,
+        }
+    }
+}
 
 // Conversion implementations
 impl From<url::ParseError> for AppMeshError {

@@ -3,6 +3,7 @@
 """AppMesh HTTP client with Keycloak OAuth2 authentication support."""
 
 import logging
+import warnings
 from typing import Optional, Union, Tuple, Dict, Any
 
 from keycloak import KeycloakOpenID
@@ -25,7 +26,7 @@ class AppMeshClientOAuth(AppMeshClient):
         self,
         oauth2: Dict[str, str],  # Required for Keycloak
         base_url: str = "https://127.0.0.1:6060",
-        ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         request_timeout: Tuple[float, float] = (60, 300),
         auto_refresh_token: bool = True,  # Default to True for Keycloak
@@ -83,6 +84,8 @@ class AppMeshClientOAuth(AppMeshClient):
             token_expire: Token expiration duration (unused in Keycloak flow).
             audience: Token audience (unused in Keycloak flow).
         """
+        if token_expire or audience:
+            warnings.warn("token_expire and audience are ignored by the Keycloak login flow", UserWarning, stacklevel=2)
         # Keycloak authentication
         self._token = self._keycloak_openid.token(
             username=username,
@@ -130,14 +133,25 @@ class AppMeshClientOAuth(AppMeshClient):
             logger.error("Keycloak token renewal failed: %s", e)
             raise AppMeshAuthError(f"Keycloak token renewal failed: {str(e)}") from e
 
+    def get_oauth_userinfo(self) -> dict:
+        """Get Keycloak OIDC userinfo for the current access token.
+
+        Returns:
+            Keycloak userinfo dictionary (OIDC claims such as ``sub``,
+            ``preferred_username``, ``email``).
+        """
+        access_token = self._get_access_token()
+        return self._keycloak_openid.userinfo(access_token)
+
     def get_current_user(self) -> dict:
         """Get information about the current user using Keycloak userinfo.
 
         Returns:
-            User information dictionary.
+            Keycloak userinfo dictionary (same as ``get_oauth_userinfo()``); note this is
+            shaped differently from the App Mesh ``/appmesh/user/self`` document returned
+            by ``AppMeshClient.get_current_user()``.
         """
-        access_token = self._get_access_token()
-        return self._keycloak_openid.userinfo(access_token)
+        return self.get_oauth_userinfo()
 
     def close(self) -> None:
         """Close the session and release resources, including Keycloak logout."""

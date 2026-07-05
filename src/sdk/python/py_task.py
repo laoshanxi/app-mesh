@@ -7,7 +7,7 @@ from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Optional, Union
 
-from appmesh import AppMeshServerTCP
+from appmesh import AppMeshWorkerTCP
 
 
 def exec_with_output(code: Union[str, bytes], exec_globals: Optional[dict] = None) -> str:
@@ -27,11 +27,11 @@ def exec_with_output(code: Union[str, bytes], exec_globals: Optional[dict] = Non
 
 def main():
     """Minimal server loop: fetch a payload, execute it, return the output."""
-    context = AppMeshServerTCP()
+    context = AppMeshWorkerTCP()
     while True:
-        payload = context.task_fetch()  # Wait and fetch a payload
+        payload = context.fetch_task()  # Wait and fetch a payload
         output = exec_with_output(payload)  # Execute the payload
-        context.task_return(output)  # Return the output back to the client
+        context.send_task_result(output)  # Return the output back to the client
 
 
 if __name__ == "__main__":

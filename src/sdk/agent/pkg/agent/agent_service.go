@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -49,17 +48,26 @@ const (
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
 	HTTP_HEADER_KEY_File_Path          = "X-File-Path"
 
-	TCP_CHUNK_BLOCK_SIZE = appmesh.TCP_CHUNK_BLOCK_SIZE
+	TCP_CHUNK_BLOCK_SIZE = appmesh.TCPChunkBlockSize
 )
 
 var (
-	logger          = utils.GetLogger()
-	REST_PATH_TASK  = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
-	localConnection *Connection // TCP connection to the local server
+	logger         = utils.GetLogger()
+	REST_PATH_TASK = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
+	localTCPAddr   net.Addr // local daemon TCP address, set by ListenAndServeREST
 
 	delegateClient     *http.Client
 	delegateClientOnce sync.Once
 )
+
+// getLocalConnection returns the pooled TCP connection to the local daemon,
+// re-establishing it if a read error removed it from the pool.
+func getLocalConnection() (*Connection, error) {
+	if localTCPAddr == nil {
+		return nil, fmt.Errorf("local daemon address not initialized")
+	}
+	return getOrCreateConnection(localTCPAddr, config.ConfigData.REST.SSL.VerifyServer, false)
+}
 
 // getDelegateClient lazily builds the shared HTTP client for forwarding requests
 // (http.Client is concurrency-safe and pools connections, so one instance suffices).
@@ -92,23 +100,15 @@ func getDelegateClient() *http.Client {
 
 // MonitorConnectionResponse continuously reads messages from a connection and forwards responses
 // to their corresponding channels. It handles connection cleanup on errors.
+// allowError is retained for API compatibility; read errors only drop the dead
+// connection from the pool, and the next request reconnects.
 func MonitorConnectionResponse(conn *Connection, allowError bool) {
 	defer deleteConnection(conn)
-
-	// Helper function to handle errors consistently
-	handleError := func(msg string, args ...interface{}) {
-		logMsg := fmt.Sprintf(msg, args...)
-		if allowError {
-			logger.Error(logMsg)
-			return
-		}
-		logger.Fatal(logMsg)
-	}
 
 	for {
 		response, err := readResponseFromConn(conn)
 		if err != nil {
-			handleError("Failed to parse response from host %s: %v", conn, err)
+			logger.Errorf("Failed to parse response from host %s: %v", conn, err)
 			return
 		}
 
@@ -124,12 +124,13 @@ func ListenAndServeREST(ctx context.Context) error {
 	hostPort = strings.Replace(hostPort, "0.0.0.0", "127.0.0.1", 1)
 	connectAddr, err := net.ResolveTCPAddr("tcp", hostPort)
 	if err != nil {
-		log.Fatalf("Failed to resolve address %s: %v", hostPort, err)
+		return fmt.Errorf("failed to resolve address %s: %w", hostPort, err)
 	}
+	localTCPAddr = connectAddr
 
-	localConnection, err = getOrCreateConnection(connectAddr, config.ConfigData.REST.SSL.VerifyServer, false)
-	if err != nil {
-		logger.Fatalf("Failed to connect to TCP server <%s> with error: %v", connectAddr, err)
+	// Eager connect so a misconfigured/unreachable daemon fails at startup.
+	if _, err := getLocalConnection(); err != nil {
+		return fmt.Errorf("failed to connect to TCP server <%s>: %w", connectAddr, err)
 	}
 	logger.Infof("Established REST connection to TCP server <%s>", connectAddr)
 
@@ -255,7 +256,13 @@ func serveTLS(ctx context.Context, address string, server *http.Server) error {
 
 // HandleAppMeshRequest processes AppMesh requests
 func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
-	var targetConnection = localConnection
+	localConn, err := getLocalConnection()
+	if err != nil {
+		logger.Errorf("Failed to connect to local daemon: %v", err)
+		utils.HttpError(w, "failed to connect to local service", http.StatusBadGateway)
+		return
+	}
+	targetConnection := localConn
 
 	// Handle forward request
 	forwardingHost := string(r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST))
@@ -303,7 +310,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
-	if targetConnection != localConnection {
+	if targetConnection != localConn {
 		request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_TCP
 		// File download & upload
 		switch request.RequestUri {
@@ -319,7 +326,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		logger.Errorf("Failed to send request to server with error: %v", sendErr)
 
 		// Only delete remote connections on error, not local connection
-		if targetConnection != localConnection {
+		if targetConnection != localConn {
 			deleteConnection(targetConnection)
 		}
 
@@ -337,7 +344,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		if sendErr != nil {
 			logger.Errorf("Failed to send file data: %v", sendErr)
 			// Only delete connection on file send error
-			if targetConnection != localConnection {
+			if targetConnection != localConn {
 				deleteConnection(targetConnection)
 			}
 			// Don't return error to client since response was already sent

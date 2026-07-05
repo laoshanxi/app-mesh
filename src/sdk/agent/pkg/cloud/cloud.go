@@ -18,10 +18,12 @@ type Cloud struct {
 
 var logManager = NewLogManager(1 * time.Hour)
 
-func NewCloud() *Cloud {
-	return &Cloud{
-		appmesh: NewAppMeshClient(),
+func NewCloud() (*Cloud, error) {
+	client, err := NewAppMeshClient()
+	if err != nil {
+		return nil, err
 	}
+	return &Cloud{appmesh: client}, nil
 }
 
 func (r *Cloud) getLeader() (string, error) {

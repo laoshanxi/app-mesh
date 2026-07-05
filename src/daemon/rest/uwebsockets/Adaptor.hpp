@@ -242,6 +242,17 @@ private:
             requestState->headers.emplace(k, v);
         }
 
+        // decodeURIComponent throws on a malformed %-escape; this runs on the uWS loop with
+        // no enclosing catch, so an escaped throw = remote DoS. Decode best-effort, fall back to raw.
+        auto safeDecode = [](const std::string &s) -> std::string
+        {
+            try { return Utility::decodeURIComponent(s); }
+            catch (const std::exception &e)
+            {
+                LOG_WAR << "handleHttpRequest() malformed query escape, using raw value: " << e.what();
+                return s;
+            }
+        };
         auto rawQuery = std::string(req->getQuery());
         for (auto qs = std::string_view(rawQuery); !qs.empty();)
         {
@@ -249,8 +260,8 @@ private:
             auto kv = qs.substr(0, amp);
             auto eq = kv.find('=');
 
-            auto key = Utility::decodeURIComponent(std::string(kv.substr(0, eq)));
-            auto val = eq == std::string_view::npos ? std::string() : Utility::decodeURIComponent(std::string(kv.substr(eq + 1)));
+            auto key = safeDecode(std::string(kv.substr(0, eq)));
+            auto val = eq == std::string_view::npos ? std::string() : safeDecode(std::string(kv.substr(eq + 1)));
             requestState->query.emplace(std::move(key), std::move(val));
 
             if (amp == std::string_view::npos)
@@ -608,7 +619,8 @@ private:
                     nlohmann::json resp = {{"status", "success"}, {"file", fileName}, {"size", state->totalBytes}};
                     res->writeStatus("201 Created");
                     res->writeHeader("Content-Type", "application/json");
-                    res->end(resp.dump());
+                    // Invalid UTF-8 in the filename makes default dump() throw on the uWS loop; 'replace' avoids it.
+                    res->end(resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
                 }
             }
         });

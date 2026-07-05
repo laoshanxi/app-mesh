@@ -555,7 +555,7 @@ std::string Utility::decodeURIComponent(const std::string &encoded)
 	{
 		if (encoded[i] == '%')
 		{
-			if (i + 2 < encoded.size() && std::isxdigit(encoded[i + 1]) && std::isxdigit(encoded[i + 2]))
+			if (i + 2 < encoded.size() && std::isxdigit(static_cast<unsigned char>(encoded[i + 1])) && std::isxdigit(static_cast<unsigned char>(encoded[i + 2])))
 			{
 				int value = std::stoi(encoded.substr(i + 1, 2), nullptr, 16);
 				result += static_cast<char>(value);

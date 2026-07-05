@@ -1,7 +1,9 @@
 package appmesh
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -9,33 +11,38 @@ import (
 	"time"
 )
 
-// AppMeshServerHttpContext interacts with the App Mesh REST service over HTTPS for server-side applications.
+// ErrProcessSuperseded indicates the server rejected the process key (HTTP 412):
+// this process instance has been superseded by another and should stop fetching tasks.
+var ErrProcessSuperseded = errors.New("process superseded: process key mismatch")
+
+// WorkerHTTPContext runs a worker-side task loop (fetch task, send result) against
+// the App Mesh REST service over HTTPS.
 // Requires environment variables: APP_MESH_PROCESS_KEY and APP_MESH_APPLICATION_NAME.
-type AppMeshServerHttpContext struct {
+type WorkerHTTPContext struct {
 	client *AppMeshClient
 }
 
 // NewHTTPContext creates a server-side task context over HTTP. Server endpoints
 // authenticate via APP_MESH_PROCESS_KEY, not JWT, so token refresh is forced off.
-func NewHTTPContext(options Option) (*AppMeshServerHttpContext, error) {
+func NewHTTPContext(options Option) (*WorkerHTTPContext, error) {
 	options.AutoRefreshToken = false
 	httpClient, err := NewHTTPClient(options)
 	if err != nil {
 		return nil, err
 	}
-	return &AppMeshServerHttpContext{client: httpClient}, nil
+	return &WorkerHTTPContext{client: httpClient}, nil
 }
-func newHTTPContextWithRequester(options Option, r Requester) (*AppMeshServerHttpContext, error) {
+func newHTTPContextWithRequester(options Option, r Requester) (*WorkerHTTPContext, error) {
 	options.AutoRefreshToken = false
 	httpClient, err := newHTTPClientWithRequester(options, r)
 	if err != nil {
 		return nil, err
 	}
-	return &AppMeshServerHttpContext{client: httpClient}, nil
+	return &WorkerHTTPContext{client: httpClient}, nil
 }
 
 // getRuntimeEnv reads and validates required runtime environment variables.
-func (r *AppMeshServerHttpContext) getRuntimeEnv() (key, appName string, err error) {
+func (r *WorkerHTTPContext) getRuntimeEnv() (key, appName string, err error) {
 	key = os.Getenv("APP_MESH_PROCESS_KEY")
 	appName = os.Getenv("APP_MESH_APPLICATION_NAME")
 
@@ -48,10 +55,17 @@ func (r *AppMeshServerHttpContext) getRuntimeEnv() (key, appName string, err err
 	return key, appName, nil
 }
 
-// TaskFetch fetches task data (payload) for the current application process.
-// It retries indefinitely until success. If a request fails within 100ms,
-// sleeps briefly before retrying; otherwise retries immediately.
-func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
+// FetchTask fetches task data (payload) for the current application process.
+// It retries until success with a fixed 100ms floor per attempt (SDKContract.md).
+// It returns ErrProcessSuperseded when the server responds 412 (this process
+// instance has been replaced).
+func (r *WorkerHTTPContext) FetchTask() (string, error) {
+	return r.FetchTaskContext(context.Background())
+}
+
+// FetchTaskContext is FetchTask with a caller-supplied context controlling cancellation:
+// the retry loop stops with ctx.Err() once the context is done.
+func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error) {
 	key, appName, err := r.getRuntimeEnv()
 	if err != nil {
 		return "", err
@@ -61,35 +75,38 @@ func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
 	query := url.Values{}
 	query.Set("process_key", key)
 
-	const (
-		baseDelay = 100 * time.Millisecond
-		maxDelay  = 30 * time.Second
-	)
-	delay := baseDelay
+	// Fixed 100ms floor per attempt: sleep only the remainder if the attempt
+	// finished early; otherwise retry immediately. No backoff (SDKContract.md).
+	const retryFloor = 100 * time.Millisecond
 
 	for {
-		status, body, _, err := r.client.get(path, query, nil)
+		attemptStart := time.Now()
+		status, body, _, err := r.client.req.SendContext(ctx, http.MethodGet, path, query, nil, nil)
 		if err != nil {
-			log.Printf("task_fetch request failed: %v, retrying in %v...", err, delay)
+			if ctx.Err() != nil {
+				return "", fmt.Errorf("fetch_task canceled: %w", ctx.Err())
+			}
+			log.Printf("fetch_task request failed: %v, retrying...", err)
 		} else if status == http.StatusOK {
 			return string(body), nil
 		} else if status == http.StatusPreconditionFailed {
-			log.Fatalf("Process key mismatch (412): this process has been superseded, exiting")
+			return "", ErrProcessSuperseded
 		} else {
-			log.Printf("task_fetch failed with status %d: %s, retrying in %v...", status, string(body), delay)
+			log.Printf("fetch_task failed with status %d: %s, retrying...", status, string(body))
 		}
 
-		time.Sleep(delay)
-		// Exponential backoff capped at maxDelay; reset to baseDelay on success path above.
-		delay *= 2
-		if delay > maxDelay {
-			delay = maxDelay
+		if remaining := retryFloor - time.Since(attemptStart); remaining > 0 {
+			select {
+			case <-ctx.Done():
+				return "", fmt.Errorf("fetch_task canceled: %w", ctx.Err())
+			case <-time.After(remaining):
+			}
 		}
 	}
 }
 
-// TaskReturn sends the processed result bytes back to the original invoking client via App Mesh.
-func (r *AppMeshServerHttpContext) TaskReturn(result string) error {
+// SendTaskResult sends the processed result bytes back to the original invoking client via App Mesh.
+func (r *WorkerHTTPContext) SendTaskResult(result string) error {
 	processKey, appName, err := r.getRuntimeEnv()
 	if err != nil {
 		return err
@@ -106,7 +123,7 @@ func (r *AppMeshServerHttpContext) TaskReturn(result string) error {
 	}
 
 	if status != http.StatusOK {
-		return errors.New("task_return failed with status " + http.StatusText(status) + ": " + string(body))
+		return errors.New("send_task_result failed with status " + http.StatusText(status) + ": " + string(body))
 	}
 
 	return nil

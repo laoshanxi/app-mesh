@@ -394,6 +394,18 @@ func indexTopLevel(s, sym string) int {
 	return -1
 }
 
+// HasStatusFunction reports whether the condition references one of the status
+// functions always()/success()/failure() outside quoted operands and ${{ }}
+// blocks, so literal text like `== 'success()'` does not count.
+func HasStatusFunction(condition string) bool {
+	for _, fn := range []string{"always()", "success()", "failure()"} {
+		if indexTopLevel(condition, fn) >= 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func evalComparison(expr string, ctx *Context, jobName string) bool {
 	for _, op := range cmpOps {
 		idx := indexTopLevel(expr, op.sym)
@@ -420,7 +432,24 @@ func evalComparison(expr string, ctx *Context, jobName string) bool {
 		}
 		return false
 	}
-	return coerce(expr, ctx, jobName) != ""
+	return truthy(coerce(expr, ctx, jobName))
+}
+
+// truthy follows GitHub Actions semantics: false, 0 and "" are falsy.
+// A resolved string "false" is also falsy since inputs and step outputs are
+// carried as strings in this engine.
+func truthy(v any) bool {
+	switch n := v.(type) {
+	case bool:
+		return n
+	case int:
+		return n != 0
+	case float64:
+		return n != 0
+	case string:
+		return n != "" && !strings.EqualFold(n, "false")
+	}
+	return v != nil
 }
 
 func coerce(token string, ctx *Context, jobName string) any {
@@ -434,6 +463,12 @@ func coerce(token string, ctx *Context, jobName string) any {
 	if (strings.HasPrefix(token, `"`) && strings.HasSuffix(token, `"`)) ||
 		(strings.HasPrefix(token, `'`) && strings.HasSuffix(token, `'`)) {
 		return token[1 : len(token)-1]
+	}
+	if token == "true" {
+		return true
+	}
+	if token == "false" {
+		return false
 	}
 	if i, err := strconv.Atoi(token); err == nil {
 		return i

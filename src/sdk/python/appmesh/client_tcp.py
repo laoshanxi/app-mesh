@@ -8,6 +8,7 @@ from typing import Optional, Tuple, Union
 
 # Local imports
 from .client_http import AppMeshClient
+from .exceptions import AppMeshError
 from .tcp_transport import TCPTransport
 from .transport_mixin import TransportClientMixin
 
@@ -43,13 +44,10 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
     _HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
     _HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
 
-    # Polling interval for wait_for_async_run (seconds)
-    _POLL_INTERVAL = 1
-
     def __init__(
         self,
         tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
-        ssl_verify: Union[bool, str] = AppMeshClient._DEFAULT_SSL_CA_CERT_PATH,
+        ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         auto_refresh_token: bool = False,
     ):
@@ -57,10 +55,11 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
 
         Args:
             tcp_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6059).
-            ssl_verify: SSL certificate verification behavior. Can be True, False, or a path to CA bundle.
+            ssl_verify: SSL certificate verification behavior. Can be None, True, False, or a path to CA bundle.
+              - None (default): Auto — use the App Mesh CA bundle if installed, otherwise system CAs
               - True: Use system CA certificates (e.g., /etc/ssl/certs/ on Linux)
-              - False:  Disable verification (insecure)
-              - str: Path to custom CA bundle or directory
+              - False:  Disable verification (insecure, must be requested explicitly)
+              - str: Path to custom CA bundle or directory (must exist)
             ssl_client_cert: SSL client certificate:
               - str: Path to single PEM with cert+key
               - tuple: (cert_path, key_path)
@@ -69,6 +68,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             TCP connections require an explicit full-chain CA specification for certificate validation,
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
+        ssl_verify = AppMeshClient._resolve_ssl_verify(ssl_verify)
         self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
         self._token = ""
         self._transport_client_addr = socket.gethostname()
@@ -82,12 +82,12 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
 
     def close(self) -> None:
         """Close the connection and release resources."""
-        if hasattr(self, "_demuxer") and self._demuxer:
+        if self._demuxer:
             self._demuxer.stop()
         if hasattr(self, "tcp_transport") and self.tcp_transport:
             self.tcp_transport.close()
             self.tcp_transport = None
-        if hasattr(self, "_demuxer") and self._demuxer:
+        if self._demuxer:
             self._demuxer.join()
             self._demuxer = None
         return super().close()
@@ -99,6 +99,12 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         except Exception:  # pylint: disable=broad-exception-caught
             pass  # suppress all exceptions
 
+    def _ensure_no_active_demuxer(self) -> None:
+        """Reject TCP file transfers while the event demuxer owns the read side: the demuxer
+        read loop would steal the raw (non-msgpack) chunk frames and corrupt the transfer."""
+        if self._demuxer and self._demuxer._running:
+            raise AppMeshError("file transfer is not supported while an event subscription is active on this client; use a separate client instance")
+
     def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
         """Copy a remote file to local through the TCP file-socket side channel.
 
@@ -107,6 +113,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             local_file: Local destination path.
             preserve_permissions: Apply remote file permissions/ownership locally on a best-effort basis.
         """
+        self._ensure_no_active_demuxer()
         header = {
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
             self._HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: "true",
@@ -140,6 +147,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             remote_file: Remote destination path.
             preserve_permissions: Send local file permissions/ownership metadata when available.
         """
+        self._ensure_no_active_demuxer()
         local_path = Path(local_file)
         if not local_path.exists():
             raise FileNotFoundError(f"Local file not found: {local_file}")
@@ -166,6 +174,6 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             while True:
                 chunk_data = fp.read(self._TCP_BLOCK_SIZE)
                 if not chunk_data:
-                    self.tcp_transport.send_message([])  # EOF signal
+                    self.tcp_transport.send_message(b"")  # EOF signal
                     break
                 self.tcp_transport.send_message(chunk_data)

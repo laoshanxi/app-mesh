@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 
+#include "HttpHeaderMap.h"
 #include "Utility.h"
 #include <curl/curl.h>
 
@@ -13,7 +14,7 @@ struct CurlResponse
 {
 	long status_code = 0;
 	std::string text;
-	std::map<std::string, std::string> header;
+	HttpHeaderMap header; // case-insensitive; keys normalized to lower-case
 	void raise_for_status();
 };
 
@@ -79,7 +80,7 @@ class RestClient
 public:
 	/**
 	 * @brief Performs an HTTP request
-	 * @details The response headers are returned in lowercase
+	 * @details Response header names are stored lower-cased and matched case-insensitively (see HttpHeaderMap)
 	 *
 	 * @param host The server host address
 	 * @param mtd The HTTP method to use

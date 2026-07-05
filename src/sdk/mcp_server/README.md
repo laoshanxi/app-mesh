@@ -124,7 +124,7 @@ caller's token.
 
 - `login` / `authenticate` / `logout` / `renew_token` / `set_token` / token-refresh —
   handled by the OAuth layer.
-- `subscribe` / event callbacks / `task_fetch` / `task_return` / `wait` /
+- `subscribe` / event callbacks / `fetch_task` / `send_task_result` / `wait` /
   `send`/`receive_message` — long-lived / server-side semantics unsuited to stateless
   tool calls.
 

@@ -1,3 +1,5 @@
+package appmesh;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -36,7 +38,8 @@ public class AppMeshClientTest {
     public void tearDown() {
         LOGGER.info("tearDown");
         if (client != null) {
-            client.logout();
+            // logout throws when no session is active; ignore in cleanup
+            try { client.logout(); } catch (Exception ignored) {}
             client.close();
             client = null;
         }
@@ -47,7 +50,7 @@ public class AppMeshClientTest {
         LOGGER.info("testSetTokenAndCookieFile");
 
         // Login to get a valid token
-        String token = client.login(USERNAME, PASSWORD, null, "P1W", "");
+        String token = client.login(USERNAME, PASSWORD, null, "P1W", "").getToken();
         assertNotNull(token);
 
         // 1. setToken without cookie file (in-memory)
@@ -112,7 +115,10 @@ public class AppMeshClientTest {
     @Test
     public void testLoginAndAuthentication() throws IOException {
         LOGGER.info("testLoginAndAuthentication");
-        String token = client.login(USERNAME, PASSWORD, null, "P1W", "");
+        // Canonical typed login: distinguishes an issued token from a TOTP challenge
+        AppMeshClient.LoginResult loginResult = client.login(USERNAME, PASSWORD, null, "P1W", "");
+        assertFalse(loginResult.isMfaRequired(), "Non-MFA user should not get a TOTP challenge");
+        String token = loginResult.getToken();
         assertNotNull(token, "Login should return a non-null token");
         assertFalse(token.isEmpty(), "Token should not be empty");
 
@@ -124,33 +130,33 @@ public class AppMeshClientTest {
         LOGGER.info("All applications count: " + apps.length());
 
         // authenticate with updateSession=false (verify only, no token update)
-        Pair<Boolean, String> authResult = client.authenticate(token, "app-view", "", false);
-        assertTrue(authResult.getLeft(), "User should be authenticated with updateSession=false");
+        AppMeshClient.AuthResult authResult = client.authenticate(token, "app-view", "", false);
+        assertTrue(authResult.isSuccess(), "User should be authenticated with updateSession=false");
 
         // authenticate with updateSession=true (verify and update client token)
-        Pair<Boolean, String> applyResult = client.authenticate(token, "app-view", "", true);
-        assertTrue(applyResult.getLeft(), "User should be authenticated with updateSession=true");
-        assertNotNull(applyResult.getRight(), "updateSession=true should return response text");
-        assertFalse(applyResult.getRight().isEmpty(), "updateSession=true response text should not be empty");
+        AppMeshClient.AuthResult applyResult = client.authenticate(token, "app-view", "", true);
+        assertTrue(applyResult.isSuccess(), "User should be authenticated with updateSession=true");
+        assertNotNull(applyResult.getResponse(), "updateSession=true should return response text");
+        assertFalse(applyResult.getResponse().isEmpty(), "updateSession=true response text should not be empty");
 
-        // backward-compatible 3-arg overload (defaults to updateSession=true, matching Python SDK)
-        Pair<Boolean, String> compatResult = client.authenticate(token, "app-view", "");
-        assertTrue(compatResult.getLeft(), "User should be authenticated with 3-arg overload");
+        // 3-arg overload (defaults to updateSession=true, matching Python SDK)
+        AppMeshClient.AuthResult compatResult = client.authenticate(token, "app-view", "");
+        assertTrue(compatResult.isSuccess(), "User should be authenticated with 3-arg overload");
 
         // invalid permission should fail
-        Pair<Boolean, String> badPerm = client.authenticate(token, "no-such-perm", "", false);
-        assertFalse(badPerm.getLeft(), "Should fail with invalid permission");
+        AppMeshClient.AuthResult badPerm = client.authenticate(token, "no-such-perm", "", false);
+        assertFalse(badPerm.isSuccess(), "Should fail with invalid permission");
 
         // audience tests: login with specific audience, then verify
         client.logout();
-        String token2 = client.login(USERNAME, PASSWORD, null, "P1W", "appmesh-service");
+        String token2 = client.login(USERNAME, PASSWORD, null, "P1W", "appmesh-service").getToken();
         assertNotNull(token2);
 
-        Pair<Boolean, String> goodAud = client.authenticate(token2, "", "appmesh-service", false);
-        assertTrue(goodAud.getLeft(), "Should succeed with matching audience");
+        AppMeshClient.AuthResult goodAud = client.authenticate(token2, "", "appmesh-service", false);
+        assertTrue(goodAud.isSuccess(), "Should succeed with matching audience");
 
-        Pair<Boolean, String> badAud = client.authenticate(token2, "", "wrong-audience", false);
-        assertFalse(badAud.getLeft(), "Should fail with wrong audience");
+        AppMeshClient.AuthResult badAud = client.authenticate(token2, "", "wrong-audience", false);
+        assertFalse(badAud.isSuccess(), "Should fail with wrong audience");
 
         boolean loggedOut = client.logout();
         assertTrue(loggedOut, "User should be successfully logged out");
@@ -252,7 +258,7 @@ public class AppMeshClientTest {
         client.login(USERNAME, PASSWORD, null, "P1W", "");
         assertNotNull(client.getUserPermissions(), "permissions should not be null");
         assertNotNull(client.getCurrentUser(), "currentUser should not be null");
-        assertNotNull(client.viewRoles(), "roles should not be null");
+        assertNotNull(client.listRoles(), "roles should not be null");
         LOGGER.info("User permissions: " + client.getUserPermissions());
     }
 
@@ -299,14 +305,14 @@ public class AppMeshClientTest {
         // Cleanup first
         try { client.deleteLabel("ABC"); } catch (Exception ignored) {}
 
-        Map<String, String> labels = client.getLabels();
-        assertNotNull(labels, "getLabels should return non-null");
+        Map<String, String> labels = client.listLabels();
+        assertNotNull(labels, "listLabels should return non-null");
 
         assertTrue(client.addLabel("ABC", "DEF"), "addLabel should succeed");
-        assertTrue(client.getLabels().containsKey("ABC"), "Label ABC should exist");
+        assertTrue(client.listLabels().containsKey("ABC"), "Label ABC should exist");
 
         assertTrue(client.deleteLabel("ABC"), "deleteLabel should succeed");
-        assertFalse(client.getLabels().containsKey("ABC"), "Label ABC should be removed");
+        assertFalse(client.listLabels().containsKey("ABC"), "Label ABC should be removed");
 
         String metrics = client.getMetrics();
         assertNotNull(metrics, "getMetrics should return non-null");

@@ -703,6 +703,27 @@ jobs:
         finally:
             self.cleanup(*cases.keys())
 
+    def test_18b_execution_identity_unconfigured_rejected(self):
+        """A workflow naming an execution_identity the engine has no credential
+        for is rejected at registration (ADR 0004). The default test engine has
+        no APPMESH_EXEC_IDENTITIES, so any execution_identity is unconfigured."""
+        name = "ut-execid"
+        yaml = """
+name: ut-execid
+execution_identity: svc-does-not-exist
+jobs:
+  j:
+    steps:
+      - name: s
+        command: "echo hi"
+"""
+        try:
+            resp = self.add(name, yaml)
+            self.assertEqual(resp.get("status"), "error", "unconfigured execution_identity should be rejected")
+            self.assertIn("execution_identity", (resp.get("message") or "").lower())
+        finally:
+            self.cleanup(name)
+
     def test_19_validation_cycle_and_bad_needs(self):
         """A dependency cycle and a missing dependency both fail (add or run)."""
         cyc = """

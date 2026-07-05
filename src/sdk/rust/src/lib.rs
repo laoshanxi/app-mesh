@@ -12,7 +12,7 @@ mod persistent_jar;
 mod requester;
 mod response_ext;
 mod subscribe;
-mod tcp_messages;
+mod wire_messages;
 mod wait_subscribe;
 mod tcp_transport;
 pub mod tls_config;
@@ -28,11 +28,12 @@ pub use client_wss::AppMeshClientWSS;
 pub use error::{AppMeshError, TransportError};
 pub use models::{
     AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
-    ExitAction, OutputHandler, Permission, ResourceLimitation, SubscriptionResult, User,
+    ExitAction, OutputFn, OutputHandler, Permission, ResourceLimitation, SubscriptionResult, User,
     print_output_handler,
 };
-pub use server_http::AppMeshServer;
-pub use server_tcp::AppMeshServerTCP;
-pub use server_wss::AppMeshServerWSS;
+// Canonical cross-SDK worker names (match the Python/Go SDKs).
+pub use server_http::AppMeshWorker;
+pub use server_tcp::AppMeshWorkerTCP;
+pub use server_wss::AppMeshWorkerWSS;
 pub use constants::EVENT_TYPE_DISCONNECTED;
-pub use subscribe::{EventCallback, MessageDemuxer};
+pub use subscribe::EventCallback;

@@ -4,7 +4,8 @@
 
 > **⚠️ Superseded — read [`src/sdk/llm-agent/README.md`](../../../src/sdk/llm-agent/README.md) for the shipped design.**
 > The implementation was later simplified to a **thin wrapper around the official Claude
-> Agent SDK** (Claude-only). The agent loop, tools (Claude Code's built-in tools), and
+> Agent SDK** (runs Claude by default; other models via Claude Code's provider env — see
+> the README's *Models & providers*). The agent loop, tools (Claude Code's built-in tools), and
 > conversation history are now the SDK's; llm-agent only routes `session_send`/`session_close`
 > and gives each session a stable workdir. As a result the sections below describing a
 > hand-rolled reason→act→observe loop, **multiple provider backends**, **tools-as-Apps**,
@@ -15,7 +16,7 @@ This document captures the originally agreed design for running LLM agents on to
 Mesh, reusing the existing Workflow Engine ([WorkflowDesign.md](WorkflowDesign.md)) and
 the daemon's App / Task / Event substrate.
 
-**The shipped agent delegates the entire loop to the Claude Agent SDK** (Claude-only); the
+**The shipped agent delegates the entire loop to the Claude Agent SDK**; the
 agent loop, tools, and conversation history are the SDK's. The text below describes the
 *original* cut, which delegated only LLM mechanics to provider SDKs and kept a custom App
 Mesh integration (sessions, **tools-as-Apps**, budgets, multi-tenant identity, streaming) —
@@ -95,7 +96,7 @@ Scenario A (DAG)                         Scenario B (interactive)
 Each App is, from the daemon's point of view, an ordinary admin-provisioned App.
 `llm-agent` registers nothing and holds no credentials — keeping the daemon and DAG
 engine unchanged. A worker process gets its own `APP_MESH_PROCESS_KEY`, so its
-`task_fetch` is scoped to itself.
+`fetch_task` is scoped to itself.
 
 ## Agent Execution Model
 
@@ -159,7 +160,7 @@ engine unchanged. A worker process gets its own `APP_MESH_PROCESS_KEY`, so its
   idle TTL, an absolute max-lifetime, or a crash. Teardown is thus a single reliable path
   (process exit → daemon cleanup).
 - App Mesh starts each worker process, so it receives its own `APP_MESH_PROCESS_KEY` and
-  its `task_fetch` is scoped to itself.
+  its `fetch_task` is scoped to itself.
 
 ## Identity & Multi-Tenancy
 
@@ -180,17 +181,20 @@ Reuses the workflow engine's existing three-layer model (ADR 0006), extended to 
 - **Per-tenant model credentials:** each tenant has its own LLM API key / gateway,
   supplied as an App **secured (encrypted) env var** — never plaintext config.
 - **No service identity:** `llm-agent` holds no daemon credentials. The task RPC
-  authenticates with the daemon-injected `APP_MESH_PROCESS_KEY`; the caller's token from
-  each request validates the session and runs the tools (L3). Identity is decided
-  upstream and forwarded **in the payload body**: in Scenario A the workflow engine
-  injects the invoker's JWT into the `message` step payload when the step sets
-  `forward_token: true` (the task RPC transport is authed by the process key, so the
-  caller JWT cannot ride the transport — it must be in the body); in Scenario B the
-  client sends its own token. `llm-agent` validates and adopts it.
-  - **Manual-only for Scenario A:** only a manual run carries a caller token to forward.
-    Automatic triggers (event/cron) have no caller identity, so they cannot drive
-    `llm-agent` — it fails closed with `token required`. A long-lived service/act-as
-    identity for automatic agent runs is **Deferred** (ADR 0004 Phase 3).
+  authenticates with the daemon-injected `APP_MESH_PROCESS_KEY`. The original design had
+  identity forwarded **in the payload body** (the workflow engine's `message` step still
+  injects the invoker's JWT when `forward_token: true` is set, since the task RPC
+  transport is authed by the process key) with `llm-agent` validating and adopting it.
+  **The shipped agent does not do this** — it ignores any `token` field, performs no
+  token validation of its own, and relies entirely on the daemon's RBAC gate on
+  `run_task` (see the README: "no auth or quota of its own").
+  - **Automatic-trigger identity (shipped behavior):** `llm-agent` itself performs no token
+    validation. The workflow side now supplies the identity: an automatic (event) trigger
+    must declare a workflow `execution_identity` (ADR 0004 — shipped), under whose token the
+    `message` step runs and whose JWT `forward_token` injects. A workflow without one fails
+    closed at run time, so an event trigger can no longer drive `llm-agent` with no identity
+    at all. A daemon-side act-as/token-exchange model (avoiding stored service-account
+    credentials) remains future work.
 - **Robustness:** untrusted client fields (per-turn limits) are coerced defensively, so a
   malformed payload returns a clean error rather than crashing the serving App.
 - **Token-expiry note:** because Scenario B is interactive (each turn arrives with the
@@ -263,7 +267,7 @@ the loop (iteration counts), and the tenant identity together.
 
 **Deliberately minimal.** The agreed primitive is **"abort the current turn for session
 X"**, default grain *stop the current turn, keep the session*:
-  - Scenario A: cooperative cancel via a control signal (no `RemoveApp` fallback for one
+  - Scenario A: cooperative cancel via a control signal (no `DeleteApp` fallback for one
     session — removing the shared App would harm the tenant's other sessions).
   - Scenario B: a **hard per-session kill** — removing/stopping the worker terminates
     exactly that session and nothing else.

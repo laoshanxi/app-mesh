@@ -120,6 +120,27 @@ func (rm *RunManager) MarkRunning(group, runID string) {
 	rm.running[group][runID] = struct{}{}
 }
 
+// RemoveQueued removes a single queued run by its run ID and returns its
+// workflow name. Used to cancel a run that is still waiting on its
+// concurrency group (it has no cancel context yet).
+func (rm *RunManager) RemoveQueued(runID string) (wfName string, found bool) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	for group, q := range rm.queued {
+		for i, p := range q {
+			if p.runID != runID {
+				continue
+			}
+			rm.queued[group] = append(q[:i:i], q[i+1:]...)
+			if len(rm.queued[group]) == 0 {
+				delete(rm.queued, group)
+			}
+			return p.wfName, true
+		}
+	}
+	return "", false
+}
+
 // DrainQueueByWorkflow removes all queued runs belonging to the given workflow
 // across all concurrency groups and returns the drained run IDs so the caller
 // can finalize their persistent state.

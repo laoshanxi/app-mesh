@@ -38,9 +38,10 @@ public:
             // If it looks like a host:port (e.g., starts with digit or is an IP), it's not a scheme
             if (!potentialScheme.empty() && std::isalpha(static_cast<unsigned char>(potentialScheme[0])))
             {
-                // Check if what follows the colon is just digits (port) or looks like a path/authority
-                std::string afterColon = uriStr.substr(colonPos + 1);
-                // If after colon is purely numeric, this is likely host:port, not scheme:rest
+                // Port candidate is only the segment up to the next '/'; the whole remainder would misclassify "host:port/path" as a scheme
+                size_t nextSlash = uriStr.find('/', colonPos + 1);
+                std::string afterColon = uriStr.substr(colonPos + 1, nextSlash == std::string::npos ? std::string::npos : nextSlash - colonPos - 1);
+                // If the port candidate is purely numeric, this is host:port, not scheme:rest
                 bool isPort = !afterColon.empty() && afterColon.find_first_not_of("0123456789") == std::string::npos;
                 if (!isPort)
                 {
@@ -223,15 +224,25 @@ private:
         {
             if (s[i] == '%' && i + 2 < s.size())
             {
-                auto fromHex = [](char c)
+                auto fromHex = [](char c) -> int
                 {
                     return (c >= '0' && c <= '9')   ? c - '0'
                            : (c >= 'a' && c <= 'f') ? c - 'a' + 10
                            : (c >= 'A' && c <= 'F') ? c - 'A' + 10
-                                                    : 0;
+                                                    : -1;
                 };
-                out += static_cast<char>((fromHex(s[i + 1]) << 4) + fromHex(s[i + 2]));
-                i += 2;
+                const int hi = fromHex(s[i + 1]);
+                const int lo = fromHex(s[i + 2]);
+                if (hi >= 0 && lo >= 0)
+                {
+                    out += static_cast<char>((hi << 4) + lo);
+                    i += 2;
+                }
+                else
+                {
+                    // Malformed escape (e.g. "%zz"): keep '%' literal, don't emit a NUL byte.
+                    out += s[i];
+                }
             }
             else if (s[i] == '+')
             {

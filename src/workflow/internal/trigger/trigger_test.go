@@ -281,3 +281,96 @@ func TestCheckpoint_NonexistentRunID(t *testing.T) {
 		t.Errorf("want nil, got %v", completed)
 	}
 }
+
+// A queued run must be individually cancellable: RemoveQueued takes it out of
+// its concurrency group's queue so it is never promoted after cancel.
+func TestRunManager_RemoveQueued(t *testing.T) {
+	rm := NewRunManager()
+	rm.TryStart("deploy", "run-1", false)
+	rm.Enqueue("deploy", "run-2", "wf-a", "manual", nil, "", "")
+	rm.Enqueue("deploy", "run-3", "wf-b", "manual", nil, "", "")
+
+	wf, ok := rm.RemoveQueued("run-2")
+	if !ok || wf != "wf-a" {
+		t.Fatalf("RemoveQueued: wf=%q ok=%v", wf, ok)
+	}
+	if _, ok := rm.RemoveQueued("run-2"); ok {
+		t.Error("second removal must report not found")
+	}
+	// run-3 is still queued and must be promoted on completion.
+	next := rm.Complete("deploy", "run-1")
+	if next == nil || next.runID != "run-3" {
+		t.Errorf("next: %+v", next)
+	}
+}
+
+func TestRunManager_RemoveQueued_NotFound(t *testing.T) {
+	rm := NewRunManager()
+	if _, ok := rm.RemoveQueued("missing"); ok {
+		t.Error("must report not found for unknown run")
+	}
+}
+
+// return_code is accepted as an alias for exit_code in event conditions.
+func TestEvalEventCondition_ReturnCodeAlias(t *testing.T) {
+	data := []byte(`{"return_code": 0}`)
+	if !evalEventCondition("return_code == 0", data) {
+		t.Error("return_code alias should match")
+	}
+	if !evalEventCondition("exit_code == 0", data) {
+		t.Error("exit_code should read return_code fallback value")
+	}
+}
+
+// --- Execution identity (ADR 0004) ---
+
+func TestIdentityManager_Known(t *testing.T) {
+	m := NewIdentityManager("127.0.0.1:6059", map[string]string{"svc-a": "pw"})
+	if !m.Known("svc-a") {
+		t.Error("configured identity should be known")
+	}
+	if m.Known("svc-b") {
+		t.Error("unconfigured identity should not be known")
+	}
+}
+
+func TestIdentityManager_TokenFor_Unknown(t *testing.T) {
+	m := NewIdentityManager("127.0.0.1:6059", nil)
+	if _, err := m.TokenFor("nobody"); err == nil {
+		t.Fatal("TokenFor for an unconfigured identity must error")
+	}
+}
+
+// resolveExecToken: caller token for manual, fail-closed for identity-less auto,
+// clear error for an unconfigured execution_identity.
+func TestResolveExecToken(t *testing.T) {
+	s := &Service{identities: NewIdentityManager("127.0.0.1:6059", nil)}
+
+	// Manual run, no execution_identity → caller token.
+	wf := &models.Workflow{Name: "wf"}
+	tok, err := s.resolveExecToken(wf, "caller-jwt")
+	if err != nil || tok != "caller-jwt" {
+		t.Fatalf("manual: tok=%q err=%v", tok, err)
+	}
+
+	// Automatic run (no caller token), no execution_identity → fail closed.
+	if _, err := s.resolveExecToken(wf, ""); err == nil {
+		t.Fatal("automatic run without execution_identity must fail closed")
+	}
+
+	// execution_identity set but not configured on the engine → clear error.
+	wfID := &models.Workflow{Name: "wf", ExecutionIdentity: "svc-x"}
+	if _, err := s.resolveExecToken(wfID, ""); err == nil {
+		t.Fatal("unconfigured execution_identity must error")
+	}
+}
+
+func TestService_IsKnownIdentity(t *testing.T) {
+	s := &Service{identities: NewIdentityManager("uri", map[string]string{"svc-a": "pw"})}
+	if !s.IsKnownIdentity("svc-a") {
+		t.Error("svc-a should be known")
+	}
+	if s.IsKnownIdentity("svc-z") {
+		t.Error("svc-z should not be known")
+	}
+}

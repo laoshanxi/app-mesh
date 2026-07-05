@@ -9,22 +9,18 @@ import (
 	"strconv"
 )
 
-// GetFileAttributes returns a map with file attributes.
+// fileAttributes returns a fresh map with the file's attribute headers.
 // On Windows, only mode is available; UID/GID are not applicable.
-func GetFileAttributes(filePath string, headers ...map[string]string) (map[string]string, error) {
-	h := make(map[string]string)
-	if len(headers) > 0 && headers[0] != nil {
-		h = headers[0]
-	}
-
+func fileAttributes(filePath string) (map[string]string, error) {
 	info, err := os.Stat(filePath)
 	if err != nil {
-		return h, err
+		return nil, err
 	}
 
 	// Capture only the permission bits
-	h["X-File-Mode"] = strconv.FormatUint(uint64(info.Mode().Perm()), 10)
-	return h, nil
+	return map[string]string{
+		"X-File-Mode": strconv.FormatUint(uint64(info.Mode().Perm()), 10),
+	}, nil
 }
 
 // ApplyFileAttributes applies file mode on Windows.

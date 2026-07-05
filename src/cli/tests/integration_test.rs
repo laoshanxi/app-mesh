@@ -693,3 +693,74 @@ fn assert_err_contains(args: &[&str], needle: &str) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains(needle), "stderr for {:?} should contain '{}', got: {}", args, needle, stderr);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Workflow subcommands (argument parsing only — no daemon needed)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_workflow_help_lists_all_12_subcommands() {
+    let s = stdout_of(&["workflow", "--help"]);
+    for sub in [
+        "add", "get", "list", "rm", "run", "runs", "logs", "output", "cancel", "rerun",
+        "detail", "inputs",
+    ] {
+        assert!(s.contains(sub), "missing workflow subcommand: {}", sub);
+    }
+}
+
+#[test]
+fn test_workflow_add_requires_file() {
+    assert_err_contains(&["workflow", "add"], "--file");
+}
+
+#[test]
+fn test_workflow_add_missing_file_errors() {
+    assert_err_contains(
+        &["workflow", "add", "-f", "/nonexistent/wf.yaml"],
+        "File not found",
+    );
+}
+
+#[test]
+fn test_workflow_get_requires_name() {
+    assert_err_contains(&["workflow", "get"], "NAME");
+}
+
+#[test]
+fn test_workflow_run_rejects_input_without_equals() {
+    // -e without key=value must fail loudly, not be silently dropped.
+    assert_err_contains(
+        &["workflow", "run", "wf-x", "-e", "noequals"],
+        "expected key=value",
+    );
+}
+
+#[test]
+fn test_workflow_run_rejects_invalid_input_key() {
+    assert_err_contains(
+        &["workflow", "run", "wf-x", "-e", "1bad=v"],
+        "[A-Za-z_][A-Za-z0-9_]*",
+    );
+}
+
+#[test]
+fn test_workflow_logs_requires_workflow_flag() {
+    assert_err_contains(&["workflow", "logs", "some-run-id"], "--workflow");
+}
+
+#[test]
+fn test_workflow_output_requires_job_and_step() {
+    assert_err_contains(&["workflow", "output", "-w", "wf", "run-1"], "--job");
+}
+
+#[test]
+fn test_workflow_cancel_requires_run_id() {
+    assert_err_contains(&["workflow", "cancel", "-w", "wf"], "RUN_ID");
+}
+
+#[test]
+fn test_workflow_list_alias_ls() {
+    let out = appm().args(["workflow", "ls", "--help"]).output().unwrap();
+    assert!(out.status.success());
+}

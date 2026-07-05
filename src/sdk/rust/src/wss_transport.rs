@@ -26,6 +26,7 @@ pub struct WSSTransport {
 
 impl WSSTransport {
     pub fn new(address: (String, u16), ssl_verify: SslVerify, ssl_client_cert: Option<ClientCert>) -> Self {
+        crate::tls_config::ensure_crypto_provider();
         Self {
             address,
             ssl_verify,
@@ -99,24 +100,23 @@ pub(crate) async fn read_one(reader: &mut SplitStream) -> Result<Option<Vec<u8>>
 
 fn build_rustls_connector(
     ssl_verify: &SslVerify,
-    _ssl_client_cert: Option<&ClientCert>,
+    ssl_client_cert: Option<&ClientCert>,
 ) -> Result<Connector, AppMeshError> {
-    let disable_verify = matches!(ssl_verify, SslVerify::False)
-        || matches!(ssl_verify, SslVerify::Path(p) if !std::path::Path::new(p).exists());
-
-    if disable_verify {
-        let crypto = rustls::ClientConfig::builder()
+    let builder = if matches!(ssl_verify, SslVerify::False) {
+        // Insecure mode is only reachable via the explicit SslVerify::False flag
+        rustls::ClientConfig::builder()
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(NoVerifier))
-            .with_no_client_auth();
-        Ok(Connector::Rustls(Arc::new(crypto)))
+            .with_custom_certificate_verifier(Arc::new(crate::tls_config::NoVerifier))
     } else if let SslVerify::Path(path) = ssl_verify {
         let p = std::path::Path::new(path);
         let mut root_store = rustls::RootCertStore::empty();
         if p.is_file() {
             let pem_data = std::fs::read(p)
                 .map_err(|e| AppMeshError::ConfigurationError(format!("Failed to read CA cert: {}", e)))?;
-            for cert in rustls_pemfile::certs(&mut &pem_data[..]).flatten() {
+            for cert in rustls_pemfile::certs(&mut &pem_data[..]) {
+                let cert = cert.map_err(|e| {
+                    AppMeshError::ConfigurationError(format!("Invalid CA cert '{}': {}", path, e))
+                })?;
                 root_store.add(cert).map_err(|e| {
                     AppMeshError::ConfigurationError(format!("Invalid CA cert: {}", e))
                 })?;
@@ -127,52 +127,50 @@ fn build_rustls_connector(
             {
                 let path = entry.map_err(|e| AppMeshError::ConfigurationError(e.to_string()))?.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("pem") {
-                    if let Ok(pem_data) = std::fs::read(&path) {
-                        for cert in rustls_pemfile::certs(&mut &pem_data[..]).flatten() {
-                            let _ = root_store.add(cert);
-                        }
+                    let pem_data = std::fs::read(&path).map_err(|e| {
+                        AppMeshError::ConfigurationError(format!(
+                            "Failed to read CA cert '{}': {}",
+                            path.display(),
+                            e
+                        ))
+                    })?;
+                    for cert in rustls_pemfile::certs(&mut &pem_data[..]).flatten() {
+                        let _ = root_store.add(cert);
                     }
                 }
             }
+        } else {
+            // A configured CA path that is missing/unreadable is a hard error,
+            // never a silent fallback to no-verification.
+            return Err(AppMeshError::ConfigurationError(format!(
+                "CA certificate path '{}' not found",
+                path
+            )));
         }
-        let crypto = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-        Ok(Connector::Rustls(Arc::new(crypto)))
+        if root_store.is_empty() {
+            return Err(AppMeshError::ConfigurationError(format!(
+                "CA certificate path '{}' contains no valid certificates",
+                path
+            )));
+        }
+        rustls::ClientConfig::builder().with_root_certificates(root_store)
     } else {
         let root_store = rustls::RootCertStore::from_iter(
             webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
         );
-        let crypto = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-        Ok(Connector::Rustls(Arc::new(crypto)))
-    }
+        rustls::ClientConfig::builder().with_root_certificates(root_store)
+    };
+
+    let crypto = match ssl_client_cert {
+        Some(client_cert) => {
+            let (chain, key) = crate::tls_config::load_client_auth(client_cert)
+                .map_err(AppMeshError::ConfigurationError)?;
+            builder.with_client_auth_cert(chain, key).map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e))
+            })?
+        }
+        None => builder.with_no_client_auth(),
+    };
+    Ok(Connector::Rustls(Arc::new(crypto)))
 }
 
-#[derive(Debug)]
-pub struct NoVerifier;
-
-impl rustls::client::danger::ServerCertVerifier for NoVerifier {
-    fn verify_server_cert(
-        &self, _: &rustls::pki_types::CertificateDer<'_>, _: &[rustls::pki_types::CertificateDer<'_>],
-        _: &rustls::pki_types::ServerName<'_>, _: &[u8], _: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-    fn verify_tls12_signature(
-        &self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-    fn verify_tls13_signature(
-        &self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        rustls::crypto::ring::default_provider()
-            .signature_verification_algorithms
-            .supported_schemes()
-    }
-}

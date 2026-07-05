@@ -92,25 +92,35 @@ npm install msgpack-lite uuid
 #### Basic HTTP Server
 
 ```javascript
-import { AppMeshServer } from "appmesh/server";
+import { AppMeshWorker, ProcessSupersededError } from "appmesh/server";
 
-const server = new AppMeshServer();
+const server = new AppMeshWorker();
 
-// Fetch task from client
-const payload = await server.task_fetch();
-console.log("Received:", payload);
+try {
+  // Fetch task from client
+  const payload = await server.fetch_task();
+  console.log("Received:", payload);
 
-// Process the task
-const result = processData(payload);
+  // Process the task
+  const result = processData(payload);
 
-// Return result to client
-await server.task_return(result);
+  // Return result to client
+  await server.send_task_result(result);
+} catch (error) {
+  if (error instanceof ProcessSupersededError) {
+    // This process instance was replaced by the daemon (HTTP 412) — stop serving.
+    // Exiting is an app entry-point decision; the SDK only surfaces the error.
+    console.error(error.message);
+    process.exit(1);
+  }
+  throw error;
+}
 ```
 
 #### With SSL Configuration
 
 ```javascript
-import { AppMeshServer } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/server";
 import fs from "fs";
 
 const sslConfig = {
@@ -120,7 +130,7 @@ const sslConfig = {
   rejectUnauthorized: true,
 };
 
-const server = new AppMeshServer("https://127.0.0.1:6060", sslConfig);
+const server = new AppMeshWorker("https://127.0.0.1:6060", sslConfig);
 ```
 
 #### TCP Server (Better Performance)
@@ -128,7 +138,7 @@ const server = new AppMeshServer("https://127.0.0.1:6060", sslConfig);
 **Dependencies:** `npm install msgpack-lite uuid`
 
 ```javascript
-import { AppMeshServerTCP, withServer } from "appmesh/server";
+import { AppMeshWorkerTCP, withServer } from "appmesh/server";
 import fs from "fs";
 
 const sslConfig = {
@@ -139,11 +149,11 @@ const sslConfig = {
 
 // Auto-cleanup with context manager
 await withServer(
-  () => new AppMeshServerTCP(sslConfig, ["127.0.0.1", 6059]),
+  () => new AppMeshWorkerTCP(sslConfig, ["127.0.0.1", 6059]),
   async (server) => {
-    const payload = await server.task_fetch();
+    const payload = await server.fetch_task();
     const result = processPayload(payload);
-    await server.task_return(result);
+    await server.send_task_result(result);
   }
 );
 // Connection automatically closed
@@ -160,12 +170,12 @@ These are **required** and set automatically by the App Mesh service when runnin
 
 ### API Reference
 
-#### AppMeshServer
+#### AppMeshWorker
 
 ##### Constructor
 
 ```javascript
-new AppMeshServer(baseURL, sslConfig, options);
+new AppMeshWorker(baseURL, sslConfig, options);
 ```
 
 **Parameters:**
@@ -181,20 +191,22 @@ new AppMeshServer(baseURL, sslConfig, options);
 
 ##### Methods
 
-###### `task_fetch()`
+###### `fetch_task()`
 
 Fetch task payload from the App Mesh service. Automatically retries on failure.
 
 **Returns:** `Promise<string|Buffer>` - The payload sent by the client
 
+**Throws:** `ProcessSupersededError` if the daemon reports HTTP 412 (this process was superseded by a newer instance) - the caller should stop serving; exit at the app entry point if appropriate
+
 **Example:**
 
 ```javascript
-const payload = await server.task_fetch();
+const payload = await server.fetch_task();
 const data = JSON.parse(payload);
 ```
 
-###### `task_return(result)`
+###### `send_task_result(result)`
 
 Return processed result back to the client.
 
@@ -210,28 +222,28 @@ Return processed result back to the client.
 
 ```javascript
 const result = { status: "success", data: processedData };
-await server.task_return(JSON.stringify(result));
+await server.send_task_result(JSON.stringify(result));
 ```
 
-#### AppMeshServerTCP
+#### AppMeshWorkerTCP
 
 TCP-based server for better performance with large data transfers.
 
 ##### Constructor
 
 ```javascript
-new AppMeshServerTCP(sslConfig, tcpAddress, options);
+new AppMeshWorkerTCP(sslConfig, tcpAddress, options);
 ```
 
 **Parameters:**
 
-- `sslConfig` (object, optional) - SSL configuration (same as AppMeshServer)
-- `tcpAddress` (array, optional) - `[host, port]`. Default: `['127.0.0.1', 6059]`
-- `options` (object, optional) - Same as AppMeshServer
+- `sslConfig` (object, optional) - SSL configuration (same as AppMeshWorker)
+- `tcpAddress` (array or object, optional) - `[host, port]` (legacy) or `{host, port}`. Default: `['127.0.0.1', 6059]`. The `{host, port}` object form is also accepted as the first argument: `new AppMeshWorkerTCP({host, port}, sslConfig)`
+- `options` (object, optional) - Same as AppMeshWorker
 
 ##### Methods
 
-Same as `AppMeshServer`, plus:
+Same as `AppMeshWorker`, plus:
 
 ###### `close()`
 
@@ -240,7 +252,7 @@ Close the TCP connection and release resources.
 **Example:**
 
 ```javascript
-const server = new AppMeshServerTCP();
+const server = new AppMeshWorkerTCP();
 try {
   // Use server...
 } finally {
@@ -265,10 +277,10 @@ Context manager for automatic resource cleanup.
 
 ```javascript
 await withServer(
-  () => new AppMeshServerTCP(),
+  () => new AppMeshWorkerTCP(),
   async (server) => {
-    const payload = await server.task_fetch();
-    await server.task_return(processData(payload));
+    const payload = await server.fetch_task();
+    await server.send_task_result(processData(payload));
   }
 );
 ```
@@ -278,12 +290,12 @@ await withServer(
 #### JSON Processing
 
 ```javascript
-import { AppMeshServer } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/server";
 
-const server = new AppMeshServer();
+const server = new AppMeshWorker();
 
 try {
-  const payload = await server.task_fetch();
+  const payload = await server.fetch_task();
   const data = JSON.parse(payload);
 
   // Process JSON data
@@ -293,9 +305,9 @@ try {
     timestamp: new Date().toISOString(),
   };
 
-  await server.task_return(JSON.stringify(result));
+  await server.send_task_result(JSON.stringify(result));
 } catch (error) {
-  await server.task_return(
+  await server.send_task_result(
     JSON.stringify({
       status: "error",
       message: error.message,
@@ -307,12 +319,12 @@ try {
 #### Binary Data Processing
 
 ```javascript
-import { AppMeshServer } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/server";
 import crypto from "crypto";
 
-const server = new AppMeshServer();
+const server = new AppMeshWorker();
 
-const binaryPayload = await server.task_fetch();
+const binaryPayload = await server.fetch_task();
 const hash = crypto.createHash("sha256");
 hash.update(binaryPayload);
 
@@ -321,17 +333,17 @@ const result = {
   checksum: hash.digest("hex"),
 };
 
-await server.task_return(JSON.stringify(result));
+await server.send_task_result(JSON.stringify(result));
 ```
 
 #### Long-Running Task
 
 ```javascript
-import { AppMeshServer } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/server";
 
-const server = new AppMeshServer();
+const server = new AppMeshWorker();
 
-const config = JSON.parse(await server.task_fetch());
+const config = JSON.parse(await server.fetch_task());
 const results = [];
 
 for (let i = 0; i < config.steps; i++) {
@@ -341,7 +353,7 @@ for (let i = 0; i < config.steps; i++) {
   console.log(`Step ${i + 1}/${config.steps} completed`);
 }
 
-await server.task_return(
+await server.send_task_result(
   JSON.stringify({
     status: "success",
     results: results,
@@ -375,11 +387,11 @@ console.log("Result:", result);
 
 ```javascript
 // Server side (running as App Mesh application)
-import { AppMeshServer } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/server";
 
-const server = new AppMeshServer();
+const server = new AppMeshWorker();
 
-const payload = await server.task_fetch();
+const payload = await server.fetch_task();
 const request = JSON.parse(payload);
 
 const result = {
@@ -387,5 +399,9 @@ const result = {
   sum: request.data.reduce((a, b) => a + b, 0),
 };
 
-await server.task_return(JSON.stringify(result));
+await server.send_task_result(JSON.stringify(result));
 ```
+
+## Behavioral contract
+
+Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, auth-token sync) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/SDKContract.md).

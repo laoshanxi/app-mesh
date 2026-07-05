@@ -65,13 +65,16 @@ int SocketServer::open(void *acceptor_or_connector)
 
     // Bind before open to prevent use-after-free (open releases construction ref)
     streams.bind(m_id, this);
+    // open() drops the construction ref, after which another reactor thread may delete
+    // this; cache id before the call so we never read a freed member afterwards.
+    const int id = m_id;
     int result = SocketStream::open(acceptor_or_connector);
     if (result == -1)
     {
-        streams.unbind(m_id);
+        streams.unbind(id);
         return result;
     }
-    LOG_DBG << fname << "Client session registered | ClientID=" << m_id << " | ActiveSessions=" << streams.current_size();
+    LOG_DBG << fname << "Client session registered | ClientID=" << id << " | ActiveSessions=" << streams.current_size();
     return result;
 }
 

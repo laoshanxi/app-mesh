@@ -25,8 +25,20 @@ jobs:
 # Register
 appm workflow add -f hello.yaml
 
+# List registered workflows (owner + last run status)
+appm workflow list
+
+# Show a workflow's YAML definition
+appm workflow get hello-world
+
+# Show a workflow's declared inputs (name, type, required, default)
+appm workflow inputs hello-world
+
 # Trigger a run (note the run_id printed in the message)
 appm workflow run hello-world
+
+# Pass inputs declared under on.manual.inputs
+appm workflow run hello-world -e env=staging -e dry_run=true
 
 # List runs
 appm workflow runs hello-world
@@ -39,6 +51,15 @@ appm workflow logs -w hello-world <run_id>
 
 # Read a step's stdout
 appm workflow output -w hello-world <run_id> -j greet -s say-hello
+
+# Per-job / per-step status, exit codes and timings for one run
+appm workflow detail -w hello-world <run_id>
+
+# Cancel a running (or still-queued) run
+appm workflow cancel -w hello-world <run_id>
+
+# Re-run a finished run with the same inputs (returns a new run_id)
+appm workflow rerun -w hello-world <run_id>
 
 # Clean up
 appm workflow rm hello-world
@@ -565,6 +586,12 @@ appm workflow runs trigger-on-event           # check accumulated runs
 appm workflow rm trigger-on-event
 ```
 
+> **Automatic triggers require an `execution_identity`.** An event-triggered run has no
+> human caller, so it has no identity to run steps under. The engine never falls back to its
+> own (privileged) identity — a workflow with `on.app_event` that does not set
+> [`execution_identity`](#execution-identity) will **fail closed** at run time. Add one to
+> enable automatic triggering.
+
 ### Schedule (External)
 
 Cron scheduling is **not** built into the workflow engine. Use App Mesh's native cron support to drive runs:
@@ -595,6 +622,55 @@ on:
       deployed_url:
         value: "${{ jobs.deploy.steps.publish.stdout }}"
 ```
+
+## Execution Identity
+
+Every step runs under an App Mesh identity, and the daemon enforces that identity's RBAC
+on everything the step does (running an App, sending a task, creating a command App). The
+identity is resolved per run:
+
+| Run | `execution_identity` set | Identity used |
+|-----|--------------------------|---------------|
+| Manual (`appm workflow run`) | no | the **triggering caller** |
+| Manual | yes | the configured **execution_identity** |
+| Automatic (`on.app_event`) | no | **none — run fails closed** |
+| Automatic | yes | the configured **execution_identity** |
+
+The engine's own (admin) credentials are **never** used to run steps — they serve only the
+engine's control plane (registration scan, step-App cleanup). This closes the escalation
+where any user who could register an event-triggered workflow would have its steps executed
+with admin rights.
+
+### Configuring an execution identity
+
+Because the daemon cannot mint a token for an arbitrary user, the engine authenticates as a
+real App Mesh user. An admin provisions the credentials as a secured env var on the engine
+App — a JSON map of `username → password`:
+
+```bash
+appm add -a workflow -z 'APPMESH_EXEC_IDENTITIES={"svc-pipeline":"<password>"}'
+```
+
+Then a workflow references it:
+
+```yaml
+name: nightly-pipeline
+execution_identity: svc-pipeline    # steps run as svc-pipeline
+on:
+  app_event:
+    app: "data-collector"
+    events: [EXIT]
+jobs:
+  process:
+    steps:
+      - name: handle
+        command: "echo running as the service account"
+```
+
+At registration the caller may bind `execution_identity` only to **itself**, or — as a
+workflow admin (`APPMESH_WORKFLOW_ADMINS`) — to any configured identity. Binding an identity
+the engine has no credential for is rejected. Give the service account the **least privilege**
+its steps need.
 
 ## Encrypted Environment Variables
 

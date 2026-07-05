@@ -1,3 +1,5 @@
+package appmesh;
+
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -14,24 +16,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocketFactory;
 
-import org.json.JSONObject;
 
 /**
  * Client SDK for interacting with the App Mesh service over WebSocket Secure
  */
 public class AppMeshClientWSS extends AppMeshClient {
-    private static final Logger LOGGER = Logger.getLogger(AppMeshClientWSS.class.getName());
     private static final int WSS_BLOCK_SIZE = 64 * 1024;
     private static final String HTTP_USER_AGENT_WSS = "appmesh/java/wss";
     private static final String HEADER_X_FILE_PATH = "X-File-Path";
@@ -39,7 +30,6 @@ public class AppMeshClientWSS extends AppMeshClient {
     private static final int FILE_TRANSFER_TIMEOUT = 120000; // 120 seconds
 
     private final WSSTransport wssTransport;
-    private final SSLSocketFactory sslSocketFactory;
     private volatile MessageDemuxer demuxer;
 
     /** Create a WSS transport client with default TLS verification behavior. */
@@ -51,34 +41,48 @@ public class AppMeshClientWSS extends AppMeshClient {
      * Create a WSS transport client that reuses the standard App Mesh client API.
      *
      * <p>Control requests go over WebSocket, while file transfers use an HTTPS side channel
-     * authorized by the WSS control response.
+     * authorized by the WSS control response. The SSL settings configure both the base
+     * client (HTTPS side channel) and the WSS transport, so one configuration is authoritative.
      */
     public AppMeshClientWSS(String host, int port, boolean disableSSLVerification,
             String caCertPath, String clientCertPath, String clientKeyPath) {
-        super(new AppMeshClient.Builder().baseURL("https://" + host + ":" + port));
-        Objects.requireNonNull(host, "host cannot be null");
+        this(configureSSL(new AppMeshClient.Builder().baseURL("https://" + host + ":" + port),
+                disableSSLVerification, caCertPath, clientCertPath, clientKeyPath), host, port);
+    }
 
-        SSLContext sslContext;
-        try {
-            sslContext = Utils.createSSLContext(caCertPath, clientCertPath, clientKeyPath, disableSSLVerification);
-            this.sslSocketFactory = sslContext.getSocketFactory();
-            this.wssTransport = new WSSTransport(host, port, this.sslSocketFactory);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize WSS transport SSL context", e);
+    /**
+     * Create a WSS transport client from a fully configured base builder. The builder's SSL
+     * settings are reused for the WSS transport (library default trust when none configured).
+     */
+    protected AppMeshClientWSS(AppMeshClient.Builder builder, String host, int port) {
+        super(builder);
+        Objects.requireNonNull(host, "host cannot be null");
+        this.wssTransport = new WSSTransport(host, port, getSSLSocketFactory());
+    }
+
+    private static AppMeshClient.Builder configureSSL(AppMeshClient.Builder base, boolean disableSSLVerification,
+            String caCertPath, String clientCertPath, String clientKeyPath) {
+        if (caCertPath != null) {
+            base.caCert(caCertPath);
         }
+        if (clientCertPath != null || clientKeyPath != null) {
+            base.clientCert(clientCertPath, clientKeyPath);
+        }
+        if (disableSSLVerification) {
+            base.disableSSLVerify();
+        }
+        return base;
     }
 
     /**
      * Builder for fluent configuration of {@link AppMeshClientWSS}.
      */
     public static class Builder {
+        private final AppMeshClient.Builder base = new AppMeshClient.Builder();
         private String host = "127.0.0.1";
         private int port = 6058;
-        private boolean disableSSLVerification = false;
-        private String caCertPath;
-        private String clientCertPath;
-        private String clientKeyPath;
         private int connectTimeout = WSSTransport.WSS_CONNECT_TIMEOUT;
+        private Integer connectionLostTimeout;
 
         public Builder() {
         }
@@ -93,32 +97,78 @@ public class AppMeshClientWSS extends AppMeshClient {
             return this;
         }
 
+        /** Disable SSL verification (insecure — development only). */
         public Builder disableSSLVerify() {
-            this.disableSSLVerification = true;
+            base.disableSSLVerify();
             return this;
         }
 
         public Builder caCert(String caCertPath) {
-            this.caCertPath = caCertPath;
+            base.caCert(caCertPath);
             return this;
         }
 
         public Builder clientCert(String clientCertPath, String clientKeyPath) {
-            this.clientCertPath = clientCertPath;
-            this.clientKeyPath = clientKeyPath;
+            base.clientCert(clientCertPath, clientKeyPath);
             return this;
         }
 
+        /** Password for encrypted private key. */
+        public Builder keyPassword(char[] password) {
+            base.keyPassword(password);
+            return this;
+        }
+
+        /** Initialize with an existing JWT token (no server verification). */
+        public Builder jwtToken(String jwtToken) {
+            base.jwtToken(jwtToken);
+            return this;
+        }
+
+        /** Cookie file path for persistent token storage. */
+        public Builder cookieFile(String cookieFile) {
+            base.cookieFile(cookieFile);
+            return this;
+        }
+
+        /** Enable automatic token refresh before expiration. */
+        public Builder autoRefreshToken(boolean enable) {
+            base.autoRefreshToken(enable);
+            return this;
+        }
+
+        /** Connection timeout in milliseconds for HTTPS side-channel requests. */
+        public Builder connectTimeoutMs(int ms) {
+            base.connectTimeoutMs(ms);
+            return this;
+        }
+
+        /** Read timeout in milliseconds for HTTPS side-channel requests. */
+        public Builder readTimeoutMs(int ms) {
+            base.readTimeoutMs(ms);
+            return this;
+        }
+
+        /** WebSocket blocking-connect timeout in seconds. */
         public Builder connectTimeout(int seconds) {
             this.connectTimeout = seconds;
             return this;
         }
 
+        /** WebSocket connection-lost (ping/pong keepalive) interval in seconds. */
+        public Builder connectionLostTimeout(int seconds) {
+            this.connectionLostTimeout = seconds;
+            return this;
+        }
+
         public AppMeshClientWSS build() {
             Objects.requireNonNull(host, "host cannot be null");
-            AppMeshClientWSS client = new AppMeshClientWSS(
-                    host, port, disableSSLVerification, caCertPath, clientCertPath, clientKeyPath);
+            base.baseURL("https://" + host + ":" + port);
+            AppMeshClientWSS client = new AppMeshClientWSS(base, host, port);
             client.wssTransport.setConnectTimeout(connectTimeout);
+            if (connectionLostTimeout != null) {
+                client.wssTransport.setConnectionLostTimeout(connectionLostTimeout);
+            }
             return client;
         }
     }
@@ -168,29 +218,47 @@ public class AppMeshClientWSS extends AppMeshClient {
                 // Demuxer is active: register before send to avoid race
                 demuxer.registerPending(req.uuid);
                 try {
+                    // Re-check after register: racing stop()'s pending.clear() would leave the latch never counted down
+                    if (!demuxer.isRunning()) {
+                        throw new TransportDisconnectedException("connection lost before request was sent");
+                    }
                     wssTransport.sendMessage(data);
-                    resp = demuxer.waitForResponse(req.uuid, 60);
+                    // No wait cap: null means the demuxer stopped (disconnect), not a slow request
+                    resp = demuxer.waitForResponse(req.uuid);
                     if (resp == null) {
-                        throw new IOException("Demuxer response timeout");
+                        throw new TransportDisconnectedException("connection lost while waiting for response");
                     }
                 } finally {
                     demuxer.unregisterPending(req.uuid);
                 }
             } else {
-                // Legacy synchronous mode: send then read directly
-                wssTransport.sendMessage(data);
-                byte[] respBuf = wssTransport.receiveMessage();
-                if (respBuf == null) {
-                    wssTransport.close();
-                    throw new IOException("WebSocket connection broken");
+                // Legacy synchronous mode: hold one lock across send+receive so
+                // concurrent callers cannot interleave and read each other's response.
+                synchronized (wssTransport) {
+                    wssTransport.sendMessage(data);
+                    while (true) {
+                        byte[] respBuf = wssTransport.receiveMessage();
+                        if (respBuf == null || respBuf.length == 0) {
+                            wssTransport.close();
+                            throw new IOException("WebSocket connection broken");
+                        }
+                        resp = ResponseMessage.deserialize(respBuf);
+                        // Skip server-push event frames (no demuxer to route them)
+                        if (MessageDemuxer.EVENT_URI.equals(resp.request_uri)) {
+                            continue;
+                        }
+                        break;
+                    }
                 }
-                resp = ResponseMessage.deserialize(respBuf);
+                if (!req.uuid.equals(resp.uuid)) {
+                    throw new IOException("Response UUID mismatch: expected " + req.uuid + ", got " + resp.uuid);
+                }
             }
 
             // Create simulated HTTP connection
             URL fakeUrl = new java.net.URI("https", null, wssTransport.getHost(),
                     wssTransport.getPort(), path, null, null).toURL();
-            return new WSSHttpURLConnection(fakeUrl, resp);
+            return new TransportHttpURLConnection(fakeUrl, resp);
 
         } catch (IOException e) {
             throw e;
@@ -252,8 +320,8 @@ public class AppMeshClientWSS extends AppMeshClient {
     }
 
     @Override
-    public boolean uploadFile(Object localFile, String remoteFile, boolean applyFileAttributes) throws IOException {
-        File file = resolveFile(localFile);
+    public boolean uploadFile(File localFile, String remoteFile, boolean applyFileAttributes) throws IOException {
+        File file = localFile;
 
         if (!file.exists()) {
             throw new IOException("Local file not found: " + file.getAbsolutePath());
@@ -331,6 +399,16 @@ public class AppMeshClientWSS extends AppMeshClient {
         return demuxer;
     }
 
+    @Override
+    protected MessageDemuxer demuxerOrNull() {
+        return getDemuxer();
+    }
+
+    @Override
+    protected void ensureDemuxer() {
+        enableDemuxer();
+    }
+
     /**
      * Subscribe-based override for WSS transport.
      *
@@ -338,131 +416,13 @@ public class AppMeshClientWSS extends AppMeshClient {
      * output emitted before subscribe took effect, deduplicates by byte offset,
      * and waits for the process to finish or the connection to drop.
      *
-     * <p>Sentinel exit codes: {@code null} = caller-side timeout,
-     * {@code -1} = REMOVED before EXIT, {@code -2} = demuxer disconnected.
+     * <p>Returns the real process exit code, or {@code null} on caller-side timeout;
+     * throws {@link AppRemovedException} (app removed before EXIT) or
+     * {@link TransportDisconnectedException} (demuxer disconnected) instead of sentinel codes.
      */
     @Override
     public Integer waitForAsyncRun(AppRun run, OutputHandler stdoutHandler, int timeoutSeconds) throws Exception {
-        if (run == null) {
-            return null;
-        }
-
-        // EXIT_CODE_NONE signals "not yet set"; real exit codes are >= 0,
-        // sentinels are -1 (REMOVED) and -2 (disconnected).
-        final int EXIT_CODE_NONE = Integer.MIN_VALUE;
-        final AtomicInteger exitCode = new AtomicInteger(EXIT_CODE_NONE);
-        final AtomicLong deliveredUntil = new AtomicLong(0);
-        final CountDownLatch done = new CountDownLatch(1);
-        final Object deliverLock = new Object();
-
-        // Event callback: routes STDOUT / EXIT / REMOVED / __disconnected__
-        MessageDemuxer.EventCallback callback = (event) -> {
-            switch (event.eventType) {
-                case "STDOUT":
-                    if (event.data != null) {
-                        long pos = event.data.optLong("position", 0);
-                        String output = event.data.optString("output", "");
-                        deliverOutput(output, pos, deliveredUntil, deliverLock, stdoutHandler);
-                    }
-                    break;
-                case "EXIT":
-                    int code = (event.data != null) ? event.data.optInt("exit_code", -1) : -1;
-                    exitCode.compareAndSet(EXIT_CODE_NONE, code);
-                    done.countDown();
-                    break;
-                case "REMOVED":
-                    exitCode.compareAndSet(EXIT_CODE_NONE, -1);
-                    done.countDown();
-                    break;
-                case MessageDemuxer.EVENT_TYPE_DISCONNECTED:
-                    exitCode.compareAndSet(EXIT_CODE_NONE, -2);
-                    done.countDown();
-                    break;
-                default:
-                    break;
-            }
-        };
-
-        JSONObject sub = this.subscribe(run.getAppName(),
-                new String[] { "STDOUT", "EXIT", "REMOVED" }, callback);
-        String subscriptionId = sub.optString("subscription_id", "");
-
-        try {
-            // Backfill bytes emitted before subscribe took effect
-            try {
-                AppOutput backfill = this.getAppOutput(run.getAppName(), 0, 0, 0,
-                        run.getProcUid(), 0);
-                if (backfill.httpBody != null && !backfill.httpBody.isEmpty()) {
-                    deliverOutput(backfill.httpBody, 0, deliveredUntil, deliverLock, stdoutHandler);
-                }
-                if (backfill.exitCode != null) {
-                    exitCode.compareAndSet(EXIT_CODE_NONE, backfill.exitCode);
-                    done.countDown();
-                }
-            } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Backfill failed for " + run.getAppName(), e);
-            }
-
-            // Wait for done signal
-            if (timeoutSeconds > 0) {
-                done.await(timeoutSeconds, TimeUnit.SECONDS);
-            } else {
-                done.await();
-            }
-        } finally {
-            // Unsubscribe
-            try {
-                if (!subscriptionId.isEmpty()) {
-                    this.unsubscribe(subscriptionId);
-                }
-            } catch (Exception ignored) {
-            }
-            // Best-effort delete on a real exit (>= 0).
-            // Sentinels (-1 REMOVED, -2 disconnected) mean the app is already gone.
-            int finalCode = exitCode.get();
-            if (finalCode != EXIT_CODE_NONE && finalCode >= 0) {
-                try {
-                    this.deleteApp(run.getAppName());
-                } catch (Exception ignored) {
-                }
-            }
-        }
-
-        int result = exitCode.get();
-        return (result == EXIT_CODE_NONE) ? null : result;
-    }
-
-    /**
-     * Deliver stdout output with deduplication by byte offset.
-     */
-    private static void deliverOutput(String chunk, long pos, AtomicLong deliveredUntil,
-            Object lock, OutputHandler stdoutHandler) {
-        if (chunk == null || chunk.isEmpty()) {
-            return;
-        }
-        byte[] chunkBytes = chunk.getBytes(StandardCharsets.UTF_8);
-        synchronized (lock) {
-            long current = deliveredUntil.get();
-            long end = pos + chunkBytes.length;
-            if (end <= current) {
-                return; // already delivered
-            }
-            long startPos;
-            String toDeliver;
-            if (pos < current) {
-                // Partial overlap: trim the already-delivered prefix
-                int skip = (int) (current - pos);
-                startPos = current;
-                toDeliver = new String(chunkBytes, skip, chunkBytes.length - skip, StandardCharsets.UTF_8);
-            } else {
-                startPos = pos;
-                toDeliver = chunk;
-            }
-            deliveredUntil.set(end);
-            if (stdoutHandler != null && !toDeliver.isEmpty()) {
-                stdoutHandler.handle(toDeliver, startPos);
-            }
-        }
+        return AsyncRunWaiter.waitViaEvents(this, run, stdoutHandler, timeoutSeconds);
     }
 
     @Override
@@ -480,14 +440,11 @@ public class AppMeshClientWSS extends AppMeshClient {
     }
 
     /**
-     * Create an HTTPS connection with proper SSL configuration.
+     * Create an HTTPS connection reusing the base client's SSL configuration.
      */
     private HttpURLConnection createSecureConnection(URL url) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        if (conn instanceof HttpsURLConnection && sslSocketFactory != null) {
-            HttpsURLConnection httpsConn = (HttpsURLConnection) conn;
-            httpsConn.setSSLSocketFactory(sslSocketFactory);
-        }
+        applySSL(conn);
         return conn;
     }
 
@@ -509,19 +466,6 @@ public class AppMeshClientWSS extends AppMeshClient {
     }
 
     /**
-     * Resolve file object from various input types.
-     */
-    private File resolveFile(Object localFile) {
-        if (localFile instanceof String) {
-            return new File((String) localFile);
-        } else if (localFile instanceof File) {
-            return (File) localFile;
-        } else {
-            throw new IllegalArgumentException("localFile must be a String path or a File object");
-        }
-    }
-
-    /**
      * Read error stream content for better error messages.
      */
     private String readErrorStream(HttpURLConnection conn) {
@@ -536,83 +480,4 @@ public class AppMeshClientWSS extends AppMeshClient {
         }
     }
 
-    /**
-     * Internal HTTP connection wrapper for WSS responses.
-     */
-    private static class WSSHttpURLConnection extends HttpURLConnection {
-        private final ResponseMessage response;
-        private final Map<String, List<String>> headerFields;
-        private final byte[] content;
-
-        protected WSSHttpURLConnection(URL url, ResponseMessage response) {
-            super(url);
-            this.response = response;
-            this.content = response.body != null ? response.body : new byte[0];
-            this.connected = true;
-
-            // Build header fields map
-            this.headerFields = new HashMap<>();
-            if (response.headers != null) {
-                for (Map.Entry<String, String> entry : response.headers.entrySet()) {
-                    List<String> values = new ArrayList<>();
-                    values.add(entry.getValue());
-                    headerFields.put(entry.getKey(), values);
-                }
-            }
-        }
-
-        @Override
-        public void disconnect() {
-            this.connected = false;
-        }
-
-        @Override
-        public boolean usingProxy() {
-            return false;
-        }
-
-        @Override
-        public void connect() throws IOException {
-            this.connected = true;
-        }
-
-        @Override
-        public int getResponseCode() throws IOException {
-            return response.http_status;
-        }
-
-        @Override
-        public InputStream getInputStream() throws IOException {
-            if (getResponseCode() >= 400) {
-                throw new IOException("HTTP error " + getResponseCode());
-            }
-            return new ByteArrayInputStream(content);
-        }
-
-        @Override
-        public InputStream getErrorStream() {
-            try {
-                if (getResponseCode() >= 400) {
-                    return new ByteArrayInputStream(content);
-                }
-            } catch (IOException e) {
-                return new ByteArrayInputStream(content);
-            }
-            return null;
-        }
-
-        @Override
-        public String getHeaderField(String name) {
-            if (response.headers == null) {
-                return null;
-            }
-            // Case-insensitive header lookup
-            for (Map.Entry<String, String> entry : response.headers.entrySet()) {
-                if (entry.getKey().equalsIgnoreCase(name)) {
-                    return entry.getValue();
-                }
-            }
-            return null;
-        }
-    }
 }

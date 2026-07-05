@@ -12,15 +12,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{debug, error, warn};
-use tokio::sync::{oneshot, watch, Mutex};
+use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
 use crate::constants::{EVENT_TYPE_DISCONNECTED, EVENT_URI};
 use crate::error::AppMeshError;
 use crate::models::AppEvent;
-use crate::tcp_messages::ResponseMessage;
+use crate::wire_messages::ResponseMessage;
 
-/// Callback invoked for each received event.  Invocations are spawned on a
-/// separate tokio task so they never block the reader loop.
+/// Callback invoked for each received event. Events for a subscription are
+/// delivered serially in arrival order on a dedicated dispatch task (matching the
+/// other SDK demuxers), so a slow callback never blocks the reader loop or other subs.
 pub type EventCallback = Arc<dyn Fn(AppEvent) + Send + Sync>;
 
 /// Trait abstracting the transport read side so the demuxer works with both
@@ -35,12 +36,15 @@ pub(crate) trait MessageReader: Send + Sync {
 const MAX_BUFFERED_SUBS: usize = 64;
 const MAX_BUFFERED_EVENTS_PER_SUB: usize = 1000;
 
-/// State protected together by a single mutex so the callback map and the
-/// pre-registration event buffer stay consistent (events buffered while a
+/// State protected together by a single mutex so the dispatch-channel map and
+/// the pre-registration event buffer stay consistent (events buffered while a
 /// callback is absent are flushed atomically on registration, preserving order
 /// vs. concurrent live events).
 struct EventState {
-    callbacks: HashMap<String, EventCallback>,
+    /// Per-subscription dispatch channels: one worker task per sub_id drains its
+    /// channel and invokes the callback, so buffered flushes, live events, and the
+    /// disconnect broadcast are delivered serially in arrival order.
+    senders: HashMap<String, mpsc::UnboundedSender<AppEvent>>,
     /// Events that arrive between the server-side subscription and the client
     /// registering its callback (e.g. atomic add_app(subscribe_events) on a fast
     /// app, whose output is pushed before the response returns). Held per sub_id
@@ -62,7 +66,7 @@ impl MessageDemuxer {
         Self {
             pending: Arc::new(Mutex::new(HashMap::new())),
             event_state: Arc::new(std::sync::Mutex::new(EventState {
-                callbacks: HashMap::new(),
+                senders: HashMap::new(),
                 buffers: HashMap::new(),
             })),
             stop_tx: std::sync::Mutex::new(None),
@@ -77,10 +81,8 @@ impl MessageDemuxer {
         }
 
         let (stop_tx, stop_rx) = watch::channel(false);
-        {
-            let mut guard = self.stop_tx.lock().expect("stop_tx lock poisoned");
-            *guard = Some(stop_tx);
-        }
+        // Poisoning is benign here (guarded state stays valid), so recover the guard.
+        *self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(stop_tx);
 
         let pending = Arc::clone(&self.pending);
         let event_state = Arc::clone(&self.event_state);
@@ -103,18 +105,22 @@ impl MessageDemuxer {
         Self::broadcast_disconnect(&self.event_state);
 
         // Signal the read loop to exit
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(true);
-            }
+        if let Some(tx) = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = tx.send(true);
         }
 
-        // Drop all pending senders so waiters get a RecvError
+        // Drop all pending senders so waiters get a RecvError. stop() may run
+        // outside a tokio runtime (e.g. from Drop): spawn when possible, else
+        // clear inline — with no runtime nothing holds the async lock.
         let pending = self.pending.clone();
-        tokio::spawn(async move {
-            let mut map = pending.lock().await;
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let mut map = pending.lock().await;
+                map.clear();
+            });
+        } else if let Ok(mut map) = pending.try_lock() {
             map.clear();
-        });
+        }
     }
 
     /// Register a pending request and return the receiver end.
@@ -124,7 +130,14 @@ impl MessageDemuxer {
     pub async fn register_request(&self, uuid: &str) -> oneshot::Receiver<ResponseMessage> {
         let (tx, rx) = oneshot::channel();
         let mut map = self.pending.lock().await;
-        map.insert(uuid.to_string(), tx);
+        // Re-check `running` under the pending lock: stop()/read-loop exit flip it
+        // false BEFORE clearing the map, so any clear after a true reading must wait
+        // on this lock and will drop our sender (waking the waiter). Inserting after
+        // the clear would strand the sender forever and hang the waiter.
+        if self.running.load(Ordering::SeqCst) {
+            map.insert(uuid.to_string(), tx);
+        }
+        // When stopped, `tx` drops here so `rx.await` fails immediately instead of hanging.
         rx
     }
 
@@ -137,28 +150,38 @@ impl MessageDemuxer {
     /// Register an event callback for a subscription id, flushing any events
     /// that arrived before registration (atomic-subscribe race).
     pub fn register_event_callback(&self, sub_id: &str, callback: EventCallback) {
-        // Take buffered events under the lock so they precede later live events,
-        // then spawn the dispatches after releasing it (callbacks may run long).
-        let buffered = {
-            let mut state = self.event_state.lock().expect("event_state lock poisoned");
-            state.callbacks.insert(sub_id.to_string(), callback.clone());
-            state.buffers.remove(sub_id)
-        };
+        let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
 
-        if let Some(buffered) = buffered {
+        // Single dispatch worker per subscription: drains the channel and invokes
+        // the callback serially in arrival order.
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                // Isolate callback panics (e.g. print! on a closed stdout pipe) so
+                // later events — including EXIT and DISCONNECTED — are still delivered.
+                let call = std::panic::AssertUnwindSafe(|| callback(event));
+                if std::panic::catch_unwind(call).is_err() {
+                    error!("event callback panicked; continuing event dispatch");
+                }
+            }
+        });
+
+        // Flush buffered events and publish the sender under the same lock so live
+        // events can only be enqueued after the buffered ones (order preserved).
+        let mut state = self.event_state.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(buffered) = state.buffers.remove(sub_id) {
             for event in buffered {
-                let cb = callback.clone();
-                tokio::spawn(async move {
-                    cb(event);
-                });
+                let _ = tx.send(event);
             }
         }
+        // Replacing an existing sender drops it, stopping the old worker after it drains.
+        state.senders.insert(sub_id.to_string(), tx);
     }
 
     /// Remove an event callback and discard any events buffered for it.
     pub fn unregister_event_callback(&self, sub_id: &str) {
-        let mut state = self.event_state.lock().expect("event_state lock poisoned");
-        state.callbacks.remove(sub_id);
+        let mut state = self.event_state.lock().unwrap_or_else(|e| e.into_inner());
+        // Dropping the sender stops the dispatch worker after it drains.
+        state.senders.remove(sub_id);
         state.buffers.remove(sub_id);
     }
 
@@ -172,24 +195,21 @@ impl MessageDemuxer {
     /// Push a synthetic disconnect event to every registered event callback,
     /// and discard any events buffered for never-registered subs.
     fn broadcast_disconnect(event_state: &Arc<std::sync::Mutex<EventState>>) {
-        let entries: Vec<(String, EventCallback)> = {
-            let mut state = event_state.lock().expect("event_state lock poisoned");
-            state.buffers.clear();
-            state.callbacks.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-        };
+        let mut state = event_state.lock().unwrap_or_else(|e| e.into_inner());
+        state.buffers.clear();
 
-        for (sub_id, callback) in entries {
+        // Enqueue through the per-subscription dispatch channels so the
+        // disconnect event is observed after any events already in flight.
+        for (sub_id, sender) in state.senders.iter() {
             let event = AppEvent {
-                subscription_id: sub_id,
+                subscription_id: sub_id.clone(),
                 event_type: EVENT_TYPE_DISCONNECTED.to_string(),
                 app_name: String::new(),
                 timestamp: 0,
                 sequence: 0,
                 data: serde_json::Value::Null,
             };
-            tokio::spawn(async move {
-                callback(event);
-            });
+            let _ = sender.send(event);
         }
     }
 
@@ -267,27 +287,18 @@ impl MessageDemuxer {
             }
         }
 
-        let cb = {
-            let mut state = event_state.lock().expect("event_state lock poisoned");
-            if let Some(cb) = state.callbacks.get(&sub_id) {
-                debug!("MessageDemuxer: event matched sub_id={}", sub_id);
-                Some(cb.clone())
-            } else if !sub_id.is_empty() {
-                // Race: event arrived before its callback registered (e.g. atomic
-                // add_app(subscribe_events) on a fast app). Buffer it (bounded) so
-                // register_event_callback can flush it instead of dropping it.
-                Self::buffer_event(&mut state, &sub_id, event);
-                return;
-            } else {
-                warn!("MessageDemuxer: event dropped, empty sub_id");
-                return;
-            }
-        };
-
-        if let Some(callback) = cb {
-            tokio::spawn(async move {
-                callback(event);
-            });
+        let mut state = event_state.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(sender) = state.senders.get(&sub_id) {
+            debug!("MessageDemuxer: event matched sub_id={}", sub_id);
+            // Unbounded send never blocks; the dispatch worker preserves order.
+            let _ = sender.send(event);
+        } else if !sub_id.is_empty() {
+            // Race: event arrived before its callback registered (e.g. atomic
+            // add_app(subscribe_events) on a fast app). Buffer it (bounded) so
+            // register_event_callback can flush it instead of dropping it.
+            Self::buffer_event(&mut state, &sub_id, event);
+        } else {
+            warn!("MessageDemuxer: event dropped, empty sub_id");
         }
     }
 
@@ -333,10 +344,95 @@ impl Drop for MessageDemuxer {
     fn drop(&mut self) {
         // Best-effort stop without spawning
         self.running.store(false, Ordering::SeqCst);
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(true);
-            }
+        if let Some(tx) = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = tx.send(true);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// Scripted mock transport: messages are fed through a channel; closing the
+    /// channel reads as transport EOF.
+    struct ScriptedReader {
+        rx: Mutex<mpsc::UnboundedReceiver<Vec<u8>>>,
+    }
+
+    #[async_trait]
+    impl MessageReader for ScriptedReader {
+        async fn read_message(&self) -> Result<Option<Vec<u8>>, AppMeshError> {
+            Ok(self.rx.lock().await.recv().await)
+        }
+    }
+
+    fn response_bytes(uuid: &str, request_uri: &str, body: &[u8]) -> Vec<u8> {
+        let resp = ResponseMessage {
+            uuid: uuid.to_string(),
+            request_uri: request_uri.to_string(),
+            http_status: 200,
+            body: body.to_vec(),
+            ..Default::default()
+        };
+        // Struct-map encoding, matching the daemon wire format
+        // (see RequestMessage::serialize).
+        rmp_serde::to_vec_named(&resp).expect("serialize response")
+    }
+
+    // Conformance: S7 (partial) — pending waiter registered before the response
+    // arrives is routed by UUID; see docs/source/SDKContract.md.
+    #[tokio::test]
+    async fn conformance_s7_response_routed_to_pre_registered_waiter() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let demuxer = MessageDemuxer::new();
+        demuxer.start(Arc::new(ScriptedReader { rx: Mutex::new(rx) }));
+
+        let waiter = demuxer.register_request("req-s7").await;
+        tx.send(response_bytes("req-s7", "/appmesh/app/test", b"{}")).unwrap();
+
+        let resp = tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await
+            .expect("timed out waiting for response")
+            .expect("waiter channel failed");
+        assert_eq!(resp.uuid, "req-s7");
+        assert_eq!(resp.http_status, 200);
+        demuxer.stop();
+    }
+
+    // Conformance: S2 (demuxer) — transport EOF broadcasts the synthetic
+    // __disconnected__ event to every registered callback and fails pending
+    // request waiters instead of leaving them hanging; see
+    // docs/source/SDKContract.md.
+    #[tokio::test]
+    async fn conformance_s2_disconnect_broadcast_unblocks() {
+        let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let demuxer = MessageDemuxer::new();
+        demuxer.start(Arc::new(ScriptedReader { rx: Mutex::new(rx) }));
+
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        demuxer.register_event_callback(
+            "sub-s2",
+            Arc::new(move |event: AppEvent| {
+                let _ = event_tx.send(event);
+            }),
+        );
+        let waiter = demuxer.register_request("req-s2").await;
+
+        drop(tx); // transport EOF
+
+        let event = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("timed out waiting for disconnect broadcast")
+            .expect("dispatch worker dropped");
+        assert_eq!(event.event_type, EVENT_TYPE_DISCONNECTED);
+        assert_eq!(event.subscription_id, "sub-s2");
+
+        // Pending waiter is woken with an error (disconnect), never "slow request".
+        let result = tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await
+            .expect("pending waiter not woken on disconnect");
+        assert!(result.is_err());
     }
 }

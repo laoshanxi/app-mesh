@@ -6,8 +6,8 @@ use crate::error::AppMeshError;
 use crate::models::*;
 use crate::requester::Requester;
 use crate::subscribe::{MessageDemuxer, MessageReader};
-use crate::tcp_messages::{RequestMessage, ResponseMessage};
-use crate::tls_config::{ClientCert, SslVerify};
+use crate::wire_messages::{RequestMessage, ResponseMessage};
+use crate::tls_config::ClientCert;
 use crate::wss_transport::WSSTransport;
 
 use async_trait::async_trait;
@@ -15,7 +15,7 @@ use bytes::Bytes;
 use reqwest::{Method, StatusCode};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -60,12 +60,10 @@ pub struct WSSRequester {
 impl WSSRequester {
     pub fn new(
         address: Option<(String, u16)>,
-        ssl_verify: Option<String>,
+        verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Self, AppMeshError> {
         let address = address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_WSS_PORT));
-        let ssl_verify_str = ssl_verify.unwrap_or_else(|| DEFAULT_SSL_CA_CERT_PATH.to_string());
-        let verify = if ssl_verify_str.is_empty() { SslVerify::False } else { SslVerify::Path(ssl_verify_str) };
         let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
 
         let transport = WSSTransport::new(address, verify, client_cert);
@@ -78,17 +76,6 @@ impl WSSRequester {
             forward_to: std::sync::Mutex::new(None),
             demuxer: std::sync::Mutex::new(None),
         })
-    }
-
-    fn to_http_response(resp: ResponseMessage) -> Result<http::Response<Bytes>, AppMeshError> {
-        let mut builder = http::Response::builder().status(resp.http_status as u16);
-        for (k, v) in &resp.headers {
-            builder = builder.header(k, v);
-        }
-        if !resp.body_msg_type.is_empty() && !resp.headers.contains_key(HTTP_HEADER_CONTENT_TYPE) {
-            builder = builder.header(HTTP_HEADER_CONTENT_TYPE, &resp.body_msg_type);
-        }
-        Ok(builder.body(Bytes::from(resp.body)).expect("Building http::Response should not fail"))
     }
 }
 
@@ -103,10 +90,19 @@ impl Requester for WSSRequester {
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>, AppMeshError> {
+        let req_uuid = Uuid::new_v4().to_string();
+
+        // Register the pending request BEFORE sending so the demuxer read loop
+        // cannot drop the response before a receiver exists (Go/Java SDK ordering).
+        let demuxer_opt = self.demuxer.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let active_demuxer = demuxer_opt.filter(|d| d.is_running());
+        let rx = match &active_demuxer {
+            Some(demuxer) => Some(demuxer.register_request(&req_uuid).await),
+            None => None,
+        };
+
         // Build and send the request message.
-        let req_uuid;
-        let req_headers;
-        {
+        let send_result: Result<Option<HashMap<String, String>>, AppMeshError> = async {
             let mut transport = self.transport.lock().await;
 
             if !transport.connected() {
@@ -114,13 +110,15 @@ impl Requester for WSSRequester {
             }
 
             let mut req = RequestMessage::new();
-            req.uuid = Uuid::new_v4().to_string();
+            req.uuid = req_uuid.clone();
             req.http_method = method.to_string();
             req.request_uri = path.to_string();
+            // Informational; "wss-client" on WSS vs hostname on TCP, per the Python reference SDK.
             req.client_addr = "wss-client".to_string();
             req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_WSS.into());
 
-            if let Some(token) = self.token.read().expect("token lock poisoned").clone() {
+            // Poisoning is benign here (guarded state stays valid), so recover the guard.
+            if let Some(token) = self.token.read().unwrap_or_else(|e| e.into_inner()).clone() {
                 req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
             }
             if let Some(ref fwd) = *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) {
@@ -128,7 +126,7 @@ impl Requester for WSSRequester {
             }
 
             // Save headers ref before consuming for token sync
-            req_headers = headers.clone();
+            let req_headers = headers.clone();
             if let Some(h) = headers {
                 req.headers.extend(h);
             }
@@ -139,30 +137,33 @@ impl Requester for WSSRequester {
                 req.body = b.to_vec();
             }
 
-            req_uuid = req.uuid.clone();
             let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
             transport.send_message(&data).await?;
+
+            Ok(req_headers)
         }
+        .await;
         // Transport lock released here.
 
-        // Check if demuxer is active — if so, route through channel-based response.
-        let demuxer_opt = {
-            self.demuxer.lock().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?.clone()
+        let req_headers = match send_result {
+            Ok(h) => h,
+            Err(e) => {
+                // Nothing was sent; remove the pending entry so it cannot leak.
+                if let Some(ref demuxer) = active_demuxer {
+                    demuxer.unregister_request(&req_uuid).await;
+                }
+                return Err(e);
+            }
         };
 
-        let resp = if let Some(ref demuxer) = demuxer_opt {
-            if demuxer.is_running() {
-                let rx = demuxer.register_request(&req_uuid).await;
-                match rx.await {
-                    Ok(resp) => resp,
-                    Err(_) => {
-                        return Err(AppMeshError::ConnectionError(
-                            "Connection closed while waiting for response".into(),
-                        ));
-                    }
+        let resp = if let Some(rx) = rx {
+            match rx.await {
+                Ok(resp) => resp,
+                Err(_) => {
+                    return Err(AppMeshError::ConnectionError(
+                        "Connection closed while waiting for response".into(),
+                    ));
                 }
-            } else {
-                self.read_response_direct().await?
             }
         } else {
             self.read_response_direct().await?
@@ -177,7 +178,7 @@ impl Requester for WSSRequester {
             });
         }
 
-        let http_resp = Self::to_http_response(resp)?;
+        let http_resp = resp.into_http_response()?;
 
         // Auto-sync token from auth endpoint responses
         crate::requester::sync_transport_token(&http_resp, path, &req_headers, self);
@@ -186,36 +187,35 @@ impl Requester for WSSRequester {
     }
 
     fn set_forward_to(&self, url: Option<String>) {
-        if let Ok(mut fwd) = self.forward_to.lock() {
-            *fwd = url;
-        }
+        *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) = url;
     }
 
     fn handle_token_update(&self, token: Option<String>) {
-        let mut guard = self.token.write().expect("token lock poisoned");
-        *guard = token;
+        *self.token.write().unwrap_or_else(|e| e.into_inner()) = token;
     }
 
     fn get_access_token(&self) -> Option<String> {
-        self.token.read().expect("token lock poisoned").clone()
+        self.token.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn close(&self) {
         // Stop the demuxer first
-        if let Ok(guard) = self.demuxer.lock() {
-            if let Some(ref d) = *guard {
-                d.stop();
-            }
+        if let Some(ref d) = *self.demuxer.lock().unwrap_or_else(|e| e.into_inner()) {
+            d.stop();
         }
-        let transport = self.transport.clone();
-        tokio::spawn(async move {
-            let mut t = transport.lock().await;
-            t.close().await;
-        });
+        // Spawn the async transport close only when a tokio runtime is available
+        // (may run in Drop outside a runtime — never panic; dropping the writer closes the socket).
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let transport = self.transport.clone();
+            handle.spawn(async move {
+                let mut t = transport.lock().await;
+                t.close().await;
+            });
+        }
     }
 
     fn enable_demuxer(&self) {
-        let mut guard = self.demuxer.lock().expect("demuxer lock poisoned");
+        let mut guard = self.demuxer.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_some() {
             return; // already enabled
         }
@@ -227,7 +227,11 @@ impl Requester for WSSRequester {
     }
 
     fn get_demuxer(&self) -> Option<Arc<MessageDemuxer>> {
-        self.demuxer.lock().ok().and_then(|g| g.clone())
+        self.demuxer.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn supports_demuxer(&self) -> bool {
+        true
     }
 }
 
@@ -256,18 +260,34 @@ pub struct AppMeshClientWSS {
     client: Arc<AppMeshClient>,
     http_client: reqwest::Client,
     base_url: String,
+    /// Shared handle to the WSS transport so `close_async` can await the close handshake.
+    transport: Arc<Mutex<WSSTransport>>,
 }
 
 impl AppMeshClientWSS {
     /// Create a WSS transport client. Defaults to `127.0.0.1:6058`.
+    /// An empty `ssl_verify` path is the legacy verification-disable form; prefer
+    /// [`crate::ClientBuilderWSS`]'s explicit `danger_accept_invalid_certs(true)`.
     pub fn new(
         address: Option<(String, u16)>,
         ssl_verify: Option<String>,
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>, AppMeshError> {
+        let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
+        Self::new_with_verify(address, verify, ssl_client_cert)
+    }
+
+    /// Create a WSS transport client with an explicit `SslVerify` mode (used by the
+    /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
+    pub(crate) fn new_with_verify(
+        address: Option<(String, u16)>,
+        verify: crate::tls_config::SslVerify,
+        ssl_client_cert: Option<(String, String)>,
+    ) -> Result<Arc<Self>, AppMeshError> {
         let address_val = address.clone().unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_WSS_PORT));
 
-        let wss_requester = WSSRequester::new(address, ssl_verify.clone(), ssl_client_cert.clone())?;
+        let wss_requester = WSSRequester::new(address, verify.clone(), ssl_client_cert.clone())?;
+        let transport = Arc::clone(&wss_requester.transport);
 
         let base_url = format!("https://{}:{}", address_val.0, address_val.1);
         let client = AppMeshClient::with_requester(Box::new(wss_requester), base_url.clone());
@@ -275,43 +295,67 @@ impl AppMeshClientWSS {
         // Build HTTP client with matching SSL settings for the file-transfer side-channel
         let mut client_builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(120));
 
-        let ssl_verify_path = ssl_verify.unwrap_or_else(|| DEFAULT_SSL_CA_CERT_PATH.to_string());
-        if ssl_verify_path.is_empty() {
-            client_builder = client_builder.danger_accept_invalid_certs(true);
-        } else if let Ok(buf) = std::fs::read(&ssl_verify_path) {
-            if let Ok(cert) = reqwest::Certificate::from_pem(&buf) {
-                client_builder = client_builder.add_root_certificate(cert);
-            } else {
+        // SslVerify::False only carries explicit intent; a configured CA that is
+        // missing/invalid is a hard error, never a silent no-verify fallback.
+        // SslVerify::True means auto resolution already chose the system store.
+        match &verify {
+            crate::tls_config::SslVerify::False => {
                 client_builder = client_builder.danger_accept_invalid_certs(true);
             }
-        } else {
-            // CA cert file not found, skip verification
-            client_builder = client_builder.danger_accept_invalid_certs(true);
+            crate::tls_config::SslVerify::Path(ssl_verify_path) => {
+                let buf = std::fs::read(ssl_verify_path).map_err(|e| {
+                    AppMeshError::ConfigurationError(format!(
+                        "Failed to read CA certificate '{}': {}",
+                        ssl_verify_path, e
+                    ))
+                })?;
+                let cert = reqwest::Certificate::from_pem(&buf).map_err(|e| {
+                    AppMeshError::ConfigurationError(format!(
+                        "Invalid CA certificate '{}': {}",
+                        ssl_verify_path, e
+                    ))
+                })?;
+                client_builder = client_builder.add_root_certificate(cert);
+            }
+            crate::tls_config::SslVerify::True => {}
         }
 
         if let Some((cert_path, key_path)) = ssl_client_cert {
-            let mut cert_buf = Vec::new();
-            let mut key_buf = Vec::new();
-            File::open(&cert_path).and_then(|mut f| f.read_to_end(&mut cert_buf)).ok();
-            File::open(&key_path).and_then(|mut f| f.read_to_end(&mut key_buf)).ok();
-            let mut combined = cert_buf;
+            let mut combined = std::fs::read(&cert_path).map_err(|e| {
+                AppMeshError::ConfigurationError(format!(
+                    "Failed to read client certificate '{}': {}",
+                    cert_path, e
+                ))
+            })?;
             combined.extend_from_slice(b"\n");
-            combined.extend_from_slice(&key_buf);
-            if let Ok(identity) = reqwest::Identity::from_pem(&combined) {
-                client_builder = client_builder.identity(identity);
-            }
+            combined.extend_from_slice(&std::fs::read(&key_path).map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Failed to read client key '{}': {}", key_path, e))
+            })?);
+            let identity = reqwest::Identity::from_pem(&combined).map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e))
+            })?;
+            client_builder = client_builder.identity(identity);
         }
 
         let http_client = client_builder
             .build()
             .map_err(|e| AppMeshError::ConnectionError(format!("Failed to build HTTP client: {}", e)))?;
 
-        Ok(Arc::new(Self { client, http_client, base_url }))
+        Ok(Arc::new(Self { client, http_client, base_url, transport }))
     }
 
     /// Get the underlying generic client for shared auth/app/task APIs.
     pub fn client(&self) -> &Arc<AppMeshClient> {
         &self.client
+    }
+
+    /// Gracefully close the client, awaiting the WebSocket close handshake.
+    /// The synchronous `close()` (also invoked by `Drop`) can only fire-and-forget the
+    /// transport close; use this to be sure the close frame is sent. Safe to call repeatedly.
+    pub async fn close_async(&self) {
+        // Cancels token refresh and stops the demuxer; transport close is idempotent.
+        self.client.close();
+        self.transport.lock().await.close().await;
     }
 
     /// Download a file using WSS control messages plus an HTTPS data side channel.
@@ -412,11 +456,15 @@ impl AppMeshClientWSS {
         let mut upload_headers = reqwest::header::HeaderMap::new();
         upload_headers.insert(
             reqwest::header::HeaderName::from_static("authorization"),
-            auth_token.parse().unwrap(),
+            reqwest::header::HeaderValue::from_str(&auth_token).map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Invalid authorization header value: {}", e))
+            })?,
         );
         upload_headers.insert(
             reqwest::header::HeaderName::from_bytes(HTTP_HEADER_KEY_X_FILE_PATH.as_bytes()).unwrap(),
-            remote_file.parse().unwrap(),
+            reqwest::header::HeaderValue::from_str(remote_file).map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Invalid remote file path header value: {}", e))
+            })?,
         );
 
         if preserve_permissions {
@@ -470,6 +518,12 @@ impl AppMeshClientWSS {
 
     /// Run an application and wait for completion using subscribe.
     /// Subscribe is established BEFORE the app is started, so no events are missed.
+    ///
+    /// Returns:
+    ///   `Ok((run, Some(code)))` -- process exited (code may be negative for signal kills)
+    ///   `Ok((run, None))`       -- caller-side timeout
+    ///   `Err(AppMeshError::AppRemoved)`            -- app removed before EXIT observed
+    ///   `Err(AppMeshError::TransportDisconnected)` -- transport failure
     pub async fn run_and_wait(
         &self,
         app: &Application,
@@ -490,10 +544,11 @@ impl AppMeshClientWSS {
     /// events and does a one-shot backfill to cover output emitted before the subscribe
     /// took effect.  Deduplicates by byte-position offset.
     ///
-    /// Sentinel exit codes:
-    ///   `None`  -- caller-side timeout
-    ///   `-1`    -- REMOVED before EXIT observed
-    ///   `-2`    -- demuxer disconnected (transport failure)
+    /// Returns:
+    ///   `Ok(Some(code))` -- process exited (code may be negative for signal kills)
+    ///   `Ok(None)`       -- caller-side timeout
+    ///   `Err(AppMeshError::AppRemoved)`            -- REMOVED before EXIT observed
+    ///   `Err(AppMeshError::TransportDisconnected)` -- demuxer disconnected (transport failure)
     pub async fn wait_for_async_run(
         &self,
         run: &AppRun,
@@ -504,6 +559,9 @@ impl AppMeshClientWSS {
     }
 }
 
+/// NOTE: Deref gives ergonomic access to the shared [`AppMeshClient`] API.
+/// Inherent methods here (e.g. `wait_for_async_run`) shadow same-named deref-target
+/// methods, but both resolve to the same subscribe-based wait semantics.
 impl std::ops::Deref for AppMeshClientWSS {
     type Target = AppMeshClient;
     fn deref(&self) -> &Self::Target {

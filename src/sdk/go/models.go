@@ -13,60 +13,66 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+// Client-facing defaults.
 const (
-	DEFAULT_HTTP_URI                   = "https://127.0.0.1:6060"
-	DEFAULT_TCP_URI                    = "127.0.0.1:6059"
-	DEFAULT_TOKEN_EXPIRE_SECONDS       = 7 * (60 * 60 * 24) // default 7 day(s)
-	DEFAULT_JWT_AUDIENCE               = "appmesh-service"
-	HTTP_USER_AGENT_HEADER_NAME        = "User-Agent"
-	HTTP_HEADER_NAME_CSRF_TOKEN        = "X-CSRF-Token"
-	HTTP_HEADER_JWT_SET_COOKIE         = "X-Set-Cookie"
-	COOKIE_TOKEN                       = "appmesh_auth_token"
-	COOKIE_CSRF_TOKEN                  = "appmesh_csrf_token"
-	HTTP_USER_AGENT                    = "appmesh/golang"
-	HTTP_USER_AGENT_TCP                = "appmesh/golang/tcp"
-	HTTP_USER_AGENT_WSS                = "appmesh/golang/wss"
-	HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
-	HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
-	HTTP_HEADER_KEY_File_Path          = "X-File-Path"
-	TOKEN_REFRESH_INTERVAL_SECONDS     = 300 // 5 minutes
-	TOKEN_REFRESH_OFFSET_SECONDS       = 30  // 30 seconds before expiry
+	DefaultHTTPURI            = "https://127.0.0.1:6060"
+	DefaultTCPURI             = "127.0.0.1:6059"
+	DefaultTokenExpireSeconds = 7 * (60 * 60 * 24) // default 7 day(s)
+	DefaultJWTAudience        = "appmesh-service"
 )
 
+// Internal wire-protocol constants (headers, cookies, user agents).
+const (
+	userAgentHeaderName         = "User-Agent"
+	headerCSRFToken             = "X-CSRF-Token"
+	headerJWTSetCookie          = "X-Set-Cookie"
+	cookieToken                 = "appmesh_auth_token"
+	cookieCSRFToken             = "appmesh_csrf_token"
+	userAgent                   = "appmesh/golang"
+	userAgentTCP                = "appmesh/golang/tcp"
+	userAgentWSS                = "appmesh/golang/wss"
+	headerSendFileSocket        = "X-Send-File-Socket"
+	headerRecvFileSocket        = "X-Recv-File-Socket"
+	headerFilePath              = "X-File-Path"
+	headerTargetHost            = "X-Target-Host"
+	tokenRefreshIntervalSeconds = 300 // 5 minutes
+	tokenRefreshOffsetSeconds   = 30  // 30 seconds before expiry
+)
+
+// Platform-aware default SSL paths.
 var (
-	// Platform-aware default SSL paths
-	_DEFAULT_SSL_DIR             string
-	DEFAULT_CLIENT_CERT_FILE     string
-	DEFAULT_CLIENT_CERT_KEY_FILE string
-	DEFAULT_CA_FILE              string
+	defaultSSLDir            string
+	DefaultClientCertFile    string
+	DefaultClientCertKeyFile string
+	DefaultCAFile            string
 )
 
 func init() {
 	if runtime.GOOS == "windows" {
-		_DEFAULT_SSL_DIR = "c:/local/appmesh/ssl"
+		defaultSSLDir = "c:/local/appmesh/ssl"
 	} else {
-		_DEFAULT_SSL_DIR = "/opt/appmesh/ssl"
+		defaultSSLDir = "/opt/appmesh/ssl"
 	}
 
-	DEFAULT_CLIENT_CERT_FILE = filepath.Join(_DEFAULT_SSL_DIR, "client.pem")
-	DEFAULT_CLIENT_CERT_KEY_FILE = filepath.Join(_DEFAULT_SSL_DIR, "client-key.pem")
-	DEFAULT_CA_FILE = filepath.Join(_DEFAULT_SSL_DIR, "ca.pem")
+	DefaultClientCertFile = filepath.Join(defaultSSLDir, "client.pem")
+	DefaultClientCertKeyFile = filepath.Join(defaultSSLDir, "client-key.pem")
+	DefaultCAFile = filepath.Join(defaultSSLDir, "ca.pem")
 }
 
 // Application represents the application configuration and status.
 type Application struct {
 	// Main definition
-	Name           string  `json:"name"`
-	Owner          *string `json:"owner"`
-	Permission     *int    `json:"permission"`
-	ShellMode      *bool   `json:"shell"`
-	SessionLogin   *bool   `json:"session_login"`
-	Command        *string `json:"command"`
-	Description    *string `json:"description"`
-	WorkingDir     *string `json:"working_dir"`
-	HealthCheckCMD *string `json:"health_check_cmd"`
-	Status         int     `json:"status"`
-	StdoutCacheNum *int    `json:"stdout_cache_num"`
+	Name           string           `json:"name"`
+	Owner          *string          `json:"owner"`
+	Permission     *int             `json:"permission"`
+	ShellMode      *bool            `json:"shell"`
+	SessionLogin   *bool            `json:"session_login"`
+	Command        *string          `json:"command"`
+	Description    *string          `json:"description"`
+	WorkingDir     *string          `json:"working_dir"`
+	HealthCheckCMD *string          `json:"health_check_cmd"`
+	Status         int              `json:"status"`
+	StdoutCacheNum *int             `json:"stdout_cache_num"`
 	Metadata       *json.RawMessage `json:"metadata,omitempty"`
 
 	// Time
@@ -80,23 +86,27 @@ type Application struct {
 	StopRetention *string   `json:"retention"`
 	Behavior      *Behavior `json:"behavior"`
 	// Short running definition
-	StartIntervalSeconds       *string `json:"start_interval_seconds"`
-	StartIntervalSecondsIsCron *bool   `json:"cron"`
+	StartIntervalSeconds *string `json:"start_interval_seconds"`
+	// StartIntervalSecondsIsCron indicates StartIntervalSeconds is a cron expression;
+	// it maps to the "cron" wire key.
+	StartIntervalSecondsIsCron *bool `json:"cron"`
 
 	// Runtime attributes
-	Pid            *int    `json:"pid"`
-	User           *string `json:"pid_user"`
-	ReturnCode     *int    `json:"return_code"`
-	Health         *int    `json:"health"`
-	FileDescritors *int    `json:"fd"`
-	Starts         *int    `json:"starts"`
-	PsTree         *string `json:"pstree"`
-	ContainerID    *string `json:"container_id"`
+	Pid        *int    `json:"pid"`
+	User       *string `json:"pid_user"`
+	ReturnCode *int    `json:"return_code"`
+	Health     *int    `json:"health"`
+	// FileDescriptors is the process file descriptor count (JSON tag "fd" is wire-fixed).
+	FileDescriptors *int    `json:"fd"`
+	Starts          *int    `json:"starts"`
+	PsTree          *string `json:"pstree"`
+	ContainerID     *string `json:"container_id"`
 
-	CPU             *float64 `json:"cpu"`
-	Memory          *int     `json:"memory"`
-	Uuid            *string  `json:"process_uuid"` // For run application
-	StdoutCacheSize *int     `json:"stdout_cache_size"`
+	CPU    *float64 `json:"cpu"`
+	Memory *int     `json:"memory"`
+	// UUID identifies a run-application process.
+	UUID            *string `json:"process_uuid"` // For run application
+	StdoutCacheSize *int    `json:"stdout_cache_size"`
 
 	Version   *int    `json:"version"`
 	LastError *string `json:"last_error"`
@@ -153,13 +163,18 @@ type JWTResponse struct {
 	TokenType string `json:"token_type"`
 }
 
-// AppOutput represents the output of an application.
+// AppOutput represents the result of an AppMeshClient.GetAppOutput call.
 type AppOutput struct {
-	HttpSuccess    bool
-	HttpBody       string
+	// HttpSuccess is true only when the server responded with HTTP 200 OK.
+	HttpSuccess bool
+	// HttpBody is the raw response body: output text on success, the server error text otherwise.
+	HttpBody string
+	// OutputPosition is the next read cursor (X-Output-Position header), when present.
 	OutputPosition *int64
-	ExitCode       *int
-	Error          error
+	// ExitCode is the process exit code (X-Exit-Code header), populated once the process has finished.
+	ExitCode *int
+	// Error is non-nil on transport failure or any non-200 HTTP status.
+	Error error
 }
 
 // Environments represents a map of environment variables.
@@ -198,6 +213,7 @@ type JWTConfig struct {
 }
 
 // Request represents the message sent over TCP.
+// Wire-protocol internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 type Request struct {
 	UUID          string            `msgpack:"uuid"`
 	RequestUri    string            `msgpack:"request_uri"`
@@ -209,6 +225,7 @@ type Request struct {
 }
 
 // NewRequest creates a Request with all fields initialized.
+// Wire-protocol internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 func NewRequest() *Request {
 	return &Request{
 		UUID:          xid.New().String(),
@@ -227,6 +244,7 @@ func (r *Request) Serialize() ([]byte, error) {
 }
 
 // Response represents the message received over TCP.
+// Wire-protocol internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 type Response struct {
 	UUID        string            `msgpack:"uuid"`
 	RequestUri  string            `msgpack:"request_uri"`

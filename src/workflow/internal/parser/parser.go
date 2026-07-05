@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"regexp"
@@ -10,6 +11,14 @@ import (
 )
 
 var safeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// usernamePattern matches App Mesh usernames used as execution_identity. It is
+// intentionally broader than safeNamePattern (allows '.', '@') to cover emails
+// and service-account naming.
+var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.@-]+$`)
+
+// inputKeyPattern: input keys must be usable as env var names.
+var inputKeyPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // LoadWorkflow reads and parses a workflow YAML file.
 func LoadWorkflow(path string) (*models.Workflow, error) {
@@ -36,8 +45,12 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 		return nil, fmt.Errorf("re-marshal YAML: %w", err)
 	}
 
+	// Strict decode: reject unknown fields so a typo (e.g. `neeeds:`) fails
+	// loudly at registration instead of being silently dropped.
 	var wf models.Workflow
-	if err := yaml.Unmarshal(fixed, &wf); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(fixed))
+	dec.KnownFields(true)
+	if err := dec.Decode(&wf); err != nil {
 		return nil, fmt.Errorf("parse workflow: %w", err)
 	}
 
@@ -75,21 +88,42 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 		return nil, fmt.Errorf("concurrency.group is required when concurrency is set")
 	}
 
-	// Validate input keys are safe identifiers (must work as env var names).
-	var inputKeyPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+	// execution_identity, when set, must be a plausible username (the engine will
+	// log in as it). Binding authorization happens at registration (workflow_add).
+	if wf.ExecutionIdentity != "" && !usernamePattern.MatchString(wf.ExecutionIdentity) {
+		return nil, fmt.Errorf("execution_identity %q must match [a-zA-Z0-9_.@-]+", wf.ExecutionIdentity)
+	}
+
+	// Validate input keys are safe identifiers and types are from the documented enum.
+	validateInputs := func(section string, inputs map[string]models.InputParam) error {
+		for k, p := range inputs {
+			if !inputKeyPattern.MatchString(k) {
+				return fmt.Errorf("%s input key %q must match [a-zA-Z_][a-zA-Z0-9_]*", section, k)
+			}
+			switch p.Type {
+			case "", "string", "number", "boolean":
+			default:
+				return fmt.Errorf("%s input %q type must be string, number or boolean", section, k)
+			}
+		}
+		return nil
+	}
 	if wf.On != nil {
 		if wf.On.Manual != nil {
-			for k := range wf.On.Manual.Inputs {
-				if !inputKeyPattern.MatchString(k) {
-					return nil, fmt.Errorf("manual input key %q must match [a-zA-Z_][a-zA-Z0-9_]*", k)
-				}
+			if err := validateInputs("manual", wf.On.Manual.Inputs); err != nil {
+				return nil, err
 			}
 		}
 		if wf.On.WorkflowCall != nil {
-			for k := range wf.On.WorkflowCall.Inputs {
-				if !inputKeyPattern.MatchString(k) {
-					return nil, fmt.Errorf("workflow_call input key %q must match [a-zA-Z_][a-zA-Z0-9_]*", k)
-				}
+			if err := validateInputs("workflow_call", wf.On.WorkflowCall.Inputs); err != nil {
+				return nil, err
+			}
+		}
+		// app_event without app/events can never fire; fail loudly instead of
+		// registering a trigger that silently does nothing.
+		if wf.On.AppEvent != nil {
+			if wf.On.AppEvent.App == "" || len(wf.On.AppEvent.Events) == 0 {
+				return nil, fmt.Errorf("app_event trigger requires app and events")
 			}
 		}
 	}

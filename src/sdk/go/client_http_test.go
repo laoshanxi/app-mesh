@@ -1,6 +1,7 @@
 package appmesh
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/require"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 type mockAuthRequester struct {
@@ -31,6 +31,10 @@ func (m *mockAuthRequester) Send(method string, apiPath string, queries url.Valu
 	// Simulate transport-level token sync (as real requesters do)
 	syncTransportToken(code, resp, apiPath, headers, m)
 	return code, resp, http.Header{}, nil
+}
+
+func (m *mockAuthRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	return m.Send(method, apiPath, queries, headers, body)
 }
 
 func (m *mockAuthRequester) Close() {}
@@ -54,7 +58,7 @@ func TestAuthenticateApplyFalseDoesNotMutateHTTPState(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "Bearer provided-token", req.lastHeaders["Authorization"])
-	require.Empty(t, req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
+	require.Empty(t, req.lastHeaders[headerJWTSetCookie])
 	require.Equal(t, "existing-token", req.getAccessToken())
 	require.Empty(t, req.updateCalls)
 }
@@ -68,7 +72,7 @@ func TestAuthenticateApplyTrueUpdatesHTTPState(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "Bearer provided-token", req.lastHeaders["Authorization"])
-	require.Equal(t, "true", req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
+	require.Equal(t, "true", req.lastHeaders[headerJWTSetCookie])
 	require.Equal(t, "verified-token", req.getAccessToken())
 	require.Equal(t, []string{"verified-token"}, req.updateCalls)
 }
@@ -103,6 +107,10 @@ func (m *mockTransportRequester) Send(method string, apiPath string, queries url
 	return code, raw, http.Header{}, nil
 }
 
+func (m *mockTransportRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	return m.Send(method, apiPath, queries, headers, body)
+}
+
 func (m *mockTransportRequester) Close() {}
 func (m *mockTransportRequester) handleTokenUpdate(token string) {
 	m.updateCalls = append(m.updateCalls, token)
@@ -132,7 +140,7 @@ func TestSyncTransportToken_LoginWithoutSetCookie(t *testing.T) {
 
 	_, err = client.Login("user", "pass", "", 3600, "")
 	require.NoError(t, err)
-	require.Equal(t, "true", req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
+	require.Equal(t, "true", req.lastHeaders[headerJWTSetCookie])
 	require.Equal(t, "new-token", req.storedToken)
 }
 
@@ -144,7 +152,7 @@ func TestSyncTransportToken_ValidateTotp(t *testing.T) {
 	err = client.ValidateTotp("user", "challenge", "123456", 3600)
 	require.NoError(t, err)
 	// ValidateTotp sends X-Set-Cookie: true
-	require.Equal(t, "true", req.lastHeaders[HTTP_HEADER_JWT_SET_COOKIE])
+	require.Equal(t, "true", req.lastHeaders[headerJWTSetCookie])
 	require.Equal(t, "new-token", req.storedToken)
 }
 
@@ -214,12 +222,11 @@ func TestIntegration_HTTP_RenewToken_UpdatesCookie(t *testing.T) {
 	cookiePath := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
 	defer os.Remove(cookiePath)
 
-	emptyStr := ""
-	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr, CookieFile: cookiePath})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true, CookieFile: cookiePath})
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 
 	tokenAfterLogin := client.req.getAccessToken()
@@ -248,12 +255,11 @@ func TestIntegration_HTTP_Logout_ClearsCookie(t *testing.T) {
 	cookiePath := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
 	defer os.Remove(cookiePath)
 
-	emptyStr := ""
-	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr, CookieFile: cookiePath})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true, CookieFile: cookiePath})
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 	tokenBeforeLogout := client.req.getAccessToken()
 	require.NotEmpty(t, tokenBeforeLogout)
@@ -273,12 +279,11 @@ func TestIntegration_HTTP_Logout_ClearsCookie(t *testing.T) {
 }
 
 func TestIntegration_TCP_Logout_ClearsToken(t *testing.T) {
-	emptyStr := ""
-	client, err := NewTCPClient(Option{SslTrustedCA: &emptyStr})
+	client, err := NewTCPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, client.req.getAccessToken(), "should have token after TCP login")
 
@@ -289,12 +294,11 @@ func TestIntegration_TCP_Logout_ClearsToken(t *testing.T) {
 }
 
 func TestIntegration_WSS_Logout_ClearsToken(t *testing.T) {
-	emptyStr := ""
-	client, err := NewWSSClient(Option{SslTrustedCA: &emptyStr})
+	client, err := NewWSSClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, client.req.getAccessToken(), "should have token after WSS login")
 
@@ -305,18 +309,17 @@ func TestIntegration_WSS_Logout_ClearsToken(t *testing.T) {
 }
 
 func TestIntegration_HTTP_Authenticate_ApplyTrue(t *testing.T) {
-	emptyStr := ""
-	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client.Close()
 
 	// Login to get a token
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 	token := client.req.getAccessToken()
 
 	// Create a new client and use authenticate to update the session
-	client2, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client2, err := NewHTTPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client2.Close()
 	require.Empty(t, client2.req.getAccessToken())
@@ -328,17 +331,16 @@ func TestIntegration_HTTP_Authenticate_ApplyTrue(t *testing.T) {
 }
 
 func TestIntegration_HTTP_Authenticate_ApplyFalse(t *testing.T) {
-	emptyStr := ""
-	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 	token := client.req.getAccessToken()
 
 	// New client: authenticate(updateSession=false) should NOT store the token
-	client2, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client2, err := NewHTTPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client2.Close()
 
@@ -349,12 +351,11 @@ func TestIntegration_HTTP_Authenticate_ApplyFalse(t *testing.T) {
 }
 
 func TestIntegration_HTTP_Authenticate_Permission(t *testing.T) {
-	emptyStr := ""
-	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 	token := client.req.getAccessToken()
 
@@ -363,20 +364,19 @@ func TestIntegration_HTTP_Authenticate_Permission(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok, "should succeed with valid permission")
 
-	// invalid permission
+	// invalid permission: non-2xx must surface as an error, not a silent false
 	ok, err = client.Authenticate(token, "no-such-perm", "", false)
-	require.NoError(t, err)
+	require.Error(t, err, "invalid permission must return a non-nil error")
 	require.False(t, ok, "should fail with invalid permission")
 }
 
 func TestIntegration_HTTP_Authenticate_Audience(t *testing.T) {
-	emptyStr := ""
-	client, err := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client.Close()
 
 	// login with specific audience
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "appmesh-service")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "appmesh-service")
 	require.NoError(t, err)
 	token := client.req.getAccessToken()
 
@@ -385,21 +385,20 @@ func TestIntegration_HTTP_Authenticate_Audience(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok, "should succeed with matching audience")
 
-	// mismatched audience
+	// mismatched audience: non-2xx must surface as an error, not a silent false
 	ok, err = client.Authenticate(token, "", "wrong-audience", false)
-	require.NoError(t, err)
+	require.Error(t, err, "wrong audience must return a non-nil error")
 	require.False(t, ok, "should fail with wrong audience")
 }
 
 func TestAppmeshLogin(t *testing.T) {
 
-	emptyStr := ""
-	client, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client, _ := NewHTTPClient(Option{InsecureSkipVerify: true})
 
-	client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	res, _ := client.GetHostResources()
 	t.Log(res)
-	labels, _ := client.GetLabels()
+	labels, _ := client.ListLabels()
 	t.Log(labels)
 	apps, _ := client.ListApps()
 	t.Log(apps)
@@ -415,17 +414,16 @@ func TestAppmeshLogin(t *testing.T) {
 }
 
 func TestAppmeshSetToken(t *testing.T) {
-	emptyStr := ""
 	// 1. Login to get a valid token
-	client, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
-	_, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	client, _ := NewHTTPClient(Option{InsecureSkipVerify: true})
+	_, err := client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 	token := client.req.getAccessToken()
 	require.NotEmpty(t, token)
 	t.Log("Got token from login")
 
 	// 2. SetToken without cookie file (in-memory)
-	client2, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr})
+	client2, _ := NewHTTPClient(Option{InsecureSkipVerify: true})
 	client2.SetToken(token)
 	apps, err := client2.ListApps()
 	require.NoError(t, err)
@@ -433,7 +431,7 @@ func TestAppmeshSetToken(t *testing.T) {
 	t.Logf("SetToken in-memory: got %d apps", len(apps))
 
 	// 3. JwtToken constructor param without cookie file
-	client3, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr, JwtToken: token})
+	client3, _ := NewHTTPClient(Option{InsecureSkipVerify: true, JwtToken: token})
 	apps3, err := client3.ListApps()
 	require.NoError(t, err)
 	require.Equal(t, len(apps), len(apps3))
@@ -442,7 +440,7 @@ func TestAppmeshSetToken(t *testing.T) {
 	// 4. SetToken with cookie file
 	cookiePath := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
 	defer os.Remove(cookiePath)
-	client4, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr, CookieFile: cookiePath})
+	client4, _ := NewHTTPClient(Option{InsecureSkipVerify: true, CookieFile: cookiePath})
 	client4.SetToken(token)
 	apps4, err := client4.ListApps()
 	require.NoError(t, err)
@@ -452,7 +450,7 @@ func TestAppmeshSetToken(t *testing.T) {
 	// 5. JwtToken + CookieFile constructor
 	cookiePath2 := filepath.Join(os.TempDir(), fmt.Sprintf("appmesh_go_test_%s.cookie", xid.New().String()))
 	defer os.Remove(cookiePath2)
-	client5, _ := NewHTTPClient(Option{SslTrustedCA: &emptyStr, JwtToken: token, CookieFile: cookiePath2})
+	client5, _ := NewHTTPClient(Option{InsecureSkipVerify: true, JwtToken: token, CookieFile: cookiePath2})
 	apps5, err := client5.ListApps()
 	require.NoError(t, err)
 	require.Equal(t, len(apps), len(apps5))
@@ -466,9 +464,10 @@ func TestAppmeshSetToken(t *testing.T) {
 }
 
 func TestAppmeshFile(t *testing.T) {
-	client, _ := NewHTTPClient(Option{})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true})
+	require.NoError(t, err, "NewHTTPClient failed")
 
-	_, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, DEFAULT_JWT_AUDIENCE)
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, DefaultJWTAudience)
 	require.NoError(t, err)
 
 	var remotePath, localFile, tempFile string
@@ -498,9 +497,10 @@ func TestAppmeshFile(t *testing.T) {
 
 func TestAppmeshTotp(t *testing.T) {
 
-	client, _ := NewHTTPClient(Option{})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true})
+	require.NoError(t, err, "NewHTTPClient failed")
 
-	_, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, DEFAULT_JWT_AUDIENCE)
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, DefaultJWTAudience)
 	require.NoError(t, err, "Login failed")
 
 	/*
@@ -513,7 +513,7 @@ func TestAppmeshTotp(t *testing.T) {
 		require.NoError(t, err, "TotpSetup failed")
 
 		code, _ = totp.GenerateCode(secret, time.Now().UTC())
-		success, _, err = client.Login("admin", "admin123", code, DEFAULT_TOKEN_EXPIRE_SECONDS)
+		success, _, err = client.Login("admin", "admin123", code, DefaultTokenExpireSeconds)
 		require.True(t, success, "Login with TOTP code failed")
 		require.NoError(t, err, "Login with TOTP code failed")
 
@@ -524,41 +524,28 @@ func TestAppmeshTotp(t *testing.T) {
 }
 
 func TestMessagePack(t *testing.T) {
-	type Response struct {
-		Uuid        string            `msg:"uuid" msgpack:"uuid"`
-		RequestUri  string            `msg:"request_uri" msgpack:"request_uri"`
-		HttpStatus  int               `msg:"http_status" msgpack:"http_status"`
-		BodyMsgType string            `msg:"body_msg_type" msgpack:"body_msg_type"`
-		Body        string            `msg:"body" msgpack:"body"`
-		Headers     map[string]string `msg:"headers" msgpack:"headers"`
+	data := &Response{
+		UUID:        xid.New().String(),
+		RequestUri:  "/appmesh/test",
+		HttpStatus:  200,
+		BodyMsgType: "text/plain",
+		Body:        []byte("msgpack round-trip payload"),
+		Headers:     map[string]string{"key": "value"},
 	}
 
-	data := new(Response)
-	data.Uuid = xid.New().String()
-	data.RequestUri = "123"
-	data.HttpStatus = 1
-	content, _ := os.ReadFile("/root/app-mesh/1.log")
-	data.Body = string(content)
-	data.Headers = make(map[string]string)
-	data.Headers[string("key")] = string("value")
-
-	buf, err := msgpack.Marshal(*data)
+	buf, err := data.Serialize()
 	require.NoError(t, err, "msgpack Marshal failed")
 
-	t.Log(len(buf))
-	protocResponse := new(Response)
-	err = msgpack.Unmarshal(buf, protocResponse)
-	require.NoError(t, err, "msgpack Unmarshal failed")
-
-	require.Equal(t, data.Body, protocResponse.Body)
+	decoded := new(Response)
+	require.NoError(t, decoded.Deserialize(buf), "msgpack Unmarshal failed")
+	require.Equal(t, data, decoded)
 }
 
 func TestAppmeshAppManagement(t *testing.T) {
-	noVerify := ""
-	client, err := NewHTTPClient(Option{SslTrustedCA: &noVerify})
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err, "Login failed")
 
 	// --- AddApp ---
@@ -578,10 +565,10 @@ func TestAppmeshAppManagement(t *testing.T) {
 
 	// Ensure cleanup regardless of test outcome.
 	defer func() {
-		ok, err := client.RemoveApp(appName)
-		require.NoError(t, err, "RemoveApp (cleanup) failed")
-		require.True(t, ok, "RemoveApp (cleanup) returned false")
-		t.Logf("RemoveApp: %s removed", appName)
+		ok, err := client.DeleteApp(appName)
+		require.NoError(t, err, "DeleteApp (cleanup) failed")
+		require.True(t, ok, "DeleteApp (cleanup) returned false")
+		t.Logf("DeleteApp: %s removed", appName)
 	}()
 
 	// --- EnableApp ---
@@ -598,8 +585,13 @@ func TestAppmeshAppManagement(t *testing.T) {
 
 	// --- GetAppOutput ---
 	out := client.GetAppOutput(appName, 0, 0, 4096, "", 3)
-	// Output may be empty for a disabled/stopped app; check no transport error.
-	require.NoError(t, out.Error, "GetAppOutput returned error")
+	// A disabled/never-run app may be rejected with a non-200; the contract is that
+	// Error is non-nil exactly when HttpSuccess is false (failures are never silent).
+	if out.HttpSuccess {
+		require.NoError(t, out.Error, "GetAppOutput returned error despite HTTP 200")
+	} else {
+		require.Error(t, out.Error, "non-200 GetAppOutput must populate Error")
+	}
 	t.Logf("GetAppOutput: success=%v body=%q", out.HttpSuccess, out.HttpBody)
 
 	// --- GetConfig / SetConfig ---
@@ -649,8 +641,8 @@ func TestAppmeshAppManagement(t *testing.T) {
 	require.True(t, ok, "AddLabel returned false")
 	t.Logf("AddLabel: %s=%s", tagName, tagValue)
 
-	tags, err := client.GetLabels()
-	require.NoError(t, err, "GetLabels after AddLabel failed")
+	tags, err := client.ListLabels()
+	require.NoError(t, err, "ListLabels after AddLabel failed")
 	require.Equal(t, tagValue, tags[tagName], "label value mismatch after AddLabel")
 
 	ok, err = client.DeleteLabel(tagName)
@@ -658,8 +650,8 @@ func TestAppmeshAppManagement(t *testing.T) {
 	require.True(t, ok, "DeleteLabel returned false")
 	t.Logf("DeleteLabel: %s deleted", tagName)
 
-	tags, err = client.GetLabels()
-	require.NoError(t, err, "GetLabels after DeleteLabel failed")
+	tags, err = client.ListLabels()
+	require.NoError(t, err, "ListLabels after DeleteLabel failed")
 	_, exists := tags[tagName]
 	require.False(t, exists, "label should be absent after DeleteLabel")
 
@@ -681,11 +673,11 @@ func TestAppmeshAppManagement(t *testing.T) {
 	require.NotEmpty(t, roles, "ListRoles returned empty slice")
 	t.Logf("ListRoles: count=%d", len(roles))
 
-	// --- ListPermissions (ViewPermissions) ---
-	perms, err := client.ViewPermissions()
-	require.NoError(t, err, "ViewPermissions failed")
-	require.NotEmpty(t, perms, "ViewPermissions returned empty list")
-	t.Logf("ViewPermissions: count=%d", len(perms))
+	// --- ListPermissions ---
+	perms, err := client.ListPermissions()
+	require.NoError(t, err, "ListPermissions failed")
+	require.NotEmpty(t, perms, "ListPermissions returned empty list")
+	t.Logf("ListPermissions: count=%d", len(perms))
 
 	// --- GetUserPermissions ---
 	userPerms, err := client.GetUserPermissions()

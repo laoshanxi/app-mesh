@@ -741,7 +741,7 @@ func TestE2E_CheckpointPreservedForDetail(t *testing.T) {
 	wdir := workdir.NewManager(dir, 10)
 	cp := trigger.NewCheckpoint(wdir)
 
-	cp.SaveRunning("wf", "r1", "manual", map[string]string{"x": "1"}, []string{"build", "test"})
+	cp.SaveRunning("wf", "r1", "manual", "", map[string]string{"x": "1"}, []string{"build", "test"})
 	cp.UpdateJob("wf", "r1", "build", "success", "node-1", map[string]trigger.StepState{
 		"compile": {Stdout: "ok", ExitCode: 0, Status: "success"},
 	})
@@ -776,7 +776,7 @@ func TestE2E_RecoveryIncludesFailedJobs(t *testing.T) {
 	wdir := workdir.NewManager(dir, 10)
 	cp := trigger.NewCheckpoint(wdir)
 
-	cp.SaveRunning("wf", "r2", "event", nil, []string{"a", "b", "c"})
+	cp.SaveRunning("wf", "r2", "event", "", nil, []string{"a", "b", "c"})
 	cp.UpdateJob("wf", "r2", "a", "success", "", nil)
 	cp.UpdateJob("wf", "r2", "b", "failure", "", nil)
 

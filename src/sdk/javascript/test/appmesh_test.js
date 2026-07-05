@@ -22,8 +22,8 @@ async function assert(name, fn) {
 }
 
 async function test() {
-  // No SSL verification (no certs on local dev)
-  const client = new AppMeshClient(baseURL)
+  // Self-signed local daemon: explicitly disable server certificate verification
+  const client = new AppMeshClient(baseURL, { rejectUnauthorized: false })
 
   console.log('=== JavaScript SDK Integration Tests ===\n')
 
@@ -57,8 +57,13 @@ async function test() {
     if (!token) throw new Error('expected token after login')
     const ok = await client.authenticate(token, 'app-view', undefined, false)
     if (!ok.success) throw new Error(`permission check failed: ${ok.responseText}`)
-    const bad = await client.authenticate(token, 'no-such-perm', undefined, false)
-    if (bad.success) throw new Error('should fail with invalid permission')
+    let threw = false
+    try {
+      await client.authenticate(token, 'no-such-perm', undefined, false)
+    } catch (_) {
+      threw = true
+    }
+    if (!threw) throw new Error('should throw with invalid permission')
   })
 
   await assert('authenticate (with audience)', async () => {
@@ -70,8 +75,13 @@ async function test() {
     if (!token) throw new Error('expected token after audience login')
     const ok = await client.authenticate(token, null, 'appmesh-service', false)
     if (!ok.success) throw new Error(`audience check failed: ${ok.responseText}`)
-    const bad = await client.authenticate(token, null, 'wrong-audience', false)
-    if (bad.success) throw new Error('should fail with wrong audience')
+    let threw = false
+    try {
+      await client.authenticate(token, null, 'wrong-audience', false)
+    } catch (_) {
+      threw = true
+    }
+    if (!threw) throw new Error('should throw with wrong audience')
     // re-login with default audience for remaining tests
     await client.login(username, password)
   })
@@ -117,8 +127,8 @@ async function test() {
     if (level !== 'DEBUG') throw new Error(`expected DEBUG, got ${level}`)
   })
 
-  await assert('metrics', async () => {
-    const m = await client.metrics()
+  await assert('get_metrics', async () => {
+    const m = await client.get_metrics()
     if (typeof m !== 'string' || m.length === 0) throw new Error('expected metrics text')
   })
 
@@ -185,11 +195,11 @@ async function test() {
   })
 
   // ---- Token Auto-Refresh ----
-  await assert('setAutoRefreshToken', async () => {
-    client.setAutoRefreshToken(true)
+  await assert('set_auto_refresh_token', async () => {
+    client.set_auto_refresh_token(true)
     if (!client._autoRefreshEnabled) throw new Error('expected enabled')
     if (!client._refreshTimer) throw new Error('expected timer')
-    client.setAutoRefreshToken(false)
+    client.set_auto_refresh_token(false)
     if (client._autoRefreshEnabled) throw new Error('expected disabled')
     if (client._refreshTimer) throw new Error('expected no timer')
   })

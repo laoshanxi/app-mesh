@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	REST_PATH_UPLOAD   = "/appmesh/file/upload"
-	REST_PATH_DOWNLOAD = "/appmesh/file/download"
+	restPathUpload   = "/appmesh/file/upload"
+	restPathDownload = "/appmesh/file/download"
 )
 
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.
@@ -25,10 +25,10 @@ type AppMeshClientTCP struct {
 
 // NewTCPClient creates a TCP transport client that reuses the standard App Mesh client API.
 func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
-	// Determine the connection URL, defaulting to DEFAULT_TCP_URI if not provided.
+	// Determine the connection URL, defaulting to DefaultTCPURI if not provided.
 	uri := options.AppMeshUri
 	if uri == "" {
-		uri = DEFAULT_TCP_URI
+		uri = DefaultTCPURI
 	}
 	parsed, err := ParseURL(uri)
 	if err != nil {
@@ -50,8 +50,6 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP Client: %v", err)
 	}
-	value := true
-	options.tcpOnly = &value
 	tcpClient := &AppMeshClientTCP{
 		AppMeshClient: httpClient,
 		tcpReq:        tcpRequester,
@@ -76,9 +74,10 @@ func (c *AppMeshClientTCP) SendMessage(ctx context.Context, buffer []byte) error
 	return c.tcpReq.TCPConnection.SendMessage(ctx, buffer)
 }
 
-// FileDownload downloads a file through the TCP file-socket side channel.
+// DownloadFile downloads a file through the TCP file-socket side channel,
+// overriding the embedded HTTP implementation (which cannot stream here).
 // When applyFileAttributes is true, returned POSIX metadata is applied locally best-effort.
-func (c *AppMeshClientTCP) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
+func (c *AppMeshClientTCP) DownloadFile(remoteFile, localFile string, applyFileAttributes bool) error {
 	if remoteFile == "" {
 		return errors.New("remote file path cannot be empty")
 	}
@@ -87,18 +86,18 @@ func (c *AppMeshClientTCP) FileDownload(remoteFile, localFile string, applyFileA
 	}
 
 	headers := map[string]string{
-		HTTP_HEADER_KEY_File_Path:          remoteFile,
-		HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: "true",
+		headerFilePath:       remoteFile,
+		headerRecvFileSocket: "true",
 	}
 
-	status, msg, responseHeaders, err := c.get(REST_PATH_DOWNLOAD, nil, headers)
+	status, msg, responseHeaders, err := c.get(restPathDownload, nil, headers)
 	if err != nil {
 		return fmt.Errorf("download request failed: %w", err)
 	}
 	if status != http.StatusOK {
 		return fmt.Errorf("failed to download %q: status=%d msg=%s", remoteFile, status, msg)
 	}
-	if err := requireHeader(responseHeaders, HTTP_HEADER_KEY_X_RECV_FILE_SOCKET); err != nil {
+	if err := requireHeader(responseHeaders, headerRecvFileSocket); err != nil {
 		return err
 	}
 
@@ -132,9 +131,9 @@ func (c *AppMeshClientTCP) receiveFile(localFile string, headers http.Header, ap
 	return nil
 }
 
-// FileUpload uploads a file through the TCP file-socket side channel.
+// UploadFileContext uploads a file through the TCP file-socket side channel.
 // When applyFileAttributes is true, local POSIX metadata is sent so the server can recreate it.
-func (c *AppMeshClientTCP) FileUpload(ctx context.Context, localFile, remoteFile string, applyFileAttributes bool) error {
+func (c *AppMeshClientTCP) UploadFileContext(ctx context.Context, localFile, remoteFile string, applyFileAttributes bool) error {
 	if localFile == "" {
 		return errors.New("local file path cannot be empty")
 	}
@@ -149,23 +148,29 @@ func (c *AppMeshClientTCP) FileUpload(ctx context.Context, localFile, remoteFile
 	defer file.Close()
 
 	headers := map[string]string{
-		HTTP_HEADER_KEY_File_Path:          remoteFile,
-		HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: "true",
+		headerFilePath:       remoteFile,
+		headerSendFileSocket: "true",
 	}
 
 	// Get the file attributes.
 	if applyFileAttributes {
-		headers, _ = GetFileAttributes(localFile, headers)
+		attrs, err := fileAttributes(localFile)
+		if err != nil {
+			return fmt.Errorf("failed to read file attributes of %q: %w", localFile, err)
+		}
+		for key, value := range attrs {
+			headers[key] = value
+		}
 	}
 
-	status, msg, responseHeaders, err := c.post(REST_PATH_UPLOAD, nil, headers, nil)
+	status, msg, responseHeaders, err := c.post(restPathUpload, nil, headers, nil)
 	if err != nil {
 		return fmt.Errorf("upload request failed: %w", err)
 	}
 	if status != http.StatusOK {
 		return fmt.Errorf("failed to upload %q: status=%d msg=%s", localFile, status, msg)
 	}
-	if err := requireHeader(responseHeaders, HTTP_HEADER_KEY_X_SEND_FILE_SOCKET); err != nil {
+	if err := requireHeader(responseHeaders, headerSendFileSocket); err != nil {
 		return err
 	}
 
@@ -175,7 +180,7 @@ func (c *AppMeshClientTCP) FileUpload(ctx context.Context, localFile, remoteFile
 // uploadFileChunks uploads a file in chunks.
 func (c *AppMeshClientTCP) uploadFileChunks(ctx context.Context, file *os.File) error {
 	reader := bufio.NewReader(file)
-	buffer := make([]byte, TCP_CHUNK_BLOCK_SIZE)
+	buffer := make([]byte, TCPChunkBlockSize)
 
 	for {
 		n, err := reader.Read(buffer)
@@ -190,6 +195,12 @@ func (c *AppMeshClientTCP) uploadFileChunks(ctx context.Context, file *os.File) 
 		}
 	}
 	return c.SendMessage(ctx, []byte{}) // EOF marker
+}
+
+// UploadFile uploads a local file via the TCP file-socket side channel,
+// overriding the embedded HTTP implementation (which cannot stream here).
+func (c *AppMeshClientTCP) UploadFile(localFile, remoteFile string, applyFileAttributes bool) error {
+	return c.UploadFileContext(context.Background(), localFile, remoteFile, applyFileAttributes)
 }
 
 // requireHeader ensures a required header exists.

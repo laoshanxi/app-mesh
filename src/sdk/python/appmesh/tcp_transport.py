@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 class TCPTransport:
     """TCP Transport layer with TLS support."""
 
-    # Number of bytes used for the message length header
-    # Must match the C++ service implementation which uses uint32_t (4 bytes)
-    # Format: Big-endian unsigned 32-bit integer
+    # Message framing header: two big-endian unsigned 32-bit integers
+    # (magic number 0x07C707F8 followed by body length), 8 bytes total.
+    # Must match the C++ service implementation.
     TCP_MESSAGE_HEADER_LENGTH = 8
     TCP_MESSAGE_MAGIC = 0x07C707F8  # Magic number
-    TCP_MAX_BLOCK_SIZE = 100 * 1024 * 1024  # 100 MB
+    TCP_MAX_BLOCK_SIZE = 1024 * 1024 * 1024  # 1 GB
 
     def __init__(
         self,
@@ -142,16 +142,23 @@ class TCPTransport:
             finally:
                 self._socket = None
 
-    def connected(self) -> bool:
-        """Socket is connected or not"""
+    @property
+    def is_connected(self) -> bool:
+        """Whether the transport holds an open socket object. Local state only — does NOT
+        probe the peer, so a server-dropped connection may report ``True`` until the next I/O fails."""
         return self._socket is not None
 
-    def send_message(self, data: Union[bytes, bytearray, list]) -> None:
+    def connected(self) -> bool:
+        """Compatibility method; prefer the ``is_connected`` property (local socket state only)."""
+        return self.is_connected
+
+    def send_message(self, data: Optional[Union[bytes, bytearray, list]]) -> None:
         """
         Send a message with prefixed header.
 
         Args:
-            data: Message data to send, or empty list for EOF signal.
+            data: Message data to send. ``b""`` (empty bytes) is the canonical EOF
+                signal; an empty list or ``None`` is also accepted for compatibility.
         """
         if not self._socket:
             raise AppMeshConnectionError("Cannot send message: not connected")
@@ -168,12 +175,13 @@ class TCPTransport:
             self.close()
             raise AppMeshConnectionError(f"Error sending message: {e}") from e
 
-    def receive_message(self) -> Optional[bytearray]:
+    def receive_message(self) -> bytes:
         """
         Receive a message with prefixed header.
 
         Returns:
-            Message data, or None for EOF signal.
+            Message data, or ``b""`` for a zero-length EOF frame (earlier releases
+            returned ``None``; both are falsy).
         """
         if not self._socket:
             raise AppMeshConnectionError("Cannot receive message: not connected")
@@ -188,7 +196,7 @@ class TCPTransport:
             if length > self.TCP_MAX_BLOCK_SIZE:
                 raise ValueError(f"Message size {length} exceeds maximum {self.TCP_MAX_BLOCK_SIZE}")
 
-            return self._recvall(length) if length > 0 else None
+            return self._recvall(length) if length > 0 else b""
 
         except (socket.error, ssl.SSLError, EOFError, ValueError) as e:
             self.close()

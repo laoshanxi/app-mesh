@@ -26,7 +26,6 @@ jobs:
 
 ```yaml
 name: data-pipeline
-owner: admin
 permission: 200
 
 on:
@@ -139,8 +138,9 @@ jobs:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Unique workflow identifier. Used as part of the registered App name (`workflow-{name}`). Must match `[a-zA-Z0-9_-]+`. |
-| `owner` | string | no | caller | User who owns this workflow. Determines execution identity — all Steps run with this user's permissions. |
-| `permission` | integer | no | 0 | Permission level. Users with permission >= this value can operate on the workflow. Same semantics as App Mesh App permission. |
+| `owner` | string | no | — | **Ignored by the engine** (a YAML-supplied owner would be spoofable). Ownership is always the authenticated user who registers the workflow; only the owner or a workflow admin (`APPMESH_WORKFLOW_ADMINS`) can operate on it. Execution identity is separate — see `execution_identity`. |
+| `permission` | integer | no | 0 | Copied onto the registered `workflow-{name}` App's permission field. **Not consulted by the engine's workflow actions** — those check owner/admin only. It affects daemon-side App access (e.g. who sees the pseudo-App), same semantics as App Mesh App permission. |
+| `execution_identity` | string | no | — | App Mesh user whose credentials the engine uses to run this workflow's steps (ADR 0004). The engine must hold that identity's credential in `APPMESH_EXEC_IDENTITIES`, and at registration the caller may bind only itself or (as a workflow admin) any configured identity. **When omitted:** manual runs execute under the *triggering caller's* identity; automatic (event) triggers **fail closed** (they have no caller identity, and the engine never runs steps under its own privileged identity). Must match `[a-zA-Z0-9_.@-]+`. |
 | `on` | object | no | — | Trigger configuration. Omit to allow only manual/API triggering. |
 | `concurrency` | object | no | — | Concurrency control. Omit to allow unlimited parallel runs. |
 | `env` | object | no | — | Global environment variables inherited by all Steps. Keys are variable names, values are strings. Supports `${{ }}` expressions. |
@@ -161,7 +161,7 @@ Fires when a registered App emits a matching event.
 |-------|------|----------|---------|-------------|
 | `app` | string | yes | — | Name of the App to watch. |
 | `events` | list[string] | yes | — | Event types to match. Values: `START`, `EXIT`, `HEALTH`, `STATUS`, `REMOVED`. STDOUT is not a valid trigger event — use an external log-watcher App for stdout-based automation. |
-| `condition` | string | no | — | Simple expression evaluated against event data. Only `exit_code` is supported. Operators: `==`, `!=`. Example: `"exit_code == 0"`. |
+| `condition` | string | no | — | Simple expression evaluated against event data. `exit_code` is supported (`return_code` is an accepted alias). Operators: `==`, `!=`. Example: `"exit_code == 0"`. |
 
 ```yaml
 on:

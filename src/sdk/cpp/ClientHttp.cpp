@@ -1,6 +1,7 @@
 // src/sdk/cpp/ClientHttp.cpp
 #include "ClientHttp.h"
 
+#include <cstdlib>
 #include <map>
 #include <string>
 
@@ -11,11 +12,11 @@
 #include "../../common/RestClient.h"
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
-#include "../../common/os/linux.h"
+#include "../../common/os/filesystem.h"
 
 // === AppRun implementation ===
 
-AppRun::AppRun(ClientHttp *client, const std::string &appName, const std::string &procUid)
+AppRun::AppRun(AppMeshClient *client, const std::string &appName, const std::string &procUid)
     : m_client(client), m_appName(appName), m_procUid(procUid), m_forwardTo(client->getForwardTo())
 {
 }
@@ -24,57 +25,66 @@ std::shared_ptr<int> AppRun::wait(OutputHandler stdoutHandler, int timeout)
 {
     // Temporarily restore the forward_to target that was active at run creation,
     // ensuring output queries reach the correct cluster node.
-    // Use RAII guard to guarantee restore even if an exception is thrown.
-    const auto originalForwardTo = m_client->getForwardTo();
-    m_client->forwardTo(m_forwardTo);
-    try
+    // RAII guard guarantees restore on every exit path, including exceptions.
+    struct ForwardToGuard
     {
-        auto result = m_client->waitForAsyncRun(this, stdoutHandler, timeout);
-        m_client->forwardTo(originalForwardTo);
-        return result;
-    }
-    catch (...)
-    {
-        m_client->forwardTo(originalForwardTo);
-        throw;
-    }
+        AppMeshClient *client;
+        std::string original;
+        ~ForwardToGuard() { client->setForwardTo(original); }
+    } guard = {m_client, m_client->getForwardTo()};
+    m_client->setForwardTo(m_forwardTo);
+    return m_client->waitForAsyncRun(this, stdoutHandler, timeout);
 }
 
-// === ClientHttp implementation ===
+// === AppMeshClient implementation ===
 
-void ClientHttp::init(const std::string &url, const std::string &ssl_verify,
-                      const std::string &ssl_client_cert, const std::string &ssl_client_certkey,
-                      const std::string &cookieFile)
+AppMeshClient::AppMeshClient(const ClientHttpConfig &config)
 {
-    m_url = url;
+    applyConfig(config);
+}
 
-    if (cookieFile.empty())
+void AppMeshClient::applyConfig(const ClientHttpConfig &config)
+{
+    m_url = config.url;
+
+    if (config.cookieFile.empty())
         RestClient::setSessionConfiguration(SessionConfig::MemorySession());
     else
-        RestClient::setSessionConfiguration(SessionConfig::FileSession(cookieFile));
+        RestClient::setSessionConfiguration(SessionConfig::FileSession(config.cookieFile));
 
-    ClientSSLConfig config;
-    config.m_verify_server = !ssl_verify.empty();
-    config.m_ca_location = ssl_verify;
-    config.m_verify_client = !ssl_client_cert.empty() && !ssl_client_certkey.empty();
-    config.m_certificate = ssl_client_cert;
-    config.m_private_key = ssl_client_certkey;
+    // Missing/unreadable CA path: absent default falls back to the system trust store
+    // (verification stays on); an explicit path is a hard error (RestClient would silently skip CAINFO/CAPATH).
+    std::string caPath = config.verifyServer ? config.caCertPath : std::string();
+    if (!caPath.empty() && !Utility::isFileExist(caPath) && !Utility::isDirExist(caPath))
+    {
+        if (caPath == ClientHttpConfig().caCertPath)
+            caPath.clear(); // default CA absent: use system trust roots
+        else
+            throw std::invalid_argument("CA certificate path not accessible: " + caPath);
+    }
 
-    RestClient::defaultSslConfiguration(config);
+    ClientSSLConfig ssl;
+    ssl.m_verify_server = config.verifyServer;
+    ssl.m_ca_location = caPath;
+    ssl.m_verify_client = !config.clientCert.empty() && !config.clientKey.empty();
+    ssl.m_certificate = config.clientCert;
+    ssl.m_private_key = config.clientKey;
+
+    RestClient::defaultSslConfiguration(ssl);
 }
 
-void ClientHttp::forwardTo(const std::string &url)
+void AppMeshClient::setForwardTo(const std::string &url)
 {
     m_forwardTo = url;
 }
 
-const std::string &ClientHttp::getForwardTo() const
+const std::string &AppMeshClient::getForwardTo() const
 {
     return m_forwardTo;
 }
 
 // Authentication Management
-std::string ClientHttp::login(const std::string &username, const std::string &password,
+std::string AppMeshClient::login(const std::string &username, const std::string &password,
                               const std::string &totp, int tokenExpire, const std::string &audience)
 {
     RestClient::clearSession();
@@ -91,7 +101,7 @@ std::string ClientHttp::login(const std::string &username, const std::string &pa
     if (!totp.empty())
         header[HTTP_HEADER_JWT_totp] = totp;
 
-    auto response = this->requestHttp(false, web::http::methods::POST, "/appmesh/login", nullptr, header);
+    auto response = this->requestHttp(ErrorPolicy::Return, web::http::methods::POST, "/appmesh/login", nullptr, header);
 
     if (response->status_code == web::http::status_codes::PreconditionRequired)
     {
@@ -107,13 +117,13 @@ std::string ClientHttp::login(const std::string &username, const std::string &pa
     }
     else if (response->status_code != web::http::status_codes::OK)
     {
-        throw std::invalid_argument(response->text);
+        throw AppMeshHttpError(response->status_code, response->text);
     }
 
     return std::string();
 }
 
-void ClientHttp::validateTotp(const std::string &username, const std::string &challenge,
+void AppMeshClient::validateTotp(const std::string &username, const std::string &challenge,
                               const std::string &totp, int tokenExpire)
 {
     std::map<std::string, std::string> header = {{HTTP_HEADER_KEY_X_SET_COOKIE, "true"}};
@@ -124,10 +134,10 @@ void ClientHttp::validateTotp(const std::string &username, const std::string &ch
         {HTTP_BODY_KEY_JWT_totp_challenge, challenge},
         {HTTP_BODY_KEY_JWT_expire_seconds, tokenExpire}};
 
-    this->requestHttp(true, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
+    this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
 }
 
-std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
+std::tuple<bool, std::string> AppMeshClient::authenticate(const std::string &token,
                                                        const std::string &permission,
                                                        const std::string &audience, bool updateSession)
 {
@@ -141,61 +151,66 @@ std::tuple<bool, std::string> ClientHttp::authenticate(const std::string &token,
     if (updateSession)
         header[HTTP_HEADER_KEY_X_SET_COOKIE] = "true";
 
-    auto resp = this->requestHttp(false, web::http::methods::POST, "/appmesh/auth", nullptr, header);
+    auto resp = this->requestHttp(ErrorPolicy::Return, web::http::methods::POST, "/appmesh/auth", nullptr, header);
     return std::make_tuple(resp->status_code == web::http::status_codes::OK, resp->text);
 }
 
-void ClientHttp::logout()
+void AppMeshClient::logout()
 {
-    this->requestHttp(true, web::http::methods::POST, "/appmesh/self/logoff");
+    this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/self/logoff");
     RestClient::clearSession();
 }
 
-void ClientHttp::renewToken(int tokenExpire)
+void AppMeshClient::renewToken(int tokenExpire)
 {
     std::map<std::string, std::string> header;
     if (tokenExpire > 0)
         header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(tokenExpire);
 
-    this->requestHttp(true, web::http::methods::POST, "/appmesh/token/renew", nullptr, header);
+    this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/token/renew", nullptr, header);
 }
 
-std::string ClientHttp::getTotpSecret()
+std::string AppMeshClient::getAuthToken() const
 {
-    auto response = requestHttp(true, web::http::methods::POST, "/appmesh/totp/secret");
+    return RestClient::getCookie(COOKIE_TOKEN);
+}
+
+std::string AppMeshClient::getTotpUri()
+{
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/totp/secret");
     auto result = nlohmann::json::parse(response->text);
     return Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
 }
 
-void ClientHttp::enableTotp(const std::string &totp)
+void AppMeshClient::enableTotp(const std::string &totp)
 {
     std::map<std::string, std::string> header = {{HTTP_HEADER_JWT_totp, totp}};
-    requestHttp(true, web::http::methods::POST, "/appmesh/totp/setup", nullptr, header);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/totp/setup", nullptr, header);
 }
 
-void ClientHttp::disableTotp(const std::string &user)
+void AppMeshClient::disableTotp(const std::string &user)
 {
     const std::string restPath = "/appmesh/totp/" + user + "/disable";
-    requestHttp(true, web::http::methods::POST, restPath);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath);
 }
 
 // Application View
-nlohmann::json ClientHttp::getApp(const std::string &app) const
+nlohmann::json AppMeshClient::getApp(const std::string &app) const
 {
     const std::string restPath = "/appmesh/app/" + app;
-    auto response = requestHttp(true, web::http::methods::GET, restPath);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, restPath);
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::listApps() const
+nlohmann::json AppMeshClient::listApps() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/applications");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/applications");
     return nlohmann::json::parse(response->text);
 }
 
-AppOutput ClientHttp::getAppOutput(const std::string &app, int outputPosition,
-                                   int stdoutIndex, int stdoutMaxsize,
-                                   const std::string &processUuid, int timeout) const
+AppOutput AppMeshClient::getAppOutput(const std::string &app, int64_t outputPosition,
+                                      int stdoutIndex, int stdoutMaxsize,
+                                      const std::string &processUuid, int timeout) const
 {
     const std::string restPath = "/appmesh/app/" + app + "/output";
 
@@ -211,62 +226,62 @@ AppOutput ClientHttp::getAppOutput(const std::string &app, int outputPosition,
     if (timeout)
         query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(timeout);
 
-    auto response = requestHttp(true, web::http::methods::GET, restPath, nullptr, {}, query);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, restPath, nullptr, {}, query);
 
     AppOutput output;
     output.statusCode = response->status_code;
     output.output = response->text;
 
     if (response->header.count(HTTP_HEADER_KEY_output_pos))
-        output.outputPosition = std::atol(response->header.at(HTTP_HEADER_KEY_output_pos).c_str());
+        output.outputPosition = std::strtoll(response->header.get(HTTP_HEADER_KEY_output_pos).c_str(), nullptr, 10);
 
     if (response->header.count(HTTP_HEADER_KEY_exit_code))
-        output.exitCode = std::make_shared<int>(std::atoi(response->header.at(HTTP_HEADER_KEY_exit_code).c_str()));
+        output.exitCode = std::make_shared<int>(std::atoi(response->header.get(HTTP_HEADER_KEY_exit_code).c_str()));
 
     return output;
 }
 
-bool ClientHttp::checkAppHealth(const std::string &app) const
+bool AppMeshClient::checkAppHealth(const std::string &app) const
 {
     const std::string restPath = "/appmesh/app/" + app + "/health";
-    auto response = requestHttp(true, web::http::methods::GET, restPath);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, restPath);
     return std::stoi(response->text) == 0;
 }
 
 // Application Manage
-nlohmann::json ClientHttp::addApp(const nlohmann::json &app)
+nlohmann::json AppMeshClient::addApp(const nlohmann::json &app)
 {
     const std::string restPath = "/appmesh/app/" + GET_JSON_STR_VALUE(app, JSON_KEY_APP_name);
-    auto response = requestHttp(true, web::http::methods::PUT, restPath, &app);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::PUT, restPath, &app);
     return nlohmann::json::parse(response->text);
 }
 
-bool ClientHttp::deleteApp(const std::string &app)
+bool AppMeshClient::deleteApp(const std::string &app)
 {
     const std::string restPath = "/appmesh/app/" + app;
-    auto response = requestHttp(false, web::http::methods::DEL, restPath);
+    auto response = requestHttp(ErrorPolicy::Return, web::http::methods::DEL, restPath);
     if (response->status_code == web::http::status_codes::OK)
         return true;
     if (response->status_code == web::http::status_codes::NotFound)
         return false;
     // Other errors (permission denied, server error, etc.)
-    throw std::invalid_argument(response->text);
+    throw AppMeshHttpError(response->status_code, response->text);
 }
 
-void ClientHttp::enableApp(const std::string &app)
+void AppMeshClient::enableApp(const std::string &app)
 {
     const std::string restPath = "/appmesh/app/" + app + "/enable";
-    requestHttp(true, web::http::methods::POST, restPath);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath);
 }
 
-void ClientHttp::disableApp(const std::string &app)
+void AppMeshClient::disableApp(const std::string &app)
 {
     const std::string restPath = "/appmesh/app/" + app + "/disable";
-    requestHttp(true, web::http::methods::POST, restPath);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath);
 }
 
 // Run Application Operations
-std::tuple<std::shared_ptr<int>, std::string> ClientHttp::runAppSync(const nlohmann::json &app,
+std::tuple<std::shared_ptr<int>, std::string> AppMeshClient::runAppSync(const nlohmann::json &app,
                                                                      int maxTime,
                                                                      int lifecycle)
 {
@@ -274,22 +289,22 @@ std::tuple<std::shared_ptr<int>, std::string> ClientHttp::runAppSync(const nlohm
         {HTTP_QUERY_KEY_timeout, std::to_string(maxTime)},
         {HTTP_QUERY_KEY_lifecycle, std::to_string(lifecycle)}};
 
-    auto response = requestHttp(true, web::http::methods::POST, "/appmesh/app/syncrun", &app, {}, query);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/app/syncrun", &app, {}, query);
 
     std::shared_ptr<int> returnCode;
     if (response->header.count(HTTP_HEADER_KEY_exit_code))
-        returnCode = std::make_shared<int>(std::atoi(response->header.at(HTTP_HEADER_KEY_exit_code).c_str()));
+        returnCode = std::make_shared<int>(std::atoi(response->header.get(HTTP_HEADER_KEY_exit_code).c_str()));
 
     return std::make_tuple(returnCode, response->text);
 }
 
-AppRun ClientHttp::runAppAsync(const nlohmann::json &app, int maxTime, int lifecycle)
+AppRun AppMeshClient::runAppAsync(const nlohmann::json &app, int maxTime, int lifecycle)
 {
     std::map<std::string, std::string> query = {
         {HTTP_QUERY_KEY_timeout, std::to_string(maxTime)},
         {HTTP_QUERY_KEY_lifecycle, std::to_string(lifecycle)}};
 
-    auto response = requestHttp(true, web::http::methods::POST, "/appmesh/app/run", &app, {}, query);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/app/run", &app, {}, query);
     auto result = nlohmann::json::parse(response->text);
 
     auto appName = result.at(JSON_KEY_APP_name).get<std::string>();
@@ -298,15 +313,18 @@ AppRun ClientHttp::runAppAsync(const nlohmann::json &app, int maxTime, int lifec
     return AppRun(this, appName, procUid);
 }
 
-std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, OutputHandler stdoutHandler, int timeout)
+std::shared_ptr<int> AppMeshClient::waitForAsyncRun(AppRun *run, OutputHandler stdoutHandler, int timeout)
 {
-    int lastOutputPosition = 0;
+    if (run == nullptr)
+        throw std::invalid_argument("run must not be null");
+
+    int64_t lastOutputPosition = 0;
     const time_t startTime = ACE_OS::time();
 
     while (true)
     {
-        auto response = this->getAppOutput(run->m_appName, lastOutputPosition, 0, 10240,
-                                           run->m_procUid, timeout);
+        auto response = this->getAppOutput(run->appName(), lastOutputPosition, 0, 10240,
+                                           run->procUid(), timeout);
 
         if (stdoutHandler && !response.output.empty())
             stdoutHandler(response.output, lastOutputPosition);
@@ -315,39 +333,42 @@ std::shared_ptr<int> ClientHttp::waitForAsyncRun(AppRun *run, OutputHandler stdo
         // Real completion: clean up the temp run app (best-effort).
         if (response.exitCode)
         {
-            try { this->deleteApp(run->m_appName); } catch (...) {}
+            try { this->deleteApp(run->appName()); } catch (...) {}
             return response.exitCode;
         }
 
-        // Transport error or timeout: the app may still be running, so do not delete it.
-        if (response.statusCode != web::http::status_codes::OK ||
-            (timeout > 0 && ACE_OS::time() - startTime >= timeout))
-        {
-            return response.exitCode;
-        }
+        // Timeout: the app may still be running, so do not delete it.
+        // (HTTP/transport errors throw from getAppOutput and never reach here.)
+        if (timeout > 0 && ACE_OS::time() - startTime >= timeout)
+            return nullptr;
     }
 }
 
-std::string ClientHttp::runTask(const std::string &app, const nlohmann::json &data, int timeout)
+std::string AppMeshClient::runTask(const std::string &app, const nlohmann::json &data, int timeout)
 {
     if (timeout <= 0)
         timeout = 300;
     const std::string restPath = "/appmesh/app/" + app + "/task";
     std::map<std::string, std::string> query = {{"timeout", std::to_string(timeout)}};
 
-    auto response = requestHttp(true, web::http::methods::POST, restPath, &data, {}, query);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath, &data, {}, query);
     return response->text;
 }
 
-bool ClientHttp::cancelTask(const std::string &app)
+bool AppMeshClient::cancelTask(const std::string &app)
 {
     const std::string restPath = "/appmesh/app/" + app + "/task";
-    auto response = requestHttp(false, web::http::methods::DEL, restPath);
-    return response->status_code == web::http::status_codes::OK;
+    auto response = requestHttp(ErrorPolicy::Return, web::http::methods::DEL, restPath);
+    if (response->status_code == web::http::status_codes::OK)
+        return true;
+    if (response->status_code == web::http::status_codes::NotFound)
+        return false;
+    // Other errors (permission denied, server error, etc.)
+    throw AppMeshHttpError(response->status_code, response->text);
 }
 
 // File Management
-void ClientHttp::downloadFile(const std::string &remoteFile, const std::string &localFile, bool preservePermissions)
+void AppMeshClient::downloadFile(const std::string &remoteFile, const std::string &localFile, bool preservePermissions)
 {
     // header
     std::map<std::string, std::string> header;
@@ -358,16 +379,16 @@ void ClientHttp::downloadFile(const std::string &remoteFile, const std::string &
 
     if (response->status_code != web::http::status_codes::OK)
     {
-        throw std::invalid_argument(response->text);
+        throw AppMeshHttpError(response->status_code, response->text);
     }
 
     if (preservePermissions)
     {
-        Utility::applyFilePermission(localFile, HttpHeaderMap(response->header));
+        Utility::applyFilePermission(localFile, response->header);
     }
 }
 
-void ClientHttp::uploadFile(const std::string &localFile, const std::string &remoteFile, bool preservePermissions)
+void AppMeshClient::uploadFile(const std::string &localFile, const std::string &remoteFile, bool preservePermissions)
 {
     // header
     std::map<std::string, std::string> header;
@@ -395,113 +416,112 @@ void ClientHttp::uploadFile(const std::string &localFile, const std::string &rem
 
     if (response->status_code != web::http::status_codes::OK)
     {
-        throw std::invalid_argument(response->text);
+        throw AppMeshHttpError(response->status_code, response->text);
     }
 }
 
 // System Management
-nlohmann::json ClientHttp::getHostResources() const
+nlohmann::json AppMeshClient::getHostResources() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/resources");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/resources");
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::getConfig() const
+nlohmann::json AppMeshClient::getConfig() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/config");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/config");
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::setConfig(const nlohmann::json &config)
+nlohmann::json AppMeshClient::setConfig(const nlohmann::json &config)
 {
-    auto response = requestHttp(true, web::http::methods::POST, "/appmesh/config", &config);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/config", &config);
     return nlohmann::json::parse(response->text);
 }
 
-std::string ClientHttp::setLogLevel(const std::string &level)
+std::string AppMeshClient::setLogLevel(const std::string &level)
 {
     nlohmann::json jsonObj = {{JSON_KEY_BaseConfig, {{JSON_KEY_LogLevel, level}}}};
     auto response = this->setConfig(jsonObj);
     return response.at(JSON_KEY_BaseConfig).at(JSON_KEY_LogLevel).get<std::string>();
 }
 
-std::string ClientHttp::getMetrics() const
+std::string AppMeshClient::getMetrics() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/metrics");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/metrics");
     return response->text;
 }
 
 // Label Management
-nlohmann::json ClientHttp::getLabels() const
+nlohmann::json AppMeshClient::listLabels() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/labels");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/labels");
     return nlohmann::json::parse(response->text);
 }
 
-void ClientHttp::addLabel(const std::string &label, const std::string &value)
+void AppMeshClient::addLabel(const std::string &label, const std::string &value)
 {
     const std::string restPath = "/appmesh/label/" + label;
     std::map<std::string, std::string> query = {{"value", value}};
-    requestHttp(true, web::http::methods::PUT, restPath, nullptr, {}, query);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::PUT, restPath, nullptr, {}, query);
 }
 
-void ClientHttp::deleteLabel(const std::string &label)
+void AppMeshClient::deleteLabel(const std::string &label)
 {
     const std::string restPath = "/appmesh/label/" + label;
-    requestHttp(true, web::http::methods::DEL, restPath);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::DEL, restPath);
 }
 
 // User Management
-void ClientHttp::updatePassword(const std::string &oldPwd, const std::string &newPwd, const std::string &user)
+void AppMeshClient::updatePassword(const std::string &oldPwd, const std::string &newPwd, const std::string &user)
 {
     nlohmann::json jsonObj = {
         {HTTP_BODY_KEY_OLD_PASSWORD, Utility::encode64(oldPwd)},
         {HTTP_BODY_KEY_NEW_PASSWORD, Utility::encode64(newPwd)}};
 
     const std::string restPath = "/appmesh/user/" + user + "/passwd";
-    requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath, &jsonObj);
 }
 
-nlohmann::json ClientHttp::getCurrentUser() const
+nlohmann::json AppMeshClient::getCurrentUser() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/self");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/user/self");
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json ClientHttp::listUsers() const
+nlohmann::json AppMeshClient::listUsers() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/users");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/users");
     return nlohmann::json::parse(response->text);
 }
 
-void ClientHttp::addUser(const nlohmann::json &user)
+void AppMeshClient::addUser(const std::string &username, const nlohmann::json &user)
 {
-    const std::string username = user.at(JSON_KEY_USER_readonly_name).get<std::string>();
     const std::string restPath = "/appmesh/user/" + username;
-    requestHttp(true, web::http::methods::PUT, restPath, &user);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::PUT, restPath, &user);
 }
 
-void ClientHttp::deleteUser(const std::string &user)
+void AppMeshClient::deleteUser(const std::string &user)
 {
     const std::string restPath = "/appmesh/user/" + user;
-    requestHttp(true, web::http::methods::DEL, restPath);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::DEL, restPath);
 }
 
-void ClientHttp::lockUser(const std::string &user)
+void AppMeshClient::lockUser(const std::string &user)
 {
     const std::string restPath = "/appmesh/user/" + user + "/lock";
-    requestHttp(true, web::http::methods::POST, restPath);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath);
 }
 
-void ClientHttp::unlockUser(const std::string &user)
+void AppMeshClient::unlockUser(const std::string &user)
 {
     const std::string restPath = "/appmesh/user/" + user + "/unlock";
-    requestHttp(true, web::http::methods::POST, restPath);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath);
 }
 
-std::set<std::string> ClientHttp::getUserPermissions() const
+std::set<std::string> AppMeshClient::getUserPermissions() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/permissions");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/user/permissions");
     auto result = nlohmann::json::parse(response->text);
     std::set<std::string> permissions;
     for (const auto &perm : result)
@@ -511,9 +531,9 @@ std::set<std::string> ClientHttp::getUserPermissions() const
     return permissions;
 }
 
-std::set<std::string> ClientHttp::listPermissions() const
+std::set<std::string> AppMeshClient::listPermissions() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/permissions");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/permissions");
     auto result = nlohmann::json::parse(response->text);
     std::set<std::string> permissions;
     for (const auto &perm : result)
@@ -523,9 +543,9 @@ std::set<std::string> ClientHttp::listPermissions() const
     return permissions;
 }
 
-std::map<std::string, std::set<std::string>> ClientHttp::listRoles() const
+std::map<std::string, std::set<std::string>> AppMeshClient::listRoles() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/roles");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/roles");
     auto result = nlohmann::json::parse(response->text);
     std::map<std::string, std::set<std::string>> roles;
     for (const auto &item : result.items())
@@ -540,9 +560,9 @@ std::map<std::string, std::set<std::string>> ClientHttp::listRoles() const
     return roles;
 }
 
-std::set<std::string> ClientHttp::listGroups() const
+std::set<std::string> AppMeshClient::listGroups() const
 {
-    auto response = requestHttp(true, web::http::methods::GET, "/appmesh/user/groups");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/user/groups");
     auto result = nlohmann::json::parse(response->text);
     std::set<std::string> groups;
     for (const auto &group : result)
@@ -552,7 +572,7 @@ std::set<std::string> ClientHttp::listGroups() const
     return groups;
 }
 
-void ClientHttp::updateRole(const std::string &role, const std::set<std::string> &rolePermissions)
+void AppMeshClient::updateRole(const std::string &role, const std::set<std::string> &rolePermissions)
 {
     nlohmann::json jsonObj = nlohmann::json::array();
     for (const auto &perm : rolePermissions)
@@ -560,22 +580,22 @@ void ClientHttp::updateRole(const std::string &role, const std::set<std::string>
         jsonObj.push_back(perm);
     }
     const std::string restPath = "/appmesh/role/" + role;
-    requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath, &jsonObj);
 }
 
-void ClientHttp::deleteRole(const std::string &role)
+void AppMeshClient::deleteRole(const std::string &role)
 {
     const std::string restPath = "/appmesh/role/" + role;
-    requestHttp(true, web::http::methods::DEL, restPath);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::DEL, restPath);
 }
 
 // Protected members
-std::shared_ptr<CurlResponse> ClientHttp::requestHttp(bool throwOnFail,
-                                                      const web::http::method &mtd,
-                                                      const std::string &path,
-                                                      const nlohmann::json *body,
-                                                      std::map<std::string, std::string> header,
-                                                      std::map<std::string, std::string> query) const
+std::shared_ptr<CurlResponse> AppMeshClient::requestHttp(ErrorPolicy errorPolicy,
+                                                         const std::string &method,
+                                                         const std::string &path,
+                                                         const nlohmann::json *body,
+                                                         std::map<std::string, std::string> header,
+                                                         std::map<std::string, std::string> query) const
 {
     // header
     this->addCommonHeaders(header);
@@ -584,17 +604,17 @@ std::shared_ptr<CurlResponse> ClientHttp::requestHttp(bool throwOnFail,
     const std::string bodyContent = body ? body->dump() : std::string();
 
     // request
-    auto resp = RestClient::request(m_url, mtd, path, bodyContent, header, query);
+    auto resp = RestClient::request(m_url, method, path, bodyContent, header, query);
 
     // check return
-    if (throwOnFail && resp->status_code != web::http::status_codes::OK)
+    if (errorPolicy == ErrorPolicy::Throw && resp->status_code != web::http::status_codes::OK)
     {
-        throw std::invalid_argument(resp->text);
+        throw AppMeshHttpError(resp->status_code, resp->text);
     }
 
     if (resp->status_code == web::http::status_codes::OK &&
         resp->header.count(web::http::header_names::content_type) &&
-        resp->header.at(web::http::header_names::content_type) == web::http::mime_types::text_plain_utf8)
+        resp->header.get(web::http::header_names::content_type) == web::http::mime_types::text_plain_utf8)
     {
         resp->text = Utility::utf8ToLocalEncoding(resp->text);
     }
@@ -602,7 +622,7 @@ std::shared_ptr<CurlResponse> ClientHttp::requestHttp(bool throwOnFail,
     return resp;
 }
 
-void ClientHttp::addCommonHeaders(std::map<std::string, std::string> &header) const
+void AppMeshClient::addCommonHeaders(std::map<std::string, std::string> &header) const
 {
     if (!m_forwardTo.empty())
     {

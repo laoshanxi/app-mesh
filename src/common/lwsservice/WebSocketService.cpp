@@ -916,8 +916,16 @@ void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
         // Verify session ID to prevent ABA pointer reuse
         if (it != m_sessions.end() && it->second->getId() == resp->m_session_id)
         {
-            it->second->enqueueOutgoingMessage(std::move(resp->m_payload));
-            lws_callback_on_writable(it->first);
+            // Queue full → client not draining; close to fail fast instead of a silent drop (on the lws service thread, so lws_set_timeout() is safe)
+            if (!it->second->enqueueOutgoingMessage(std::move(resp->m_payload)))
+            {
+                LOG_WAR << "WS outgoing queue full for session " << resp->m_session_id << ", closing connection";
+                lws_set_timeout(it->first, PENDING_TIMEOUT_CLOSE_ACK, LWS_TO_KILL_ASYNC);
+            }
+            else
+            {
+                lws_callback_on_writable(it->first);
+            }
         }
     }
 }

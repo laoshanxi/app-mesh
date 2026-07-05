@@ -121,12 +121,15 @@ type ConcurrencyConfig struct {
 }
 
 type Workflow struct {
-	Name        string             `yaml:"name"`
-	Owner       string             `yaml:"owner,omitempty"`
-	Permission  int                `yaml:"permission,omitempty"`
-	On          *TriggerConfig     `yaml:"on,omitempty"`
-	Concurrency *ConcurrencyConfig `yaml:"concurrency,omitempty"`
-	Env         map[string]string  `yaml:"env,omitempty"`
-	SecEnv      map[string]string  `yaml:"sec_env,omitempty"`
-	Jobs        map[string]*Job    `yaml:"jobs"`
+	Name       string `yaml:"name"`
+	Owner      string `yaml:"owner,omitempty"`
+	Permission int    `yaml:"permission,omitempty"`
+	// App Mesh user whose credentials run this workflow's steps (APPMESH_EXEC_IDENTITIES);
+	// empty = caller for manual runs, fail-closed for auto triggers. See ADR 0004.
+	ExecutionIdentity string             `yaml:"execution_identity,omitempty"`
+	On                *TriggerConfig     `yaml:"on,omitempty"`
+	Concurrency       *ConcurrencyConfig `yaml:"concurrency,omitempty"`
+	Env               map[string]string  `yaml:"env,omitempty"`
+	SecEnv            map[string]string  `yaml:"sec_env,omitempty"`
+	Jobs              map[string]*Job    `yaml:"jobs"`
 }

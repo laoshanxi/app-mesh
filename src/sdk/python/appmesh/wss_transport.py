@@ -96,7 +96,7 @@ class WSSTransport:
                 if path.is_file():
                     sslopt["ca_certs"] = str(path)
                 elif path.is_dir():
-                    sslopt["ca_certs"] = str(path)
+                    sslopt["ca_cert_path"] = str(path)  # websocket-client maps this to capath
                 else:
                     raise ValueError(f"ssl_verify path '{self.ssl_verify}' is invalid")
         else:
@@ -137,8 +137,10 @@ class WSSTransport:
             finally:
                 self._websocket = None
 
-    def connected(self) -> bool:
-        """Check if WebSocket is connected."""
+    @property
+    def is_connected(self) -> bool:
+        """Whether the websocket-client ``connected`` flag reports connected (updated on
+        close/error); does NOT probe the peer with network I/O."""
         if self._websocket is None:
             return False
         try:
@@ -150,12 +152,17 @@ class WSSTransport:
         except Exception:  # pylint: disable=broad-exception-caught
             return False
 
-    def send_message(self, data: Union[bytes, bytearray, list]) -> None:
+    def connected(self) -> bool:
+        """Compatibility method; prefer the ``is_connected`` property."""
+        return self.is_connected
+
+    def send_message(self, data: Optional[Union[bytes, bytearray, list]]) -> None:
         """
         Send a message over WebSocket.
 
         Args:
-            data: Message data to send, or empty list for EOF signal.
+            data: Message data to send. ``b""`` (empty bytes) is the canonical EOF
+                signal; an empty list or ``None`` is also accepted for compatibility.
 
         Note:
             WebSocket handles message framing automatically,
@@ -186,7 +193,8 @@ class WSSTransport:
         Uses the high-level ``recv()`` API so that control frames (PING/PONG/CLOSE) are handled
         inside websocket-client — in particular, PING is auto-replied with PONG, which is what
         keeps long-idle subscribe connections alive against server-side ``idleTimeout``.
-        Returns the data as bytearray, or an empty bytearray for EOF / non-data frames.
+        Returns the data as bytearray, or an empty bytearray for EOF / non-data frames
+        (falsy, matching TCPTransport's ``b""`` EOF convention).
         """
         if not self._websocket:
             raise AppMeshConnectionError("Cannot receive message: not connected")

@@ -17,7 +17,7 @@ from requests.structures import CaseInsensitiveDict
 from .app import App
 from .app_run import OutputHandler
 from .client_http import AppMeshClient
-from .exceptions import AppMeshConnectionError
+from .exceptions import AppMeshAppRemovedError, AppMeshConnectionError
 from .subscribe import (
     EVENT_TYPE_DISCONNECTED,
     AppEvent,
@@ -40,6 +40,12 @@ _LOGOFF_PATH = "/appmesh/self/logoff"
 class TransportClientMixin:
     """Mixin providing shared request/response logic for TCP and WSS transport clients.
 
+    Design note: TCP/WSS clients deliberately inherit AppMeshClient rather than wrap it —
+    every REST method funnels through ``_request_http``, so overriding that one choke point
+    with msgpack framing (adapted into a ``requests.Response``) reuses all inherited methods
+    and token/cookie persistence unchanged, at the cost of a mostly idle ``requests.Session``
+    (which the WSS client reuses for its file-transfer HTTPS data channel).
+
     Subclasses must define:
         - _transport: the transport object (TCPTransport or WSSTransport)
         - _token: the current access token string
@@ -47,6 +53,13 @@ class TransportClientMixin:
     """
 
     _ENCODING_UTF8 = "utf-8"
+
+    # Lazily created by _ensure_demuxer(); the class-level default keeps
+    # close()/__del__ safe even when a subclass __init__ raised early.
+    _demuxer: Optional[MessageDemuxer] = None
+
+    # Persistent-connection transports can deliver app events (see AppMeshClient.supports_events)
+    supports_events = True
 
     def _convert_bytes(self, body) -> bytes:
         """Prepare request body for transmission."""
@@ -161,12 +174,13 @@ class TransportClientMixin:
         # Send request and receive response
         data = appmesh_request.serialize()
 
-        if hasattr(self, "_demuxer") and self._demuxer and self._demuxer._running:
-            # Demuxer is active — route through it to avoid concurrent socket reads
-            appmesh_resp = self._demuxer.send_and_receive(appmesh_request.uuid, data, timeout=60.0)
+        if self._demuxer and self._demuxer._running:
+            # Demuxer is active — route through it to avoid concurrent socket reads.
+            # No wait cap: a falsy result means the demuxer stopped (disconnect), not a slow request.
+            appmesh_resp = self._demuxer.send_and_receive(appmesh_request.uuid, data)
             if not appmesh_resp:
                 transport.close()
-                raise AppMeshConnectionError(f"{self._transport_name} demuxer response timeout")
+                raise AppMeshConnectionError(f"{self._transport_name} connection lost while waiting for response")
         else:
             transport.send_message(data)
             resp_data = transport.receive_message()
@@ -252,34 +266,43 @@ class TransportClientMixin:
         query = {"subscription_id": subscription_id}
         self._request_http(AppMeshClient._Method.DELETE, path="/appmesh/subscribe", query=query)
 
-        if hasattr(self, "_demuxer") and self._demuxer:
+        if self._demuxer:
             self._demuxer.unregister_event_callback(subscription_id)
 
     def _ensure_demuxer(self) -> None:
         """Start the message demuxer if not already running."""
-        if hasattr(self, "_demuxer") and self._demuxer:
+        if self._demuxer:
             return
         self._demuxer = MessageDemuxer(self._transport)
         self._demuxer.start()
 
-    def wait_for_async_run(self, run, stdout_handler: OutputHandler = None, timeout: int = 0) -> Optional[int]:
+    def wait_for_async_run(self, run, stdout_handler: Optional[OutputHandler] = None, timeout: int = 0) -> Optional[int]:
         """Override: use subscribe-based streaming on TCP/WSS instead of polling.
 
         Subscribes to ``STDOUT`` + ``EXIT`` + ``REMOVED``, then does a
         one-shot ``get_app_output`` to backfill bytes emitted before the subscribe
         took effect. Stdout events whose ``position`` is already covered by an
         earlier delivery are deduped (partial overlap → prefix trimmed).
+
+        Returns:
+            Exit code if the process finished, or ``None`` when ``timeout`` elapsed first.
+
+        Raises:
+            AppMeshAppRemovedError: If the app was removed before its exit was observed.
+            AppMeshConnectionError: If the transport disconnected while waiting, or the
+                daemon delivered an unparseable exit code.
         """
         if not run or not run.app_name:
             return None
 
         wait_timeout: Optional[float] = None if timeout in (0, None) else float(timeout)
 
-        # Sentinel exit codes distinguishable from real ones (>=0):
-        #   None → caller-side timeout (done.wait returned without done.set)
-        #   -1   → REMOVED before EXIT observed
-        #   -2   → demuxer disconnected (transport failure)
+        # Failure signaling (no sentinel exit codes — contract item 6):
+        #   exit_code None + failure None → caller-side timeout (returns None)
+        #   failure set → raised after cleanup
         exit_code: Optional[int] = None
+        failure: Optional[Exception] = None
+        disconnected = False  # transport died — skip cleanup (SDKContract cleanup policy)
         delivered_until = 0  # next-byte offset already passed to stdout_handler
         done = threading.Event()
         lock = threading.Lock()
@@ -305,7 +328,7 @@ class TransportClientMixin:
                     pass
 
         def on_event(event: AppEvent) -> None:
-            nonlocal exit_code
+            nonlocal exit_code, failure, disconnected
             if event.event_type == "STDOUT":
                 try:
                     pos = int(event.data.get("position", 0))
@@ -314,17 +337,18 @@ class TransportClientMixin:
                 deliver(event.data.get("output", ""), pos)
             elif event.event_type == "EXIT":
                 try:
-                    exit_code = int(event.data.get("exit_code", -1))
+                    exit_code = int(event.data.get("exit_code"))
                 except (TypeError, ValueError):
-                    exit_code = -1
+                    failure = AppMeshConnectionError(f"EXIT event for '{run.app_name}' carried an unparseable exit_code: {event.data.get('exit_code')!r}")
                 done.set()
             elif event.event_type == "REMOVED":
-                if exit_code is None:
-                    exit_code = -1
+                if exit_code is None and failure is None:
+                    failure = AppMeshAppRemovedError(f"app '{run.app_name}' was removed before its exit was observed")
                 done.set()
             elif event.event_type == EVENT_TYPE_DISCONNECTED:
-                if exit_code is None:
-                    exit_code = -2
+                disconnected = True
+                if exit_code is None and failure is None:
+                    failure = AppMeshConnectionError(f"transport disconnected while waiting for '{run.app_name}' to exit")
                 done.set()
 
         sub = self.subscribe(run.app_name, ["STDOUT", "EXIT", "REMOVED"], callback=on_event)
@@ -337,7 +361,7 @@ class TransportClientMixin:
                     app_name=run.app_name,
                     stdout_position=0,
                     stdout_index=0,
-                    process_uuid=run.proc_uid,
+                    process_uuid=run.process_uuid,
                     timeout=0,
                 )
                 if backfill.output:
@@ -350,17 +374,22 @@ class TransportClientMixin:
 
             done.wait(timeout=wait_timeout)
         finally:
-            try:
-                if sub.subscription_id:
-                    self.unsubscribe(sub.subscription_id)
-            except Exception:
-                pass
-            # Best-effort delete on a real exit. Sentinels (-1 REMOVED, -2 disconnected)
-            # mean the daemon already lost track or the app is gone — don't try to delete.
-            if exit_code is not None and exit_code >= 0:
+            # Cleanup policy: after a disconnect the transport is dead — an unsubscribe would
+            # silently reconnect and register a never-answered waiter.
+            if not disconnected:
                 try:
-                    self.delete_app(run.app_name)
+                    if sub.subscription_id:
+                        self.unsubscribe(sub.subscription_id)
                 except Exception:
                     pass
+                # Best-effort delete on a real exit. On REMOVED/disconnect failures the
+                # daemon already lost track or the app is gone — don't try to delete.
+                if exit_code is not None and failure is None:
+                    try:
+                        self.delete_app(run.app_name)
+                    except Exception:
+                        pass
 
+        if failure is not None:
+            raise failure
         return exit_code

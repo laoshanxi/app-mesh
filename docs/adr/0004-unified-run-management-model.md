@@ -2,9 +2,11 @@
 
 ## Status
 
-Proposed — partially implemented. The step-result isolation and cancel-propagation
-changes below are in the engine; the unified Run API, single-mode engine, and
-external-trigger model are not. ADRs 0001–0003 describe the implemented architecture.
+Proposed — partially implemented. Implemented: the step-result isolation and
+cancel-propagation changes below, and the **`execution_identity`** part of the identity
+model (service-account model — see "Identity Model"). Not implemented: the unified Run API,
+single-mode engine, and external-trigger model. ADRs 0001–0003 describe the implemented
+architecture; ADR 0006 covers the shipped ownership/authz layer this builds on.
 
 ## Context
 
@@ -100,9 +102,22 @@ Three distinct identities per Run, following GitHub Actions semantics:
 |----------|-----------|-------------|
 | **resource_owner** | Who owns the workflow definition | `workflow.owner` field → App Mesh App owner |
 | **actor** | Who triggered this Run | Recorded in Run record: CLI user, event source |
-| **execution_identity** | What API credentials steps use | Configured per-workflow; defaults to `resource_owner` |
+| **execution_identity** | What API credentials steps use | `execution_identity` YAML field; else the triggering caller (manual) or fail-closed (automatic) |
 
 Step permission check: when a step references an existing App (`app: deployer`), the daemon checks whether `execution_identity` has permission to run that App, using App Mesh's existing RBAC.
+
+**Implemented (service-account model).** Since the daemon cannot mint a token for an
+arbitrary user (signing keys are daemon-side; `/appmesh/login` requires a password), the
+engine authenticates as a real App Mesh user to obtain `execution_identity`'s token. Admin
+provisions credentials as the secured env var `APPMESH_EXEC_IDENTITIES` (a JSON map
+`{"user":"password"}`); a workflow selects one via the `execution_identity` field. At
+registration the caller may bind only itself or (as a workflow admin) any configured
+identity, so a workflow cannot run as an identity more privileged than its registrant is
+allowed to use. When no `execution_identity` is set, manual runs use the caller's token
+(ADR 0006 Phase 2) and automatic (event) triggers **fail closed** — the engine's own
+identity is never used to execute steps. The `resource_owner`-as-default and a daemon-side
+impersonation/token-exchange endpoint (which would avoid storing service-account passwords)
+remain future work.
 
 ### Run Record (replaces checkpoint)
 

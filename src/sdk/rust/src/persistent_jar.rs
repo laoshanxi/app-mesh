@@ -40,7 +40,7 @@ impl PersistentJar {
 
     /// Loads cookies from the file into the jar.
     pub fn load(&self) -> Result<()> {
-        let _guard = self.io_lock.lock().unwrap();
+        let _guard = self.io_lock.lock().unwrap_or_else(|e| e.into_inner());
         let content = fs::read_to_string(&self.file_path)?;
 
         for line in content.lines() {
@@ -65,7 +65,7 @@ impl PersistentJar {
 
     /// Saves all cookies from the jar to the file.
     pub fn save(&self) -> Result<()> {
-        let _guard = self.io_lock.lock().unwrap();
+        let _guard = self.io_lock.lock().unwrap_or_else(|e| e.into_inner());
 
         // Ensure parent directory exists on first write
         if let Some(parent) = self.file_path.parent() {
@@ -119,7 +119,7 @@ impl PersistentJar {
 
     /// Clears all cookies and resets the file.
     pub fn clear(&self) -> Result<()> {
-        let _guard = self.io_lock.lock().unwrap();
+        let _guard = self.io_lock.lock().unwrap_or_else(|e| e.into_inner());
         fs::write(&self.file_path, NETSCAPE_HEADER)?;
         Ok(())
     }

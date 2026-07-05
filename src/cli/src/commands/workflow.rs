@@ -52,7 +52,7 @@ fn with_token(client: &appmesh::AppMeshClientWSS, mut payload: serde_json::Value
 }
 
 async fn add(cli: &Cli, args: &WorkflowAddArgs) -> Result<i32> {
-    let client = build_client_with_auth(cli).await?;
+    // Validate the local file before any network call.
     let path = std::path::Path::new(&args.file);
     if !path.exists() { bail!("File not found: {}", args.file); }
     let content = std::fs::read_to_string(path)?;
@@ -60,6 +60,7 @@ async fn add(cli: &Cli, args: &WorkflowAddArgs) -> Result<i32> {
     let name = yaml.get("name").and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("YAML must have 'name'"))?;
 
+    let client = build_client_with_auth(cli).await?;
     let payload = with_token(&client, json!({"action": "workflow_add", "workflow": name, "content": content}));
     let resp = client.run_task(WORKFLOW_TRIGGER_APP, payload, 30).await.context(task_err("add"))?;
     let v = parse_resp(&resp)?;
@@ -102,16 +103,22 @@ async fn rm(cli: &Cli, args: &WorkflowRmArgs) -> Result<i32> {
 }
 
 async fn run(cli: &Cli, args: &WorkflowRunArgs) -> Result<i32> {
-    let client = build_client_with_auth(cli).await?;
+    // Validate inputs locally before any network call.
     let mut inputs = serde_json::Map::new();
     for input in &args.input {
-        if let Some((k, v)) = input.split_once('=') {
-            if !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                bail!("Input key '{}' must be [A-Za-z0-9_]", k);
-            }
-            inputs.insert(k.to_string(), json!(v));
+        let Some((k, v)) = input.split_once('=') else {
+            bail!("Invalid input '{}': expected key=value", input);
+        };
+        // Same identifier rule as the engine's parser: [A-Za-z_][A-Za-z0-9_]*
+        let mut chars = k.chars();
+        let valid = matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !valid {
+            bail!("Input key '{}' must match [A-Za-z_][A-Za-z0-9_]*", k);
         }
+        inputs.insert(k.to_string(), json!(v));
     }
+    let client = build_client_with_auth(cli).await?;
     let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "run", "workflow": args.name, "inputs": inputs})), 30).await.context(task_err("run"))?;
     let v = parse_resp(&resp)?;
     let run_id = v["data"]["run_id"].as_str().unwrap_or("").to_string();

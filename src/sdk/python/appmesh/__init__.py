@@ -14,18 +14,22 @@ from importlib import import_module
 
 __all__ = [
     "App",
+    "AppRun",
+    "AppOutput",
     "AppMeshClient",
     "AppMeshClientTCP",
     "AppMeshClientWSS",
     "AppMeshClientOAuth",
-    "AppMeshServer",
-    "AppMeshServerTCP",
-    "AppMeshServerWSS",
+    "AppMeshWorker",
+    "AppMeshWorkerTCP",
+    "AppMeshWorkerWSS",
     "AppMeshError",
     "AppMeshAuthError",
     "AppMeshConnectionError",
     "AppMeshTimeoutError",
     "AppMeshRequestError",
+    "AppMeshAppRemovedError",
+    "AppMeshProcessSupersededError",
     "AppEvent",
     "SubscriptionResult",
     "OutputHandler",
@@ -35,18 +39,22 @@ __all__ = [
 # Lazy import configuration
 _LAZY_IMPORTS = {
     "App": ("app", "App"),  # from .app import App
+    "AppRun": ("app_run", "AppRun"),  # from .app_run import AppRun
+    "AppOutput": ("app_output", "AppOutput"),  # from .app_output import AppOutput
     "AppMeshClient": ("client_http", "AppMeshClient"),  # from .client_http import AppMeshClient
     "AppMeshClientTCP": ("client_tcp", "AppMeshClientTCP"),  # from .client_tcp import AppMeshClientTCP
     "AppMeshClientWSS": ("client_wss", "AppMeshClientWSS"),  # from .client_wss import AppMeshClientWSS
     "AppMeshClientOAuth": ("client_http_oauth", "AppMeshClientOAuth"),  # from .client_http_oauth import AppMeshClientOAuth
-    "AppMeshServer": ("server_http", "AppMeshServer"),  # from .server_http import AppMeshServer
-    "AppMeshServerTCP": ("server_tcp", "AppMeshServerTCP"),  # from .server_tcp import AppMeshServerTCP
-    "AppMeshServerWSS": ("server_wss", "AppMeshServerWSS"),  # from .server_wss import AppMeshServerWSS
+    "AppMeshWorker": ("server_http", "AppMeshWorker"),  # from .server_http import AppMeshWorker
+    "AppMeshWorkerTCP": ("server_tcp", "AppMeshWorkerTCP"),  # from .server_tcp import AppMeshWorkerTCP
+    "AppMeshWorkerWSS": ("server_wss", "AppMeshWorkerWSS"),  # from .server_wss import AppMeshWorkerWSS
     "AppMeshError": ("exceptions", "AppMeshError"),  # from .exceptions import AppMeshError
     "AppMeshAuthError": ("exceptions", "AppMeshAuthError"),  # from .exceptions import AppMeshAuthError
     "AppMeshConnectionError": ("exceptions", "AppMeshConnectionError"),  # from .exceptions import AppMeshConnectionError
     "AppMeshTimeoutError": ("exceptions", "AppMeshTimeoutError"),  # from .exceptions import AppMeshTimeoutError
     "AppMeshRequestError": ("exceptions", "AppMeshRequestError"),  # from .exceptions import AppMeshRequestError
+    "AppMeshAppRemovedError": ("exceptions", "AppMeshAppRemovedError"),  # from .exceptions import AppMeshAppRemovedError
+    "AppMeshProcessSupersededError": ("exceptions", "AppMeshProcessSupersededError"),  # from .exceptions import AppMeshProcessSupersededError
     "AppEvent": ("subscribe", "AppEvent"),  # from .subscribe import AppEvent
     "SubscriptionResult": ("subscribe", "SubscriptionResult"),  # from .subscribe import SubscriptionResult
     "OutputHandler": ("app_run", "OutputHandler"),  # from .app_run import OutputHandler
@@ -56,14 +64,16 @@ _LAZY_IMPORTS = {
 if TYPE_CHECKING:
     # Type checking imports (not executed at runtime)
     from .app import App  # noqa: F401
+    from .app_run import AppRun  # noqa: F401
+    from .app_output import AppOutput  # noqa: F401
     from .client_http import AppMeshClient  # noqa: F401
     from .client_tcp import AppMeshClientTCP  # noqa: F401
     from .client_wss import AppMeshClientWSS  # noqa: F401
     from .client_http_oauth import AppMeshClientOAuth  # noqa: F401
-    from .server_http import AppMeshServer  # noqa: F401
-    from .server_tcp import AppMeshServerTCP  # noqa: F401
-    from .server_wss import AppMeshServerWSS  # noqa: F401
-    from .exceptions import AppMeshError, AppMeshAuthError, AppMeshConnectionError, AppMeshTimeoutError, AppMeshRequestError  # noqa: F401
+    from .server_http import AppMeshWorker  # noqa: F401
+    from .server_tcp import AppMeshWorkerTCP  # noqa: F401
+    from .server_wss import AppMeshWorkerWSS  # noqa: F401
+    from .exceptions import AppMeshError, AppMeshAuthError, AppMeshConnectionError, AppMeshTimeoutError, AppMeshRequestError, AppMeshAppRemovedError, AppMeshProcessSupersededError  # noqa: F401
     from .subscribe import AppEvent, SubscriptionResult  # noqa: F401
     from .app_run import OutputHandler, print_output_handler  # noqa: F401
 

@@ -42,9 +42,6 @@ func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP Client: %v", err)
 	}
-	value := true
-	options.tcpOnly = &value
-
 	wssClient := &AppMeshClientWSS{
 		AppMeshClient: httpClient,
 		wssReq:        wssRequester,
@@ -71,9 +68,10 @@ func (c *AppMeshClientWSS) SendMessage(ctx context.Context, buffer []byte) error
 	return c.wssReq.WSSConnection.SendMessage(ctx, buffer)
 }
 
-// FileDownload downloads a file through the WSS control channel plus HTTP(S) streaming data path.
+// DownloadFile downloads a file through the WSS control channel plus HTTP(S) streaming data path,
+// overriding the embedded HTTP implementation (which cannot stream here).
 // When applyFileAttributes is true, returned POSIX metadata is applied locally best-effort.
-func (c *AppMeshClientWSS) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
+func (c *AppMeshClientWSS) DownloadFile(remoteFile, localFile string, applyFileAttributes bool) error {
 	if remoteFile == "" {
 		return fmt.Errorf("remote file path cannot be empty")
 	}
@@ -82,10 +80,10 @@ func (c *AppMeshClientWSS) FileDownload(remoteFile, localFile string, applyFileA
 	}
 
 	headers := map[string]string{
-		HTTP_HEADER_KEY_File_Path: remoteFile,
+		headerFilePath: remoteFile,
 	}
 
-	status, msg, responseHeaders, err := c.get(REST_PATH_DOWNLOAD, nil, headers)
+	status, msg, responseHeaders, err := c.get(restPathDownload, nil, headers)
 	if err != nil {
 		return fmt.Errorf("download request failed: %w", err)
 	}
@@ -106,13 +104,16 @@ func (c *AppMeshClientWSS) FileDownload(remoteFile, localFile string, applyFileA
 	}
 	fullURL := fmt.Sprintf("%s://%s/appmesh/file/download/ws", scheme, base.Host)
 
-	httpConn := newHTTPConnection(c.sslClientCert, c.sslClientCertKey, c.sslCAFile, c.cookieFile)
+	httpConn, err := newHTTPConnection(c.sslClientCert, c.sslClientCertKey, c.sslCAFile, c.cookieFile)
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP connection: %w", err)
+	}
 	req, err := http.NewRequest(http.MethodGet, fullURL, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", auth)
-	req.Header.Set(HTTP_HEADER_KEY_File_Path, remoteFile)
+	req.Header.Set(headerFilePath, remoteFile)
 
 	resp, err := httpConn.Do(req)
 	if err != nil {
@@ -141,9 +142,9 @@ func (c *AppMeshClientWSS) FileDownload(remoteFile, localFile string, applyFileA
 	return nil
 }
 
-// FileUpload uploads a file through the WSS control channel plus HTTP(S) streaming data path.
+// UploadFileContext uploads a file through the WSS control channel plus HTTP(S) streaming data path.
 // When applyFileAttributes is true, local POSIX metadata is sent so the server can recreate it.
-func (c *AppMeshClientWSS) FileUpload(ctx context.Context, localFile, remoteFile string, applyFileAttributes bool) error {
+func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, remoteFile string, applyFileAttributes bool) error {
 	if localFile == "" {
 		return fmt.Errorf("local file path cannot be empty")
 	}
@@ -158,14 +159,20 @@ func (c *AppMeshClientWSS) FileUpload(ctx context.Context, localFile, remoteFile
 	defer f.Close()
 
 	headers := map[string]string{
-		HTTP_HEADER_KEY_File_Path: remoteFile,
+		headerFilePath: remoteFile,
 	}
 
 	if applyFileAttributes {
-		headers, _ = GetFileAttributes(localFile, headers)
+		attrs, err := fileAttributes(localFile)
+		if err != nil {
+			return fmt.Errorf("failed to read file attributes of %q: %w", localFile, err)
+		}
+		for key, value := range attrs {
+			headers[key] = value
+		}
 	}
 
-	status, msg, responseHeaders, err := c.post(REST_PATH_UPLOAD, nil, headers, nil)
+	status, msg, responseHeaders, err := c.post(restPathUpload, nil, headers, nil)
 	if err != nil {
 		return fmt.Errorf("upload request failed: %w", err)
 	}
@@ -185,14 +192,17 @@ func (c *AppMeshClientWSS) FileUpload(ctx context.Context, localFile, remoteFile
 	}
 	fullURL := fmt.Sprintf("%s://%s/appmesh/file/upload/ws", scheme, base.Host)
 
-	httpConn := newHTTPConnection(c.sslClientCert, c.sslClientCertKey, c.sslCAFile, c.cookieFile)
+	httpConn, err := newHTTPConnection(c.sslClientCert, c.sslClientCertKey, c.sslCAFile, c.cookieFile)
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP connection: %w", err)
+	}
 	req, err := http.NewRequest(http.MethodPost, fullURL, f)
 	if err != nil {
 		return err
 	}
 	req = req.WithContext(ctx)
 	req.Header.Set("Authorization", auth)
-	req.Header.Set(HTTP_HEADER_KEY_File_Path, remoteFile)
+	req.Header.Set(headerFilePath, remoteFile)
 	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := httpConn.Do(req)
@@ -206,4 +216,10 @@ func (c *AppMeshClientWSS) FileUpload(ctx context.Context, localFile, remoteFile
 		return fmt.Errorf("upload failed: status=%d msg=%s", resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+// UploadFile uploads a local file via the WSS control channel plus HTTP(S) streaming
+// data path, overriding the embedded HTTP implementation (which cannot stream here).
+func (c *AppMeshClientWSS) UploadFile(localFile, remoteFile string, applyFileAttributes bool) error {
+	return c.UploadFileContext(context.Background(), localFile, remoteFile, applyFileAttributes)
 }

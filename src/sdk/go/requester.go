@@ -1,6 +1,7 @@
 package appmesh
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,7 +42,7 @@ func syncTransportToken(statusCode int, raw []byte, apiPath string, headers map[
 	}
 
 	if authSetCookiePaths[apiPath] {
-		if headers == nil || headers[HTTP_HEADER_JWT_SET_COOKIE] != "true" {
+		if headers == nil || headers[headerJWTSetCookie] != "true" {
 			return
 		}
 	} else if !authRenewPaths[apiPath] {
@@ -57,6 +58,7 @@ func syncTransportToken(statusCode int, raw []byte, apiPath string, headers map[
 // Requester defines the interface for making HTTP requests.
 type Requester interface {
 	Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error)
+	SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error)
 	Close()
 
 	handleTokenUpdate(token string)
@@ -76,6 +78,11 @@ type HTTPRequester struct {
 
 // REST request
 func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	return h.SendContext(context.Background(), method, apiPath, queries, headers, body)
+}
+
+// SendContext performs the REST request with the provided context controlling cancellation.
+func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
 	// Validate inputs
 	if h.httpClient == nil {
 		return 0, nil, nil, fmt.Errorf("http client is nil")
@@ -91,25 +98,28 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 		u.RawQuery = queries.Encode()
 	}
 
-	// TODO: Create request with context http.NewRequestWithContext(ctx, method, u.String(), body)
-	req, err := http.NewRequest(method, u.String(), body)
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return 0, nil, nil, err
 	}
 
 	// Apply implicit auth only when the caller did not provide explicit auth headers.
 	if _, hasAuth := headers["Authorization"]; !hasAuth {
-		if _, hasCsrf := headers[HTTP_HEADER_NAME_CSRF_TOKEN]; !hasCsrf {
-			if csrfToken := h.httpClient.getCookie(COOKIE_CSRF_TOKEN, &h.baseURL); csrfToken != "" {
-				req.Header.Set(HTTP_HEADER_NAME_CSRF_TOKEN, csrfToken)
-			} else if accessToken := h.httpClient.getCookie(COOKIE_TOKEN, &h.baseURL); accessToken != "" {
+		if _, hasCsrf := headers[headerCSRFToken]; !hasCsrf {
+			if csrfToken := h.httpClient.getCookie(cookieCSRFToken, &h.baseURL); csrfToken != "" {
+				req.Header.Set(headerCSRFToken, csrfToken)
+			} else if accessToken := h.httpClient.getCookie(cookieToken, &h.baseURL); accessToken != "" {
 				req.Header.Set("Authorization", "Bearer "+accessToken)
 			}
 		}
 	}
 
-	// Set forwarding header
-	forwardingHost := h.forwardingHost.Load()
+	// Set forwarding header. A caller-supplied X-Target-Host header overrides the
+	// client-wide forward target for this request only ("" disables forwarding).
+	forwardingHost, forwardOverridden := headers[headerTargetHost]
+	if !forwardOverridden {
+		forwardingHost = h.forwardingHost.Load()
+	}
 	if forwardingHost != "" {
 		targetHost := forwardingHost
 		if !strings.Contains(forwardingHost, ":") {
@@ -119,14 +129,17 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 			}
 			targetHost = forwardingHost + ":" + port
 		}
-		req.Header.Set("X-Target-Host", targetHost)
+		req.Header.Set(headerTargetHost, targetHost)
 	}
 
 	// Set default headers
-	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
+	req.Header.Set(userAgentHeaderName, userAgent)
 
-	// Set custom headers
+	// Set custom headers (X-Target-Host was already applied, normalized, above)
 	for k, v := range headers {
+		if k == headerTargetHost {
+			continue
+		}
 		req.Header.Set(k, v)
 	}
 
@@ -173,17 +186,43 @@ func (h *HTTPRequester) handleTokenUpdate(token string) {
 	h.httpClient.SaveCookies()
 }
 func (h *HTTPRequester) setToken(token string) {
-	h.httpClient.setCookie(COOKIE_TOKEN, token, &h.baseURL)
+	h.httpClient.setCookie(cookieToken, token, &h.baseURL)
 	h.handleTokenUpdate(token)
 }
 func (h *HTTPRequester) getAccessToken() string {
-	return h.httpClient.getCookie(COOKIE_TOKEN, &h.baseURL)
+	return h.httpClient.getCookie(cookieToken, &h.baseURL)
 }
 func (h *HTTPRequester) setForwardTo(forwardTo string) {
 	h.forwardingHost.Store(forwardTo)
 }
 func (h *HTTPRequester) getForwardTo() string {
 	return h.forwardingHost.Load()
+}
+
+// waitDemuxResponse waits for a demuxer-routed response, unblocking on context
+// cancellation or demuxer shutdown (transport read error) instead of hanging on
+// a channel the dead readLoop can never deliver to.
+func waitDemuxResponse(ctx context.Context, ch chan *Response, demux *MessageDemuxer) (*Response, error) {
+	select {
+	case resp, ok := <-ch:
+		if !ok || resp == nil {
+			return nil, fmt.Errorf("connection closed while waiting for response")
+		}
+		return resp, nil
+	case <-demux.stopCh:
+		// The register may have raced with stop() (landed in the fresh pending
+		// map), so ch is never closed; drain a response delivered just before.
+		select {
+		case resp, ok := <-ch:
+			if ok && resp != nil {
+				return resp, nil
+			}
+		default:
+		}
+		return nil, fmt.Errorf("connection closed while waiting for response")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // TCPRequester handles TCP requests.
@@ -199,13 +238,21 @@ type TCPRequester struct {
 
 // Send performs a REST-like request over TCP.
 func (t *TCPRequester) Send(method, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	return t.SendContext(context.Background(), method, apiPath, queries, headers, body)
+}
+
+// SendContext performs the REST-like request over TCP with the provided context.
+// The context cancels the send and, when the demuxer is active (EnableConcurrency/
+// Subscribe), the response wait. In legacy synchronous mode the blocking read is
+// not cancelable; use Close() to abort.
+func (t *TCPRequester) SendContext(ctx context.Context, method, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
 	u := t.baseURL
 	u.Path = path.Join(u.Path, apiPath)
 	if queries != nil {
 		u.RawQuery = queries.Encode()
 	}
 
-	req, err := http.NewRequest(method, u.String(), body)
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -215,16 +262,24 @@ func (t *TCPRequester) Send(method, apiPath string, queries url.Values, headers 
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	forwardingHost := t.forwardingHost.Load()
+	// A caller-supplied X-Target-Host header overrides the client-wide forward
+	// target for this request only ("" disables forwarding).
+	forwardingHost, forwardOverridden := headers[headerTargetHost]
+	if !forwardOverridden {
+		forwardingHost = t.forwardingHost.Load()
+	}
 	if forwardingHost != "" {
 		if strings.Contains(forwardingHost, ":") {
-			req.Header.Set("X-Target-Host", forwardingHost)
+			req.Header.Set(headerTargetHost, forwardingHost)
 		} else {
-			req.Header.Set("X-Target-Host", forwardingHost+":"+u.Port())
+			req.Header.Set(headerTargetHost, forwardingHost+":"+u.Port())
 		}
 	}
-	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT_TCP)
+	req.Header.Set(userAgentHeaderName, userAgentTCP)
 	for k, v := range headers {
+		if k == headerTargetHost {
+			continue // already applied, normalized, above
+		}
 		req.Header.Set(k, v)
 	}
 
@@ -274,7 +329,7 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 		}
 	}
 
-	if data.RequestUri != REST_PATH_UPLOAD && req.Body != nil {
+	if data.RequestUri != restPathUpload && req.Body != nil {
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
 			return nil, err
@@ -288,7 +343,7 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 		}
 	}
 
-	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_TCP
+	data.Headers[userAgentHeaderName] = userAgentTCP
 
 	buf, err := data.Serialize()
 	if err != nil {
@@ -296,9 +351,10 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 	}
 
 	// When demuxer is active, register BEFORE send so the response cannot arrive
-	// and be dropped before the channel is in place.
+	// and be dropped before the channel is in place. A stopped demuxer (transport
+	// read error) never delivers, so fall back to the direct read below.
 	demux := t.getDemuxer()
-	if demux != nil {
+	if demux != nil && demux.isRunning() {
 		ch := demux.registerRequest(data.UUID)
 		defer demux.unregisterRequest(data.UUID)
 
@@ -306,11 +362,7 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 			return nil, err
 		}
 
-		resp, ok := <-ch
-		if !ok || resp == nil {
-			return nil, fmt.Errorf("connection closed while waiting for response")
-		}
-		return resp, nil
+		return waitDemuxResponse(req.Context(), ch, demux)
 	}
 
 	if err := t.SendMessage(req.Context(), buf); err != nil {
@@ -376,13 +428,21 @@ type WSSRequester struct {
 
 // Send performs the request over WSS.
 func (w *WSSRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	return w.SendContext(context.Background(), method, apiPath, queries, headers, body)
+}
+
+// SendContext performs the request over WSS with the provided context.
+// The context cancels the send and, when the demuxer is active (EnableConcurrency/
+// Subscribe), the response wait. In legacy synchronous mode the blocking read is
+// not cancelable; use Close() to abort.
+func (w *WSSRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
 	u := w.baseURL
 	u.Path = path.Join(u.Path, apiPath)
 	if queries != nil {
 		u.RawQuery = queries.Encode()
 	}
 
-	req, err := http.NewRequest(method, u.String(), body)
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -392,16 +452,24 @@ func (w *WSSRequester) Send(method string, apiPath string, queries url.Values, h
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	forwardingHost := w.forwardingHost.Load()
+	// A caller-supplied X-Target-Host header overrides the client-wide forward
+	// target for this request only ("" disables forwarding).
+	forwardingHost, forwardOverridden := headers[headerTargetHost]
+	if !forwardOverridden {
+		forwardingHost = w.forwardingHost.Load()
+	}
 	if forwardingHost != "" {
 		if strings.Contains(forwardingHost, ":") {
-			req.Header.Set("X-Target-Host", forwardingHost)
+			req.Header.Set(headerTargetHost, forwardingHost)
 		} else {
-			req.Header.Set("X-Target-Host", forwardingHost+":"+u.Port())
+			req.Header.Set(headerTargetHost, forwardingHost+":"+u.Port())
 		}
 	}
-	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT_WSS)
+	req.Header.Set(userAgentHeaderName, userAgentWSS)
 	for k, v := range headers {
+		if k == headerTargetHost {
+			continue // already applied, normalized, above
+		}
 		req.Header.Set(k, v)
 	}
 
@@ -451,7 +519,7 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 		}
 	}
 
-	if data.RequestUri != REST_PATH_UPLOAD && req.Body != nil {
+	if data.RequestUri != restPathUpload && req.Body != nil {
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
 			return nil, err
@@ -465,7 +533,7 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 		}
 	}
 
-	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_WSS
+	data.Headers[userAgentHeaderName] = userAgentWSS
 
 	buf, err := data.Serialize()
 	if err != nil {
@@ -475,9 +543,10 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 	ctx := req.Context()
 
 	// When demuxer is active, register BEFORE send so the response cannot arrive
-	// and be dropped before the channel is in place.
+	// and be dropped before the channel is in place. A stopped demuxer (transport
+	// read error) never delivers, so fall back to the direct read below.
 	demux := w.getDemuxer()
-	if demux != nil {
+	if demux != nil && demux.isRunning() {
 		ch := demux.registerRequest(data.UUID)
 		defer demux.unregisterRequest(data.UUID)
 
@@ -485,11 +554,7 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 			return nil, err
 		}
 
-		resp, ok := <-ch
-		if !ok || resp == nil {
-			return nil, fmt.Errorf("connection closed while waiting for response")
-		}
-		return resp, nil
+		return waitDemuxResponse(ctx, ch, demux)
 	}
 
 	if err := w.SendMessage(ctx, buf); err != nil {

@@ -23,8 +23,8 @@ type AppMesh struct {
 	mu sync.Mutex
 }
 
-// NewAppMeshClient creates and returns a new AppMesh client for interacting with a TCP server
-func NewAppMeshClient() *AppMesh {
+// NewAppMeshClient creates and returns a new AppMesh client for interacting with a TCP server.
+func NewAppMeshClient() (*AppMesh, error) {
 	// Replace '0.0.0.0' with '127.0.0.1' to ensure correct loopback address
 	targetHost := strings.Replace(config.ConfigData.REST.RestListenAddress, "0.0.0.0", "127.0.0.1", 1)
 	uri := url.URL{
@@ -34,16 +34,22 @@ func NewAppMeshClient() *AppMesh {
 
 	client := &AppMesh{}
 	var err error
-	client.AppMeshClientTCP, err = appmesh.NewTCPClient(appmesh.Option{
+	opt := appmesh.Option{
 		AppMeshUri:                  uri.String(),
-		SslTrustedCA:                &config.ConfigData.REST.SSL.SSLCaPath,
 		SslClientCertificateFile:    config.ConfigData.REST.SSL.SSLClientCertificateFile,
 		SslClientCertificateKeyFile: config.ConfigData.REST.SSL.SSLClientCertificateKeyFile,
-	})
-	if err != nil {
-		logger.Fatalf("Failed to establish TCP connection for cloud operator: %v", err)
 	}
-	return client
+	// Empty configured CA path = verification disabled; the SDK requires the explicit insecure flag for that.
+	if caPath := config.ConfigData.REST.SSL.SSLCaPath; caPath != "" {
+		opt.SslTrustedCA = &caPath
+	} else {
+		opt.InsecureSkipVerify = true
+	}
+	client.AppMeshClientTCP, err = appmesh.NewTCPClient(opt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to establish TCP connection for cloud operator: %w", err)
+	}
+	return client, nil
 }
 
 // GetHostResources retrieves cloud resources via a TCP request

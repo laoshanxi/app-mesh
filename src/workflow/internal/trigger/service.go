@@ -28,6 +28,7 @@ type Service struct {
 	events       *EventListener
 	checkpoint   *Checkpoint
 	wdir         *workdir.Manager
+	identities   *IdentityManager // execution_identity credential store (ADR 0004)
 
 	mu          sync.Mutex
 	cancelFns   map[string]context.CancelFunc
@@ -49,6 +50,7 @@ func NewService(client *appmesh.AppMeshClient, serverURI string, clusterNodes []
 		activeSteps:  make(map[string]*engine.ActiveSteps),
 		checkpoint:   NewCheckpoint(wdir),
 		wdir:         wdir,
+		identities:   NewIdentityManager(serverURI, nil),
 	}
 	s.events = NewEventListener(client, s.registry, s.triggerRun)
 	return s
@@ -70,14 +72,15 @@ func (s *Service) Run(ctx context.Context) {
 				logger.Error("TRIGGER cannot resume workflow '" + rec.Workflow + "': not found")
 				continue
 			}
-			// A manual run carried the triggering caller's token in memory only; after a
-			// restart it cannot be re-acquired, and resuming under the engine identity
-			// would be a privilege escalation. Fail closed and let the owner re-trigger.
-			// Automatic runs (event/cron) always ran as the engine, so they resume safely.
-			if rec.Source == "manual" {
+			// Only workflows with an execution_identity can re-derive an execution
+			// token after a restart (re-login from stored credentials). Without one
+			// there is no token — manual caller tokens live in memory only — and
+			// resuming under the engine identity would be privilege escalation, so
+			// fail closed and require a re-trigger.
+			if wf.ExecutionIdentity == "" {
 				s.checkpoint.MarkComplete(rec.Workflow, rec.RunID, "cancelled")
 				s.wdir.UpdateRunInIndex(rec.Workflow, rec.RunID, "cancelled", 0)
-				logger.Info(fmt.Sprintf("TRIGGER not resuming manual run %s/%s after restart (re-run required)", rec.Workflow, rec.RunID))
+				logger.Info(fmt.Sprintf("TRIGGER not resuming run %s/%s after restart: no execution_identity (re-run required)", rec.Workflow, rec.RunID))
 				continue
 			}
 			completedJobs := s.checkpoint.CompletedJobs(rec.Workflow, rec.RunID)
@@ -99,6 +102,7 @@ func (s *Service) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			s.events.Cleanup()
+			s.identities.Close()
 			logger.Info("TRIGGER service stopped")
 			return
 		case <-scanTicker.C:
@@ -120,6 +124,40 @@ func (s *Service) Registry() *Registry { return s.registry }
 // SetReAuth sets the callback for re-authentication on token expiry.
 func (s *Service) SetReAuth(fn func() error) {
 	s.reAuth = fn
+}
+
+// SetExecIdentities installs the execution_identity credential store (parsed
+// from the engine's APPMESH_EXEC_IDENTITIES secured env var). Call once at
+// startup before Run.
+func (s *Service) SetExecIdentities(creds map[string]string) {
+	s.identities = NewIdentityManager(s.serverURI, creds)
+}
+
+// IsKnownIdentity reports whether the engine holds a credential for the given
+// execution identity. Used by workflow_add to reject definitions that name an
+// identity the engine cannot authenticate as.
+func (s *Service) IsKnownIdentity(name string) bool {
+	return s.identities.Known(name)
+}
+
+// errExecIdentityRequired: a run with neither an execution_identity nor a caller
+// token fails closed rather than executing under the engine's own (privileged) identity.
+var errExecIdentityRequired = fmt.Errorf("execution_identity required: automatic-triggered workflows must set execution_identity")
+
+// resolveExecToken determines the token a run's steps execute under:
+//   - workflow declares execution_identity → the engine logs in as that identity;
+//   - else a caller token is present (manual run) → run under the caller (Phase 2);
+//   - else (automatic trigger, no identity) → fail closed.
+//
+// The engine's own identity is never used to execute steps.
+func (s *Service) resolveExecToken(wf *models.Workflow, callerToken string) (string, error) {
+	if wf.ExecutionIdentity != "" {
+		return s.identities.TokenFor(wf.ExecutionIdentity)
+	}
+	if callerToken != "" {
+		return callerToken, nil
+	}
+	return "", errExecIdentityRequired
 }
 
 // stepStateToAny serializes a checkpointed StepState into the engine's
@@ -206,7 +244,7 @@ func (s *Service) cleanOrphanedStepApps() {
 	count := 0
 	for _, app := range apps {
 		if strings.HasPrefix(app.Name, executor.StepAppPrefix) {
-			s.client.RemoveApp(app.Name)
+			s.client.DeleteApp(app.Name)
 			count++
 		}
 	}
@@ -216,7 +254,9 @@ func (s *Service) cleanOrphanedStepApps() {
 }
 
 // triggerRun creates a run with no caller token (automatic event/cron triggers).
-// Such runs execute under the engine's own identity (no caller to impersonate).
+// Such runs execute under the workflow's execution_identity; if none is declared
+// the run fails closed at launch (see resolveExecToken) — the engine never runs
+// steps under its own identity.
 func (s *Service) triggerRun(wf *models.Workflow, source string, inputs map[string]string) (string, string) {
 	return s.triggerRunToken(wf, source, inputs, "", "")
 }
@@ -316,37 +356,15 @@ func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, in
 	} else {
 		s.runMgr.MarkRunning("", runID)
 	}
-	// Crash-recovered runs have no caller token (it is never persisted), so they run
-	// under the engine identity. Acceptable: recovery is rare and bounded.
+	// Crash-recovered runs have no caller token (it is never persisted). Only runs
+	// with an execution_identity reach here (see the resume guard in Run); launchRun
+	// re-derives their token from that identity's stored credentials.
 	s.launchRun(wf, runID, group, source, inputs, completedJobs, recoveredSteps, "")
 }
 
 func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, inputs map[string]string, completedJobs map[string]string, recoveredSteps map[string]map[string]map[string]any, token string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	active := engine.NewActiveSteps(s.client, s.serverURI)
-
-	// Steps run under the caller's identity (Phase 2): build a caller-scoped client
-	// from the token and use it for execution. Control-plane work (registry, app
-	// cleanup via ActiveSteps) stays on the engine client. Falls back to the engine
-	// client when there is no token (automatic / recovered runs).
-	execClient := s.client
-	var callerTCP *appmesh.AppMeshClientTCP
-	if token != "" {
-		noVerify := ""
-		if c, err := appmesh.NewTCPClient(appmesh.Option{
-			AppMeshUri:   s.serverURI,
-			JwtToken:     token,
-			SslTrustedCA: &noVerify,
-		}); err == nil {
-			// Parallel jobs in a run share this client; enable the demuxer so their
-			// concurrent step calls can't cross-wire responses on the shared socket.
-			c.EnableConcurrency()
-			callerTCP = c
-			execClient = c.AppMeshClient
-		} else {
-			logger.Error(fmt.Sprintf("run=%s: caller client failed, falling back to engine identity: %v", runID, err))
-		}
-	}
 
 	s.mu.Lock()
 	s.cancelFns[runID] = cancel
@@ -367,6 +385,7 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 		var (
 			finalStatus = "failure"
 			dur         float64
+			callerTCP   *appmesh.AppMeshClientTCP
 		)
 		defer func() {
 			if r := recover(); r != nil {
@@ -430,6 +449,38 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			inputs = make(map[string]string)
 		}
 
+		// Resolve the token this run's steps execute under (ADR 0004).
+		execToken, ierr := s.resolveExecToken(wf, token)
+		if ierr != nil {
+			msg := fmt.Sprintf("run=%s cannot start: %v", runID, ierr)
+			logger.Error("TRIGGER " + msg)
+			if runLog != nil {
+				runLog.Error(msg)
+			}
+			return // defer marks the run failed and promotes the queue
+		}
+
+		// Execution-scoped client for steps; control-plane work stays on the engine client.
+		execClient := s.client
+		if c, err := appmesh.NewTCPClient(appmesh.Option{
+			AppMeshUri:         s.serverURI,
+			JwtToken:           execToken,
+			InsecureSkipVerify: true,
+		}); err == nil {
+			// Parallel jobs in a run share this client; enable the demuxer so their
+			// concurrent step calls can't cross-wire responses on the shared socket.
+			c.EnableConcurrency()
+			callerTCP = c
+			execClient = c.AppMeshClient
+		} else {
+			msg := fmt.Sprintf("run=%s: execution client failed: %v", runID, err)
+			logger.Error("TRIGGER " + msg)
+			if runLog != nil {
+				runLog.Error(msg)
+			}
+			return
+		}
+
 		start := time.Now()
 		var log logger.Log
 		if runLog != nil {
@@ -439,7 +490,7 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 		code, _ := engine.RunWithContext(ctx, wf, execClient, inputs, runID, 0, engine.Options{
 			ClusterNodes:    s.clusterNodes,
 			ServerURI:       s.serverURI,
-			CallerToken:     token,  // injected only into forward_token message payloads
+			CallerToken:     execToken, // identity forwarded into forward_token message payloads
 			CompletedJobs:   completedJobs,
 			RecoveredSteps:  recoveredSteps,
 			Log:             log,
@@ -541,14 +592,22 @@ func (s *Service) CancelByWorkflow(wfName string) {
 	}
 }
 
-// CancelByRunID cancels a running workflow by its run ID.
+// CancelByRunID cancels a running workflow by its run ID. A run still queued
+// on its concurrency group has no cancel context yet, so it is removed from
+// the queue and finalized directly.
 func (s *Service) CancelByRunID(runID string) error {
 	s.mu.Lock()
 	_, ok := s.cancelFns[runID]
 	s.mu.Unlock()
-	if !ok {
-		return fmt.Errorf("run '%s' not found or not running", runID)
+	if ok {
+		s.cancelRun(runID)
+		return nil
 	}
-	s.cancelRun(runID)
-	return nil
+	if wfName, queued := s.runMgr.RemoveQueued(runID); queued {
+		s.checkpoint.MarkComplete(wfName, runID, "cancelled")
+		s.wdir.UpdateRunInIndex(wfName, runID, "cancelled", 0)
+		logger.Info(fmt.Sprintf("TRIGGER cancelled queued run=%s", runID))
+		return nil
+	}
+	return fmt.Errorf("run '%s' not found or not running", runID)
 }

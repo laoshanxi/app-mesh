@@ -50,8 +50,8 @@ macro_rules! hmap {
 pub struct HTTPRequester {
     url: String,
     client: ReqwestClient,
-    pub persistent_jar: Option<PersistentJar>,
-    pub cookie_jar: Arc<Jar>,
+    pub(crate) persistent_jar: Option<PersistentJar>,
+    pub(crate) cookie_jar: Arc<Jar>,
     forward_to: Arc<Mutex<Option<String>>>,
 }
 
@@ -74,34 +74,46 @@ impl HTTPRequester {
         };
 
         let timeout = timeout.unwrap_or(Duration::from_secs(60));
+        // reqwest uses `rustls-no-provider`; install a process-default provider to avoid panics.
+        crate::tls_config::ensure_crypto_provider();
         let mut client_builder = ReqwestClient::builder()
             .cookie_provider(cookie_jar.clone())
             .timeout(timeout);
 
-        // SSL setup
-        if danger_accept_invalid_certs {
+        // SSL setup. Verification is disabled only on explicit intent (danger
+        // flag or the legacy empty CA path). A configured-but-missing CA is a hard
+        // error; auto uses the App Mesh CA bundle if installed, else system CAs.
+        if danger_accept_invalid_certs || ssl_verify.as_deref() == Some("") {
             client_builder = client_builder.danger_accept_invalid_certs(true);
         } else {
-            let ca_path = ssl_verify.unwrap_or_else(|| DEFAULT_SSL_CA_CERT_PATH.to_string());
-            if let Ok(cert_bytes) = std::fs::read(&ca_path) {
-                if let Ok(cert) = reqwest::Certificate::from_pem(&cert_bytes) {
-                    client_builder = client_builder.add_root_certificate(cert);
-                }
-            } else {
-                // CA file not found, skip verification
-                client_builder = client_builder.danger_accept_invalid_certs(true);
+            let ca_path = ssl_verify.or_else(|| {
+                std::path::Path::new(DEFAULT_SSL_CA_CERT_PATH)
+                    .exists()
+                    .then(|| DEFAULT_SSL_CA_CERT_PATH.to_string())
+            });
+            if let Some(ca_path) = ca_path {
+                let cert_bytes = std::fs::read(&ca_path).map_err(|e| {
+                    AppMeshError::ConfigurationError(format!("Failed to read CA certificate '{}': {}", ca_path, e))
+                })?;
+                let cert = reqwest::Certificate::from_pem(&cert_bytes).map_err(|e| {
+                    AppMeshError::ConfigurationError(format!("Invalid CA certificate '{}': {}", ca_path, e))
+                })?;
+                client_builder = client_builder.add_root_certificate(cert);
             }
         }
 
         if let Some((cert, key)) = &ssl_client_cert {
-            if let (Ok(cert_content), Ok(key_content)) =
-                (std::fs::read_to_string(cert), std::fs::read_to_string(key))
-            {
-                let pem = format!("{}\n{}", cert_content, key_content);
-                if let Ok(identity) = reqwest::Identity::from_pem(pem.as_bytes()) {
-                    client_builder = client_builder.identity(identity);
-                }
-            }
+            let cert_content = std::fs::read_to_string(cert).map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Failed to read client certificate '{}': {}", cert, e))
+            })?;
+            let key_content = std::fs::read_to_string(key).map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Failed to read client key '{}': {}", key, e))
+            })?;
+            let pem = format!("{}\n{}", cert_content, key_content);
+            let identity = reqwest::Identity::from_pem(pem.as_bytes()).map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e))
+            })?;
+            client_builder = client_builder.identity(identity);
         }
 
         Ok(Self {
@@ -146,15 +158,14 @@ impl HTTPRequester {
             .entry(HTTP_HEADER_KEY_USER_AGENT.to_string())
             .or_insert_with(|| HTTP_USER_AGENT.to_string());
 
-        if let Ok(forward_to) = self.forward_to.lock() {
-            if let Some(forward_to) = forward_to.as_ref() {
-                let forward_host = if forward_to.contains(':') {
-                    forward_to.clone()
-                } else {
-                    format!("{}:{}", forward_to, Self::parse_url_port(&self.url))
-                };
-                headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.to_string(), forward_host);
-            }
+        // Poisoning is benign here (guarded state stays valid), so recover the guard.
+        if let Some(forward_to) = self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            let forward_host = if forward_to.contains(':') {
+                forward_to.clone()
+            } else {
+                format!("{}:{}", forward_to, Self::parse_url_port(&self.url))
+            };
+            headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.to_string(), forward_host);
         }
 
         if let Some(csrf_token) = self.get_cookie(COOKIE_CSRF_TOKEN) {
@@ -225,9 +236,7 @@ impl Requester for HTTPRequester {
     }
 
     fn set_forward_to(&self, url: Option<String>) {
-        if let Ok(mut forward) = self.forward_to.lock() {
-            *forward = url;
-        }
+        *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) = url;
     }
 
     fn handle_token_update(&self, _token: Option<String>) {
@@ -255,7 +264,7 @@ impl Requester for HTTPRequester {
 
 /// Main AppMesh client for interacting with the AppMesh service.
 ///
-/// Construct via [`crate::ClientBuilder`] (recommended) or [`AppMeshClient::new`].
+/// Construct via [`crate::ClientBuilder`].
 pub struct AppMeshClient {
     pub(crate) req: Box<dyn Requester>,
     url: String,
@@ -278,8 +287,9 @@ impl std::fmt::Debug for AppMeshClient {
 // -- Construction -----------------------------------------------------------
 
 impl AppMeshClient {
-    /// Create a new HTTP-backed client.
-    pub fn new(
+    /// Create a new HTTP-backed client (crate-internal; public construction
+    /// goes through [`crate::ClientBuilder`], which validates inputs).
+    pub(crate) fn new(
         url: Option<String>,
         ssl_verify: Option<String>,
         ssl_client_cert: Option<(String, String)>,
@@ -299,7 +309,7 @@ impl AppMeshClient {
     }
 
     /// Create an `AppMeshClient` with a custom [`Requester`] (for TCP / WSS).
-    pub fn with_requester(requester: Box<dyn Requester>, url: String) -> Arc<Self> {
+    pub(crate) fn with_requester(requester: Box<dyn Requester>, url: String) -> Arc<Self> {
         Arc::new(Self {
             req: requester,
             url,
@@ -313,7 +323,7 @@ impl AppMeshClient {
         self.auto_refresh.store(enable, Ordering::Relaxed);
         if !enable {
             self.cancel_refresh_task();
-        } else if self.get_stored_token().is_some() {
+        } else if self.get_access_token().is_some() {
             self.schedule_token_refresh();
         }
     }
@@ -326,15 +336,13 @@ impl AppMeshClient {
 
     /// Cancel the running refresh task, if any.
     fn cancel_refresh_task(&self) {
-        if let Ok(mut handle) = self.refresh_handle.lock() {
-            if let Some(h) = handle.take() {
-                h.abort();
-            }
+        if let Some(h) = self.refresh_handle.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            h.abort();
         }
     }
 
     /// Set the cluster forwarding host.
-    pub fn forward_to(&self, url: Option<String>) {
+    pub fn set_forward_to(&self, url: Option<String>) {
         self.req.set_forward_to(url);
     }
 
@@ -451,7 +459,7 @@ impl AppMeshClient {
 
     /// Set a JWT token directly without server-side verification.
     /// Use when the token is already known to be valid.
-    /// For server-side verification, use [`authenticate()`] instead.
+    /// For server-side verification, use [`Self::authenticate`] instead.
     pub fn set_token(self: &Arc<Self>, token: &str) {
         let cookie_str = format!("{}={}", COOKIE_TOKEN, token);
         self.req.set_cookie(&cookie_str);
@@ -462,6 +470,9 @@ impl AppMeshClient {
     }
 
     /// Verify the supplied JWT token with the server and optionally update this client session.
+    ///
+    /// Returns `(bool, String)` where the bool is `true` only for HTTP 200 and
+    /// the String is the raw response body (diagnostic text on failure).
     pub async fn authenticate(
         &self,
         token: &str,
@@ -547,9 +558,7 @@ impl AppMeshClient {
             debug!("Auto-refresh: background task exiting");
         });
 
-        if let Ok(mut h) = self.refresh_handle.lock() {
-            *h = Some(handle);
-        }
+        *self.refresh_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
     }
 
     /// Compute how long to sleep before the next refresh attempt.
@@ -561,7 +570,7 @@ impl AppMeshClient {
     fn compute_refresh_delay(client: &AppMeshClient) -> Duration {
         let default_interval = Duration::from_secs(TOKEN_REFRESH_INTERVAL_SECS);
 
-        let Some(jwt_str) = client.get_stored_token() else {
+        let Some(jwt_str) = client.get_access_token() else {
             return default_interval;
         };
 
@@ -590,11 +599,6 @@ impl AppMeshClient {
         }
     }
 
-    /// Retrieve the current access token from the underlying transport.
-    fn get_stored_token(&self) -> Option<String> {
-        self.req.get_access_token()
-    }
-
     /// Decode the `exp` field from a JWT without signature verification.
     ///
     /// JWT format: `header.payload.signature` — we only decode the payload (part 1).
@@ -615,8 +619,19 @@ impl AppMeshClient {
     /// Get the raw TOTP secret for MFA setup.
     ///
     /// The server returns a base64-encoded provisioning URI; this helper extracts and returns
-    /// only the `secret` query parameter.
+    /// only the `secret` query parameter. Use [`Self::get_totp_uri`] for the full otpauth:// URI.
     pub async fn get_totp_secret(&self) -> Result<String> {
+        let totp_uri = self.fetch_totp_uri().await?;
+        Self::parse_totp_uri(&totp_uri)
+    }
+
+    /// Get the full `otpauth://` TOTP provisioning URI for MFA setup (e.g. for QR code generation).
+    pub async fn get_totp_uri(&self) -> Result<String> {
+        self.fetch_totp_uri().await
+    }
+
+    /// Fetch and base64-decode the TOTP provisioning URI from the server.
+    async fn fetch_totp_uri(&self) -> Result<String> {
         let resp = self.req.send(Method::POST, "/appmesh/totp/secret", None, None, None, true).await?;
 
         let val: Value = resp.json()?;
@@ -624,8 +639,7 @@ impl AppMeshClient {
             val[HTTP_BODY_KEY_MFA_URI].as_str().ok_or_else(|| AppMeshError::Other("Invalid MFA URI".into()))?;
 
         let decoded = base64::engine::general_purpose::STANDARD.decode(encoded)?;
-        let totp_uri = String::from_utf8_lossy(&decoded).to_string();
-        Self::parse_totp_uri(&totp_uri)
+        Ok(String::from_utf8_lossy(&decoded).to_string())
     }
 
     fn parse_totp_uri(uri: &str) -> Result<String> {
@@ -709,20 +723,17 @@ impl AppMeshClient {
 
     pub async fn list_groups(&self) -> Result<Vec<String>> {
         let resp = self.req.send(Method::GET, "/appmesh/user/groups", None, None, None, true).await?;
-        let json: Value = resp.json()?;
-        Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        json_string_array(&resp.json()?)
     }
 
     pub async fn get_user_permissions(&self) -> Result<Vec<String>> {
         let resp = self.req.send(Method::GET, "/appmesh/user/permissions", None, None, None, true).await?;
-        let json: Value = resp.json()?;
-        Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        json_string_array(&resp.json()?)
     }
 
     pub async fn list_permissions(&self) -> Result<Vec<String>> {
         let resp = self.req.send(Method::GET, "/appmesh/permissions", None, None, None, true).await?;
-        let json: Value = resp.json()?;
-        Ok(json.as_array().unwrap_or(&vec![]).iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        json_string_array(&resp.json()?)
     }
 
     pub async fn list_roles(&self) -> Result<HashMap<String, Vec<String>>> {
@@ -754,6 +765,13 @@ impl AppMeshClient {
     }
 }
 
+/// Parse a JSON array of strings, failing loudly on a malformed (non-array) body.
+fn json_string_array(json: &Value) -> Result<Vec<String>> {
+    json.as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .ok_or_else(|| AppMeshError::SerializationError(format!("Expected JSON array, got: {}", json)))
+}
+
 // -- Application Management -------------------------------------------------
 
 impl AppMeshClient {
@@ -777,7 +795,7 @@ impl AppMeshClient {
     /// process has already finished. `timeout` controls server-side long polling.
     pub async fn get_app_output(
         &self,
-        app: &str,
+        name: &str,
         stdout_position: i64,
         stdout_index: i32,
         stdout_maxsize: i32,
@@ -803,7 +821,7 @@ impl AppMeshClient {
 
         let resp = self
             .req
-            .send(Method::GET, &format!("/appmesh/app/{}/output", app), None, None, Some(query), false)
+            .send(Method::GET, &format!("/appmesh/app/{}/output", name), None, None, Some(query), false)
             .await?;
 
         // Now we can read headers *and* body without cloning, thanks to &self on ResponseExt
@@ -829,9 +847,9 @@ impl AppMeshClient {
     }
 
     /// Check application health (returns `true` if healthy).
-    pub async fn check_app_health(&self, app: &str) -> Result<bool> {
+    pub async fn check_app_health(&self, name: &str) -> Result<bool> {
         let resp =
-            self.req.send(Method::GET, &format!("/appmesh/app/{}/health", app), None, None, None, true).await?;
+            self.req.send(Method::GET, &format!("/appmesh/app/{}/health", name), None, None, None, true).await?;
         let text = resp.text()?;
         Ok(text.trim() == "0")
     }
@@ -874,7 +892,7 @@ impl AppMeshClient {
     /// When a `callback` is provided the underlying transport's message demuxer is
     /// enabled (TCP/WSS only) and the callback is registered for the returned
     /// subscription ID.  Events will be dispatched asynchronously until
-    /// [`unsubscribe`] is called.
+    /// [`Self::unsubscribe`] is called.
     pub async fn subscribe(
         &self,
         app_name: &str,
@@ -893,6 +911,7 @@ impl AppMeshClient {
         });
         // Enable demuxer and pre-register callback with a temporary key so events
         // arriving between server processing and response delivery are captured.
+        // (The "__pending_" prefix cannot collide with server-issued UUID sub ids.)
         let pending_key = format!("__pending_{}", uuid::Uuid::new_v4());
         if let Some(ref cb) = callback {
             self.req.enable_demuxer();
@@ -989,17 +1008,19 @@ impl AppMeshClient {
         Ok((code, resp.text()?))
     }
 
-    /// Convenience: run a shell command synchronously.
+    /// Convenience: run a shell command synchronously. No app name is sent, so
+    /// the daemon assigns a unique temporary name per call (matches the Python SDK).
     pub async fn run_sync(
         &self,
         command: &str,
         max_time: i32,
         lifecycle: i32,
     ) -> Result<(Option<i32>, String)> {
-        let app = Application::builder("_run_cmd_")
-            .command(command)
-            .shell(true)
-            .build();
+        let app = Application {
+            command: Some(command.to_string()),
+            shell: Some(true),
+            ..Default::default()
+        };
         self.run_app_sync(&app, max_time, lifecycle).await
     }
 
@@ -1036,21 +1057,31 @@ impl AppMeshClient {
         })
     }
 
-    /// Convenience: run a shell command asynchronously.
+    /// Convenience: run a shell command asynchronously. No app name is sent, so
+    /// the daemon assigns a unique temporary name per call (matches the Python
+    /// SDK); [`AppRun::app_name`] carries the server-assigned name.
     pub async fn run_async(
         self: &Arc<Self>,
         command: &str,
         max_time: i32,
         lifecycle: i32,
     ) -> Result<AppRun> {
-        let app = Application::builder("_run_cmd_")
-            .command(command)
-            .shell(true)
-            .build();
+        let app = Application {
+            command: Some(command.to_string()),
+            shell: Some(true),
+            ..Default::default()
+        };
         self.run_app_async(&app, max_time, lifecycle).await
     }
 
     /// Wait for an async run to complete, optionally invoking a callback with incremental stdout.
+    /// Uses the subscribe-based wait on TCP/WSS; HTTP falls back to polling.
+    ///
+    /// Returns:
+    /// - `Ok(Some(code))` — process exited (code may be negative for signal kills)
+    /// - `Ok(None)` — caller-side timeout
+    /// - `Err(AppMeshError::AppRemoved)` — app removed before EXIT was observed
+    /// - `Err(AppMeshError::TransportDisconnected)` — TCP/WSS connection lost
     ///
     /// On success, this method makes a best-effort attempt to delete the temporary run app.
     pub async fn wait_for_async_run(
@@ -1059,6 +1090,10 @@ impl AppMeshClient {
         stdout_handler: OutputHandler,
         timeout: i32,
     ) -> Result<Option<i32>> {
+        if self.req.supports_demuxer() {
+            return crate::wait_subscribe::wait_for_async_run_subscribe(self, run, stdout_handler, timeout).await;
+        }
+
         let mut last_output_position = 0i64;
         let start_time = std::time::Instant::now();
 
@@ -1094,22 +1129,22 @@ impl AppMeshClient {
     }
 
     /// Run a task by sending JSON data to a running app and returning its response body.
-    pub async fn run_task(&self, app: &str, data: Value, timeout: i32) -> Result<String> {
+    pub async fn run_task(&self, name: &str, data: Value, timeout: i32) -> Result<String> {
         let timeout = if timeout <= 0 { 300 } else { timeout };
         let query = hmap! { HTTP_QUERY_KEY_TIMEOUT => timeout };
         let body_bytes = serde_json::to_vec(&data)?;
 
         let resp = self
             .req
-            .send(Method::POST, &format!("/appmesh/app/{}/task", app), Some(&body_bytes), None, Some(query), true)
+            .send(Method::POST, &format!("/appmesh/app/{}/task", name), Some(&body_bytes), None, Some(query), true)
             .await?;
         resp.text()
     }
 
     /// Cancel a running task.
-    pub async fn cancel_task(&self, app: &str) -> Result<bool> {
+    pub async fn cancel_task(&self, name: &str) -> Result<bool> {
         let resp =
-            self.req.send(Method::DELETE, &format!("/appmesh/app/{}/task", app), None, None, None, false).await?;
+            self.req.send(Method::DELETE, &format!("/appmesh/app/{}/task", name), None, None, None, false).await?;
         Ok(resp.status() == StatusCode::OK)
     }
 }

@@ -44,7 +44,11 @@
 // Protocol constants
 static constexpr size_t TCP_HEADER_SIZE = TCP_MESSAGE_HEADER_LENGTH;
 static constexpr uint32_t TCP_MAGIC = TCP_MESSAGE_MAGIC;
-static constexpr size_t TCP_MAX_BODY_SIZE = TCP_MAX_BLOCK_SIZE;
+// Enforced single-RPC-message cap for BOTH send and recv (matches every SDK's
+// TCP_MAX_BLOCK_SIZE = 1 GB). Files go in ~16 KB chunks, so this bounds one message,
+// not file size. Recv buffers this fully pre-auth → bounds the per-connection pre-auth
+// allocation (see the DoS residual in docs/comm-layer-bugfix-summary.md).
+static constexpr size_t TCP_MAX_RECV_BODY_SIZE = 1024UL * 1024 * 1024;
 
 // Network byte order helpers
 inline uint32_t host_to_net32(uint32_t x) { return ACE_HTONL(x); }
@@ -134,9 +138,9 @@ public:
 			return false;
 		}
 
-		if (len > TCP_MAX_BODY_SIZE)
+		if (len > TCP_MAX_RECV_BODY_SIZE)
 		{
-			LOG_ERR << fname << "Message body too large: " << len << ", maximum allowed: " << TCP_MAX_BODY_SIZE;
+			LOG_ERR << fname << "Message body too large: " << len << ", maximum allowed: " << TCP_MAX_RECV_BODY_SIZE;
 			return false;
 		}
 

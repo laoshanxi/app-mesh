@@ -7,15 +7,20 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
-const TCP_CONNECT_TIMEOUT_SECONDS = 10
+const tcpConnectTimeoutSeconds = 10
+
+// caSystemTrust is an internal CA-path sentinel meaning "verify against the
+// system trust store" (tls.Config.RootCAs left nil). Produced when SslTrustedCA
+// is nil and the default App Mesh CA is absent. Distinct from "" (skip-verify).
+const caSystemTrust = "<system>"
 
 // IsFileExist checks if the file at the given path exists.
 func IsFileExist(path string) bool {
@@ -44,6 +49,7 @@ func LoadCertificatePair(pem, key string) (tls.Certificate, error) {
 }
 
 // LoadCA loads a CA certificate, either from a single file or from a directory of certificates.
+// Wire/transport internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 func LoadCA(caPath string) (*x509.CertPool, error) {
 	// Check if the CA path exists.
 	if !IsFileExist(caPath) {
@@ -66,6 +72,7 @@ func LoadCA(caPath string) (*x509.CertPool, error) {
 }
 
 // LoadCACertificate loads a single CA certificate from a file and returns a CertPool containing it.
+// Wire/transport internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 func LoadCACertificate(certFile string) (*x509.CertPool, error) {
 	// Read the certificate file from the provided path.
 	caCrt, err := os.ReadFile(certFile)
@@ -86,6 +93,7 @@ func LoadCACertificate(certFile string) (*x509.CertPool, error) {
 }
 
 // LoadCACertificates loads multiple CA certificates from a directory.
+// Wire/transport internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 func LoadCACertificates(certDir string) (*x509.CertPool, error) {
 	// Create a new certificate pool.
 	caCertPool := x509.NewCertPool()
@@ -106,17 +114,18 @@ func LoadCACertificates(certDir string) (*x509.CertPool, error) {
 		// Build the full certificate path.
 		certPath := filepath.Join(certDir, file.Name())
 
-		// Read the certificate file.
+		// Read the certificate file. An unreadable CA file is a hard error:
+		// silently skipping it could weaken server verification.
 		certPEM, err := os.ReadFile(certPath)
 		if err != nil {
-			// Log an error and continue on failure to read a certificate.
-			fmt.Printf("failed to read file %s: %v", certPath, err)
-			continue
+			return nil, fmt.Errorf("failed to read CA file %s: %w", certPath, err)
 		}
 
-		// Try to append the certificate to the pool. Log a warning if it fails.
+		// The directory may hold non-certificate files (README, keys, .DS_Store);
+		// skip them so the valid CA certificates still load.
 		if ok := caCertPool.AppendCertsFromPEM(certPEM); !ok {
-			fmt.Printf("failed to append certificate from %s", certPath)
+			log.Printf("skipping %s: no PEM certificates found in file", certPath)
+			continue
 		}
 	}
 
@@ -135,17 +144,8 @@ func ParseURL(input string) (*url.URL, error) {
 		return nil, fmt.Errorf("input is empty")
 	}
 
-	// Regular expression to match IP addresses.
-	ipRegex := regexp.MustCompile(`^(\d{1,3}\.){3}\d{1,3}$`)
-
-	// Check if the input includes a scheme (e.g., "http://").
-	hasScheme := strings.Contains(input, "://")
-
-	// If the input is an IP address without a scheme, prefix it with "https://".
-	if ipRegex.MatchString(input) && !hasScheme {
-		input = "https://" + input
-	} else if !hasScheme {
-		// If no scheme is present, add "https://" as a default.
+	// If no scheme (e.g., "http://") is present, add "https://" as a default.
+	if !strings.Contains(input, "://") {
 		input = "https://" + input
 	}
 
@@ -168,17 +168,9 @@ func ParseURL(input string) (*url.URL, error) {
 	return parsedURL, nil
 }
 
-// MergeStringMaps merges two string maps, with values from the second map overwriting those in the first.
-func MergeStringMaps(map1, map2 map[string]string) {
-	// Copy all entries from map2 to map1
-	for key, value := range map2 {
-		map1[key] = value
-	}
-}
-
-// SetTcpNoDelay disables Nagle's algorithm for the given net.Conn,
+// setTCPNoDelay disables Nagle's algorithm for the given net.Conn,
 // and supports both TCP and TLS connections.
-func SetTcpNoDelay(conn net.Conn) error {
+func setTCPNoDelay(conn net.Conn) error {
 	var tcpConn *net.TCPConn
 
 	switch c := conn.(type) {
@@ -202,6 +194,8 @@ func SetTcpNoDelay(conn net.Conn) error {
 	return tcpConn.SetNoDelay(true)
 }
 
+// HtmlUnescapeBytes unescapes HTML entities in b, returning b unchanged when no entities are present.
+// Wire/transport internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 func HtmlUnescapeBytes(b []byte) []byte {
 	if !bytes.Contains(b, []byte{'&'}) {
 		return b

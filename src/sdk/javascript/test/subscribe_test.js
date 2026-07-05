@@ -5,7 +5,8 @@
  * Run: node test/subscribe_test.js
  */
 
-import { ResponseMessage, MessageDemuxer } from '../src/appmesh_tcp.js'
+import { AppMeshClientTCP, ResponseMessage, MessageDemuxer, EVENT_TYPE_DISCONNECTED } from '../src/appmesh_tcp.js'
+import { TransportDisconnectedError } from '../src/appmesh.js'
 
 let passed = 0
 let failed = 0
@@ -99,6 +100,7 @@ assert('MessageDemuxer routes event callbacks', () => {
   if (received.app_name !== 'test') throw new Error('Wrong app_name')
 })
 
+// Conformance S7 (partial, SDKContract.md): waiter registered before the response arrives is routed by UUID.
 await assertAsync('MessageDemuxer routes responses by UUID', async () => {
   const demuxer = new MessageDemuxer(null)
   const uuid = 'test-uuid-123'
@@ -141,6 +143,83 @@ assert('MessageDemuxer unregister removes callback', () => {
   demuxer.unregisterEventCallback('sub1')
   demuxer._dispatchEvent(makeEvent())
   if (callCount !== 1) throw new Error('Should not call after unregister')
+})
+
+// Conformance S2 (demuxer, SDKContract.md): transport EOF broadcasts the synthetic
+// __disconnected__ event to callbacks and rejects pending waiters instead of hanging.
+await assertAsync('MessageDemuxer disconnect broadcast unblocks waiters', async () => {
+  // Scripted mock transport: the only read fails, i.e. immediate EOF.
+  const transport = {
+    connected: () => true,
+    receiveMessage: () => Promise.reject(new Error('connection closed'))
+  }
+  const demuxer = new MessageDemuxer(transport)
+
+  let received = null
+  demuxer.registerEventCallback('sub-s2', (event) => { received = event })
+  const pending = demuxer.registerRequest('req-s2')
+  demuxer.start()
+
+  let rejection = null
+  try {
+    await pending
+  } catch (e) {
+    rejection = e
+  }
+  if (!(rejection instanceof TransportDisconnectedError)) {
+    throw new Error(`pending waiter should reject with TransportDisconnectedError, got ${rejection}`)
+  }
+  if (!received || received.event_type !== EVENT_TYPE_DISCONNECTED) {
+    throw new Error('registered callback did not receive the __disconnected__ broadcast')
+  }
+  if (received.subscription_id !== 'sub-s2') throw new Error('wrong subscription_id on disconnect event')
+})
+
+// Scripted client for the wait_for_async_run path (no network): injectEvent fires from
+// the backfill call, after subscribe registered the callback (event arriving mid-wait).
+function makeStubWaitClient () {
+  const stub = {
+    injectEvent: null,
+    deleted: false,
+    _cb: null,
+    async subscribe (name, events, cb) { stub._cb = cb; return { subscription_id: 'sub-1' } },
+    async get_app_output () {
+      if (stub._cb && stub.injectEvent) stub._cb(stub.injectEvent)
+      return { output: '', exitCode: null }
+    },
+    async unsubscribe () {},
+    async delete_app () { stub.deleted = true }
+  }
+  return stub
+}
+
+// Conformance S6 (SDKContract.md): a negative exit code (signal kill, e.g. -2 = SIGINT)
+// is returned as-is, never conflated with an error sentinel.
+await assertAsync('wait_for_async_run returns negative exit code as-is', async () => {
+  const stub = makeStubWaitClient()
+  stub.injectEvent = { event_type: 'EXIT', data: { exit_code: -2 } }
+  const code = await AppMeshClientTCP.prototype.wait_for_async_run.call(
+    stub, { appName: 'waitapp', procUid: 'proc-1' }, null, 5)
+  if (code !== -2) throw new Error(`expected exit code -2, got ${code}`)
+  if (!stub.deleted) throw new Error('run app must be deleted after a real observed exit')
+})
+
+// Conformance S2 (SDKContract.md): transport disconnect mid-wait throws
+// TransportDisconnectedError promptly instead of hanging.
+await assertAsync('wait_for_async_run disconnect unblocks with typed error', async () => {
+  const stub = makeStubWaitClient()
+  stub.injectEvent = { event_type: EVENT_TYPE_DISCONNECTED }
+  let thrown = null
+  try {
+    await AppMeshClientTCP.prototype.wait_for_async_run.call(
+      stub, { appName: 'waitapp', procUid: 'proc-1' }, null, 30)
+  } catch (e) {
+    thrown = e
+  }
+  if (!(thrown instanceof TransportDisconnectedError)) {
+    throw new Error(`expected TransportDisconnectedError, got ${thrown}`)
+  }
+  if (stub.deleted) throw new Error('must not delete the run app after a disconnect')
 })
 
 console.log(`\nResults: ${passed} passed, ${failed} failed`)

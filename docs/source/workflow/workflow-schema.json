@@ -14,12 +14,17 @@
     },
     "owner": {
       "type": "string",
-      "description": "User who owns this workflow. Execution identity for all steps."
+      "description": "Ignored by the engine (a YAML owner would be spoofable). Ownership is the authenticated registrant."
     },
     "permission": {
       "type": "integer",
       "minimum": 0,
-      "description": "Permission level. Same semantics as App Mesh App permission."
+      "description": "Copied to the workflow's App permission; not consulted by workflow authorization (owner/admin only)."
+    },
+    "execution_identity": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.@-]+$",
+      "description": "App Mesh user whose credentials the engine uses to run steps. The engine must hold this identity's credential (APPMESH_EXEC_IDENTITIES) and the registrant may bind only itself or (as a workflow admin) any configured identity. When omitted, manual runs use the caller's identity and automatic (event) triggers fail closed."
     },
     "on": {
       "$ref": "#/$defs/TriggerConfig"
@@ -99,7 +104,7 @@
         },
         "condition": {
           "type": "string",
-          "description": "Expression evaluated against event data. Available: exit_code, pid, status."
+          "description": "Expression evaluated against event data. Available: exit_code (alias: return_code)."
         }
       }
     },
@@ -285,7 +290,7 @@
         "timeout": {
           "type": "integer",
           "minimum": 0,
-          "description": "Max execution seconds. 0 = no limit."
+          "description": "Max execution seconds. 0/omitted = default (172800 for command/app/workflow steps, 300 for message steps)."
         },
         "retry": {
           "$ref": "#/$defs/RetryPolicy"

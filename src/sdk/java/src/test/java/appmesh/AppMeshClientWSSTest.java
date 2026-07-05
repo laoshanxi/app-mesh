@@ -1,3 +1,5 @@
+package appmesh;
+
 import static org.junit.jupiter.api.Assertions.*;
 import java.io.File;
 import java.io.IOException;
@@ -31,7 +33,8 @@ public class AppMeshClientWSSTest {
     @AfterEach
     public void tearDown() {
         if (client != null) {
-            client.logout();
+            // logout throws when no session is active; ignore in cleanup
+            try { client.logout(); } catch (Exception ignored) {}
             client.close();
             client = null;
         }
@@ -39,7 +42,7 @@ public class AppMeshClientWSSTest {
 
     @Test
     public void testWSSLoginAndApps() throws IOException {
-        String token = client.login(USERNAME, PASSWORD, null, "P1W", "");
+        String token = client.login(USERNAME, PASSWORD, null, "P1W", "").getToken();
         assertNotNull(token);
         assertFalse(token.isEmpty());
 
@@ -47,8 +50,8 @@ public class AppMeshClientWSSTest {
         assertNotNull(apps);
         LOGGER.info("WSS listApps count: " + apps.length());
 
-        Pair<Boolean, String> auth = client.authenticate(token, "app-view", "");
-        assertTrue(auth.getLeft());
+        AppMeshClient.AuthResult auth = client.authenticate(token, "app-view", "");
+        assertTrue(auth.isSuccess());
     }
 
     @Test
@@ -97,7 +100,7 @@ public class AppMeshClientWSSTest {
 
         try { client.deleteLabel("wss_tag"); } catch (Exception ignored) {}
         assertTrue(client.addLabel("wss_tag", "wss_val"));
-        Map<String, String> labels = client.getLabels();
+        Map<String, String> labels = client.listLabels();
         assertEquals("wss_val", labels.get("wss_tag"));
         assertTrue(client.deleteLabel("wss_tag"));
     }

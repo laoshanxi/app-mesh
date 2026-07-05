@@ -63,7 +63,11 @@ async def _run(prompt: str, options, stream: StreamFn) -> Result:
                 if isinstance(block, TextBlock) and block.text:
                     text.append(block.text)
                     if stream:
-                        stream(block.text)
+                        # A dead stream sink (e.g. broken pipe) must not abort an otherwise-good turn.
+                        try:
+                            stream(block.text)
+                        except Exception:
+                            log.warning("stream callback failed; continuing without streaming", exc_info=True)
         elif isinstance(msg, ResultMessage):
             usage = getattr(msg, "usage", None) or {}
             res.turn_tokens = int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)

@@ -20,3 +20,11 @@ class AppMeshTimeoutError(AppMeshConnectionError):
 
 class AppMeshRequestError(AppMeshError):
     """HTTP request failed."""
+
+
+class AppMeshAppRemovedError(AppMeshError):
+    """The application was removed before its process exit was observed."""
+
+
+class AppMeshProcessSupersededError(AppMeshError):
+    """The current process key was superseded by a newer process instance (HTTP 412)."""

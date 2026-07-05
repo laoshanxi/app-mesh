@@ -11,12 +11,11 @@ import (
 )
 
 func TestAppmeshTCPFile(t *testing.T) {
-	noVerify := ""
-	client, err := NewTCPClient(Option{SslTrustedCA: &noVerify})
+	client, err := NewTCPClient(Option{InsecureSkipVerify: true})
 	fmt.Println(err)
 	require.Nil(t, err)
 
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err)
 
 	var remotePath, localFile, tempFile string
@@ -33,21 +32,20 @@ func TestAppmeshTCPFile(t *testing.T) {
 	_ = os.Remove(localFile)
 	_ = os.Remove(tempFile)
 
-	require.Nil(t, client.FileDownload(remotePath, localFile, true))
-	// require.Nil(t, client.FileUpload(localFile, tempFile, true))
+	require.Nil(t, client.DownloadFile(remotePath, localFile, true))
+	// require.Nil(t, client.UploadFile(localFile, tempFile, true))
 
 	_ = os.Remove(localFile)
 	_ = os.Remove(tempFile)
 }
 
 func TestAppmeshTCPOperations(t *testing.T) {
-	noVerify := ""
-	client, err := NewTCPClient(Option{SslTrustedCA: &noVerify})
+	client, err := NewTCPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	defer client.CloseConnection()
 
 	// 1. Login
-	_, err = client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
 	require.NoError(t, err, "TCP login should succeed")
 
 	// 2. ListApps - verify count > 0
@@ -82,7 +80,7 @@ func TestAppmeshTCPOperations(t *testing.T) {
 	require.NotEmpty(t, cfg, "TCP GetConfig should return non-empty data")
 	t.Logf("TCP GetConfig keys: %d", len(cfg))
 
-	// 6. AddLabel / GetLabels / DeleteLabel
+	// 6. AddLabel / ListLabels / DeleteLabel
 	const tagName = "go-tcp-test-tag"
 	const tagValue = "tcp-test-value"
 
@@ -90,17 +88,17 @@ func TestAppmeshTCPOperations(t *testing.T) {
 	require.NoError(t, err, "TCP AddLabel should succeed")
 	require.True(t, added, "TCP AddLabel should return true")
 
-	tags, err := client.GetLabels()
-	require.NoError(t, err, "TCP GetLabels should succeed")
-	require.Equal(t, tagValue, tags[tagName], "TCP GetLabels should contain the added label with correct value")
-	t.Logf("TCP GetLabels: %v", tags)
+	tags, err := client.ListLabels()
+	require.NoError(t, err, "TCP ListLabels should succeed")
+	require.Equal(t, tagValue, tags[tagName], "TCP ListLabels should contain the added label with correct value")
+	t.Logf("TCP ListLabels: %v", tags)
 
 	deleted, err := client.DeleteLabel(tagName)
 	require.NoError(t, err, "TCP DeleteLabel should succeed")
 	require.True(t, deleted, "TCP DeleteLabel should return true")
 
-	tagsAfter, err := client.GetLabels()
-	require.NoError(t, err, "TCP GetLabels after delete should succeed")
+	tagsAfter, err := client.ListLabels()
+	require.NoError(t, err, "TCP ListLabels after delete should succeed")
 	_, stillPresent := tagsAfter[tagName]
 	require.False(t, stillPresent, "TCP label should be absent after deletion")
 
