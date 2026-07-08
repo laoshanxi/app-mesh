@@ -155,11 +155,52 @@ the daemon (rather than talking to Keycloak directly) use it as follows:
   revokes the Keycloak session server-side (end-session endpoint) in addition to the local
   blacklist. Without the header, only the local session is revoked.
 
+#### User profile resolution (admin API)
+
+Some operations need a user *profile* object (not just authorization), e.g. resolving an
+application owner, deciding the run-as OS user, and serving `GET /appmesh/user/self`. A
+Keycloak identity is resolved through the Keycloak **admin API**, so users do **not** need to
+be duplicated in the local `security.yaml`.
+
+* **Resolution order:** a user also defined locally in `security.yaml` wins (this lets you keep
+  a local `exec_user` override for that name); otherwise the profile is fetched from Keycloak
+  and cached (~5 min).
+* **What is populated (display only):** `email`, the first Keycloak `group`, and this client's
+  role-mappings as `roles`. Per-request **authorization still uses the token** (`resource_access`),
+  never this profile — so the profile is informational (it drives `user/self` and owner/group
+  fields), and stale/empty roles here cannot grant or deny access.
+* **Run-as user:** unless a matching local user defines `exec_user`, apps run as the configured
+  default OS user (`DefaultExecUser`), not a per-Keycloak-user mapping.
+
+To enable the admin lookups the client must be usable as a service account:
+
+1. **Client authentication = On** (confidential client) and **Service accounts roles = On**
+   (enables the `client_credentials` grant).
+2. Grant the client's **service account** these `realm-management` client roles:
+   * `view-users` — read the user, their groups, and their client role-mappings.
+   * `view-clients` — resolve the client's internal id used for the role-mapping lookup.
+3. Provide the client secret via `APPMESH_Keycloak_client_secret` (see below).
+
+**Graceful degradation:** if no client secret is configured or the service account lacks the
+roles above, profile resolution falls back to a **name-only** user (so an authenticated
+identity never breaks owner/exec-user resolution). A username that genuinely does not exist in
+Keycloak still returns `404`.
+
+> **Secret injection:** the client secret is read from the `APPMESH_Keycloak_client_secret`
+> environment variable (it overrides the `client_secret` value in `oauth2.yaml`). Leave the
+> YAML value empty and inject the secret via the environment so it is not committed.
+
 #### Limitations
 
 * **Signing algorithms:** asymmetric RS/ES/PS families (RS256/384/512, ES256/384/512,
   PS256/384/512) are accepted. HMAC (`HS*`) and `none` are rejected by design to prevent
   algorithm-confusion forgery.
+* **User management in OAuth2 mode:** `add/delete/lock/unlock/change-password` and TOTP setup
+  act on the interim local store, not Keycloak. Manage those in Keycloak; the local endpoints
+  are not authoritative for Keycloak identities.
+* **Secured env encryption:** a Keycloak-owned application's encrypted environment variables are
+  keyed from local password material, which a Keycloak-only user does not have. Prefer a
+  locally-defined owner for apps that rely on encrypted env vars.
 
 ## REST
 
@@ -179,6 +220,33 @@ App Mesh supports two JWT signing algorithms:
 * RS256 - Uses public and private PEM key files for signing
 * ES256 - Uses public and private PEM key files with ECDSA algrithom
 
+
+### Cookie Authentication & CSRF
+
+Browsers may authenticate with a cookie: sending `X-Set-Cookie: true` on login makes the
+server issue the JWT as an `appmesh_auth_token` cookie (HttpOnly, Secure, SameSite=Strict).
+Programmatic SDK clients use the `Authorization: Bearer` header instead and are not affected by
+anything in this section.
+
+CSRF protection for cookie auth is enforced **in the daemon**, uniformly across all transports
+(HTTP, WebSocket, and agent-proxied TCP) — the agent/SDKs need no special CSRF handling:
+
+* **Baseline:** `SameSite=Strict` keeps the auth cookie off cross-site requests.
+* **Origin check:** a cookie-authenticated state-changing request (POST/PUT/DELETE) must be
+  same-origin, or carry an `Origin` listed in `REST.CsrfAllowedOrigins` (config.yaml, or the
+  `APPMESH_REST_CsrfAllowedOrigins` env override). Cross-origin cookie requests are rejected
+  with `403`. The `Origin` header is set by the browser and cannot be forged by cross-site
+  page script, which makes it a reliable CSRF signal; non-browser clients send no cookie and
+  are exempt.
+
+**When to configure `CsrfAllowedOrigins`:** only when the browser UI runs on a *different origin*
+than the API but the *same site* — e.g. the UI is served from a sibling subdomain or a different
+port (`https://ui.example.com` calling `https://api.example.com`). In that case add the UI's origin
+to the list (multiple values supported). You do **not** need it when:
+
+* UI and API share one origin (e.g. both behind a single nginx domain) — same-origin is always allowed; or
+* the UI is on a completely different domain — `SameSite=Strict` stops the browser from sending the
+  cookie at all, so cookie auth can't be used there regardless.
 
 ### PSK (Pre-Shared Key)
 

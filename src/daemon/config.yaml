@@ -54,6 +54,14 @@ REST:
   # When true, CORS headers will not be added to responses.
   CorsDisabled: false
 
+  # CSRF: browser Origins allowed to send cookie-authenticated writes (POST/PUT/DELETE).
+  # When to set: ONLY when the browser UI runs on a different origin than the API but the same
+  # site (e.g. UI on a sibling subdomain/port). Not needed if UI and API share one origin (e.g.
+  # behind one nginx domain); a fully different domain can't use cookie auth anyway (SameSite=Strict).
+  # SDK/Bearer clients carry no cookie and are unaffected. Multiple values supported.
+  # e.g. CsrfAllowedOrigins: ["https://ui.example.com", "https://admin.example.com"]
+  CsrfAllowedOrigins: []
+
   # Allowed base directory for file upload/download operations.
   FileAllowedBaseDir:
 

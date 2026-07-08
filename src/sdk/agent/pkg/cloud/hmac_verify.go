@@ -8,10 +8,7 @@ import (
 
 const HTTP_HEADER_HMAC = "X-Request-HMAC"
 
-var (
-	HMAC_SDKToAgent *HMACVerify // HMAC key for SDK-to-agent (CSRF) communication; derived from config to ensure CSRF token validity
-	HMAC_AgentToCPP *HMACVerify // HMAC key for agent-to-C++-service communication; inherited from parent C++ process
-)
+var HMAC_AgentToCPP *HMACVerify // HMAC key for agent-to-C++-service communication; inherited from parent C++ process
 
 // Hash-based Message Authentication Code
 // HMACVerify handles HMAC operations using a pre-shared key (PSK).

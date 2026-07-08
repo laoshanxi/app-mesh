@@ -28,7 +28,6 @@ import (
 // Constants for REST paths and headers
 const (
 	COOKIE_TOKEN                = "appmesh_auth_token"
-	COOKIE_CSRF_TOKEN           = "appmesh_csrf_token"
 	REST_PATH_LOGIN             = "/appmesh/login"
 	REST_PATH_AUTH              = "/appmesh/auth"
 	REST_PATH_TOTP_VALIDATE     = "/appmesh/totp/validate"
@@ -42,7 +41,6 @@ const (
 	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
 
 	HTTP_HEADER_KEY_X_SET_COOKIE       = "X-Set-Cookie"
-	HTTP_HEADER_KEY_X_CSRF_TOKEN       = "X-CSRF-Token"
 	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
 	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"

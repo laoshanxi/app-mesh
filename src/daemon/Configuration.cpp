@@ -395,6 +395,12 @@ bool Configuration::getCorsDisabled() const
 	return m_rest->m_corsDisabled;
 }
 
+std::set<std::string> Configuration::getCsrfAllowedOrigins() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_csrfAllowedOrigins;
+}
+
 std::string Configuration::getFileAllowedBaseDir() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -632,6 +638,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_passwordComplexityEnabled, newConfig->m_rest->m_passwordComplexityEnabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsDisabled))
 				SET_COMPARE(this->m_rest->m_corsDisabled, newConfig->m_rest->m_corsDisabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_CsrfAllowedOrigins))
+				SET_COMPARE(this->m_rest->m_csrfAllowedOrigins, newConfig->m_rest->m_csrfAllowedOrigins);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_FileAllowedBaseDir))
 				SET_COMPARE(this->m_rest->m_fileAllowedBaseDir, newConfig->m_rest->m_fileAllowedBaseDir);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort))
@@ -774,6 +782,15 @@ bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envVal
 			return true;
 		}
 	}
+	else if (jsonValue.is_array())
+	{
+		// Comma-separated env value maps to a string array (e.g. APPMESH_REST_CsrfAllowedOrigins="a,b").
+		auto arr = nlohmann::json::array();
+		for (const auto &item : Utility::splitString(envValue, ","))
+			arr.push_back(item);
+		jsonValue = std::move(arr);
+		return true;
+	}
 	else
 	{
 		LOG_WAR << fname << "JSON value type not supported: " << jsonValue.dump();
@@ -901,6 +918,14 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_PasswordComplexityEnabled, rest->m_passwordComplexityEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_CorsDisabled, rest->m_corsDisabled);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CsrfAllowedOrigins) && jsonValue.at(JSON_KEY_CsrfAllowedOrigins).is_array())
+	{
+		for (const auto &origin : jsonValue.at(JSON_KEY_CsrfAllowedOrigins))
+		{
+			if (origin.is_string() && !origin.get<std::string>().empty())
+				rest->m_csrfAllowedOrigins.insert(origin.get<std::string>());
+		}
+	}
 	rest->m_fileAllowedBaseDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_FileAllowedBaseDir);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
 	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WorkerThreadPoolSize);
@@ -998,6 +1023,7 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
 	result[JSON_KEY_PasswordComplexityEnabled] = (m_passwordComplexityEnabled);
 	result[JSON_KEY_CorsDisabled] = (m_corsDisabled);
+	result[JSON_KEY_CsrfAllowedOrigins] = m_csrfAllowedOrigins;
 	result[JSON_KEY_FileAllowedBaseDir] = std::string(m_fileAllowedBaseDir);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();

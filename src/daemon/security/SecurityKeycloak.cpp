@@ -4,6 +4,13 @@
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
+#include "User.h"
+
+#include <chrono>
+#include <cstdlib>
+#include <mutex>
+#include <unordered_map>
+#include <utility>
 
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <nlohmann/json.hpp>
@@ -17,9 +24,8 @@ void SecurityKeycloak::init()
 {
     const static char fname[] = "SecurityKeycloak::init() ";
 
-    // TODO: Keycloak integration requires an admin token for user management operations
-    // such as retrieving detailed user information via Security::instance()->getUserInfo(ownerStr)
-    // Using local JSON user configuration as an interim solution until full integration
+    // Local JSON still backs locally-defined users (a local entry overrides Keycloak in
+    // getUserInfo); Keycloak-only identities are now resolved via the admin API in getUserInfo().
     SecurityJson::init();
 
     const auto securityYamlFile = Utility::getConfigFilePath(APPMESH_OAUTH2_CONFIG_FILE);
@@ -32,6 +38,15 @@ void SecurityKeycloak::init()
     m_config->m_keycloakRealm = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_Realm);
     m_config->m_keycloakClientId = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_ClientID);
     m_config->m_keycloakClientSecret = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_ClientSecret);
+
+    // The generic APPMESH_<Section>_<Key> override splits on '_' and walks from the top config,
+    // so it cannot target this nested key whose name also contains '_'. Honor the documented
+    // secret env var explicitly so the secret can be injected without committing it to YAML.
+    if (const char *secretEnv = ::getenv(ENV_APPMESH_Keycloak_client_secret))
+    {
+        if (secretEnv[0] != '\0')
+            m_config->m_keycloakClientSecret = secretEnv;
+    }
 
     LOG_DBG << fname << "Keycloak URL: " << m_config->m_keycloakUrl;
     LOG_DBG << fname << "Keycloak Realm: " << m_config->m_keycloakRealm;
@@ -419,4 +434,211 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
         LOG_WAR << fname << "Token verification failed: " << e.what();
         throw std::domain_error(Utility::stringFormat("Token verification failed: %s", e.what()));
     }
+}
+
+const std::string SecurityKeycloak::getAdminAccessToken()
+{
+    const static char fname[] = "SecurityKeycloak::getAdminAccessToken() ";
+
+    // Cache the client-credentials token until shortly before it expires.
+    static std::mutex tokenLock;
+    static std::string cachedToken;
+    static std::chrono::steady_clock::time_point expiresAt;
+    {
+        std::lock_guard<std::mutex> lock(tokenLock);
+        if (!cachedToken.empty() && std::chrono::steady_clock::now() < expiresAt)
+            return cachedToken;
+    }
+
+    if (m_config->m_keycloakClientSecret.empty())
+        throw std::runtime_error("Keycloak admin API requires a confidential client secret");
+
+    const auto path = "/realms/" + m_config->m_keycloakRealm + "/protocol/openid-connect/token";
+    std::map<std::string, std::string> formData;
+    formData["client_id"] = m_config->m_keycloakClientId;
+    formData["client_secret"] = m_config->m_keycloakClientSecret;
+    formData["grant_type"] = "client_credentials";
+
+    auto response = RestClient::request(m_config->m_keycloakUrl, web::http::methods::POST, path, "", {}, {}, std::move(formData));
+    response->raise_for_status();
+
+    JwtHelper::TokenResponse tokenResponse;
+    if (!JwtHelper::extractTokenResponse(response->text, tokenResponse))
+        throw std::runtime_error("Keycloak admin token response missing access_token");
+
+    // Cache below the real expiry: omitted expires_in => conservative 60s; short-lived token =>
+    // half its life so we never serve it past expiry; otherwise refresh 30s early.
+    long long ttl;
+    if (tokenResponse.expiresIn <= 0)
+        ttl = 60;
+    else if (tokenResponse.expiresIn > 60)
+        ttl = tokenResponse.expiresIn - 30;
+    else
+        ttl = tokenResponse.expiresIn / 2;
+    {
+        std::lock_guard<std::mutex> lock(tokenLock);
+        cachedToken = tokenResponse.accessToken;
+        expiresAt = std::chrono::steady_clock::now() + std::chrono::seconds(ttl);
+    }
+    LOG_DBG << fname << "obtained Keycloak admin token";
+    return tokenResponse.accessToken;
+}
+
+std::shared_ptr<User> SecurityKeycloak::fetchKeycloakUserProfile(const std::string &userName)
+{
+    const static char fname[] = "SecurityKeycloak::fetchKeycloakUserProfile() ";
+
+    std::map<std::string, std::string> headers;
+    headers["Authorization"] = JwtHelper::buildBearerAuthorization(getAdminAccessToken());
+
+    // Exact-match lookup by username.
+    std::map<std::string, std::string> query;
+    query["username"] = userName;
+    query["exact"] = "true";
+    const auto usersPath = "/admin/realms/" + m_config->m_keycloakRealm + "/users";
+
+    auto response = RestClient::request(m_config->m_keycloakUrl, web::http::methods::GET, usersPath, "", headers, std::move(query));
+    response->raise_for_status();
+
+    auto users = nlohmann::json::parse(response->text);
+    if (!users.is_array() || users.empty())
+        throw NotFoundException(Utility::stringFormat("Keycloak user <%s> not found", userName.c_str()).c_str());
+    const auto &kcUser = users.front();
+    const auto userId = GET_JSON_STR_VALUE(kcUser, "id");
+
+    // Build a runtime profile: authentication/authorization still come from the verified token,
+    // not this object; roles/group here are for display (e.g. the user-self endpoint).
+    nlohmann::json userJson = nlohmann::json::object();
+    userJson[JSON_KEY_USER_email] = GET_JSON_STR_VALUE(kcUser, "email");
+
+    // Group: best-effort first Keycloak group (leading '/' stripped). Failure is non-fatal.
+    try
+    {
+        if (!userId.empty())
+        {
+            const auto groupsPath = "/admin/realms/" + m_config->m_keycloakRealm + "/users/" + userId + "/groups";
+            auto groupsResp = RestClient::request(m_config->m_keycloakUrl, web::http::methods::GET, groupsPath, "", headers, {});
+            groupsResp->raise_for_status();
+            auto groups = nlohmann::json::parse(groupsResp->text);
+            if (groups.is_array() && !groups.empty())
+                userJson[JSON_KEY_USER_group] = Utility::stdStringTrim(GET_JSON_STR_VALUE(groups.front(), "name"), '/', true, false);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        LOG_WAR << fname << "group lookup failed for <" << userName << ">: " << e.what();
+    }
+
+    // Roles: this client's role-mappings for the user (the same permission keys the token carries).
+    // Display-only; per-request authorization uses the token's resource_access. Non-fatal.
+    try
+    {
+        const auto clientUuid = resolveClientUuid(headers);
+        if (!userId.empty() && !clientUuid.empty())
+        {
+            const auto rolesPath = "/admin/realms/" + m_config->m_keycloakRealm + "/users/" + userId + "/role-mappings/clients/" + clientUuid;
+            auto rolesResp = RestClient::request(m_config->m_keycloakUrl, web::http::methods::GET, rolesPath, "", headers, {});
+            rolesResp->raise_for_status();
+            auto roles = nlohmann::json::parse(rolesResp->text);
+            if (roles.is_array())
+            {
+                auto roleNames = nlohmann::json::array();
+                for (const auto &role : roles)
+                {
+                    const auto roleName = GET_JSON_STR_VALUE(role, "name");
+                    if (!roleName.empty())
+                        roleNames.push_back(roleName);
+                }
+                if (!roleNames.empty())
+                    userJson[JSON_KEY_USER_roles] = std::move(roleNames);
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        LOG_WAR << fname << "role lookup failed for <" << userName << ">: " << e.what();
+    }
+
+    LOG_DBG << fname << "resolved Keycloak user profile: " << userName;
+    return User::FromJson(userName, userJson, m_jsonSecurity->m_roles);
+}
+
+const std::string SecurityKeycloak::resolveClientUuid(const std::map<std::string, std::string> &headers)
+{
+    // The clientId -> internal UUID mapping is stable for a process lifetime; cache it.
+    static std::mutex lock;
+    static std::string cached;
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        if (!cached.empty())
+            return cached;
+    }
+
+    std::map<std::string, std::string> query;
+    query["clientId"] = m_config->m_keycloakClientId;
+    const auto path = "/admin/realms/" + m_config->m_keycloakRealm + "/clients";
+    auto response = RestClient::request(m_config->m_keycloakUrl, web::http::methods::GET, path, "", headers, std::move(query));
+    response->raise_for_status();
+
+    auto clients = nlohmann::json::parse(response->text);
+    if (clients.is_array() && !clients.empty())
+    {
+        const auto uuid = GET_JSON_STR_VALUE(clients.front(), "id");
+        std::lock_guard<std::mutex> guard(lock);
+        cached = uuid;
+        return uuid;
+    }
+    return "";
+}
+
+std::shared_ptr<User> SecurityKeycloak::getUserInfo(const std::string &userName)
+{
+    const static char fname[] = "SecurityKeycloak::getUserInfo() ";
+
+    // 1) A locally-defined user wins (preserves admin-configured exec-user / group overrides).
+    try
+    {
+        auto localUser = SecurityJson::getUserInfo(userName);
+        if (localUser)
+            return localUser;
+    }
+    catch (const NotFoundException &)
+    {
+        // not defined locally — resolve from Keycloak below
+    }
+
+    // 2) Short-lived cache to avoid an admin round-trip on every lookup.
+    static std::mutex cacheLock;
+    static std::unordered_map<std::string, std::pair<std::shared_ptr<User>, std::chrono::steady_clock::time_point>> cache;
+    const auto CACHE_TTL = std::chrono::minutes(5);
+    {
+        std::lock_guard<std::mutex> lock(cacheLock);
+        auto it = cache.find(userName);
+        if (it != cache.end() && (std::chrono::steady_clock::now() - it->second.second) < CACHE_TTL)
+            return it->second.first;
+    }
+
+    // 3) Resolve from Keycloak. A genuinely absent user propagates as NotFound (callers still get
+    // a 404); only an unavailable admin API (no secret / 403 / network) degrades to a name-only
+    // profile so an authenticated identity never breaks owner / exec-user resolution.
+    std::shared_ptr<User> user;
+    try
+    {
+        user = fetchKeycloakUserProfile(userName);
+    }
+    catch (const NotFoundException &)
+    {
+        throw;
+    }
+    catch (const std::exception &e)
+    {
+        LOG_WAR << fname << "admin API unavailable for <" << userName << "> (" << e.what() << "); using name-only profile";
+        user = std::make_shared<User>(userName);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(cacheLock);
+        cache[userName] = std::make_pair(user, std::chrono::steady_clock::now());
+    }
+    return user;
 }

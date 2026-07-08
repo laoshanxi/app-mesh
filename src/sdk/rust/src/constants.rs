@@ -7,7 +7,6 @@ pub const HTTP_HEADER_JWT_EXPIRE_SECONDS: &str = "X-Expire-Seconds";
 pub const HTTP_HEADER_JWT_AUDIENCE: &str = "X-Audience";
 pub const HTTP_HEADER_JWT_TOTP: &str = "X-Totp-Code";
 pub const HTTP_HEADER_JWT_AUTH_PERMISSION: &str = "X-Permission";
-pub const HTTP_HEADER_NAME_CSRF_TOKEN: &str = "X-CSRF-Token";
 pub const HTTP_HEADER_AUTH_BASIC: &str = "Basic ";
 pub const HTTP_HEADER_AUTH_BEARER: &str = "Bearer ";
 pub const HTTP_HEADER_KEY_FORWARDING_HOST: &str = "X-Target-Host";
@@ -27,7 +26,6 @@ pub const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: &str = "X-Send-File-Socket";
 pub const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: &str = "X-Recv-File-Socket";
 
 // Cookie names
-pub const COOKIE_CSRF_TOKEN: &str = "appmesh_csrf_token";
 pub const COOKIE_TOKEN: &str = "appmesh_auth_token";
 
 // Body keys

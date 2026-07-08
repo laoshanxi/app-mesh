@@ -75,6 +75,7 @@ public:
 		bool m_restEnabled;
 		bool m_passwordComplexityEnabled;
 		bool m_corsDisabled;
+		std::set<std::string> m_csrfAllowedOrigins; // CSRF: Origins allowed for cookie-auth state-changing requests
 		std::string m_fileAllowedBaseDir;
 		int m_workerThreadPoolSize;
 		int m_IOThreadPoolSize;
@@ -140,6 +141,7 @@ public:
 	bool getRestEnabled() const;
 	bool getPasswordComplexityEnabled() const;
 	bool getCorsDisabled() const;
+	std::set<std::string> getCsrfAllowedOrigins() const;
 	std::string getFileAllowedBaseDir() const;
 	std::size_t getWorkerThreadPoolSize() const;
 	std::size_t getIOThreadPoolSize() const;

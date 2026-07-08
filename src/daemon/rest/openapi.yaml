@@ -1581,9 +1581,14 @@ components:
       description: |
         Cookie-based authentication. When a request to /appmesh/login, /appmesh/auth,
         or /appmesh/totp/validate carries the `X-Set-Cookie: true` header, the server
-        issues the JWT via a Set-Cookie `appmesh_auth_token` and a companion
-        `appmesh_csrf_token`. Subsequent state-changing requests authenticated by cookie
-        must echo the CSRF token in the `X-CSRF-Token` header.
+        issues the JWT via a Set-Cookie `appmesh_auth_token` (HttpOnly, Secure,
+        SameSite=Strict).
+
+        CSRF protection is enforced by the daemon (uniformly for direct and agent-proxied
+        requests): a cookie-authenticated state-changing request must be same-origin or carry
+        an `Origin` listed in the `CsrfAllowedOrigins` config. Cross-origin cookie requests are
+        rejected with 403. `SameSite=Strict` on the auth cookie is the baseline. Token
+        (`Authorization` / Bearer) requests carry no cookie and are exempt.
 
   schemas:
     ErrorResponse:
@@ -1667,8 +1672,7 @@ components:
             type: string
           description: |
             Present only when the request carried `X-Set-Cookie: true`. Sets the
-            `appmesh_auth_token` JWT cookie and an `appmesh_csrf_token` companion
-            cookie for subsequent cookie-based authentication.
+            `appmesh_auth_token` JWT cookie for subsequent cookie-based authentication.
       content:
         application/json:
           schema:

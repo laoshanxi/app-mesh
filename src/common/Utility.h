@@ -290,7 +290,8 @@ public:
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 #define ENV_APPMESH_PREFIX "APPMESH_"
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
-#define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24))		// default 7 days // TODO: limit max token expire time
+#define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24))		// default 7 days
+#define MAX_TOKEN_EXPIRE_SECONDS int(30 * (60 * 60 * 24))			// hard cap: reject/clamp requests for tokens living longer than 30 days
 #define JWT_CLOCK_LEEWAY_SECONDS 60									// tolerate up to 60s of clock skew on exp/nbf/iat verification
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 2)		// run app default timeout 2 days
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
@@ -319,6 +320,7 @@ public:
 #define JSON_KEY_PasswordComplexityEnabled "PasswordComplexityEnabled"
 #define JSON_KEY_FileAllowedBaseDir "FileAllowedBaseDir"
 #define JSON_KEY_CorsDisabled "CorsDisabled"
+#define JSON_KEY_CsrfAllowedOrigins "CsrfAllowedOrigins"
 #define JSON_KEY_WebSocketPort "WebSocketPort"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 
@@ -347,6 +349,7 @@ public:
 #define JSON_KEY_JWT_Keycloak_Realm "realm"
 #define JSON_KEY_JWT_Keycloak_ClientID "client_id"
 #define JSON_KEY_JWT_Keycloak_ClientSecret "client_secret"
+#define ENV_APPMESH_Keycloak_client_secret "APPMESH_Keycloak_client_secret"
 
 #define JSON_KEY_WorkerThreadPoolSize "WorkerThreadPoolSize"
 #define JSON_KEY_IOThreadPoolSize "IOThreadPoolSize"
@@ -496,9 +499,7 @@ public:
 
 // Cookie
 #define COOKIE_TOKEN "appmesh_auth_token"
-#define COOKIE_CSRF_TOKEN "appmesh_csrf_token"
 #define HTTP_HEADER_KEY_X_SET_COOKIE "X-Set-Cookie"
-#define HTTP_HEADER_KEY_X_CSRF_TOKEN "X-CSRF-Token"
 
 #define PERMISSION_KEY_view_app "app-view"
 #define PERMISSION_KEY_view_app_output "app-output-view"
