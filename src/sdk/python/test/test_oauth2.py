@@ -25,6 +25,10 @@ Setup:
     - [Users] → [mesh] → [Role Mappings] → [Assign Client roles]: assign the permission
         roles (or the composite role) to the user. App Mesh uses these roles directly as
         permissions; there is no local role mapping.
+    - The SDK requests the <openid profile email> scopes, so ensure the client has the
+        <profile>/<email> client scopes assigned (default in Keycloak) for userinfo to return
+        preferred_username/email. To also expose group/roles in userinfo, add the corresponding
+        group-membership / client-role mappers.
     - Set SecurityInterface in config.yaml to oauth2
     - Config oauth2.yaml
 """
@@ -121,7 +125,7 @@ def main():
     """
     # Keycloak configuration
     keycloak_config = {
-        "auth_server_url": "http://172.26.246.205:8080",
+        "auth_server_url": "http://localhost:8080",
         "realm": "appmesh-realm",
         "client_id": "appmesh-client",
         "client_secret": os.environ.get("APPMESH_Keycloak_client_secret", ""),  # For confidential clients; set via env
@@ -151,6 +155,11 @@ def main():
                 print(f"  - {key}: {value}")
         else:
             print(f"Token verification failed: {result}")
+
+        # OIDC userinfo for the logged-in identity (needs the client's profile/email scopes).
+        userinfo = client.get_current_user()
+        print(f"userinfo: {userinfo}")
+        assert userinfo.get("preferred_username") or userinfo.get("sub"), "userinfo returned no identity claim"
 
         # Make sure permission configured resource_access: {'appmesh-client': {'roles': ['view', 'uma_protection', 'manage']}}
         print(client.get_app("ping"))

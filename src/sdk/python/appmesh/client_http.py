@@ -158,9 +158,7 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
     _HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
     _HTTP_HEADER_JWT_SET_COOKIE = "X-Set-Cookie"
-    _HTTP_HEADER_NAME_CSRF_TOKEN = "X-CSRF-Token"
     _COOKIE_TOKEN = "appmesh_auth_token"
-    _COOKIE_CSRF_TOKEN = "appmesh_csrf_token"
 
     @unique
     class _Method(Enum):
@@ -1301,18 +1299,11 @@ class AppMeshClient:
         # Prepare headers
         headers = header.copy() if header else {}
 
-        has_explicit_auth = self._HTTP_HEADER_KEY_AUTH in headers
-        has_explicit_csrf = self._HTTP_HEADER_NAME_CSRF_TOKEN in headers
-        if not has_explicit_auth and not has_explicit_csrf:
-            csrf_token = self._get_cookie_value(self.session.cookies, self._COOKIE_CSRF_TOKEN)
-            if csrf_token:
-                # appmesh token
-                headers[self._HTTP_HEADER_NAME_CSRF_TOKEN] = csrf_token
-            else:
-                # OAuth token
-                access_token = self._get_access_token()
-                if access_token:
-                    headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {access_token}"
+        # Cookie-mode sessions authenticate via the auto-sent auth cookie; otherwise send Bearer.
+        if self._HTTP_HEADER_KEY_AUTH not in headers:
+            access_token = self._get_access_token()
+            if access_token:
+                headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {access_token}"
 
         if self.forward_to:
             target_host = self.forward_to

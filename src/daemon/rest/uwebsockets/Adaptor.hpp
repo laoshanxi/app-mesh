@@ -126,7 +126,7 @@ private:
 
         res->writeHeader("Access-Control-Allow-Origin", "*")
             ->writeHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-            ->writeHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-File-Path, X-CSRF-Token");
+            ->writeHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-File-Path");
         (void)req; // CORS headers are now a fixed allow-list, not echoed from request
     }
 

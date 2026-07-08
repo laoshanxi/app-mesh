@@ -2,6 +2,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <map>
 #include <mutex>
 #include <set>
@@ -78,6 +79,9 @@ private:
 	std::string m_mfaKey;
 	std::string m_totpChallenge;
 	std::chrono::system_clock::time_point m_totpChallengeExpire;
+	// Highest TOTP time-step counter already accepted; blocks replay of a code within its
+	// validity window. -1 means no code has been consumed yet.
+	int64_t m_lastTotpCounter{-1};
 	mutable std::recursive_mutex m_mutex;
 	std::set<std::shared_ptr<Role>> m_roles;
 };

@@ -2,13 +2,11 @@
 package agent
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
@@ -34,6 +32,14 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 			r.Headers[key] = values[0]
 		}
 	}
+
+	// Set the browser-facing host for the daemon's CSRF Origin check. As the front proxy (trust
+	// boundary) the agent overwrites any client-supplied value so it cannot be forged.
+	if req.Host != "" {
+		r.Headers["X-Forwarded-Host"] = req.Host
+	} else {
+		delete(r.Headers, "X-Forwarded-Host")
+	}
 	for key, values := range req.URL.Query() {
 		if len(values) > 0 {
 			r.Query[key] = values[0]
@@ -47,10 +53,9 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 		}
 	}
 
-	// Handle CSRF validation
-	if err := r.validateCSRFToken(req); err != nil {
-		return nil, err
-	}
+	// Relay cookie auth to the daemon. CSRF is enforced by the daemon (Origin check on
+	// cookie-authenticated state-changing requests); the agent forwards Cookie + Origin as-is.
+	r.applyCookieAuth(req)
 
 	return r, nil
 }
@@ -77,48 +82,22 @@ func (r *Request) loadBodyFromHTTP(req *http.Request) error {
 	return nil
 }
 
-// validateCSRFToken processes CSRF validation
-func (r *Request) validateCSRFToken(req *http.Request) error {
-	// Skip CSRF check if using token-based auth (server will verify)
-	authHeader := req.Header.Get("Authorization")
-	if authHeader != "" {
-		return nil
+// applyCookieAuth relays the auth cookie as an Authorization header. CSRF is enforced by the
+// daemon (Origin check); SameSite=Strict on the cookie is the baseline.
+func (r *Request) applyCookieAuth(req *http.Request) {
+	// Already token-authenticated — nothing to do.
+	if req.Header.Get("Authorization") != "" {
+		return
 	}
 
 	authCookie, _ := req.Cookie(COOKIE_TOKEN)
-	csrfCookie, _ := req.Cookie(COOKIE_CSRF_TOKEN)
-
-	// Missing cookies — skip CSRF validation
-	if authCookie == nil || csrfCookie == nil {
-		return nil
+	if authCookie == nil {
+		return
 	}
-
 	authCookieValue := strings.TrimSpace(authCookie.Value)
-	csrfCookieValue := strings.TrimSpace(csrfCookie.Value)
-
-	// Empty cookies — skip CSRF validation
-	if authCookieValue == "" || csrfCookieValue == "" {
-		return nil
+	if authCookieValue == "" {
+		return
 	}
 
-	csrfHeaderValue := strings.TrimSpace(req.Header.Get(HTTP_HEADER_KEY_X_CSRF_TOKEN))
-	if csrfHeaderValue == "" {
-		logger.Warnf("CSRF validation failed: missing token - RequestID=%s Path=%s Client=%s", r.UUID, r.RequestUri, r.ClientAddress)
-		return errors.New("invalid CSRF token")
-	}
-
-	if csrfHeaderValue != csrfCookieValue {
-		logger.Warnf("CSRF validation failed: token mismatch - RequestID=%s Path=%s Client=%s", r.UUID, r.RequestUri, r.ClientAddress)
-		return errors.New("invalid CSRF token")
-	}
-
-	if !cloud.HMAC_SDKToAgent.VerifyHMAC(authCookieValue, csrfCookieValue) {
-		logger.Warnf("CSRF validation failed: HMAC verification failed - RequestID=%s Path=%s Client=%s", r.UUID, r.RequestUri, r.ClientAddress)
-		return errors.New("invalid CSRF token")
-	}
-
-	// CSRF validation passed — inject Authorization header
 	r.Headers["Authorization"] = "Bearer " + authCookieValue
-
-	return nil
 }

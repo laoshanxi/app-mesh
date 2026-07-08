@@ -14,6 +14,7 @@
 // OpenSSL (TOTP)
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/rand.h>
 
 // OpenSSL (Encrypt)
 #include <cryptopp/aes.h>
@@ -446,6 +447,7 @@ bool User::totpValidateCode(const std::string &totpCode)
 	uint64_t t = static_cast<uint64_t>(now) / totp_time_duration_seconds;
 
 	bool matched = false;
+	int64_t matchedCounter = -1;
 	for (int i = -window; i <= window && !matched; ++i)
 	{
 		uint64_t counter = static_cast<uint64_t>(static_cast<int64_t>(t) + i);
@@ -459,6 +461,7 @@ bool User::totpValidateCode(const std::string &totpCode)
 		if (codeStr == totpCode)
 		{
 			matched = true;
+			matchedCounter = static_cast<int64_t>(counter);
 		}
 	}
 
@@ -467,6 +470,14 @@ bool User::totpValidateCode(const std::string &totpCode)
 		LOG_WAR << fname << "invalid token <" << totpCode << ">";
 		throw std::domain_error(Utility::stringFormat("Invalid TOTP token"));
 	}
+
+	// Replay protection: reject a counter at or below the last accepted one (one-time use per code).
+	if (matchedCounter <= m_lastTotpCounter)
+	{
+		LOG_WAR << fname << "replayed TOTP code rejected for user: " << m_name;
+		throw std::domain_error(Utility::stringFormat("TOTP code already used"));
+	}
+	m_lastTotpCounter = matchedCounter;
 
 	LOG_INF << fname << "2FA validate success for user: " << m_name;
 	return true;
@@ -574,80 +585,96 @@ std::string User::getKeyMaterial() const
 	return m_key;
 }
 
-const std::string User::encrypt(const std::string &message)
+// Current ciphertext marker; legacy blobs (bare base64) lack it, so decrypt() stays backward compatible.
+static const std::string ENCRYPT_V2_PREFIX = "v2:";
+
+// Derive the AES key by cycling the user's key material to the block key length.
+static void deriveAesKey(const std::string &keyMaterial, CryptoPP::SecByteBlock &key)
 {
 	using namespace CryptoPP;
-	const std::string keyMaterial = getKeyMaterial();
-	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
 	size_t size = 0;
-	while (size < key.size())
+	while (size < key.size() && !keyMaterial.empty())
 	{
 		for (size_t i = 0; i < keyMaterial.length(); i++)
 		{
 			key[size++] = keyMaterial[i];
 			if (size >= key.size())
-			{
 				break;
-			}
 		}
 	}
+}
 
+const std::string User::encrypt(const std::string &message)
+{
+	using namespace CryptoPP;
+	const std::string keyMaterial = getKeyMaterial();
+	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
+	deriveAesKey(keyMaterial, key);
+
+	// Random per-message IV, stored with the ciphertext (a fixed IV leaks plaintext relations in CFB).
 	SecByteBlock iv(AES::BLOCKSIZE);
-	size = 0;
-	while (size < iv.size())
+	if (RAND_bytes(reinterpret_cast<unsigned char *>(iv.BytePtr()), static_cast<int>(iv.size())) != 1)
+		throw std::runtime_error("Failed to generate random IV");
+
+	// CFB is a stream mode: ciphertext length equals plaintext length.
+	std::string cipher(message.size(), '\0');
+	if (!message.empty())
 	{
-		for (size_t i = 0; i < m_name.length(); i++)
-		{
-			iv[size++] = m_name[i];
-			if (size >= iv.size())
-			{
-				break;
-			}
-		}
+		CFB_Mode<AES>::Encryption cfbEncryption(key, key.size(), iv);
+		cfbEncryption.ProcessData(reinterpret_cast<byte *>(&cipher[0]), reinterpret_cast<const byte *>(message.data()), message.size());
 	}
 
-	size_t messageLen = std::strlen(message.c_str()) + 1;
-	std::shared_ptr<byte> plainText = make_shared_array<byte>(messageLen);
-
-	//////////////////////////////////////////////////////////////////////////
-	// Encrypt
-	//////////////////////////////////////////////////////////////////////////
-	CFB_Mode<AES>::Encryption cfbEncryption(key, key.size(), iv);
-	cfbEncryption.ProcessData(&(*plainText), (const byte *)message.c_str(), messageLen);
-
-	// use base64 for persist (explicit length to preserve embedded 0x00 bytes in ciphertext)
-	return Utility::encode64(std::string((char *)(&(*plainText)), messageLen));
+	// Layout: IV || ciphertext, base64-encoded, with a version marker.
+	std::string blob(reinterpret_cast<const char *>(iv.BytePtr()), iv.size());
+	blob += cipher;
+	return ENCRYPT_V2_PREFIX + Utility::encode64(blob);
 }
 
 const std::string User::decrypt(const std::string &encryptedMessage)
 {
 	using namespace CryptoPP;
+	const std::string keyMaterial = getKeyMaterial();
+	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
+	deriveAesKey(keyMaterial, key);
+
+	// Current format: "v2:" + base64(IV || ciphertext) with a random IV.
+	if (Utility::startWith(encryptedMessage, ENCRYPT_V2_PREFIX))
+	{
+		const std::string payloadB64 = encryptedMessage.substr(ENCRYPT_V2_PREFIX.size());
+		std::string blob = Utility::decode64(payloadB64);
+		// decode64 strips trailing null bytes; restore the exact length from the base64 payload.
+		{
+			size_t b64Len = payloadB64.size();
+			size_t padChars = (b64Len > 0 && payloadB64[b64Len - 1] == '=') + (b64Len > 1 && payloadB64[b64Len - 2] == '=');
+			blob.resize((b64Len / 4) * 3 - padChars, '\0');
+		}
+		if (blob.size() < AES::BLOCKSIZE)
+			throw std::invalid_argument("ciphertext too short");
+
+		SecByteBlock iv(AES::BLOCKSIZE);
+		std::memcpy(iv.BytePtr(), blob.data(), AES::BLOCKSIZE);
+
+		const size_t cipherLen = blob.size() - AES::BLOCKSIZE;
+		std::string plain(cipherLen, '\0');
+		if (cipherLen > 0)
+		{
+			CFB_Mode<AES>::Decryption cfbDecryption(key, key.size(), iv);
+			cfbDecryption.ProcessData(reinterpret_cast<byte *>(&plain[0]), reinterpret_cast<const byte *>(blob.data() + AES::BLOCKSIZE), cipherLen);
+		}
+		return plain;
+	}
+
+	// Legacy format: bare base64(ciphertext) with a username-derived IV. Kept so secrets
+	// persisted before the format change still decrypt.
 	std::string message = Utility::decode64(encryptedMessage);
-	// decode64 strips trailing null bytes, but ciphertext may legitimately end with 0x00.
-	// Restore the exact original length computed from the base64 encoding.
 	{
 		size_t b64Len = encryptedMessage.size();
 		size_t padChars = (b64Len > 0 && encryptedMessage[b64Len - 1] == '=') + (b64Len > 1 && encryptedMessage[b64Len - 2] == '=');
 		message.resize((b64Len / 4) * 3 - padChars, '\0');
 	}
 
-	const std::string keyMaterial = getKeyMaterial();
-	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
-	size_t size = 0;
-	while (size < key.size())
-	{
-		for (size_t i = 0; i < keyMaterial.length(); i++)
-		{
-			key[size++] = keyMaterial[i];
-			if (size >= key.size())
-			{
-				break;
-			}
-		}
-	}
-
 	SecByteBlock iv(AES::BLOCKSIZE);
-	size = 0;
+	size_t size = 0;
 	while (size < iv.size())
 	{
 		for (size_t i = 0; i < m_name.length(); i++)

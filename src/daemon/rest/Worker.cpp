@@ -16,6 +16,7 @@
 #endif
 
 #include <memory>
+#include <set>
 #include <utility>
 
 struct HttpRequestContext
@@ -114,6 +115,45 @@ void Worker::shutdown()
 	}
 }
 
+// CSRF: reject cross-origin, cookie-authenticated, state-changing requests. Only cookie auth is
+// CSRF-relevant (Bearer/SDK exempt); a missing Origin passes; allowed = same-origin (via
+// X-Forwarded-Host/Host) plus the configured CsrfAllowedOrigins.
+static bool isCsrfViolation(const std::shared_ptr<HttpRequest> &request)
+{
+	const auto &headers = request->m_headers;
+	if (!headers.contains("cookie"))
+		return false;
+
+	const auto &m = request->m_method;
+	if (!(m == web::http::methods::POST || m == web::http::methods::PUT || m == web::http::methods::DEL))
+		return false;
+
+	const auto origin = Utility::stdStringTrim(headers.get("origin"));
+	if (origin.empty())
+		return false; // same-origin / non-browser
+	if (Configuration::instance()->getCsrfAllowedOrigins().count(origin) > 0)
+		return false; // explicitly allow-listed
+
+	// Same-origin: match Origin host[:port] against the browser-facing host. Prefer
+	// X-Forwarded-Host (set by the proxy) since behind nginx/agent the daemon's Host is upstream.
+	// Safe on the direct path only because x-forwarded-host is non-safelisted — never add it to
+	// the CORS Access-Control-Allow-Headers list, or a cross-site request could forge same-origin.
+	auto host = Utility::stdStringTrim(headers.get("x-forwarded-host"));
+	if (host.empty())
+		host = Utility::stdStringTrim(headers.get("host"));
+	if (!host.empty())
+	{
+		auto originHostPort = origin;
+		const auto schemeEnd = originHostPort.find("://");
+		if (schemeEnd != std::string::npos)
+			originHostPort = originHostPort.substr(schemeEnd + 3);
+		originHostPort = originHostPort.substr(0, originHostPort.find('/'));
+		if (originHostPort == host)
+			return false;
+	}
+	return true;
+}
+
 bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 {
 	static const char fname[] = "Worker::process() ";
@@ -122,6 +162,14 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 			<< request->m_remote_address << "> path <"
 			<< request->m_relative_uri << "> id <"
 			<< request->m_uuid << ">";
+
+	if (isCsrfViolation(request))
+	{
+		LOG_WAR << fname << "CSRF: rejected cross-origin cookie request, path <" << request->m_relative_uri
+				<< "> origin <" << request->m_headers.get("origin") << ">";
+		request->reply(web::http::status_codes::Forbidden, Utility::text2json("CSRF validation failed: origin not allowed"));
+		return true;
+	}
 
 	if (request->m_headers.contains(HTTP_HEADER_KEY_Forwarding_Host))
 	{

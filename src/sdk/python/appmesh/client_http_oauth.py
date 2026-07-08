@@ -40,7 +40,7 @@ class AppMeshClientOAuth(AppMeshClient):
                 - client_id: Keycloak client ID
                 - client_secret: Keycloak client secret (optional)
         """
-        # Initialize base class, disabling its Keycloak and auto-refresh logic
+        # Initialize base class; token refresh is driven here via the overridden renew_token()
         super().__init__(
             base_url=base_url,
             ssl_verify=ssl_verify,
@@ -92,7 +92,7 @@ class AppMeshClientOAuth(AppMeshClient):
             password=password,
             totp=int(totp_code) if totp_code else None,
             grant_type="password",  # grant type for token request: "password" / "client_credentials" / "refresh_token"
-            scope="openid",  # what information to include in the token, such as "openid profile email"
+            scope="openid profile email",  # request identity claims so userinfo returns preferred_username/email
         )
         self._on_token_changed(self._get_access_token())
 
@@ -107,11 +107,11 @@ class AppMeshClientOAuth(AppMeshClient):
                     result = True
             except Exception as e:
                 logger.warning("Failed to logout from Keycloak: %s", e)
-            finally:
-                self._token = {}
 
-        # Call super to handle base class cleanup (timers, session)
+        # Call super BEFORE clearing the token so it can still read the access token and revoke
+        # it on the daemon; clearing first would make super().logout() a no-op that returns False.
         super_result = super().logout()
+        self._token = {}
 
         return result and super_result
 
