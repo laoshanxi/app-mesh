@@ -1,5 +1,8 @@
 // src/daemon/rest/RestHandler.cpp
+#include <algorithm>
+#include <cerrno>
 #include <chrono>
+#include <cstdlib>
 
 #include <boost/algorithm/string_regex.hpp>
 
@@ -95,6 +98,22 @@ constexpr auto REST_PATH_RESOURCE_VIEW = "/appmesh/resources";
 // 11. Subscribe
 constexpr auto REST_PATH_APP_SUBSCRIBE = R"(/appmesh/app/([^/\*]+)/subscribe)";
 constexpr auto REST_PATH_APP_SUBSCRIBE_ALL = "/appmesh/subscribe";
+
+// Parse client-supplied token lifetime; robust to malformed input and capped at MAX to prevent
+// effectively non-expiring tokens. Empty/"0" => default.
+static int parseTokenTimeout(const std::string &raw)
+{
+	if (raw.empty() || raw == "0")
+		return DEFAULT_TOKEN_EXPIRE_SECONDS;
+
+	char *end = nullptr;
+	errno = 0;
+	const long long parsed = std::strtoll(raw.c_str(), &end, 10);
+	if (errno != 0 || end == raw.c_str() || *end != '\0' || parsed <= 0)
+		throw std::invalid_argument("Invalid token expire seconds");
+
+	return static_cast<int>(std::min<long long>(parsed, MAX_TOKEN_EXPIRE_SECONDS));
+}
 
 RestHandler::RestHandler() : PrometheusRest()
 {
@@ -855,7 +874,7 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 	const auto audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
-	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
+	int timeoutSeconds = parseTokenTimeout(timeout);
 
 	if (audience == WEBSOCKET_FILE_AUDIENCE)
 	{
@@ -970,7 +989,7 @@ void RestHandler::apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message)
 
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_token_renew);
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
-	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
+	int timeoutSeconds = parseTokenTimeout(timeout);
 
 	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
 	{

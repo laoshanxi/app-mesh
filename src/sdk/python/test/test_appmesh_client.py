@@ -1517,7 +1517,6 @@ class TestCookies(TestCase):
                 self.assertEqual(mode, 0o600)
             content = self.read_file(cookie_path)
             self.assertIn("appmesh_auth_token", content)
-            self.assertIn("appmesh_csrf_token", content)
             client.logout()
             content_after = self.read_file(cookie_path)
             self.assertNotIn("appmesh_auth_token", content_after)

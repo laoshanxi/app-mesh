@@ -15,8 +15,6 @@ const CONSTANTS = Object.freeze({
   DEFAULT_RUN_APP_TIMEOUT_SECONDS: "P2D",
   DEFAULT_RUN_APP_LIFECYCLE_SECONDS: "P2DT12H",
   DEFAULT_JWT_AUDIENCE: "appmesh-service",
-  HTTP_HEADER_NAME_CSRF_TOKEN: "X-CSRF-Token",
-  HTTP_COOKIE_NAME_CSRF_TOKEN: "appmesh_csrf_token",
   HTTP_HEADER_KEY_AUTH: "Authorization",
   HTTP_HEADER_KEY_X_TARGET_HOST: "X-Target-Host",
   HTTP_HEADER_KEY_X_FILE_PATH: "X-File-Path",
@@ -498,11 +496,10 @@ class AppMeshClient {
       this._stopAutoRefresh();
       this._token = null;
 
-      // Remove CSRF token and cookies
+      // Clear the outgoing auth cookie (Node); the browser's HttpOnly auth cookie is cleared
+      // server-side on logoff.
       if (ENV.isNode) {
         this._client.defaults.headers.Cookie = null;
-      } else {
-        document.cookie = `${CONSTANTS.HTTP_COOKIE_NAME_CSRF_TOKEN}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict; Secure`;
       }
     }
   }
@@ -1296,20 +1293,6 @@ class AppMeshClient {
     // Add user agent in Node.js
     if (ENV.isNode) {
       headers[CONSTANTS.HTTP_USER_AGENT_HEADER_NAME] = CONSTANTS.HTTP_USER_AGENT;
-    }
-
-    // Add CSRF token from cookies to headers
-    const getCsrfToken = (cookieStr) => {
-      if (!cookieStr) return null;
-      const match = cookieStr.split('; ').find(c => c.startsWith(CONSTANTS.HTTP_COOKIE_NAME_CSRF_TOKEN + '='));
-      return match ? match.split('=')[1] : null;
-    };
-    if (ENV.isNode) {
-      const token = getCsrfToken(this._client.defaults.headers.Cookie);
-      if (token) headers[CONSTANTS.HTTP_HEADER_NAME_CSRF_TOKEN] = token;
-    } else {
-      const token = getCsrfToken(document.cookie);
-      if (token) headers[CONSTANTS.HTTP_HEADER_NAME_CSRF_TOKEN] = token;
     }
 
     // Add forwarding host if specified

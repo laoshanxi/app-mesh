@@ -173,7 +173,7 @@ void Response::applyCorsHeaders()
 
 	headers["Access-Control-Allow-Origin"] = "*";
 	headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
-	headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-CSRF-Token";
+	headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type";
 	// Note: Removed Access-Control-Allow-Credentials as it conflicts with wildcard origin
 }
 
@@ -243,22 +243,28 @@ static std::string trim(const std::string &str)
 
 static std::string getCookieValue(const std::string &cookieHeader, const std::string &cookieName)
 {
-	std::string searchPattern = cookieName + "=";
-	size_t startPos = cookieHeader.find(searchPattern);
-	if (startPos == std::string::npos)
-		return "";
-
-	startPos += searchPattern.size();
-	size_t endPos = cookieHeader.find(';', startPos);
-	if (endPos == std::string::npos)
+	// Match on the cookie-name boundary, not a substring, so e.g. "x_appmesh_auth_token"
+	// cannot be mistaken for "appmesh_auth_token". Split the header on ';' and compare names.
+	size_t pos = 0;
+	while (pos < cookieHeader.size())
 	{
-		return trim(cookieHeader.substr(startPos));
+		size_t sep = cookieHeader.find(';', pos);
+		const std::string pair = cookieHeader.substr(pos, sep == std::string::npos ? std::string::npos : sep - pos);
+
+		const size_t eq = pair.find('=');
+		if (eq != std::string::npos && trim(pair.substr(0, eq)) == cookieName)
+			return trim(pair.substr(eq + 1));
+
+		if (sep == std::string::npos)
+			break;
+		pos = sep + 1;
 	}
-	return trim(cookieHeader.substr(startPos, endPos - startPos));
+	return "";
 }
 
-// Convert cookie to Authorization header (follows agent_request.go validateCSRFToken pattern)
-// Returns true if cookie was converted to header, false otherwise
+// Inject Authorization from the auth cookie for cookie-authenticated clients (header-based SDKs
+// already set Authorization and skip this). CSRF is enforced separately by the daemon's Origin
+// check (see Worker::isCsrfViolation); do not add token validation here.
 bool Request::convertCookieToAuthorization()
 {
 	const static char fname[] = "Request::convertCookieToAuthorization() ";
@@ -277,12 +283,6 @@ bool Request::convertCookieToAuthorization()
 	if (authCookieValue.empty())
 		return false;
 
-	// Note: For simple implementation, we skip CSRF validation
-	// Full implementation would check:
-	// 1. Extract CSRF token from cookie (COOKIE_CSRF_TOKEN)
-	// 2. Compare with X-CSRF-Token header
-	// 3. Verify HMAC if both present
-	// For now, we just inject the Authorization header
 	// Inject Authorization header
 	headers[HTTP_HEADER_JWT_Authorization] = JwtHelper::buildBearerAuthorization(authCookieValue);
 

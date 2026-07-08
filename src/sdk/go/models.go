@@ -24,10 +24,8 @@ const (
 // Internal wire-protocol constants (headers, cookies, user agents).
 const (
 	userAgentHeaderName         = "User-Agent"
-	headerCSRFToken             = "X-CSRF-Token"
 	headerJWTSetCookie          = "X-Set-Cookie"
 	cookieToken                 = "appmesh_auth_token"
-	cookieCSRFToken             = "appmesh_csrf_token"
 	userAgent                   = "appmesh/golang"
 	userAgentTCP                = "appmesh/golang/tcp"
 	userAgentWSS                = "appmesh/golang/wss"

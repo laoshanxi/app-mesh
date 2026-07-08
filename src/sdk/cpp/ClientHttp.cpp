@@ -631,8 +631,4 @@ void AppMeshClient::addCommonHeaders(std::map<std::string, std::string> &header)
         else
             header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
     }
-
-    const auto token = RestClient::getCookie(COOKIE_CSRF_TOKEN);
-    if (!token.empty())
-        header[HTTP_HEADER_KEY_X_CSRF_TOKEN] = token;
 }

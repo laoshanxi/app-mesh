@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
@@ -244,9 +243,7 @@ func (r *Response) setAuthCookie(w http.ResponseWriter, req *http.Request) {
 	}
 
 	http.SetCookie(w, cookie)
-
-	// Create CSRF token cookie (generate HMAC token from access token)
-	r.setCSRFToken(w, req, cookie.MaxAge, jwtResponse.AccessToken)
+	// CSRF is enforced by the daemon via an Origin check; no companion CSRF cookie is needed.
 }
 
 // clearAuthCookie invalidates the authentication cookie
@@ -261,41 +258,6 @@ func (r *Response) clearAuthCookie(w http.ResponseWriter, req *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1, // Expire immediately
 	})
-
-	r.clearCSRFToken(w, req)
-}
-
-// clearCSRFToken invalidates the CSRF token cookie
-func (r *Response) clearCSRFToken(w http.ResponseWriter, req *http.Request) {
-	logger.Debugf("Clearing CSRF token for %s", r.UUID)
-	http.SetCookie(w, &http.Cookie{
-		Name:     COOKIE_CSRF_TOKEN,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   req.TLS != nil,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   -1, // Expire immediately
-	})
-}
-
-// setCSRFToken generates a CSRF token and sets it in the response header
-func (r *Response) setCSRFToken(w http.ResponseWriter, req *http.Request, maxAge int, hmacMessage string) {
-	logger.Debugf("Creating CSRF token for %s", r.UUID)
-
-	token := cloud.HMAC_SDKToAgent.GenerateHMAC(hmacMessage)
-
-	cookie := &http.Cookie{
-		Name:     COOKIE_CSRF_TOKEN,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: false, // CSRF token should be accessible via JavaScript
-		Secure:   req.TLS != nil,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   maxAge,
-	}
-
-	http.SetCookie(w, cookie)
 }
 
 // setSecureHeaders sets security headers for sensitive responses

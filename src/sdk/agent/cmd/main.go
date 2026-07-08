@@ -165,13 +165,6 @@ func main() {
 	}
 	cloud.HMAC_AgentToCPP = cloud.NewHMACVerify(string(psk))
 
-	// Initialize HMAC (use configured salt for cluster-shared tokens)
-	salt := config.ConfigData.REST.JWT.JWTSalt
-	if salt == "" {
-		logger.Fatal("JWT salt is missing in configuration")
-	}
-	cloud.HMAC_SDKToAgent = cloud.NewHMACVerify(salt)
-
 	// Start all services
 	restDone := initializeServices(ctx)
 	go monitorParentProcess(ctx, stop)

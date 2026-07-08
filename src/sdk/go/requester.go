@@ -103,14 +103,10 @@ func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath 
 		return 0, nil, nil, err
 	}
 
-	// Apply implicit auth only when the caller did not provide explicit auth headers.
+	// Apply implicit auth only when the caller did not provide an explicit Authorization header.
 	if _, hasAuth := headers["Authorization"]; !hasAuth {
-		if _, hasCsrf := headers[headerCSRFToken]; !hasCsrf {
-			if csrfToken := h.httpClient.getCookie(cookieCSRFToken, &h.baseURL); csrfToken != "" {
-				req.Header.Set(headerCSRFToken, csrfToken)
-			} else if accessToken := h.httpClient.getCookie(cookieToken, &h.baseURL); accessToken != "" {
-				req.Header.Set("Authorization", "Bearer "+accessToken)
-			}
+		if accessToken := h.httpClient.getCookie(cookieToken, &h.baseURL); accessToken != "" {
+			req.Header.Set("Authorization", "Bearer "+accessToken)
 		}
 	}
 

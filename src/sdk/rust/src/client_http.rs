@@ -167,12 +167,6 @@ impl HTTPRequester {
             };
             headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.to_string(), forward_host);
         }
-
-        if let Some(csrf_token) = self.get_cookie(COOKIE_CSRF_TOKEN) {
-            if !csrf_token.is_empty() && !headers.contains_key(HTTP_HEADER_NAME_CSRF_TOKEN) {
-                headers.insert(HTTP_HEADER_NAME_CSRF_TOKEN.to_string(), csrf_token);
-            }
-        }
     }
 
     fn parse_url_port(url: &str) -> String {
