@@ -89,6 +89,8 @@ DateTime::TimeZonePtr DateTime::getOutputPosixZone()
 
 std::string DateTime::getLocalZoneUtcOffset()
 {
+	const static char fname[] = "DateTime::getLocalZoneUtcOffset() ";
+
 	static std::once_flag initFlag;
 	static std::string cachedOffset;
 
@@ -101,13 +103,15 @@ std::string DateTime::getLocalZoneUtcOffset()
         }
         ss << tz_offset;
         cachedOffset = ss.str();
-        LOG_DBG << "DateTime::getLocalZoneUtcOffset() Local timezone UTC offset: " << cachedOffset; });
+        LOG_DBG << fname << "Local timezone UTC offset: " << cachedOffset; });
 
 	return cachedOffset;
 }
 
 DateTime::TimeZonePtr DateTime::initOutputFormatPosixZone(const std::string &posixZone)
 {
+	const static char fname[] = "DateTime::initOutputFormatPosixZone() ";
+
 	std::lock_guard<std::mutex> lock(s_outputZoneMutex);
 
 	if (!posixZone.empty())
@@ -120,7 +124,7 @@ DateTime::TimeZonePtr DateTime::initOutputFormatPosixZone(const std::string &pos
 		}
 		catch (const std::exception &e)
 		{
-			LOG_WAR << "DateTime::initOutputFormatPosixZone() Failed to parse zone '" << posixZone << "': " << e.what() << ". Using local zone.";
+			LOG_WAR << fname << "Failed to parse zone <" << posixZone << ">: " << e.what() << ". Using local zone.";
 			s_outputPosixZone = getLocalPosixZone();
 		}
 	}
@@ -240,7 +244,7 @@ std::string DateTime::formatRFC3339Time(const TimePoint &time)
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << "DateTime::formatRFC3339Time() Failed: " << e.what();
+		LOG_ERR << "DateTime::formatRFC3339Time() Failed to format RFC3339 time: " << e.what();
 		return {};
 	}
 }

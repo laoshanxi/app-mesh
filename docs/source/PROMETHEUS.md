@@ -27,13 +27,13 @@ docker-compose -f docker-compose-all-in-one.yaml up -d
 
 1. Access Prometheus 9090 UI (http://prom_node:9090/) to verify
 2. Open Grafana on 3000 port (http://grafana_node:3000/)
-3. Add DataSource: Loki
-4. Input Loki address: http://script_prometheus_1:9090 (this address is Grafana access Loki docker container name)
+3. Add DataSource: Prometheus
+4. Input Prometheus address: http://script_prometheus_1:9090 (this address is Grafana access Prometheus docker container name)
 5. Select Explore -> Metrics
 
 ### Design
 
-`Prometheus` is monitoring system and time series database, every metric (unique by label) will be a time series data in DB, and use pull way to scrap data from Server to Client, client provide a exporter service listen on a local port, the exporter is build with Application together to read metric data from memory. appmesh provide a exporter service listen at 6061 by default. The exporter run build-in with appmesh and no need extra process.
+`Prometheus` is monitoring system and time series database, every metric (unique by label) will be a time series data in DB, and use pull way to scrap data from Server to Client, client provide a exporter service listen on a local port, the exporter is build with Application together to read metric data from memory. appmesh provide a exporter service listen at the port configured by `REST.PrometheusExporterListenPort` (default 0 means disabled, e.g. set to 6061). The exporter run build-in with appmesh and no need extra process.
 In order to collect node metrics, an extra node-exporter can be started on each node and listen on 9100 to provide node metrics service.
 
 ### Defined Metrics

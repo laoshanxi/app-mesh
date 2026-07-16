@@ -20,7 +20,7 @@ namespace os
 
 		if (mode == 0)
 		{
-			LOG_WAR << fname << "Warning: mode 0 will remove all permissions for path <" << path << ">";
+			LOG_WAR << fname << "Mode 0 will remove all permissions for path <" << path << ">";
 		}
 
 		uint16_t mode_u = mode / 100;

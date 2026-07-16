@@ -80,12 +80,11 @@ const std::string SecurityKeycloak::extractCertificate(const std::string &keysJs
                 return key["x5c"][0];
             }
         }
-        LOG_WAR << fname << "Key ID not found: " << kid;
         throw std::invalid_argument(Utility::stringFormat("Key ID <%s> not found", kid.c_str()));
     }
     catch (const nlohmann::json::exception &e)
     {
-        LOG_ERR << fname << "JSON parsing error: " << e.what();
+        LOG_ERR << fname << "Failed to parse Keycloak keys JSON: " << e.what();
         throw std::invalid_argument(Utility::stringFormat("Failed to parse keys JSON: %s", e.what()));
     }
 }
@@ -260,7 +259,6 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
     }
     else
     {
-        LOG_WAR << fname << "No username found in token";
         throw std::invalid_argument("No username could be extracted from the token");
     }
 

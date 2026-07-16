@@ -95,7 +95,7 @@ void SecurityJson::save()
             {
                 throw std::runtime_error(std::string("Failed to rename temporary file: ") + last_error_msg());
             }
-            LOG_DBG << fname << "local security saved";
+            LOG_INF << fname << "Security configuration saved to <" << securityYamlFile << ">";
         }
 
         boost::filesystem::permissions(securityYamlFile, fs::perms::owner_all);

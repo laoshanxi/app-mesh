@@ -63,7 +63,7 @@ export APPMESH_WORKSPACE=/home/dev/app-mesh
 
 ## 5. Implementation: `remote.py`
 
-Single Python CLI tool (~240 lines) with 6 subcommands:
+Single Python CLI tool (~340 lines) with 7 subcommands:
 
 ### Commands
 
@@ -76,6 +76,7 @@ Commands:
   sync-exec <cmd> [--timeout N]   sync + execute (main dev loop)
   run-script <file> [--timeout N] upload script + execute + cleanup
   deploy <name> <cmd>             sync + register as long-running service
+  output <app_name>               view stdout of a running/finished app
   cleanup <app_name>              stop and remove remote app
 ```
 
@@ -190,7 +191,7 @@ src/sdk/claude-plugin/
 └── README.md
 ```
 
-**Installation:** Copy `skills/appmesh-remote/` and `rules/` into the target project's `.claude/` directory. See [README.md](../sdk/claude-plugin/README.md) for details.
+**Installation:** Copy `skills/appmesh-remote/` and `rules/` into the target project's `.claude/` directory. See [README.md](../../src/sdk/claude-plugin/README.md) for details.
 
 ## 8. Validation
 

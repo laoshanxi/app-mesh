@@ -68,7 +68,7 @@ namespace os
 		size_t lastParenPos = content.find_last_of(')');
 		if (lastParenPos == std::string::npos)
 		{
-			LOG_DBG << fname << "Malformed stat file: " << path;
+			LOG_WAR << fname << "Malformed stat file (no closing parenthesis): " << path;
 			return nullptr;
 		}
 

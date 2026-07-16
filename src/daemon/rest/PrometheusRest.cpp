@@ -26,7 +26,7 @@ PrometheusRest::PrometheusRest()
 PrometheusRest::~PrometheusRest()
 {
 	const static char fname[] = "PrometheusRest::~PrometheusRest() ";
-	LOG_INF << fname << "Entered";
+	LOG_INF << fname << "PrometheusRest destroyed";
 }
 
 void PrometheusRest::initMetrics()

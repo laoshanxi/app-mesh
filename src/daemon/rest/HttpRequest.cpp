@@ -90,7 +90,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, i
 	}
 	else
 	{
-		LOG_ERR << fname << "failed to decode tcp raw data";
+		LOG_ERR << fname << "Failed to decode TCP request data from client <" << tcpClientId << ">";
 	}
 	return nullptr;
 }
@@ -135,7 +135,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 						const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequest::reply() ";
-	LOG_DBG << fname;
+	LOG_DBG << fname << "Replying status <" << status << "> to request <" << uuid << "> for <" << requestUri << ">";
 
 	auto response = std::make_unique<Response>();
 	// Fill response data
@@ -256,7 +256,7 @@ bool HttpRequestWithTimeout::initTimer(int timeoutSeconds)
 bool HttpRequestWithTimeout::onTimerResponse()
 {
 	const static char fname[] = "HttpRequestWithTimeout::onTimerResponse() ";
-	LOG_DBG << fname;
+	LOG_DBG << fname << "Request <" << this->m_uuid << "> timed out";
 
 	CLEAR_TIMER_ID(m_timerResponseId);
 	// Flag-gated via the virtual reply() override; no-op if a worker already replied.
@@ -289,7 +289,7 @@ bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 								   const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequestWithTimeout::reply() ";
-	LOG_DBG << fname;
+	LOG_DBG << fname << "Replying to request <" << uuid << ">";
 
 	const_cast<HttpRequestWithTimeout *>(this)->cancelTimer(m_timerResponseId);
 	if (!m_httpRequestReplyFlag.exchange(true))
@@ -344,7 +344,7 @@ void HttpRequestOutputView::response()
 bool HttpRequestOutputView::onTimerResponse()
 {
 	const static char fname[] = "HttpRequestOutputView::onTimerResponse() ";
-	LOG_DBG << fname;
+	LOG_DBG << fname << "Responding output for pid <" << m_pid << ">";
 	// Keep alive: unbind may drop the last reference.
 	auto self = std::static_pointer_cast<HttpRequestOutputView>(shared_from_this());
 	// Remove our entry so completed timed polls don't accumulate while the process runs
@@ -376,7 +376,7 @@ bool HttpRequestOutputView::onTimerResponse()
 			const auto &exitCode = std::get<2>(result);
 			if (output.length())
 			{
-				LOG_INF << fname << "Get application output size <" << output.size() << ">";
+				LOG_DBG << fname << "Retrieved application output with size <" << output.size() << ">";
 			}
 			std::map<std::string, std::string> headers;
 			if (pos)
@@ -413,6 +413,7 @@ bool HttpRequestOutputView::onTimerResponse()
 	}
 	catch (const std::exception &e)
 	{
+		LOG_WAR << fname << "Failed to respond output for pid <" << m_pid << ">: " << e.what();
 		HttpRequest::reply(web::http::status_codes::ExpectationFailed);
 	}
 	return false;
@@ -467,7 +468,7 @@ void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 	{
 		m_activeTask = taskRequest;
 		m_replyTask.reset();
-		LOG_INF << fname << "deliver to waiting fetch: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
+		LOG_DBG << fname << "deliver to waiting fetch: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
 		m_fetchTask->reply(web::http::status_codes::OK, *taskRequest->m_body);
 		m_fetchTask.reset();
 	}
@@ -480,7 +481,7 @@ void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 			return;
 		}
 		m_taskQueue.push(taskRequest);
-		LOG_INF << fname << "queued task (queue size: " << m_taskQueue.size() << ")";
+		LOG_DBG << fname << "queued task (queue size: " << m_taskQueue.size() << ")";
 	}
 }
 
@@ -512,7 +513,7 @@ void TaskRequest::fetchTask(std::shared_ptr<void> &serverRequest)
 	{
 		m_activeTask = m_taskQueue.front();
 		m_taskQueue.pop();
-		LOG_INF << fname << "deliver queued task: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
+		LOG_DBG << fname << "deliver queued task: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
 		m_fetchTask->reply(web::http::status_codes::OK, *m_activeTask->m_body);
 		m_fetchTask.reset();
 		return;
@@ -522,7 +523,7 @@ void TaskRequest::fetchTask(std::shared_ptr<void> &serverRequest)
 	cleanupRepliedRequest(m_activeTask);
 	if (m_activeTask)
 	{
-		LOG_INF << fname << "re-deliver active task: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
+		LOG_DBG << fname << "re-deliver active task: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
 		m_fetchTask->reply(web::http::status_codes::OK, *m_activeTask->m_body);
 		m_fetchTask.reset();
 	}
@@ -544,7 +545,7 @@ void TaskRequest::replyTask(std::shared_ptr<void> &serverRequest)
 		return;
 	}
 
-	LOG_INF << fname << "respond to client: " << m_activeTask->m_method << " " << m_activeTask->m_relative_uri;
+	LOG_DBG << fname << "respond to client: " << m_activeTask->m_method << " " << m_activeTask->m_relative_uri;
 
 	// Forward the server's reply to the original client request.
 	m_activeTask->reply(web::http::status_codes::OK, *m_replyTask->m_body);

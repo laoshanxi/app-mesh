@@ -134,7 +134,7 @@ namespace os
 		}
 		else
 		{
-			LOG_ERR << fname << "Failed to get system times";
+			LOG_ERR << fname << "GetSystemTimes failed with error " << GetLastError();
 			return nullptr;
 		}
 

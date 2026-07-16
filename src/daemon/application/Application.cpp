@@ -316,7 +316,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 			app->m_startInterval = duration.parse(app->m_startIntervalValue);
 			if (app->m_startInterval <= 0)
 			{
-				LOG_ERR << fname << "invalid start interval: " << app->m_startIntervalValue;
+				LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <" << app->m_name << ">, falling back to default";
 				app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
 			}
 			app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
@@ -438,8 +438,8 @@ bool Application::attach(int pid)
 		m_needsSchedule.store(false);
 	} // dead: intent stays true, the tick starts it normally
 
-	LOG_INF << fname << "Attached pid <" << pid << "> to application " << m_name
-			<< ", last start on: " << DateTime::formatLocalTime(*procStartTime);
+	LOG_INF << fname << "Attached pid <" << pid << "> to application <" << m_name
+			<< ">, last start on <" << DateTime::formatLocalTime(*procStartTime) << ">";
 
 	// 4. Stdout follow-up, outside the m_process lock
 	if (live && attached->running())
@@ -458,16 +458,16 @@ void Application::handleUnavailable(const std::chrono::system_clock::time_point 
 		// Running outside the daily time range: stop until the range re-opens.
 		if (!m_timer->isInDailyTimeRange(now) && forceStop())
 		{
-			LOG_INF << fname << "Application <" << m_name << "> is not in start time, startTime: "
-					<< DateTime::formatLocalTime(m_startTime) << " endTime: " << DateTime::formatLocalTime(m_endTime)
-					<< " now: " << DateTime::formatLocalTime(now);
+			LOG_INF << fname << "Application <" << m_name << "> stopped: outside its daily time range, startTime <"
+					<< DateTime::formatLocalTime(m_startTime) << ">, endTime <" << DateTime::formatLocalTime(m_endTime)
+					<< ">, now <" << DateTime::formatLocalTime(now) << ">";
 		}
 	}
 	else if (getStatus() != STATUS::NOTAVAILABLE) // NOTAVAILABLE: runApp temp apps and destroying
 	{
 		if (forceStop())
 		{
-			LOG_INF << fname << "Application <" << m_name << "> is not available";
+			LOG_INF << fname << "Application <" << m_name << "> stopped: no longer available";
 		}
 	}
 }
@@ -603,7 +603,7 @@ void Application::spawnNow()
 			r.exitPending = false;
 		});
 		const auto execUser = (m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : getExecUser();
-		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << execUser;
+		LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">";
 
 		const pid_t newPid = (*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
 		updateRunState([&](RunState &r) { r.pid = newPid; });
@@ -709,7 +709,7 @@ std::string Application::runSync(int timeoutSeconds, std::shared_ptr<HttpRequest
 	}
 	else
 	{
-		LOG_WAR << fname << "process is not MonitoredProcess for app <" << m_name << ">";
+		LOG_WAR << fname << "Process for application <" << m_name << "> is not a MonitoredProcess, async output is unavailable";
 	}
 
 	return runApp(timeoutSeconds);
@@ -890,7 +890,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 			{
 				exitCode = process->returnValue();
 				finished = true;
-				LOG_DBG << fname << "process:" << processUuid << " finished with exit code: " << exitCode;
+				LOG_DBG << fname << "Process <" << processUuid << "> finished with exit code <" << exitCode << ">";
 			}
 		}
 		auto output = process->getOutputMsg(&position, maxSize);
@@ -1157,14 +1157,14 @@ void Application::save()
 	// rename cannot replace a bind-mounted file (kernel pins the inode).
 	std::lock_guard<std::mutex> guard(m_saveMutex);
 	const auto appPath = getYamlPath();
-	LOG_DBG << fname << appPath;
 	std::ofstream ofs(appPath, ios::trunc);
 	ofs << std::setw(4) << Utility::jsonToYaml(AsJson(false)) << std::endl;
 	if (ofs.fail())
 	{
+		LOG_ERR << fname << "Failed to save application <" << m_name << "> to file <" << appPath << ">, error: " << last_error_msg();
 		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
 	}
-	LOG_INF << fname << "Saved file: " << appPath;
+	LOG_INF << fname << "Saved application <" << m_name << "> to file <" << appPath << ">";
 }
 
 std::string Application::getYamlPath()

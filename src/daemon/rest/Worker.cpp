@@ -19,6 +19,10 @@
 #include <set>
 #include <utility>
 
+// Global backpressure cap on the shared inbound queue (TCP + lws + uWS). Bounds a
+// request-flood DoS: a client sending faster than workers drain is shed, not buffered.
+static constexpr size_t MAX_PENDING_REQUESTS = 10000;
+
 struct HttpRequestContext
 {
 	ByteBuffer m_data;
@@ -27,14 +31,46 @@ struct HttpRequestContext
 #if defined(HAVE_UWEBSOCKETS)
 	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;
 #endif
+	// Explicit shutdown marker (an empty m_data must never mean shutdown: a zero-length
+	// frame would then let any client kill a worker).
+	bool m_isShutdownSentinel = false;
 };
+
+bool Worker::enqueueRequest(std::shared_ptr<HttpRequestContext> ctx)
+{
+	static const char fname[] = "Worker::enqueueRequest() ";
+	if (m_pendingCount.fetch_add(1, std::memory_order_relaxed) + 1 > MAX_PENDING_REQUESTS)
+	{
+		m_pendingCount.fetch_sub(1, std::memory_order_relaxed);
+		LOG_WAR << fname << "Inbound queue saturated (" << MAX_PENDING_REQUESTS << "), dropping request";
+		return false;
+	}
+	// enqueue only fails/throws on allocation failure; roll back the reserved slot so
+	// the counter can't ratchet up and permanently wedge the cap.
+	bool enqueued = false;
+	try
+	{
+		enqueued = m_messages.enqueue(std::move(ctx));
+	}
+	catch (...)
+	{
+		enqueued = false;
+	}
+	if (!enqueued)
+	{
+		m_pendingCount.fetch_sub(1, std::memory_order_relaxed);
+		LOG_ERR << fname << "Failed to enqueue request (allocation failure)";
+		return false;
+	}
+	return true;
+}
 
 void Worker::queueTcpRequest(ByteBuffer &&data, int tcpClientId)
 {
 	auto ctx = std::make_shared<HttpRequestContext>();
 	ctx->m_data = std::move(data);
 	ctx->m_tcpClientId = tcpClientId;
-	m_messages.enqueue(std::move(ctx));
+	enqueueRequest(std::move(ctx));
 }
 
 void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
@@ -42,7 +78,7 @@ void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
 	auto ctx = std::make_shared<HttpRequestContext>();
 	ctx->m_data = std::move(data);
 	ctx->m_lwsRef = lwsRef;
-	m_messages.enqueue(std::move(ctx));
+	enqueueRequest(std::move(ctx));
 }
 
 #if defined(HAVE_UWEBSOCKETS)
@@ -51,27 +87,27 @@ void Worker::queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContex
 	auto ctx = std::make_shared<HttpRequestContext>();
 	ctx->m_data = std::move(data);
 	ctx->m_uwsReplyContext = std::move(uwsContext);
-	m_messages.enqueue(std::move(ctx));
+	enqueueRequest(std::move(ctx));
 }
 #endif
 
 int Worker::svc()
 {
 	static const char fname[] = "Worker::svc() ";
-	LOG_INF << fname;
+	LOG_INF << fname << "Worker thread started";
 
 	while (!QuitHandler::instance()->shouldExit())
 	{
 		std::shared_ptr<HttpRequestContext> requestContext;
 		m_messages.wait_dequeue(requestContext);
 
-		// Sentinel check
-		const bool isSentinel = !requestContext || requestContext->m_data.empty();
-		if (isSentinel)
+		// Sentinel check — explicit flag only (never data-derived), see HttpRequestContext.
+		if (!requestContext || requestContext->m_isShutdownSentinel)
 		{
-			LOG_INF << fname << "Got sentinel";
+			LOG_INF << fname << "Received shutdown sentinel";
 			break;
 		}
+		m_pendingCount.fetch_sub(1, std::memory_order_relaxed); // matched to enqueueRequest reservation
 
 #if defined(HAVE_UWEBSOCKETS)
 		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef, requestContext->m_uwsReplyContext);
@@ -81,7 +117,7 @@ int Worker::svc()
 
 		if (!request || !process(request))
 		{
-			LOG_WAR << fname << "Failed to parse request, closing connection";
+			LOG_WAR << fname << "Failed to parse or process request, closing connection | ClientID=" << requestContext->m_tcpClientId;
 
 			if (requestContext->m_tcpClientId > 0)
 			{
@@ -90,7 +126,13 @@ int Worker::svc()
 #if defined(HAVE_UWEBSOCKETS)
 			else if (requestContext->m_uwsReplyContext)
 			{
-				requestContext->m_uwsReplyContext->replyWebSocket("500 Internal Server Error", true, false);
+				auto &uwsCtx = requestContext->m_uwsReplyContext;
+				if (uwsCtx->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
+					uwsCtx->replyHTTP("500 Internal Server Error", "Internal Server Error", {}, "text/plain");
+				else
+					// WS: no uuid to correlate a framed error, so drop the message (no desync)
+					// rather than send an unframed body the SDK can't parse.
+					uwsCtx->markAborted();
 			}
 #else
 			else if (requestContext->m_lwsRef)
@@ -101,7 +143,7 @@ int Worker::svc()
 		}
 	}
 
-	LOG_WAR << fname << "Exit";
+	LOG_INF << fname << "Worker thread exiting";
 	return 0;
 }
 
@@ -110,8 +152,9 @@ void Worker::shutdown()
 	const size_t threadNum = this->thr_count();
 	for (size_t i = 0; i < threadNum; ++i)
 	{
-		ByteBuffer sentinel;
-		queueTcpRequest(std::move(sentinel), 0);
+		auto sentinel = std::make_shared<HttpRequestContext>();
+		sentinel->m_isShutdownSentinel = true;
+		m_messages.enqueue(std::move(sentinel)); // bypass the cap: shutdown must always enqueue
 	}
 }
 

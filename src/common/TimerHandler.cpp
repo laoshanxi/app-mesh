@@ -153,7 +153,7 @@ bool TimerManager::cancelTimer(long &timerId)
 		return true;
 	}
 
-	LOG_ERR << fname << "failed to cancel timer ID <" << timerId << ">";
+	LOG_WAR << fname << "failed to cancel timer ID <" << timerId << ">, timer may have already expired";
 	return false;
 }
 

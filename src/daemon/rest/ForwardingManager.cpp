@@ -3,6 +3,10 @@
 #include "Data.h"
 #include "HttpRequest.h"
 
+// Bounds the blocking TCP connect + TLS handshake to a forwarding peer, so an
+// unreachable host cannot pin a worker thread for the OS connect timeout (minutes).
+constexpr int FORWARD_CONNECT_TIMEOUT_SECONDS = 10;
+
 bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<HttpRequest> request)
 {
 	// TOCTOU fix: check closed and bind atomically under the same lock
@@ -51,16 +55,17 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 	static const char fname[] = "ForwardingManager::getOrCreateConnection() ";
 
 	std::shared_ptr<ForwardingConnection> conn;
+	const std::string key = host + ":" + std::to_string(port); // same host may serve different ports
 
 	// Phase 1: check under lock, remove stale
 	{
 		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, m_connections.mutex(), nullptr);
 
-		if (m_connections.find(host, conn) == 0)
+		if (m_connections.find(key, conn) == 0)
 		{
 			if (!conn->closed.load(std::memory_order_acquire))
 				return conn;
-			m_connections.unbind(host);
+			m_connections.unbind(key);
 			conn.reset();
 		}
 	}
@@ -101,9 +106,9 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 
 	// Safe: ForwardingManager is a process-lifetime singleton
 	stream->onClose(
-		[this, weakConn, host]()
+		[this, weakConn, key]()
 		{
-			LOG_WAR << "ForwardingManager: Forwarding connection to " << host << " closed";
+			LOG_WAR << "ForwardingManager: Forwarding connection to " << key << " closed";
 			if (auto c = weakConn.lock())
 			{
 				c->failAll("Forwarding host connection closed");
@@ -111,14 +116,15 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 			// Only unbind if the mapped connection is this one (not a race winner)
 			ACE_GUARD(ACE_Recursive_Thread_Mutex, guard, m_connections.mutex());
 			std::shared_ptr<ForwardingConnection> current;
-			if (m_connections.find(host, current) == 0 && current == weakConn.lock())
-				m_connections.unbind(host);
+			if (m_connections.find(key, current) == 0 && current == weakConn.lock())
+				m_connections.unbind(key);
 		});
 
 	// Now connect (this calls open() which registers with reactor)
-	if (!stream->connect(ACE_INET_Addr(port, host.c_str())))
+	ACE_Time_Value connectTimeout(FORWARD_CONNECT_TIMEOUT_SECONDS);
+	if (!stream->connect(ACE_INET_Addr(port, host.c_str()), &connectTimeout))
 	{
-		LOG_ERR << fname << "Failed to connect to forwarding host: " << host;
+		LOG_ERR << fname << "Failed to connect to forwarding host: " << key;
 		return nullptr;
 	}
 	conn->stream = std::move(stream);
@@ -127,14 +133,14 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 	{
 		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, m_connections.mutex(), nullptr);
 		std::shared_ptr<ForwardingConnection> existing;
-		if (m_connections.find(host, existing) == 0 && !existing->closed.load(std::memory_order_acquire))
+		if (m_connections.find(key, existing) == 0 && !existing->closed.load(std::memory_order_acquire))
 		{
 			// Another thread won the race — close our connection and use theirs
 			conn->stream->shutdown();
 			return existing;
 		}
-		m_connections.unbind(host); // Remove any stale entry
-		m_connections.bind(host, conn);
+		m_connections.unbind(key); // Remove any stale entry
+		m_connections.bind(key, conn);
 	}
 
 	return conn;

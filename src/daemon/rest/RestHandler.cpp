@@ -640,7 +640,7 @@ void RestHandler::apiUserChangePwd(const std::shared_ptr<HttpRequest> &message)
 		}
 	}
 
-	LOG_INF << fname << "User <" << targetUser << "> changed password by <" << tokenUser << ">";
+	LOG_INF << fname << "Password of user <" << targetUser << "> changed by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("password changed success"));
 }
 
@@ -660,7 +660,7 @@ void RestHandler::apiUserLock(const std::shared_ptr<HttpRequest> &message)
 	Security::instance()->getUserInfo(pathUserName)->lock();
 	Security::instance()->save();
 
-	LOG_INF << fname << "User <" << pathUserName << "> locked by " << tokenUser;
+	LOG_INF << fname << "User <" << pathUserName << "> locked by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("Lock user success"));
 }
 
@@ -675,7 +675,7 @@ void RestHandler::apiUserUnlock(const std::shared_ptr<HttpRequest> &message)
 	Security::instance()->getUserInfo(pathUserName)->unlock();
 	Security::instance()->save();
 
-	LOG_INF << fname << "User <" << pathUserName << "> unlocked by " << tokenUser;
+	LOG_INF << fname << "User <" << pathUserName << "> unlocked by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("Unlock user success"));
 }
 
@@ -703,7 +703,7 @@ void RestHandler::apiUserAdd(const std::shared_ptr<HttpRequest> &message)
 	Security::instance()->addUser(pathUserName, userJson);
 	Security::instance()->save();
 
-	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUser;
+	LOG_INF << fname << "User <" << pathUserName << "> added by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("User add success"));
 }
 
@@ -735,7 +735,7 @@ void RestHandler::apiUserDel(const std::shared_ptr<HttpRequest> &message)
 	Security::instance()->delUser(pathUserName);
 	Security::instance()->save();
 
-	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUser;
+	LOG_INF << fname << "User <" << pathUserName << "> deleted by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("User delete success"));
 }
 
@@ -770,7 +770,7 @@ void RestHandler::apiRoleUpdate(const std::shared_ptr<HttpRequest> &message)
 	Security::instance()->addRole(message->extractJson(), pathRoleName);
 	Security::instance()->save();
 
-	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUser;
+	LOG_INF << fname << "Role <" << pathRoleName << "> updated by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("Role update success"));
 }
 
@@ -786,7 +786,7 @@ void RestHandler::apiRoleDelete(const std::shared_ptr<HttpRequest> &message)
 	Security::instance()->delRole(pathRoleName);
 	Security::instance()->save();
 
-	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUser;
+	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("Role delete success"));
 }
 
@@ -1113,7 +1113,7 @@ void RestHandler::apiUserTotpValidate(const std::shared_ptr<HttpRequest> &messag
 	const auto timeout = GET_JSON_INT64_VALUE(body, HTTP_BODY_KEY_JWT_expire_seconds);
 	int timeoutSeconds = (timeout == 0) ? DEFAULT_TOKEN_EXPIRE_SECONDS : timeout;
 
-	LOG_DBG << fname << "User <" << uname << ">";
+	LOG_DBG << fname << "Validating TOTP for user <" << uname << ">";
 	const auto user = Security::instance()->getUserInfo(uname);
 	if (!user->mfaEnabled())
 		throw std::invalid_argument("TOTP authentication not enabled for current user");
@@ -1153,7 +1153,7 @@ void RestHandler::apiUserTotpDisable(const std::shared_ptr<HttpRequest> &message
 	}
 	else
 	{
-		LOG_WAR << fname << "user not found: " << userName;
+		LOG_WAR << fname << "User <" << userName << "> not found";
 		throw std::invalid_argument("user not found");
 	}
 }
@@ -1244,7 +1244,6 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 		jsonApp[JSON_KEY_APP_name] = Utility::shortID(); // specify a UUID app name
 		if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
 		{
-			LOG_WAR << fname << "Missing required command field in application JSON";
 			throw std::invalid_argument("Should specify command run application");
 		}
 	}
@@ -1258,7 +1257,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 	jsonApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
 	auto app = Configuration::instance()->addApp(jsonApp, fromApp, false);
 	if (fromApp)
-		LOG_INF << fname << "Run application <" << app->getName() << "> from " << fromApp->getName();
+		LOG_INF << fname << "Run application <" << app->getName() << "> from <" << fromApp->getName() << ">";
 	else
 		LOG_INF << fname << "Run application <" << app->getName() << ">";
 
@@ -1390,9 +1389,9 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	}
 	// from_recover is a server-internal flag; never trust it from REST input.
 	jsonApp.erase(JSON_KEY_APP_from_recover);
-	LOG_DBG << fname << jsonApp;
 
 	auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
+	LOG_DBG << fname << "Registering application <" << appName << ">";
 	if (Configuration::instance()->isAppExist(appName))
 	{
 		checkAppAccessPermission(message, appName, true);

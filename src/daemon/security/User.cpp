@@ -423,12 +423,12 @@ bool User::totpValidateCode(const std::string &totpCode)
 	std::vector<uint8_t> keyBytes;
 	if (!base32Decode(m_mfaKey, keyBytes))
 	{
-		LOG_WAR << fname << "base32 decode failed for key";
+		LOG_WAR << fname << "Failed to base32 decode TOTP key for user <" << m_name << ">";
 		throw std::domain_error(Utility::stringFormat("Failed to base32 decode TOTP key"));
 	}
 	if (keyBytes.empty())
 	{
-		LOG_WAR << fname << "decoded key empty";
+		LOG_WAR << fname << "Decoded TOTP key is empty for user <" << m_name << ">";
 		throw std::domain_error(Utility::stringFormat("Decoded TOTP key empty"));
 	}
 
@@ -465,11 +465,11 @@ bool User::totpValidateCode(const std::string &totpCode)
 
 	if (!matched)
 	{
-		LOG_WAR << fname << "invalid token <" << totpCode << ">";
+		LOG_WAR << fname << "Invalid TOTP code provided for user <" << m_name << ">";
 		throw std::domain_error(Utility::stringFormat("Invalid TOTP token"));
 	}
 
-	LOG_INF << fname << "2FA validate success for user: " << m_name;
+	LOG_INF << fname << "2FA validation succeeded for user: " << m_name;
 	return true;
 }
 

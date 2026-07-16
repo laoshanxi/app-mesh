@@ -60,7 +60,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 
 void PersistManager::persistSnapshot()
 {
-	const static char fname[] = "HealthCheckTask::persistSnapshot() ";
+	const static char fname[] = "PersistManager::persistSnapshot() ";
 
 	// only do this every minute.
 	static std::chrono::system_clock::time_point lastExecuteTime = std::chrono::system_clock::now();
@@ -84,11 +84,11 @@ void PersistManager::persistSnapshot()
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_WAR << fname << "got exception: " << ex.what();
+		LOG_WAR << fname << "Failed to persist snapshot: " << ex.what();
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << "exception";
+		LOG_WAR << fname << "Failed to persist snapshot with unknown exception";
 	}
 }
 
@@ -190,16 +190,16 @@ void Snapshot::persist()
 		ofs.close();
 		if (ACE_OS::rename(tmpFile.c_str(), SNAPSHOT_FILE_NAME) == 0)
 		{
-			LOG_DBG << fname << "write snapshot success";
+			LOG_DBG << fname << "Snapshot written to <" << SNAPSHOT_FILE_NAME << ">";
 		}
 		else
 		{
-			LOG_ERR << fname << "Failed to create snapshot file <" << SNAPSHOT_FILE_NAME << ">, error: " << last_error_msg();
+			LOG_ERR << fname << "Failed to rename temporary snapshot file <" << tmpFile << "> to <" << SNAPSHOT_FILE_NAME << ">, error: " << last_error_msg();
 		}
 	}
 	else
 	{
-		LOG_WAR << fname << "Failed to open snapshot file";
+		LOG_ERR << fname << "Failed to open snapshot file <" << tmpFile << "> for writing, error: " << last_error_msg();
 	}
 }
 

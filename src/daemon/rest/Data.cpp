@@ -42,7 +42,7 @@ bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "failed with error: " << e.what();
+		LOG_ERR << fname << "Failed to deserialize response message with size <" << dataSize << ">: " << e.what();
 	}
 	return false;
 }
@@ -203,7 +203,7 @@ bool Request::deserialize(const ByteBuffer &data)
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "failed with error: " << e.what();
+		LOG_ERR << fname << "Failed to deserialize request message with size <" << data.size() << ">: " << e.what();
 	}
 	return false;
 }

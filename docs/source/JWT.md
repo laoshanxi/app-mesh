@@ -24,10 +24,10 @@ What is **not** supported:
 | Method | URI                    | Body/Headers                                                                                                                               | Desc                                                       |
 | ------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
 | POST   | /appmesh/login         | Authorization=Basic base64(NAME:PASSWD) <br> Optional: <br> X-Expire-Seconds=600 <br> X-Totp-Code=TOTP_KEY <br> X-Audience=appmesh-service | User login, return JWT token or require next TOTP validate |
-| POST   | /appmesh/totp/validate | { "user_name":"NAME", "totp_code":"TOTP_KEY", "totp_challenge":"CHALLANGE_ABC", "expire_seconds":"360000" }                                | Validate TOTP key, return JWT token                        |
+| POST   | /appmesh/totp/validate | { "user_name":"NAME", "totp_code":"TOTP_KEY", "totp_challenge":"CHALLANGE_ABC", "expire_seconds":360000 }                                | Validate TOTP key, return JWT token                        |
 
 ```shell
-curl -X POST -k -s -H "Authorization:$(echo -n 'user:pwd' | base64)" -H "X-Expire-Seconds:2" https://localhost:6060/appmesh/login | python -m json.tool
+curl -X POST -k -s -H "Authorization:Basic $(echo -n 'user:pwd' | base64)" -H "X-Expire-Seconds:2" https://localhost:6060/appmesh/login | python -m json.tool
 ```
 
 The REST will response bellow json when authentication success:
@@ -35,7 +35,7 @@ The REST will response bellow json when authentication success:
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDU5MjA1NjQsImlhdCI6MTYwNTMxNTc2NCwiaXNzIjoiYXBwbWVzaC1hdXRoMCIsIm5hbWUiOiJhZG1pbiJ9.hPOGoU5cl8TexQKyUnKpSi4r9Hy0Vhi03A-mCyQfpXw",
-  "expire_seconds": 604800,
+  "expires_in": 604800,
   "expire_time": 1605920564,
   "profile": {
     "auth_time": 1605315764,
@@ -66,8 +66,15 @@ The REST will response bellow json when authentication success:
 
 ```json
 {
-  "permission": "app-view",
-  "success": true,
-  "user": "mesh"
+  "access_token": "<JWT_TOKEN>",
+  "expires_in": 600,
+  "expire_time": 1605920564,
+  "issued_at": 1605919964,
+  "profile": {
+    "auth_time": 1605919964,
+    "group": "",
+    "name": "mesh"
+  },
+  "token_type": "Bearer"
 }
 ```

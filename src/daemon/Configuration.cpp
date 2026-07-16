@@ -60,12 +60,12 @@ std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << "Failed to parse configuration file with error <" << e.what() << ">";
+		LOG_ERR << "Failed to apply environment overrides to configuration with error <" << e.what() << ">";
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
 	}
 	catch (...)
 	{
-		LOG_ERR << "Failed to parse configuration file with error <unknown exception>";
+		LOG_ERR << "Failed to apply environment overrides to configuration with error <unknown exception>";
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
 	}
 	auto config = std::make_shared<Configuration>();
@@ -102,7 +102,7 @@ void SigHupHandler(int signo)
 {
 	const static char fname[] = "SigHupHandler() ";
 
-	LOG_INF << fname << "Handle singal :" << signo;
+	LOG_INF << fname << "Received signal <" << signo << ">, reloading configuration";
 	auto config = Configuration::instance();
 	if (config != nullptr)
 	{
@@ -113,11 +113,11 @@ void SigHupHandler(int signo)
 		}
 		catch (const std::exception &e)
 		{
-			LOG_ERR << fname << e.what();
+			LOG_ERR << fname << "Failed to reload configuration: " << e.what();
 		}
 		catch (...)
 		{
-			LOG_ERR << fname << "unknown exception";
+			LOG_ERR << fname << "Failed to reload configuration with unknown exception";
 		}
 	}
 }
@@ -179,7 +179,7 @@ void Configuration::addApp2Map(std::shared_ptr<Application> app)
 	const static char fname[] = "Configuration::addApp2Map() ";
 	if (m_apps.bind(app->getName(), app) == 1)
 	{
-		LOG_ERR << fname << "Application <" << app->getName() << "> already exist.";
+		LOG_ERR << fname << "Application <" << app->getName() << "> already exists";
 	}
 }
 
@@ -270,7 +270,7 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 			auto path = jsonFile.path().string();
 			if (Utility::isFileExist(path) && (Utility::endWith(path, ".yml") || Utility::endWith(path, ".yaml")))
 			{
-				LOG_INF << fname << "loading <" << path << ">.";
+				LOG_INF << fname << "Loading application file <" << path << ">";
 				try
 				{
 					auto jsonObj = Utility::yamlToJson(YAML::LoadFile(path));
@@ -280,7 +280,7 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 				}
 				catch (const std::exception &e)
 				{
-					LOG_ERR << fname << "Failed load application file <" << path << ">, error: " << e.what();
+					LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
 				}
 			}
 		}
@@ -290,7 +290,7 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 			auto path = jsonFile.path().string();
 			if (Utility::isFileExist(path) && Utility::endWith(path, ".json"))
 			{
-				LOG_INF << fname << "loading <" << path << ">.";
+				LOG_INF << fname << "Loading application file <" << path << ">";
 				try
 				{
 					auto jsonObj = nlohmann::json::parse(std::ifstream(path));
@@ -300,7 +300,7 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 				}
 				catch (const std::exception &e)
 				{
-					LOG_ERR << fname << "Failed load application file <" << path << ">, error: " << e.what();
+					LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
 				}
 			}
 		}
@@ -485,8 +485,16 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
+	// Mask the JWT salt (HS256 signing secret) in a local copy before logging
+	auto configJson = this->AsJson();
+	if (HAS_JSON_FIELD(configJson, JSON_KEY_REST) && HAS_JSON_FIELD(configJson.at(JSON_KEY_REST), JSON_KEY_JWT))
+	{
+		auto &jwt = configJson[JSON_KEY_REST][JSON_KEY_JWT];
+		if (HAS_JSON_FIELD(jwt, JSON_KEY_JWTSalt))
+			jwt[JSON_KEY_JWTSalt] = Utility::maskSecret(GET_JSON_STR_VALUE(jwt, JSON_KEY_JWTSalt));
+	}
 	LOG_DBG << fname << '\n'
-			<< this->AsJson().dump(2);
+			<< configJson.dump(2);
 
 	auto apps = getApps();
 	for (auto &app : apps)
@@ -536,7 +544,7 @@ void Configuration::removeApp(const std::string &appName)
 
 	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
 
-	LOG_DBG << fname << appName;
+	LOG_DBG << fname << "Removing application <" << appName << ">";
 	std::shared_ptr<Application> app, empty;
 	{
 		// TODO: workaround to release memory immediately in case of
@@ -550,7 +558,7 @@ void Configuration::removeApp(const std::string &appName)
 		// Write to disk
 		app->destroy();
 		app->remove();
-		LOG_DBG << fname << "removed " << appName;
+		LOG_DBG << fname << "Removed application <" << appName << ">";
 	}
 	m_appNameIndexMap.unbind(appName);
 	EventDispatcher::instance()->removeByApp(appName);
@@ -580,7 +588,7 @@ void Configuration::saveConfigToDisk()
 		{
 			if (ACE_OS::rename(tmpFile.c_str(), configFilePath.c_str()) == 0)
 			{
-				LOG_INF << fname << "saving config file to disk <" << configFilePath << ">";
+				LOG_INF << fname << "Saved configuration file to disk <" << configFilePath << ">";
 			}
 			else
 			{
@@ -588,15 +596,17 @@ void Configuration::saveConfigToDisk()
 			}
 		}
 	}
-
-	LOG_DBG << fname;
+	else
+	{
+		LOG_ERR << fname << "Failed to open configuration file <" << tmpFile << "> for writing, error: " << last_error_msg();
+	}
 }
 
 void Configuration::hotUpdate(nlohmann::json &jsonValue)
 {
 	const static char fname[] = "Configuration::hotUpdate() ";
 
-	LOG_DBG << fname << "update configuration: " << jsonValue.dump();
+	LOG_DBG << fname << "Applying configuration hot-update";
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
@@ -711,7 +721,7 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 {
 	const static char fname[] = "Configuration::overrideConfigWithEnv() ";
-	LOG_INF << fname;
+	LOG_INF << fname << "Applying environment variable overrides to configuration";
 	// environment "APPMESH_LogLevel=INFO" can override main configuration
 	// environment "APPMESH_Security_JWTEnabled=false" can override Security configuration
 	bool applyConfig = false;
@@ -737,11 +747,11 @@ bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 						if (applyEnvConfig(json->at(jsonKey), envVal))
 						{
 							applyConfig = true;
-							LOG_INF << fname << "Configuration: " << envKey << " apply environment value " << Utility::maskSecret(envVal);
+							LOG_INF << fname << "Configuration <" << envKey << "> overridden with environment value <" << Utility::maskSecret(envVal) << ">";
 						}
 						else
 						{
-							LOG_WAR << fname << "Configuration: " << envKey << " apply environment value failed";
+							LOG_WAR << fname << "Failed to apply environment value for configuration <" << envKey << ">";
 						}
 					}
 					else
@@ -793,7 +803,7 @@ bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envVal
 	}
 	else
 	{
-		LOG_WAR << fname << "JSON value type not supported: " << jsonValue.dump();
+		LOG_WAR << fname << "JSON value type not supported: " << jsonValue.type_name();
 	}
 	return false;
 }
@@ -826,7 +836,7 @@ std::shared_ptr<Application> Configuration::getApp(const std::string &appName, b
 
 	if (throwOnNotFound)
 	{
-		LOG_WAR << fname << "No such application: " << appName;
+		LOG_WAR << fname << "No such application <" << appName << ">";
 		throw NotFoundException("No such application");
 	}
 	return nullptr;
@@ -885,7 +895,7 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 	auto cmd = (fs::path(Utility::getBinDir()) / "agent").string();
 #endif
 
-	LOG_INF << fname << " agent start command <" << cmd << ">";
+	LOG_INF << fname << "Agent start command <" << cmd << ">";
 
 	nlohmann::json restApp;
 	restApp[JSON_KEY_APP_name] = std::string(SEPARATE_AGENT_APP_NAME);
@@ -941,11 +951,11 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	if (rest->m_restListenPort < 1000 || rest->m_restListenPort > 65534)
 	{
 		rest->m_restListenPort = DEFAULT_REST_LISTEN_PORT;
-		LOG_DBG << fname << "Default value <" << rest->m_restListenPort << "> will by used for RestListenPort";
+		LOG_DBG << fname << "Default value <" << rest->m_restListenPort << "> will be used for RestListenPort";
 	}
 	if (!Utility::isFileExist("/var/run/docker.sock"))
 	{
-		LOG_INF << fname << "Docker not installed or started, will not start docker agent.";
+		LOG_INF << fname << "Docker not installed or not running, will not start docker agent";
 	}
 	// SSL
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSL))
@@ -980,7 +990,7 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	unsigned int gid, uid;
 	if (!config->m_defaultExecUser.empty() && !os::getUidByName(config->m_defaultExecUser, uid, gid))
 	{
-		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
+		LOG_ERR << "No such OS user <" << config->m_defaultExecUser << ">";
 		throw std::invalid_argument("No such OS user for default execution");
 	}
 	if (!config->m_disableExecUser && os::get_uid() != 0)
@@ -992,7 +1002,7 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	{
 		// Use default value instead
 		config->m_scheduleInterval = DEFAULT_SCHEDULE_INTERVAL;
-		LOG_INF << "Default value <" << config->m_scheduleInterval << "> will by used for ScheduleIntervalSec";
+		LOG_INF << "Default value <" << config->m_scheduleInterval << "> will be used for ScheduleIntervalSeconds";
 	}
 	return config;
 }

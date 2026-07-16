@@ -25,6 +25,16 @@ type AppMesh struct {
 
 // NewAppMeshClient creates and returns a new AppMesh client for interacting with a TCP server.
 func NewAppMeshClient() (*AppMesh, error) {
+	client := &AppMesh{}
+	if err := client.connect(); err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+// connect dials (or re-dials) the TCP transport, replacing any existing connection.
+// Callers that re-dial an in-use client must hold r.mu.
+func (r *AppMesh) connect() error {
 	// Replace '0.0.0.0' with '127.0.0.1' to ensure correct loopback address
 	targetHost := strings.Replace(config.ConfigData.REST.RestListenAddress, "0.0.0.0", "127.0.0.1", 1)
 	uri := url.URL{
@@ -32,8 +42,6 @@ func NewAppMeshClient() (*AppMesh, error) {
 		Host:   fmt.Sprintf("%s:%d", targetHost, config.ConfigData.REST.RestTcpPort),
 	}
 
-	client := &AppMesh{}
-	var err error
 	opt := appmesh.Option{
 		AppMeshUri:                  uri.String(),
 		SslClientCertificateFile:    config.ConfigData.REST.SSL.SSLClientCertificateFile,
@@ -45,11 +53,12 @@ func NewAppMeshClient() (*AppMesh, error) {
 	} else {
 		opt.InsecureSkipVerify = true
 	}
-	client.AppMeshClientTCP, err = appmesh.NewTCPClient(opt)
+	tcp, err := appmesh.NewTCPClient(opt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to establish TCP connection for cloud operator: %w", err)
+		return fmt.Errorf("failed to establish TCP connection for cloud operator: %w", err)
 	}
-	return client, nil
+	r.AppMeshClientTCP = tcp
+	return nil
 }
 
 // GetHostResources retrieves cloud resources via a TCP request
@@ -96,6 +105,29 @@ func (r *AppMesh) request(ctx context.Context, data *Request) (*appmesh.Response
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	resp, err := r.roundTrip(ctx, buf)
+	// Don't reconnect on caller cancellation/timeout — the failure isn't a stale
+	// connection, and re-dialing would waste a handshake (and retry idempotently
+	// only because this RPC is a GET; see roundTrip).
+	if err != nil && ctx.Err() == nil {
+		// The long-lived TCP connection may be stale (daemon restart / dropped peer),
+		// which would otherwise fail every future report until agent restart. Re-dial
+		// once and retry so periodic resource reporting self-heals.
+		logger.Warnf("cloud TCP request failed (%v); reconnecting and retrying once", err)
+		if r.AppMeshClientTCP != nil {
+			r.AppMeshClientTCP.CloseConnection()
+		}
+		if cerr := r.connect(); cerr != nil {
+			return nil, fmt.Errorf("reconnect after error %q failed: %w", err, cerr)
+		}
+		resp, err = r.roundTrip(ctx, buf)
+	}
+	return resp, err
+}
+
+// roundTrip sends one request and reads its response over the current connection.
+// The caller must hold r.mu.
+func (r *AppMesh) roundTrip(ctx context.Context, buf []byte) (*appmesh.Response, error) {
 	// Send the data over TCP
 	if err := r.AppMeshClientTCP.SendMessage(ctx, buf); err != nil {
 		return nil, fmt.Errorf("failed to send data: %v", err)

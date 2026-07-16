@@ -18,7 +18,7 @@ The interactive with native application can use std input, App Mesh support pass
 docker run -d -m 8g --restart=always -v /usr/share/myapp.py:/usr/share/myapp.py:ro --name=myapp -p 6060:6060 -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
 ```
 
-* If we have any special configuration changes for App Mesh container, we can add `-v /opt/user/config.yaml:/opt/appmesh/config.yaml:ro`.
+* If we have any special configuration changes for App Mesh container, we can add `-v /opt/user/config.yaml:/opt/appmesh/config/config.yaml:ro`.
 * mount docker.sock to container so that App Mesh will also support manage container app.
 
 ## Use native application
@@ -28,10 +28,10 @@ docker run -d -m 8g --restart=always -v /usr/share/myapp.py:/usr/share/myapp.py:
 App Mesh by default enable JWT authentication for all REST requests, we need to get JWT token:
 
 ```shell
-curl -X POST -k -H "username:$(echo -n admin | base64)" -H "password:$(echo -n admin123 | base64)" https://localhost:6060/appmesh/login
+curl -X POST -k -H "Authorization:Basic $(echo -n admin:admin123 | base64)" https://localhost:6060/appmesh/login
 ```
 
-BTW, the admin user password can be changed by config.yaml or override with container(laoshanxi/appmesh) startup environment like `-e APPMESH_Security_Users_admin_key=MyNewPwd`
+BTW, the admin user password can be changed by `appm passwd` or by mounting a customized security file `-v /opt/user/security.yaml:/opt/appmesh/config/security.yaml`
 
 ### Call microservice
 

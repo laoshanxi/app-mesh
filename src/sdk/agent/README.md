@@ -44,4 +44,4 @@ Reference:
 
 ### Nginx Proxy Implementation
 
-`docker_nginx` implement a docker proxy demo with Nginx
+`nginx` implement a docker proxy demo with Nginx

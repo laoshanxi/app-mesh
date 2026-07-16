@@ -5,6 +5,9 @@
 
 #include <ace/Guard_T.h>
 
+// Cap on concurrent inbound TCP sessions — bounds memory/fd from a connection flood.
+static constexpr size_t MAX_TCP_CONNECTIONS = 10000;
+
 static std::atomic_int idGenerator{0};
 static ServerStreamMap streams{};
 
@@ -26,6 +29,13 @@ int SocketServer::open(void *acceptor_or_connector)
 {
     const static char fname[] = "SocketServer::open() ";
     LOG_INF << fname << "Initializing connection for client | ClientID=" << m_id;
+
+    // Over the cap: return -1 so ACE_Acceptor calls close() (releases the construction ref).
+    if (streams.current_size() >= MAX_TCP_CONNECTIONS)
+    {
+        LOG_WAR << fname << "Connection limit reached (" << MAX_TCP_CONNECTIONS << "), rejecting | ClientID=" << m_id;
+        return -1;
+    }
 
     // NOTE: callback functions are invoked on the reactor I/O thread.
     this->onData(
@@ -52,15 +62,17 @@ int SocketServer::open(void *acceptor_or_connector)
     this->onError(
         [id = m_id](const std::string &msg)
         {
-            LOG_WAR << "SocketServer::onError() | ClientID=" << id << " | Error occurred: " << msg;
+            const static char fname_cb[] = "SocketServer::onError() ";
+            LOG_WAR << fname_cb << "| ClientID=" << id << " | Error occurred: " << msg;
         });
 
     this->onClose(
         [id = m_id]()
         {
+            const static char fname_cb[] = "SocketServer::onClose() ";
             streams.unbind(id);
             EventDispatcher::instance()->removeByConnection(ConnectionKey::tcp(id));
-            LOG_DBG << "SocketServer::onClose() | ClientID=" << id;
+            LOG_DBG << fname_cb << "| ClientID=" << id;
         });
 
     // Bind before open to prevent use-after-free (open releases construction ref)

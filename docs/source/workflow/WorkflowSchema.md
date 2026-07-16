@@ -479,7 +479,7 @@ Expressions are enclosed in `${{ }}` and evaluated at runtime by the workflow en
 | `job.status` | Current job aggregate status | `${{ job.status }}` |
 | `jobs.<name>.steps.<name>.*` | Cross-job step reference | `${{ jobs.build.steps.compile.stdout }}` |
 | `workflow.name` | Workflow name | `${{ workflow.name }}` |
-| `workflow.run_id` | UUID of this run | `${{ workflow.run_id }}` |
+| `workflow.run_id` | Unique ID (xid) of this run | `${{ workflow.run_id }}` |
 | `inputs.<name>` | Manual trigger or workflow_call input | `${{ inputs.environment }}` |
 | `env.<name>` | Resolved environment variable | `${{ env.PIPELINE_VERSION }}` |
 

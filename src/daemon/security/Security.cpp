@@ -47,10 +47,12 @@ void Security::init(const std::string &interface)
 
 std::shared_ptr<Security> Security::instance()
 {
+    const static char fname[] = "Security::instance() ";
+
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
     if (!m_instance)
     {
-        LOG_ERR << "Security::instance() called before initialization";
+        LOG_ERR << fname << "called before initialization";
     }
     return m_instance;
 }

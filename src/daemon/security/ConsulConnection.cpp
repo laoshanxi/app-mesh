@@ -168,7 +168,7 @@ std::shared_ptr<CurlResponse> ConsulConnection::requestConsul(const web::http::m
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_WAR << fname << path << " got exception: " << ex.what();
+		LOG_WAR << fname << mtd << " " << restURL << path << " got exception: " << ex.what();
 	}
 	response->status_code = web::http::status_codes::ResetContent;
 	response->text = std::string("failed access ").append(restURL);
@@ -216,7 +216,7 @@ void ConsulConnection::watchSecurityThread()
 			if (securityObj->getUsers().size())
 			{
 				Security::instance(securityObj);
-				LOG_DBG << fname << "Security info updated from Consul successfully";
+				LOG_INF << fname << "Security info updated from Consul successfully";
 			}
 		}
 		else

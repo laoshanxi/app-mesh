@@ -47,6 +47,9 @@ namespace WSS
         // means the client isn't draining → the connection is closed.
         constexpr unsigned int MAX_BACKPRESSURE = 16 * 1024 * 1024; // 16 MB
         constexpr int DEFAULT_CLOSE_CODE = 1000;
+        // Global cap on concurrent WS connections (parity with the libwebsockets path's
+        // MAX_WS_SESSIONS). Bounds pre-auth memory/fd from a connection flood.
+        constexpr size_t MAX_CONNECTIONS = 10000;
     }
 
     // Options for configuring the SSL context.
@@ -149,7 +152,8 @@ namespace WSS
                 // (RFC 6455 1013). BACKPRESSURE = buffered, will send, so left alone.
                 if (ws->send(std::move(data), opcode) == WebSocketType::SendStatus::DROPPED)
                 {
-                    LOG_WAR << "WSConnection::send() dropped message (backpressure exceeded), closing conn " << id;
+                    const static char fname[] = "WSConnection::send() ";
+                    LOG_WAR << fname << "Message dropped (backpressure exceeded), closing connection " << id;
                     ws->end(1013, "backpressure limit exceeded");
                 }
             });
@@ -750,71 +754,127 @@ namespace WSS
                  },
                  .open = [this, threadId](auto *ws)
                  {
-                     enableTcpNoDelay(ws->getNativeHandle());
-                     ws->subscribe("broadcast"); // Subscribe to the global broadcast topic
+                     try
+                     {
+                         if (getConnectionCount() >= Config::MAX_CONNECTIONS)
+                         {
+                             LOG_WAR << "WSS::Server connection limit reached (" << Config::MAX_CONNECTIONS << "), rejecting connection";
+                             ws->end(1013, "connection limit reached");
+                             return;
+                         }
 
-                     SessionData *data = ws->getUserData();
-                     if (!data) return;
-                     auto connection = createConnection(ws, data->subProtocol, threadId);
-                     data->connectionPtr = connection;
+                         enableTcpNoDelay(ws->getNativeHandle());
+                         ws->subscribe("broadcast"); // Subscribe to the global broadcast topic
 
-                     if (auto handler = m_wsOpenHandler)
-                         handler(connection);
+                         SessionData *data = ws->getUserData();
+                         if (!data) return;
+                         auto connection = createConnection(ws, data->subProtocol, threadId);
+                         data->connectionPtr = connection;
+
+                         if (auto handler = m_wsOpenHandler)
+                             handler(connection);
+                     }
+                     catch (const std::exception &e)
+                     {
+                         LOG_ERR << "WSS::Server open handler exception: " << e.what();
+                         ws->end(1011, "internal error");
+                     }
+                     catch (...)
+                     {
+                         LOG_ERR << "WSS::Server open handler unknown exception";
+                         ws->end(1011, "internal error");
+                     }
                  },
                  .message = [this](auto *ws, std::string_view message, uWS::OpCode opCode)
                  {
-                     SessionData *data = ws->getUserData();
-                     if (!data) return;
+                     try
+                     {
+                         SessionData *data = ws->getUserData();
+                         if (!data) return;
 
-                     std::shared_ptr<void> connectionShared = data->connectionPtr.lock();
-                     if (!connectionShared) return;
+                         std::shared_ptr<void> connectionShared = data->connectionPtr.lock();
+                         if (!connectionShared) return;
 
-                     auto connection = std::static_pointer_cast<WSConnectionType>(connectionShared);
-                     bool isBinary = (opCode == uWS::OpCode::BINARY);
+                         auto connection = std::static_pointer_cast<WSConnectionType>(connectionShared);
+                         bool isBinary = (opCode == uWS::OpCode::BINARY);
 
-                     // Create a ReplyContext that uses the connection's thread-safe send method
-                     auto replyCtx = createWebSocketReplyContext(connection);
+                         // Create a ReplyContext that uses the connection's thread-safe send method
+                         auto replyCtx = createWebSocketReplyContext(connection);
 
-                     if (auto handler = m_wsMessageHandler)
-                         handler(message, connection, replyCtx, isBinary);
+                         if (auto handler = m_wsMessageHandler)
+                             handler(message, connection, replyCtx, isBinary);
+                     }
+                     catch (const std::exception &e)
+                     {
+                         LOG_ERR << "WSS::Server message handler exception: " << e.what();
+                         ws->end(1011, "internal error");
+                     }
+                     catch (...)
+                     {
+                         LOG_ERR << "WSS::Server message handler unknown exception";
+                         ws->end(1011, "internal error");
+                     }
                  },
                  .close = [this](auto *ws, int code, std::string_view message)
                  {
-                     SessionData *data = ws->getUserData();
-                     if (!data) return;
-
-                     std::string connId;
-                     if (auto connectionShared = data->connectionPtr.lock())
+                     // Runs during teardown; the connection is already closing, so on exception
+                     // just log — there is nothing to close and throwing would terminate the loop.
+                     try
                      {
-                         auto connection = std::static_pointer_cast<WSConnectionType>(connectionShared);
-                         connId = connection->getId();
-                         connection->invalidate();
-                         removeConnection(connId);
-                     }
+                         SessionData *data = ws->getUserData();
+                         if (!data) return;
 
-                     WSCloseHandler handler = m_wsCloseHandler;
-                     if (handler && !connId.empty())
-                         handler(connId, code, message);
+                         std::string connId;
+                         if (auto connectionShared = data->connectionPtr.lock())
+                         {
+                             auto connection = std::static_pointer_cast<WSConnectionType>(connectionShared);
+                             connId = connection->getId();
+                             connection->invalidate();
+                             removeConnection(connId);
+                         }
+
+                         WSCloseHandler handler = m_wsCloseHandler;
+                         if (handler && !connId.empty())
+                             handler(connId, code, message);
+                     }
+                     catch (const std::exception &e)
+                     {
+                         LOG_ERR << "WSS::Server close handler exception: " << e.what();
+                     }
+                     catch (...)
+                     {
+                         LOG_ERR << "WSS::Server close handler unknown exception";
+                     }
                  }});
 
             // HTTP catch-all handler with regex support
             app.any("/*", [this, threadId](auto *res, auto *req)
             {
-                std::string method = toUpperCase(std::string(req->getMethod()));
-                std::string url(req->getUrl());
-
-                auto [handler, match] = findRoute(method, url);
-
-                if (handler)
+                try
                 {
-                    auto replyCtx = createHttpReplyContext(res, m_loopGuards[threadId]);
-                    handler(res, req, replyCtx, match);
+                    std::string method = toUpperCase(std::string(req->getMethod()));
+                    std::string url(req->getUrl());
+
+                    auto [handler, match] = findRoute(method, url);
+
+                    if (handler)
+                    {
+                        auto replyCtx = createHttpReplyContext(res, m_loopGuards[threadId]);
+                        handler(res, req, replyCtx, match);
+                    }
+                    else
+                    {
+                        res->writeStatus("404 Not Found");
+                        res->writeHeader("Content-Type", "application/json");
+                        res->end(R"({"error":"Route not found"})");
+                    }
                 }
-                else
+                catch (...)
                 {
-                    res->writeStatus("404 Not Found");
-                    res->writeHeader("Content-Type", "application/json");
-                    res->end(R"({"error":"Route not found"})");
+                    // Never unwind into the uSockets C loop (→ terminate). Best-effort 500;
+                    // end() may throw if the response was already partly written, so guard it.
+                    LOG_ERR << "WSS::Server HTTP handler exception";
+                    try { res->writeStatus("500 Internal Server Error")->end("Internal Server Error"); } catch (...) {}
                 }
             });
         }

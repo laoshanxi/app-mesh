@@ -50,7 +50,7 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	if ((x) != (y))                                                 \
 	{                                                               \
 		(x) = (y);                                                  \
-		LOG_INF << fname << "Configuration value updated : " << #x; \
+		LOG_INF << fname << "Configuration value updated: " << #x; \
 	}
 
 // make_unique implementation for C++11, C++14 already support

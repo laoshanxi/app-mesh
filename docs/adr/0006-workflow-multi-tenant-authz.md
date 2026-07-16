@@ -20,7 +20,7 @@ Today the workflow engine has effectively no authorization beyond one coarse gat
   engine App. Past that gate, `TaskHandler.dispatch` does **zero** per-action /
   per-workflow authorization — any reachable caller can run / cancel / delete / read
   logs of **any** workflow.
-- `wf-<name>` Apps record `owner`/`permission`, but nothing reads them.
+- `workflow-<name>` Apps record `owner`/`permission`, but nothing reads them.
 - Steps run as `admin`, so any user who can trigger a workflow gets admin-level
   command execution (privilege escalation / confused deputy).
 
@@ -69,7 +69,7 @@ Predicate:
 ```
 isAdmin(caller)        = caller ∈ APPMESH_WORKFLOW_ADMINS   // comma-separated username
                          // allowlist, default {"admin"}; evaluated in the engine (PDP)
-canAccess(caller, wf)  = isAdmin(caller) || caller == wf.owner   // wf.owner from wf-<name> App Owner
+canAccess(caller, wf)  = isAdmin(caller) || caller == wf.owner   // wf.owner from workflow-<name> App
 ```
 
 The admin check is a **username allowlist** (`APPMESH_WORKFLOW_ADMINS`), chosen for
@@ -104,7 +104,7 @@ Steps run as the **triggering caller**, not admin:
   (`StepExecutor.Client`, `clientForTarget` forwards `client.GetToken()` to remote
   nodes). This keeps Phase 2 nearly zero-change in the execution path.
 - The engine's **own** identity (`s.client`) is used **only for the control plane** —
-  registry scan / `ListApps`, registering & removing `wf-<name>` Apps, orphan and
+  registry scan / `ListApps`, registering & removing `workflow-<name>` Apps, orphan and
   cancel cleanup. It **no longer executes steps**. It should therefore be **downgraded
   from `admin` to a least-privilege service account** (only `app-reg`, `app-delete`,
   `app-view-all`, `app-run-task`), not the broad `admin` it defaults to today.

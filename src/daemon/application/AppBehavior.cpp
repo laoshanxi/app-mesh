@@ -9,6 +9,8 @@ AppBehavior::AppBehavior()
 
 void AppBehavior::behaviorInit(nlohmann::json config)
 {
+    const static char fname[] = "AppBehavior::behaviorInit() ";
+
     m_exitEvent = AppBehavior::Action::STANDBY;
     m_exitCodeEvent.clear();
     if (!config.is_null())
@@ -29,7 +31,7 @@ void AppBehavior::behaviorInit(nlohmann::json config)
                 }
                 else
                 {
-                    LOG_ERR << "invalid control code <" << event.key() << ">";
+                    LOG_WAR << fname << "Invalid behavior control code <" << event.key() << ">, expected a numeric exit code";
                     throw std::invalid_argument("invalid control code");
                 }
             }
@@ -55,6 +57,8 @@ nlohmann::json AppBehavior::behaviorAsJson()
 
 AppBehavior::Action AppBehavior::str2action(const std::string &action2str)
 {
+    const static char fname[] = "AppBehavior::str2action() ";
+
     if (Utility::strTolower(action2str) == JSON_KEY_APP_behavior_standby)
     {
         return AppBehavior::Action::STANDBY;
@@ -71,7 +75,7 @@ AppBehavior::Action AppBehavior::str2action(const std::string &action2str)
     {
         return AppBehavior::Action::REMOVE;
     }
-    LOG_WAR << "invalid action input <" << action2str << ">";
+    LOG_WAR << fname << "Invalid behavior action <" << action2str << ">";
     throw std::invalid_argument("invalid action input");
 }
 

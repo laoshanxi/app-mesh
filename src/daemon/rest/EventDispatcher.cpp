@@ -266,6 +266,8 @@ void EventDispatcher::removeSubscriptionLocked(const std::string &subId)
 
 void EventDispatcher::flushStdout(const std::string &appName, Application *app, long pos)
 {
+	const static char fname[] = "EventDispatcher::flushStdout() ";
+
 	// Read [pos, EOF] on disk and emit one final STDOUT_OUTPUT with finished=true.
 	if (!app || !hasStdoutSubscriber(appName)) return;
 	try
@@ -286,6 +288,6 @@ void EventDispatcher::flushStdout(const std::string &appName, Application *app, 
 	}
 	catch (const std::exception &e)
 	{
-		LOG_WAR << "EventDispatcher::flushStdout() error: " << e.what();
+		LOG_WAR << fname << "Failed to flush stdout for app <" << appName << ">: " << e.what();
 	}
 }

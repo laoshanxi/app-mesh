@@ -17,7 +17,7 @@ Index | Method | URI | Body/Headers | Desc
 ---|---|---|---|---
 1 |POST| /appmesh/login | Authorization=Basic base64(NAME:PASSWD) <br> Optional: <br> X-Expire-Seconds=600 | JWT authenticate login
 2 |POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer <JWT_TOKEN>" <https://127.0.0.1:6060/appmesh/auth> <br> Optional: <br> X-Permission=permission_id | JWT token and permission authenticate
-3 |POST| /appmesh/user/admin/passwd | { "new_password": base64(passwd) } | Change user password
+3 |POST| /appmesh/user/admin/passwd | { "old_password": base64(old_passwd), "new_password": base64(new_passwd) } | Change user password
 4 |POST| /appmesh/user/usera/lock | | admin user to lock usera
 5 |POST| /appmesh/user/usera/unlock | | admin user to unlock usera
 6 |PUT | /appmesh/user/usera | | Add usera to Users
@@ -59,7 +59,7 @@ services:
      - /etc/ssl/ca-bundle.pem:/opt/appmesh/ssl/ca.pem
      - ./server.pem:/opt/appmesh/ssl/server.pem
      - ./server-key.pem:/opt/appmesh/ssl/server-key.pem
-     - ./security.yaml:/opt/appmesh/security.yaml:rw
+     - ./security.yaml:/opt/appmesh/config/security.yaml:rw
     ports:
      - "6060:6060"
     environment:

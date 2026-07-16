@@ -139,7 +139,8 @@ public:
 
 	int handle_close(ACE_HANDLE, ACE_Reactor_Mask) override
 	{
-		LOG_DBG << "ExitAdapter::handle_close() deleting adapter";
+		const static char fname[] = "ExitAdapter::handle_close() ";
+		LOG_DBG << fname << "deleting adapter";
 		delete this;
 		return 0;
 	}
@@ -426,7 +427,7 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 	}
 	else
 	{
-		LOG_ERR << fname << "already pending for kill by timer ID: " << m_timerTerminateId;
+		LOG_WAR << fname << "kill already pending with timer ID <" << m_timerTerminateId << ">, ignoring duplicate request";
 	}
 }
 
@@ -441,7 +442,7 @@ void AppProcess::registerCheckStdoutTimer()
 	}
 	else
 	{
-		LOG_ERR << fname << "already registered stdout check timer ID: " << m_timerCheckStdoutId;
+		LOG_WAR << fname << "stdout check timer already registered with ID <" << m_timerCheckStdoutId << ">, ignoring duplicate request";
 	}
 }
 
@@ -464,7 +465,7 @@ bool AppProcess::onTimerCheckStdout()
 				ACE_File_Lock fileLock(m_stdoutHandler.get(), false);
 				if (fileLock.acquire() == -1)
 				{
-					LOG_WAR << fname << "acquire exclusive lock on the stdout file failed: " << m_stdoutFileName;
+					LOG_WAR << fname << "Failed to acquire exclusive lock on stdout file <" << m_stdoutFileName << ">: " << last_error_msg();
 				}
 
 				const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
@@ -472,12 +473,12 @@ bool AppProcess::onTimerCheckStdout()
 				ACE_OS::ftruncate(m_stdoutHandler.get(), 0);
 				fileLock.release();
 
-				LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
+				LOG_INF << fname << "stdout file <" << m_stdoutFileName << "> size <" << stat.st_size << "> reached limit <" << m_stdOutMaxSize << ">, backed up and truncated";
 			}
 		}
 		else
 		{
-			LOG_ERR << fname << "fstat failed with error : " << last_error_msg();
+			LOG_WAR << fname << "fstat on stdout file <" << m_stdoutFileName << "> failed, reopening handle: " << last_error_msg();
 #if !defined(_WIN32)
 			const auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
 			m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
@@ -544,7 +545,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	else
 	{
 		startError(Utility::stringFormat("working_directory <%s> does not exist", workDir.c_str()));
-		LOG_WAR << fname << "working_directory <" << workDir << "> does not exist, use default";
+		LOG_WAR << fname << "working_directory <" << workDir << "> does not exist, using default";
 	}
 
 	for (const auto &pair : envMap)
@@ -571,7 +572,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
 
 			if (!m_stdoutHandler.valid())
-				LOG_ERR << fname << "Failed to open file: <" << m_stdoutFileName << "> with error: " << ACE_OS::last_error();
+				LOG_ERR << fname << "Failed to open stdout file <" << m_stdoutFileName << ">: " << last_error_msg();
 
 #if !defined(_WIN32)
 			auto pipeFds = createStdoutPipe();
@@ -633,7 +634,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	else
 	{
-		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << last_error_msg();
+		LOG_ERR << fname << "Process <" << cmd << "> start failed with error: " << last_error_msg();
 		startError(Utility::stringFormat("start failed with error <%s>", last_error_msg()));
 	}
 

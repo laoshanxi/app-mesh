@@ -134,7 +134,7 @@ void RestBase::bindRestMethod(const web::http::method &method, const std::string
     else if (method == web::http::methods::DEL)
         m_restDelFunctions[path] = std::move(func);
     else
-        LOG_ERR << fname << method << " not supported.";
+        LOG_ERR << fname << "Method <" << method << "> not supported for path <" << path << ">";
 }
 
 const std::string RestBase::getJwtToken(const std::shared_ptr<HttpRequest> &message)
@@ -218,7 +218,6 @@ const std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &
         // Verify user has the required permission
         if (userPermissions.count(permission) == 0)
         {
-            LOG_WAR << fname << "Permission denied: '" << permission << "' for user '" << userName << "'";
             throw std::invalid_argument(Utility::stringFormat("Permission denied: user '%s' lacks required permission '%s'", userName.c_str(), permission.c_str()));
         }
     }

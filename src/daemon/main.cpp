@@ -179,7 +179,7 @@ int AppMeshDaemon::run(int argc, char *argv[])
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "Exception in main loop: " << e.what();
+		LOG_ERR << fname << "Fatal exception during daemon startup or execution: " << e.what();
 	}
 
 	performShutdown();
@@ -204,7 +204,7 @@ void AppMeshDaemon::initializeACE()
 	QuitHandler::instance();
 	WORKER::instance();
 
-	LOG_INF << fname << "Initializing ACE TP_Reactor (POSIX)";
+	LOG_INF << fname << "Initializing ACE TP_Reactor";
 	ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
 	if (ACE_Reactor::instance()->open(ACE::max_handles()) == -1)
 	{
@@ -451,7 +451,7 @@ void AppMeshDaemon::initializeRestService()
 	if (m_client->stream() && m_client->stream()->connected())
 		LOG_INF << fname << "Test local TCP client connected successfully";
 	else
-		LOG_WAR << fname << "Test local TCP client connection failed";
+		LOG_WAR << fname << "Test local TCP client connection to <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << "> failed";
 
 	// Websocket service
 	if (config->getWebSocketPort())
@@ -468,7 +468,7 @@ void AppMeshDaemon::initializeRestService()
 		WebSocketService::instance()->initialize(addr, cert, key, ca);
 		WebSocketService::instance()->start(workerThreadNumber);
 #endif
-		LOG_INF << fname << "Initializing Websocket service on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
+		LOG_INF << fname << "WebSocket service initialized on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
 	}
 
 	startAgentApplication();
@@ -585,7 +585,6 @@ void AppMeshDaemon::runMainLoop()
 
 			PersistManager::instance()->persistSnapshot();
 			HealthCheckTask::instance()->doHealthCheck();
-			spdlog::default_logger()->flush();
 
 			// Update process tree for prometheus if needed
 			if (config->prometheusEnabled() && RESTHANDLER::instance()->collected())
@@ -606,7 +605,7 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 
 	if (m_client && m_client->stream() && !m_client->stream()->connected())
 	{
-		LOG_WAR << fname << "self-loopback TCP client reports disconnected (passive)";
+		LOG_WAR << fname << "Self-loopback TCP client reports disconnected (passive)";
 	}
 	(void)errorCounter;
 	return true;

@@ -132,13 +132,13 @@ namespace SSLHelper
                 bool isDir = Utility::isDirExist(ca);
                 if (context->load_trusted_ca(isDir ? 0 : ca.c_str(), isDir ? ca.c_str() : 0, false) != 0)
                 {
-                    LOG_WAR << fname << "Failed to load trusted CA from: " << ca;
+                    LOG_ERR << fname << "Failed to load trusted CA from: " << ca;
                     return nullptr;
                 }
             }
             else
             {
-                LOG_WAR << fname << "CA path inaccessible or invalid: " << ca;
+                LOG_ERR << fname << "CA path inaccessible or invalid: " << ca;
                 return nullptr;
             }
         }

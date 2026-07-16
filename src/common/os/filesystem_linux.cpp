@@ -15,7 +15,7 @@ namespace os
 
 	std::shared_ptr<FilesystemUsage> df(const std::string &path)
 	{
-		const static char fname[] = "proc::df() ";
+		const static char fname[] = "os::df() ";
 		auto df = std::make_shared<FilesystemUsage>();
 
 		struct statvfs buf;
@@ -40,7 +40,7 @@ namespace os
 
 	std::map<std::string, std::string> getMountPoints()
 	{
-		const static char fname[] = "proc::getMountPoints() ";
+		const static char fname[] = "os::getMountPoints() ";
 		std::map<std::string, std::string> mountPointsMap;
 
 		std::unique_ptr<FILE, void (*)(FILE *)> mountsFile(setmntent("/proc/mounts", "r"), [](FILE *fp)

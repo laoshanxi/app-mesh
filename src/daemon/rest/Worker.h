@@ -9,6 +9,7 @@
 #include <ace/Task.h>
 #include <concurrentqueue/blockingconcurrentqueue.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 
@@ -49,7 +50,11 @@ protected:
 	bool forward(std::string forwardTo, const std::shared_ptr<HttpRequest> &request);
 
 private:
+	// Drops and returns false when the shared queue is saturated. Not for the sentinel.
+	bool enqueueRequest(std::shared_ptr<HttpRequestContext> ctx);
+
 	RequestQueue m_messages;
+	std::atomic<size_t> m_pendingCount{0}; // in-flight requests queued but not yet processed
 };
 
 using WORKER = ACE_Singleton<Worker, ACE_Null_Mutex>;

@@ -55,7 +55,7 @@ namespace os
 
 	std::shared_ptr<FilesystemUsage> df(const std::string &path)
 	{
-		const static char fname[] = "proc::df() ";
+		const static char fname[] = "os::df() ";
 		auto df = std::make_shared<FilesystemUsage>();
 
 		ULARGE_INTEGER freeBytesAvailable, totalNumberOfBytes, totalNumberOfFreeBytes;
@@ -81,7 +81,7 @@ namespace os
 
 	std::map<std::string, std::string> getMountPoints()
 	{
-		const static char fname[] = "proc::getMountPoints() ";
+		const static char fname[] = "os::getMountPoints() ";
 		std::map<std::string, std::string> mountPointsMap;
 
 		DWORD drives = GetLogicalDrives();
@@ -162,7 +162,7 @@ namespace os
 				char tmpFile[MAX_PATH];
 				if (GetTempFileNameA(tmpDir, "amsh", 0, tmpFile) == 0)
 				{
-					LOG_DBG << fname << "GetTempFileNameA failed with error " << ::GetLastError();
+					LOG_WAR << fname << "GetTempFileNameA failed in directory <" << tmpDir << "> with error " << ::GetLastError();
 					return {};
 				}
 				finalPath = tmpFile;
@@ -177,7 +177,7 @@ namespace os
 				char tmpFile[MAX_PATH];
 				if (GetTempFileNameA(parentDir.string().c_str(), prefix.c_str(), 0, tmpFile) == 0)
 				{
-					LOG_DBG << fname << "GetTempFileNameA failed with error " << ::GetLastError();
+					LOG_WAR << fname << "GetTempFileNameA failed in directory <" << parentDir.string() << "> with error " << ::GetLastError();
 					return {};
 				}
 				finalPath = tmpFile;
@@ -199,7 +199,7 @@ namespace os
 
 			if (hFile == INVALID_HANDLE_VALUE)
 			{
-				LOG_DBG << fname << "Failed to create file <" << finalPath.string() << "> with error " << ::GetLastError();
+				LOG_WAR << fname << "Failed to create file <" << finalPath.string() << "> with error " << ::GetLastError();
 				return {};
 			}
 
@@ -209,7 +209,7 @@ namespace os
 				if (!::WriteFile(hFile, content.data(), static_cast<DWORD>(content.size()), &bytesWritten, NULL) ||
 					bytesWritten != content.size())
 				{
-					LOG_DBG << fname << "Failed to write to file <" << finalPath.string() << ">";
+					LOG_WAR << fname << "Failed to write to file <" << finalPath.string() << ">, wrote " << bytesWritten << " of " << content.size() << " bytes";
 					::CloseHandle(hFile);
 					return {};
 				}
@@ -222,7 +222,7 @@ namespace os
 		}
 		catch (const std::exception &e)
 		{
-			LOG_DBG << fname << "Exception: " << e.what();
+			LOG_WAR << fname << "Exception while creating temp file: " << e.what();
 			return {};
 		}
 	}
