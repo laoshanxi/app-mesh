@@ -51,12 +51,14 @@ namespace net
 	{
 		WinsockOnce()
 		{
+			const static char fname[] = "net::WinsockOnce() ";
+
 			WSADATA wsa{};
 			const int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
 			if (rc != 0)
 			{
 				// We only log; continuing allows callers to fail gracefully.
-				LOG_ERR << "WSAStartup failed: " << rc;
+				LOG_ERR << fname << "WSAStartup failed with error: " << rc;
 			}
 		}
 		WinsockOnce(const WinsockOnce &) = delete;
@@ -153,6 +155,8 @@ namespace net
 	{
 		static const auto cached = []() -> std::string
 		{
+			const static char fname[] = "net::hostname() ";
+
 			const auto shortHostname = boost::asio::ip::host_name();
 			try
 			{
@@ -173,12 +177,12 @@ namespace net
 				catch (const boost::system::system_error &e)
 				{
 					// Log and fall back to short hostname
-					LOG_WAR << "FQDN resolution failed: " << e.what();
+					LOG_WAR << fname << "FQDN resolution failed for host <" << shortHostname << ">: " << e.what();
 				}
 			}
 			catch (const std::exception &e)
 			{
-				LOG_ERR << "Failed to retrieve hostname: " << e.what();
+				LOG_WAR << fname << "Unexpected error resolving FQDN for host <" << shortHostname << ">, falling back to short hostname: " << e.what();
 			}
 			// Fall back to short hostname
 			return shortHostname;

@@ -192,6 +192,10 @@ private:
         m_server->onWSMessage([](std::string_view message, auto /*connection*/, auto replyCtx, bool /*isBinary*/)
         {
             LOG_DBG << "WebSocketAdaptor::onWSMessage()";
+            // An empty WS frame carries no request payload (the SDK always sends a
+            // non-empty msgpack request). Never enqueue it.
+            if (message.empty())
+                return;
             auto data = ByteBuffer(message.begin(), message.end());
             WORKER::instance()->queueUwsRequest(std::move(data), std::move(replyCtx));
         });
@@ -274,26 +278,41 @@ private:
 
         res->onData([res, requestState, ctx](std::string_view data, bool last) mutable
         {
-            if (ctx->isAborted())
+            // Runs outside the route handler's try/catch; guard so a throw here can't
+            // unwind into the uSockets C loop (→ terminate). Fail only this request.
+            try
             {
-                return;
+                if (ctx->isAborted())
+                {
+                    return;
+                }
+
+                if (requestState->body.size() + data.size() > MAX_HTTP_BODY_SIZE)
+                {
+                    ctx->markAborted(); // Mark aborted first to prevent reply callback from using res
+                    res->writeStatus("413 Payload Too Large")->end("Body too large");
+                    return;
+                }
+
+                requestState->body.insert(requestState->body.end(), data.begin(), data.end());
+
+                if (last)
+                {
+                    requestState->convertCookieToAuthorization();
+                    auto msgPack = requestState->serialize();
+                    auto packedData = ByteBuffer(msgPack->data(), msgPack->data() + msgPack->size());
+                    WORKER::instance()->queueUwsRequest(std::move(packedData), ctx);
+                }
             }
-
-            if (requestState->body.size() + data.size() > MAX_HTTP_BODY_SIZE)
+            catch (const std::exception &e)
             {
-                ctx->markAborted(); // Mark aborted first to prevent reply callback from using res
-                res->writeStatus("413 Payload Too Large")->end("Body too large");
-                return;
+                LOG_ERR << "WebSocketAdaptor::handleHttpRequest() onData exception: " << e.what();
+                ctx->markAborted();
             }
-
-            requestState->body.insert(requestState->body.end(), data.begin(), data.end());
-
-            if (last)
+            catch (...)
             {
-                requestState->convertCookieToAuthorization();
-                auto msgPack = requestState->serialize();
-                auto packedData = ByteBuffer(msgPack->data(), msgPack->data() + msgPack->size());
-                WORKER::instance()->queueUwsRequest(std::move(packedData), ctx);
+                LOG_ERR << "WebSocketAdaptor::handleHttpRequest() onData unknown exception";
+                ctx->markAborted();
             }
         });
     }

@@ -44,11 +44,13 @@
 // Protocol constants
 static constexpr size_t TCP_HEADER_SIZE = TCP_MESSAGE_HEADER_LENGTH;
 static constexpr uint32_t TCP_MAGIC = TCP_MESSAGE_MAGIC;
-// Enforced single-RPC-message cap for BOTH send and recv (matches every SDK's
-// TCP_MAX_BLOCK_SIZE = 1 GB). Files go in ~16 KB chunks, so this bounds one message,
-// not file size. Recv buffers this fully pre-auth → bounds the per-connection pre-auth
-// allocation (see the DoS residual in docs/comm-layer-bugfix-summary.md).
-static constexpr size_t TCP_MAX_RECV_BODY_SIZE = 1024UL * 1024 * 1024;
+// Max single message (send + recv). Largest legit payload is an inline HTTP body
+// (128 MB) + envelope; files stream in ~16 KB chunks. Bounds the length-header alloc.
+static constexpr size_t TCP_MAX_RECV_BODY_SIZE = 256UL * 1024 * 1024;
+
+// Cap on queued outbound messages per connection. A peer that stops reading makes the
+// send queue (events + replies) grow unbounded; past this the connection is closed.
+static constexpr size_t MAX_SEND_QUEUE_DEPTH = 10000;
 
 // Network byte order helpers
 inline uint32_t host_to_net32(uint32_t x) { return ACE_HTONL(x); }
@@ -236,6 +238,8 @@ public:
 		return m_queue.empty() && current_done;
 	}
 
+	size_t queue_depth_unsafe() const { return m_queue.size(); }
+
 	void clear();
 
 	std::mutex &mutex() { return m_mutex; }
@@ -255,9 +259,10 @@ class SocketStreamPtr;
 //
 // Key rules:
 //   1. Lock ordering: reactor token → m_io_mutex → m_cb_mutex → (external locks).
-//      Non-reactor threads must NEVER hold m_io_mutex when calling reactor APIs
-//      (mask_ops, register_handler, etc.) — that inverts the order with handle_close
-//      (which is called by the reactor with its token held).
+//      NO thread may hold m_io_mutex while calling reactor APIs (mask_ops, etc.) —
+//      handle_close runs with the token held, even concurrently with I/O upcalls
+//      (notify-driven closes bypass TP_Reactor suspension). So acquire m_io_mutex
+//      only via IoGuard and request mask changes via defer_mask().
 //   2. Callbacks (onData, onSent, ...) run while m_io_mutex is held, so they may
 //      re-enter send()/shutdown(). m_io_mutex MUST stay recursive.
 //   3. All callbacks MUST be set before open(). open() fires onConnect synchronously.
@@ -293,6 +298,10 @@ public:
 	// --- ACE_Acceptor Hook ---
 	virtual int open(void *acceptor_or_connector = nullptr) override;
 
+	// Failure-path hook (ACE_Acceptor on accept/open failure, connect() likewise):
+	// releases the construction reference. On success open() releases it instead.
+	virtual int close(u_long flags = 0) override;
+
 	// ========== Client-side: Connect to remote server ==========
 	bool connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
 
@@ -322,6 +331,10 @@ private:
 
 	int enable_mask(ACE_Reactor_Mask bit);
 	int disable_mask(ACE_Reactor_Mask bit);
+	void defer_mask(ACE_Reactor_Mask bit, bool enable); // Record a mask change; caller holds m_io_mutex
+	void apply_mask_ops(ACE_Reactor_Mask add, ACE_Reactor_Mask clr); // Caller must NOT hold m_io_mutex
+
+	class IoGuard; // Scoped m_io_mutex; applies deferred mask ops once fully released
 
 	void fire_connect();
 	void fire_close();
@@ -365,6 +378,14 @@ private:
 	// lock is held, and those callbacks may re-enter send()/shutdown() on this stream.
 	mutable std::recursive_mutex m_io_mutex;
 	mutable std::mutex m_cb_mutex; // Protects callbacks
+
+	// Deferred reactor mask changes (see lock-ordering rule 1). Protected by m_io_mutex.
+	int m_io_depth{0};
+	ACE_Reactor_Mask m_deferred_mask_add{0};
+	ACE_Reactor_Mask m_deferred_mask_clr{0};
+	// Deferred close, run by the outermost IoGuard (shutdown() must run outside m_io_mutex,
+	// rule 1). Protected by m_io_mutex.
+	bool m_pending_close{false};
 
 	DataCallback m_data_cb;
 	SendCallback m_send_cb;

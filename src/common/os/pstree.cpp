@@ -188,7 +188,7 @@ namespace os
 		if (iter != processes.end())
 			return std::make_shared<ProcessTree>(ProcessTree(*iter, children));
 
-		LOG_ERR << fname << "No process <" << pid << "> found from tree";
+		LOG_ERR << fname << "No process <" << pid << "> found in process list";
 		return nullptr;
 	}
 

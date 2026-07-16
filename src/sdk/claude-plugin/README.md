@@ -21,7 +21,7 @@ Run from your project root:
 
 ```bash
 curl -sL https://github.com/laoshanxi/app-mesh/archive/refs/heads/main.tar.gz \
-  | tar xz --strip-components=4 -C /tmp app-mesh-main/src/sdk/claude-plugin \
+  | tar xz --strip-components=3 -C /tmp app-mesh-main/src/sdk/claude-plugin \
   && mkdir -p .claude/skills .claude/rules \
   && cp -r /tmp/claude-plugin/skills/appmesh-remote .claude/skills/ \
   && cp /tmp/claude-plugin/rules/remote-dev-mode.md .claude/rules/ \

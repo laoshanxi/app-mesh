@@ -31,6 +31,8 @@ void TimerStdoutStrategy::teardown()
 
 bool TimerStdoutStrategy::onTimerDispatch()
 {
+	const static char fname[] = "TimerStdoutStrategy::onTimerDispatch() ";
+
 	auto owner = m_owner.lock();
 	if (!owner)
 		return IS_VALID_TIMER_ID(m_timerId);
@@ -54,7 +56,7 @@ bool TimerStdoutStrategy::onTimerDispatch()
 	}
 	catch (const std::exception &e)
 	{
-		LOG_WAR << "TimerStdoutStrategy::onTimerDispatch() failed for app=" << m_appName << ": " << e.what();
+		LOG_WAR << fname << "failed for app=" << m_appName << ": " << e.what();
 	}
 	return IS_VALID_TIMER_ID(m_timerId);
 }

@@ -70,9 +70,9 @@ ownership, and runs the steps **as the caller** (recorded as `actor`).
 ```bash
 appm workflow add  -f src/workflow/docs/spec-pipeline-demo.yaml
 appm workflow run  spec-pipeline-demo                       # green path
-appm workflow run  spec-pipeline-demo -i demo_reject=true   # exercise the rework path
+appm workflow run  spec-pipeline-demo -e demo_reject=true   # exercise the rework path
 appm workflow runs spec-pipeline-demo                       # list runs
-appm workflow logs spec-pipeline-demo <run_id>              # flow log
+appm workflow logs -w spec-pipeline-demo <run_id>           # flow log
 ```
 
 ### Via an SDK (Python)
@@ -132,8 +132,9 @@ FINAL: failure
 - **Long runs vs token validity** — steps run with the caller's token; a run that outlives the
   token will fail closed mid-flight. Trigger with a token whose lifetime covers the run, and
   use a non-renewing (one-shot) token so a session refresh doesn't revoke it mid-run.
-- **Automatic (cron/event) triggers** run under the engine identity, not a caller — keep those
-  pipelines to engine-appropriate work, or wait for the act-as capability (ADR 0004 / Phase 3).
+- **Automatic (cron/event) triggers** have no caller identity — the workflow must declare an
+  `execution_identity` (see [Workflow.md](Workflow.md)) or the run fails closed; the engine's
+  own identity is never used to run steps (ADR 0004).
 - Placeholder commands (`claude`/`openspec`/`gh`/`./scripts/*`) must exist in the daemon's
   environment; otherwise those steps fail at the command (a useful orchestration smoke test).
 

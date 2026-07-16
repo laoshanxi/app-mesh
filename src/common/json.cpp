@@ -27,7 +27,7 @@ std::string JSON::dump(const nlohmann::json &j, int indent, bool sanitizeUTF8)
         {
             try
             {
-                LOG_ERR << "Retrying with UTF-8 sanitization...";
+                LOG_WAR << "Retrying JSON dump with UTF-8 sanitization";
                 return j.dump(indent, ' ', false, nlohmann::json::error_handler_t::replace);
             }
             catch (...)

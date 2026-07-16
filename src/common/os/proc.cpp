@@ -101,7 +101,7 @@ namespace os
 				// pbi_nfiles from PROC_PIDTASKALLINFO — it is the SAME count
 				// (open files), not a distinct memory-mapped-file metric.
 				result = static_cast<size_t>(got) / sizeof(proc_fdinfo);
-				LOG_DBG << fname << "Found " << result << " file descriptors";
+				LOG_DBG << fname << "Found " << result << " file descriptors for process " << pid;
 			}
 		}
 
@@ -118,11 +118,11 @@ namespace os
 				result = static_cast<size_t>(std::distance(
 					boost::filesystem::directory_iterator(procFdPath),
 					boost::filesystem::directory_iterator()));
-				LOG_DBG << fname << "Found " << result << " file descriptors";
+				LOG_DBG << fname << "Found " << result << " file descriptors for process " << pid;
 			}
 			else
 			{
-				LOG_WAR << fname << "no such path or no permission: " << procFdPath;
+				LOG_WAR << fname << "Path does not exist or is not readable: " << procFdPath;
 			}
 		}
 		catch (const std::exception &e)

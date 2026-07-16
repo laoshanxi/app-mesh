@@ -67,7 +67,7 @@ docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_ubuntu22 \
 
 ## Code Style
 
-### C++ (Core Daemon and CLI)
+### C++ (Core Daemon)
 
 - **Standard**: C++17
 - **Classes**: CamelCase (e.g., `ApplicationManager`)

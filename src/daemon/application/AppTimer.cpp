@@ -32,7 +32,7 @@ std::chrono::system_clock::time_point AppTimer::nextTime(const std::chrono::syst
 
 std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono::system_clock::time_point target)
 {
-    const static char fname[] = "Application::adjustDailyTimeRange() ";
+    const static char fname[] = "AppTimer::adjustDailyTimeRange() ";
     if (m_dailyLimit != nullptr)
     {
         // Convert now to day time [%H:%M:%S], less than 24h
@@ -46,13 +46,13 @@ std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono
                 {
                     auto offset = (m_dailyLimit->m_startTimeValue - now).total_seconds();
                     target += std::chrono::seconds(offset);
-                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset << ">";
+                    LOG_DBG << fname << "day time <" << now << "> with startTime <" << m_dailyLimit->m_startTimeValue << ">, endTime <" << m_dailyLimit->m_endTimeValue << ">, adjusted by <" << offset << "> seconds";
                 }
                 else if (now > m_dailyLimit->m_endTimeValue)
                 {
                     auto offset = std::chrono::hours(24) - std::chrono::seconds((m_dailyLimit->m_endTimeValue - now).total_seconds());
                     target += offset;
-                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset.count() << ">";
+                    LOG_DBG << fname << "day time <" << now << "> with startTime <" << m_dailyLimit->m_startTimeValue << ">, endTime <" << m_dailyLimit->m_endTimeValue << ">, adjusted by <" << offset.count() << "> seconds";
                 }
             }
         }
@@ -65,7 +65,7 @@ std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono
                 // In the invalid range, advance to startTime
                 auto offset = (m_dailyLimit->m_startTimeValue - now).total_seconds();
                 target += std::chrono::seconds(offset);
-                LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset << ">";
+                LOG_DBG << fname << "day time <" << now << "> with startTime <" << m_dailyLimit->m_startTimeValue << ">, endTime <" << m_dailyLimit->m_endTimeValue << ">, adjusted by <" << offset << "> seconds";
             }
         }
     }

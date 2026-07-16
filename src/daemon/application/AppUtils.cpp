@@ -24,7 +24,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
 	if (!shellFile.is_open())
 	{
-		LOG_WAR << fname << "Failed to open shell file for writing: " << fileName;
+		LOG_ERR << fname << "Failed to open batch file <" << fileName << "> for writing for app <" << name << ">: " << last_error_msg();
 		throw std::runtime_error("Failed to create shell script file.");
 	}
 
@@ -48,7 +48,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	m_fileName = fileName;
 	m_shellCmd = Utility::stringFormat("cmd.exe /C \"%s\"", m_fileName.c_str());
 
-	LOG_DBG << fname << "Generated batch file <" << fileName << "> for app <" << name << "> command: " << m_shellCmd;
+	LOG_DBG << fname << "Generated batch file <" << fileName << "> for app <" << name << "> with command <" << m_shellCmd << ">";
 
 #else
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
@@ -59,7 +59,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
 	if (!shellFile.is_open())
 	{
-		LOG_WAR << fname << "Failed to open shell file for writing: " << fileName;
+		LOG_ERR << fname << "Failed to open shell file <" << fileName << "> for writing for app <" << name << ">: " << last_error_msg();
 		throw std::runtime_error("Failed to create shell script file.");
 	}
 
@@ -74,7 +74,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	// Set the file permission to read and execute (owner only)
 	if (!os::chmod(fileName, 500))
 	{
-		LOG_WAR << fname << "Failed to set permissions for file: " << fileName;
+		LOG_ERR << fname << "Failed to set permissions for file <" << fileName << ">: " << last_error_msg();
 		throw std::runtime_error("Failed to set file permissions.");
 	}
 
@@ -87,7 +87,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	{
 		if (!os::chown(fileName, execUser))
 		{
-			LOG_WAR << fname << "Failed to change ownership of file: " << fileName;
+			LOG_ERR << fname << "Failed to change ownership of file <" << fileName << "> to user <" << execUser << ">: " << last_error_msg();
 			throw std::runtime_error("Failed to change file ownership.");
 		}
 	}
@@ -102,7 +102,6 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	{
 		m_usingSudo = true;
 		m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash '%s'", execUser.c_str(), m_fileName.c_str());
-		LOG_DBG << fname << "Generated shell command with sudo for user <" << execUser << "> : " << m_shellCmd;
 	}
 
 	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> and command <" << m_shellCmd << ">";
@@ -135,11 +134,11 @@ void AppLogFile::increaseIndex()
 		Utility::removeFile(newFile);
 	if (Utility::isFileExist(oldFile) && 0 != ACE_OS::rename(oldFile.c_str(), newFile.c_str()))
 	{
-		LOG_ERR << fname << "Rename file <" << oldFile << "> failed with error: " << last_error_msg();
+		LOG_ERR << fname << "Failed to rename file <" << oldFile << "> to <" << newFile << ">: " << last_error_msg();
 	}
 	else
 	{
-		LOG_DBG << fname << "file <" << newFile << "> created";
+		LOG_DBG << fname << "File <" << newFile << "> created";
 	}
 }
 

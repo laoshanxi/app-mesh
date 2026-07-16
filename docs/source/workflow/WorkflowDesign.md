@@ -34,7 +34,7 @@ wf-engine (Go, single long-lived process)
         ▼
   App Mesh daemon APIs
         │
-        │  RunAppAsync, Wait, Subscribe, GetAppOutput, RunTask, DeleteApp
+        │  RunAppAsync, Subscribe, GetAppOutput, RunTask, DeleteApp
 ```
 
 The `wf-engine` binary is a pre-installed App (named `workflow`) that auto-starts on daemon boot. All workflow operations — registration, execution, cancellation, querying — go through the Task API. There is one execution path: goroutines.
@@ -62,7 +62,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 │  Topo sort, layer-by-layer dispatch, cancel prop    │
 ├─────────────────────────────────────────────────────┤
 │  Layer 4: Step Executor                             │
-│  executor.go, stdout_collector.go, node.go          │
+│  executor.go, node.go                               │
 │  4 step types, remote routing, subscribe stdout     │
 ├─────────────────────────────────────────────────────┤
 │  Layer 5: Expression Engine                         │
@@ -121,7 +121,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 ```
 
 **Interfaces exposed:**
-- `TriggerManual(name, inputs) (runID, status, error)` — used by Layer 6.
+- `TriggerManual(name, inputs, token, actor) (runID, status, error)` — used by Layer 6.
 - `CancelByRunID(runID)` / `CancelByWorkflow(name)` — used by Layer 6.
 - `Checkpoint().GetRunRecord(wf, runID)` — used by Layer 6 for `run_detail`.
 
@@ -151,16 +151,17 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 
 **Behavior by step type:**
 
-- **command** (`execCommand`): Creates a temporary App (`wf-cmd-*`), subscribes to `STDOUT`+`EXIT`+`REMOVED` events **before** `RunAppAsync` (so no events are missed), waits for completion, then calls `Unsubscribe` + `DeleteApp` to clean up.
-- **app** (`execApp`): Runs an existing App via `RunAppAsync`. Subscribes **after** the call (because the daemon generates a new run name). Immediately does a backfill `GetAppOutput` check after subscribe to handle fast-exit apps whose EXIT event arrived before the subscription connected. If the app already exited, `collector.backfill` signals completion immediately.
+- **command** (`execCommand`): Creates a temporary App (`wf-cmd-*`) with the resolved command/workdir/docker_image and runs it through the shared `runAndWait` path; the temp App is deleted at step end.
+- **app** (`execApp`): Runs an existing App by name through the same `runAndWait` path, passing `env`/`sec_env` overrides.
+- **runAndWait** (shared by command/app): calls `RunAppAsync`, then waits with the Go SDK's `WaitForAsyncRun`, which subscribes to `STDOUT`+`EXIT`+`REMOVED` events and backfills via `GetAppOutput` any output emitted before the subscription took effect (byte-position dedup bridges backfill and live events). Stdout chunks stream into the step log file as they arrive.
 - **message** (`execMessage`): Calls `RunTask` in a goroutine with a buffered channel. A `select` on `ctx.Done()` provides cancel support — if cancelled, the function returns immediately while the goroutine drains to the buffered channel.
 - **workflow** (`execWorkflow`): Creates a `context.WithTimeout` from the step's timeout config, passes it to `RunSubWorkflow`. The sub-workflow respects the timeout at DAG layer boundaries.
 
-**Remote execution:** `clientForTarget` creates a forwarding TCP client per job and caches it in `remoteClient`. On TCP disconnect (exit code `-2`), the cached client is cleared and API calls on the dead connection are skipped; the next step creates a fresh connection.
+**Remote execution:** `clientForTarget` creates a forwarding TCP client per job and caches it in `remoteClient`. On TCP disconnect (`appmesh.ErrTransportDisconnected`), the cached client is cleared and API calls on the dead connection are skipped; the next step creates a fresh connection.
 
-**Subscribe fallback:** If subscription fails, the executor falls back to polling via `client.Wait` + `client.GetAppOutput`.
+**Subscribe failure:** if the subscription cannot be established, `WaitForAsyncRun` returns an error and the step fails — there is no polling fallback.
 
-**stdout collection:** `stdoutCollector` handles `STDOUT`, `EXIT`, `REMOVED`, and `__disconnected__` events. It uses `sync.Once` for `signalDone` (safe against double-close) and `sync.Mutex` for stdout buffer and exit code. The `backfill` method is thread-safe and idempotent — if an EXIT event already set the exit code, backfill is a no-op.
+**stdout collection:** the event handling lives in the Go SDK's `WaitForAsyncRun` (`src/sdk/go/subscribe.go`): it handles `STDOUT`, `EXIT`, `REMOVED`, and `__disconnected__` events, completes exactly once via `sync.Once`, and its `GetAppOutput` backfill is idempotent — if an EXIT event already set the exit code, the backfill result is ignored. The executor's `onOutput` callback guards the stdout buffer and step log file with a mutex and fences late events after the wait returns.
 
 ### Layer 5 — Expression Engine
 
@@ -269,7 +270,7 @@ Max nesting depth is 4 levels. The target workflow YAML must be available at the
 3. Build DAG layers from `jobs[*].needs`.
 4. For each job, evaluate dependencies and `if`.
 5. For each step, evaluate `if`, merge `env` and `sec_env`, substitute expressions, then dispatch through the executor.
-6. Stream stdout by subscribing to `STDOUT`, `EXIT`, and `REMOVED` events before `RunAppAsync`; fallback to `Wait` and `GetAppOutput` if subscription is unavailable.
+6. Stream stdout by subscribing to `STDOUT`, `EXIT`, and `REMOVED` events after `RunAppAsync`; a `GetAppOutput` backfill covers output emitted before the subscription took effect.
 7. Write step result snapshots into the expression context and checkpoint.
 8. Run `finally` steps after normal steps. `finally` steps can read `job.status`.
 9. Mark run `success`, `failure`, or `cancelled`; then mark checkpoint complete.
@@ -314,15 +315,15 @@ daemon starts workflow App
 
 **Recovery:** If auto-refresh fails (e.g., daemon restart), the scan loop detects consecutive failures and re-logins with the stored password. If the process itself crashes, `behavior: exit: restart` causes the daemon to respawn it with a fresh login.
 
-**Remote nodes:** Step execution on remote nodes uses `ForwardTo` header — the local daemon proxies the request and handles remote authentication. The engine uses a single identity for all operations.
+**Remote nodes:** Step execution on remote nodes uses `ForwardTo` header — the local daemon proxies the request and handles remote authentication. The engine's own login is used only for the control plane (registry scan, App CRUD, orphan cleanup); step execution uses the per-run identity (see Identity And Security).
 
 ## Identity And Security
 
-- `owner` and `permission` are stored on the `workflow-{name}` pseudo App.
-- All step execution uses the JWT/token of the `workflow` engine process.
-- There is no per-run `actor` or `execution_identity` record yet.
+- Ownership is derived from the authenticated registrant and stored in the `workflow-{name}` pseudo App's metadata; every workflow action authorizes against owner/workflow-admin (`APPMESH_WORKFLOW_ADMINS`), fail-closed (ADR 0006).
+- Manually triggered runs execute steps under the triggering caller's token; automatic (event) runs use the workflow's declared `execution_identity` (credentials provisioned via `APPMESH_EXEC_IDENTITIES`) or fail closed. The engine's own identity is never used to run steps (ADR 0006 / ADR 0004).
+- The triggering user is recorded as `actor` in the run record for audit.
 
-This means owner/permission helps identify and protect the workflow definition, but it is not yet a complete execution identity model. A future improvement would introduce distinct `resource_owner`, `actor`, and `execution_identity` fields (see ADR 0004).
+The unified Run API and a daemon-side act-as/token-exchange model remain future work (see ADR 0004).
 
 ## Concurrency
 

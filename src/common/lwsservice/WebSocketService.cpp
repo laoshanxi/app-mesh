@@ -466,6 +466,8 @@ void WebSocketService::stop()
 // -------------------------------
 int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
 {
+    const static char fname[] = "WebSocketService::handleHttpCallback() ";
+
     ACE_UNUSED_ARG(user);
     auto *pss = http_pss(wsi);
 
@@ -693,7 +695,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
                 int n = lws_write(wsi, pss->response_body.data() + LWS_PRE, body_len, LWS_WRITE_HTTP_FINAL);
                 if (n < 0 || n < body_len) // partial HTTP_FINAL is fatal
                 {
-                    LOG_WAR << "HTTP body partial write: requested=" << body_len << " written=" << n;
+                    LOG_WAR << fname << "HTTP body partial write: requested=" << body_len << " written=" << n;
                     return 1;
                 }
             }
@@ -880,6 +882,8 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
 // IO-thread only. HTTP liveness = opaque_user_data != null; WS via m_sessions.
 void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
 {
+    const static char fname[] = "WebSocketService::deliverResponse() ";
+
     struct lws *wsi = (struct lws *)resp->m_session_ref;
 
     if (resp->m_is_http)
@@ -888,21 +892,21 @@ void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
         // since the worker captured it, making http_pss(wsi) a use-after-free.
         if (m_http_live.find(wsi) == m_http_live.end())
         {
-            LOG_WAR << "HTTP connection closed before response, dropping response";
+            LOG_WAR << fname << "HTTP connection closed before response, dropping response";
             return;
         }
 
         auto *pss = http_pss(wsi);
         if (!pss || !pss->http_pending)
         {
-            LOG_WAR << "HTTP Session invalid or closed, dropping response";
+            LOG_WAR << fname << "HTTP Session invalid or closed, dropping response";
             return;
         }
 
         // ABA protection — verify request ID matches
         if (pss->req_id != resp->m_req_id)
         {
-            LOG_WAR << "HTTP request ID mismatch (ABA detected), dropping response";
+            LOG_WAR << fname << "HTTP request ID mismatch (ABA detected), dropping response";
             return;
         }
 
@@ -919,7 +923,7 @@ void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
             // Queue full → client not draining; close to fail fast instead of a silent drop (on the lws service thread, so lws_set_timeout() is safe)
             if (!it->second->enqueueOutgoingMessage(std::move(resp->m_payload)))
             {
-                LOG_WAR << "WS outgoing queue full for session " << resp->m_session_id << ", closing connection";
+                LOG_WAR << fname << "WS outgoing queue full for session " << resp->m_session_id << ", closing connection";
                 lws_set_timeout(it->first, PENDING_TIMEOUT_CLOSE_ACK, LWS_TO_KILL_ASYNC);
             }
             else
@@ -1003,11 +1007,11 @@ void WebSocketService::runWorkerLoop(int worker_id)
         }
         catch (const std::exception &e)
         {
-            LOG_ERR << fname << "worker " << worker_id << " exception: " << e.what() << " (req_id=" << req.m_req_id << ")";
+            LOG_ERR << fname << "Worker " << worker_id << " exception: " << e.what() << " (req_id=" << req.m_req_id << ")";
         }
         catch (...)
         {
-            LOG_ERR << fname << "worker " << worker_id << " unknown exception (req_id=" << req.m_req_id << ")";
+            LOG_ERR << fname << "Worker " << worker_id << " unknown exception (req_id=" << req.m_req_id << ")";
         }
     }
     LOG_INF << fname << "Thread stopped: ID=" << worker_id;

@@ -77,6 +77,8 @@ ssize_t SSL_Stream_Ex::recv(void *buf, size_t len, int *out_ssl_error)
 // RecvState methods
 RecvResult RecvState::do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t len, size_t &bytes_received, int &ssl_error)
 {
+	const static char fname[] = "RecvState::do_recv() ";
+
 	bytes_received = 0;
 	ssl_error = SSL_ERROR_NONE;
 
@@ -100,7 +102,7 @@ RecvResult RecvState::do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t l
 
 	case SSL_ERROR_ZERO_RETURN:
 		// Clean shutdown (close_notify received)
-		LOG_DBG << "Peer closed connection cleanly";
+		LOG_DBG << fname << "Peer closed connection cleanly";
 		return RecvResult::CLOSED;
 
 	case SSL_ERROR_SYSCALL:
@@ -108,7 +110,7 @@ RecvResult RecvState::do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t l
 		if (n == 0)
 		{
 			// EOF violation (peer closed socket without sending close_notify)
-			LOG_DBG << "Peer closed connection unexpectedly (EOF)";
+			LOG_DBG << fname << "Peer closed connection unexpectedly (EOF)";
 			return RecvResult::CLOSED;
 		}
 
@@ -117,7 +119,7 @@ RecvResult RecvState::do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t l
 		if (err == EWOULDBLOCK || err == EAGAIN || err == EINTR)
 			return RecvResult::WOULD_BLOCK;
 
-		LOG_ERR << "Receive syscall failed: " << last_error_msg();
+		LOG_ERR << fname << "Receive syscall failed: " << last_error_msg();
 		return RecvResult::ERR;
 	}
 
@@ -128,23 +130,24 @@ RecvResult RecvState::do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t l
 		unsigned long openssl_err = ::ERR_peek_error();
 		if (openssl_err == 0)
 		{
-			LOG_DBG << "Peer connection lost (SSL_ERROR_SSL, no queued error)";
+			LOG_DBG << fname << "Peer connection lost (SSL_ERROR_SSL, no queued error)";
 			return RecvResult::CLOSED;
 		}
 #ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
 		if (ERR_GET_REASON(openssl_err) == SSL_R_UNEXPECTED_EOF_WHILE_READING)
 		{
 			::ERR_clear_error();
-			LOG_DBG << "Peer closed connection without close_notify";
+			LOG_DBG << fname << "Peer closed connection without close_notify";
 			return RecvResult::CLOSED;
 		}
 #endif
-		LOG_WAR << "SSL protocol error on recv: " << ::ERR_reason_error_string(openssl_err);
+		const char *reason = ::ERR_reason_error_string(openssl_err);
+		LOG_WAR << fname << "SSL protocol error on recv: " << (reason ? reason : "unknown");
 		return RecvResult::ERR;
 	}
 
 	default:
-		LOG_ERR << "SSL Recv error code: " << ssl_error;
+		LOG_ERR << fname << "Unexpected SSL error on recv, code: " << ssl_error;
 		return RecvResult::ERR;
 	}
 }
@@ -193,6 +196,8 @@ SendResult SendBuffer::do_send(SSL_Stream_Ex &stream, int &ssl_error)
 
 SendResult SendBuffer::send_chunk(SSL_Stream_Ex &stream, const char *data, size_t len, size_t &sent, size_t max_len, int &ssl_error)
 {
+	const static char fname[] = "SendBuffer::send_chunk() ";
+
 	// Reset error state before operation
 	ssl_error = SSL_ERROR_NONE;
 
@@ -219,7 +224,7 @@ SendResult SendBuffer::send_chunk(SSL_Stream_Ex &stream, const char *data, size_
 
 	case SSL_ERROR_ZERO_RETURN:
 		// The peer has sent a "close notify" alert cleanly
-		LOG_DBG << "Connection closed by peer (SSL_ERROR_ZERO_RETURN)";
+		LOG_DBG << fname << "Connection closed by peer (SSL_ERROR_ZERO_RETURN)";
 		return SendResult::CLOSED;
 
 	case SSL_ERROR_SYSCALL:
@@ -228,7 +233,7 @@ SendResult SendBuffer::send_chunk(SSL_Stream_Ex &stream, const char *data, size_
 		// Note: If n == 0 here, it often means EOF from peer without close_notify.
 		if (n == 0)
 		{
-			LOG_DBG << "Connection closed unexpectedly (EOF)";
+			LOG_DBG << fname << "Connection closed unexpectedly (EOF)";
 			return SendResult::CLOSED;
 		}
 
@@ -237,7 +242,7 @@ SendResult SendBuffer::send_chunk(SSL_Stream_Ex &stream, const char *data, size_
 		if (err == EWOULDBLOCK || err == EAGAIN || err == EINTR)
 			return SendResult::WOULD_BLOCK;
 
-		LOG_ERR << "Send syscall failed: " << last_error_msg();
+		LOG_ERR << fname << "Send syscall failed: " << last_error_msg();
 		return SendResult::ERR;
 	}
 
@@ -246,15 +251,16 @@ SendResult SendBuffer::send_chunk(SSL_Stream_Ex &stream, const char *data, size_
 		unsigned long openssl_err = ::ERR_peek_error();
 		if (openssl_err == 0)
 		{
-			LOG_DBG << "Peer connection lost (SSL_ERROR_SSL, no queued error)";
+			LOG_DBG << fname << "Peer connection lost (SSL_ERROR_SSL, no queued error)";
 			return SendResult::CLOSED;
 		}
-		LOG_WAR << "SSL protocol error on send: " << ::ERR_reason_error_string(openssl_err);
+		const char *reason = ::ERR_reason_error_string(openssl_err);
+		LOG_WAR << fname << "SSL protocol error on send: " << (reason ? reason : "unknown");
 		return SendResult::ERR;
 	}
 
 	default:
-		LOG_ERR << "SSL Send error code: " << ssl_error;
+		LOG_ERR << fname << "Unexpected SSL error on send, code: " << ssl_error;
 		return SendResult::ERR;
 	}
 }
@@ -298,6 +304,81 @@ void SendState::clear()
 	m_current.reset();
 }
 
+// IoGuard: scoped m_io_mutex ownership. Deferred mask changes are applied only when
+// the outermost lock level is released (depth tracks re-entrant frames), so no
+// thread holds m_io_mutex while acquiring the reactor token (see rule 1 in header).
+class SocketStream::IoGuard
+{
+public:
+	explicit IoGuard(SocketStream &stream) : m_stream(stream), m_lock(stream.m_io_mutex)
+	{
+		++m_stream.m_io_depth;
+	}
+	~IoGuard()
+	{
+		ACE_Reactor_Mask add = 0, clr = 0;
+		bool close = false;
+		if (--m_stream.m_io_depth == 0)
+		{
+			add = std::exchange(m_stream.m_deferred_mask_add, static_cast<ACE_Reactor_Mask>(0));
+			clr = std::exchange(m_stream.m_deferred_mask_clr, static_cast<ACE_Reactor_Mask>(0));
+			close = std::exchange(m_stream.m_pending_close, false);
+		}
+		m_lock.unlock();
+		// Both take the reactor path — must run with m_io_mutex released (rule 1).
+		if (add || clr)
+			m_stream.apply_mask_ops(add, clr);
+		if (close)
+			m_stream.shutdown();
+	}
+	IoGuard(const IoGuard &) = delete;
+	IoGuard &operator=(const IoGuard &) = delete;
+
+private:
+	SocketStream &m_stream;
+	std::unique_lock<std::recursive_mutex> m_lock;
+};
+
+void SocketStream::defer_mask(ACE_Reactor_Mask bit, bool enable)
+{
+	// Caller holds m_io_mutex.
+	if (enable)
+	{
+		m_deferred_mask_add |= bit;
+		m_deferred_mask_clr &= ~bit;
+	}
+	else
+	{
+		m_deferred_mask_clr |= bit;
+		m_deferred_mask_add &= ~bit;
+	}
+}
+
+void SocketStream::apply_mask_ops(ACE_Reactor_Mask add, ACE_Reactor_Mask clr)
+{
+	// Caller must NOT hold m_io_mutex: mask_ops acquires the reactor token.
+	if (add)
+		enable_mask(add);
+	if (clr)
+	{
+		disable_mask(clr);
+		if (clr & ACE_Event_Handler::WRITE_MASK)
+		{
+			// A send() may have enqueued between recording and applying this disable —
+			// re-check so a non-empty queue is never left with the write mask off.
+			bool needWrite = false;
+			{
+				std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
+				std::lock_guard<std::mutex> send_lock(m_send_state.mutex());
+				needWrite = m_state.load(std::memory_order_acquire) == ConnState::OPEN &&
+							(!m_send_state.is_empty_unsafe() || m_ssl_retry.want_write_for_recv);
+			}
+			if (needWrite)
+				enable_mask(ACE_Event_Handler::WRITE_MASK);
+		}
+	}
+}
+
 // SocketStream methods
 SocketStream::SocketStream(ACE_SSL_Context *ctx, ACE_Reactor *reactor)
 	: Super(nullptr, nullptr, reactor), m_state(ConnState::CLOSED)
@@ -330,7 +411,7 @@ int SocketStream::open(void *acceptor_or_connector)
 	int nodelay = 1;
 	if (this->peer().set_option(ACE_IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay)) == -1)
 	{
-		LOG_ERR << fname << "Can't disable Nagle's algorithm: " << last_error_msg();
+		LOG_WAR << fname << "Failed to disable Nagle's algorithm (TCP_NODELAY): " << last_error_msg();
 	}
 	// Enable non-blocking mode
 	if (this->peer().enable(ACE_NONBLOCK) == -1)
@@ -344,13 +425,27 @@ int SocketStream::open(void *acceptor_or_connector)
 	{
 		LOG_ERR << fname << "Failed to register handler: " << last_error_msg();
 		m_state.store(ConnState::CLOSED, std::memory_order_release);
-
-		this->remove_reference(); // Release the construction reference
+		// Keep the construction reference — ACE_Acceptor (and connect()) call close()
+		// after open() fails; releasing it here would make that a use-after-free.
 		return -1;
 	}
 
 	fire_connect();
 	this->remove_reference(); // Release the construction reference
+	return 0;
+}
+
+// Releases the construction reference on the failure path. ACE_Acceptor calls this
+// when open() returns -1, and connect() calls it on failure; the success path never
+// reaches here (open() releases the ref, teardown goes through handle_close()).
+int SocketStream::close(u_long flags)
+{
+	ACE_UNUSED_ARG(flags);
+	const static char fname[] = "SocketStream::close() ";
+	LOG_DBG << fname << this;
+
+	this->peer().close();
+	this->remove_reference();
 	return 0;
 }
 
@@ -361,6 +456,7 @@ bool SocketStream::connect(const ACE_INET_Addr &remote, const ACE_Time_Value *ti
 	if (!this->reactor())
 	{
 		LOG_ERR << fname << "No reactor assigned";
+		this->close();
 		return false;
 	}
 	ACE_SSL_SOCK_Connector connector;
@@ -368,13 +464,14 @@ bool SocketStream::connect(const ACE_INET_Addr &remote, const ACE_Time_Value *ti
 	if (connector.connect(this->peer(), remote, timeout, ACE_Addr::sap_any, 1) == -1)
 	{
 		report_error("Connect failed");
+		this->close();
 		return false;
 	}
 
 	if (this->open(nullptr) == -1)
 	{
 		LOG_ERR << fname << "Failed to open socket stream after connection";
-		this->peer().close();
+		this->close();
 		return false;
 	}
 	return true;
@@ -383,19 +480,23 @@ bool SocketStream::connect(const ACE_INET_Addr &remote, const ACE_Time_Value *ti
 bool SocketStream::send(const std::string &data) { return send(data.data(), data.size()); }
 bool SocketStream::send(const char *data, size_t len)
 {
+	const static char fname[] = "SocketStream::send() ";
+
 	if (len > TCP_MAX_RECV_BODY_SIZE)
 	{
-		LOG_ERR << "SocketStream::send() Message too large: " << len << " bytes, limit: " << TCP_MAX_RECV_BODY_SIZE;
+		LOG_ERR << fname << "Message too large: " << len << " bytes, limit: " << TCP_MAX_RECV_BODY_SIZE;
 		return false;
 	}
 	return send_impl(SendBuffer(data, len));
 }
 bool SocketStream::send(std::unique_ptr<msgpack::sbuffer> &&data)
 {
+	const static char fname[] = "SocketStream::send() ";
+
 	const size_t len = data ? data->size() : 0;
 	if (len > TCP_MAX_RECV_BODY_SIZE)
 	{
-		LOG_ERR << "SocketStream::send() Message too large: " << len << " bytes, limit: " << TCP_MAX_RECV_BODY_SIZE;
+		LOG_ERR << fname << "Message too large: " << len << " bytes, limit: " << TCP_MAX_RECV_BODY_SIZE;
 		return false;
 	}
 	return send_impl(SendBuffer(std::move(data)));
@@ -420,7 +521,7 @@ void SocketStream::shutdown()
 				// and clean up resources under the io lock. The connection will be cleaned
 				// up when the reactor eventually dispatches or when the object is destroyed.
 				LOG_WAR << fname << "Failed to notify reactor for close: " << last_error_msg();
-				std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
+				IoGuard io_lock(*this);
 				ConnState prev = m_state.exchange(ConnState::CLOSED, std::memory_order_acq_rel);
 				if (prev != ConnState::CLOSED)
 				{
@@ -433,7 +534,7 @@ void SocketStream::shutdown()
 		else
 		{
 			// No reactor, directly close
-			std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
+			IoGuard io_lock(*this);
 			m_state.store(ConnState::CLOSED, std::memory_order_release);
 			this->peer().close();
 			m_send_state.clear();
@@ -454,7 +555,7 @@ int SocketStream::handle_input(ACE_HANDLE fd)
 	const static char fname[] = "SocketStream::handle_input() ";
 	LOG_DBG << fname << this;
 
-	std::lock_guard<std::recursive_mutex> lock(m_io_mutex);
+	IoGuard lock(*this);
 
 	// SSL renegotiation: send needed a read — bounded to prevent mutual recursion
 	if (std::exchange(m_ssl_retry.want_read_for_send, false))
@@ -471,7 +572,7 @@ int SocketStream::handle_input(ACE_HANDLE fd)
 		{
 			// Recursion depth limit reached, defer to reactor
 			m_ssl_retry.want_read_for_send = true;
-			enable_mask(ACE_Event_Handler::WRITE_MASK);
+			defer_mask(ACE_Event_Handler::WRITE_MASK, true);
 		}
 	}
 
@@ -550,7 +651,7 @@ int SocketStream::handle_output(ACE_HANDLE fd)
 	const static char fname[] = "SocketStream::handle_output() ";
 	LOG_DBG << fname << this;
 
-	std::lock_guard<std::recursive_mutex> lock(m_io_mutex);
+	IoGuard lock(*this);
 
 	// SSL renegotiation: recv needed a write — bounded to prevent mutual recursion
 	if (std::exchange(m_ssl_retry.want_write_for_recv, false))
@@ -567,7 +668,7 @@ int SocketStream::handle_output(ACE_HANDLE fd)
 		{
 			// Recursion depth limit reached, defer to reactor
 			m_ssl_retry.want_write_for_recv = true;
-			enable_mask(ACE_Event_Handler::READ_MASK);
+			defer_mask(ACE_Event_Handler::READ_MASK, true);
 		}
 	}
 
@@ -586,7 +687,7 @@ int SocketStream::handle_output(ACE_HANDLE fd)
 			if (m_send_state.is_empty_unsafe() && !m_ssl_retry.want_write_for_recv)
 			{
 				LOG_DBG << fname << "Send queue empty, disabling write mask";
-				disable_mask(ACE_Event_Handler::WRITE_MASK);
+				defer_mask(ACE_Event_Handler::WRITE_MASK, false);
 			}
 			return 0;
 		}
@@ -605,7 +706,7 @@ int SocketStream::handle_output(ACE_HANDLE fd)
 			if (ssl_err == SSL_ERROR_WANT_READ)
 			{
 				m_ssl_retry.want_read_for_send = true;
-				enable_mask(ACE_Event_Handler::READ_MASK);
+				defer_mask(ACE_Event_Handler::READ_MASK, true);
 			}
 			return 0;
 
@@ -636,10 +737,12 @@ int SocketStream::handle_close(ACE_HANDLE h, ACE_Reactor_Mask m)
 	if (prev != ConnState::CLOSED)
 	{
 		{
-			std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
+			IoGuard io_lock(*this);
 
 			if (auto r = this->reactor())
 			{
+				// Token under m_io_mutex is safe ONLY here: handle_close callers already
+				// hold the token, so this re-acquisition is recursive and cannot block.
 				r->remove_handler(this, ACE_Event_Handler::ALL_EVENTS_MASK | ACE_Event_Handler::DONT_CALL);
 			}
 
@@ -649,7 +752,8 @@ int SocketStream::handle_close(ACE_HANDLE h, ACE_Reactor_Mask m)
 			fire_close();
 		}
 
-		// Call base class after releasing io_lock — base may call delete this
+		// Call base after releasing io_lock: the reactor drops its last reference once
+		// this upcall returns, deleting this — we must not hold the lock across that.
 		return Super::handle_close(h, m);
 	}
 
@@ -663,27 +767,39 @@ bool SocketStream::send_impl(SendBuffer &&buf)
 	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
 		return false;
 
+	bool overflow = false;
 	{
 		// Lock order: m_io_mutex → m_send_state.mutex()
-		// enable_mask() must be called OUTSIDE m_io_mutex to avoid lock inversion
-		// with reactor dispatch (reactor token → m_io_mutex in handle_close).
-		std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
+		IoGuard io_lock(*this);
 
 		if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
 			return false;
 
-		std::lock_guard<std::mutex> lock(m_send_state.mutex());
-		m_send_state.enqueue_unsafe(std::move(buf));
-		LOG_DBG << fname << "Enqueued message for sending";
+		{
+			std::lock_guard<std::mutex> lock(m_send_state.mutex());
+			if (m_send_state.queue_depth_unsafe() >= MAX_SEND_QUEUE_DEPTH)
+				overflow = true;
+			else
+				m_send_state.enqueue_unsafe(std::move(buf));
+		}
+
+		if (!overflow)
+		{
+			LOG_DBG << fname << "Enqueued message for sending";
+			// Deferred (rule 1) — also covers re-entrant sends from onData/onSent
+			// callbacks, which run while an outer upcall frame holds m_io_mutex.
+			defer_mask(ACE_Event_Handler::WRITE_MASK, true);
+		}
+		else
+		{
+			// Defer close to the outermost IoGuard — a re-entrant (callback → send) frame
+			// can't release m_io_mutex itself (rule 1).
+			LOG_WAR << fname << "Send queue full (" << MAX_SEND_QUEUE_DEPTH << "), peer not draining; closing " << this;
+			m_pending_close = true;
+		}
 	}
 
-	// enable_mask acquires the reactor token — calling it under m_io_mutex
-	// inverts the lock order with handle_close (reactor token → m_io_mutex),
-	// causing deadlock. Safe to call outside the lock: if handle_close races
-	// and closes the connection, mask_ops on a removed handler is a harmless no-op.
-	enable_mask(ACE_Event_Handler::WRITE_MASK);
-
-	return true;
+	return overflow ? false : true;
 }
 
 void SocketStream::handle_ssl_want_write(int ssl_err)
@@ -691,7 +807,7 @@ void SocketStream::handle_ssl_want_write(int ssl_err)
 	if (ssl_err == SSL_ERROR_WANT_WRITE)
 	{
 		m_ssl_retry.want_write_for_recv = true;
-		enable_mask(ACE_Event_Handler::WRITE_MASK);
+		defer_mask(ACE_Event_Handler::WRITE_MASK, true);
 	}
 }
 
@@ -718,6 +834,8 @@ void SocketStream::fire_connect()
 
 void SocketStream::fire_close()
 {
+	const static char fname[] = "SocketStream::fire_close() ";
+
 	std::lock_guard<std::mutex> l(m_cb_mutex);
 	if (m_close_cb)
 	{
@@ -727,7 +845,7 @@ void SocketStream::fire_close()
 		}
 		catch (...)
 		{
-			LOG_ERR << "Exception thrown in close callback";
+			LOG_ERR << fname << "Exception thrown in close callback";
 		}
 	}
 }
@@ -763,7 +881,7 @@ SocketStreamPtr SocketStream::createConnection(const ACE_INET_Addr &remote, cons
 		LOG_DBG << fname << "Connected to " << remote.get_host_addr() << ":" << remote.get_port_number();
 	else
 		LOG_WAR << fname << "Failed to connect to " << remote.get_host_addr() << ":" << remote.get_port_number();
-	// Always return stream — caller checks connected(). This avoids needing to manually
-	// release the ACE construction reference when open() was never called.
+	// Always return stream — caller checks connected(); on failure connect() already
+	// released the construction reference.
 	return stream;
 }

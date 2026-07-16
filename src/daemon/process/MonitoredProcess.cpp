@@ -56,6 +56,6 @@ void MonitoredProcess::replyAsyncRequest()
 	}
 	catch (...)
 	{
-		LOG_ERR << fname << "message reply failed, maybe the http connection broken with error: " << last_error_msg();
+		LOG_ERR << fname << "Failed to reply async HTTP request, connection may be broken: " << last_error_msg();
 	}
 }

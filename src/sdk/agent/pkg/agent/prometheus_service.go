@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"net/http"
+	"time"
 )
 
 const (
@@ -36,7 +37,18 @@ func (s *PrometheusServer) ListenAndServe() error {
 
 	addr := fmt.Sprintf(":%d", s.port)
 	logger.Infof("Starting Prometheus exporter server on %s", addr)
-	return http.ListenAndServe(addr, mux)
+
+	// Bound every phase of the request so a slow/idle client (Slowloris) cannot pin a
+	// connection open indefinitely; mirrors the REST server's timeout discipline.
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+	return server.ListenAndServe()
 }
 
 // ListenPrometheus creates and starts a PrometheusServer

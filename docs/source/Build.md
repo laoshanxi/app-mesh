@@ -45,13 +45,13 @@ The Docker image build process is simple with this:
 
 ```shell
 TAG_NAME=build_ubuntu24
-MAGE_NAME=laoshanxi/appmesh:${TAG_NAME}
+IMAGE_NAME=laoshanxi/appmesh:${TAG_NAME}
 
 git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
 cd app-mesh
 
 ! docker rmi -f ${IMAGE_NAME}
-! docker rmi ubuntu:20.04
+! docker rmi ubuntu:24.04
 docker build --no-cache -f docker/Dockerfile.${TAG_NAME} -t ${IMAGE_NAME} .
 docker push ${IMAGE_NAME}
 ```

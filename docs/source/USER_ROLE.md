@@ -102,33 +102,33 @@ User and Role design for App Mesh.
 
 | REST Method | PATH                           | Permission Key       |
 | :---------: | ------------------------------ | -------------------- |
-|     GET     | /appmesh/app/app-name          | `view-app`           |
-|     GET     | /appmesh/app/app-name/output   | `view-app-output`    |
-|     GET     | /appmesh/applications          | `view-all-app`       |
-|     GET     | /appmesh/resources             | `view-host-resource` |
+|     GET     | /appmesh/app/app-name          | `app-view`           |
+|     GET     | /appmesh/app/app-name/output   | `app-output-view`    |
+|     GET     | /appmesh/applications          | `app-view-all`       |
+|     GET     | /appmesh/resources             | `host-resource-view` |
 |     PUT     | /appmesh/app/app-name          | `app-reg`            |
 |    POST     | /appmesh/app/app-name/enable   | `app-control`        |
 |    POST     | /appmesh/app/app-name/disable  | `app-control`        |
 |     DEL     | /appmesh/app/app-name          | `app-delete`         |
-|    POST     | /appmesh/app/syncrun?timeout=5 | `run-app-sync`       |
-|    POST     | /appmesh/app/run?timeout=5     | `run-app-async`      |
-|     GET     | /appmesh/download              | `file-download`      |
-|    POST     | /appmesh/upload                | `file-upload`        |
+|    POST     | /appmesh/app/syncrun?timeout=5 | `app-run-sync`       |
+|    POST     | /appmesh/app/run?timeout=5     | `app-run-async`      |
+|     GET     | /appmesh/file/download         | `file-download`      |
+|    POST     | /appmesh/file/upload           | `file-upload`        |
 |     GET     | /appmesh/labels                | `label-view`         |
 |     PUT     | /appmesh/label/abc?value=123   | `label-set`          |
 |     DEL     | /appmesh/label/abc             | `label-delete`       |
-|    POST     | /appmesh/config                | `config-view`        |
-|     GET     | /appmesh/config                | `config-set`         |
-|    POST     | /appmesh/user/admin/passwd     | `change-passwd`      |
-|    POST     | /appmesh/user/usera/lock       | `lock-user`          |
-|    POST     | /appmesh/user/usera/unlock     | `unlock-user`        |
-|     DEL     | /appmesh/user/usera            | `delete-user`        |
-|     PUT     | /appmesh/user/usera            | `add-user`           |
+|     GET     | /appmesh/config                | `config-view`        |
+|    POST     | /appmesh/config                | `config-set`         |
+|    POST     | /appmesh/user/admin/passwd     | `passwd-change-self` / `passwd-change-user` |
+|    POST     | /appmesh/user/usera/lock       | `user-lock`          |
+|    POST     | /appmesh/user/usera/unlock     | `user-unlock`        |
+|     DEL     | /appmesh/user/usera            | `user-delete`        |
+|     PUT     | /appmesh/user/usera            | `user-add`           |
 |    POST     | /appmesh/totp/secret           | `user-totp-active`   |
 |    POST     | /appmesh/totp/setup            | `user-totp-active`   |
 |    POST     | /appmesh/token/renew           | `user-token-renew`   |
 |    POST     | /appmesh/totp/usera/disable    | `user-totp-disable`  |
-|     GET     | /appmesh/users                 | `get-users`          |
+|     GET     | /appmesh/users                 | `user-list`          |
 
 ### Command Line Authentication
 

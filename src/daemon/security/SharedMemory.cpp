@@ -47,16 +47,16 @@ bool SharedMemory::create()
     if (m_aceShm->open(shmName.c_str(), PSK_SHM_TOTAL_SIZE, O_CREAT | O_RDWR, 0600) == -1)
 #endif
     {
-        LOG_WAR << fname << "Failed to create shared memory: " << last_error_msg();
+        LOG_WAR << fname << "Failed to create shared memory <" << shmName << ">: " << last_error_msg();
         m_aceShm = nullptr;
         return false;
     }
-    LOG_INF << fname << "Shared memory created successfully: " << shmName;
+    LOG_DBG << fname << "Shared memory created successfully: " << shmName;
 
     m_shmPtr = static_cast<psk_shared_memory_t *>(m_aceShm->malloc());
     if (!m_shmPtr)
     {
-        LOG_WAR << fname << "Failed to get shared memory pointer";
+        LOG_WAR << fname << "Failed to get pointer for shared memory <" << shmName << ">";
         cleanup();
         return false;
     }
@@ -88,7 +88,7 @@ bool SharedMemory::waitForFlag(int timeoutSeconds)
     {
         if (m_shmPtr->flag.load(std::memory_order_acquire) == 1)
         {
-            LOG_INF << fname << "Flag received successfully";
+            LOG_DBG << fname << "Flag received successfully";
             return true;
         }
 
@@ -96,7 +96,7 @@ bool SharedMemory::waitForFlag(int timeoutSeconds)
         auto elapsed = std::chrono::steady_clock::now() - start;
         if (elapsed > std::chrono::seconds(timeoutSeconds))
         {
-            LOG_WAR << fname << "Wait flag timeout after " << timeoutSeconds << " seconds";
+            LOG_WAR << fname << "Timed out waiting for flag after <" << timeoutSeconds << "> seconds";
             return false;
         }
     }
@@ -134,7 +134,7 @@ bool SharedMemory::writeData(const char *data)
 
     // Ensure write is visible to other processes
     std::atomic_thread_fence(std::memory_order_release);
-    LOG_INF << fname << "Data written successfully, length: " << len;
+    LOG_DBG << fname << "Data written successfully, length: " << len;
     return true;
 }
 
@@ -162,7 +162,7 @@ void SharedMemory::writeFlag()
     m_shmPtr->flag.store(1, std::memory_order_release);
     // Ensure flag write is visible across processes
     std::atomic_thread_fence(std::memory_order_seq_cst);
-    LOG_INF << fname << "Flag set successfully";
+    LOG_DBG << fname << "Flag set successfully";
 }
 
 // Get the shared memory name for environment export

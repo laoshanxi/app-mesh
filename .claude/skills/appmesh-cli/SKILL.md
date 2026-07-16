@@ -42,7 +42,7 @@ appm add -a myapp -c "./run.sh" -w /path/to/work          # basic
 appm add -a myapp -c "./run.sh" -u                         # shell mode
 appm add -a myapp -I nginx:latest \
   -e "APP_DOCKER_OPTS=-p 80:80"                            # docker
-appm add -a myapp -c "./run.sh" -Y cron -i "*/5 * * * * *"  # cron
+appm add -a myapp -c "./run.sh" -Y -i "*/5 * * * * *"      # cron
 appm add -a myapp -c "./run.sh" -S "02:00:00+08"          # daily schedule
 appm add -a myapp -c "./run.sh" -M 512 -C 1024            # resource limits
 appm add -a myapp -c "./run.sh" -e "K=V" -e "K2=V2"       # env vars
@@ -74,7 +74,7 @@ appm shell ps aux                             # one-shot via shell
 ```bash
 appm resource                          # CPU, memory, disk
 appm config                            # view config
-appm log -L DEBUG                      # set log level (DEBUG/INFO/WARN/ERROR)
+appm log -L DEBUG                      # set log level (DEBUG/INFO/NOTICE/WARN/ERROR)
 appm label --view                      # view labels
 appm label -a -l key=value             # add label
 appm label -d -l key                   # delete label
@@ -105,5 +105,4 @@ done
 Some short flags change meaning per command — use long-form (`--app`, `--target`) when ambiguous:
 - `-a`: app name (`ls`/`add`/`run`), audience (`logon`), add mode (`label`), no-attr (`get`/`put`)
 - `-t`: timeout (`run`/`shell`), target user (`passwd`/`lock`)
-- `-v`: verbose (global), view (`label`/`config`)
 - `-r`: remote path (`get`/`put`), retry (`shell`)

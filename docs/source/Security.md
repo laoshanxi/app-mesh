@@ -214,11 +214,11 @@ All REST methods require authentication by default. JWT authentication protects 
 
 #### JWT Sign Algorithm
 
-App Mesh supports two JWT signing algorithms:
+App Mesh supports three JWT signing algorithms:
 
 * HS256 - Uses JWTSalt as the secret key
 * RS256 - Uses public and private PEM key files for signing
-* ES256 - Uses public and private PEM key files with ECDSA algrithom
+* ES256 - Uses public and private PEM key files with ECDSA algorithm
 
 
 ### Cookie Authentication & CSRF

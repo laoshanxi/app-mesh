@@ -21,7 +21,7 @@ Configuration:
 
 - Configuration override by Environment Variables:
   - Override defaults in `config.yaml` & `consul.yaml` using environment variables with the format `APPMESH_${JSON_KEY_LEVEL1}_${JSON_KEY_LEVEL2}_${JSON_KEY_LEVEL3}=NEW_VALUE`. For example, to enable specific cluster configurations for request forwarding:
-    - `-e APPMESH_REST_JWT_JWTSalt=PRODUCTION_SALT`: Specify the JWT salt at the cluster level in case of using HS256 sign algorithom (should share jwt-private.pem/jwt-private.pem in case of using RS256).
+    - `-e APPMESH_REST_JWT_JWTSalt=PRODUCTION_SALT`: Specify the JWT salt at the cluster level in case of using HS256 sign algorithom (should share jwt-public.pem/jwt-private.pem in case of using RS256).
     - `-e APPMESH_REST_JWT_Issuer=PRODUCTION_SERVICE_NAME`: Specify the JWT issuer at the cluster level.
     - `-e APPMESH_REST_RestListenAddress=0.0.0.0`: Enable listening on the LAN.
 
@@ -142,7 +142,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 
 - Download and Configure Docker Compose File:
 
-- Obtain the [docker-compose.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml).
+- Obtain the [docker-compose.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker/docker-compose.yaml).
 - Configure the correct Consul bind IP address and network device name in the file.
 
 - Start Services:
@@ -150,7 +150,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 ```bash
 mkdir appmesh
 cd appmesh
-wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml
+wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/script/docker/docker-compose.yaml
 docker-compose -f docker-compose.yaml up -d
 ```
 
@@ -167,7 +167,7 @@ By default, App Mesh will connect to Consul via `https://127.0.0.1:443`. App Mes
 - WSL Support: Use `service appmesh start` on Windows WSL Ubuntu environments.
 - Fresh Installation: Set `export APPMESH_FRESH_INSTALL=Y` to enable a fresh installation (avoiding reuse of SSL and config files) and use sudo -E to pass environment variables.
 - Secure Installation: Set `export APPMESH_SECURE_INSTALLATION=Y` to generate an initial secure password for the admin user and enable password encryption.
-- Custom Installation Path: Set `PROMPT_INSTALL_PATH=1` to specify a custom installation directory interactively during installation. Alternatively, set `PROMPT_INSTALL_PATH=/opt` to specify the installation directory directly without a prompt. After moving the home directory to a new location, you can re-run the script `script/setup.sh` to complete the setup.
+- Custom Installation Path: Set `PROMPT_INSTALL_PATH=1` to specify a custom installation directory interactively during installation. Alternatively, set `PROMPT_INSTALL_PATH=/opt` to specify the installation directory directly without a prompt. After moving the home directory to a new location, you can re-run the script `script/pack/setup.sh` to complete the setup.
 - Disable Custom Process User: Set `export APPMESH_BaseConfig_DisableExecUser=true` to disable custom process users.
 - Daemon User and Group: Use `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user and group.
 - Timezone Configuration: Use `APPMESH_BaseConfig_PosixTimezone` (e.g., `export APPMESH_BaseConfig_PosixTimezone="+08"`) for timezone setting.

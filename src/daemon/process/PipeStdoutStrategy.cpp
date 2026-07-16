@@ -30,7 +30,7 @@ PipeStdoutStrategy::PipeStdoutStrategy(
 PipeStdoutStrategy::~PipeStdoutStrategy()
 {
 	const static char fname[] = "PipeStdoutStrategy::~PipeStdoutStrategy() ";
-	LOG_DBG << fname;
+	LOG_DBG << fname << "Entered";
 	teardown();
 }
 

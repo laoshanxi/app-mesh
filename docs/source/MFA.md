@@ -31,7 +31,7 @@ These API endpoints and workflows allow users to generate a TOTP secret key, set
 
 #### TOTP Secret Generation:
 
-- API Endpoint: `POST /totp/secret`
+- API Endpoint: `POST /appmesh/totp/secret`
 - Workflow:
   - Generate a unique TOTP secret key for the user.
   - Store the secret key securely on the server (not ready for TOTP validation).
@@ -40,16 +40,16 @@ These API endpoints and workflows allow users to generate a TOTP secret key, set
 
 #### TOTP Setup:
 
-- API Endpoint: `POST /totp/setup`
+- API Endpoint: `POST /appmesh/totp/setup`
 - Workflow:
-  - Receive the TOTP secret key from the client.
-  - Verify the secret key against the stored secret key on the server.
-  - If the secret key is valid, associate it with the user's account.
+  - Receive the TOTP code from the client.
+  - Verify the TOTP code against the stored secret key on the server.
+  - If the code is valid, activate TOTP for the user's account.
   - Return a success response to the client.
 
 #### TOTP Validation:
 
-- API Endpoint: `POST /totp/validate`
+- API Endpoint: `POST /appmesh/totp/validate`
 - Workflow:
   - Receive the TOTP token from the client.
   - Retrieve the user's TOTP secret key from the server.
@@ -59,7 +59,7 @@ These API endpoints and workflows allow users to generate a TOTP secret key, set
 
 #### TOTP Disable:
 
-- API Endpoint: `POST /totp/disable`
+- API Endpoint: `POST /appmesh/totp/{user_name}/disable`
 - Workflow:
   - Remove the TOTP secret key association from the user's account.
   - Invalidate any existing TOTP tokens for the user.

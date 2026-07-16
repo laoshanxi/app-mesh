@@ -598,7 +598,7 @@ Cron scheduling is **not** built into the workflow engine. Use App Mesh's native
 
 ```bash
 # Run hello-world every day at 02:00
-appm add -a cron-hello -c "appm workflow run hello-world" -Y "0 2 * * *"
+appm add -a cron-hello -c "appm workflow run hello-world" -Y -i "0 2 * * *"
 
 # Or, drive on an interval (ISO 8601 duration)
 appm add -a tick-hello -c "appm workflow run hello-world" -i PT5M

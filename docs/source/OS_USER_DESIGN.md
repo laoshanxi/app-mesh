@@ -116,7 +116,7 @@ The Dockerfile pre-creates the `appmesh` user with fixed UID/GID 482 and sets `D
 
 ### Security
 
-- The daemon rejects spawning applications as root — both the literal username `"root"` and any name resolving to UID 0 are blocked.
+- When switching users, any `exec_user` name resolving to UID 0 is rejected; the literal username `"root"` skips user switching entirely, so the process inherits the daemon's own OS user.
 - If `DisableExecUser=false` but the daemon is not running as root, a warning is logged at startup indicating that user switching will not take effect.
 - In containers, numeric UID strings (e.g., `"1001"`) are accepted as valid execution users even without a corresponding `/etc/passwd` entry.
 

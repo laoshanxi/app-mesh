@@ -4,7 +4,7 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 
 ## Core Concepts (Existing App Mesh)
 
-- **App** — A managed process definition registered with App Mesh. Has a command, owner, env, lifecycle behavior, and resource limits. Persisted as YAML in `/opt/appmesh/work/app/`.
+- **App** — A managed process definition registered with App Mesh. Has a command, owner, env, lifecycle behavior, and resource limits. Persisted as YAML in `/opt/appmesh/work/apps/`.
 - **Task** — A request-response message sent to a running App via `POST /app/{name}/task`. The client sends a payload, the App fetches it, processes it, and replies. Synchronous from the caller's perspective.
 - **Event** — A notification dispatched by App Mesh when an App's state changes. Six types: PROCESS_START, PROCESS_EXIT, STDOUT_OUTPUT, HEALTH_CHANGE, STATUS_CHANGE, APP_REMOVED.
 - **Label** — A key-value tag on a node (not an App). Used for node selection and routing in multi-node clusters.
@@ -14,7 +14,7 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 
 ### Core Model (aligned with GitHub Actions)
 
-- **Workflow** — A YAML-defined pipeline of Jobs. Stored at `/opt/appmesh/work/workflow/{name}/workflow.yaml`. Registered as a special App (label `type=workflow`, name `workflow-{name}`) for CRUD and RBAC. (v2 goal: first-class daemon resource — see ADR 0004.)
+- **Workflow** — A YAML-defined pipeline of Jobs. Stored at `/opt/appmesh/work/workflow/{name}/workflow.yaml`. Registered as a special App (metadata `type=workflow`, name `workflow-{name}`) for CRUD and RBAC. (v2 goal: first-class daemon resource — see ADR 0004.)
 - **Job** — A parallel execution unit within a Workflow. Contains an ordered list of Steps. Jobs declare dependencies on other Jobs via `needs`. Independent Jobs run concurrently as goroutines.
 - **Step** — A serial execution unit within a Job. Four types:
   - `command` — runs a shell command via `RunAppAsync` (temporary App Mesh process).
@@ -30,9 +30,9 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 - **runs.json** — Per-workflow run history index (separate from checkpoint).
 - **Trigger (v1)** — Built into the workflow engine: event listener subscribes to App events, fires workflow runs as goroutines. Cron is NOT built in — `on.schedule` in YAML is parsed but a warning is emitted; use external App Mesh cron apps instead.
 - **Cancel** — `cancelRun` cancels the goroutine context AND calls `KillAll()` on tracked active step Apps via `DeleteApp`.
-- **Identity** — v1 uses the workflow App's `owner` field as execution identity. No separate actor/execution_identity distinction.
+- **Identity** — manual runs execute steps under the triggering caller's identity; automatic (event) runs use the workflow's declared `execution_identity` or fail closed (ADR 0006, plus the shipped `execution_identity` part of ADR 0004). The triggering user is recorded as `actor` in the run record.
 
-### v2 Target (ADR 0004 — not yet implemented)
+### v2 Target (ADR 0004 — mostly not implemented; `execution_identity` has shipped)
 
 - **Unified Run Management** — All trigger sources create a Run Record via a single API. Engine only executes, never decides when to run. Triggers are fully external.
 - **Run Record** — Single source of truth replacing checkpoint.json + runs.json. Contains actor, execution_identity, per-job state.
@@ -43,7 +43,7 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 
 - **Workflow Workdir** — Per-workflow directory at `/opt/appmesh/work/workflow/{name}/` containing the YAML definition and per-run data.
 - **Flow Log** — Per-run structured progress log (`flow.log`).
-- **Step Log** — Per-step stdout archive (`{job}.{step}.log`). Streamed via Subscribe events before step completion; fallback to `GetAppOutput` if subscribe is unavailable.
+- **Step Log** — Per-step stdout archive (`{job}.{step}.log`). Streamed via Subscribe events during execution, with a `GetAppOutput` backfill for output emitted before the subscription took effect.
 - **Run Retention** — Automatic cleanup of old run directories. Default: keep the 10 most recent runs per workflow.
 - **Concurrency Group** — A named mutual-exclusion scope for Workflow Runs. GitHub Actions `concurrency` semantics.
 
@@ -60,7 +60,7 @@ Step references are scoped to the current Job. Cross-job references use the `job
 - **`${{ jobs.<name>.steps.<step>.* }}`** — Cross-job step reference.
 - **`${{ job.status }}`** — Aggregate status of the current Job.
 - **`${{ workflow.name }}`** — Name of the Workflow.
-- **`${{ workflow.run_id }}`** — UUID of the current Workflow Run.
+- **`${{ workflow.run_id }}`** — Unique ID (xid) of the current Workflow Run.
 - **`${{ inputs.<name> }}`** — Value passed via manual trigger inputs.
 - **`${{ env.<name> }}`** — Environment variable value.
 - **`success()`** — True if all needs-deps succeeded. Skipped deps = not succeeded.
@@ -74,5 +74,5 @@ Step references are scoped to the current Job. Cross-job references use the `job
 | Task | Request-response message API (`/app/{name}/task`) | Do not use. Use "Step" or "message step" instead. |
 | App | A real managed process | In v1, workflow is registered as a special App for CRUD/RBAC. Not a runnable App. |
 | Run | `POST /app/run` executes an App (App Run) | `appm workflow run` creates a Workflow Run. Internally each step creates an App Run. |
-| Owner | App Mesh user who owns an App | Resource Owner — who owns the workflow definition. v1: no actor/execution_identity split. |
+| Owner | App Mesh user who owns an App | Resource Owner — who owns the workflow definition (the authenticated registrant). `actor` and `execution_identity` are tracked separately (ADR 0006/0004). |
 | Trigger | Not a concept in App Mesh core | v1: built-in event listener. v2: external App Mesh cron/event apps. |

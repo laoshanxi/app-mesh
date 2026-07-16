@@ -1,6 +1,7 @@
 // src/common/Utility.cpp
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <errno.h>
 #include <fstream>
 #include <list>
@@ -306,11 +307,11 @@ bool Utility::createDirectory(const std::string &path, fs::perms perms)
 		const fs::path directoryPath = fs::path(path);
 		if (!fs::create_directories(directoryPath))
 		{
-			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << last_error_msg();
+			LOG_ERR << fname << "Failed to create directory <" << path << "> with error: " << last_error_msg();
 			return false;
 		}
 		// os::chown(getuid(), getgid(), path, false);
-		LOG_DBG << fname << "Created directory: " << path;
+		LOG_DBG << fname << "Created directory <" << path << ">";
 		fs::permissions(directoryPath, perms);
 	}
 	return true;
@@ -336,7 +337,7 @@ bool Utility::createRecursiveDirectory(const std::string &path, fs::perms perms)
 	catch (const std::exception &e)
 	{
 		// VITAL: Catch the permission error so the app survives
-		LOG_WAR << fname << "Cannot create directory " << path << ". Container might be Read-Only. Error: " << e.what();
+		LOG_WAR << fname << "Cannot create directory <" << path << ">. Container might be read-only. Error: " << e.what();
 	}
 	return false;
 }
@@ -351,7 +352,7 @@ bool Utility::removeDir(const std::string &path)
 		auto removed = fs::remove_all(path, ec);
 		if (ec)
 		{
-			LOG_ERR << fname << "remove <" << path << "> failed with error: " << ec.message();
+			LOG_ERR << fname << "Failed to remove <" << path << "> with error: " << ec.message();
 			return false;
 		}
 		else
@@ -375,7 +376,7 @@ void Utility::removeFile(const std::string &path)
 		}
 		else
 		{
-			LOG_WAR << fname << "removed file <" << path << "> failed with error: " << last_error_msg();
+			LOG_WAR << fname << "Failed to remove file <" << path << "> with error: " << last_error_msg();
 		}
 	}
 }
@@ -447,7 +448,8 @@ void Utility::initLogging(const std::string &name)
 	// Create logger
 	auto logger = std::make_shared<spdlog::logger>("appmesh", sinks.begin(), sinks.end());
 	spdlog::set_default_logger(logger);
-	logger->flush_on(spdlog::level::info);
+	logger->flush_on(spdlog::level::warn);
+	spdlog::flush_every(std::chrono::seconds(3));
 
 	// Pattern
 	// %l = full level name (info/warning/error/debug). %L would print single chars E/D.
@@ -458,7 +460,7 @@ void Utility::initLogging(const std::string &name)
 	if (!levelEnv.empty())
 		setLogLevel(levelEnv);
 
-	LOG_DBG << "Logging process ID:" << getpid();
+	LOG_DBG << "Logging process ID: " << getpid();
 }
 
 bool Utility::setLogLevel(const std::string &level)
@@ -487,12 +489,12 @@ bool Utility::setLogLevel(const std::string &level)
 			for (auto &sink : logger->sinks())
 				sink->set_level(it->second);
 		}
-		LOG_INF << "Setting log level to " << level;
+		LOG_INF << "Set log level to <" << level << ">";
 		return true;
 	}
 	else
 	{
-		LOG_ERR << "No such log level " << level;
+		LOG_ERR << "Unknown log level <" << level << ">";
 		return false;
 	}
 }
@@ -584,7 +586,7 @@ std::string Utility::readFile(const std::string &path)
 	if (nullptr == file)
 	{
 		if (!startWith(path, "/proc/"))
-			LOG_WAR << fname << "Get file <" << path << "> failed with error : " << last_error_msg();
+			LOG_WAR << fname << "Failed to open file <" << path << "> with error: " << last_error_msg();
 		return "";
 	}
 
@@ -605,7 +607,7 @@ std::string Utility::readFile(const std::string &path)
 		{
 			// NOTE: ferror() will not modify errno if the stream
 			// is valid, which is the case here since it is open.
-			LOG_ERR << fname << "fread failed with error : " << last_error_msg();
+			LOG_ERR << fname << "Failed to read file <" << path << "> with error: " << last_error_msg();
 			delete[] buffer;
 			::fclose(file);
 			return "";
@@ -766,14 +768,14 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 
 	if (!Utility::isFileExist(path))
 	{
-		LOG_WAR << fname << "File does not exist: " << path;
+		LOG_WAR << fname << "File <" << path << "> does not exist";
 		return std::string();
 	}
 
 	std::ifstream fileStream(path, std::ios::in | std::ios::binary);
 	if (!fileStream.is_open())
 	{
-		LOG_ERR << fname << "Failed to open file: " << path;
+		LOG_ERR << fname << "Failed to open file <" << path << ">";
 		return std::string();
 	}
 
@@ -782,7 +784,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 	const std::streampos fileSize = fileStream.tellg();
 	if (fileSize == std::streampos(-1))
 	{
-		LOG_ERR << fname << "Failed to get file size";
+		LOG_ERR << fname << "Failed to get size of file <" << path << ">";
 		return std::string();
 	}
 
@@ -801,7 +803,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 		fileStream.seekg(0, std::ios::beg);
 	if (!fileStream.good())
 	{
-		LOG_ERR << fname << ("Failed to seek to specified position");
+		LOG_ERR << fname << "Failed to seek to read position in file <" << path << ">";
 		return std::string();
 	}
 
@@ -837,7 +839,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 		{
 			if (!fileStream.seekg(0, std::ios::end))
 			{
-				LOG_ERR << fname << ("Failed to seek to end for reverse reading");
+				LOG_ERR << fname << "Failed to seek to end of file <" << path << "> for reverse reading";
 				return std::string();
 			}
 		}
@@ -845,7 +847,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 		const std::streampos endPos = fileStream.tellg();
 		if (endPos == std::streampos(-1))
 		{
-			LOG_ERR << fname << ("Failed to get current position");
+			LOG_ERR << fname << "Failed to get current position in file <" << path << ">";
 			return std::string();
 		}
 
@@ -884,7 +886,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 			{
 				if (!fileStream.seekg(-static_cast<std::streamoff>(readSize), std::ios::end))
 				{
-					LOG_ERR << fname << ("Failed to seek for reverse reading");
+					LOG_ERR << fname << "Failed to seek in file <" << path << "> for reverse reading";
 					return std::string();
 				}
 			}
@@ -892,7 +894,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 			{
 				if (!fileStream.seekg(0, std::ios::beg))
 				{
-					LOG_ERR << fname << ("Failed to seek to beginning");
+					LOG_ERR << fname << "Failed to seek to beginning of file <" << path << ">";
 					return std::string();
 				}
 				readSize = static_cast<size_t>(endPos);
@@ -901,7 +903,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 			result.resize(readSize);
 			if (!fileStream.read(&result[0], readSize))
 			{
-				LOG_ERR << fname << ("Failed to read file content");
+				LOG_ERR << fname << "Failed to read content of file <" << path << ">";
 				return std::string();
 			}
 			result.resize(fileStream.gcount());

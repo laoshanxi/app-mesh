@@ -32,7 +32,7 @@ void HealthCheckTask::doHealthCheck()
 				proc->wait(&exitCode);
 				app->health(0 == exitCode);
 				// proc->terminate();
-				LOG_DBG << fname << app->getName() << " health check :" << app->healthCheckCmd() << ", return " << exitCode << ", last error: " << proc->startError();
+				LOG_DBG << fname << "Health check for <" << app->getName() << "> command <" << app->healthCheckCmd() << "> returned <" << exitCode << ">, last error: " << proc->startError();
 			}
 			else
 			{
@@ -41,11 +41,11 @@ void HealthCheckTask::doHealthCheck()
 		}
 		catch (const std::exception &ex)
 		{
-			LOG_WAR << fname << app->getName() << "check got exception: " << ex.what();
+			LOG_WAR << fname << "Health check for <" << app->getName() << "> got exception: " << ex.what();
 		}
 		catch (...)
 		{
-			LOG_WAR << fname << app->getName() << " exception";
+			LOG_WAR << fname << "Health check for <" << app->getName() << "> got unknown exception";
 		}
 	}
 }

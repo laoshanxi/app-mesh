@@ -136,13 +136,13 @@ namespace os
 			int fd = ::mkstemp(buf.data());
 			if (fd == -1)
 			{
-				LOG_DBG << fname << "Failed to create temp file from template <" << tmpl << ">";
+				LOG_WAR << fname << "Failed to create temp file from template <" << tmpl << "> with error: " << last_error_msg();
 				return {};
 			}
 
 			if (::fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) == -1)
 			{
-				LOG_DBG << fname << "Failed to set permissions on file <" << buf.data() << ">";
+				LOG_WAR << fname << "Failed to set permissions on file <" << buf.data() << "> with error: " << last_error_msg();
 				::close(fd);
 				::unlink(buf.data());
 				LOG_DBG << fname << "file <" << buf.data() << "> removed";
@@ -154,7 +154,7 @@ namespace os
 				ssize_t written = ::write(fd, content.data(), content.size());
 				if (written == -1 || static_cast<size_t>(written) != content.size())
 				{
-					LOG_DBG << fname << "Failed to write content to file <" << buf.data() << ">";
+					LOG_WAR << fname << "Failed to write content to file <" << buf.data() << ">, wrote " << written << " of " << content.size() << " bytes";
 					::close(fd);
 					::unlink(buf.data());
 					LOG_DBG << fname << "file <" << buf.data() << "> removed";
@@ -170,7 +170,7 @@ namespace os
 		}
 		catch (const std::exception &e)
 		{
-			LOG_DBG << fname << "Exception: " << e.what();
+			LOG_WAR << fname << "Exception while creating temp file: " << e.what();
 			return {};
 		}
 	}

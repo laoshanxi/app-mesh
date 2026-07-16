@@ -88,7 +88,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		auto imageSizeStr = Utility::stdStringTrim(dockerProcess->getOutputMsg(nullptr, 10240, true));
 		if (!Utility::isNumber(imageSizeStr) || std::stoll(imageSizeStr) < 1)
 		{
-			LOG_WAR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
+			LOG_WAR << fname << "docker image <" << m_dockerImage << "> does not exist, trying to pull";
 			startError(Utility::stringFormat("docker image <%s> not exist, try to pull.", m_dockerImage.c_str()));
 			return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
 		}
@@ -171,7 +171,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		else
 		{
 			const auto outmsg = dockerProcess->getOutputMsg(nullptr, 10240, false);
-			LOG_WAR << fname << "started container <" << dockerCommand << "> failed: " << outmsg;
+			LOG_WAR << fname << "start container command <" << dockerCommand << "> failed: " << outmsg;
 			startError(Utility::stringFormat("started docker container <%s> failed with error <%s>", dockerCommand.c_str(), outmsg.c_str()));
 		}
 
@@ -209,14 +209,14 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 			}
 			else
 			{
-				LOG_WAR << fname << "can not get correct container pid: " << pidStr;
+				LOG_WAR << fname << "failed to parse container pid from output <" << pidStr << ">";
 				startError(Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str()));
 			}
 		}
 		else
 		{
 			const auto output = dockerProcess->getOutputMsg(nullptr, 10240, false);
-			LOG_WAR << fname << "started container <" << dockerCommand << "> failed: " << output;
+			LOG_WAR << fname << "inspect container pid command <" << dockerCommand << "> failed: " << output;
 			startError(Utility::stringFormat("start docker container <%s> failed <%s>", dockerCommand.c_str(), output.c_str()));
 		}
 		dockerProcess->terminate();
@@ -241,7 +241,7 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 	}
 	else
 	{
-		LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
+		LOG_DBG << fname << "image pull timeout not configured, using default <" << pullTimeout << "> seconds";
 	}
 
 	m_imagePull = std::make_shared<AppProcess>(std::weak_ptr<Application>());
@@ -292,12 +292,12 @@ int DockerProcess::returnValue() const
 		}
 		else
 		{
-			LOG_WAR << fname << "docker inspect exit code from container " << containerId << " failed with output: " << msg;
+			LOG_WAR << fname << "docker inspect exit code from container <" << containerId << "> failed with output: " << msg;
 		}
 	}
 	else
 	{
-		LOG_WAR << fname << "docker inspect exit code from container " << containerId << " failed with exit code: " << dockerProcess->returnValue();
+		LOG_WAR << fname << "docker inspect exit code from container <" << containerId << "> failed with exit code: " << dockerProcess->returnValue();
 	}
 
 	return -200;

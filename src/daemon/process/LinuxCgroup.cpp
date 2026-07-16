@@ -222,13 +222,13 @@ LinuxCgroupV1::LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapByt
 	  m_enabled(false),
 	  m_swapLimitSupported(true)
 {
+#if defined(__linux__)
 	const static char fname[] = "LinuxCgroupV1::LinuxCgroupV1() ";
 
-#if defined(__linux__)
 	// Validate and adjust memory limit
 	if (m_memoryLimitBytes > 0 && m_memoryLimitBytes < MIN_MEMORY_LIMIT_BYTES)
 	{
-		LOG_WAR << fname << "Memory limit increased to minimum " << MIN_MEMORY_LIMIT_BYTES << " bytes";
+		LOG_WAR << fname << "Memory limit <" << m_memoryLimitBytes << "> below minimum, increased to <" << MIN_MEMORY_LIMIT_BYTES << "> bytes";
 		m_memoryLimitBytes = MIN_MEMORY_LIMIT_BYTES;
 	}
 
@@ -310,9 +310,9 @@ void LinuxCgroupV1::cleanup()
 
 void LinuxCgroupV1::discoverMountPoints()
 {
+#if defined(__linux__)
 	const static char fname[] = "LinuxCgroupV1::discoverMountPoints() ";
 
-#if defined(__linux__)
 	std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen("/proc/mounts", "r"), [](FILE *f)
 											   { if (f) fclose(f); });
 	if (!fp)
@@ -482,13 +482,13 @@ LinuxCgroupV2::LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapByt
 	  m_enabled(false),
 	  m_swapLimitSupported(true)
 {
+#if defined(__linux__)
 	const static char fname[] = "LinuxCgroupV2::LinuxCgroupV2() ";
 
-#if defined(__linux__)
 	// Validate and adjust memory limit
 	if (m_memoryLimitBytes > 0 && m_memoryLimitBytes < MIN_MEMORY_LIMIT_BYTES)
 	{
-		LOG_WAR << fname << "Memory limit increased to minimum " << MIN_MEMORY_LIMIT_BYTES << " bytes";
+		LOG_WAR << fname << "Memory limit <" << m_memoryLimitBytes << "> below minimum, increased to <" << MIN_MEMORY_LIMIT_BYTES << "> bytes";
 		m_memoryLimitBytes = MIN_MEMORY_LIMIT_BYTES;
 	}
 
@@ -544,9 +544,9 @@ void LinuxCgroupV2::cleanup()
 
 void LinuxCgroupV2::discoverMountPoint()
 {
+#if defined(__linux__)
 	const static char fname[] = "LinuxCgroupV2::discoverMountPoint() ";
 
-#if defined(__linux__)
 	// Default location for cgroup v2
 	const std::string defaultPath = "/sys/fs/cgroup";
 

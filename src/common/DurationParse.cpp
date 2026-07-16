@@ -35,7 +35,7 @@ int DurationParse::parse(const std::string &duration)
         if (what.size() > 1)
         {
             totalSeconds = parsePart("week", what[1]);
-            LOG_DBG << fname << "week duration: " << duration << "=" << totalSeconds;
+            LOG_DBG << fname << "Week duration: <" << duration << "> = <" << totalSeconds << "> seconds";
             return totalSeconds;
         }
     }
@@ -73,17 +73,17 @@ int DurationParse::parse(const std::string &duration)
             if (i == 8)
                 totalSeconds += parsePart("time", what[i]);
         }
-        LOG_DBG << fname << "date time duration: " << duration << "=" << totalSeconds;
+        LOG_DBG << fname << "Date-time duration: <" << duration << "> = <" << totalSeconds << "> seconds";
         return totalSeconds;
     }
-    LOG_WAR << fname << "invalid ISO8601 duration format: " << duration;
+    LOG_WAR << fname << "Invalid ISO8601 duration format: <" << duration << ">";
     throw std::invalid_argument("invalid ISO8601 duration format");
 }
 
 std::string DurationParse::compose(int time, bool weekMode)
 {
     const static char fname[] = "DurationParse::compose ";
-    LOG_DBG << fname << "time:" << time << " weekMode:" << weekMode;
+    LOG_DBG << fname << "time <" << time << "> weekMode <" << weekMode << ">";
 
     int totalTime = time;
     std::string composedDuration = "P";
@@ -129,7 +129,7 @@ int DurationParse::parsePart(const std::string &mode, const std::string &regexPa
     if (id == "week W")
         return n * 7 * 24 * 60 * 60;
 
-    LOG_WAR << fname << "Ambiguous duration " << regexPart << " for " << mode;
+    LOG_WAR << fname << "Ambiguous duration <" << regexPart << "> for mode <" << mode << ">";
     throw std::invalid_argument("Ambiguous duration");
 }
 

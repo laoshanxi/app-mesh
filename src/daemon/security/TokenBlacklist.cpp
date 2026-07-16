@@ -31,7 +31,7 @@ void TokenBlacklist::addToken(const std::string &token, const std::chrono::syste
         clearSoonestExpiring(m_maxSize / 2);
     }
     m_tokenSet[token] = expiryTime;
-    LOG_DBG << fname << "token black list size: " << m_tokenSet.size();
+    LOG_DBG << fname << "token blacklist size: " << m_tokenSet.size();
 }
 
 bool TokenBlacklist::tryRemoveFromList(const std::string &token)
@@ -93,7 +93,7 @@ void TokenBlacklist::init(std::unordered_map<std::string, std::chrono::system_cl
 
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
     m_tokenSet = tokens;
-    LOG_INF << fname << "token black list size: " << m_tokenSet.size();
+    LOG_INF << fname << "token blacklist size: " << m_tokenSet.size();
 }
 
 std::unordered_map<std::string, std::chrono::system_clock::time_point> TokenBlacklist::getTokens() const

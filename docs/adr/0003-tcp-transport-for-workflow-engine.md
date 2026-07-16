@@ -21,13 +21,13 @@ The engine needs event subscriptions for:
 
 ## Decision
 
-The workflow engine uses **TCP transport exclusively** for all daemon communication. Both `run` and `serve` modes create a `NewTCPClient` (default `127.0.0.1:6059`). For cross-node execution, per-job TCP clients are created with `ForwardTo` set to the target node.
+The workflow engine uses **TCP transport exclusively** for all daemon communication. The engine creates a `NewTCPClient` (default `127.0.0.1:6059`). For cross-node execution, per-job TCP clients are created with `ForwardTo` set to the target node.
 
 ## Consequences
 
 ### Benefits
 
-- **Step stdout archival**: after step completion, `GetAppOutput` fetches full stdout and writes to `{workdir}/steps/{job}.{step}.log`. Real-time output during execution is available directly via `appm view -a wf-cmd-<id> -o -f` on the daemon.
+- **Step stdout archival**: step stdout is streamed via event subscription (with a `GetAppOutput` backfill for output emitted before the subscription took effect) and written to `{workdir}/steps/{job}.{step}.log`. Real-time output during execution is also available directly via `appm view -a wf-cmd-<id> -o -f` on the daemon.
 - **Efficient exit detection**: subscribe to EXIT event instead of polling `GetAppOutput` in a loop.
 - **Single protocol**: no mixed HTTP+TCP client management. One connection type, one set of abstractions.
 - **Lower overhead**: binary msgpack is more compact than HTTP+JSON for high-frequency stdout chunks.

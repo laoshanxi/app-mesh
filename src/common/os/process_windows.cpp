@@ -161,7 +161,7 @@ namespace os
 		NTSTATUS ntStatus = NtQueryInformationProcess(hProc, ProcessBasicInformation, &pbi, sizeof(pbi), &retLen);
 		if (ntStatus != 0)
 		{
-			LOG_WAR << fname << "NtQueryInformationProcess failed: " << last_error_msg();
+			LOG_WAR << fname << "NtQueryInformationProcess(pid=" << pid << ") failed: " << last_error_msg();
 			return {};
 		}
 
@@ -169,14 +169,14 @@ namespace os
 		SIZE_T bytesRead = 0;
 		if (!ReadProcessMemory(hProc, pbi.PebBaseAddress, &remotePeb, sizeof(remotePeb), &bytesRead) || bytesRead != sizeof(remotePeb))
 		{
-			LOG_WAR << fname << "ReadProcessMemory(PEB) failed: " << last_error_msg();
+			LOG_WAR << fname << "ReadProcessMemory(PEB, pid=" << pid << ") failed: " << last_error_msg();
 			return {};
 		}
 
 		RTL_USER_PROCESS_PARAMETERS remoteUpp = {};
 		if (!ReadProcessMemory(hProc, remotePeb.ProcessParameters, &remoteUpp, sizeof(remoteUpp), &bytesRead) || bytesRead != sizeof(remoteUpp))
 		{
-			LOG_WAR << fname << "ReadProcessMemory(RTL_USER_PROCESS_PARAMETERS) failed: " << last_error_msg();
+			LOG_WAR << fname << "ReadProcessMemory(RTL_USER_PROCESS_PARAMETERS, pid=" << pid << ") failed: " << last_error_msg();
 			return {};
 		}
 
@@ -189,7 +189,7 @@ namespace os
 
 		if (!ReadProcessMemory(hProc, remoteUpp.CommandLine.Buffer, &wbuf[0], remoteUpp.CommandLine.Length, &bytesRead) || bytesRead != remoteUpp.CommandLine.Length)
 		{
-			LOG_WAR << fname << "ReadProcessMemory(command line) failed: " << last_error_msg();
+			LOG_WAR << fname << "ReadProcessMemory(command line, pid=" << pid << ") failed: " << last_error_msg();
 			return {};
 		}
 

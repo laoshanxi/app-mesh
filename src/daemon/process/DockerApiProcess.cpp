@@ -87,7 +87,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	// Check REST availability
 	if (resp->status_code == web::http::status_codes::BadGateway)
 	{
-		LOG_WAR << fname << "request docker with code: " << resp->status_code << ", message: " << resp->text;
+		LOG_WAR << fname << "Docker REST request failed with status <" << resp->status_code << ">: " << resp->text;
 		return ACE_INVALID_PID;
 	}
 
@@ -169,7 +169,6 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	createBody["HostConfig"] = hostConfig;
 
 	// POST /containers/create
-	LOG_DBG << fname << "Creating Container: " << createBody.dump();
 	resp = this->requestDocker(web::http::methods::POST, "/containers/create",
 							   {{"name", m_containerName}}, {}, &createBody);
 
@@ -270,11 +269,11 @@ int DockerApiProcess::returnValue() const
 			}
 			catch (...)
 			{
-				LOG_WAR << fname << "failed to parse exit code";
+				LOG_WAR << fname << "Failed to parse exit code from inspect response of container <" << this->containerId() << ">";
 			}
 		}
 
-		LOG_WAR << fname << "failed: " << resp->text;
+		LOG_WAR << fname << "Failed to get exit code for container <" << this->containerId() << ">: " << resp->text;
 		return -200;
 	}
 	else
@@ -298,8 +297,12 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	if (body)
 	{
 		bodyContent = body->dump();
+		// Mask container Env in the logged copy — user env vars can hold secrets
+		auto logBody = *body;
+		if (logBody.contains("Env"))
+			logBody["Env"] = "***";
 		LOG_DBG << fname << path << "\n"
-				<< body->dump(2);
+				<< logBody.dump(2);
 	}
 
 	auto response = std::make_shared<CurlResponse>();
@@ -316,7 +319,7 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	}
 	catch (...)
 	{
-		LOG_ERR << fname << path << " exception";
+		LOG_ERR << fname << "Unknown exception on request <" << path << ">";
 	}
 
 	response->status_code = web::http::status_codes::ServiceUnavailable;

@@ -5,7 +5,7 @@
 ### build with libasan
 
 ```shell
-cmake -DCMAKE_BUILD_TYPE=ASAN ..
+cmake -DENABLE_ASAN=ON ..
 ```
 
 ### run appmesh with asan
