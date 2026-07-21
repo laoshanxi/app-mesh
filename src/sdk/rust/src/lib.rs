@@ -17,9 +17,9 @@ mod wait_subscribe;
 mod tcp_transport;
 pub mod tls_config;
 mod wss_transport;
-mod server_http;
-mod server_tcp;
-mod server_wss;
+mod worker_http;
+mod worker_tcp;
+mod worker_wss;
 
 pub use client_builder::*;
 pub use client_http::AppMeshClient;
@@ -32,8 +32,8 @@ pub use models::{
     print_output_handler,
 };
 // Canonical cross-SDK worker names (match the Python/Go SDKs).
-pub use server_http::AppMeshWorker;
-pub use server_tcp::AppMeshWorkerTCP;
-pub use server_wss::AppMeshWorkerWSS;
+pub use worker_http::AppMeshWorker;
+pub use worker_tcp::AppMeshWorkerTCP;
+pub use worker_wss::AppMeshWorkerWSS;
 pub use constants::EVENT_TYPE_DISCONNECTED;
 pub use subscribe::EventCallback;

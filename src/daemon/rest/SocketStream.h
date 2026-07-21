@@ -219,17 +219,16 @@ private:
 	size_t m_body_sent{0};
 };
 
-// SendState: Manages send queue for one connection (thread-safe)
+// SendState: Send queue for one connection. *_unsafe methods require mutex() held;
+// *_safe methods lock internally.
 class SendState
 {
 public:
-	// Called from any thread
 	void enqueue_unsafe(SendBuffer &&buf)
 	{
 		m_queue.push_back(std::move(buf));
 	}
 
-	// Called from reactor thread
 	std::shared_ptr<SendBuffer> get_current_safe();
 
 	bool is_empty_unsafe() const
@@ -258,7 +257,7 @@ class SocketStreamPtr;
 //   - Client side: createConnection() / connect() for outbound connections
 //
 // Key rules:
-//   1. Lock ordering: reactor token → m_io_mutex → m_cb_mutex → (external locks).
+//   1. Lock ordering: reactor token → m_io_mutex → m_cb_mutex (leaf — callbacks run outside it).
 //      NO thread may hold m_io_mutex while calling reactor APIs (mask_ops, etc.) —
 //      handle_close runs with the token held, even concurrently with I/O upcalls
 //      (notify-driven closes bypass TP_Reactor suspension). So acquire m_io_mutex
@@ -289,11 +288,14 @@ public:
 	virtual ~SocketStream();
 
 	// --- Setup (all callbacks MUST be set before calling open(), callbacks set after open() may miss events) ---
-	void onData(DataCallback cb) { m_data_cb = std::move(cb); }
-	void onSent(SendCallback cb) { m_send_cb = std::move(cb); }
-	void onConnect(EventCallback cb) { m_connect_cb = std::move(cb); }
-	void onClose(EventCallback cb) { m_close_cb = std::move(cb); }
-	void onError(ErrorCallback cb) { m_error_cb = std::move(cb); }
+	// Thread-safe: fire sites copy the callback under m_cb_mutex and invoke outside it.
+	// clang-format off
+	void onData(DataCallback cb) { std::lock_guard<std::mutex> l(m_cb_mutex); m_data_cb = std::move(cb); }
+	void onSent(SendCallback cb) { std::lock_guard<std::mutex> l(m_cb_mutex); m_send_cb = std::move(cb); }
+	void onConnect(EventCallback cb) { std::lock_guard<std::mutex> l(m_cb_mutex); m_connect_cb = std::move(cb); }
+	void onClose(EventCallback cb) { std::lock_guard<std::mutex> l(m_cb_mutex); m_close_cb = std::move(cb); }
+	void onError(ErrorCallback cb) { std::lock_guard<std::mutex> l(m_cb_mutex); m_error_cb = std::move(cb); }
+	// clang-format on
 
 	// --- ACE_Acceptor Hook ---
 	virtual int open(void *acceptor_or_connector = nullptr) override;
@@ -303,6 +305,8 @@ public:
 	virtual int close(u_long flags = 0) override;
 
 	// ========== Client-side: Connect to remote server ==========
+	/// Failure releases the construction reference — caller must hold a SocketStreamPtr
+	/// (prefer createConnection()).
 	bool connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
 
 	/// Create a new client SocketStream and connect to the remote address.
@@ -403,6 +407,8 @@ public:
 	{
 		if (m_var.handler() && add_ref)
 		{
+			// Paired with the remove_reference in m_var's destructor (ACE_Event_Handler_var
+			// releases on destruction/reset but adopts without bumping — so bump here).
 			m_var.handler()->add_reference();
 		}
 	}

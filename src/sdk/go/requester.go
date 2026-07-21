@@ -83,9 +83,39 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 
 // SendContext performs the REST request with the provided context controlling cancellation.
 func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	resp, err := h.doContext(ctx, method, apiPath, queries, headers, body)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+
+	// Ensure response body is always closed
+	defer resp.Body.Close()
+
+	// Read response body
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, nil, resp.Header, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return resp.StatusCode, data, resp.Header, nil
+}
+
+// getStream performs a GET request and returns the response body as a stream
+// without buffering it in memory. The caller must close the returned body.
+func (h *HTTPRequester) getStream(apiPath string, queries url.Values, headers map[string]string) (int, io.ReadCloser, http.Header, error) {
+	resp, err := h.doContext(context.Background(), http.MethodGet, apiPath, queries, headers, nil)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	return resp.StatusCode, resp.Body, resp.Header, nil
+}
+
+// doContext builds and executes the HTTP request, returning the response with
+// its body unread. Callers own resp.Body and must close it.
+func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (*http.Response, error) {
 	// Validate inputs
 	if h.httpClient == nil {
-		return 0, nil, nil, fmt.Errorf("http client is nil")
+		return nil, fmt.Errorf("http client is nil")
 	}
 
 	// Snapshot token before request for change detection
@@ -100,7 +130,7 @@ func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath 
 
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
-		return 0, nil, nil, err
+		return nil, err
 	}
 
 	// Apply implicit auth only when the caller did not provide an explicit Authorization header.
@@ -142,20 +172,7 @@ func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath 
 	// Execute request
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	// Ensure response body is always closed
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
-		}
-	}()
-
-	// Read response body
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp.StatusCode, nil, resp.Header, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	// Auto-detect token changes from server Set-Cookie responses.
@@ -168,7 +185,7 @@ func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath 
 		h.setToken(newToken)
 	}
 
-	return resp.StatusCode, data, resp.Header, nil
+	return resp, nil
 }
 
 // Close closes the HTTP client and its idle connections.

@@ -24,7 +24,6 @@ class AppTimer;
 class User;
 class CounterMetric;
 class GaugeMetric;
-class PrometheusRest;
 class AppProcess;
 class DailyLimitation;
 class ResourceLimitation;

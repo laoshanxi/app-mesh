@@ -910,6 +910,12 @@ paths:
           schema:
             type: string
           description: File group name or GID.
+        - name: X-File-Name
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Base name of the file on the remote server (used with direct binary body uploads; ignored for multipart, where the 'filename' form field applies).
       requestBody:
         required: true
         content:
@@ -924,6 +930,11 @@ paths:
                 file:
                   type: string
                   format: binary
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: Raw file content as the request body; the remote path is taken from the X-File-Path header.
       responses:
         "200":
           description: File uploaded successfully.

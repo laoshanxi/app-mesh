@@ -87,12 +87,8 @@ impl ClientBuilder {
     }
 
     /// Enable automatic JWT token refresh before expiration.
-    ///
-    /// When enabled, a background tokio task periodically checks the token's
-    /// `exp` claim and calls `renew_token` ~30 seconds before it expires.
-    /// Call [`AppMeshClient::schedule_token_refresh`] after login to start
-    /// the refresh loop, or it will be started automatically after the first
-    /// successful login.
+    /// The refresh loop starts after the first successful login, or call
+    /// [`AppMeshClient::schedule_token_refresh`] to start it explicitly.
     pub fn auto_refresh_token(mut self, enable: bool) -> Self {
         self.auto_refresh_token = enable;
         self

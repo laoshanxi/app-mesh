@@ -30,7 +30,7 @@ void RestBase::handle_put(const std::shared_ptr<HttpRequest> &message)
 
 void RestBase::handle_post(const std::shared_ptr<HttpRequest> &message)
 {
-    handleRest(message, m_restPstFunctions);
+    handleRest(message, m_restPostFunctions);
 }
 
 void RestBase::handle_delete(const std::shared_ptr<HttpRequest> &message)
@@ -130,14 +130,14 @@ void RestBase::bindRestMethod(const web::http::method &method, const std::string
     else if (method == web::http::methods::PUT)
         m_restPutFunctions[path] = std::move(func);
     else if (method == web::http::methods::POST)
-        m_restPstFunctions[path] = std::move(func);
+        m_restPostFunctions[path] = std::move(func);
     else if (method == web::http::methods::DEL)
         m_restDelFunctions[path] = std::move(func);
     else
         LOG_ERR << fname << "Method <" << method << "> not supported for path <" << path << ">";
 }
 
-const std::string RestBase::getJwtToken(const std::shared_ptr<HttpRequest> &message)
+std::string RestBase::getJwtToken(const std::shared_ptr<HttpRequest> &message)
 {
     std::string token;
     if (message->m_headers.count(HTTP_HEADER_JWT_Authorization))
@@ -151,7 +151,7 @@ const std::string RestBase::getJwtToken(const std::shared_ptr<HttpRequest> &mess
     return token;
 }
 
-const std::string RestBase::getJwtUserName(const std::shared_ptr<HttpRequest> &message)
+std::string RestBase::getJwtUserName(const std::shared_ptr<HttpRequest> &message)
 {
     const auto decodedToken = JwtHelper::decode(getJwtToken(message));
 
@@ -170,7 +170,7 @@ const std::string RestBase::getJwtUserName(const std::shared_ptr<HttpRequest> &m
     }
 }
 
-const std::set<std::string> RestBase::getJwtUserAudience(const std::shared_ptr<HttpRequest> &message)
+std::set<std::string> RestBase::getJwtUserAudience(const std::shared_ptr<HttpRequest> &message)
 {
     const auto decodedToken = JwtHelper::decode(getJwtToken(message));
 
@@ -184,7 +184,7 @@ const std::set<std::string> RestBase::getJwtUserAudience(const std::shared_ptr<H
     }
 }
 
-const std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission, const std::string &audience)
+std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission, const std::string &audience)
 {
     const static char fname[] = "RestBase::permissionCheck() ";
 

@@ -9,6 +9,8 @@
 static constexpr size_t MAX_TCP_CONNECTIONS = 10000;
 
 static std::atomic_int idGenerator{0};
+// Live client sessions by ClientID. Raw pointers — safe only because onClose unbinds BEFORE
+// the reactor drops the final reference, and findClient() pins entries under the map mutex.
 static ServerStreamMap streams{};
 
 SocketServer::SocketServer(ACE_SSL_Context *ctx, ACE_Reactor *reactor)
@@ -117,7 +119,7 @@ bool SocketServer::replyTcp(int clientId, std::unique_ptr<Response> &&resp)
     auto *client = static_cast<SocketServer *>(clientGuard.stream());
 
     LOG_DBG << fname << "Sending response | ClientID=" << clientId;
-    // Hold m_file_mutex only for check, release before send() to avoid lock inversion
+    // Hold transfer_mutex only for prepare, release before send() to avoid lock inversion
     {
         std::lock_guard<std::mutex> flock(client->m_fileTransfer.transfer_mutex());
         client->m_fileTransfer.prepareTransfer(resp, clientId);

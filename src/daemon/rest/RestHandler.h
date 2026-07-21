@@ -8,12 +8,13 @@
 
 #include "EventDispatcher.h"
 #include "PrometheusRest.h"
+#include "RestBase.h"
 
 class Application;
 /// <summary>
 /// REST service handle class, all REST request entrypoint
 /// </summary>
-class RestHandler : public PrometheusRest
+class RestHandler : public RestBase
 {
 public:
 	explicit RestHandler();
@@ -26,7 +27,19 @@ public:
 	static const std::string &getOpenApiContent();
 	static const std::string &getIndexHtmlContent();
 
+	// Prometheus metrics, forwarded to the owned exporter so that callers keep using RESTHANDLER
+	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
+	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
+	bool collected();
+
 protected:
+	/// <summary>
+	/// override RestBase::handleRest() to count REST request metrics
+	/// </summary>
+	/// <param name="message"></param>
+	/// <param name="restFunctions"></param>
+	virtual void handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &restFunctions) override;
+
 	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::string &appName, bool requestWrite);
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
@@ -100,6 +113,10 @@ protected:
 	void apiOpenApi(const std::shared_ptr<HttpRequest> &message);
 	void apiSwagger(const std::shared_ptr<HttpRequest> &message);
 	void apiIndex(const std::shared_ptr<HttpRequest> &message);
+
+private:
+	// Prometheus metrics exporter (composition, was a base class before)
+	std::shared_ptr<PrometheusRest> m_metrics;
 };
 
 typedef ACE_Singleton<RestHandler, ACE_Null_Mutex> RESTHANDLER;

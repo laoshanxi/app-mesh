@@ -8,6 +8,7 @@ use reqwest::{cookie::CookieStore, cookie::Jar, header::HeaderValue, Client as R
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -176,19 +177,17 @@ impl HTTPRequester {
             .map(|port| port.to_string())
             .unwrap_or_else(|| "6060".to_string())
     }
-}
 
-#[async_trait]
-impl Requester for HTTPRequester {
-    async fn send(
+    /// Execute a request and return the raw `reqwest::Response` without buffering the body.
+    async fn execute(
         &self,
         method: Method,
         path: &str,
-        body: Option<&[u8]>,
+        body: Option<reqwest::Body>,
         headers: Option<HashMap<String, String>>,
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
-    ) -> Result<http::Response<Bytes>> {
+    ) -> Result<reqwest::Response> {
         let url = format!("{}{}", self.url, path);
         debug!("{} {} {}", method, path, url);
 
@@ -201,7 +200,7 @@ impl Requester for HTTPRequester {
         }
 
         if let Some(body) = body {
-            req = req.body(body.to_vec())
+            req = req.body(body)
         }
 
         if let Some(query) = query {
@@ -226,7 +225,36 @@ impl Requester for HTTPRequester {
             self.handle_token_update(new_token);
         }
 
+        Ok(resp)
+    }
+}
+
+#[async_trait]
+impl Requester for HTTPRequester {
+    async fn send(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&[u8]>,
+        headers: Option<HashMap<String, String>>,
+        query: Option<HashMap<String, String>>,
+        fail_on_error: bool,
+    ) -> Result<http::Response<Bytes>> {
+        let body = body.map(|b| reqwest::Body::from(b.to_vec()));
+        let resp = self.execute(method, path, body, headers, query, fail_on_error).await?;
         Self::to_http_response(resp).await
+    }
+
+    async fn send_streaming(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<reqwest::Body>,
+        headers: Option<HashMap<String, String>>,
+        query: Option<HashMap<String, String>>,
+        fail_on_error: bool,
+    ) -> Result<Option<reqwest::Response>> {
+        Ok(Some(self.execute(method, path, body, headers, query, fail_on_error).await?))
     }
 
     fn set_forward_to(&self, url: Option<String>) {
@@ -266,6 +294,9 @@ pub struct AppMeshClient {
     auto_refresh: AtomicBool,
     /// Handle to the background token-refresh task (if running).
     refresh_handle: Mutex<Option<JoinHandle<()>>>,
+    /// Current OAuth2 refresh token issued by the daemon in Keycloak mode.
+    /// Stays `None` in local-JWT mode, so renew/logout send no `X-Refresh-Token` header there.
+    refresh_token: Mutex<Option<String>>,
 }
 
 impl std::fmt::Debug for AppMeshClient {
@@ -299,6 +330,7 @@ impl AppMeshClient {
             url,
             auto_refresh: AtomicBool::new(false),
             refresh_handle: Mutex::new(None),
+            refresh_token: Mutex::new(None),
         }))
     }
 
@@ -309,6 +341,7 @@ impl AppMeshClient {
             url,
             auto_refresh: AtomicBool::new(false),
             refresh_handle: Mutex::new(None),
+            refresh_token: Mutex::new(None),
         })
     }
 
@@ -357,6 +390,21 @@ impl AppMeshClient {
 // -- Authentication ---------------------------------------------------------
 
 impl AppMeshClient {
+    /// Store the OAuth2 refresh token from a login/renew response body, if present.
+    ///
+    /// Only the Keycloak (OAuth2) daemon returns `refresh_token`; local-JWT mode omits it,
+    /// so the stored value stays `None` and renew/logout send no `X-Refresh-Token` header.
+    /// Keycloak rotates the refresh token on every renew, so a present value replaces the
+    /// stored one; an absent value leaves the stored token untouched. Transport-agnostic:
+    /// `resp` carries the body over HTTP and TCP/WSS alike.
+    fn capture_refresh_token(&self, resp: &http::Response<Bytes>) {
+        if let Ok(json) = serde_json::from_slice::<Value>(resp.body()) {
+            if let Some(rt) = json.get(HTTP_BODY_KEY_REFRESH_TOKEN).and_then(|v| v.as_str()) {
+                *self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = Some(rt.to_string());
+            }
+        }
+    }
+
     /// Login with username/password and update this client session on success.
     ///
     /// Returns the TOTP challenge string when the server replies with HTTP 428 and no valid code
@@ -401,6 +449,10 @@ impl AppMeshClient {
             let text = resp.text()?;
             return Err(AppMeshError::AuthenticationFailed(text));
         }
+
+        // Capture the OAuth2 refresh token when the daemon (Keycloak mode) issues one, so
+        // renew_token()/logout() can present it via X-Refresh-Token. Local mode: no-op.
+        self.capture_refresh_token(&resp);
 
         Ok(String::new())
     }
@@ -496,15 +548,32 @@ impl AppMeshClient {
     /// Logout from the current session.
     pub async fn logout(&self) -> Result<()> {
         self.cancel_refresh_task();
-        self.req.send(Method::POST, "/appmesh/self/logoff", None, None, None, true).await?;
+        // OAuth2 (Keycloak) proxy mode: present the refresh token so the daemon can revoke the
+        // Keycloak session server-side. Local-JWT mode has none stored, so no header is sent.
+        let refresh_token = self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let headers = refresh_token.map(|rt| hmap! { HTTP_HEADER_JWT_REFRESH_TOKEN => rt });
+        self.req.send(Method::POST, "/appmesh/self/logoff", None, headers, None, true).await?;
+        *self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = None;
         Ok(())
     }
 
     /// Renew the current JWT token already attached to this client.
     pub async fn renew_token(&self, token_expire: Option<i32>) -> Result<()> {
-        let headers = token_expire.map(|sec| hmap! { HTTP_HEADER_JWT_EXPIRE_SECONDS => sec });
+        let mut headers = hmap!();
+        if let Some(sec) = token_expire {
+            headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.into(), sec.to_string());
+        }
+        // Keycloak proxy mode requires the refresh token in X-Refresh-Token to renew.
+        // Local-JWT mode has none stored, so the header is omitted and behavior is unchanged.
+        let refresh_token = self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(rt) = refresh_token {
+            headers.insert(HTTP_HEADER_JWT_REFRESH_TOKEN.into(), rt);
+        }
+        let headers = if headers.is_empty() { None } else { Some(headers) };
 
-        self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
+        let resp = self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
+        // Keycloak rotates the refresh token on every renew — capture the new one.
+        self.capture_refresh_token(&resp);
         Ok(())
     }
 
@@ -611,9 +680,7 @@ impl AppMeshClient {
     }
 
     /// Get the raw TOTP secret for MFA setup.
-    ///
-    /// The server returns a base64-encoded provisioning URI; this helper extracts and returns
-    /// only the `secret` query parameter. Use [`Self::get_totp_uri`] for the full otpauth:// URI.
+    /// Use [`Self::get_totp_uri`] for the full `otpauth://` provisioning URI.
     pub async fn get_totp_secret(&self) -> Result<String> {
         let totp_uri = self.fetch_totp_uri().await?;
         Self::parse_totp_uri(&totp_uri)
@@ -848,8 +915,7 @@ impl AppMeshClient {
         Ok(text.trim() == "0")
     }
 
-    /// Add or update an application (type-safe).
-    /// Register or update an application, optionally subscribing to events atomically.
+    /// Add or update an application (type-safe), optionally subscribing to events atomically.
     ///
     /// When `subscribe_events` is `Some`, a subscription is created before the app starts,
     /// ensuring no events are missed. The returned `Application.subscription_id` will be set.
@@ -1003,7 +1069,7 @@ impl AppMeshClient {
     }
 
     /// Convenience: run a shell command synchronously. No app name is sent, so
-    /// the daemon assigns a unique temporary name per call (matches the Python SDK).
+    /// the daemon assigns a unique temporary name per call.
     pub async fn run_sync(
         &self,
         command: &str,
@@ -1052,8 +1118,8 @@ impl AppMeshClient {
     }
 
     /// Convenience: run a shell command asynchronously. No app name is sent, so
-    /// the daemon assigns a unique temporary name per call (matches the Python
-    /// SDK); [`AppRun::app_name`] carries the server-assigned name.
+    /// the daemon assigns a unique temporary name per call; [`AppRun::app_name`]
+    /// carries the server-assigned name.
     pub async fn run_async(
         self: &Arc<Self>,
         command: &str,
@@ -1205,18 +1271,44 @@ impl AppMeshClient {
     ///
     /// When `preserve_permissions` is true, POSIX mode/owner/group metadata from response headers
     /// is applied locally on a best-effort basis.
+    ///
+    /// An empty `local_file` defaults to the basename of `remote_file`.
     pub async fn download_file(
         &self,
         remote_file: &str,
         local_file: &str,
         preserve_permissions: bool,
     ) -> Result<()> {
+        // Empty local_file: derive the local path from the remote file's basename.
+        let local_file = if local_file.is_empty() {
+            Path::new(remote_file).file_name().and_then(|n| n.to_str()).unwrap_or(remote_file)
+        } else {
+            local_file
+        };
         let headers = hmap! { HTTP_HEADER_KEY_X_FILE_PATH => remote_file };
+        let local_path = Path::new(local_file);
 
+        // Stream response chunks to disk (bounded memory) when the transport supports it.
+        if let Some(mut resp) = self
+            .req
+            .send_streaming(Method::GET, "/appmesh/file/download", None, Some(headers.clone()), None, true)
+            .await?
+        {
+            let mut file = fs::File::create(local_path)?;
+            while let Some(chunk) = resp.chunk().await? {
+                file.write_all(&chunk)?;
+            }
+            file.flush()?;
+
+            if preserve_permissions {
+                let _ = Self::apply_file_attributes(local_path, resp.headers());
+            }
+            return Ok(());
+        }
+
+        // Buffered fallback for transports without HTTP streaming.
         let resp =
             self.req.send(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
-
-        let local_path = Path::new(local_file);
         fs::write(local_path, resp.bytes())?;
 
         if preserve_permissions {
@@ -1229,18 +1321,24 @@ impl AppMeshClient {
     ///
     /// When `preserve_permissions` is true, local POSIX metadata is sent in headers so the server
     /// can recreate permissions/ownership when supported.
+    ///
+    /// An empty `remote_file` defaults to the local file's basename.
     pub async fn upload_file(
         &self,
         local_file: &str,
         remote_file: &str,
         preserve_permissions: bool,
     ) -> Result<()> {
+        let remote_file = if remote_file.is_empty() {
+            Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file)
+        } else {
+            remote_file
+        };
         let local_path = Path::new(local_file);
         if !local_path.exists() {
             return Err(AppMeshError::NotFound(format!("Local file not found: {}", local_file)));
         }
 
-        let file_content = fs::read(local_file)?;
         let file_name = local_path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
 
         let mut headers = hmap! {
@@ -1252,6 +1350,30 @@ impl AppMeshClient {
             Self::get_file_attributes(local_path, &mut headers);
         }
 
+        // Stream the file as the request body (bounded memory) when the transport supports it.
+        // Explicit Content-Length keeps the wire format identical to the buffered upload.
+        let file = tokio::fs::File::open(local_path).await?;
+        let file_len = file.metadata().await?.len();
+        let mut streaming_headers = headers.clone();
+        streaming_headers.insert(HTTP_HEADER_CONTENT_LENGTH.to_string(), file_len.to_string());
+        if self
+            .req
+            .send_streaming(
+                Method::POST,
+                "/appmesh/file/upload",
+                Some(reqwest::Body::from(file)),
+                Some(streaming_headers),
+                None,
+                true,
+            )
+            .await?
+            .is_some()
+        {
+            return Ok(());
+        }
+
+        // Buffered fallback for transports without HTTP streaming.
+        let file_content = fs::read(local_file)?;
         self.req
             .send(Method::POST, "/appmesh/file/upload", Some(&file_content), Some(headers), None, true)
             .await?;

@@ -32,19 +32,19 @@ public:
 
 protected:
     /// Check permission for the request, returns the authenticated username.
-    const std::string permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
+    std::string permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
     /// Extract username from the JWT token in the request.
-    const std::string getJwtUserName(const std::shared_ptr<HttpRequest> &message);
+    std::string getJwtUserName(const std::shared_ptr<HttpRequest> &message);
     /// Extract audience set from the JWT token in the request.
-    const std::set<std::string> getJwtUserAudience(const std::shared_ptr<HttpRequest> &message);
+    std::set<std::string> getJwtUserAudience(const std::shared_ptr<HttpRequest> &message);
     /// Extract the raw JWT token string from the Authorization header.
-    const std::string getJwtToken(const std::shared_ptr<HttpRequest> &message);
+    std::string getJwtToken(const std::shared_ptr<HttpRequest> &message);
 
 protected:
     // API functions
     std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restGetFunctions;
     std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restPutFunctions;
-    std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restPstFunctions;
+    std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restPostFunctions;
     std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restDelFunctions;
 };
 

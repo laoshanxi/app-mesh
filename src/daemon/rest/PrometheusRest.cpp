@@ -11,15 +11,11 @@
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "PrometheusRest.h"
-#include "RestBase.h"
-
-std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 
 PrometheusRest::PrometheusRest()
-	: RestBase(), m_scrapeCounter(0)
+	: m_scrapeCounter(0)
 {
 	m_promRegistry = std::make_shared<prometheus::Registry>();
-	bindRestMethod(web::http::methods::GET, METRIC_PATH, std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
 	initMetrics();
 }
 
@@ -73,32 +69,30 @@ std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &
 	return std::make_shared<GaugeMetric>(m_promRegistry, metricName, metricHelp, labels);
 }
 
-void PrometheusRest::handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &message)>> &restFunctions)
+void PrometheusRest::countRequest(const std::string &method, const std::string &requestUri)
 {
-	if (message->m_method == web::http::methods::GET)
+	if (method == web::http::methods::GET)
 	{
-		if (message->m_relative_uri != METRIC_PATH)
+		if (requestUri != METRIC_PATH)
 		{
 			PROM_COUNTER_INCREASE(m_restGetCounter)
 		}
 	}
-	else if (message->m_method == web::http::methods::PUT)
+	else if (method == web::http::methods::PUT)
 	{
 		PROM_COUNTER_INCREASE(m_restPutCounter)
 	}
-	else if (message->m_method == web::http::methods::POST)
+	else if (method == web::http::methods::POST)
 	{
 		PROM_COUNTER_INCREASE(m_restPostCounter)
 	}
-	else if (message->m_method == web::http::methods::DEL)
+	else if (method == web::http::methods::DEL)
 	{
 		PROM_COUNTER_INCREASE(m_restDelCounter)
 	}
-
-	RestBase::handleRest(message, restFunctions);
 }
 
-const std::string PrometheusRest::collectData()
+std::string PrometheusRest::collectData()
 {
 	m_collectTime = ACE_OS::time();
 	if (m_scrapeCounter)
@@ -121,15 +115,6 @@ bool PrometheusRest::collected()
 		return false;
 	}
 	return true;
-}
-
-void PrometheusRest::apiMetrics(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "PrometheusRest::apiMetrics() ";
-	LOG_DBG << fname << "Entered";
-
-	auto body = collectData();
-	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
 }
 
 CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, const std::string &name, const std::string &help, std::map<std::string, std::string> label)
