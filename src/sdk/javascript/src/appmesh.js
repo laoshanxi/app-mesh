@@ -657,59 +657,53 @@ class AppMeshClient {
   /**
    * Check app health status
    * @param {string} name - App name
-   * @returns {boolean} True if healthy
+   * @returns {boolean} True if healthy; false if the daemon reports unhealthy (non-200 or missing app)
+   * @throws {AppMeshError} On network/transport failure (no HTTP status received)
    */
   async check_app_health(name) {
     try {
       const response = await this._request("get", `/appmesh/app/${name}/health`);
       return parseInt(response.data, 10) === 0;
-    } catch (_) {
-      return false; // non-200 or missing app → not healthy
+    } catch (error) {
+      if (error.statusCode != null) {
+        return false; // non-200 or missing app → not healthy
+      }
+      throw error; // network/transport failure → propagate
     }
   }
 
   /**
-   * Add or update application
+   * Add or update an application.
    * @param {string} name - App name
-   * @param {Object} appJson - App configuration
-   * @example
-  * {
-   *  "name": "",
-   *  "command": "",
-   *  "shell": false,
-   *  "session_login": false,
-   *  "description": "",
-   *  "metadata": "",
-   *  "working_dir": "",
-   *  "status": 1,
-   *  "docker_image": "",
-   *  "stdout_cache_num": 3,
-   *  "start_time": "",
-   *  "end_time": "",
-   *  "interval": null,
-   *  "cron": false,
-   *  "daily_limitation": {
-   *      "daily_start": "",
-   *      "daily_end": ""
-   *  },
-   *  "retention": null,
-   *  "health_check_cmd": null,
-   *  "permission": null,
-   *  "envs": [],
-   *  "sec_env": [],
-   *  "pid": null,
-   *  "resource_limit": {
-   *      "cpu_shares": null,
-   *      "memory_mb": null,
-   *      "memory_virt_mb": null
-   *  },
-   *  "behavior": {
-   *      "exit": "standby",
-   *      "control": {
-   *          "0": "keepalive"
-   *      }
-   *  }
+   * @param {Object} appJson - App configuration; see the App schema in openapi.yaml for all fields
    * @returns {Promise<Object>} Registered app
+   * @example
+   * const appConfig = {
+   *   name: "ping",
+   *   command: "ping github.com -w 3",
+   *   shell: false,
+   *   session_login: false,
+   *   description: "",
+   *   metadata: "",
+   *   working_dir: "",
+   *   status: 1,
+   *   docker_image: "",
+   *   stdout_cache_num: 3,
+   *   start_time: "",
+   *   end_time: "",
+   *   start_interval_seconds: null,
+   *   cron: false,
+   *   daily_limitation: { daily_start: "", daily_end: "" },
+   *   retention: null,
+   *   health_check_cmd: null,
+   *   permission: null,
+   *   env: {},
+   *   sec_env: {},
+   *   pid: null,
+   *   resource_limit: { cpu_shares: null, memory_mb: null, memory_virt_mb: null },
+   *   behavior: { exit: "standby", control: { "0": "keepalive" } }
+   * };
+   * await client.add_app("ping", appConfig);
    */
   async add_app(name, appJson) {
     const response = await this._request("put", `/appmesh/app/${name}`, appJson);
@@ -910,11 +904,13 @@ class AppMeshClient {
    *   and `applyAttrs` has no effect.
    *
    * @param {string} filePath - Remote file path
-   * @param {string} localFile - Local file path (Node.js) or suggested filename (browser)
+   * @param {string} [localFile=null] - Local file path (Node.js) or suggested filename (browser);
+   * defaults to the basename of filePath
    * @param {boolean} [applyAttrs=true] - Node.js only: apply returned mode and best-effort
    * owner/group metadata on non-Windows platforms
    */
-  async download_file(filePath, localFile, applyAttrs = true) {
+  async download_file(filePath, localFile = null, applyAttrs = true) {
+    if (!localFile) localFile = filePath.split(/[\\/]/).pop();
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
     const response = await this._request("get", "/appmesh/file/download", null, {
       headers,
@@ -975,11 +971,12 @@ class AppMeshClient {
   /**
    * Upload a file to the remote server.
    * @param {string|File} localFile - Local file path/object
-   * @param {string} filePath - Remote target path
+   * @param {string} [filePath=null] - Remote target path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs] - In Node.js, send local permission bits; user/group metadata is
    * not currently populated by this SDK
    */
-  async upload_file(localFile, filePath, applyAttrs = true) {
+  async upload_file(localFile, filePath = null, applyAttrs = true) {
+    if (!filePath) filePath = localFile.split(/[\\/]/).pop();
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
     let formData;
 

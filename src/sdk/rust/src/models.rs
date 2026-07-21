@@ -72,8 +72,7 @@ pub struct AppOutput {
 }
 
 /// Handle for an asynchronous application run started via [`AppMeshClient::run_app_async`].
-/// Retains an `Arc` to its originating client so [`AppRun::wait`] can self-serve
-/// (subscribe-based on TCP/WSS, output polling on HTTP).
+/// Call [`AppRun::wait`] to await completion.
 #[derive(Debug, Clone)]
 pub struct AppRun {
     pub(crate) client: Arc<AppMeshClient>,
@@ -272,7 +271,6 @@ pub struct SubscriptionResult {
 pub type OutputFn = Arc<dyn Fn(&str, i64) + Send + Sync>;
 
 /// Optional [`OutputFn`]; `None` discards output.
-/// Prefer spelling `Option<OutputFn>` in new signatures so optionality is visible.
 pub type OutputHandler = Option<OutputFn>;
 
 /// Pre-built OutputHandler that prints data to stdout.

@@ -275,35 +275,6 @@ void SendBuffer::init_header(size_t len)
 	m_body_sent = 0;
 }
 
-// SendState methods
-std::shared_ptr<SendBuffer> SendState::get_current_safe()
-{
-	std::lock_guard<std::mutex> lock(m_mutex);
-
-	if (m_current && !m_current->complete())
-	{
-		return m_current;
-	}
-
-	m_current.reset();
-
-	if (!m_queue.empty())
-	{
-		m_current = std::make_shared<SendBuffer>(std::move(m_queue.front()));
-		m_queue.pop_front();
-		return m_current;
-	}
-
-	return {};
-}
-
-void SendState::clear()
-{
-	std::lock_guard<std::mutex> lock(m_mutex);
-	m_queue.clear();
-	m_current.reset();
-}
-
 // IoGuard: scoped m_io_mutex ownership. Deferred mask changes are applied only when
 // the outermost lock level is released (depth tracks re-entrant frames), so no
 // thread holds m_io_mutex while acquiring the reactor token (see rule 1 in header).
@@ -369,9 +340,8 @@ void SocketStream::apply_mask_ops(ACE_Reactor_Mask add, ACE_Reactor_Mask clr)
 			bool needWrite = false;
 			{
 				std::lock_guard<std::recursive_mutex> io_lock(m_io_mutex);
-				std::lock_guard<std::mutex> send_lock(m_send_state.mutex());
 				needWrite = m_state.load(std::memory_order_acquire) == ConnState::OPEN &&
-							(!m_send_state.is_empty_unsafe() || m_ssl_retry.want_write_for_recv);
+							(!m_send_state.is_empty() || m_ssl_retry.want_write_for_recv);
 			}
 			if (needWrite)
 				enable_mask(ACE_Event_Handler::WRITE_MASK);
@@ -431,13 +401,18 @@ int SocketStream::open(void *acceptor_or_connector)
 	}
 
 	fire_connect();
-	this->remove_reference(); // Release the construction reference
+	// Pairs with the implicit count=1 from construction (no explicit add_reference exists).
+	// Mutually exclusive with the release in close(): the caller (ACE_Acceptor / connect())
+	// invokes close() only when open() failed or never ran — same thread, sequential, so
+	// exactly one of the two sites runs. From here on the registration owns the object.
+	this->remove_reference();
 	return 0;
 }
 
-// Releases the construction reference on the failure path. ACE_Acceptor calls this
-// when open() returns -1, and connect() calls it on failure; the success path never
-// reaches here (open() releases the ref, teardown goes through handle_close()).
+// Failure-path releaser of the construction reference. ACE_Acceptor calls close() on
+// accept/setup failure (open() never ran) and on open() == -1; connect() mirrors that.
+// Normal post-open teardown goes through handle_close(), never here — do NOT call this
+// on an opened stream (it would release the registration's reference); use shutdown().
 int SocketStream::close(u_long flags)
 {
 	ACE_UNUSED_ARG(flags);
@@ -445,6 +420,10 @@ int SocketStream::close(u_long flags)
 	LOG_DBG << fname << this;
 
 	this->peer().close();
+	// Pairs with the implicit count=1 from construction. Every caller is a failure path on
+	// the accept/connect thread — ACE_Acceptor on accept/setup failure (open() never ran)
+	// or on open() == -1, connect() likewise — each invokes close() exactly once, and the
+	// success path releases in open() instead. May be the last ref (ACE deletes at zero).
 	this->remove_reference();
 	return 0;
 }
@@ -518,8 +497,8 @@ void SocketStream::shutdown()
 				// Notify failed — do NOT call handle_close() directly from a non-reactor
 				// thread: TP_Reactor's remove_handler() is not safe from arbitrary threads
 				// and can race with concurrent reactor dispatch. Instead, mark as CLOSED
-				// and clean up resources under the io lock. The connection will be cleaned
-				// up when the reactor eventually dispatches or when the object is destroyed.
+				// and clean up resources under the io lock. The reactor holds its registration
+				// reference until it notices the closed handle (deferred release, never UAF).
 				LOG_WAR << fname << "Failed to notify reactor for close: " << last_error_msg();
 				IoGuard io_lock(*this);
 				ConnState prev = m_state.exchange(ConnState::CLOSED, std::memory_order_acq_rel);
@@ -680,11 +659,10 @@ int SocketStream::handle_output(ACE_HANDLE fd)
 		if (++loop_count > MAX_IO_LOOPS)
 			return 0;
 
-		std::shared_ptr<SendBuffer> buf = m_send_state.get_current_safe();
+		SendBuffer *buf = m_send_state.current();
 		if (!buf)
 		{
-			std::lock_guard<std::mutex> send_lock(m_send_state.mutex());
-			if (m_send_state.is_empty_unsafe() && !m_ssl_retry.want_write_for_recv)
+			if (!m_ssl_retry.want_write_for_recv)
 			{
 				LOG_DBG << fname << "Send queue empty, disabling write mask";
 				defer_mask(ACE_Event_Handler::WRITE_MASK, false);
@@ -769,19 +747,15 @@ bool SocketStream::send_impl(SendBuffer &&buf)
 
 	bool overflow = false;
 	{
-		// Lock order: m_io_mutex → m_send_state.mutex()
 		IoGuard io_lock(*this);
 
 		if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
 			return false;
 
-		{
-			std::lock_guard<std::mutex> lock(m_send_state.mutex());
-			if (m_send_state.queue_depth_unsafe() >= MAX_SEND_QUEUE_DEPTH)
-				overflow = true;
-			else
-				m_send_state.enqueue_unsafe(std::move(buf));
-		}
+		if (m_send_state.queue_depth() >= MAX_SEND_QUEUE_DEPTH)
+			overflow = true;
+		else
+			m_send_state.enqueue(std::move(buf));
 
 		if (!overflow)
 		{
@@ -825,18 +799,37 @@ int SocketStream::disable_mask(ACE_Reactor_Mask bit)
 	return -1;
 }
 
+// Fire sites invoke the callback members directly: immutable after open() (rule 3),
+// so no lock or copy is needed. Exceptions never propagate into the reactor loop.
+void SocketStream::assert_not_open() const
+{
+	const static char fname[] = "SocketStream::assert_not_open() ";
+
+	if (m_state.load(std::memory_order_acquire) == ConnState::OPEN)
+		LOG_ERR << fname << "Callback set after open() — unsynchronized and may miss events (rule 3)";
+}
+
 void SocketStream::fire_connect()
 {
-	std::lock_guard<std::mutex> l(m_cb_mutex);
+	const static char fname[] = "SocketStream::fire_connect() ";
+
 	if (m_connect_cb)
-		m_connect_cb();
+	{
+		try
+		{
+			m_connect_cb();
+		}
+		catch (...)
+		{
+			LOG_ERR << fname << "Exception thrown in connect callback";
+		}
+	}
 }
 
 void SocketStream::fire_close()
 {
 	const static char fname[] = "SocketStream::fire_close() ";
 
-	std::lock_guard<std::mutex> l(m_cb_mutex);
 	if (m_close_cb)
 	{
 		try
@@ -852,24 +845,54 @@ void SocketStream::fire_close()
 
 void SocketStream::deliver_message(std::vector<std::uint8_t> &&msg)
 {
-	std::lock_guard<std::mutex> l(m_cb_mutex);
+	const static char fname[] = "SocketStream::deliver_message() ";
+
 	if (m_data_cb)
-		m_data_cb(std::move(msg));
+	{
+		try
+		{
+			m_data_cb(std::move(msg));
+		}
+		catch (...)
+		{
+			LOG_ERR << fname << "Exception thrown in data callback";
+		}
+	}
 }
 
 void SocketStream::notify_sent(const std::unique_ptr<msgpack::sbuffer> &data)
 {
-	std::lock_guard<std::mutex> l(m_cb_mutex);
+	const static char fname[] = "SocketStream::notify_sent() ";
+
 	if (m_send_cb)
-		m_send_cb(data);
+	{
+		try
+		{
+			m_send_cb(data);
+		}
+		catch (...)
+		{
+			LOG_ERR << fname << "Exception thrown in sent callback";
+		}
+	}
 }
 
 void SocketStream::report_error(const std::string &msg)
 {
+	const static char fname[] = "SocketStream::report_error() ";
+
 	LOG_ERR << "SocketStream error: " << msg << " | " << last_error_msg();
-	std::lock_guard<std::mutex> l(m_cb_mutex);
 	if (m_error_cb)
-		m_error_cb(msg);
+	{
+		try
+		{
+			m_error_cb(msg);
+		}
+		catch (...)
+		{
+			LOG_ERR << fname << "Exception thrown in error callback";
+		}
+	}
 }
 
 SocketStreamPtr SocketStream::createConnection(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout)

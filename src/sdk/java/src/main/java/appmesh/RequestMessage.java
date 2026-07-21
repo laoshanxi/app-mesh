@@ -9,10 +9,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * TCP request message for HTTP-like communication.
- * Matches Python's RequestMessage dataclass.
- */
+/** TCP request message. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class RequestMessage {
     
@@ -39,10 +36,7 @@ public class RequestMessage {
 
     private static final ObjectMapper MAPPER = new ObjectMapper(new MessagePackFactory());
 
-    /**
-     * Serialize request message to bytes using MessagePack.
-     * Matches Python's serialize() method.
-     */
+    /** Serialize to MessagePack bytes. */
     public byte[] serialize() throws IOException {
         return MAPPER.writeValueAsBytes(this);
     }

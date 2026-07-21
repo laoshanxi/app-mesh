@@ -2,11 +2,14 @@
 # pylint: disable=line-too-long,broad-exception-caught,too-many-lines,import-outside-toplevel,broad-exception-raised
 """AppMesh HTTP client with Keycloak OAuth2 authentication support."""
 
+import json
 import logging
+import time
 import warnings
-from typing import Optional, Union, Tuple, Dict, Any
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from keycloak import KeycloakOpenID
+from keycloak.exceptions import KeycloakPostError
 
 from .client_http import AppMeshClient
 from .exceptions import AppMeshAuthError
@@ -74,7 +77,7 @@ class AppMeshClientOAuth(AppMeshClient):
         totp_code: Optional[str] = None,
         token_expire: Union[str, int] = 0,
         audience: Optional[str] = None,
-    ) -> Optional[str]:
+    ) -> None:
         """Login with username and password using Keycloak.
 
         Args:
@@ -90,11 +93,78 @@ class AppMeshClientOAuth(AppMeshClient):
         self._token = self._keycloak_openid.token(
             username=username,
             password=password,
-            totp=int(totp_code) if totp_code else None,
+            # Pass TOTP as-is: int() would strip leading zeros (e.g. "012345" -> 12345)
+            totp=totp_code if totp_code else None,
             grant_type="password",  # grant type for token request: "password" / "client_credentials" / "refresh_token"
             scope="openid profile email",  # request identity claims so userinfo returns preferred_username/email
         )
         self._on_token_changed(self._get_access_token())
+
+    def login_device_flow(
+        self,
+        scope: str = "openid profile email",
+        on_prompt: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> None:
+        """Login via the OAuth 2.0 Device Authorization Grant (RFC 8628).
+
+        For browserless/input-constrained environments: the user opens
+        ``verification_uri_complete`` (or ``verification_uri`` + ``user_code``) on another
+        device, and this call polls the token endpoint until approval, denial, or expiry.
+
+        Requires "OAuth 2.0 Device Authorization Grant" enabled on the Keycloak client
+        (client settings → Capability config).
+
+        Args:
+            scope: OAuth2 scopes to request.
+            on_prompt: Callback receiving the device authorization response (keys per
+                RFC 8628 §3.2: ``user_code``, ``verification_uri``,
+                ``verification_uri_complete``, ``expires_in``, ``interval``) to present
+                the instructions to the user. Defaults to printing them to stdout.
+
+        Raises:
+            AppMeshAuthError: When the user denies the request, the device code expires,
+                or the token request fails for any other reason.
+        """
+        device = self._keycloak_openid.device(scope=scope)
+
+        if on_prompt:
+            on_prompt(device)
+        else:
+            uri = device.get("verification_uri_complete") or device.get("verification_uri")
+            print(f"To sign in, open {uri} and enter code: {device.get('user_code')}")
+
+        # RFC 8628 §3.5: poll no faster than "interval", stop once the device code expires
+        interval = int(device.get("interval", 5))
+        deadline = time.monotonic() + int(device.get("expires_in", 600))
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AppMeshAuthError("Device authorization expired before the user approved the request")
+            time.sleep(min(interval, remaining))
+            try:
+                self._token = self._keycloak_openid.token(
+                    grant_type="urn:ietf:params:oauth:grant-type:device_code",
+                    device_code=device["device_code"],
+                )
+            except KeycloakPostError as e:
+                error = self._oauth_error_code(e)
+                if error == "authorization_pending":
+                    continue
+                if error == "slow_down":
+                    interval += 5  # RFC 8628 §3.5: back off by 5 seconds
+                    continue
+                raise AppMeshAuthError(f"Device authorization failed: {error or e}") from e
+            self._on_token_changed(self._get_access_token())
+            return
+
+    @staticmethod
+    def _oauth_error_code(e: KeycloakPostError) -> str:
+        """Extract the OAuth2 "error" code from a Keycloak error response body."""
+        try:
+            return json.loads(e.response_body).get("error", "")
+        except Exception:
+            return ""
 
     def logout(self) -> bool:
         """Log out of the current session from Keycloak and clean up."""
@@ -134,7 +204,11 @@ class AppMeshClientOAuth(AppMeshClient):
             raise AppMeshAuthError(f"Keycloak token renewal failed: {str(e)}") from e
 
     def get_oauth_userinfo(self) -> dict:
-        """Get Keycloak OIDC userinfo for the current access token.
+        """Get Keycloak OIDC userinfo for the current access token, directly from Keycloak.
+
+        Unlike :meth:`get_current_user` (inherited), which asks the App Mesh daemon
+        ``/appmesh/user/self``, this queries the Keycloak userinfo endpoint without
+        involving the daemon.
 
         Returns:
             Keycloak userinfo dictionary (OIDC claims such as ``sub``,
@@ -143,29 +217,20 @@ class AppMeshClientOAuth(AppMeshClient):
         access_token = self._get_access_token()
         return self._keycloak_openid.userinfo(access_token)
 
-    def get_current_user(self) -> dict:
-        """Get information about the current user using Keycloak userinfo.
-
-        Returns:
-            Keycloak userinfo dictionary (same as ``get_oauth_userinfo()``); note this is
-            shaped differently from the App Mesh ``/appmesh/user/self`` document returned
-            by ``AppMeshClient.get_current_user()``.
-        """
-        return self.get_oauth_userinfo()
-
     def close(self) -> None:
         """Close the session and release resources, including Keycloak logout."""
         # Logout from Keycloak if needed
-        if hasattr(self, "_keycloak_openid") and self._keycloak_openid and self._token and isinstance(self._token, dict):
-            refresh_token = self._token.get("refresh_token")
-            if refresh_token:
-                try:
-                    self._keycloak_openid.logout(refresh_token)
-                except Exception as e:
-                    logger.warning("Failed to logout from Keycloak during close: %s", e)
-                finally:
-                    self._keycloak_openid = None
-                    self._token = {}
+        if hasattr(self, "_keycloak_openid") and self._keycloak_openid:
+            if self._token and isinstance(self._token, dict):
+                refresh_token = self._token.get("refresh_token")
+                if refresh_token:
+                    try:
+                        self._keycloak_openid.logout(refresh_token)
+                    except Exception as e:
+                        logger.warning("Failed to logout from Keycloak during close: %s", e)
+            # Always release, even when no refresh token was present
+            self._keycloak_openid = None
+            self._token = {}
 
         # Close the base class session and resources (timers, etc.)
         super().close()

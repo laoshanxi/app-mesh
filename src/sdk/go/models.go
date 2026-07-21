@@ -25,6 +25,7 @@ const (
 const (
 	userAgentHeaderName         = "User-Agent"
 	headerJWTSetCookie          = "X-Set-Cookie"
+	headerJWTRefreshToken       = "X-Refresh-Token"
 	cookieToken                 = "appmesh_auth_token"
 	userAgent                   = "appmesh/golang"
 	userAgentTCP                = "appmesh/golang/tcp"
@@ -152,6 +153,7 @@ type ResourceLimitation struct {
 // JWTResponse represents the response containing JWT token information.
 type JWTResponse struct {
 	AccessToken   string `json:"access_token"`
+	RefreshToken  string `json:"refresh_token"`
 	ExpireSeconds int    `json:"expire_seconds"`
 	ExpireTime    int    `json:"expire_time"`
 	Profile       struct {

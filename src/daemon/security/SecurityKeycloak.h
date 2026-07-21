@@ -4,6 +4,15 @@
 #include "../../common/JwtHelper.h"
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
+// Local user/role/credential mutation is meaningless under OAuth2 — passwords, MFA, and role
+// assignments live in Keycloak. Reject such calls with a clear message (HTTP 400) rather than
+// the generic "not applicable function".
+#define KEYCLOAK_MANAGED_THROW                                                                          \
+    override                                                                                           \
+    {                                                                                                  \
+        throw std::invalid_argument("not supported in OAuth2 mode: user/role management is in Keycloak"); \
+    }
+
 class SecurityKeycloak : public SecurityJson
 {
     struct JsonKeycloak
@@ -21,7 +30,17 @@ public:
     SecurityKeycloak();
     virtual ~SecurityKeycloak() = default;
     virtual void init() override;
-    virtual void save() NOT_APPLICABLE_THROW;
+    virtual void save() KEYCLOAK_MANAGED_THROW;
+
+    // Authentication and user/role mutation are delegated to Keycloak — reject local-store
+    // operations (change password, add/delete user, add/delete role) with a clear error.
+    // Lock/unlock and TOTP setup have no dedicated method; they are stopped by save() above.
+    virtual bool verifyUserKey(const std::string &userName, const std::string &userKey) KEYCLOAK_MANAGED_THROW;
+    virtual void changeUserPasswd(const std::string &userName, const std::string &newPwd) KEYCLOAK_MANAGED_THROW;
+    virtual std::shared_ptr<User> addUser(const std::string &userName, const nlohmann::json &userJson) KEYCLOAK_MANAGED_THROW;
+    virtual void delUser(const std::string &name) KEYCLOAK_MANAGED_THROW;
+    virtual void addRole(const nlohmann::json &obj, std::string name) KEYCLOAK_MANAGED_THROW;
+    virtual void delRole(const std::string &name) KEYCLOAK_MANAGED_THROW;
 
     // Resolve a user profile from Keycloak (admin API) instead of the local JSON store.
     // A locally-defined user still wins (preserves exec-user overrides); otherwise the profile
