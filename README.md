@@ -4,9 +4,9 @@
 
 # App Mesh
 
-**App Mesh = systemd + cron + remote execution + API.**
+**One secure daemon to run, schedule, and remote-control apps across machines.**
 
-A lightweight, secure platform that runs, schedules, and remote-controls applications across machines — one C++ daemon with JWT/RBAC security, a CLI, REST APIs, SDKs in 6 languages, and a built-in workflow engine.
+A lightweight C++ daemon with JWT/RBAC security, a CLI, REST APIs, SDKs in 6 languages, and a built-in workflow engine.
 
 Use App Mesh to:
 

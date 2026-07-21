@@ -14,8 +14,7 @@
 
 struct CurlResponse;
 
-/// HTTP failure carrying the response status code and body text.
-/// Derives from std::invalid_argument so existing catch sites keep working.
+/// HTTP failure carrying the response status code and body text (derives from std::invalid_argument).
 class AppMeshHttpError : public std::invalid_argument
 {
 public:
@@ -50,11 +49,8 @@ struct AppRun
     const std::string &appName() const { return m_appName; }
     const std::string &procUid() const { return m_procUid; }
 
-    /// Wait for the asynchronous run to complete.
-    /// Temporarily restores the forward_to target that was active at run creation,
-    /// ensuring output queries reach the correct cluster node.
-    /// Returns the process exit code, or nullptr on timeout (not exited);
-    /// throws AppMeshHttpError on HTTP/transport error.
+    /// Wait for the asynchronous run to complete (routed to the node where the run started).
+    /// Returns the process exit code, or nullptr on timeout (not exited); throws AppMeshHttpError on HTTP/transport error.
     std::shared_ptr<int> wait(OutputHandler stdoutHandler = nullptr, int timeout = 0);
 
 private:
@@ -65,8 +61,6 @@ private:
 };
 
 /// Connection settings for AppMeshClient.
-/// No transport timeout knob here: RestClient hardcodes a process-global request
-/// timeout of 200s (1000s for file transfer); see src/common/RestClient.cpp.
 struct ClientHttpConfig
 {
     std::string url = "https://127.0.0.1:6060";
@@ -95,8 +89,7 @@ public:
     AppMeshClient() = default;
     /// Configure endpoint, TLS material, and optional cookie persistence (no authentication;
     /// reconfigures the process-global RestClient state, see class note).
-    /// Throws std::invalid_argument when config.verifyServer is true and config.caCertPath
-    /// is a missing/unreadable non-default path (absent default = system trust store).
+    /// Throws std::invalid_argument on an inaccessible non-default caCertPath (see ClientHttpConfig::caCertPath).
     explicit AppMeshClient(const ClientHttpConfig &config);
     virtual ~AppMeshClient() = default;
 
@@ -150,9 +143,9 @@ public:
     /// Remove an application.
     /// Returns true when deleted, false when not found (404); throws AppMeshHttpError otherwise.
     bool deleteApp(const std::string &app);
-    /// Enable an application. Throws AppMeshHttpError on failure.
+    /// Enable an application.
     void enableApp(const std::string &app);
-    /// Disable an application. Throws AppMeshHttpError on failure.
+    /// Disable an application.
     void disableApp(const std::string &app);
 
     // Run Application Operations
@@ -161,14 +154,12 @@ public:
     std::tuple<std::shared_ptr<int>, std::string> runAppSync(const nlohmann::json &app,
                                                              int maxTime = 60 * 60 * 24 * 2,
                                                              int lifecycle = 60 * 60 * 24 * 2 + 60 * 60 * 12);
-    /// Run an application asynchronously and return a handle that snapshots the current forward target.
+    /// Run an application asynchronously and return a handle to monitor it.
     AppRun runAppAsync(const nlohmann::json &app,
                        int maxTime = 60 * 60 * 24 * 2,
                        int lifecycle = 60 * 60 * 24 * 2 + 60 * 60 * 12);
     /// Poll an async run until completion or timeout.
-    /// Returns the exit code, or nullptr on timeout (not exited); throws AppMeshHttpError
-    /// on HTTP/transport error.
-    /// On success may best-effort remove the temp run app. Throws std::invalid_argument on null run.
+    /// Returns the exit code, or nullptr on timeout (not exited); throws AppMeshHttpError on HTTP/transport error, or std::invalid_argument on null run.
     std::shared_ptr<int> waitForAsyncRun(AppRun *run, OutputHandler stdoutHandler = nullptr, int timeout = 0);
     /// Send a payload to a running application task endpoint and wait for the response body.
     /// timeout is a server-side task timeout (seconds), not a transport timeout.
@@ -179,9 +170,9 @@ public:
 
     // File Management
     /// Download a remote file and optionally apply returned POSIX metadata locally.
-    void downloadFile(const std::string &remoteFile, const std::string &localFile, bool preservePermissions = true);
+    void downloadFile(const std::string &remoteFile, const std::string &localFile = "", bool preservePermissions = true);
     /// Upload a local file and optionally send local POSIX metadata for server-side recreation.
-    void uploadFile(const std::string &localFile, const std::string &remoteFile, bool preservePermissions = true);
+    void uploadFile(const std::string &localFile, const std::string &remoteFile = "", bool preservePermissions = true);
 
     // System Management
     nlohmann::json getHostResources() const;
@@ -223,7 +214,8 @@ protected:
                                               const nlohmann::json *body = nullptr,
                                               std::map<std::string, std::string> header = {},
                                               std::map<std::string, std::string> query = {}) const;
-    void addCommonHeaders(std::map<std::string, std::string> &header) const;
+    /// Virtual so subclasses can attach extra headers (e.g. OAuth Bearer authorization) to every request.
+    virtual void addCommonHeaders(std::map<std::string, std::string> &header) const;
 
 private:
     void applyConfig(const ClientHttpConfig &config);

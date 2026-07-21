@@ -7,6 +7,7 @@ pub const HTTP_HEADER_JWT_EXPIRE_SECONDS: &str = "X-Expire-Seconds";
 pub const HTTP_HEADER_JWT_AUDIENCE: &str = "X-Audience";
 pub const HTTP_HEADER_JWT_TOTP: &str = "X-Totp-Code";
 pub const HTTP_HEADER_JWT_AUTH_PERMISSION: &str = "X-Permission";
+pub const HTTP_HEADER_JWT_REFRESH_TOKEN: &str = "X-Refresh-Token";
 pub const HTTP_HEADER_AUTH_BASIC: &str = "Basic ";
 pub const HTTP_HEADER_AUTH_BEARER: &str = "Bearer ";
 pub const HTTP_HEADER_KEY_FORWARDING_HOST: &str = "X-Target-Host";
@@ -14,7 +15,6 @@ pub const HTTP_HEADER_KEY_OUTPUT_POS: &str = "X-Output-Position";
 pub const HTTP_HEADER_KEY_EXIT_CODE: &str = "X-Exit-Code";
 pub const HTTP_HEADER_KEY_USER_AGENT: &str = "User-Agent";
 pub const HTTP_HEADER_KEY_X_FILE_PATH: &str = "X-File-Path";
-pub const HTTP_HEADER_KEY_X_FILE_NAME: &str = "X-File-Name";
 #[cfg(unix)]
 pub const HTTP_HEADER_KEY_X_FILE_MODE: &str = "X-File-Mode";
 #[cfg(unix)]
@@ -22,6 +22,7 @@ pub const HTTP_HEADER_KEY_X_FILE_USER: &str = "X-File-User";
 #[cfg(unix)]
 pub const HTTP_HEADER_KEY_X_FILE_GROUP: &str = "X-File-Group";
 pub const HTTP_HEADER_CONTENT_TYPE: &str = "Content-Type";
+pub const HTTP_HEADER_CONTENT_LENGTH: &str = "Content-Length";
 pub const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: &str = "X-Send-File-Socket";
 pub const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: &str = "X-Recv-File-Socket";
 
@@ -37,6 +38,7 @@ pub const HTTP_BODY_KEY_MFA_URI: &str = "mfa_uri";
 pub const HTTP_BODY_KEY_OLD_PASSWORD: &str = "old_password";
 pub const HTTP_BODY_KEY_NEW_PASSWORD: &str = "new_password";
 pub const HTTP_BODY_KEY_ACCESS_TOKEN: &str = "access_token";
+pub const HTTP_BODY_KEY_REFRESH_TOKEN: &str = "refresh_token";
 
 // Query parameters
 pub const HTTP_QUERY_KEY_STDOUT_INDEX: &str = "stdout_index";

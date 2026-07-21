@@ -924,6 +924,11 @@ paths:
                 file:
                   type: string
                   format: binary
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: Raw file content as the request body; the remote path is taken from the X-File-Path header.
       responses:
         "200":
           description: File uploaded successfully.

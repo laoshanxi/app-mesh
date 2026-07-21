@@ -2,12 +2,11 @@
 #pragma once
 
 #include <atomic>
+#include <map>
 #include <memory>
+#include <string>
 
 #include <prometheus/family.h>
-
-#include "HttpRequest.h"
-#include "RestBase.h"
 
 namespace prometheus
 {
@@ -34,7 +33,7 @@ public:
 						   const std::string &name, const std::string &help,
 						   std::map<std::string, std::string> label);
 
-	virtual ~CounterMetric();
+	~CounterMetric();
 
 	prometheus::Counter &metric();
 
@@ -58,7 +57,7 @@ public:
 						 const std::string &name, const std::string &help,
 						 std::map<std::string, std::string> label);
 
-	virtual ~GaugeMetric();
+	~GaugeMetric();
 
 	prometheus::Gauge &metric();
 
@@ -72,36 +71,34 @@ private:
 };
 
 /// <summary>
-/// Prometheus Exporter REST service
+/// Prometheus metrics exporter component, owned by RestHandler
 /// </summary>
-class PrometheusRest : public RestBase
+class PrometheusRest
 {
 public:
 	explicit PrometheusRest();
-	virtual ~PrometheusRest();
+	~PrometheusRest();
 
 	/// <summary>
-	/// Create a Counter Metric
+	/// Create a Counter Metric, the metric unregisters itself from the registry on destruction
 	/// </summary>
 	/// <param name="metricName"></param>
 	/// <param name="metricHelp"></param>
 	/// <param name="labels"></param>
-	/// <returns>return null if exporter was not enabled</returns>
-	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
+	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
 	/// <summary>
-	/// Create a Gauge Metric
+	/// Create a Gauge Metric, the metric unregisters itself from the registry on destruction
 	/// </summary>
 	/// <param name="metricName"></param>
 	/// <param name="metricHelp"></param>
 	/// <param name="labels"></param>
-	/// <returns>return null if exporter was not enabled</returns>
-	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
+	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
 
 	/// <summary>
 	/// Collect all metrics
 	/// </summary>
 	/// <returns></returns>
-	const std::string collectData();
+	std::string collectData();
 
 	/// <summary>
 	/// The metrics is collected by Prometheus server or not
@@ -109,19 +106,12 @@ public:
 	/// <returns></returns>
 	bool collected();
 
-protected:
 	/// <summary>
-	/// override RestBase::handleRest() to set REST related metrics
+	/// Count one REST request into the HTTP request counters (moved from the former handleRest() override)
 	/// </summary>
-	/// <param name="message"></param>
-	/// <param name="restFunctions"></param>
-	virtual void handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &message)>> &restFunctions) override;
-
-	/// <summary>
-	/// REST API function
-	/// </summary>
-	/// <param name="message"></param>
-	void apiMetrics(const std::shared_ptr<HttpRequest> &message);
+	/// <param name="method"></param>
+	/// <param name="requestUri"></param>
+	void countRequest(const std::string &method, const std::string &requestUri);
 
 private:
 	/// <summary>
@@ -130,8 +120,7 @@ private:
 	void initMetrics();
 
 private:
-	std::atomic_long m_collectTime = ATOMIC_FLAG_INIT; // std::atomic_flag should be initialized in declare
-	static std::shared_ptr<PrometheusRest> m_instance;
+	std::atomic_long m_collectTime{0};
 
 	// prometheus registry
 	std::shared_ptr<prometheus::Registry> m_promRegistry;
@@ -146,10 +135,6 @@ private:
 	std::shared_ptr<CounterMetric> m_restDelCounter;
 	std::shared_ptr<CounterMetric> m_restPostCounter;
 	std::shared_ptr<GaugeMetric> m_appmeshFileDesc;
-
-public:
-	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
-	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
 };
 
 constexpr auto METRIC_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";

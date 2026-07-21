@@ -90,10 +90,15 @@ namespace JwtToken
 
 		const auto decodedToken = JwtHelper::decode(token);
 
-		// Delegate to Keycloak if configured
-		if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
+		// Delegate to Keycloak if configured — except the internal file-service token, which
+		// generate() always mints locally (even in OAuth2 mode); Keycloak cannot carry its
+		// audience, so verify it locally to keep WebSocket file transfer working under OAuth2.
+		if (audience != WEBSOCKET_FILE_AUDIENCE)
 		{
-			return keycloak->verifyKeycloakToken(decodedToken, audience);
+			if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
+			{
+				return keycloak->verifyKeycloakToken(decodedToken, audience);
+			}
 		}
 
 		// Verify subject claim exists
