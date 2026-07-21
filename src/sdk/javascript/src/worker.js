@@ -1,4 +1,4 @@
-// server.js - App Mesh Worker SDK for Node.js
+// worker.js - App Mesh Worker SDK for Node.js
 // This is a Node.js-only module - not included in browser builds
 
 // Environment check - only works in Node.js
@@ -57,7 +57,7 @@ const _DEFER_CLIENT = Symbol('appmesh.deferClient')
  *
  * @example
  * // HTTP Worker Example
- * import { AppMeshWorker } from 'appmesh/server';
+ * import { AppMeshWorker } from 'appmesh/worker';
  *
  * const worker = new AppMeshWorker();
  * const payload = await worker.fetch_task();
@@ -66,7 +66,7 @@ const _DEFER_CLIENT = Symbol('appmesh.deferClient')
  *
  * @example
  * // TCP Worker Example
- * import { AppMeshWorkerTCP } from 'appmesh/server';
+ * import { AppMeshWorkerTCP } from 'appmesh/worker';
  *
  * const worker = new AppMeshWorkerTCP();
  * try {
@@ -292,7 +292,7 @@ class AppMeshWorker {
  * @extends AppMeshWorker
  *
  * @example
- * import { AppMeshWorkerTCP } from 'appmesh/server';
+ * import { AppMeshWorkerTCP } from 'appmesh/worker';
  *
  * const worker = new AppMeshWorkerTCP();
  * try {
@@ -417,7 +417,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
  * @returns {Promise<any>} Result from callback
  *
  * @example
- * import { withServer, AppMeshWorkerTCP } from 'appmesh/server';
+ * import { withServer, AppMeshWorkerTCP } from 'appmesh/worker';
  *
  * await withServer(
  *   () => new AppMeshWorkerTCP(),

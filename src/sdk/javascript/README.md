@@ -61,7 +61,7 @@ Server-side SDK for building App Mesh applications in Node.js. This SDK enables 
 The `appmesh` package supports **both browser and Node.js** environments:
 
 - **Client SDK** (`appmesh`) - Works in both browser and Node.js
-- **Server SDK** (`appmesh/server`) - **Node.js only** (not bundled for browser)
+- **Server SDK** (`appmesh/worker`) - **Node.js only** (not bundled for browser)
 
 This ensures the browser build remains lightweight and doesn't include Node.js-specific server code.
 
@@ -92,7 +92,7 @@ npm install msgpack-lite uuid
 #### Basic HTTP Server
 
 ```javascript
-import { AppMeshWorker, ProcessSupersededError } from "appmesh/server";
+import { AppMeshWorker, ProcessSupersededError } from "appmesh/worker";
 
 const server = new AppMeshWorker();
 
@@ -120,7 +120,7 @@ try {
 #### With SSL Configuration
 
 ```javascript
-import { AppMeshWorker } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/worker";
 import fs from "fs";
 
 const sslConfig = {
@@ -138,7 +138,7 @@ const server = new AppMeshWorker("https://127.0.0.1:6060", sslConfig);
 **Dependencies:** `npm install msgpack-lite uuid`
 
 ```javascript
-import { AppMeshWorkerTCP, withServer } from "appmesh/server";
+import { AppMeshWorkerTCP, withServer } from "appmesh/worker";
 import fs from "fs";
 
 const sslConfig = {
@@ -290,7 +290,7 @@ await withServer(
 #### JSON Processing
 
 ```javascript
-import { AppMeshWorker } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/worker";
 
 const server = new AppMeshWorker();
 
@@ -319,7 +319,7 @@ try {
 #### Binary Data Processing
 
 ```javascript
-import { AppMeshWorker } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/worker";
 import crypto from "crypto";
 
 const server = new AppMeshWorker();
@@ -339,7 +339,7 @@ await server.send_task_result(JSON.stringify(result));
 #### Long-Running Task
 
 ```javascript
-import { AppMeshWorker } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/worker";
 
 const server = new AppMeshWorker();
 
@@ -387,7 +387,7 @@ console.log("Result:", result);
 
 ```javascript
 // Server side (running as App Mesh application)
-import { AppMeshWorker } from "appmesh/server";
+import { AppMeshWorker } from "appmesh/worker";
 
 const server = new AppMeshWorker();
 

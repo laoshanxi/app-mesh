@@ -36,6 +36,12 @@ type AppMeshClient struct {
 	autoRefreshToken bool
 	refreshStop      chan struct{} // closed to signal the goroutine to exit
 	refreshMu        sync.Mutex    // protects refreshStop
+
+	// OAuth2 (Keycloak) refresh token, captured from login/renew response bodies.
+	// Stays empty in local-JWT mode, so renew/logout send no X-Refresh-Token header there.
+	// Guarded by atomic.String (the SDK's token-state convention) because the auto-refresh
+	// goroutine and user calls may read/write it concurrently.
+	refreshToken atomic.String
 }
 
 // Option for NewHttpClient
@@ -131,6 +137,17 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	return c, nil
 }
 
+// captureRefreshToken stores the OAuth2 refresh token from a login/renew response body when present.
+// Only the Keycloak (OAuth2) daemon returns refresh_token; local-JWT mode omits it, so the stored
+// refresh token stays empty and renew/logout send no X-Refresh-Token header. Keycloak rotates the
+// refresh token on every renew, so a present value replaces the stored one; an absent value keeps it.
+func (r *AppMeshClient) captureRefreshToken(raw []byte) {
+	var result JWTResponse
+	if err := json.Unmarshal(raw, &result); err == nil && result.RefreshToken != "" {
+		r.refreshToken.Store(result.RefreshToken)
+	}
+}
+
 // Login authenticates with username/password and updates this client session on success.
 // It returns a TOTP challenge string when the server responds with HTTP 428 and no code was
 // provided; otherwise it returns an empty string. An empty challenge with a nil error means
@@ -161,6 +178,9 @@ func (r *AppMeshClient) Login(username string, password string, totpCode string,
 	}
 	switch code {
 	case http.StatusOK:
+		// Capture the OAuth2 refresh token when the daemon (Keycloak mode) issues one, so
+		// RenewToken/Logout can present it via X-Refresh-Token. Local-JWT mode: no-op.
+		r.captureRefreshToken(raw)
 		r.StartTokenRefresh()
 		return "", nil
 
@@ -219,7 +239,13 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 
 // Logout invalidates the current session on the server and clears the locally stored token.
 func (r *AppMeshClient) Logout() (bool, error) {
-	code, raw, _, err := r.post("/appmesh/self/logoff", nil, nil, nil)
+	// OAuth2 (Keycloak) proxy mode: present the refresh token so the daemon can revoke the
+	// Keycloak session server-side. Local-JWT mode leaves the refresh token empty and omits it.
+	var headers map[string]string
+	if rt := r.refreshToken.Load(); rt != "" {
+		headers = map[string]string{headerJWTRefreshToken: rt}
+	}
+	code, raw, _, err := r.post("/appmesh/self/logoff", nil, headers, nil)
 	r.StopTokenRefresh()
 	if err != nil {
 		return false, fmt.Errorf("logout request failed: %w", err)
@@ -227,6 +253,7 @@ func (r *AppMeshClient) Logout() (bool, error) {
 	if code != http.StatusOK {
 		return false, fmt.Errorf("logout failed with status %d: %s", code, string(raw))
 	}
+	r.refreshToken.Store("")
 	return true, nil
 }
 
@@ -275,11 +302,19 @@ func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audienc
 
 // RenewToken renews the current JWT token already attached to this client session.
 func (r *AppMeshClient) RenewToken() (bool, error) {
-	code, raw, _, err := r.post("/appmesh/token/renew", nil, nil, nil)
+	// OAuth2 (Keycloak) proxy mode renews via the refresh token; the daemon requires it in
+	// X-Refresh-Token. Local-JWT mode leaves the refresh token empty and omits the header.
+	var headers map[string]string
+	if rt := r.refreshToken.Load(); rt != "" {
+		headers = map[string]string{headerJWTRefreshToken: rt}
+	}
+	code, raw, _, err := r.post("/appmesh/token/renew", nil, headers, nil)
 	if err != nil {
 		return false, fmt.Errorf("token renewal request failed: %w", err)
 	}
 	if code == http.StatusOK {
+		// Keycloak rotates the refresh token on renew — store the new one for the next cycle.
+		r.captureRefreshToken(raw)
 		return true, nil
 	}
 	return false, fmt.Errorf("token renewal failed with status %d: %s", code, string(raw))

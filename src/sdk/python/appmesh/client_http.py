@@ -158,6 +158,7 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
     _HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
     _HTTP_HEADER_JWT_SET_COOKIE = "X-Set-Cookie"
+    _HTTP_HEADER_JWT_REFRESH_TOKEN = "X-Refresh-Token"
     _COOKIE_TOKEN = "appmesh_auth_token"
 
     @unique
@@ -269,6 +270,10 @@ class AppMeshClient:
         self._refresh_thread = None
         self._refresh_stop = threading.Event()
         self._refresh_wake = threading.Event()
+
+        # OAuth2 (Keycloak proxy) refresh token, captured from the daemon login/renew response.
+        # Stays None in local-JWT mode, so renew/logout send no X-Refresh-Token header there.
+        self._refresh_token: Optional[str] = None
 
         # Session and cookie management
         self._lock = threading.Lock()
@@ -477,6 +482,20 @@ class AppMeshClient:
     ########################################
     # Security
     ########################################
+    def _capture_refresh_token(self, resp) -> None:
+        """Store the OAuth2 refresh token from a login/renew response body, if present.
+
+        Only the Keycloak (OAuth2) daemon returns ``refresh_token``; local-JWT mode omits it,
+        so ``_refresh_token`` stays ``None`` and renew/logout send no ``X-Refresh-Token`` header.
+        Keycloak rotates the refresh token on every renew, so a present value replaces the old one.
+        """
+        try:
+            rt = resp.json().get("refresh_token")
+        except Exception:  # pylint: disable=broad-exception-caught
+            rt = None
+        if rt:
+            self._refresh_token = rt
+
     def login(
         self,
         username: str,
@@ -526,6 +545,10 @@ class AppMeshClient:
                 if not totp_code:
                     return challenge
                 self.validate_totp(username, challenge, totp_code, token_expire)
+        elif resp.status_code == HTTPStatus.OK:
+            # Capture the OAuth2 refresh token when the daemon (Keycloak mode) issues one, so
+            # renew_token()/logout() can present it via X-Refresh-Token. Local mode: no-op.
+            self._capture_refresh_token(resp)
 
     def validate_totp(
         self, username: str, challenge: str, code: str, token_expire: Union[int, str] = _DURATION_ONE_WEEK_ISO
@@ -568,12 +591,19 @@ class AppMeshClient:
         if not jwt_token or not isinstance(jwt_token, str):
             return False
 
-        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/self/logoff", raise_on_fail=False)
+        # OAuth2 (Keycloak) proxy mode: present the refresh token so the daemon can revoke the
+        # Keycloak session server-side. Optional — logoff still succeeds (local revoke) without it.
+        headers = {}
+        if self._refresh_token:
+            headers[self._HTTP_HEADER_JWT_REFRESH_TOKEN] = self._refresh_token
+
+        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/self/logoff", header=(headers or None), raise_on_fail=False)
 
         if resp.status_code != HTTPStatus.OK:
             logger.warning("Failed to logout: %s", resp.text)
             return False
 
+        self._refresh_token = None
         self.stop_token_refresh()
         return True
 
@@ -660,11 +690,19 @@ class AppMeshClient:
         if not isinstance(jwt_token, str):
             raise AppMeshAuthError("Unsupported token format")
 
-        self._request_http(
+        headers = {"X-Expire-Seconds": str(self._parse_duration(token_expire))}
+        # OAuth2 (Keycloak) proxy mode renews via the refresh token; the daemon requires it in
+        # X-Refresh-Token. Local-JWT mode leaves _refresh_token None and omits the header.
+        if self._refresh_token:
+            headers[self._HTTP_HEADER_JWT_REFRESH_TOKEN] = self._refresh_token
+
+        resp = self._request_http(
             AppMeshClient._Method.POST,
             path="/appmesh/token/renew",
-            header={"X-Expire-Seconds": str(self._parse_duration(token_expire))},
+            header=headers,
         )
+        # Keycloak rotates the refresh token on renew — store the new one for the next cycle.
+        self._capture_refresh_token(resp)
 
     def get_totp_uri(self) -> str:
         """Return the TOTP provisioning URI (``otpauth://...``) for the current user,

@@ -266,6 +266,9 @@ pub struct AppMeshClient {
     auto_refresh: AtomicBool,
     /// Handle to the background token-refresh task (if running).
     refresh_handle: Mutex<Option<JoinHandle<()>>>,
+    /// Current OAuth2 refresh token issued by the daemon in Keycloak mode.
+    /// Stays `None` in local-JWT mode, so renew/logout send no `X-Refresh-Token` header there.
+    refresh_token: Mutex<Option<String>>,
 }
 
 impl std::fmt::Debug for AppMeshClient {
@@ -299,6 +302,7 @@ impl AppMeshClient {
             url,
             auto_refresh: AtomicBool::new(false),
             refresh_handle: Mutex::new(None),
+            refresh_token: Mutex::new(None),
         }))
     }
 
@@ -309,6 +313,7 @@ impl AppMeshClient {
             url,
             auto_refresh: AtomicBool::new(false),
             refresh_handle: Mutex::new(None),
+            refresh_token: Mutex::new(None),
         })
     }
 
@@ -357,6 +362,21 @@ impl AppMeshClient {
 // -- Authentication ---------------------------------------------------------
 
 impl AppMeshClient {
+    /// Store the OAuth2 refresh token from a login/renew response body, if present.
+    ///
+    /// Only the Keycloak (OAuth2) daemon returns `refresh_token`; local-JWT mode omits it,
+    /// so the stored value stays `None` and renew/logout send no `X-Refresh-Token` header.
+    /// Keycloak rotates the refresh token on every renew, so a present value replaces the
+    /// stored one; an absent value leaves the stored token untouched. Transport-agnostic:
+    /// `resp` carries the body over HTTP and TCP/WSS alike.
+    fn capture_refresh_token(&self, resp: &http::Response<Bytes>) {
+        if let Ok(json) = serde_json::from_slice::<Value>(resp.body()) {
+            if let Some(rt) = json.get(HTTP_BODY_KEY_REFRESH_TOKEN).and_then(|v| v.as_str()) {
+                *self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = Some(rt.to_string());
+            }
+        }
+    }
+
     /// Login with username/password and update this client session on success.
     ///
     /// Returns the TOTP challenge string when the server replies with HTTP 428 and no valid code
@@ -401,6 +421,10 @@ impl AppMeshClient {
             let text = resp.text()?;
             return Err(AppMeshError::AuthenticationFailed(text));
         }
+
+        // Capture the OAuth2 refresh token when the daemon (Keycloak mode) issues one, so
+        // renew_token()/logout() can present it via X-Refresh-Token. Local mode: no-op.
+        self.capture_refresh_token(&resp);
 
         Ok(String::new())
     }
@@ -496,15 +520,32 @@ impl AppMeshClient {
     /// Logout from the current session.
     pub async fn logout(&self) -> Result<()> {
         self.cancel_refresh_task();
-        self.req.send(Method::POST, "/appmesh/self/logoff", None, None, None, true).await?;
+        // OAuth2 (Keycloak) proxy mode: present the refresh token so the daemon can revoke the
+        // Keycloak session server-side. Local-JWT mode has none stored, so no header is sent.
+        let refresh_token = self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let headers = refresh_token.map(|rt| hmap! { HTTP_HEADER_JWT_REFRESH_TOKEN => rt });
+        self.req.send(Method::POST, "/appmesh/self/logoff", None, headers, None, true).await?;
+        *self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = None;
         Ok(())
     }
 
     /// Renew the current JWT token already attached to this client.
     pub async fn renew_token(&self, token_expire: Option<i32>) -> Result<()> {
-        let headers = token_expire.map(|sec| hmap! { HTTP_HEADER_JWT_EXPIRE_SECONDS => sec });
+        let mut headers = hmap!();
+        if let Some(sec) = token_expire {
+            headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.into(), sec.to_string());
+        }
+        // Keycloak proxy mode requires the refresh token in X-Refresh-Token to renew.
+        // Local-JWT mode has none stored, so the header is omitted and behavior is unchanged.
+        let refresh_token = self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(rt) = refresh_token {
+            headers.insert(HTTP_HEADER_JWT_REFRESH_TOKEN.into(), rt);
+        }
+        let headers = if headers.is_empty() { None } else { Some(headers) };
 
-        self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
+        let resp = self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
+        // Keycloak rotates the refresh token on every renew — capture the new one.
+        self.capture_refresh_token(&resp);
         Ok(())
     }
 

@@ -23,8 +23,13 @@
       "import": "./dist/appmesh.esm.js",
       "default": "./dist/appmesh.esm.js"
     },
+    "./worker": {
+      "node": "./src/worker.js",
+      "import": null,
+      "default": null
+    },
     "./server": {
-      "node": "./src/server.js",
+      "node": "./src/worker.js",
       "import": null,
       "default": null
     },

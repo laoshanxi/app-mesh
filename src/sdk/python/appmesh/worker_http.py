@@ -1,4 +1,4 @@
-# server_http.py
+# worker_http.py
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
 """HTTP worker SDK implementation for App Mesh (task fetch/return loop)."""

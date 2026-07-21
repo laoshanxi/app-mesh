@@ -1,4 +1,4 @@
-// server_http.rs
+// worker_http.rs
 // Server SDK implementation for App Mesh (HTTP)
 
 use bytes::Bytes;

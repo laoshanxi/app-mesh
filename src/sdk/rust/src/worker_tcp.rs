@@ -1,11 +1,11 @@
-// server_tcp.rs
+// worker_tcp.rs
 // Server SDK implementation for App Mesh (TCP)
 
 use std::sync::Arc;
 
 use crate::client_tcp::AppMeshClientTCP;
 use crate::error::AppMeshError;
-use crate::server_http::AppMeshWorker;
+use crate::worker_http::AppMeshWorker;
 
 /// Server-side helper for applications using TCP transport
 pub struct AppMeshWorkerTCP {

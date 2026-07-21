@@ -68,6 +68,9 @@ public class AppMeshClient implements Closeable {
 
     private final String baseURL;
     private final AtomicReference<String> jwtToken = new AtomicReference<>(null);
+    // Keycloak (OAuth2) mode issues a refresh token that must be echoed back on renew/logoff.
+    // Absent in local-JWT mode, in which case it stays null and no X-Refresh-Token header is sent.
+    private final AtomicReference<String> refreshToken = new AtomicReference<>(null);
     private volatile String forwardTo;
 
     // Per-instance SSL (avoids modifying JVM global defaults)
@@ -330,6 +333,7 @@ public class AppMeshClient implements Closeable {
     public void close() {
         stopTokenRefresh();
         this.jwtToken.set(null);
+        this.refreshToken.set(null);
     }
 
     // -------- Token Persistence --------
@@ -352,6 +356,13 @@ public class AppMeshClient implements Closeable {
         JSONObject jsonResponse = new JSONObject(responseContent);
         String token = jsonResponse.getString("access_token");
         this.jwtToken.set(token);
+        // Keycloak (OAuth2) mode returns a rotating refresh token; capture it when present so it
+        // can be echoed on renew/logoff. It rotates on every renew, so a present value replaces
+        // the stored one. It is absent in local-JWT mode, where we must not clear any prior value.
+        String refresh = jsonResponse.optString("refresh_token", null);
+        if (refresh != null && !refresh.isEmpty()) {
+            this.refreshToken.set(refresh);
+        }
         onTokenChanged(token);
         return token;
     }
@@ -632,10 +643,19 @@ public class AppMeshClient implements Closeable {
     public boolean logout() throws IOException {
         stopTokenRefresh();
         try {
-            HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
+            Map<String, String> headers = null;
+            // Keycloak (OAuth2) mode revokes the server-side session via the refresh token;
+            // omitted in local-JWT mode where no refresh token is stored.
+            String refresh = this.refreshToken.get();
+            if (refresh != null && !refresh.isEmpty()) {
+                headers = new HashMap<>();
+                headers.put("X-Refresh-Token", refresh);
+            }
+            HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, headers, null);
             return ensureOk("logout", conn);
         } finally {
             this.jwtToken.set(null);
+            this.refreshToken.set(null);
             onTokenChanged(null);
         }
     }
@@ -750,6 +770,12 @@ public class AppMeshClient implements Closeable {
         Map<String, String> headers = new HashMap<>();
         if (tokenExpireSeconds != null) {
             headers.put("X-Expire-Seconds", Long.toString(tokenExpireSeconds));
+        }
+        // Keycloak (OAuth2) mode requires the refresh token in the X-Refresh-Token header;
+        // omitted in local-JWT mode where no refresh token is stored.
+        String refresh = this.refreshToken.get();
+        if (refresh != null && !refresh.isEmpty()) {
+            headers.put("X-Refresh-Token", refresh);
         }
         HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
         return applyAuthToken(conn);

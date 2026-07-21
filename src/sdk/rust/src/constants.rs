@@ -7,6 +7,7 @@ pub const HTTP_HEADER_JWT_EXPIRE_SECONDS: &str = "X-Expire-Seconds";
 pub const HTTP_HEADER_JWT_AUDIENCE: &str = "X-Audience";
 pub const HTTP_HEADER_JWT_TOTP: &str = "X-Totp-Code";
 pub const HTTP_HEADER_JWT_AUTH_PERMISSION: &str = "X-Permission";
+pub const HTTP_HEADER_JWT_REFRESH_TOKEN: &str = "X-Refresh-Token";
 pub const HTTP_HEADER_AUTH_BASIC: &str = "Basic ";
 pub const HTTP_HEADER_AUTH_BEARER: &str = "Bearer ";
 pub const HTTP_HEADER_KEY_FORWARDING_HOST: &str = "X-Target-Host";
@@ -37,6 +38,7 @@ pub const HTTP_BODY_KEY_MFA_URI: &str = "mfa_uri";
 pub const HTTP_BODY_KEY_OLD_PASSWORD: &str = "old_password";
 pub const HTTP_BODY_KEY_NEW_PASSWORD: &str = "new_password";
 pub const HTTP_BODY_KEY_ACCESS_TOKEN: &str = "access_token";
+pub const HTTP_BODY_KEY_REFRESH_TOKEN: &str = "refresh_token";
 
 // Query parameters
 pub const HTTP_QUERY_KEY_STDOUT_INDEX: &str = "stdout_index";
