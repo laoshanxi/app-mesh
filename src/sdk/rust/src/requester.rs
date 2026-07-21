@@ -25,6 +25,23 @@ pub trait Requester: Send + Sync {
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>>;
 
+    /// Execute a request and return the raw streaming `reqwest::Response`
+    /// so large bodies can be consumed chunk-by-chunk (bounded memory).
+    ///
+    /// Only the HTTP transport supports this; other transports return
+    /// `Ok(None)` and callers fall back to the buffered [`Requester::send`].
+    async fn send_streaming(
+        &self,
+        _method: Method,
+        _path: &str,
+        _body: Option<reqwest::Body>,
+        _headers: Option<HashMap<String, String>>,
+        _query: Option<HashMap<String, String>>,
+        _fail_on_error: bool,
+    ) -> Result<Option<reqwest::Response>> {
+        Ok(None)
+    }
+
     /// Handle token updates (called after successful authentication)
     fn handle_token_update(&self, token: Option<String>);
 

@@ -219,35 +219,52 @@ private:
 	size_t m_body_sent{0};
 };
 
-// SendState: Manages send queue for one connection (thread-safe)
+// SendState: Send queue for one connection. NOT internally synchronized — every access
+// site runs under the stream's m_io_mutex (send_impl, handle_output, apply_mask_ops,
+// clear-on-close), so an internal lock would be pure overhead.
+//
+// Ownership: the in-flight message lives in m_current, NOT in m_queue. This keeps it
+// alive across user callbacks — a re-entrant shutdown() from onSent may clear() the
+// queue mid-callback (m_io_mutex is recursive), and must not destroy the buffer the
+// callback's argument still references.
 class SendState
 {
 public:
-	// Called from any thread
-	void enqueue_unsafe(SendBuffer &&buf)
+	void enqueue(SendBuffer &&buf)
 	{
 		m_queue.push_back(std::move(buf));
 	}
 
-	// Called from reactor thread
-	std::shared_ptr<SendBuffer> get_current_safe();
-
-	bool is_empty_unsafe() const
+	// In-progress message, promoting the next queued one; nullptr when drained.
+	// Valid until the next current()/clear-on-destruction, even across callbacks.
+	SendBuffer *current()
 	{
-		const bool current_done = (!m_current || m_current->complete());
-		return m_queue.empty() && current_done;
+		if (!m_current || m_current->complete())
+		{
+			m_current.reset();
+			if (!m_queue.empty())
+			{
+				m_current = std::make_unique<SendBuffer>(std::move(m_queue.front()));
+				m_queue.pop_front();
+			}
+		}
+		return m_current.get();
 	}
 
-	size_t queue_depth_unsafe() const { return m_queue.size(); }
+	bool is_empty() const
+	{
+		return m_queue.empty() && (!m_current || m_current->complete());
+	}
 
-	void clear();
+	size_t queue_depth() const { return m_queue.size(); }
 
-	std::mutex &mutex() { return m_mutex; }
+	// Drops queued (unsent) messages. Deliberately leaves m_current alive — see the
+	// ownership note above; it is released on the next current() or with the stream.
+	void clear() { m_queue.clear(); }
 
 private:
-	std::mutex m_mutex;
 	std::deque<SendBuffer> m_queue;
-	std::shared_ptr<SendBuffer> m_current;
+	std::unique_ptr<SendBuffer> m_current;
 };
 
 class SocketStreamPtr;
@@ -258,7 +275,7 @@ class SocketStreamPtr;
 //   - Client side: createConnection() / connect() for outbound connections
 //
 // Key rules:
-//   1. Lock ordering: reactor token → m_io_mutex → m_cb_mutex → (external locks).
+//   1. Lock ordering: reactor token → m_io_mutex.
 //      NO thread may hold m_io_mutex while calling reactor APIs (mask_ops, etc.) —
 //      handle_close runs with the token held, even concurrently with I/O upcalls
 //      (notify-driven closes bypass TP_Reactor suspension). So acquire m_io_mutex
@@ -266,6 +283,11 @@ class SocketStreamPtr;
 //   2. Callbacks (onData, onSent, ...) run while m_io_mutex is held, so they may
 //      re-enter send()/shutdown(). m_io_mutex MUST stay recursive.
 //   3. All callbacks MUST be set before open(). open() fires onConnect synchronously.
+//      Callbacks are immutable after open() and read without a lock. Publication:
+//      open()'s register_handler (reactor token) covers reactor threads; other threads
+//      discover the stream only through a mutex-guarded map bound AFTER the setters ran
+//      (SocketServer::open, ForwardingManager) — that bind-after-setters order is
+//      load-bearing, keep it.
 class SocketStream : public ACE_Svc_Handler<SSL_Stream_Ex, ACE_MT_SYNCH>
 {
 public:
@@ -288,12 +310,15 @@ public:
 	SocketStream(ACE_SSL_Context *ctx = ACE_SSL_Context::instance(), ACE_Reactor *reactor = ACE_Reactor::instance());
 	virtual ~SocketStream();
 
-	// --- Setup (all callbacks MUST be set before calling open(), callbacks set after open() may miss events) ---
-	void onData(DataCallback cb) { m_data_cb = std::move(cb); }
-	void onSent(SendCallback cb) { m_send_cb = std::move(cb); }
-	void onConnect(EventCallback cb) { m_connect_cb = std::move(cb); }
-	void onClose(EventCallback cb) { m_close_cb = std::move(cb); }
-	void onError(ErrorCallback cb) { m_error_cb = std::move(cb); }
+	// --- Setup (all callbacks MUST be set before calling open() — see rule 3; setting
+	// them after open() is an unsynchronized write racing the reactor threads) ---
+	// clang-format off
+	void onData(DataCallback cb) { assert_not_open(); m_data_cb = std::move(cb); }
+	void onSent(SendCallback cb) { assert_not_open(); m_send_cb = std::move(cb); }
+	void onConnect(EventCallback cb) { assert_not_open(); m_connect_cb = std::move(cb); }
+	void onClose(EventCallback cb) { assert_not_open(); m_close_cb = std::move(cb); }
+	void onError(ErrorCallback cb) { assert_not_open(); m_error_cb = std::move(cb); }
+	// clang-format on
 
 	// --- ACE_Acceptor Hook ---
 	virtual int open(void *acceptor_or_connector = nullptr) override;
@@ -303,6 +328,8 @@ public:
 	virtual int close(u_long flags = 0) override;
 
 	// ========== Client-side: Connect to remote server ==========
+	/// Failure releases the construction reference — caller must hold a SocketStreamPtr
+	/// (prefer createConnection()).
 	bool connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
 
 	/// Create a new client SocketStream and connect to the remote address.
@@ -336,6 +363,7 @@ private:
 
 	class IoGuard; // Scoped m_io_mutex; applies deferred mask ops once fully released
 
+	void assert_not_open() const; // Enforces rule 3: callbacks may not be set after open()
 	void fire_connect();
 	void fire_close();
 	void deliver_message(std::vector<std::uint8_t> &&msg);
@@ -377,7 +405,6 @@ private:
 	// MUST remain recursive: user callbacks (onData, onSent) are invoked while this
 	// lock is held, and those callbacks may re-enter send()/shutdown() on this stream.
 	mutable std::recursive_mutex m_io_mutex;
-	mutable std::mutex m_cb_mutex; // Protects callbacks
 
 	// Deferred reactor mask changes (see lock-ordering rule 1). Protected by m_io_mutex.
 	int m_io_depth{0};
@@ -387,6 +414,7 @@ private:
 	// rule 1). Protected by m_io_mutex.
 	bool m_pending_close{false};
 
+	// Immutable after open() (rule 3) — fire sites read them without a lock.
 	DataCallback m_data_cb;
 	SendCallback m_send_cb;
 	EventCallback m_connect_cb;
@@ -403,6 +431,8 @@ public:
 	{
 		if (m_var.handler() && add_ref)
 		{
+			// Paired with the remove_reference in m_var's destructor (ACE_Event_Handler_var
+			// releases on destruction/reset but adopts without bumping — so bump here).
 			m_var.handler()->add_reference();
 		}
 	}

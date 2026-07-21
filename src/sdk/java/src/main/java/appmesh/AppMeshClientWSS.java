@@ -319,6 +319,15 @@ public class AppMeshClientWSS extends AppMeshClient {
         return true;
     }
 
+    /**
+     * Download a file through WSS control messages plus an HTTPS data side channel. Uses the remote
+     * file's name as the local file name.
+     */
+    @Override
+    public boolean downloadFile(String remoteFile, boolean applyFileAttributes) throws IOException {
+        return downloadFile(remoteFile, new File(remoteFile).getName(), applyFileAttributes);
+    }
+
     @Override
     public boolean uploadFile(File localFile, String remoteFile, boolean applyFileAttributes) throws IOException {
         File file = localFile;
@@ -378,6 +387,14 @@ public class AppMeshClientWSS extends AppMeshClient {
         }
 
         return true;
+    }
+
+    /**
+     * Upload a file through WSS. Uses the local file's name as the remote file name.
+     */
+    @Override
+    public boolean uploadFile(File localFile, boolean applyFileAttributes) throws IOException {
+        return uploadFile(localFile, localFile.getName(), applyFileAttributes);
     }
 
     /**

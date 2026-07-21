@@ -137,7 +137,7 @@ private:
 
 // HttpRequest for viewing application output
 // Monitors process and responds with output when ready or on timeout
-class HttpRequestOutputView : public TimerHandler, public HttpRequest
+class HttpRequestOutputView : public HttpRequest, public TimerHandler
 {
 public:
 	explicit HttpRequestOutputView(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj);

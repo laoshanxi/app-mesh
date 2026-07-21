@@ -31,14 +31,7 @@ const LOGOFF_PATH = '/appmesh/self/logoff'
 /**
  * TCP transport for secure TLS connections and framed App Mesh messages.
  *
- * `sslConfig` is a tri-state:
- * - `null`/`undefined` (default): verify the server certificate against the App Mesh default
- *   CA (/opt/appmesh/ssl/ca.pem) if installed, otherwise the system CAs.
- * - object: custom TLS material — `ca`/`cert`/`key` (Buffer or file path) with an optional
- *   `rejectUnauthorized` flag (defaults to `true`). An unreadable CA/cert/key path is a hard
- *   error (`fs.readFileSync` throws), never a silent fallback to no-verification.
- * - `false`: explicit insecure mode — server certificate verification is disabled.
- *   This is the only way to disable verification besides `rejectUnauthorized: false`.
+ * @param {Object|false|null} [sslConfig=null] - TLS config; same tri-state as AppMeshClient (null=default CA, object=custom ca/cert/key, false=insecure).
  */
 class TCPTransport {
   /**
@@ -250,13 +243,15 @@ class RequestMessage {
    * Serialize message to msgpack format
    */
   serialize () {
+    // Coerce header/query values to strings; the daemon expects map<string,string>.
+    const strMap = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, String(v)]))
     const data = {
       uuid: this.uuid,
       http_method: this.httpMethod,
       request_uri: this.requestUri,
       client_addr: this.clientAddr,
-      headers: this.headers,
-      query: this.query,
+      headers: strMap(this.headers),
+      query: strMap(this.query),
       body: this.body
     }
     return msgpack.encode(data)
@@ -331,16 +326,7 @@ class AppMeshClientTCP extends AppMeshClient {
    *   `new AppMeshClientTCP(sslConfig, {host, port})` — the address may be an explicit
    *   `{host, port}` object in either position.
    *
-   * `sslConfig` is a tri-state: `null`/`undefined` verifies the server certificate against the
-   * App Mesh default CA (/opt/appmesh/ssl/ca.pem) if installed, otherwise the system CAs; an
-   * object supplies custom TLS material (an unreadable ca/cert/key path is a hard error, never
-   * a silent no-verify fallback); `false` is the explicit insecure no-verification mode.
-   *
-   * @param {Object|false|null} [sslConfig=null] - SSL configuration (or `{host, port}` address)
-   * @param {Buffer|string} [sslConfig.ca] - CA certificate
-   * @param {Buffer|string} [sslConfig.cert] - Client certificate
-   * @param {Buffer|string} [sslConfig.key] - Client key
-   * @param {boolean} [sslConfig.rejectUnauthorized=true] - Whether to verify SSL
+   * @param {Object|false|null} [sslConfig=null] - TLS config; same tri-state as AppMeshClient (null=default CA, object=custom ca/cert/key, false=insecure).
    * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
    */
   constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6059]) {
@@ -594,12 +580,13 @@ class AppMeshClientTCP extends AppMeshClient {
    * Download a file through the TCP file-socket side channel.
    *
    * @param {string} filePath - Remote file path
-   * @param {string} localFile - Local destination path
+   * @param {string} [localFile=null] - Local destination path; defaults to the basename of filePath
    * @param {boolean} [applyAttrs=true] - Apply returned mode and best-effort owner/group metadata
    * on non-Windows Node.js hosts
    * @override
    */
-  async download_file (filePath, localFile, applyAttrs = true) {
+  async download_file (filePath, localFile = null, applyAttrs = true) {
+    if (!localFile) localFile = filePath.split(/[\\/]/).pop()
     const headers = {
       [HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath),
       [HTTP_HEADER_KEY_X_RECV_FILE_SOCKET]: 'true'
@@ -631,7 +618,12 @@ class AppMeshClientTCP extends AppMeshClient {
         writeStream.write(chunk)
       }
     } finally {
-      writeStream.end()
+      // Await the flush so the file is complete on disk before this resolves.
+      await new Promise((resolve, reject) => {
+        writeStream.once('finish', resolve)
+        writeStream.once('error', reject)
+        writeStream.end()
+      })
     }
 
     // Apply file attributes on Unix systems
@@ -660,12 +652,13 @@ class AppMeshClientTCP extends AppMeshClient {
    * Upload a file through the TCP file-socket side channel.
    *
    * @param {string} localFile - Local file path
-   * @param {string} filePath - Remote destination path
+   * @param {string} [filePath=null] - Remote destination path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs=true] - Send local mode/uid/gid metadata so the server can
    * recreate permissions and ownership when supported
    * @override
    */
-  async upload_file (localFile, filePath, applyAttrs = true) {
+  async upload_file (localFile, filePath = null, applyAttrs = true) {
+    if (!filePath) filePath = localFile.split(/[\\/]/).pop()
     if (!fs.existsSync(localFile)) {
       throw new Error(`Local file not found: ${localFile}`)
     }
@@ -791,22 +784,13 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Subscribe-based wait for async run (TCP override).
-   *
-   * Instead of polling get_app_output in a loop, subscribes to STDOUT/EXIT/REMOVED
-   * events and does a one-shot backfill to cover output emitted before the subscribe
-   * took effect.  Deduplicates by byte-position offset.
-   *
-   * No sentinel exit codes (real exit codes may be negative for signal kills):
-   * non-EXIT terminations throw typed errors; null means caller-side timeout only.
-   *
+   * Wait for an async run to finish over TCP, streaming incremental output.
    * @param {AppRun} run - AppRun object
    * @param {Function} [stdoutHandler] - Stdout handler callback(data, position)
    * @param {number} [timeout=0] - Max wait time in seconds (0 = unlimited)
    * @returns {Promise<number|null>} Exit code, or null on timeout
    * @throws {AppRemovedError} If the app was removed before its exit was observed.
-   * @throws {TransportDisconnectedError} If the demuxer disconnected while waiting,
-   *   or the daemon delivered an unparseable exit code.
+   * @throws {TransportDisconnectedError} If the transport disconnected while waiting, or the daemon delivered an unparseable exit code.
    */
   async wait_for_async_run (run, stdoutHandler, timeout = 0) {
     if (!run || !run.appName) return null

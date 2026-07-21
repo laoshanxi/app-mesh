@@ -67,7 +67,7 @@ Default to surfacing uncertainty, not hiding it.
 
 ## Project Overview
 
-App Mesh is a C++17 cross-platform (Linux/macOS/Windows) application management platform. Think systemd + cron + remote execution API with RBAC/JWT security, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, JavaScript, and C++.
+App Mesh is a C++17 cross-platform (Linux/macOS/Windows) application management platform — one secure daemon to run, schedule, and remote-control apps across machines, with RBAC/JWT security, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, JavaScript, and C++.
 
 ## Build & Test
 

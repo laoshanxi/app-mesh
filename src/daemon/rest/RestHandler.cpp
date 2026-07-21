@@ -115,7 +115,7 @@ static int parseTokenTimeout(const std::string &raw)
 	return static_cast<int>(std::min<long long>(parsed, MAX_TOKEN_EXPIRE_SECONDS));
 }
 
-RestHandler::RestHandler() : PrometheusRest()
+RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 {
 	// Static content handlers
 	bindRestMethod(web::http::methods::GET, "/swagger/", std::bind(&RestHandler::apiSwagger, this, std::placeholders::_1));
@@ -185,6 +185,7 @@ RestHandler::RestHandler() : PrometheusRest()
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_GROUPS_VIEW, std::bind(&RestHandler::apiUserGroupsView, this, std::placeholders::_1));
 
 	// 10. metrics
+	bindRestMethod(web::http::methods::GET, METRIC_PATH, std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_PROMETHEUS_METRICS, std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_RESOURCE_VIEW, std::bind(&RestHandler::apiResourceView, this, std::placeholders::_1));
 
@@ -199,6 +200,27 @@ RestHandler::~RestHandler()
 {
 	const static char fname[] = "RestHandler::~RestHandler() ";
 	LOG_INF << fname << "RestHandler destroyed";
+}
+
+void RestHandler::handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &restFunctions)
+{
+	m_metrics->countRequest(message->m_method, message->m_relative_uri);
+	RestBase::handleRest(message, restFunctions);
+}
+
+std::shared_ptr<CounterMetric> RestHandler::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
+{
+	return m_metrics->createPromCounter(metricName, metricHelp, labels);
+}
+
+std::shared_ptr<GaugeMetric> RestHandler::createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
+{
+	return m_metrics->createPromGauge(metricName, metricHelp, labels);
+}
+
+bool RestHandler::collected()
+{
+	return m_metrics->collected();
 }
 
 // Static content serving utilities
@@ -825,7 +847,11 @@ void RestHandler::apiHealth(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 {
-	PrometheusRest::apiMetrics(message);
+	const static char fname[] = "RestHandler::apiRestMetrics() ";
+	LOG_DBG << fname << "Entered";
+
+	auto body = m_metrics->collectData();
+	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
 }
 
 nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token, const std::string *refreshToken)

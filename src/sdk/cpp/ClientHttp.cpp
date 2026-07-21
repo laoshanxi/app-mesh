@@ -370,12 +370,15 @@ bool AppMeshClient::cancelTask(const std::string &app)
 // File Management
 void AppMeshClient::downloadFile(const std::string &remoteFile, const std::string &localFile, bool preservePermissions)
 {
+    // Default to the basename when no local/remote name is given.
+    const std::string localName = localFile.empty() ? remoteFile.substr(remoteFile.find_last_of("/\\") + 1) : localFile;
+
     // header
     std::map<std::string, std::string> header;
     this->addCommonHeaders(header);
     header[HTTP_HEADER_KEY_file_path] = Utility::encodeURIComponent(remoteFile);
 
-    auto response = RestClient::download(m_url, REST_PATH_DOWNLOAD, remoteFile, localFile, header);
+    auto response = RestClient::download(m_url, REST_PATH_DOWNLOAD, remoteFile, localName, header);
 
     if (response->status_code != web::http::status_codes::OK)
     {
@@ -384,16 +387,19 @@ void AppMeshClient::downloadFile(const std::string &remoteFile, const std::strin
 
     if (preservePermissions)
     {
-        Utility::applyFilePermission(localFile, response->header);
+        Utility::applyFilePermission(localName, response->header);
     }
 }
 
 void AppMeshClient::uploadFile(const std::string &localFile, const std::string &remoteFile, bool preservePermissions)
 {
+    // Default to the basename when no remote name is given.
+    const std::string remoteName = remoteFile.empty() ? localFile.substr(localFile.find_last_of("/\\") + 1) : remoteFile;
+
     // header
     std::map<std::string, std::string> header;
     this->addCommonHeaders(header);
-    header[HTTP_HEADER_KEY_file_path] = Utility::encodeURIComponent(remoteFile);
+    header[HTTP_HEADER_KEY_file_path] = Utility::encodeURIComponent(remoteName);
     if (preservePermissions)
     {
         auto fileInfo = os::fileStat(localFile);

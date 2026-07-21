@@ -10,12 +10,6 @@
 
 #include "User.h"
 
-#define NOT_APPLICABLE_THROW                                    \
-    override                                                    \
-    {                                                           \
-        throw std::invalid_argument("not applicable function"); \
-    }
-
 class Security
 {
 public:

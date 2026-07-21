@@ -1,11 +1,11 @@
-// server_wss.rs
+// worker_wss.rs
 // Server SDK implementation for App Mesh (WSS)
 
 use std::sync::Arc;
 
 use crate::client_wss::AppMeshClientWSS;
 use crate::error::AppMeshError;
-use crate::server_http::AppMeshWorker;
+use crate::worker_http::AppMeshWorker;
 
 /// Server-side helper for applications using WSS transport
 pub struct AppMeshWorkerWSS {

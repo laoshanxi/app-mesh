@@ -68,6 +68,9 @@ public class AppMeshClient implements Closeable {
 
     private final String baseURL;
     private final AtomicReference<String> jwtToken = new AtomicReference<>(null);
+    // Keycloak (OAuth2) mode issues a refresh token that must be echoed back on renew/logoff.
+    // Absent in local-JWT mode, in which case it stays null and no X-Refresh-Token header is sent.
+    private final AtomicReference<String> refreshToken = new AtomicReference<>(null);
     private volatile String forwardTo;
 
     // Per-instance SSL (avoids modifying JVM global defaults)
@@ -301,14 +304,7 @@ public class AppMeshClient implements Closeable {
             return forwardingHost;
         }
 
-        /**
-         * Wait for this run to finish, streaming stdout to the handler.
-         *
-         * <p>The forwarding host captured at run creation is applied per-request via the
-         * {@code X-Target-Host} header; the client-wide {@link #setForwardTo} state is not
-         * mutated. When no forwarding host was captured, the client's current forwarding
-         * setting (if any) applies.
-         */
+        /** Wait for this run to finish, streaming stdout to the handler. See {@link AppMeshClient#waitForAsyncRun}. */
         public Integer wait(OutputHandler stdoutHandler, int timeoutSeconds) throws Exception {
             return clientRef.waitForAsyncRun(this, stdoutHandler, timeoutSeconds);
         }
@@ -330,6 +326,7 @@ public class AppMeshClient implements Closeable {
     public void close() {
         stopTokenRefresh();
         this.jwtToken.set(null);
+        this.refreshToken.set(null);
     }
 
     // -------- Token Persistence --------
@@ -352,6 +349,13 @@ public class AppMeshClient implements Closeable {
         JSONObject jsonResponse = new JSONObject(responseContent);
         String token = jsonResponse.getString("access_token");
         this.jwtToken.set(token);
+        // Keycloak (OAuth2) mode returns a rotating refresh token; capture it when present so it
+        // can be echoed on renew/logoff. It rotates on every renew, so a present value replaces
+        // the stored one. It is absent in local-JWT mode, where we must not clear any prior value.
+        String refresh = jsonResponse.optString("refresh_token", null);
+        if (refresh != null && !refresh.isEmpty()) {
+            this.refreshToken.set(refresh);
+        }
         onTokenChanged(token);
         return token;
     }
@@ -632,10 +636,19 @@ public class AppMeshClient implements Closeable {
     public boolean logout() throws IOException {
         stopTokenRefresh();
         try {
-            HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
+            Map<String, String> headers = null;
+            // Keycloak (OAuth2) mode revokes the server-side session via the refresh token;
+            // omitted in local-JWT mode where no refresh token is stored.
+            String refresh = this.refreshToken.get();
+            if (refresh != null && !refresh.isEmpty()) {
+                headers = new HashMap<>();
+                headers.put("X-Refresh-Token", refresh);
+            }
+            HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, headers, null);
             return ensureOk("logout", conn);
         } finally {
             this.jwtToken.set(null);
+            this.refreshToken.set(null);
             onTokenChanged(null);
         }
     }
@@ -751,6 +764,12 @@ public class AppMeshClient implements Closeable {
         if (tokenExpireSeconds != null) {
             headers.put("X-Expire-Seconds", Long.toString(tokenExpireSeconds));
         }
+        // Keycloak (OAuth2) mode requires the refresh token in the X-Refresh-Token header;
+        // omitted in local-JWT mode where no refresh token is stored.
+        String refresh = this.refreshToken.get();
+        if (refresh != null && !refresh.isEmpty()) {
+            headers.put("X-Refresh-Token", refresh);
+        }
         HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
         return applyAuthToken(conn);
     }
@@ -784,13 +803,7 @@ public class AppMeshClient implements Closeable {
         throw new IOException("TOTP URI does not contain a 'secret' field");
     }
 
-    /**
-     * Enable TOTP for the current user with a 6-digit verification code and return the new JWT token.
-     *
-     * <p>Note the asymmetry with {@link #disableTotp()}: the server issues a fresh JWT only on
-     * TOTP setup (the session's MFA state changes), so enable returns the new token while
-     * disable simply reports success.
-     */
+    /** Enable TOTP for the current user with a 6-digit verification code; returns the new JWT token. */
     public String enableTotp(String totpCode) throws IOException {
         if (totpCode == null || !totpCode.matches("\\d{6}")) {
             throw new IllegalArgumentException("TOTP code must be a 6-digit number");
@@ -1125,8 +1138,8 @@ public class AppMeshClient implements Closeable {
      * <p>When the process exits, this method makes a best-effort attempt to delete the temporary
      * run app before returning the exit code.
      *
-     * <p>The forwarding host captured on the {@link AppRun} is applied per-request via the
-     * {@code X-Target-Host} header; the shared {@link #setForwardTo} state is left untouched.
+     * <p>The forwarding host captured on the {@link AppRun} is applied per-request without mutating
+     * the shared {@link #setForwardTo} state.
      */
     public Integer waitForAsyncRun(AppRun run, OutputHandler stdoutHandler, int timeoutSeconds) throws Exception {
         if (run == null)
@@ -1216,6 +1229,13 @@ public class AppMeshClient implements Closeable {
     }
 
     /**
+     * Download a remote file to local disk. Uses the remote file's name as the local file name.
+     */
+    public boolean downloadFile(String remoteFile, boolean applyFileAttributes) throws IOException {
+        return downloadFile(remoteFile, new File(remoteFile).getName(), applyFileAttributes);
+    }
+
+    /**
      * Upload a local file to the remote server.
      *
      * <p>When {@code preservePermissions} is true, local file metadata is sent in headers so the
@@ -1224,6 +1244,13 @@ public class AppMeshClient implements Closeable {
     public boolean uploadFile(String localFilePath, String remoteFile, boolean preservePermissions)
             throws IOException {
         return uploadFile(new File(localFilePath), remoteFile, preservePermissions);
+    }
+
+    /**
+     * Upload a local file to the remote server. Uses the local file's name as the remote file name.
+     */
+    public boolean uploadFile(String localFilePath, boolean preservePermissions) throws IOException {
+        return uploadFile(localFilePath, new File(localFilePath).getName(), preservePermissions);
     }
 
     /**
@@ -1253,6 +1280,8 @@ public class AppMeshClient implements Closeable {
         applySSL(connection);
         connection.setDoOutput(true);
         connection.setRequestMethod("POST");
+        // Stream the request body instead of buffering the whole file in memory
+        connection.setChunkedStreamingMode(4096);
         connection.setConnectTimeout(connectTimeoutMs);
         connection.setReadTimeout(readTimeoutMs);
         commonHeaders().forEach(connection::setRequestProperty);
@@ -1269,6 +1298,13 @@ public class AppMeshClient implements Closeable {
             throw new IOException("HTTP error code: " + responseCode + ", Response: " + responseBody);
         }
         return true;
+    }
+
+    /**
+     * Upload a local file to the remote server. Uses the local file's name as the remote file name.
+     */
+    public boolean uploadFile(File localFile, boolean preservePermissions) throws IOException {
+        return uploadFile(localFile, localFile.getName(), preservePermissions);
     }
 
     // -------- System & Configuration --------

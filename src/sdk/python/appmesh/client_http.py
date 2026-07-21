@@ -40,40 +40,35 @@ logger = logging.getLogger(__name__)
 
 class AppMeshClient:
     """
-    Client SDK for interacting with the App Mesh service via REST API.
+    HTTP (REST) client for the App Mesh service.
 
-    The `AppMeshClient` class provides a comprehensive interface for managing and monitoring distributed applications
-    within the App Mesh ecosystem. It enables communication with the App Mesh REST API for operations such as
-    application lifecycle management, monitoring, and configuration.
-
-    This client is designed for direct usage in applications that require access to App Mesh services over HTTP-based REST.
-
-    Attributes:
-        - TLS (Transport Layer Security): Supports secure connections between the client and App Mesh service,
-          ensuring encrypted communication.
-        - JWT (JSON Web Token) and RBAC (Role-Based Access Control): Provides secure API access with
-          token-based authentication and authorization to enforce fine-grained permissions.
+    Manages application lifecycle, monitoring, and configuration over HTTPS,
+    with TLS transport and JWT/RBAC authentication.
 
     Methods:
-        # Authentication Management
+        # Authentication & Token Management
         - login()
         - logout()
         - authenticate()
+        - set_token()
         - renew_token()
-        - disable_totp()
+        - start_token_refresh()
+        - stop_token_refresh()
+        - validate_totp()
         - get_totp_uri()
         - get_totp_secret()
         - enable_totp()
+        - disable_totp()
 
         # Application Management
-        - add_app()
-        - delete_app()
-        - disable_app()
-        - enable_app()
-        - check_app_health()
-        - get_app_output()
         - get_app()
         - list_apps()
+        - get_app_output()
+        - check_app_health()
+        - add_app()
+        - delete_app()
+        - enable_app()
+        - disable_app()
 
         # Run Application Operations
         - run_app_async()
@@ -86,7 +81,7 @@ class AppMeshClient:
         - subscribe()
         - unsubscribe()
 
-        # System Management
+        # System & Configuration
         - forward_to
         - set_config()
         - get_config()
@@ -101,28 +96,28 @@ class AppMeshClient:
         - download_file()
         - upload_file()
 
-        # User and Role Management
+        # User & Role Management
         - add_user()
         - delete_user()
         - lock_user()
-        - update_password()
-        - get_current_user()
         - unlock_user()
         - list_users()
+        - get_current_user()
         - get_user_permissions()
         - list_permissions()
-        - delete_role()
-        - update_role()
-        - list_roles()
         - list_groups()
+        - list_roles()
+        - update_role()
+        - delete_role()
+
+        # Client Lifecycle
+        - close()
 
     Example:
-        >>> python -m pip install --upgrade appmesh
         >>> from appmesh import AppMeshClient
         >>> client = AppMeshClient()
         >>> client.login("your-name", "your-password")
-        >>> client.authenticate("your-token-for-token-login")
-        >>> response = client.get_app(app_name='ping')
+        >>> app = client.get_app(app_name="ping")
     """
 
     # Polling interval for wait_for_async_run (seconds)
@@ -158,6 +153,7 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
     _HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
     _HTTP_HEADER_JWT_SET_COOKIE = "X-Set-Cookie"
+    _HTTP_HEADER_JWT_REFRESH_TOKEN = "X-Refresh-Token"
     _COOKIE_TOKEN = "appmesh_auth_token"
 
     @unique
@@ -269,6 +265,10 @@ class AppMeshClient:
         self._refresh_thread = None
         self._refresh_stop = threading.Event()
         self._refresh_wake = threading.Event()
+
+        # OAuth2 (Keycloak proxy) refresh token, captured from the daemon login/renew response.
+        # Stays None in local-JWT mode, so renew/logout send no X-Refresh-Token header there.
+        self._refresh_token: Optional[str] = None
 
         # Session and cookie management
         self._lock = threading.Lock()
@@ -477,6 +477,20 @@ class AppMeshClient:
     ########################################
     # Security
     ########################################
+    def _capture_refresh_token(self, resp) -> None:
+        """Store the OAuth2 refresh token from a login/renew response body, if present.
+
+        Only the Keycloak (OAuth2) daemon returns ``refresh_token``; local-JWT mode omits it,
+        so ``_refresh_token`` stays ``None`` and renew/logout send no ``X-Refresh-Token`` header.
+        Keycloak rotates the refresh token on every renew, so a present value replaces the old one.
+        """
+        try:
+            rt = resp.json().get("refresh_token")
+        except Exception:  # pylint: disable=broad-exception-caught
+            rt = None
+        if rt:
+            self._refresh_token = rt
+
     def login(
         self,
         username: str,
@@ -526,6 +540,10 @@ class AppMeshClient:
                 if not totp_code:
                     return challenge
                 self.validate_totp(username, challenge, totp_code, token_expire)
+        elif resp.status_code == HTTPStatus.OK:
+            # Capture the OAuth2 refresh token when the daemon (Keycloak mode) issues one, so
+            # renew_token()/logout() can present it via X-Refresh-Token. Local mode: no-op.
+            self._capture_refresh_token(resp)
 
     def validate_totp(
         self, username: str, challenge: str, code: str, token_expire: Union[int, str] = _DURATION_ONE_WEEK_ISO
@@ -568,12 +586,19 @@ class AppMeshClient:
         if not jwt_token or not isinstance(jwt_token, str):
             return False
 
-        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/self/logoff", raise_on_fail=False)
+        # OAuth2 (Keycloak) proxy mode: present the refresh token so the daemon can revoke the
+        # Keycloak session server-side. Optional — logoff still succeeds (local revoke) without it.
+        headers = {}
+        if self._refresh_token:
+            headers[self._HTTP_HEADER_JWT_REFRESH_TOKEN] = self._refresh_token
+
+        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/self/logoff", header=(headers or None), raise_on_fail=False)
 
         if resp.status_code != HTTPStatus.OK:
             logger.warning("Failed to logout: %s", resp.text)
             return False
 
+        self._refresh_token = None
         self.stop_token_refresh()
         return True
 
@@ -660,11 +685,19 @@ class AppMeshClient:
         if not isinstance(jwt_token, str):
             raise AppMeshAuthError("Unsupported token format")
 
-        self._request_http(
+        headers = {"X-Expire-Seconds": str(self._parse_duration(token_expire))}
+        # OAuth2 (Keycloak) proxy mode renews via the refresh token; the daemon requires it in
+        # X-Refresh-Token. Local-JWT mode leaves _refresh_token None and omits the header.
+        if self._refresh_token:
+            headers[self._HTTP_HEADER_JWT_REFRESH_TOKEN] = self._refresh_token
+
+        resp = self._request_http(
             AppMeshClient._Method.POST,
             path="/appmesh/token/renew",
-            header={"X-Expire-Seconds": str(self._parse_duration(token_expire))},
+            header=headers,
         )
+        # Keycloak rotates the refresh token on renew — store the new one for the next cycle.
+        self._capture_refresh_token(resp)
 
     def get_totp_uri(self) -> str:
         """Return the TOTP provisioning URI (``otpauth://...``) for the current user,
@@ -1037,12 +1070,14 @@ class AppMeshClient:
         except OSError:
             return {}
 
-    def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
-        """Download a remote file to the local filesystem.
+    def download_file(self, remote_file: str, local_file: Optional[str] = None, preserve_permissions: bool = True) -> None:
+        """Download a remote file to the local filesystem (``local_file`` defaults to the remote basename).
 
         When ``preserve_permissions`` is ``True``, POSIX mode/owner/group metadata from App Mesh
         response headers is applied best-effort on non-Windows platforms.
         """
+        if not local_file:
+            local_file = os.path.basename(remote_file)
         resp = self._request_http(
             AppMeshClient._Method.GET,
             path="/appmesh/file/download",
@@ -1059,12 +1094,14 @@ class AppMeshClient:
         if preserve_permissions:
             self._apply_file_attributes(local_path, resp.headers)
 
-    def upload_file(self, local_file: str, remote_file: str, preserve_permissions: bool = True) -> None:
-        """Upload a local file to the remote server.
+    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = True) -> None:
+        """Upload a local file to the remote server (``remote_file`` defaults to the local file's basename).
 
         When ``preserve_permissions`` is ``True``, the client also sends local POSIX metadata
         in request headers so the server can recreate permissions/ownership when supported.
         """
+        if not remote_file:
+            remote_file = os.path.basename(local_file)
         local_path = Path(local_file)
         if not local_path.exists():
             raise FileNotFoundError(f"Local file not found: {local_file}")
@@ -1101,9 +1138,6 @@ class AppMeshClient:
 
     def run_task(self, app_name: str, data: str, timeout: int = 300) -> str:
         """Client send an invocation message to a running App Mesh application and wait for result.
-
-        This method posts the provided `data` to the App Mesh service which will
-        forward it to the specified running application instance.
 
         Args:
             app_name: Name of the target application (as registered in App Mesh).

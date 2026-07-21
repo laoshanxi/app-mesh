@@ -45,9 +45,9 @@ _LAZY_IMPORTS = {
     "AppMeshClientTCP": ("client_tcp", "AppMeshClientTCP"),  # from .client_tcp import AppMeshClientTCP
     "AppMeshClientWSS": ("client_wss", "AppMeshClientWSS"),  # from .client_wss import AppMeshClientWSS
     "AppMeshClientOAuth": ("client_http_oauth", "AppMeshClientOAuth"),  # from .client_http_oauth import AppMeshClientOAuth
-    "AppMeshWorker": ("server_http", "AppMeshWorker"),  # from .server_http import AppMeshWorker
-    "AppMeshWorkerTCP": ("server_tcp", "AppMeshWorkerTCP"),  # from .server_tcp import AppMeshWorkerTCP
-    "AppMeshWorkerWSS": ("server_wss", "AppMeshWorkerWSS"),  # from .server_wss import AppMeshWorkerWSS
+    "AppMeshWorker": ("worker_http", "AppMeshWorker"),  # from .worker_http import AppMeshWorker
+    "AppMeshWorkerTCP": ("worker_tcp", "AppMeshWorkerTCP"),  # from .worker_tcp import AppMeshWorkerTCP
+    "AppMeshWorkerWSS": ("worker_wss", "AppMeshWorkerWSS"),  # from .worker_wss import AppMeshWorkerWSS
     "AppMeshError": ("exceptions", "AppMeshError"),  # from .exceptions import AppMeshError
     "AppMeshAuthError": ("exceptions", "AppMeshAuthError"),  # from .exceptions import AppMeshAuthError
     "AppMeshConnectionError": ("exceptions", "AppMeshConnectionError"),  # from .exceptions import AppMeshConnectionError
@@ -70,9 +70,9 @@ if TYPE_CHECKING:
     from .client_tcp import AppMeshClientTCP  # noqa: F401
     from .client_wss import AppMeshClientWSS  # noqa: F401
     from .client_http_oauth import AppMeshClientOAuth  # noqa: F401
-    from .server_http import AppMeshWorker  # noqa: F401
-    from .server_tcp import AppMeshWorkerTCP  # noqa: F401
-    from .server_wss import AppMeshWorkerWSS  # noqa: F401
+    from .worker_http import AppMeshWorker  # noqa: F401
+    from .worker_tcp import AppMeshWorkerTCP  # noqa: F401
+    from .worker_wss import AppMeshWorkerWSS  # noqa: F401
     from .exceptions import AppMeshError, AppMeshAuthError, AppMeshConnectionError, AppMeshTimeoutError, AppMeshRequestError, AppMeshAppRemovedError, AppMeshProcessSupersededError  # noqa: F401
     from .subscribe import AppEvent, SubscriptionResult  # noqa: F401
     from .app_run import OutputHandler, print_output_handler  # noqa: F401

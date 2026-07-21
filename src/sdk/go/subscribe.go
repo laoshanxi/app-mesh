@@ -49,7 +49,7 @@ type EventCallback func(event AppEvent)
 // MessageDemuxer reads messages from a transport connection and routes them
 // to either pending request channels (by UUID) or event subscription callbacks.
 // Event callbacks are dispatched serially via a single worker goroutine, so
-// per-subscription event ordering is preserved (matching Python/Java SDKs).
+// per-subscription event ordering is preserved.
 type MessageDemuxer struct {
 	mu       sync.Mutex
 	pending  map[string]chan *Response // uuid -> response channel
@@ -340,9 +340,7 @@ type SubscriptionResult struct {
 }
 
 // Subscribe registers for events on a named app (or all apps if AppName is empty/"*").
-// Callbacks are dispatched serially on a single goroutine, preserving per-subscription
-// event order; a slow callback delays subsequent events but never the socket reader.
-// Returns the subscription ID and any error.
+// Callbacks are dispatched serially, preserving per-subscription event order.
 func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
 	apiPath := "/appmesh/subscribe"
 	if opt.AppName != "" && opt.AppName != "*" {

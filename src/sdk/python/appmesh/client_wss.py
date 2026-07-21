@@ -14,22 +14,25 @@ from .transport_mixin import TransportClientMixin
 
 
 class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
-    """Client SDK for interacting with the App Mesh service over WebSocket Secure (WSS).
+    """
+    App Mesh client over WebSocket Secure (WSS).
 
-    The `AppMeshClientWSS` class extends the functionality of `AppMeshClient` by offering a WSS-based communication layer
-    for the App Mesh REST API. It overrides the file download and upload methods to support large file transfers with
-    improved performance, leveraging WebSocket for lower latency and higher throughput compared to HTTP.
-
-    This client is suitable for applications requiring efficient bidirectional data transfers and high-throughput operations
-    within the App Mesh ecosystem, while maintaining compatibility with all other attributes and methods from `AppMeshClient`.
-
-    Attributes:
-        Inherits all attributes from `AppMeshClient`, including TLS secure connections and JWT-based authentication.
+    Same API as ``AppMeshClient`` but overrides file up/download to use a WSS
+    side channel for faster large-file transfers, and supports event subscription.
 
     Methods:
+        # Overridden for the WSS transport
         - download_file()
         - upload_file()
-        - Inherits all other methods from `AppMeshClient`, providing a consistent interface for managing applications within App Mesh.
+        - add_app()             # subscribe atomically when the app starts
+        - wait_for_async_run()  # subscribe-based output streaming
+        - close()
+
+        # Event Subscription (TCP/WSS only)
+        - subscribe()
+        - unsubscribe()
+
+        Inherits all other methods from AppMeshClient.
 
     Example:
         >>> from appmesh import AppMeshClientWSS
@@ -99,14 +102,16 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         except Exception:
             pass  # Never raise in __del__
 
-    def download_file(self, remote_file: str, local_file: str, preserve_permissions: bool = True) -> None:
+    def download_file(self, remote_file: str, local_file: Optional[str] = None, preserve_permissions: bool = True) -> None:
         """Copy a remote file to local through the WSS control channel plus HTTPS data channel.
 
         Args:
             remote_file: Remote file path.
-            local_file: Local destination path.
+            local_file: Local destination path; defaults to the remote file's basename.
             preserve_permissions: Apply remote file permissions/ownership locally on a best-effort basis.
         """
+        if not local_file:
+            local_file = Path(remote_file).name
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
         resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
         if self._HTTP_HEADER_KEY_AUTH not in resp.headers:
@@ -134,14 +139,16 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         else:
             r.raise_for_status()
 
-    def upload_file(self, local_file: str, remote_file: str, preserve_permissions: bool = True) -> None:
+    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = True) -> None:
         """Upload a local file through the WSS control channel plus HTTPS data channel.
 
         Args:
             local_file: Local file path.
-            remote_file: Remote destination path.
+            remote_file: Remote destination path; defaults to the local file's basename.
             preserve_permissions: Send local file permissions/ownership metadata when available.
         """
+        if not remote_file:
+            remote_file = Path(local_file).name
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
         resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)
         if self._HTTP_HEADER_KEY_AUTH not in resp.headers:

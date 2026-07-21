@@ -100,6 +100,11 @@ mapping in OAuth2 mode.
    role-view           role-set            role-delete         permission-list
    ```
 
+   > **Note:** local user/role/credential management is delegated to Keycloak in OAuth2 mode.
+   > Change-password, user add/delete, lock/unlock, TOTP setup/disable, and role create/delete
+   > return HTTP 400 (*"not supported in OAuth2 mode"*) — perform these in the Keycloak console.
+   > The related keys above only gate those endpoints and are otherwise unused.
+
    Recommended: instead of assigning ~30 roles per user, create **composite client roles**
    that bundle a set, e.g.:
 

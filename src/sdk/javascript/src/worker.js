@@ -1,4 +1,4 @@
-// server.js - App Mesh Worker SDK for Node.js
+// worker.js - App Mesh Worker SDK for Node.js
 // This is a Node.js-only module - not included in browser builds
 
 // Environment check - only works in Node.js
@@ -57,7 +57,7 @@ const _DEFER_CLIENT = Symbol('appmesh.deferClient')
  *
  * @example
  * // HTTP Worker Example
- * import { AppMeshWorker } from 'appmesh/server';
+ * import { AppMeshWorker } from 'appmesh/worker';
  *
  * const worker = new AppMeshWorker();
  * const payload = await worker.fetch_task();
@@ -66,7 +66,7 @@ const _DEFER_CLIENT = Symbol('appmesh.deferClient')
  *
  * @example
  * // TCP Worker Example
- * import { AppMeshWorkerTCP } from 'appmesh/server';
+ * import { AppMeshWorkerTCP } from 'appmesh/worker';
  *
  * const worker = new AppMeshWorkerTCP();
  * try {
@@ -176,11 +176,6 @@ class AppMeshWorker {
    * @throws {ProcessSupersededError} The daemon reported HTTP 412 — this process key was
    *   superseded by a newer process instance; the caller should stop serving (an app
    *   entry point typically catches this and exits).
-   *
-   * @example
-   * const worker = new AppMeshWorker();
-   * const payload = await worker.fetch_task();
-   * console.log('Received payload:', payload);
    */
   async fetch_task () {
     const { processKey, appName } = this._getRuntimeEnv()
@@ -244,11 +239,6 @@ class AppMeshWorker {
    * @param {string|Buffer} result - Result payload to be delivered back to the client as-is
    * @returns {Promise<void>}
    * @throws {Error} If the task return fails
-   *
-   * @example
-   * const worker = new AppMeshWorker();
-   * const result = { status: 'success', data: processedData };
-   * await worker.send_task_result(JSON.stringify(result));
    */
   async send_task_result (result) {
     const { processKey, appName } = this._getRuntimeEnv()
@@ -292,7 +282,7 @@ class AppMeshWorker {
  * @extends AppMeshWorker
  *
  * @example
- * import { AppMeshWorkerTCP } from 'appmesh/server';
+ * import { AppMeshWorkerTCP } from 'appmesh/worker';
  *
  * const worker = new AppMeshWorkerTCP();
  * try {
@@ -319,12 +309,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
-   * @param {AppMeshClientTCP} [options.client] - Optional pre-built `AppMeshClientTCP` instance to reuse.
-   *   When supplied, `sslConfig` and `tcpAddress` are ignored and the worker shares the caller's
-   *   client (and therefore its token-refresh state). Use this when a single process needs both
-   *   client and worker roles to avoid two independent `/token/renew` loops fighting each other —
-   *   the daemon blacklists the previous token on every renew, so the slower refresher gets
-   *   401 "Token has been revoked".
+   * @param {AppMeshClientTCP} [options.client] - Pre-built client to reuse (shares token-refresh state); see AppMeshWorker for why. When set, sslConfig/tcpAddress are ignored.
    *
    * @example
    * import fs from 'fs';
@@ -392,14 +377,6 @@ class AppMeshWorkerTCP extends AppMeshWorker {
   /**
    * Close the TCP connection and release resources.
    * Should be called when done using the server.
-   *
-   * @example
-   * const worker = new AppMeshWorkerTCP();
-   * try {
-   *   // Use worker...
-   * } finally {
-   *   worker.close();
-   * }
    */
   close () {
     if (this._client && typeof this._client.close === 'function') {
@@ -417,7 +394,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
  * @returns {Promise<any>} Result from callback
  *
  * @example
- * import { withServer, AppMeshWorkerTCP } from 'appmesh/server';
+ * import { withServer, AppMeshWorkerTCP } from 'appmesh/worker';
  *
  * await withServer(
  *   () => new AppMeshWorkerTCP(),

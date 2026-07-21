@@ -5,13 +5,7 @@
 #include "FileTransferHandler.h"
 #include "SocketStream.h"
 
-#include <ace/Map_Manager.h>
-#include <ace/Recursive_Thread_Mutex.h>
-
 #include <memory>
-
-class SocketServer;
-using ServerStreamMap = ACE_Map_Manager<int, SocketServer *, ACE_Recursive_Thread_Mutex>;
 
 // Server-side socket handler. Managed by ACE_Acceptor.
 class SocketServer : public SocketStream

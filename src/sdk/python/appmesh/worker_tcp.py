@@ -1,4 +1,4 @@
-# server_tcp.py
+# worker_tcp.py
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
 # Standard library imports
@@ -7,7 +7,7 @@ from typing import Optional, Tuple, Union
 
 # Local imports
 from .client_tcp import AppMeshClientTCP
-from .server_http import AppMeshWorker
+from .worker_http import AppMeshWorker
 
 logger = logging.getLogger(__name__)
 

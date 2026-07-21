@@ -3,13 +3,17 @@
 #include "SocketServer.h"
 #include "Worker.h"
 
-#include <ace/Guard_T.h>
+#include <mutex>
+#include <unordered_map>
 
 // Cap on concurrent inbound TCP sessions — bounds memory/fd from a connection flood.
 static constexpr size_t MAX_TCP_CONNECTIONS = 10000;
 
 static std::atomic_int idGenerator{0};
-static ServerStreamMap streams{};
+// Live client sessions by ClientID. Raw pointers — safe only because onClose unbinds BEFORE
+// the reactor drops the final reference, and findClient() pins entries under the map mutex.
+static std::mutex streamsMutex;
+static std::unordered_map<int, SocketServer *> streams;
 
 SocketServer::SocketServer(ACE_SSL_Context *ctx, ACE_Reactor *reactor)
     : SocketStream(ctx, reactor), m_id(++idGenerator)
@@ -21,7 +25,10 @@ SocketServer::SocketServer(ACE_SSL_Context *ctx, ACE_Reactor *reactor)
 SocketServer::~SocketServer()
 {
     const static char fname[] = "SocketServer::~SocketServer() ";
-    streams.unbind(m_id);
+    {
+        std::lock_guard<std::mutex> lock(streamsMutex);
+        streams.erase(m_id);
+    }
     LOG_DBG << fname << "Client session terminated | ClientID=" << m_id;
 }
 
@@ -31,10 +38,13 @@ int SocketServer::open(void *acceptor_or_connector)
     LOG_INF << fname << "Initializing connection for client | ClientID=" << m_id;
 
     // Over the cap: return -1 so ACE_Acceptor calls close() (releases the construction ref).
-    if (streams.current_size() >= MAX_TCP_CONNECTIONS)
     {
-        LOG_WAR << fname << "Connection limit reached (" << MAX_TCP_CONNECTIONS << "), rejecting | ClientID=" << m_id;
-        return -1;
+        std::lock_guard<std::mutex> lock(streamsMutex);
+        if (streams.size() >= MAX_TCP_CONNECTIONS)
+        {
+            LOG_WAR << fname << "Connection limit reached (" << MAX_TCP_CONNECTIONS << "), rejecting | ClientID=" << m_id;
+            return -1;
+        }
     }
 
     // NOTE: callback functions are invoked on the reactor I/O thread.
@@ -70,23 +80,33 @@ int SocketServer::open(void *acceptor_or_connector)
         [id = m_id]()
         {
             const static char fname_cb[] = "SocketServer::onClose() ";
-            streams.unbind(id);
+            {
+                std::lock_guard<std::mutex> lock(streamsMutex);
+                streams.erase(id);
+            }
             EventDispatcher::instance()->removeByConnection(ConnectionKey::tcp(id));
             LOG_DBG << fname_cb << "| ClientID=" << id;
         });
 
-    // Bind before open to prevent use-after-free (open releases construction ref)
-    streams.bind(m_id, this);
+    // Bind before open (open releases the construction ref) and AFTER the callback
+    // setters: the map mutex is what publishes the callbacks to worker threads (rule 3).
+    size_t activeSessions = 0;
+    {
+        std::lock_guard<std::mutex> lock(streamsMutex);
+        streams[m_id] = this;
+        activeSessions = streams.size();
+    }
     // open() drops the construction ref, after which another reactor thread may delete
     // this; cache id before the call so we never read a freed member afterwards.
     const int id = m_id;
     int result = SocketStream::open(acceptor_or_connector);
     if (result == -1)
     {
-        streams.unbind(id);
+        std::lock_guard<std::mutex> lock(streamsMutex);
+        streams.erase(id);
         return result;
     }
-    LOG_DBG << fname << "Client session registered | ClientID=" << id << " | ActiveSessions=" << streams.current_size();
+    LOG_DBG << fname << "Client session registered | ClientID=" << id << " | ActiveSessions=" << activeSessions;
     return result;
 }
 
@@ -94,11 +114,14 @@ SocketStreamPtr SocketServer::findClient(int clientId)
 {
     const static char fname[] = "SocketServer::findClient() ";
 
-    SocketServer *client = nullptr;
-    ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, streams.mutex(), SocketStreamPtr());
-    if (streams.find(clientId, client) == 0 && client != nullptr)
     {
-        return SocketStreamPtr(client);
+        std::lock_guard<std::mutex> lock(streamsMutex);
+        auto it = streams.find(clientId);
+        if (it != streams.end() && it->second != nullptr)
+        {
+            // Pin under the map mutex: add_reference happens before onClose can unbind.
+            return SocketStreamPtr(it->second);
+        }
     }
     LOG_WAR << fname << "Target client not found | ClientID=" << clientId;
     return SocketStreamPtr();
@@ -117,7 +140,7 @@ bool SocketServer::replyTcp(int clientId, std::unique_ptr<Response> &&resp)
     auto *client = static_cast<SocketServer *>(clientGuard.stream());
 
     LOG_DBG << fname << "Sending response | ClientID=" << clientId;
-    // Hold m_file_mutex only for check, release before send() to avoid lock inversion
+    // Hold transfer_mutex only for prepare, release before send() to avoid lock inversion
     {
         std::lock_guard<std::mutex> flock(client->m_fileTransfer.transfer_mutex());
         client->m_fileTransfer.prepareTransfer(resp, clientId);

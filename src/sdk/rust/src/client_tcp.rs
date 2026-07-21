@@ -277,12 +277,20 @@ impl AppMeshClientTCP {
     /// Download a file using the TCP file-socket side channel.
     ///
     /// When `preserve_permissions` is true, returned POSIX metadata is applied locally best-effort.
+    ///
+    /// An empty `local_file` defaults to the basename of `remote_file`.
     pub async fn download_file(
         &self,
         remote_file: &str,
         local_file: &str,
         preserve_permissions: bool,
     ) -> Result<()> {
+        // Empty local_file: derive the local path from the remote file's basename.
+        let local_file = if local_file.is_empty() {
+            Path::new(remote_file).file_name().and_then(|n| n.to_str()).unwrap_or(remote_file)
+        } else {
+            local_file
+        };
         let mut headers = HashMap::new();
         headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
         headers.insert(HTTP_HEADER_KEY_X_RECV_FILE_SOCKET.into(), "true".into());
@@ -323,12 +331,19 @@ impl AppMeshClientTCP {
     ///
     /// When `preserve_permissions` is true, local POSIX metadata is sent so the server can
     /// recreate permissions/ownership when supported.
+    ///
+    /// An empty `remote_file` defaults to the local file's basename.
     pub async fn upload_file(
         &self,
         local_file: &str,
         remote_file: &str,
         preserve_permissions: bool,
     ) -> Result<()> {
+        let remote_file = if remote_file.is_empty() {
+            Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file)
+        } else {
+            remote_file
+        };
         let local_path = Path::new(local_file);
         if !local_path.exists() {
             return Err(AppMeshError::FileNotFound(local_file.to_string()));
@@ -374,9 +389,6 @@ impl AppMeshClientTCP {
     }
 
     /// Run an application asynchronously and return the standard [`AppRun`] handle.
-    ///
-    /// This method exists explicitly because the `&Arc<Self>` receiver cannot be delegated through
-    /// `Deref`.
     pub async fn run_app_async(
         self: &Arc<Self>,
         app: &Application,
@@ -387,10 +399,6 @@ impl AppMeshClientTCP {
     }
 
     /// Subscribe-based wait for an async run (TCP override).
-    ///
-    /// Instead of polling `get_app_output` in a loop, subscribes to STDOUT/EXIT/REMOVED
-    /// events and does a one-shot backfill to cover output emitted before the subscribe
-    /// took effect.  Deduplicates by byte-position offset.
     ///
     /// Returns:
     ///   `Ok(Some(code))` -- process exited (code may be negative for signal kills)

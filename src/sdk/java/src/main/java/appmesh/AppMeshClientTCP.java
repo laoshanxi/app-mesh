@@ -18,13 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 
 
-/**
- * Simple TCP (TLS) client wrapper that reuses `AppMeshClient`.
- *
- * It constructs an HTTPS base URL using the provided TCP address and
- * reuses `AppMeshClient` for underlying HTTP requests. This mirrors the
- * Python approach of injecting a TCP client while reusing the same public API.
- */
+/** App Mesh client over TCP (TLS). Control requests go over TCP; file transfers use a TCP side channel. */
 public class AppMeshClientTCP extends AppMeshClient {
     private static final java.util.logging.Logger LOGGER = java.util.logging.Logger.getLogger(AppMeshClientTCP.class.getName());
     private static final int TCP_BLOCK_SIZE = 16 * 1024 - 128; // TLS-optimized chunk size
@@ -276,6 +270,15 @@ public class AppMeshClientTCP extends AppMeshClient {
     }
 
     /**
+     * Download a file through the TCP file-socket side channel. Uses the remote file's name as the
+     * local file name.
+     */
+    @Override
+    public boolean downloadFile(String filePath, boolean applyFileAttributes) throws IOException {
+        return downloadFile(filePath, new File(filePath).getName(), applyFileAttributes);
+    }
+
+    /**
      * Upload a file through the TCP file-socket side channel.
      *
      * <p>When {@code preservePermissions} is true, local file metadata is sent so the server can
@@ -324,6 +327,15 @@ public class AppMeshClientTCP extends AppMeshClient {
         }
 
         return true;
+    }
+
+    /**
+     * Upload a file through the TCP file-socket side channel. Uses the local file's name as the
+     * remote file name.
+     */
+    @Override
+    public boolean uploadFile(File localFile, boolean preservePermissions) throws IOException {
+        return uploadFile(localFile, localFile.getName(), preservePermissions);
     }
 
     /**

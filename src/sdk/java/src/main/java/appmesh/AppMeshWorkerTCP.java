@@ -1,12 +1,6 @@
 package appmesh;
 
-/**
- * TCP worker wrapper for App Mesh Java SDK.
- *
- * This class reuses an `AppMeshClient`-compatible client. If you have a
- * TCP-based client implementation that presents the same request() API as
- * `AppMeshClient`, construct it and pass it to this constructor.
- */
+/** {@link AppMeshWorker} backed by a TCP-transport client. */
 public class AppMeshWorkerTCP extends AppMeshWorker {
     public AppMeshWorkerTCP(AppMeshClient tcpClient) {
         super(tcpClient);

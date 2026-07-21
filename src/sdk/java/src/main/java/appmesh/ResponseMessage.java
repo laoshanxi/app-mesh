@@ -9,10 +9,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * TCP response message for HTTP-like communication.
- * Matches Python's ResponseMessage dataclass.
- */
+/** TCP response message. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ResponseMessage {
 
@@ -43,10 +40,7 @@ public class ResponseMessage {
         return MAPPER.writeValueAsBytes(this);
     }
 
-    /**
-     * Deserialize TCP msgpack buffer.
-     * Matches Python's deserialize() method.
-     */
+    /** Deserialize TCP msgpack buffer. */
     public static ResponseMessage deserialize(byte[] buf) throws IOException {
         ResponseMessage msg = MAPPER.readValue(buf, ResponseMessage.class);
         // Ensure non-null defaults (matching Python's _convert_type behavior)
