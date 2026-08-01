@@ -24,7 +24,7 @@ Usage:
     python3 setup_oauth2_daemon.py --keycloak-url http://192.168.1.10:8080
 
     # then restart the daemon (e.g. docker restart <container>) and verify:
-    KEYCLOAK_URL=http://<same-url> python3 test_oauth2.py
+    KEYCLOAK_URL=http://<same-url> python3 smoke_oauth2.py
 
 Environment:
     APPMESH_ADMIN_USER / APPMESH_ADMIN_PWD  daemon admin for provisioning (default admin/admin123)
@@ -37,7 +37,7 @@ import socket
 import sys
 import tempfile
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))  # -> src/sdk/python
 from appmesh import AppMeshClientTCP
 
 
@@ -116,8 +116,8 @@ def main() -> None:
     client.close()
 
     print("\nDONE — restart the daemon to activate, then verify with:")
-    print(f"  KEYCLOAK_URL={keycloak_url} python3 test_oauth2.py")
-    print(f"  KEYCLOAK_URL={keycloak_url} python3 test_oauth2.py --device")
+    print(f"  KEYCLOAK_URL={keycloak_url} python3 smoke_oauth2.py")
+    print(f"  KEYCLOAK_URL={keycloak_url} python3 smoke_oauth2.py --device")
 
 
 if __name__ == "__main__":

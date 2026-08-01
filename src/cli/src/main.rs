@@ -41,7 +41,8 @@ async fn main() {
 
 fn is_follow_or_force_mode(cli: &Cli) -> bool {
     match &cli.command {
-        Commands::View(args) => args.follow,
+        // Only output-follow (-a <app> -f) tolerates errors; `ls -f` watch must not.
+        Commands::View(args) => args.follow && args.app.is_some(),
         Commands::Rm(args) => args.force,
         Commands::Add(args) => args.force,
         Commands::User(args) => args.force,

@@ -73,8 +73,8 @@ The original design had problems:
   REST/tick fork concurrency; a bare fork→exec from a threaded process is safe.)
 - A dedicated single-thread spawn *executor* was prototyped and dropped: tick-poll achieves the
   same "fork off the timer thread" with zero new threads, so the executor was needless complexity.
-- Verified by `src/sdk/python/test/{test_runstate_e2e,stress_runstate}.py` and
-  `test/application` C++ unit tests.
+- Verified by `src/sdk/python/test/test_runstate_e2e.py`,
+  `src/sdk/python/test/tools/stress_runstate.py`, and `test/application` C++ unit tests.
 
 ### Deferred
 

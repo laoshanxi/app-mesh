@@ -89,7 +89,7 @@ jobs:
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
             bash /work/script/run_python_test_with_debug.sh \
-              /work/src/sdk/python/test/test_appmesh_client.py \
+              /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
               /work/src/sdk/python/sample.py
 
@@ -144,7 +144,7 @@ jobs:
             apt install -y python3 python3-pip
             python3 -m pip install --break-system-packages --upgrade appmesh pyotp
             bash /work/script/run_python_test_with_debug.sh \
-              /work/src/sdk/python/test/test_appmesh_client.py \
+              /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
               /work/src/sdk/python/sample.py
 
@@ -197,7 +197,7 @@ jobs:
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
             bash /work/script/run_python_test_with_debug.sh \
-              /work/src/sdk/python/test/test_appmesh_client.py \
+              /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
               /work/src/sdk/python/sample.py
 
@@ -257,7 +257,7 @@ jobs:
             yum install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
             bash /work/script/run_python_test_with_debug.sh \
-              /work/src/sdk/python/test/test_appmesh_client.py \
+              /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
               /work/src/sdk/python/sample.py
 

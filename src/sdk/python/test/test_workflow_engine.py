@@ -39,16 +39,20 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(current_directory))
 
 from appmesh import AppMeshClientWSS
+from _support import config
 
 # WSS transport carries run_task/REST calls over a single persistent websocket (msgpack),
 # not urllib3 — so ssl_verify=False emits no per-request InsecureRequestWarning noise.
 WSS_ADDRESS = ("127.0.0.1", 6058)
 
-DEFAULT_CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
+USER = config.USER
+DEFAULT_CRED = config.CRED
 WF_APP = "workflow"           # engine App name (default install)
 MSG_APP = "pytask"            # shipped App used to exercise message steps
 POLL_TIMEOUT = 45             # seconds to wait for a run to reach a terminal state
 TERMINAL = ("success", "failure", "cancelled")
+# Response markers that mean an infra/auth failure, not a workflow/authz outcome.
+_INFRA_MARKERS = ("Token has been revoked", "Unauthorized", "Forbidden", " 401", " 403")
 
 
 class TestWorkflowEngine(unittest.TestCase):
@@ -57,7 +61,7 @@ class TestWorkflowEngine(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = AppMeshClientWSS(wss_address=WSS_ADDRESS, ssl_verify=False)
-        cls.client.login("admin", DEFAULT_CRED)
+        cls.client.login(USER, DEFAULT_CRED)
 
     @classmethod
     def tearDownClass(cls):
@@ -78,8 +82,6 @@ class TestWorkflowEngine(unittest.TestCase):
     # Substrings that mark a transport/auth failure (a dead session), NOT a workflow
     # business error. These must NOT be folded into {"status":"error"} or a negative
     # test would pass on a broken session and mask the real failure (CLAUDE.md Rule 12).
-    _INFRA_MARKERS = ("Token has been revoked", "Unauthorized", "Forbidden", " 401", " 403")
-
     def call(self, action, **kw):
         """Send one workflow action and return the parsed JSON response.
 
@@ -98,7 +100,7 @@ class TestWorkflowEngine(unittest.TestCase):
             raise RuntimeError(f"non-JSON engine response (transport/auth failure?): {raw!r}")
         if resp.get("status") == "error":
             msg = resp.get("message") or ""
-            if "authentication" in msg.lower() or any(m in msg for m in self._INFRA_MARKERS):
+            if "authentication" in msg.lower() or any(m in msg for m in _INFRA_MARKERS):
                 raise RuntimeError(f"infrastructure/auth failure, not a workflow error: {msg}")
         return resp
 
@@ -890,14 +892,12 @@ class TestWorkflowAuthz(unittest.TestCase):
 
     # Transport/auth failure markers — never folded into a business error, so a dead
     # session fails loudly instead of masquerading as an authz decision.
-    _INFRA_MARKERS = ("Token has been revoked", "Unauthorized", "Forbidden", " 401", " 403")
-
     @classmethod
     def setUpClass(cls):
         cls._created = []        # only users this run created — never touch pre-existing ones
         cls._made_role = False
         cls.admin = AppMeshClientWSS(wss_address=WSS_ADDRESS, ssl_verify=False)
-        cls.admin.login("admin", DEFAULT_CRED)
+        cls.admin.login(USER, DEFAULT_CRED)
 
         # Prereq 1: is the deployed engine token-aware? An old engine accepts a
         # token-less request; if so this build isn't deployed here — skip, don't fail.
@@ -965,7 +965,7 @@ class TestWorkflowAuthz(unittest.TestCase):
             resp = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             raise RuntimeError(f"non-JSON engine response (transport/auth failure?): {raw!r}")
-        if resp.get("status") == "error" and any(m in (resp.get("message") or "") for m in cls._INFRA_MARKERS):
+        if resp.get("status") == "error" and any(m in (resp.get("message") or "") for m in _INFRA_MARKERS):
             raise RuntimeError(f"infrastructure failure, not an authz decision: {resp.get('message')}")
         return resp
 

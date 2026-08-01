@@ -1,6 +1,19 @@
 # client_http_oauth.py
 # pylint: disable=line-too-long,broad-exception-caught,too-many-lines,import-outside-toplevel,broad-exception-raised
-"""AppMesh HTTP client with Keycloak OAuth2 authentication support."""
+"""AppMesh HTTP client with Keycloak OAuth2 authentication (direct-to-IdP).
+
+Two OAuth2/Keycloak models exist:
+
+* Daemon-proxied (base ``AppMeshClient``): the client talks only to the daemon, which
+  brokers Keycloak; the access token lives in the cookie jar.
+* Direct-to-IdP (this ``AppMeshClientOAuth``): the client authenticates against Keycloak
+  via ``python-keycloak`` and presents the token to the daemon as a Bearer JWT.
+
+Both reuse the base client's background token refresh; this subclass overrides
+``renew_token`` / ``_get_access_token`` to drive the Keycloak refresh.
+
+Dependency: ``python -m pip install python-keycloak``
+"""
 
 import json
 import logging
@@ -166,24 +179,36 @@ class AppMeshClientOAuth(AppMeshClient):
         except Exception:
             return ""
 
+    def _revoke_keycloak_session(self, context: str) -> bool:
+        """Best-effort Keycloak RP-initiated logout for the current refresh token.
+
+        Returns True when the Keycloak session was revoked or there was nothing to
+        revoke; False only when a revocation was attempted and failed.
+        """
+        if not (self._keycloak_openid and isinstance(self._token, dict)):
+            return True
+        refresh_token = self._token.get("refresh_token")
+        if not refresh_token:
+            return True
+        try:
+            self._keycloak_openid.logout(refresh_token)
+            return True
+        except Exception as e:
+            logger.warning("Failed to logout from Keycloak during %s: %s", context, e)
+            return False
+
     def logout(self) -> bool:
-        """Log out of the current session from Keycloak and clean up."""
-        result = False
-        if self._keycloak_openid and self._token:
-            try:
-                refresh_token = self._token.get("refresh_token")
-                if refresh_token:
-                    self._keycloak_openid.logout(refresh_token)
-                    result = True
-            except Exception as e:
-                logger.warning("Failed to logout from Keycloak: %s", e)
-
-        # Call super BEFORE clearing the token so it can still read the access token and revoke
-        # it on the daemon; clearing first would make super().logout() a no-op that returns False.
-        super_result = super().logout()
+        """Log out. Returns whether the Keycloak session ended; the daemon logoff is
+        best-effort and its failure does not affect the return value."""
+        keycloak_ok = self._revoke_keycloak_session("logout")
+        # Revoke on the daemon before clearing the token, so it can read the access token.
+        try:
+            if not super().logout():
+                logger.warning("Daemon-side logoff did not succeed")
+        except Exception as e:
+            logger.warning("Daemon-side logoff failed: %s", e)
         self._token = {}
-
-        return result and super_result
+        return keycloak_ok
 
     def renew_token(self, token_expire: Union[int, str] = 0) -> None:
         """Renew the current Keycloak token."""
@@ -219,16 +244,9 @@ class AppMeshClientOAuth(AppMeshClient):
 
     def close(self) -> None:
         """Close the session and release resources, including Keycloak logout."""
-        # Logout from Keycloak if needed
-        if hasattr(self, "_keycloak_openid") and self._keycloak_openid:
-            if self._token and isinstance(self._token, dict):
-                refresh_token = self._token.get("refresh_token")
-                if refresh_token:
-                    try:
-                        self._keycloak_openid.logout(refresh_token)
-                    except Exception as e:
-                        logger.warning("Failed to logout from Keycloak during close: %s", e)
-            # Always release, even when no refresh token was present
+        if getattr(self, "_keycloak_openid", None):
+            self._revoke_keycloak_session("close")
+            # Always release, even when no refresh token was present.
             self._keycloak_openid = None
             self._token = {}
 

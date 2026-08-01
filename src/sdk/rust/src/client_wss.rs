@@ -407,22 +407,55 @@ impl AppMeshClientWSS {
                 message: e.to_string(),
             })?;
 
-        if !response.status().is_success() {
+        // Failures answer plain text, file content answers octet-stream. Older daemons send
+        // that text with a "200 OK" status line, so the content type has to decide success —
+        // otherwise the error body lands in the destination file and we report success.
+        let is_file_content = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with("application/octet-stream"));
+        if !response.status().is_success() || !is_file_content {
+            let status = if response.status().is_success() {
+                StatusCode::BAD_GATEWAY
+            } else {
+                response.status()
+            };
+            let message = response.text().await.unwrap_or_default();
             return Err(AppMeshError::RequestFailed {
-                status: response.status(),
-                message: "Download request failed".into(),
+                status,
+                message: if message.is_empty() { "Download request failed".into() } else { message },
             });
         }
 
+        // Rename from a sibling temp file so a partial transfer never reaches the destination.
         let local_path = Path::new(local_file);
-        let mut file = File::create(local_path)?;
-        while let Some(chunk) = response.chunk().await.map_err(|e| AppMeshError::ConnectionError(e.to_string()))? {
-            file.write_all(&chunk)?;
+        let file_name = local_path.file_name().and_then(|n| n.to_str()).unwrap_or("download");
+        let temp_path = local_path.with_file_name(format!(".{}.appm-part", file_name));
+
+        let write_result = async {
+            let mut file = File::create(&temp_path)?;
+            while let Some(chunk) =
+                response.chunk().await.map_err(|e| AppMeshError::ConnectionError(e.to_string()))?
+            {
+                file.write_all(&chunk)?;
+            }
+            file.flush()?;
+            Ok::<(), AppMeshError>(())
         }
-        file.flush()?;
+        .await;
+
+        if let Err(e) = write_result {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e);
+        }
 
         if preserve_permissions {
-            let _ = AppMeshClient::apply_file_attributes(local_path, resp.headers());
+            let _ = AppMeshClient::apply_file_attributes(&temp_path, resp.headers());
+        }
+        if let Err(e) = std::fs::rename(&temp_path, local_path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e.into());
         }
         Ok(())
     }
@@ -510,9 +543,12 @@ impl AppMeshClientWSS {
             })?;
 
         if !response.status().is_success() {
+            let status = response.status();
+            // Surface the daemon's own message instead of a generic failure string.
+            let message = response.text().await.unwrap_or_default();
             return Err(AppMeshError::RequestFailed {
-                status: response.status(),
-                message: "Upload request failed".into(),
+                status,
+                message: if message.is_empty() { "Upload request failed".into() } else { message },
             });
         }
         Ok(())

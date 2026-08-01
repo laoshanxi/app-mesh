@@ -132,7 +132,7 @@ jobs:
           # Run both scripts under the same wrapper so a sample.py crash also dumps
           # daemon backtrace / wrapper log / server.log via dump_failure_context.
           bash script/run_python_test_with_debug.sh \
-            src/sdk/python/test/test_appmesh_client.py \
+            src/sdk/python/test/integration/test_client.py \
             src/sdk/python/sample.py
 
           cd src/sdk/go
