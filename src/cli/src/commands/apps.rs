@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use appmesh::{AppEvent, Application, AppMeshClient, ExitAction};
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::sync::Arc;
 
 use crate::app::{AddArgs, Cli, DisableArgs, EnableArgs, RestartArgs, RmArgs, ViewArgs};
@@ -294,18 +294,60 @@ pub async fn view(cli: &Cli, args: &ViewArgs) -> Result<i32> {
     }
 
     // List all apps
+    if args.follow {
+        return watch_apps(&client, args).await;
+    }
+
     let apps = client
         .list_apps()
         .await
         .context("Failed to list applications")?;
 
+    print_app_list(&apps, args)?;
+    Ok(0)
+}
+
+fn print_app_list(apps: &[Application], args: &ViewArgs) -> Result<()> {
     if args.json {
-        let json = serde_json::to_value(&apps)?;
+        let json = serde_json::to_value(apps)?;
         format::print_json(&json)?;
     } else {
-        table::print_apps(&apps, args.long);
+        table::print_apps(apps, args.long);
     }
-    Ok(0)
+    Ok(())
+}
+
+/// Redraw interval for `ls -f` watch mode.
+const WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Consecutive list failures tolerated, so one dropped request doesn't kill the watch.
+const WATCH_MAX_ERRORS: u32 = 5;
+
+/// Watch mode (`ls -f` without `-a`): redraw the list until interrupted with Ctrl-C.
+async fn watch_apps(client: &Arc<appmesh::AppMeshClientWSS>, args: &ViewArgs) -> Result<i32> {
+    let tty = io::stdout().is_terminal();
+    let mut errors = 0u32;
+    loop {
+        match client.list_apps().await {
+            Ok(apps) => {
+                errors = 0;
+                if tty {
+                    // Home cursor and clear below, like top(1): avoids full-clear flicker.
+                    print!("\x1b[H\x1b[J");
+                }
+                print_app_list(&apps, args)?;
+                io::stdout().flush().ok();
+            }
+            Err(e) => {
+                errors += 1;
+                if errors >= WATCH_MAX_ERRORS {
+                    return Err(anyhow::anyhow!("{}", e))
+                        .context("Lost connection while watching applications");
+                }
+            }
+        }
+        tokio::time::sleep(WATCH_INTERVAL).await;
+    }
 }
 
 async fn view_output(
@@ -321,6 +363,11 @@ async fn view_output(
             .get_app_output(app_name, 0, log_index, 0, None, None)
             .await
             .context("Failed to get output")?;
+        // Fetched with fail_on_error=false so the exit-code header survives a non-2xx
+        // reply, so check the status here — else a 404 body prints as app output, exit 0.
+        if !(200..300).contains(&output.status_code) {
+            bail!("Failed to get output: {}", output.output.trim());
+        }
         if !output.output.is_empty() {
             print!("{}", output.output);
             io::stdout().flush().ok();

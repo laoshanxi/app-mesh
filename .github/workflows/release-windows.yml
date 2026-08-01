@@ -101,7 +101,7 @@ jobs:
           cat "C:\local\appmesh\work\stdout\*.out"
 
           # TODO: ping not work on github action windows host, consider to use curl
-          #python src\sdk\python\test\test_appmesh_client.py
+          #python src\sdk\python\test\integration\test_client.py
           python src\sdk\python\sample.py
 
       - name: Attest Build Provenance

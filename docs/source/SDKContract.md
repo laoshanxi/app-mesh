@@ -247,11 +247,11 @@ race/edge the scenario names; **MISSING** = no test at all.
 | # | Python | Go | Rust | Java | JavaScript |
 |---|---|---|---|---|---|
 | S1 | MISSING | MISSING | MISSING | MISSING | MISSING |
-| S2 | `test/test_appmesh_client.py` `test_s2_disconnect_unblocks_wait` | `subscribe_test.go` `TestWaitForAsyncRunDisconnectUnblocks` | partial: `src/subscribe.rs` `conformance_s2_disconnect_broadcast_unblocks` + `src/wait_subscribe.rs` `conformance_s2_disconnected_event_classified` (wait path not driven) | `AsyncRunWaiterTest` `testDisconnectUnblocksWait` | `test/subscribe_test.js` `wait_for_async_run disconnect unblocks with typed error` |
+| S2 | `test/unit/test_subscribe_conformance.py` `test_s2_disconnect_unblocks_wait` | `subscribe_test.go` `TestWaitForAsyncRunDisconnectUnblocks` | partial: `src/subscribe.rs` `conformance_s2_disconnect_broadcast_unblocks` + `src/wait_subscribe.rs` `conformance_s2_disconnected_event_classified` (wait path not driven) | `AsyncRunWaiterTest` `testDisconnectUnblocksWait` | `test/subscribe_test.js` `wait_for_async_run disconnect unblocks with typed error` |
 | S3 | MISSING | MISSING | MISSING | MISSING | MISSING |
-| S4 | partial: `test/test_appmesh_client.py` `test_66_add_app_with_subscribe_events` | MISSING | MISSING | MISSING | MISSING |
+| S4 | partial: `test/integration/test_client.py` `test_66_add_app_with_subscribe_events` | MISSING | MISSING | MISSING | MISSING |
 | S5 | MISSING | MISSING | MISSING | MISSING | MISSING |
-| S6 | `test/test_appmesh_client.py` `test_s6_negative_exit_code` | `subscribe_test.go` `TestWaitForAsyncRunNegativeExitCode` | partial: `src/wait_subscribe.rs` `conformance_s6_negative_exit_code_is_exit` (callback classification only) | `AsyncRunWaiterTest` `testNegativeExitCodeReturnedAsExitCode` | `test/subscribe_test.js` `wait_for_async_run returns negative exit code as-is` |
-| S7 | `test/test_appmesh_client.py` `test_s7_response_races_send` | partial: `subscribe_test.go` `TestMessageDemuxerRequestResponse` | partial: `src/subscribe.rs` `conformance_s7_response_routed_to_pre_registered_waiter` | partial: `SubscribeTest` `testDemuxerRoutesResponseToPreRegisteredWaiter` | partial: `test/subscribe_test.js` `MessageDemuxer routes responses by UUID` |
+| S6 | `test/unit/test_subscribe_conformance.py` `test_s6_negative_exit_code` | `subscribe_test.go` `TestWaitForAsyncRunNegativeExitCode` | partial: `src/wait_subscribe.rs` `conformance_s6_negative_exit_code_is_exit` (callback classification only) | `AsyncRunWaiterTest` `testNegativeExitCodeReturnedAsExitCode` | `test/subscribe_test.js` `wait_for_async_run returns negative exit code as-is` |
+| S7 | `test/unit/test_subscribe_conformance.py` `test_s7_response_races_send` | partial: `subscribe_test.go` `TestMessageDemuxerRequestResponse` | partial: `src/subscribe.rs` `conformance_s7_response_routed_to_pre_registered_waiter` | partial: `SubscribeTest` `testDemuxerRoutesResponseToPreRegisteredWaiter` | partial: `test/subscribe_test.js` `MessageDemuxer routes responses by UUID` |
 | S8 | MISSING | MISSING | MISSING | MISSING | MISSING |
 | S9 | MISSING | MISSING | MISSING | MISSING | MISSING |

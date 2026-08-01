@@ -47,11 +47,12 @@ import threading
 import time
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(current_directory))
+sys.path.insert(0, os.path.abspath(os.path.join(current_directory, "..", "..")))  # -> src/sdk/python
 
 from appmesh import AppMeshClient, App
 
 BASE_URL = os.environ.get("APPMESH_TEST_URL")
+USER = os.environ.get("APPMESH_TEST_USER", "admin")
 CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
 DURATION = int(os.environ.get("STRESS_DURATION_SEC", "60"))
 CONCURRENCY = int(os.environ.get("STRESS_CONCURRENCY", "3"))
@@ -66,7 +67,7 @@ SLOW = 1.0
 
 def new_client() -> AppMeshClient:
     c = AppMeshClient(base_url=BASE_URL) if BASE_URL else AppMeshClient()
-    c.login("admin", CRED)
+    c.login(USER, CRED)
     return c
 
 

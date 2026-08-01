@@ -419,6 +419,17 @@ fn test_error_with_follow_flag_exits_zero() {
 
 #[cfg(unix)]
 #[test]
+fn test_watch_mode_failure_exits_nonzero() {
+    // `ls -f` (no -a) is watch mode, not output-follow: a connection failure is
+    // a real failure and must not be masked as success.
+    let out = appm()
+        .args(["-H", "127.0.0.1:1", "ls", "--follow"])
+        .output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[cfg(unix)]
+#[test]
 fn test_error_with_short_f_flag_exits_zero() {
     // -f on rm is --force; raw argv scan sees "-f"
     let out = appm()

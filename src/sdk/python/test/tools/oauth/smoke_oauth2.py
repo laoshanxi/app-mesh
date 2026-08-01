@@ -15,12 +15,12 @@ Setup
 -----
 Keycloak side — one command (starts a container if needed; idempotent):
 
-    bash src/sdk/python/test/keycloak-init.sh
+    bash src/sdk/python/test/tools/oauth/keycloak-init.sh
 
 It creates realm ``appmesh-realm``, confidential client ``appmesh-client`` (direct
 access grants + device grant enabled), all App Mesh permission keys as client roles,
-and user ``mesh``/``mesh123`` with every role. Export the printed client secret as
-``APPMESH_Keycloak_client_secret`` (do not commit it).
+and users ``admin``/``admin123`` and ``mesh``/``mesh123`` each with every role. Export the
+printed client secret as ``APPMESH_Keycloak_client_secret`` (do not commit it).
 
 App Mesh daemon side (optional — enables the daemon API section):
 
@@ -30,8 +30,8 @@ App Mesh daemon side (optional — enables the daemon API section):
 
 Usage
 -----
-    python3 test_oauth2.py            # password grant flow
-    python3 test_oauth2.py --device   # device authorization grant (approve in browser)
+    python3 smoke_oauth2.py            # password grant flow
+    python3 smoke_oauth2.py --device   # device authorization grant (approve in browser)
 
 Configuration via environment (defaults match keycloak-init.sh):
     KEYCLOAK_URL   KEYCLOAK_REALM   KEYCLOAK_CLIENT_ID   APPMESH_Keycloak_client_secret
@@ -48,7 +48,7 @@ import requests
 from jwt.algorithms import RSAAlgorithm
 
 # For source code env:
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))  # -> src/sdk/python
 from appmesh import AppMeshClientOAuth
 from appmesh.exceptions import AppMeshError
 

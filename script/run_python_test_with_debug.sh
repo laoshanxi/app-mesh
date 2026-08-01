@@ -394,7 +394,7 @@ stop_watchdog() {
 }
 
 # ----- run each script in order, stop + dump on the first failure -----
-# Multi-script support is so callers can chain e.g. test_appmesh_client.py + sample.py
+# Multi-script support is so callers can chain e.g. integration/test_client.py + sample.py
 # under one wrapper; without this, sample.py crashes lose all daemon diagnostics.
 off=$(snapshot_log_offset)
 gha_notice "Python test run starts at $(date '+%F %T')"

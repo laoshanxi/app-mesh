@@ -30,10 +30,12 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(current_directory))
 
 from appmesh import AppMeshClient, App
-import sslconf  # noqa: F401  # APPMESH_TEST_SSL_VERIFY override for self-signed daemons
+from _support import ssl_shim  # noqa: F401  # APPMESH_TEST_SSL_VERIFY override for self-signed daemons
+from _support import config
 
-DEFAULT_CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
-BASE_URL = os.environ.get("APPMESH_TEST_URL")  # None -> SDK default (https://127.0.0.1:6060)
+USER = config.USER
+DEFAULT_CRED = config.CRED
+BASE_URL = config.BASE_URL  # None -> SDK default (https://127.0.0.1:6060)
 # retention used by test_02; MUST exceed the daemon ScheduleIntervalSeconds (default 2s)
 # to reproduce the old "REMOVE re-arms every tick and never fires" bug.
 RETENTION_SEC = int(os.environ.get("APPMESH_TEST_RETENTION_SEC", "8"))
@@ -54,7 +56,7 @@ def _poll(predicate, timeout: float, interval: float = 0.2):
 class TestRunStateE2E(unittest.TestCase):
     def setUp(self):
         self.client = AppMeshClient(base_url=BASE_URL) if BASE_URL else AppMeshClient()
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._created = set()
 
     def tearDown(self):

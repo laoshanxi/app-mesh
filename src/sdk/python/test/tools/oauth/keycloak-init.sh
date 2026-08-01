@@ -3,8 +3,8 @@
 # Requires: curl, jq, python3; docker (only to start a new instance).
 #
 # Creates: realm `appmesh-realm`, confidential client `appmesh-client` (direct grant +
-# service account), all App Mesh permission keys as client roles, user `mesh`/`mesh123`
-# with every role assigned, and the service-account realm-management roles the daemon's
+# service account), all App Mesh permission keys as client roles, users `admin`/`admin123`
+# and `mesh`/`mesh123` each with every role assigned, and the service-account realm-management roles the daemon's
 # admin-API profile lookup needs. Re-running tolerates "already exists".
 #
 # The client secret is printed to stdout by default. Set KC_SECRET_FILE=/path to instead
@@ -17,8 +17,8 @@ KC_ADMIN=${KC_ADMIN:-admin}
 KC_ADMIN_PWD=${KC_ADMIN_PWD:-admin}
 REALM=${REALM:-appmesh-realm}
 CLIENT_ID=${CLIENT_ID:-appmesh-client}
-TEST_USER=${TEST_USER:-mesh}
-TEST_PWD=${TEST_PWD:-mesh123}
+# Business users, each granted every permission role. Override with KC_USERS="u1:p1 u2:p2".
+KC_USERS=${KC_USERS:-"admin:admin123 mesh:mesh123"}
 KC_SECRET_FILE=${KC_SECRET_FILE:-}
 
 # The exact App Mesh permission keys (from daemon PERMISSION_KEY_* — must match byte-for-byte).
@@ -94,15 +94,18 @@ for key in "${PERMISSION_KEYS[@]}"; do
 done
 ROLE_REPS=$(adm GET "/realms/$REALM/clients/$CUUID/roles" | jq -c '[.[] | {id,name}]')
 
-# 5) Test user + assign every client role.
-echo "==> user: $TEST_USER"
-adm POST "/realms/$REALM/users" "{
-  \"username\":\"$TEST_USER\",\"enabled\":true,\"emailVerified\":true,
-  \"email\":\"$TEST_USER@appmesh.com\",\"requiredActions\":[],
-  \"credentials\":[{\"type\":\"password\",\"value\":\"$TEST_PWD\",\"temporary\":false}]
-}" 2>/dev/null || echo "   (user exists)"
-UUID=$(adm GET "/realms/$REALM/users?username=$TEST_USER&exact=true" | jq -r '.[0].id')
-adm POST "/realms/$REALM/users/$UUID/role-mappings/clients/$CUUID" "$ROLE_REPS" >/dev/null
+# 5) Business users + assign every client role to each.
+for _entry in $KC_USERS; do
+  _u=${_entry%%:*}; _p=${_entry#*:}
+  echo "==> user: $_u"
+  adm POST "/realms/$REALM/users" "{
+    \"username\":\"$_u\",\"enabled\":true,\"emailVerified\":true,
+    \"email\":\"$_u@appmesh.com\",\"requiredActions\":[],
+    \"credentials\":[{\"type\":\"password\",\"value\":\"$_p\",\"temporary\":false}]
+  }" 2>/dev/null || echo "   (user exists)"
+  _uuid=$(adm GET "/realms/$REALM/users?username=$_u&exact=true" | jq -r '.[0].id')
+  adm POST "/realms/$REALM/users/$_uuid/role-mappings/clients/$CUUID" "$ROLE_REPS" >/dev/null
+done
 
 # 6) Service-account realm-management roles (view-users, view-clients) for the admin-API lookup.
 echo "==> granting service-account admin roles"
@@ -120,25 +123,31 @@ else
   SECRET_LINE="Client secret: $SECRET"
 fi
 
-# 8) Self-verify (Keycloak layer, no App Mesh daemon needed): password-grant login and
-#    confirm the issued token carries this client's roles (== App Mesh permissions).
-echo "==> verifying: password-grant login for $TEST_USER"
-VTOKEN=$(curl -fsS -X POST "$KC_URL/realms/$REALM/protocol/openid-connect/token" \
-  -d grant_type=password -d client_id="$CLIENT_ID" \
-  --data-urlencode "client_secret=$SECRET" \
-  -d username="$TEST_USER" -d password="$TEST_PWD" -d scope="openid profile email" \
-  | jq -r .access_token)
-NROLES=$(printf '%s' "$VTOKEN" | python3 -c '
+# 8) Self-verify (Keycloak layer, no App Mesh daemon needed): password-grant login for each
+#    user and confirm the issued token carries this client's roles (== App Mesh permissions).
+VERIFY_LINE=""
+for _entry in $KC_USERS; do
+  _u=${_entry%%:*}; _p=${_entry#*:}
+  echo "==> verifying: password-grant login for $_u"
+  _vtoken=$(curl -fsS -X POST "$KC_URL/realms/$REALM/protocol/openid-connect/token" \
+    -d grant_type=password -d client_id="$CLIENT_ID" \
+    --data-urlencode "client_secret=$SECRET" \
+    -d username="$_u" -d password="$_p" -d scope="openid profile email" \
+    | jq -r .access_token)
+  _nroles=$(printf '%s' "$_vtoken" | python3 -c '
 import sys, base64, json
 p = sys.stdin.read().split(".")[1]; p += "=" * (-len(p) % 4)
 c = json.loads(base64.urlsafe_b64decode(p))
 print(len(c.get("resource_access", {}).get(sys.argv[1], {}).get("roles", [])))
 ' "$CLIENT_ID" 2>/dev/null || echo 0)
-if [ "${NROLES:-0}" -gt 0 ] 2>/dev/null; then
-  VERIFY_LINE="Self-verify   : OK — login works, token carries $NROLES '$CLIENT_ID' roles"
-else
-  VERIFY_LINE="Self-verify   : FAILED — login token has no '$CLIENT_ID' roles (check role assignment)"
-fi
+  if [ "${_nroles:-0}" -gt 0 ] 2>/dev/null; then
+    VERIFY_LINE="${VERIFY_LINE}Self-verify   : $_u OK — token carries $_nroles '$CLIENT_ID' roles
+"
+  else
+    VERIFY_LINE="${VERIFY_LINE}Self-verify   : $_u FAILED — token has no '$CLIENT_ID' roles (check role assignment)
+"
+  fi
+done
 
 cat <<EOF
 
@@ -147,19 +156,19 @@ Realm        : $REALM
 Client       : $CLIENT_ID
 $SECRET_LINE
 $VERIFY_LINE
-Test user    : $TEST_USER / $TEST_PWD  (all ${#PERMISSION_KEYS[@]} permission roles assigned)
+Test users   : $KC_USERS  (each assigned all ${#PERMISSION_KEYS[@]} permission roles)
 
 App Mesh side:
   1) config.yaml:   SecurityInterface: oauth2
   2) oauth2.yaml:   auth_server_url: $KC_URL   realm: $REALM   client_id: $CLIENT_ID
   3) export APPMESH_Keycloak_client_secret=...   # from above; do NOT commit
-  4) restart appmesh, then:  python3 src/sdk/python/test/test_oauth2.py
-                             python3 src/sdk/python/test/test_oauth2.py --device
+  4) restart appmesh, then:  python3 src/sdk/python/test/tools/oauth/smoke_oauth2.py
+                             python3 src/sdk/python/test/tools/oauth/smoke_oauth2.py --device
 
 Daemon in a container? The token issuer embeds the Keycloak URL, so daemon and test
 clients must use the SAME URL, reachable from both. '$KC_URL' won't work from inside a
 container — provision through the SDK instead (handles URL choice + oauth2.yaml upload):
-  python3 src/sdk/python/test/setup_oauth2_daemon.py --help
+  python3 src/sdk/python/test/tools/oauth/setup_oauth2_daemon.py --help
 Or do both in one go:
   PROVISION_DAEMON=Y [DAEMON_KEYCLOAK_URL=http://...:8080] bash keycloak-init.sh
 ==============================================

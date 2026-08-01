@@ -118,8 +118,11 @@ private:
         return out;
     }
 
-    template <typename Res, typename Req>
-    static void addCors(Res *res, Req *req)
+    // uWS commits the status line on the first writeHeader() (implicitly "200 OK") and
+    // ignores any later writeStatus(). So CORS headers must never be written before the
+    // status is decided, or every error reply goes out as 200 with the error text as body.
+    template <typename Res>
+    static void addCors(Res *res)
     {
         if (Configuration::instance()->getCorsDisabled())
             return;
@@ -127,7 +130,13 @@ private:
         res->writeHeader("Access-Control-Allow-Origin", "*")
             ->writeHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
             ->writeHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-File-Path");
+    }
+
+    template <typename Res, typename Req>
+    static void addCors(Res *res, Req *req)
+    {
         (void)req; // CORS headers are now a fixed allow-list, not echoed from request
+        addCors(res);
     }
 
     // State management for async download streaming
@@ -321,7 +330,6 @@ private:
     {
         const static char fname[] = "WebSocketAdaptor::handleDownload() ";
         LOG_DBG << fname << "Enter";
-        addCors(res, req);
 
         auto token = req->getHeader("authorization");
         if (!verifyToken(token, WEBSOCKET_FILE_AUDIENCE))
@@ -377,7 +385,8 @@ private:
 
         std::string fileName = sanitizeFilename(filePath.filename().string());
 
-        // Set response headers
+        // Implicitly commits "200 OK"; every error path above has already returned.
+        addCors(res, req);
         res->writeHeader("Content-Type", "application/octet-stream");
         res->writeHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
 
@@ -480,7 +489,6 @@ private:
     {
         const static char fname[] = "WebSocketAdaptor::handleUpload() ";
         LOG_DBG << fname << "Enter";
-        addCors(res, req);
 
         auto token = req->getHeader("authorization");
         if (!verifyToken(token, WEBSOCKET_FILE_AUDIENCE))
@@ -637,6 +645,7 @@ private:
                     std::string fileName = std::filesystem::path(state->path).filename().string();
                     nlohmann::json resp = {{"status", "success"}, {"file", fileName}, {"size", state->totalBytes}};
                     res->writeStatus("201 Created");
+                    addCors(res); // after writeStatus: `req` is already dead in this callback
                     res->writeHeader("Content-Type", "application/json");
                     // Invalid UTF-8 in the filename makes default dump() throw on the uWS loop; 'replace' avoids it.
                     res->end(resp.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));

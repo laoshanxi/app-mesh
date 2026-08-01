@@ -296,7 +296,7 @@ pub struct ViewArgs {
     #[arg(short = 'i', long = "log-index")]
     pub log_index: Option<i32>,
 
-    /// Follow output in real-time
+    /// Follow output in real-time (with -a), otherwise refresh the list
     #[arg(short = 'f', long = "follow")]
     pub follow: bool,
 

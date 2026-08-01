@@ -6,6 +6,28 @@ use crate::app::{Cli, ExecArgs, RunArgs, ShellArgs};
 use crate::client::build_client_with_auth;
 use crate::util::{config, parse, signal};
 
+/// Join trailing arguments into the shell string the daemon runs. A lone argument is
+/// already a shell string (`appm exec "ls | wc -l"`) so it passes through; separate argv
+/// entries are re-quoted, else `exec -- sh -c 'exit 7'` flattens to `sh -c exit 7`.
+fn join_command(parts: &[String]) -> String {
+    if parts.len() <= 1 {
+        return parts.first().cloned().unwrap_or_default();
+    }
+    parts.iter().map(|p| shell_quote(p)).collect::<Vec<_>>().join(" ")
+}
+
+/// Single-quote for POSIX shells; arguments of only safe characters are left bare.
+fn shell_quote(arg: &str) -> String {
+    let safe = !arg.is_empty()
+        && arg
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | '@' | ','));
+    if safe {
+        return arg.to_string();
+    }
+    format!("'{}'", arg.replace('\'', r"'\''"))
+}
+
 pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
 
@@ -92,7 +114,7 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
 pub async fn exec(cli: &Cli, args: &ExecArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
 
-    let command = args.command.join(" ");
+    let command = join_command(&args.command);
     if command.is_empty() {
         bail!("The 'exec' command requires a command to execute.");
     }
@@ -163,7 +185,7 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
 
     // Execute initial command if provided
     if !args.command.is_empty() {
-        let initial_cmd = args.command.join(" ");
+        let initial_cmd = join_command(&args.command);
         return_code =
             execute_shell_command(&client, &app_name, &initial_cmd, args, timeout, lifecycle)
                 .await

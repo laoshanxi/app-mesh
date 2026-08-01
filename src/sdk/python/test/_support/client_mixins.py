@@ -1,42 +1,20 @@
-"""Comprehensive Python SDK integration tests across four protocols.
-
-Covers: HTTP REST, TCP, WebSocket (WSS), REST-over-WSS.
-Includes: auth, app CRUD, subscribe/publish, task ops, user mgmt,
-          app output, file transfer, stress/chaos scenarios.
-
-Usage:
-    python3 -m unittest --verbose                                # all
-    python3 -m unittest test_appmesh_client.TestHTTP             # HTTP only
-    python3 -m unittest test_appmesh_client.TestTCP              # TCP only
-    python3 -m unittest test_appmesh_client.TestWSS              # WSS only
-    python3 -m unittest test_appmesh_client.TestWSSRest          # REST-over-WSS
-    python3 -m unittest -k subscribe test_appmesh_client         # subscribe tests
-    python3 -m unittest -k stress test_appmesh_client            # stress tests
-"""
-
-import concurrent.futures
+"""Reusable test-body mixins composed onto the per-transport TestCase classes in
+``integration/test_client.py``. Not collected on their own (no ``TestCase`` base)."""
 import contextlib
 import io
 import json
 import os
-import stat
 import sys
 import tempfile
 import threading
 import time
-import unittest
-from unittest import TestCase
 
-from pyotp import TOTP
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))  # -> src/sdk/python
+from appmesh import App, print_output_handler
+from _support import config
 
-current_directory = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(current_directory))
-
-from appmesh import AppMeshClient, AppMeshClientTCP, AppMeshClientWSS, App, print_output_handler
-import sslconf  # noqa: F401  # APPMESH_TEST_SSL_VERIFY override for self-signed daemons
-
-DEFAULT_CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
-_WSS_REST_PORT = 6058
+USER = config.USER
+DEFAULT_CRED = config.CRED
 
 
 def get_test_paths():
@@ -77,7 +55,7 @@ class ProtocolTestMixin:
 
     def test_01_login_logout(self):
         """Login, verify token, logout, verify locked out."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         token = self.client._get_access_token()
         self.assertIsNotNone(token)
         self.assertTrue(self.client.authenticate(token)[0])
@@ -88,15 +66,15 @@ class ProtocolTestMixin:
     def test_02_auth_audience(self):
         """Audience-scoped authentication."""
         with self.assertRaises(Exception):
-            self.client.login("admin", DEFAULT_CRED, audience="appmesh-service-na")
-        self.client.login("admin", DEFAULT_CRED, audience="your-service-api")
+            self.client.login(USER, DEFAULT_CRED, audience="appmesh-service-na")
+        self.client.login(USER, DEFAULT_CRED, audience="your-service-api")
         token = self.client._get_access_token()
         self.assertFalse(self.client.authenticate(token)[0])
         self.assertTrue(self.client.authenticate(token, audience="your-service-api")[0])
 
     def test_03_renew_token(self):
         """Token renewal returns a different token."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         t1 = self.client._get_access_token()
         self.client.renew_token(100)
         t2 = self.client._get_access_token()
@@ -107,7 +85,7 @@ class ProtocolTestMixin:
 
     def test_04_user_management(self):
         """User-related endpoints."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self.assertIn("permission-list", self.client.list_permissions())
         self.assertIn("permission-list", self.client.get_user_permissions())
         self.assertIn("mesh", self.client.list_users())
@@ -117,24 +95,24 @@ class ProtocolTestMixin:
 
     def test_05_credential_change(self):
         """Change credential, verify old fails, new works, restore."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         temp_cred = "Admin@456"
         try:
             self.assertIsNone(self.client.update_password(DEFAULT_CRED, temp_cred))
             with self.assertRaises(Exception):
-                self.client.login("admin", DEFAULT_CRED)
-            self.assertIsNone(self.client.login("admin", temp_cred))
+                self.client.login(USER, DEFAULT_CRED)
+            self.assertIsNone(self.client.login(USER, temp_cred))
             self.assertIsNone(self.client.update_password(temp_cred, DEFAULT_CRED))
         finally:
             try:
-                self.client.login("admin", temp_cred)
+                self.client.login(USER, temp_cred)
                 self.client.update_password(temp_cred, DEFAULT_CRED)
             except Exception:
                 pass
 
     def test_06_roles_and_groups(self):
         """Role and group listing."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self.assertIsNone(
             self.client.update_role(
                 "manage",
@@ -148,7 +126,7 @@ class ProtocolTestMixin:
 
     def test_07_labels(self):
         """CRUD for labels."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self.assertIsNone(self.client.add_label("PyTag", "PyValue"))
         self.assertIn("PyTag", self.client.list_labels())
         self.assertIsNone(self.client.delete_label("PyTag"))
@@ -158,7 +136,7 @@ class ProtocolTestMixin:
 
     def test_08_app_list_and_get(self):
         """List applications and inspect one."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         apps = self.client.list_apps()
         self.assertGreater(len(apps), 0)
         first_app = apps[0].name
@@ -172,7 +150,7 @@ class ProtocolTestMixin:
 
     def test_09_app_add_enable_disable_delete(self):
         """Full lifecycle: add -> disable -> enable -> delete."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app = self.client.add_app(App({"command": "sleep 1000", "name": "SDK_TEST"}))
         self.assertTrue(hasattr(app, "name"))
         self.assertIsNone(self.client.disable_app("SDK_TEST"))
@@ -184,21 +162,21 @@ class ProtocolTestMixin:
 
     def test_10_app_run_sync(self):
         """Synchronous app execution."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         metadata = {"subject": "subject", "message": "msg"}
         app_data = {"command": "whoami", "metadata": json.dumps(metadata)}
         self.assertEqual(0, self.client.run_app_sync(app=App(app_data), max_time=5, lifecycle=6)[0])
 
     def test_11_app_run_timeout(self):
         """Long-running command killed by timeout exits non-zero."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         exit_code = self.client.run_app_sync(App({"command": get_long_running_command(), "shell": True}), max_time=3)[0]
         self.assertIsNotNone(exit_code)
         self.assertNotEqual(0, exit_code)
 
     def test_12_app_run_async(self):
         """Async run with wait."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         run = self.client.run_app_async(App({"command": get_long_running_command(), "shell": True}), max_time=4)
         run.wait()
 
@@ -206,7 +184,7 @@ class ProtocolTestMixin:
 
     def test_13_config_and_metrics(self):
         """Server config, metrics, and log level."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self.assertIn("cpu_cores", self.client.get_host_resources())
         self.assertIn("appmesh_prom_scrape_count", self.client.get_metrics())
         self.assertEqual(self.client.set_log_level("INFO"), "INFO")
@@ -214,7 +192,7 @@ class ProtocolTestMixin:
 
     def test_14_get_config_roundtrip(self):
         """get_config / set_config roundtrip."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         orig = self.client.get_config()
         self.assertIn("REST", orig)
         result = self.client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
@@ -224,7 +202,7 @@ class ProtocolTestMixin:
     def test_15_context_manager(self):
         """Client used as context manager."""
         with self._create_client() as c:
-            c.login("admin", DEFAULT_CRED)
+            c.login(USER, DEFAULT_CRED)
             apps = c.list_apps()
             self.assertGreater(len(apps), 0)
 
@@ -235,7 +213,7 @@ class ProtocolTestMixin:
         child exits and ~AppProcess runs they must all be released. Allow a small
         slack for daemon-internal churn (timer queues, log rotation, etc.).
         """
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         # Warm-up: ensures lazy resources (sockets, log files) are already open.
         for i in range(3):
             name = f"SDK_FD_WARM_{i}"
@@ -267,7 +245,7 @@ class AppOutputMixin:
 
     def test_30_app_output_basic(self):
         """Read output from a running app, verify non-empty."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app_name = "SDK_OUTPUT_30"
         try:
             self.client.add_app(App({"command": "echo hello_output_test", "name": app_name, "shell": True}))
@@ -279,7 +257,7 @@ class AppOutputMixin:
 
     def test_31_app_output_incremental_position(self):
         """Two reads using stdout_position, verify continuation."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app_name = "SDK_OUTPUT_31"
         try:
             self.client.add_app(App({"command": "seq 1 20", "name": app_name, "shell": True}))
@@ -295,7 +273,7 @@ class AppOutputMixin:
 
     def test_32_app_output_maxsize_limit(self):
         """stdout_maxsize limits output — smaller maxsize returns less data."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app_name = "SDK_OUTPUT_32"
         try:
             self.client.add_app(App({"command": "seq 1 1000", "name": app_name, "shell": True}))
@@ -308,7 +286,7 @@ class AppOutputMixin:
 
     def test_33_app_output_exit_code(self):
         """Synchronous run returns exit_code via run_app_sync."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         exit_code, output = self.client.run_app_sync(App({"command": "echo done", "shell": True}), max_time=5)
         self.assertIsNotNone(exit_code)
         self.assertEqual(exit_code, 0)
@@ -316,7 +294,7 @@ class AppOutputMixin:
 
     def test_34_app_output_long_poll(self):
         """Long-poll timeout=2 on idle app blocks approximately 2s."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app_name = "SDK_OUTPUT_34"
         try:
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
@@ -337,7 +315,7 @@ class UserManagementMixin:
 
     def test_40_add_and_delete_user(self):
         """Create user, verify in list, delete, verify gone."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         username = "sdk_test_user_40"
         try:
             self.client.add_user(username, {"key": "Test@1234", "roles": ["manage"]})
@@ -353,7 +331,7 @@ class UserManagementMixin:
 
     def test_41_add_user_with_roles(self):
         """Create user with role and group, verify attributes."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         username = "sdk_test_user_41"
         try:
             self.client.add_user(username, {"key": "Test@1234", "roles": ["manage"], "group": "admin"})
@@ -367,13 +345,13 @@ class UserManagementMixin:
 
     def test_42_delete_nonexistent_user(self):
         """Deleting nonexistent user raises exception."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         with self.assertRaises(Exception):
             self.client.delete_user("nonexistent_user_xyz_42")
 
     def test_43_delete_role(self):
         """Create role, verify, delete, verify gone."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         role_name = "sdk_test_role_43"
         try:
             self.client.update_role(role_name, ["app-control"])
@@ -395,7 +373,7 @@ class TaskOperationMixin:
 
     def test_50_run_task_echo(self):
         """Register an echo app, run_task, verify response."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app_name = "SDK_TASK_50"
         try:
             self.client.add_app(App({"command": "cat", "name": app_name, "shell": True}))
@@ -409,7 +387,7 @@ class TaskOperationMixin:
 
     def test_51_cancel_task_no_pending(self):
         """cancel_task when nothing pending returns False."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app_name = "SDK_TASK_51"
         try:
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
@@ -429,7 +407,7 @@ class FileTransferMixin:
     def test_20_file_download(self):
         """Download server log to local."""
         paths = get_test_paths()
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         local = "download_test.log"
         try:
             if os.path.exists(local):
@@ -443,7 +421,7 @@ class FileTransferMixin:
     def test_21_file_upload_download_roundtrip(self):
         """Upload a file, then download it, verify content exists."""
         paths = get_test_paths()
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         local_src = "roundtrip_src.log"
         local_dst = "roundtrip_dst.log"
         remote = paths["remote_tmp"]
@@ -466,7 +444,7 @@ class FileTransferMixin:
     def test_22_download_readonly_file(self):
         """Download a read-only system file."""
         paths = get_test_paths()
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         local = "etc_download"
         try:
             self.assertIsNone(self.client.download_file(paths["etc_file"], local))
@@ -501,12 +479,12 @@ class SubscribeMixin:
                     if admin_data.get("exec_user"):
                         user_body["exec_user"] = admin_data["exec_user"]
                     self.client.add_user("admin", user_body)
-            self.client.login("admin", DEFAULT_CRED)
+            self.client.login(USER, DEFAULT_CRED)
             SubscribeMixin._subscribe_permission_granted = True
 
     def test_60_subscribe_process_start(self):
         """Subscribe to START, enable a disabled app, verify event."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_60"
         sub_result = None
@@ -535,7 +513,7 @@ class SubscribeMixin:
 
     def test_61_subscribe_process_exit(self):
         """Subscribe to EXIT, verify exit event with exit_code."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_61"
         sub_id = None
@@ -572,7 +550,7 @@ class SubscribeMixin:
 
     def test_62_subscribe_stdout(self):
         """Subscribe to stdout, verify output data events arrive."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_62"
         sub_result = None
@@ -602,7 +580,7 @@ class SubscribeMixin:
 
     def test_63_unsubscribe_stops_events(self):
         """After unsubscribe, no more callbacks."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_63"
         sub_result = None
@@ -644,7 +622,7 @@ class SubscribeMixin:
         when the demuxer mis-routes a concurrent event message as the
         subscribe response — a transport-layer timing issue tracked separately.
         """
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_64"
         sub_result = None
@@ -668,7 +646,7 @@ class SubscribeMixin:
 
     def test_65_subscribe_multiple_event_types(self):
         """Subscribe to both START and EXIT, verify both arrive."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_65"
         sub_result = None
@@ -706,7 +684,7 @@ class SubscribeMixin:
 
         Conformance: S4 (partial) — see docs/source/SDKContract.md.
         """
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_66"
         try:
@@ -731,7 +709,7 @@ class SubscribeMixin:
 
     def test_67_subscribe_app_removed(self):
         """Subscribe to REMOVED, delete app, verify event."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_67"
         sub_result = None
@@ -761,7 +739,7 @@ class SubscribeMixin:
 
     def test_68_subscribe_status_change(self):
         """Subscribe to STATUS, enable/disable, verify event."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_68"
         sub_result = None
@@ -792,7 +770,7 @@ class SubscribeMixin:
         Captures stdout to assert the subscribe/dispatch path actually delivered the
         process output (not just that the run exited with 0).
         """
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         run = self.client.run_app_async(
             App({"command": "echo streaming-ok && exit 0", "shell": True}),
@@ -820,7 +798,7 @@ class SubscribeWildcardMixin:
 
     def test_70_wildcard_subscribe_all(self):
         """Subscribe '*' to START, register 2 apps, verify events from both."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app1 = "SDK_WILD_70A"
         app2 = "SDK_WILD_70B"
@@ -850,7 +828,7 @@ class SubscribeWildcardMixin:
 
     def test_71_wildcard_unsubscribe(self):
         """Subscribe '*', receive events, unsubscribe, verify no more."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_WILD_71"
         sub_result = None
@@ -884,7 +862,7 @@ class SubscribeWildcardMixin:
 
     def test_72_multiple_subs_same_app(self):
         """Two subscriptions on same app, different events, verify isolation."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_WILD_72"
         sub1 = sub2 = None
@@ -928,7 +906,7 @@ class SubscribeWildcardMixin:
 
     def test_73_event_sequence_monotonic(self):
         """Event sequence numbers increase monotonically."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_WILD_73"
         sub_result = None
@@ -979,7 +957,7 @@ class StressTestMixin:
 
     def test_80_stress_rapid_add_delete_cycle(self):
         """20x add+delete loop, verify no leftover."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app_name = "SDK_STRESS_80"
         for _ in range(20):
             self.client.add_app(App({"command": "sleep 1", "name": app_name}))
@@ -988,7 +966,7 @@ class StressTestMixin:
 
     def test_81_stress_rapid_enable_disable_cycle(self):
         """20x enable/disable on one app, verify valid state."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         app_name = "SDK_STRESS_81"
         try:
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
@@ -1002,13 +980,13 @@ class StressTestMixin:
 
     def test_82_stress_concurrent_clients_list_apps(self):
         """5 threads x 10 list_apps calls, verify all succeed."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         errors = []
 
         def worker():
             c = self._create_client()
             try:
-                c.login("admin", DEFAULT_CRED)
+                c.login(USER, DEFAULT_CRED)
                 for _ in range(10):
                     apps = c.list_apps()
                     if len(apps) == 0:
@@ -1030,14 +1008,14 @@ class StressTestMixin:
 
     def test_83_stress_concurrent_add_delete(self):
         """5 threads each add+delete unique app simultaneously."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         barrier = threading.Barrier(5, timeout=10)
         errors = []
 
         def worker(idx):
             try:
                 c = self._create_client()
-                c.login("admin", DEFAULT_CRED)
+                c.login(USER, DEFAULT_CRED)
                 name = f"SDK_STRESS_83_{idx}"
                 c.add_app(App({"command": "sleep 1", "name": name}))
                 barrier.wait()
@@ -1056,7 +1034,7 @@ class StressTestMixin:
 
     def test_84_stress_rapid_run_sync(self):
         """10x run_app_sync with trivial command, verify all exit_code=0."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         for _ in range(10):
             exit_code, _ = self.client.run_app_sync(App({"command": "echo ok", "shell": True}), max_time=5)
             self.assertEqual(0, exit_code)
@@ -1064,14 +1042,14 @@ class StressTestMixin:
     def test_85_stress_rapid_login_logout(self):
         """10x login/logout cycle."""
         for _ in range(10):
-            self.client.login("admin", DEFAULT_CRED)
+            self.client.login(USER, DEFAULT_CRED)
             apps = self.client.list_apps()
             self.assertGreater(len(apps), 0)
             self.client.logout()
 
     def test_86_stress_rapid_label_churn(self):
         """20x add+delete label."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         for i in range(20):
             label = f"STRESS_LABEL_{i}"
             self.client.add_label(label, f"value_{i}")
@@ -1086,7 +1064,7 @@ class StressTestMixin:
         worker must finish within DEADLINE; if any thread is stuck the join
         times out and the test fails with a clear message.
         """
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         N = 6
         DEADLINE = 60  # whole test must finish well under this
         barrier = threading.Barrier(N, timeout=15)
@@ -1097,7 +1075,7 @@ class StressTestMixin:
             name = f"SDK_STRESS_87_{idx}"
             try:
                 c = self._create_client()
-                c.login("admin", DEFAULT_CRED)
+                c.login(USER, DEFAULT_CRED)
                 # All workers start the lifecycle storm together
                 barrier.wait()
                 c.add_app(App({"command": "sleep 30", "name": name, "status": 0}))
@@ -1140,7 +1118,7 @@ class StressTestMixin:
         different threads and m_selfRef stays held, AppProcess refcounts get
         stuck > 0 and ~AppProcess never runs — leaking pipe + log fds per spawn.
         """
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         # Warm-up to settle lazy resources before baseline.
         for i in range(3):
             n = f"SDK_FD_STRESS_WARM_{i}"
@@ -1157,7 +1135,7 @@ class StressTestMixin:
         def worker(idx):
             c = self._create_client()
             try:
-                c.login("admin", DEFAULT_CRED)
+                c.login(USER, DEFAULT_CRED)
                 for j in range(CYCLES_PER_WORKER):
                     name = f"SDK_FD_STRESS_{idx}_{j}"
                     c.add_app(App({"command": "echo fd_stress", "name": name, "shell": True}))
@@ -1196,7 +1174,7 @@ class SubscribeStressMixin:
 
     def test_90_subscribe_stress_during_rapid_add_delete(self):
         """Wildcard subscribe, rapidly add+delete 5 apps, verify events received."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         sub_result = None
         app_names = [f"SDK_CHAOS_90_{i}" for i in range(5)]
@@ -1227,7 +1205,7 @@ class SubscribeStressMixin:
 
     def test_91_subscribe_stress_during_rapid_enable_disable(self):
         """Subscribe STATUS, 5x enable/disable, verify events."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_91"
         sub_result = None
@@ -1255,7 +1233,7 @@ class SubscribeStressMixin:
 
     def test_92_subscribe_stress_many_subscriptions(self):
         """Create 10 subscriptions on different apps, verify callbacks fire."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_names = [f"SDK_CHAOS_92_{i}" for i in range(10)]
         subs = []
@@ -1297,7 +1275,7 @@ class SubscribeStressMixin:
 
     def test_93_subscribe_stress_recreate_app(self):
         """Subscribe -> delete -> re-create same name -> verify new events."""
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_93"
         sub_result = None
@@ -1341,7 +1319,7 @@ class SubscribeStressMixin:
         synchronous request read consumes the interleaved event frame), not of subscription
         itself. Streaming output is the realistic subscribe use case and exercises the same path.
         """
-        self.client.login("admin", DEFAULT_CRED)
+        self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_94"
         result = None
@@ -1371,406 +1349,3 @@ class SubscribeStressMixin:
 
 # ---------------------------------------------------------------------------
 # Concrete test classes per protocol
-# ---------------------------------------------------------------------------
-class TestHTTP(ProtocolTestMixin, AppOutputMixin, UserManagementMixin, TaskOperationMixin,
-               FileTransferMixin, StressTestMixin, TestCase):
-    """Tests using HTTP REST client (AppMeshClient)."""
-
-    def setUp(self):
-        self.client = AppMeshClient(auto_refresh_token=True)
-
-    def tearDown(self):
-        # Close the per-test client; otherwise the requests.Session keepalive
-        # socket + token-refresh thread linger and the daemon's fd count grows
-        # by ~3 per test across the suite.
-        try:
-            self.client.close()
-        except Exception:
-            pass
-
-    def _create_client(self):
-        return AppMeshClient(auto_refresh_token=True)
-
-    @unittest.skip("Go agent IsValidFileName blocks /etc/* on download (fixed in source, awaiting release); TCP/WSS still cover it.")
-    def test_22_download_readonly_file(self):
-        pass
-
-    def test_16_config_set(self):
-        """HTTP-specific: set config (VerifyServer flag for SSL)."""
-        self.client.login("admin", DEFAULT_CRED)
-        result = self.client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
-        self.assertTrue(result["REST"]["SSL"]["VerifyServer"])
-        self.client.set_config({"REST": {"SSL": {"VerifyServer": False}}})
-
-    def test_17_forward_to(self):
-        """HTTP-specific: forward_to header."""
-        self.client.login("admin", DEFAULT_CRED)
-        self.client.forward_to = "127.0.0.1"
-        apps = self.client.list_apps()
-        self.assertGreater(len(apps), 0)
-        self.client.forward_to = None
-
-
-class TestTCP(
-    ProtocolTestMixin, AppOutputMixin, UserManagementMixin, TaskOperationMixin,
-    FileTransferMixin, SubscribeMixin, SubscribeWildcardMixin,
-    StressTestMixin, SubscribeStressMixin, TestCase,
-):
-    """Tests using TCP client (AppMeshClientTCP)."""
-
-    def setUp(self):
-        self.client = AppMeshClientTCP(auto_refresh_token=True)
-
-    def tearDown(self):
-        try:
-            self.client.close()
-        except Exception:
-            pass
-
-    def _create_client(self):
-        return AppMeshClientTCP(auto_refresh_token=True)
-
-
-class TestWSS(
-    ProtocolTestMixin, AppOutputMixin, UserManagementMixin, TaskOperationMixin,
-    FileTransferMixin, SubscribeMixin, SubscribeWildcardMixin,
-    StressTestMixin, SubscribeStressMixin, TestCase,
-):
-    """Tests using WebSocket Secure client (AppMeshClientWSS)."""
-
-    def setUp(self):
-        self.client = AppMeshClientWSS(auto_refresh_token=True)
-
-    def tearDown(self):
-        try:
-            self.client.close()
-        except Exception:
-            pass
-
-    def _create_client(self):
-        return AppMeshClientWSS(auto_refresh_token=True)
-
-
-class TestWSSRest(ProtocolTestMixin, AppOutputMixin, UserManagementMixin, TaskOperationMixin, StressTestMixin, TestCase):
-    """Tests using plain HTTPS REST client against the WSS (lws) port."""
-
-    def setUp(self):
-        self.client = AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}", auto_refresh_token=True)
-
-    def tearDown(self):
-        try:
-            self.client.close()
-        except Exception:
-            pass
-
-    def _create_client(self):
-        return AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}", auto_refresh_token=True)
-
-
-# ---------------------------------------------------------------------------
-# TOTP tests (HTTP only)
-# ---------------------------------------------------------------------------
-class TestTOTP(TestCase):
-    """TOTP authentication flow (HTTP client)."""
-
-    def setUp(self):
-        self.client = AppMeshClient()
-
-    def test_totp_enable_login_disable(self):
-        """Full TOTP lifecycle."""
-        self.client.login("admin", DEFAULT_CRED)
-        totp_secret = self.client.get_totp_secret()
-        self.assertIsNotNone(totp_secret)
-        totp = TOTP(totp_secret)
-        totp_code = totp.now()
-        self.assertIsNone(self.client.enable_totp(totp_code))
-        totp_code = totp.now()
-        self.assertIsNone(self.client.login("admin", DEFAULT_CRED, totp_code))
-        challenge = self.client.login("admin", DEFAULT_CRED)
-        self.assertIsNotNone(challenge)
-        self.assertIsNone(self.client.validate_totp("admin", challenge, totp.now()))
-        self.assertIsNone(self.client.disable_totp())
-
-
-# ---------------------------------------------------------------------------
-# Cookie / token tests (HTTP only)
-# ---------------------------------------------------------------------------
-class TestCookies(TestCase):
-    """Cookie persistence and reuse (HTTP client)."""
-
-    def read_file(self, path):
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-
-    def test_cookie_lifecycle(self):
-        """Create, persist, clear, and reload cookies."""
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            cookie_path = tmp.name
-        try:
-            os.remove(cookie_path) if os.path.exists(cookie_path) else None
-            client = AppMeshClient(cookie_file=cookie_path)
-            self.assertFalse(os.path.exists(cookie_path))
-            client.login("admin", DEFAULT_CRED)
-            self.assertTrue(os.path.exists(cookie_path))
-            if os.name == "posix":
-                mode = stat.S_IMODE(os.stat(cookie_path).st_mode)
-                self.assertEqual(mode, 0o600)
-            content = self.read_file(cookie_path)
-            self.assertIn("appmesh_auth_token", content)
-            client.logout()
-            content_after = self.read_file(cookie_path)
-            self.assertNotIn("appmesh_auth_token", content_after)
-            client = AppMeshClient(cookie_file=cookie_path)
-            client.login("admin", DEFAULT_CRED)
-            token = client._get_access_token()
-            client2 = AppMeshClient(cookie_file=cookie_path)
-            user_info = client2.get_current_user()
-            self.assertEqual(user_info["name"], "admin")
-        finally:
-            os.remove(cookie_path) if os.path.exists(cookie_path) else None
-
-    def test_set_token(self):
-        """set_token and jwt_token constructor."""
-        client = AppMeshClient()
-        client.login("admin", DEFAULT_CRED)
-        token = client._get_access_token()
-        client2 = AppMeshClient()
-        client2.set_token(token)
-        self.assertGreater(len(client2.list_apps()), 0)
-        client3 = AppMeshClient(jwt_token=token)
-        self.assertGreater(len(client3.list_apps()), 0)
-
-
-# ---------------------------------------------------------------------------
-# Protocol-specific edge case tests
-# ---------------------------------------------------------------------------
-class TestProtocolFixes(TestCase):
-    """Tests targeting specific issues found during code review."""
-
-    def test_path_traversal_rejected(self):
-        """File paths with '..' must be rejected."""
-        client = AppMeshClientTCP()
-        client.login("admin", DEFAULT_CRED)
-        with self.assertRaises(Exception):
-            client.download_file("/opt/appmesh/../../etc/shadow", "shadow.local")
-        if os.path.exists("shadow.local"):
-            os.remove("shadow.local")
-
-    def test_path_traversal_upload_rejected(self):
-        """Upload with '..' in remote path must be rejected."""
-        client = AppMeshClientTCP()
-        client.login("admin", DEFAULT_CRED)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
-            tmp.write(b"test")
-            tmp_path = tmp.name
-        try:
-            with self.assertRaises(Exception):
-                client.upload_file(local_file=tmp_path, remote_file="/tmp/../../../etc/evil.txt")
-        finally:
-            os.remove(tmp_path)
-
-    def test_tcp_large_app_output(self):
-        """TCP transport handles non-trivial payload (message framing)."""
-        client = AppMeshClientTCP()
-        client.login("admin", DEFAULT_CRED)
-        exit_code, output = client.run_app_sync(App({"command": "seq 1 100", "shell": True}), max_time=5)
-        self.assertEqual(0, exit_code)
-        self.assertIn("100", output)
-
-    def test_wss_large_app_output(self):
-        """WSS transport handles non-trivial payload (WS framing)."""
-        client = AppMeshClientWSS()
-        client.login("admin", DEFAULT_CRED)
-        exit_code, output = client.run_app_sync(App({"command": "seq 1 100", "shell": True}), max_time=5)
-        self.assertEqual(0, exit_code)
-        self.assertIn("100", output)
-
-    def test_http_concurrent_requests(self):
-        """HTTP handles multiple rapid sequential requests."""
-        client = AppMeshClient()
-        client.login("admin", DEFAULT_CRED)
-        for _ in range(10):
-            apps = client.list_apps()
-            self.assertGreater(len(apps), 0)
-
-    def test_tcp_concurrent_requests(self):
-        """TCP handles multiple rapid sequential requests."""
-        client = AppMeshClientTCP()
-        client.login("admin", DEFAULT_CRED)
-        for _ in range(10):
-            apps = client.list_apps()
-            self.assertGreater(len(apps), 0)
-
-    def test_wss_concurrent_requests(self):
-        """WSS handles multiple rapid sequential requests."""
-        client = AppMeshClientWSS()
-        client.login("admin", DEFAULT_CRED)
-        for _ in range(10):
-            apps = client.list_apps()
-            self.assertGreater(len(apps), 0)
-
-    def test_wss_rest_concurrent_requests(self):
-        """REST-over-WSS handles rapid sequential requests."""
-        client = AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}")
-        client.login("admin", DEFAULT_CRED)
-        for _ in range(10):
-            apps = client.list_apps()
-            self.assertGreater(len(apps), 0)
-
-    def test_wss_rest_large_response(self):
-        """REST-over-WSS returns large payload."""
-        client = AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}")
-        client.login("admin", DEFAULT_CRED)
-        exit_code, output = client.run_app_sync(App({"command": "seq 1 500", "shell": True}), max_time=5)
-        self.assertEqual(0, exit_code)
-        self.assertIn("500", output)
-
-    def test_http_config_ssl_verify_server(self):
-        """Verify the new getSslVerifyServer config option."""
-        client = AppMeshClient()
-        client.login("admin", DEFAULT_CRED)
-        cfg = client.set_config({"REST": {"SSL": {"VerifyServer": False}}})
-        self.assertFalse(cfg["REST"]["SSL"]["VerifyServer"])
-        cfg = client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
-        self.assertTrue(cfg["REST"]["SSL"]["VerifyServer"])
-        client.set_config({"REST": {"SSL": {"VerifyServer": False}}})
-
-    def test_transport_token_sync(self):
-        """TransportClientMixin token extraction logic."""
-        from appmesh.transport_mixin import TransportClientMixin
-
-        class FakeResp:
-            def __init__(self, status, payload):
-                self.status_code = status
-                self._payload = payload
-
-            def json(self):
-                return self._payload
-
-        mixin = TransportClientMixin()
-        mixin._token = None
-        mixin._auto_refresh_token = False
-        mixin.cookie_file = None
-        mixin._on_token_changed = lambda t: setattr(mixin, "_token", t)
-
-        mixin._sync_transport_token(FakeResp(200, {"access_token": "tok1"}), "/appmesh/login", {"X-Set-Cookie": "true"})
-        self.assertEqual("tok1", mixin._token)
-
-        mixin._token = "old"
-        mixin._sync_transport_token(FakeResp(200, {"access_token": "no"}), "/appmesh/login", {})
-        self.assertEqual("old", mixin._token)
-
-        mixin._token = "has-token"
-        mixin._sync_transport_token(FakeResp(200, {}), "/appmesh/self/logoff", {})
-        self.assertIsNone(mixin._token)
-
-
-class TestSubscribeConformance(TestCase):
-    """SDKContract conformance scenarios (docs/source/SDKContract.md) — no daemon needed."""
-
-    class _FakeWaitClient:
-        """Stubs the REST half of wait_for_async_run; the event injected via
-        ``inject_event`` is fired from the backfill call, after subscribe has
-        registered the callback (mirrors an event arriving mid-wait)."""
-
-        from appmesh.transport_mixin import TransportClientMixin
-
-        wait_for_async_run = TransportClientMixin.wait_for_async_run
-
-        def __init__(self, inject_event=None):
-            self.inject_event = inject_event
-            self.callback = None
-            self.unsubscribed = False
-            self.deleted = False
-
-        def subscribe(self, app_name, events=None, callback=None):
-            from appmesh.subscribe import SubscriptionResult
-
-            self.callback = callback
-            return SubscriptionResult(subscription_id="sub-1", app_name=app_name, events=events or [])
-
-        def get_app_output(self, app_name, stdout_position=0, stdout_index=0, process_uuid="", timeout=0, **kwargs):
-            from appmesh.app_output import AppOutput
-
-            if self.callback and self.inject_event is not None:
-                self.callback(self.inject_event)
-            return AppOutput(status_code=200, output="", output_position=None, exit_code=None)
-
-        def unsubscribe(self, subscription_id):
-            self.unsubscribed = True
-
-        def delete_app(self, app_name):
-            self.deleted = True
-
-    @staticmethod
-    def _fake_run():
-        from types import SimpleNamespace
-
-        return SimpleNamespace(app_name="waitapp", process_uuid="proc-1")
-
-    def test_s6_negative_exit_code(self):
-        """Conformance: S6 — a negative exit code (signal kill, e.g. -2 = SIGINT) is
-        returned as the exit code, never conflated with an error sentinel."""
-        from appmesh.subscribe import AppEvent
-
-        client = self._FakeWaitClient(inject_event=AppEvent(subscription_id="sub-1", event_type="EXIT", data={"exit_code": -2}))
-        code = client.wait_for_async_run(self._fake_run(), timeout=5)
-        self.assertEqual(-2, code)
-        self.assertTrue(client.deleted, "run app must be deleted after a real observed exit")
-
-    def test_s2_disconnect_unblocks_wait(self):
-        """Conformance: S2 — transport disconnect mid-wait_for_async_run raises
-        AppMeshConnectionError promptly instead of hanging, and skips cleanup
-        requests on the dead transport."""
-        from appmesh.exceptions import AppMeshConnectionError
-        from appmesh.subscribe import EVENT_TYPE_DISCONNECTED, AppEvent
-
-        client = self._FakeWaitClient(inject_event=AppEvent(subscription_id="sub-1", event_type=EVENT_TYPE_DISCONNECTED))
-        with self.assertRaises(AppMeshConnectionError):
-            client.wait_for_async_run(self._fake_run(), timeout=30)
-        self.assertFalse(client.unsubscribed, "must not send unsubscribe on a dead transport")
-        self.assertFalse(client.deleted, "must not delete the run app after a disconnect")
-
-    def test_s7_response_races_send(self):
-        """Conformance: S7 — the pending waiter is registered before the request is
-        written, so a response arriving immediately after send is not dropped."""
-        import msgpack
-
-        from appmesh.subscribe import MessageDemuxer
-
-        response_buf = msgpack.packb(
-            {"uuid": "req-s7", "request_uri": "/appmesh/app/test", "http_status": 200, "body_msg_type": "", "body": b"{}", "headers": {}}
-        )
-        delivered = threading.Event()
-
-        class ScriptedTransport:
-            """Delivers the response only after send_message — the reader thread can
-            dispatch it before the sender starts waiting."""
-
-            def __init__(self):
-                self._sent = threading.Event()
-
-            def send_message(self, data):
-                self._sent.set()
-
-            def receive_message(self):
-                self._sent.wait(5)
-                if delivered.is_set():
-                    time.sleep(0.05)  # drained; avoid a busy loop until stop()
-                    return None
-                delivered.set()
-                return response_buf
-
-        demuxer = MessageDemuxer(ScriptedTransport())
-        demuxer.start()
-        try:
-            resp = demuxer.send_and_receive("req-s7", b"request-bytes", timeout=5)
-            self.assertIsNotNone(resp, "response arriving right after send must not be dropped")
-            self.assertEqual("req-s7", resp.uuid)
-            self.assertEqual(200, resp.http_status)
-        finally:
-            demuxer.stop()
-
-
-if __name__ == "__main__":
-    unittest.main()

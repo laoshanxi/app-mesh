@@ -175,7 +175,7 @@ if(NOT APPMESH_NO_TESTS)
     # add_subdirectory(test)
 
     add_custom_target(python_tests
-        COMMAND python3 -m unittest
+        COMMAND python3 -m unittest discover
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/src/sdk/python/test"
         COMMENT "Running Python tests..."
         VERBATIM
