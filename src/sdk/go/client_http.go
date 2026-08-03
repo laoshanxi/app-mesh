@@ -7,8 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -34,14 +34,22 @@ type AppMeshClient struct {
 
 	// Token auto-refresh
 	autoRefreshToken bool
+	useRefreshToken  *bool         // nil: follow autoRefreshToken; see Option.UseRefreshToken
 	refreshStop      chan struct{} // closed to signal the goroutine to exit
 	refreshMu        sync.Mutex    // protects refreshStop
 
-	// OAuth2 (Keycloak) refresh token, captured from login/renew response bodies.
-	// Stays empty in local-JWT mode, so renew/logout send no X-Refresh-Token header there.
-	// Guarded by atomic.String (the SDK's token-state convention) because the auto-refresh
-	// goroutine and user calls may read/write it concurrently.
+	// Refresh token from login/renew responses; issued by both Keycloak and local-JWT
+	// daemons, empty against an older daemon that returns none. Atomic: the auto-refresh
+	// goroutine and user calls race on it.
 	refreshToken atomic.String
+
+	// Expire seconds from login, replayed on renew so the caller's TTL is kept.
+	tokenExpireSeconds atomic.Int32
+
+	// Serializes renewals. Rotation makes a refresh token single-use, so two concurrent
+	// renewals would present the same one and the loser would be told it is revoked —
+	// permanently wedging a client that has no other credential.
+	renewMu sync.Mutex
 }
 
 // Option for NewHttpClient
@@ -69,6 +77,11 @@ type Option struct {
 	HTTPTimeout time.Duration
 
 	AutoRefreshToken bool // Enable automatic token refresh before expiration.
+
+	// UseRefreshToken asks the daemon to issue a refresh token on login/renew. nil follows
+	// AutoRefreshToken, which already says whether this client is long-lived; a refresh token
+	// is long-lived, so a one-shot caller would leak one per invocation.
+	UseRefreshToken *bool
 }
 
 // NewHTTPClient builds an HTTP-backed client for App Mesh REST APIs.
@@ -127,6 +140,7 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 		sslClientCertKey: clientCertKeyFile,
 		sslCAFile:        caFile,
 		autoRefreshToken: options.AutoRefreshToken,
+		useRefreshToken:  options.UseRefreshToken,
 	}
 
 	if options.JwtToken != "" {
@@ -136,10 +150,18 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	return c, nil
 }
 
-// captureRefreshToken stores the OAuth2 refresh token from a login/renew response body when present.
-// Only the Keycloak (OAuth2) daemon returns refresh_token; local-JWT mode omits it, so the stored
-// refresh token stays empty and renew/logout send no X-Refresh-Token header. Keycloak rotates the
-// refresh token on every renew, so a present value replaces the stored one; an absent value keeps it.
+// wantRefreshToken resolves Option.UseRefreshToken: an explicit setting wins, otherwise
+// auto-refresh decides, since only a long-lived client has anywhere to keep the credential.
+func (r *AppMeshClient) wantRefreshToken() bool {
+	if r.useRefreshToken != nil {
+		return *r.useRefreshToken
+	}
+	return r.autoRefreshToken
+}
+
+// captureRefreshToken stores the refresh token from a login/renew response body.
+// Both modes rotate it on renew, so a present value replaces the stored one; an
+// absent value keeps it.
 func (r *AppMeshClient) captureRefreshToken(raw []byte) {
 	var result JWTResponse
 	if err := json.Unmarshal(raw, &result); err == nil && result.RefreshToken != "" {
@@ -155,14 +177,24 @@ func (r *AppMeshClient) captureRefreshToken(raw []byte) {
 // On a non-empty challenge, either retry Login with the TOTP code or pass the
 // challenge to ValidateTotp.
 func (r *AppMeshClient) Login(username string, password string, totpCode string, tokenExpire int, audience string) (string, error) {
+	return r.LoginContext(context.Background(), username, password, totpCode, tokenExpire, audience)
+}
+
+// LoginContext is Login bounded by ctx. Prefer it on a control loop: an unbounded login is
+// just as capable of stalling the caller as any other request.
+func (r *AppMeshClient) LoginContext(ctx context.Context, username string, password string, totpCode string, tokenExpire int, audience string) (string, error) {
 	if username == "" || password == "" {
 		return "", fmt.Errorf("username and password are required")
 	}
 
 	headers := map[string]string{
-		"Authorization":    "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password)),
-		"X-Expire-Seconds": fmt.Sprintf("%d", tokenExpire),
-		headerJWTSetCookie: strconv.FormatBool(true),
+		"Authorization":        "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password)),
+		headerJWTExpireSeconds: fmt.Sprintf("%d", tokenExpire),
+		headerJWTSetCookie:     strconv.FormatBool(true),
+	}
+	// Omitted, not "false", when declined: the daemon only issues on an explicit opt-in.
+	if r.wantRefreshToken() {
+		headers[headerJWTWantRefreshToken] = "true"
 	}
 	if audience != "" && audience != DefaultJWTAudience {
 		headers["X-Audience"] = audience
@@ -171,15 +203,14 @@ func (r *AppMeshClient) Login(username string, password string, totpCode string,
 		headers["X-Totp-Code"] = totpCode
 	}
 
-	code, raw, _, err := r.post("/appmesh/login", nil, headers, nil)
+	code, raw, _, err := r.req.SendContext(ctx, http.MethodPost, "/appmesh/login", nil, headers, nil)
 	if err != nil {
 		return "", fmt.Errorf("login request failed: %w", err)
 	}
 	switch code {
 	case http.StatusOK:
-		// Capture the OAuth2 refresh token when the daemon (Keycloak mode) issues one, so
-		// RenewToken/Logout can present it via X-Refresh-Token. Local-JWT mode: no-op.
 		r.captureRefreshToken(raw)
+		r.tokenExpireSeconds.Store(int32(tokenExpire))
 		r.StartTokenRefresh()
 		return "", nil
 
@@ -226,11 +257,19 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 		return fmt.Errorf("failed to marshal TOTP request: %w", err)
 	}
 	headers := map[string]string{headerJWTSetCookie: "true"}
+	if r.wantRefreshToken() {
+		headers[headerJWTWantRefreshToken] = "true"
+	}
 	code, raw, _, err := r.post("/appmesh/totp/validate", nil, headers, body)
 	if err != nil {
 		return fmt.Errorf("TOTP validation request failed: %w", err)
 	}
 	if code == http.StatusOK {
+		// A validated challenge completes the login, so it owes the same session setup
+		// as Login (this path previously never started auto-refresh at all).
+		r.captureRefreshToken(raw)
+		r.tokenExpireSeconds.Store(int32(tokenExpire))
+		r.StartTokenRefresh()
 		return nil
 	}
 	return newAPIError("TOTP validation", code, string(raw))
@@ -238,8 +277,7 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 
 // Logout invalidates the current session on the server and clears the locally stored token.
 func (r *AppMeshClient) Logout() (bool, error) {
-	// OAuth2 (Keycloak) proxy mode: present the refresh token so the daemon can revoke the
-	// Keycloak session server-side. Local-JWT mode leaves the refresh token empty and omits it.
+	// Lets the daemon revoke server-side: Keycloak end-session, or the local blacklist.
 	var headers map[string]string
 	if rt := r.refreshToken.Load(); rt != "" {
 		headers = map[string]string{headerJWTRefreshToken: rt}
@@ -299,22 +337,40 @@ func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audienc
 	return true, nil
 }
 
-// RenewToken renews the current JWT token already attached to this client session.
+// RenewToken renews the current JWT token.
+//
+// A held refresh token is the sole credential the daemon needs, so renewal succeeds
+// even after the access token expired — that is how a missed refresh window recovers
+// without a re-login. Without one, the daemon authenticates the access token instead.
 func (r *AppMeshClient) RenewToken() (bool, error) {
-	// OAuth2 (Keycloak) proxy mode renews via the refresh token; the daemon requires it in
-	// X-Refresh-Token. Local-JWT mode leaves the refresh token empty and omits the header.
-	var headers map[string]string
+	r.renewMu.Lock()
+	defer r.renewMu.Unlock()
+
+	headers := map[string]string{}
+	if r.wantRefreshToken() {
+		headers[headerJWTWantRefreshToken] = "true"
+	}
 	if rt := r.refreshToken.Load(); rt != "" {
-		headers = map[string]string{headerJWTRefreshToken: rt}
+		headers[headerJWTRefreshToken] = rt
+	}
+	// Replay the login TTL; otherwise the daemon applies its own default.
+	if exp := r.tokenExpireSeconds.Load(); exp > 0 {
+		headers[headerJWTExpireSeconds] = strconv.Itoa(int(exp))
 	}
 	code, raw, _, err := r.post("/appmesh/token/renew", nil, headers, nil)
 	if err != nil {
 		return false, fmt.Errorf("token renewal request failed: %w", err)
 	}
 	if code == http.StatusOK {
-		// Keycloak rotates the refresh token on renew — store the new one for the next cycle.
+		// Both modes rotate the refresh token on renew — store the new one for the next cycle.
 		r.captureRefreshToken(raw)
 		return true, nil
+	}
+	// A rejected refresh token will never be accepted again (rotated away, revoked, or the
+	// session ended). Drop it so the next attempt falls back to presenting the access token
+	// instead of replaying a credential that is now guaranteed to fail.
+	if code == http.StatusUnauthorized {
+		r.refreshToken.Store("")
 	}
 	return false, newAPIError("token renewal", code, string(raw))
 }
@@ -428,7 +484,13 @@ func (r *AppMeshClient) GetHostResources() (map[string]interface{}, error) {
 
 // ListApps returns all applications visible to the current user.
 func (r *AppMeshClient) ListApps() ([]Application, error) {
-	code, raw, _, err := r.get("/appmesh/applications", nil, nil)
+	return r.ListAppsContext(context.Background())
+}
+
+// ListAppsContext is ListApps bounded by ctx. Prefer it on a single-threaded control
+// loop: over TCP a dropped reply otherwise blocks until the connection breaks.
+func (r *AppMeshClient) ListAppsContext(ctx context.Context) ([]Application, error) {
+	code, raw, _, err := r.req.SendContext(ctx, http.MethodGet, "/appmesh/applications", nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("view all apps request failed: %w", err)
 	}
@@ -569,17 +631,22 @@ func (r *AppMeshClient) DisableApp(appName string) (bool, error) {
 // A 404 (app does not exist) is not an error: it returns (false, nil) so callers can
 // distinguish "removed now" from "was already absent". Any other non-2xx status is an error.
 func (r *AppMeshClient) DeleteApp(appName string) (bool, error) {
-	return r.deleteApp(appName, nil)
+	return r.deleteApp(context.Background(), appName, nil)
+}
+
+// DeleteAppContext is DeleteApp bounded by ctx.
+func (r *AppMeshClient) DeleteAppContext(ctx context.Context, appName string) (bool, error) {
+	return r.deleteApp(ctx, appName, nil)
 }
 
 // deleteApp implements DeleteApp; extraHeaders allows per-request
 // X-Target-Host overrides without mutating shared client state.
-func (r *AppMeshClient) deleteApp(appName string, extraHeaders Headers) (bool, error) {
+func (r *AppMeshClient) deleteApp(ctx context.Context, appName string, extraHeaders Headers) (bool, error) {
 	if appName == "" {
 		return false, fmt.Errorf("application name is required")
 	}
 
-	code, _, _, err := r.req.Send(http.MethodDelete, fmt.Sprintf("/appmesh/app/%s", appName), nil, extraHeaders, nil)
+	code, _, _, err := r.req.SendContext(ctx, http.MethodDelete, fmt.Sprintf("/appmesh/app/%s", appName), nil, extraHeaders, nil)
 	if err != nil {
 		return false, fmt.Errorf("remove app request failed: %w", err)
 	}
@@ -749,7 +816,7 @@ func (r *AppMeshClient) WaitContext(ctx context.Context, asyncRun *AppRun, stdou
 			}
 			if out.ExitCode != nil {
 				// best-effort cleanup on the same node
-				_, _ = r.deleteApp(asyncRun.AppName, forwardHeaders)
+				_, _ = r.deleteApp(context.Background(), asyncRun.AppName, forwardHeaders)
 				return *out.ExitCode, nil
 			}
 			if !out.HttpSuccess {
@@ -1298,11 +1365,12 @@ func (r *AppMeshClient) delete(path string) (int, []byte, error) {
 	return code, raw, err
 }
 
-// decodeJwtExp extracts the "exp" claim from a JWT token without verifying the signature.
-func decodeJwtExp(token string) (int64, error) {
+// decodeJwtTimes extracts the "exp" and "iat" claims from a JWT without verifying
+// the signature. iat is 0 when the claim is absent; callers must cope.
+func decodeJwtTimes(token string) (int64, int64, error) {
 	parts := strings.SplitN(token, ".", 3)
 	if len(parts) < 2 {
-		return 0, fmt.Errorf("invalid JWT token format")
+		return 0, 0, fmt.Errorf("invalid JWT token format")
 	}
 	// Base64url decode the payload (2nd part)
 	payload := parts[1]
@@ -1315,41 +1383,83 @@ func decodeJwtExp(token string) (int64, error) {
 	}
 	decoded, err := base64.URLEncoding.DecodeString(payload)
 	if err != nil {
-		return 0, fmt.Errorf("failed to decode JWT payload: %w", err)
+		return 0, 0, fmt.Errorf("failed to decode JWT payload: %w", err)
 	}
 	var claims map[string]interface{}
 	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return 0, fmt.Errorf("failed to parse JWT claims: %w", err)
+		return 0, 0, fmt.Errorf("failed to parse JWT claims: %w", err)
 	}
 	exp, ok := claims["exp"].(float64)
 	if !ok {
-		return 0, fmt.Errorf("JWT token missing exp claim")
+		return 0, 0, fmt.Errorf("JWT token missing exp claim")
 	}
-	return int64(exp), nil
+	iat, _ := claims["iat"].(float64)
+	return int64(exp), int64(iat), nil
 }
 
-// computeRefreshDelay calculates how long to wait before the next token refresh.
-func (r *AppMeshClient) computeRefreshDelay() time.Duration {
+// refreshMargin returns how long before expiry to renew: a fraction of the token's
+// own lifetime, floored at tokenRefreshOffsetSeconds.
+func refreshMargin(token string, exp, iat int64) time.Duration {
+	lifetime := time.Duration(exp-iat) * time.Second
+	if iat <= 0 || lifetime <= 0 {
+		lifetime = time.Until(time.Unix(exp, 0)) // no usable iat
+	}
+	margin := max(time.Duration(float64(lifetime)*(1-tokenRefreshLifetimeRatio)),
+		tokenRefreshOffsetSeconds*time.Second)
+
+	// Jitter derived from the token: stable across polls, distinct per client.
+	h := fnv.New32a()
+	h.Write([]byte(token))
+	spread := float64(margin) * tokenRefreshJitterRatio
+	margin += time.Duration((float64(h.Sum32()%2001)/1000.0 - 1.0) * spread)
+
+	// Clamp last: the 30s floor (and its jitter) must never exceed the token's own life,
+	// or every renewal would land past the refresh point and the loop would spin at ~1Hz.
+	if lifetime > 0 && margin > lifetime/2 {
+		margin = lifetime / 2
+	}
+	return margin
+}
+
+// refreshPlan reports how long to sleep and whether a renewal is due afterwards.
+// Sleep is capped at the poll interval so a token replaced elsewhere is noticed.
+func (r *AppMeshClient) refreshPlan() (time.Duration, bool) {
+	const poll = tokenRefreshIntervalSeconds * time.Second
+
 	token := r.req.getAccessToken()
-	if token != "" {
-		if exp, err := decodeJwtExp(token); err == nil {
-			remaining := time.Until(time.Unix(exp, 0))
-			if remaining <= tokenRefreshOffsetSeconds*time.Second {
-				return 1 * time.Second // Expiring soon, refresh immediately
-			}
-			delay := remaining - tokenRefreshOffsetSeconds*time.Second
-			if delay > tokenRefreshIntervalSeconds*time.Second {
-				delay = tokenRefreshIntervalSeconds * time.Second
-			}
-			return delay
+	if token == "" {
+		// A held refresh token can still mint a new access token, so an access token lost
+		// to an expired cookie is recoverable — but only if we actually try. With neither
+		// credential there is nothing to renew, so just idle.
+		if r.refreshToken.Load() != "" {
+			return time.Second, true
 		}
+		return poll, false
 	}
-	return tokenRefreshIntervalSeconds * time.Second
+	exp, iat, err := decodeJwtTimes(token)
+	if err != nil {
+		return poll, true // unreadable lifetime: fall back to the fixed cadence
+	}
+
+	switch wait := time.Until(time.Unix(exp, 0).Add(-refreshMargin(token, exp, iat))); {
+	case wait <= 0:
+		return time.Second, true // at or past the refresh point
+	case wait > poll:
+		return poll, false // not due; wake only to re-evaluate
+	default:
+		return wait, true
+	}
 }
 
-// StartTokenRefresh starts background token auto-refresh when AutoRefreshToken is enabled.
-// The refresh loop decodes the JWT exp claim and renews shortly before expiration.
-// Concurrent calls atomically stop any existing refresh goroutine before starting a new one.
+// refreshRetryDelay is the bounded backoff for the nth renewal failure (n >= 1).
+func refreshRetryDelay(failures int) time.Duration {
+	secs := min(tokenRefreshRetryBaseSeconds<<min(max(failures-1, 0), 16), tokenRefreshRetryMaxSeconds)
+	return time.Duration(secs) * time.Second
+}
+
+// StartTokenRefresh starts background auto-refresh when AutoRefreshToken is enabled.
+// Renews once the token has consumed tokenRefreshLifetimeRatio of its lifetime; failed
+// renewals retry with bounded backoff. Concurrent calls replace the existing goroutine.
 func (r *AppMeshClient) StartTokenRefresh() {
 	if !r.autoRefreshToken {
 		return
@@ -1363,16 +1473,32 @@ func (r *AppMeshClient) StartTokenRefresh() {
 	r.refreshMu.Unlock()
 
 	go func() {
+		failures := 0
 		for {
-			delay := r.computeRefreshDelay()
+			delay, due := r.refreshPlan()
+			if failures > 0 {
+				delay, due = refreshRetryDelay(failures), true // retry, not the stale plan
+			}
 			select {
 			case <-stop:
 				return
 			case <-time.After(delay):
 			}
-			if _, err := r.RenewToken(); err != nil {
-				log.Printf("Auto-refresh: token renewal failed: %v", err)
+			if !due {
+				continue
 			}
+			if _, err := r.RenewToken(); err != nil {
+				failures++
+				// Log sparsely: a daemon outage must not flood at the backoff rate.
+				if failures == 1 || failures%tokenRefreshLogEvery == 0 {
+					logf("Auto-refresh: token renewal failed (attempt %d): %v", failures, err)
+				}
+				continue
+			}
+			if failures > 0 {
+				logf("Auto-refresh: token renewal recovered after %d failure(s)", failures)
+			}
+			failures = 0
 		}
 	}()
 }

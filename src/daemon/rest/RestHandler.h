@@ -44,7 +44,10 @@ protected:
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 
-	nlohmann::json createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token = nullptr, const std::string *refreshToken = nullptr);
+	/// Build the JWT response body. @param issueRefresh mints a local-mode refresh token;
+	/// set it only where a session begins or rotates (login, TOTP validate, renew), never
+	/// where an existing token is echoed back. Ignored under Keycloak, which passes its own.
+	nlohmann::json createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token = nullptr, const std::string *refreshToken = nullptr, bool issueRefresh = false);
 	void apiUserLogin(const std::shared_ptr<HttpRequest> &message);
 	void apiUserLogoff(const std::shared_ptr<HttpRequest> &message);
 	void apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message);

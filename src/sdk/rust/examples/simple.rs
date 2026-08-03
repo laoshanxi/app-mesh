@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = ClientBuilderWSS::new().build()?;
 
     // Login
-    client.login("admin", "admin123", None, None, None).await?;
+    client.client().login("admin", "admin123", None, None, None).await?;
 
     // List all applications
     let apps = client.list_apps().await?;

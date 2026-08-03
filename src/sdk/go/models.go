@@ -34,8 +34,20 @@ const (
 	headerRecvFileSocket        = "X-Recv-File-Socket"
 	headerFilePath              = "X-File-Path"
 	headerTargetHost            = "X-Target-Host"
-	tokenRefreshIntervalSeconds = 300 // 5 minutes
-	tokenRefreshOffsetSeconds   = 30  // 30 seconds before expiry
+	headerJWTExpireSeconds      = "X-Expire-Seconds"
+	headerJWTWantRefreshToken   = "X-Refresh-Token-Request"
+	tokenRefreshIntervalSeconds = 300 // poll cap, NOT a renew interval
+	tokenRefreshOffsetSeconds   = 30  // floor for the pre-expiry margin
+)
+
+// Auto-refresh pacing: the loop polls every tokenRefreshIntervalSeconds but renews
+// only once the token has burned tokenRefreshLifetimeRatio of its lifetime.
+const (
+	tokenRefreshLifetimeRatio    = 0.6 // rest is the retry budget
+	tokenRefreshJitterRatio      = 0.1 // of the margin, so clients don't renew in lockstep
+	tokenRefreshRetryBaseSeconds = 5
+	tokenRefreshRetryMaxSeconds  = 60
+	tokenRefreshLogEvery         = 10 // log 1st failure, then every Nth
 )
 
 // Platform-aware default SSL paths.

@@ -8,6 +8,7 @@ pub const HTTP_HEADER_JWT_AUDIENCE: &str = "X-Audience";
 pub const HTTP_HEADER_JWT_TOTP: &str = "X-Totp-Code";
 pub const HTTP_HEADER_JWT_AUTH_PERMISSION: &str = "X-Permission";
 pub const HTTP_HEADER_JWT_REFRESH_TOKEN: &str = "X-Refresh-Token";
+pub const HTTP_HEADER_JWT_WANT_REFRESH_TOKEN: &str = "X-Refresh-Token-Request";
 pub const HTTP_HEADER_AUTH_BASIC: &str = "Basic ";
 pub const HTTP_HEADER_AUTH_BEARER: &str = "Bearer ";
 pub const HTTP_HEADER_KEY_FORWARDING_HOST: &str = "X-Target-Host";
@@ -81,9 +82,24 @@ pub const TCP_BLOCK_SIZE: usize = 16 * 1024 - 128;
 /// Default token timeout: 1 week in seconds
 #[allow(dead_code)]
 pub const DEFAULT_TOKEN_TIMEOUT_SECONDS: i32 = 604_800;
-/// Token refresh interval: check every 5 minutes
+// Auto-refresh pacing: poll every TOKEN_REFRESH_INTERVAL_SECS, but renew only once the
+// token has burned TOKEN_REFRESH_LIFETIME_RATIO of its lifetime.
+/// Poll cap, NOT a renew interval.
 #[allow(dead_code)]
 pub const TOKEN_REFRESH_INTERVAL_SECS: u64 = 300;
-/// Refresh token 30 seconds before expiry
+/// Floor for the pre-expiry margin.
 #[allow(dead_code)]
 pub const TOKEN_REFRESH_MARGIN_SECS: u64 = 30;
+/// Lifetime fraction to consume before renewing; the rest is retry budget.
+#[allow(dead_code)]
+pub const TOKEN_REFRESH_LIFETIME_RATIO: f64 = 0.6;
+/// Jitter, as a fraction of the margin, so clients don't renew in lockstep.
+#[allow(dead_code)]
+pub const TOKEN_REFRESH_JITTER_RATIO: f64 = 0.1;
+#[allow(dead_code)]
+pub const TOKEN_REFRESH_RETRY_BASE_SECS: u64 = 5;
+#[allow(dead_code)]
+pub const TOKEN_REFRESH_RETRY_MAX_SECS: u64 = 60;
+/// Log the 1st renewal failure, then every Nth.
+#[allow(dead_code)]
+pub const TOKEN_REFRESH_LOG_EVERY: u32 = 10;

@@ -18,6 +18,16 @@ const CONSTANTS = Object.freeze({
   HTTP_HEADER_KEY_AUTH: "Authorization",
   HTTP_HEADER_KEY_X_TARGET_HOST: "X-Target-Host",
   HTTP_HEADER_KEY_X_FILE_PATH: "X-File-Path",
+
+  // Auto-refresh pacing: the loop wakes every TOKEN_REFRESH_POLL_SECONDS but renews only
+  // once the token has burned TOKEN_REFRESH_LIFETIME_RATIO of its own lifetime.
+  TOKEN_REFRESH_POLL_SECONDS: 300,   // poll cap, NOT a renew interval
+  TOKEN_REFRESH_OFFSET_SECONDS: 30,  // floor for the pre-expiry margin
+  TOKEN_REFRESH_LIFETIME_RATIO: 0.6, // rest is the retry budget
+  TOKEN_REFRESH_JITTER_RATIO: 0.1,   // of the margin, so clients don't renew in lockstep
+  TOKEN_REFRESH_RETRY_BASE_SECONDS: 5,
+  TOKEN_REFRESH_RETRY_MAX_SECONDS: 60,
+  TOKEN_REFRESH_LOG_EVERY: 10,       // log the 1st failure, then every Nth
 });
 
 // Environment detection
@@ -248,20 +258,37 @@ async function _resolveGid(group) {
 }
 
 /**
- * Decode the `exp` field from a JWT without signature verification.
+ * Decode the `exp` and `iat` claims from a JWT without signature verification.
  * @param {string} token - JWT string (header.payload.signature)
- * @returns {number|null} Expiry timestamp in seconds, or null
+ * @returns {{exp: number, iat: number}|null} Claims (`iat` is 0 when absent), or null when
+ *   the token is not a decodable JWT carrying `exp`
  * @private
  */
-function _decodeJwtExp(token) {
+function _decodeJwtTimes(token) {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     const payload = JSON.parse(base64Utils.decode(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof payload.exp === 'number' ? payload.exp : null;
+    if (typeof payload.exp !== 'number') return null;
+    return { exp: payload.exp, iat: typeof payload.iat === 'number' ? payload.iat : 0 };
   } catch (_) {
     return null;
   }
+}
+
+/**
+ * FNV-1a 32-bit hash, matching the Go SDK so both derive the same jitter from a token.
+ * @param {string} str - Input string (JWTs are ASCII, so code units are bytes)
+ * @returns {number} Unsigned 32-bit hash
+ * @private
+ */
+function _fnv1a32(str) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
 }
 
 // Default App Mesh CA bundle, preferred when no sslConfig is given and the file exists
@@ -300,6 +327,7 @@ class AppMeshClient {
    *   against the App Mesh default CA (/opt/appmesh/ssl/ca.pem) if installed, else the system CAs;
    *   `false` disables verification; an object supplies custom `ca`/`cert`/`key` (Buffer, inline
    *   PEM, or file path — a missing path is a hard error).
+   * @param {boolean|null} [useRefreshToken=null] - See {@link AppMeshClient#set_use_refresh_token}.
    * @example
    * const sslConfig = {
    *   cert: fs.readFileSync("client.pem"),
@@ -308,7 +336,7 @@ class AppMeshClient {
    *   rejectUnauthorized: true
    * };
    */
-  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null) {
+  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, useRefreshToken = null) {
     // Base URL for API requests
     this.baseURL = baseURL;
 
@@ -318,6 +346,34 @@ class AppMeshClient {
     // Current JWT token known to this client (single token store; transports
     // sync from it via _handleTokenUpdate/_getAccessToken)
     this._token = null;
+
+    // Refresh token from the login/totp-validate/renew response body; issued by both
+    // Keycloak and local-JWT daemons, absent against an older daemon that returns none.
+    this._refreshToken = null;
+
+    // Expire seconds from login, replayed on renew so the caller's TTL is kept.
+    this._tokenExpireSeconds = null;
+
+    // {exp, iat} as reported by the daemon in the login/renew body. The only lifetime
+    // source available in a browser, where the auth cookie is HttpOnly and unreadable.
+    this._tokenTimes = null;
+
+    // Per-client jitter seed, used only when no token is readable: the session times
+    // alone are identical for every client that logs in during the same second.
+    this._jitterSeed = Math.random().toString(36).slice(2);
+
+    // Bumped by logout() so a response from a superseded session cannot revive it.
+    this._sessionEpoch = 0;
+
+    // Auto-refresh state: pending timer, consecutive renewal failures (drives the
+    // backoff), and the tail of the renewal queue that serializes renew_token().
+    this._autoRefreshEnabled = false;
+    this._autoRefreshJwt = null;
+    // Tri-state opt-in for being ISSUED a refresh token; null follows auto-refresh.
+    this._useRefreshToken = useRefreshToken;
+    this._refreshTimer = null;
+    this._refreshFailures = 0;
+    this._renewChain = null;
 
     // Configure axios instance
     const axiosConfig = {
@@ -397,11 +453,15 @@ class AppMeshClient {
       [CONSTANTS.HTTP_HEADER_KEY_AUTH]: `Basic ${auth}`,
       "X-Set-Cookie": "true"
     };
+    // Omitted, not "false", when declined: the daemon only issues on an explicit opt-in.
+    if (this._wantRefreshToken()) headers["X-Refresh-Token-Request"] = "true";
     if (totpCode) headers["X-Totp-Code"] = totpCode;
     if (tokenExpire) headers["X-Expire-Seconds"] = parseDuration(tokenExpire);
     if (audience) headers["X-Audience"] = audience;
 
-    await this._request("post", "/appmesh/login", null, { headers });
+    const response = await this._request("post", "/appmesh/login", null, { headers });
+    this._captureRefreshToken(response);
+    this._tokenExpireSeconds = tokenExpire ? parseDuration(tokenExpire) : null;
   }
 
   /**
@@ -422,6 +482,12 @@ class AppMeshClient {
     if (audience) headers["X-Audience"] = audience;
     if (updateSession) headers["X-Set-Cookie"] = "true";
     const response = await this._request("post", "/appmesh/auth", null, { headers });
+    if (updateSession) {
+      // /appmesh/auth returns the same body as login. In a browser this is the only way to
+      // learn the lifetime — set_token() cannot replace an HttpOnly cookie — so without it
+      // auto-refresh would idle at the poll interval until the session silently died.
+      this._captureRefreshToken(response);
+    }
     const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
     return { success: true, responseText };
   }
@@ -480,11 +546,39 @@ class AppMeshClient {
   }
 
   /**
+   * Store the refresh token carried by a login/totp-validate/renew response body.
+   * Both modes rotate it on renew, so a present value replaces the stored one and an
+   * absent value keeps it.
+   * @param {Object} response - Response object from _request
+   * @private
+   */
+  _captureRefreshToken(response, epoch = this._sessionEpoch) {
+    if (epoch !== this._sessionEpoch) return; // superseded by a logout
+    let data = response && response.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (_) { return; }
+    }
+    if (!data) return;
+    if (typeof data.refresh_token === 'string' && data.refresh_token) {
+      this._refreshToken = data.refresh_token;
+    }
+    // The daemon reports the lifetime in the response body, which stays readable even when
+    // the token itself is an HttpOnly cookie. That is what lets a browser pace itself off
+    // the real lifetime instead of falling back to a fixed cadence.
+    if (Number.isFinite(data.expire_time) && Number.isFinite(data.issued_at)) {
+      this._tokenTimes = { exp: data.expire_time, iat: data.issued_at };
+    }
+  }
+
+  /**
    * Logout from the current session.
    */
   async logout() {
     try {
-      await this._request("post", "/appmesh/self/logoff");
+      // OAuth2 (Keycloak) proxy mode: present the refresh token so the daemon can end the
+      // upstream session. Optional — logoff still succeeds (local revoke) without it.
+      const headers = this._refreshToken ? { "X-Refresh-Token": this._refreshToken } : {};
+      await this._request("post", "/appmesh/self/logoff", null, { headers });
     } catch (error) {
       console.error("Failed to logoff:", error.message);
     } finally {
@@ -494,7 +588,13 @@ class AppMeshClient {
       }
 
       this._stopAutoRefresh();
+      // Supersede any renewal already in flight: its response would otherwise land after
+      // this block and re-populate the token, the refresh token and the times — leaving a
+      // logged-out client holding a credential pair the daemon minted after logoff.
+      this._sessionEpoch++;
       this._token = null;
+      this._refreshToken = null;
+      this._tokenTimes = null;
 
       // Clear the outgoing auth cookie (Node); the browser's HttpOnly auth cookie is cleared
       // server-side on logoff.
@@ -518,13 +618,120 @@ class AppMeshClient {
     }
   }
 
+  /**
+   * Choose whether login/totp-validate/renew ask the daemon to issue a refresh token.
+   *
+   * A refresh token is long-lived, so a one-shot script would leak one per run.
+   *
+   * @param {boolean|null} [value=null] - `null` follows auto-refresh; `true`/`false` force it.
+   *   In a browser the default is `false`: the auth cookie is HttpOnly to keep XSS away from
+   *   the credential, and pacing/renewal work without it.
+   */
+  set_use_refresh_token(value = null) {
+    this._useRefreshToken = value;
+  }
+
+  /**
+   * Resolve the refresh-token tri-state for the outgoing request.
+   * @returns {boolean} true to send the opt-in header; false to omit it entirely
+   * @private
+   */
+  _wantRefreshToken() {
+    if (typeof this._useRefreshToken === 'boolean') return this._useRefreshToken;
+    return ENV.isNode && this._autoRefreshEnabled;
+  }
+
   /** @private */
   _stopAutoRefresh() {
     this._autoRefreshEnabled = false;
+    this._refreshFailures = 0;
     if (this._refreshTimer) {
       clearTimeout(this._refreshTimer);
       this._refreshTimer = null;
     }
+  }
+
+  /**
+   * Seconds before expiry at which to renew: a fraction of the token's own lifetime,
+   * floored at TOKEN_REFRESH_OFFSET_SECONDS.
+   * @param {string} token - JWT the margin is derived from (also seeds the jitter)
+   * @param {number} exp - Expiry claim, epoch seconds
+   * @param {number} iat - Issued-at claim, epoch seconds; 0 when absent
+   * @returns {number} Margin in seconds
+   * @private
+   */
+  static _refreshMargin(token, exp, iat) {
+    const lifetime = (iat > 0 && exp > iat) ? exp - iat : exp - Date.now() / 1000;
+    let margin = Math.max(lifetime * (1 - CONSTANTS.TOKEN_REFRESH_LIFETIME_RATIO), CONSTANTS.TOKEN_REFRESH_OFFSET_SECONDS);
+
+    // Jitter derived from the token: stable across polls, distinct per client.
+    const spread = margin * CONSTANTS.TOKEN_REFRESH_JITTER_RATIO;
+    margin += ((_fnv1a32(token) % 2001) / 1000 - 1) * spread;
+
+    // Clamp last: the 30s floor (and its jitter) must never exceed the token's own life,
+    // or every renewal would land past the refresh point and the loop would spin at ~1Hz.
+    return lifetime > 0 ? Math.min(margin, lifetime / 2) : margin;
+  }
+
+  /**
+   * Bounded exponential backoff for the nth consecutive renewal failure (n >= 1).
+   * @param {number} failures - Consecutive failure count
+   * @returns {number} Delay in seconds
+   * @private
+   */
+  static _refreshRetryDelay(failures) {
+    const shift = Math.min(Math.max(failures - 1, 0), 16);
+    return Math.min(CONSTANTS.TOKEN_REFRESH_RETRY_BASE_SECONDS * Math.pow(2, shift), CONSTANTS.TOKEN_REFRESH_RETRY_MAX_SECONDS);
+  }
+
+  /**
+   * Decide how long to sleep and whether a renewal is due when that sleep ends.
+   * The sleep is capped at the poll interval so a token replaced elsewhere is noticed;
+   * waking early is not by itself a reason to renew.
+   * @returns {{delaySec: number, due: boolean}}
+   * @private
+   */
+  _computeRefreshPlan() {
+    const poll = CONSTANTS.TOKEN_REFRESH_POLL_SECONDS;
+
+    const token = this._autoRefreshJwt || this._getAccessToken();
+    const tokenTimes = token ? _decodeJwtTimes(token) : null;
+
+    // In a browser the auth cookie is HttpOnly, so the token is never readable here. Pace
+    // off the lifetime the daemon reported in the login/renew body instead — same 60% rule
+    // as every other SDK, rather than the fixed cadence this change exists to remove.
+    //
+    // Prefer whichever source expires later. _autoRefreshJwt is set once by
+    // set_auto_refresh_token and never updated in a browser (_handleTokenUpdate is
+    // Node-only), so a frozen copy would otherwise shadow the times every renewal
+    // refreshes — and once it aged past its refresh point the loop would renew once per
+    // second forever, which is far worse than the cadence this replaced.
+    const times = this._tokenTimes && (!tokenTimes || this._tokenTimes.exp > tokenTimes.exp)
+      ? this._tokenTimes
+      : tokenTimes;
+
+    if (!token && !times) {
+      // A held refresh token can still mint a new access token, so an access token lost
+      // to an expired cookie is recoverable — but only if we actually try.
+      if (this._refreshToken) return { delaySec: 1, due: true };
+      return { delaySec: poll, due: false }; // nothing to renew, just idle
+    }
+    if (!times) return { delaySec: poll, due: true }; // unreadable lifetime: fixed cadence
+
+    const nowSec = Date.now() / 1000;
+    // Times saying the session is already dead cannot be acted on once per second: a
+    // successful renewal would have replaced them, so they are stale rather than urgent.
+    // Fall back to the fixed cadence, which bounds the worst case at the poll interval.
+    if (times.exp <= nowSec) return { delaySec: poll, due: true };
+
+    // Jitter needs a per-client seed; without a readable token the session times alone
+    // would collide for every client that logged in during the same second, so mix in
+    // this client's own random seed.
+    const seed = token || `${this._jitterSeed}.${times.iat}.${times.exp}`;
+    const wait = times.exp - AppMeshClient._refreshMargin(seed, times.exp, times.iat) - nowSec;
+    if (wait <= 0) return { delaySec: 1, due: true };  // at or past the refresh point
+    if (wait > poll) return { delaySec: poll, due: false }; // not due; wake only to re-evaluate
+    return { delaySec: wait, due: true };
   }
 
   /** @private */
@@ -537,36 +744,34 @@ class AppMeshClient {
       this._refreshTimer = null;
     }
 
-    const REFRESH_INTERVAL = 300; // 5 min default check
-    const REFRESH_MARGIN = 30;    // refresh 30s before expiry
-
-    let delaySec = REFRESH_INTERVAL;
-
-    // Try to compute precise delay from JWT exp
-    const token = this._autoRefreshJwt || this._getAccessToken();
-    if (token) {
-      const exp = _decodeJwtExp(token);
-      if (exp) {
-        const now = Math.floor(Date.now() / 1000);
-        const timeToExpiry = exp - now;
-        if (timeToExpiry <= REFRESH_MARGIN) {
-          delaySec = 1; // almost expired, refresh immediately
-        } else {
-          delaySec = Math.min(timeToExpiry - REFRESH_MARGIN, REFRESH_INTERVAL);
-        }
-      }
+    let { delaySec, due } = this._computeRefreshPlan();
+    if (this._refreshFailures > 0) {
+      // Retry on the backoff schedule, not the stale plan.
+      delaySec = AppMeshClient._refreshRetryDelay(this._refreshFailures);
+      due = true;
     }
 
     this._refreshTimer = setTimeout(async () => {
+      this._refreshTimer = null;
       if (!this._autoRefreshEnabled) return;
-      try {
-        // _request captures the renewed token cookie and routes it through
-        // _handleTokenUpdate, which updates _autoRefreshJwt for precise delays
-        await this.renew_token();
-      } catch (err) {
-        console.warn("Auto-refresh: token renewal failed:", err.message);
+      if (due) {
+        try {
+          // _request captures the renewed token cookie and routes it through
+          // _handleTokenUpdate, which updates _autoRefreshJwt for precise delays
+          await this.renew_token();
+          if (this._refreshFailures > 0) {
+            console.info(`Auto-refresh: token renewal recovered after ${this._refreshFailures} failure(s)`);
+          }
+          this._refreshFailures = 0;
+        } catch (err) {
+          this._refreshFailures++;
+          // Log sparsely: a daemon outage must not flood at the backoff rate.
+          if (this._refreshFailures === 1 || this._refreshFailures % CONSTANTS.TOKEN_REFRESH_LOG_EVERY === 0) {
+            console.warn(`Auto-refresh: token renewal failed (attempt ${this._refreshFailures}):`, err.message);
+          }
+        }
       }
-      this._scheduleTokenRefresh(); // re-schedule
+      this._scheduleTokenRefresh(); // keep the loop armed, failure or not
     }, delaySec * 1000);
 
     // Don't block Node.js process exit
@@ -577,14 +782,48 @@ class AppMeshClient {
 
   /**
    * Renew the current JWT token.
-   * @param {string|number} [tokenExpire] - Token expiry (integer seconds or ISO 8601 string)
+   *
+   * A held refresh token is the sole credential the daemon needs, so renewal succeeds even
+   * after the access token expired — that is how a missed refresh window recovers without a
+   * re-login. Without one, the daemon authenticates the access token instead.
+   *
+   * @param {string|number} [tokenExpire] - Token expiry (integer seconds or ISO 8601 string).
+   *   Defaults to the value used at login; the header is omitted when that is unknown, so the
+   *   daemon applies its own default rather than silently extending a short-lived token.
    */
-  async renew_token(tokenExpire = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
+  async renew_token(tokenExpire = null) {
+    // Serialize renewals: rotation makes a refresh token single-use, so two concurrent
+    // renewals present the same one and the loser is told it is revoked — permanently
+    // wedging a client that holds no other credential. (See also the AppMeshWorker
+    // constructor docs on sharing one client instead of running two renew loops.)
+    const run = (this._renewChain || Promise.resolve()).then(() => this._renewTokenOnce(tokenExpire));
+    this._renewChain = run.catch(() => { /* a failed renewal must not break the queue */ });
+    return run;
+  }
+
+  /** @private */
+  async _renewTokenOnce(tokenExpire) {
+    const expire = (tokenExpire === null || tokenExpire === undefined) ? this._tokenExpireSeconds : tokenExpire;
     const headers = {};
-    if (tokenExpire) {
-      headers["X-Expire-Seconds"] = parseDuration(tokenExpire);
+    if (this._wantRefreshToken()) headers["X-Refresh-Token-Request"] = "true";
+    if (expire !== null && expire !== undefined) {
+      headers["X-Expire-Seconds"] = parseDuration(expire);
     }
-    await this._request("post", "/appmesh/token/renew", null, { headers });
+    if (this._refreshToken) {
+      headers["X-Refresh-Token"] = this._refreshToken;
+    }
+
+    let response;
+    try {
+      response = await this._request("post", "/appmesh/token/renew", null, { headers });
+    } catch (error) {
+      // A rejected refresh token will never be accepted again (rotated away, revoked, or the
+      // session ended). Drop it so the next attempt presents the access token instead.
+      if (error && error.statusCode === 401) this._refreshToken = null;
+      throw error;
+    }
+    // Both modes rotate the refresh token on renew — store the new one for the next cycle.
+    this._captureRefreshToken(response);
   }
 
   /**
@@ -621,8 +860,13 @@ class AppMeshClient {
     };
     // Set cookie header for browser
     const headers = { "X-Set-Cookie": "true" };
+    if (this._wantRefreshToken()) headers["X-Refresh-Token-Request"] = "true";
 
-    await this._request("post", "/appmesh/totp/validate", body, { headers });
+    const response = await this._request("post", "/appmesh/totp/validate", body, { headers });
+    // A validated challenge completes the login, so it owes the same session setup as
+    // login(); auto-refresh itself is (re)armed by _handleTokenUpdate when the token lands.
+    this._captureRefreshToken(response);
+    this._tokenExpireSeconds = tokenExpire ? parseDuration(tokenExpire) : null;
   }
 
   /**

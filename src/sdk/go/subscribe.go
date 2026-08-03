@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -140,7 +139,7 @@ func (d *MessageDemuxer) dispatchWorker() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("dispatchWorker: callback panic: %v", r)
+					logf("dispatchWorker: callback panic: %v", r)
 				}
 			}()
 			task.cb(task.event)
@@ -342,6 +341,12 @@ type SubscriptionResult struct {
 // Subscribe registers for events on a named app (or all apps if AppName is empty/"*").
 // Callbacks are dispatched serially, preserving per-subscription event order.
 func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
+	return c.SubscribeContext(context.Background(), opt, callback)
+}
+
+// SubscribeContext is Subscribe bounded by ctx. ctx bounds only the subscribe call,
+// not the lifetime of the subscription.
+func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
 	apiPath := "/appmesh/subscribe"
 	if opt.AppName != "" && opt.AppName != "*" {
 		apiPath = fmt.Sprintf("/appmesh/app/%s/subscribe", opt.AppName)
@@ -352,7 +357,7 @@ func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (
 		queries.Set("events", strings.Join(opt.Events, ","))
 	}
 
-	status, raw, _, err := c.req.Send(http.MethodPost, apiPath, queries, nil, nil)
+	status, raw, _, err := c.req.SendContext(ctx, http.MethodPost, apiPath, queries, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -381,10 +386,15 @@ func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (
 
 // Unsubscribe removes a subscription by ID.
 func (c *AppMeshClient) Unsubscribe(subscriptionID string) error {
+	return c.UnsubscribeContext(context.Background(), subscriptionID)
+}
+
+// UnsubscribeContext is Unsubscribe bounded by ctx.
+func (c *AppMeshClient) UnsubscribeContext(ctx context.Context, subscriptionID string) error {
 	queries := url.Values{}
 	queries.Set("subscription_id", subscriptionID)
 
-	status, raw, _, err := c.req.Send(http.MethodDelete, "/appmesh/subscribe", queries, nil, nil)
+	status, raw, _, err := c.req.SendContext(ctx, http.MethodDelete, "/appmesh/subscribe", queries, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -529,7 +539,7 @@ func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 		Events:  []string{"STDOUT", "EXIT", "REMOVED"},
 	}, onEvent)
 	if err != nil {
-		log.Printf("WaitForAsyncRun: subscribe failed for %s: %v", run.AppName, err)
+		logf("WaitForAsyncRun: subscribe failed for %s: %v", run.AppName, err)
 		return nil, fmt.Errorf("subscribe: %w", err)
 	}
 

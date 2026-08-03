@@ -30,6 +30,7 @@ mod tcp {
             .expect("ClientBuilderTCP::build failed");
 
         client
+            .client()
             .login("admin", "admin123", None, None, None)
             .await
             .expect("TCP login failed — is AppMesh running at 127.0.0.1:6059?");
@@ -162,6 +163,7 @@ mod wss {
             .expect("ClientBuilderWSS::build failed");
 
         client
+            .client()
             .login("admin", "admin123", None, None, None)
             .await
             .expect("WSS login failed — is AppMesh running at 127.0.0.1:6058?");

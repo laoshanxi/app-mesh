@@ -19,12 +19,21 @@ public:
     void addToken(const std::string &token, const std::chrono::system_clock::time_point &expiryTime);
     bool isTokenBlacklisted(const std::string &token);
 
+    /// Atomically revoke a token, returning false if it was already revoked. Callers that
+    /// consume a single-use token (refresh-token rotation) must gate on this rather than on
+    /// a separate isTokenBlacklisted() check: requests are served by a worker pool, so a
+    /// check-then-insert lets two concurrent presentations of the same token both succeed.
+    bool revokeOnce(const std::string &token, const std::chrono::system_clock::time_point &expiryTime);
+
     void init(std::unordered_map<std::string, std::chrono::system_clock::time_point> &tokens) noexcept(false);
     std::unordered_map<std::string, std::chrono::system_clock::time_point> getTokens() const;
 
     bool tryRemoveFromList(const std::string &token);
 
 protected:
+    /// Map key for a token: its jti when present, else a hash. Never the token itself.
+    static std::string keyOf(const std::string &token);
+
     void removeExpiredTokens();
     void clearSoonestExpiring(size_t numTokens);
 

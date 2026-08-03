@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -74,6 +75,10 @@ struct ClientHttpConfig
     std::string clientKey = "ssl/client-key.pem";
     /// Empty keeps the session cookie in memory; file storage is not thread-safe.
     std::string cookieFile;
+    /// Ask the daemon for a refresh token on login/validateTotp/renewToken. Off by default:
+    /// this client has no refresh loop, so the usual shape is one-shot and would leave a
+    /// long-lived credential behind. Turn it on for a process that stays up and renews.
+    bool useRefreshToken = false;
 };
 
 /// IMPORTANT: RestClient state is process-global (static): all AppMeshClient instances
@@ -103,10 +108,13 @@ public:
     /// Login with username/password.
     /// Returns a TOTP challenge string on HTTP 428; empty string on success (JWT persisted
     /// to the process-global cookie jar, see getAuthToken()). Throws AppMeshHttpError otherwise.
+    /// When ClientHttpConfig::useRefreshToken is set, a refresh token is requested and, once the
+    /// daemon issues one, stored on this client for renewToken()/logout(); tokenExpire is
+    /// remembered and replayed on renewToken().
     std::string login(const std::string &username, const std::string &password,
                       const std::string &totp = "", int tokenExpire = 7 * 24 * 60 * 60,
                       const std::string &audience = "");
-    /// Complete a TOTP challenge and store the returned JWT in this client session.
+    /// Complete a TOTP challenge and store the returned JWT (and refresh token) in this client session.
     void validateTotp(const std::string &username, const std::string &challenge,
                       const std::string &totp, int tokenExpire);
     /// Verify a JWT token with the server and optionally check permission/audience.
@@ -116,9 +124,21 @@ public:
                                                const std::string &audience = "",
                                                bool updateSession = true);
     /// Log out of the current session and clear locally stored token state.
+    /// A held refresh token is presented so the server-side session is revoked too.
     void logout();
     /// Renew the JWT token already attached to this client session.
+    /// A held refresh token is the sole credential the daemon needs, so renewal succeeds
+    /// even after the access token expired. tokenExpire > 0 overrides the login TTL for
+    /// this call only; 0 replays the TTL given at login (header omitted when unknown).
     void renewToken(int tokenExpire = 0);
+
+    // The mutex members below make this type non-copyable and non-movable. Spelled out so a
+    // downstream `AppMeshClient c = makeClient();` fails with a legible error rather than
+    // "call to implicitly-deleted copy constructor".
+    AppMeshClient(const AppMeshClient &) = delete;
+    AppMeshClient &operator=(const AppMeshClient &) = delete;
+    AppMeshClient(AppMeshClient &&) = delete;
+    AppMeshClient &operator=(AppMeshClient &&) = delete;
     /// Return the JWT from the (process-global) session cookie jar; empty when not logged in.
     std::string getAuthToken() const;
     /// Return the TOTP provisioning URI (otpauth://totp/...) for the current user.
@@ -220,6 +240,33 @@ protected:
 private:
     void applyConfig(const ClientHttpConfig &config);
 
+    /// Whether to send the refresh-token opt-in header. Single point of policy so every
+    /// credential-issuing call (login/validateTotp/renewToken) agrees.
+    bool wantRefreshToken() const;
+
+    /// Store the refresh_token carried by a login/renew response body. Both modes rotate it
+    /// on every renew, so a present value replaces the stored one; an absent value (older
+    /// daemon, or a body that is not a token response) keeps whatever is already held.
+    void captureRefreshToken(const std::string &responseBody);
+    std::string getRefreshToken() const;
+    void setRefreshToken(const std::string &token);
+    /// Clear the stored refresh token only if it is still the one that was presented, so a
+    /// failed renewal cannot discard a newer token another thread just rotated in.
+    void clearRefreshTokenIf(const std::string &presented);
+    int getLoginExpireSeconds() const;
+    void setLoginExpireSeconds(int seconds);
+
     std::string m_url;
     std::string m_forwardTo;
+    bool m_useRefreshToken = false; ///< See ClientHttpConfig::useRefreshToken
+
+    /// Guards the credential state below, matching the mutex RestClient uses for the
+    /// access-token cookie jar: the same client may renew while another thread requests.
+    // Serializes whole renewals. Distinct from m_authMutex, which stays a leaf lock never
+    // held across HTTP; this one is held for the duration of the round trip so two threads
+    // cannot both present the same single-use refresh token.
+    std::mutex m_renewMutex;
+    mutable std::mutex m_authMutex;
+    std::string m_refreshToken;
+    int m_loginExpireSeconds = 0; ///< Token TTL requested at login; 0 = unknown
 };

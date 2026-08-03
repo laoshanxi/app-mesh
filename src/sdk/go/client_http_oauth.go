@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -240,7 +239,7 @@ func (r *AppMeshClientOAuth) Logout() (bool, error) {
 	kcResult := false
 	if refresh := r.refreshTokenValue(); refresh != "" {
 		if err := r.keycloakLogout(refresh); err != nil {
-			log.Printf("Failed to logout from Keycloak: %v", err)
+			logf("Failed to logout from Keycloak: %v", err)
 		} else {
 			kcResult = true
 		}
@@ -298,7 +297,7 @@ func (r *AppMeshClientOAuth) GetOauthUserinfo() (map[string]interface{}, error) 
 func (r *AppMeshClientOAuth) Close() {
 	if refresh := r.refreshTokenValue(); refresh != "" {
 		if err := r.keycloakLogout(refresh); err != nil {
-			log.Printf("Failed to logout from Keycloak during close: %v", err)
+			logf("Failed to logout from Keycloak during close: %v", err)
 		}
 	}
 	r.tokenMu.Lock()

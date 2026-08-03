@@ -38,6 +38,16 @@ func main() {
 	flag.StringVar(&clusterNodes, "cluster-nodes", "", "Comma-separated cluster node addresses")
 	flag.Parse()
 
+	// Route SDK diagnostics into our stdout logger; by default they go to stderr, a
+	// different stream from the engine's own log, so failures that explain our symptoms
+	// (a failed token auto-refresh, say) landed where nobody would correlate them.
+	// logger.Error, not Info: every SDK logf call site is a warning or a failure (token
+	// renewal, callback panic, unusable CA), and Info emits no level prefix at all — an
+	// operator alerting on ERROR would miss the very line that explains the outage.
+	appmesh.SetLogger(func(format string, args ...any) {
+		logger.Error("SDK " + fmt.Sprintf(format, args...))
+	})
+
 	user := os.Getenv("APPMESH_USER")
 	if user == "" {
 		user = "admin"
@@ -95,7 +105,11 @@ func main() {
 
 	if password != "" {
 		svc.SetReAuth(func() error {
-			_, err := tcpClient.Login(user, password, "", 86400, "")
+			// Bounded: this is called from the trigger service's Run goroutine, and token
+			// expiry correlates with daemon trouble — exactly when a reply may be lost.
+			ctx, cancel := context.WithTimeout(context.Background(), trigger.ReAuthTimeout)
+			defer cancel()
+			_, err := tcpClient.LoginContext(ctx, user, password, "", 86400, "")
 			return err
 		})
 	}

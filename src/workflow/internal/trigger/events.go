@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"sync"
@@ -67,7 +68,12 @@ func (el *EventListener) subscribe(appName string) {
 	gen := el.generation
 	el.mu.Unlock()
 
-	sub, err := el.client.Subscribe(
+	// Bounded: this runs on the Run goroutine, so a lost reply would stall later scans.
+	ctx, cancel := context.WithTimeout(context.Background(), scanRequestTimeout)
+	defer cancel()
+
+	sub, err := el.client.SubscribeContext(
+		ctx,
 		appmesh.SubscribeOption{
 			AppName: appName,
 			Events:  []string{"START", "EXIT", "HEALTH", "STATUS", "REMOVED"},
@@ -84,7 +90,7 @@ func (el *EventListener) subscribe(appName string) {
 	// would be stale on the server side.
 	if el.generation != gen {
 		el.mu.Unlock()
-		_ = el.client.Unsubscribe(sub.SubscriptionID)
+		_ = el.unsubscribeBounded(sub.SubscriptionID)
 		return
 	}
 	el.subscriptions[appName] = sub.SubscriptionID
@@ -94,13 +100,23 @@ func (el *EventListener) subscribe(appName string) {
 }
 
 func (el *EventListener) unsubscribe(appName, subID string) {
+	// Drop the local entry only once the daemon has confirmed: deleting it first means a
+	// timed-out call leaves a subscription alive server-side that we can no longer name.
+	if err := el.unsubscribeBounded(subID); err != nil {
+		logger.Error("failed to unsubscribe from app '" + appName + "': " + err.Error())
+		return
+	}
+
 	el.mu.Lock()
 	delete(el.subscriptions, appName)
 	el.mu.Unlock()
+}
 
-	if err := el.client.Unsubscribe(subID); err != nil {
-		logger.Error("failed to unsubscribe from app '" + appName + "': " + err.Error())
-	}
+// unsubscribeBounded applies the Run-loop deadline to an unsubscribe call.
+func (el *EventListener) unsubscribeBounded(subID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), scanRequestTimeout)
+	defer cancel()
+	return el.client.UnsubscribeContext(ctx, subID)
 }
 
 func (el *EventListener) onEvent(event appmesh.AppEvent) {
@@ -251,6 +267,6 @@ func (el *EventListener) Cleanup() {
 	el.mu.Unlock()
 
 	for _, subID := range subs {
-		_ = el.client.Unsubscribe(subID)
+		_ = el.unsubscribeBounded(subID)
 	}
 }

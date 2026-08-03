@@ -651,6 +651,10 @@ void RestHandler::apiUserChangePwd(const std::shared_ptr<HttpRequest> &message)
 		throw std::invalid_argument(Utility::stringFormat("old password for user <%s> is incorrect", targetUser.c_str()));
 	}
 	Security::instance()->changeUserPasswd(targetUser, newPasswd);
+	// Invalidate everything already issued to this user. Changing a password is the
+	// standard response to a suspected compromise, and without this the old access token —
+	// and the refresh token that can keep minting new ones — would survive it.
+	Security::instance()->getUserInfo(targetUser)->revokeIssuedTokens();
 	Security::instance()->save();
 
 	// Re-encrypt sec_env for all apps owned by the changed user (key material changed).
@@ -854,7 +858,14 @@ void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
 }
 
-nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token, const std::string *refreshToken)
+// Whether the client can manage a refresh token. Opt-in, because a client that ignores it
+// never presents it on logoff, which would leave a live credential behind.
+static bool wantsRefreshToken(const std::shared_ptr<HttpRequest> &message)
+{
+	return (GET_HTTP_HEADER(message, HTTP_HEADER_JWT_want_refresh_token)) == "true";
+}
+
+nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token, const std::string *refreshToken, bool issueRefresh)
 {
 	const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	const auto exp = now + timeoutSeconds;
@@ -863,7 +874,19 @@ nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest>
 	result["token_type"] = HTTP_HEADER_JWT_Bearer;
 	result[HTTP_HEADER_JWT_access_token] = token ? *token : JwtToken::generate(uname, ugroup, audience, timeoutSeconds);
 	if (refreshToken && !refreshToken->empty())
+	{
 		result[HTTP_HEADER_JWT_refresh_token_key] = *refreshToken;
+	}
+	else if (issueRefresh && !dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
+	{
+		// The refresh token must outlive the access token — that is the whole point — but it
+		// scales with the caller's chosen TTL instead of a fixed floor, so shortening the
+		// access token actually shortens the credential pair rather than pinning a 7-day one.
+		const int refreshSeconds = std::min(MAX_TOKEN_EXPIRE_SECONDS,
+											std::max(timeoutSeconds * REFRESH_TOKEN_EXPIRE_MULTIPLE,
+													 timeoutSeconds + REFRESH_TOKEN_EXPIRE_MIN_MARGIN_SECONDS));
+		result[HTTP_HEADER_JWT_refresh_token_key] = JwtToken::generateRefresh(uname, ugroup, refreshSeconds);
+	}
 	result[HTTP_BODY_KEY_JWT_expires_in] = timeoutSeconds;
 	result["expire_time"] = exp;
 
@@ -902,7 +925,10 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = parseTokenTimeout(timeout);
 
-	if (audience == WEBSOCKET_FILE_AUDIENCE)
+	// Internal audiences are daemon-minted only: the file audience bypasses RBAC on the
+	// WebSocket file endpoints, and the refresh audience would hand out a credential that
+	// sits outside the rotation chain and survives logoff.
+	if (audience == WEBSOCKET_FILE_AUDIENCE || audience == JWT_REFRESH_AUDIENCE)
 	{
 		throw std::invalid_argument("illegal audience");
 	}
@@ -925,7 +951,7 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 		else if (user && !user->mfaEnabled())
 		{
 			// verify without TOTP
-			message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), audience));
+			message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), audience, nullptr, nullptr, wantsRefreshToken(message)));
 			LOG_DBG << fname << "User <" << uname << "> login success";
 		}
 		else if (user && user->mfaEnabled())
@@ -951,7 +977,7 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 			{
 				if (user->totpValidateCode(totp))
 				{
-					message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), audience));
+					message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), audience, nullptr, nullptr, wantsRefreshToken(message)));
 					LOG_DBG << fname << "User <" << uname << "> login with TOTP success";
 				}
 				else
@@ -968,71 +994,182 @@ void RestHandler::apiUserLogoff(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiUserLogoff() ";
 
-	// verify current token
-	const auto verify = JwtToken::verify(getJwtToken(message));
-	const auto &uname = std::get<0>(verify);
+	const auto refreshToken = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_refresh_token);
+	const auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance());
 
-	// retire current token (local blacklist only)
-	const auto token = getJwtToken(message);
-	const auto decodedToken = JwtHelper::decode(token);
-	TOKEN_BLACK_LIST::instance()->addToken(token, decodedToken.get_expires_at());
+	// Either credential may authenticate a logoff: the refresh token outlives the access
+	// token, so an expired access token must not strand the credential that can still mint.
+	bool authenticated = false;
+	std::string uname;
 
-	// Under OAuth2 the local blacklist only blocks this access token on this daemon. To end
-	// the Keycloak-side session, the client supplies its refresh token via X-Refresh-Token
-	// and we call the Keycloak end-session endpoint. The header is optional so logoff still
-	// succeeds (local revoke) when the client cannot present the refresh token.
-	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
+	// Retire the access token (local blacklist only) when it is still presentable.
+	try
 	{
-		const auto refreshToken = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_refresh_token);
-		if (!refreshToken.empty())
+		const auto token = getJwtToken(message);
+		uname = std::get<0>(JwtToken::verify(token));
+		TOKEN_BLACK_LIST::instance()->addToken(token, JwtHelper::decode(token).get_expires_at());
+		authenticated = true;
+	}
+	catch (const std::exception &e)
+	{
+		LOG_DBG << fname << "access token not revocable (" << e.what() << "); trying the refresh token";
+	}
+
+	if (!refreshToken.empty())
+	{
+		try
 		{
-			try
+			if (keycloak)
 			{
+				// The local blacklist only blocks this daemon; ending the Keycloak-side
+				// session needs the refresh token, which Keycloak itself validates. Gate it
+				// the same way renew does: unauthenticated in this branch, so without a
+				// well-formedness check it relays any string to the IdP.
+				(void)JwtHelper::decode(refreshToken);
 				keycloak->logoutKeycloak(refreshToken);
-				LOG_DBG << fname << "User <" << uname << "> Keycloak session revoked";
 			}
-			catch (const std::exception &e)
+			else
 			{
-				LOG_WAR << fname << "User <" << uname << "> Keycloak end-session failed: " << e.what();
+				// Verify first, so logoff cannot be used to blacklist arbitrary strings.
+				uname = std::get<0>(JwtToken::verifyRefresh(refreshToken));
+				TOKEN_BLACK_LIST::instance()->addToken(refreshToken, JwtHelper::decode(refreshToken).get_expires_at());
 			}
+			authenticated = true;
+			LOG_DBG << fname << "User <" << uname << "> refresh token revoked";
 		}
-		else
+		catch (const std::exception &e)
 		{
-			LOG_WAR << fname << "User <" << uname << "> logoff without refresh token; Keycloak session remains active until expiry";
+			LOG_WAR << fname << "User <" << uname << "> refresh token revocation failed: " << e.what();
 		}
-		message->reply(web::http::status_codes::OK);
-		LOG_DBG << fname << "User <" << uname << "> logoff success";
-		return;
+	}
+	else if (keycloak)
+	{
+		LOG_WAR << fname << "User <" << uname << "> logoff without refresh token; Keycloak session remains active until expiry";
+	}
+
+	if (!authenticated)
+	{
+		throw std::domain_error("Logoff requires a valid access token or refresh token");
 	}
 
 	message->reply(web::http::status_codes::OK);
 	LOG_DBG << fname << "User <" << uname << "> logoff success";
 }
 
+// Audience for a token minted by the refresh-token flow, which carries none of its own.
+// Carried over from the access token the caller presents, so a custom-audience client is
+// not silently downgraded on its first refresh-based renewal; the default otherwise.
+//
+// Deliberately NOT taken from the X-Audience header. The caller must not choose the
+// audience of a token the daemon mints: the WebSocket file endpoints authorize on audience
+// alone (Session.cpp verifyToken), with no permission check, so an X-Audience of
+// appmesh-file-service would hand any user with user-token-renew arbitrary file read and
+// write. apiUserLogin rejects the same thing for the same reason.
+static std::string renewAudience(const std::shared_ptr<HttpRequest> &message)
+{
+	try
+	{
+		if (message->m_headers.count(HTTP_HEADER_JWT_Authorization))
+		{
+			const auto audiences = JwtHelper::decode(JwtHelper::normalizeBearerToken(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second)).get_audience();
+			// Reject internal audiences: the presented token is not verified here, so a
+			// forged one must not be able to select a privileged scope either.
+			if (!audiences.empty() && *audiences.begin() != WEBSOCKET_FILE_AUDIENCE && *audiences.begin() != JWT_REFRESH_AUDIENCE)
+			{
+				return *audiences.begin();
+			}
+		}
+	}
+	catch (const std::exception &)
+	{
+		// Unreadable access token: fall through to the default audience.
+	}
+	return HTTP_HEADER_JWT_Audience_appmesh;
+}
+
 void RestHandler::apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiUserTokenRenew() ";
 
-	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_token_renew);
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = parseTokenTimeout(timeout);
+	const auto refreshToken = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_refresh_token);
+
+	// A presented refresh token is the sole credential this endpoint needs, in either mode.
+	// No permissionCheck on the access token first: it may already have expired, and renewing
+	// anyway is the entire point of a refresh token.
 
 	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
 	{
 		// OAuth2 renewal exchanges the Keycloak refresh token for a fresh access token.
 		// The client supplies the refresh token it received at login via X-Refresh-Token.
-		const auto refreshToken = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_refresh_token);
 		if (refreshToken.empty())
 		{
 			throw std::invalid_argument("Token renewal requires the refresh token in the X-Refresh-Token header");
 		}
 
+		// Cheap local sanity check before forwarding. Without it this endpoint is an
+		// unauthenticated oracle that relays any string to Keycloak's token endpoint and
+		// reports back whether it was accepted, and an outbound amplifier into Keycloak's
+		// brute-force detector. Signature validation stays Keycloak's job.
+		try
+		{
+			(void)JwtHelper::decode(refreshToken);
+		}
+		catch (const std::exception &)
+		{
+			throw std::invalid_argument("Malformed refresh token");
+		}
+
 		const auto tokenResp = keycloak->refreshKeycloakToken(refreshToken, timeoutSeconds);
 		const int expiresIn = tokenResp.expiresIn > 0 ? static_cast<int>(tokenResp.expiresIn) : timeoutSeconds;
+
+		// Authorize on the freshly issued token, not the possibly-expired one the caller sent.
+		// Also validates Keycloak's response before we hand it back.
+		const auto verified = keycloak->verifyKeycloakToken(JwtHelper::decode(tokenResp.accessToken), HTTP_HEADER_JWT_Audience_appmesh);
+		const auto &tokenUser = std::get<0>(verified);
+		if (std::get<2>(verified).count(PERMISSION_KEY_user_token_renew) == 0)
+		{
+			throw std::invalid_argument(Utility::stringFormat("Permission denied: user '%s' lacks required permission '%s'", tokenUser.c_str(), PERMISSION_KEY_user_token_renew));
+		}
+
 		message->reply(web::http::status_codes::OK, createJwtResponse(message, tokenUser, expiresIn, "Keycloak", "", &tokenResp.accessToken, &tokenResp.refreshToken));
 		LOG_DBG << fname << "User <" << tokenUser << "> renew Keycloak token success";
 		return;
 	}
+
+	if (!refreshToken.empty())
+	{
+		// Local refresh-token flow: authenticate on the refresh token alone.
+		const auto verified = JwtToken::verifyRefresh(refreshToken);
+		const auto &refreshUser = std::get<0>(verified);
+		const auto &refreshGroup = std::get<1>(verified);
+
+		const auto permissions = Security::instance()->getUserPermissions(refreshUser, refreshGroup);
+		if (permissions.count(PERMISSION_KEY_user_token_renew) == 0)
+		{
+			throw std::invalid_argument(Utility::stringFormat("Permission denied: user '%s' lacks required permission '%s'", refreshUser.c_str(), PERMISSION_KEY_user_token_renew));
+		}
+
+		// Rotate: retire the presented refresh token so a captured copy cannot be replayed.
+		// The atomic revoke is the real gate — verifyRefresh's blacklist check above is a
+		// cheap early-out, but two concurrent renews on the worker pool would both pass it
+		// and fork the token chain. Losing that race means the token was already consumed.
+		if (!TOKEN_BLACK_LIST::instance()->revokeOnce(refreshToken, JwtHelper::decode(refreshToken).get_expires_at()))
+		{
+			throw std::domain_error("Refresh token has been revoked");
+		}
+
+		// The old access token is left alone: it is short-lived and expires on its own, and
+		// blacklisting one per renew is the churn this flow exists to remove.
+		message->reply(web::http::status_codes::OK, createJwtResponse(message, refreshUser, timeoutSeconds, refreshGroup, renewAudience(message), nullptr, nullptr, true));
+		LOG_DBG << fname << "User <" << refreshUser << "> renew token via refresh token success";
+		return;
+	}
+
+	// Legacy flow (older SDK, or a token installed via SetToken): the access token
+	// authenticates its own renewal and is retired.
+	permissionCheck(message, PERMISSION_KEY_user_token_renew);
 
 	// verify current token
 	const auto token = getJwtToken(message);
@@ -1054,8 +1191,9 @@ void RestHandler::apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message)
 	//	throw std::invalid_argument("The current time is still before the midpoint of the expire time");
 	//}
 
-	// create new token
-	message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, userGroup, audience));
+	// Hand back a refresh token when the client asked for one: this is how a client that
+	// started without one upgrades into the refresh flow after a single legacy renewal.
+	message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, userGroup, audience, nullptr, nullptr, wantsRefreshToken(message)));
 
 	// retire current token
 	TOKEN_BLACK_LIST::instance()->addToken(token, expireTime);
@@ -1137,7 +1275,10 @@ void RestHandler::apiUserTotpValidate(const std::shared_ptr<HttpRequest> &messag
 	const auto totp = GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_JWT_totp);
 	const auto totpChallenge = GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_JWT_totp_challenge);
 	const auto timeout = GET_JSON_INT64_VALUE(body, HTTP_BODY_KEY_JWT_expire_seconds);
-	int timeoutSeconds = (timeout == 0) ? DEFAULT_TOKEN_EXPIRE_SECONDS : timeout;
+	// Route through parseTokenTimeout like every other entry point: the raw int64 was neither
+	// clamped to MAX_TOKEN_EXPIRE_SECONDS nor checked for a positive value, and narrowing it
+	// straight to int is implementation-defined.
+	int timeoutSeconds = parseTokenTimeout(timeout == 0 ? std::string() : std::to_string(timeout));
 
 	LOG_DBG << fname << "Validating TOTP for user <" << uname << ">";
 	const auto user = Security::instance()->getUserInfo(uname);
@@ -1146,10 +1287,18 @@ void RestHandler::apiUserTotpValidate(const std::shared_ptr<HttpRequest> &messag
 	if (totp.empty())
 		throw std::invalid_argument("no TOTP key provided");
 
+	// Challenge first: it is the only artifact proving the caller completed the password
+	// login, and this endpoint has no permissionCheck. Validating the code before it would
+	// let an unauthenticated caller brute-force the second factor and read the answer off
+	// the status code.
 	std::string token;
 	user->totpValidateChallenge(totpChallenge, token);
+
+	// Then the second factor itself. Without this a correct password plus any six digits
+	// completed an MFA login — the code was never checked on this path.
+	user->totpValidateCode(totp);
 	assert(token.empty() == false);
-	message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), "", &token));
+	message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), "", &token, nullptr, wantsRefreshToken(message)));
 
 	LOG_DBG << fname << "User <" << uname << "> validate TOTP key success";
 }
@@ -1171,10 +1320,10 @@ void RestHandler::apiUserTotpDisable(const std::shared_ptr<HttpRequest> &message
 			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
 		}
 		user->totpDeactive();
-		message->reply(web::http::status_codes::OK, Utility::text2json("2FA deactive success"));
-
-		// persist
+		// Persist before replying: a failure here must surface as an error, not follow a
+		// success the client already received.
 		Security::instance()->save();
+		message->reply(web::http::status_codes::OK, Utility::text2json("2FA deactive success"));
 		LOG_DBG << fname << "User <" << userName << "> disable TOTP success";
 	}
 	else

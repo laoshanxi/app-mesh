@@ -26,6 +26,7 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
         .context("Invalid timeout duration")?;
 
     let challenge = client
+        .client()
         .login(&username, &passwd, None, expire, args.audience.as_deref())
         .await
         .context("Login failed")?;
@@ -33,7 +34,10 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
     if !challenge.is_empty() {
         let totp_code = password::prompt_totp()?;
         let expire_secs = expire.unwrap_or(604_800);
+        // validate_totp needs &Arc<AppMeshClient> (it may start auto-refresh), which Deref
+        // through the WSS wrapper cannot provide.
         client
+            .client()
             .validate_totp(&username, &challenge, &totp_code, expire_secs)
             .await
             .context("TOTP validation failed")?;

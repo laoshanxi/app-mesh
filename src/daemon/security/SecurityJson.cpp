@@ -102,7 +102,11 @@ void SecurityJson::save()
     }
     catch (const std::exception &ex)
     {
+        // Rethrow, matching SecurityConsul::save(). Swallowing meant a password change or a
+        // token revocation returned 200 while nothing reached disk, so every "revoked" token
+        // came back alive after the next restart.
         LOG_ERR << fname << "Failed to save security information: " << ex.what();
+        throw;
     }
 }
 
