@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -77,7 +76,7 @@ func (r *TCPConnection) Connect(tcpAddr net.Addr, sslClientCert string, sslClien
 
 	// Set TCP_NODELAY for low-latency communication.
 	if err := setTCPNoDelay(conn); err != nil {
-		log.Printf("warning: failed to set TCP_NODELAY: %v", err)
+		logf("warning: failed to set TCP_NODELAY: %v", err)
 	}
 
 	r.conn = conn
@@ -119,6 +118,18 @@ func (r *TCPConnection) readHeader() (uint32, error) {
 
 	// Extract the body length (next 4 bytes).
 	return binary.BigEndian.Uint32(headerBuf[4:]), nil
+}
+
+// ReadMessageContext is ReadMessage bounded by ctx's deadline. Without it a lost reply
+// blocks until TCP keepalive tears the connection down, which is minutes.
+func (r *TCPConnection) ReadMessageContext(ctx context.Context) ([]byte, error) {
+	if deadline, ok := ctx.Deadline(); ok && r.conn != nil {
+		if err := r.conn.SetReadDeadline(deadline); err != nil {
+			return nil, err
+		}
+		defer r.conn.SetReadDeadline(time.Time{})
+	}
+	return r.ReadMessage()
 }
 
 // readBytes reads the specified number of bytes from the TCP connection.
@@ -167,10 +178,15 @@ func (r *TCPConnection) SendMessage(ctx context.Context, buffer []byte) error {
 	binary.BigEndian.PutUint32(header[4:], uint32(len(buffer)))
 
 	// --- Send header and body atomically ---
+	// A failure part-way through leaves a truncated frame on the wire, and the peer would
+	// read the next request's bytes as the tail of this one. Close so callers are forced
+	// through a reconnect instead of silently desynchronising the stream.
 	if err := r.sendBytes(header[:]); err != nil {
+		r.Close()
 		return fmt.Errorf("failed to send header: %w", err)
 	}
 	if err := r.sendBytes(buffer); err != nil {
+		r.Close()
 		return fmt.Errorf("failed to send body: %w", err)
 	}
 

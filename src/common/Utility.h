@@ -164,6 +164,9 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
 #define WEBSOCKET_FILE_OPERATION_TIMEOUT 30
 #define WEBSOCKET_FILE_AUDIENCE "appmesh-file-service"
+// Local-mode refresh token audience: only /appmesh/token/renew accepts it; the normal
+// API audience check rejects it everywhere else.
+#define JWT_REFRESH_AUDIENCE "appmesh-refresh"
 
 #define JWT_USER_KEY "mesh123"
 #define JWT_USER_NAME "mesh"
@@ -292,6 +295,11 @@ public:
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24))		// default 7 days
 #define MAX_TOKEN_EXPIRE_SECONDS int(30 * (60 * 60 * 24))			// hard cap: reject/clamp requests for tokens living longer than 30 days
+// Refresh tokens are derived from the access TTL rather than pinned to a constant: a
+// fixed 7-day floor made them expire alongside a default 7-day access token, so the
+// "renew after the access token expired" path could never actually be reached.
+#define REFRESH_TOKEN_EXPIRE_MULTIPLE 2                     // refresh TTL = N x access TTL ...
+#define REFRESH_TOKEN_EXPIRE_MIN_MARGIN_SECONDS int(60 * 60) // ... but at least this much longer
 #define JWT_CLOCK_LEEWAY_SECONDS 60									// tolerate up to 60s of clock skew on exp/nbf/iat verification
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 2)		// run app default timeout 2 days
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
@@ -434,6 +442,9 @@ public:
 #define JSON_KEY_USER_group "group"
 #define JSON_KEY_USER_roles "roles"
 #define JSON_KEY_USER_locked "locked"
+// Tokens issued before this instant are rejected. Bumped when a credential change
+// must invalidate everything already handed out (e.g. a password change).
+#define JSON_KEY_USER_token_epoch "token_epoch"
 #define JSON_KEY_USER_metadata "metadata"
 #define JSON_KEY_USER_mfa_key "mfa_key"
 #define JSON_KEY_USER_mfa_enabled "mfa_enabled"
@@ -458,6 +469,10 @@ public:
 
 #define HTTP_HEADER_JWT_expire_seconds "X-Expire-Seconds"
 #define HTTP_HEADER_JWT_refresh_token "X-Refresh-Token"
+// Opt-in: only clients that set this get a refresh token. A client that cannot store
+// and replay one would otherwise be issued a credential it never sends back on
+// logoff, leaving it live until expiry.
+#define HTTP_HEADER_JWT_want_refresh_token "X-Refresh-Token-Request"
 #define HTTP_HEADER_JWT_audience "X-Audience"
 #define HTTP_HEADER_JWT_totp "X-Totp-Code"
 #define HTTP_HEADER_JWT_auth_permission "X-Permission"

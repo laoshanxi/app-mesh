@@ -382,8 +382,8 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
-	// Receive the response directly (legacy synchronous mode).
-	respData, err := t.ReadMessage()
+	// Receive the response directly (legacy synchronous mode), bounded by ctx.
+	respData, err := t.ReadMessageContext(req.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +415,11 @@ func (h *TCPRequester) getForwardTo() string {
 func (t *TCPRequester) enableDemuxer() {
 	t.demuxerMu.Lock()
 	defer t.demuxerMu.Unlock()
-	if t.demuxer != nil {
+	// Replace a stopped demuxer rather than keeping it. stop() (any readLoop error, e.g. a
+	// daemon restart) leaves the object in place but not running, and every later request
+	// would then silently fall back to the uncancelable legacy read path for the lifetime
+	// of the process.
+	if t.demuxer != nil && t.demuxer.isRunning() {
 		return
 	}
 	t.demuxer = newMessageDemuxer(t.TCPConnection.ReadMessage)

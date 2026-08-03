@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -86,13 +85,13 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 			if ctx.Err() != nil {
 				return "", fmt.Errorf("fetch_task canceled: %w", ctx.Err())
 			}
-			log.Printf("fetch_task request failed: %v, retrying...", err)
+			logf("fetch_task request failed: %v, retrying...", err)
 		} else if status == http.StatusOK {
 			return string(body), nil
 		} else if status == http.StatusPreconditionFailed {
 			return "", ErrProcessSuperseded
 		} else {
-			log.Printf("fetch_task failed with status %d: %s, retrying...", status, string(body))
+			logf("fetch_task failed with status %d: %s, retrying...", status, string(body))
 		}
 
 		if remaining := retryFloor - time.Since(attemptStart); remaining > 0 {

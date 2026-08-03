@@ -295,7 +295,9 @@ public class AppMeshClientWSS extends AppMeshClient {
         conn.setReadTimeout(FILE_TRANSFER_TIMEOUT);
 
         int responseCode = conn.getResponseCode();
-        if (responseCode != HttpURLConnection.HTTP_OK) {
+        // Any 2xx is success: the WebSocket file endpoint answers 201 Created on upload,
+        // while the REST path answers 200. The other SDKs accept the whole range.
+        if (responseCode < HttpURLConnection.HTTP_OK || responseCode >= HttpURLConnection.HTTP_MULT_CHOICE) {
             String errorMsg = readErrorStream(conn);
             throw new IOException("HTTPS download failed: " + responseCode + " " + errorMsg);
         }
@@ -381,7 +383,9 @@ public class AppMeshClientWSS extends AppMeshClient {
         }
 
         int responseCode = conn.getResponseCode();
-        if (responseCode != HttpURLConnection.HTTP_OK) {
+        // Any 2xx is success: the WebSocket file endpoint answers 201 Created on upload,
+        // while the REST path answers 200. The other SDKs accept the whole range.
+        if (responseCode < HttpURLConnection.HTTP_OK || responseCode >= HttpURLConnection.HTTP_MULT_CHOICE) {
             String errorMsg = readErrorStream(conn);
             throw new IOException("HTTPS upload failed: " + responseCode + " " + errorMsg);
         }

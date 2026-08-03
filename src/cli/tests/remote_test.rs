@@ -27,7 +27,7 @@ async fn new_client() -> Arc<appmesh::AppMeshClientWSS> {
 
 async fn authed() -> Arc<appmesh::AppMeshClientWSS> {
     let c = new_client().await;
-    c.login("admin", &cred(), None, None, None).await.expect("login failed");
+    c.client().login("admin", &cred(), None, None, None).await.expect("login failed");
     c
 }
 
@@ -64,7 +64,7 @@ fn cli_login() {
 #[ignore]
 async fn sdk_01_login_logout() {
     let c = new_client().await;
-    let ch = c.login("admin", &cred(), None, None, None).await.unwrap();
+    let ch = c.client().login("admin", &cred(), None, None, None).await.unwrap();
     assert!(ch.is_empty());
     assert!(c.get_access_token().is_some());
     c.logout().await.unwrap();
@@ -74,7 +74,7 @@ async fn sdk_01_login_logout() {
 #[ignore]
 async fn sdk_02_login_wrong_password() {
     let c = new_client().await;
-    assert!(c.login("admin", "WRONG", None, None, None).await.is_err());
+    assert!(c.client().login("admin", "WRONG", None, None, None).await.is_err());
 }
 
 #[tokio::test]
@@ -114,10 +114,10 @@ async fn sdk_06_password_change_roundtrip() {
     c.update_password(&cred(), "TempPass@789", None).await.unwrap();
     // old password should fail now
     let c2 = new_client().await;
-    assert!(c2.login("admin", &cred(), None, None, None).await.is_err());
+    assert!(c2.client().login("admin", &cred(), None, None, None).await.is_err());
     // restore
     let c3 = new_client().await;
-    c3.login("admin", "TempPass@789", None, None, None).await.unwrap();
+    c3.client().login("admin", "TempPass@789", None, None, None).await.unwrap();
     c3.update_password("TempPass@789", &cred(), None).await.unwrap();
 }
 

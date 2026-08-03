@@ -18,13 +18,11 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.zip.CRC32;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
@@ -63,14 +61,32 @@ public class AppMeshClient implements Closeable {
     private static final String DEFAULT_SSL_CLIENT_CERT = DEFAULT_SSL_DIR + "/client.pem";
     private static final String DEFAULT_SSL_CLIENT_KEY = DEFAULT_SSL_DIR + "/client-key.pem";
 
-    private static final long TOKEN_REFRESH_INTERVAL_SECONDS = 300; // 5 minutes
-    private static final long TOKEN_REFRESH_OFFSET_SECONDS = 30;   // 30 seconds before expiry
+    // Opt-in: the daemon only issues a refresh token to clients that ask for one, and this
+    // SDK stores and replays it.
+    private static final String WANT_REFRESH_TOKEN_HEADER = "X-Refresh-Token-Request";
+
+    // Auto-refresh pacing: the loop polls every TOKEN_REFRESH_POLL_SECONDS but renews only
+    // once the token has burned TOKEN_REFRESH_LIFETIME_RATIO of its own lifetime.
+    private static final long TOKEN_REFRESH_POLL_SECONDS = 300; // poll cap, NOT a renew interval
+    private static final long TOKEN_REFRESH_OFFSET_SECONDS = 30; // floor for the pre-expiry margin
+    private static final double TOKEN_REFRESH_LIFETIME_RATIO = 0.6; // rest is the retry budget
+    private static final double TOKEN_REFRESH_JITTER_RATIO = 0.1; // of the margin, so clients don't renew in lockstep
+    private static final long TOKEN_REFRESH_RETRY_BASE_SECONDS = 5;
+    private static final long TOKEN_REFRESH_RETRY_MAX_SECONDS = 60;
+    private static final int TOKEN_REFRESH_LOG_EVERY = 10; // log 1st failure, then every Nth
 
     private final String baseURL;
     private final AtomicReference<String> jwtToken = new AtomicReference<>(null);
-    // Keycloak (OAuth2) mode issues a refresh token that must be echoed back on renew/logoff.
-    // Absent in local-JWT mode, in which case it stays null and no X-Refresh-Token header is sent.
-    private final AtomicReference<String> refreshToken = new AtomicReference<>(null);
+    // Refresh token from a login/TOTP/renew response; issued by both Keycloak and local-JWT
+    // daemons, absent against an older daemon that returns none. Echoed back on renew/logoff.
+    // Package-private so the pacing tests can seed it without a daemon.
+    final AtomicReference<String> refreshToken = new AtomicReference<>(null);
+    // Expire seconds from login, replayed on renew so the caller's TTL is kept; 0 = unknown.
+    private final AtomicLong loginExpireSeconds = new AtomicLong(0);
+    // Serializes renewals. Rotation makes a refresh token single-use, so two concurrent
+    // renewals would present the same one and the loser would be told it is revoked —
+    // permanently wedging a client that has no other credential.
+    private final Object renewLock = new Object();
     private volatile String forwardTo;
 
     // Per-instance SSL (avoids modifying JVM global defaults)
@@ -84,10 +100,17 @@ public class AppMeshClient implements Closeable {
     // Cookie file persistence
     private final String cookieFile;
 
-    // Token auto-refresh
+    // Token auto-refresh: one daemon thread per client, woken by refreshMonitor.
     private final boolean autoRefreshToken;
-    private volatile ScheduledExecutorService refreshExecutor;
-    private volatile ScheduledFuture<?> refreshFuture;
+    // Caller's refresh-token opt-in; null follows autoRefreshToken. See Builder#useRefreshToken.
+    private final Boolean useRefreshToken;
+    private final Object refreshMonitor = new Object();
+    private volatile Thread refreshThread; // guarded by refreshMonitor for writes
+    private boolean refreshStop; // guarded by refreshMonitor
+    // Set by stopTokenRefresh(); makes stop terminal so a renewal completing afterwards
+    // cannot resurrect the loop. Cleared only by an explicit startTokenRefresh().
+    private boolean refreshClosed; // guarded by refreshMonitor
+    private boolean refreshWake; // guarded by refreshMonitor
 
     /**
      * Internal constructor used by Builder and subclasses.
@@ -100,6 +123,7 @@ public class AppMeshClient implements Closeable {
 
         this.cookieFile = builder.cookieFile;
         this.autoRefreshToken = builder.autoRefreshToken;
+        this.useRefreshToken = builder.useRefreshToken;
 
         // Load token from cookie file if exists
         if (this.cookieFile != null && !this.cookieFile.isEmpty()) {
@@ -146,6 +170,7 @@ public class AppMeshClient implements Closeable {
         private String jwtToken;
         private String cookieFile;
         private boolean autoRefreshToken = false;
+        private Boolean useRefreshToken = null;
         private boolean disableSSLVerification = false;
         private int connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private int readTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
@@ -218,6 +243,16 @@ public class AppMeshClient implements Closeable {
         /** Enable automatic token refresh before expiration. */
         public Builder autoRefreshToken(boolean enable) {
             this.autoRefreshToken = enable;
+            return this;
+        }
+
+        /**
+         * Ask the daemon for a refresh token on login/renew. {@code null} (default) follows
+         * {@link #autoRefreshToken(boolean)}, which already says whether this client is
+         * long-lived; a refresh token is long-lived, so a one-shot client would leak one per run.
+         */
+        public Builder useRefreshToken(Boolean enable) {
+            this.useRefreshToken = enable;
             return this;
         }
 
@@ -336,7 +371,7 @@ public class AppMeshClient implements Closeable {
             saveTokenToFile(token);
         }
         if (token != null && !token.isEmpty() && autoRefreshToken) {
-            startTokenRefresh();
+            armTokenRefresh();
         }
     }
 
@@ -414,61 +449,213 @@ public class AppMeshClient implements Closeable {
 
     // -------- Token Auto-Refresh --------
 
-    /** Start background token auto-refresh. */
+    /**
+     * Start background token auto-refresh when enabled for this client.
+     *
+     * <p>Renewal happens once the token has consumed {@code TOKEN_REFRESH_LIFETIME_RATIO} of its
+     * lifetime, not on a fixed cadence; failed renewals retry with bounded backoff. Calling this
+     * while the loop already runs only wakes it to re-plan against the token that just changed.
+     */
     public void startTokenRefresh() {
         if (!autoRefreshToken) return;
-        stopTokenRefresh();
-        refreshExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "appmesh-token-refresh");
+        synchronized (refreshMonitor) {
+            refreshClosed = false; // explicit call: the caller wants the loop running
+        }
+        armTokenRefresh();
+    }
+
+    /**
+     * Start the loop unless it has been stopped for good. Used by the internal token-changed
+     * callback: a renewal already in flight when stop was called will complete and land here,
+     * and without the refreshClosed guard it would spawn a thread with refreshStop=false that
+     * nothing can ever stop — leaking a renewer past close() and writing credentials back
+     * after logout() cleared them.
+     */
+    private void armTokenRefresh() {
+        if (!autoRefreshToken) return;
+        synchronized (refreshMonitor) {
+            if (refreshClosed) return;
+            if (refreshThread != null && refreshThread.isAlive()) {
+                refreshWake = true;
+                refreshMonitor.notifyAll();
+                return;
+            }
+            refreshStop = false;
+            refreshWake = false;
+            Thread t = new Thread(this::tokenRefreshLoop, "appmesh-token-refresh");
             t.setDaemon(true);
-            return t;
-        });
-        scheduleNextRefresh();
+            refreshThread = t;
+            t.start();
+        }
     }
 
-    /** Stop background token auto-refresh. */
+    /**
+     * Stop background token auto-refresh. Terminal: a renewal still in flight cannot restart
+     * the loop when it completes. Call startTokenRefresh() explicitly to re-arm.
+     */
     public void stopTokenRefresh() {
-        if (refreshFuture != null) {
-            refreshFuture.cancel(false);
-            refreshFuture = null;
+        Thread t;
+        synchronized (refreshMonitor) {
+            refreshClosed = true;
+            t = refreshThread;
+            if (t == null) return;
+            refreshStop = true;
+            refreshMonitor.notifyAll();
         }
-        if (refreshExecutor != null) {
-            refreshExecutor.shutdownNow();
-            refreshExecutor = null;
+        // The join stays OUTSIDE the monitor on purpose: the loop thread needs the monitor to
+        // finish its own renewal callback, so joining while holding it deadlocks immediately.
+        if (t != Thread.currentThread()) {
+            try {
+                t.join(5000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        synchronized (refreshMonitor) {
+            if (refreshThread == t) refreshThread = null;
         }
     }
 
-    private void scheduleNextRefresh() {
-        if (refreshExecutor == null || refreshExecutor.isShutdown()) return;
-        long delaySec = computeRefreshDelay();
-        refreshFuture = refreshExecutor.schedule(() -> {
+    /**
+     * Background loop: sleep, renew when due, repeat until stopped.
+     *
+     * <p>Failures retry with bounded backoff rather than disarming the loop: with a refresh token
+     * the daemon can still issue a new access token long after the old one expired.
+     */
+    private void tokenRefreshLoop() {
+        final Thread self = Thread.currentThread();
+        int failures = 0;
+        while (true) {
+            RefreshPlan plan = computeRefreshPlan();
+            long delaySeconds = plan.delaySeconds;
+            boolean due = plan.due;
+            if (failures > 0) {
+                delaySeconds = refreshRetryDelay(failures); // retry, not the stale plan
+                due = true;
+            }
+            // Deadline loop: a spurious wakeup must not be mistaken for the refresh point.
+            long deadline = System.currentTimeMillis() + delaySeconds * 1000L;
+            boolean woken = false;
+            synchronized (refreshMonitor) {
+                while (true) {
+                    if (refreshStop || refreshThread != self) return;
+                    if (refreshWake) {
+                        refreshWake = false;
+                        woken = true;
+                        break;
+                    }
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0) break;
+                    try {
+                        refreshMonitor.wait(remaining);
+                    } catch (InterruptedException e) {
+                        self.interrupt();
+                        return;
+                    }
+                }
+            }
+            if (woken) {
+                // Token changed externally: the failure history no longer applies to it.
+                failures = 0;
+                continue;
+            }
+            if (!due) continue; // woke short of the refresh point
             try {
                 renewToken();
-                LOGGER.fine("Auto-refresh: token renewed successfully");
             } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Auto-refresh: token renewal failed", e);
-            }
-            scheduleNextRefresh();
-        }, delaySec, TimeUnit.SECONDS);
-    }
-
-    private long computeRefreshDelay() {
-        String token = this.jwtToken.get();
-        if (token != null) {
-            try {
-                long exp = decodeJwtExp(token);
-                long remaining = exp - System.currentTimeMillis() / 1000;
-                if (remaining <= TOKEN_REFRESH_OFFSET_SECONDS) {
-                    return 1;
+                failures++;
+                // Log sparsely: a daemon outage must not flood at the backoff rate.
+                if (failures == 1 || failures % TOKEN_REFRESH_LOG_EVERY == 0) {
+                    LOGGER.log(Level.WARNING, "Auto-refresh: token renewal failed (attempt " + failures + ")", e);
                 }
-                return Math.min(remaining - TOKEN_REFRESH_OFFSET_SECONDS, TOKEN_REFRESH_INTERVAL_SECONDS);
-            } catch (Exception ignored) {
+                continue;
             }
+            if (failures > 0) {
+                LOGGER.info("Auto-refresh: token renewal recovered after " + failures + " failure(s)");
+            }
+            failures = 0;
         }
-        return TOKEN_REFRESH_INTERVAL_SECONDS;
     }
 
-    private static long decodeJwtExp(String token) {
+    /** How long the refresh loop sleeps, and whether a renewal is due once it elapses. */
+    static final class RefreshPlan {
+        final long delaySeconds;
+        final boolean due;
+
+        RefreshPlan(long delaySeconds, boolean due) {
+            this.delaySeconds = delaySeconds;
+            this.due = due;
+        }
+    }
+
+    /**
+     * Seconds before expiry at which to renew: a fraction of the token's own lifetime,
+     * floored at {@code TOKEN_REFRESH_OFFSET_SECONDS}.
+     */
+    static double refreshMargin(String token, long exp, long iat) {
+        double lifetime = (iat > 0 && exp > iat) ? (double) (exp - iat) : exp - System.currentTimeMillis() / 1000.0;
+        double margin = Math.max(lifetime * (1 - TOKEN_REFRESH_LIFETIME_RATIO), TOKEN_REFRESH_OFFSET_SECONDS);
+
+        // Jitter derived from the token: stable across polls, distinct per client.
+        CRC32 crc = new CRC32();
+        crc.update(token.getBytes(StandardCharsets.UTF_8));
+        double spread = margin * TOKEN_REFRESH_JITTER_RATIO;
+        margin += ((crc.getValue() % 2001) / 1000.0 - 1.0) * spread;
+
+        // Clamp last: the 30s floor (and its jitter) must never exceed the token's own life,
+        // or every renewal would land past the refresh point and the loop would spin at ~1Hz.
+        return lifetime > 0 ? Math.min(margin, lifetime / 2) : margin;
+    }
+
+    /**
+     * Plan the next loop iteration. Sleep is capped at {@code TOKEN_REFRESH_POLL_SECONDS} so a
+     * token replaced elsewhere is noticed, but a wake-up short of the refresh point does not renew.
+     */
+    RefreshPlan computeRefreshPlan() {
+        String token = this.jwtToken.get();
+        if (token == null || token.isEmpty()) {
+            // A held refresh token can still mint a new access token, so an access token lost to
+            // an expired cookie is recoverable — but only if we actually try. With neither
+            // credential there is nothing to renew, so just idle.
+            String refresh = this.refreshToken.get();
+            if (refresh != null && !refresh.isEmpty()) {
+                return new RefreshPlan(1, true);
+            }
+            return new RefreshPlan(TOKEN_REFRESH_POLL_SECONDS, false);
+        }
+
+        long exp;
+        long iat;
+        try {
+            long[] times = decodeJwtTimes(token);
+            exp = times[0];
+            iat = times[1];
+        } catch (Exception e) {
+            return new RefreshPlan(TOKEN_REFRESH_POLL_SECONDS, true); // unreadable lifetime: fixed cadence
+        }
+
+        double wait = exp - refreshMargin(token, exp, iat) - System.currentTimeMillis() / 1000.0;
+        if (wait <= 0) {
+            return new RefreshPlan(1, true); // at or past the refresh point
+        }
+        if (wait > TOKEN_REFRESH_POLL_SECONDS) {
+            return new RefreshPlan(TOKEN_REFRESH_POLL_SECONDS, false); // not due; wake only to re-evaluate
+        }
+        return new RefreshPlan(Math.max(1, (long) Math.ceil(wait)), true);
+    }
+
+    /** Bounded exponential backoff for the nth consecutive renewal failure (n &gt;= 1). */
+    static long refreshRetryDelay(int failures) {
+        int shift = Math.min(Math.max(failures - 1, 0), 16);
+        return Math.min(TOKEN_REFRESH_RETRY_BASE_SECONDS << shift, TOKEN_REFRESH_RETRY_MAX_SECONDS);
+    }
+
+    /**
+     * Extract the {@code exp} and {@code iat} claims from a JWT without verifying the signature.
+     *
+     * @return {@code {exp, iat}}; iat is 0 when the claim is absent, and callers must cope
+     */
+    static long[] decodeJwtTimes(String token) {
         String[] parts = token.split("\\.");
         if (parts.length < 2) throw new IllegalArgumentException("Invalid JWT");
         String payload = parts[1];
@@ -479,7 +666,7 @@ public class AppMeshClient implements Closeable {
         }
         byte[] decoded = Base64.getUrlDecoder().decode(payload);
         JSONObject claims = new JSONObject(new String(decoded, StandardCharsets.UTF_8));
-        return claims.getLong("exp");
+        return new long[] { claims.getLong("exp"), claims.optLong("iat", 0) };
     }
 
     // -------- Authentication --------
@@ -545,6 +732,15 @@ public class AppMeshClient implements Closeable {
                 tokenExpire == null ? null : Long.valueOf(Utils.toSeconds(tokenExpire)), audience);
     }
 
+    /**
+     * Resolve the tri-state refresh-token opt-in: an explicit choice wins, otherwise auto-refresh
+     * decides — only a long-lived client has somewhere to keep (and eventually revoke) the
+     * credential. Package-private so the tri-state test can assert it without a daemon.
+     */
+    boolean wantsRefreshToken() {
+        return this.useRefreshToken != null ? this.useRefreshToken.booleanValue() : this.autoRefreshToken;
+    }
+
     private LoginResult loginImpl(String username, String password, String totpCode, Long tokenExpireSeconds,
             String audience) throws IOException {
         Map<String, String> headers = new HashMap<>();
@@ -552,6 +748,11 @@ public class AppMeshClient implements Closeable {
                 + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
         headers.put(AUTHORIZATION_HEADER, basic);
         headers.put("X-Set-Cookie", "true");
+        // Opt in only when the caller wants one — the header is the daemon's sole trigger, and
+        // omitting it (rather than sending "false") is what suppresses issuance.
+        if (wantsRefreshToken()) {
+            headers.put(WANT_REFRESH_TOKEN_HEADER, "true");
+        }
         if (tokenExpireSeconds != null) {
             headers.put("X-Expire-Seconds", Long.toString(tokenExpireSeconds));
         }
@@ -566,6 +767,9 @@ public class AppMeshClient implements Closeable {
         int statusCode = conn.getResponseCode();
 
         if (statusCode == HttpURLConnection.HTTP_OK) {
+            // Remember the TTL before the token lands: applyAuthToken arms the refresh loop,
+            // whose renewals must replay it.
+            rememberExpireSeconds(tokenExpireSeconds);
             return new LoginResult(applyAuthToken(conn), null);
         } else if (statusCode == HTTP_PRECONDITION_REQUIRED) {
             String responseContent = Utils.readResponseSafe(conn);
@@ -617,8 +821,16 @@ public class AppMeshClient implements Closeable {
         if (tokenExpireSeconds != null) {
             body.put("expire_seconds", tokenExpireSeconds.longValue());
         }
-        HttpURLConnection conn = request("POST", "/appmesh/totp/validate", body, null, null);
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-Set-Cookie", "true");
+        if (wantsRefreshToken()) {
+            headers.put(WANT_REFRESH_TOKEN_HEADER, "true");
+        }
+        HttpURLConnection conn = request("POST", "/appmesh/totp/validate", body, headers, null);
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+            // A validated challenge completes the login, so it owes the same session setup as
+            // login(): capture the refresh token, remember the TTL, arm auto-refresh.
+            rememberExpireSeconds(tokenExpireSeconds);
             return applyAuthToken(conn);
         }
         String errorBody = Utils.readResponseSafe(conn);
@@ -759,19 +971,42 @@ public class AppMeshClient implements Closeable {
         return renewTokenImpl(tokenExpire == null ? null : Long.valueOf(Utils.toSeconds(tokenExpire)));
     }
 
+    /** Record the TTL a session was established with, so renewals can replay it. */
+    private void rememberExpireSeconds(Long tokenExpireSeconds) {
+        this.loginExpireSeconds.set(tokenExpireSeconds == null ? 0 : tokenExpireSeconds.longValue());
+    }
+
     private String renewTokenImpl(Long tokenExpireSeconds) throws IOException {
-        Map<String, String> headers = new HashMap<>();
-        if (tokenExpireSeconds != null) {
-            headers.put("X-Expire-Seconds", Long.toString(tokenExpireSeconds));
+        // Single-flight: a rotated refresh token is single-use, so a second concurrent renewal
+        // would present an already-spent credential and wedge the client for good.
+        synchronized (renewLock) {
+            Map<String, String> headers = new HashMap<>();
+            if (wantsRefreshToken()) {
+                headers.put(WANT_REFRESH_TOKEN_HEADER, "true");
+            }
+            // Replay the TTL the session was created with. Omit the header when unknown so the
+            // daemon applies its own default rather than silently upgrading a short-lived token.
+            long expire = tokenExpireSeconds != null ? tokenExpireSeconds.longValue() : this.loginExpireSeconds.get();
+            if (expire > 0) {
+                headers.put("X-Expire-Seconds", Long.toString(expire));
+            }
+            // A held refresh token is the sole credential the daemon needs, so renewal succeeds
+            // even after the access token expired; without one the access token is authenticated.
+            String refresh = this.refreshToken.get();
+            if (refresh != null && !refresh.isEmpty()) {
+                headers.put("X-Refresh-Token", refresh);
+            }
+            HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
+            if (conn.getResponseCode() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+                // A rejected refresh token will never be accepted again (rotated away, revoked, or
+                // the session ended). Drop it so the next attempt falls back to the access token
+                // instead of replaying a credential that is now guaranteed to fail.
+                this.refreshToken.set(null);
+                throw new IOException("Token renewal failed: HTTP 401 - " + Utils.readErrorResponse(conn));
+            }
+            // Both modes rotate the refresh token on renew — applyAuthToken stores the new one.
+            return applyAuthToken(conn);
         }
-        // Keycloak (OAuth2) mode requires the refresh token in the X-Refresh-Token header;
-        // omitted in local-JWT mode where no refresh token is stored.
-        String refresh = this.refreshToken.get();
-        if (refresh != null && !refresh.isEmpty()) {
-            headers.put("X-Refresh-Token", refresh);
-        }
-        HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
-        return applyAuthToken(conn);
     }
 
     /**

@@ -37,6 +37,12 @@ public:
 	const std::string totpGenerateChallenge(const std::string &token, const int &timeoutSeconds);
 	bool totpValidateChallenge(const std::string &totpChallenge, std::string &outToken);
 
+	/// Reject every token issued before now. Used where a credential change must not leave
+	/// previously issued tokens — including long-lived refresh tokens — usable.
+	void revokeIssuedTokens();
+	/// Instant before which a token's iat makes it invalid (epoch means "no revocation").
+	std::chrono::system_clock::time_point tokenEpoch() const;
+
 	// get user info
 	bool locked() const;
 	bool mfaEnabled() const;
@@ -68,6 +74,7 @@ public:
 private:
 	std::string getKeyMaterial() const;
 	std::string m_key;
+	std::chrono::system_clock::time_point m_tokenEpoch;
 	bool m_locked;
 	bool m_enableMfa;
 	std::string m_name;

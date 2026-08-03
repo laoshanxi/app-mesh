@@ -7,7 +7,16 @@ class AppMeshError(Exception):
 
 
 class AppMeshAuthError(AppMeshError):
-    """Authentication or authorization error."""
+    """Authentication or authorization error.
+
+    ``status_code`` distinguishes 401 (the credential itself is rejected) from 403
+    (the credential is fine but lacks the permission); callers must not treat them
+    alike. ``None`` when the error did not come from an HTTP response.
+    """
+
+    def __init__(self, message: str, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class AppMeshConnectionError(AppMeshError):

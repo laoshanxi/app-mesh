@@ -39,6 +39,7 @@ pub struct ClientBuilder {
     timeout: Option<Duration>,
     danger_accept_invalid_certs: bool,
     auto_refresh_token: bool,
+    use_refresh_token: Option<bool>,
 }
 
 impl ClientBuilder {
@@ -91,6 +92,14 @@ impl ClientBuilder {
     /// [`AppMeshClient::schedule_token_refresh`] to start it explicitly.
     pub fn auto_refresh_token(mut self, enable: bool) -> Self {
         self.auto_refresh_token = enable;
+        self
+    }
+
+    /// Ask the daemon for a refresh token on login/renew. Unset follows
+    /// [`Self::auto_refresh_token`], which already says whether this client is long-lived;
+    /// a refresh token is long-lived, so a one-shot client would leak one per invocation.
+    pub fn use_refresh_token(mut self, enable: bool) -> Self {
+        self.use_refresh_token = Some(enable);
         self
     }
 
@@ -147,6 +156,8 @@ impl ClientBuilder {
             self.timeout,
             self.danger_accept_invalid_certs,
         )?;
+
+        client.set_use_refresh_token(self.use_refresh_token);
 
         if let Some(token) = &self.jwt_token {
             client.set_token(token);

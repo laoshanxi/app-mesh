@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use base64::Engine;
 use bytes::Bytes;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use reqwest::{cookie::CookieStore, cookie::Jar, header::HeaderValue, Client as ReqwestClient, Method, StatusCode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -292,11 +292,19 @@ pub struct AppMeshClient {
     url: String,
     /// Whether automatic token refresh is enabled.
     auto_refresh: AtomicBool,
+    /// Caller's refresh-token opt-in; `None` follows `auto_refresh`. See
+    /// [`crate::ClientBuilder::use_refresh_token`].
+    use_refresh_token: Mutex<Option<bool>>,
     /// Handle to the background token-refresh task (if running).
     refresh_handle: Mutex<Option<JoinHandle<()>>>,
-    /// Current OAuth2 refresh token issued by the daemon in Keycloak mode.
-    /// Stays `None` in local-JWT mode, so renew/logout send no `X-Refresh-Token` header there.
+    /// Refresh token from login/renew; issued by both Keycloak and local-JWT daemons,
+    /// `None` against an older daemon that returns none.
     refresh_token: Mutex<Option<String>>,
+    /// Expire seconds from login, replayed on renew so the caller's TTL is kept.
+    token_expire_seconds: Mutex<Option<i32>>,
+    /// Serializes renewals. Rotation makes a refresh token single-use, so two concurrent
+    /// renewals would present the same one and the loser would be told it is revoked.
+    renew_lock: tokio::sync::Mutex<()>,
 }
 
 impl std::fmt::Debug for AppMeshClient {
@@ -329,8 +337,11 @@ impl AppMeshClient {
             req: Box::new(requester),
             url,
             auto_refresh: AtomicBool::new(false),
+            use_refresh_token: Mutex::new(None),
             refresh_handle: Mutex::new(None),
             refresh_token: Mutex::new(None),
+            token_expire_seconds: Mutex::new(None),
+            renew_lock: tokio::sync::Mutex::new(()),
         }))
     }
 
@@ -340,8 +351,11 @@ impl AppMeshClient {
             req: requester,
             url,
             auto_refresh: AtomicBool::new(false),
+            use_refresh_token: Mutex::new(None),
             refresh_handle: Mutex::new(None),
             refresh_token: Mutex::new(None),
+            token_expire_seconds: Mutex::new(None),
+            renew_lock: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -353,6 +367,20 @@ impl AppMeshClient {
         } else if self.get_access_token().is_some() {
             self.schedule_token_refresh();
         }
+    }
+
+    /// Set the caller's refresh-token opt-in; `None` follows the auto-refresh setting.
+    pub(crate) fn set_use_refresh_token(&self, enable: Option<bool>) {
+        *self.use_refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = enable;
+    }
+
+    /// Resolve the tri-state opt-in: an explicit choice wins, otherwise auto-refresh decides —
+    /// only a long-lived client has somewhere to keep (and eventually revoke) the credential.
+    fn wants_refresh_token(&self) -> bool {
+        self.use_refresh_token
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(|| self.auto_refresh.load(Ordering::Relaxed))
     }
 
     /// Close the client and release resources.
@@ -390,13 +418,10 @@ impl AppMeshClient {
 // -- Authentication ---------------------------------------------------------
 
 impl AppMeshClient {
-    /// Store the OAuth2 refresh token from a login/renew response body, if present.
+    /// Store the refresh token from a login/renew response body, if present.
     ///
-    /// Only the Keycloak (OAuth2) daemon returns `refresh_token`; local-JWT mode omits it,
-    /// so the stored value stays `None` and renew/logout send no `X-Refresh-Token` header.
-    /// Keycloak rotates the refresh token on every renew, so a present value replaces the
-    /// stored one; an absent value leaves the stored token untouched. Transport-agnostic:
-    /// `resp` carries the body over HTTP and TCP/WSS alike.
+    /// Both modes rotate it on renew, so a present value replaces the stored one; an absent
+    /// value leaves it untouched. Transport-agnostic: `resp` carries the body on all.
     fn capture_refresh_token(&self, resp: &http::Response<Bytes>) {
         if let Ok(json) = serde_json::from_slice::<Value>(resp.body()) {
             if let Some(rt) = json.get(HTTP_BODY_KEY_REFRESH_TOKEN).and_then(|v| v.as_str()) {
@@ -410,7 +435,7 @@ impl AppMeshClient {
     /// Returns the TOTP challenge string when the server replies with HTTP 428 and no valid code
     /// was supplied; otherwise returns an empty string after storing the issued JWT/cookie.
     pub async fn login(
-        &self,
+        self: &Arc<Self>,
         username: &str,
         password: &str,
         totp: Option<&str>,
@@ -426,6 +451,11 @@ impl AppMeshClient {
             HTTP_HEADER_JWT_SET_COOKIE => "true"
         };
 
+        // Opt in only when the caller wants one — the header is the daemon's sole trigger,
+        // and omitting it (rather than sending "false") is what suppresses issuance.
+        if self.wants_refresh_token() {
+            headers.insert(HTTP_HEADER_JWT_WANT_REFRESH_TOKEN.into(), "true".into());
+        }
         if let Some(seconds) = token_expire {
             headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.into(), seconds.to_string());
         }
@@ -450,9 +480,14 @@ impl AppMeshClient {
             return Err(AppMeshError::AuthenticationFailed(text));
         }
 
-        // Capture the OAuth2 refresh token when the daemon (Keycloak mode) issues one, so
-        // renew_token()/logout() can present it via X-Refresh-Token. Local mode: no-op.
         self.capture_refresh_token(&resp);
+        *self.token_expire_seconds.lock().unwrap_or_else(|e| e.into_inner()) = token_expire;
+        // Arm the loop here too, not only in login_and_refresh(): validate_totp() and
+        // set_token() already do, so leaving plain login() out gave a non-TOTP caller a
+        // silently dead refresh loop — the exact failure this rework exists to remove.
+        if self.auto_refresh.load(Ordering::Relaxed) {
+            self.schedule_token_refresh();
+        }
 
         Ok(String::new())
     }
@@ -478,13 +513,18 @@ impl AppMeshClient {
 
     /// Validate a TOTP challenge and store the returned JWT in this client session.
     pub async fn validate_totp(
-        &self,
+        self: &Arc<Self>,
         username: &str,
         challenge: &str,
         totp: &str,
         token_expire: i32,
     ) -> Result<()> {
-        let headers = hmap! { HTTP_HEADER_JWT_SET_COOKIE => "true" };
+        let mut headers = hmap! {
+            HTTP_HEADER_JWT_SET_COOKIE => "true"
+        };
+        if self.wants_refresh_token() {
+            headers.insert(HTTP_HEADER_JWT_WANT_REFRESH_TOKEN.into(), "true".into());
+        }
 
         let body = json!({
             HTTP_BODY_KEY_JWT_USERNAME: username,
@@ -494,7 +534,15 @@ impl AppMeshClient {
         });
         let body_bytes = serde_json::to_vec(&body)?;
 
-        self.req.send(Method::POST, "/appmesh/totp/validate", Some(&body_bytes), Some(headers), None, true).await?;
+        let resp =
+            self.req.send(Method::POST, "/appmesh/totp/validate", Some(&body_bytes), Some(headers), None, true).await?;
+        // A validated challenge completes the login: same session setup as login(),
+        // auto-refresh included (this path previously never started it).
+        self.capture_refresh_token(&resp);
+        *self.token_expire_seconds.lock().unwrap_or_else(|e| e.into_inner()) = Some(token_expire);
+        if self.auto_refresh.load(Ordering::Relaxed) {
+            self.schedule_token_refresh();
+        }
         Ok(())
     }
 
@@ -557,29 +605,49 @@ impl AppMeshClient {
         Ok(())
     }
 
-    /// Renew the current JWT token already attached to this client.
+    /// Renew the current JWT token.
+    ///
+    /// A held refresh token is the sole credential the daemon needs, so renewal succeeds
+    /// even after the access token expired. Without one, the daemon authenticates the
+    /// access token instead. `token_expire` defaults to the login value when `None`.
     pub async fn renew_token(&self, token_expire: Option<i32>) -> Result<()> {
-        let mut headers = hmap!();
-        if let Some(sec) = token_expire {
+        let _guard = self.renew_lock.lock().await;
+
+        let mut headers: HashMap<String, String> = hmap! {};
+        if self.wants_refresh_token() {
+            headers.insert(HTTP_HEADER_JWT_WANT_REFRESH_TOKEN.into(), "true".into());
+        }
+        let expire =
+            token_expire.or(*self.token_expire_seconds.lock().unwrap_or_else(|e| e.into_inner()));
+        if let Some(sec) = expire {
             headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.into(), sec.to_string());
         }
-        // Keycloak proxy mode requires the refresh token in X-Refresh-Token to renew.
-        // Local-JWT mode has none stored, so the header is omitted and behavior is unchanged.
         let refresh_token = self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if let Some(rt) = refresh_token {
             headers.insert(HTTP_HEADER_JWT_REFRESH_TOKEN.into(), rt);
         }
         let headers = if headers.is_empty() { None } else { Some(headers) };
 
-        let resp = self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await?;
-        // Keycloak rotates the refresh token on every renew — capture the new one.
+        let resp = match self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                // A rejected refresh token will never be accepted again. Drop it so the next
+                // attempt presents the access token instead of replaying a dead credential.
+                if matches!(&e, AppMeshError::RequestFailed { status, .. } if *status == StatusCode::UNAUTHORIZED) {
+                    *self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                }
+                return Err(e);
+            }
+        };
+        // Both modes rotate the refresh token on every renew — capture the new one.
         self.capture_refresh_token(&resp);
         Ok(())
     }
 
     /// Start background token auto-refresh.
     ///
-    /// The refresh loop decodes the JWT `exp` claim and renews shortly before expiry.
+    /// Renews once the token has consumed `TOKEN_REFRESH_LIFETIME_RATIO` of its lifetime;
+    /// failed renewals retry with bounded backoff.
     pub fn schedule_token_refresh(self: &Arc<Self>) {
         if !self.auto_refresh.load(Ordering::Relaxed) {
             return;
@@ -591,30 +659,46 @@ impl AppMeshClient {
         let weak = Arc::downgrade(self);
 
         let handle = tokio::spawn(async move {
+            let mut failures: u32 = 0;
             loop {
-                // Determine how long to sleep
-                let sleep_duration = {
+                let (mut sleep_duration, mut due) = {
                     let Some(client) = weak.upgrade() else { break };
                     if !client.auto_refresh.load(Ordering::Relaxed) { break }
-                    Self::compute_refresh_delay(&client)
+                    Self::compute_refresh_plan(&client)
                 };
+                if failures > 0 {
+                    // Retry on the backoff schedule, not the stale plan.
+                    sleep_duration = Self::refresh_retry_delay(failures);
+                    due = true;
+                }
 
                 tokio::time::sleep(sleep_duration).await;
 
                 // Re-acquire the client (it may have been dropped)
                 let Some(client) = weak.upgrade() else { break };
                 if !client.auto_refresh.load(Ordering::Relaxed) { break }
+                if !due {
+                    continue;
+                }
 
                 debug!("Auto-refresh: attempting token renewal");
                 match client.renew_token(None).await {
                     Ok(()) => {
+                        if failures > 0 {
+                            info!("Auto-refresh: token renewal recovered after {} failure(s)", failures);
+                        }
+                        failures = 0;
                         debug!("Auto-refresh: token renewed successfully");
-                        // After renewal, re-schedule via the new token's exp
-                        // (loop continues, will recompute delay)
                     }
                     Err(e) => {
-                        warn!("Auto-refresh: token renewal failed: {}", e);
-                        // Back off and retry after the regular interval
+                        failures = failures.saturating_add(1);
+                        // Log sparsely: a daemon outage must not flood at the backoff rate.
+                        // Not is_multiple_of: that needs Rust 1.87 and this crate declares
+                        // no MSRV, so it would silently raise the bar for consumers.
+                        #[allow(clippy::manual_is_multiple_of)]
+                        if failures == 1 || failures % TOKEN_REFRESH_LOG_EVERY == 0 {
+                            warn!("Auto-refresh: token renewal failed (attempt {}): {}", failures, e);
+                        }
                     }
                 }
             }
@@ -624,48 +708,77 @@ impl AppMeshClient {
         *self.refresh_handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
     }
 
-    /// Compute how long to sleep before the next refresh attempt.
-    ///
-    /// Decodes the JWT `exp` claim (without verifying the signature) to
-    /// determine time-to-expiry.  Returns a shorter delay if the token is
-    /// close to expiring, or falls back to `TOKEN_REFRESH_INTERVAL_SECS`
-    /// if the token cannot be decoded.
-    fn compute_refresh_delay(client: &AppMeshClient) -> Duration {
-        let default_interval = Duration::from_secs(TOKEN_REFRESH_INTERVAL_SECS);
+    /// Seconds before expiry at which to renew: a fraction of the token's own lifetime,
+    /// floored at `TOKEN_REFRESH_MARGIN_SECS`.
+    fn refresh_margin(token: &str, exp: u64, iat: u64, now: u64) -> u64 {
+        let lifetime = if iat > 0 && exp > iat {
+            exp - iat
+        } else {
+            exp.saturating_sub(now)
+        };
+        let margin =
+            ((lifetime as f64 * (1.0 - TOKEN_REFRESH_LIFETIME_RATIO)) as u64).max(TOKEN_REFRESH_MARGIN_SECS);
+
+        // Jitter derived from the token: stable across polls, distinct per client.
+        let mut hash: u32 = 2166136261; // FNV-1a
+        for b in token.as_bytes() {
+            hash ^= *b as u32;
+            hash = hash.wrapping_mul(16777619);
+        }
+        let spread = margin as f64 * TOKEN_REFRESH_JITTER_RATIO;
+        let offset = ((hash % 2001) as f64 / 1000.0 - 1.0) * spread;
+        let jittered = ((margin as f64) + offset).max(1.0) as u64;
+
+        // Clamp last: the floor (and its jitter) must never exceed the token's own life,
+        // or the loop would spin at ~1Hz.
+        if lifetime > 0 { jittered.min(lifetime / 2) } else { jittered }
+    }
+
+    /// How long to sleep, and whether a renewal is due afterwards. Sleep is capped at
+    /// `TOKEN_REFRESH_INTERVAL_SECS` so a token replaced elsewhere is noticed.
+    fn compute_refresh_plan(client: &AppMeshClient) -> (Duration, bool) {
+        let poll = Duration::from_secs(TOKEN_REFRESH_INTERVAL_SECS);
 
         let Some(jwt_str) = client.get_access_token() else {
-            return default_interval;
+            // A held refresh token can still mint a new access token; with neither
+            // credential there is nothing to renew, so just idle.
+            let has_refresh = client.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+            return if has_refresh { (Duration::from_secs(1), true) } else { (poll, false) };
         };
 
-        match Self::decode_jwt_exp(&jwt_str) {
-            Some(exp) => {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                if exp <= now {
-                    // Already expired — refresh immediately (small delay to avoid tight loop)
-                    Duration::from_secs(1)
-                } else {
-                    let time_to_expiry = exp - now;
-                    if time_to_expiry <= TOKEN_REFRESH_MARGIN_SECS {
-                        Duration::from_secs(1)
-                    } else {
-                        // Sleep until TOKEN_REFRESH_MARGIN_SECS before expiry,
-                        // but no longer than TOKEN_REFRESH_INTERVAL_SECS
-                        let wait = time_to_expiry - TOKEN_REFRESH_MARGIN_SECS;
-                        Duration::from_secs(wait.min(TOKEN_REFRESH_INTERVAL_SECS))
-                    }
-                }
-            }
-            None => default_interval,
+        // Unreadable lifetime: fall back to the fixed cadence.
+        let Some((exp, iat)) = Self::decode_jwt_times(&jwt_str) else {
+            return (poll, true);
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let refresh_at = exp.saturating_sub(Self::refresh_margin(&jwt_str, exp, iat, now));
+        if refresh_at <= now {
+            return (Duration::from_secs(1), true); // at or past the refresh point
+        }
+        let wait = refresh_at - now;
+        if wait > TOKEN_REFRESH_INTERVAL_SECS {
+            (poll, false) // not due yet; wake up only to re-evaluate
+        } else {
+            (Duration::from_secs(wait), true)
         }
     }
 
-    /// Decode the `exp` field from a JWT without signature verification.
-    ///
-    /// JWT format: `header.payload.signature` — we only decode the payload (part 1).
-    fn decode_jwt_exp(token: &str) -> Option<u64> {
+    /// Bounded exponential backoff for the nth consecutive renewal failure (n >= 1).
+    fn refresh_retry_delay(failures: u32) -> Duration {
+        let shift = failures.saturating_sub(1).min(16);
+        let secs = TOKEN_REFRESH_RETRY_BASE_SECS
+            .saturating_mul(1u64 << shift)
+            .min(TOKEN_REFRESH_RETRY_MAX_SECS);
+        Duration::from_secs(secs)
+    }
+
+    /// Decode the `exp` and `iat` claims from a JWT without signature verification.
+    /// `iat` is 0 when the claim is absent; callers must cope.
+    fn decode_jwt_times(token: &str) -> Option<(u64, u64)> {
         let parts: Vec<&str> = token.split('.').collect();
         if parts.len() != 3 {
             return None;
@@ -676,7 +789,9 @@ impl AppMeshClient {
             .decode(parts[1])
             .ok()?;
         let payload: Value = serde_json::from_slice(&payload_bytes).ok()?;
-        payload.get("exp")?.as_u64()
+        let exp = payload.get("exp")?.as_u64()?;
+        let iat = payload.get("iat").and_then(|v| v.as_u64()).unwrap_or(0);
+        Some((exp, iat))
     }
 
     /// Get the raw TOTP secret for MFA setup.
@@ -1499,8 +1614,8 @@ mod tests {
             .encode(b"{\"alg\":\"HS256\"}");
         let token = format!("{}.{}.fake_sig", header_b64, payload_b64);
 
-        let exp = AppMeshClient::decode_jwt_exp(&token);
-        assert_eq!(exp, Some(1700000000));
+        let times = AppMeshClient::decode_jwt_times(&token);
+        assert_eq!(times, Some((1700000000, 0)));
     }
 
     #[test]
@@ -1512,13 +1627,68 @@ mod tests {
             .encode(b"{\"alg\":\"HS256\"}");
         let token = format!("{}.{}.fake_sig", header_b64, payload_b64);
 
-        assert_eq!(AppMeshClient::decode_jwt_exp(&token), None);
+        assert_eq!(AppMeshClient::decode_jwt_times(&token), None);
     }
 
     #[test]
     fn test_decode_jwt_exp_invalid_token() {
-        assert_eq!(AppMeshClient::decode_jwt_exp("not-a-jwt"), None);
-        assert_eq!(AppMeshClient::decode_jwt_exp("a.b"), None);
-        assert_eq!(AppMeshClient::decode_jwt_exp(""), None);
+        assert_eq!(AppMeshClient::decode_jwt_times("not-a-jwt"), None);
+        assert_eq!(AppMeshClient::decode_jwt_times("a.b"), None);
+        assert_eq!(AppMeshClient::decode_jwt_times(""), None);
+    }
+
+    /// Build an unsigned JWT carrying iat/exp, all the refresh pacing logic reads.
+    fn make_jwt(iat: u64, exp: u64) -> String {
+        let mut claims = serde_json::json!({ "exp": exp });
+        if iat > 0 {
+            claims["iat"] = serde_json::json!(iat);
+        }
+        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&claims).unwrap());
+        let header_b64 =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"alg\":\"HS256\"}");
+        format!("{}.{}.fake_sig", header_b64, payload_b64)
+    }
+
+    #[test]
+    fn test_refresh_margin_scales_with_lifetime() {
+        let now = 1_700_000_000u64;
+        // 40% of lifetime, +/-10% of that margin.
+        for (lifetime, low, high) in [(1800u64, 648u64, 792u64), (604_800, 217_728, 266_112)] {
+            let exp = now + lifetime;
+            let margin = AppMeshClient::refresh_margin(&make_jwt(now, exp), exp, now, now);
+            assert!(margin >= low && margin <= high, "margin {} outside [{}, {}]", margin, low, high);
+        }
+        // Short tokens are floored at the 30s offset, not at 40% (= 24s).
+        let exp = now + 60;
+        let margin = AppMeshClient::refresh_margin(&make_jwt(now, exp), exp, now, now);
+        assert!((27..=33).contains(&margin), "short-token margin {} not floored", margin);
+    }
+
+    #[test]
+    fn test_refresh_margin_is_deterministic_per_token() {
+        let now = 1_700_000_000u64;
+        let exp = now + 3600;
+        let token = make_jwt(now, exp);
+        let first = AppMeshClient::refresh_margin(&token, exp, now, now);
+        for _ in 0..10 {
+            assert_eq!(AppMeshClient::refresh_margin(&token, exp, now, now), first);
+        }
+    }
+
+    #[test]
+    fn test_refresh_margin_spreads_across_tokens() {
+        let now = 1_700_000_000u64;
+        let exp = now + 3600;
+        let distinct: std::collections::HashSet<u64> = (0..20)
+            .map(|i| AppMeshClient::refresh_margin(&format!("{}{}", make_jwt(now, exp), i), exp, now, now))
+            .collect();
+        assert!(distinct.len() > 5, "jitter must spread renewals, got {} distinct", distinct.len());
+    }
+
+    #[test]
+    fn test_refresh_retry_delay_is_bounded() {
+        let got: Vec<u64> = (1..=7).map(|n| AppMeshClient::refresh_retry_delay(n).as_secs()).collect();
+        assert_eq!(got, vec![5, 10, 20, 40, 60, 60, 60]);
     }
 }

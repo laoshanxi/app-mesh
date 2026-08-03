@@ -46,6 +46,7 @@ class AppMeshClientOAuth(AppMeshClient):
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         request_timeout: Tuple[float, float] = (60, 300),
         auto_refresh_token: bool = True,  # Default to True for Keycloak
+        use_refresh_token: Optional[bool] = None,
     ):
         """Initialize an App Mesh HTTP client with Keycloak support.
 
@@ -63,6 +64,7 @@ class AppMeshClientOAuth(AppMeshClient):
             ssl_client_cert=ssl_client_cert,
             request_timeout=request_timeout,
             auto_refresh_token=auto_refresh_token,
+            use_refresh_token=use_refresh_token,
         )
 
         # Keycloak integration

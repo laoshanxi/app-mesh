@@ -52,6 +52,7 @@ pub async fn build_client(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> {
     // Authenticate if credentials provided inline
     if let (Some(user), Some(pass)) = (&cli.user, &cli.password) {
         client
+            .client()
             .login(user, pass, None, None, None)
             .await
             .context("Login failed")?;
@@ -62,6 +63,7 @@ pub async fn build_client(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> {
             bail!("password cannot be empty");
         }
         client
+            .client()
             .login(user, &pass, None, None, None)
             .await
             .context("Login failed")?;
@@ -77,7 +79,7 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
 
     if cli.user.is_none() && client.get_access_token().is_none() {
         // Try default credentials; if that also fails, give a clear message
-        if client.login("mesh", "mesh123", None, None, None).await.is_err() {
+        if client.client().login("mesh", "mesh123", None, None, None).await.is_err() {
             anyhow::bail!(
                 "Not logged in. Run 'appm logon -U <user> -X <password>' first, \
                  or pass -U/-X on the command line."

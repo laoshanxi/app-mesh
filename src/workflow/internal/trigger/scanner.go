@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"strings"
@@ -12,9 +13,14 @@ import (
 
 const WorkflowAppPrefix = "workflow-"
 
-// ScanWorkflows discovers workflow definitions registered as special Apps.
+// ScanWorkflows discovers workflow definitions registered as special Apps. Bounded by
+// scanRequestTimeout: it runs on the trigger service's single Run goroutine, so an
+// unbounded call would stall every subsequent scan and subscription with it.
 func ScanWorkflows(client *appmesh.AppMeshClient, registry *Registry) error {
-	apps, err := client.ListApps()
+	ctx, cancel := context.WithTimeout(context.Background(), scanRequestTimeout)
+	defer cancel()
+
+	apps, err := client.ListAppsContext(ctx)
 	if err != nil {
 		logger.Error("failed to list apps: " + err.Error())
 		return err

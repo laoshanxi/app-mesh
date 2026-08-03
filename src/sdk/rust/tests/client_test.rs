@@ -107,6 +107,65 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    /// Mock a login that requires the refresh-token opt-in header to be present/absent.
+    async fn mock_login_with_refresh_header(server: &mut ServerGuard, expected: impl Into<Matcher>) -> mockito::Mock {
+        server
+            .mock("POST", "/appmesh/login")
+            .match_header("x-refresh-token-request", expected)
+            .with_status(200)
+            .with_body(r#"{"access_token":"test-token"}"#)
+            .create_async()
+            .await
+    }
+
+    // The tri-state opt-in: a refresh token is a long-lived credential, so a one-shot client
+    // (auto-refresh off) must not be issued one it would never store or revoke.
+
+    #[tokio::test]
+    async fn test_refresh_token_header_unset_follows_auto_refresh_on() {
+        let mut server = Server::new_async().await;
+        let mock = mock_login_with_refresh_header(&mut server, "true").await;
+
+        let client = ClientBuilder::new()
+            .url(server.url())
+            .danger_accept_invalid_certs(true)
+            .auto_refresh_token(true)
+            .build()
+            .unwrap();
+        client.login("admin", "password", None, None, None).await.unwrap();
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_header_unset_follows_auto_refresh_off() {
+        let mut server = Server::new_async().await;
+        let mock = mock_login_with_refresh_header(&mut server, Matcher::Missing).await;
+
+        // auto_refresh_token defaults to false — the one-shot case.
+        let client = create_test_client(&server);
+        client.login("admin", "password", None, None, None).await.unwrap();
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_header_explicit_false_overrides_auto_refresh() {
+        let mut server = Server::new_async().await;
+        let mock = mock_login_with_refresh_header(&mut server, Matcher::Missing).await;
+
+        let client = ClientBuilder::new()
+            .url(server.url())
+            .danger_accept_invalid_certs(true)
+            .auto_refresh_token(true)
+            .use_refresh_token(false)
+            .build()
+            .unwrap();
+        client.login("admin", "password", None, None, None).await.unwrap();
+
+        mock.assert_async().await;
+    }
+
     #[tokio::test]
     async fn test_list_apps() {
         let mut server = Server::new_async().await;

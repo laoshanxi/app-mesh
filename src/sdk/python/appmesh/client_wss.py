@@ -51,6 +51,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         auto_refresh_token: bool = False,
+        use_refresh_token: Optional[bool] = None,
     ):
         """Construct a WSS transport client that reuses the standard App Mesh client API.
 
@@ -76,7 +77,13 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         self._transport_name = "WebSocket"
         # http and websocket share same address
         host, port = wss_address
-        super().__init__(base_url=f"https://{host}:{port}", ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, auto_refresh_token=auto_refresh_token)
+        super().__init__(
+            base_url=f"https://{host}:{port}",
+            ssl_verify=ssl_verify,
+            ssl_client_cert=ssl_client_cert,
+            auto_refresh_token=auto_refresh_token,
+            use_refresh_token=use_refresh_token,
+        )
 
     @property
     def _transport(self):

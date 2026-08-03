@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import warnings
+import zlib
 from contextlib import suppress
 from datetime import datetime
 from enum import Enum, unique
@@ -130,8 +131,15 @@ class AppMeshClient:
     _DURATION_ONE_WEEK_ISO = "P1W"
     _DURATION_TWO_DAYS_ISO = "P2D"
     _DURATION_TWO_DAYS_HALF_ISO = "P2DT12H"
-    _TOKEN_REFRESH_INTERVAL = 300  # 5 min to refresh token
-    _TOKEN_REFRESH_OFFSET = 30  # 30s before token expire to refresh token
+    # Auto-refresh pacing: poll every _TOKEN_REFRESH_INTERVAL, but renew only once the
+    # token has burned _TOKEN_REFRESH_LIFETIME_RATIO of its lifetime.
+    _TOKEN_REFRESH_INTERVAL = 300  # poll cap, NOT a renew interval
+    _TOKEN_REFRESH_OFFSET = 30  # floor for the pre-expiry margin
+    _TOKEN_REFRESH_LIFETIME_RATIO = 0.6  # rest is the retry budget
+    _TOKEN_REFRESH_JITTER_RATIO = 0.1  # of the margin, so clients don't renew in lockstep
+    _TOKEN_REFRESH_RETRY_BASE = 5
+    _TOKEN_REFRESH_RETRY_MAX = 60
+    _TOKEN_REFRESH_LOG_EVERY = 10  # log 1st failure, then every Nth
 
     # Platform-aware default SSL paths (only used if directory exists)
     _DEFAULT_SSL_DIR = Path("c:/local/appmesh/ssl" if os.name == "nt" else "/opt/appmesh/ssl")
@@ -154,6 +162,7 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
     _HTTP_HEADER_JWT_SET_COOKIE = "X-Set-Cookie"
     _HTTP_HEADER_JWT_REFRESH_TOKEN = "X-Refresh-Token"
+    _HTTP_HEADER_JWT_WANT_REFRESH_TOKEN = "X-Refresh-Token-Request"
     _COOKIE_TOKEN = "appmesh_auth_token"
 
     @unique
@@ -235,6 +244,7 @@ class AppMeshClient:
         jwt_token: Optional[str] = None,
         cookie_file: Optional[str] = None,
         auto_refresh_token: bool = False,
+        use_refresh_token: Optional[bool] = None,
     ):
         """Initialize an App Mesh HTTP client for interacting with the App Mesh server via secure HTTPS.
 
@@ -252,6 +262,9 @@ class AppMeshClient:
             jwt_token: JWT token set directly without server verification (no network call).
             cookie_file: Cookie file path for HTTP clients (set this to enable persistent cookie storage).
             auto_refresh_token: Enable automatic token refresh before expiration (supports App Mesh and Keycloak tokens).
+            use_refresh_token: Ask the daemon for a refresh token on login/renew. None (default)
+              follows `auto_refresh_token`, which already says whether this client is long-lived;
+              a refresh token is long-lived, so a one-shot caller would leak one per invocation.
         """
         self._ensure_logging_configured()
         self.base_url = base_url
@@ -262,13 +275,21 @@ class AppMeshClient:
 
         # Token auto-refresh (single background thread + Event-based wake)
         self._auto_refresh_token = auto_refresh_token
+        self._use_refresh_token = use_refresh_token
         self._refresh_thread = None
         self._refresh_stop = threading.Event()
         self._refresh_wake = threading.Event()
 
-        # OAuth2 (Keycloak proxy) refresh token, captured from the daemon login/renew response.
-        # Stays None in local-JWT mode, so renew/logout send no X-Refresh-Token header there.
+        # Refresh token from the daemon login/renew response; issued by both Keycloak and
+        # local-JWT daemons, None against an older daemon that returns none.
         self._refresh_token: Optional[str] = None
+
+        # Expire seconds from login, replayed on renew so the caller's TTL is kept.
+        self._token_expire_seconds: Optional[int] = None
+
+        # Serializes renewals. Rotation makes a refresh token single-use, so two concurrent
+        # renewals would present the same one and the loser would be told it is revoked.
+        self._renew_lock = threading.Lock()
 
         # Session and cookie management
         self._lock = threading.Lock()
@@ -342,42 +363,79 @@ class AppMeshClient:
 
         return None
 
-    def _compute_refresh_delay(self) -> float:
-        """Compute seconds to wait before next token refresh attempt."""
-        with suppress(Exception):
-            token = self._get_access_token()
-            if token:
-                exp = jwt.decode(token, options={"verify_signature": False}).get("exp", 0)
-                remaining = exp - time.time()
-                if remaining <= self._TOKEN_REFRESH_OFFSET:
-                    return 1  # Expiring soon, refresh immediately
-                return max(1, min(remaining - self._TOKEN_REFRESH_OFFSET, self._TOKEN_REFRESH_INTERVAL))
-        return self._TOKEN_REFRESH_INTERVAL
+    @classmethod
+    def _refresh_margin(cls, token: str, exp: float, iat: float) -> float:
+        """Seconds before expiry at which to renew: a fraction of the token's own
+        lifetime, floored at ``_TOKEN_REFRESH_OFFSET``.
+        """
+        lifetime = exp - iat if iat > 0 and exp > iat else exp - time.time()
+        margin = max(lifetime * (1 - cls._TOKEN_REFRESH_LIFETIME_RATIO), cls._TOKEN_REFRESH_OFFSET)
+        # Jitter derived from the token: stable across polls, distinct per client.
+        spread = margin * cls._TOKEN_REFRESH_JITTER_RATIO
+        margin += ((zlib.crc32(token.encode()) % 2001) / 1000.0 - 1.0) * spread
+        # Clamp last: the floor (and its jitter) must never exceed the token's own life,
+        # or the loop would spin at ~1Hz.
+        return min(margin, lifetime / 2) if lifetime > 0 else margin
+
+    def _compute_refresh_plan(self) -> Tuple[float, bool]:
+        """Return ``(sleep_seconds, renew_due)`` for the next loop iteration. Sleep is
+        capped at ``_TOKEN_REFRESH_INTERVAL`` so a token replaced elsewhere is noticed.
+        """
+        token = self._get_access_token()
+        if not token:
+            # A held refresh token can still mint a new access token; with neither
+            # credential there is nothing to renew, so just idle.
+            return (1, True) if self._refresh_token else (self._TOKEN_REFRESH_INTERVAL, False)
+        try:
+            claims = jwt.decode(token, options={"verify_signature": False})
+            exp = float(claims["exp"])
+        except Exception:  # pylint: disable=broad-exception-caught
+            return self._TOKEN_REFRESH_INTERVAL, True  # unreadable lifetime: fixed cadence
+
+        wait = exp - self._refresh_margin(token, exp, float(claims.get("iat", 0) or 0)) - time.time()
+        if wait <= 0:
+            return 1, True  # at or past the refresh point
+        if wait > self._TOKEN_REFRESH_INTERVAL:
+            return self._TOKEN_REFRESH_INTERVAL, False  # not due; wake only to re-evaluate
+        return wait, True
+
+    @classmethod
+    def _refresh_retry_delay(cls, failures: int) -> float:
+        """Bounded exponential backoff for the nth consecutive renewal failure (n >= 1)."""
+        return min(cls._TOKEN_REFRESH_RETRY_BASE * (2 ** min(max(failures - 1, 0), 16)), cls._TOKEN_REFRESH_RETRY_MAX)
 
     def _token_refresh_loop(self) -> None:
-        """Background thread: sleep → renew → repeat until stopped."""
+        """Background thread: sleep → renew when due → repeat until stopped.
+
+        Failures retry with bounded backoff rather than halting: with a refresh token the
+        daemon can still issue a new access token after the old one expired.
+        """
+        failures = 0
         while not self._refresh_stop.is_set():
-            delay = self._compute_refresh_delay()
-            self._refresh_wake.clear()
+            delay, due = self._compute_refresh_plan()
+            if failures:
+                delay, due = self._refresh_retry_delay(failures), True  # retry, not the stale plan
             self._refresh_wake.wait(timeout=delay)
             if self._refresh_stop.is_set():
                 break
             if self._refresh_wake.is_set():
-                continue  # Token changed externally, recompute delay
+                # Token changed externally: the failure history no longer applies to it.
+                self._refresh_wake.clear()
+                failures = 0
+                continue
+            if not due:
+                continue
             try:
                 self.renew_token()
-                logger.info("Token successfully refreshed")
-            except AppMeshAuthError as e:
-                # Token rejected (401/403) → dead token; retrying only spams logs.
-                logger.warning("Token refresh halted (auth rejected): %s", e)
-                return
-            except Exception as e:
-                # Network timeout, daemon down, SSL error, etc. — stop the loop.
-                # The current token stays valid until exp; the next user request
-                # will surface the connection issue with full context. Background
-                # spinning at ~1 Hz once exp approaches only floods the log.
-                logger.warning("Token refresh halted (%s: %s); call login() to resume", type(e).__name__, e)
-                return
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                failures += 1
+                # Log sparsely: a daemon outage must not flood at the backoff rate.
+                if failures == 1 or failures % self._TOKEN_REFRESH_LOG_EVERY == 0:
+                    logger.warning("Token refresh failed (attempt %d, %s: %s)", failures, type(e).__name__, e)
+                continue
+            if failures:
+                logger.info("Token refresh recovered after %d failure(s)", failures)
+            failures = 0
 
     def start_token_refresh(self) -> None:
         """Start background token auto-refresh."""
@@ -477,12 +535,17 @@ class AppMeshClient:
     ########################################
     # Security
     ########################################
-    def _capture_refresh_token(self, resp) -> None:
-        """Store the OAuth2 refresh token from a login/renew response body, if present.
+    def _want_refresh_token(self) -> bool:
+        """Resolve `use_refresh_token`: an explicit setting wins, otherwise auto-refresh decides,
+        since only a long-lived client has anywhere to keep such a credential."""
+        if self._use_refresh_token is not None:
+            return self._use_refresh_token
+        return self._auto_refresh_token
 
-        Only the Keycloak (OAuth2) daemon returns ``refresh_token``; local-JWT mode omits it,
-        so ``_refresh_token`` stays ``None`` and renew/logout send no ``X-Refresh-Token`` header.
-        Keycloak rotates the refresh token on every renew, so a present value replaces the old one.
+    def _capture_refresh_token(self, resp) -> None:
+        """Store the refresh token from a login/renew response body, if present.
+
+        Both modes rotate it on renew, so a present value replaces the old one.
         """
         try:
             rt = resp.json().get("refresh_token")
@@ -522,6 +585,9 @@ class AppMeshClient:
             self._HTTP_HEADER_JWT_SET_COOKIE: "true",  # Enable cookie token mode
             "X-Expire-Seconds": str(self._parse_duration(token_expire)),
         }
+        # Omitted, not "false", when declined: the daemon only issues on an explicit opt-in.
+        if self._want_refresh_token():
+            headers[self._HTTP_HEADER_JWT_WANT_REFRESH_TOKEN] = "true"
         if audience:
             headers["X-Audience"] = audience
         if totp_code:
@@ -541,9 +607,8 @@ class AppMeshClient:
                     return challenge
                 self.validate_totp(username, challenge, totp_code, token_expire)
         elif resp.status_code == HTTPStatus.OK:
-            # Capture the OAuth2 refresh token when the daemon (Keycloak mode) issues one, so
-            # renew_token()/logout() can present it via X-Refresh-Token. Local mode: no-op.
             self._capture_refresh_token(resp)
+            self._token_expire_seconds = self._parse_duration(token_expire)
 
     def validate_totp(
         self, username: str, challenge: str, code: str, token_expire: Union[int, str] = _DURATION_ONE_WEEK_ISO
@@ -567,13 +632,19 @@ class AppMeshClient:
         }
 
         headers = {self._HTTP_HEADER_JWT_SET_COOKIE: "true"}
+        if self._want_refresh_token():
+            headers[self._HTTP_HEADER_JWT_WANT_REFRESH_TOKEN] = "true"
 
-        self._request_http(
+        resp = self._request_http(
             AppMeshClient._Method.POST,
             path="/appmesh/totp/validate",
             body=body,
             header=headers,
         )
+        # A validated challenge completes the login, so it owes the same session setup as
+        # login(). Auto-refresh is started by _on_token_changed when the new token lands.
+        self._capture_refresh_token(resp)
+        self._token_expire_seconds = self._parse_duration(token_expire)
 
     def logout(self) -> bool:
         """Logout from the current session.
@@ -672,32 +743,52 @@ class AppMeshClient:
         self.session.cookies.set_cookie(cookie)
         self._on_token_changed(token)
 
-    def renew_token(self, token_expire: Union[int, str] = _DURATION_ONE_WEEK_ISO) -> None:
+    def renew_token(self, token_expire: Optional[Union[int, str]] = None) -> None:
         """Renew the current JWT token.
 
+        A held refresh token is the sole credential the daemon needs, so renewal succeeds
+        even after the access token expired. Without one, the daemon authenticates the
+        access token instead, which must still be valid.
+
         Args:
-            token_expire: Token expiration duration (integer seconds or ISO 8601 string).
+            token_expire: Expiration (seconds or ISO 8601). Defaults to the login value.
         """
         jwt_token = self._get_access_token()
-        if not jwt_token:
+        if not jwt_token and not self._refresh_token:
             raise AppMeshAuthError("No token to renew")
 
-        if not isinstance(jwt_token, str):
+        if jwt_token and not isinstance(jwt_token, str):
             raise AppMeshAuthError("Unsupported token format")
 
-        headers = {"X-Expire-Seconds": str(self._parse_duration(token_expire))}
-        # OAuth2 (Keycloak) proxy mode renews via the refresh token; the daemon requires it in
-        # X-Refresh-Token. Local-JWT mode leaves _refresh_token None and omits the header.
-        if self._refresh_token:
-            headers[self._HTTP_HEADER_JWT_REFRESH_TOKEN] = self._refresh_token
+        # Omit the header when the TTL is unknown so the daemon applies its own default,
+        # matching Go and Rust. Sending a week here would silently upgrade a short-lived
+        # token that was installed via set_token() rather than login().
+        if token_expire is None:
+            token_expire = self._token_expire_seconds
+        with self._renew_lock:
+            headers = {}
+            if self._want_refresh_token():
+                headers[self._HTTP_HEADER_JWT_WANT_REFRESH_TOKEN] = "true"
+            if token_expire is not None:
+                headers["X-Expire-Seconds"] = str(self._parse_duration(token_expire))
+            if self._refresh_token:
+                headers[self._HTTP_HEADER_JWT_REFRESH_TOKEN] = self._refresh_token
 
-        resp = self._request_http(
-            AppMeshClient._Method.POST,
-            path="/appmesh/token/renew",
-            header=headers,
-        )
-        # Keycloak rotates the refresh token on renew — store the new one for the next cycle.
-        self._capture_refresh_token(resp)
+            try:
+                resp = self._request_http(
+                    AppMeshClient._Method.POST,
+                    path="/appmesh/token/renew",
+                    header=headers,
+                )
+            except AppMeshAuthError as e:
+                # Only 401 means the refresh token itself is dead. This exception also covers
+                # 403, which is a permission problem with a possibly valid refresh token —
+                # discarding it there would throw away the recovery path for no reason.
+                if e.status_code == HTTPStatus.UNAUTHORIZED:
+                    self._refresh_token = None
+                raise
+            # Both modes rotate the refresh token on renew — store the new one.
+            self._capture_refresh_token(resp)
 
     def get_totp_uri(self) -> str:
         """Return the TOTP provisioning URI (``otpauth://...``) for the current user,
@@ -1382,7 +1473,7 @@ class AppMeshClient:
 
             if raise_on_fail and resp.status_code != HTTPStatus.PRECONDITION_REQUIRED:
                 if resp.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
-                    raise AppMeshAuthError(f"HTTP {resp.status_code}: {resp.reason}")
+                    raise AppMeshAuthError(f"HTTP {resp.status_code}: {resp.reason}", resp.status_code)
                 resp.raise_for_status()
 
             # Auto-detect token changes from server Set-Cookie responses

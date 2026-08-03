@@ -45,6 +45,16 @@ paths:
             type: boolean
             default: false
           description: Optional to request cookie authentication.
+        - name: X-Refresh-Token-Request
+          in: header
+          required: false
+          schema:
+            type: string
+            enum: ["true"]
+          description: |
+            Set to "true" to be issued a refresh token alongside the access token. Opt-in: a
+            client that cannot store and replay one would never present it on logoff, leaving
+            it valid until expiry.
       responses:
         "200":
           $ref: "#/components/responses/TokenResponse"
@@ -128,7 +138,10 @@ paths:
           required: false
           schema:
             type: string
-          description: OAuth2 (Keycloak) mode only. The refresh token issued at login; when supplied the Keycloak session is revoked server-side, otherwise only the local session is revoked.
+          description: |
+            In OAuth2 mode revokes the Keycloak session server-side; in local-JWT mode revokes
+            the refresh token so it can no longer mint access tokens. Omitting it leaves the
+            refresh token valid until expiry.
       responses:
         "200":
           description: User logged out successfully.
@@ -138,9 +151,14 @@ paths:
   /appmesh/token/renew:
     post:
       summary: Renew access token.
+      description: |
+        Issues a fresh access token plus a rotated refresh token. Authenticates on
+        X-Refresh-Token when present (allowing recovery from an expired access token),
+        otherwise on the Bearer access token.
       tags: [Identity]
       security:
         - BearerAuth: []
+        - {}
       parameters:
         - name: X-Expire-Seconds
           in: header
@@ -154,7 +172,11 @@ paths:
           required: false
           schema:
             type: string
-          description: Required in OAuth2 (Keycloak) mode. The refresh token issued at login, exchanged for a fresh access token.
+          description: |
+            Exchanged for a fresh access token and a rotated refresh token. Required in OAuth2
+            mode, optional but recommended in local-JWT mode: when supplied it is the only
+            credential checked, so renewal succeeds even if the Bearer token has expired.
+            When omitted, the access token authenticates the renewal and is then revoked.
       responses:
         "200":
           $ref: "#/components/responses/TokenResponse"
@@ -1700,7 +1722,14 @@ components:
                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
               refresh_token:
                 type: string
-                description: Present only in OAuth2 (Keycloak) mode. Supply it back via the X-Refresh-Token header to renew or to revoke the Keycloak session on logoff.
+                description: |
+                  Issued by login, TOTP validate and token renew when the request opts in via
+                  X-Refresh-Token-Request (OAuth2 mode always issues one). Supply it back via
+                  X-Refresh-Token to renew, or to revoke on logoff. It outlives the access
+                  token, so renewal works after that token has expired. Rotated on every renew:
+                  the old value is revoked and rejected if replayed. Revocation state is held
+                  per daemon and is not replicated across a cluster, so a token rotated on one
+                  node is not rejected by another that shares the JWT signing key.
                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
               token_type:
                 type: string

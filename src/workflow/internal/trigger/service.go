@@ -2,7 +2,9 @@ package trigger
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +20,20 @@ import (
 )
 
 const scanInterval = 30 * time.Second
+
+// Consecutive non-auth scan failures before falling back to a re-login; auth failures
+// bypass this entirely (see scan).
+const scanFailsBeforeReAuth = 3
+
+// Ceiling on the backoff between failed re-login attempts.
+const reAuthMaxBackoff = 5 * time.Minute
+
+// Deadline for daemon calls made from the Run loop. They share one goroutine, so any of
+// them hanging stalls the whole trigger service.
+const scanRequestTimeout = 20 * time.Second
+
+// ReAuthTimeout bounds the re-login the engine performs from its Run goroutine.
+const ReAuthTimeout = scanRequestTimeout
 
 type Service struct {
 	client       *appmesh.AppMeshClient
@@ -36,6 +52,11 @@ type Service struct {
 
 	reAuth    func() error // re-login callback for token expiry recovery
 	scanFails int          // consecutive scan failures
+
+	// Backoff for repeated re-login failures: without it a wrong password or locked
+	// account would fire a login on every scan, forever.
+	reAuthFails    int
+	reAuthCooldown time.Time // no further attempts before this instant
 }
 
 func NewService(client *appmesh.AppMeshClient, serverURI string, clusterNodes []string, workflowDir string) *Service {
@@ -218,33 +239,80 @@ func (s *Service) reconcileIndex() {
 	}
 }
 
+// isAuthError reports whether the daemon rejected our token. Only 401 counts: a 403
+// means the credential is fine but the permission is missing, so re-logging in would
+// just replay the same denial.
+func isAuthError(err error) bool {
+	var apiErr *appmesh.APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized
+}
+
 func (s *Service) scan() {
-	if err := ScanWorkflows(s.client, s.registry); err != nil {
-		s.scanFails++
-		if s.scanFails >= 3 && s.reAuth != nil {
-			logger.Info("scan failed consecutively, attempting re-authentication")
-			if rerr := s.reAuth(); rerr != nil {
-				logger.Error("re-authentication failed: " + rerr.Error())
-			} else {
-				logger.Info("re-authentication succeeded")
-			}
-			s.scanFails = 0
-		}
+	err := ScanWorkflows(s.client, s.registry)
+	if err == nil {
+		s.scanFails = 0
+		return
+	}
+
+	// A rejected token does not heal by waiting, so re-authenticate on the first 401.
+	// Other failures (daemon restarting, connection reset) usually do heal, so they
+	// keep the consecutive-failure grace period.
+	if isAuthError(err) && s.reAuth != nil {
+		s.reAuthenticate("token rejected")
+		return
+	}
+
+	s.scanFails++
+	if s.scanFails >= scanFailsBeforeReAuth && s.reAuth != nil {
+		s.reAuthenticate("scan failed consecutively")
+	}
+}
+
+// reAuthenticate re-logs in from the stored credentials. The failure counter resets
+// either way, and repeated failures back off, so a credential that will never work
+// costs one login per cooldown rather than one per scan.
+func (s *Service) reAuthenticate(reason string) {
+	// Check the cooldown before touching scanFails: resetting it on a suppressed attempt
+	// would restart the three-strike count, so the non-auth path could never fire again
+	// while a cooldown is active.
+	if time.Now().Before(s.reAuthCooldown) {
 		return
 	}
 	s.scanFails = 0
+
+	logger.Info("attempting re-authentication: " + reason)
+	if err := s.reAuth(); err != nil {
+		s.reAuthFails++
+		backoff := scanInterval << min(s.reAuthFails-1, 5)
+		if backoff > reAuthMaxBackoff {
+			backoff = reAuthMaxBackoff
+		}
+		s.reAuthCooldown = time.Now().Add(backoff)
+		logger.Error(fmt.Sprintf("re-authentication failed (attempt %d, next try in %s): %s", s.reAuthFails, backoff, err.Error()))
+		return
+	}
+	s.reAuthFails = 0
+	s.reAuthCooldown = time.Time{}
+	logger.Info("re-authentication succeeded")
 }
 
-// cleanOrphanedStepApps removes leftover step Apps from a previous crash.
+// cleanOrphanedStepApps removes leftover step Apps from a previous crash. Bounded: this
+// runs before the ticker starts, so a hung daemon here would stop the trigger service from
+// ever starting.
 func (s *Service) cleanOrphanedStepApps() {
-	apps, err := s.client.ListApps()
+	ctx, cancel := context.WithTimeout(context.Background(), scanRequestTimeout)
+	defer cancel()
+
+	apps, err := s.client.ListAppsContext(ctx)
 	if err != nil {
 		return
 	}
 	count := 0
 	for _, app := range apps {
 		if strings.HasPrefix(app.Name, executor.StepAppPrefix) {
-			s.client.DeleteApp(app.Name)
+			delCtx, delCancel := context.WithTimeout(context.Background(), scanRequestTimeout)
+			s.client.DeleteAppContext(delCtx, app.Name)
+			delCancel()
 			count++
 		}
 	}

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"log"
 	"net"
 	"net/url"
 	"os"
@@ -124,7 +123,7 @@ func LoadCACertificates(certDir string) (*x509.CertPool, error) {
 		// The directory may hold non-certificate files (README, keys, .DS_Store);
 		// skip them so the valid CA certificates still load.
 		if ok := caCertPool.AppendCertsFromPEM(certPEM); !ok {
-			log.Printf("skipping %s: no PEM certificates found in file", certPath)
+			logf("skipping %s: no PEM certificates found in file", certPath)
 			continue
 		}
 	}

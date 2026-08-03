@@ -160,6 +160,8 @@ nlohmann::json User::AsJson() const
 	result[JSON_KEY_USER_group] = std::string(m_group);
 	result[JSON_KEY_USER_exec_user] = getExecUserOverride();
 	result[JSON_KEY_USER_locked] = (m_locked);
+	if (m_tokenEpoch.time_since_epoch().count() > 0)
+		result[JSON_KEY_USER_token_epoch] = (int64_t)std::chrono::system_clock::to_time_t(m_tokenEpoch);
 	result[JSON_KEY_USER_mfa_enabled] = (m_enableMfa);
 	if (!m_metadata.empty())
 		result[JSON_KEY_USER_metadata] = std::string(m_metadata);
@@ -187,6 +189,9 @@ std::shared_ptr<User> User::FromJson(const std::string &userName, const nlohmann
 		result->m_metadata = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_metadata);
 		result->m_mfaKey = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_mfa_key);
 		result->m_locked = GET_JSON_BOOL_VALUE(obj, JSON_KEY_USER_locked);
+		// Absent on records written before token epochs existed: no revocation point.
+		if (HAS_JSON_FIELD(obj, JSON_KEY_USER_token_epoch))
+			result->m_tokenEpoch = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(obj, JSON_KEY_USER_token_epoch));
 		result->m_enableMfa = GET_JSON_BOOL_VALUE(obj, JSON_KEY_USER_mfa_enabled);
 		if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))
 		{
@@ -217,6 +222,11 @@ void User::updateUser(std::shared_ptr<User> user)
 	// this->m_mfaKey = user->m_mfaKey;
 	// this->m_key = user->m_key;
 	this->m_locked = user->m_locked;
+	// Not m_tokenEpoch: like the keys above it is daemon-owned. Copying it from a
+	// client-supplied body would let a user-add PUT that omits the field reset it to
+	// "no revocation point", reviving every token a password change just killed — or
+	// set it far-future and lock the account out permanently.
+	// this->m_tokenEpoch = user->m_tokenEpoch;
 	this->m_enableMfa = user->m_enableMfa;
 	this->m_email = user->m_email;
 }
@@ -495,6 +505,20 @@ bool User::totpValidateChallenge(const std::string &totpChallenge, std::string &
 			throw jwt::error::signature_verification_exception(jwt::error::token_verification_error::token_expired);
 	}
 	throw jwt::error::signature_verification_exception(jwt::error::signature_verification_error::invalid_signature);
+}
+
+void User::revokeIssuedTokens()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	// Truncated to whole seconds to match the JWT iat granularity and what to_time_t
+	// persists, so the comparison behaves the same before and after a reload.
+	m_tokenEpoch = std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now());
+}
+
+std::chrono::system_clock::time_point User::tokenEpoch() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_tokenEpoch;
 }
 
 bool User::locked() const

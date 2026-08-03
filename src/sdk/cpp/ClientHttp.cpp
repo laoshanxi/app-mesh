@@ -46,6 +46,7 @@ AppMeshClient::AppMeshClient(const ClientHttpConfig &config)
 void AppMeshClient::applyConfig(const ClientHttpConfig &config)
 {
     m_url = config.url;
+    m_useRefreshToken = config.useRefreshToken;
 
     if (config.cookieFile.empty())
         RestClient::setSessionConfiguration(SessionConfig::MemorySession());
@@ -73,6 +74,11 @@ void AppMeshClient::applyConfig(const ClientHttpConfig &config)
     RestClient::defaultSslConfiguration(ssl);
 }
 
+bool AppMeshClient::wantRefreshToken() const
+{
+    return m_useRefreshToken;
+}
+
 void AppMeshClient::setForwardTo(const std::string &url)
 {
     m_forwardTo = url;
@@ -88,11 +94,16 @@ std::string AppMeshClient::login(const std::string &username, const std::string 
                               const std::string &totp, int tokenExpire, const std::string &audience)
 {
     RestClient::clearSession();
+    // Drop any credential from a previous session: it belongs to the token jar just cleared.
+    this->setRefreshToken(std::string());
 
     std::map<std::string, std::string> header;
     header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_Auth_BasicSpace) +
                                             Utility::encode64(username + ":" + password);
     header[HTTP_HEADER_KEY_X_SET_COOKIE] = "true";
+    // Omitted, not "false", when declined: the daemon only issues on an explicit opt-in.
+    if (this->wantRefreshToken())
+        header[HTTP_HEADER_JWT_want_refresh_token] = "true";
 
     if (tokenExpire > 0)
         header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(tokenExpire);
@@ -119,6 +130,11 @@ std::string AppMeshClient::login(const std::string &username, const std::string 
     {
         throw AppMeshHttpError(response->status_code, response->text);
     }
+    else
+    {
+        this->captureRefreshToken(response->text);
+        this->setLoginExpireSeconds(tokenExpire);
+    }
 
     return std::string();
 }
@@ -127,6 +143,8 @@ void AppMeshClient::validateTotp(const std::string &username, const std::string 
                               const std::string &totp, int tokenExpire)
 {
     std::map<std::string, std::string> header = {{HTTP_HEADER_KEY_X_SET_COOKIE, "true"}};
+    if (this->wantRefreshToken())
+        header[HTTP_HEADER_JWT_want_refresh_token] = "true";
 
     nlohmann::json body = {
         {HTTP_BODY_KEY_JWT_username, username},
@@ -134,7 +152,11 @@ void AppMeshClient::validateTotp(const std::string &username, const std::string 
         {HTTP_BODY_KEY_JWT_totp_challenge, challenge},
         {HTTP_BODY_KEY_JWT_expire_seconds, tokenExpire}};
 
-    this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
+    auto response = this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
+
+    // A validated challenge completes the login, so it owes the same credential setup.
+    this->captureRefreshToken(response->text);
+    this->setLoginExpireSeconds(tokenExpire);
 }
 
 std::tuple<bool, std::string> AppMeshClient::authenticate(const std::string &token,
@@ -157,17 +179,56 @@ std::tuple<bool, std::string> AppMeshClient::authenticate(const std::string &tok
 
 void AppMeshClient::logout()
 {
-    this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/self/logoff");
+    // Present the refresh token so the daemon revokes it too; otherwise it stays able to
+    // mint access tokens until it expires, long after the access token is blacklisted.
+    std::map<std::string, std::string> header;
+    const auto refreshToken = this->getRefreshToken();
+    if (!refreshToken.empty())
+        header[HTTP_HEADER_JWT_refresh_token] = refreshToken;
+
+    this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/self/logoff", nullptr, header);
     RestClient::clearSession();
+    this->setRefreshToken(std::string());
 }
 
 void AppMeshClient::renewToken(int tokenExpire)
 {
+    // Rotation makes a refresh token single-use, so two concurrent renewals would present
+    // the same one and the loser would be told it is revoked. Held across the HTTP call;
+    // m_authMutex stays a leaf lock, so there is no lock-order cycle with RestClient's.
+    std::lock_guard<std::mutex> renewGuard(m_renewMutex);
+
     std::map<std::string, std::string> header;
+    if (this->wantRefreshToken())
+        header[HTTP_HEADER_JWT_want_refresh_token] = "true";
+
+    const auto refreshToken = this->getRefreshToken();
+    if (!refreshToken.empty())
+        header[HTTP_HEADER_JWT_refresh_token] = refreshToken;
+
+    // Replay the login TTL; otherwise the daemon silently applies its own default.
+    if (tokenExpire <= 0)
+        tokenExpire = this->getLoginExpireSeconds();
     if (tokenExpire > 0)
         header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(tokenExpire);
 
-    this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/token/renew", nullptr, header);
+    auto response = this->requestHttp(ErrorPolicy::Return, web::http::methods::POST, "/appmesh/token/renew", nullptr, header);
+
+    if (response->status_code == web::http::status_codes::OK)
+    {
+        this->captureRefreshToken(response->text);
+        return;
+    }
+
+    // A rejected refresh token will never be accepted again (rotated away, revoked, or the
+    // session ended). Drop it so the next attempt falls back to the access token instead of
+    // replaying a credential that is now guaranteed to fail.
+    // Compare-and-clear: logout() or another path may have replaced the token while this
+    // request was in flight, and clearing unconditionally would discard a valid one.
+    if (response->status_code == web::http::status_codes::Unauthorized)
+        this->clearRefreshTokenIf(refreshToken);
+
+    throw AppMeshHttpError(response->status_code, response->text);
 }
 
 std::string AppMeshClient::getAuthToken() const
@@ -637,4 +698,55 @@ void AppMeshClient::addCommonHeaders(std::map<std::string, std::string> &header)
         else
             header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
     }
+}
+
+// Private members
+void AppMeshClient::captureRefreshToken(const std::string &responseBody)
+{
+    try
+    {
+        const auto result = nlohmann::json::parse(responseBody);
+        if (result.is_object() && result.contains(HTTP_HEADER_JWT_refresh_token_key) &&
+            result.at(HTTP_HEADER_JWT_refresh_token_key).is_string())
+        {
+            const auto token = result.at(HTTP_HEADER_JWT_refresh_token_key).get<std::string>();
+            if (!token.empty())
+                this->setRefreshToken(token);
+        }
+    }
+    catch (const std::exception &)
+    {
+        // Not a token response body: keep whatever is already held.
+    }
+}
+
+std::string AppMeshClient::getRefreshToken() const
+{
+    std::lock_guard<std::mutex> guard(m_authMutex);
+    return m_refreshToken;
+}
+
+void AppMeshClient::setRefreshToken(const std::string &token)
+{
+    std::lock_guard<std::mutex> guard(m_authMutex);
+    m_refreshToken = token;
+}
+
+void AppMeshClient::clearRefreshTokenIf(const std::string &presented)
+{
+    std::lock_guard<std::mutex> guard(m_authMutex);
+    if (m_refreshToken == presented)
+        m_refreshToken.clear();
+}
+
+int AppMeshClient::getLoginExpireSeconds() const
+{
+    std::lock_guard<std::mutex> guard(m_authMutex);
+    return m_loginExpireSeconds;
+}
+
+void AppMeshClient::setLoginExpireSeconds(int seconds)
+{
+    std::lock_guard<std::mutex> guard(m_authMutex);
+    m_loginExpireSeconds = seconds;
 }
