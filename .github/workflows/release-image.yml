@@ -24,7 +24,7 @@ permissions:
 jobs:
   build:
     name: Build Platform Image
-    timeout-minutes: 30
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +56,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Docker buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
         with:
           platforms: ${{ matrix.platform }}
 
@@ -72,11 +72,26 @@ jobs:
         with:
           context: .
           file: Dockerfile
+          target: appmesh
           no-cache: true
           platforms: ${{ matrix.platform }}
           push: true
           provenance: false
           tags: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and Push LLM Platform Image
+        id: build-platform-llm
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: Dockerfile
+          target: llm_agent
+          no-cache: true
+          platforms: ${{ matrix.platform }}
+          push: true
+          provenance: false
+          tags: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-llm-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           labels: ${{ steps.meta.outputs.labels }}
 
   merge-and-push:
@@ -101,6 +116,11 @@ jobs:
               ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-amd64 \
               ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-arm64
           done
+          for tag in ${{ env.APPMESH_VERSION }}-llm llm; do
+            docker buildx imagetools create -t ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${tag} \
+              ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-llm-amd64 \
+              ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-llm-arm64
+          done
 
       - name: Cleanup Platform Tags
         run: |
@@ -109,9 +129,13 @@ jobs:
             -d '{"username": "'${{ secrets.DOCKERHUB_USERNAME }}'", "password": "'${{ secrets.DOCKERHUB_TOKEN }}'"}' \
             https://hub.docker.com/v2/users/login/ | jq -r .token)
 
-          for arch in amd64 arm64; do
-            IMAGE_URL="https://hub.docker.com/v2/repositories/${{ env.DOCKER_IMAGE }}/tags/${{ env.APPMESH_VERSION }}-${arch}/"
-            curl -X DELETE -H "Authorization: Bearer ${TOKEN}" ${IMAGE_URL} || echo "Failed to delete ${arch} tag"
+          for tag in \
+            ${{ env.APPMESH_VERSION }}-amd64 \
+            ${{ env.APPMESH_VERSION }}-arm64 \
+            ${{ env.APPMESH_VERSION }}-llm-amd64 \
+            ${{ env.APPMESH_VERSION }}-llm-arm64; do
+            IMAGE_URL="https://hub.docker.com/v2/repositories/${{ env.DOCKER_IMAGE }}/tags/${tag}/"
+            curl -X DELETE -H "Authorization: Bearer ${TOKEN}" ${IMAGE_URL} || echo "Failed to delete ${tag}"
           done
 
       - name: Generate Docker Image SBOM
@@ -133,3 +157,11 @@ jobs:
             timeout 30s /entrypoint.sh &
             sleep 5
             appm ls && appm resource
+
+      - name: Verify LLM Image
+        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3
+        with:
+          image: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-llm
+          shell: bash
+          run: |
+            python3 -c "import appmesh, claude_agent_sdk"
