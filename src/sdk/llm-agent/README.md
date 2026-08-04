@@ -22,7 +22,10 @@ a subprocess**. The App's host/image therefore needs:
   or the equivalent for another backend (Bedrock / Vertex / a gateway). See
   [Models & providers](#models--providers).
 
-The Docker image installs these via `requirements.txt` (see the repo `Dockerfile`).
+The default Docker image includes the `appmesh` Python SDK, but not the
+llm-agent App package or `claude-agent-sdk`. Build the `llm_agent` Docker
+target, or deploy the llm-agent package and `requirements.txt` yourself before
+registering the App.
 
 Session history is written under `$CLAUDE_CONFIG_DIR` — llm-agent defaults it to
 `<workspace>/.claude` because the daemon does not propagate `HOME`, so you don't need to
@@ -30,7 +33,7 @@ set one, but the **workspace must be writable by the App's user**.
 
 ## Two scenarios, two Apps
 
-The same `llm_agent` binary runs in two roles — both admin-provisioned Apps (this
+The same `llm_agent` Python module runs in two roles — both admin-provisioned Apps (this
 package registers nothing itself):
 
 | | Scenario A — batch / DAG | Scenario B — interactive |
@@ -136,6 +139,16 @@ Smoke-test once it is up:
 ```bash
 python3 examples/user_scenarios.py a_single
 ```
+
+For Docker, build the optional target because the default image keeps the
+llm-agent App package and Claude Code out of the base runtime:
+
+```bash
+docker build --target llm_agent -t laoshanxi/appmesh:llm .
+```
+
+Published images use the same split: `laoshanxi/appmesh:latest` is the base runtime,
+and `laoshanxi/appmesh:llm` includes the llm-agent App and optional requirements.
 
 Provision a Scenario B worker (edit `name` / `working_dir` / `--session-id`; `permission: 11`
 scopes it to the owner):
