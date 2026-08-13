@@ -1,5 +1,7 @@
 // src/daemon/process/DockerApiProcess.cpp
+#include <cstdint>
 #include <thread>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -13,8 +15,8 @@
 #include "DockerApiProcess.h"
 #include "LinuxCgroup.h"
 
-DockerApiProcess::DockerApiProcess(const std::string &appName, const std::string &dockerImage)
-	: DockerProcess(appName, dockerImage)
+DockerApiProcess::DockerApiProcess(std::weak_ptr<Application> owner, const std::string &appName, const std::string &dockerImage)
+	: DockerProcess(std::move(owner), appName, dockerImage)
 {
 	const static char fname[] = "DockerApiProcess::DockerApiProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -28,7 +30,7 @@ DockerApiProcess::~DockerApiProcess()
 	DockerApiProcess::terminate();
 }
 
-void DockerApiProcess::terminate()
+void DockerApiProcess::terminateImpl()
 {
 	const static char fname[] = "DockerApiProcess::terminate() ";
 
@@ -49,7 +51,8 @@ void DockerApiProcess::terminate()
 			if (resp->status_code >= web::http::status_codes::BadRequest)
 			{
 				LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
-				ACE::terminate_process(this->getpid());
+				// Do not fall back to the host PID: exit handling may already have invalidated
+				// or allowed reuse of it. The forced container delete below remains best-effort.
 			}
 
 			// DELETE /containers/{id}?force=true
@@ -72,7 +75,6 @@ void DockerApiProcess::terminate()
 	this->detach();
 }
 
-// TODO: if need pull image, the first process will be docker pull command, the next start container process need to handle
 int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir,
 								   std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 								   const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
@@ -159,11 +161,17 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 
 	if (limit)
 	{
-		hostConfig["Memory"] = (limit->m_memoryMb);
-		hostConfig["MemorySwap"] = (limit->m_memoryVirtMb);
-		hostConfig["CpuShares"] = (limit->m_cpuShares);
+		constexpr int64_t MB = 1024LL * 1024LL;
+		if (limit->m_memoryMb > 0)
+			hostConfig["Memory"] = static_cast<int64_t>(limit->m_memoryMb) * MB;
+		if (limit->m_memoryVirtSpecified)
+			hostConfig["MemorySwap"] = static_cast<int64_t>(limit->m_memoryVirtMb) * MB;
+		if (limit->m_cpuShares > 0)
+			hostConfig["CpuShares"] = (limit->m_cpuShares);
 	}
 
+	// TODO: AutoRemove can race refresh() when it reads the exit code or final logs.
+	// Reliable collection needs an explicit inspect-before-remove lifecycle; keep cleanup simple for now.
 	hostConfig["AutoRemove"] = true;
 	hostConfig["RestartPolicy"]["Name"] = "no";
 	createBody["HostConfig"] = hostConfig;

@@ -13,7 +13,7 @@
 
 #include "EventTypes.h"
 
-class Application;
+class AppProcess;
 
 struct ConnectionKey
 {
@@ -117,7 +117,7 @@ public:
 	bool hasStdoutSubscriber(const std::string &appName) const;
 
 	// Final exit-time drain from `pos` (= AppProcess::stdoutDispatchedBytes) to disk EOF.
-	void flushStdout(const std::string &appName, Application *app, long pos);
+	void flushStdout(const std::string &appName, AppProcess *process, long pos);
 
 	static EventDispatcher *instance();
 

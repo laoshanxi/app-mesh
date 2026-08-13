@@ -6,10 +6,12 @@ App Mesh supports native systemd-managed service and Docker container deployment
 
 ### Docker Container (Quick Start)
 
-Create an App Mesh container, expose the service port `6060`, and enable Docker access inside the container:
+Create an App Mesh container and expose the service port `6060`:
 
 ```shell
-docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
+docker run -d -p 6060:6060 --restart=always --name=appmesh \
+  -v appmesh-work:/opt/appmesh/work \
+  laoshanxi/appmesh:latest
 ```
 
 Configuration:
@@ -26,6 +28,14 @@ Configuration:
     - `-e APPMESH_REST_RestListenAddress=0.0.0.0`: Enable listening on the LAN.
 
 - Working data persists in `/opt/appmesh/work` - mount this directory for persistence.
+  The image runs as UID/GID `482:482`; bind-mounted directories must be writable,
+  and mounted or copied files must be readable by this identity. Docker named
+  volumes work without additional permission setup.
+
+- To run as root, add `--user 0:0`.
+
+- Docker socket access is disabled by default. Mount `/var/run/docker.sock` and
+  grant its group access only when `docker_image` management is required.
 
 - Security plugin supports `local`/`consul`/`oauth2`, mount `/opt/appmesh/config/security.yaml` to override local security information.
 
@@ -82,15 +92,15 @@ sudo apt purge appmesh          # also remove config files
 sudo installer -pkg appmesh_2.2.1_clang_17_macos_15_arm64.pkg -target /
 
 # Start
-sudo launchctl load -w /Library/LaunchDaemons/com.appmesh.appmesh.plist
+sudo launchctl load -w /Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 
 # Stop
-sudo launchctl unload /Library/LaunchDaemons/com.appmesh.appmesh.plist
+sudo launchctl unload /Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 
 # Uninstall
-sudo launchctl unload /Library/LaunchDaemons/com.appmesh.appmesh.plist
+sudo launchctl unload /Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 sudo rm -rf /opt/appmesh
-sudo rm /Library/LaunchDaemons/com.appmesh.appmesh.plist
+sudo rm /Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 sudo pkgutil --forget com.laoshanxi.appmesh
 ```
 
@@ -98,8 +108,8 @@ sudo pkgutil --forget com.laoshanxi.appmesh
 
 ```shell
 # Install & Start (see Quick Start above)
-docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host \
-  -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
+docker run -d -p 6060:6060 --restart=always --name=appmesh \
+  -v appmesh-work:/opt/appmesh/work laoshanxi/appmesh:latest
 
 # Stop
 docker stop appmesh
@@ -168,7 +178,7 @@ By default, App Mesh will connect to Consul via `https://127.0.0.1:443`. App Mes
 - Fresh Installation: Set `export APPMESH_FRESH_INSTALL=Y` to enable a fresh installation (avoiding reuse of SSL and config files) and use sudo -E to pass environment variables.
 - Secure Installation: Set `export APPMESH_SECURE_INSTALLATION=Y` to generate an initial secure password for the admin user and enable password encryption.
 - Custom Installation Path: Set `PROMPT_INSTALL_PATH=1` to specify a custom installation directory interactively during installation. Alternatively, set `PROMPT_INSTALL_PATH=/opt` to specify the installation directory directly without a prompt. After moving the home directory to a new location, you can re-run the script `script/pack/setup.sh` to complete the setup.
-- Disable Custom Process User: Set `export APPMESH_BaseConfig_DisableExecUser=true` to disable custom process users.
+- Disable Custom Process User: Set `export APPMESH_BaseConfig_DisableExecUser=true` to disable custom process users. The Docker image sets this environment variable by default.
 - Daemon User and Group: Use `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user and group.
 - Timezone Configuration: Use `APPMESH_BaseConfig_PosixTimezone` (e.g., `export APPMESH_BaseConfig_PosixTimezone="+08"`) for timezone setting.
 - Default User: The installation creates an appmesh Linux user for app execution.

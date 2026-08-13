@@ -4,34 +4,36 @@
 #include "sysinfo.h"
 
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <psapi.h>
+
+#pragma comment(lib, "Psapi.lib")
 
 #include "../Utility.h"
 
 namespace os
 {
-
-	int64_t cpuTotalTime()
+	namespace
 	{
-		FILETIME idleTime, kernelTime, userTime;
-		if (GetSystemTimes(&idleTime, &kernelTime, &userTime))
+		struct PageFileTotals
 		{
-			auto fileTimeToInt64 = [](const FILETIME &ft) -> int64_t
-			{
-				ULARGE_INTEGER uli;
-				uli.LowPart = ft.dwLowDateTime;
-				uli.HighPart = ft.dwHighDateTime;
-				return static_cast<int64_t>(uli.QuadPart / 10000);
-			};
+			uint64_t pageSize = 0;
+			uint64_t total = 0;
+			uint64_t used = 0;
+		};
 
-			// Note: kernelTime already includes idleTime per Windows API docs
-			return fileTimeToInt64(kernelTime) + fileTimeToInt64(userTime);
+		BOOL CALLBACK collectPageFile(LPVOID context, PENUM_PAGE_FILE_INFORMATION info, LPCWSTR)
+		{
+			auto &totals = *static_cast<PageFileTotals *>(context);
+			totals.total += static_cast<uint64_t>(info->TotalSize) * totals.pageSize;
+			totals.used += static_cast<uint64_t>(info->TotalInUse) * totals.pageSize;
+			return TRUE;
 		}
-		return 0;
 	}
 
 	std::shared_ptr<Memory> memory()
@@ -44,12 +46,16 @@ namespace os
 		{
 			mem->total_bytes = memStatus.ullTotalPhys;
 			mem->free_bytes = memStatus.ullAvailPhys;
-			mem->totalSwap_bytes = (memStatus.ullTotalPageFile > memStatus.ullTotalPhys)
-								   ? memStatus.ullTotalPageFile - memStatus.ullTotalPhys
-								   : 0;
-			mem->freeSwap_bytes = (memStatus.ullAvailPageFile > memStatus.ullAvailPhys)
-								   ? memStatus.ullAvailPageFile - memStatus.ullAvailPhys
-								   : 0;
+			mem->available_bytes = memStatus.ullAvailPhys;
+			SYSTEM_INFO systemInfo{};
+			GetSystemInfo(&systemInfo);
+			PageFileTotals totals{systemInfo.dwPageSize, 0, 0};
+			if (EnumPageFilesW(collectPageFile, &totals))
+			{
+				mem->totalSwap_bytes = totals.total;
+				mem->freeSwap_bytes = totals.used < totals.total ? totals.total - totals.used : 0;
+				mem->swapAvailable = true;
+			}
 		}
 		else
 		{
@@ -61,8 +67,6 @@ namespace os
 
 	std::list<CPU> cpus()
 	{
-		const static char fname[] = "proc::cpus() ";
-
 		static std::atomic<bool> initialized(false);
 		static std::mutex mutex;
 		static std::list<CPU> results;
@@ -72,73 +76,76 @@ namespace os
 			std::lock_guard<std::mutex> lock(mutex);
 			if (!initialized.load(std::memory_order_relaxed))
 			{
-				SYSTEM_INFO sysInfo;
-				GetSystemInfo(&sysInfo);
-
 				DWORD bufferSize = 0;
-				GetLogicalProcessorInformation(NULL, &bufferSize);
-
+				GetLogicalProcessorInformationEx(RelationAll, nullptr, &bufferSize);
 				if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
 				{
-					std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
-
-					if (GetLogicalProcessorInformation(&buffer[0], &bufferSize))
+					std::vector<unsigned char> buffer(bufferSize);
+					if (GetLogicalProcessorInformationEx(RelationAll,
+						reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data()), &bufferSize))
 					{
-						unsigned int processorId = 0;
-						for (const auto &info : buffer)
+						constexpr unsigned int bitsPerGroup = sizeof(KAFFINITY) * 8;
+						std::map<unsigned int, unsigned int> sockets;
+						unsigned int socketId = 0;
+						for (DWORD offset = 0; offset < bufferSize;)
 						{
-							if (info.Relationship == RelationProcessorCore)
+							auto *info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data() + offset);
+							if (info->Relationship == RelationProcessorPackage)
 							{
-								DWORD_PTR mask = info.ProcessorMask;
-								while (mask)
+								for (WORD groupIndex = 0; groupIndex < info->Processor.GroupCount; ++groupIndex)
 								{
-									if (mask & 1)
+									const auto &group = info->Processor.GroupMask[groupIndex];
+									for (unsigned int bit = 0; bit < bitsPerGroup; ++bit)
 									{
-										results.push_back(CPU(processorId, processorId, 0));
+										if (group.Mask & (static_cast<KAFFINITY>(1) << bit))
+											sockets[group.Group * bitsPerGroup + bit] = socketId;
 									}
-									mask >>= 1;
-									processorId++;
 								}
+								++socketId;
 							}
+							offset += info->Size;
+						}
+
+						unsigned int coreId = 0;
+						for (DWORD offset = 0; offset < bufferSize;)
+						{
+							auto *info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data() + offset);
+							if (info->Relationship == RelationProcessorCore)
+							{
+								for (WORD groupIndex = 0; groupIndex < info->Processor.GroupCount; ++groupIndex)
+								{
+									const auto &group = info->Processor.GroupMask[groupIndex];
+									for (unsigned int bit = 0; bit < bitsPerGroup; ++bit)
+									{
+										if (!(group.Mask & (static_cast<KAFFINITY>(1) << bit)))
+											continue;
+										const auto processorId = group.Group * bitsPerGroup + bit;
+										results.push_back(CPU(processorId, coreId, sockets[processorId]));
+									}
+								}
+								++coreId;
+							}
+							offset += info->Size;
 						}
 					}
 				}
 
 				if (results.empty())
 				{
-					for (DWORD i = 0; i < sysInfo.dwNumberOfProcessors; ++i)
-					{
+					const DWORD processorCount = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+					for (DWORD i = 0; i < processorCount; ++i)
 						results.push_back(CPU(i, i, 0));
-					}
 				}
-
 				initialized.store(true, std::memory_order_release);
 			}
 		}
-
 		return results;
 	}
 
 	std::shared_ptr<Load> loadavg()
 	{
-		const static char fname[] = "loadavg() ";
-
-		auto load = std::make_shared<Load>();
-
-		FILETIME idleTime, kernelTime, userTime;
-		if (GetSystemTimes(&idleTime, &kernelTime, &userTime))
-		{
-			load->one = 0.0;
-			load->five = 0.0;
-			load->fifteen = 0.0;
-		}
-		else
-		{
-			LOG_ERR << fname << "GetSystemTimes failed with error " << GetLastError();
-			return nullptr;
-		}
-
-		return load;
+		// Windows has no Unix-compatible load average.
+		return nullptr;
 	}
 
 } // namespace os

@@ -40,8 +40,8 @@ install(PROGRAMS "${WORKFLOW_BIN}"
     COMPONENT Runtime
 )
 
-# Pre-install the wf-engine App definition so daemon auto-starts it.
+# Platform installers materialize the runtime definition once.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config/workflow.yaml"
-    DESTINATION "${CMAKE_INSTALL_PREFIX}/work/apps"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/config/templates"
     COMPONENT Runtime
 )

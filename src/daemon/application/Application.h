@@ -29,8 +29,7 @@ class DailyLimitation;
 class ResourceLimitation;
 class TaskRequest;
 
-// Recursive mutex is REQUIRED: terminate() under a synchronize() scope re-enters via
-// onExitUpdate() -> m_process.get() (e.g. disabling an exited app); plain mutex would self-deadlock.
+// Lifecycle methods re-enter the process gate.
 using AppMeshProcess = boost::synchronized_value<std::shared_ptr<AppProcess>, boost::recursive_mutex>;
 
 // An Application defines and manages a process job
@@ -69,7 +68,7 @@ public:
 	virtual std::string getYamlPath();
 
 	// Operations
-	void execute(void *ptree = nullptr);
+	void execute(void *ptree = nullptr, bool refreshMetrics = false);
 	void enable();
 	void disable();
 	void destroy();
@@ -79,9 +78,8 @@ public:
 	void regSuicideTimer(int timeoutSeconds);
 	bool onTimerAppRemove();
 	void handleError();
-	// triggerLifecycle: inline immediate restart; currently always false (restart is tick-driven).
-	// naturalExit: latch for restart (vs. deliberate kill). reporter: latch only if it's the current m_process.
-	void onExitUpdate(int code, bool triggerLifecycle = false, bool naturalExit = false, const AppProcess *reporter = nullptr);
+	// Natural exits latch restart only when reporter is the current process.
+	void onExitUpdate(int code, bool naturalExit, AppProcess *reporter);
 	void terminate(std::shared_ptr<AppProcess> &process);
 
 	// Run operations
@@ -99,6 +97,7 @@ public:
 	// Prometheus metrics
 	void initMetrics();
 	void initMetrics(std::shared_ptr<Application> fromApp);
+	void clearMetrics();
 
 protected:
 	// Error handling
@@ -110,7 +109,7 @@ protected:
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
 	void spawnNow(); // start the process now (called by spawnIfDue on the scheduler thread)
 	void refresh();
-	void collectMetrics(void *ptree = nullptr); // Prometheus process-stat sampling; runs outside m_lifecycleMutex
+	void collectMetrics(void *ptree, bool refreshMetrics); // Uses the scheduler's shared process snapshot.
 	void healthCheck();
 
 	std::string runApp(int timeoutSeconds) noexcept(false);
@@ -177,7 +176,6 @@ protected:
 	AppMeshProcess m_process;
 	std::atomic_bool m_health;
 	std::atomic<STATUS> m_status;
-	std::atomic_bool m_destroying{false}; // First entry to destroy() wins; rest are no-ops.
 	mutable std::mutex m_saveMutex; // Serialise concurrent save() on same app yaml.
 
 	// Schedule intent: true when no one owns the next start (initial, force-stop, failed arm);
@@ -225,14 +223,21 @@ protected:
 	// Task request (application level)
 	TaskRequest m_task;
 
-	// Prometheus metrics
-	std::shared_ptr<CounterMetric> m_metricStartCount;
-	std::shared_ptr<GaugeMetric> m_metricMemory;
-	std::shared_ptr<GaugeMetric> m_metricCpu;
-	std::shared_ptr<GaugeMetric> m_metricAppPid;
-	std::shared_ptr<GaugeMetric> m_metricFileDesc;
-	// Always-on start counter reported by AsJson (independent of Prometheus). shared_ptr so an
-	// updated app inherits the prior object's count (see initMetrics). atomic, not a prometheus
-	// type, to keep this off the Prometheus dependency when metrics are disabled.
-	std::shared_ptr<std::atomic<unsigned long long>> m_starts;
+	struct MetricsState
+	{
+		std::mutex mutex;
+		const Application *owner = nullptr; // Identity only; never dereferenced.
+		std::shared_ptr<CounterMetric> startCount;
+		std::shared_ptr<CounterMetric> collectionError;
+		std::shared_ptr<GaugeMetric> memory;
+		std::shared_ptr<GaugeMetric> cpu;
+		std::shared_ptr<GaugeMetric> appPid;
+		std::shared_ptr<GaugeMetric> fileDesc;
+		std::shared_ptr<GaugeMetric> enabled;
+		std::shared_ptr<GaugeMetric> running;
+		std::shared_ptr<GaugeMetric> healthy;
+		unsigned long long starts = 0;
+	};
+	std::shared_ptr<MetricsState> m_metrics;
+	static void resetMetricHandles(MetricsState &metrics);
 };

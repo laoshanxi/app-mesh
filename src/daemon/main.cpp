@@ -1,6 +1,7 @@
 // src/daemon/main.cpp
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <list>
@@ -50,6 +51,7 @@
 #include "ResourceCollection.h"
 #include "application/Application.h"
 #include "process/AppProcess.h"
+#include "process/LinuxCgroup.h"
 #include "rest/RestHandler.h"
 #include "rest/SSLHelper.h"
 #include "rest/SocketServer.h"
@@ -124,6 +126,9 @@ private:
 	std::shared_ptr<SocketStreamPtr> m_client;
 	std::unique_ptr<TcpAcceptor> m_acceptor;
 	std::list<os::Process> m_ptree;
+	bool m_ptreeReady = false;
+	bool m_ptreeRefreshPending = false;
+	uint64_t m_lastPrometheusScrape = 0;
 	ACE_Reactor *m_processReactor = nullptr;
 };
 
@@ -166,6 +171,7 @@ int AppMeshDaemon::run(int argc, char *argv[])
 		initializeEnvironment();
 		initializeLogging();
 		initializeConfiguration();
+		LinuxCgroup::initializeApplicationCgroups();
 		initializeACE();
 		initializeSecurity();
 		initializeDirectories();
@@ -239,8 +245,8 @@ void AppMeshDaemon::initializeConfiguration()
 	Configuration::handleSignal();
 
 	LOG_INF << fname << "Initializing host resource collection";
-	ResourceCollection::instance()->getHostResource();
-	ResourceCollection::instance()->dump();
+	const auto hostResources = ResourceCollection::instance()->getHostResource();
+	ResourceCollection::instance()->dump(hostResources);
 
 	auto configJson = Utility::yamlToJson(YAML::Load(Configuration::readConfiguration()));
 	auto config = Configuration::FromJson(configJson, true);
@@ -285,8 +291,8 @@ void AppMeshDaemon::initializeDirectories()
 		Utility::createDirectory(dir);
 	}
 
-	// Set ownership if default exec user is specified
-	if (!config->getDefaultExecUser().empty())
+	// Set ownership only when execution-user switching is active.
+	if (!config->getDisableExecUser() && !config->getDefaultExecUser().empty())
 	{
 #if !defined(_WIN32)
 		LOG_INF << fname << "Setting directory ownership to user <" << config->getDefaultExecUser() << ">";
@@ -500,7 +506,7 @@ void AppMeshDaemon::startAgentApplication()
 		LOG_INF << fname << "Starting agent application";
 
 		const auto shmName = HMACVerifierSingleton::instance()->writePSKToSHM();
-		config->addApp(config->getAgentAppJson(shmName), nullptr, false)->execute();
+		config->addApp(config->getAgentAppJson(shmName), false)->execute();
 
 		if (!shmName.empty() && !HMACVerifierSingleton::instance()->waitPSKRead())
 		{
@@ -586,9 +592,37 @@ void AppMeshDaemon::runMainLoop()
 			PersistManager::instance()->persistSnapshot();
 			HealthCheckTask::instance()->doHealthCheck();
 
-			// Update process tree for prometheus if needed
-			if (config->prometheusEnabled() && RESTHANDLER::instance()->collected())
-				m_ptree = os::processes();
+			// Refresh all process metrics once per completed scrape.
+			if (config->prometheusEnabled())
+			{
+				const auto scrapeGeneration = RESTHANDLER::instance()->prometheusScrapeGeneration();
+				if (scrapeGeneration != m_lastPrometheusScrape)
+				{
+					std::vector<pid_t> roots = {ACE_OS::getpid()};
+					for (const auto &app : Configuration::instance()->getApps())
+					{
+						const auto pid = app->getpid();
+						if (pid > 1)
+							roots.push_back(pid);
+					}
+					m_ptree = os::processes(roots);
+					m_ptreeReady = !m_ptree.empty();
+					m_ptreeRefreshPending = true;
+					RESTHANDLER::instance()->refreshPrometheusProcessMetrics(
+						m_ptreeReady ? static_cast<void *>(&m_ptree) : nullptr);
+					m_lastPrometheusScrape = scrapeGeneration;
+				}
+				else
+				{
+					m_ptreeReady = false;
+					m_ptreeRefreshPending = false;
+				}
+			}
+			else
+			{
+				m_ptreeReady = false;
+				m_ptreeRefreshPending = false;
+			}
 		}
 		catch (const std::exception &ex)
 		{
@@ -617,6 +651,10 @@ void AppMeshDaemon::executeApplications()
 	const static char fname[] = "AppMeshDaemon::executeApplications() ";
 
 	auto allApps = Configuration::instance()->getApps();
+	void *const processSnapshot = m_ptreeReady ? static_cast<void *>(&m_ptree) : nullptr;
+	m_ptreeReady = false;
+	const bool refreshMetrics = m_ptreeRefreshPending;
+	m_ptreeRefreshPending = false;
 
 	for (const auto &app : allApps)
 	{
@@ -627,7 +665,7 @@ void AppMeshDaemon::executeApplications()
 
 		try
 		{
-			app->execute(static_cast<void *>(&m_ptree));
+			app->execute(processSnapshot, refreshMetrics);
 		}
 		catch (const std::exception &ex)
 		{

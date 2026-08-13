@@ -1,6 +1,9 @@
 // src/daemon/process/AppProcess.h
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -38,7 +41,6 @@ public:
 	virtual pid_t getpid() const;
 	virtual int returnValue() const;
 	virtual void onExit(int exitCode);
-	bool onTimerAppExit(int exitCode);
 
 	bool running() const;
 	static bool running(pid_t pid);
@@ -52,18 +54,20 @@ public:
 	virtual std::string containerId() const { return std::string(); }
 	virtual void containerId(const std::string &) {}
 
-	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> getProcessDetails(void *ptree = nullptr);
+	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> getProcessDetails(
+		void *ptree = nullptr, bool includeTreeString = true, bool metricsSample = false);
 
 	void attach(int pid, const std::string &stdoutFile = "");
 	// Recovered (attached) processes are not our children — no SIGCHLD; Application::refresh
-	// polls and synthesizes the exit. Set ONLY by Application::attach (Docker must not opt in).
+	// polls and synthesizes the exit with compatibility status 0. Set ONLY by
+	// Application::attach (Docker must not opt in).
 	void markRecovered() { m_recovered.store(true); }
 	bool isRecovered() const { return m_recovered.load(); }
 	void detach();
-	virtual void terminate();
+	void terminate();
 	bool onTimerTerminate();
 	void cleanResource();
-	virtual void setCgroup(std::shared_ptr<ResourceLimitation> &limit);
+	virtual void setCgroup(const std::shared_ptr<ResourceLimitation> &limit);
 	void delayKill(std::size_t timeoutSec, const std::string &from);
 	void registerCheckStdoutTimer();
 	bool onTimerCheckStdout();
@@ -73,7 +77,7 @@ public:
 							 const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON,
 							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
 
-	virtual pid_t spawn(ACE_Process_Options &options);
+	virtual pid_t spawn(ACE_Process_Options &options, const std::shared_ptr<ResourceLimitation> &limit = nullptr);
 
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
@@ -81,13 +85,27 @@ public:
 	void startError(const std::string &err);
 
 private:
+	enum class ExitPhase : std::uint8_t
+	{
+		Active,
+		Observed,
+		Finalizing,
+		Finalized
+	};
+
+	friend class Application;
+	pid_t lastPid() const { return m_lastPid.load(std::memory_order_acquire); }
+	bool blocksStart() const { return lastPid() > 1 && m_exitPhase.load(std::memory_order_acquire) != ExitPhase::Finalized; }
 	int validateCommand(const std::string &cmd);
 	void prepareEnvironment(std::map<std::string, std::string> &envMap);
+	bool beginExit(int exitCode);
 
 	// Per-process bridge registered as exit_notify_ with ACE_Process_Manager.
 	class ExitAdapter;
 
 protected:
+	virtual void terminateImpl();
+	virtual void finishExit(int exitCode);
 	const std::weak_ptr<Application> m_owner;
 
 private:
@@ -108,19 +126,21 @@ private:
 
 	mutable std::recursive_mutex m_cpuMutex;
 	uint64_t m_lastProcCpuTime;
-	uint64_t m_lastSysCpuTime;
+	std::chrono::steady_clock::time_point m_lastCpuSampleTime;
+	uint64_t m_lastMetricProcCpuTime;
+	std::chrono::steady_clock::time_point m_lastMetricCpuSampleTime;
 
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	const std::string m_uuid;
 	const std::string m_key;
 	std::atomic<pid_t> m_pid;
 	std::atomic<int> m_returnValue;
-	// BUG fix: CAS guard prevents double onExit when terminate() races with natural exit.
-	std::atomic<bool> m_exitFired{false};
+	std::atomic<ExitPhase> m_exitPhase{ExitPhase::Active};
 	// True once we deliberately kill this process; marks its exit as not-natural (no restart).
 	std::atomic<bool> m_terminating{false};
 	// True for a daemon-restart recovered (attached) process; enables tick-side exit polling.
 	std::atomic<bool> m_recovered{false};
+	std::atomic<pid_t> m_lastPid{ACE_INVALID_PID};
 
 	boost::atomic_shared_ptr<std::string> m_startError;
 

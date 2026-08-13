@@ -51,13 +51,11 @@ The original design had problems:
   bypassed for periodic/cron.
 - **Recovered (attached) processes** (`m_recovered`): not our children, so `refresh()` polls
   and synthesizes their exit.
-- **Exit is record-only on the timer thread; the tick drives restart + spawn.** The natural-exit
-  upcall (`onTimerAppExit`, on the ACE timer thread) only sets the latch + dispatches the event.
-  `driveLifecycle` (lock-holding, multi-step) and the actual fork run on the scheduler-tick
-  thread, keeping fork/exec off the shared timer thread. The inline-immediate exit path remains
-  behind `onExitUpdate(triggerLifecycle=…)`, disabled.
-- **`m_process` stays a recursive mutex** (required): `terminate()` under that lock re-enters
-  via `onExitUpdate() → m_process.get()`; a plain mutex self-deadlocks.
+- **Exit is finalized once on the timer thread; the tick drives restart + spawn.** The exit
+  callback drains stdout, dispatches the event and sets the latch. `driveLifecycle` and the
+  actual fork stay on the scheduler thread.
+- **`m_process` stays a recursive mutex** because `spawnIfDue()` holds the process gate while
+  calling `spawnNow()`, which re-enters it to keep the gate and replacement atomic.
 
 ## Consequences
 

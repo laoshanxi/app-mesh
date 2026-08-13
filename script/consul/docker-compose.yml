@@ -69,10 +69,11 @@ services:
       - APPMESH_consul_token=YOUR-CONSUL-ACL-TOKEN
       - APPMESH_consul_tls_enable=true
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - /opt/appmesh/work # mount this to enable configuration persist
-    privileged: true
-    user: root
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     # used for debug
     ports:
       - 8501:8501
@@ -101,7 +102,8 @@ services:
       - APPMESH_consul_enable=true
       - APPMESH_consul_tls_enable=true
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - /opt/appmesh/work # mount this to enable configuration persist
-    privileged: true
-    user: root
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

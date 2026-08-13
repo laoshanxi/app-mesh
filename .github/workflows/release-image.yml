@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - Dockerfile
+      - script/pack/docker-entrypoint.sh
       - .github/workflows/release-image.yml
   workflow_run:
     workflows: ["release-linux"]
@@ -154,7 +155,7 @@ jobs:
           image: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}
           shell: bash
           run: |
-            timeout 30s /entrypoint.sh &
+            timeout 30s /opt/appmesh/script/docker-entrypoint.sh &
             sleep 5
             appm ls && appm resource
 

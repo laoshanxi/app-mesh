@@ -22,6 +22,30 @@
 
 #include "HttpRequest.h"
 
+struct HttpReplyMetricState
+{
+	explicit HttpReplyMetricState(std::function<void(int)> fn) : callback(std::move(fn)) {}
+
+	void notify(int status) noexcept
+	{
+		if (!notified.exchange(true) && callback)
+		{
+			try
+			{
+				callback(status);
+			}
+			catch (...)
+			{
+				// Metrics never affect request delivery.
+			}
+		}
+	}
+	~HttpReplyMetricState() { notify(0); }
+
+	std::atomic<bool> notified{false};
+	std::function<void(int)> callback;
+};
+
 HttpRequest::HttpRequest(Request &&request, int tcpClientId)
 	: m_uuid(std::move(request.uuid)),
 	  m_method(std::move(request.http_method)),
@@ -36,6 +60,17 @@ HttpRequest::HttpRequest(Request &&request, int tcpClientId)
 
 HttpRequest::~HttpRequest()
 {
+}
+
+void HttpRequest::setReplyMetricCallback(std::function<void(int)> callback)
+{
+	m_replyMetric = std::make_shared<HttpReplyMetricState>(std::move(callback));
+}
+
+void HttpRequest::notifyReply(int status) const
+{
+	if (m_replyMetric)
+		m_replyMetric->notify(status);
 }
 
 nlohmann::json HttpRequest::extractJson() const
@@ -151,7 +186,10 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	if (m_tcpClientId > 0)
 	{
 		// TCP protocol
-		return SocketServer::replyTcp(m_tcpClientId, std::move(response));
+		const bool success = SocketServer::replyTcp(m_tcpClientId, std::move(response));
+		if (success)
+			notifyReply(status);
+		return success;
 	}
 #if defined(HAVE_UWEBSOCKETS)
 	else if (m_uwsReplyContext)
@@ -163,6 +201,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 			response->applyCorsHeaders();
 			response->applySecurityHeaders();
 			m_uwsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
+			notifyReply(status);
 			return true;
 		}
 		else if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
@@ -170,6 +209,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 			// WebSocket protocol
 			auto data = response->serialize();
 			m_uwsReplyContext->replyWebSocket(std::string(data->data(), data->size()), false, true);
+			notifyReply(status);
 			return true;
 		}
 		else
@@ -189,6 +229,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		resp->m_payload = response->serialize();
 		resp->m_is_http = m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) == HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
+		notifyReply(status);
 		return true;
 	}
 #endif
@@ -258,7 +299,7 @@ bool HttpRequestWithTimeout::onTimerResponse()
 	const static char fname[] = "HttpRequestWithTimeout::onTimerResponse() ";
 	LOG_DBG << fname << "Request <" << this->m_uuid << "> timed out";
 
-	CLEAR_TIMER_ID(m_timerResponseId);
+	clearTimerId(m_timerResponseId);
 	// Flag-gated via the virtual reply() override; no-op if a worker already replied.
 	HttpRequest::reply(web::http::status_codes::RequestTimeout);
 
@@ -352,7 +393,7 @@ bool HttpRequestOutputView::onTimerResponse()
 	APP_OUT_VIEW_MAP.unbind(m_pid, self);
 	try
 	{
-		CLEAR_TIMER_ID(m_timerResponseId);
+		clearTimerId(m_timerResponseId);
 		if (!m_httpRequestReplyFlag.test_and_set())
 		{
 			auto app = m_app.lock();

@@ -46,11 +46,24 @@ Function .onInit
 FunctionEnd
 
 Section "Install"
+    ; Stop an existing installation before replacing its binaries.
+    StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"
+    IfFileExists "$NSSM_PATH" 0 install_files
+    nsExec::ExecToLog '"$NSSM_PATH" stop AppMeshService'
+    nsExec::ExecToLog '"$NSSM_PATH" remove AppMeshService confirm'
+
+install_files:
     SetOutPath "$INSTDIR"
     File /r "..\..\build\package_root\*"
 
     StrCpy $START_APPMESH "$INSTDIR\bin\appmesh.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"
+
+    ; Preserve an existing runtime definition during upgrades.
+    CreateDirectory "$INSTDIR\work\apps"
+    IfFileExists "$INSTDIR\work\apps\workflow.yaml" workflow_ready 0
+    CopyFiles /SILENT "$INSTDIR\config\templates\workflow.yaml" "$INSTDIR\work\apps"
+workflow_ready:
 
     ; Generate SSL certs
     DetailPrint "Starting SSL certificate generation"
@@ -64,12 +77,6 @@ Section "Install"
     ${Else}
         DetailPrint "SUCCESS: SSL certificate generation completed"
     ${EndIf}
-
-
-    ; Remove existing service if present
-    nsExec::ExecToLog '"$NSSM_PATH" stop AppMeshService'
-    nsExec::ExecToLog '"$NSSM_PATH" remove AppMeshService confirm'
-
     ; Install service
     nsExec::ExecToLog '"$NSSM_PATH" install AppMeshService "$START_APPMESH"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppDirectory "$INSTDIR"'

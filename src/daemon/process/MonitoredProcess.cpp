@@ -14,16 +14,20 @@ MonitoredProcess::~MonitoredProcess()
 	LOG_DBG << fname << "Process <" << AppProcess::getpid() << "> released";
 }
 
-void MonitoredProcess::onExit(int exitCode)
+void MonitoredProcess::finishExit(int exitCode)
 {
-	// Call parent class exit handler first
-	AppProcess::onExit(exitCode);
+	try
+	{
+		cleanResource();
+	}
+	catch (...)
+	{
+		LOG_ERR << "MonitoredProcess::finishExit() failed to clean process resources";
+	}
 
-	// Flush pipe to disk before reading — fast-exit processes may still have
-	// buffered stdout when the async timer hasn't fired yet (idempotent).
-	cleanResource();
-
-	replyAsyncRequest();
+	auto requestKeepalive = replyAsyncRequest();
+	AppProcess::finishExit(exitCode);
+	(void)requestKeepalive;
 }
 
 void MonitoredProcess::setAsyncHttpRequest(std::shared_ptr<void> httpRequest)
@@ -32,13 +36,13 @@ void MonitoredProcess::setAsyncHttpRequest(std::shared_ptr<void> httpRequest)
 	*locked = std::static_pointer_cast<HttpRequest>(httpRequest);
 }
 
-void MonitoredProcess::replyAsyncRequest()
+std::shared_ptr<HttpRequest> MonitoredProcess::replyAsyncRequest()
 {
 	const static char fname[] = "MonitoredProcess::replyAsyncRequest() ";
+	std::shared_ptr<HttpRequest> request;
 
 	try
 	{
-		std::shared_ptr<HttpRequest> request;
 		m_httpRequest.swap(request);
 
 		if (request)
@@ -58,4 +62,5 @@ void MonitoredProcess::replyAsyncRequest()
 	{
 		LOG_ERR << fname << "Failed to reply async HTTP request, connection may be broken: " << last_error_msg();
 	}
+	return request;
 }

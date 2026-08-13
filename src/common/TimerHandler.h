@@ -20,15 +20,28 @@
 using TimerCallback = std::function<bool(void)>;
 
 constexpr long INVALID_TIMER_ID = -1L;
-#define IS_VALID_TIMER_ID(id) ((id) != INVALID_TIMER_ID)
-#define CLEAR_TIMER_ID(id) ((id) = INVALID_TIMER_ID)
+
+constexpr bool isValidTimerId(long timerId) noexcept
+{
+	return timerId != INVALID_TIMER_ID;
+}
+
+inline bool isValidTimerId(const std::atomic_long &timerId) noexcept
+{
+	return isValidTimerId(timerId.load(std::memory_order_acquire));
+}
+
+inline void clearTimerId(std::atomic_long &timerId) noexcept
+{
+	timerId.store(INVALID_TIMER_ID, std::memory_order_release);
+}
 
 /**
  * @class TimerHandler
  * @brief Base class for objects requiring timer functionality.
  *
  * Uses std::enable_shared_from_this to prevent premature destruction while timers are active.
- * For lambda-only timers without an object, use standalone registerTimer()/cancelTimer().
+ * For lambda-only timers without an object, use TIMER_MANAGER directly.
  *
  * @note Does not support stack allocation due to enable_shared_from_this.
  */
@@ -88,17 +101,6 @@ public:
 	 */
 	int handle_timeout(const ACE_Time_Value &current_time, const void *act = nullptr) override;
 
-	/**
-	 * @brief Called when a handle_*() method returns -1 or when remove_handler() is called on an ACE_Reactor.
-	 *
-	 * This method performs cleanup by deleting the TimerEvent instance.
-	 *
-	 * @param handle The ACE handle associated with the event.
-	 * @param close_mask Indicates which event triggered the handle_close callback.
-	 * @return int 0 on success.
-	 */
-	int handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask) override;
-
 private:
 	const std::shared_ptr<TimerHandler> m_timerObj; ///< Holds the target TimerHandler instance to prevent premature deallocation (can be nullptr).
 	const TimerCallback m_handler;					///< The callback function to be invoked on timer expiration.
@@ -130,8 +132,8 @@ public:
 	/// @brief Convenience overload for lambda-only timers.
 	long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, std::string from, const TimerCallback &handler);
 
-	/// @brief Cancels timer (non-thread-safe).
-	bool cancelTimer(long &timerId);
+	/// @brief Cancels a timer ID already detached from its owner.
+	bool cancelTimer(long timerId);
 
 	/**
 	 * @brief Cancels timer (thread-safe).
@@ -148,30 +150,3 @@ private:
 };
 
 using TIMER_MANAGER = ACE_Singleton<TimerManager, ACE_Null_Mutex>;
-
-/**
- * @brief Standalone timer registration for lambda-only timers.
- *
- * @param delayMilliseconds Initial delay in milliseconds.
- * @param intervalMilliseconds Interval in milliseconds. 0 for one-shot.
- * @param from Source identifier for logging.
- * @param handler Callback invoked on expiration.
- * @return Timer ID, or INVALID_TIMER_ID on failure.
- *
- * @example
- *   std::atomic_long timerId{INVALID_TIMER_ID};
- *   timerId = registerTimer(1000, 5000, "my_lambda_timer", []() {
- *       std::cout << "Timer fired!" << std::endl;
- *       return true; // Continue timer
- *   });
- *   cancelTimer(timerId);
- */
-long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler);
-
-/**
- * @brief Standalone timer cancellation.
- * @param timerId Timer ID (atomically reset to INVALID_TIMER_ID).
- * @return true if canceled successfully.
- * @warning Do not call from within TimerCallback.
- */
-bool cancelTimer(std::atomic_long &timerId);

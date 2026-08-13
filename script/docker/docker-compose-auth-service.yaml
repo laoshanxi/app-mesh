@@ -3,8 +3,12 @@ services:
     image: laoshanxi/appmesh
     container_name: auth_service
     restart: always
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
-      - ./work:/opt/appmesh/work/
+      - auth_service_work:/opt/appmesh/work/
 
   auth_ui:
     image: laoshanxi/appmesh-ui
@@ -20,3 +24,6 @@ services:
       - VUE_APP_TITLE=My Authentication Service
     links:
       - auth_service
+
+volumes:
+  auth_service_work:

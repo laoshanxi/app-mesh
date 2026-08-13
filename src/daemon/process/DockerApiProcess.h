@@ -15,11 +15,8 @@ struct CurlResponse;
 class DockerApiProcess : public DockerProcess
 {
 public:
-	DockerApiProcess(const std::string &appName, const std::string &dockerImage);
+	DockerApiProcess(std::weak_ptr<Application> owner, const std::string &appName, const std::string &dockerImage);
 	~DockerApiProcess();
-
-	// Override with docker REST behavior
-	void terminate() override;
 
 	// Override with docker REST request
 	int spawnProcess(std::string cmd, std::string execUser, std::string workDir,
@@ -32,6 +29,9 @@ public:
 
 	// Get process exit code from container inspect API
 	int returnValue() const override;
+
+protected:
+	void terminateImpl() override;
 
 private:
 	// Request Docker HTTP REST API

@@ -2,8 +2,6 @@
 #pragma once
 
 #include <list>
-#include <memory>
-#include <set>
 #include <string>
 
 namespace net
@@ -22,10 +20,7 @@ namespace net
 	// Converts a sockaddr structure to a string
 	std::string sockaddrToString(const struct sockaddr *storage);
 
-	// Get all virtual network devices name in the system
-	std::set<std::string> getVirtualNetworkDevices();
-
-	// Retrieves the network link devices in the system
+	// Retrieves active physical and virtual network interfaces, excluding loopback.
 	std::list<NetworkInterfaceInfo> getNetworkLinks();
 
 } // namespace net

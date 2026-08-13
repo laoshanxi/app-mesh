@@ -11,11 +11,8 @@
 class DockerProcess : public AppProcess
 {
 public:
-	DockerProcess(const std::string &containerName, const std::string &dockerImage);
+	DockerProcess(std::weak_ptr<Application> owner, const std::string &containerName, const std::string &dockerImage);
 	~DockerProcess();
-
-	// Override with docker cli behavior
-	void terminate() override;
 
 	// Override with docker cli spawn behavior
 	int spawnProcess(std::string cmd, std::string execUser, std::string workDir,
@@ -37,6 +34,8 @@ public:
 	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) override;
 
 protected:
+	void terminateImpl() override;
+
 	// Run docker pull cli
 	int execPullDockerImage(std::map<std::string, std::string> &envMap, const std::string &dockerImage,
 							const std::string &stdoutFile, const std::string &workDir);

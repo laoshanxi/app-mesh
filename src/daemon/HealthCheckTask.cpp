@@ -26,12 +26,14 @@ void HealthCheckTask::doHealthCheck()
 			if (app->available())
 			{
 				auto proc = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-				proc->spawnProcess(app->healthCheckCmd(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0);
-				proc->delayKill(DEFAULT_HEALTH_CHECK_INTERVAL, fname);
-				ACE_exitcode exitCode;
-				proc->wait(&exitCode);
+				const auto pid = proc->spawnProcess(app->healthCheckCmd(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0);
+				ACE_exitcode exitCode = 1;
+				if (pid > 1 && proc->wait(ACE_Time_Value(DEFAULT_HEALTH_CHECK_INTERVAL), &exitCode) <= 0)
+				{
+					proc->terminate();
+					exitCode = proc->returnValue();
+				}
 				app->health(0 == exitCode);
-				// proc->terminate();
 				LOG_DBG << fname << "Health check for <" << app->getName() << "> command <" << app->healthCheckCmd() << "> returned <" << exitCode << ">, last error: " << proc->startError();
 			}
 			else

@@ -9,6 +9,7 @@
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
+#include "../../common/os/filesystem.h"
 #include "../../common/os/linux.h"
 #include "../../common/os/proc.h"
 #include "../Configuration.h"
@@ -44,11 +45,12 @@ Application::Application()
 	  m_regTime(std::chrono::system_clock::now()),
 	  m_appId(Utility::shortID()), m_version(0), m_timerRemoveId(INVALID_TIMER_ID),
 	  m_health(true),
-	  m_status(STATUS::ENABLED), m_starts(std::make_shared<std::atomic<unsigned long long>>(0ULL))
+	  m_status(STATUS::ENABLED), m_metrics(std::make_shared<MetricsState>())
 {
 	const static char fname[] = "Application::Application() ";
 	m_run.pid = ACE_INVALID_PID;
 	m_run.returnCode = INVALID_RETURN_CODE;
+	m_metrics->owner = this;
 	m_needsSchedule.store(true); // never scheduled yet
 	LOG_DBG << fname << "Entered.";
 }
@@ -144,7 +146,7 @@ bool Application::available(const std::chrono::system_clock::time_point &now)
 void Application::FromJson(const std::shared_ptr<Application> &app, const nlohmann::json &jsonObj)
 {
 	const static char fname[] = "Application::FromJson() ";
-	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
+	app->m_name = normalizeAppName(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
 
 	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner));
 	if (!ownerStr.empty())
@@ -331,57 +333,101 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 
 void Application::refresh()
 {
+	std::shared_ptr<AppProcess> exitedProcess;
 	{
 		auto lock = m_process.synchronize();
 		if (m_bufferProcess && !m_bufferProcess->running())
 		{
 			m_bufferProcess.reset();
 		}
-		// A recovered (attached) process is not our child: poll and synthesize its exit
-		// (real code unknowable -> 0); onExit's CAS guard keeps this idempotent.
-		if ((*lock) && (*lock)->isRecovered() && !(*lock)->running())
+		const auto process = *lock;
+		const pid_t pid = process ? process->getpid() : ACE_INVALID_PID;
+		// Recovered and Docker processes are attached, so no reactor exit callback is available.
+		const bool lacksReactorExitCallback = process && (process->isRecovered() || !m_dockerImage.empty());
+		// Another exit path may already have claimed the process.
+		const bool isExitUnclaimed = process && process->m_exitPhase.load(std::memory_order_acquire) == AppProcess::ExitPhase::Active;
+		// A valid PID excludes a Docker start that failed before host-PID attachment.
+		const bool hasValidPid = pid > 1;
+		if (lacksReactorExitCallback && isExitUnclaimed && hasValidPid && !AppProcess::running(pid))
 		{
-			(*lock)->onExit(0);
+			// Potentially blocking Docker inspection runs after releasing the process gate.
+			// TODO: Docker event subscription could replace this host-PID polling path.
+			exitedProcess = process;
 		}
+	}
+
+	if (exitedProcess)
+	{
+		// A recovered PID is not our child, so its real exit status cannot be obtained.
+		const int exitCode = exitedProcess->isRecovered() ? 0 : exitedProcess->returnValue();
+		exitedProcess->onExit(exitCode);
 	}
 
 	// Health check
 	healthCheck();
 }
 
-void Application::collectMetrics(void *ptree)
+void Application::collectMetrics(void *ptree, bool refreshMetrics)
 {
-	if (!(Configuration::instance()->prometheusEnabled() && RESTHANDLER::instance()->collected()))
+	if (!refreshMetrics || !Configuration::instance()->prometheusEnabled())
 	{
 		return;
 	}
 
-	// Snapshot handles under the lock (initMetrics reassigns them there), then read /proc unlocked.
-	std::shared_ptr<AppProcess> process;
-	std::shared_ptr<GaugeMetric> mem, cpu, fileDesc, appPid;
-	{
-		auto lock = m_process.synchronize();
-		process = *lock;
-		mem = m_metricMemory;
-		cpu = m_metricCpu;
-		fileDesc = m_metricFileDesc;
-		appPid = m_metricAppPid;
-	}
+	const auto process = m_process.get();
+	const auto metrics = m_metrics;
+	std::lock_guard<std::mutex> metricsGuard(metrics->mutex);
+	if (metrics->owner != this)
+		return;
 
-	if (mem && process)
+	const bool processRunning = process && process->running();
+	if (processRunning && ptree != nullptr && (metrics->memory || metrics->cpu || metrics->fileDesc))
 	{
-		auto usage = process->getProcessDetails(ptree);
-		mem->metric().Set(std::get<1>(usage));
-		cpu->metric().Set(std::get<2>(usage));
-		if (fileDesc)
+		auto usage = process->getProcessDetails(ptree, false, true);
+		if (std::get<0>(usage))
 		{
-			fileDesc->metric().Set(std::get<3>(usage));
+			if (metrics->memory)
+				metrics->memory->metric().Set(std::get<1>(usage));
+			// Convert percent to CPU cores.
+			if (metrics->cpu)
+				metrics->cpu->metric().Set(std::get<2>(usage) / 100.0);
+			if (metrics->fileDesc)
+				metrics->fileDesc->metric().Set(std::get<3>(usage));
+		}
+		else
+		{
+			if (metrics->memory)
+				metrics->memory->metric().Set(0);
+			if (metrics->cpu)
+				metrics->cpu->metric().Set(0);
+			if (metrics->fileDesc)
+				metrics->fileDesc->metric().Set(0);
+			if (metrics->collectionError)
+				metrics->collectionError->metric().Increment();
 		}
 	}
-	if (appPid)
+	else if (!processRunning || ptree == nullptr)
 	{
-		appPid->metric().Set(loadRunState().pid);
+		if (metrics->memory)
+			metrics->memory->metric().Set(0);
+		if (metrics->cpu)
+			metrics->cpu->metric().Set(0);
+		if (metrics->fileDesc)
+			metrics->fileDesc->metric().Set(0);
+		if (processRunning && ptree == nullptr && metrics->collectionError)
+			metrics->collectionError->metric().Increment();
 	}
+	const auto run = loadRunState();
+	if (metrics->appPid)
+	{
+		metrics->appPid->metric().Set(processRunning && run.pid != ACE_INVALID_PID ? run.pid : 0);
+	}
+	if (metrics->enabled)
+		metrics->enabled->metric().Set(getStatus() == STATUS::ENABLED ? 1 : 0);
+	if (metrics->running)
+		metrics->running->metric().Set(processRunning ? 1 : 0);
+	if (metrics->healthy)
+		metrics->healthy->metric().Set(processRunning && health() == 0 ? 1 : 0);
 }
 
 // Recovery entry (FromJson registration and main.cpp snapshot recovery); moving these calls
@@ -523,12 +569,12 @@ bool Application::consumePendingExit()
 	return consumed;
 }
 
-void Application::execute(void *ptree)
+void Application::execute(void *ptree, bool refreshMetrics)
 {
 	// Periodic tick trigger.
 	driveLifecycle(std::chrono::system_clock::now());
-	// Outside m_lifecycleMutex: a slow /proc read must not stall an exit-driven driveLifecycle.
-	collectMetrics(ptree);
+	// All applications in this scheduler pass reuse the same process snapshot.
+	collectMetrics(ptree, refreshMetrics);
 }
 
 void Application::driveLifecycle(const std::chrono::system_clock::time_point &now)
@@ -573,54 +619,62 @@ void Application::spawnNow()
 	}
 	else
 	{
-		auto processLock = m_process.synchronize();
-
-		// 1. Clean old process
-		if ((*processLock) && (*processLock)->running())
+		try
 		{
-			if (m_bufferTime > 0)
+			auto processLock = m_process.synchronize();
+
+			// 1. Clean old process
+			if ((*processLock) && (*processLock)->running())
 			{
-				// Give some time for buffer process
-				m_bufferProcess = (*processLock);
-				m_bufferProcess->delayKill(m_bufferTime, __FUNCTION__);
+				if (m_bufferTime > 0)
+				{
+					// Give some time for buffer process
+					m_bufferProcess = (*processLock);
+					m_bufferProcess->delayKill(m_bufferTime, __FUNCTION__);
+				}
+				else
+				{
+					// Direct kill old process
+					terminate(*processLock);
+				}
+			}
+
+			// 2. Start new process
+			(*processLock).reset();
+			(*processLock) = allocProcess(false, m_dockerImage, m_name);
+
+			// Publish a clean Running state so no stale return/exitTime is observable for the new run.
+			updateRunState([&](RunState &r) {
+				r.startTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+				r.returnCode = INVALID_RETURN_CODE;
+				r.exitTime = nullptr;
+				r.exitPending = false;
+			});
+			const auto execUser = (m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : getExecUser();
+			LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">";
+
+			const pid_t newPid = (*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
+			updateRunState([&](RunState &r) { r.pid = newPid; });
+			if (newPid > 0)
+			{
+				checkProcStdoutFile = (*processLock);
+				spawnedPid = newPid;
+				processUuid = (*processLock)->getuuid();
 			}
 			else
 			{
-				// Direct kill old process
-				terminate(*processLock);
+				// Spawn failed: no process and no exit upcall, so restore the intent for a tick retry.
+				m_needsSchedule.store(true);
 			}
+
+			// 3. Post process
+			setLastError((*processLock)->startError());
 		}
-
-		// 2. Start new process
-		(*processLock).reset();
-		(*processLock) = allocProcess(false, m_dockerImage, m_name);
-
-		// Publish a clean Running state so no stale return/exitTime is observable for the new run.
-		updateRunState([&](RunState &r) {
-			r.startTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-			r.returnCode = INVALID_RETURN_CODE;
-			r.exitTime = nullptr;
-			r.exitPending = false;
-		});
-		const auto execUser = (m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : getExecUser();
-		LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">";
-
-		const pid_t newPid = (*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
-		updateRunState([&](RunState &r) { r.pid = newPid; });
-		if (newPid > 0)
+		catch (...)
 		{
-			checkProcStdoutFile = (*processLock);
-			spawnedPid = newPid;
-			processUuid = (*processLock)->getuuid();
-		}
-		else
-		{
-			// Spawn failed: no process and no exit upcall, so restore the intent for a tick retry.
 			m_needsSchedule.store(true);
+			throw;
 		}
-
-		// 3. Post process
-		setLastError((*processLock)->startError());
 	}
 
 	// Dispatch event outside m_process lock to avoid blocking other threads
@@ -649,7 +703,7 @@ void Application::disable()
 
 	auto enabled = STATUS::ENABLED;
 	if (!m_status.compare_exchange_strong(enabled, STATUS::DISABLED))
-		return; // already disabled — skip side effects to avoid concurrent saves
+		return;
 
 	LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"status", "disabled"}, {"previous_status", "enabled"}});
@@ -658,7 +712,6 @@ void Application::disable()
 	// Clear the scheduled launch so the tick won't start it; status=DISABLED also gates spawnIfDue.
 	nextLaunchTime(AppTimer::TIME_UNSET);
 	m_needsSchedule.store(true); // so a later enable() reschedules (gated by available())
-	save();
 }
 
 void Application::enable()
@@ -668,7 +721,6 @@ void Application::enable()
 	{
 		EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"status", "enabled"}, {"previous_status", "disabled"}});
 	}
-	save();
 }
 
 std::string Application::runAsync(int timeoutSeconds)
@@ -744,7 +796,6 @@ std::string Application::runApp(int timeoutSeconds)
 	});
 	const pid_t newPid = (*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
 	updateRunState([&](RunState &r) { r.pid = newPid; });
-
 	setLastError((*processLock)->startError());
 
 	if (newPid > 0)
@@ -903,54 +954,87 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 
 void Application::initMetrics()
 {
-	auto lock = m_process.synchronize();
-
-	m_metricStartCount.reset();
-	m_metricAppPid.reset();
-	m_metricMemory.reset();
-	m_metricCpu.reset();
-	m_metricFileDesc.reset();
+	const auto metrics = m_metrics;
+	std::lock_guard<std::mutex> guard(metrics->mutex);
+	if (metrics->startCount)
+		return;
+	resetMetricHandles(*metrics);
+	metrics->owner = this;
 
 	if (Configuration::instance()->prometheusEnabled())
 	{
-		// Use uuid in label here to avoid same name app use the same metric cause issue
-		m_metricStartCount = RESTHANDLER::instance()->createPromCounter(
-			PROM_METRIC_NAME_appmesh_prom_process_start_count, PROM_METRIC_HELP_appmesh_prom_process_start_count,
-			{{"application", getName()}, {"id", m_appId}});
-		m_metricAppPid = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_prom_process_id_gauge, PROM_METRIC_HELP_appmesh_prom_process_start_count,
-			{{"application", getName()}, {"id", m_appId}});
-		m_metricMemory = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_prom_process_memory_gauge, PROM_METRIC_HELP_appmesh_prom_process_memory_gauge,
-			{{"application", getName()}, {"id", m_appId}});
-		m_metricCpu = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_prom_process_cpu_gauge, PROM_METRIC_HELP_appmesh_prom_process_cpu_gauge,
-			{{"application", getName()}, {"id", m_appId}});
-		m_metricFileDesc = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_prom_process_file_descriptors, PROM_METRIC_HELP_appmesh_prom_process_file_descriptors,
-			{{"application", getName()}, {"id", m_appId}});
+		// One-off names are unbounded; do not create Prometheus series for them.
+		if (!m_persistAble && getName() != SEPARATE_AGENT_APP_NAME)
+			return;
+		const std::map<std::string, std::string> labels = {{"application", getName()}};
+		metrics->startCount = RESTHANDLER::instance()->createPromCounter(
+			PROM_METRIC_NAME_appmesh_application_process_starts_total, PROM_METRIC_HELP_appmesh_application_process_starts_total, labels);
+		metrics->startCount->metric().Increment(static_cast<double>(metrics->starts));
+		// TODO: Add exit outcomes only when the lifecycle exposes one simple completion point.
+		metrics->collectionError = RESTHANDLER::instance()->createPromCounter(
+			PROM_METRIC_NAME_appmesh_application_metrics_collection_errors_total,
+			PROM_METRIC_HELP_appmesh_application_metrics_collection_errors_total, labels);
+		metrics->appPid = RESTHANDLER::instance()->createPromGauge(
+			PROM_METRIC_NAME_appmesh_application_process_id, PROM_METRIC_HELP_appmesh_application_process_id, labels);
+		metrics->memory = RESTHANDLER::instance()->createPromGauge(
+			PROM_METRIC_NAME_appmesh_application_process_resident_memory_bytes, PROM_METRIC_HELP_appmesh_application_process_resident_memory_bytes, labels);
+		metrics->cpu = RESTHANDLER::instance()->createPromGauge(
+			PROM_METRIC_NAME_appmesh_application_process_cpu_usage_cores, PROM_METRIC_HELP_appmesh_application_process_cpu_usage_cores, labels);
+		metrics->fileDesc = RESTHANDLER::instance()->createPromGauge(
+			PROM_METRIC_NAME_appmesh_application_process_open_fds, PROM_METRIC_HELP_appmesh_application_process_open_fds, labels);
+		metrics->enabled = RESTHANDLER::instance()->createPromGauge(
+			PROM_METRIC_NAME_appmesh_application_enabled, PROM_METRIC_HELP_appmesh_application_enabled, labels);
+		metrics->running = RESTHANDLER::instance()->createPromGauge(
+			PROM_METRIC_NAME_appmesh_application_running, PROM_METRIC_HELP_appmesh_application_running, labels);
+		metrics->healthy = RESTHANDLER::instance()->createPromGauge(
+			PROM_METRIC_NAME_appmesh_application_healthy, PROM_METRIC_HELP_appmesh_application_healthy, labels);
 	}
 }
 
 void Application::initMetrics(std::shared_ptr<Application> fromApp)
 {
-	auto lock = m_process.synchronize();
-
-	m_metricStartCount.reset();
-	m_metricAppPid.reset();
-	m_metricMemory.reset();
-	m_metricCpu.reset();
-	m_metricFileDesc.reset();
-
-	if (fromApp)
+	if (!fromApp)
 	{
-		m_metricStartCount = fromApp->m_metricStartCount;
-		m_metricAppPid = fromApp->m_metricAppPid;
-		m_metricMemory = fromApp->m_metricMemory;
-		m_metricCpu = fromApp->m_metricCpu;
-		m_metricFileDesc = fromApp->m_metricFileDesc;
-		m_starts = fromApp->m_starts;
+		clearMetrics();
+		return;
 	}
+	const auto registersApplicationMetrics = [](const Application &app) {
+		return app.m_persistAble || app.getName() == SEPARATE_AGENT_APP_NAME;
+	};
+	if (registersApplicationMetrics(*this) != registersApplicationMetrics(*fromApp))
+	{
+		fromApp->clearMetrics();
+		initMetrics();
+		return;
+	}
+
+	const auto inherited = fromApp->m_metrics;
+	std::lock_guard<std::mutex> guard(inherited->mutex);
+	inherited->owner = this;
+	m_metrics = inherited;
+}
+
+void Application::clearMetrics()
+{
+	const auto metrics = m_metrics;
+	std::lock_guard<std::mutex> guard(metrics->mutex);
+	if (metrics->owner != this)
+		return;
+	metrics->owner = nullptr;
+	resetMetricHandles(*metrics);
+}
+
+void Application::resetMetricHandles(MetricsState &metrics)
+{
+	metrics.startCount.reset();
+	metrics.collectionError.reset();
+	metrics.appPid.reset();
+	metrics.memory.reset();
+	metrics.cpu.reset();
+	metrics.fileDesc.reset();
+	metrics.enabled.reset();
+	metrics.running.reset();
+	metrics.healthy.reset();
 }
 
 nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
@@ -1132,7 +1216,9 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		{
 			result[JSON_KEY_APP_last_error] = std::string(err);
 		}
-		result[JSON_KEY_APP_starts] = static_cast<long long>(m_starts->load());
+		const auto metrics = m_metrics;
+		std::lock_guard<std::mutex> guard(metrics->mutex);
+		result[JSON_KEY_APP_starts] = static_cast<long long>(metrics->starts);
 		auto nextLaunch = run.nextLaunch;
 		if (nextLaunch)
 		{
@@ -1151,17 +1237,29 @@ void Application::save()
 	if (!this->isPersistAble())
 		return;
 
-	// Serialise concurrent save() on the same app. We intentionally write
-	// in place (truncate+write) rather than via temp+rename so deployments
-	// that bind-mount a single yaml file into the container keep working:
-	// rename cannot replace a bind-mounted file (kernel pins the inode).
 	std::lock_guard<std::mutex> guard(m_saveMutex);
 	const auto appPath = getYamlPath();
-	std::ofstream ofs(appPath, ios::trunc);
-	ofs << std::setw(4) << Utility::jsonToYaml(AsJson(false)) << std::endl;
-	if (ofs.fail())
+	uint16_t mode = 0644;
+#if !defined(_WIN32)
+	if (Utility::isFileExist(appPath))
 	{
-		LOG_ERR << fname << "Failed to save application <" << m_name << "> to file <" << appPath << ">, error: " << last_error_msg();
+		const int existingMode = std::get<0>(os::fileStat(appPath));
+		if (existingMode >= 0)
+			mode = static_cast<uint16_t>(existingMode);
+	}
+#endif
+	const auto content = Utility::jsonToYaml(AsJson(false)) + "\n";
+	const auto tempPath = os::createTmpFile(appPath, content, mode);
+	if (tempPath.empty())
+	{
+		LOG_ERR << fname << "Failed to create a temporary file for application <" << m_name << ">";
+		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
+	}
+	if (ACE_OS::rename(tempPath.c_str(), appPath.c_str()) != 0)
+	{
+		const auto error = last_error_msg();
+		Utility::removeFile(tempPath);
+		LOG_ERR << fname << "Failed to save application <" << m_name << "> to file <" << appPath << ">, error: " << error;
 		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
 	}
 	LOG_INF << fname << "Saved application <" << m_name << "> to file <" << appPath << ">";
@@ -1206,7 +1304,11 @@ void Application::dump()
 	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
-	LOG_DBG << fname << "m_starts:" << m_starts->load();
+	{
+		const auto metrics = m_metrics;
+		std::lock_guard<std::mutex> guard(metrics->mutex);
+		LOG_DBG << fname << "m_starts:" << metrics->starts;
+	}
 	LOG_DBG << fname << "m_version:" << m_version;
 	LOG_DBG << fname << "m_lastError:" << getLastError();
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
@@ -1230,13 +1332,16 @@ void Application::dump()
 std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName)
 {
 	std::shared_ptr<AppProcess> process;
+	const auto weakSelf = std::weak_ptr<Application>(std::dynamic_pointer_cast<Application>(shared_from_this()));
 	m_stdoutFileQueue->enqueue();
 	// Single increment site keeps JSON (m_starts) and Prometheus counters consistent;
 	// attach/recovery intentionally counts as a start (long-standing JSON behavior).
-	m_starts->fetch_add(1, std::memory_order_relaxed);
-	if (m_metricStartCount)
 	{
-		m_metricStartCount->metric().Increment();
+		const auto metrics = m_metrics;
+		std::lock_guard<std::mutex> guard(metrics->mutex);
+		++metrics->starts;
+		if (metrics->owner == this && metrics->startCount)
+			metrics->startCount->metric().Increment();
 	}
 
 	if ((m_shellApp || m_sessionLogin) && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
@@ -1250,11 +1355,11 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 #if !defined(_WIN32)
 		if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
 		{
-			process.reset(new DockerApiProcess(appName, dockerImage));
+			process = std::make_shared<DockerApiProcess>(weakSelf, appName, dockerImage);
 		}
 		else
 		{
-			process.reset(new DockerProcess(appName, dockerImage));
+			process = std::make_shared<DockerProcess>(weakSelf, appName, dockerImage);
 		}
 #else
 		throw std::invalid_argument("Docker application does not support on Windows");
@@ -1262,8 +1367,6 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	}
 	else
 	{
-		auto weakSelf = std::weak_ptr<Application>(std::dynamic_pointer_cast<Application>(shared_from_this()));
-
 		if (monitorProcess)
 		{
 			process = std::make_shared<MonitoredProcess>(weakSelf);
@@ -1280,10 +1383,6 @@ void Application::destroy()
 {
 	const static char fname[] = "Application::destroy() ";
 
-	// Idempotent: concurrent removeApp paths must not double-destroy.
-	if (m_destroying.exchange(true, std::memory_order_acq_rel))
-		return;
-
 	LOG_DBG << fname << "suicide timer ID: " << m_timerRemoveId.load();
 	this->disable(); // clears nextLaunch + sets DISABLED, so the tick won't start it
 	this->m_status.store(STATUS::NOTAVAILABLE);
@@ -1293,11 +1392,11 @@ void Application::destroy()
 bool Application::onTimerAppRemove()
 {
 	const static char fname[] = "Application::onTimerAppRemove() ";
-	CLEAR_TIMER_ID(m_timerRemoveId);
+	clearTimerId(m_timerRemoveId);
 
 	try
 	{
-		Configuration::instance()->removeApp(m_name);
+		Configuration::instance()->removeApp(m_name, this);
 	}
 	catch (...)
 	{
@@ -1306,57 +1405,48 @@ bool Application::onTimerAppRemove()
 	return false;
 }
 
-void Application::onExitUpdate(int code, bool triggerLifecycle, bool naturalExit, const AppProcess *reporter)
+void Application::onExitUpdate(int code, bool naturalExit, AppProcess *reporter)
 {
 	auto process = m_process.get();
 	const bool stillRunning = (process != nullptr && process->running());
-	// Only the current run may mint the latch — a buffer exiting after the current run ended
-	// would otherwise re-run handleError with the buffer's exit code.
-	const bool isCurrentProcess = (reporter == nullptr || reporter == process.get());
-	pid_t prevPid = ACE_INVALID_PID;
-	updateRunState([&](RunState &r) {
-		prevPid = r.pid;
-		if (!stillRunning)
-		{
-			r.pid = ACE_INVALID_PID;
-		}
-		r.exitTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-		r.returnCode = code;
-		// A deliberate kill passes naturalExit=false, which also clears any stale latch.
-		r.exitPending = naturalExit && !stillRunning && isCurrentProcess;
-	});
-
-	if (code != 0 && process)
+	const auto run = loadRunState();
+	// A deliberate terminate resets m_process before this timer runs; match its last PID.
+	const bool isCurrentProcess = reporter == process.get() ||
+		(process == nullptr && reporter->lastPid() == run.pid);
+	const pid_t prevPid = reporter->lastPid();
+	if (code != 0 && isCurrentProcess)
 	{
-		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, process->startError().c_str()));
+		const auto error = reporter->startError();
+		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, error.c_str()));
 	}
 
-	// Resume disk read from where the pump left off so subscribers don't see duplicates.
-	const long dispatchedPos = process ? process->stdoutDispatchedBytes() : 0;
-	EventDispatcher::instance()->flushStdout(m_name, this, dispatchedPos);
-	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT, {{"exit_code", code}, {"pid", prevPid}, {"last_error", getLastError()}});
-
-	// Immediate restart on the caller's thread; currently unused (restart is tick-driven, to
-	// keep driveLifecycle off the timer thread). Kept so it can be re-enabled later.
-	if (triggerLifecycle)
+	// Commit lifecycle state before best-effort output/event side effects.
+	if (isCurrentProcess)
 	{
-		driveLifecycle(std::chrono::system_clock::now());
+		updateRunState([&](RunState &state) {
+			if (!stillRunning)
+				state.pid = ACE_INVALID_PID;
+			state.exitTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+			state.returnCode = code;
+			state.exitPending = naturalExit && !stillRunning;
+		});
 	}
+
+	const long dispatchedPos = reporter->stdoutDispatchedBytes();
+	EventDispatcher::instance()->flushStdout(m_name, reporter, dispatchedPos);
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT,
+		{{"exit_code", code}, {"pid", prevPid}, {"last_error", getLastError()}});
 }
 
 void Application::terminate(std::shared_ptr<AppProcess> &p)
 {
 	if (p)
 	{
-		// When process is running, p->terminate() triggers:
-		//   AppProcess::onExit() -> onTimerAppExit() -> onExitUpdate() asynchronously
-		// When process is not running, we need to call onExitUpdate() directly
-		const bool wasRunning = p->running();
 		p->terminate();
-		if (!wasRunning)
-		{
-			onExitUpdate(9);
-		}
+		// Docker implementations detach without calling AppProcess::onExit; the CAS
+		// guard makes this a no-op when the base implementation already reported it.
+		if (p->lastPid() > 1)
+			p->onExit(9);
 	}
 
 	m_task.terminate();
@@ -1448,13 +1538,14 @@ void Application::spawnIfDue(const std::chrono::system_clock::time_point &now)
 	{
 		return; // nothing scheduled, or not due yet
 	}
-	auto process = m_process.get();
-	if (process && process->running())
+	auto processLock = m_process.synchronize();
+	const auto &process = *processLock;
+	if (process && process->blocksStart())
 	{
-		return; // a run is already active
+		return; // active, or its exit event/stdout is still being finalized
 	}
 	nextLaunchTime(AppTimer::TIME_UNSET); // consume the due launch (periodic re-arms in spawnNow)
-	spawnNow();
+	spawnNow(); // m_process uses a recursive mutex; keep the gate and replacement atomic.
 }
 
 void Application::scheduleNext(std::chrono::system_clock::time_point startFrom)

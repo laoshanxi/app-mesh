@@ -202,9 +202,10 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 	static const char fname[] = "Worker::process() ";
 
 	LOG_DBG << fname << request->m_method << " from <"
-			<< request->m_remote_address << "> path <"
-			<< request->m_relative_uri << "> id <"
-			<< request->m_uuid << ">";
+				<< request->m_remote_address << "> path <"
+				<< request->m_relative_uri << "> id <"
+				<< request->m_uuid << ">";
+	RESTHANDLER::instance()->observeHttpRequest(request);
 
 	if (isCsrfViolation(request))
 	{
@@ -247,7 +248,7 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 	}
 	else
 	{
-		return false;
+		request->reply(web::http::status_codes::MethodNotAllowed);
 	}
 
 	return true;

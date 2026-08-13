@@ -169,15 +169,24 @@ namespace os
 			byPid.emplace(st->pid, st);
 		}
 
-		auto selected = collectDescendants(rootPid, children);
-		selected.insert(rootPid);
+		std::unordered_set<pid_t> selected;
+		if (rootPid == 0)
+		{
+			for (const auto &entry : byPid)
+				selected.insert(entry.first);
+		}
+		else
+		{
+			selected = collectDescendants(rootPid, children);
+			selected.insert(rootPid);
+		}
 
 		std::list<Process> result;
 		for (pid_t pid : selected)
 		{
 			auto it = byPid.find(pid);
 			if (it != byPid.end())
-				result.push_back(makeProcess(*it->second, os::cmdline(pid)));
+				result.push_back(makeProcess(*it->second, rootPid == 0 ? std::string() : os::cmdline(pid)));
 		}
 		return result;
 	}

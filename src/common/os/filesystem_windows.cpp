@@ -3,6 +3,8 @@
 
 #include "filesystem.h"
 
+#include <algorithm>
+#include <cstring>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -62,9 +64,13 @@ namespace os
 
 		if (GetDiskFreeSpaceExA(path.c_str(), &freeBytesAvailable, &totalNumberOfBytes, &totalNumberOfFreeBytes))
 		{
-			df->totalSize = totalNumberOfBytes.QuadPart;
-			df->usedSize = totalNumberOfBytes.QuadPart - totalNumberOfFreeBytes.QuadPart;
-			if (totalNumberOfBytes.QuadPart > 0)
+			const auto totalBytes = totalNumberOfBytes.QuadPart;
+			const auto freeBytes = std::min(totalNumberOfFreeBytes.QuadPart, totalBytes);
+			const auto availableBytes = std::min(freeBytesAvailable.QuadPart, freeBytes);
+			df->totalSize = totalBytes;
+			df->usedSize = totalBytes - freeBytes;
+			df->availableSize = availableBytes;
+			if (totalBytes > 0)
 			{
 				df->usagePercentage = static_cast<double>(df->usedSize) / df->totalSize;
 			}
@@ -83,33 +89,34 @@ namespace os
 	{
 		const static char fname[] = "os::getMountPoints() ";
 		std::map<std::string, std::string> mountPointsMap;
-
-		DWORD drives = GetLogicalDrives();
-		char driveLetter = 'A';
-
-		for (int i = 0; i < 26; i++)
+		char volume[MAX_PATH + 1] = {0};
+		HANDLE search = FindFirstVolumeA(volume, MAX_PATH + 1);
+		if (search == INVALID_HANDLE_VALUE)
 		{
-			if (drives & (1 << i))
-			{
-				std::string drivePath = std::string(1, driveLetter + i) + ":\\";
-				UINT driveType = GetDriveTypeA(drivePath.c_str());
-
-				if (driveType == DRIVE_FIXED)
-				{
-					char volumeName[MAX_PATH + 1] = {0};
-					if (GetVolumeInformationA(drivePath.c_str(), volumeName, MAX_PATH,
-											  NULL, NULL, NULL, NULL, 0))
-					{
-						std::string deviceName = volumeName[0] ? volumeName : drivePath;
-						mountPointsMap[drivePath] = deviceName;
-					}
-					else
-					{
-						mountPointsMap[drivePath] = drivePath;
-					}
-				}
-			}
+			LOG_WAR << fname << "FindFirstVolume failed: " << GetLastError();
+			return mountPointsMap;
 		}
+		do
+		{
+			if (GetDriveTypeA(volume) != DRIVE_FIXED)
+				continue;
+
+			DWORD needed = 0;
+			GetVolumePathNamesForVolumeNameA(volume, nullptr, 0, &needed);
+			std::vector<char> paths(needed > 1 ? needed : 1, '\0');
+			if (needed > 1 && GetVolumePathNamesForVolumeNameA(volume, paths.data(), needed, &needed))
+			{
+				std::string preferredMountPath;
+				for (const char *path = paths.data(); *path; path += std::strlen(path) + 1)
+				{
+					if (preferredMountPath.empty() || std::strlen(path) < preferredMountPath.size())
+						preferredMountPath = path;
+				}
+				if (!preferredMountPath.empty())
+					mountPointsMap[preferredMountPath] = volume;
+			}
+		} while (FindNextVolumeA(search, volume, MAX_PATH + 1));
+		FindVolumeClose(search);
 
 		return mountPointsMap;
 	}
@@ -146,9 +153,10 @@ namespace os
 		return false;
 	}
 
-	std::string createTmpFile(const std::string &fileName, const std::string &content)
+	std::string createTmpFile(const std::string &fileName, const std::string &content, uint16_t mode)
 	{
 		const char *fname = "os::createTmpFile() ";
+		(void)mode;
 
 		try
 		{

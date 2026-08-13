@@ -98,13 +98,13 @@ REST:
     SSLClientCertificateFile: ssl/client.pem
     SSLClientCertificateKeyFile: ssl/client-key.pem
 
-    # Enables or disables verification of client certificates.
+    # Require valid client certificates for incoming connections.
     VerifyClient: false
 
-    # Enables or disables verification of server certificates.
-    VerifyServer: true
+    # Verify certificates when App Mesh connects to a server; false accepts invalid/self-signed certificates.
+    VerifyServer: false
 
-    # Enables or disables delegated server verification.
+    # Verify certificates for delegated connections; false accepts invalid/self-signed certificates.
     VerifyServerDelegate: false
 
 # Node labels with 2 default samples provided.

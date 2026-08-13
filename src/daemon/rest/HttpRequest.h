@@ -1,6 +1,7 @@
 // src/daemon/rest/HttpRequest.h
 #pragma once
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <queue>
@@ -13,6 +14,7 @@
 #include "Data.h"
 
 class WebSocketSession;
+struct HttpReplyMetricState;
 namespace WSS
 {
 	class ReplyContext;
@@ -65,6 +67,8 @@ public:
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;
+	// Zero status means no response was sent.
+	void setReplyMetricCallback(std::function<void(int)> callback);
 
 	std::string m_uuid;
 	web::http::method m_method;
@@ -84,6 +88,8 @@ public:
 	const std::shared_ptr<WSS::ReplyContext> &uwsReplyContext() const { return m_uwsReplyContext; }
 
 private:
+	void notifyReply(int status) const;
+	std::shared_ptr<HttpReplyMetricState> m_replyMetric;
 	const int m_tcpClientId;
 	LwsSessionRef m_lwsRef;
 	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;

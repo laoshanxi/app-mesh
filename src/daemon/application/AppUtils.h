@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+std::string normalizeAppName(const std::string &name);
+
 /// <summary>
 /// Shell mode application manage (create/clean) shell script
 /// </summary>

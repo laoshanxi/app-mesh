@@ -185,8 +185,15 @@ class ProtocolTestMixin:
     def test_13_config_and_metrics(self):
         """Server config, metrics, and log level."""
         self.client.login(USER, DEFAULT_CRED)
-        self.assertIn("cpu_cores", self.client.get_host_resources())
-        self.assertIn("appmesh_prom_scrape_count", self.client.get_metrics())
+        resources = self.client.get_host_resources()
+        self.assertEqual(resources.get("schema_version"), 3)
+        self.assertIn("cpu_effective_processors", resources)
+        self.assertIn("mem_available_bytes", resources)
+        self.assertIn("swap_source", resources)
+        self.assertIn("collector_errors", resources)
+        self.assertIn("net", resources)
+        self.assertIn("fs", resources)
+        self.assertIn("appmesh_metrics_scrapes_total", self.client.get_metrics())
         self.assertEqual(self.client.set_log_level("INFO"), "INFO")
         self.assertEqual(self.client.set_log_level("DEBUG"), "DEBUG")
 
@@ -229,7 +236,7 @@ class ProtocolTestMixin:
             name = f"SDK_FD_LOOP_{i}"
             self.client.add_app(App({"command": "echo fd_test", "name": name, "shell": True}))
             self.client.delete_app(name)
-        time.sleep(3)  # let onTimerAppExit / ~AppProcess run for all of them
+        time.sleep(3)  # let exit finalization / ~AppProcess run for all of them
 
         after = self.client.get_host_resources().get("fd")
         delta = after - baseline
@@ -1156,7 +1163,7 @@ class StressTestMixin:
         for t in threads:
             t.join(timeout=60)
         self.assertEqual(errors, [], f"Worker errors: {errors}")
-        time.sleep(5)  # let onTimerAppExit / ~AppProcess fully drain
+        time.sleep(5)  # let exit finalization / ~AppProcess fully drain
 
         after = self.client.get_host_resources().get("fd")
         delta = after - baseline

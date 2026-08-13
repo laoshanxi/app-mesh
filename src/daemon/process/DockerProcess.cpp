@@ -1,5 +1,6 @@
 // src/daemon/process/DockerProcess.cpp
 #include "DockerProcess.h"
+#include <utility>
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
 #include "../../common/os/pstree.h"
@@ -13,8 +14,8 @@ namespace
 	constexpr int DOCKER_CLI_TIMEOUT_SEC = 5;
 }
 
-DockerProcess::DockerProcess(const std::string &containerName, const std::string &dockerImage)
-	: AppProcess({}), m_containerName(containerName), m_dockerImage(dockerImage), m_containerEngine(CONTAINER_DOCKER)
+DockerProcess::DockerProcess(std::weak_ptr<Application> owner, const std::string &containerName, const std::string &dockerImage)
+	: AppProcess(std::move(owner)), m_containerName(containerName), m_dockerImage(dockerImage), m_containerEngine(CONTAINER_DOCKER)
 {
 	const static char fname[] = "DockerProcess::DockerProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -28,7 +29,7 @@ DockerProcess::~DockerProcess()
 	DockerProcess::terminate();
 }
 
-void DockerProcess::terminate()
+void DockerProcess::terminateImpl()
 {
 	const static char fname[] = "DockerProcess::terminate() ";
 
@@ -63,7 +64,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 {
 	const static char fname[] = "DockerProcess::syncSpawnProcess() ";
 
-	terminate();
+	terminateImpl();
 	int pid = ACE_INVALID_PID;
 	const std::string containerName = m_containerName;
 
@@ -133,9 +134,9 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		if (limit->m_memoryMb)
 		{
 			dockerCommand.append(" --memory ").append(std::to_string(limit->m_memoryMb)).append("M");
-			if (limit->m_memoryVirtMb && limit->m_memoryVirtMb > limit->m_memoryMb)
+			if (limit->m_memoryVirtSpecified)
 			{
-				dockerCommand.append(" --memory-swap ").append(std::to_string(limit->m_memoryVirtMb - limit->m_memoryMb)).append("M");
+				dockerCommand.append(" --memory-swap ").append(std::to_string(limit->m_memoryVirtMb)).append("M");
 			}
 		}
 		if (limit->m_cpuShares)
@@ -233,6 +234,9 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 									   const std::string &stdoutFile, const std::string &workDir)
 {
 	const static char fname[] = "DockerProcess::execPullDockerImage() ";
+	// TODO: Image pull is represented as the current attached process. Automatically continuing
+	// from a successful pull to container creation needs an explicit lifecycle state; for now the
+	// configured application exit policy decides whether another start is attempted.
 
 	int pullTimeout = 5 * 60; // Default image pull timeout: 5 minutes
 	if (envMap.count(ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT) && Utility::isNumber(envMap[ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT]))
@@ -278,6 +282,8 @@ int DockerProcess::returnValue() const
 	const static char fname[] = "DockerProcess::returnValue() ";
 
 	const auto containerId = this->containerId();
+	if (containerId.empty())
+		return AppProcess::returnValue();
 	auto dockerCommand = Utility::stringFormat("%s inspect %s --format='{{.State.ExitCode}}'", m_containerEngine.c_str(), containerId.c_str());
 	auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
 	dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, containerId);

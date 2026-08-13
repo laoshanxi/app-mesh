@@ -2,7 +2,7 @@
 #include "EventDispatcher.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
-#include "../application/Application.h"
+#include "../process/AppProcess.h"
 
 EventDispatcher::EventDispatcher()
 {
@@ -264,19 +264,18 @@ void EventDispatcher::removeSubscriptionLocked(const std::string &subId)
 	m_subscriptions.erase(it);
 }
 
-void EventDispatcher::flushStdout(const std::string &appName, Application *app, long pos)
+void EventDispatcher::flushStdout(const std::string &appName, AppProcess *process, long pos)
 {
 	const static char fname[] = "EventDispatcher::flushStdout() ";
 
 	// Read [pos, EOF] on disk and emit one final STDOUT_OUTPUT with finished=true.
-	if (!app || !hasStdoutSubscriber(appName)) return;
+	if (!process || !hasStdoutSubscriber(appName)) return;
 	try
 	{
 		// Capture chunk start before getOutput advances `pos` by reference, to keep
 		// `position` semantics consistent with StdoutPump's start-of-chunk convention.
 		const long startPos = pos;
-		auto result = app->getOutput(pos, 1024 * 1024, "", 0, 0);
-		auto &output = std::get<0>(result);
+		auto output = process->getOutputMsg(&pos, 1024 * 1024);
 		if (!output.empty())
 		{
 			nlohmann::json data;
