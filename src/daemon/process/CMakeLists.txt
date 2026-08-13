@@ -1,6 +1,11 @@
 # src/daemon/process/CMakeLists.txt
 
 file(GLOB SRC_LIST *.cpp)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(REMOVE_ITEM SRC_LIST
+      ${CMAKE_CURRENT_SOURCE_DIR}/CgroupStartBarrier.cpp
+    )
+endif()
 if (WIN32)
     list(REMOVE_ITEM SRC_LIST
       ${CMAKE_CURRENT_SOURCE_DIR}/DockerProcess.cpp

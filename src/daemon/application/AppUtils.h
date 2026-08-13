@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+std::string normalizeAppName(const std::string &name);
+
 /// <summary>
 /// Shell mode application manage (create/clean) shell script
 /// </summary>
@@ -67,7 +69,7 @@ private:
 /// Crash-loop restart backoff (k8s CrashLoopBackOff style): the delay before the next
 /// start grows exponentially (base, 2x, 4x ... capped) across consecutive short-lived runs,
 /// and resets to zero once a run survives the "stable" threshold. Not thread-safe; the
-/// caller serializes (App invokes it under m_lifecycleMutex).
+/// caller serializes (Application invokes it under its runtime lifecycle lock).
 /// </summary>
 class RestartBackoff
 {

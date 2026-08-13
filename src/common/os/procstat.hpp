@@ -3,6 +3,7 @@
 
 #include <atomic>  // std::atomic
 #include <chrono>  // std::chrono::system_clock
+#include <cstdint>
 #include <ctime>   // time_t, time()
 #include <fstream> // std::ifstream
 #include <mutex>   // std::once_flag, std::call_once
@@ -28,13 +29,13 @@ namespace os
             pid_t _ppid,
             pid_t _pgrp,
             pid_t _session,
-            unsigned long _utime,
-            unsigned long _stime,
-            long _cutime,
-            long _cstime,
-            unsigned long long _starttime,
-            unsigned long _vsize,
-            long _rss)
+            uint64_t _utime,
+            uint64_t _stime,
+            int64_t _cutime,
+            int64_t _cstime,
+            uint64_t _starttime,
+            uint64_t _vsize,
+            int64_t _rss)
             : pid(_pid),
               comm(_comm),
               state(_state),
@@ -96,13 +97,13 @@ namespace os
         const pid_t pgrp;
         const pid_t session;
 
-        const unsigned long utime;
-        const unsigned long stime;
-        const long cutime;
-        const long cstime;
-        const unsigned long long starttime;
-        const unsigned long vsize;
-        const long rss;
+        const uint64_t utime;
+        const uint64_t stime;
+        const int64_t cutime;
+        const int64_t cstime;
+        const uint64_t starttime;
+        const uint64_t vsize;
+        const int64_t rss;
     };
 
 } // namespace os

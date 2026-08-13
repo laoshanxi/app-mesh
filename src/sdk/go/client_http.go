@@ -678,6 +678,11 @@ func (r *AppMeshClient) AddApp(app Application, subscribeEvents ...string) (*App
 
 	var params url.Values
 	if len(subscribeEvents) > 0 {
+		// START may be pushed before the add-app response. Give the demuxer
+		// ownership of the persistent connection before sending the atomic request.
+		if sub, ok := r.req.(subscribableRequester); ok {
+			sub.enableDemuxer()
+		}
 		params = url.Values{}
 		params.Set("subscribe_events", strings.Join(subscribeEvents, ","))
 	}

@@ -202,10 +202,96 @@ RestHandler::~RestHandler()
 	LOG_INF << fname << "RestHandler destroyed";
 }
 
-void RestHandler::handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &restFunctions)
+std::string RestHandler::normalizedHttpRoute(const std::string &path,
+											 const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions) const
 {
-	m_metrics->countRequest(message->m_method, message->m_relative_uri);
-	RestBase::handleRest(message, restFunctions);
+	typedef std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> RestFunctions;
+	auto findPattern = [&path](const RestFunctions &functions) -> std::string
+	{
+		for (const auto &entry : functions)
+		{
+			if (path == entry.first || boost::regex_match(path, boost::regex(entry.first)))
+				return entry.first;
+		}
+		return {};
+	};
+
+	std::string pattern;
+	if (preferredFunctions)
+		pattern = findPattern(*preferredFunctions);
+	else
+	{
+		for (const auto *functions : {&m_restGetFunctions, &m_restPutFunctions, &m_restPostFunctions, &m_restDelFunctions})
+		{
+			pattern = findPattern(*functions);
+			if (!pattern.empty())
+				break;
+		}
+	}
+	if (pattern.empty())
+		return "unmatched";
+
+	const std::string capture = "([^/\\*]+)";
+	std::string normalized = pattern;
+	std::size_t position = 0;
+	while ((position = normalized.find(capture, position)) != std::string::npos)
+	{
+		normalized.replace(position, capture.size(), ":param");
+		position += 6;
+	}
+	return normalized;
+}
+
+void RestHandler::observeHttpRequest(const std::shared_ptr<HttpRequest> &message)
+{
+	const auto queryPosition = message->m_relative_uri.find('?');
+	auto path = message->m_relative_uri.substr(0, queryPosition);
+	for (auto pos = path.find("//"); pos != std::string::npos; pos = path.find("//", pos))
+		path.erase(pos, 1);
+	if (path == METRIC_PATH || path == METRIC_APP_PATH)
+		return;
+
+	const auto *routes = &m_restGetFunctions;
+	bool matchRoute = true;
+	std::string method = "OTHER";
+	if (message->m_method == web::http::methods::GET || message->m_method == web::http::methods::HEAD)
+	{
+		routes = &m_restGetFunctions;
+		method = message->m_method;
+	}
+	else if (message->m_method == web::http::methods::PUT)
+	{
+		routes = &m_restPutFunctions;
+		method = message->m_method;
+	}
+	else if (message->m_method == web::http::methods::POST)
+	{
+		routes = &m_restPostFunctions;
+		method = message->m_method;
+	}
+	else if (message->m_method == web::http::methods::DEL)
+	{
+		routes = &m_restDelFunctions;
+		method = message->m_method;
+	}
+	else if (message->m_method == web::http::methods::OPTIONS)
+	{
+		routes = nullptr;
+		method = message->m_method;
+	}
+	else
+	{
+		matchRoute = false;
+	}
+
+	const auto route = matchRoute ? normalizedHttpRoute(path, routes) : std::string("unmatched");
+	const auto started = std::chrono::steady_clock::now();
+	const auto metrics = m_metrics;
+	m_metrics->httpRequestStarted(method, route);
+	message->setReplyMetricCallback([metrics, method, route, started](int status)
+									{
+		const auto duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+		metrics->httpRequestFinished(method, route, status, duration); });
 }
 
 std::shared_ptr<CounterMetric> RestHandler::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
@@ -218,21 +304,26 @@ std::shared_ptr<GaugeMetric> RestHandler::createPromGauge(const std::string &met
 	return m_metrics->createPromGauge(metricName, metricHelp, labels);
 }
 
-bool RestHandler::collected()
+uint64_t RestHandler::prometheusScrapeGeneration() const
 {
-	return m_metrics->collected();
+	return m_metrics->scrapeGeneration();
+}
+
+void RestHandler::refreshPrometheusProcessMetrics(void *processSnapshot)
+{
+	m_metrics->refreshProcessMetrics(processSnapshot);
 }
 
 // Static content serving utilities
 const std::string &RestHandler::getOpenApiContent()
 {
-	static const std::string content = Utility::readFileCpp((fs::path(Configuration::instance()->getWorkDir()) / ".." / "script" / "openapi.yaml").string());
+	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "openapi.yaml").string());
 	return content;
 }
 
 const std::string &RestHandler::getIndexHtmlContent()
 {
-	static const std::string content = Utility::readFileCpp((fs::path(Configuration::instance()->getWorkDir()) / ".." / "script" / "index.html").string());
+	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "index.html").string());
 	return content;
 }
 
@@ -272,10 +363,10 @@ void RestHandler::apiIndex(const std::shared_ptr<HttpRequest> &message)
 	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
 }
 
-void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::string &appName, bool requestWrite)
+void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app, bool requestWrite)
 {
 	const auto tokenUser = getJwtUserName(message);
-	auto app = Configuration::instance()->getApp(appName);
+	const auto &appName = app->getName();
 	if (!Configuration::instance()->checkOwnerPermission(tokenUser, app->getOwner(), app->getOwnerPermission(), requestWrite))
 	{
 		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to <%s> app <%s>", tokenUser.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
@@ -384,10 +475,22 @@ void RestHandler::apiAppEnable(const std::shared_ptr<HttpRequest> &message)
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_ENABLE);
-
-	checkAppAccessPermission(message, appName, true);
-
-	Configuration::instance()->enableApp(appName);
+	auto config = Configuration::instance();
+	const auto app = config->getApp(appName);
+	checkAppAccessPermission(message, app, true);
+	bool stale = false;
+	{
+		const auto mutation = config->lockAppMutation();
+		if (!config->isCurrentApp(appName, app))
+			stale = true;
+		else
+			config->enableApp(appName);
+	}
+	if (stale)
+	{
+		message->reply(web::http::status_codes::Conflict);
+		return;
+	}
 	message->reply(web::http::status_codes::OK, Utility::text2json(std::string("Enable <") + appName + "> success."));
 }
 
@@ -396,10 +499,22 @@ void RestHandler::apiAppDisable(const std::shared_ptr<HttpRequest> &message)
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DISABLE);
-
-	checkAppAccessPermission(message, appName, true);
-
-	Configuration::instance()->disableApp(appName);
+	auto config = Configuration::instance();
+	const auto app = config->getApp(appName);
+	checkAppAccessPermission(message, app, true);
+	bool stale = false;
+	{
+		const auto mutation = config->lockAppMutation();
+		if (!config->isCurrentApp(appName, app))
+			stale = true;
+		else
+			config->disableApp(appName);
+	}
+	if (stale)
+	{
+		message->reply(web::http::status_codes::Conflict);
+		return;
+	}
 	message->reply(web::http::status_codes::OK, Utility::text2json(std::string("Disable <") + appName + "> success."));
 }
 
@@ -408,14 +523,14 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DELETE);
 
-	if (!Configuration::instance()->isAppExist(appName))
+	auto config = Configuration::instance();
+	auto app = config->getApp(appName, false);
+	if (!app)
 	{
 		message->reply(web::http::status_codes::NotFound);
 	}
 	else
 	{
-		auto app = Configuration::instance()->getApp(appName);
-
 		// Establish a VERIFIED identity before the owner shortcut. getJwtUserName() only
 		// decodes the token and is forgeable; relying on it here would let a crafted token
 		// claim to be the app owner and skip the delete-permission check entirely.
@@ -426,9 +541,20 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 			permissionCheck(message, PERMISSION_KEY_app_delete);
 		}
 
-		checkAppAccessPermission(message, appName, true);
-
-		Configuration::instance()->removeApp(appName);
+		checkAppAccessPermission(message, app, true);
+		bool stale = false;
+		{
+			const auto mutation = config->lockAppMutation();
+			if (!config->isCurrentApp(appName, app))
+				stale = true;
+			else
+				config->removeApp(appName, app.get());
+		}
+		if (stale)
+		{
+			message->reply(web::http::status_codes::Conflict);
+			return;
+		}
 		message->reply(web::http::status_codes::OK, Utility::text2json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 	}
 }
@@ -597,8 +723,7 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_config_set);
 
 	auto json = message->extractJson();
-	Configuration::instance()->hotUpdate(json);
-	Configuration::instance()->saveConfigToDisk();
+	Configuration::instance()->hotUpdateAndSave(json);
 
 	LOG_INF << fname << "User <" << tokenUser << "> updated configuration";
 	message->reply(web::http::status_codes::OK, Configuration::instance()->AsJson());
@@ -967,7 +1092,7 @@ void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
 				result["status"] = std::string("TOTP_CHALLENGE_REQUIRED");
 				result["digits"] = 6;
 				result["algorithm"] = std::string("SHA1"); // TOTP hash algorithm (RFC 6238)
-				result["period"] = 30; // TOTP time step in seconds (RFC 6238 default)
+				result["period"] = 30;					   // TOTP time step in seconds (RFC 6238 default)
 				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(JwtToken::generate(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
 				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = std::time(nullptr) + challengeTimeout;
 				message->reply(web::http::status_codes::PreconditionRequired, std::move(result), std::move(headers));
@@ -1338,10 +1463,9 @@ void RestHandler::apiAppView(const std::shared_ptr<HttpRequest> &message)
 	permissionCheck(message, PERMISSION_KEY_view_app);
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_VIEW);
-
-	checkAppAccessPermission(message, appName, false);
-
-	message->reply(web::http::status_codes::OK, Configuration::instance()->getApp(appName)->AsJson(true));
+	const auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, false);
+	message->reply(web::http::status_codes::OK, app->AsJson(true));
 }
 
 std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_ptr<HttpRequest> &message)
@@ -1355,13 +1479,14 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 	std::shared_ptr<Application> fromApp;
 	if (clientProvideAppName.length() > 0)
 	{
-		if (Configuration::instance()->isAppExist(clientProvideAppName))
+		clientProvideAppName = normalizeAppName(clientProvideAppName);
+		jsonApp[JSON_KEY_APP_name] = clientProvideAppName;
+		fromApp = Configuration::instance()->getApp(clientProvideAppName, false);
+		if (fromApp)
 		{
 			// COPY from existing application
 			// require app read permission
-			checkAppAccessPermission(message, clientProvideAppName, false);
-			// get application profile
-			fromApp = Configuration::instance()->getApp(clientProvideAppName);
+			checkAppAccessPermission(message, fromApp, false);
 			auto existApp = fromApp->AsJson(false);
 			// CASE: copy existing application and run
 			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
@@ -1430,25 +1555,38 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 
 	jsonApp[JSON_KEY_APP_status] = (static_cast<int>(STATUS::NOTAVAILABLE));
 	jsonApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
-	auto app = Configuration::instance()->addApp(jsonApp, fromApp, false);
+	auto app = Configuration::instance()->addApp(jsonApp, false);
 	if (fromApp)
 		LOG_INF << fname << "Run application <" << app->getName() << "> from <" << fromApp->getName() << ">";
 	else
 		LOG_INF << fname << "Run application <" << app->getName() << ">";
 
-	app->regSuicideTimer(lifecycle);
+	app->scheduleRemoval(lifecycle);
 	app->dump();
 	return app;
 }
 
 void RestHandler::apiRunAsync(const std::shared_ptr<HttpRequest> &message)
 {
+	const static char fname[] = "RestHandler::apiRunAsync() ";
+
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 
 	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
-	auto processUuid = appObj->runAsync(timeout);
+	std::string processUuid;
+	try
+	{
+		processUuid = appObj->runAsync(timeout);
+	}
+	catch (...)
+	{
+		// Remove the one-shot app when its start is rejected.
+		LOG_WAR << fname << "removing rejected on-demand application <" << appObj->getName() << ">";
+		Configuration::instance()->removeApp(appObj->getName(), appObj.get());
+		throw;
+	}
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_APP_name] = appObj->getName();
 	result[HTTP_QUERY_KEY_process_uuid] = std::move(processUuid);
@@ -1476,9 +1614,8 @@ void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
-	checkAppAccessPermission(message, appName, true);
-
 	auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, true);
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
 	asyncRequest->initTimer(timeout);
 	app->sendTask(asyncRequest);
@@ -1491,9 +1628,8 @@ void RestHandler::apiRemoveMessage(const std::shared_ptr<HttpRequest> &message)
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
-	checkAppAccessPermission(message, appName, true);
-
 	auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, true);
 	bool removed = app->deleteTask();
 	message->reply(removed ? web::http::status_codes::OK : web::http::status_codes::AlreadyReported);
 }
@@ -1528,9 +1664,9 @@ void RestHandler::apiAppOutputView(const std::shared_ptr<HttpRequest> &message)
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_OUT_VIEW);
 
-	checkAppAccessPermission(message, appName, false);
-
-	auto delayRequest = std::make_shared<HttpRequestOutputView>(message, Configuration::instance()->getApp(appName));
+	const auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, false);
+	auto delayRequest = std::make_shared<HttpRequestOutputView>(message, app);
 	delayRequest->init();
 }
 
@@ -1565,41 +1701,58 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	// from_recover is a server-internal flag; never trust it from REST input.
 	jsonApp.erase(JSON_KEY_APP_from_recover);
 
-	auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
+	auto appName = normalizeAppName(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name));
+	jsonApp[JSON_KEY_APP_name] = appName;
 	LOG_DBG << fname << "Registering application <" << appName << ">";
-	if (Configuration::instance()->isAppExist(appName))
-	{
-		checkAppAccessPermission(message, appName, true);
-	}
+	auto config = Configuration::instance();
+	const auto observed = config->getApp(appName, false);
+	if (observed)
+		checkAppAccessPermission(message, observed, true);
 
-	// Atomically subscribe before app registration so no events are missed.
 	auto subscribeEvents = getHttpQueryString(*message, "subscribe_events");
-	std::string subId;
+	uint32_t eventMask = 0;
 	if (!subscribeEvents.empty())
 	{
-		uint32_t eventMask = parseEventMask(subscribeEvents);
+		eventMask = parseEventMask(subscribeEvents);
 		if (eventMask == 0)
 		{
 			message->reply(web::http::status_codes::BadRequest,
 						   Utility::text2json("No valid event types in subscribe_events: " + subscribeEvents));
 			return;
 		}
-		ConnectionKey connKey;
-		DeliveryCallback deliveryCb;
-		if (buildDeliveryCallback(message, connKey, deliveryCb))
-		{
-			subId = EventDispatcher::instance()->subscribe(appName, eventMask, tokenUser, std::move(deliveryCb), connKey);
-		}
 	}
 
 	jsonApp[JSON_KEY_APP_owner] = tokenUser;
+	std::string subId;
+	nlohmann::json result;
+	bool stale = false;
 	try
 	{
-		auto app = Configuration::instance()->addApp(jsonApp);
-		app->save();
+		{
+			// Keep same-name validation, subscription and replacement atomic.
+			const auto mutation = config->lockAppMutation();
+			if (!config->isCurrentApp(appName, observed))
+				stale = true;
+			else
+			{
+				if (eventMask != 0)
+				{
+					ConnectionKey connKey;
+					DeliveryCallback deliveryCb;
+					if (buildDeliveryCallback(message, connKey, deliveryCb))
+						subId = EventDispatcher::instance()->subscribe(appName, eventMask, tokenUser, std::move(deliveryCb), connKey);
+				}
 
-		// Use returnRuntimeInfo=true so the response strips encrypted sec_env.
-		auto result = app->AsJson(true);
+				auto app = config->addApp(jsonApp);
+				// Use returnRuntimeInfo=true so the response strips encrypted sec_env.
+				result = app->AsJson(true);
+			}
+		}
+		if (stale)
+		{
+			message->reply(web::http::status_codes::Conflict);
+			return;
+		}
 		if (!subId.empty())
 		{
 			result["subscription_id"] = subId;
@@ -1718,10 +1871,13 @@ void RestHandler::apiAppSubscribe(const std::shared_ptr<HttpRequest> &message)
 	const auto path = curlpp::unescape(message->m_relative_uri);
 
 	std::string appName = "*";
+	auto config = Configuration::instance();
+	std::shared_ptr<Application> observed;
 	if (path != REST_PATH_APP_SUBSCRIBE_ALL)
 	{
 		appName = regexSearch(path, REST_PATH_APP_SUBSCRIBE);
-		checkAppAccessPermission(message, appName, false);
+		observed = config->getApp(appName);
+		checkAppAccessPermission(message, observed, false);
 	}
 	else
 	{
@@ -1747,7 +1903,20 @@ void RestHandler::apiAppSubscribe(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 
+	std::unique_lock<std::recursive_mutex> mutation;
+	if (observed)
+	{
+		mutation = config->lockAppMutation();
+		if (!config->isCurrentApp(appName, observed))
+		{
+			mutation.unlock();
+			message->reply(web::http::status_codes::Conflict);
+			return;
+		}
+	}
 	auto subId = EventDispatcher::instance()->subscribe(appName, eventMask, userName, std::move(deliveryCb), connKey);
+	if (mutation.owns_lock())
+		mutation.unlock();
 
 	nlohmann::json result;
 	result["subscription_id"] = subId;

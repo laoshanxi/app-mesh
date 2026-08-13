@@ -214,16 +214,23 @@ impl Requester for WSSRequester {
         }
     }
 
-    fn enable_demuxer(&self) {
+    async fn enable_demuxer(&self) -> Result<(), AppMeshError> {
+        {
+            let mut transport = self.transport.lock().await;
+            if !transport.connected() {
+                transport.connect().await?;
+            }
+        }
         let mut guard = self.demuxer.lock().unwrap_or_else(|e| e.into_inner());
-        if guard.is_some() {
-            return; // already enabled
+        if guard.as_ref().map(|d| d.is_running()).unwrap_or(false) {
+            return Ok(()); // already enabled
         }
         let demuxer = Arc::new(MessageDemuxer::new());
         // Use the split reader handle — reads are independent from sends (no lock contention)
         let reader = Arc::new(WSSMessageReader { reader: Arc::clone(&self.reader_handle) });
         demuxer.start(reader);
         *guard = Some(demuxer);
+        Ok(())
     }
 
     fn get_demuxer(&self) -> Option<Arc<MessageDemuxer>> {

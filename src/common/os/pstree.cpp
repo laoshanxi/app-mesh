@@ -1,6 +1,11 @@
 // src/common/os/pstree.cpp
 #include "pstree.h"
 
+#include <functional>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 namespace os
 {
 	std::shared_ptr<ProcessTree> ProcessTree::find(pid_t pid) const
@@ -45,23 +50,16 @@ namespace os
 
 	uint64_t ProcessTree::totalCpuTime() const
 	{
-		// On Linux, the formula to calculate the total CPU time for a process is (not include child process):
-		//     total_cpu_time = process.utime + process.stime + process.cutime + process.cstime
-		// On macOS, the total CPU time for a process including all threads and child processes as:
-		//     total_cpu_time = task_info.pti_total_user + task_info.pti_total_system
-		// On Windows, we use the sum of user and kernel time
-#if defined(__APPLE__)
-		return static_cast<uint64_t>(this->process.cutime + this->process.cstime);
-#elif defined(_WIN32)
-		return static_cast<uint64_t>(this->process.utime + this->process.stime);
+		// Linux also exposes waited-child time; macOS and Windows expose own user/system time.
+#if defined(__APPLE__) || defined(_WIN32)
+		const auto ownCpuTime = static_cast<uint64_t>(process.utime + process.stime);
 #else
-		uint64_t result = std::accumulate(
-			children.begin(), children.end(),
-			static_cast<uint64_t>(process.utime + process.stime + process.cutime + process.cstime),
-			[](const uint64_t &time, const ProcessTree &process)
-			{ return time + process.totalCpuTime(); });
-		return result;
+		const auto ownCpuTime = static_cast<uint64_t>(process.utime + process.stime + process.cutime + process.cstime);
 #endif
+		return std::accumulate(
+			children.begin(), children.end(), ownCpuTime,
+			[](const uint64_t &time, const ProcessTree &child)
+			{ return time + child.totalCpuTime(); });
 	}
 
 	std::list<os::Process> ProcessTree::getProcesses() const
@@ -169,27 +167,39 @@ namespace os
 	std::shared_ptr<ProcessTree> pstree(pid_t pid, const std::list<Process> &processes)
 	{
 		const static char fname[] = "os::pstree() ";
-
-		std::list<ProcessTree> children;
+		std::unordered_map<pid_t, const Process *> byPid;
+		std::unordered_map<pid_t, std::vector<pid_t>> childrenByPid;
 		for (const Process &proc : processes)
 		{
-			if (proc.parent == pid)
-			{
-				auto tree = pstree(proc.pid, processes);
-				if (tree == nullptr)
-				{
-					return tree;
-				}
-				children.push_back(*(tree.get()));
-			}
+			byPid[proc.pid] = &proc;
+			childrenByPid[proc.parent].push_back(proc.pid);
 		}
-		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p)
-									   { return p.pid == pid; });
-		if (iter != processes.end())
-			return std::make_shared<ProcessTree>(ProcessTree(*iter, children));
 
-		LOG_ERR << fname << "No process <" << pid << "> found in process list";
-		return nullptr;
+		std::unordered_set<pid_t> visiting;
+		std::function<std::shared_ptr<ProcessTree>(pid_t)> build = [&](pid_t currentPid) {
+			const auto process = byPid.find(currentPid);
+			if (process == byPid.end() || !visiting.insert(currentPid).second)
+				return std::shared_ptr<ProcessTree>();
+
+			std::list<ProcessTree> children;
+			const auto childPids = childrenByPid.find(currentPid);
+			if (childPids != childrenByPid.end())
+			{
+				for (const auto childPid : childPids->second)
+				{
+					auto child = build(childPid);
+					if (child)
+						children.push_back(*child);
+				}
+			}
+			visiting.erase(currentPid);
+			return std::make_shared<ProcessTree>(ProcessTree(*process->second, children));
+		};
+
+		auto result = build(pid);
+		if (!result)
+			LOG_ERR << fname << "No process <" << pid << "> found in process list";
+		return result;
 	}
 
 	std::shared_ptr<ProcessTree> pstree(pid_t pid, void *ptree)
@@ -201,7 +211,7 @@ namespace os
 
 		if (ptree == nullptr)
 		{
-			return pstree(pid, os::processes());
+			return pstree(pid, os::processSnapshot(pid));
 		}
 
 		auto processTree = static_cast<std::list<Process> *>(ptree);

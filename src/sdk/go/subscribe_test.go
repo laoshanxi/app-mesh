@@ -175,6 +175,7 @@ func TestMessageDemuxerDisconnectBroadcast(t *testing.T) {
 // a real MessageDemuxer (fed through msgCh) delivers server-push events.
 type fakeWaitRequester struct {
 	demuxer *MessageDemuxer
+	actions []string
 }
 
 func (f *fakeWaitRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
@@ -182,7 +183,10 @@ func (f *fakeWaitRequester) Send(method string, apiPath string, queries url.Valu
 }
 
 func (f *fakeWaitRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+	f.actions = append(f.actions, "request")
 	switch {
+	case method == http.MethodPut && strings.HasPrefix(apiPath, "/appmesh/app/"):
+		return http.StatusOK, []byte(`{"name":"atomic-app","subscription_id":"sub-add"}`), http.Header{}, nil
 	case method == http.MethodPost && strings.HasSuffix(apiPath, "/subscribe"):
 		return http.StatusOK, []byte(`{"subscription_id":"sub-wait","app_name":"waitapp","events":["STDOUT","EXIT","REMOVED"]}`), http.Header{}, nil
 	default:
@@ -197,7 +201,7 @@ func (f *fakeWaitRequester) setToken(string)             {}
 func (f *fakeWaitRequester) getAccessToken() string      { return "" }
 func (f *fakeWaitRequester) setForwardTo(string)         {}
 func (f *fakeWaitRequester) getForwardTo() string        { return "" }
-func (f *fakeWaitRequester) enableDemuxer()              {}
+func (f *fakeWaitRequester) enableDemuxer()              { f.actions = append(f.actions, "demuxer") }
 func (f *fakeWaitRequester) getDemuxer() *MessageDemuxer { return f.demuxer }
 
 // newWaitHarness wires an AppMeshClient to a scripted requester and a live
@@ -280,6 +284,21 @@ func TestSubscribeOptionPath(t *testing.T) {
 	// Test: empty means wildcard
 	opt3 := SubscribeOption{}
 	assert.Empty(t, opt3.AppName)
+}
+
+func TestEventRequestsEnableDemuxerBeforeSend(t *testing.T) {
+	addRequester := &fakeWaitRequester{}
+	addClient := &AppMeshClient{req: addRequester}
+	added, err := addClient.AddApp(Application{Name: "atomic-app"}, "START", "EXIT")
+	require.NoError(t, err)
+	require.NotNil(t, added)
+	assert.Equal(t, []string{"demuxer", "request"}, addRequester.actions)
+
+	subscribeRequester := &fakeWaitRequester{}
+	subscribeClient := &AppMeshClient{req: subscribeRequester}
+	_, err = subscribeClient.Subscribe(SubscribeOption{AppName: "waitapp", Events: []string{"START"}}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"demuxer", "request"}, subscribeRequester.actions)
 }
 
 func TestResponseDeserialize(t *testing.T) {

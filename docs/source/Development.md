@@ -69,7 +69,7 @@ App Mesh can test memory issue by valgrind to find potential memory leaks. build
 
 ## Integrations
 
-- [Claude Code Plugin](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/claude-plugin) — Local dev + remote execution sandbox for AI coding assistants
+- [Remote Execution Skill](https://github.com/laoshanxi/app-mesh/tree/main/.agents/skills/appmesh-remote) — Local development plus an App Mesh remote execution sandbox for Codex and Claude Code
 - [MCP Server](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp_server) — Standalone MCP server (Streamable HTTP + OAuth) for LLM clients to manage App Mesh
 - [MCP Bridge](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp_bridge) — stdio MCP server + WebSocket tunnel for relaying to a remote LLM gateway
 - [MQTT Bridge](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mqtt) — IoT integration via MQTT

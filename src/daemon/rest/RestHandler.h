@@ -1,6 +1,7 @@
 // src/daemon/rest/RestHandler.h
 #pragma once
 
+#include <cstdint>
 #include <functional>
 
 #include <ace/Null_Mutex.h>
@@ -30,17 +31,15 @@ public:
 	// Prometheus metrics, forwarded to the owned exporter so that callers keep using RESTHANDLER
 	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
 	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
-	bool collected();
+	uint64_t prometheusScrapeGeneration() const;
+	void refreshPrometheusProcessMetrics(void *processSnapshot);
+	void observeHttpRequest(const std::shared_ptr<HttpRequest> &message);
 
 protected:
-	/// <summary>
-	/// override RestBase::handleRest() to count REST request metrics
-	/// </summary>
-	/// <param name="message"></param>
-	/// <param name="restFunctions"></param>
-	virtual void handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &restFunctions) override;
+	std::string normalizedHttpRoute(const std::string &path,
+		const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions = nullptr) const;
 
-	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::string &appName, bool requestWrite);
+	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app, bool requestWrite);
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 

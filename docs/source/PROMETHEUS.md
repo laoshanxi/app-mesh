@@ -8,14 +8,14 @@ Prometheus, a Cloud Native Computing Foundation project, is a systems and servic
 
 ## What is supported
 >
-> * App Mesh provide a build-in Prometheus exporter
-> * Prometheus exporter is a build-in REST server for Prometheus to scrap metrics
+> * App Mesh provides a built-in Prometheus exporter
+> * The exporter exposes current daemon, persistent-application, and HTTP metrics
 
 ## What is **not** supported
 >
-> * Exporter SSL is not supported as community
+> * The Prometheus listener does not provide TLS
 
-## Start Grafana, Prommetheus
+## Start Grafana and Prometheus
 
 ```shell
 git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
@@ -33,41 +33,58 @@ docker-compose -f docker-compose-all-in-one.yaml up -d
 
 ### Design
 
-`Prometheus` is monitoring system and time series database, every metric (unique by label) will be a time series data in DB, and use pull way to scrap data from Server to Client, client provide a exporter service listen on a local port, the exporter is build with Application together to read metric data from memory. appmesh provide a exporter service listen at the port configured by `REST.PrometheusExporterListenPort` (default 0 means disabled, e.g. set to 6061). The exporter run build-in with appmesh and no need extra process.
-In order to collect node metrics, an extra node-exporter can be started on each node and listen on 9100 to provide node metrics service.
+The daemon owns the in-memory registry. The Go agent listens on
+`REST.PrometheusExporterListenPort` and proxies `/metrics` to the daemon's local transport.
+REST must be enabled. Port `0` disables the listener; `6061` is a typical value. Use
+node-exporter separately when full host metrics are required.
+The dedicated listener accepts only `GET`/`HEAD` and always targets the local daemon;
+the agent forwarding header is rejected on this endpoint.
 
 ### Defined Metrics
 
 <http://127.0.0.1:6061/metrics>
 
-```html
-# HELP appmesh_prom_scrape_count prometheus scrape count
-# TYPE appmesh_prom_scrape_count counter
-appmesh_prom_scrape_count{host="appmesh",pid="10791"} 6.000000
-# HELP appmesh_prom_file_descriptor appmesh file descriptors
-# TYPE appmesh_prom_file_descriptor gauge
-appmesh_prom_file_descriptor{host="appmesh",pid="10791"} 11.00000000000000000
-# HELP appmesh_prom_process_start_count application process spawn count
-# TYPE appmesh_prom_process_start_count counter
-appmesh_prom_process_start_count{application="appweb",host="appmesh",pid="10791"} 1.000000
-appmesh_prom_process_start_count{application="timer",host="appmesh",pid="10791"} 0.000000
-# HELP appmesh_http_request_count app mesh http request count
-# TYPE appmesh_http_request_count counter
-appmesh_http_request_count{host="appmesh",method="POST",pid="10791"} 0.000000
-appmesh_http_request_count{host="appmesh",method="DELETE",pid="10791"} 0.000000
-appmesh_http_request_count{host="appmesh",method="PUT",pid="10791"} 0.000000
-appmesh_http_request_count{host="appmesh",method="GET",pid="10791"} 0.000000
-# HELP appmesh_prom_scrape_up prometheus scrape alive
-# TYPE appmesh_prom_scrape_up gauge
-appmesh_prom_scrape_up{host="appmesh",pid="10791"} 1.000000
-# HELP appmesh_prom_process_memory_gauge application process memory bytes
-# TYPE appmesh_prom_process_memory_gauge gauge
-appmesh_prom_process_memory_gauge{application="appweb",host="appmesh",pid="10791"} 3268759.000000
-appmesh_prom_process_memory_gauge{application="timer",host="appmesh",pid="10791"} 0.000000
-# HELP appmesh_prom_process_file_descriptors application process file descriptors
-# TYPE appmesh_prom_process_file_descriptors gauge
-appmesh_prom_process_file_descriptors{application="apprest",host="appmesh",id="4229730c-5672-11eb-8000-6c2b59df0017",pid="83288"} 13.00000000000000000
-```
+| Metric | Type | Description |
+| --- | --- | --- |
+| `appmesh_metrics_scrapes_total` | counter | Metrics scrapes served by App Mesh |
+| `appmesh_metrics_collection_errors_total` | counter | Collector failures |
+| `appmesh_process_id` | gauge | Daemon PID |
+| `appmesh_build_info{version}` | gauge | Build metadata |
+| `appmesh_process_open_fds` | gauge | Open FDs in the daemon process tree |
+| `appmesh_http_requests_total{method,route,status_code,status_class}` | counter | Completed HTTP requests; dynamic path segments are normalized and metrics endpoints are excluded |
+| `appmesh_http_request_duration_seconds{method,route}` | histogram | End-to-end HTTP response latency with eight fixed buckets from 10 ms to 30 s |
+| `appmesh_http_requests_in_flight{method,route}` | gauge | Requests that have started but have not completed |
+| `appmesh_application_process_starts_total{application}` | counter | Process start attempts including attach/recovery |
+| `appmesh_application_metrics_collection_errors_total{application}` | counter | Process metric collection failures, including exit-during-scrape races |
+| `appmesh_application_process_id{application}` | gauge | Current PID, or zero while stopped |
+| `appmesh_application_process_resident_memory_bytes{application}` | gauge | Process-tree RSS |
+| `appmesh_application_process_cpu_usage_cores{application}` | gauge | CPU use where `1.0` is one fully used core |
+| `appmesh_application_process_open_fds{application}` | gauge | Process-tree open FDs |
+| `appmesh_application_enabled{application}` | gauge | Enabled state |
+| `appmesh_application_running{application}` | gauge | Running state |
+| `appmesh_application_healthy{application}` | gauge | `1` only while the process is running and its health check passes |
+
+Every series has the stable `host` label. Application metrics are registered only for persisted
+applications and the fixed-name agent; one-off runs do not create Prometheus series. This keeps the
+`application` label bounded. HTTP routes use registered templates such as `/appmesh/app/:param`; unknown
+paths use `route="unmatched"`. `status_class` is one of `1xx` through `5xx` or `unreplied`.
+PID, raw URL values, query strings, and random one-off application IDs are values or omitted from labels,
+so requests and restarts do not create unbounded time series.
+
+HTTP observation starts at the worker boundary, so CSRF rejection, forwarding, unsupported methods,
+and normal REST handling all participate in the same RED series. The two metrics endpoints are excluded.
+
+The standard HTTP RED queries are based on:
+
+- Rate: `rate(appmesh_http_requests_total[5m])`
+- Errors: `rate(appmesh_http_requests_total{status_class=~"4xx|5xx|unreplied"}[5m])`
+- Duration p95: `histogram_quantile(0.95, sum by (le, route) (rate(appmesh_http_request_duration_seconds_bucket[5m])))`
+
+Metric names changed to Prometheus base-unit and `_total` conventions. Dashboards and alerting
+rules using the former `appmesh_prom_*` or `appmesh_http_request_count` names must be migrated.
+`REST.PrometheusExporterListenPort` updates are accepted and persisted, but the Go exporter binds
+its listener only during startup. The running exporter and in-process metric registration keep
+their startup state until App Mesh is restarted.
 
 ![Prometheus Configuration](https://raw.githubusercontent.com/laoshanxi/picture/master/prometheus/Prometheus-Configuration.png)
 ![Prometheus Targets](https://raw.githubusercontent.com/laoshanxi/picture/master/prometheus/Prometheus-Targets.png)

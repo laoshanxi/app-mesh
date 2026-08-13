@@ -1,5 +1,3 @@
-version: "3"
-
 name: appmesh_monitor
 
 networks:
@@ -29,9 +27,11 @@ services:
       - APPMESH_Consul_Url=http://consul:8500
       - APPMESH_REST_PrometheusExporterListenPort=6061
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - /opt/appmesh/work # mount this to enable configuration persist
-    privileged: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "443:443" # for appmesh_ui
       - "6061:6061" # Prometheus Exporter
@@ -44,8 +44,6 @@ services:
   appmesh-ui:
     restart: always
     image: laoshanxi/appmesh-ui:latest
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - appmesh_node
     network_mode: "service:appmesh_node" # make sure in same network with appmesh
@@ -84,11 +82,13 @@ services:
   prometheus:
     restart: always
     image: prom/prometheus:latest
-    privileged: true
-    user: root
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./prom_alert_rules.yml:/etc/prometheus/rules.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prom_alert_rules.yml:/etc/prometheus/rules.yml:ro
     ports:
       - "9090:9090"
     networks:

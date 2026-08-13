@@ -21,9 +21,9 @@ AppTimer::AppTimer(const std::chrono::system_clock::time_point &startTime, const
 
 std::chrono::system_clock::time_point AppTimer::nextTime(const std::chrono::system_clock::time_point &startFrom)
 {
-    auto next = checkStartTime(startFrom);
+    auto next = adjustDailyTimeRange(applyStartBoundary(startFrom));
     // check end
-    if (next > m_endTime)
+    if (next >= m_endTime)
     {
         return TIME_UNSET;
     }
@@ -40,20 +40,17 @@ std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono
         if (m_dailyLimit->m_startTimeValue < m_dailyLimit->m_endTimeValue)
         {
             // Start less than End means valid range should between start and end.
-            if (now < m_dailyLimit->m_startTimeValue || now >= m_dailyLimit->m_endTimeValue)
+            if (now < m_dailyLimit->m_startTimeValue)
             {
-                if (now < m_dailyLimit->m_startTimeValue)
-                {
-                    auto offset = (m_dailyLimit->m_startTimeValue - now).total_seconds();
-                    target += std::chrono::seconds(offset);
-                    LOG_DBG << fname << "day time <" << now << "> with startTime <" << m_dailyLimit->m_startTimeValue << ">, endTime <" << m_dailyLimit->m_endTimeValue << ">, adjusted by <" << offset << "> seconds";
-                }
-                else if (now > m_dailyLimit->m_endTimeValue)
-                {
-                    auto offset = std::chrono::hours(24) - std::chrono::seconds((m_dailyLimit->m_endTimeValue - now).total_seconds());
-                    target += offset;
-                    LOG_DBG << fname << "day time <" << now << "> with startTime <" << m_dailyLimit->m_startTimeValue << ">, endTime <" << m_dailyLimit->m_endTimeValue << ">, adjusted by <" << offset.count() << "> seconds";
-                }
+                auto offset = (m_dailyLimit->m_startTimeValue - now).total_seconds();
+                target += std::chrono::seconds(offset);
+                LOG_DBG << fname << "day time <" << now << "> with startTime <" << m_dailyLimit->m_startTimeValue << ">, endTime <" << m_dailyLimit->m_endTimeValue << ">, adjusted by <" << offset << "> seconds";
+            }
+            else if (now >= m_dailyLimit->m_endTimeValue)
+            {
+                auto offset = (boost::posix_time::hours(24) - now + m_dailyLimit->m_startTimeValue).total_seconds();
+                target += std::chrono::seconds(offset);
+                LOG_DBG << fname << "day time <" << now << "> with startTime <" << m_dailyLimit->m_startTimeValue << ">, endTime <" << m_dailyLimit->m_endTimeValue << ">, adjusted by <" << offset << "> seconds";
             }
         }
         else if (m_dailyLimit->m_startTimeValue > m_dailyLimit->m_endTimeValue)
@@ -76,7 +73,7 @@ bool AppTimer::isInDailyTimeRange(const std::chrono::system_clock::time_point &t
 {
     // const static char fname[] = "Application::isInDailyTimeRange() ";
     //  1. check date range
-    if (target < m_startTime || target > m_endTime)
+    if (target < m_startTime || target >= m_endTime)
     {
         return false;
     }
@@ -100,18 +97,9 @@ bool AppTimer::isInDailyTimeRange(const std::chrono::system_clock::time_point &t
     return true;
 }
 
-std::chrono::system_clock::time_point AppTimer::checkStartTime(const std::chrono::system_clock::time_point &target)
+std::chrono::system_clock::time_point AppTimer::applyStartBoundary(const std::chrono::system_clock::time_point &target)
 {
-    // 1. check start
-    auto nextTime = target;
-    if (nextTime < m_startTime)
-    {
-        nextTime = m_startTime;
-    }
-
-    // 2. adjust daily limitation
-    nextTime = adjustDailyTimeRange(nextTime);
-    return nextTime;
+    return target < m_startTime ? m_startTime : target;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -125,28 +113,20 @@ AppTimerPeriod::AppTimerPeriod(const std::chrono::system_clock::time_point &star
 
 std::chrono::system_clock::time_point AppTimerPeriod::nextTime(const std::chrono::system_clock::time_point &startFrom)
 {
-    // 1. check start time
-    auto startTime = checkStartTime(startFrom);
-
-    // 2. calculate next time based on interval gap
-    if (startTime > m_startTime && m_intervalSeconds > 0)
+    auto next = applyStartBoundary(startFrom);
+    if (next > m_startTime && m_intervalSeconds > 0)
     {
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(startTime - m_startTime).count();
-        auto nextGapSeconds = m_intervalSeconds - (elapsed % m_intervalSeconds);
-        startTime += std::chrono::seconds(nextGapSeconds);
-    }
-
-    // 3. check end time
-    if (startTime < m_endTime)
-    {
-        // make sure the target is in daily range
-        startTime = adjustDailyTimeRange(startTime);
-        if (startTime <= m_endTime)
+        const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(next - m_startTime).count();
+        next = m_startTime + std::chrono::seconds((elapsed / m_intervalSeconds) * m_intervalSeconds);
+        if (next <= startFrom)
         {
-            return startTime;
+            next += std::chrono::seconds(m_intervalSeconds);
         }
     }
-    return TIME_UNSET;
+
+    // Daily limitation adjusts a computed occurrence; it does not redefine the interval grid.
+    next = adjustDailyTimeRange(next);
+    return next < m_endTime ? next : TIME_UNSET;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -161,22 +141,16 @@ AppTimerCron::AppTimerCron(const std::chrono::system_clock::time_point &startTim
 
 std::chrono::system_clock::time_point AppTimerCron::nextTime(const std::chrono::system_clock::time_point &startFrom)
 {
-    auto next = checkStartTime(startFrom);
+    auto next = applyStartBoundary(startFrom);
     // check end
     if (next < m_endTime)
     {
         auto nextStartTimeT = std::chrono::system_clock::to_time_t(next);
         auto nextTimeT = cron::cron_next(m_cron, nextStartTimeT);
-        auto offsetSeconds = std::abs(nextTimeT - nextStartTimeT);
-        if (offsetSeconds == 1)
-        {
-            // cron min unit is 1 minute, add 1 minutes to start to calculate again
-            auto beginTime = next + std::chrono::minutes(1);
-            nextTimeT = cron::cron_next(m_cron, std::chrono::system_clock::to_time_t(beginTime));
-        }
-        // again, make sure the target is in daily range
+        // croncpp supports a seconds field and already returns a strictly later
+        // occurrence. A result one second away is valid and must not be skipped.
         next = adjustDailyTimeRange(std::chrono::system_clock::from_time_t(nextTimeT));
-        if (next <= m_endTime)
+        if (next < m_endTime)
         {
             return next;
         }

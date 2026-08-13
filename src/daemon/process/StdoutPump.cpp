@@ -21,7 +21,7 @@ namespace
 	constexpr int COALESCE_WINDOW_MS = 200;				   // otherwise flush every 200 ms
 }
 
-StdoutPump::StdoutPump(std::string appName, ACE_HANDLE pipeRead, ACE_HANDLE diskWrite, std::shared_ptr<std::recursive_mutex> diskMutex)
+StdoutPump::StdoutPump(std::string appName, ACE_HANDLE pipeRead, ACE_HANDLE diskWrite, std::shared_ptr<std::mutex> diskMutex)
 	: m_appName(std::move(appName)),
 	  m_pipeRead(pipeRead),
 	  m_diskWrite(diskWrite),
@@ -74,7 +74,7 @@ int StdoutPump::handle_input(ACE_HANDLE)
 		{
 			// Tee to disk per-read so the on-disk log keeps streaming.
 			{
-				std::lock_guard<std::recursive_mutex> dg(*m_diskMutex);
+				std::lock_guard<std::mutex> dg(*m_diskMutex);
 				const size_t total = static_cast<size_t>(n);
 				size_t written = 0;
 				while (written < total)
@@ -236,7 +236,7 @@ void StdoutPump::finalSyncDrain()
 			break; // EOF, EAGAIN, or unrecoverable error
 
 		{
-			std::lock_guard<std::recursive_mutex> dg(*m_diskMutex);
+			std::lock_guard<std::mutex> dg(*m_diskMutex);
 			const size_t total = static_cast<size_t>(n);
 			size_t written = 0;
 			while (written < total)

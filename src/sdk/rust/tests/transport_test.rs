@@ -126,19 +126,16 @@ mod tcp {
         // get_host_resources
         let resources = client.get_host_resources().await.expect("TCP get_host_resources failed");
         assert!(resources.is_object(), "TCP get_host_resources should return a JSON object");
-        assert!(
-            resources.get("cpu_cores").is_some()
-                || resources.get("cpu").is_some()
-                || resources.get("memory_total_mb").is_some()
-                || resources.get("mem_total").is_some()
-                || resources.get("total_memory_mb").is_some(),
-            "TCP get_host_resources missing expected CPU/memory field: {:?}",
-            resources
-        );
+        assert_eq!(resources.get("schema_version").and_then(|v| v.as_u64()), Some(3));
+        assert!(resources.get("cpu_effective_processors").is_some());
+        assert!(resources.get("mem_available_bytes").is_some());
+        assert!(resources.get("swap_source").is_some());
+        assert!(resources.get("net").and_then(|v| v.as_array()).is_some());
+        assert!(resources.get("fs").and_then(|v| v.as_array()).is_some());
 
         // get_metrics
         let metrics = client.get_metrics().await.expect("TCP get_metrics failed");
-        assert!(!metrics.is_empty(), "TCP get_metrics returned empty string");
+        assert!(metrics.contains("appmesh_metrics_scrapes_total"), "TCP get_metrics missing scrape counter");
     }
 }
 
@@ -257,18 +254,15 @@ mod wss {
         // get_host_resources
         let resources = client.get_host_resources().await.expect("WSS get_host_resources failed");
         assert!(resources.is_object(), "WSS get_host_resources should return a JSON object");
-        assert!(
-            resources.get("cpu_cores").is_some()
-                || resources.get("cpu").is_some()
-                || resources.get("memory_total_mb").is_some()
-                || resources.get("mem_total").is_some()
-                || resources.get("total_memory_mb").is_some(),
-            "WSS get_host_resources missing expected CPU/memory field: {:?}",
-            resources
-        );
+        assert_eq!(resources.get("schema_version").and_then(|v| v.as_u64()), Some(3));
+        assert!(resources.get("cpu_effective_processors").is_some());
+        assert!(resources.get("mem_available_bytes").is_some());
+        assert!(resources.get("swap_source").is_some());
+        assert!(resources.get("net").and_then(|v| v.as_array()).is_some());
+        assert!(resources.get("fs").and_then(|v| v.as_array()).is_some());
 
         // get_metrics
         let metrics = client.get_metrics().await.expect("WSS get_metrics failed");
-        assert!(!metrics.is_empty(), "WSS get_metrics returned empty string");
+        assert!(metrics.contains("appmesh_metrics_scrapes_total"), "WSS get_metrics missing scrape counter");
     }
 }

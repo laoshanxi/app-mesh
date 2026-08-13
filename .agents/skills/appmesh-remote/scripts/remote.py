@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Remote dev tool: tar-based sync + App Mesh execute.
+Remote development tool: tar-based sync and App Mesh execution.
 
 Usage:
     remote.py sync                            Sync local files to remote
@@ -33,7 +33,7 @@ WORKSPACE = os.environ.get("APPMESH_WORKSPACE", "")
 SSL_VERIFY_ENV = os.environ.get("APPMESH_SSL_VERIFY", "false")
 SSL_VERIFY = {"true": True, "false": False}.get(SSL_VERIFY_ENV.lower(), SSL_VERIFY_ENV)
 
-DEFAULT_EXCLUDES = [".git", "build", "node_modules", "__pycache__", ".claude", "*.o", "*.pyc", ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx"]
+DEFAULT_EXCLUDES = [".git", "build", "node_modules", "__pycache__", ".agents", ".claude", ".codex", "*.o", "*.pyc", ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx"]
 EXTRA = os.environ.get("APPMESH_SYNC_EXCLUDE", "")
 if EXTRA:
     DEFAULT_EXCLUDES.extend(e.strip() for e in EXTRA.split(",") if e.strip())
@@ -202,7 +202,7 @@ def cmd_sync_exec(args):
 
 def cmd_run_script(args):
     client = get_client()
-    remote_script = f"/tmp/claude_{uuid.uuid4().hex[:12]}"
+    remote_script = f"/tmp/appmesh_agent_{uuid.uuid4().hex[:12]}"
 
     client.upload_file(args.script, remote_script)
     rs_q = shlex.quote(remote_script)

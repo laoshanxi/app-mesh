@@ -15,7 +15,7 @@ class StdoutPump : public ACE_Event_Handler
 {
 public:
 	StdoutPump(std::string appName, ACE_HANDLE pipeRead, ACE_HANDLE diskWrite,
-			   std::shared_ptr<std::recursive_mutex> diskMutex);
+			   std::shared_ptr<std::mutex> diskMutex);
 	~StdoutPump() override;
 
 	StdoutPump(const StdoutPump &) = delete;
@@ -52,7 +52,7 @@ private:
 	ACE_HANDLE m_pipeRead; // written only in the ctor; closed only by the dtor
 	ACE_HANDLE m_diskWrite;
 	// shared_ptr so the mutex outlives whichever (pump or AppProcess) destructs first.
-	std::shared_ptr<std::recursive_mutex> m_diskMutex;
+	std::shared_ptr<std::mutex> m_diskMutex;
 	std::atomic<long> m_acceptedBytes;
 	std::atomic<bool> m_stopped;
 

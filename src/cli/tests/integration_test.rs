@@ -10,13 +10,13 @@ fn appm() -> Command {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_help_lists_all_22_commands() {
+fn test_help_lists_core_commands() {
     let out = appm().arg("--help").output().unwrap();
     assert!(out.status.success());
     let s = String::from_utf8_lossy(&out.stdout);
     for cmd in [
         "logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable", "restart",
-        "run", "exec", "shell", "get", "put", "label", "log", "config", "resource",
+        "run", "exec", "shell", "get", "put", "label", "log", "config", "resource", "metric",
         "passwd", "lock", "user", "mfa", "appmgpwd", "appmginit",
     ] {
         assert!(s.contains(cmd), "missing command: {}", cmd);
@@ -442,7 +442,7 @@ fn test_error_with_short_f_flag_exits_zero() {
 fn test_help_always_exits_zero() {
     for cmd in ["logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable",
                 "restart", "run", "exec", "shell", "get", "put", "label", "log",
-                "config", "resource", "passwd", "lock", "user", "mfa", "appmgpwd", "appmginit"] {
+                "config", "resource", "metric", "passwd", "lock", "user", "mfa", "appmgpwd", "appmginit"] {
         let out = appm().args([cmd, "--help"]).output().unwrap();
         assert!(out.status.success(), "{} --help should exit 0", cmd);
     }

@@ -1,12 +1,15 @@
 // src/common/Utility.cpp
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <errno.h>
 #include <fstream>
 #include <list>
 #include <locale>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #if !defined(_WIN32)
@@ -383,9 +386,31 @@ void Utility::removeFile(const std::string &path)
 
 bool Utility::runningInContainer()
 {
-	static const bool isInContainer =
-		std::ifstream("/run/.dockerenv").good() ||	// docker specific
-		std::ifstream("/run/.containerenv").good(); // podman specific
+	static const bool isInContainer = []() {
+		// Support standard and legacy container markers.
+		if (std::ifstream("/.dockerenv").good() ||
+			std::ifstream("/run/.dockerenv").good() ||
+			std::ifstream("/run/.containerenv").good())
+		{
+			return true;
+		}
+		const char *containerRuntime = std::getenv("container");
+		if (containerRuntime != nullptr && containerRuntime[0] != '\0')
+		{
+			return true;
+		}
+
+#if defined(__linux__)
+		// Detect runtimes without marker files.
+		const auto cgroup = Utility::readFileCpp("/proc/self/cgroup");
+		static const std::vector<std::string> containerCgroupMarkers = {
+			"docker", "kubepods", "containerd", "libpod", "podman", "lxc"};
+		return std::any_of(containerCgroupMarkers.begin(), containerCgroupMarkers.end(),
+			[&cgroup](const std::string &marker) { return cgroup.find(marker) != std::string::npos; });
+#else
+		return false;
+#endif
+	}();
 
 	return isInContainer;
 }
@@ -480,15 +505,7 @@ bool Utility::setLogLevel(const std::string &level)
 	auto it = levelMap.find(level);
 	if (it != levelMap.end())
 	{
-		// Set on the default logger and its sinks too — spdlog::set_level alone has been
-		// observed not to take effect on the logger created via initLogging().
 		spdlog::set_level(it->second);
-		if (auto logger = spdlog::default_logger())
-		{
-			logger->set_level(it->second);
-			for (auto &sink : logger->sinks())
-				sink->set_level(it->second);
-		}
 		LOG_INF << "Set log level to <" << level << ">";
 		return true;
 	}
@@ -1172,13 +1189,23 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 	if (userIt != headers.end() && groupIt != headers.end() &&
 		!userIt->second.empty() && !groupIt->second.empty())
 	{
-		try
+		if (Utility::runningInContainer())
 		{
-			os::chown(file, userIt->second, groupIt->second);
+			// A container upload is created by the fixed daemon identity. Do not
+			// transfer it to a host/client identity that may be absent or unreadable.
+			LOG_DBG << fname << "Ignoring remote owner <" << userIt->second << ":" << groupIt->second
+					<< "> for container file <" << file << ">";
 		}
-		catch (...)
+		else
 		{
-			LOG_WAR << fname << "Invalid user/group ID value: " << userIt->second << "/" << groupIt->second;
+			try
+			{
+				os::chown(file, userIt->second, groupIt->second);
+			}
+			catch (...)
+			{
+				LOG_WAR << fname << "Invalid user/group ID value: " << userIt->second << "/" << groupIt->second;
+			}
 		}
 	}
 #endif
@@ -1189,6 +1216,10 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 		try
 		{
 			int mode = std::stoi(modeIt->second);
+			if (mode < 0 || mode > 0777)
+				throw std::out_of_range("file mode must be between 0 and 0777");
+			if (Utility::runningInContainer())
+				mode |= 0400; // Keep uploads readable by the fixed daemon owner.
 			os::fileChmod(file, static_cast<uint16_t>(mode));
 		}
 		catch (...)
@@ -2007,5 +2038,3 @@ std::string Utility::convertToUTF8(const std::string &input, unsigned int codepa
 	return "";
 #endif
 }
-
-

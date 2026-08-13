@@ -135,7 +135,7 @@ namespace os
 		return out;
 	}
 
-	std::list<Process> processSnapshot(pid_t rootPid)
+	static std::list<Process> processSnapshotImpl(const std::vector<pid_t> &rootPids, bool allProcesses)
 	{
 		// One bulk sysctl(KERN_PROC_ALL) for the whole table: it already
 		// carries ppid/pgid/state/comm, so status()'s per-process
@@ -146,6 +146,7 @@ namespace os
 			return {};
 
 		std::vector<char> buf(size + sizeof(struct kinfo_proc) * 10);
+		size = buf.size();
 		if (sysctl(mib, 3, buf.data(), &size, nullptr, 0) != 0)
 			return {};
 
@@ -191,8 +192,23 @@ namespace os
 			children[ppid].push_back(pid);
 		}
 
-		auto selected = collectDescendants(rootPid, children);
-		selected.insert(rootPid);
+		std::unordered_set<pid_t> selected;
+		if (allProcesses)
+		{
+			for (const auto &entry : byPid)
+				selected.insert(entry.first);
+		}
+		else
+		{
+			for (const auto rootPid : rootPids)
+			{
+				if (rootPid <= 0)
+					continue;
+				const auto descendants = collectDescendants(rootPid, children);
+				selected.insert(descendants.begin(), descendants.end());
+				selected.insert(rootPid);
+			}
+		}
 
 		// Detail fetch only for the selected set: PROC_PIDTASKINFO (rss/cpu,
 		// not in kinfo_proc). Excludes a process whose task info fails (e.g. zombie),
@@ -205,16 +221,26 @@ namespace os
 				continue;
 
 			struct proc_taskinfo task_info;
-			if (proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task_info, sizeof(task_info)) <= 0)
+			if (proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task_info, sizeof(task_info)) != static_cast<int>(sizeof(task_info)))
 				continue;
 
 			const Light &l = it->second;
 			ProcessStatus st(pid, l.comm, l.state, l.ppid, l.pgid, 0,
 							 task_info.pti_total_user, task_info.pti_total_system, 0, 0,
 							 0, 0, task_info.pti_resident_size / getpagesize());
-			result.push_back(makeProcess(st, os::cmdline(pid)));
+			result.push_back(makeProcess(st, allProcesses ? std::string() : os::cmdline(pid)));
 		}
 		return result;
+	}
+
+	std::list<Process> processSnapshot(pid_t rootPid)
+	{
+		return processSnapshotImpl(rootPid == 0 ? std::vector<pid_t>{} : std::vector<pid_t>{rootPid}, rootPid == 0);
+	}
+
+	std::list<Process> processSnapshot(const std::vector<pid_t> &rootPids)
+	{
+		return processSnapshotImpl(rootPids, false);
 	}
 
 } // namespace os

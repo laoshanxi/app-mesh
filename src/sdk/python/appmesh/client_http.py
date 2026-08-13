@@ -1256,13 +1256,18 @@ class AppMeshClient:
 
         Returns:
             bool: ``True`` if a task existed and was cancelled. ``False`` means no task
-            was found (404) or the request failed for another reason (e.g. 401/403);
-            non-404 failures are logged as warnings, never raised.
+            was pending (208), the application was not found (404), or the request failed
+            for another reason (e.g. 401/403); unexpected failures are logged as warnings,
+            never raised.
         """
         resp = self._request_http(
             AppMeshClient._Method.DELETE, path=f"/appmesh/app/{app_name}/task", raise_on_fail=False
         )
-        if resp.status_code not in (HTTPStatus.OK, HTTPStatus.NOT_FOUND):
+        if resp.status_code not in (
+            HTTPStatus.OK,
+            HTTPStatus.ALREADY_REPORTED,
+            HTTPStatus.NOT_FOUND,
+        ):
             logger.warning("Failed to cancel task for app '%s' with status %d: %s", app_name, resp.status_code, resp.text)
         return resp.status_code == HTTPStatus.OK
 

@@ -19,28 +19,6 @@
 namespace os
 {
 
-	int64_t cpuTotalTime()
-	{
-		std::ifstream stat_file("/proc/stat");
-		if (!stat_file)
-			return 0;
-
-		std::string line;
-		std::getline(stat_file, line);
-
-		unsigned long u, n, s, i, w, x, y, z;
-		std::string _;
-		std::istringstream data(line);
-		data >> _ >> u >> n >> s >> i >> w >> x >> y >> z;
-
-		if (data.fail())
-		{
-			return 0;
-		}
-
-		return u + n + s + i + w + x + y + z;
-	}
-
 	std::shared_ptr<Memory> memory()
 	{
 		auto mem = std::make_shared<Memory>();
@@ -52,16 +30,37 @@ namespace os
 		}
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 3, 23))
-		mem->total_bytes = (info.totalram * info.mem_unit);
-		mem->free_bytes = (info.freeram * info.mem_unit);
-		mem->totalSwap_bytes = (info.totalswap * info.mem_unit);
-		mem->freeSwap_bytes = (info.freeswap * info.mem_unit);
+		mem->total_bytes = static_cast<uint64_t>(info.totalram) * info.mem_unit;
+		mem->free_bytes = static_cast<uint64_t>(info.freeram) * info.mem_unit;
+		mem->totalSwap_bytes = static_cast<uint64_t>(info.totalswap) * info.mem_unit;
+		mem->freeSwap_bytes = static_cast<uint64_t>(info.freeswap) * info.mem_unit;
+		mem->swapAvailable = true;
 #else
 		mem->total_bytes = (info.totalram);
 		mem->free_bytes = (info.freeram);
 		mem->totalSwap_bytes = (info.totalswap);
 		mem->freeSwap_bytes = (info.freeswap);
+		mem->swapAvailable = true;
 #endif
+
+		// MemAvailable includes reclaimable memory.
+		std::ifstream meminfo("/proc/meminfo");
+		std::string line;
+		std::string key;
+		uint64_t valueKb = 0;
+		bool availableParsed = false;
+		while (std::getline(meminfo, line))
+		{
+			std::istringstream entry(line);
+			if (entry >> key >> valueKb && key == "MemAvailable:")
+			{
+				mem->available_bytes = valueKb * 1024ULL;
+				availableParsed = true;
+				break;
+			}
+		}
+		if (!availableParsed)
+			mem->available_bytes = mem->free_bytes;
 
 		return mem;
 	}
@@ -135,10 +134,18 @@ namespace os
 
 				for (const auto &it : cpuInfo)
 				{
+					const int cpu = it.first;
+					auto topologyValue = [cpu](const char *name) -> int {
+						std::ifstream topologyFile("/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/" + name);
+						int value = -1;
+						return topologyFile >> value ? value : -1;
+					};
+					const int core = it.second.first >= 0 ? it.second.first : topologyValue("core_id");
+					const int socket = it.second.second >= 0 ? it.second.second : topologyValue("physical_package_id");
 					results.push_back(CPU(
 						it.first,
-						it.second.first >= 0 ? it.second.first : 0,
-						it.second.second >= 0 ? it.second.second : 0));
+						core >= 0 ? core : it.first,
+						socket >= 0 ? socket : 0));
 				}
 
 				initialized.store(true, std::memory_order_release);

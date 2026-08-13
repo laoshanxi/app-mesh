@@ -29,6 +29,7 @@ Commands:
   log        Set log level
   config     View server configuration
   resource   Show host resources
+  metric     Show Prometheus metrics
   passwd     Change user password
   lock       Lock or unlock a user
   user       Manage users
@@ -128,7 +129,7 @@ Register a new application
 Usage: appm add [OPTIONS]
 
 Options:
-  -a, --app <APP>                        Application name
+  -a, --app <APP>                        Application name (1-128 letters, digits, _ or -)
   -c, --cmd <CMD>                        Command with arguments
   -d, --description <DESCRIPTION>        Application description
   -w, --working-dir <WORKING_DIR>        Working directory
@@ -145,8 +146,8 @@ Options:
   -i, --interval <INTERVAL>              Start interval (ISO 8601 duration or cron expression)
   -Y, --cron                             Use cron expression for interval
   -M, --memory-limit <MEMORY_LIMIT>      Memory limit in MB
-  -V, --virtual-memory <VIRTUAL_MEMORY>  Virtual memory limit in MB
-  -C, --cpu-shares <CPU_SHARES>          CPU shares (relative weight)
+  -V, --virtual-memory <VIRTUAL_MEMORY>  Total memory+swap limit in MB (must be >= memory)
+  -C, --cpu-shares <CPU_SHARES>          CPU shares (relative weight, 2-262144)
   -N, --log-cache-size <LOG_CACHE_SIZE>  Number of stdout cache files
   -p, --permission <PERMISSION>          Permission bits
   -m, --metadata <METADATA>              Metadata (string/JSON, '@' prefix for file)
@@ -232,14 +233,24 @@ appm restart -a ping
 $ appm resource
 {
   "appmesh_start_time": "2021-02-20 10:26:55+08",
+  "appmesh_start_time_unix_seconds": 1613788015,
+  "appmesh_version": "appmesh_2.2.1_20260810",
+  "architecture": "amd64",
+  "collected_at_unix_seconds": 1613788068,
+  "collector_errors": [],
+  "cgroup_version": "v2",
   "cpu_cores": 6,
+  "cpu_effective_processors": 6,
   "cpu_processors": 6,
+  "cpu_quota_cores": 0.0,
+  "cpu_source": "cgroup",
   "cpu_sockets": 1,
   "fd": 17,
   "fs": [
     {
       "device": "/dev/sda2",
       "mount_point": "/",
+      "available": 179142807552,
       "size": 244529655808,
       "usage": 0.26739761823956576,
       "used": 65386647552
@@ -247,6 +258,7 @@ $ appm resource
     {
       "device": "/dev/sda1",
       "mount_point": "/boot/efi",
+      "available": 527630336,
       "size": 535805952,
       "usage": 0.01525853897195976,
       "used": 8175616
@@ -260,28 +272,42 @@ $ appm resource
     "5min": 0.66000000000000003
   },
   "mem_applications": 17352934,
-  "mem_freeSwap_bytes": 2147479552,
-  "mem_free_bytes": 25269743616,
-  "mem_totalSwap_bytes": 2147479552,
+  "mem_daemon_process_tree_bytes": 22142976,
+  "memory_source": "cgroup",
+  "swap_source": "cgroup",
+  "in_container": false,
+  "mem_available_bytes": 26615496704,
+  "mem_current_bytes": 6862204928,
+  "mem_swap_current_bytes": 0,
+  "mem_swap_free_bytes": 2147479552,
+  "mem_swap_total_bytes": 2147479552,
   "mem_total_bytes": 33477701632,
+  "schema_version": 3,
   "net": [
     {
       "address": "192.168.3.24",
-      "ipv4": true,
+      "ipv6": false,
       "name": "enp1s0"
     },
     {
       "address": "fe80::8b4a:81ce:7bf5:7431",
-      "ipv4": false,
+      "ipv6": true,
       "name": "enp1s0"
     }
   ],
+  "os": "linux",
   "pid": 21430,
   "systime": "2021-02-20 10:27:48+08"
 }
 ```
 
 </details>
+
+- Display Prometheus metrics
+
+```text
+$ appm metric
+```
 
 - View application resource (application process tree memory usage) with json or yaml format
 

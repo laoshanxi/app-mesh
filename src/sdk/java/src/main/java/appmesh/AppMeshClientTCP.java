@@ -343,8 +343,20 @@ public class AppMeshClientTCP extends AppMeshClient {
      * Creates and starts the demuxer if not already running.
      */
     public synchronized void enableDemuxer() {
+        try {
+            ensureDemuxer();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to enable TCP demuxer", e);
+        }
+    }
+
+    @Override
+    protected synchronized void ensureDemuxer() throws IOException {
         if (demuxer != null && demuxer.isRunning()) {
             return;
+        }
+        if (!tcpTransport.connected()) {
+            tcpTransport.connect();
         }
         // Demuxer owns the read side and must block indefinitely between frames:
         // the connect-time SO_TIMEOUT would tear down idle subscriptions with a spurious
@@ -368,11 +380,6 @@ public class AppMeshClientTCP extends AppMeshClient {
     @Override
     protected MessageDemuxer demuxerOrNull() {
         return getDemuxer();
-    }
-
-    @Override
-    protected void ensureDemuxer() {
-        enableDemuxer();
     }
 
     /**

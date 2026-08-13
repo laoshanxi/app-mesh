@@ -135,7 +135,7 @@ class App:
             """Physical memory limit in MB."""
 
             self.memory_virt_mb = _get_int(data, "memory_virt_mb")
-            """Virtual memory limit in MB."""
+            """Total memory plus swap limit in MB; must be at least memory_mb."""
 
     def __init__(self, data: Optional[dict] = None) -> None:
         """Initialize an App instance with optional configuration data."""

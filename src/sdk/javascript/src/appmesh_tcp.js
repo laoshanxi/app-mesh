@@ -709,7 +709,7 @@ class AppMeshClientTCP extends AppMeshClient {
    * @returns {Promise<Object>} Subscription result with subscription_id, app_name, events.
    */
   async subscribe (appName, events, callback) {
-    this._enableDemuxer()
+    await this._enableDemuxer()
 
     let path = '/appmesh/subscribe'
     if (appName && appName !== '*') {
@@ -759,7 +759,7 @@ class AppMeshClientTCP extends AppMeshClient {
   async add_app (name, appJson, subscribeEvents, callback) {
     const options = {}
     if (subscribeEvents && subscribeEvents.length > 0) {
-      this._enableDemuxer()
+      await this._enableDemuxer()
       options.params = { subscribe_events: subscribeEvents.join(',') }
     }
 
@@ -777,8 +777,11 @@ class AppMeshClientTCP extends AppMeshClient {
    * Enable demuxer for concurrent request-response and event routing.
    * @private
    */
-  _enableDemuxer () {
-    if (this._demuxer) return
+  async _enableDemuxer () {
+    if (this._demuxer && this._demuxer._running) return
+    if (!this.tcpTransport.connected()) {
+      await this.tcpTransport.connect()
+    }
     this._demuxer = new MessageDemuxer(this.tcpTransport)
     this._demuxer.start()
   }

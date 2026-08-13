@@ -30,7 +30,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 	auto apps = Configuration::instance()->getApps();
 	for (auto &app : apps)
 	{
-		if (!app->isEnabled() || !app->isPersistAble() || app->getName() == SEPARATE_AGENT_APP_NAME)
+		if (!app->isEnabled() || !app->isPersistAble())
 			continue;
 
 		auto pid = app->getpid();

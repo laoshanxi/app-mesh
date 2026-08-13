@@ -55,7 +55,7 @@ jobs:
         env:
           OS_TAG: ubuntu22
         run: |
-          docker run --rm -e OS_TAG -e APPMESH_BaseConfig_LogLevel=DEBUG \
+          docker run --rm -e OS_TAG \
             -v ${{ github.workspace }}:/work \
             -v /tmp/host-cores:/cores \
             --ulimit core=-1 \
@@ -111,7 +111,7 @@ jobs:
         env:
           OS_TAG: ubuntu24
         run: |
-          docker run --rm -e OS_TAG -e APPMESH_BaseConfig_LogLevel=DEBUG \
+          docker run --rm -e OS_TAG \
             -v ${{ github.workspace }}:/work \
             -v /tmp/host-cores:/cores \
             --ulimit core=-1 \
@@ -166,7 +166,7 @@ jobs:
         env:
           OS_TAG: ubuntu18
         run: |
-          docker run --rm -e OS_TAG -e APPMESH_BaseConfig_LogLevel=DEBUG \
+          docker run --rm -e OS_TAG \
             -v ${{ github.workspace }}:/work \
             -v /tmp/host-cores:/cores \
             --ulimit core=-1 \
@@ -219,7 +219,7 @@ jobs:
         env:
           OS_TAG: centos7
         run: |
-          docker run --rm -e OS_TAG -e APPMESH_BaseConfig_LogLevel=DEBUG \
+          docker run --rm -e OS_TAG \
             -v ${{ github.workspace }}:/work \
             -v /tmp/host-cores:/cores \
             --ulimit core=-1 \

@@ -1,5 +1,5 @@
 # Pre-installed App definition for the workflow engine.
-# Placed in /opt/appmesh/work/apps/ during package installation.
+# Installed as a template and materialized during a non-secure package install.
 # Daemon auto-loads and starts this App on boot.
 #
 # sec_env values are encrypted with the default admin key.

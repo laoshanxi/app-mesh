@@ -1162,6 +1162,9 @@ public class AppMeshClient implements Closeable {
     public JSONObject addApp(String appName, JSONObject appJson, String... subscribeEvents) throws IOException {
         Map<String, String> query = null;
         if (subscribeEvents != null && subscribeEvents.length > 0) {
+            // START may be pushed before the add-app response. The persistent
+            // transport's demuxer must own the read side before this request.
+            ensureDemuxer();
             query = new HashMap<>();
             query.put("subscribe_events", String.join(",", subscribeEvents));
         }
@@ -1197,6 +1200,10 @@ public class AppMeshClient implements Closeable {
     /** Internal variant with per-request header overrides (e.g. {@code X-Target-Host} forwarding). */
     JSONObject subscribe(String appName, String[] events, MessageDemuxer.EventCallback callback,
             Map<String, String> extraHeaders) throws IOException {
+        // A matching event may race the subscribe response once the server installs
+        // the subscription, even when the caller did not supply a callback.
+        ensureDemuxer();
+
         String path = "/appmesh/subscribe";
         if (appName != null && !appName.isEmpty() && !"*".equals(appName)) {
             path = "/appmesh/app/" + encodeURIComponent(appName) + "/subscribe";
@@ -1209,10 +1216,9 @@ public class AppMeshClient implements Closeable {
         HttpURLConnection conn = request("POST", path, null, extraHeaders, query);
         JSONObject result = new JSONObject(Utils.readResponse(conn));
 
-        // If a callback is provided and the transport supports demuxing, enable it
+        // Events received before this point are held by the demuxer's bounded buffer.
         if (callback != null && result.has("subscription_id")) {
             String subscriptionId = result.getString("subscription_id");
-            ensureDemuxer();
             MessageDemuxer demuxer = demuxerOrNull();
             if (demuxer != null) {
                 demuxer.registerEventCallback(subscriptionId, callback);
@@ -1694,7 +1700,7 @@ public class AppMeshClient implements Closeable {
      * Transport hook: ensure the message demuxer is running.
      * No-op for transports without demuxing (plain HTTP).
      */
-    protected void ensureDemuxer() {
+    protected void ensureDemuxer() throws IOException {
     }
 
     /** Ensure the response is HTTP 200, otherwise throw an IOException carrying status and error body. */

@@ -53,6 +53,36 @@ assert('AppEvent JSON parsing', () => {
   if (event.data.exit_code !== 1) throw new Error('exit_code mismatch')
 })
 
+await assertAsync('event requests enable demuxer before send', async () => {
+  const actions = []
+  const stub = {
+    _demuxer: null,
+    async _enableDemuxer () {
+      actions.push('demuxer')
+      stub._demuxer = { registerEventCallback: () => actions.push('callback') }
+    },
+    async _request (method, path) {
+      actions.push('request')
+      return {
+        data: path.endsWith('/subscribe')
+          ? { subscription_id: 'sub-standalone' }
+          : { subscription_id: 'sub-atomic' }
+      }
+    }
+  }
+
+  await AppMeshClientTCP.prototype.add_app.call(stub, 'test', { command: 'true' }, ['START'], () => {})
+  if (actions.join(',') !== 'demuxer,request,callback') {
+    throw new Error(`atomic add ordering mismatch: ${actions}`)
+  }
+
+  actions.length = 0
+  await AppMeshClientTCP.prototype.subscribe.call(stub, 'test', ['START'], () => {})
+  if (actions.join(',') !== 'demuxer,request,callback') {
+    throw new Error(`subscribe ordering mismatch: ${actions}`)
+  }
+})
+
 assert('Event type strings', () => {
   const validTypes = ['START', 'EXIT', 'STDOUT', 'HEALTH', 'STATUS', 'REMOVED']
   for (const t of validTypes) {

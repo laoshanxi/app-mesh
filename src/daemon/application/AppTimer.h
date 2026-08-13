@@ -24,7 +24,7 @@ public:
     std::chrono::system_clock::time_point adjustDailyTimeRange(std::chrono::system_clock::time_point target);
 
 protected:
-    std::chrono::system_clock::time_point checkStartTime(const std::chrono::system_clock::time_point &target);
+    std::chrono::system_clock::time_point applyStartBoundary(const std::chrono::system_clock::time_point &target);
 
 public:
     static std::chrono::system_clock::time_point TIME_UNSET;

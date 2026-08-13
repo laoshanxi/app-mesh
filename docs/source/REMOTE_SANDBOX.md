@@ -1,23 +1,25 @@
-# Claude Code remote sandbox
+# AI coding agent remote sandbox
 
-A Claude Code skill that provides **remote execution sandboxing** — edit code locally, build/test/run/deploy on a remote App Mesh server in isolation.
+An agent skill for Codex and Claude Code that provides **remote execution
+sandboxing** — edit code locally, then build, test, run, or deploy on a remote
+App Mesh server in isolation.
 
 ## 1. Why
 
 Developers on Mac/Windows often need to compile, test, or deploy on a remote Linux server. Traditional approaches (SSH + rsync, Docker dev containers, VS Code Remote) all require heavyweight setup and don't integrate with AI coding assistants.
 
-**App Mesh Remote Sandbox** solves this with zero local infrastructure — no SSH keys, no Docker, no rsync. Just `pip install appmesh`, set two environment variables, and Claude Code automatically syncs files (tar + SDK upload) and executes commands remotely via the appmesh Python SDK. The developer experience is fully transparent: say "build" or "deploy" in natural language, and the AI routes it to the right place.
+**App Mesh Remote Sandbox** solves this with zero local infrastructure — no SSH keys, no Docker, no rsync. Just `pip install appmesh`, set two environment variables, and the coding agent automatically syncs files (tar + SDK upload) and executes commands remotely via the App Mesh Python SDK. The developer experience is fully transparent: say "build" or "deploy" in natural language, and the agent routes it to the right place.
 
 ## 2. Architecture
 
 ```
-Local Mac (Claude Code)                     Remote Linux (App Mesh)
+Local machine (Codex or Claude Code)         Remote node (App Mesh)
 ┌─────────────────────────┐                ┌─────────────────────────┐
 │ Read/Edit/Write/        │                │                         │
 │ Grep/Glob/Git           │                │  APPMESH_WORKSPACE/     │
 │   ↓ local files         │  tar + upload  │    (code mirror)        │
 │                         │ ─────────────→ │                         │
-│ remote.py               │  SDK API       │  appmesh daemon          │
+│ scripts/remote.py       │  SDK API       │  appmesh daemon          │
 │   sync-exec "make"      │ ─────────────→ │    ↓ execute cmd        │
 │                         │                │    ↓ stdout             │
 │ real-time stdout        │ ←───────────── │    ↓ stream back        │
@@ -61,14 +63,14 @@ export APPMESH_WORKSPACE=/home/dev/app-mesh
 3. **Remote**: App Mesh daemon running
 4. No SSH access needed. No rsync needed. No appm CLI needed.
 
-## 5. Implementation: `remote.py`
+## 5. Implementation: `scripts/remote.py`
 
 Single Python CLI tool (~340 lines) with 7 subcommands:
 
 ### Commands
 
 ```
-remote.py <command> [args]
+python3 <skill-dir>/scripts/remote.py <command> [args]
 
 Commands:
   sync                            tar + upload + extract to remote workspace
@@ -84,7 +86,7 @@ Commands:
 
 **`do_sync(client)`**:
 
-1. `tar czf` local git repo root (excludes `.git`, `build`, `node_modules`, `__pycache__`, `.claude`, `*.o`, `*.pyc`)
+1. `tar czf` local git repo root (excludes `.git`, `build`, `node_modules`, `__pycache__`, `.agents`, `.claude`, `.codex`, `*.o`, `*.pyc`)
 2. SHA-256 hash check — skip upload if unchanged since last sync (override with `--force`)
 3. `client.upload_file()` tar to remote `/tmp/`
 4. `client.run_app_sync("mkdir -p $WORKSPACE && tar xzf ... -C $WORKSPACE")` extract
@@ -102,7 +104,7 @@ Commands:
 - `run_app_sync` only for quick infrastructure ops (extract tar, chmod, rm)
 - `auto_refresh_token=True` for long sessions
 - `ssl_verify=False` by default (self-signed certs common in dev)
-- Exit code propagation: `sys.exit(rc)` so Claude sees build failures
+- Exit code propagation: `sys.exit(rc)` so the coding agent sees build failures
 
 ## 6. Workflow
 
@@ -116,8 +118,8 @@ pip install appmesh
 export APPMESH_HOST=https://192.168.1.100:6060
 export APPMESH_WORKSPACE=/home/dev/app-mesh
 
-# 3. Start Claude Code
-claude
+# 3. Start a supported coding agent
+codex   # or: claude
 ```
 
 ### 6.2 Daily Development Loop
@@ -125,13 +127,13 @@ claude
 ```
 User: "fix the segfault in Configuration.cpp"
 
-  Claude: Grep("segfault", path="src/daemon/")            → local search
-  Claude: Read("src/daemon/Configuration.cpp")              → local read
-  Claude: Edit("src/daemon/Configuration.cpp", old→new)     → local edit
+  Agent: search src/daemon/ for "segfault"                 → local search
+  Agent: read src/daemon/Configuration.cpp                 → local read
+  Agent: edit src/daemon/Configuration.cpp                 → local edit
 
 User: "build"
 
-  Claude: Bash('python3 .claude/skills/appmesh-remote/remote.py sync-exec "cd build && make -j$(nproc)"')
+  Agent: python3 .agents/skills/appmesh-remote/scripts/remote.py sync-exec "cd build && make -j$(nproc)"
 
   Output:
     [sync] Packing /Users/dev/app-mesh ...
@@ -145,12 +147,12 @@ User: "build"
 
 User: "run the tests"
 
-  Claude: Bash('python3 .claude/skills/appmesh-remote/remote.py sync-exec "cd build && make test ARGS=-V"')
+  Agent: python3 .agents/skills/appmesh-remote/scripts/remote.py sync-exec "cd build && make test ARGS=-V"
 
 User: "commit and push"
 
-  Claude: Bash("git add ... && git commit -m '...'")        → local git
-  Claude: Bash("git push origin main")                      → local git
+  Agent: git add ... && git commit -m '...'                 → local git
+  Agent: git push origin main                               → local git
 ```
 
 ### 6.3 Routing Rules: Local vs Remote
@@ -167,7 +169,7 @@ User: "commit and push"
 | Run a standalone script               | `run-script` | No    | `run-script /tmp/setup.sh`                          |
 | Stop / remove a remote app            | `cleanup`    | No    | `cleanup my-api`                                    |
 
-**Local — Claude native tools, no remote involvement:**
+**Local — coding-agent native tools, no remote involvement:**
 
 | User Intent       | Tool        | Examples                                        |
 | ----------------- | ----------- | ----------------------------------------------- |
@@ -179,19 +181,46 @@ User: "commit and push"
 
 **Quick decision rule:** Does it need to execute on the OS? → Remote. Just reading/writing files or git? → Local.
 
-## 7. Plugin Structure
+## 7. Skill Structure
 
 ```
-src/sdk/claude-plugin/
-├── plugin.json
-├── skills/appmesh-remote/
-│   ├── SKILL.md
+.agents/skills/appmesh-remote/
+├── SKILL.md
+├── scripts/
 │   └── remote.py
-├── rules/remote-dev-mode.md
-└── README.md
+└── references/
+    ├── configuration.md
+    └── troubleshooting.md
+
+.claude -> .agents
 ```
 
-**Installation:** Copy `skills/appmesh-remote/` and `rules/` into the target project's `.claude/` directory. See [README.md](../../src/sdk/claude-plugin/README.md) for details.
+The `.agents/` directory is the canonical source used by Codex. The repository's
+`.claude` directory is a link to `.agents`, so Claude Code discovers the same
+skills and settings without maintaining a second directory.
+
+### Install in another repository
+
+Copy the canonical skill into the target repository:
+
+```bash
+mkdir -p .agents/skills
+cp -R /path/to/app-mesh/.agents/skills/appmesh-remote .agents/skills/
+```
+
+If the target does not already have a `.claude` directory, expose the same
+configuration to Claude Code with:
+
+```bash
+ln -s .agents .claude
+```
+
+If `.claude` already exists, link only the skill instead:
+
+```bash
+mkdir -p .claude/skills
+ln -s ../../.agents/skills/appmesh-remote .claude/skills/appmesh-remote
+```
 
 ## 8. Validation
 
@@ -204,7 +233,7 @@ src/sdk/claude-plugin/
 | 5   | Deploy       | `deploy svc "python3 svc.py"`  | Sync + register keepalive service              |
 | 6   | Cleanup      | `cleanup app_name`             | Disable + delete app                           |
 | 7   | Ctrl+C       | Interrupt during exec          | App disabled + deleted                         |
-| 8   | Cross-repo   | Install plugin in another repo | Set env → works                                |
+| 8   | Cross-repo   | Install the skill in another repo | Set env → works                              |
 
 All tests 1-6 verified against live Docker container (2026-03-07).
 

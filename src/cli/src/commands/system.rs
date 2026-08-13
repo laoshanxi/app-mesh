@@ -66,3 +66,10 @@ pub async fn resource(cli: &Cli) -> Result<i32> {
     format::print_json(&res)?;
     Ok(0)
 }
+
+pub async fn metric(cli: &Cli) -> Result<i32> {
+    let client = build_client_with_auth(cli).await?;
+    let metrics = client.get_metrics().await.context("Failed to get metrics")?;
+    print!("{}", metrics);
+    Ok(0)
+}

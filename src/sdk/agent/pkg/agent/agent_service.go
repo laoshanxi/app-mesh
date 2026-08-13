@@ -150,16 +150,8 @@ func ListenAndServeREST(ctx context.Context) error {
 	// docker.sock proxy
 	RegisterDockerRoutes(router)
 
-	// AppMesh endpoints - register with all common HTTP methods
-	router.PathPrefix("/appmesh").Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodHead).HandlerFunc(HandleAppMeshRequest)
-
-	// Catch-all for static content and other routes
-	router.NotFoundHandler = http.HandlerFunc(HandleAppMeshRequest)
-
-	// Explicit OPTIONS handler (optional but safe)
-	router.Methods(http.MethodOptions).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
+	// Forward all remaining requests, including static content, to the daemon.
+	router.PathPrefix("/").HandlerFunc(HandleAppMeshRequest)
 
 	return StartHTTPSServer(ctx, listenAddr, router)
 }

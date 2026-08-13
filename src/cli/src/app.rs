@@ -92,6 +92,9 @@ pub enum Commands {
     /// Show host resources
     Resource(ResourceArgs),
 
+    /// Show Prometheus metrics
+    Metric(MetricArgs),
+
     /// Change user password
     Passwd(PasswdArgs),
 
@@ -214,11 +217,11 @@ pub struct AddArgs {
     #[arg(short = 'M', long = "memory-limit")]
     pub memory_limit: Option<u64>,
 
-    /// Virtual memory limit in MB
+    /// Total memory+swap limit in MB (must be >= memory)
     #[arg(short = 'V', long = "virtual-memory")]
     pub virtual_memory: Option<u64>,
 
-    /// CPU shares (relative weight)
+    /// CPU shares (relative weight, 2-262144)
     #[arg(short = 'C', long = "cpu-shares")]
     pub cpu_shares: Option<i32>,
 
@@ -506,6 +509,9 @@ pub struct ConfigArgs {}
 
 #[derive(Parser)]
 pub struct ResourceArgs {}
+
+#[derive(Parser)]
+pub struct MetricArgs {}
 
 // ─── User Management ────────────────────────────────────────────────────────
 

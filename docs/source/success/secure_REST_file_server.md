@@ -76,15 +76,16 @@ Use `docker-compose up -d` to start appmesh and nginx service.
 `compose.yml`:
 
 ```yaml
-version: "3"
-
 services:
   appmesh_upload_svc:
     image: laoshanxi/appmesh:latest
     hostname: appmesh.hostname.com
     restart: always
-    privileged: true
-    user: root
+    user: "482:482"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./data/:/data/
       - /etc/ssl/ca.pem:/opt/appmesh/ssl/ca.pem
@@ -107,5 +108,8 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf
       - ./default.conf:/etc/nginx/conf.d/default.conf
 ```
+
+Before startup, make `./data` writable by UID/GID `482:482` and ensure every
+file mounted into `/opt/appmesh/ssl` is readable by UID 482.
 
 View file server from URL `https://127.0.0.1:8443/`

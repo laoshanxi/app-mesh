@@ -1,4 +1,5 @@
 // src/daemon/Configuration.cpp
+#include <exception>
 #include <set>
 #if !defined(_WIN32)
 #include <unistd.h> //environ
@@ -23,6 +24,7 @@
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Utility.h"
+#include "../common/os/filesystem.h"
 #include "../common/os/pstree.h"
 
 extern char **environ; // unistd.h
@@ -46,6 +48,11 @@ std::shared_ptr<Configuration> Configuration::instance()
 
 void Configuration::instance(std::shared_ptr<Configuration> config)
 {
+	if (config)
+	{
+		std::lock_guard<std::recursive_mutex> guard(config->m_hotupdateMutex);
+		config->m_runtimePrometheusEnabled = config->m_rest->m_restEnabled && config->m_rest->m_promListenPort > 1024;
+	}
 	m_instance = config;
 }
 
@@ -241,7 +248,16 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 	// Build Json
 	if (returnRuntimeInfo)
 	{
-		std::list<os::Process> ptree = os::processes();
+		std::vector<pid_t> roots;
+		for (const auto &app : apps)
+		{
+			const auto pid = app->getpid();
+			if (pid > 1)
+				roots.push_back(pid);
+		}
+		std::list<os::Process> ptree;
+		if (!roots.empty())
+			ptree = os::processes(roots);
 		for (std::size_t i = 0; i < apps.size(); ++i)
 		{
 			result.push_back(apps[i]->AsJson(returnRuntimeInfo, (void *)(&ptree)));
@@ -313,12 +329,27 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 
 void Configuration::disableApp(const std::string &appName)
 {
-	getApp(appName)->disable();
+	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
+	auto app = getApp(appName);
+	app->disable();
+	app->save();
 }
 void Configuration::enableApp(const std::string &appName)
 {
+	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
 	auto app = getApp(appName);
 	app->enable();
+	app->save();
+}
+
+std::unique_lock<std::recursive_mutex> Configuration::lockAppMutation() const
+{
+	return std::unique_lock<std::recursive_mutex>(m_appMutationMutex);
+}
+
+bool Configuration::isCurrentApp(const std::string &appName, const std::shared_ptr<Application> &expected) const
+{
+	return getApp(appName, false) == expected;
 }
 
 const std::string Configuration::getLogLevel() const
@@ -335,7 +366,12 @@ const std::string Configuration::getDefaultExecUser() const
 
 bool Configuration::getDisableExecUser() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+#if !defined(_WIN32)
+	return m_baseConfig->m_disableExecUser || os::get_uid() != 0;
+#else
 	return m_baseConfig->m_disableExecUser;
+#endif
 }
 
 const std::string Configuration::getWorkDir() const
@@ -503,34 +539,40 @@ void Configuration::dump()
 	}
 }
 
-std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp, std::shared_ptr<Application> fromApp, bool persistable)
+std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp, bool persistable)
 {
+	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
 	auto app = parseApp(jsonApp);
 	std::shared_ptr<Application> oldApp = getApp(app->getName(), false);
 	if (oldApp)
 	{
+		if (!persistable)
+			throw std::invalid_argument("on-demand application name is already in use");
 		if (app->getName() == SEPARATE_AGENT_APP_NAME)
 		{
 			throw std::invalid_argument("not permited");
 		}
-		oldApp->destroy();
-		oldApp.reset();
 	}
-	m_apps.rebind(app->getName(), app, oldApp);
 
-	// Write to disk
 	if (!persistable)
 	{
 		app->setUnPersistable();
 	}
-	if (fromApp)
+	else
 	{
-		app->initMetrics(fromApp);
+		// Persist the candidate first so a write failure does not destroy the current app.
+		app->save();
+	}
+	if (oldApp)
+	{
+		oldApp->destroy();
+		app->initMetrics(oldApp);
 	}
 	else
 	{
 		app->initMetrics();
 	}
+	m_apps.rebind(app->getName(), app, oldApp);
 
 	// invoke immediately
 	app->execute();
@@ -538,9 +580,15 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 	return app;
 }
 
-void Configuration::removeApp(const std::string &appName)
+void Configuration::removeApp(const std::string &appName, const Application *expected)
 {
 	const static char fname[] = "Configuration::removeApp() ";
+	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
+	if (expected != nullptr && getApp(appName, false).get() != expected)
+	{
+		LOG_DBG << fname << "Ignoring stale remove for application <" << appName << ">";
+		return;
+	}
 
 	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
 
@@ -557,6 +605,7 @@ void Configuration::removeApp(const std::string &appName)
 	{
 		// Write to disk
 		app->destroy();
+		app->clearMetrics();
 		app->remove();
 		LOG_DBG << fname << "Removed application <" << appName << ">";
 	}
@@ -572,33 +621,70 @@ void Configuration::saveConfigToDisk()
 	// snapshot a torn config mid-write.
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	auto content = this->AsJson();
+	// Atomic replacement also supports readable root-owned files in a writable directory.
+	const auto yamlContent = Utility::jsonToYaml(content);
 	const auto configFilePath = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE, true);
-	auto tmpFile = configFilePath + "." + std::to_string(Utility::getThreadId());
-	if (Utility::runningInContainer())
+	uint16_t mode = 0644;
+#if !defined(_WIN32)
+	if (Utility::isFileExist(configFilePath))
 	{
-		tmpFile = configFilePath;
+		const int existingMode = std::get<0>(os::fileStat(configFilePath));
+		if (existingMode >= 0)
+			mode = static_cast<uint16_t>(existingMode);
 	}
-	std::ofstream ofs(tmpFile, ios::trunc);
-	if (ofs.is_open())
+#endif
+	const auto tmpFile = os::createTmpFile(configFilePath, yamlContent, mode);
+	if (tmpFile.empty())
 	{
-		auto formatJson = Utility::jsonToYaml(content);
-		ofs << formatJson;
-		ofs.close();
-		if (tmpFile != configFilePath)
+		const auto error = Utility::stringFormat(
+			"Failed to create temporary configuration file beside <%s>",
+			configFilePath.c_str());
+		LOG_ERR << fname << error;
+		throw std::runtime_error(error);
+	}
+
+	if (ACE_OS::rename(tmpFile.c_str(), configFilePath.c_str()) != 0)
+	{
+		const auto error = Utility::stringFormat(
+			"Failed to replace configuration file <%s>: %s",
+			configFilePath.c_str(), last_error_msg());
+		Utility::removeFile(tmpFile);
+		LOG_ERR << fname << error;
+		throw std::runtime_error(error);
+	}
+
+	LOG_INF << fname << "Saved configuration file to disk <" << configFilePath << ">";
+}
+
+void Configuration::hotUpdateAndSave(nlohmann::json &jsonValue)
+{
+	const static char fname[] = "Configuration::hotUpdateAndSave() ";
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	const auto previousConfig = this->AsJson();
+
+	this->hotUpdate(jsonValue);
+	try
+	{
+		this->saveConfigToDisk();
+	}
+	catch (...)
+	{
+		const auto writeFailure = std::current_exception();
+		try
 		{
-			if (ACE_OS::rename(tmpFile.c_str(), configFilePath.c_str()) == 0)
-			{
-				LOG_INF << fname << "Saved configuration file to disk <" << configFilePath << ">";
-			}
-			else
-			{
-				LOG_ERR << fname << "Failed to write configuration file <" << configFilePath << ">, error: " << last_error_msg();
-			}
+			auto rollbackConfig = previousConfig;
+			this->hotUpdate(rollbackConfig);
+			LOG_WAR << fname << "Rolled back runtime configuration after persistence failure";
 		}
-	}
-	else
-	{
-		LOG_ERR << fname << "Failed to open configuration file <" << tmpFile << "> for writing, error: " << last_error_msg();
+		catch (const std::exception &e)
+		{
+			LOG_ERR << fname << "Failed to roll back runtime configuration: " << e.what();
+		}
+		catch (...)
+		{
+			LOG_ERR << fname << "Failed to roll back runtime configuration with unknown error";
+		}
+		std::rethrow_exception(writeFailure);
 	}
 }
 
@@ -610,9 +696,10 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
-		// parse
-		auto newConfig = Configuration::FromJson(jsonValue);
-
+		// Reapply environment overrides after merging the patch.
+		auto effectiveJson = this->AsJson();
+		effectiveJson.merge_patch(jsonValue);
+		auto newConfig = Configuration::FromJson(effectiveJson, true);
 		// Base config
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_BaseConfig))
 		{
@@ -654,6 +741,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_fileAllowedBaseDir, newConfig->m_rest->m_fileAllowedBaseDir);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort))
 				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort))
+				SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestTcpPort))
 				SET_COMPARE(this->m_rest->m_restTcpPort, newConfig->m_rest->m_restTcpPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_WebSocketPort))
@@ -664,10 +753,6 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_workerThreadPoolSize, newConfig->m_rest->m_workerThreadPoolSize);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_IOThreadPoolSize))
 				SET_COMPARE(this->m_rest->m_IOThreadPoolSize, newConfig->m_rest->m_IOThreadPoolSize);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort) && (this->m_rest->m_promListenPort != newConfig->m_rest->m_promListenPort))
-			{
-				SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
-			}
 			// SSL
 			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
 			{
@@ -712,10 +797,7 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 			SET_COMPARE(this->m_label, newConfig->m_label);
 	}
 
-	ResourceCollection::instance()->getHostName(true);
-
 	this->dump();
-	ResourceCollection::instance()->dump();
 }
 
 bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
@@ -817,7 +899,7 @@ void Configuration::registerPrometheus()
 
 bool Configuration::prometheusEnabled() const
 {
-	return getRestEnabled() && getPromListenPort() > 1024;
+	return m_runtimePrometheusEnabled;
 }
 
 std::shared_ptr<Application> Configuration::parseApp(const nlohmann::json &jsonApp)
@@ -987,15 +1069,18 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	config->m_posixTimezone = GET_JSON_STR_INT_TEXT(jsonValue, JSON_KEY_PosixTimezone);
 
 #if !defined(_WIN32)
-	unsigned int gid, uid;
-	if (!config->m_defaultExecUser.empty() && !os::getUidByName(config->m_defaultExecUser, uid, gid))
+	if (!config->m_disableExecUser && os::get_uid() == 0 && !config->m_defaultExecUser.empty())
 	{
-		LOG_ERR << "No such OS user <" << config->m_defaultExecUser << ">";
-		throw std::invalid_argument("No such OS user for default execution");
+		unsigned int gid, uid;
+		if (!os::getUidByName(config->m_defaultExecUser, uid, gid))
+		{
+			LOG_ERR << "No such OS user <" << config->m_defaultExecUser << ">";
+			throw std::invalid_argument("No such OS user for default execution");
+		}
 	}
 	if (!config->m_disableExecUser && os::get_uid() != 0)
 	{
-		LOG_WAR << "Daemon is not running as root, user switching (exec_user/DefaultExecUser) will not take effect";
+		LOG_WAR << "Daemon is not running as root, user switching (exec_user/DefaultExecUser) is disabled at runtime";
 	}
 #endif
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)

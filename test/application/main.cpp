@@ -13,6 +13,7 @@
 #include <ace/TP_Reactor.h>
 #include <chrono>
 #include <memory>
+#include <string>
 #include <thread>
 
 #include <boost/make_shared.hpp>
@@ -131,4 +132,14 @@ TEST_CASE("appTimer_period_aligns_to_interval_grid", "[apptimer]")
 	// 3s past the grid origin -> next grid point is +7s -> base+10s.
 	const auto next = timer.nextTime(base() + std::chrono::seconds(3));
 	REQUIRE(next == base() + std::chrono::seconds(10));
+}
+
+TEST_CASE("appTimer_cron_preserves_next_second_occurrence", "[apptimer]")
+{
+	const auto from = base();
+	const auto nextSecond = (Clock::to_time_t(from) + 1) % 60;
+	const auto expression = std::to_string(nextSecond) + " * * * * *";
+	AppTimerCron timer(base(), Clock::time_point::max(), nullptr, expression, /*intervalSeconds*/ 0);
+
+	REQUIRE(timer.nextTime(from) == from + std::chrono::seconds(1));
 }

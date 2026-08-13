@@ -2,13 +2,10 @@
 #include <map>
 #include <string>
 
-#include <ace/Hash_Multi_Map_Manager_T.h>
-
 #include "../../common/Utility.h"
 #include "../../common/json.h"
 #include "../Configuration.h"
 #include "../application/Application.h"
-#include "../process/AppProcess.h"
 #include "../security/HMACVerifier.h"
 #include "Data.h"
 #include "RestHandler.h"
@@ -21,6 +18,30 @@
 #endif
 
 #include "HttpRequest.h"
+
+struct HttpReplyMetricState
+{
+	explicit HttpReplyMetricState(std::function<void(int)> fn) : callback(std::move(fn)) {}
+
+	void notify(int status) noexcept
+	{
+		if (!notified.exchange(true) && callback)
+		{
+			try
+			{
+				callback(status);
+			}
+			catch (...)
+			{
+				// Metrics never affect request delivery.
+			}
+		}
+	}
+	~HttpReplyMetricState() { notify(0); }
+
+	std::atomic<bool> notified{false};
+	std::function<void(int)> callback;
+};
 
 HttpRequest::HttpRequest(Request &&request, int tcpClientId)
 	: m_uuid(std::move(request.uuid)),
@@ -36,6 +57,17 @@ HttpRequest::HttpRequest(Request &&request, int tcpClientId)
 
 HttpRequest::~HttpRequest()
 {
+}
+
+void HttpRequest::setReplyMetricCallback(std::function<void(int)> callback)
+{
+	m_replyMetric = std::make_shared<HttpReplyMetricState>(std::move(callback));
+}
+
+void HttpRequest::notifyReply(int status) const
+{
+	if (m_replyMetric)
+		m_replyMetric->notify(status);
 }
 
 nlohmann::json HttpRequest::extractJson() const
@@ -151,7 +183,10 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	if (m_tcpClientId > 0)
 	{
 		// TCP protocol
-		return SocketServer::replyTcp(m_tcpClientId, std::move(response));
+		const bool success = SocketServer::replyTcp(m_tcpClientId, std::move(response));
+		if (success)
+			notifyReply(status);
+		return success;
 	}
 #if defined(HAVE_UWEBSOCKETS)
 	else if (m_uwsReplyContext)
@@ -163,6 +198,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 			response->applyCorsHeaders();
 			response->applySecurityHeaders();
 			m_uwsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
+			notifyReply(status);
 			return true;
 		}
 		else if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
@@ -170,6 +206,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 			// WebSocket protocol
 			auto data = response->serialize();
 			m_uwsReplyContext->replyWebSocket(std::string(data->data(), data->size()), false, true);
+			notifyReply(status);
 			return true;
 		}
 		else
@@ -189,6 +226,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		resp->m_payload = response->serialize();
 		resp->m_is_http = m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) == HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
 		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
+		notifyReply(status);
 		return true;
 	}
 #endif
@@ -221,7 +259,7 @@ HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 	// Trigger suicide timer to remove app (avoid using Application lock to access Configuration)
 	if (auto app = m_app.lock())
 	{
-		app->regSuicideTimer(0);
+		app->scheduleRemoval(0);
 	}
 }
 
@@ -248,7 +286,7 @@ bool HttpRequestWithTimeout::initTimer(int timeoutSeconds)
 		return false;
 	}
 
-	m_timerResponseId = this->registerTimer(1000L * timeoutSeconds, 0, fname, std::bind(&HttpRequestWithTimeout::onTimerResponse, this));
+	this->registerTimer(m_timerResponseId, 1000L * timeoutSeconds, 0, fname, std::bind(&HttpRequestWithTimeout::onTimerResponse, this));
 	LOG_DBG << fname << "registered timer " << m_timerResponseId << " for request " << this->m_uuid << " with timeout " << timeoutSeconds << " seconds";
 	return true;
 }
@@ -258,7 +296,6 @@ bool HttpRequestWithTimeout::onTimerResponse()
 	const static char fname[] = "HttpRequestWithTimeout::onTimerResponse() ";
 	LOG_DBG << fname << "Request <" << this->m_uuid << "> timed out";
 
-	CLEAR_TIMER_ID(m_timerResponseId);
 	// Flag-gated via the virtual reply() override; no-op if a worker already replied.
 	HttpRequest::reply(web::http::status_codes::RequestTimeout);
 
@@ -302,12 +339,14 @@ bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequestOutputView - handles viewing application output with async response
 ////////////////////////////////////////////////////////////////////////////////
-using APP_OUT_MULTI_MAP_TYPE = ACE_Hash_Multi_Map_Manager<pid_t, std::shared_ptr<HttpRequestOutputView>, ACE_Hash<pid_t>, ACE_Equal_To<pid_t>, ACE_Recursive_Thread_Mutex>;
-static APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
-
 HttpRequestOutputView::HttpRequestOutputView(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj)
-	: HttpRequest(*message), m_timerResponseId(INVALID_TIMER_ID), m_pid(appObj->getpid()), m_app(appObj)
+	: HttpRequest(*message), m_timerResponseId(INVALID_TIMER_ID), m_app(appObj)
 {
+}
+
+HttpRequestOutputView::~HttpRequestOutputView()
+{
+	unsubscribeRunCompletion();
 }
 
 void HttpRequestOutputView::init()
@@ -322,12 +361,31 @@ void HttpRequestOutputView::init()
 	}
 
 	size_t timeout = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
-	if (AppProcess::running(m_pid) && timeout > 0)
+	const auto requestedRun = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_process_uuid);
+	if (timeout > 0)
 	{
-		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(shared_from_this()));
-		m_timerResponseId = this->registerTimer(1000L * timeout, 0, fname, std::bind(&HttpRequestOutputView::onTimerResponse, this));
+		auto weakSelf = std::weak_ptr<HttpRequestOutputView>(std::static_pointer_cast<HttpRequestOutputView>(shared_from_this()));
+		const auto subscription = app->subscribeRunCompletion(requestedRun, [weakSelf]()
+															  {
+			if (auto self = weakSelf.lock())
+				self->response(); });
+		if (subscription == Application::INVALID_RUN_COMPLETION_SUBSCRIPTION)
+		{
+			response();
+			return;
+		}
+		m_completionSubscription.store(subscription, std::memory_order_release);
+		this->registerTimer(m_timerResponseId, 1000L * timeout, 0, fname, std::bind(&HttpRequestOutputView::onTimerResponse, this));
+		if (!isValidTimerId(m_timerResponseId))
+		{
+			unsubscribeRunCompletion();
+			response();
+			return;
+		}
+		if (m_responseStarted.load(std::memory_order_acquire))
+			this->cancelTimer(m_timerResponseId);
 
-		LOG_DBG << fname << "app <" << app->getName() << "> view output with pid <" << m_pid << ">, APP_OUT_VIEW_MAP size = " << APP_OUT_VIEW_MAP.current_size();
+		LOG_DBG << fname << "app <" << app->getName() << "> waiting for run <" << requestedRun << "> completion";
 	}
 	else
 	{
@@ -344,16 +402,13 @@ void HttpRequestOutputView::response()
 bool HttpRequestOutputView::onTimerResponse()
 {
 	const static char fname[] = "HttpRequestOutputView::onTimerResponse() ";
-	LOG_DBG << fname << "Responding output for pid <" << m_pid << ">";
-	// Keep alive: unbind may drop the last reference.
+	LOG_DBG << fname << "Responding to output request <" << m_uuid << ">";
+	// Keep the request alive while timer cancellation and unsubscription release owners.
 	auto self = std::static_pointer_cast<HttpRequestOutputView>(shared_from_this());
-	// Remove our entry so completed timed polls don't accumulate while the process runs
-	// (map is otherwise only cleared on exit). No-op if never bound / already removed.
-	APP_OUT_VIEW_MAP.unbind(m_pid, self);
+	unsubscribeRunCompletion();
 	try
 	{
-		CLEAR_TIMER_ID(m_timerResponseId);
-		if (!m_httpRequestReplyFlag.test_and_set())
+		if (!m_responseStarted.exchange(true, std::memory_order_acq_rel))
 		{
 			auto app = m_app.lock();
 			if (!app)
@@ -413,30 +468,18 @@ bool HttpRequestOutputView::onTimerResponse()
 	}
 	catch (const std::exception &e)
 	{
-		LOG_WAR << fname << "Failed to respond output for pid <" << m_pid << ">: " << e.what();
+		LOG_WAR << fname << "Failed to respond to output request <" << m_uuid << ">: " << e.what();
 		HttpRequest::reply(web::http::status_codes::ExpectationFailed);
 	}
 	return false;
 }
 
-void HttpRequestOutputView::onProcessExitResponse(pid_t pid)
+void HttpRequestOutputView::unsubscribeRunCompletion()
 {
-	const static char fname[] = "HttpRequestOutputView::onProcessExitResponse() ";
-	LOG_DBG << fname << (APP_OUT_VIEW_MAP.current_size() > 0 ? " APP_OUT_VIEW_MAP size: " + std::to_string(APP_OUT_VIEW_MAP.current_size()) : "");
-
-	ACE_Unbounded_Set<std::shared_ptr<HttpRequestOutputView>> requests, empty;
-	{
-		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(APP_OUT_VIEW_MAP.mutex());
-		APP_OUT_VIEW_MAP.rebind(pid, empty, requests);
-		APP_OUT_VIEW_MAP.unbind(pid);
-	}
-
-	if (requests.size() > 0)
-	{
-		LOG_DBG << fname << "pid <" << pid << "> exit and response output to clients: " << requests.size();
-		for (auto &req : requests)
-			req->response();
-	}
+	const auto subscription = m_completionSubscription.exchange(
+		Application::INVALID_RUN_COMPLETION_SUBSCRIPTION, std::memory_order_acq_rel);
+	if (auto app = m_app.lock())
+		app->unsubscribeRunCompletion(subscription);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -445,43 +488,81 @@ void HttpRequestOutputView::onProcessExitResponse(pid_t pid)
 // and replies to them one at a time in FIFO order.
 ////////////////////////////////////////////////////////////////////////////////
 
+TaskRequest::SupersededRequests TaskRequest::activate(const std::string &processKey)
+{
+	std::lock_guard<std::mutex> guard(m_mutex);
+	if (processKey == m_processKey)
+		return {};
+	m_processKey = processKey;
+	return SupersededRequests{{std::move(m_fetchTask), std::move(m_replyTask)}};
+}
+
 void TaskRequest::terminate()
 {
-	m_fetchTask.reset();
-	m_replyTask.reset();
-	m_activeTask.reset();
-	while (!m_taskQueue.empty())
+	std::queue<std::shared_ptr<HttpRequestWithTimeout>> pending;
+	std::shared_ptr<HttpRequestWithTimeout> fetchTask;
+	std::shared_ptr<HttpRequestWithTimeout> replyTask;
+	std::shared_ptr<HttpRequestWithTimeout> activeTask;
 	{
-		m_taskQueue.front()->interrupt();
-		m_taskQueue.pop();
+		std::lock_guard<std::mutex> guard(m_mutex);
+		m_processKey.clear();
+		fetchTask = std::move(m_fetchTask);
+		replyTask = std::move(m_replyTask);
+		activeTask = std::move(m_activeTask);
+		pending.swap(m_taskQueue);
+	}
+	if (fetchTask)
+		fetchTask->interrupt();
+	if (replyTask)
+		replyTask->interrupt();
+	if (activeTask)
+		activeTask->interrupt();
+	while (!pending.empty())
+	{
+		pending.front()->interrupt();
+		pending.pop();
 	}
 }
 
 void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 {
 	const static char fname[] = "TaskRequest::sendTask() ";
-
-	taskRequest->id(++m_taskId);
-
-	// If the server is already waiting for a task, deliver immediately.
-	if (m_fetchTask)
+	std::shared_ptr<HttpRequestWithTimeout> fetchTask;
+	std::shared_ptr<HttpRequestWithTimeout> previousReply;
+	bool queueFull = false;
 	{
-		m_activeTask = taskRequest;
-		m_replyTask.reset();
-		LOG_DBG << fname << "deliver to waiting fetch: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
-		m_fetchTask->reply(web::http::status_codes::OK, *taskRequest->m_body);
-		m_fetchTask.reset();
-	}
-	else
-	{
-		if (m_taskQueue.size() >= 512)
+		std::lock_guard<std::mutex> guard(m_mutex);
+		if (m_processKey.empty())
+			throw std::invalid_argument("No process running");
+		taskRequest->id(++m_taskId);
+
+		// If the server is already waiting for a task, claim it under the state lock.
+		if (m_fetchTask)
 		{
-			LOG_WAR << fname << "task queue full (" << m_taskQueue.size() << "), rejecting";
-			taskRequest->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json("task queue full, try again later"));
-			return;
+			m_activeTask = taskRequest;
+			previousReply = std::move(m_replyTask);
+			fetchTask = std::move(m_fetchTask);
 		}
-		m_taskQueue.push(taskRequest);
-		LOG_DBG << fname << "queued task (queue size: " << m_taskQueue.size() << ")";
+		else if (m_taskQueue.size() >= 512)
+		{
+			queueFull = true;
+		}
+		else
+		{
+			m_taskQueue.push(taskRequest);
+			LOG_DBG << fname << "queued task (queue size: " << m_taskQueue.size() << ")";
+		}
+	}
+
+	if (fetchTask)
+	{
+		LOG_DBG << fname << "deliver to waiting fetch: " << fetchTask->m_method << " " << fetchTask->m_relative_uri;
+		fetchTask->reply(web::http::status_codes::OK, *taskRequest->m_body);
+	}
+	else if (queueFull)
+	{
+		LOG_WAR << fname << "task queue full (512), rejecting";
+		taskRequest->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json("task queue full, try again later"));
 	}
 }
 
@@ -492,94 +573,113 @@ bool TaskRequest::deleteTask()
 	// their own requests and each carry their own timeout, so they are left
 	// intact: one client's cancel must not abort everyone else's pending work.
 	// Full teardown of the queue happens in terminate() on app stop/remove.
-	if (m_activeTask)
+	std::shared_ptr<HttpRequestWithTimeout> activeTask;
 	{
-		bool result = m_activeTask->interrupt();
-		m_activeTask.reset();
-		return result;
+		std::lock_guard<std::mutex> guard(m_mutex);
+		activeTask = std::move(m_activeTask);
 	}
-	return false;
+	return activeTask && activeTask->interrupt();
 }
 
-void TaskRequest::fetchTask(std::shared_ptr<void> &serverRequest)
+void TaskRequest::fetchTask(const std::string &processKey, std::shared_ptr<void> &serverRequest)
 {
 	const static char fname[] = "TaskRequest::fetchTask() ";
-
-	m_fetchTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
-	m_replyTask.reset();
-
-	// If there are queued tasks, deliver the next one immediately.
-	if (!m_taskQueue.empty())
+	std::shared_ptr<HttpRequestWithTimeout> fetchTask;
+	std::shared_ptr<HttpRequestWithTimeout> activeTask;
+	std::shared_ptr<HttpRequestWithTimeout> previousFetch;
+	std::shared_ptr<HttpRequestWithTimeout> previousReply;
+	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
 	{
-		m_activeTask = m_taskQueue.front();
-		m_taskQueue.pop();
-		LOG_DBG << fname << "deliver queued task: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
-		m_fetchTask->reply(web::http::status_codes::OK, *m_activeTask->m_body);
-		m_fetchTask.reset();
-		return;
+		std::lock_guard<std::mutex> guard(m_mutex);
+		if (processKey.empty() || processKey != m_processKey)
+			throw std::runtime_error("Process key mismatch");
+		previousFetch = std::move(m_fetchTask);
+		m_fetchTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
+		previousReply = std::move(m_replyTask);
+
+		// A restarted worker must receive the existing in-flight task before the
+		// queued tail; only advance FIFO after that task has replied.
+		repliedActive = releaseRepliedRequestLocked(m_activeTask);
+		if (!m_activeTask && !m_taskQueue.empty())
+		{
+			m_activeTask = m_taskQueue.front();
+			m_taskQueue.pop();
+		}
+		if (m_activeTask)
+		{
+			activeTask = m_activeTask;
+			fetchTask = std::move(m_fetchTask);
+		}
 	}
 
-	// Allow re-fetch of active task in case the server process restarted.
-	cleanupRepliedRequest(m_activeTask);
-	if (m_activeTask)
+	if (fetchTask)
 	{
-		LOG_DBG << fname << "re-deliver active task: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
-		m_fetchTask->reply(web::http::status_codes::OK, *m_activeTask->m_body);
-		m_fetchTask.reset();
+		LOG_DBG << fname << "deliver task: " << fetchTask->m_method << " " << fetchTask->m_relative_uri;
+		fetchTask->reply(web::http::status_codes::OK, *activeTask->m_body);
 	}
 	// Otherwise m_fetchTask stays set — will be satisfied by the next sendTask.
 }
 
-void TaskRequest::replyTask(std::shared_ptr<void> &serverRequest)
+void TaskRequest::replyTask(const std::string &processKey, std::shared_ptr<void> &serverRequest)
 {
 	const static char fname[] = "TaskRequest::replyTask() ";
-
-	m_replyTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
-
-	cleanupRepliedRequest(m_activeTask);
-	if (m_activeTask == nullptr)
+	std::shared_ptr<HttpRequestWithTimeout> replyTask;
+	std::shared_ptr<HttpRequestWithTimeout> activeTask;
+	std::shared_ptr<HttpRequestWithTimeout> previousReply;
+	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
 	{
-		LOG_WAR << fname << "no client request waiting for response";
-		m_replyTask->reply(web::http::status_codes::ExpectationFailed, Utility::text2json("no message request from client waiting for response"));
-		m_replyTask.reset();
-		return;
+		std::lock_guard<std::mutex> guard(m_mutex);
+		if (processKey.empty() || processKey != m_processKey)
+			throw std::runtime_error("Process key mismatch");
+		previousReply = std::move(m_replyTask);
+		m_replyTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
+		repliedActive = releaseRepliedRequestLocked(m_activeTask);
+		replyTask = std::move(m_replyTask);
+		activeTask = std::move(m_activeTask);
 	}
 
-	LOG_DBG << fname << "respond to client: " << m_activeTask->m_method << " " << m_activeTask->m_relative_uri;
+	if (!activeTask)
+	{
+		LOG_WAR << fname << "no client request waiting for response";
+		replyTask->reply(web::http::status_codes::ExpectationFailed, Utility::text2json("no message request from client waiting for response"));
+		return;
+	}
+	LOG_DBG << fname << "respond to client: " << activeTask->m_method << " " << activeTask->m_relative_uri;
 
 	// Forward the server's reply to the original client request.
-	m_activeTask->reply(web::http::status_codes::OK, *m_replyTask->m_body);
-	m_activeTask.reset();
+	activeTask->reply(web::http::status_codes::OK, *replyTask->m_body);
 
 	// Acknowledge server's reply.
-	m_replyTask->reply(web::http::status_codes::OK);
-	m_replyTask.reset();
+	replyTask->reply(web::http::status_codes::OK);
 }
 
-void TaskRequest::cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request)
+std::shared_ptr<HttpRequestWithTimeout> TaskRequest::releaseRepliedRequestLocked(
+	std::shared_ptr<HttpRequestWithTimeout> &request)
 {
-	const static char fname[] = "TaskRequest::cleanupRepliedRequest() ";
+	const static char fname[] = "TaskRequest::releaseRepliedRequestLocked() ";
 
 	if (request && request->replied())
 	{
 		LOG_WAR << fname << "clean replied request: " << request->m_uuid << " " << request->m_method << " " << request->m_relative_uri;
-		request = nullptr;
+		return std::move(request);
 	}
+	return {};
 }
 
 std::tuple<int, std::string> TaskRequest::taskStatus()
 {
-	cleanupRepliedRequest(m_activeTask);
-
-	if (m_fetchTask)
+	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
+	std::tuple<int, std::string> result;
 	{
-		return std::make_tuple(m_taskId.load(), "idle");
-	}
+		std::lock_guard<std::mutex> guard(m_mutex);
+		repliedActive = releaseRepliedRequestLocked(m_activeTask);
 
-	if (m_activeTask || !m_taskQueue.empty())
-	{
-		return std::make_tuple(m_taskId.load(), "busy");
+		if (m_fetchTask)
+			result = std::make_tuple(m_taskId, "idle");
+		else if (m_activeTask || !m_taskQueue.empty())
+			result = std::make_tuple(m_taskId, "busy");
+		else
+			result = std::make_tuple(m_taskId, "");
 	}
-
-	return std::make_tuple(m_taskId.load(), "");
+	return result;
 }

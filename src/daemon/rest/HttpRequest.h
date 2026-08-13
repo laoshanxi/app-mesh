@@ -1,9 +1,16 @@
 // src/daemon/rest/HttpRequest.h
 #pragma once
 
+#include <array>
+#include <atomic>
+#include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <queue>
+#include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -13,6 +20,7 @@
 #include "Data.h"
 
 class WebSocketSession;
+struct HttpReplyMetricState;
 namespace WSS
 {
 	class ReplyContext;
@@ -65,6 +73,8 @@ public:
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;
+	// Zero status means no response was sent.
+	void setReplyMetricCallback(std::function<void(int)> callback);
 
 	std::string m_uuid;
 	web::http::method m_method;
@@ -84,6 +94,8 @@ public:
 	const std::shared_ptr<WSS::ReplyContext> &uwsReplyContext() const { return m_uwsReplyContext; }
 
 private:
+	void notifyReply(int status) const;
+	std::shared_ptr<HttpReplyMetricState> m_replyMetric;
 	const int m_tcpClientId;
 	LwsSessionRef m_lwsRef;
 	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;
@@ -136,12 +148,12 @@ private:
 };
 
 // HttpRequest for viewing application output
-// Monitors process and responds with output when ready or on timeout
+// Waits for an application run to finish, then responds with output (or on timeout).
 class HttpRequestOutputView : public HttpRequest, public TimerHandler
 {
 public:
 	explicit HttpRequestOutputView(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj);
-	~HttpRequestOutputView() = default;
+	~HttpRequestOutputView();
 	void init();
 
 	// Triggers immediate response with current output
@@ -150,44 +162,48 @@ public:
 	// Timer callback to respond with application output
 	bool onTimerResponse();
 
-	// Static method to respond to all pending requests for a process
-	// Called when a process exits to respond with final output
-	static void onProcessExitResponse(pid_t pid);
-
 private:
+	void unsubscribeRunCompletion();
+
 	std::atomic_long m_timerResponseId;
-	pid_t m_pid;
 	std::weak_ptr<Application> m_app;
-	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;
+	std::atomic<std::uint64_t> m_completionSubscription{0};
+	std::atomic_bool m_responseStarted{false};
 };
 
 // Manages task request/response communication between client and server
 // Coordinates message flow for bidirectional task handling
 // Manages task communication between multiple clients and a single server process.
 // Clients send tasks via sendTask (queued); the server fetches one at a time via fetchTask
-// and returns results via replyTask. Each client connection gets its own queue slot,
-// so concurrent run_task calls no longer overwrite each other.
+// and returns results via replyTask. Each client request gets its own queue entry,
+// so concurrent run_task calls cannot overwrite one another.
 class TaskRequest
 {
 public:
+	using SupersededRequests = std::array<std::shared_ptr<HttpRequestWithTimeout>, 2>;
+
 	TaskRequest() = default;
 	virtual ~TaskRequest() = default;
 
+	SupersededRequests activate(const std::string &processKey);
 	void terminate();
 
 	void sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
 	bool deleteTask();
-	void fetchTask(std::shared_ptr<void> &serverRequest);
-	void replyTask(std::shared_ptr<void> &serverRequest);
+	void fetchTask(const std::string &processKey, std::shared_ptr<void> &serverRequest);
+	void replyTask(const std::string &processKey, std::shared_ptr<void> &serverRequest);
 	std::tuple<int, std::string> taskStatus();
 
 private:
-	void cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request);
+	std::shared_ptr<HttpRequestWithTimeout> releaseRepliedRequestLocked(
+		std::shared_ptr<HttpRequestWithTimeout> &request);
 
 private:
+	std::mutex m_mutex;
+	std::string m_processKey;
 	std::queue<std::shared_ptr<HttpRequestWithTimeout>> m_taskQueue; // pending client requests
 	std::shared_ptr<HttpRequestWithTimeout> m_activeTask;            // task currently being processed by server
 	std::shared_ptr<HttpRequestWithTimeout> m_fetchTask;             // server blocking on GET waiting for next task
 	std::shared_ptr<HttpRequestWithTimeout> m_replyTask;             // server PUT with response payload
-	std::atomic_int m_taskId{0};
+	int m_taskId{0};
 };

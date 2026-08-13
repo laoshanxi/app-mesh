@@ -8,6 +8,7 @@
 #include <ace/OS_NS_unistd.h>
 
 class Application;
+class TimerHandler;
 
 // Abstract base for stdout dispatch strategies.
 class StdoutStrategy
@@ -15,13 +16,15 @@ class StdoutStrategy
 public:
 	virtual ~StdoutStrategy() = default;
 
+	// Start dispatch only after the PROCESS_START event has been published.
+	virtual void activate(TimerHandler &owner, const std::string &runId) = 0;
 	virtual long dispatchedBytes() const = 0;
 	virtual bool isActive() const = 0;
 	virtual void teardown() = 0;
 
 	static std::unique_ptr<StdoutStrategy> create(
 		std::string appName, ACE_HANDLE pipeRead, ACE_HANDLE diskWrite,
-		std::shared_ptr<std::recursive_mutex> diskMutex,
+		std::shared_ptr<std::mutex> diskMutex,
 		std::weak_ptr<Application> owner);
 
 protected:

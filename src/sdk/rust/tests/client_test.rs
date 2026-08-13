@@ -468,20 +468,20 @@ mod integration {
         // get_host_resources — CPU/memory/disk info.
         let resources = client.get_host_resources().await.expect("get_host_resources failed");
         assert!(resources.is_object(), "get_host_resources should return a JSON object");
-        // Spot-check at least one well-known key exists.
-        assert!(
-            resources.get("cpu_cores").is_some()
-                || resources.get("cpu").is_some()
-                || resources.get("memory_total_mb").is_some()
-                || resources.get("mem_total").is_some()
-                || resources.get("total_memory_mb").is_some(),
-            "get_host_resources missing expected CPU/memory field: {:?}",
-            resources
-        );
+        assert_eq!(resources.get("schema_version").and_then(|v| v.as_u64()), Some(3));
+        for field in [
+            "collected_at_unix_seconds",
+            "cpu_effective_processors",
+            "mem_available_bytes",
+            "swap_source",
+            "collector_errors",
+        ] {
+            assert!(resources.get(field).is_some(), "get_host_resources missing {field}: {resources:?}");
+        }
 
         // get_metrics — Prometheus-format text, must be non-empty.
         let metrics = client.get_metrics().await.expect("get_metrics failed");
-        assert!(!metrics.is_empty(), "get_metrics returned empty string");
+        assert!(metrics.contains("appmesh_metrics_scrapes_total"), "get_metrics missing scrape counter");
 
         // set_log_level — round-trip: set DEBUG, restore to INFO.
         let new_level = client.set_log_level("DEBUG").await.expect("set_log_level(DEBUG) failed");

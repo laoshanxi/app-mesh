@@ -1,20 +1,49 @@
 // src/daemon/process/DockerApiProcess.cpp
-#include <thread>
+#include "DockerApiProcess.h"
+
+#include <cstdint>
+#include <limits>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
-#include "../../common/DateTime.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
-#include "../../common/os/pstree.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../security/HMACVerifier.h"
-#include "DockerApiProcess.h"
-#include "LinuxCgroup.h"
 
-DockerApiProcess::DockerApiProcess(const std::string &appName, const std::string &dockerImage)
-	: DockerProcess(appName, dockerImage)
+namespace
+{
+	constexpr long DOCKER_REQUEST_TIMEOUT_SECONDS = 15;
+
+	std::string decodeDockerLogs(const std::string &raw)
+	{
+		std::string output;
+		output.reserve(raw.size());
+		size_t offset = 0;
+		while (offset + 8 <= raw.size())
+		{
+			const auto byte = [&](size_t index)
+			{
+				return static_cast<uint32_t>(static_cast<unsigned char>(raw[offset + index]));
+			};
+			if ((byte(0) != 1 && byte(0) != 2) || byte(1) != 0 || byte(2) != 0 || byte(3) != 0)
+				return raw; // TTY containers return an unframed byte stream.
+
+			const size_t length = (byte(4) << 24) | (byte(5) << 16) | (byte(6) << 8) | byte(7);
+			offset += 8;
+			if (length > raw.size() - offset)
+				return raw;
+			output.append(raw, offset, length);
+			offset += length;
+		}
+		return offset == raw.size() ? output : raw;
+	}
+}
+
+DockerApiProcess::DockerApiProcess(std::weak_ptr<Application> owner, const std::string &appName, const std::string &dockerImage)
+	: DockerProcess(std::move(owner), appName, dockerImage)
 {
 	const static char fname[] = "DockerApiProcess::DockerApiProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -25,76 +54,68 @@ DockerApiProcess::~DockerApiProcess()
 	const static char fname[] = "DockerApiProcess::~DockerApiProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	DockerApiProcess::terminate();
+	// Destruction has no shared owner; skip lifecycle callbacks.
+	DockerApiProcess::terminateImpl();
 }
 
-void DockerApiProcess::terminate()
+void DockerApiProcess::terminateImpl()
 {
 	const static char fname[] = "DockerApiProcess::terminate() ";
 
-	// Get and clean container id
-	std::string containerId = this->containerId();
-	this->containerId("");
-
-	// Clean docker container
-	if (!containerId.empty())
+	auto containerId = takeContainerId();
+	if (containerId.empty())
 	{
-		try
-		{
-			// POST /containers/{id}/kill
-			auto resp = this->requestDocker(web::http::methods::POST,
-											Utility::stringFormat("/containers/%s/kill", containerId.c_str()),
-											{{"signal", "SIGKILL"}}, {}, nullptr);
+		// Image pulls are native child processes owned by AppProcess.
+		AppProcess::terminateImpl();
+		return;
+	}
 
-			if (resp->status_code >= web::http::status_codes::BadRequest)
-			{
-				LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
-				ACE::terminate_process(this->getpid());
-			}
+	// POST /containers/{id}/kill
+	auto resp = this->requestDocker(web::http::methods::POST,
+									Utility::stringFormat("/containers/%s/kill", containerId.c_str()),
+									{{"signal", "SIGKILL"}}, {}, nullptr);
 
-			// DELETE /containers/{id}?force=true
-			resp = this->requestDocker(web::http::methods::DEL,
-									   Utility::stringFormat("/containers/%s", containerId.c_str()),
-									   {{"force", "1"}}, {}, nullptr);
+	if (resp->status_code >= web::http::status_codes::BadRequest &&
+		resp->status_code != web::http::status_codes::NotFound)
+	{
+		LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
+		// Do not fall back to the host PID: exit handling may already have invalidated
+		// or allowed reuse of it. The forced container delete below remains best-effort.
+	}
 
-			if (resp->status_code >= web::http::status_codes::BadRequest)
-			{
-				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp->text << ">";
-			}
-		}
-		catch (const std::exception &e)
-		{
-			LOG_WAR << fname << "Remove container failed <" << e.what() << ">";
-		}
+	// DELETE /containers/{id}?force=true
+	resp = this->requestDocker(web::http::methods::DEL,
+							   Utility::stringFormat("/containers/%s", containerId.c_str()),
+							   {{"force", "1"}}, {}, nullptr);
+
+	if (resp->status_code >= web::http::status_codes::BadRequest &&
+		resp->status_code != web::http::status_codes::NotFound)
+	{
+		LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp->text << ">";
 	}
 
 	// Detach manually
 	this->detach();
 }
 
-// TODO: if need pull image, the first process will be docker pull command, the next start container process need to handle
-int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir,
-								   std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-								   const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
+pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::string workDir,
+								  std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+								  const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
 {
-	const static char fname[] = "DockerApiProcess::spawnProcess() ";
+	const static char fname[] = "DockerApiProcess::startImpl() ";
 	LOG_DBG << fname << "Entered";
 
 	// GET /images/{name}/json - Check if image exists
 	auto resp = this->requestDocker(web::http::methods::GET,
 									Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr);
 
-	// Check REST availability
-	if (resp->status_code == web::http::status_codes::BadGateway)
-	{
-		LOG_WAR << fname << "Docker REST request failed with status <" << resp->status_code << ">: " << resp->text;
-		return ACE_INVALID_PID;
-	}
-
+	if (resp->status_code == web::http::status_codes::NotFound)
+		return startImagePull(envMap, m_dockerImage, std::move(workDir), stdoutFile);
 	if (resp->status_code != web::http::status_codes::OK)
 	{
-		// Pull docker image
-		return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
+		LOG_WAR << fname << "Docker REST request failed with status <" << resp->status_code << ">: " << resp->text;
+		setStartError(resp->text.empty() ? "Docker REST service is unavailable" : resp->text);
+		return ACE_INVALID_PID;
 	}
 
 	// DELETE /containers/{id}?force=true - Clean existing container
@@ -102,7 +123,8 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 							   Utility::stringFormat("/containers/%s", m_containerName.c_str()),
 							   {{"force", "true"}, {"v", "true"}}, {}, nullptr);
 
-	if (resp->status_code >= web::http::status_codes::BadRequest)
+	if (resp->status_code >= web::http::status_codes::BadRequest &&
+		resp->status_code != web::http::status_codes::NotFound)
 	{
 		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp->text << ">";
 	}
@@ -112,12 +134,12 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	{
 		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + stdinFileContent.dump();
 		LOG_WAR << fname << msg;
-		startError(msg);
+		setStartError(msg);
 		return ACE_INVALID_PID;
 	}
 
 	// Build container creation body
-	auto createBody = stdinFileContent;
+	auto createBody = stdinFileContent.is_object() ? stdinFileContent : nlohmann::json::object();
 
 	// Set command
 	if (cmd.length())
@@ -155,17 +177,30 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	}
 
 	// Configure host settings
-	auto hostConfig = HAS_JSON_FIELD(createBody, "HostConfig") ? createBody["HostConfig"] : nlohmann::json();
+	if (HAS_JSON_FIELD(createBody, "HostConfig") && !createBody.at("HostConfig").is_object())
+	{
+		setStartError("Docker HostConfig must be a JSON object");
+		return ACE_INVALID_PID;
+	}
+	auto hostConfig = HAS_JSON_FIELD(createBody, "HostConfig")
+						  ? createBody.at("HostConfig")
+						  : nlohmann::json::object();
 
 	if (limit)
 	{
-		hostConfig["Memory"] = (limit->m_memoryMb);
-		hostConfig["MemorySwap"] = (limit->m_memoryVirtMb);
-		hostConfig["CpuShares"] = (limit->m_cpuShares);
+		constexpr int64_t MB = 1024LL * 1024LL;
+		if (limit->m_memoryMb > 0)
+			hostConfig["Memory"] = static_cast<int64_t>(limit->m_memoryMb) * MB;
+		if (limit->m_memoryVirtSpecified)
+			hostConfig["MemorySwap"] = static_cast<int64_t>(limit->m_memoryVirtMb) * MB;
+		if (limit->m_cpuShares > 0)
+			hostConfig["CpuShares"] = (limit->m_cpuShares);
 	}
 
-	hostConfig["AutoRemove"] = true;
-	hostConfig["RestartPolicy"]["Name"] = "no";
+	// Keep the stopped container until App Mesh has inspected its final state/logs.
+	// The next start or an explicit terminate removes it deterministically.
+	hostConfig["AutoRemove"] = false;
+	hostConfig["RestartPolicy"] = {{"Name", "no"}};
 	createBody["HostConfig"] = hostConfig;
 
 	// POST /containers/create
@@ -174,44 +209,91 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 
 	if (resp->status_code == web::http::status_codes::Created)
 	{
-		this->containerId(nlohmann::json::parse(resp->text).at("Id").get<std::string>());
+		const auto createResponse = nlohmann::json::parse(resp->text, nullptr, false);
+		const auto containerId = HAS_JSON_FIELD(createResponse, "Id") && createResponse.at("Id").is_string()
+									 ? GET_JSON_STR_VALUE(createResponse, "Id")
+									 : std::string();
+		if (containerId.empty())
+		{
+			setStartError("Docker create response does not contain a valid container ID");
+			LOG_WAR << fname << startError() << ": " << resp->text;
+			setContainerId(m_containerName); // Docker endpoints also accept the container name.
+			this->detach();
+			terminate();
+			return this->getpid();
+		}
+		setContainerId(containerId);
 
 		// POST /containers/{id}/start
 		resp = this->requestDocker(web::http::methods::POST,
-								   Utility::stringFormat("/containers/%s/start", m_containerName.c_str()), {}, {}, nullptr);
+								   Utility::stringFormat("/containers/%s/start", containerId.c_str()),
+								   {}, {}, nullptr);
 
 		if (resp->status_code < web::http::status_codes::BadRequest)
 		{
 			// GET /containers/{id}/json
 			resp = this->requestDocker(web::http::methods::GET,
-									   Utility::stringFormat("/containers/%s/json", m_containerName.c_str()), {}, {}, nullptr);
+									   Utility::stringFormat("/containers/%s/json", containerId.c_str()),
+									   {}, {}, nullptr);
 
 			if (resp->status_code == web::http::status_codes::OK)
 			{
-				auto pid = nlohmann::json::parse(resp->text)["State"]["Pid"].get<int>();
-				// Success
-				this->attach(pid);
-				LOG_INF << fname << "started pid <" << pid << "> for container: " << m_containerName;
-				return this->getpid();
+				const auto inspectResponse = nlohmann::json::parse(resp->text, nullptr, false);
+				if (!HAS_JSON_FIELD(inspectResponse, "State") || !inspectResponse.at("State").is_object())
+				{
+					setStartError("Docker inspect response does not contain a valid process state");
+					LOG_WAR << fname << startError() << ": " << resp->text;
+				}
+				else
+				{
+					const auto &state = inspectResponse.at("State");
+					if (!HAS_JSON_FIELD(state, "Pid") || !state.at("Pid").is_number_integer() ||
+						!HAS_JSON_FIELD(state, "Running") || !state.at("Running").is_boolean())
+					{
+						setStartError("Docker inspect response does not contain a valid process state");
+						LOG_WAR << fname << startError() << ": " << resp->text;
+					}
+					else
+					{
+						if (!GET_JSON_BOOL_VALUE(state, "Running"))
+						{
+							const int exitCode = HAS_JSON_FIELD(state, "ExitCode") && state.at("ExitCode").is_number_integer()
+													 ? GET_JSON_INT_VALUE(state, "ExitCode")
+													 : -200;
+							LOG_INF << fname << "container <" << m_containerName
+									<< "> completed before host PID inspection, exit code <" << exitCode << ">";
+							reportEarlyExit(exitCode);
+							return ACE_INVALID_PID;
+						}
+						const auto pid = GET_JSON_INT64_VALUE(state, "Pid");
+						if (pid > 1 && pid <= std::numeric_limits<pid_t>::max())
+						{
+							this->attach(static_cast<pid_t>(pid));
+							LOG_INF << fname << "started pid <" << pid << "> for container: " << m_containerName;
+							return this->getpid();
+						}
+						setStartError("container reported running without a valid host pid");
+					}
+				}
 			}
 			else
 			{
 				const auto &errorMsg = resp->text;
-				startError(errorMsg);
+				setStartError(errorMsg);
 				LOG_WAR << fname << "Get container info failed <" << errorMsg << ">";
 			}
 		}
 		else
 		{
 			const auto &errorMsg = resp->text;
-			startError(errorMsg);
+			setStartError(errorMsg);
 			LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 		}
 	}
 	else
 	{
 		const auto &errorMsg = resp->text;
-		startError(errorMsg);
+		setStartError(errorMsg);
 		LOG_WAR << fname << "Create container failed <" << errorMsg << ">";
 	}
 
@@ -223,7 +305,8 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 
 const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bool readLine)
 {
-	if (this->containerId().length())
+	const auto containerId = this->containerId();
+	if (!containerId.empty())
 	{
 		// Get logs since timestamp (RFC3339 or UNIX timestamp)
 		auto secondsUTC = 0L;
@@ -234,7 +317,7 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 
 		auto resp = this->requestDocker(
 			web::http::methods::GET,
-			Utility::stringFormat("/containers/%s/logs", this->containerId().c_str()),
+			Utility::stringFormat("/containers/%s/logs", containerId.c_str()),
 			{{"stdout", "true"}, {"stderr", "true"}, {"since", std::to_string(secondsUTC)}, {"tail", readLine ? "1" : "all"}},
 			{}, nullptr);
 
@@ -243,37 +326,49 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 			*position = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		}
 
-		return resp->text;
+		auto output = decodeDockerLogs(resp->text);
+		if (readLine)
+		{
+			const auto newline = output.find('\n');
+			if (newline != std::string::npos)
+				output.resize(newline);
+		}
+		if (maxSize > 0 && output.size() > static_cast<size_t>(maxSize))
+			output.resize(static_cast<size_t>(maxSize));
+		else if (maxSize < 0 && output.size() > static_cast<size_t>(-maxSize))
+			output.erase(0, output.size() - static_cast<size_t>(-maxSize));
+		return output;
 	}
 
-	return std::string();
+	return AppProcess::getOutputMsg(position, maxSize, readLine);
 }
 
 int DockerApiProcess::returnValue() const
 {
 	const static char fname[] = "DockerApiProcess::returnValue() ";
 
-	if (this->containerId().length())
+	const auto containerId = this->containerId();
+	if (!containerId.empty())
 	{
 		// GET /containers/{id}/json
 		auto resp = requestDocker(
 			web::http::methods::GET,
-			Utility::stringFormat("/containers/%s/json", this->containerId().c_str()),
+			Utility::stringFormat("/containers/%s/json", containerId.c_str()),
 			{}, {}, nullptr);
 
 		if (resp->status_code == web::http::status_codes::OK)
 		{
-			try
+			const auto inspectResponse = nlohmann::json::parse(resp->text, nullptr, false);
+			if (HAS_JSON_FIELD(inspectResponse, "State") && inspectResponse.at("State").is_object())
 			{
-				return nlohmann::json::parse(resp->text).at("State").at("ExitCode").get<int>();
+				const auto &state = inspectResponse.at("State");
+				if (HAS_JSON_FIELD(state, "ExitCode") && state.at("ExitCode").is_number_integer())
+					return GET_JSON_INT_VALUE(state, "ExitCode");
 			}
-			catch (...)
-			{
-				LOG_WAR << fname << "Failed to parse exit code from inspect response of container <" << this->containerId() << ">";
-			}
+			LOG_WAR << fname << "Failed to parse exit code from inspect response of container <" << containerId << ">";
 		}
 
-		LOG_WAR << fname << "Failed to get exit code for container <" << this->containerId() << ">: " << resp->text;
+		LOG_WAR << fname << "Failed to get exit code for container <" << containerId << ">: " << resp->text;
 		return -200;
 	}
 	else
@@ -310,7 +405,7 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 
 	try
 	{
-		return RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query);
+		return RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, {}, DOCKER_REQUEST_TIMEOUT_SECONDS);
 	}
 	catch (const std::exception &ex)
 	{

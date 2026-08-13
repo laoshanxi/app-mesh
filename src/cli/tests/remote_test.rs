@@ -539,6 +539,15 @@ fn cli_65_appmgpwd() {
     assert!(hash.starts_with("$pbkdf2$100000$"), "expected PBKDF2 format, got: {}", hash);
 }
 
+#[test]
+#[ignore]
+fn cli_66_metric() {
+    cli_login();
+    let out = appm().args(["metric"]).output().unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("appmesh_"));
+}
+
 // ─── CLI negative cases ─────────────────────────────────────────────────────
 
 #[test]

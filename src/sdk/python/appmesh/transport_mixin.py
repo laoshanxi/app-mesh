@@ -218,9 +218,14 @@ class TransportClientMixin:
         Reuses the base ``add_app`` for the HTTP round-trip + ``subscription_id`` parsing,
         then registers ``callback`` against the local demuxer keyed by the new subscription.
         """
+        # The daemon creates the subscription before starting the app, so START can be
+        # pushed before the add_app response on the same connection. Give the demuxer
+        # ownership of the read side before sending the request; otherwise the synchronous
+        # request path can consume that event frame as if it were the response.
+        if subscribe_events:
+            self._ensure_demuxer()
         result_app = super().add_app(app, subscribe_events=subscribe_events)
         if callback and result_app.subscription_id:
-            self._ensure_demuxer()
             self._demuxer.register_event_callback(result_app.subscription_id, callback)
         return result_app
 
@@ -235,6 +240,11 @@ class TransportClientMixin:
         Returns:
             SubscriptionResult with subscription_id, app_name, and events.
         """
+        # Once the server installs the subscription, an event may race its response.
+        # Start the sole socket reader first so request replies and pushed events are
+        # always separated by UUID/URI rather than by arrival order.
+        self._ensure_demuxer()
+
         path = "/appmesh/subscribe"
         if app_name and app_name != "*":
             path = f"/appmesh/app/{app_name}/subscribe"
@@ -252,7 +262,6 @@ class TransportClientMixin:
         )
 
         if callback and result.subscription_id:
-            self._ensure_demuxer()
             self._demuxer.register_event_callback(result.subscription_id, callback)
 
         return result
@@ -271,9 +280,12 @@ class TransportClientMixin:
 
     def _ensure_demuxer(self) -> None:
         """Start the message demuxer if not already running."""
-        if self._demuxer:
+        if self._demuxer and self._demuxer._running:
             return
-        self._demuxer = MessageDemuxer(self._transport)
+        transport = self._transport
+        if not transport.connected():
+            transport.connect()
+        self._demuxer = MessageDemuxer(transport)
         self._demuxer.start()
 
     def wait_for_async_run(self, run, stdout_handler: Optional[OutputHandler] = None, timeout: int = 0) -> Optional[int]:

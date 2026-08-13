@@ -1,6 +1,7 @@
 // src/common/os/models.h
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <sys/types.h> // For pid_t
 
@@ -13,10 +14,10 @@ namespace os
                 pid_t _group,
                 const pid_t &_session,
                 const uint64_t &_rss_bytes,
-                const unsigned long &_utime,
-                const unsigned long &_stime,
-                const unsigned long &_cutime,
-                const unsigned long &_cstime,
+                const uint64_t &_utime,
+                const uint64_t &_stime,
+                const uint64_t &_cutime,
+                const uint64_t &_cstime,
                 const std::string &_command,
                 bool _zombie)
             : pid(_pid),
@@ -37,10 +38,10 @@ namespace os
         const pid_t session;
         // Resident Set Size
         const uint64_t rss_bytes;
-        const unsigned long utime;
-        const unsigned long stime;
-        const unsigned long cutime;
-        const unsigned long cstime;
+        const uint64_t utime;
+        const uint64_t stime;
+        const uint64_t cutime;
+        const uint64_t cstime;
         const std::string command;
         const bool zombie;
 

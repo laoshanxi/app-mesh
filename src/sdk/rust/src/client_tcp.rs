@@ -17,7 +17,7 @@ use crate::models::*;
 use crate::requester::Requester;
 use crate::subscribe::{MessageDemuxer, MessageReader};
 use crate::wire_messages::{RequestMessage, ResponseMessage};
-use crate::tcp_transport::TCPTransport;
+use crate::tcp_transport::{ReceivePoll, TCPTransport};
 use crate::tls_config::ClientCert;
 
 pub type Result<T> = std::result::Result<T, AppMeshError>;
@@ -33,16 +33,25 @@ struct TCPMessageReader {
 #[async_trait]
 impl MessageReader for TCPMessageReader {
     async fn read_message(&self) -> Result<Option<Vec<u8>>> {
-        // Offload the blocking TLS read to a thread-pool thread so we do not
-        // block the tokio runtime.
-        let transport = Arc::clone(&self.transport);
-        tokio::task::spawn_blocking(move || {
-            // Poisoning is benign here (guarded state stays valid), so recover the guard.
-            let mut t = transport.lock().unwrap_or_else(|e| e.into_inner());
-            t.receive_message().map_err(AppMeshError::from)
-        })
-        .await
-        .map_err(|e| AppMeshError::ConnectionError(format!("reader task panicked: {}", e)))?
+        loop {
+            // Bound each blocking TLS read so the transport mutex is released
+            // regularly; the writer can then send requests while this reader owns
+            // response/event routing. TCPTransport retains partial frames.
+            let transport = Arc::clone(&self.transport);
+            let polled = tokio::task::spawn_blocking(move || {
+                let mut t = transport.lock().unwrap_or_else(|e| e.into_inner());
+                t.poll_message(std::time::Duration::from_millis(50))
+                    .map_err(AppMeshError::from)
+            })
+            .await
+            .map_err(|e| AppMeshError::ConnectionError(format!("reader task panicked: {}", e)))??;
+
+            match polled {
+                ReceivePoll::Message(data) => return Ok(Some(data)),
+                ReceivePoll::Closed => return Ok(None),
+                ReceivePoll::Pending => tokio::task::yield_now().await,
+            }
+        }
     }
 }
 
@@ -206,10 +215,16 @@ impl Requester for TCPRequester {
         self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner()).close();
     }
 
-    fn enable_demuxer(&self) {
+    async fn enable_demuxer(&self) -> Result<()> {
+        {
+            let mut transport = self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner());
+            if !transport.connected() {
+                transport.connect()?;
+            }
+        }
         let mut guard = self.demuxer.lock().unwrap_or_else(|e| e.into_inner());
-        if guard.is_some() {
-            return; // already enabled
+        if guard.as_ref().map(|d| d.is_running()).unwrap_or(false) {
+            return Ok(()); // already enabled
         }
         let demuxer = Arc::new(MessageDemuxer::new());
         let reader = Arc::new(TCPMessageReader {
@@ -217,6 +232,7 @@ impl Requester for TCPRequester {
         });
         demuxer.start(reader);
         *guard = Some(demuxer);
+        Ok(())
     }
 
     fn get_demuxer(&self) -> Option<Arc<MessageDemuxer>> {

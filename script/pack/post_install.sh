@@ -128,12 +128,8 @@ finalize_files() {
         # Create target directory
         mkdir -p "$TARGET_INSTALL_PATH" || die "Failed to create directory: $TARGET_INSTALL_PATH"
         
-        # Copy files then remove source (safer than mv for cross-filesystem)
-        if [[ "$os_type" == "macos" ]]; then
-            cp -R "$built_in_normalized"/* "$TARGET_INSTALL_PATH"/ || die "Failed to copy files"
-        else
-            cp -rf "$built_in_normalized"/* "$TARGET_INSTALL_PATH"/ || die "Failed to copy files"
-        fi
+        # Include hidden runtime state and support cross-filesystem relocation.
+        cp -R "$built_in_normalized/." "$TARGET_INSTALL_PATH/" || die "Failed to copy files"
         rm -rf "$built_in_normalized"
     else
         die "Cannot find installation files at $TARGET_INSTALL_PATH or $built_in_normalized"
@@ -172,11 +168,11 @@ run_setup() {
     if [[ -f "$setup_script" ]]; then
         info "Executing setup script: $setup_script"
         if [[ -x /usr/bin/bash ]]; then
-            /usr/bin/bash "$setup_script"
+            /usr/bin/bash "$setup_script" || die "Setup script failed: $setup_script"
         elif [[ -x /bin/bash ]]; then
-            /bin/bash "$setup_script"
+            /bin/bash "$setup_script" || die "Setup script failed: $setup_script"
         else
-            bash "$setup_script"
+            bash "$setup_script" || die "Setup script failed: $setup_script"
         fi
     else
         info "Setup script not found at $setup_script, skipping."

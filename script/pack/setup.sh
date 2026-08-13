@@ -25,8 +25,11 @@ readonly BASH_COMPLETION_PATH="$BASH_COMPLETION_DIR/appm"
 readonly APPM_SOFTLINK=/usr/local/bin/appm
 readonly INITD_SOFTLINK=/etc/init.d/appmesh
 readonly SYSTEMD_FILE=/etc/systemd/system/appmesh.service
-readonly LAUNCHD_FILE=/Library/LaunchDaemons/com.appmesh.appmesh.plist
+readonly LAUNCHD_FILE=/Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 readonly ENV_FILE="$PROG_HOME/appmesh.default"
+readonly WORKFLOW_TEMPLATE="${PROG_HOME}/config/templates/workflow.yaml"
+readonly WORKFLOW_APP="${PROG_HOME}/work/apps/workflow.yaml"
+readonly WORKFLOW_INIT_MARKER="${PROG_HOME}/work/.workflow_initialized"
 
 ################################################################################
 # Utility Functions
@@ -122,39 +125,143 @@ clean_environment() {
 
     # Clean work directory for fresh install
     if [ "${APPMESH_FRESH_INSTALL:-}" = "Y" ]; then
-        rm -rf "${PROG_HOME}/work/"* "${PROG_HOME}/work/".* 2>/dev/null || true
+        find "${PROG_HOME}/work" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
         info "Work directory cleaned for fresh installation"
     fi
 }
 
+write_env_entry() {
+    local target="$1"
+    local name="$2"
+    local value="$3"
+    local filtered=""
+
+    case "$name" in
+    "" | [0-9]* | *[!a-zA-Z0-9_]*) die "Invalid environment variable name: $name" ;;
+    esac
+
+    filtered=$(mktemp "${target}.filter.XXXXXX") || die "Failed to create temporary environment file"
+    chmod 600 "$filtered"
+    if [ -s "$target" ]; then
+        awk -v key="$name" 'substr($0, 1, length(key) + 1) != key "=" { print }' "$target" >"$filtered"
+    fi
+    printf '%s=%s\n' "$name" "$value" >>"$filtered"
+    mv "$filtered" "$target"
+}
+
+read_env_entry() {
+    local name="$1"
+    awk -v key="$name" '
+        substr($0, 1, length(key) + 1) == key "=" {
+            value = substr($0, length(key) + 2)
+            found = 1
+        }
+        END {
+            if (found) print value
+            else exit 1
+        }
+    ' "$ENV_FILE"
+}
+
 setup_env_file() {
     info "Setting up environment file at $ENV_FILE"
-    : >"$ENV_FILE"
+    [ -L "$ENV_FILE" ] && die "Refusing symbolic-link environment file: $ENV_FILE"
+
+    local env_tmp=""
+    local assignment=""
+    local name=""
+    local value=""
+    env_tmp=$(mktemp "${ENV_FILE}.XXXXXX") || die "Failed to create temporary environment file"
+    chmod 600 "$env_tmp"
+
+    # Preserve service configuration across upgrades.
+    if [ "${APPMESH_FRESH_INSTALL:-}" != "Y" ] && [ -f "$ENV_FILE" ]; then
+        [ -r "$ENV_FILE" ] || die "Existing environment file is not readable: $ENV_FILE"
+        while IFS= read -r assignment || [ -n "$assignment" ]; do
+            case "$assignment" in
+            "" | \#*) continue ;;
+            *=*)
+                name="${assignment%%=*}"
+                value="${assignment#*=}"
+                write_env_entry "$env_tmp" "$name" "$value"
+                ;;
+            *) die "Invalid environment entry in $ENV_FILE" ;;
+            esac
+        done <"$ENV_FILE"
+    fi
 
     # Locale setup
     if locale -a 2>/dev/null | grep -iE "^(en_US\.(utf8|UTF-8))$" >/dev/null; then
-        {
-            echo "LANG=en_US.UTF-8"
-            echo "LC_ALL=en_US.UTF-8"
-        } >>"$ENV_FILE"
+        write_env_entry "$env_tmp" "LANG" "en_US.UTF-8"
+        write_env_entry "$env_tmp" "LC_ALL" "en_US.UTF-8"
         info "Locale set to [en_US.UTF-8]"
     else
         error "Failed to set default locale [en_US.UTF-8], not available"
     fi
 
-    # AppMesh environment variables
-    printenv | grep '^APPMESH_' | while read -r var; do
-        info "Applying environment variable: $var"
-        echo "$var" >>"$ENV_FILE"
-    done
+    # Current installer values override preserved values.
+    while IFS= read -r assignment || [ -n "$assignment" ]; do
+        name="${assignment%%=*}"
+        value="${assignment#*=}"
+        info "Applying environment variable: $name"
+        write_env_entry "$env_tmp" "$name" "$value"
+    done < <(printenv | grep '^APPMESH_')
 
     # Default execution user setup
     if [ -n "${APPMESH_BaseConfig_DefaultExecUser:-}" ] && [ "$APPMESH_BaseConfig_DefaultExecUser" != "root" ]; then
-        echo "APPMESH_BaseConfig_DefaultExecUser=${APPMESH_BaseConfig_DefaultExecUser}" >>"$ENV_FILE"
         info "DefaultExecUser set to: $APPMESH_BaseConfig_DefaultExecUser"
     fi
 
-    chmod 644 "$ENV_FILE"
+    mv "$env_tmp" "$ENV_FILE"
+    # setup_permissions() transfers ownership to a configured daemon user.
+    chmod 600 "$ENV_FILE"
+
+    # Restore the persisted service identity before regenerating definitions.
+    for name in APPMESH_DAEMON_EXEC_USER APPMESH_DAEMON_EXEC_USER_GROUP; do
+        if value=$(read_env_entry "$name"); then
+            printf -v "$name" '%s' "$value"
+            export "$name"
+        fi
+    done
+}
+
+prepare_workflow_app() {
+    if [ "${APPMESH_SECURE_INSTALLATION:-N}" = "Y" ] || [ -f "${PROG_HOME}/work/.appmginit" ]; then
+        # A packaged default is incompatible with appmginit credentials.
+        if [ -f "$WORKFLOW_APP" ] && [ -f "$WORKFLOW_TEMPLATE" ] && cmp -s "$WORKFLOW_APP" "$WORKFLOW_TEMPLATE"; then
+            local disabled_app="${WORKFLOW_APP}.disabled"
+            [ -e "$disabled_app" ] && disabled_app="${disabled_app}.$(date +%s)"
+            mv "$WORKFLOW_APP" "$disabled_app"
+            info "Secure installation: moved the default workflow App to $disabled_app"
+        fi
+        info "Secure installation: workflow App was not enabled with default credentials"
+        info "Provision the workflow App sec_env after the daemon starts"
+        touch "$WORKFLOW_INIT_MARKER"
+        chmod 600 "$WORKFLOW_INIT_MARKER"
+        return
+    fi
+
+    # Runtime definitions are operator state. Only initialize a missing one.
+    if [ -f "$WORKFLOW_APP" ]; then
+        info "Preserving existing workflow App definition at $WORKFLOW_APP"
+        touch "$WORKFLOW_INIT_MARKER"
+        chmod 600 "$WORKFLOW_INIT_MARKER"
+        return
+    fi
+    if [ -f "$WORKFLOW_INIT_MARKER" ]; then
+        info "Preserving intentionally absent workflow App definition"
+        return
+    fi
+    if [ ! -f "$WORKFLOW_TEMPLATE" ]; then
+        die "Workflow App template not found: $WORKFLOW_TEMPLATE"
+    fi
+
+    mkdir -p "$(dirname "$WORKFLOW_APP")"
+    cp "$WORKFLOW_TEMPLATE" "$WORKFLOW_APP"
+    chmod 600 "$WORKFLOW_APP"
+    touch "$WORKFLOW_INIT_MARKER"
+    chmod 600 "$WORKFLOW_INIT_MARKER"
+    info "Installed default workflow App definition at $WORKFLOW_APP"
 }
 
 ################################################################################
@@ -184,8 +291,13 @@ setup_service() {
 
     # Initialize secure installation if needed
     if [ "${APPMESH_SECURE_INSTALLATION:-}" = "Y" ]; then
-        info "Performing secure installation initialization"
-        "$APPM_SOFTLINK" appmginit
+        local flag_file="${PROG_HOME}/work/.appmginit"
+        if [ ! -f "$flag_file" ]; then
+            info "Performing secure installation initialization"
+            "$APPM_SOFTLINK" appmginit
+        else
+            info "Secure installation was already initialized"
+        fi
     fi
 }
 
@@ -223,14 +335,52 @@ install_launchd_service() {
 
     update_appmesh_paths "${PROG_HOME}/script/appmesh.launchd.plist"
 
-    chown root:wheel "$service_template"
-    chmod 644 "$service_template"
-    rm -f "$LAUNCHD_FILE" && ln -sf "$service_template" "$LAUNCHD_FILE"
+    # Keep the LaunchDaemon definition root-owned.
+    rm -f "$LAUNCHD_FILE" && cp "$service_template" "$LAUNCHD_FILE"
+
+    # Render the env file into launchd's native dictionary without eval.
+    local assignment=""
+    local name=""
+    local value=""
+    while IFS= read -r assignment || [ -n "$assignment" ]; do
+        case "$assignment" in
+        "" | \#*) continue ;;
+        *=*)
+            name="${assignment%%=*}"
+            value="${assignment#*=}"
+            case "$name" in
+            "" | [0-9]* | *[!a-zA-Z0-9_]*) die "Invalid environment entry in $ENV_FILE" ;;
+            esac
+            if plutil -extract "EnvironmentVariables.${name}" raw "$LAUNCHD_FILE" >/dev/null 2>&1; then
+                plutil -replace "EnvironmentVariables.${name}" -string "$value" "$LAUNCHD_FILE"
+            else
+                plutil -insert "EnvironmentVariables.${name}" -string "$value" "$LAUNCHD_FILE"
+            fi
+            ;;
+        *) die "Invalid environment entry in $ENV_FILE" ;;
+        esac
+    done <"$ENV_FILE"
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER:-}" ]; then
-        sed -i '' "s/<key>UserName<\/key>\n\t<string>.*<\/string>/<key>UserName<\/key>\n\t<string>${APPMESH_DAEMON_EXEC_USER}<\/string>/" "$LAUNCHD_FILE"
+        if plutil -extract UserName raw "$LAUNCHD_FILE" >/dev/null 2>&1; then
+            plutil -replace UserName -string "$APPMESH_DAEMON_EXEC_USER" "$LAUNCHD_FILE"
+        else
+            plutil -insert UserName -string "$APPMESH_DAEMON_EXEC_USER" "$LAUNCHD_FILE"
+        fi
         info "Service user set to: ${APPMESH_DAEMON_EXEC_USER}"
     fi
+
+    if [ -n "${APPMESH_DAEMON_EXEC_USER_GROUP:-}" ]; then
+        if plutil -extract GroupName raw "$LAUNCHD_FILE" >/dev/null 2>&1; then
+            plutil -replace GroupName -string "$APPMESH_DAEMON_EXEC_USER_GROUP" "$LAUNCHD_FILE"
+        else
+            plutil -insert GroupName -string "$APPMESH_DAEMON_EXEC_USER_GROUP" "$LAUNCHD_FILE"
+        fi
+        info "Service group set to: ${APPMESH_DAEMON_EXEC_USER_GROUP}"
+    fi
+
+    chown root:wheel "$LAUNCHD_FILE"
+    chmod 600 "$LAUNCHD_FILE"
 
     rm -f "${LAUNCHD_FILE}.bak"
 
@@ -328,6 +478,7 @@ main() {
     # Setup
     setup_env_file
     setup_service
+    prepare_workflow_app
     setup_permissions
     setup_ssl_certificates
 

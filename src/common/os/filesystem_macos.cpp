@@ -3,6 +3,7 @@
 
 #include "filesystem.h"
 
+#include <algorithm>
 #include <set>
 #include <string>
 #include <sys/mount.h>
@@ -31,9 +32,12 @@ namespace os
 			return nullptr;
 		}
 
+		const auto freeBlocks = std::min(buf.f_bfree, buf.f_blocks);
+		const auto availableBlocks = std::min(buf.f_bavail, freeBlocks);
 		df->totalSize = static_cast<uint64_t>(buf.f_bsize) * buf.f_blocks;
-		df->usedSize = static_cast<uint64_t>(buf.f_bsize) * (buf.f_blocks - buf.f_bfree);
-		df->usagePercentage = static_cast<double>(buf.f_blocks - buf.f_bfree) / buf.f_blocks;
+		df->usedSize = static_cast<uint64_t>(buf.f_bsize) * (buf.f_blocks - freeBlocks);
+		df->availableSize = static_cast<uint64_t>(buf.f_bsize) * availableBlocks;
+		df->usagePercentage = static_cast<double>(buf.f_blocks - freeBlocks) / buf.f_blocks;
 
 		return df;
 	}
@@ -51,11 +55,12 @@ namespace os
 			return mountPointsMap;
 		}
 
-		std::set<std::string> ignoredFileSystems = {
+		static const std::set<std::string> ignoredFileSystems = {
 			"autofs", "devfs", "volfs", "tmpfs", "vmware_fusion",
 			"com.apple.TimeMachine", "synthetics", "com.apple.filesystems.apfs.serviceroot",
 			"com.apple.os.update-", "com.apple.system.clock",
 			"com.apple.system.background-task", "com.apple.system.ql-cache"};
+		std::set<std::string> seenDevices;
 
 		for (int i = 0; i < totalMounts; ++i)
 		{
@@ -69,34 +74,32 @@ namespace os
 				continue;
 			}
 
-			if (!devicePath.empty() && devicePath[0] == '/')
+			if ((mountEntries[i].f_flags & MNT_LOCAL) == 0)
 			{
-				struct statfs fileSystemStats;
-				if (statfs(mountDir.c_str(), &fileSystemStats) != 0)
-				{
-					LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << last_error_msg();
-					continue;
-				}
-
-				if (fileSystemStats.f_blocks <= 0)
-				{
-					LOG_WAR << fname << "Skipping mount point with no blocks: " << mountDir;
-					continue;
-				}
-
-				if (fileSystemStats.f_flags & MNT_RDONLY)
-				{
-					LOG_DBG << fname << "Skipping read-only filesystem: " << mountDir;
-					continue;
-				}
-
-				LOG_DBG << fname << "device: " << devicePath << " mountDir: " << mountDir << " mountFsType: " << mountFsType;
-				mountPointsMap[mountDir] = devicePath;
+				LOG_DBG << fname << "Skipping remote filesystem: " << mountFsType << " at " << mountDir;
+				continue;
 			}
-			else
+			if (devicePath.empty() || devicePath[0] != '/')
 			{
 				LOG_DBG << fname << "Skipping invalid device path: " << devicePath;
+				continue;
 			}
+			if (mountDir == "/System/Volumes" || Utility::startWith(mountDir, "/System/Volumes/"))
+			{
+				LOG_DBG << fname << "Skipping macOS auxiliary system volume: " << mountDir;
+				continue;
+			}
+			if (mountEntries[i].f_blocks <= 0)
+				continue;
+			if (!seenDevices.insert(devicePath).second)
+			{
+				LOG_DBG << fname << "Skipping duplicate logical disk device: " << devicePath << " at " << mountDir;
+				continue;
+			}
+
+			// AsJson performs the single filesystem usage query.
+			LOG_DBG << fname << "device: " << devicePath << " mountDir: " << mountDir << " mountFsType: " << mountFsType;
+			mountPointsMap[mountDir] = devicePath;
 		}
 
 		return mountPointsMap;
