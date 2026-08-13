@@ -6,11 +6,12 @@
 //!   + 4 bytes length (u32 big-endian)
 //!   + payload bytes
 
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, WriteBytesExt};
 use rustls::StreamOwned;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::error::TransportError;
 pub use crate::tls_config::{ClientCert, SslVerify};
@@ -27,12 +28,20 @@ pub struct TCPTransport {
     ssl_verify: SslVerify,
     ssl_client_cert: Option<ClientCert>,
     socket: Option<StreamOwned<rustls::ClientConnection, TcpStream>>,
+    receive_buffer: Vec<u8>,
+}
+
+/// Result of one bounded receive attempt used by the background demuxer.
+pub(crate) enum ReceivePoll {
+    Message(Vec<u8>),
+    Pending,
+    Closed,
 }
 
 impl TCPTransport {
     pub fn new(address: (String, u16), ssl_verify: SslVerify, ssl_client_cert: Option<ClientCert>) -> Self {
         crate::tls_config::ensure_crypto_provider();
-        Self { address, ssl_verify, ssl_client_cert, socket: None }
+        Self { address, ssl_verify, ssl_client_cert, socket: None, receive_buffer: Vec::new() }
     }
 
     /// Establishes a TCP+TLS connection.
@@ -49,6 +58,7 @@ impl TCPTransport {
         let tls_stream = StreamOwned::new(tls_conn, tcp);
 
         self.socket = Some(tls_stream);
+        self.receive_buffer.clear();
         Ok(())
     }
 
@@ -57,6 +67,7 @@ impl TCPTransport {
             socket.conn.send_close_notify();
             let _ = socket.conn.complete_io(&mut socket.sock);
         }
+        self.receive_buffer.clear();
     }
 
     pub fn connected(&self) -> bool {
@@ -88,31 +99,85 @@ impl TCPTransport {
 
     /// Receive a framed message
     pub fn receive_message(&mut self) -> Result<Option<Vec<u8>>> {
-        let stream = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
-
-        let magic = match stream.read_u32::<BigEndian>() {
-            Ok(m) => m,
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Err(TransportError::ConnectionClosed)
+        loop {
+            if let Some(message) = self.take_buffered_message()? {
+                return Ok(Some(message));
             }
-            Err(e) => return Err(TransportError::ReceiveError(e.to_string())),
-        };
 
+            let stream = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
+            stream.sock.set_read_timeout(None)?;
+            let mut chunk = [0u8; 16 * 1024];
+            match stream.read(&mut chunk) {
+                Ok(0) => return Err(TransportError::ConnectionClosed),
+                Ok(size) => self.receive_buffer.extend_from_slice(&chunk[..size]),
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    return Err(TransportError::ConnectionClosed)
+                }
+                Err(e) => return Err(TransportError::ReceiveError(e.to_string())),
+            }
+        }
+    }
+
+    /// Attempt to receive one frame without holding the requester's transport
+    /// mutex indefinitely. Partial plaintext is retained for the next poll.
+    pub(crate) fn poll_message(&mut self, timeout: Duration) -> Result<ReceivePoll> {
+        if let Some(message) = self.take_buffered_message()? {
+            return Ok(ReceivePoll::Message(message));
+        }
+
+        let stream = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
+        stream.sock.set_read_timeout(Some(timeout))?;
+        let mut chunk = [0u8; 16 * 1024];
+        let read_result = stream.read(&mut chunk);
+        let reset_result = stream.sock.set_read_timeout(None);
+        if let Err(error) = reset_result {
+            return Err(TransportError::IoError(error));
+        }
+
+        match read_result {
+            Ok(0) => Ok(ReceivePoll::Closed),
+            Ok(size) => {
+                self.receive_buffer.extend_from_slice(&chunk[..size]);
+                Ok(match self.take_buffered_message()? {
+                    Some(message) => ReceivePoll::Message(message),
+                    None => ReceivePoll::Pending,
+                })
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                Ok(ReceivePoll::Pending)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(ReceivePoll::Closed),
+            Err(e) => Err(TransportError::ReceiveError(e.to_string())),
+        }
+    }
+
+    fn take_buffered_message(&mut self) -> Result<Option<Vec<u8>>> {
+        if self.receive_buffer.len() < 8 {
+            return Ok(None);
+        }
+
+        let magic = u32::from_be_bytes(self.receive_buffer[0..4].try_into().unwrap());
         if magic != TCP_MESSAGE_MAGIC {
             return Err(TransportError::InvalidMagic(magic));
         }
 
-        let len = stream.read_u32::<BigEndian>()? as usize;
+        let len = u32::from_be_bytes(self.receive_buffer[4..8].try_into().unwrap()) as usize;
         if len > TCP_MAX_BLOCK_SIZE {
             return Err(TransportError::MessageTooLarge(len));
         }
-        if len == 0 {
-            return Ok(Some(Vec::new()));
+        let frame_size = 8 + len;
+        if self.receive_buffer.len() < frame_size {
+            return Ok(None);
         }
 
-        let mut buf = vec![0u8; len];
-        stream.read_exact(&mut buf)?;
-        Ok(Some(buf))
+        let message = self.receive_buffer[8..frame_size].to_vec();
+        self.receive_buffer.drain(..frame_size);
+        Ok(Some(message))
     }
 }
 

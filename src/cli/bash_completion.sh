@@ -18,7 +18,7 @@ _appm() {
         cword=$COMP_CWORD
     fi
 
-    local commands="logon logoff logout loginfo ls list view add reg rm remove unreg enable disable restart run exec shell get put label log config resource passwd mfa lock user appmgpwd appmginit"
+    local commands="logon logoff logout loginfo ls list view add reg rm remove unreg enable disable restart run exec shell get put label log config resource metric passwd mfa lock user appmgpwd appmginit"
 
     local flags_logon="--timeout --audience --show-token"
     local flags_loginfo="--show-token"

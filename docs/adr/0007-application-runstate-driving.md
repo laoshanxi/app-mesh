@@ -5,6 +5,8 @@
 Accepted — implemented. Supersedes the prior poll-driven driving described under "Context".
 (Consolidates the former docs/source/AppStartDriving.md analysis and RunStateRefactor.md
 change summary, which were internal design notes mislocated in the published docs tree.)
+User-visible time ranges, recurring patterns, restart actions, recovery, and Docker scheduling
+semantics are specified separately in [ADR 0008](0008-application-scheduling-semantics.md).
 
 ## Context
 
@@ -28,53 +30,58 @@ The original design had problems:
 
 ## Decision
 
-- **Consolidate run-state** into one `RunState` struct under one mutex (`m_runMutex`), accessed
-  via `updateRunState()` / `loadRunState()` consistent snapshots.
-- **Single convergence point** `driveLifecycle()` under `m_lifecycleMutex`, lock order
-  `m_lifecycleMutex → m_process → m_runMutex`. Steps: enforce-availability → schedule →
-  refresh(health/buffer) → consume-exit→handleError → **spawn-if-due**.
-- **One-shot exit latch** (`RunState::exitPending`, test-and-clear) replaces the polled
-  `hasExited` and its `+1s`; `handleError` runs exactly once per genuine exit (fixes REMOVE).
+- **Consolidate run-state** into private `Runtime::Run`, protected by `Runtime::runMutex` and
+  accessed as consistent snapshots. The header exposes neither lifecycle state nor its locks.
+- **Single convergence point** `maintainRuntime(now)`: maintain process exit state → stop an
+  invalid run → update health → under `Runtime::lifecycleMutex`, plan if needed → consume one
+  restart evaluation → consume a due start → call `startRun` after releasing the decision lock.
+- **One-shot exit latch** (`Run::restartEvaluationPending`, test-and-clear) replaces the polled
+  `hasExited` and its `+1s`; `applyExitPolicy` runs exactly once per genuine natural exit (fixes REMOVE).
 - **Two spawn paths, each on its natural thread — never the shared timer thread:**
-  - *On-demand `run`* (REST sync/async): `runApp` forks **immediately**, inline on the REST
+  - *On-demand `run`* (REST sync/async): `startRun` forks **immediately**, inline on the REST
     worker thread, so the client gets the process/uuid right away.
-  - *Scheduled* (first start, restart, periodic, cron): `scheduleSpawnAt` only **records** the due
-    time in `RunState.nextLaunch` (no timer); the scheduler tick's `spawnIfDue()` forks when
-    `now ≥ nextLaunch`, on the scheduler thread. No spawn timer, no generation token, no
-    dedicated executor — the tick is the sole scheduled-spawn driver, serialized by
-    `m_lifecycleMutex`.
-- **Explicit schedule intent** `m_needsSchedule`, decoupled from the display-only next-launch.
-- **Natural-vs-deliberate exit:** `AppProcess::m_terminating` + `naturalExit`; a `reporter`
-  identity check latches only the *current* process's natural exit (a buffer process exit
-  cannot mint a restart).
+  - *Scheduled* (first start, restart, periodic, cron): `scheduleStartAt` only **records** the due
+    time as `Run::nextLaunch + Armed` (no spawn timer); the scheduler tick's `consumeScheduledStart()`
+    revalidates the complete time window and process phase before `startRun`.
+- **Explicit schedule intent** `Dormant / NeedsPlan / Armed`, coupled with `nextLaunch` in the
+  same run snapshot. A schedule with no future occurrence becomes `Dormant` instead of retrying
+  every tick.
+- **Natural-vs-deliberate exit:** `AppProcess::Lifecycle::terminating` + `naturalExit`; run-id
+  identity allows only the current run's natural exit to request policy evaluation.
+- **Recurring retention handoff:** each due interval/cron occurrence becomes the new current run;
+  the replaced run is terminated immediately when `retention == 0`, otherwise its own delayed
+  termination keeps it alive for the configured buffer without letting its exit drive current policy.
 - **Crash-loop backoff** (k8s style): exponential 1→300s, reset after a 60s stable run;
   bypassed for periodic/cron.
-- **Recovered (attached) processes** (`m_recovered`): not our children, so `refresh()` polls
-  and synthesizes their exit.
-- **Exit is record-only on the timer thread; the tick drives restart + spawn.** The natural-exit
-  upcall (`onTimerAppExit`, on the ACE timer thread) only sets the latch + dispatches the event.
-  `driveLifecycle` (lock-holding, multi-step) and the actual fork run on the scheduler-tick
-  thread, keeping fork/exec off the shared timer thread. The inline-immediate exit path remains
-  behind `onExitUpdate(triggerLifecycle=…)`, disabled.
-- **`m_process` stays a recursive mutex** (required): `terminate()` under that lock re-enters
-  via `onExitUpdate() → m_process.get()`; a plain mutex self-deadlocks.
+- **Recovered processes and attached Docker containers:** they are not reactor-managed children, so
+  `maintainRuntime(now)` polls PID identity and synthesizes their exit when necessary. Docker image
+  pulls are native children and retain their exact `ProcessManager` exit callback.
+- **Exit is claimed in the ProcessManager upcall and finalized once outside its mutex.** Finalization
+  drains stdout, records the run result and dispatches callbacks; the tick later evaluates policy.
+- **`m_process` uses a non-recursive mutex.** Replacement moves the previous shared pointer out;
+  terminate, backend calls, event dispatch and process start never execute while holding that gate.
+- **Docker CLI cleanup is non-blocking.** Termination launches a separate `AppProcess` with a short
+  timeout and returns; that helper's timer retains its ownership until exit or timeout, so no new
+  worker thread or wait on `TimerManager` is required.
 
 ## Consequences
 
 - Correctness: REMOVE-with-retention fixed; exactly-once exit handling; no torn reads;
-  `LogFileQueue` self-thread-safe; no spurious restart from buffer exits.
-- Scheduled-spawn/restart timing is tick-granular: ≤ `ScheduleIntervalSeconds` (default 1s)
+  `LogFileQueue` self-thread-safe; disable/enable invalidates stale start and exit decisions.
+- Scheduled-spawn/restart timing is tick-granular: ≤ `ScheduleIntervalSeconds` (default 2s)
   jitter. Negligible for restart/periodic/cron (second/minute-grained); on-demand `run` is
   unaffected (forks immediately on the REST thread).
 - **No fork/exec runs on the shared ACE timer-dispatch thread**, so a fork backlog cannot stall
-  delayKill / suicide(REMOVE) / stdout-coalesce / health timers. Forks stay serialized by
+  scheduled termination / removal / stdout-coalesce / health timers. Forks stay serialized by
   construction: on-demand on REST worker threads + scheduled on the single tick thread.
   (Multithreaded fork is acceptable here — glibc `pthread_atfork` covers the pre-existing
   REST/tick fork concurrency; a bare fork→exec from a threaded process is safe.)
 - A dedicated single-thread spawn *executor* was prototyped and dropped: tick-poll achieves the
   same "fork off the timer thread" with zero new threads, so the executor was needless complexity.
-- Verified by `src/sdk/python/test/test_runstate_e2e.py`,
-  `src/sdk/python/test/tools/stress_runstate.py`, and `test/application` C++ unit tests.
+- Runtime verification is provided by `src/sdk/python/test/test_runstate_e2e.py`,
+  `src/sdk/python/test/tools/stress_runstate.py`, and
+  `src/sdk/python/test/tools/verify_process_lifecycle.py`; C++ unit execution is optional and
+  separate from this design.
 
 ### Deferred
 

@@ -14,17 +14,16 @@ namespace os
 		Memory();
 		uint64_t total_bytes;
 		uint64_t free_bytes;
+		uint64_t available_bytes;
 		uint64_t totalSwap_bytes;
 		uint64_t freeSwap_bytes;
+		bool swapAvailable;
 	};
 
 	std::ostream &operator<<(std::ostream &stream, const Memory &mem);
 
 	/// Returns the total size of main and free memory.
 	std::shared_ptr<Memory> memory();
-
-	/// Get total system CPU time.
-	int64_t cpuTotalTime();
 
 	/// Representation of a processor (cross-platform).
 	struct CPU

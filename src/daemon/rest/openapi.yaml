@@ -484,6 +484,7 @@ paths:
               properties:
                 name:
                   type: string
+                  pattern: "^[A-Za-z0-9_-]{1,128}$"
                   example: "test-ping"
                 description:
                   type: string
@@ -613,6 +614,7 @@ paths:
               properties:
                 name:
                   type: string
+                  pattern: "^[A-Za-z0-9_-]{1,128}$"
                 command:
                   type: string
                 shell:
@@ -671,6 +673,7 @@ paths:
               properties:
                 name:
                   type: string
+                  pattern: "^[A-Za-z0-9_-]{1,128}$"
                 command:
                   type: string
                 shell:
@@ -1447,7 +1450,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/HostResources"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
@@ -1618,6 +1621,129 @@ components:
         (`Authorization` / Bearer) requests carry no cookie and are exempt.
 
   schemas:
+    HostResources:
+      type: object
+      required:
+        - schema_version
+        - collected_at_unix_seconds
+        - cpu_effective_processors
+        - cpu_source
+        - memory_source
+        - swap_source
+        - cgroup_version
+        - mem_total_bytes
+        - mem_available_bytes
+        - collector_errors
+      properties:
+        schema_version:
+          type: integer
+          example: 3
+        collected_at_unix_seconds:
+          type: integer
+          format: int64
+        collector_errors:
+          type: array
+          items:
+            type: string
+          description: Bounded collector identifiers that failed during this snapshot.
+        in_container:
+          type: boolean
+        appmesh_version:
+          type: string
+        os:
+          type: string
+        architecture:
+          type: string
+        cpu_cores:
+          type: integer
+        cpu_sockets:
+          type: integer
+        cpu_processors:
+          type: integer
+        cpu_effective_processors:
+          type: integer
+        cpu_quota_cores:
+          type: number
+          format: double
+          description: Zero when no finite CPU quota is configured.
+        cpu_source:
+          type: string
+          enum: [host, cgroup]
+        memory_source:
+          type: string
+          enum: [host, cgroup]
+        swap_source:
+          type: string
+          enum: [host, cgroup]
+        cgroup_version:
+          type: string
+          enum: [none, v1, v2]
+        mem_total_bytes:
+          type: integer
+          format: int64
+        mem_available_bytes:
+          type: integer
+          format: int64
+        mem_current_bytes:
+          type: integer
+          format: int64
+        mem_swap_total_bytes:
+          type: integer
+          format: int64
+        mem_swap_free_bytes:
+          type: integer
+          format: int64
+        mem_swap_current_bytes:
+          type: integer
+          format: int64
+        mem_applications:
+          type: integer
+          format: int64
+          description: Deduplicated RSS bytes for all currently managed application process trees.
+        mem_daemon_process_tree_bytes:
+          type: integer
+          format: int64
+          description: RSS bytes for the App Mesh daemon process tree.
+        fd:
+          type: integer
+          format: int64
+          description: Open descriptors or handles in the App Mesh daemon process tree.
+        net:
+          type: array
+          description: Addresses assigned to active physical and virtual network interfaces; loopback is excluded.
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              address:
+                type: string
+              ipv6:
+                type: boolean
+        fs:
+          type: array
+          description: Mounted local logical disks; virtual, remote, bind, and unmounted volumes are excluded.
+          items:
+            type: object
+            properties:
+              device:
+                type: string
+              mount_point:
+                type: string
+              size:
+                type: integer
+                format: int64
+              used:
+                type: integer
+                format: int64
+              available:
+                type: integer
+                format: int64
+                description: Free bytes available to the current process.
+              usage:
+                type: number
+                format: double
+
     ErrorResponse:
       type: object
       properties:

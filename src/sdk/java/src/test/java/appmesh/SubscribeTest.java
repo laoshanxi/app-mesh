@@ -5,8 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -25,6 +31,47 @@ import org.junit.jupiter.api.Test;
 public class SubscribeTest {
 
     private static final String EVENT_URI = "/appmesh/event";
+
+    private static class OrderingClient extends AppMeshClient {
+        private final List<String> actions = new ArrayList<>();
+
+        OrderingClient() {
+            super(new AppMeshClient.Builder());
+        }
+
+        @Override
+        protected void ensureDemuxer() {
+            actions.add("demuxer");
+        }
+
+        @Override
+        public HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
+                Map<String, String> params) throws IOException {
+            actions.add("request");
+            String response = path.endsWith("/subscribe")
+                    ? "{\"subscription_id\":\"sub-standalone\",\"app_name\":\"test\",\"events\":[\"START\"]}"
+                    : "{\"name\":\"test\",\"subscription_id\":\"sub-atomic\"}";
+            byte[] bytes = response.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            return new HttpURLConnection(new URL("http://appmesh.test")) {
+                @Override public void disconnect() {}
+                @Override public boolean usingProxy() { return false; }
+                @Override public void connect() {}
+                @Override public int getResponseCode() { return HTTP_OK; }
+                @Override public java.io.InputStream getInputStream() { return new ByteArrayInputStream(bytes); }
+            };
+        }
+    }
+
+    @Test
+    public void testEventRequestsEnableDemuxerBeforeSend() throws IOException {
+        OrderingClient addClient = new OrderingClient();
+        addClient.addApp("test", new JSONObject().put("name", "test"), "START", "EXIT");
+        assertEquals(Arrays.asList("demuxer", "request"), addClient.actions);
+
+        OrderingClient subscribeClient = new OrderingClient();
+        subscribeClient.subscribe("test", new String[] { "START" }, null);
+        assertEquals(Arrays.asList("demuxer", "request"), subscribeClient.actions);
+    }
 
     @Test
     public void testResponseMessageDeserialization() throws IOException {

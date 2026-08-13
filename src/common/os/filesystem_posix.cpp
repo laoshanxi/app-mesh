@@ -112,9 +112,15 @@ namespace os
 		}
 	}
 
-	std::string createTmpFile(const std::string &fileName, const std::string &content)
+	std::string createTmpFile(const std::string &fileName, const std::string &content, uint16_t mode)
 	{
 		const char *fname = "os::createTmpFile() ";
+		constexpr uint16_t MAX_FILE_MODE = 0777;
+		if (mode > MAX_FILE_MODE)
+		{
+			LOG_WAR << fname << "Invalid mode value <" << mode << ">";
+			return {};
+		}
 
 		try
 		{
@@ -140,7 +146,7 @@ namespace os
 				return {};
 			}
 
-			if (::fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) == -1)
+			if (::fchmod(fd, mode) == -1)
 			{
 				LOG_WAR << fname << "Failed to set permissions on file <" << buf.data() << "> with error: " << last_error_msg();
 				::close(fd);

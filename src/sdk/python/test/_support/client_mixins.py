@@ -185,8 +185,15 @@ class ProtocolTestMixin:
     def test_13_config_and_metrics(self):
         """Server config, metrics, and log level."""
         self.client.login(USER, DEFAULT_CRED)
-        self.assertIn("cpu_cores", self.client.get_host_resources())
-        self.assertIn("appmesh_prom_scrape_count", self.client.get_metrics())
+        resources = self.client.get_host_resources()
+        self.assertEqual(resources.get("schema_version"), 3)
+        self.assertIn("cpu_effective_processors", resources)
+        self.assertIn("mem_available_bytes", resources)
+        self.assertIn("swap_source", resources)
+        self.assertIn("collector_errors", resources)
+        self.assertIn("net", resources)
+        self.assertIn("fs", resources)
+        self.assertIn("appmesh_metrics_scrapes_total", self.client.get_metrics())
         self.assertEqual(self.client.set_log_level("INFO"), "INFO")
         self.assertEqual(self.client.set_log_level("DEBUG"), "DEBUG")
 
@@ -229,7 +236,7 @@ class ProtocolTestMixin:
             name = f"SDK_FD_LOOP_{i}"
             self.client.add_app(App({"command": "echo fd_test", "name": name, "shell": True}))
             self.client.delete_app(name)
-        time.sleep(3)  # let onTimerAppExit / ~AppProcess run for all of them
+        time.sleep(3)  # let exit finalization / ~AppProcess run for all of them
 
         after = self.client.get_host_resources().get("fd")
         delta = after - baseline
@@ -697,13 +704,12 @@ class SubscribeMixin:
 
             app = self.client.add_app(
                 App({"command": "echo sub_test_66", "name": app_name, "shell": True}),
-                subscribe_events=["START", "STDOUT"],
+                subscribe_events=["START", "STDOUT", "EXIT"],
+                callback=on_event,
             )
             self.assertTrue(hasattr(app, "name"))
-            # Events from atomic subscribe arrive on the transport's demuxer
-            # Give some time for the app to start
-            time.sleep(3)
-            self.assertGreaterEqual(len(received), 0)
+            self.assertTrue(barrier.wait(timeout=10), "atomic subscription delivered no events")
+            self.assertGreater(len(received), 0)
         finally:
             self.client.delete_app(app_name)
 
@@ -1156,7 +1162,7 @@ class StressTestMixin:
         for t in threads:
             t.join(timeout=60)
         self.assertEqual(errors, [], f"Worker errors: {errors}")
-        time.sleep(5)  # let onTimerAppExit / ~AppProcess fully drain
+        time.sleep(5)  # let exit finalization / ~AppProcess fully drain
 
         after = self.client.get_host_resources().get("fd")
         delta = after - baseline
@@ -1312,12 +1318,8 @@ class SubscribeStressMixin:
     def test_94_subscribe_stress_high_volume_stdout(self):
         """Subscribe to STDOUT of a high-output app and verify events stream in.
 
-        The app paces its output so it is still running when the subscription's reader goes
-        live. Atomic add_app(subscribe_events) on a brand-new connection cannot retroactively
-        capture a sub-second app whose entire stdout is produced and flushed before the demuxer
-        owns the socket — that is a cold-start limitation of the TCP/WSS read model (the
-        synchronous request read consumes the interleaved event frame), not of subscription
-        itself. Streaming output is the realistic subscribe use case and exercises the same path.
+        The app paces its output to exercise sustained event delivery after the atomic
+        subscription has installed the connection demuxer.
         """
         self.client.login(USER, DEFAULT_CRED)
         self._ensure_subscribe_permission()

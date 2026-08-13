@@ -179,7 +179,7 @@ def scenario_read(client, name):
 
 def scenario_fault(client, name):
     # Disable/delete an app mid restart-loop: races disable->cancelTimer / delete->destroy
-    # against onTimerSpawn and the exit-driven driveLifecycle; must leave consistent state.
+    # against process start and lifecycle maintenance; must leave consistent state.
     client.add_app(App({"name": name, "command": "sh -c 'sleep 0.2; exit 1'",
                         "shell": True, "behavior": {"exit": "restart"}}))
     if not poll(lambda: pid(client, name) > 0, timeout=10):

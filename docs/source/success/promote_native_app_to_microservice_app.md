@@ -15,11 +15,16 @@ The interactive with native application can use std input, App Mesh support pass
 * Start Docker container in backend:
 
 ```shell
-docker run -d -m 8g --restart=always -v /usr/share/myapp.py:/usr/share/myapp.py:ro --name=myapp -p 6060:6060 -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
+docker run -d -m 8g --restart=always \
+  -v /usr/share/myapp.py:/usr/share/myapp.py:ro \
+  -v appmesh-work:/opt/appmesh/work \
+  --name=myapp -p 6060:6060 laoshanxi/appmesh
 ```
 
 * If we have any special configuration changes for App Mesh container, we can add `-v /opt/user/config.yaml:/opt/appmesh/config/config.yaml:ro`.
-* mount docker.sock to container so that App Mesh will also support manage container app.
+* The raw host Docker socket is not mounted by default. This example manages the
+  native application as UID/GID 482; `docker_image` management therefore remains
+  disabled in this deployment.
 
 ## Use native application
 

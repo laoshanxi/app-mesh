@@ -35,6 +35,7 @@ SocketServer::~SocketServer()
 int SocketServer::open(void *acceptor_or_connector)
 {
     const static char fname[] = "SocketServer::open() ";
+    const int id = m_id;
     LOG_INF << fname << "Initializing connection for client | ClientID=" << m_id;
 
     // Over the cap: return -1 so ACE_Acceptor calls close() (releases the construction ref).
@@ -70,14 +71,14 @@ int SocketServer::open(void *acceptor_or_connector)
         });
 
     this->onError(
-        [id = m_id](const std::string &msg)
+        [id](const std::string &msg)
         {
             const static char fname_cb[] = "SocketServer::onError() ";
             LOG_WAR << fname_cb << "| ClientID=" << id << " | Error occurred: " << msg;
         });
 
     this->onClose(
-        [id = m_id]()
+        [id]()
         {
             const static char fname_cb[] = "SocketServer::onClose() ";
             {
@@ -98,7 +99,6 @@ int SocketServer::open(void *acceptor_or_connector)
     }
     // open() drops the construction ref, after which another reactor thread may delete
     // this; cache id before the call so we never read a freed member afterwards.
-    const int id = m_id;
     int result = SocketStream::open(acceptor_or_connector);
     if (result == -1)
     {

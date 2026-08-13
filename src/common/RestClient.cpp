@@ -302,7 +302,8 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	const std::string &body,
 	std::map<std::string, std::string> header,
 	std::map<std::string, std::string> query,
-	std::map<std::string, std::string> formData)
+	std::map<std::string, std::string> formData,
+	long timeoutSeconds)
 {
 	CurlGlobalInitializer::instance();
 
@@ -337,7 +338,7 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	// Configure CURL options
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, CONNECT_TIMEOUT_SECONDS);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, REQUEST_TIMEOUT_SECONDS);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeoutSeconds > 0 ? timeoutSeconds : REQUEST_TIMEOUT_SECONDS);
 	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, mtd.c_str());
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response->text);

@@ -3,9 +3,11 @@
 
 #include "filesystem.h"
 
+#include <algorithm>
 #include <cstring>
 #include <mntent.h>
 #include <set>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 
 #include "../Utility.h"
@@ -31,9 +33,12 @@ namespace os
 			return nullptr;
 		}
 
+		const auto freeBlocks = std::min(buf.f_bfree, buf.f_blocks);
+		const auto availableBlocks = std::min(buf.f_bavail, freeBlocks);
 		df->totalSize = static_cast<uint64_t>(buf.f_frsize) * buf.f_blocks;
-		df->usedSize = static_cast<uint64_t>(buf.f_frsize) * (buf.f_blocks - buf.f_bfree);
-		df->usagePercentage = static_cast<double>(buf.f_blocks - buf.f_bfree) / buf.f_blocks;
+		df->usedSize = static_cast<uint64_t>(buf.f_frsize) * (buf.f_blocks - freeBlocks);
+		df->availableSize = static_cast<uint64_t>(buf.f_frsize) * availableBlocks;
+		df->usagePercentage = static_cast<double>(buf.f_blocks - freeBlocks) / buf.f_blocks;
 
 		return df;
 	}
@@ -62,11 +67,20 @@ namespace os
 		struct mntent tempMountEntry;
 		char entryBuffer[4096];
 
-		std::set<std::string> ignoredFileSystems = {
-			"tmpfs", "romfs", "ramfs", "devtmpfs", "overlay", "squashfs",
+		static const std::set<std::string> ignoredFileSystems = {
+			"tmpfs", "romfs", "ramfs", "devtmpfs", "overlay", "squashfs", "autofs",
 			"sysfs", "proc", "devpts", "securityfs", "cgroup", "cgroup2",
-			"pstore", "debugfs", "hugetlbfs", "mqueue", "fusectl",
-			"configfs", "fuse", "binfmt_misc"};
+			"pstore", "debugfs", "tracefs", "hugetlbfs", "mqueue", "fusectl",
+			"configfs", "fuse", "binfmt_misc", "bpf", "nsfs", "rpc_pipefs",
+			"efivarfs", "selinuxfs"};
+		// Avoid blocking the local collector on unreachable remote mounts.
+		static const std::set<std::string> remoteFileSystems = {
+			"nfs", "nfs4", "cifs", "smb3", "sshfs", "fuse.sshfs", "9p",
+			"ceph", "glusterfs", "gcsfuse", "s3fs", "afs"};
+		// ZFS datasets are logical disks but do not expose a /dev block-device path.
+		static const std::set<std::string> logicalFileSystemsWithoutBlockDevice = {"zfs"};
+		std::set<dev_t> seenBlockDevices;
+		std::set<std::string> seenLogicalDevices;
 
 		while ((currentMountEntry = getmntent_r(mountsFile.get(), &tempMountEntry, entryBuffer, sizeof(entryBuffer))) != nullptr)
 		{
@@ -80,29 +94,46 @@ namespace os
 				continue;
 			}
 
-			if (ignoredFileSystems.count(fileSystemType) > 0 || devicePath[0] != '/')
+			if (ignoredFileSystems.count(fileSystemType) > 0)
 			{
-				LOG_DBG << fname << "Skipping " << (devicePath[0] != '/' ? "non-device" : "ignored")
-						<< " filesystem: " << fileSystemType << " at " << mountDir;
+				LOG_DBG << fname << "Skipping ignored filesystem: " << fileSystemType << " at " << mountDir;
 				continue;
 			}
 
-			struct statvfs fileSystemStats;
-			if (::statvfs(mountDir, &fileSystemStats) != 0)
+			if (remoteFileSystems.count(fileSystemType) > 0 || hasmntopt(currentMountEntry, "_netdev"))
 			{
-				LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << last_error_msg();
-				continue;
-			}
-
-			if (fileSystemStats.f_blocks <= 0)
-			{
-				LOG_WAR << fname << "Skipping mount point with no blocks: " << mountDir;
+				LOG_DBG << fname << "Skipping remote filesystem: " << fileSystemType << " at " << mountDir;
 				continue;
 			}
 
 			if (strstr(currentMountEntry->mnt_opts, "bind"))
 			{
 				LOG_DBG << fname << "Skipping bind mount: " << mountDir;
+				continue;
+			}
+
+			struct stat deviceStats {};
+			const bool blockBacked = ::stat(devicePath, &deviceStats) == 0 && S_ISBLK(deviceStats.st_mode);
+			const bool logicalWithoutBlockDevice = logicalFileSystemsWithoutBlockDevice.count(fileSystemType) > 0;
+			if (!blockBacked && !logicalWithoutBlockDevice)
+			{
+				LOG_DBG << fname << "Skipping non-logical-disk filesystem: " << fileSystemType
+						<< " device: " << devicePath << " at " << mountDir;
+				continue;
+			}
+			if (blockBacked && !seenBlockDevices.insert(deviceStats.st_rdev).second)
+			{
+				LOG_DBG << fname << "Skipping duplicate logical disk device: " << devicePath << " at " << mountDir;
+				continue;
+			}
+			if (logicalWithoutBlockDevice && !seenLogicalDevices.insert(devicePath).second)
+			{
+				LOG_DBG << fname << "Skipping duplicate logical disk: " << devicePath << " at " << mountDir;
+				continue;
+			}
+			if (mountPointsMap.count(mountDir) > 0)
+			{
+				LOG_DBG << fname << "Skipping duplicate mount point: " << mountDir;
 				continue;
 			}
 

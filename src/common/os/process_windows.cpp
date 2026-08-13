@@ -106,12 +106,12 @@ namespace os
 			return static_cast<time_t>((uli.QuadPart - 116444736000000000ULL) / 10000000ULL);
 		};
 
-		auto fileTimeToTicks = [](const FILETIME &ft) -> unsigned long
+		auto fileTimeToTicks = [](const FILETIME &ft) -> uint64_t
 		{
 			ULARGE_INTEGER uli;
 			uli.LowPart = ft.dwLowDateTime;
 			uli.HighPart = ft.dwHighDateTime;
-			return static_cast<unsigned long>(uli.QuadPart / 10000);
+			return static_cast<uint64_t>(uli.QuadPart / 10000);
 		};
 
 		return std::make_shared<ProcessStatus>(
@@ -126,8 +126,8 @@ namespace os
 			0,
 			0,
 			fileTimeToTimeT(createTime),
-			static_cast<unsigned long>(memInfo.PagefileUsage),
-			static_cast<long>(memInfo.WorkingSetSize / os::pagesize()));
+			static_cast<uint64_t>(memInfo.PagefileUsage),
+			static_cast<int64_t>(memInfo.WorkingSetSize / os::pagesize()));
 	}
 
 	std::string cmdline(pid_t pid /* = 0 */)
@@ -286,9 +286,9 @@ namespace os
 		struct Light
 		{
 			pid_t ppid;
-			unsigned long utime;
-			unsigned long stime;
-			long rss;
+			uint64_t utime;
+			uint64_t stime;
+			int64_t rss;
 			std::string comm;
 		};
 		std::unordered_map<pid_t, Light> byPid;
@@ -318,9 +318,9 @@ namespace os
 				Light l;
 				l.ppid = static_cast<pid_t>(ppid);
 				// 100ns units -> ms, matching status()'s fileTimeToTicks.
-				l.utime = static_cast<unsigned long>(spi->UserTime.QuadPart / 10000);
-				l.stime = static_cast<unsigned long>(spi->KernelTime.QuadPart / 10000);
-				l.rss = static_cast<long>(spi->WorkingSetSize / os::pagesize());
+				l.utime = static_cast<uint64_t>(spi->UserTime.QuadPart / 10000);
+				l.stime = static_cast<uint64_t>(spi->KernelTime.QuadPart / 10000);
+				l.rss = static_cast<int64_t>(spi->WorkingSetSize / os::pagesize());
 				l.comm = comm;
 				byPid[static_cast<pid_t>(pid)] = l;
 				children[static_cast<pid_t>(ppid)].push_back(static_cast<pid_t>(pid));
@@ -331,8 +331,17 @@ namespace os
 			ptr += spi->NextEntryOffset;
 		}
 
-		auto selected = collectDescendants(rootPid, children);
-		selected.insert(rootPid);
+		std::unordered_set<pid_t> selected;
+		if (rootPid == 0)
+		{
+			for (const auto &entry : byPid)
+				selected.insert(entry.first);
+		}
+		else
+		{
+			selected = collectDescendants(rootPid, children);
+			selected.insert(rootPid);
+		}
 
 		// command from cmdline (PEB) when available, else the image base name.
 		// starttime/vsize are unused by Process, so passed as 0.
@@ -343,7 +352,7 @@ namespace os
 				continue;
 			const Light &l = it->second;
 			ProcessStatus st(pid, l.comm, 'R', l.ppid, 0, 0, l.utime, l.stime, 0, 0, 0, 0, l.rss);
-			result.push_back(makeProcess(st, os::cmdline(pid)));
+			result.push_back(makeProcess(st, rootPid == 0 ? std::string() : os::cmdline(pid)));
 		}
 		return result;
 	}

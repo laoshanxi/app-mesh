@@ -12,15 +12,17 @@ class PipeStdoutStrategy : public StdoutStrategy
 {
 public:
 	PipeStdoutStrategy(std::string appName, ACE_HANDLE pipeRead,
-					   ACE_HANDLE diskWrite, std::shared_ptr<std::recursive_mutex> diskMutex);
+					   ACE_HANDLE diskWrite, std::shared_ptr<std::mutex> diskMutex);
 	~PipeStdoutStrategy() override;
 
+	void activate(TimerHandler &owner, const std::string &runId) override;
 	long dispatchedBytes() const override;
-	bool isActive() const override { return !m_tornDown; }
+	bool isActive() const override { return m_registered && !m_tornDown; }
 	void teardown() override;
 
 private:
 	StdoutPump *m_pump{nullptr};
 	std::atomic<long> m_snapshotBytes{0};
 	std::atomic<bool> m_tornDown{false};
+	bool m_registered{false};
 };

@@ -1041,6 +1041,11 @@ impl AppMeshClient {
             .as_deref()
             .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
         let body_bytes = serde_json::to_vec(app)?;
+        if subscribe_events.is_some() {
+            // START may arrive before the add-app response on a persistent
+            // connection, so the demuxer must own the read side first.
+            self.req.enable_demuxer().await?;
+        }
         let query = subscribe_events.map(|events| {
             let mut q = HashMap::new();
             q.insert("subscribe_events".to_string(), events.join(","));
@@ -1084,12 +1089,15 @@ impl AppMeshClient {
             q.insert("events".to_string(), e.join(","));
             q
         });
-        // Enable demuxer and pre-register callback with a temporary key so events
-        // arriving between server processing and response delivery are captured.
+        // Enable the demuxer before the request even when no callback was supplied:
+        // otherwise an event racing the response can be consumed by the direct reader.
+        self.req.enable_demuxer().await?;
+
+        // Pre-register callback state before sending. Events use the actual server
+        // subscription ID and are buffered until that ID is registered below.
         // (The "__pending_" prefix cannot collide with server-issued UUID sub ids.)
         let pending_key = format!("__pending_{}", uuid::Uuid::new_v4());
         if let Some(ref cb) = callback {
-            self.req.enable_demuxer();
             if let Some(demuxer) = self.req.get_demuxer() {
                 demuxer.register_event_callback(&pending_key, cb.clone());
             }

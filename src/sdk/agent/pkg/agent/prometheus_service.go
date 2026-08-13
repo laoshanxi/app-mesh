@@ -12,12 +12,26 @@ const (
 
 // PrometheusServer represents the Prometheus exporter server
 type PrometheusServer struct {
-	port int
+	port           int
+	metricsHandler http.HandlerFunc
 }
 
 // NewPrometheusServer creates a new PrometheusServer instance
 func NewPrometheusServer(port int) *PrometheusServer {
-	return &PrometheusServer{port: port}
+	return &PrometheusServer{port: port, metricsHandler: HandleAppMeshRequest}
+}
+
+func (s *PrometheusServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST) != "" {
+		http.Error(w, "metrics forwarding is not allowed", http.StatusBadRequest)
+		return
+	}
+	s.metricsHandler(w, r)
 }
 
 // RootHandler handles the root path request
@@ -29,20 +43,22 @@ func (s *PrometheusServer) RootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Prometheus metrics available at %s", prometheusMetricPath)
 }
 
-// ListenAndServe starts the Prometheus exporter server
-func (s *PrometheusServer) ListenAndServe() error {
+func (s *PrometheusServer) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.RootHandler)
-	mux.HandleFunc(prometheusMetricPath, HandleAppMeshRequest)
+	mux.HandleFunc(prometheusMetricPath, s.handleMetrics)
+	return mux
+}
 
+// ListenAndServe starts the Prometheus exporter server
+func (s *PrometheusServer) ListenAndServe() error {
 	addr := fmt.Sprintf(":%d", s.port)
 	logger.Infof("Starting Prometheus exporter server on %s", addr)
 
-	// Bound every phase of the request so a slow/idle client (Slowloris) cannot pin a
-	// connection open indefinitely; mirrors the REST server's timeout discipline.
+	// Bound slow or idle connections.
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           s.handler(),
 		ReadHeaderTimeout: 15 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,

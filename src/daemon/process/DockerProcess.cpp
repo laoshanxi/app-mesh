@@ -1,20 +1,98 @@
 // src/daemon/process/DockerProcess.cpp
 #include "DockerProcess.h"
-#include "../../common/DateTime.h"
+
+#include <chrono>
+#include <sstream>
+#include <utility>
+
 #include "../../common/Utility.h"
-#include "../../common/os/pstree.h"
+#include "../Configuration.h"
 #include "../ResourceLimitation.h"
-#include "LinuxCgroup.h"
 
 namespace
 {
 	const char *const CONTAINER_DOCKER = "docker";
 	const char *const CONTAINER_PODMAN = "podman";
 	constexpr int DOCKER_CLI_TIMEOUT_SEC = 5;
+	constexpr int DOCKER_COMMAND_ERROR = -200;
+
+	struct DockerCommandResult
+	{
+		bool started = false;
+		bool completed = false;
+		int exitCode = DOCKER_COMMAND_ERROR;
+		std::string output;
+		std::string error;
+	};
+
+	template <typename Integer>
+	bool parseInteger(const std::string &text, Integer &value)
+	{
+		if (text.empty())
+			return false;
+
+		Integer parsed{};
+		std::istringstream input(text);
+		input >> std::noskipws >> parsed;
+		if (input.fail() || !input.eof())
+			return false;
+
+		value = parsed;
+		return true;
+	}
+
+	DockerCommandResult runDockerCli(const std::string &command, int timeoutSeconds = DOCKER_CLI_TIMEOUT_SEC,
+									 int maxOutput = 10240, bool readLine = false)
+	{
+		DockerCommandResult result;
+		const auto outputFile = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR /
+								 ("docker." + Utility::shortID() + ".out"))
+									.string();
+		{
+			auto process = std::make_shared<AppProcess>(std::weak_ptr<Application>());
+			const auto start = process->start(command, "root", "", {}, nullptr, outputFile, EMPTY_STR_JSON, 0);
+			result.started = start.accepted;
+			result.error = start.error;
+			if (result.started)
+			{
+				process->scheduleTermination(timeoutSeconds, "runDockerCli");
+				result.completed = process->wait(ACE_Time_Value(timeoutSeconds + 1)) > 0;
+				if (!result.completed)
+				{
+					process->terminate();
+					process->wait(ACE_Time_Value(1));
+					result.error = "docker command timed out";
+				}
+				else
+				{
+					result.exitCode = process->returnValue();
+					result.output = process->getOutputMsg(nullptr, maxOutput, readLine);
+				}
+			}
+		}
+		Utility::removeFile(outputFile);
+		return result;
+	}
+
+	void launchDockerCleanup(const std::string &command)
+	{
+		const static char fname[] = "launchDockerCleanup() ";
+		auto process = std::make_shared<AppProcess>(std::weak_ptr<Application>());
+		const auto start = process->start(command, "root", "", {}, nullptr, "", EMPTY_STR_JSON, 0);
+		if (!start.accepted)
+		{
+			LOG_ERR << fname << "failed to launch <" << command << ">: " << start.error;
+			return;
+		}
+
+		// The termination timer owns the helper until it exits or reaches the timeout.
+		// Cleanup is best effort, so the caller never waits for Docker CLI completion.
+		process->scheduleTermination(3, fname);
+	}
 }
 
-DockerProcess::DockerProcess(const std::string &containerName, const std::string &dockerImage)
-	: AppProcess({}), m_containerName(containerName), m_dockerImage(dockerImage), m_containerEngine(CONTAINER_DOCKER)
+DockerProcess::DockerProcess(std::weak_ptr<Application> owner, const std::string &containerName, const std::string &dockerImage)
+	: AppProcess(std::move(owner)), m_containerName(containerName), m_dockerImage(dockerImage), m_containerEngine(CONTAINER_DOCKER)
 {
 	const static char fname[] = "DockerProcess::DockerProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -28,74 +106,72 @@ DockerProcess::~DockerProcess()
 	DockerProcess::terminate();
 }
 
-void DockerProcess::terminate()
+void DockerProcess::terminateImpl()
 {
-	const static char fname[] = "DockerProcess::terminate() ";
-
-	// Get and clean container id
-	std::string containerId = this->containerId();
-	this->containerId("");
+	std::string containerId;
+	std::string containerEngine;
+	{
+		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		containerId = std::move(m_containerId);
+		m_containerId.clear();
+		containerEngine = m_containerEngine;
+	}
+	if (containerId.empty())
+	{
+		// Image pulls are native child processes owned by this instance.
+		AppProcess::terminateImpl();
+		return;
+	}
 
 	// Clean docker container
-	if (!containerId.empty())
-	{
-		auto cmd = Utility::stringFormat("%s rm -f %s", m_containerEngine.c_str(), containerId.c_str());
-		auto proc = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-		proc->spawnProcess(cmd, "root", "", {}, nullptr);
-		if (proc->wait(ACE_Time_Value(3)) <= 0)
-		{
-			LOG_ERR << fname << "cmd <" << cmd << "> killed due to timeout";
-			proc->terminate();
-		}
-	}
-
-	if (m_imagePull && m_imagePull->running())
-	{
-		m_imagePull->terminate();
-	}
+	auto cmd = Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), containerId.c_str());
+	launchDockerCleanup(cmd);
 
 	// Detach manually
 	this->detach();
 }
 
-int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::string workDir,
-									std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile)
+pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &workDir,
+									const std::map<std::string, std::string> &envMap,
+									const std::shared_ptr<ResourceLimitation> &limit, const std::string &stdoutFile)
 {
-	const static char fname[] = "DockerProcess::syncSpawnProcess() ";
+	const static char fname[] = "DockerProcess::startContainer() ";
 
-	terminate();
-	int pid = ACE_INVALID_PID;
-	const std::string containerName = m_containerName;
-
-	// Step 0: Clean old docker container (containers may remain after host restart)
-	std::string dockerCommand = Utility::stringFormat("%s rm -f %s", m_containerEngine.c_str(), containerName.c_str());
+	std::string containerEngine;
 	{
-		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
-		dockerProcess->wait();
+		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		containerEngine = m_containerEngine;
 	}
 
-	// Step 1: Check if docker image exists
-	dockerCommand = Utility::stringFormat("%s inspect -f '{{.Size}}' %s", m_containerEngine.c_str(), m_dockerImage.c_str());
-	{
-		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
-		dockerProcess->delayKill(DOCKER_CLI_TIMEOUT_SEC, fname);
-		dockerProcess->wait();
-		dockerProcess->terminate();
-		m_imagePull.reset();
+	// Step 0: Clean old docker container (containers may remain after host restart)
+	std::string dockerCommand = Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), m_containerName.c_str());
+	runDockerCli(dockerCommand); // Best effort: docker run reports a name conflict if cleanup failed.
 
-		auto imageSizeStr = Utility::stdStringTrim(dockerProcess->getOutputMsg(nullptr, 10240, true));
-		if (!Utility::isNumber(imageSizeStr) || std::stoll(imageSizeStr) < 1)
+	// Step 1: Check if docker image exists
+	dockerCommand = Utility::stringFormat("%s image inspect -f '{{.Size}}' %s", containerEngine.c_str(), m_dockerImage.c_str());
+	{
+		const auto imageInspect = runDockerCli(dockerCommand);
+		if (!imageInspect.started)
+		{
+			setStartError(imageInspect.error.empty() ? "failed to launch docker image inspect" : imageInspect.error);
+			return ACE_INVALID_PID;
+		}
+		if (!imageInspect.completed)
+		{
+			setStartError(imageInspect.error);
+			return ACE_INVALID_PID;
+		}
+		auto imageSizeStr = Utility::stdStringTrim(imageInspect.output);
+		int64_t imageSize = 0;
+		if (imageInspect.exitCode != 0 || !parseInteger(imageSizeStr, imageSize) || imageSize < 1)
 		{
 			LOG_WAR << fname << "docker image <" << m_dockerImage << "> does not exist, trying to pull";
-			startError(Utility::stringFormat("docker image <%s> not exist, try to pull.", m_dockerImage.c_str()));
-			return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
+			return startImagePull(envMap, m_dockerImage, workDir, stdoutFile);
 		}
 	}
 
 	// Step 2: Build docker start command line
-	dockerCommand = Utility::stringFormat("%s run -d --name %s ", m_containerEngine.c_str(), containerName.c_str());
+	dockerCommand = Utility::stringFormat("%s run -d --name %s ", containerEngine.c_str(), m_containerName.c_str());
 
 	for (const auto &env : envMap)
 	{
@@ -133,9 +209,9 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		if (limit->m_memoryMb)
 		{
 			dockerCommand.append(" --memory ").append(std::to_string(limit->m_memoryMb)).append("M");
-			if (limit->m_memoryVirtMb && limit->m_memoryVirtMb > limit->m_memoryMb)
+			if (limit->m_memoryVirtSpecified)
 			{
-				dockerCommand.append(" --memory-swap ").append(std::to_string(limit->m_memoryVirtMb - limit->m_memoryMb)).append("M");
+				dockerCommand.append(" --memory-swap ").append(std::to_string(limit->m_memoryVirtMb)).append("M");
 			}
 		}
 		if (limit->m_cpuShares)
@@ -152,103 +228,128 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	bool startSuccess = false;
 	std::string containerId;
 	{
-		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
-		dockerProcess->delayKill(DOCKER_CLI_TIMEOUT_SEC, fname);
-		dockerProcess->wait();
-		dockerProcess->terminate();
-
-		if (dockerProcess->returnValue() == 0)
+		const auto run = runDockerCli(dockerCommand);
+		if (!run.started)
 		{
-			const auto outmsg = dockerProcess->getOutputMsg(nullptr, 10240, true);
-			containerId = Utility::stdStringTrim(outmsg);
-			startSuccess = (containerId.length() > 0);
+			setStartError(run.error.empty() ? "failed to launch docker run command" : run.error);
+		}
+		else if (!run.completed)
+		{
+			setStartError(run.error);
+		}
+		else if (run.exitCode == 0)
+		{
+			containerId = Utility::stdStringTrim(run.output);
+			startSuccess = !containerId.empty();
 			if (!startSuccess)
-			{
-				startError(Utility::stringFormat("failed get docker container <%s> from output <%s>", dockerCommand.c_str(), outmsg.c_str()));
-			}
+				setStartError(Utility::stringFormat("failed get docker container <%s> from output <%s>", dockerCommand.c_str(), run.output.c_str()));
 		}
 		else
 		{
-			const auto outmsg = dockerProcess->getOutputMsg(nullptr, 10240, false);
-			LOG_WAR << fname << "start container command <" << dockerCommand << "> failed: " << outmsg;
-			startError(Utility::stringFormat("started docker container <%s> failed with error <%s>", dockerCommand.c_str(), outmsg.c_str()));
+			LOG_WAR << fname << "start container command <" << dockerCommand << "> failed: " << run.output;
+			setStartError(Utility::stringFormat("started docker container <%s> failed with error <%s>", dockerCommand.c_str(), run.output.c_str()));
 		}
 
 		// Set container id here for future cleanup
-		this->containerId(containerId);
+		setContainerId(containerId);
 	}
 
 	// Step 4: Get docker root pid
 	if (startSuccess)
 	{
-		dockerCommand = Utility::stringFormat("%s inspect -f '{{.State.Pid}}' %s", m_containerEngine.c_str(), containerId.c_str());
-		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
-		dockerProcess->delayKill(DOCKER_CLI_TIMEOUT_SEC, fname);
-		dockerProcess->wait();
-
-		if (dockerProcess->returnValue() == 0)
+		dockerCommand = Utility::stringFormat(
+			"%s inspect -f '{{.State.Pid}} {{.State.Running}} {{.State.ExitCode}}' %s",
+			containerEngine.c_str(), containerId.c_str());
+		const auto inspect = runDockerCli(dockerCommand);
+		if (!inspect.started)
 		{
-			auto pidStr = Utility::stdStringTrim(dockerProcess->getOutputMsg(nullptr, 10240, true));
-			if (Utility::isNumber(pidStr))
+			setStartError(inspect.error.empty() ? "failed to launch docker inspect command" : inspect.error);
+			setContainerId(containerId);
+			terminate();
+			return ACE_INVALID_PID;
+		}
+		if (!inspect.completed)
+		{
+			setStartError(inspect.error);
+			setContainerId(containerId);
+			terminate();
+			return ACE_INVALID_PID;
+		}
+
+		if (inspect.exitCode == 0)
+		{
+			const auto stateText = Utility::stdStringTrim(inspect.output);
+			std::istringstream stateStream(stateText);
+			int hostPid = 0;
+			int exitCode = DOCKER_COMMAND_ERROR;
+			std::string runningText;
+			if (stateStream >> hostPid >> runningText >> exitCode)
 			{
-				pid = std::stoi(pidStr);
-				if (pid > 1)
+				if (runningText == "false")
 				{
-					// Success
-					this->attach(pid);
-					this->containerId(containerId);
-					LOG_INF << fname << "started pid <" << pid << "> for container: " << containerId;
+					setContainerId(containerId);
+					LOG_INF << fname << "container <" << containerId
+							<< "> completed before host PID inspection, exit code <" << exitCode << ">";
+					reportEarlyExit(exitCode);
+					return ACE_INVALID_PID;
+				}
+				if (runningText == "true" && hostPid > 1)
+				{
+					this->attach(hostPid);
+					setContainerId(containerId);
+					LOG_INF << fname << "started pid <" << hostPid << "> for container: " << containerId;
 					return this->getpid();
 				}
-				else
-				{
-					startError(Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str()));
-				}
+				setStartError(Utility::stringFormat("container running without valid host pid, inspect output <%s>", stateText.c_str()));
 			}
 			else
 			{
-				LOG_WAR << fname << "failed to parse container pid from output <" << pidStr << ">";
-				startError(Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str()));
+				LOG_WAR << fname << "failed to parse container state from output <" << stateText << ">";
+				setStartError(Utility::stringFormat("failed get docker container state <%s> from output <%s>", dockerCommand.c_str(), stateText.c_str()));
 			}
 		}
 		else
 		{
-			const auto output = dockerProcess->getOutputMsg(nullptr, 10240, false);
-			LOG_WAR << fname << "inspect container pid command <" << dockerCommand << "> failed: " << output;
-			startError(Utility::stringFormat("start docker container <%s> failed <%s>", dockerCommand.c_str(), output.c_str()));
+			LOG_WAR << fname << "inspect container pid command <" << dockerCommand << "> failed: " << inspect.output;
+			setStartError(Utility::stringFormat("start docker container <%s> failed <%s>", dockerCommand.c_str(), inspect.output.c_str()));
 		}
-		dockerProcess->terminate();
 	}
 
 	// Failed
-	this->containerId(containerId);
+	setContainerId(containerId);
 	this->detach();
 	terminate();
 	return this->getpid();
 }
 
-int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMap, const std::string &dockerImage,
-									   const std::string &stdoutFile, const std::string &workDir)
+pid_t DockerProcess::startImagePull(const std::map<std::string, std::string> &envMap, const std::string &dockerImage,
+									std::string workDir, const std::string &stdoutFile)
 {
-	const static char fname[] = "DockerProcess::execPullDockerImage() ";
+	const static char fname[] = "DockerProcess::startImagePull() ";
 
 	int pullTimeout = 5 * 60; // Default image pull timeout: 5 minutes
-	if (envMap.count(ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT) && Utility::isNumber(envMap[ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT]))
+	const auto timeoutSetting = envMap.find(ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT);
+	int configuredTimeout = 0;
+	if (timeoutSetting != envMap.end() && parseInteger(timeoutSetting->second, configuredTimeout) && configuredTimeout > 0)
 	{
-		pullTimeout = std::stoi(envMap[ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT]);
+		pullTimeout = configuredTimeout;
 	}
 	else
 	{
 		LOG_DBG << fname << "image pull timeout not configured, using default <" << pullTimeout << "> seconds";
 	}
 
-	m_imagePull = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-	m_imagePull->spawnProcess(m_containerEngine + " pull " + dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
-	m_imagePull->delayKill(pullTimeout, fname);
-	this->attach(m_imagePull->getpid());
-	return this->getpid();
+	std::string containerEngine;
+	{
+		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		containerEngine = m_containerEngine;
+	}
+	const pid_t pid = AppProcess::startImpl(
+		containerEngine + " pull " + dockerImage, "root", std::move(workDir), {}, nullptr,
+		stdoutFile, EMPTY_STR_JSON, 0);
+	if (pid > 1)
+		scheduleTermination(pullTimeout, fname);
+	return pid;
 }
 
 pid_t DockerProcess::getpid() const
@@ -263,67 +364,94 @@ pid_t DockerProcess::getpid() const
 
 std::string DockerProcess::containerId() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_dockerMutex);
+	std::lock_guard<std::mutex> guard(m_dockerMutex);
 	return m_containerId;
 }
 
-void DockerProcess::containerId(const std::string &containerId)
+void DockerProcess::setContainerId(const std::string &containerId)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_dockerMutex);
+	std::lock_guard<std::mutex> guard(m_dockerMutex);
 	m_containerId = containerId;
+}
+
+std::string DockerProcess::takeContainerId()
+{
+	std::lock_guard<std::mutex> guard(m_dockerMutex);
+	auto containerId = std::move(m_containerId);
+	m_containerId.clear();
+	return containerId;
 }
 
 int DockerProcess::returnValue() const
 {
 	const static char fname[] = "DockerProcess::returnValue() ";
 
-	const auto containerId = this->containerId();
-	auto dockerCommand = Utility::stringFormat("%s inspect %s --format='{{.State.ExitCode}}'", m_containerEngine.c_str(), containerId.c_str());
-	auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-	dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, containerId);
-	dockerProcess->wait();
-
-	if (dockerProcess->returnValue() == 0)
+	std::string containerId;
+	std::string containerEngine;
 	{
-		auto msg = dockerProcess->getOutputMsg(nullptr, 512, true);
-		if (Utility::isNumber(msg))
-		{
-			return std::atoi(msg.c_str());
-		}
-		else
-		{
-			LOG_WAR << fname << "docker inspect exit code from container <" << containerId << "> failed with output: " << msg;
-		}
+		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		containerId = m_containerId;
+		containerEngine = m_containerEngine;
+	}
+	if (containerId.empty())
+		return AppProcess::returnValue();
+	auto dockerCommand = Utility::stringFormat("%s inspect %s --format='{{.State.ExitCode}}'", containerEngine.c_str(), containerId.c_str());
+	const auto inspect = runDockerCli(dockerCommand, DOCKER_CLI_TIMEOUT_SEC, 512, true);
+	if (!inspect.started)
+	{
+		LOG_WAR << fname << "failed to launch docker inspect: " << inspect.error;
+		return DOCKER_COMMAND_ERROR;
+	}
+	if (!inspect.completed)
+	{
+		LOG_WAR << fname << "docker inspect timed out for container <" << containerId << ">";
+		return DOCKER_COMMAND_ERROR;
+	}
+
+	if (inspect.exitCode == 0)
+	{
+		int exitCode = 0;
+		if (parseInteger(Utility::stdStringTrim(inspect.output), exitCode))
+			return exitCode;
+		LOG_WAR << fname << "docker inspect exit code from container <" << containerId << "> failed with output: " << inspect.output;
 	}
 	else
 	{
-		LOG_WAR << fname << "docker inspect exit code from container <" << containerId << "> failed with exit code: " << dockerProcess->returnValue();
+		LOG_WAR << fname << "docker inspect exit code from container <" << containerId << "> failed with exit code: " << inspect.exitCode;
 	}
 
-	return -200;
+	return DOCKER_COMMAND_ERROR;
 }
 
-int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir,
-								std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-								const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
+pid_t DockerProcess::startImpl(std::string cmd, std::string execUser, std::string workDir,
+							   std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+							   const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
 {
-	const static char fname[] = "DockerProcess::spawnProcess() ";
+	const static char fname[] = "DockerProcess::startImpl() ";
 	LOG_DBG << fname << "Entered";
 
 	// Check for podman engine
 	if (CONTAINER_PODMAN == GET_JSON_STR_VALUE(stdinFileContent, "engine"))
 	{
+		std::lock_guard<std::mutex> guard(m_dockerMutex);
 		m_containerEngine = CONTAINER_PODMAN;
 	}
 
-	return syncSpawnProcess(cmd, execUser, workDir, envMap, limit, stdoutFile);
+	return startContainer(cmd, workDir, envMap, limit, stdoutFile);
 }
 
 const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool readLine)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_dockerMutex);
+	const static char fname[] = "DockerProcess::getOutputMsg() ";
+	std::string containerId;
+	std::string containerEngine;
+	{
+		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		containerId = m_containerId;
+		containerEngine = m_containerEngine;
+	}
 
-	if (m_containerId.length())
+	if (!containerId.empty())
 	{
 		// Get logs since timestamp (RFC3339 or UNIX timestamp)
 		auto secondsUTC = 0L;
@@ -332,18 +460,25 @@ const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool 
 			secondsUTC = *position;
 		}
 
-		auto dockerCommand = Utility::stringFormat("%s logs --since %llu %s", m_containerEngine.c_str(), secondsUTC, m_containerId.c_str());
-		auto dockerProcess = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, m_containerId);
-		dockerProcess->wait();
+		auto dockerCommand = Utility::stringFormat("%s logs --since %ld %s", containerEngine.c_str(), secondsUTC, containerId.c_str());
+		const auto logs = runDockerCli(dockerCommand, DOCKER_CLI_TIMEOUT_SEC, maxSize, readLine);
+		if (!logs.started)
+		{
+			LOG_WAR << fname << "failed to launch docker logs: " << logs.error;
+			return {};
+		}
+		if (!logs.completed)
+		{
+			LOG_WAR << fname << "docker logs timed out for container <" << containerId << ">";
+			return {};
+		}
 
-		auto msg = dockerProcess->getOutputMsg(nullptr, maxSize, readLine);
 		if (position)
 		{
 			*position = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		}
-		return msg;
+		return logs.output;
 	}
 
-	return std::string();
+	return AppProcess::getOutputMsg(position, maxSize, readLine);
 }

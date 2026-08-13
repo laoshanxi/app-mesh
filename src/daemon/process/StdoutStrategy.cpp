@@ -8,6 +8,7 @@
 class NullStdoutStrategy : public StdoutStrategy
 {
 public:
+	void activate(TimerHandler &, const std::string &) override {}
 	long dispatchedBytes() const override { return 0; }
 	bool isActive() const override { return false; }
 	void teardown() override {}
@@ -15,7 +16,7 @@ public:
 
 std::unique_ptr<StdoutStrategy> StdoutStrategy::create(
 	std::string appName, ACE_HANDLE pipeRead, ACE_HANDLE diskWrite,
-	std::shared_ptr<std::recursive_mutex> diskMutex,
+	std::shared_ptr<std::mutex> diskMutex,
 	std::weak_ptr<Application> owner)
 {
 #if !defined(_WIN32)

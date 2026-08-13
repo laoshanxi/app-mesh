@@ -3,6 +3,7 @@
 
 #include "sysinfo.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <mutex>
@@ -19,44 +20,34 @@
 namespace os
 {
 
-	int64_t cpuTotalTime()
-	{
-		host_cpu_load_info_data_t cpuinfo;
-		mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
-		if (host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO,
-							(host_info_t)&cpuinfo, &count) == KERN_SUCCESS)
-		{
-			return cpuinfo.cpu_ticks[CPU_STATE_USER] +
-				   cpuinfo.cpu_ticks[CPU_STATE_SYSTEM] +
-				   cpuinfo.cpu_ticks[CPU_STATE_IDLE] +
-				   cpuinfo.cpu_ticks[CPU_STATE_NICE];
-		}
-		return 0;
-	}
-
 	std::shared_ptr<Memory> memory()
 	{
 		auto mem = std::make_shared<Memory>();
 
 		vm_size_t page_size;
-		mach_port_t mach_port = mach_host_self();
+		static const auto hostPort = mach_host_self();
 		vm_statistics64_data_t vm_stats;
 		mach_msg_type_number_t count = sizeof(vm_stats) / sizeof(natural_t);
 
-		host_page_size(mach_port, &page_size);
+		if (host_page_size(hostPort, &page_size) != KERN_SUCCESS)
+			return nullptr;
 
-		if (host_statistics64(mach_port, HOST_VM_INFO64,
+		if (host_statistics64(hostPort, HOST_VM_INFO64,
 							  (host_info64_t)&vm_stats, &count) != KERN_SUCCESS)
 		{
 			return nullptr;
 		}
 
-		uint64_t total_memory;
+		uint64_t total_memory = 0;
 		size_t len = sizeof(total_memory);
-		sysctlbyname("hw.memsize", &total_memory, &len, NULL, 0);
+		if (sysctlbyname("hw.memsize", &total_memory, &len, NULL, 0) != 0)
+			return nullptr;
 
 		mem->total_bytes = total_memory;
 		mem->free_bytes = (uint64_t)vm_stats.free_count * (uint64_t)page_size;
+		mem->available_bytes = std::min<uint64_t>(
+			mem->total_bytes,
+			(static_cast<uint64_t>(vm_stats.free_count) + static_cast<uint64_t>(vm_stats.inactive_count)) * static_cast<uint64_t>(page_size));
 
 		xsw_usage swap_usage;
 		size_t swap_size = sizeof(swap_usage);
@@ -64,6 +55,7 @@ namespace os
 		{
 			mem->totalSwap_bytes = swap_usage.xsu_total;
 			mem->freeSwap_bytes = swap_usage.xsu_avail;
+			mem->swapAvailable = true;
 		}
 
 		return mem;
@@ -98,10 +90,17 @@ namespace os
 					initialized.store(true, std::memory_order_release);
 					return results;
 				}
+				if (num_cores <= 0 || num_threads <= 0)
+				{
+					LOG_ERR << fname << "Invalid physical/logical CPU count";
+					initialized.store(true, std::memory_order_release);
+					return results;
+				}
 
 				for (int i = 0; i < num_threads; ++i)
 				{
-					results.push_back(CPU(i, i % num_cores, i / num_cores));
+					// sysctl does not expose per-thread socket IDs; report one package.
+					results.push_back(CPU(i, i % num_cores, 0));
 				}
 
 				initialized.store(true, std::memory_order_release);

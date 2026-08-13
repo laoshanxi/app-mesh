@@ -20,6 +20,10 @@ public class TCPTransport implements AutoCloseable {
     private SSLSocket socket;
     private DataInputStream inputStream;
     private DataOutputStream outputStream;
+    // TLS sockets are full-duplex. Serialize readers and writers independently so
+    // the demuxer's blocking read never prevents a request from being written.
+    private final Object readLock = new Object();
+    private final Object writeLock = new Object();
 
     // Must match C++ service and Python implementation
     public static final int TCP_MESSAGE_HEADER_LENGTH = 8;
@@ -125,26 +129,28 @@ public class TCPTransport implements AutoCloseable {
      * 
      * @param data Byte array to send. Pass byte[0] or null for EOF/Empty message.
      */
-    public synchronized void sendMessage(byte[] data) throws IOException {
-        if (!connected())
-            throw new IOException("Not connected");
+    public void sendMessage(byte[] data) throws IOException {
+        synchronized (writeLock) {
+            if (!connected())
+                throw new IOException("Not connected");
 
-        try {
-            int length = (data != null) ? data.length : 0;
+            try {
+                int length = (data != null) ? data.length : 0;
 
-            // Pack the header into 8 bytes using big-endian format
-            outputStream.writeInt(TCP_MESSAGE_MAGIC);
-            outputStream.writeInt(length);
+                // Pack the header into 8 bytes using big-endian format
+                outputStream.writeInt(TCP_MESSAGE_MAGIC);
+                outputStream.writeInt(length);
 
-            // Write body if present
-            if (length > 0) {
-                outputStream.write(data);
+                // Write body if present
+                if (length > 0) {
+                    outputStream.write(data);
+                }
+                outputStream.flush();
+
+            } catch (IOException e) {
+                close();
+                throw new IOException("Error sending message: " + e.getMessage(), e);
             }
-            outputStream.flush();
-
-        } catch (IOException e) {
-            close();
-            throw new IOException("Error sending message: " + e.getMessage(), e);
         }
     }
 
@@ -153,36 +159,38 @@ public class TCPTransport implements AutoCloseable {
      * 
      * @return byte array of body, or null if EOF/Empty frame (length 0).
      */
-    public synchronized byte[] receiveMessage() throws IOException {
-        if (!connected())
-            throw new IOException("Not connected");
+    public byte[] receiveMessage() throws IOException {
+        synchronized (readLock) {
+            if (!connected())
+                throw new IOException("Not connected");
 
-        try {
-            int magic = inputStream.readInt();
-            int length = inputStream.readInt();
+            try {
+                int magic = inputStream.readInt();
+                int length = inputStream.readInt();
 
-            if (magic != TCP_MESSAGE_MAGIC) {
-                throw new IOException(String.format("Invalid magic number: 0x%X", magic));
+                if (magic != TCP_MESSAGE_MAGIC) {
+                    throw new IOException(String.format("Invalid magic number: 0x%X", magic));
+                }
+
+                if (length < 0 || length > TCP_MAX_BLOCK_SIZE) {
+                    throw new IOException("Invalid message length: " + length);
+                }
+
+                if (length == 0) {
+                    return null;
+                }
+
+                byte[] buf = new byte[length];
+                inputStream.readFully(buf);
+                return buf;
+
+            } catch (java.io.EOFException e) {
+                close();
+                throw new IOException("Connection closed by peer", e);
+            } catch (IOException e) {
+                close();
+                throw e;
             }
-
-            if (length < 0 || length > TCP_MAX_BLOCK_SIZE) {
-                throw new IOException("Invalid message length: " + length);
-            }
-
-            if (length == 0) {
-                return null;
-            }
-
-            byte[] buf = new byte[length];
-            inputStream.readFully(buf);
-            return buf;
-
-        } catch (java.io.EOFException e) {
-            close();
-            throw new IOException("Connection closed by peer", e);
-        } catch (IOException e) {
-            close();
-            throw e;
         }
     }
 

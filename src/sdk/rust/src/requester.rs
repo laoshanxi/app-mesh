@@ -65,7 +65,9 @@ pub trait Requester: Send + Sync {
     /// Enable the message demuxer for this transport.
     ///
     /// Only TCP and WSS transports support this; HTTP is a no-op.
-    fn enable_demuxer(&self) {}
+    async fn enable_demuxer(&self) -> Result<()> {
+        Ok(())
+    }
 
     /// Whether this transport supports the message demuxer (TCP/WSS: `true`,
     /// HTTP: `false`); picks the subscribe-based wait over polling.

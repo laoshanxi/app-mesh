@@ -8,8 +8,7 @@
 #include "../rest/EventDispatcher.h"
 
 TimerStdoutStrategy::TimerStdoutStrategy(std::string appName, std::weak_ptr<Application> owner)
-	: m_appName(std::move(appName)),
-	  m_owner(std::move(owner))
+	: m_state(std::make_shared<State>(std::move(appName), std::move(owner)))
 {
 }
 
@@ -18,45 +17,76 @@ TimerStdoutStrategy::~TimerStdoutStrategy()
 	teardown();
 }
 
-void TimerStdoutStrategy::startTimer(TimerHandler &owner)
+void TimerStdoutStrategy::activate(TimerHandler &owner, const std::string &processUuid)
 {
-	const static char fname[] = "TimerStdoutStrategy::startTimer() ";
-	m_timerId = owner.registerTimer(0, 1000, fname, std::bind(&TimerStdoutStrategy::onTimerDispatch, this));
+	const static char fname[] = "TimerStdoutStrategy::activate() ";
+	auto state = m_state;
+	std::lock_guard<std::mutex> registrationGuard(state->registrationMutex);
+	state->processUuid = processUuid;
+	state->stopped.store(false, std::memory_order_release);
+	state->timerId = owner.registerTimer(0, 1000, fname, [state]()
+										 { return onTimerDispatch(state); });
+	if (!isValidTimerId(state->timerId))
+		state->stopped.store(true, std::memory_order_release);
+}
+
+long TimerStdoutStrategy::dispatchedBytes() const
+{
+	return m_state->dispatchedBytes.load(std::memory_order_acquire);
 }
 
 void TimerStdoutStrategy::teardown()
 {
-	cancelTimer(m_timerId);
+	auto state = m_state;
+	long timerId = INVALID_TIMER_ID;
+	{
+		std::lock_guard<std::mutex> registrationGuard(state->registrationMutex);
+		state->stopped.store(true, std::memory_order_release);
+		timerId = state->timerId.exchange(INVALID_TIMER_ID, std::memory_order_acq_rel);
+	}
+	TIMER_MANAGER::instance()->cancelTimer(timerId);
+	std::lock_guard<std::mutex> guard(state->dispatchMutex);
 }
 
-bool TimerStdoutStrategy::onTimerDispatch()
+bool TimerStdoutStrategy::onTimerDispatch(const std::shared_ptr<State> &state)
 {
 	const static char fname[] = "TimerStdoutStrategy::onTimerDispatch() ";
 
-	auto owner = m_owner.lock();
+	{
+		std::lock_guard<std::mutex> registrationGuard(state->registrationMutex);
+		if (state->stopped.load(std::memory_order_acquire))
+			return false;
+	}
+	auto owner = state->owner.lock();
 	if (!owner)
-		return IS_VALID_TIMER_ID(m_timerId);
-	if (!EventDispatcher::instance()->hasStdoutSubscriber(m_appName))
-		return IS_VALID_TIMER_ID(m_timerId);
+	{
+		state->timerId.store(INVALID_TIMER_ID, std::memory_order_release);
+		return false;
+	}
+	if (!EventDispatcher::instance()->hasStdoutSubscriber(state->appName))
+		return !state->stopped.load(std::memory_order_acquire);
 	try
 	{
-		long pos = m_dispatchedBytes.load(std::memory_order_acquire);
+		long pos = state->dispatchedBytes.load(std::memory_order_acquire);
 		const long startPos = pos;
-		auto result = owner->getOutput(pos, 64 * 1024, "", 0, 0);
+		auto result = owner->getOutput(pos, 64 * 1024, state->processUuid, 0, 0);
 		auto &output = std::get<0>(result);
+		std::lock_guard<std::mutex> guard(state->dispatchMutex);
+		if (state->stopped.load(std::memory_order_acquire))
+			return false;
 		if (!output.empty())
 		{
 			nlohmann::json data;
 			data["output"] = output;
 			data["position"] = startPos;
 			data["finished"] = std::get<1>(result);
-			EventDispatcher::instance()->dispatch(m_appName, AppEventType::STDOUT_OUTPUT, data);
-			m_dispatchedBytes.store(pos, std::memory_order_release);
+			EventDispatcher::instance()->dispatch(state->appName, AppEventType::STDOUT_OUTPUT, data);
+			state->dispatchedBytes.store(pos, std::memory_order_release);
 		}
 	}
 	catch (const std::exception &e)
 	{
-		LOG_WAR << fname << "failed for app=" << m_appName << ": " << e.what();
+		LOG_WAR << fname << "failed for app=" << state->appName << ": " << e.what();
 	}
-	return IS_VALID_TIMER_ID(m_timerId);
+	return !state->stopped.load(std::memory_order_acquire);
 }

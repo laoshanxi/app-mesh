@@ -4,9 +4,9 @@ Exercise a RUNNING daemon via the Python SDK:
   test_01 restart-on-exit      test_02 REMOVE deletes (retention > tick: the headline bug)
   test_03 periodic runs        test_04 disable/enable reschedules
   test_05 concurrent reads      test_06 run sync/async
-  test_07 crash-loop backoff (bounded restarts)   test_08 spawn-failure retries then recovers
+  test_07 crash-loop backoff (bounded restarts)   test_08 spawn-failure is terminal then recovers
   test_09 attach adopts a live pid & detects its exit (APPMESH_TEST_ATTACH=1, same-host)
-  test_10 buffer overlap stays stable
+  test_10 recurring replacement with retention buffer
   test_11 agent PSK restart doesn't deadlock the timer thread (APPMESH_TEST_AGENT=1)
 
 Prereqs: a daemon at https://127.0.0.1:6060 (APPMESH_TEST_URL), admin/admin123
@@ -109,7 +109,7 @@ class TestRunStateE2E(unittest.TestCase):
             "behavior": {"exit": "remove"},
             # retention > ScheduleIntervalSeconds: the OLD code re-armed the self-delete
             # timer on every tick and the app was never removed; the new one-shot latch
-            # fires handleError exactly once so the app is removed after `retention`.
+            # applies the exit policy exactly once so the app is removed after `retention`.
             "retention": str(RETENTION_SEC),
         })
         self.assertIn(name, self._app_names(), "app should exist right after registration")
@@ -202,19 +202,28 @@ class TestRunStateE2E(unittest.TestCase):
         self.assertLessEqual(delta, 10, f"backoff not applied: {delta} restarts in {window}s")
 
     # ----- R4: spawn failure must keep retrying, then recover ------------
-    def test_08_spawn_failure_retries_then_recovers(self):
+    def test_08_spawn_failure_is_reported_then_recovers(self):
         name = self._name("spawnfail")
         # A '/'-rooted command that does not exist fails in validateCommand BEFORE fork:
-        # no process, no exit upcall — the schedule-intent restore is the only retry driver.
+        # no process and no exit upcall. The app must expose the start error and keep
+        # no live PID, then accept a corrected definition without a daemon restart.
         self._add({"name": name, "command": "/nonexistent_e2e_spawnfail_binary"})
-        base = self._starts(name)
-        retried = _poll(lambda: self._starts(name) >= base + 2 and self._pid(name) <= 0, timeout=20)
-        self.assertTrue(retried, "spawn-failure app is not retrying (stranded: no starts growth)")
+        failed = _poll(
+            lambda: (lambda app: app if (app.pid or 0) <= 1 and app.last_error else None)(
+                self.client.get_app(name)
+            ),
+            timeout=20,
+        )
+        self.assertTrue(failed, "spawn failure did not publish last_error without a live pid")
+        self.assertTrue(failed.last_error, "spawn failure did not expose last_error")
+        failed_starts = failed.starts or 0
 
         # Fix the app via update: it must come up without disable/enable or daemon restart.
         self._add({"name": name, "command": "sleep 1000"})
         self.assertTrue(_poll(lambda: self._pid(name) > 0, timeout=20),
                         "app did not start after the bad command was corrected")
+        self.assertGreater(self._starts(name), failed_starts,
+                           "recovery did not record an accepted process start")
 
     # ----- R5/R6: attach adopts a live pid; its exit must be detected ----
     # Requires the daemon to SHARE THE PID NAMESPACE with this test (native same-host
@@ -242,7 +251,7 @@ class TestRunStateE2E(unittest.TestCase):
             self.assertEqual(self._pid(name), child.pid, "daemon spawned over the attached process")
 
             # Kill it: a recovered process is not the daemon's child (no SIGCHLD), so this
-            # exercises the refresh() liveness poll -> synthesized exit -> restart.
+            # exercises maintainRuntime() liveness polling -> synthesized exit -> restart.
             child.kill()
             child.wait()
             restarted = _poll(lambda: self._pid(name) > 0 and self._pid(name) != child.pid, timeout=30)
@@ -252,26 +261,28 @@ class TestRunStateE2E(unittest.TestCase):
                 child.kill()
                 child.wait()
 
-    # ----- R2-adjacent: buffer overlap must not destabilize the app ------
-    def test_10_buffer_overlap_stays_stable(self):
-        name = self._name("buffer")
-        # Each run (3s) outlives the interval (2s): every spawn buffers the previous run
-        # (retention=8 -> delayKill later than its natural end), so buffer processes keep
-        # exiting naturally next to the current run. No spurious restart may be minted.
+    # ----- recurring occurrence replaces current; retention buffers old run --
+    def test_10_recurring_retention_buffer(self):
+        name = self._name("retention_buffer")
         self._add({
             "name": name,
-            "command": "sleep 3",
+            "command": "sleep 8",
             "start_interval_seconds": "2",
-            "retention": "8",
+            "retention": "10",
         })
         self.assertTrue(_poll(lambda: self._starts(name) >= 1, timeout=15), "app never started")
         baseline = self._starts(name)
-        window = 14
-        time.sleep(window)
-        delta = self._starts(name) - baseline
-        self.assertGreaterEqual(delta, 3, f"periodic+buffer app stalled (delta={delta})")
-        self.assertLessEqual(delta, 10, f"buffer exits minted extra restarts: {delta} in {window}s")
-        self.assertIn(name, self._app_names(), "app vanished during buffer churn")
+        first_pid = self._pid(name)
+
+        def replacement_published():
+            app = self.client.get_app(name)
+            replaced = (app and (app.starts or 0) > baseline
+                        and (app.pid or 0) > 1 and app.pid != first_pid)
+            return app if replaced else None
+
+        self.assertTrue(_poll(replacement_published, timeout=6),
+                        "the next occurrence did not replace the still-running current run")
+        self.assertIn(name, self._app_names(), "buffered-process exit removed the current application")
 
     # ----- R1: agent restart must not deadlock the timer thread ----------
     @unittest.skipUnless(os.environ.get("APPMESH_TEST_AGENT") == "1",
