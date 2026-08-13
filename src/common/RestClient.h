@@ -89,6 +89,7 @@ public:
 	 * @param header Map of request headers
 	 * @param query Map of query parameters
 	 * @param formData Optional form data parameters (sent as application/x-www-form-urlencoded)
+	 * @param timeoutSeconds Request timeout override; zero uses the client default
 	 * @return std::shared_ptr<CurlResponse> containing status code, response body and headers
 	 */
 	static std::shared_ptr<CurlResponse> request(
@@ -98,7 +99,8 @@ public:
 		const std::string &body,
 		std::map<std::string, std::string> header,
 		std::map<std::string, std::string> query,
-		std::map<std::string, std::string> formData = {});
+		std::map<std::string, std::string> formData = {},
+		long timeoutSeconds = 0);
 
 	/**
 	 * @brief Uploads a file using multipart/form-data

@@ -236,6 +236,12 @@ else()
     set(BUILD_TYPE_ENV "${CMAKE_BUILD_TYPE}")
 endif()
 
+# Clean only the default packaging stage before incremental packs.
+set(PACK_STAGING_CLEAN_COMMAND ${CMAKE_COMMAND} -E true)
+if(CMAKE_INSTALL_PREFIX STREQUAL "${CMAKE_BINARY_DIR}/package_root")
+    set(PACK_STAGING_CLEAN_COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_INSTALL_PREFIX}")
+endif()
+
 add_custom_target(pack
     COMMENT "Creating distribution package..."
 
@@ -244,7 +250,8 @@ add_custom_target(pack
             --manifest-path "${RUST_CLI_DIR}/Cargo.toml"
             --target-dir "${RUST_TARGET_DIR}"
 
-    # 1. make install (C++ daemon + libs)
+    # 1. Recreate the package stage and install native artifacts.
+    COMMAND ${PACK_STAGING_CLEAN_COMMAND}
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
             --target install
             --parallel ${PARALLEL_BUILD}

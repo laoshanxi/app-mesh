@@ -2,7 +2,7 @@
 #include "EventDispatcher.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
-#include "../application/Application.h"
+#include "../process/AppProcess.h"
 
 EventDispatcher::EventDispatcher()
 {
@@ -33,7 +33,7 @@ std::string EventDispatcher::subscribe(const std::string &appName, uint32_t even
 	sub.connKey = connKey;
 
 	{
-		std::lock_guard<std::recursive_mutex> lock(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 		m_subscriptions.emplace(subId, std::move(sub));
 		m_appIndex.emplace(appName, subId);
 		m_connectionIndex.emplace(connKey, subId);
@@ -47,7 +47,7 @@ bool EventDispatcher::unsubscribe(const std::string &subId, const std::string &u
 {
 	const static char fname[] = "EventDispatcher::unsubscribe() ";
 
-	std::lock_guard<std::recursive_mutex> lock(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 	auto it = m_subscriptions.find(subId);
 	if (it == m_subscriptions.end())
 		return false;
@@ -65,7 +65,11 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 {
 	const static char fname[] = "EventDispatcher::dispatch() ";
 
-	auto seq = m_sequence.fetch_add(1);
+	// Delivery callbacks terminate at the transport layer and do not re-enter
+	// EventDispatcher. Serialize the pass so each subscription observes ordered, non-concurrent
+	// delivery, without holding the subscription-index mutex in a callback.
+	std::lock_guard<std::mutex> deliveryGuard(m_deliveryMutex);
+	auto seq = m_sequence++;
 	auto now = std::chrono::duration_cast<std::chrono::seconds>(
 				   std::chrono::system_clock::now().time_since_epoch())
 				   .count();
@@ -93,7 +97,7 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 	};
 	std::vector<PendingDelivery> pending;
 	{
-		std::lock_guard<std::recursive_mutex> lock(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		auto collectMatching = [&](const std::string &indexKey)
 		{
@@ -135,7 +139,7 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 
 	if (!deadSubscriptions.empty())
 	{
-		std::lock_guard<std::recursive_mutex> lock(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 		for (const auto &subId : deadSubscriptions)
 		{
 			LOG_WAR << fname << "Removing dead subscription: " << subId;
@@ -148,7 +152,7 @@ void EventDispatcher::removeByConnection(const ConnectionKey &connKey)
 {
 	const static char fname[] = "EventDispatcher::removeByConnection() ";
 
-	std::lock_guard<std::recursive_mutex> lock(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	auto range = m_connectionIndex.equal_range(connKey);
 	std::vector<std::string> subIds;
@@ -188,7 +192,7 @@ void EventDispatcher::removeByApp(const std::string &appName)
 {
 	const static char fname[] = "EventDispatcher::removeByApp() ";
 
-	std::lock_guard<std::recursive_mutex> lock(m_mutex);
+	std::lock_guard<std::mutex> lock(m_mutex);
 
 	auto range = m_appIndex.equal_range(appName);
 	std::vector<std::string> subIds;
@@ -224,15 +228,20 @@ void EventDispatcher::removeByApp(const std::string &appName)
 
 bool EventDispatcher::hasStdoutSubscriber(const std::string &appName) const
 {
-	std::lock_guard<std::recursive_mutex> lock(m_mutex);
-	auto range = m_appIndex.equal_range(appName);
-	for (auto it = range.first; it != range.second; ++it)
+	std::lock_guard<std::mutex> lock(m_mutex);
+	const auto hasMatching = [&](const std::string &key)
 	{
-		auto subIt = m_subscriptions.find(it->second);
-		if (subIt != m_subscriptions.end() && (subIt->second.eventMask & static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT)))
-			return true;
-	}
-	return false;
+		auto range = m_appIndex.equal_range(key);
+		for (auto it = range.first; it != range.second; ++it)
+		{
+			auto subIt = m_subscriptions.find(it->second);
+			if (subIt != m_subscriptions.end() &&
+				(subIt->second.eventMask & static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT)))
+				return true;
+		}
+		return false;
+	};
+	return hasMatching(appName) || (appName != "*" && hasMatching("*"));
 }
 
 void EventDispatcher::removeSubscriptionLocked(const std::string &subId)
@@ -264,19 +273,19 @@ void EventDispatcher::removeSubscriptionLocked(const std::string &subId)
 	m_subscriptions.erase(it);
 }
 
-void EventDispatcher::flushStdout(const std::string &appName, Application *app, long pos)
+void EventDispatcher::flushStdout(const std::string &appName, AppProcess *process, long pos)
 {
 	const static char fname[] = "EventDispatcher::flushStdout() ";
 
 	// Read [pos, EOF] on disk and emit one final STDOUT_OUTPUT with finished=true.
-	if (!app || !hasStdoutSubscriber(appName)) return;
+	if (!process || !hasStdoutSubscriber(appName))
+		return;
 	try
 	{
 		// Capture chunk start before getOutput advances `pos` by reference, to keep
 		// `position` semantics consistent with StdoutPump's start-of-chunk convention.
 		const long startPos = pos;
-		auto result = app->getOutput(pos, 1024 * 1024, "", 0, 0);
-		auto &output = std::get<0>(result);
+		auto output = process->getOutputMsg(&pos, 1024 * 1024);
 		if (!output.empty())
 		{
 			nlohmann::json data;

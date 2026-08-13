@@ -56,7 +56,6 @@ if(APPLE)
     install(PROGRAMS
         "${SRC}/script/pack/appmesh.launchd.plist"
         "${SRC}/script/pack/appmesh.initd.sh"
-        "${SRC}/script/pack/entrypoint.sh"
         "${SRC}/script/pack/setup.sh"
         DESTINATION "${DST}/script"
         COMPONENT scripts)
@@ -67,7 +66,6 @@ elseif(UNIX)
     install(PROGRAMS 
         "${SRC}/script/pack/appmesh.systemd.service"
         "${SRC}/script/pack/appmesh.initd.sh"
-        "${SRC}/script/pack/entrypoint.sh"
         "${SRC}/script/pack/setup.sh"
         DESTINATION "${DST}/script"
         COMPONENT scripts)

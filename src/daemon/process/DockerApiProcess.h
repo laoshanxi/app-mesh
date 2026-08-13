@@ -15,23 +15,21 @@ struct CurlResponse;
 class DockerApiProcess : public DockerProcess
 {
 public:
-	DockerApiProcess(const std::string &appName, const std::string &dockerImage);
-	~DockerApiProcess();
-
-	// Override with docker REST behavior
-	void terminate() override;
-
-	// Override with docker REST request
-	int spawnProcess(std::string cmd, std::string execUser, std::string workDir,
-					 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-					 const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON,
-					 int maxStdoutSize = 0) override;
+	DockerApiProcess(std::weak_ptr<Application> owner, const std::string &appName, const std::string &dockerImage);
+	~DockerApiProcess() override;
 
 	// Get stdout content from docker logs API
 	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) override;
 
 	// Get process exit code from container inspect API
 	int returnValue() const override;
+
+protected:
+	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir,
+						std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+						const std::string &stdoutFile, const nlohmann::json &stdinFileContent,
+						int maxStdoutSize) override;
+	void terminateImpl() override;
 
 private:
 	// Request Docker HTTP REST API

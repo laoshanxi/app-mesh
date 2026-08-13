@@ -6,12 +6,13 @@
 namespace os
 {
 
-	Memory::Memory() : total_bytes(0), free_bytes(0), totalSwap_bytes(0), freeSwap_bytes(0) {}
+	Memory::Memory() : total_bytes(0), free_bytes(0), available_bytes(0), totalSwap_bytes(0), freeSwap_bytes(0), swapAvailable(false) {}
 
 	std::ostream &operator<<(std::ostream &stream, const Memory &mem)
 	{
 		return stream << "Memory [total_bytes <" << mem.total_bytes << "> "
 					  << "free_bytes <" << mem.free_bytes << "> "
+					  << "available_bytes <" << mem.available_bytes << "> "
 					  << "totalSwap_bytes <" << mem.totalSwap_bytes << "> "
 					  << "freeSwap_bytes <" << mem.freeSwap_bytes << ">]";
 	}

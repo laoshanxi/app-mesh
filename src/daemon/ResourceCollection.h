@@ -4,8 +4,8 @@
 #include <chrono>
 #include <list>
 #include <memory>
-#include <mutex>
 #include <string>
+#include <vector>
 #if !defined(_WIN32)
 #include <unistd.h>
 #endif
@@ -23,19 +23,25 @@ struct HostNetInterface
 //////////////////////////////////////////////////////////////////////////
 struct HostResource
 {
-	HostResource() : m_cores(0), m_sockets(0), m_processors(0), m_total_bytes(0), m_free_bytes(0), m_totalSwap_bytes(0), m_freeSwap_bytes(0) {}
-
 	// CPU
-	std::size_t m_cores;
-	std::size_t m_sockets;
-	std::size_t m_processors;
+	std::size_t m_cores = 0;
+	std::size_t m_sockets = 0;
+	std::size_t m_processors = 0;
+	std::size_t m_effectiveProcessors = 0;
+	double m_cpuQuotaCores = 0.0;
 	// MEM
-	uint64_t m_total_bytes;
-	uint64_t m_free_bytes;
-	uint64_t m_totalSwap_bytes;
-	uint64_t m_freeSwap_bytes;
-	// TODO: disk
-
+	uint64_t m_total_bytes = 0;
+	uint64_t m_available_bytes = 0;
+	uint64_t m_current_bytes = 0;
+	uint64_t m_totalSwap_bytes = 0;
+	uint64_t m_freeSwap_bytes = 0;
+	uint64_t m_currentSwap_bytes = 0;
+	bool m_inContainer = false;
+	std::string m_cpuSource = "host";
+	std::string m_memorySource = "host";
+	std::string m_swapSource = "host";
+	std::string m_cgroupVersion = "none";
+	std::vector<std::string> m_collectorErrors;
 	// NET
 	std::list<HostNetInterface> m_ipaddress;
 };
@@ -47,20 +53,19 @@ class ResourceCollection
 {
 public:
 	ResourceCollection();
-	virtual ~ResourceCollection();
+	~ResourceCollection() = default;
 	// Internal Singleton.
 	static std::unique_ptr<ResourceCollection> &instance();
 
-	const std::string getHostName(bool refresh = false);
-	const HostResource &getHostResource();
+	std::string getHostName() const;
+	// Return a snapshot rather than exposing the mutable collector state.
+	HostResource getHostResource();
 	pid_t getPid();
 
-	void dump();
+	void dump(const HostResource &resources);
 
 	nlohmann::json AsJson();
 
 private:
-	HostResource m_resources;
-	std::recursive_mutex m_mutex;
 	const std::chrono::system_clock::time_point m_appmeshStartTime;
 };

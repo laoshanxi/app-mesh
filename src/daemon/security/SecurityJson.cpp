@@ -1,12 +1,13 @@
 // src/daemon/security/SecurityJson.cpp
 #include "SecurityJson.h"
 #include "../../common/Utility.h"
+#include "../../common/os/filesystem.h"
 #include "../Configuration.h"
 
 #include <ace/OS.h>
-#include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 
 SecurityJson::SecurityJson()
 {
@@ -77,28 +78,20 @@ void SecurityJson::save()
     {
         auto content = m_jsonSecurity->AsJson();
         const auto securityYamlFile = Utility::getConfigFilePath(securityFile, true);
-        auto tmpFile = Utility::runningInContainer() ? securityYamlFile : securityYamlFile + std::string(".") + std::to_string(Utility::getThreadId());
-
-        std::ofstream ofs(tmpFile, std::ios::trunc);
-        if (!ofs.is_open())
+        const auto formatJson = Utility::jsonToYaml(content);
+        const auto tmpFile = os::createTmpFile(securityYamlFile, formatJson, 0600);
+        if (tmpFile.empty())
         {
-            throw std::runtime_error("Could not open file for writing: " + tmpFile);
+            throw std::runtime_error("Could not create temporary security configuration");
         }
 
-        auto formatJson = Utility::jsonToYaml(content);
-        ofs << formatJson;
-        ofs.close();
-
-        if (tmpFile != securityYamlFile)
+        if (ACE_OS::rename(tmpFile.c_str(), securityYamlFile.c_str()) != 0)
         {
-            if (ACE_OS::rename(tmpFile.c_str(), securityYamlFile.c_str()) != 0)
-            {
-                throw std::runtime_error(std::string("Failed to rename temporary file: ") + last_error_msg());
-            }
-            LOG_INF << fname << "Security configuration saved to <" << securityYamlFile << ">";
+            const std::string error = last_error_msg();
+            Utility::removeFile(tmpFile);
+            throw std::runtime_error(std::string("Failed to replace security configuration: ") + error);
         }
-
-        boost::filesystem::permissions(securityYamlFile, fs::perms::owner_all);
+        LOG_INF << fname << "Security configuration saved to <" << securityYamlFile << ">";
     }
     catch (const std::exception &ex)
     {

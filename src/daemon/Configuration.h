@@ -100,6 +100,7 @@ public:
 	nlohmann::json AsJson();
 	void loadApps(const boost::filesystem::path &appDir);
 	void saveConfigToDisk();
+	void hotUpdateAndSave(nlohmann::json &config);
 	void hotUpdate(nlohmann::json &config);
 	static bool overrideConfigWithEnv(nlohmann::json &jsonConfig);
 	static bool applyEnvConfig(nlohmann::json &jsonValue, std::string envValue);
@@ -107,8 +108,8 @@ public:
 	bool prometheusEnabled() const;
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
-	std::shared_ptr<Application> addApp(const nlohmann::json &jsonApp, std::shared_ptr<Application> fromApp = nullptr, bool persistable = true);
-	void removeApp(const std::string &appName);
+	std::shared_ptr<Application> addApp(const nlohmann::json &jsonApp, bool persistable = true);
+	void removeApp(const std::string &appName, const Application *expected = nullptr);
 	std::shared_ptr<Application> parseApp(const nlohmann::json &jsonApp);
 
 	int getScheduleInterval();
@@ -154,13 +155,20 @@ public:
 	void dump();
 
 private:
+	friend class RestHandler;
+	std::unique_lock<std::recursive_mutex> lockAppMutation() const;
+	bool isCurrentApp(const std::string &appName, const std::shared_ptr<Application> &expected) const;
 	void addApp2Map(std::shared_ptr<Application> app);
 
 private:
 	mutable ACE_Map_Manager<std::string, std::shared_ptr<Application>, ACE_Recursive_Thread_Mutex> m_apps;
 	mutable ACE_Map_Manager<std::string, int, ACE_Recursive_Thread_Mutex> m_appNameIndexMap;
+	// Serializes same-name replacement/removal across parse, metric transfer and map mutation.
+	mutable std::recursive_mutex m_appMutationMutex;
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
+	// Runtime exporter state is fixed at startup.
+	bool m_runtimePrometheusEnabled = false;
 
 	mutable std::recursive_mutex m_hotupdateMutex;
 

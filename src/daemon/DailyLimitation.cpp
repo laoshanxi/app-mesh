@@ -44,8 +44,12 @@ std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const nlohmann::json 
 			throw std::invalid_argument("should both have daily_start and daily_end parameter");
 		}
 		result = std::make_shared<DailyLimitation>();
-		result->m_startTimeValue = boost::posix_time::seconds(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_DAILY_LIMITATION_daily_start));
-		result->m_endTimeValue = boost::posix_time::seconds(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_DAILY_LIMITATION_daily_end));
+		// Existing clients send either UTC seconds-of-day or epoch seconds.
+		constexpr int64_t secondsPerDay = 24 * 60 * 60;
+		result->m_startTimeValue = boost::posix_time::seconds(
+			GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_DAILY_LIMITATION_daily_start) % secondsPerDay);
+		result->m_endTimeValue = boost::posix_time::seconds(
+			GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_DAILY_LIMITATION_daily_end) % secondsPerDay);
 	}
 	return result;
 }

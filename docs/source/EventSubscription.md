@@ -98,16 +98,19 @@ Response {
     removeApp           └──────────────────┘
                                │
                     ┌──────────┼──────────┐
-                    │ StdoutWatcher (1s)  │
-                    │ per-app timer poll  │
+                    │ StdoutStrategy      │
+                    │ pipe/timer fallback │
                     └─────────────────────┘
 ```
 
 ### Thread Safety
 
-- `EventDispatcher` uses `std::recursive_mutex` for all operations
-- `dispatch()` delivers events and cleans dead subscriptions in a single lock scope (no TOCTOU)
-- `StdoutWatcher` timer callback uses `weak_ptr` capture to prevent use-after-free
+- `EventDispatcher` uses a non-recursive `std::mutex` only to snapshot or mutate subscription indexes
+- `dispatch()` uses a separate delivery mutex to assign sequence numbers and invoke transport delivery callbacks serially; this preserves per-subscription order without holding the subscription-index mutex in a callback
+- the delivery mutex is intentionally global to avoid per-subscription queue/lock state; transport callbacks must remain bounded and must not re-enter `EventDispatcher`, because one slow delivery delays later server-side emissions
+- failed subscriptions are removed in a second short index critical section; unsubscribe may race an already-snapshotted delivery, whose copied callback remains valid for that one in-flight call
+- stdout strategies are activated only after `START` publication and are torn down outside the process resource lock, so final drain/delivery cannot re-enter a held process lock
+- timer-based stdout callbacks capture shared state and use `weak_ptr<Application>` rather than a raw application owner
 - Connection cleanup (`removeByConnection`) is called from `SocketServer::onClose` and `WebSocketService::destroySession` after releasing transport-specific locks
 
 ### Ownership Enforcement
@@ -228,6 +231,6 @@ client.unsubscribe(&result.subscription_id).await?;
 ## Limitations
 
 - **REST/HTTP** does not support subscriptions (no persistent connection). Use TCP or WebSocket.
-- **Wildcard stdout** (`/appmesh/subscribe?events=STDOUT`) is not supported — stdout polling requires a specific app name.
+- **Wildcard stdout** (`/appmesh/subscribe?events=STDOUT`) is supported; it participates in live delivery and the final stdout drain for every matching application.
 - **Server restart** clears all subscriptions (in-memory only). Clients must re-subscribe after reconnecting.
 - **Event ordering** is guaranteed per-subscription via a monotonic `sequence` counter. Cross-subscription ordering is not guaranteed.

@@ -1,5 +1,3 @@
-version: "3"
-
 name: appmesh_cluster
 services:
   consul:
@@ -28,11 +26,12 @@ services:
       - APPMESH_REST_JWT_JWTSalt=MY_CLUSTER_SALT
       - APPMESH_REST_PrometheusExporterListenPort=6061
       - APPMESH_Consul_IsMainNode=true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "443:443" # for appmesh_ui
-    privileged: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - consul
     logging:
@@ -44,8 +43,6 @@ services:
   appmesh_ui:
     restart: always
     image: laoshanxi/appmesh-ui
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - appmesh_master
     network_mode: "service:appmesh_master"
@@ -55,7 +52,6 @@ services:
     container_name: appmesh_slave1
     restart: always
     image: laoshanxi/appmesh
-    command: appm rm -n ping -f
     mem_limit: 4G
     environment:
       - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
@@ -63,8 +59,10 @@ services:
       - APPMESH_REST_PrometheusExporterListenPort=6061
       - APPMESH_Consul_Url=http://consul:8500
       - APPMESH_Consul_IsMainNode=false
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     links:
       - consul
     depends_on:
@@ -80,7 +78,6 @@ services:
     container_name: appmesh_slave2
     restart: always
     image: laoshanxi/appmesh
-    command: appm rm -n ping -f
     mem_limit: 3G
     environment:
       - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
@@ -88,8 +85,10 @@ services:
       - APPMESH_REST_PrometheusExporterListenPort=6061
       - APPMESH_Consul_Url=http://consul:8500
       - APPMESH_Consul_IsMainNode=false
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     links:
       - consul
     depends_on:
@@ -105,7 +104,6 @@ services:
     container_name: appmesh_slave3
     restart: always
     image: laoshanxi/appmesh
-    command: appm rm -n ping -f
     mem_limit: 3G
     environment:
       - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
@@ -113,8 +111,10 @@ services:
       - APPMESH_REST_PrometheusExporterListenPort=6061
       - APPMESH_Consul_Url=http://consul:8500
       - APPMESH_Consul_IsMainNode=false
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     links:
       - consul
     depends_on:

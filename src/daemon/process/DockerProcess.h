@@ -1,7 +1,6 @@
 // src/daemon/process/DockerProcess.h
 #pragma once
 
-#include <chrono>
 #include <map>
 #include <string>
 
@@ -11,24 +10,14 @@
 class DockerProcess : public AppProcess
 {
 public:
-	DockerProcess(const std::string &containerName, const std::string &dockerImage);
-	~DockerProcess();
-
-	// Override with docker cli behavior
-	void terminate() override;
-
-	// Override with docker cli spawn behavior
-	int spawnProcess(std::string cmd, std::string execUser, std::string workDir,
-					 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-					 const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON,
-					 int maxStdoutSize = 0) override;
+	DockerProcess(std::weak_ptr<Application> owner, const std::string &containerName, const std::string &dockerImage);
+	~DockerProcess() override;
 
 	// Returns docker container PID from inspect
 	pid_t getpid() const override;
 
-	// Get/set container ID
+	// Get container ID
 	std::string containerId() const override;
-	void containerId(const std::string &containerId) override;
 
 	// Get process exit code from container inspect
 	int returnValue() const override;
@@ -37,22 +26,28 @@ public:
 	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) override;
 
 protected:
-	// Run docker pull cli
-	int execPullDockerImage(std::map<std::string, std::string> &envMap, const std::string &dockerImage,
-							const std::string &stdoutFile, const std::string &workDir);
+	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir,
+					std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+					const std::string &stdoutFile, const nlohmann::json &stdinFileContent,
+					int maxStdoutSize) override;
+	void terminateImpl() override;
 
-private:
-	// Synchronously spawn docker container start process
-	virtual int syncSpawnProcess(std::string cmd, std::string execUser, std::string workDir,
-								 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-								 std::string stdoutFile) noexcept(false);
-
-protected:
+	// A pull is its own managed run, with this AppProcess owning its PID and exit callback.
+	pid_t startImagePull(const std::map<std::string, std::string> &envMap, const std::string &dockerImage,
+						 std::string workDir, const std::string &stdoutFile);
+	void setContainerId(const std::string &containerId);
+	std::string takeContainerId();
+	// Immutable container identity shared with the API implementation.
 	const std::string m_containerName;
 	const std::string m_dockerImage;
+
+private:
+	pid_t startContainer(const std::string &cmd, const std::string &workDir,
+						 const std::map<std::string, std::string> &envMap,
+						 const std::shared_ptr<ResourceLimitation> &limit, const std::string &stdoutFile);
 	std::string m_containerId;
 	std::string m_containerEngine; // docker or podman
 
-	std::shared_ptr<AppProcess> m_imagePull;
-	mutable std::recursive_mutex m_dockerMutex;
+	// Guards container id and engine selection.
+	mutable std::mutex m_dockerMutex;
 };

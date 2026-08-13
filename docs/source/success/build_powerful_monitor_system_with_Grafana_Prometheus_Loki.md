@@ -78,7 +78,7 @@ Open Prometheus WEB portal at <http://192.168.3.24:9090/>
 
 <img src="https://raw.githubusercontent.com/laoshanxi/picture/master/wiki/prometheus01.png" />
 
-Query metrics: appmesh_prom_process_memory_gauge
+Query metrics: appmesh_application_process_resident_memory_bytes
 
 <img src="https://raw.githubusercontent.com/laoshanxi/picture/master/wiki/prometheus02.png" />
 

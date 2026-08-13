@@ -406,8 +406,24 @@ public class AppMeshClientWSS extends AppMeshClient {
      * Creates and starts the demuxer if not already running.
      */
     public synchronized void enableDemuxer() {
+        try {
+            ensureDemuxer();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to enable WSS demuxer", e);
+        }
+    }
+
+    @Override
+    protected synchronized void ensureDemuxer() throws IOException {
         if (demuxer != null && demuxer.isRunning()) {
             return;
+        }
+        if (!wssTransport.connected()) {
+            try {
+                wssTransport.connect();
+            } catch (Exception e) {
+                throw new IOException("Failed to connect WSS transport for event demuxer", e);
+            }
         }
         demuxer = new MessageDemuxer(() -> wssTransport.receiveMessage());
         demuxer.start();
@@ -423,11 +439,6 @@ public class AppMeshClientWSS extends AppMeshClient {
     @Override
     protected MessageDemuxer demuxerOrNull() {
         return getDemuxer();
-    }
-
-    @Override
-    protected void ensureDemuxer() {
-        enableDemuxer();
     }
 
     /**

@@ -21,6 +21,7 @@ public:
 
 	int m_memoryMb;
 	int m_memoryVirtMb;
+	bool m_memoryVirtSpecified;
 	int m_cpuShares;
 
 	// runtime info

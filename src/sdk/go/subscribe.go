@@ -347,6 +347,14 @@ func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (
 // SubscribeContext is Subscribe bounded by ctx. ctx bounds only the subscribe call,
 // not the lifetime of the subscription.
 func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
+	// Once the server installs a subscription, a matching event can precede the
+	// subscribe response. Start the sole reader before issuing the request.
+	var subscriber subscribableRequester
+	if sub, ok := c.req.(subscribableRequester); ok {
+		subscriber = sub
+		subscriber.enableDemuxer()
+	}
+
 	apiPath := "/appmesh/subscribe"
 	if opt.AppName != "" && opt.AppName != "*" {
 		apiPath = fmt.Sprintf("/appmesh/app/%s/subscribe", opt.AppName)
@@ -373,10 +381,10 @@ func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOptio
 		return nil, fmt.Errorf("server returned empty subscription_id")
 	}
 
-	// Register the callback with the demuxer (if transport supports it).
-	if sub, ok := c.req.(subscribableRequester); ok {
-		sub.enableDemuxer()
-		if d := sub.getDemuxer(); d != nil {
+	// Register after parsing the server-issued ID; events received in the race
+	// window are held by the demuxer's bounded pre-registration buffer.
+	if subscriber != nil && callback != nil {
+		if d := subscriber.getDemuxer(); d != nil {
 			d.registerEventCallback(result.SubscriptionID, callback)
 		}
 	}

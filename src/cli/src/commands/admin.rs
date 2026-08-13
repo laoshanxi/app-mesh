@@ -180,10 +180,23 @@ fn find_config_file(home: &Path, name: &str) -> Option<PathBuf> {
 
 #[cfg(unix)]
 fn running_in_container() -> bool {
-    Path::new("/.dockerenv").exists()
-        || std::fs::read_to_string("/proc/1/cgroup")
-            .map(|s| s.contains("docker") || s.contains("kubepods"))
+    if Path::new("/.dockerenv").exists()
+        || Path::new("/run/.dockerenv").exists()
+        || Path::new("/run/.containerenv").exists()
+        || std::env::var_os("container")
+            .map(|value| !value.is_empty())
             .unwrap_or(false)
+    {
+        return true;
+    }
+
+    std::fs::read_to_string("/proc/self/cgroup")
+        .map(|cgroup| {
+            ["docker", "kubepods", "containerd", "libpod", "podman", "lxc"]
+                .iter()
+                .any(|marker| cgroup.contains(marker))
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

@@ -70,6 +70,7 @@ async fn run(cli: &Cli) -> Result<i32> {
         Commands::Log(args) => commands::system::log_level(cli, args).await,
         Commands::Config(_) => commands::system::config(cli).await,
         Commands::Resource(_) => commands::system::resource(cli).await,
+        Commands::Metric(_) => commands::system::metric(cli).await,
         Commands::Passwd(args) => commands::user::passwd(cli, args).await,
         Commands::Lock(args) => commands::user::lock(cli, args).await,
         Commands::User(args) => commands::user::user(cli, args).await,

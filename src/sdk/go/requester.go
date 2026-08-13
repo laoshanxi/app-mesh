@@ -593,7 +593,7 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 func (w *WSSRequester) enableDemuxer() {
 	w.demuxerMu.Lock()
 	defer w.demuxerMu.Unlock()
-	if w.demuxer != nil {
+	if w.demuxer != nil && w.demuxer.isRunning() {
 		return
 	}
 	w.demuxer = newMessageDemuxer(w.WSSConnection.ReadMessage)

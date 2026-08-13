@@ -1,7 +1,7 @@
 // src/daemon/rest/EventDispatcher.h
 #pragma once
 
-#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -13,7 +13,7 @@
 
 #include "EventTypes.h"
 
-class Application;
+class AppProcess;
 
 struct ConnectionKey
 {
@@ -116,20 +116,21 @@ public:
 
 	bool hasStdoutSubscriber(const std::string &appName) const;
 
-	// Final exit-time drain from `pos` (= AppProcess::stdoutDispatchedBytes) to disk EOF.
-	void flushStdout(const std::string &appName, Application *app, long pos);
+	// Final exit-time drain from the strategy's dispatched position to disk EOF.
+	void flushStdout(const std::string &appName, AppProcess *process, long pos);
 
 	static EventDispatcher *instance();
 
 private:
 	void removeSubscriptionLocked(const std::string &subId);
 
-	mutable std::recursive_mutex m_mutex;
+	mutable std::mutex m_mutex;
+	std::mutex m_deliveryMutex;
 	std::map<std::string, Subscription> m_subscriptions;
 	std::multimap<std::string, std::string> m_appIndex;
 	std::multimap<ConnectionKey, std::string> m_connectionIndex;
 
-	std::atomic<uint64_t> m_sequence{0};
+	uint64_t m_sequence{0};
 };
 
 typedef ACE_Singleton<EventDispatcher, ACE_Null_Mutex> EVENT_DISPATCHER;

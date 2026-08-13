@@ -6,7 +6,7 @@
 ################################################################################
 
 # chkconfig: 2345 99 01
-# description: App Mesh Service - controls the App Mesh daemon and its watchdog
+# description: App Mesh Service - controls the App Mesh daemon
 #
 ### BEGIN INIT INFO
 # Provides:          appmesh
@@ -15,7 +15,7 @@
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: App Mesh Service
-# Description:       Controls the App Mesh service and its watchdog
+# Description:       Controls the App Mesh service
 ### END INIT INFO
 
 set -e # Exit on error
@@ -24,7 +24,6 @@ set -u # Exit on undefined variables
 # Environment variables with fallback defaults
 export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
 export PROG=${PROG:-"${PROG_HOME}/bin/appmesh"}
-export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/entrypoint.sh"}
 
 # Constants
 readonly TIMEOUT_SECONDS=10                              # Start timeout (seconds)
@@ -47,8 +46,36 @@ readonly LSB_NOT_RUNNING_RELOAD=7
 # Source LSB functions if available
 [ -r /lib/lsb/init-functions ] && . /lib/lsb/init-functions
 
-# Source system configuration
-[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+# Parse installer KEY=VALUE entries without shell evaluation.
+load_environment() {
+    local assignment=""
+    local name=""
+    local value=""
+
+    [ -r "$ENV_FILE" ] || return $LSB_OK
+    while IFS= read -r assignment || [ -n "$assignment" ]; do
+        case "$assignment" in
+        "" | \#*) continue ;;
+        *=*)
+            name="${assignment%%=*}"
+            value="${assignment#*=}"
+            case "$name" in
+            "" | [0-9]* | *[!a-zA-Z0-9_]*)
+                printf 'Invalid environment entry in %s\n' "$ENV_FILE" >&2
+                return $LSB_NOT_CONFIGURED
+                ;;
+            esac
+            export "$name=$value"
+            ;;
+        *)
+            printf 'Invalid environment entry in %s\n' "$ENV_FILE" >&2
+            return $LSB_NOT_CONFIGURED
+            ;;
+        esac
+    done <"$ENV_FILE"
+}
+
+load_environment || exit $?
 
 log() {
     local level="$1"
@@ -73,10 +100,6 @@ log() {
 check_installation() {
     if [ ! -x "$PROG" ]; then
         log "error" "App Mesh executable not found or not executable: $PROG"
-        return $LSB_NOT_INSTALLED
-    fi
-    if [ ! -x "$PROG_WATCHDOG" ]; then
-        log "error" "App Mesh watchdog not found or not executable: $PROG_WATCHDOG"
         return $LSB_NOT_INSTALLED
     fi
     return $LSB_OK
@@ -120,7 +143,7 @@ start_service() {
     # Enable core dumps. APPMESH_CORE_DUMP=0 opts out.
     [ "${APPMESH_CORE_DUMP:-1}" != "0" ] && ulimit -c unlimited 2>/dev/null || true
 
-    nohup "$PROG_WATCHDOG" </dev/null >/dev/null 2>&1 &
+    nohup "$PROG" </dev/null >/dev/null 2>&1 &
 
     # Wait for process with timeout
     local attempt=0
