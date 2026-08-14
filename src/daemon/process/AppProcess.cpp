@@ -238,7 +238,7 @@ bool AppProcess::beginExit(int exitCode)
 
 	// Claim and publish the observed exit while ProcessManager may still hold its mutex.
 	// Cleanup and callbacks are deferred to finishExit().
-	auto expected = ExitPhase::Active;
+	int expected = ExitPhase::Active;
 	if (!m_exitPhase.compare_exchange_strong(expected, ExitPhase::Observed, std::memory_order_acq_rel))
 	{
 		LOG_DBG << fname << "duplicate onExit blocked by CAS guard";
@@ -255,7 +255,7 @@ void AppProcess::finishExit(int exitCode)
 {
 	const static char fname[] = "AppProcess::finishExit() ";
 	// Runs outside the ProcessManager upcall so cleanup and application callbacks may block safely.
-	auto expected = ExitPhase::Observed;
+	int expected = ExitPhase::Observed;
 	if (!m_exitPhase.compare_exchange_strong(expected, ExitPhase::Finalizing, std::memory_order_acq_rel))
 		return;
 	LOG_DBG << fname << "uuid=" << m_uuid << " exitCode=" << exitCode;

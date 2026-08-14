@@ -85,7 +85,7 @@ public:
 	void startError(const std::string &err);
 
 private:
-	enum class ExitPhase : std::uint8_t
+	enum ExitPhase
 	{
 		Active,
 		Observed,
@@ -135,7 +135,8 @@ private:
 	const std::string m_key;
 	std::atomic<pid_t> m_pid;
 	std::atomic<int> m_returnValue;
-	std::atomic<ExitPhase> m_exitPhase{ExitPhase::Active};
+	// Use an integral atomic for compatibility with older C++11 standard libraries.
+	std::atomic<int> m_exitPhase{ExitPhase::Active};
 	// True once we deliberately kill this process; marks its exit as not-natural (no restart).
 	std::atomic<bool> m_terminating{false};
 	// True for a daemon-restart recovered (attached) process; enables tick-side exit polling.
