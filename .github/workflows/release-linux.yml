@@ -50,7 +50,6 @@ jobs:
 
       - name: Install venv
         run: |
-          sudo find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' {} +
           sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update
           sudo apt-get install -y --no-install-recommends python3 python3-venv
 
@@ -117,11 +116,11 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Download arm64 packages
+      - name: Download amd64 packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: amd64-${{ github.sha }}
-      - name: Download amd64 packages
+      - name: Download arm64 packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: arm64-${{ github.sha }}
@@ -139,33 +138,57 @@ jobs:
           echo "9. cgroup V2 support" >> CHANGELOG.txt
           ls -R
 
-      - name: Install gpg dependency
+      - name: Install package signing dependencies
         run: |
-          sudo find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' {} +
           sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update
-          sudo apt-get install -y --no-install-recommends rpm dpkg-sig gnupg2
+          sudo apt-get install -y --no-install-recommends rpm debsigs debsig-verify gnupg2
 
       - name: Sign Packages
         run: |
-          # generate key
+          # Generate an ephemeral release key.
           gpg --batch --passphrase '' --quick-generate-key "appmesh <178029200@qq.com>" rsa4096
           gpg --list-keys
-          # prepare for rpm sign
-          gpg --export -a 'appmesh' > gpg_public.key
+          GPG_FINGERPRINT="$(gpg --batch --with-colons --list-keys appmesh | awk -F: '$1 == "fpr" { print $10; exit }')"
+          DEBSIG_KEY_ID="${GPG_FINGERPRINT: -16}"
+
+          # Prepare for RPM signing.
+          gpg --export -a "$GPG_FINGERPRINT" > gpg_public.key
           rpm --import gpg_public.key
           rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
           cat > ~/.rpmmacros <<EOF
           %_signature gpg
           %_gpg_path ~/.gnupg
-          %_gpg_name appmesh
+          %_gpg_name ${GPG_FINGERPRINT}
           %_gpgbin /usr/bin/gpg
           EOF
-          # sign rpm pkg
           rpm --addsign */*.rpm
           rpm --checksig */*.rpm
-          # sign deb pkg
-          dpkg-sig --sign builder -k appmesh --gpg-options '--batch --pinentry-mode loopback' */*.deb
-          dpkg-sig --verify */*.deb
+
+          # Sign DEBs with debsigs. dpkg-sig is not available on Ubuntu 24.04.
+          POLICY_ROOT="${RUNNER_TEMP}/debsig/policies"
+          KEYRING_ROOT="${RUNNER_TEMP}/debsig/keyrings"
+          mkdir -p "${POLICY_ROOT}/${DEBSIG_KEY_ID}" "${KEYRING_ROOT}/${DEBSIG_KEY_ID}"
+          gpg --batch --output "${KEYRING_ROOT}/${DEBSIG_KEY_ID}/appmesh.gpg" --export "$GPG_FINGERPRINT"
+          cat > "${POLICY_ROOT}/${DEBSIG_KEY_ID}/appmesh.pol" <<EOF
+          <?xml version="1.0"?>
+          <!DOCTYPE Policy SYSTEM "https://www.debian.org/debsig/1.0/policy.dtd">
+          <Policy xmlns="https://www.debian.org/debsig/1.0/">
+            <Origin Name="App Mesh" id="${DEBSIG_KEY_ID}" Description="App Mesh release packages"/>
+            <Selection>
+              <Required Type="origin" File="appmesh.gpg" id="${DEBSIG_KEY_ID}"/>
+            </Selection>
+            <Verification MinOptional="0">
+              <Required Type="origin" File="appmesh.gpg" id="${DEBSIG_KEY_ID}"/>
+            </Verification>
+          </Policy>
+          EOF
+          debsigs --sign=origin --default-key="$GPG_FINGERPRINT" */*.deb
+          for package in */*.deb; do
+            debsig-verify \
+              --policies-dir "$POLICY_ROOT" \
+              --keyrings-dir "$KEYRING_ROOT" \
+              "$package"
+          done
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.10.1 # TODO: Renovate will pin to SHA
