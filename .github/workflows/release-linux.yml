@@ -50,6 +50,7 @@ jobs:
 
       - name: Install venv
         run: |
+          sudo find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' {} +
           sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update
           sudo apt-get install -y --no-install-recommends python3 python3-venv
 
@@ -113,7 +114,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     if: github.event_name != 'pull_request'
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Download amd64 packages
@@ -140,51 +141,85 @@ jobs:
 
       - name: Install package signing dependencies
         run: |
+          sudo find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' {} +
           sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update
           sudo apt-get install -y --no-install-recommends rpm debsigs debsig-verify gnupg2
 
       - name: Sign Packages
+        shell: bash
         run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          rpm_packages=( */*.rpm )
+          deb_packages=( */*.deb )
+          if (( ${#rpm_packages[@]} == 0 )); then
+            echo "::error::No RPM packages were downloaded"
+            exit 1
+          fi
+          if (( ${#deb_packages[@]} == 0 )); then
+            echo "::error::No DEB packages were downloaded"
+            exit 1
+          fi
+
           # Generate an ephemeral release key.
-          gpg --batch --passphrase '' --quick-generate-key "appmesh <178029200@qq.com>" rsa4096
-          gpg --list-keys
-          GPG_FINGERPRINT="$(gpg --batch --with-colons --list-keys appmesh | awk -F: '$1 == "fpr" { print $10; exit }')"
-          DEBSIG_KEY_ID="${GPG_FINGERPRINT: -16}"
+          export GNUPGHOME="${RUNNER_TEMP}/gnupg"
+          export GPG_TTY=/dev/null
+          mkdir -m 700 "$GNUPGHOME"
+          RELEASE_IDENTITY="appmesh <178029200@qq.com>"
+          gpg --batch --pinentry-mode loopback --passphrase '' \
+            --quick-generate-key "$RELEASE_IDENTITY" rsa4096 sign 3y
+          GPG_FINGERPRINT="$(
+            gpg --batch --with-colons --list-secret-keys --fingerprint \
+              "$RELEASE_IDENTITY" |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          if [[ ! "$GPG_FINGERPRINT" =~ ^[0-9A-F]{40}$ ]]; then
+            echo "::error::Could not determine the release key fingerprint"
+            exit 1
+          fi
+          gpg --batch --list-keys "$GPG_FINGERPRINT"
 
           # Prepare for RPM signing.
-          gpg --export -a "$GPG_FINGERPRINT" > gpg_public.key
+          gpg --batch --armor --export-options export-minimal \
+            --export "$GPG_FINGERPRINT" > gpg_public.key
           rpm --import gpg_public.key
           rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
-          cat > ~/.rpmmacros <<EOF
-          %_signature gpg
-          %_gpg_path ~/.gnupg
-          %_gpg_name ${GPG_FINGERPRINT}
-          %_gpgbin /usr/bin/gpg
-          EOF
-          rpm --addsign */*.rpm
-          rpm --checksig */*.rpm
+          rpmsign --addsign \
+            --define "_gpg_path ${GNUPGHOME}" \
+            --define "_gpg_name ${GPG_FINGERPRINT}" \
+            --define "_gpg_sign_cmd_extra_args --batch --pinentry-mode loopback" \
+            "${rpm_packages[@]}"
+          rpm --checksig --verbose "${rpm_packages[@]}"
 
           # Sign DEBs with debsigs. dpkg-sig is not available on Ubuntu 24.04.
           POLICY_ROOT="${RUNNER_TEMP}/debsig/policies"
           KEYRING_ROOT="${RUNNER_TEMP}/debsig/keyrings"
-          mkdir -p "${POLICY_ROOT}/${DEBSIG_KEY_ID}" "${KEYRING_ROOT}/${DEBSIG_KEY_ID}"
-          gpg --batch --output "${KEYRING_ROOT}/${DEBSIG_KEY_ID}/appmesh.gpg" --export "$GPG_FINGERPRINT"
-          cat > "${POLICY_ROOT}/${DEBSIG_KEY_ID}/appmesh.pol" <<EOF
+          # debsig-verify 0.29 on Ubuntu 24.04 selects these directories by
+          # the complete signing-key fingerprint reported by GnuPG.
+          mkdir -p \
+            "${POLICY_ROOT}/${GPG_FINGERPRINT}" \
+            "${KEYRING_ROOT}/${GPG_FINGERPRINT}"
+          gpg --batch --yes --export-options export-minimal \
+            --output "${KEYRING_ROOT}/${GPG_FINGERPRINT}/appmesh.pgp" \
+            --export "$GPG_FINGERPRINT"
+          cat > "${POLICY_ROOT}/${GPG_FINGERPRINT}/appmesh.pol" <<EOF
           <?xml version="1.0"?>
           <!DOCTYPE Policy SYSTEM "https://www.debian.org/debsig/1.0/policy.dtd">
           <Policy xmlns="https://www.debian.org/debsig/1.0/">
-            <Origin Name="App Mesh" id="${DEBSIG_KEY_ID}" Description="App Mesh release packages"/>
+            <Origin Name="App Mesh" id="${GPG_FINGERPRINT}" Description="App Mesh release packages"/>
             <Selection>
-              <Required Type="origin" File="appmesh.gpg" id="${DEBSIG_KEY_ID}"/>
+              <Required Type="origin" File="appmesh.pgp" id="${GPG_FINGERPRINT}"/>
             </Selection>
             <Verification MinOptional="0">
-              <Required Type="origin" File="appmesh.gpg" id="${DEBSIG_KEY_ID}"/>
+              <Required Type="origin" File="appmesh.pgp" id="${GPG_FINGERPRINT}"/>
             </Verification>
           </Policy>
           EOF
-          debsigs --sign=origin --default-key="$GPG_FINGERPRINT" */*.deb
-          for package in */*.deb; do
-            debsig-verify \
+          debsigs --sign=origin --default-key="$GPG_FINGERPRINT" \
+            "${deb_packages[@]}"
+          for package in "${deb_packages[@]}"; do
+            debsig-verify --verbose \
               --policies-dir "$POLICY_ROOT" \
               --keyrings-dir "$KEYRING_ROOT" \
               "$package"
