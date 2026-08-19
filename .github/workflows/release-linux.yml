@@ -50,7 +50,6 @@ jobs:
 
       - name: Install venv
         run: |
-          sudo find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' {} +
           sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update
           sudo apt-get install -y --no-install-recommends python3 python3-venv
 
@@ -141,7 +140,6 @@ jobs:
 
       - name: Install package signing dependencies
         run: |
-          sudo find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' {} +
           sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update
           sudo apt-get install -y --no-install-recommends rpm gnupg2
 
