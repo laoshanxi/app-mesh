@@ -25,9 +25,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
         include:
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04
             platform: linux/amd64
           - runner: ubuntu-24.04-arm
             platform: linux/arm64
@@ -48,10 +48,10 @@ jobs:
       - name: Checkout Github code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - name: Install venv
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-venv
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
 
       - name: Download Syft
         id: syft
@@ -111,16 +111,16 @@ jobs:
   deploy:
     name: Sign and Release Packages
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: github.event_name != 'pull_request'
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
-      - name: Download arm64 packages
+      - name: Download amd64 packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: amd64-${{ github.sha }}
-      - name: Download amd64 packages
+      - name: Download arm64 packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: arm64-${{ github.sha }}
@@ -138,32 +138,71 @@ jobs:
           echo "9. cgroup V2 support" >> CHANGELOG.txt
           ls -R
 
-      - name: Install gpg dependency
+      - name: Install package signing dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm dpkg-sig gnupg2
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update
+          sudo apt-get install -y --no-install-recommends rpm gnupg2
 
       - name: Sign Packages
+        shell: bash
         run: |
-          # generate key
-          gpg --batch --passphrase '' --quick-generate-key "appmesh <178029200@qq.com>" rsa4096
-          gpg --list-keys
-          # prepare for rpm sign
-          gpg --export -a 'appmesh' > gpg_public.key
+          set -euo pipefail
+          shopt -s nullglob
+
+          rpm_packages=( */*.rpm )
+          deb_packages=( */*.deb )
+          if (( ${#rpm_packages[@]} == 0 )); then
+            echo "::error::No RPM packages were downloaded"
+            exit 1
+          fi
+          if (( ${#deb_packages[@]} == 0 )); then
+            echo "::error::No DEB packages were downloaded"
+            exit 1
+          fi
+
+          # Generate an ephemeral release key.
+          export GNUPGHOME="${RUNNER_TEMP}/gnupg"
+          export GPG_TTY=/dev/null
+          mkdir -m 700 "$GNUPGHOME"
+          RELEASE_IDENTITY="appmesh <178029200@qq.com>"
+          gpg --batch --pinentry-mode loopback --passphrase '' \
+            --quick-generate-key "$RELEASE_IDENTITY" rsa4096 sign 3y
+          GPG_FINGERPRINT="$(
+            gpg --batch --with-colons --list-secret-keys --fingerprint \
+              "$RELEASE_IDENTITY" |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          if [[ ! "$GPG_FINGERPRINT" =~ ^[0-9A-F]{40}$ ]]; then
+            echo "::error::Could not determine the release key fingerprint"
+            exit 1
+          fi
+          gpg --batch --list-keys "$GPG_FINGERPRINT"
+
+          # Prepare for RPM signing.
+          gpg --batch --armor --export-options export-minimal \
+            --export "$GPG_FINGERPRINT" > gpg_public.key
           rpm --import gpg_public.key
           rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
-          cat > ~/.rpmmacros <<EOF
-          %_signature gpg
-          %_gpg_path ~/.gnupg
-          %_gpg_name appmesh
-          %_gpgbin /usr/bin/gpg
-          EOF
-          # sign rpm pkg
-          rpm --addsign */*.rpm
-          rpm --checksig */*.rpm
-          # sign deb pkg
-          dpkg-sig --sign builder -k appmesh --gpg-options '--batch --pinentry-mode loopback' */*.deb
-          dpkg-sig --verify */*.deb
+          rpmsign --addsign \
+            --define "_gpg_path ${GNUPGHOME}" \
+            --define "_gpg_name ${GPG_FINGERPRINT}" \
+            --define "_gpg_sign_cmd_extra_args --batch --pinentry-mode loopback" \
+            "${rpm_packages[@]}"
+          rpm --checksig --verbose "${rpm_packages[@]}"
+
+          # Sign one checksum manifest for all release packages.
+          package_files=( "${rpm_packages[@]}" "${deb_packages[@]}" )
+          : > SHA256SUMS
+          for package in "${package_files[@]}"; do
+            checksum="$(sha256sum "$package")"
+            printf '%s  %s\n' "${checksum%% *}" "${package##*/}" >> SHA256SUMS
+          done
+          gpg --batch --yes --pinentry-mode loopback \
+            --local-user "$GPG_FINGERPRINT" \
+            --digest-algo SHA512 \
+            --armor --detach-sign \
+            --output SHA256SUMS.asc SHA256SUMS
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.10.1 # TODO: Renovate will pin to SHA
@@ -214,3 +253,5 @@ jobs:
             centos*/*.deb.bundle
             centos*/*.rpm.bundle
             gpg_public.key
+            SHA256SUMS
+            SHA256SUMS.asc

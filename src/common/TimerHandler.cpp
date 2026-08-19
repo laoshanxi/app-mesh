@@ -226,13 +226,13 @@ long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, long delayM
 	}
 	catch (const std::exception &ex)
 	{
-		if (timer)
+		if (timer.handler() != nullptr)
 			releaseTimerToken(timerToken, static_cast<TimerEvent *>(timer.handler()));
 		LOG_CRT << fname << from << " failed to register timer: " << ex.what();
 	}
 	catch (...)
 	{
-		if (timer)
+		if (timer.handler() != nullptr)
 			releaseTimerToken(timerToken, static_cast<TimerEvent *>(timer.handler()));
 		LOG_CRT << fname << from << " failed to register timer with unknown error";
 	}
