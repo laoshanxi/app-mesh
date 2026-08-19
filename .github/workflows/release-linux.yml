@@ -143,7 +143,7 @@ jobs:
         run: |
           sudo find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' {} +
           sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update
-          sudo apt-get install -y --no-install-recommends rpm debsigs debsig-verify gnupg2
+          sudo apt-get install -y --no-install-recommends rpm gnupg2
 
       - name: Sign Packages
         shell: bash
@@ -192,38 +192,19 @@ jobs:
             "${rpm_packages[@]}"
           rpm --checksig --verbose "${rpm_packages[@]}"
 
-          # Sign DEBs with debsigs. dpkg-sig is not available on Ubuntu 24.04.
-          POLICY_ROOT="${RUNNER_TEMP}/debsig/policies"
-          KEYRING_ROOT="${RUNNER_TEMP}/debsig/keyrings"
-          # debsig-verify 0.29 on Ubuntu 24.04 selects these directories by
-          # the complete signing-key fingerprint reported by GnuPG.
-          mkdir -p \
-            "${POLICY_ROOT}/${GPG_FINGERPRINT}" \
-            "${KEYRING_ROOT}/${GPG_FINGERPRINT}"
-          gpg --batch --yes --export-options export-minimal \
-            --output "${KEYRING_ROOT}/${GPG_FINGERPRINT}/appmesh.pgp" \
-            --export "$GPG_FINGERPRINT"
-          cat > "${POLICY_ROOT}/${GPG_FINGERPRINT}/appmesh.pol" <<EOF
-          <?xml version="1.0"?>
-          <!DOCTYPE Policy SYSTEM "https://www.debian.org/debsig/1.0/policy.dtd">
-          <Policy xmlns="https://www.debian.org/debsig/1.0/">
-            <Origin Name="App Mesh" id="${GPG_FINGERPRINT}" Description="App Mesh release packages"/>
-            <Selection>
-              <Required Type="origin" File="appmesh.pgp" id="${GPG_FINGERPRINT}"/>
-            </Selection>
-            <Verification MinOptional="0">
-              <Required Type="origin" File="appmesh.pgp" id="${GPG_FINGERPRINT}"/>
-            </Verification>
-          </Policy>
-          EOF
-          debsigs --sign=origin --default-key="$GPG_FINGERPRINT" \
-            "${deb_packages[@]}"
-          for package in "${deb_packages[@]}"; do
-            debsig-verify --verbose \
-              --policies-dir "$POLICY_ROOT" \
-              --keyrings-dir "$KEYRING_ROOT" \
-              "$package"
+          # Sign one checksum manifest for all release packages.
+          package_files=( "${rpm_packages[@]}" "${deb_packages[@]}" )
+          : > SHA256SUMS
+          for package in "${package_files[@]}"; do
+            checksum="$(sha256sum "$package")"
+            printf '%s  %s\n' "${checksum%% *}" "${package##*/}" >> SHA256SUMS
           done
+          gpg --batch --yes --pinentry-mode loopback \
+            --local-user "$GPG_FINGERPRINT" \
+            --digest-algo SHA512 \
+            --armor --detach-sign \
+            --output SHA256SUMS.asc SHA256SUMS
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.10.1 # TODO: Renovate will pin to SHA
@@ -274,3 +255,5 @@ jobs:
             centos*/*.deb.bundle
             centos*/*.rpm.bundle
             gpg_public.key
+            SHA256SUMS
+            SHA256SUMS.asc
