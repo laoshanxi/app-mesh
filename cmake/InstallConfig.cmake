@@ -5,22 +5,56 @@
 set(SRC ${CMAKE_SOURCE_DIR})
 set(DST ${CMAKE_INSTALL_PREFIX})
 
+# Repo-native authentication configuration is installed for Linux and macOS
+# packages. Prepared third-party executables remain outside the CMake install
+# graph. Windows keeps external-issuer-only deployments.
+set(APPMESH_INSTALL_AUTH_CONFIG OFF)
+if(UNIX)
+    set(APPMESH_INSTALL_AUTH_CONFIG ON)
+endif()
+
 # Configuration Files (Root)
 install(FILES
     "${SRC}/src/daemon/config.yaml"
-    "${SRC}/src/daemon/security/security.yaml"
-    "${SRC}/src/daemon/security/oauth2.yaml"
-    "${SRC}/src/sdk/agent/pkg/cloud/consul.yaml"
+    "${SRC}/src/daemon/security/authorization.yaml"
+    "${SRC}/src/daemon/security/oidc.yaml"
     DESTINATION "${DST}/config"
     COMPONENT configs
 )
 
-# Application Configs (apps/)
+# Project and dependency notices are package contents. Prepared runtime
+# components add their own exact upstream license beside these files later.
+install(FILES
+    "${SRC}/LICENSE"
+    "${SRC}/NOTICE"
+    DESTINATION "${DST}/share/licenses/appmesh"
+    COMPONENT configs
+)
+install(DIRECTORY "${SRC}/THIRD_PARTY_LICENSES/"
+    DESTINATION "${DST}/share/licenses/third-party"
+    COMPONENT configs
+)
+
+if(APPMESH_INSTALL_AUTH_CONFIG)
+    install(FILES
+        "${SRC}/src/daemon/security/auth-stack.yaml"
+        "${SRC}/src/auth/dex.yaml"
+        DESTINATION "${DST}/config"
+        COMPONENT configs
+    )
+endif()
+
+# Application Configs (apps/). The auth System Apps ship only where the
+# bundled auth stack is installed.
+set(APPS_EXCLUDE_AUTH PATTERN "auth-*.yaml" EXCLUDE)
+if(APPMESH_INSTALL_AUTH_CONFIG)
+    set(APPS_EXCLUDE_AUTH "")
+endif()
 install(
     DIRECTORY "${SRC}/script/apps/"
     DESTINATION "${DST}/apps"
     COMPONENT configs
-    FILES_MATCHING PATTERN "*.yaml"
+    FILES_MATCHING PATTERN "*.yaml" ${APPS_EXCLUDE_AUTH}
 )
 
 if(WIN32)
@@ -63,10 +97,16 @@ if(APPLE)
     install(PROGRAMS "${SRC}/script/pack/pre_uninstall.sh" DESTINATION "${CMAKE_BINARY_DIR}/pkg_scripts" RENAME preuninstall COMPONENT scripts)
     install(PROGRAMS "${SRC}/script/pack/post_uninstall.sh" DESTINATION "${CMAKE_BINARY_DIR}/pkg_scripts" RENAME postuninstall COMPONENT scripts)
 elseif(UNIX)
-    install(PROGRAMS 
+    install(PROGRAMS
         "${SRC}/script/pack/appmesh.systemd.service"
         "${SRC}/script/pack/appmesh.initd.sh"
         "${SRC}/script/pack/setup.sh"
+        DESTINATION "${DST}/script"
+        COMPONENT scripts)
+else()
+    # Windows is external-issuer-only: setup.ps1 covers the setup.sh surface
+    # that applies there (issuer/routing/TLS into work/config/oidc.yaml).
+    install(PROGRAMS "${SRC}/script/pack/setup.ps1"
         DESTINATION "${DST}/script"
         COMPONENT scripts)
 endif()
@@ -93,10 +133,12 @@ if(WIN32)
     )
     install(FILES ${OPENSSL_RUNTIME_DLLS} DESTINATION "${DST}/bin" COMPONENT runtime)
 else()
-    install(FILES "${SRC}/script/ssl/generate_ssl_cert.sh" DESTINATION "${DST}/ssl" COMPONENT scripts)
+    # PROGRAMS, not FILES: docker-entrypoint.sh requires the executable bit.
+    install(PROGRAMS "${SRC}/script/ssl/generate_ssl_cert.sh" DESTINATION "${DST}/ssl" COMPONENT scripts)
     # TODO: macOS ssl can not work with pure openssl 
     if(APPLE)
         foreach(bin cfssl cfssljson)
+            # cfssl lives at /usr/local/bin by bootstrap contract (install_build_deps*.sh pin GOBIN)
             install(PROGRAMS "/usr/local/bin/${bin}" DESTINATION "${DST}/ssl" COMPONENT scripts)
         endforeach()
     endif()
@@ -109,6 +151,14 @@ install(PROGRAMS
     DESTINATION "${DST}/bin"
     COMPONENT binaries
 )
+
+if(APPMESH_INSTALL_AUTH_CONFIG)
+    install(PROGRAMS
+        "${SRC}/src/auth/appmesh-auth.sh"
+        DESTINATION "${DST}/script"
+        COMPONENT scripts
+    )
+endif()
 
 # Windows: NSSM Service Manager
 if(WIN32)

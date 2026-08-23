@@ -13,10 +13,14 @@
 package api
 
 import (
-	"encoding/base64"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,9 +48,11 @@ type Request struct {
 	Step     string            `json:"step,omitempty"`
 	Inputs   map[string]string `json:"inputs,omitempty"`
 	Content  string            `json:"content,omitempty"` // YAML content for workflow_add
-	// Token is the caller's JWT. It authenticates the caller (Phase 1 owner authz)
-	// and is reused to run the workflow's steps under the caller's identity (Phase 2).
-	// It is stripped immediately after authentication and is never persisted or logged.
+	// Token is the caller's Dex access token. The Engine verifies it and resolves a
+	// stable Principal for owner authorization; a manual run keeps it in memory only
+	// as the forward_token identity for message steps (the run itself executes under
+	// a renewed Engine capability). It is stripped immediately after authentication
+	// and is never persisted or logged.
 	Token string `json:"token,omitempty"`
 }
 
@@ -59,11 +65,18 @@ type Response struct {
 
 // TaskHandler runs the fetch_task/send_task_result loop.
 type TaskHandler struct {
-	svc    *trigger.Service
-	wdir   *workdir.Manager
-	client *appmesh.AppMeshClient // daemon client for CRUD operations (uses JWT)
-	server *appmesh.WorkerTCPContext
-	admins map[string]bool // workflow admins (manage all workflows)
+	svc           *trigger.Service
+	wdir          *workdir.Manager
+	client        *appmesh.AppMeshClient // narrow Workflow control capability (registry/event only)
+	server        *appmesh.WorkerTCPContext
+	principalHTTP *http.Client
+	engineURL     string
+	engineOption  appmesh.Option
+}
+
+type callerPrincipal struct {
+	PrincipalID string   `json:"principal_id"`
+	Permissions []string `json:"permissions"`
 }
 
 // NewTaskHandler creates a Task RPC handler.
@@ -72,24 +85,40 @@ func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh
 	if err != nil {
 		return nil, fmt.Errorf("create task context: %w", err)
 	}
-	return &TaskHandler{svc: svc, wdir: wdir, client: client, server: server, admins: parseAdmins()}, nil
+	principalHTTP, engineURL, err := newPrincipalHTTPClient()
+	if err != nil {
+		server.CloseConnection()
+		return nil, err
+	}
+	return &TaskHandler{svc: svc, wdir: wdir, client: client, server: server, principalHTTP: principalHTTP, engineURL: engineURL, engineOption: opts}, nil
 }
 
-// parseAdmins reads the workflow-admin username set from APPMESH_WORKFLOW_ADMINS
-// (comma-separated). Admins may manage all workflows; everyone else is limited to
-// the workflows they own. Defaults to {"admin"}.
-func parseAdmins() map[string]bool {
-	admins := map[string]bool{}
-	raw := os.Getenv("APPMESH_WORKFLOW_ADMINS")
-	if raw == "" {
-		raw = "admin"
+func newPrincipalHTTPClient() (*http.Client, string, error) {
+	engineURL := strings.TrimRight(os.Getenv("APPMESH_ENGINE_URL"), "/")
+	if engineURL == "" {
+		engineURL = "https://127.0.0.1:6060"
 	}
-	for _, name := range strings.Split(raw, ",") {
-		if name = strings.TrimSpace(name); name != "" {
-			admins[name] = true
+	parsed, err := url.Parse(engineURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, "", fmt.Errorf("APPMESH_ENGINE_URL must be an absolute HTTP(S) URL")
+	}
+	verify := !strings.EqualFold(os.Getenv("APPMESH_ENGINE_TLS_VERIFY"), "false") && os.Getenv("APPMESH_ENGINE_TLS_VERIFY") != "0"
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verify}
+	if caPath := os.Getenv("APPMESH_CA"); caPath != "" {
+		pem, err := os.ReadFile(caPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("read App Mesh CA: %w", err)
 		}
+		roots, err := x509.SystemCertPool()
+		if err != nil || roots == nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM(pem) {
+			return nil, "", fmt.Errorf("App Mesh CA file contains no certificates")
+		}
+		tlsConfig.RootCAs = roots
 	}
-	return admins
+	return &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}, Timeout: 15 * time.Second}, engineURL, nil
 }
 
 // Run starts the fetch_task/send_task_result loop. Blocks forever, except when the
@@ -138,15 +167,17 @@ func (h *TaskHandler) dispatch(payload string) Response {
 	}
 
 	// Authenticate the caller from the token in the payload, then strip it so it is
-	// never logged or persisted. The same token is reused to run the workflow's steps
-	// under the caller's identity (handleRun/handleRerun -> TriggerManual).
+	// never logged or persisted. The token travels on to handleRun/handleRerun ->
+	// TriggerManual only as the forward_token identity for message steps; the run's
+	// steps execute under a renewed Engine-issued capability.
 	token := req.Token
 	req.Token = ""
 	caller, err := h.authenticate(token)
 	if err != nil {
 		return Response{Status: "error", Message: "authentication failed: " + err.Error()}
 	}
-	admin := h.isAdmin(caller)
+	admin := caller.hasPermission("workflow-admin")
+	callerID := caller.PrincipalID
 
 	for field, value := range map[string]string{
 		"workflow": req.Workflow, "run_id": req.RunID,
@@ -157,29 +188,29 @@ func (h *TaskHandler) dispatch(payload string) Response {
 		}
 	}
 
-	if msg := h.authorize(caller, admin, req); msg != "" {
+	if msg := h.authorize(callerID, admin, req); msg != "" {
 		return Response{Status: "error", Message: msg}
 	}
 
 	switch req.Action {
 	// Workflow CRUD
 	case "workflow_add":
-		return h.handleWorkflowAdd(req, caller)
+		return h.handleWorkflowAdd(req, token, callerID, admin)
 	case "workflow_get":
 		return h.handleWorkflowGet(req)
 	case "workflow_list":
-		return h.handleWorkflowList(req, caller, admin)
+		return h.handleWorkflowList(req, callerID, admin)
 	case "workflow_rm":
-		return h.handleWorkflowRm(req)
+		return h.handleWorkflowRm(req, token)
 	case "workflow_inputs":
 		return h.handleWorkflowInputs(req)
 	// Run management
 	case "run":
-		return h.handleRun(req, token, caller)
+		return h.handleRun(req, token, callerID)
 	case "cancel":
 		return h.handleCancel(req)
 	case "rerun":
-		return h.handleRerun(req, token, caller)
+		return h.handleRerun(req, token, callerID)
 	// Observability
 	case "runs":
 		return h.handleRuns(req)
@@ -194,24 +225,43 @@ func (h *TaskHandler) dispatch(payload string) Response {
 	}
 }
 
-// authenticate validates the caller's JWT against the daemon and returns the verified
-// username (the token's subject). Invalid/expired/blacklisted tokens fail closed.
-func (h *TaskHandler) authenticate(token string) (string, error) {
+// authenticate asks the Engine to validate the Dex bearer and return its immutable
+// Principal and effective authorization. The workflow process never decodes claims as
+// an authority and never calls an Engine-local login endpoint.
+func (h *TaskHandler) authenticate(token string) (callerPrincipal, error) {
 	if token == "" {
-		return "", fmt.Errorf("token required")
+		return callerPrincipal{}, fmt.Errorf("Dex access token required")
 	}
-	ok, err := h.client.Authenticate(token, "", "", false)
+	req, err := http.NewRequest(http.MethodGet, h.engineURL+"/appmesh/principal/self", nil)
 	if err != nil {
-		return "", err
+		return callerPrincipal{}, err
 	}
-	if !ok {
-		return "", fmt.Errorf("invalid or expired token")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := h.principalHTTP.Do(req)
+	if err != nil {
+		return callerPrincipal{}, err
 	}
-	user := usernameFromJWT(token)
-	if user == "" {
-		return "", fmt.Errorf("token has no subject")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return callerPrincipal{}, fmt.Errorf("Engine rejected Dex bearer with HTTP %d", resp.StatusCode)
 	}
-	return user, nil
+	var principal callerPrincipal
+	if err := json.NewDecoder(resp.Body).Decode(&principal); err != nil {
+		return callerPrincipal{}, fmt.Errorf("decode Engine Principal response: %w", err)
+	}
+	if principal.PrincipalID == "" {
+		return callerPrincipal{}, fmt.Errorf("Engine Principal response omitted principal_id")
+	}
+	return principal, nil
+}
+
+func (p callerPrincipal) hasPermission(permission string) bool {
+	for _, granted := range p.Permissions {
+		if granted == permission {
+			return true
+		}
+	}
+	return false
 }
 
 // authorize enforces per-workflow ownership: a caller may act on a workflow only if
@@ -237,6 +287,14 @@ func (h *TaskHandler) authorize(caller string, admin bool, req Request) string {
 			return denied
 		}
 		return ""
+	case "workflow_rm":
+		if !h.workflowExists(req.Workflow) {
+			return "" // unknown workflow; the handler reports not-found
+		}
+		if !canAccess(caller, admin, h.ownerOf(req.Workflow)) {
+			return denied
+		}
+		return ""
 	default:
 		if req.Workflow != "" && !canAccess(caller, admin, h.ownerOf(req.Workflow)) {
 			return denied
@@ -249,8 +307,6 @@ func (h *TaskHandler) authorize(caller string, admin bool, req Request) string {
 func canAccess(caller string, admin bool, owner string) bool {
 	return admin || (owner != "" && caller == owner)
 }
-
-func (h *TaskHandler) isAdmin(caller string) bool { return h.admins[caller] }
 
 // ownerOf returns the workflow's owner, or "" if unknown. Served from the in-memory
 // registry (populated by the periodic scan and on registration) — no daemon round-trip.
@@ -276,31 +332,19 @@ func (h *TaskHandler) workflowOfRun(runID string) string {
 	return ""
 }
 
-// usernameFromJWT extracts the subject (username) from a JWT without verifying it;
-// callers must validate the token separately (see authenticate).
-func usernameFromJWT(token string) string {
-	parts := strings.Split(token, ".")
-	if len(parts) < 2 {
-		return ""
+// workflowExists reports whether the workflow definition is present on disk —
+// the same source of truth handleWorkflowGet reads for its not-found answer.
+func (h *TaskHandler) workflowExists(wfName string) bool {
+	if wfName == "" {
+		return false
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		if raw, err = base64.StdEncoding.DecodeString(parts[1]); err != nil {
-			return ""
-		}
-	}
-	var claims struct {
-		Sub string `json:"sub"`
-	}
-	if err := json.Unmarshal(raw, &claims); err != nil {
-		return ""
-	}
-	return claims.Sub
+	_, err := os.Stat(filepath.Join(h.wdir.BaseDir(), wfName, "workflow.yaml"))
+	return err == nil
 }
 
 // --- Workflow CRUD ---
 
-func (h *TaskHandler) handleWorkflowAdd(req Request, caller string) Response {
+func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string, admin bool) Response {
 	if req.Workflow == "" || req.Content == "" {
 		return Response{Status: "error", Message: "workflow name and content required"}
 	}
@@ -330,16 +374,11 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, caller string) Response {
 	if _, err := dag.TopoSort(wf.Jobs); err != nil {
 		return Response{Status: "error", Message: "invalid workflow DAG: " + err.Error()}
 	}
-
-	// Authorize execution_identity binding (ADR 0004): engine must hold the credential,
-	// and only that identity itself or a workflow admin may bind it.
-	if wf.ExecutionIdentity != "" {
-		if !h.svc.IsKnownIdentity(wf.ExecutionIdentity) {
-			return Response{Status: "error", Message: fmt.Sprintf("execution_identity %q is not configured on the engine; ask an admin to provision its credential (APPMESH_EXEC_IDENTITIES)", wf.ExecutionIdentity)}
-		}
-		if wf.ExecutionIdentity != caller && !h.isAdmin(caller) {
-			return Response{Status: "error", Message: fmt.Sprintf("not allowed to bind execution_identity %q (only that identity or a workflow admin can)", wf.ExecutionIdentity)}
-		}
+	// An automatic trigger has no user bearer and therefore executes under an
+	// Engine-issued run capability bound to this owner. Only workflow administrators
+	// may authorize that delegation by registering such a definition.
+	if wf.On != nil && (wf.On.AppEvent != nil || len(wf.On.Schedule) != 0) && !admin {
+		return Response{Status: "error", Message: "workflow-admin permission is required to register automatic triggers"}
 	}
 
 	// Register the daemon App FIRST. If it succeeds, we then write the YAML.
@@ -347,9 +386,10 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, caller string) Response {
 	yamlPath := filepath.Join(h.wdir.BaseDir(), wf.Name, "workflow.yaml")
 	appName := workflowAppPrefix + req.Workflow
 	trueCmd := "true"
-	// Workflow ownership lives in engine-controlled metadata, not the App's owner field:
-	// the daemon stamps the App owner with the *registering* identity (the engine), so the
-	// owner field can't carry the caller. The scan and list read owner back from here.
+	// The daemon derives owner_principal_id from this caller-authenticated request.
+	// Workflow also keeps the same immutable Principal ID in metadata so its narrow
+	// registry and per-workflow authorization do not depend on a client-supplied App
+	// ownership field.
 	metaBytes, err := json.Marshal(map[string]string{"type": "workflow", "yaml_path": yamlPath, "owner": caller})
 	if err != nil {
 		return Response{Status: "error", Message: "failed to marshal metadata: " + err.Error()}
@@ -361,14 +401,18 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, caller string) Response {
 	app := appmesh.Application{
 		Name:     appName,
 		Command:  &trueCmd,
-		Status:   0, // disabled
+		Status:   false, // disabled
 		Metadata: &metadata,
-		Owner:    &owner,
 	}
 	if wf.Permission != 0 {
 		app.Permission = &wf.Permission
 	}
-	if _, err := h.client.AddApp(app); err != nil {
+	callerClient, err := h.newCallerClient(callerToken)
+	if err != nil {
+		return Response{Status: "error", Message: "failed to create caller Engine client: " + err.Error()}
+	}
+	defer callerClient.CloseConnection()
+	if _, err := callerClient.AddApp(app); err != nil {
 		return Response{Status: "error", Message: "failed to register App: " + err.Error()}
 	}
 
@@ -388,7 +432,7 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, caller string) Response {
 		return nil
 	}
 	if err := writeYaml(); err != nil {
-		h.client.DeleteApp(appName)
+		callerClient.DeleteApp(appName)
 		return Response{Status: "error", Message: err.Error()}
 	}
 
@@ -413,9 +457,11 @@ func (h *TaskHandler) handleWorkflowGet(req Request) Response {
 }
 
 func (h *TaskHandler) handleWorkflowList(req Request, caller string, admin bool) Response {
-	apps, err := h.client.ListApps()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	apps, err := h.client.ListWorkflowRegistryContext(ctx)
 	if err != nil {
-		return Response{Status: "error", Message: "failed to list apps: " + err.Error()}
+		return Response{Status: "error", Message: "failed to list workflow registry: " + err.Error()}
 	}
 
 	type WfInfo struct {
@@ -455,14 +501,22 @@ func (h *TaskHandler) handleWorkflowList(req Request, caller string, admin bool)
 	return Response{Status: "ok", Data: workflows}
 }
 
-func (h *TaskHandler) handleWorkflowRm(req Request) Response {
+func (h *TaskHandler) handleWorkflowRm(req Request, callerToken string) Response {
 	if req.Workflow == "" {
 		return Response{Status: "error", Message: "workflow name required"}
+	}
+	if !h.workflowExists(req.Workflow) {
+		return Response{Status: "error", Message: "workflow not found"}
 	}
 	h.svc.CancelByWorkflow(req.Workflow)
 	h.svc.Registry().Remove(req.Workflow)
 	appName := workflowAppPrefix + req.Workflow
-	if _, err := h.client.DeleteApp(appName); err != nil {
+	callerClient, err := h.newCallerClient(callerToken)
+	if err != nil {
+		return Response{Status: "error", Message: "failed to create caller Engine client: " + err.Error()}
+	}
+	defer callerClient.CloseConnection()
+	if _, err := callerClient.DeleteApp(appName); err != nil {
 		return Response{Status: "error", Message: "failed to remove App: " + err.Error()}
 	}
 	wfDir := filepath.Join(h.wdir.BaseDir(), req.Workflow)
@@ -607,6 +661,18 @@ func (h *TaskHandler) handleStepLog(req Request) Response {
 		return Response{Status: "error", Message: "step log not found"}
 	}
 	return Response{Status: "ok", Data: content}
+}
+
+// newCallerClient keeps workflow-definition mutations under the authenticated
+// human Principal. The Workflow control capability cannot register or delete
+// definitions and is never upgraded to a general system identity.
+func (h *TaskHandler) newCallerClient(token string) (*appmesh.AppMeshClientTCP, error) {
+	if token == "" {
+		return nil, fmt.Errorf("caller Dex bearer is required")
+	}
+	option := h.engineOption
+	option.JwtToken = token
+	return appmesh.NewTCPClient(option)
 }
 
 // Close closes the server-side TCP connection used for fetch_task / send_task_result.

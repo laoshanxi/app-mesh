@@ -91,10 +91,8 @@ class AppMeshWorker {
    * @param {Object} [options.logger=console] - Logger instance
    * @param {AppMeshClient} [options.client] - Optional pre-built `AppMeshClient` instance to reuse.
    *   When supplied, `baseURL` and `sslConfig` are ignored and the worker shares the caller's
-   *   client (and therefore its token-refresh state). Use this when a single process needs both
-   *   client (outbound calls like `AddApp`) and worker (`fetch_task`/`send_task_result`) roles to
-   *   avoid two independent `/token/renew` loops fighting each other — the daemon blacklists
-   *   the previous token on every renew, so the slower refresher gets 401 "Token has been revoked".
+   *   client (and therefore its caller-owned bearer). Use this when a single process needs both
+   *   client (outbound calls like `AddApp`) and worker (`fetch_task`/`send_task_result`) roles.
    *
    * @example
    * import fs from 'fs';
@@ -109,7 +107,7 @@ class AppMeshWorker {
    * @example
    * // Share a single client between client-role and worker-role usage:
    * const client = new AppMeshClient('https://127.0.0.1:6060', sslConfig);
-   * await client.login('user', 'pass');
+   * client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
    * const worker = new AppMeshWorker('https://127.0.0.1:6060', sslConfig, { client });
    */
   constructor (
@@ -125,7 +123,6 @@ class AppMeshWorker {
       this._client = options.client
     } else {
       this._client = new AppMeshClient(baseURL, sslConfig)
-      this._client.set_auto_refresh_token(false) // Task endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
     }
     this._logger = options.logger || console
     this._stopped = false
@@ -187,7 +184,7 @@ class AppMeshWorker {
       const attemptStart = Date.now()
       try {
         const response = await this._client.request('get', path, null, {
-          params: { process_key: processKey }
+          headers: { 'X-AppMesh-Process-Key': processKey }
         })
 
         if (response.status === 200) {
@@ -247,7 +244,7 @@ class AppMeshWorker {
     let response
     try {
       response = await this._client.request('put', path, result, {
-        params: { process_key: processKey }
+        headers: { 'X-AppMesh-Process-Key': processKey }
       })
     } catch (error) {
       // request() throws AppMeshError on non-200
@@ -309,7 +306,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
-   * @param {AppMeshClientTCP} [options.client] - Pre-built client to reuse (shares token-refresh state); see AppMeshWorker for why. When set, sslConfig/tcpAddress are ignored.
+   * @param {AppMeshClientTCP} [options.client] - Pre-built client to reuse (shares its caller-owned bearer); when set, sslConfig/tcpAddress are ignored.
    *
    * @example
    * import fs from 'fs';
@@ -324,7 +321,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    * // Share a single TCP client between client-role and worker-role usage:
    * import { AppMeshClientTCP } from 'appmesh/tcp';
    * const client = new AppMeshClientTCP(sslConfig, ['127.0.0.1', 6059]);
-   * await client.login('user', 'pass');
+   * client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
    * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6059], { client });
    */
   constructor (
@@ -353,7 +350,6 @@ class AppMeshWorkerTCP extends AppMeshWorker {
     if (!this._client) {
       const { AppMeshClientTCP } = await import('./appmesh_tcp.js')
       this._client = new AppMeshClientTCP(this._sslConfig, this._tcpAddress)
-      this._client.set_auto_refresh_token(false) // Task endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
     }
     return this._client
   }

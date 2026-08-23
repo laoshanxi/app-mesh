@@ -16,12 +16,9 @@ Welcome to AppMesh's documentation!
    CLI.md
    Development.md
    Install.md
-   JWT.md
    Loki.md
    PROMETHEUS.md
    Security.md
-   MFA.md
-   USER_ROLE.md
    Coverity.md
    GrafanaDataSource.md
    RemoteTask.md
@@ -43,7 +40,6 @@ Welcome to AppMesh's documentation!
    success/open_service_broker_support_local_pv_for_K8S.md
    success/promote_native_app_to_microservice_app.md
    success/secure_REST_file_server.md
-   success/standalone_JWT_server.md
    success/kubernetes_run_native_application.md
    success/python_parallel_run.md
 

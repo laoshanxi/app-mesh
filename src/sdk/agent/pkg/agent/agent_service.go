@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,20 +28,12 @@ import (
 
 // Constants for REST paths and headers
 const (
-	COOKIE_TOKEN                = "appmesh_auth_token"
-	REST_PATH_LOGIN             = "/appmesh/login"
-	REST_PATH_AUTH              = "/appmesh/auth"
-	REST_PATH_TOTP_VALIDATE     = "/appmesh/totp/validate"
-	REST_PATH_LOGOFF            = "/appmesh/self/logoff"
-	REST_PATH_TOKEN_RENEW       = "/appmesh/token/renew"
-	REST_PATH_TOTP_SETUP        = "/appmesh/totp/setup"
 	REST_PATH_UPLOAD            = "/appmesh/file/upload"
 	REST_PATH_DOWNLOAD          = "/appmesh/file/download"
 	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
 	USER_AGENT_APPMESH_SDK      = "appmesh/sdk"
 	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
 
-	HTTP_HEADER_KEY_X_SET_COOKIE       = "X-Set-Cookie"
 	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
 	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
@@ -150,10 +143,77 @@ func ListenAndServeREST(ctx context.Context) error {
 	// docker.sock proxy
 	RegisterDockerRoutes(router)
 
+	// Dex is the only externally reachable authentication surface. Upstream IdPs and
+	// Upstream identity providers stay behind Dex and are never routed by the agent.
+	dexProxy, dexPath, err := newDexReverseProxy()
+	if err != nil {
+		return err
+	}
+	if dexPath != "" {
+		router.Path(dexPath).Handler(dexProxy)
+		router.PathPrefix(dexPath + "/").Handler(dexProxy)
+	} else {
+		logger.Infof("OIDC issuer has no path; Dex is reached directly at <%s> and not proxied by the agent", config.OIDCData.Issuer)
+	}
+
 	// Forward all remaining requests, including static content, to the daemon.
 	router.PathPrefix("/").HandlerFunc(HandleAppMeshRequest)
 
 	return StartHTTPSServer(ctx, listenAddr, router)
+}
+
+func newDexReverseProxy() (http.Handler, string, error) {
+	issuer, err := url.Parse(config.OIDCData.Issuer)
+	if err != nil || (issuer.Scheme != "http" && issuer.Scheme != "https") || issuer.Host == "" || issuer.Hostname() == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" {
+		return nil, "", fmt.Errorf("invalid OIDC issuer")
+	}
+	target, err := url.Parse(config.OIDCData.DexAccessURL)
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.Hostname() == "" || target.User != nil || target.RawQuery != "" || target.ForceQuery || target.Fragment != "" {
+		return nil, "", fmt.Errorf("invalid OIDC dex_access_url")
+	}
+	issuerPath := strings.TrimSuffix(issuer.Path, "/")
+	// An issuer without a path (e.g. http://host:6062) roots Dex at the target's
+	// root: the director below forwards request paths unchanged. Such an issuer
+	// cannot be mounted under the agent's "/" catch-all (which serves the local
+	// daemon), so callers reach it directly and no Dex sub-path is registered.
+	targetPath := strings.TrimSuffix(target.Path, "/")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	var dexRoots *x509.CertPool
+	if config.OIDCData.DexCAPath != "" {
+		dexRoots, err = appmesh.LoadCA(config.OIDCData.DexCAPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to load Dex CA: %w", err)
+		}
+	}
+	proxy.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: !config.OIDCData.DexTLSVerify,
+			RootCAs:            dexRoots,
+		},
+		DialContext:     (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		IdleConnTimeout: 90 * time.Second,
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, proxyErr error) {
+		logger.Warnf("Dex reverse proxy failed: %v", proxyErr)
+		utils.HttpError(w, "Dex is unavailable", http.StatusBadGateway)
+	}
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		incomingPath := req.URL.Path
+		originalDirector(req)
+		suffix := strings.TrimPrefix(incomingPath, issuerPath)
+		if suffix != "" && !strings.HasPrefix(suffix, "/") {
+			suffix = "/" + suffix
+		}
+		req.URL.Path = targetPath + suffix
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
+		req.URL.RawPath = ""
+		req.Host = target.Host
+	}
+	return proxy, issuerPath, nil
 }
 
 // StartHTTPSServer starts the HTTPS server with the provided router
@@ -325,7 +385,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reply to client
-	resp.writeToHTTPResponse(w, r, request)
+	resp.writeToHTTPResponse(w, r)
 
 	// Handle file upload after response to client
 	if resp.TempUploadFilePath != "" {

@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <csignal>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -15,7 +16,7 @@
 
 #include "../../../common/Utility.h"
 #include "../../Configuration.h"
-#include "../../security/JwtToken.h"
+#include "../../security/Security.h"
 #include "../EventDispatcher.h"
 #include "../Worker.h"
 #include "Service.h"
@@ -87,18 +88,61 @@ private:
     WebSocketAdaptor(WebSocketAdaptor &&) = delete;
     WebSocketAdaptor &operator=(WebSocketAdaptor &&) = delete;
 
-    // Helper function to verify token
-    static bool verifyToken(std::string_view token, const std::string &audience)
+    static bool isLoopbackPeer(std::string_view peer)
     {
-        if (token.empty() || token.size() > MAX_JWT_TOKEN_LENGTH)
-            return false;
+        if (peer == "::1" || peer == "0:0:0:0:0:0:0:1")
+            return true;
+        if (peer.size() >= 4 && peer.substr(0, 4) == "127.")
+            return true;
+        if (peer.size() >= 11 && peer.substr(0, 11) == "::ffff:127.")
+            return true;
+        // uWS renders IPv6 without '::' compression and a dual-stack 127.0.0.1 peer as
+        // v4-mapped "0000:...:ffff:7fxx:xxxx"; neither literal matches, so parse the 8-group form.
+        if (!peer.empty() && peer.size() < 63 && peer.find("::") == std::string_view::npos)
+        {
+            char buf[64];
+            std::memcpy(buf, peer.data(), peer.size());
+            buf[peer.size()] = '\0';
+            unsigned int g[8];
+            if (sscanf(buf, "%x:%x:%x:%x:%x:%x:%x:%x", &g[0], &g[1], &g[2], &g[3], &g[4], &g[5], &g[6], &g[7]) == 8)
+            {
+                const bool leadingZero = !g[0] && !g[1] && !g[2] && !g[3] && !g[4];
+                if (leadingZero && !g[5] && !g[6] && g[7] == 1)
+                    return true;                                  // ::1
+                if (leadingZero && g[5] == 0xffff && (g[6] >> 8) == 0x7f)
+                    return true;                                  // ::ffff:127.x.x.x
+            }
+        }
+        return false;
+    }
+
+    static std::string authorize(std::string_view authorization, const std::string &permission = "")
+    {
+        if (authorization.empty() || authorization.size() > MAX_JWT_TOKEN_LENGTH)
+            throw std::domain_error("Authentication required");
+        const auto principal = Security::authenticateBearerAuthorization(std::string(authorization));
+        Security::requirePermission(principal.id(), permission);
+        return principal.id();
+    }
+
+    template <typename Res>
+    static bool authorizeFile(Res *res, std::string_view authorization, const std::string &permission)
+    {
         try
         {
-            JwtToken::verify(std::string(token), audience);
+            authorize(authorization, permission);
             return true;
+        }
+        catch (const AuthorizationException &)
+        {
+            res->writeStatus("403 Forbidden")->end("Permission denied");
+            return false;
         }
         catch (...)
         {
+            res->writeStatus("401 Unauthorized")
+               ->writeHeader("WWW-Authenticate", "Bearer realm=\"appmesh\"")
+               ->end("Authentication failed");
             return false;
         }
     }
@@ -176,6 +220,32 @@ private:
 
         // Register a supported sub-protocol for WebSocket
         m_server->registerSupportedProtocol("appmesh-ws");
+
+        m_server->onWSUpgrade([](std::string_view authorization, std::string_view peer)
+        {
+            WSS::WSUpgradeDecision decision;
+            if (authorization.empty())
+            {
+                // A bearer-less session pins no principal: every protected route
+                // still rejects its frames (401), so only the public discovery
+                // endpoints answer anonymously — the same exposure as plain HTTPS.
+                // A loopback peer keeps the managed-worker RPC privilege; RestHandler
+                // enforces its strict route/key restriction.
+                decision.accepted = true;
+                decision.managedWorkerTransport = isLoopbackPeer(peer);
+                return decision;
+            }
+            try
+            {
+                decision.principalId = authorize(authorization);
+                decision.accepted = true;
+            }
+            catch (...)
+            {
+                decision.accepted = false;
+            }
+            return decision;
+        });
 
         m_server->route("GET", "/appmesh/file/download/ws", [this](auto *res, auto *req, auto /*replyCtx*/, const auto & /*match*/)
                         { handleDownload(res, req); });
@@ -307,7 +377,6 @@ private:
 
                 if (last)
                 {
-                    requestState->convertCookieToAuthorization();
                     auto msgPack = requestState->serialize();
                     auto packedData = ByteBuffer(msgPack->data(), msgPack->data() + msgPack->size());
                     WORKER::instance()->queueUwsRequest(std::move(packedData), ctx);
@@ -331,12 +400,8 @@ private:
         const static char fname[] = "WebSocketAdaptor::handleDownload() ";
         LOG_DBG << fname << "Enter";
 
-        auto token = req->getHeader("authorization");
-        if (!verifyToken(token, WEBSOCKET_FILE_AUDIENCE))
-        {
-            res->writeStatus("401 Unauthorized")->end("Authentication failed");
+        if (!authorizeFile(res, req->getHeader("authorization"), PERMISSION_KEY_file_download))
             return;
-        }
 
         auto filePathHeader = req->getHeader("x-file-path");
         if (filePathHeader.empty())
@@ -490,12 +555,8 @@ private:
         const static char fname[] = "WebSocketAdaptor::handleUpload() ";
         LOG_DBG << fname << "Enter";
 
-        auto token = req->getHeader("authorization");
-        if (!verifyToken(token, WEBSOCKET_FILE_AUDIENCE))
-        {
-            res->writeStatus("401 Unauthorized")->end("Authentication failed");
+        if (!authorizeFile(res, req->getHeader("authorization"), PERMISSION_KEY_file_upload))
             return;
-        }
 
         auto filePathHeader = req->getHeader("x-file-path");
         if (filePathHeader.empty())

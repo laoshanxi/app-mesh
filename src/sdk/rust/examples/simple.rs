@@ -10,8 +10,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Initialize client
     let client = ClientBuilderWSS::new().build()?;
 
-    // Login
-    client.client().login("admin", "admin123", None, None, None).await?;
+    // Obtain a Dex access token outside the Engine SDK and attach it in memory.
+    let token = std::env::var("APPMESH_BEARER_TOKEN")?;
+    client.client().set_token(&token);
 
     // List all applications
     let apps = client.list_apps().await?;

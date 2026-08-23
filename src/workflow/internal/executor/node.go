@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"github.com/laoshanxi/app-mesh/src/workflow/internal/tlsconf"
 )
 
 // ResolveTargetNode finds a cluster node matching the given label selector.
@@ -34,12 +35,15 @@ func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nod
 		token = localClient.GetToken()
 	}
 	for _, node := range clusterNodes {
-		probe, err := appmesh.NewTCPClient(appmesh.Option{
-			AppMeshUri:         serverURI,
-			ForwardTo:          node,
-			JwtToken:           token,
-			InsecureSkipVerify: true,
-		})
+		// The probe carries the engine credential; verify the daemon certificate
+		// (fail closed) like every credential-bearing client.
+		probeOption := appmesh.Option{
+			AppMeshUri: serverURI,
+			ForwardTo:  node,
+			JwtToken:   token,
+		}
+		tlsconf.Apply(&probeOption)
+		probe, err := appmesh.NewTCPClient(probeOption)
 		if err != nil {
 			continue
 		}

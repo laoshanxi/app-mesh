@@ -29,9 +29,7 @@ impl AppMeshWorker {
         ssl_verify: Option<String>,
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>, AppMeshError> {
-        let client = AppMeshClient::new(base_url, ssl_verify, ssl_client_cert, None, None, false)?;
-        // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
-        client.set_auto_refresh_token(false);
+        let client = AppMeshClient::new(base_url, ssl_verify, ssl_client_cert, None, false)?;
         Ok(AppMeshWorker::with_client(client))
     }
 
@@ -79,8 +77,8 @@ impl AppMeshWorker {
         let (pkey, app_name) = Self::get_runtime_env()?;
         let path = format!("/appmesh/app/{}/task", app_name);
 
-        let mut query = HashMap::new();
-        query.insert("process_key".to_string(), pkey);
+        let mut headers = HashMap::new();
+        headers.insert("X-AppMesh-Process-Key".to_string(), pkey);
 
         let mut stop_rx = self.stop_tx.subscribe();
         let mut attempts: u32 = 0;
@@ -90,7 +88,7 @@ impl AppMeshWorker {
             }
             let attempt_start = Instant::now();
             let result = tokio::select! {
-                r = self.client.raw_request(Method::GET, &path, None, None, Some(query.clone()), false) => r,
+                r = self.client.raw_request(Method::GET, &path, None, Some(headers.clone()), None, false) => r,
                 _ = stop_rx.changed() => return Err(AppMeshError::Cancelled),
             };
             match result {
@@ -130,11 +128,11 @@ impl AppMeshWorker {
         let (pkey, app_name) = Self::get_runtime_env()?;
         let path = format!("/appmesh/app/{}/task", app_name);
 
-        let mut query = HashMap::new();
-        query.insert("process_key".to_string(), pkey);
+        let mut headers = HashMap::new();
+        headers.insert("X-AppMesh-Process-Key".to_string(), pkey);
 
         let resp =
-            self.client.raw_request(Method::PUT, &path, Some(result), None, Some(query), false).await?;
+            self.client.raw_request(Method::PUT, &path, Some(result), Some(headers), None, false).await?;
 
         let status = resp.status();
         if status != StatusCode::OK {

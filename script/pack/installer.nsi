@@ -59,11 +59,9 @@ install_files:
     StrCpy $START_APPMESH "$INSTDIR\bin\appmesh.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"
 
-    ; Preserve an existing runtime definition during upgrades.
-    CreateDirectory "$INSTDIR\work\apps"
-    IfFileExists "$INSTDIR\work\apps\workflow.yaml" workflow_ready 0
-    CopyFiles /SILENT "$INSTDIR\config\templates\workflow.yaml" "$INSTDIR\work\apps"
-workflow_ready:
+    ; Bundled Dex is intentionally rejected by CMake on Windows until a
+    ; native auth launcher exists. Do not install the POSIX-launcher-based
+    ; workflow System App here and imply that bundled authentication is usable.
 
     ; Generate SSL certs
     DetailPrint "Starting SSL certificate generation"
@@ -88,6 +86,13 @@ workflow_ready:
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppStderr "$INSTDIR\install_stderr.log"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppExit Default Restart'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppRestartDelay 5000'
+
+    ; Windows is external-issuer-only: point the operator at the configuration
+    ; entry point before the service serves any authenticated request.
+    DetailPrint "App Mesh on Windows trusts an operator-managed external Dex issuer."
+    DetailPrint "Configure it with:"
+    DetailPrint "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\setup.ps1 -Issuer https://auth.example.com/dex"
+    DetailPrint "The first administrator must be provisioned by hand; see the 'First login' section of docs/source/Install.md."
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 

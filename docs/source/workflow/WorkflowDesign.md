@@ -121,7 +121,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 ```
 
 **Interfaces exposed:**
-- `TriggerManual(name, inputs, token, actor) (runID, status, error)` — used by Layer 6.
+- `TriggerManual(name, inputs, bearer, actorPrincipalID) (runID, status, error)` — used by Layer 6. The bearer is ephemeral and never persisted.
 - `CancelByRunID(runID)` / `CancelByWorkflow(name)` — used by Layer 6.
 - `Checkpoint().GetRunRecord(wf, runID)` — used by Layer 6 for `run_detail`.
 
@@ -293,37 +293,44 @@ Supported functions/operators are documented in [WorkflowSchema.md](WorkflowSche
 
 ## Authentication
 
-The engine authenticates with the local daemon via password-based login. The password is stored as an encrypted `sec_env` on the `workflow` App definition — the daemon decrypts it at spawn time and passes it as a plain environment variable.
-
-**Setup:**
-
-```bash
-appm add -a workflow -z APPMESH_PASSWORD=<password>
-```
-
-**Runtime flow:**
+The workflow service is not an OAuth client. Manual runs keep the caller's validated Dex
+bearer in memory. Automatic and recovered runs use an opaque authorization capability issued
+by the local Engine after the current managed Workflow process proves its process key.
 
 ```
 daemon starts workflow App
-  → decrypts sec_env → sets APPMESH_PASSWORD env var
-  → spawns wf-engine process
-     → reads APPMESH_PASSWORD
-     → Login(user, password) → obtains JWT token (24h TTL)
-     → SDK auto-refresh renews token before expiry
-     → each run gets latest token via client.GetToken()
+  → Engine injects APP_MESH_PROCESS_KEY
+  → wf-engine requests a capability over loopback TCP
+  → Engine derives owner from workflow-{name}, binds workflow/run/process/ops/expiry
+  → each step operation is checked against the capability and current owner RBAC
 ```
 
-**Recovery:** If auto-refresh fails (e.g., daemon restart), the scan loop detects consecutive failures and re-logins with the stored password. If the process itself crashes, `behavior: exit: restart` causes the daemon to respawn it with a fresh login.
+This is a Run-lifecycle/owner/operation binding, not a credential for one arbitrary target.
+App and message steps may use an existing App only when the bound owner passes that App's
+normal RBAC and access checks. Command steps may create only `wf-cmd-*` temporary Apps tagged
+with the matching workflow ID, run ID, and Workflow process UUID; every later operation on
+such an App repeats that metadata check. Registry scans use a separate private endpoint that
+returns only Engine-registered `workflow-*` definitions, never the general App list.
 
-**Remote nodes:** Step execution on remote nodes uses `ForwardTo` header — the local daemon proxies the request and handles remote authentication. The engine's own login is used only for the control plane (registry scan, App CRUD, orphan cleanup); step execution uses the per-run identity (see Identity And Security).
+Capabilities expire within five minutes and are renewed before expiry using the same process
+proof. They are neither JWTs nor OAuth tokens, are never persisted/logged/forwarded, and are
+rejected on public HTTP/WSS or non-loopback TCP. The process key proves only the managed
+process instance; it is not itself an App Mesh identity or general authorization credential.
+
+**Remote nodes:** Manual runs may forward the caller's Dex bearer. Node-local internal
+capabilities are deliberately not accepted by another Engine, so remote automatic/recovered
+steps fail closed until an Engine-mediated cluster delegation protocol is implemented.
 
 ## Identity And Security
 
-- Ownership is derived from the authenticated registrant and stored in the `workflow-{name}` pseudo App's metadata; every workflow action authorizes against owner/workflow-admin (`APPMESH_WORKFLOW_ADMINS`), fail-closed (ADR 0006).
-- Manually triggered runs execute steps under the triggering caller's token; automatic (event) runs use the workflow's declared `execution_identity` (credentials provisioned via `APPMESH_EXEC_IDENTITIES`) or fail closed. The engine's own identity is never used to run steps (ADR 0006 / ADR 0004).
-- The triggering user is recorded as `actor` in the run record for audit.
+- Ownership is derived from the Engine-validated registrant and stored as an immutable
+  Principal ID. Authorization is owner-or-`workflow-admin`, fail-closed (ADR 0006).
+- Registering automatic triggers requires `workflow-admin`.
+- Manual actor Principal IDs and the `internal:workflow-trigger` automatic actor marker are
+  recorded; recovery preserves the original actor/source. Bearers and capabilities are
+  never persisted.
 
-The unified Run API and a daemon-side act-as/token-exchange model remain future work (see ADR 0004).
+The unified Run API remains future work (see ADR 0004).
 
 ## Concurrency
 
@@ -360,7 +367,12 @@ Checkpoint is job-granular with crash-safe write ordering:
 Recovery constraints:
 
 - Mid-step crashes cannot resume the partial step; the incomplete job is rerun from its first step.
-- Orphan cleanup removes local `wf-cmd-*` Apps on startup before recovery.
+- Before recovery, a private loopback-TCP Engine operation removes only local temporary
+  Apps created by a prior Workflow process. Eligible Apps must have the exact `wf-cmd-`
+  prefix plus `metadata.type=workflow-step`, valid workflow/run IDs, and a different
+  creator process UUID. The current process proves `APP_MESH_PROCESS_KEY`; the request
+  accepts no app name or owner and grants no general `app-delete` authority. Untagged
+  legacy Apps are deliberately not deleted by prefix alone.
 - YAML changes between crash and recovery use the current definition — renamed or removed jobs may produce different behavior than the original run.
 
 ## Cross-Node Execution
@@ -566,7 +578,7 @@ All actions return errors in the same format:
 | Pending runs cannot be cancelled by run ID | `cancel` only works on running runs; pending (queued) runs must wait or be removed via `workflow_rm` | Add `CancelPendingRun` to remove from queue and mark "cancelled" |
 | File-based Run state (`runs.json` + checkpoint) | Not a transactional Run record | Single Run record per run |
 | Pseudo-App workflow storage | Reuses daemon App model but is not a first-class workflow resource | First-class Workflow API/resource |
-| Owner/permission are not execution identity | Stored metadata does not guarantee step execution as owner | Explicit actor/resource_owner/execution_identity |
+| Identity metadata uses stable Principal IDs | Directory names can change without changing ownership | Keep owner/actor as immutable Principal IDs |
 | Trigger eligibility not checked | A workflow with only `on.workflow_call` can be started via manual `run` | Validate source against declared triggers |
 | `on.schedule` is not dispatched internally | Requires external cron App | External wrapper creates Run |
 | Cross-node sub-workflow requires YAML on remote node | Sub-workflow YAML must exist at the same path on execution node | Shared workflow resource |

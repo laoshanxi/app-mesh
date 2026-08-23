@@ -125,18 +125,6 @@ public class AppMeshClientWSS extends AppMeshClient {
             return this;
         }
 
-        /** Cookie file path for persistent token storage. */
-        public Builder cookieFile(String cookieFile) {
-            base.cookieFile(cookieFile);
-            return this;
-        }
-
-        /** Enable automatic token refresh before expiration. */
-        public Builder autoRefreshToken(boolean enable) {
-            base.autoRefreshToken(enable);
-            return this;
-        }
-
         /** Connection timeout in milliseconds for HTTPS side-channel requests. */
         public Builder connectTimeoutMs(int ms) {
             base.connectTimeoutMs(ms);
@@ -178,6 +166,8 @@ public class AppMeshClientWSS extends AppMeshClient {
     public HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
             Map<String, String> params) throws IOException {
         try {
+            Map<String, String> commonHeaders = super.getCommonHeaders();
+            wssTransport.setAuthorization(commonHeaders.get(HEADER_AUTHORIZATION));
             if (!wssTransport.connected()) {
                 wssTransport.connect();
             }
@@ -193,7 +183,8 @@ public class AppMeshClientWSS extends AppMeshClient {
             req.headers.put("User-Agent", HTTP_USER_AGENT_WSS);
 
             // Add common headers from parent
-            req.headers.putAll(super.getCommonHeaders());
+            commonHeaders.remove(HEADER_AUTHORIZATION);
+            req.headers.putAll(commonHeaders);
 
             // Add custom headers
             if (headers != null) {
@@ -278,11 +269,11 @@ public class AppMeshClientWSS extends AppMeshClient {
         // Step 1: Request download via WSS to get Auth token
         Map<String, String> header = new HashMap<>();
         header.put(HEADER_X_FILE_PATH, remoteFile);
-        HttpURLConnection resp = request("GET", "/appmesh/file/download", null, header, null);
+        request("GET", "/appmesh/file/download", null, header, null);
 
-        String authToken = resp.getHeaderField(HEADER_AUTHORIZATION);
+        String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
         if (authToken == null || authToken.isEmpty()) {
-            throw new IOException("Server did not respond with file transfer authentication: " + HEADER_AUTHORIZATION);
+            throw new IOException("File transfer requires a Dex bearer token");
         }
 
         // Step 2: Perform HTTPS GET for the file stream
@@ -341,11 +332,11 @@ public class AppMeshClientWSS extends AppMeshClient {
         // Step 1: Request upload via WSS to get Auth token
         Map<String, String> wssHeader = new HashMap<>();
         wssHeader.put(HEADER_X_FILE_PATH, remoteFile);
-        HttpURLConnection resp = request("POST", "/appmesh/file/upload", null, wssHeader, null);
+        request("POST", "/appmesh/file/upload", null, wssHeader, null);
 
-        String authToken = resp.getHeaderField(HEADER_AUTHORIZATION);
+        String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
         if (authToken == null || authToken.isEmpty()) {
-            throw new IOException("Server did not respond with file transfer authentication: " + HEADER_AUTHORIZATION);
+            throw new IOException("File transfer requires a Dex bearer token");
         }
 
         // Step 2: Perform HTTPS POST for the file stream
@@ -418,6 +409,7 @@ public class AppMeshClientWSS extends AppMeshClient {
         if (demuxer != null && demuxer.isRunning()) {
             return;
         }
+        wssTransport.setAuthorization(super.getCommonHeaders().get(HEADER_AUTHORIZATION));
         if (!wssTransport.connected()) {
             try {
                 wssTransport.connect();
@@ -505,7 +497,7 @@ public class AppMeshClientWSS extends AppMeshClient {
             if (errorStream == null) {
                 return "";
             }
-            byte[] bytes = errorStream.readAllBytes();
+            byte[] bytes = Utils.readAllBytes(errorStream);
             return new String(bytes, StandardCharsets.UTF_8);
         } catch (Exception e) {
             return "";

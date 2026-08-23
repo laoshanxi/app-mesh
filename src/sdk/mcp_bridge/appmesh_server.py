@@ -23,8 +23,8 @@ health state, logs, and scheduling/behavior metadata.
 
 Authentication
 --------------
-This demo logs into AppMesh using default admin credentials.
-In production use, replace this with secure credential handling.
+The bridge forwards a caller-provisioned Dex bearer from the environment. It
+does not collect credentials or act as an OAuth client.
 
 Transport
 ---------
@@ -74,10 +74,15 @@ def _ssl_verify():
 
 
 def _make_client() -> AppMeshClient:
-    """Create an authenticated App Mesh client for tool handlers."""
-    client = AppMeshClient(base_url=os.environ.get("APPMESH_URL", "https://127.0.0.1:6060"), ssl_verify=_ssl_verify())
-    client.login("admin", "admin123")
-    return client
+    """Create an App Mesh client with a caller-provisioned Dex bearer."""
+    bearer = os.environ.get("APPMESH_BEARER_TOKEN")
+    if not bearer:
+        raise RuntimeError("APPMESH_BEARER_TOKEN is required")
+    return AppMeshClient(
+        base_url=os.environ.get("APPMESH_URL", "https://127.0.0.1:6060"),
+        ssl_verify=_ssl_verify(),
+        bearer_token=bearer,
+    )
 
 
 @mcp.tool(description="Retrieve detailed information about a single application by name.")

@@ -9,7 +9,6 @@ mod constants;
 mod error;
 mod models;
 mod oauth;
-mod persistent_jar;
 mod requester;
 mod response_ext;
 mod subscribe;
@@ -28,12 +27,13 @@ pub use client_tcp::AppMeshClientTCP;
 pub use client_wss::AppMeshClientWSS;
 pub use error::{AppMeshError, TransportError};
 pub use oauth::{
-    AppMeshClientOAuth, DeviceAuthorization, DevicePoll, KeycloakClient, OAuth2Config,
-    DEFAULT_OAUTH_SCOPE,
+    AuthorizationRequest, DEFAULT_OAUTH_SCOPE, DEFAULT_OAUTH_SCOPES, DexOAuthClient,
+    DexOAuthConfig, DeviceAuthorization, DevicePoll, OidcMetadata, StaticAccessTokenProvider,
+    TokenProvider, TokenSet,
 };
 pub use models::{
     AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
-    ExitAction, OutputFn, OutputHandler, Permission, ResourceLimitation, SubscriptionResult, User,
+    ExitAction, OutputFn, OutputHandler, Permission, ResourceLimitation, SubscriptionResult,
     print_output_handler,
 };
 // Canonical cross-SDK worker names (match the Python/Go SDKs).

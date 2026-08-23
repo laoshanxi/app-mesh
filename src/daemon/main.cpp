@@ -1,4 +1,5 @@
 // src/daemon/main.cpp
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -60,7 +61,6 @@
 #include "rest/Worker.h"
 #include "security/HMACVerifier.h"
 #include "security/Security.h"
-#include "security/TokenBlacklist.h"
 #if !defined(NDEBUG) && !defined(_WIN32)
 #include "../common/Valgrind.h"
 #endif
@@ -166,6 +166,7 @@ int main(int argc, char *argv[])
 int AppMeshDaemon::run(int argc, char *argv[])
 {
 	const static char fname[] = "AppMeshDaemon::run() ";
+	int result = 0;
 
 	try
 	{
@@ -187,10 +188,11 @@ int AppMeshDaemon::run(int argc, char *argv[])
 	catch (const std::exception &e)
 	{
 		LOG_ERR << fname << "Fatal exception during daemon startup or execution: " << e.what();
+		result = 1;
 	}
 
 	performShutdown();
-	return 0;
+	return result;
 }
 
 void AppMeshDaemon::initializeEnvironment()
@@ -261,7 +263,7 @@ void AppMeshDaemon::initializeSecurity()
 {
 	const static char fname[] = "AppMeshDaemon::initializeSecurity() ";
 
-	Security::init(Configuration::instance()->getJwt()->getJwtInterface());
+	Security::init();
 
 	LOG_INF << fname << "Security initialized";
 }
@@ -537,10 +539,6 @@ void AppMeshDaemon::performHighAvailabilityRecovery()
 		snap = std::make_shared<Snapshot>();
 	}
 
-	// Recover token blacklist
-	LOG_INF << fname << "Recovering token blacklist";
-	TOKEN_BLACK_LIST::instance()->init(snap->m_tokenBlackList);
-
 	// Recover application processes
 	LOG_INF << fname << "Recovering application processes";
 	auto apps = config->getApps();
@@ -649,7 +647,15 @@ void AppMeshDaemon::executeApplications()
 {
 	const static char fname[] = "AppMeshDaemon::executeApplications() ";
 
-	auto allApps = Configuration::instance()->getApps();
+	auto config = Configuration::instance();
+	auto allApps = config->getApps();
+	std::stable_sort(allApps.begin(), allApps.end(), [](const std::shared_ptr<Application> &left,
+		const std::shared_ptr<Application> &right)
+		{
+			if (left->startupPhase() != right->startupPhase())
+				return left->startupPhase() < right->startupPhase();
+			return left->getName() < right->getName();
+		});
 	void *const processSnapshot = m_ptreeReady ? static_cast<void *>(&m_ptree) : nullptr;
 	m_ptreeReady = false;
 	const bool refreshMetrics = m_ptreeRefreshPending;
@@ -661,7 +667,6 @@ void AppMeshDaemon::executeApplications()
 		{
 			continue;
 		}
-
 		try
 		{
 			app->execute(processSnapshot, refreshMetrics);
