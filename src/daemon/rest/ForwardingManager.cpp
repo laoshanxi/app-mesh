@@ -3,6 +3,28 @@
 #include "Data.h"
 #include "HttpRequest.h"
 
+namespace
+{
+	constexpr auto EVENT_URI = "/appmesh/event";
+	constexpr auto SUBSCRIPTION_HEADER = "X-Subscription-Id";
+
+	bool isPersistentClient(const std::shared_ptr<HttpRequest> &request)
+	{
+		return request && request->isPersistentClientTransport();
+	}
+
+	std::string responseSubscriptionId(const Response &response)
+	{
+		if (response.http_status < 200 || response.http_status >= 300 || response.body.empty())
+			return {};
+		const auto value = nlohmann::json::parse(response.body.begin(), response.body.end(), nullptr, false);
+		if (!value.is_object() || !value.contains("subscription_id") ||
+			!value.at("subscription_id").is_string())
+			return {};
+		return value.at("subscription_id").get<std::string>();
+	}
+}
+
 // Bounds the blocking TCP connect + TLS handshake to a forwarding peer, so an
 // unreachable host cannot pin a worker thread for the OS connect timeout (minutes).
 constexpr int FORWARD_CONNECT_TIMEOUT_SECONDS = 10;
@@ -16,11 +38,90 @@ bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<H
 	return pending_requests.bind(uuid, std::move(request)) == 0;
 }
 
+std::shared_ptr<HttpRequest> ForwardingConnection::findRequest(const std::string &uuid)
+{
+	ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, pending_requests.mutex(), nullptr);
+	std::shared_ptr<HttpRequest> request;
+	pending_requests.find(uuid, request);
+	return request;
+}
+
 std::shared_ptr<HttpRequest> ForwardingConnection::takeRequest(const std::string &uuid)
 {
 	std::shared_ptr<HttpRequest> req;
 	pending_requests.unbind(uuid, req);
 	return req;
+}
+
+void ForwardingConnection::rememberSubscription(const std::string &subscriptionId,
+	std::shared_ptr<HttpRequest> request)
+{
+	if (subscriptionId.empty() || !isPersistentClient(request))
+		return;
+	ACE_GUARD(ACE_Thread_Mutex, guard, subscriptions.mutex());
+	std::shared_ptr<HttpRequest> previous;
+	subscriptions.unbind(subscriptionId, previous);
+	subscriptions.bind(subscriptionId, std::move(request));
+}
+
+std::shared_ptr<HttpRequest> ForwardingConnection::findSubscription(const std::string &subscriptionId)
+{
+	ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, subscriptions.mutex(), nullptr);
+	std::shared_ptr<HttpRequest> request;
+	subscriptions.find(subscriptionId, request);
+	return request;
+}
+
+void ForwardingConnection::removeSubscription(const std::string &subscriptionId)
+{
+	if (subscriptionId.empty())
+		return;
+	std::shared_ptr<HttpRequest> request;
+	subscriptions.unbind(subscriptionId, request);
+}
+
+void ForwardingConnection::handleResponse(Response &response)
+{
+	if (response.request_uri == EVENT_URI)
+	{
+		std::string routeId;
+		auto route = response.headers.find(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE);
+		if (route != response.headers.end())
+		{
+			routeId = route->second;
+			response.headers.erase(route);
+		}
+		std::string subscriptionId;
+		auto subscription = response.headers.find(SUBSCRIPTION_HEADER);
+		if (subscription != response.headers.end())
+			subscriptionId = subscription->second;
+
+		auto request = routeId.empty() ? nullptr : findRequest(routeId);
+		if (!request && !subscriptionId.empty())
+			request = findSubscription(subscriptionId);
+		if (request && request->reply(response.request_uri, response.uuid, response.body,
+			response.headers, response.http_status, response.body_msg_type))
+			return;
+		removeSubscription(subscriptionId);
+		LOG_WAR << "ForwardingManager: Received event without an active frontend route";
+		return;
+	}
+
+	auto request = takeRequest(response.uuid);
+	if (!request)
+	{
+		LOG_WAR << "ForwardingManager: Received response for unknown UUID: " << response.uuid;
+		return;
+	}
+	rememberSubscription(responseSubscriptionId(response), request);
+	request->reply(response.request_uri, response.uuid, response.body,
+		response.headers, response.http_status, response.body_msg_type);
+	if (request->m_method == web::http::methods::DEL)
+	{
+		auto subscription = request->m_query.find("subscription_id");
+		if (subscription != request->m_query.end())
+			removeSubscription(subscription->second);
+	}
 }
 
 void ForwardingConnection::failAll(const std::string &msg)
@@ -41,6 +142,29 @@ void ForwardingConnection::failAll(const std::string &msg)
 		{
 			req->reply(web::http::status_codes::BadGateway, msg);
 		}
+	}
+
+	std::vector<std::pair<std::string, std::shared_ptr<HttpRequest>>> activeSubscriptions;
+	{
+		ACE_GUARD(ACE_Thread_Mutex, guard, subscriptions.mutex());
+		for (auto iter = subscriptions.begin(); iter != subscriptions.end(); ++iter)
+			activeSubscriptions.emplace_back((*iter).ext_id_, (*iter).int_id_);
+		subscriptions.unbind_all();
+	}
+	for (const auto &entry : activeSubscriptions)
+	{
+		nlohmann::json event = {
+			{"subscription_id", entry.first},
+			{"event_type", "__disconnected__"},
+			{"app_name", ""},
+			{"timestamp", 0},
+			{"sequence", 0},
+			{"data", {{"message", msg}}}};
+		const auto text = event.dump();
+		entry.second->reply(EVENT_URI, Utility::shortID(),
+			std::vector<std::uint8_t>(text.begin(), text.end()),
+			{{SUBSCRIPTION_HEADER, entry.first}}, web::http::status_codes::OK,
+			web::http::mime_types::application_json);
 	}
 }
 
@@ -87,15 +211,7 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 			Response r;
 			if (r.deserialize(data.data(), data.size()))
 			{
-				auto req = c->takeRequest(r.uuid);
-				if (req)
-				{
-					req->reply(r.request_uri, r.uuid, r.body, r.headers, r.http_status, r.body_msg_type);
-				}
-				else
-				{
-					LOG_WAR << "ForwardingManager: Received response for unknown UUID: " << r.uuid;
-				}
+					c->handleResponse(r);
 			}
 			else
 			{

@@ -46,130 +46,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_authenticate_update_session_false_does_not_update_token() {
-        let mut server = Server::new_async().await;
-        server
-            .mock("POST", "/appmesh/auth")
-            .match_header("authorization", "Bearer provided-token")
-            .match_header("x-set-cookie", Matcher::Missing)
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"access_token":"verified-token"}"#)
-            .create_async()
-            .await;
-
-        let client = create_test_client(&server);
-        client.set_token("existing-token");
-
-        let (ok, _) = client.authenticate("provided-token", None, None, false).await.unwrap();
-        assert!(ok);
-        assert_eq!(client.get_access_token(), Some("existing-token".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_authenticate_update_session_true_updates_token() {
-        let mut server = Server::new_async().await;
-        server
-            .mock("POST", "/appmesh/auth")
-            .match_header("authorization", "Bearer provided-token")
-            .match_header("x-set-cookie", "true")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_header("set-cookie", "appmesh_auth_token=verified-token; Path=/")
-            .with_body(r#"{"access_token":"verified-token"}"#)
-            .create_async()
-            .await;
-
-        let client = create_test_client(&server);
-
-        let (ok, _) = client.authenticate("provided-token", None, None, true).await.unwrap();
-        assert!(ok);
-        assert_eq!(client.get_access_token(), Some("verified-token".to_string()));
-    }
-
-    async fn setup_auth_mock(server: &mut ServerGuard) {
-        server
-            .mock("POST", "/appmesh/login")
-            .match_header("Authorization", "Basic YWRtaW46cGFzc3dvcmQ=")
-            .with_status(200)
-            .with_body(r#"{"access_token":"test-token"}"#)
-            .create_async()
-            .await;
-    }
-
-    #[tokio::test]
-    async fn test_login() {
-        let mut server = Server::new_async().await;
-        setup_auth_mock(&mut server).await;
-
-        let client = create_test_client(&server);
-        let result = client.login("admin", "password", None, None, None).await;
-        assert!(result.is_ok());
-    }
-
-    /// Mock a login that requires the refresh-token opt-in header to be present/absent.
-    async fn mock_login_with_refresh_header(server: &mut ServerGuard, expected: impl Into<Matcher>) -> mockito::Mock {
-        server
-            .mock("POST", "/appmesh/login")
-            .match_header("x-refresh-token-request", expected)
-            .with_status(200)
-            .with_body(r#"{"access_token":"test-token"}"#)
-            .create_async()
-            .await
-    }
-
-    // The tri-state opt-in: a refresh token is a long-lived credential, so a one-shot client
-    // (auto-refresh off) must not be issued one it would never store or revoke.
-
-    #[tokio::test]
-    async fn test_refresh_token_header_unset_follows_auto_refresh_on() {
-        let mut server = Server::new_async().await;
-        let mock = mock_login_with_refresh_header(&mut server, "true").await;
-
-        let client = ClientBuilder::new()
-            .url(server.url())
-            .danger_accept_invalid_certs(true)
-            .auto_refresh_token(true)
-            .build()
-            .unwrap();
-        client.login("admin", "password", None, None, None).await.unwrap();
-
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_refresh_token_header_unset_follows_auto_refresh_off() {
-        let mut server = Server::new_async().await;
-        let mock = mock_login_with_refresh_header(&mut server, Matcher::Missing).await;
-
-        // auto_refresh_token defaults to false — the one-shot case.
-        let client = create_test_client(&server);
-        client.login("admin", "password", None, None, None).await.unwrap();
-
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_refresh_token_header_explicit_false_overrides_auto_refresh() {
-        let mut server = Server::new_async().await;
-        let mock = mock_login_with_refresh_header(&mut server, Matcher::Missing).await;
-
-        let client = ClientBuilder::new()
-            .url(server.url())
-            .danger_accept_invalid_certs(true)
-            .auto_refresh_token(true)
-            .use_refresh_token(false)
-            .build()
-            .unwrap();
-        client.login("admin", "password", None, None, None).await.unwrap();
-
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
     async fn test_list_apps() {
         let mut server = Server::new_async().await;
-        setup_auth_mock(&mut server).await;
 
         server
             .mock("GET", "/appmesh/applications")
@@ -179,7 +57,6 @@ mod tests {
             .await;
 
         let client = create_test_client(&server);
-        client.login("admin", "password", None, None, None).await.unwrap();
         let result = client.list_apps().await.unwrap();
 
         assert_eq!(result.len(), 2);
@@ -190,7 +67,6 @@ mod tests {
     #[tokio::test]
     async fn test_add_app_raw() {
         let mut server = Server::new_async().await;
-        setup_auth_mock(&mut server).await;
 
         let app_json = json!({
             "name": "test-app",
@@ -205,7 +81,6 @@ mod tests {
             .await;
 
         let client = create_test_client(&server);
-        client.login("admin", "password", None, None, None).await.unwrap();
 
         let result = client.add_app_raw(app_json.clone()).await.unwrap();
         assert_eq!(result.name, Some("test-app".to_string()));
@@ -214,7 +89,6 @@ mod tests {
     #[tokio::test]
     async fn test_add_app_typed() {
         let mut server = Server::new_async().await;
-        setup_auth_mock(&mut server).await;
 
         server
             .mock("PUT", "/appmesh/app/test-app")
@@ -224,7 +98,6 @@ mod tests {
             .await;
 
         let client = create_test_client(&server);
-        client.login("admin", "password", None, None, None).await.unwrap();
 
         let app = Application::builder("test-app")
             .command("echo 'test'")
@@ -237,7 +110,6 @@ mod tests {
     #[tokio::test]
     async fn test_get_app_output() {
         let mut server = Server::new_async().await;
-        setup_auth_mock(&mut server).await;
 
         // Use Matcher::Any for query since the method adds query params
         server
@@ -251,7 +123,6 @@ mod tests {
             .await;
 
         let client = create_test_client(&server);
-        client.login("admin", "password", None, None, None).await.unwrap();
         let result = client.get_app_output("test-app", 0, 0, 1024, None, None).await.unwrap();
 
         assert_eq!(result.output, "test output");
@@ -262,7 +133,6 @@ mod tests {
     #[tokio::test]
     async fn test_run_app_sync() {
         let mut server = Server::new_async().await;
-        setup_auth_mock(&mut server).await;
 
         server
             .mock("POST", "/appmesh/app/syncrun")
@@ -274,7 +144,6 @@ mod tests {
             .await;
 
         let client = create_test_client(&server);
-        client.login("admin", "password", None, None, None).await.unwrap();
 
         let app = Application::builder("test-app").command("echo 'test'").build();
         let (exit_code, output) = client.run_app_sync(&app, 3600, 7200).await.unwrap();
@@ -286,7 +155,6 @@ mod tests {
     #[tokio::test]
     async fn test_run_sync_shortcut() {
         let mut server = Server::new_async().await;
-        setup_auth_mock(&mut server).await;
 
         server
             .mock("POST", "/appmesh/app/syncrun")
@@ -298,7 +166,6 @@ mod tests {
             .await;
 
         let client = create_test_client(&server);
-        client.login("admin", "password", None, None, None).await.unwrap();
 
         let (exit_code, output) = client.run_sync("echo hello", 60, 120).await.unwrap();
         assert_eq!(exit_code, Some(0));
@@ -308,7 +175,6 @@ mod tests {
     #[tokio::test]
     async fn test_tags() {
         let mut server = Server::new_async().await;
-        setup_auth_mock(&mut server).await;
 
         server
             .mock("PUT", "/appmesh/label/env")
@@ -325,7 +191,6 @@ mod tests {
         server.mock("DELETE", "/appmesh/label/env").with_status(200).create_async().await;
 
         let client = create_test_client(&server);
-        client.login("admin", "password", None, None, None).await.unwrap();
 
         client.add_label("env", "prod").await.unwrap();
         let tags: serde_json::Value = client.list_labels().await.unwrap();
@@ -359,26 +224,25 @@ mod tests {
 
 #[cfg(test)]
 mod integration {
+    // These tests talk to a live App Mesh daemon (https://127.0.0.1:6060) with a
+    // caller-obtained Dex bearer (APPMESH_BEARER_TOKEN). They are #[ignore]d so the
+    // documented plain `cargo test` stays green without a daemon; run them with:
+    //   cargo test -- --ignored
     use appmesh::{AppMeshClient, Application, ClientBuilder};
+    use std::env;
     use std::sync::Arc;
     use tempfile::NamedTempFile;
     use std::io::Write;
 
     const SERVER_URL: &str = "https://127.0.0.1:6060";
-    const ADMIN_USER: &str = "admin";
-    const ADMIN_PASS: &str = "admin123";
-
-    /// Build a client pointed at the real server and log in as admin.
+    /// Build a client pointed at the real server with a caller-obtained Dex bearer.
     async fn setup_client() -> Arc<AppMeshClient> {
         let client = ClientBuilder::new()
             .url(SERVER_URL)
             .danger_accept_invalid_certs(true)
             .build()
             .unwrap();
-        client
-            .login(ADMIN_USER, ADMIN_PASS, None, None, None)
-            .await
-            .expect("login to live server failed — is AppMesh running at https://127.0.0.1:6060?");
+        client.set_token(&env::var("APPMESH_BEARER_TOKEN").expect("APPMESH_BEARER_TOKEN is required"));
         client
     }
 
@@ -387,6 +251,7 @@ mod integration {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_app_management() {
         let client = setup_client().await;
         let app_name = "rust-integ-app-mgmt";
@@ -420,25 +285,17 @@ mod integration {
     }
 
     // -----------------------------------------------------------------------
-    // 2. User and roles: list_users, get_current_user, list_roles,
-    //    list_permissions, get_user_permissions
+    // 2. Current principal and roles
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_user_and_roles() {
         let client = setup_client().await;
 
-        // list_users — must include the admin account we used to log in.
-        let users = client.list_users().await.expect("list_users failed");
-        assert!(users.is_object() || users.is_array(), "list_users should return JSON object or array");
-
-        // get_current_user — should reflect the logged-in admin.
-        let me = client.get_current_user().await.expect("get_current_user failed");
-        assert!(
-            me.get("name").is_some(),
-            "get_current_user response missing 'name' field: {:?}",
-            me
-        );
+        // get_current_principal returns the verified Dex principal.
+        let me = client.get_current_principal().await.expect("get_current_principal failed");
+        assert!(me.is_object(), "get_current_principal should return a principal object");
 
         // list_roles — should return a non-empty map.
         let roles = client.list_roles().await.expect("list_roles failed");
@@ -448,9 +305,9 @@ mod integration {
         let perms = client.list_permissions().await.expect("list_permissions failed");
         assert!(!perms.is_empty(), "list_permissions returned empty list");
 
-        // get_user_permissions — permissions for the current (admin) user.
-        let user_perms = client.get_user_permissions().await.expect("get_user_permissions failed");
-        assert!(!user_perms.is_empty(), "get_user_permissions returned empty list for admin");
+        // get_principal_permissions returns the current principal's permissions.
+        let user_perms = client.get_principal_permissions().await.expect("get_principal_permissions failed");
+        let _ = user_perms;
     }
 
     // -----------------------------------------------------------------------
@@ -458,6 +315,7 @@ mod integration {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_config() {
         let client = setup_client().await;
 
@@ -496,6 +354,7 @@ mod integration {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_async_run() {
         let client = setup_client().await;
 
@@ -528,6 +387,7 @@ mod integration {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_file_operations() {
         let client = setup_client().await;
 

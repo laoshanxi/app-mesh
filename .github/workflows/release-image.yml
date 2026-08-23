@@ -7,23 +7,27 @@ on:
       - main
     paths:
       - Dockerfile
+      - .dockerignore
       - script/pack/docker-entrypoint.sh
       - .github/workflows/release-image.yml
   workflow_run:
     workflows: ["release-linux"]
     types:
       - completed
+    branches:
+      - main
 
 env:
   DOCKER_REGISTRY: docker.io
   DOCKER_IMAGE: laoshanxi/appmesh
-  APPMESH_VERSION: "2.2.1"
+  APPMESH_VERSION: "3.0.0"
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: Build Platform Image
     timeout-minutes: 120
     strategy:
@@ -49,6 +53,8 @@ jobs:
 
       - name: Checkout Github code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Login to DockerHub
         uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4
@@ -155,9 +161,26 @@ jobs:
           image: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}
           shell: bash
           run: |
-            timeout 30s /opt/appmesh/script/docker-entrypoint.sh &
+            timeout 60s /opt/appmesh/script/docker-entrypoint.sh &
             sleep 5
-            appm ls && appm resource
+            # Dex-only image: every request needs a bearer. Use the launcher as
+            # the single owner of machine-credential location and token exchange.
+            TOKEN=""
+            for _ in $(seq 1 10); do
+              TOKEN=$(/opt/appmesh/script/appmesh-auth.sh automation-token) && break
+              sleep 2
+            done
+            [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
+            APPMESH_BEARER_TOKEN="$TOKEN" appm ls
+            # Password grant through bundled Dex verifies bootstrap credentials
+            # and the pre-seeded viewer RBAC.
+            GUEST_PW=$(awk -F= '$1=="password"{print $2}' /opt/appmesh/work/auth/secrets/initial-viewer-credentials)
+            GUEST_JWT=$(curl -s -X POST \
+              -d "grant_type=password&client_id=appmesh-cli&username=guest@appmesh.local&password=${GUEST_PW}&scope=openid%20audience:server:client_id:appmesh-api" \
+              http://127.0.0.1:6062/auth/token |
+              sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
+            [ -n "$GUEST_JWT" ] || { echo "failed to obtain the password-grant token"; exit 1; }
+            APPMESH_BEARER_TOKEN="$GUEST_JWT" appm ls >/dev/null
 
       - name: Verify LLM Image
         uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3

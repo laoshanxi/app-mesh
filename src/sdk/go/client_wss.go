@@ -48,9 +48,14 @@ func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 		wssReq:        wssRequester,
 	}
 
-	if err := wssRequester.WSSConnection.Connect(&wssRequester.baseURL, wssClient.sslClientCert, wssClient.sslClientCertKey, wssClient.sslCAFile); err != nil {
+	if err := wssRequester.WSSConnection.Connect(&wssRequester.baseURL, wssClient.sslClientCert,
+		wssClient.sslClientCertKey, wssClient.sslCAFile, wssRequester.getAccessToken()); err != nil {
 		return nil, err
 	}
+	wssRequester.sslClientCert = wssClient.sslClientCert
+	wssRequester.sslClientKey = wssClient.sslClientCertKey
+	wssRequester.sslCAFile = wssClient.sslCAFile
+	wssRequester.connectedToken = wssRequester.getAccessToken()
 	return wssClient, nil
 }
 
@@ -84,7 +89,7 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 		headerFilePath: remoteFile,
 	}
 
-	status, msg, responseHeaders, err := c.get(restPathDownload, nil, headers)
+	status, msg, _, err := c.get(restPathDownload, nil, headers)
 	if err != nil {
 		return fmt.Errorf("download request failed: %w", err)
 	}
@@ -92,10 +97,11 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 		return newAPIErrorText("download file", status, string(msg), fmt.Sprintf("failed to download %q: status=%d msg=%s", remoteFile, status, msg))
 	}
 
-	auth := responseHeaders.Get("Authorization")
-	if auth == "" {
-		return fmt.Errorf("server did not respond with file transfer authentication: Authorization")
+	accessToken := c.wssReq.getAccessToken()
+	if accessToken == "" {
+		return fmt.Errorf("file transfer requires a bearer token")
 	}
+	auth := "Bearer " + accessToken
 
 	// Prepare HTTP URL for streaming endpoint
 	base := c.wssReq.baseURL
@@ -105,7 +111,7 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 	}
 	fullURL := fmt.Sprintf("%s://%s/appmesh/file/download/ws", scheme, base.Host)
 
-	httpConn, err := newHTTPConnection(c.sslClientCert, c.sslClientCertKey, c.sslCAFile, c.cookieFile)
+	httpConn, err := newHTTPConnection(c.sslClientCert, c.sslClientCertKey, c.sslCAFile)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP connection: %w", err)
 	}
@@ -181,7 +187,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 		}
 	}
 
-	status, msg, responseHeaders, err := c.post(restPathUpload, nil, headers, nil)
+	status, msg, _, err := c.post(restPathUpload, nil, headers, nil)
 	if err != nil {
 		return fmt.Errorf("upload request failed: %w", err)
 	}
@@ -189,10 +195,11 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 		return newAPIErrorText("upload file", status, string(msg), fmt.Sprintf("failed to upload %q: status=%d msg=%s", localFile, status, msg))
 	}
 
-	auth := responseHeaders.Get("Authorization")
-	if auth == "" {
-		return fmt.Errorf("server did not respond with file transfer authentication: Authorization")
+	accessToken := c.wssReq.getAccessToken()
+	if accessToken == "" {
+		return fmt.Errorf("file transfer requires a bearer token")
 	}
+	auth := "Bearer " + accessToken
 
 	base := c.wssReq.baseURL
 	scheme := "https"
@@ -201,7 +208,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	}
 	fullURL := fmt.Sprintf("%s://%s/appmesh/file/upload/ws", scheme, base.Host)
 
-	httpConn, err := newHTTPConnection(c.sslClientCert, c.sslClientCertKey, c.sslCAFile, c.cookieFile)
+	httpConn, err := newHTTPConnection(c.sslClientCert, c.sslClientCertKey, c.sslCAFile)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP connection: %w", err)
 	}

@@ -1,0 +1,19 @@
+---
+OIDC:
+  # App Mesh trusts one logical issuer. External identity systems stay upstream.
+  issuer: http://127.0.0.1:6062/auth
+
+  # Network address this Engine node uses to reach discovery and signing keys. It may differ
+  # from the canonical issuer in container, cluster, or hairpin deployments.
+  # Discovery and token `iss` must still equal `issuer` exactly.
+  access_url: http://127.0.0.1:6062/auth
+  tls_verify: true
+  ca_path: ""
+
+  # RFC 9728 protected-resource identifier and dynamic audience target.
+  resource_url: https://127.0.0.1:6060/appmesh
+  resource_audience: appmesh-api
+  public_client_id: appmesh-cli
+
+  scopes: [openid, profile, email, groups, offline_access]
+  allowed_algorithms: [RS256]

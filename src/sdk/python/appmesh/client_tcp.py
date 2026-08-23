@@ -10,6 +10,7 @@ from typing import Optional, Tuple, Union
 from .client_http import AppMeshClient
 from .exceptions import AppMeshError
 from .tcp_transport import TCPTransport
+from .token_provider import TokenProvider
 from .transport_mixin import TransportClientMixin
 
 
@@ -36,8 +37,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
 
     Example:
         >>> from appmesh import AppMeshClientTCP
-        >>> client = AppMeshClientTCP()
-        >>> client.login("your-name", "your-password")
+        >>> client = AppMeshClientTCP(bearer_token="access-token")
         >>> client.download_file("/tmp/os-release", "os-release")
     """
 
@@ -52,8 +52,9 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
-        auto_refresh_token: bool = False,
-        use_refresh_token: Optional[bool] = None,
+        *,
+        bearer_token: Optional[str] = None,
+        token_provider: Optional[TokenProvider] = None,
     ):
         """Construct a TCP transport client that reuses the standard App Mesh client API.
 
@@ -67,6 +68,8 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             ssl_client_cert: SSL client certificate:
               - str: Path to single PEM with cert+key
               - tuple: (cert_path, key_path)
+            bearer_token: Caller-owned access token.
+            token_provider: Provider that supplies and refreshes access tokens.
 
         Note:
             TCP connections require an explicit full-chain CA specification for certificate validation,
@@ -74,14 +77,13 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         """
         ssl_verify = AppMeshClient._resolve_ssl_verify(ssl_verify)
         self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
-        self._token = ""
         self._transport_client_addr = socket.gethostname()
         self._transport_name = "Socket"
         super().__init__(
             ssl_verify=ssl_verify,
             ssl_client_cert=ssl_client_cert,
-            auto_refresh_token=auto_refresh_token,
-            use_refresh_token=use_refresh_token,
+            bearer_token=bearer_token,
+            token_provider=token_provider,
         )
 
     @property
@@ -114,7 +116,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         if self._demuxer and self._demuxer._running:
             raise AppMeshError("file transfer is not supported while an event subscription is active on this client; use a separate client instance")
 
-    def download_file(self, remote_file: str, local_file: Optional[str] = None, preserve_permissions: bool = True) -> None:
+    def download_file(self, remote_file: str, local_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
         """Copy a remote file to local through the TCP file-socket side channel.
 
         Args:
@@ -150,7 +152,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         if preserve_permissions:
             AppMeshClient._apply_file_attributes(local_path, resp.headers)
 
-    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = True) -> None:
+    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
         """Upload a local file to the remote server through the TCP file-socket side channel.
 
         Args:

@@ -2,14 +2,6 @@
 
 // HTTP headers
 pub const HTTP_HEADER_JWT_AUTHORIZATION: &str = "Authorization";
-pub const HTTP_HEADER_JWT_SET_COOKIE: &str = "X-Set-Cookie";
-pub const HTTP_HEADER_JWT_EXPIRE_SECONDS: &str = "X-Expire-Seconds";
-pub const HTTP_HEADER_JWT_AUDIENCE: &str = "X-Audience";
-pub const HTTP_HEADER_JWT_TOTP: &str = "X-Totp-Code";
-pub const HTTP_HEADER_JWT_AUTH_PERMISSION: &str = "X-Permission";
-pub const HTTP_HEADER_JWT_REFRESH_TOKEN: &str = "X-Refresh-Token";
-pub const HTTP_HEADER_JWT_WANT_REFRESH_TOKEN: &str = "X-Refresh-Token-Request";
-pub const HTTP_HEADER_AUTH_BASIC: &str = "Basic ";
 pub const HTTP_HEADER_AUTH_BEARER: &str = "Bearer ";
 pub const HTTP_HEADER_KEY_FORWARDING_HOST: &str = "X-Target-Host";
 pub const HTTP_HEADER_KEY_OUTPUT_POS: &str = "X-Output-Position";
@@ -26,20 +18,6 @@ pub const HTTP_HEADER_CONTENT_TYPE: &str = "Content-Type";
 pub const HTTP_HEADER_CONTENT_LENGTH: &str = "Content-Length";
 pub const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: &str = "X-Send-File-Socket";
 pub const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: &str = "X-Recv-File-Socket";
-
-// Cookie names
-pub const COOKIE_TOKEN: &str = "appmesh_auth_token";
-
-// Body keys
-pub const HTTP_BODY_KEY_JWT_USERNAME: &str = "user_name";
-pub const HTTP_BODY_KEY_JWT_TOTP: &str = "totp_code";
-pub const HTTP_BODY_KEY_JWT_TOTP_CHALLENGE: &str = "totp_challenge";
-pub const HTTP_BODY_KEY_JWT_EXPIRE_SECONDS: &str = "expire_seconds";
-pub const HTTP_BODY_KEY_MFA_URI: &str = "mfa_uri";
-pub const HTTP_BODY_KEY_OLD_PASSWORD: &str = "old_password";
-pub const HTTP_BODY_KEY_NEW_PASSWORD: &str = "new_password";
-pub const HTTP_BODY_KEY_ACCESS_TOKEN: &str = "access_token";
-pub const HTTP_BODY_KEY_REFRESH_TOKEN: &str = "refresh_token";
 
 // Query parameters
 pub const HTTP_QUERY_KEY_STDOUT_INDEX: &str = "stdout_index";
@@ -58,7 +36,6 @@ pub const JSON_KEY_BASE_CONFIG: &str = "BaseConfig";
 pub const JSON_KEY_LOG_LEVEL: &str = "LogLevel";
 
 // Other constants
-pub const REST_TEXT_TOTP_CHALLENGE_JSON_KEY: &str = "totp_challenge";
 pub const HTTP_USER_AGENT: &str = "appmesh/rust";
 pub const HTTP_USER_AGENT_TCP: &str = "appmesh/rust/tcp";
 pub const HTTP_USER_AGENT_WSS: &str = "appmesh/rust/wss";
@@ -79,9 +56,6 @@ pub const EVENT_TYPE_DISCONNECTED: &str = "__disconnected__";
 // TCP file transfer
 pub const TCP_BLOCK_SIZE: usize = 16 * 1024 - 128;
 
-/// Default token timeout: 1 week in seconds
-#[allow(dead_code)]
-pub const DEFAULT_TOKEN_TIMEOUT_SECONDS: i32 = 604_800;
 // Auto-refresh pacing: poll every TOKEN_REFRESH_INTERVAL_SECS, but renew only once the
 // token has burned TOKEN_REFRESH_LIFETIME_RATIO of its lifetime.
 /// Poll cap, NOT a renew interval.

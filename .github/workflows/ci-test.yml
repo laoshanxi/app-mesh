@@ -9,24 +9,31 @@ on:
       - main
     paths:
       - .github/workflows/ci-test.yml
+      - "script/**"
+      - "src/sdk/**"
+      - "src/cli/**"
   workflow_run:
     workflows: ["release-linux"]
     types: [completed]
+    branches: [main]
 
 env:
-  APPMESH_VERSION: "2.2.1"
+  APPMESH_VERSION: "3.0.0"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
 jobs:
   ci-test:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
@@ -63,30 +70,55 @@ jobs:
             --entrypoint=bash \
             ubuntu:22.04 \
             -c '
-            # Always tail server.log on any exit (success or failure) so CI logs
-            # always contain the daemon`s last words, even if the structured
-            # dump-only path bails out early.
             # Tail server.log only on non-zero exit, for failed-run diagnostics.
             trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
 
             apt update
-            apt install -y wget iputils-ping gdb
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_11_glibc_2.35_x86_64.deb
+            apt install -y wget iputils-ping gdb curl python3 python3-pip
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_11_glibc_2.35_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             ulimit -c unlimited
 
+            # Dex-only authentication bootstrap for CI:
+            # 1) precompute the machine-client Principal and seed authorization.yaml
+            #    before the first start (Dex derives the client_credentials subject
+            #    deterministically from the client id: base64url of protobuf
+            #    field 1 = the id, so no running Dex is needed here);
+            # 2) once the daemon is up, exchange the launcher-generated
+            #    appmesh-automation secret for a client_credentials token.
+            DEX_ISSUER="http://127.0.0.1:6062/auth"
+            AUTOMATION_SUB=$(python3 -c "import base64; cid=b\"appmesh-automation\"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip(\"=\"))")
+            PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c "import hashlib,os; print(hashlib.sha256(os.environ[\"DEX_ISSUER\"].encode()+b\"\x00\"+os.environ[\"AUTOMATION_SUB\"].encode()).hexdigest())")"
+            install -d -m 700 /opt/appmesh/work/config
+            SEED=/opt/appmesh/work/config/authorization.yaml
+            {
+                sed -n "1,/^  principals:$/p" /opt/appmesh/config/authorization.yaml
+                printf "    %s:\n" "$PRINCIPAL_ID"
+                printf "      kind: service\n      issuer: %s\n      subject: %s\n      status: active\n      execution_user: \"\"\n      roles: [appmesh-ci]\n" "$DEX_ISSUER" "$AUTOMATION_SUB"
+                sed -n "/^  principals:$/,/^  roles:$/p" /opt/appmesh/config/authorization.yaml | tail -n +2
+                printf "    appmesh-ci:\n"
+                sed -n "/^    appmesh-admin:$/,/^    appmesh-viewer:$/p" /opt/appmesh/config/authorization.yaml | sed "1d;\$d"
+                sed -n "/^  roles:$/,\$p" /opt/appmesh/config/authorization.yaml | tail -n +2
+            } > "$SEED"
+            chmod 600 "$SEED"
+            echo "seeded authorization principal $PRINCIPAL_ID"
+
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
-            appm ls
-            appm resource
 
-            appm logon -U admin -X admin123 || true
+            TOKEN=""
+            for _ in $(seq 1 15); do
+                TOKEN=$(/opt/appmesh/script/appmesh-auth.sh automation-token) && break
+                sleep 2
+            done
+            [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
+            export APPMESH_BEARER_TOKEN="$TOKEN"
+            export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
+            appm ls && appm resource
             appm log -L DEBUG || true
-            appm loginfo || true
 
-            apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
             bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
@@ -101,10 +133,11 @@ jobs:
                 exit 1
             }
 
-            # test appmesh rust cli + sdk
+            # test appmesh rust cli + sdk (cli_* cases need an interactive
+            # `appm logon` session, which a client_credentials token cannot provide)
             bash /work/script/bootstrap/install_rust.sh
             cd /work/src/cli
-            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu22 cargo test --test remote_test -- --ignored --test-threads=1
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu22 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '
 
       - name: test ubuntu:24
@@ -123,25 +156,53 @@ jobs:
             trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
 
             apt update
-            apt install -y wget iputils-ping gdb
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_13_glibc_2.39_x86_64.deb
+            apt install -y wget iputils-ping gdb curl python3 python3-pip
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_13_glibc_2.39_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             ulimit -c unlimited
 
+            # Dex-only authentication bootstrap for CI:
+            # 1) precompute the machine-client Principal and seed authorization.yaml
+            #    before the first start (Dex derives the client_credentials subject
+            #    deterministically from the client id: base64url of protobuf
+            #    field 1 = the id, so no running Dex is needed here);
+            # 2) once the daemon is up, exchange the launcher-generated
+            #    appmesh-automation secret for a client_credentials token.
+            DEX_ISSUER="http://127.0.0.1:6062/auth"
+            AUTOMATION_SUB=$(python3 -c "import base64; cid=b\"appmesh-automation\"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip(\"=\"))")
+            PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c "import hashlib,os; print(hashlib.sha256(os.environ[\"DEX_ISSUER\"].encode()+b\"\x00\"+os.environ[\"AUTOMATION_SUB\"].encode()).hexdigest())")"
+            install -d -m 700 /opt/appmesh/work/config
+            SEED=/opt/appmesh/work/config/authorization.yaml
+            {
+                sed -n "1,/^  principals:$/p" /opt/appmesh/config/authorization.yaml
+                printf "    %s:\n" "$PRINCIPAL_ID"
+                printf "      kind: service\n      issuer: %s\n      subject: %s\n      status: active\n      execution_user: \"\"\n      roles: [appmesh-ci]\n" "$DEX_ISSUER" "$AUTOMATION_SUB"
+                sed -n "/^  principals:$/,/^  roles:$/p" /opt/appmesh/config/authorization.yaml | tail -n +2
+                printf "    appmesh-ci:\n"
+                sed -n "/^    appmesh-admin:$/,/^    appmesh-viewer:$/p" /opt/appmesh/config/authorization.yaml | sed "1d;\$d"
+                sed -n "/^  roles:$/,\$p" /opt/appmesh/config/authorization.yaml | tail -n +2
+            } > "$SEED"
+            chmod 600 "$SEED"
+            echo "seeded authorization principal $PRINCIPAL_ID"
+
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
-            appm ls
-            appm resource
 
-            appm logon -U admin -X admin123 || true
+            TOKEN=""
+            for _ in $(seq 1 15); do
+                TOKEN=$(/opt/appmesh/script/appmesh-auth.sh automation-token) && break
+                sleep 2
+            done
+            [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
+            export APPMESH_BEARER_TOKEN="$TOKEN"
+            export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
+            appm ls && appm resource
             appm log -L DEBUG || true
-            appm loginfo || true
 
             # test appmesh python sdk FIRST — Python wrapper captures full daemon
             # diagnostics on crash (backtrace / dmesg / server.log).
-            apt install -y python3 python3-pip
             python3 -m pip install --break-system-packages --upgrade appmesh pyotp
             bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
@@ -156,10 +217,11 @@ jobs:
                 exit 1
             }
 
-            # test appmesh rust cli + sdk
+            # test appmesh rust cli + sdk (cli_* cases need an interactive
+            # `appm logon` session, which a client_credentials token cannot provide)
             bash /work/script/bootstrap/install_rust.sh
             cd /work/src/cli
-            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test --test remote_test -- --ignored --test-threads=1
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '
 
       - name: test ubuntu:18
@@ -178,23 +240,51 @@ jobs:
             trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
 
             apt update
-            apt install -y wget iputils-ping gdb
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_7_glibc_2.27_x86_64.deb
+            apt install -y wget iputils-ping gdb curl python3 python3-pip
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_7_glibc_2.27_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             ulimit -c unlimited
 
+            # Dex-only authentication bootstrap for CI:
+            # 1) precompute the machine-client Principal and seed authorization.yaml
+            #    before the first start (Dex derives the client_credentials subject
+            #    deterministically from the client id: base64url of protobuf
+            #    field 1 = the id, so no running Dex is needed here);
+            # 2) once the daemon is up, exchange the launcher-generated
+            #    appmesh-automation secret for a client_credentials token.
+            DEX_ISSUER="http://127.0.0.1:6062/auth"
+            AUTOMATION_SUB=$(python3 -c "import base64; cid=b\"appmesh-automation\"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip(\"=\"))")
+            PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c "import hashlib,os; print(hashlib.sha256(os.environ[\"DEX_ISSUER\"].encode()+b\"\x00\"+os.environ[\"AUTOMATION_SUB\"].encode()).hexdigest())")"
+            install -d -m 700 /opt/appmesh/work/config
+            SEED=/opt/appmesh/work/config/authorization.yaml
+            {
+                sed -n "1,/^  principals:$/p" /opt/appmesh/config/authorization.yaml
+                printf "    %s:\n" "$PRINCIPAL_ID"
+                printf "      kind: service\n      issuer: %s\n      subject: %s\n      status: active\n      execution_user: \"\"\n      roles: [appmesh-ci]\n" "$DEX_ISSUER" "$AUTOMATION_SUB"
+                sed -n "/^  principals:$/,/^  roles:$/p" /opt/appmesh/config/authorization.yaml | tail -n +2
+                printf "    appmesh-ci:\n"
+                sed -n "/^    appmesh-admin:$/,/^    appmesh-viewer:$/p" /opt/appmesh/config/authorization.yaml | sed "1d;\$d"
+                sed -n "/^  roles:$/,\$p" /opt/appmesh/config/authorization.yaml | tail -n +2
+            } > "$SEED"
+            chmod 600 "$SEED"
+            echo "seeded authorization principal $PRINCIPAL_ID"
+
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
-            appm ls
-            appm resource
 
-            appm logon -U admin -X admin123 || true
+            TOKEN=""
+            for _ in $(seq 1 15); do
+                TOKEN=$(/opt/appmesh/script/appmesh-auth.sh automation-token) && break
+                sleep 2
+            done
+            [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
+            export APPMESH_BEARER_TOKEN="$TOKEN"
+            export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
+            appm ls && appm resource
             appm log -L DEBUG || true
-            appm loginfo || true
 
-            apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
             bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
@@ -209,10 +299,11 @@ jobs:
                 exit 1
             }
 
-            # test appmesh rust cli + sdk
+            # test appmesh rust cli + sdk (cli_* cases need an interactive
+            # `appm logon` session, which a client_credentials token cannot provide)
             bash /work/script/bootstrap/install_rust.sh
             cd /work/src/cli
-            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu18 cargo test --test remote_test -- --ignored --test-threads=1
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu18 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '
 
       - name: test centos:7
@@ -237,24 +328,52 @@ jobs:
             yum clean all
             yum makecache
 
-            yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.2.1_gcc_4.8.5_glibc_2.17_x86_64.rpm
-            yum install -y gdb
+            yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_4.8.5_glibc_2.17_x86_64.rpm
+            yum install -y gdb python3 python3-pip
 
             ulimit -c unlimited
+
+            # Dex-only authentication bootstrap for CI:
+            # 1) precompute the machine-client Principal and seed authorization.yaml
+            #    before the first start (Dex derives the client_credentials subject
+            #    deterministically from the client id: base64url of protobuf
+            #    field 1 = the id, so no running Dex is needed here);
+            # 2) once the daemon is up, exchange the launcher-generated
+            #    appmesh-automation secret for a client_credentials token.
+            DEX_ISSUER="http://127.0.0.1:6062/auth"
+            AUTOMATION_SUB=$(python3 -c "import base64; cid=b\"appmesh-automation\"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip(\"=\"))")
+            PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c "import hashlib,os; print(hashlib.sha256(os.environ[\"DEX_ISSUER\"].encode()+b\"\x00\"+os.environ[\"AUTOMATION_SUB\"].encode()).hexdigest())")"
+            install -d -m 700 /opt/appmesh/work/config
+            SEED=/opt/appmesh/work/config/authorization.yaml
+            {
+                sed -n "1,/^  principals:$/p" /opt/appmesh/config/authorization.yaml
+                printf "    %s:\n" "$PRINCIPAL_ID"
+                printf "      kind: service\n      issuer: %s\n      subject: %s\n      status: active\n      execution_user: \"\"\n      roles: [appmesh-ci]\n" "$DEX_ISSUER" "$AUTOMATION_SUB"
+                sed -n "/^  principals:$/,/^  roles:$/p" /opt/appmesh/config/authorization.yaml | tail -n +2
+                printf "    appmesh-ci:\n"
+                sed -n "/^    appmesh-admin:$/,/^    appmesh-viewer:$/p" /opt/appmesh/config/authorization.yaml | sed "1d;\$d"
+                sed -n "/^  roles:$/,\$p" /opt/appmesh/config/authorization.yaml | tail -n +2
+            } > "$SEED"
+            chmod 600 "$SEED"
+            echo "seeded authorization principal $PRINCIPAL_ID"
 
             # start appmesh
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
-            appm ls
-            appm resource
 
-            appm logon -U admin -X admin123 || true
+            TOKEN=""
+            for _ in $(seq 1 15); do
+                TOKEN=$(/opt/appmesh/script/appmesh-auth.sh automation-token) && break
+                sleep 2
+            done
+            [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
+            export APPMESH_BEARER_TOKEN="$TOKEN"
+            export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
+            appm ls && appm resource
             appm log -L DEBUG || true
-            appm loginfo || true
 
             # test appmesh python sdk FIRST — Python wrapper captures full daemon
             # diagnostics on crash (backtrace / dmesg / server.log).
-            yum install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
             bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
@@ -270,8 +389,9 @@ jobs:
                 exit 1
             }
 
-            # test appmesh rust cli + sdk
+            # test appmesh rust cli + sdk (cli_* cases need an interactive
+            # `appm logon` session, which a client_credentials token cannot provide)
             bash /work/script/bootstrap/install_rust.sh
             cd /work/src/cli
-            CARGO_TARGET_DIR=/tmp/cargo-target-centos7 cargo test --test remote_test -- --ignored --test-threads=1
+            CARGO_TARGET_DIR=/tmp/cargo-target-centos7 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '

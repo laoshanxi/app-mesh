@@ -13,10 +13,10 @@ With request forwarding, you can achieve cluster-level task execution.
 The client sends a payload (task data) to App Mesh and waits for the response.
 
 ```python
+import os
 from appmesh import AppMeshClient
 # Initialize the App Mesh Client
-client = AppMeshClient()
-client.login("admin", "admin123")  # raises on failure
+client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
 count_in_server = "0"
 for i in range(10):
     # task data
@@ -51,9 +51,9 @@ if __name__ == "__main__":
 ```shell
 $ appm ls
 ID  NAME    OWNER  STATUS    HEALTH  PID    USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
-1   pytask  mesh   enabled   OK      16412        32.7 MiB  0     1       8h             2       "python.exe ../../bi*"
-2   pyexec  mesh   disabled  -       -      -     -         -     -       8h   -         0       "python.exe ../../bi*"
-3   ping    mesh   enabled   OK      -      -     -         -     0       8h   -         1       "ping github.com"
+1   pytask  system  enabled   OK      16412        32.7 MiB  0     1       8h             2       "python.exe ../../bi*"
+2   pyexec  system  disabled  -       -      -     -         -     -       8h   -         0       "python.exe ../../bi*"
+3   ping    system  enabled   OK      -      -     -         -     0       8h   -         1       "ping github.com"
 
 $ python3 sample.py
 0

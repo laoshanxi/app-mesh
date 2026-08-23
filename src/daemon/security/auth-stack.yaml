@@ -1,0 +1,13 @@
+---
+AuthStack:
+  # standalone: one-node installation; owner: active auth node; follower: no local Dex.
+  # APPMESH_AUTH_ROLE is the per-node runtime override used by immutable images.
+  role: standalone
+
+  web_callback: https://127.0.0.1:6060/oauth/callback
+
+  # The issuer listener stays on loopback. Agent is the only public proxy.
+  # APPMESH_AUTH_DEX_LISTEN overrides this only when Dex must be reachable over
+  # a protected cluster network. Never expose this plaintext listener publicly.
+  dex_listen: 127.0.0.1:6062
+  dex_telemetry_listen: 127.0.0.1:6063

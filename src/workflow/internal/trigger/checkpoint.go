@@ -25,7 +25,7 @@ type StepState struct {
 
 type JobState struct {
 	Status     string               `json:"status"`
-	Node       string               `json:"node,omitempty"`       // target host that executed this job
+	Node       string               `json:"node,omitempty"` // target host that executed this job
 	FinishedAt string               `json:"finished_at,omitempty"`
 	Steps      map[string]StepState `json:"steps,omitempty"` // step name → result
 }
@@ -35,7 +35,7 @@ type RunRecord struct {
 	RunID     string              `json:"run_id"`
 	Workflow  string              `json:"workflow"`
 	Source    string              `json:"source"`
-	Actor     string              `json:"actor,omitempty"` // user who triggered the run (empty for automatic triggers)
+	Actor     string              `json:"actor,omitempty"` // caller Principal or internal:workflow-trigger audit marker
 	Status    string              `json:"status"`
 	StartedAt string              `json:"started_at"`
 	Inputs    map[string]string   `json:"inputs,omitempty"`
@@ -90,6 +90,7 @@ func (c *Checkpoint) SaveRunningWithCompleted(wfName, runID, source, actor strin
 		RunID:     runID,
 		Workflow:  wfName,
 		Source:    source,
+		Actor:     actor,
 		Status:    "running",
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 		Inputs:    inputs,

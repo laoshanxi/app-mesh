@@ -1,274 +1,169 @@
 # Security
 
-App Mesh acts as enterprise middleware, implementing security at multiple levels to provide a secure platform.
+App Mesh is an OAuth 2.0 protected resource. It trusts one OpenID Connect issuer. It keeps authentication separate from App Mesh authorization.
 
-## Security Concepts
+This document defines security behavior. Use [CLI](CLI.md) for sign-in commands. Use [Deployment](Install.md) for installation procedures. Use [ADR 0009](../adr/0009-authentication-service.md) for the authentication-service implementation decision.
 
-### User
+## Trust boundaries
 
-App Mesh has built-in user management. Each user can define a process execution OS user for application execution. Each user has:
+| Component | Responsibility | Excluded responsibility |
+| --- | --- | --- |
+| Authentication service | Authenticate identities. Issue signed access tokens. Operate OAuth and OpenID Connect flows. | App Mesh permissions and process execution. |
+| Engine | Validate access tokens. Resolve principals. Enforce roles, ownership, and execution policy. | Passwords, MFA, users, and token issuance. |
+| Agent | Route authentication paths. Forward the caller bearer without a change. | Token exchange, token storage, and token issuance. |
+| MCP server | Validate a bearer at the MCP boundary. Forward the same bearer to the Engine. | App Mesh authorization decisions and token issuance. |
+| SDK | Attach a caller-owned bearer. Python and Rust can also manage an OAuth token lifecycle. | Engine-owned login or token signing. |
 
-* Password
-* MFA key
-* Roles
+An external identity provider can connect to the authentication service. The Engine and SDK do not depend on that upstream provider.
 
-```bash
-$ appm user
-{
-  "email": "admin@appmesh.com",
-  "exec_user": "root",
-  "group": "admin",
-  "locked": false,
-  "mfa_enabled": false,
-  "name": "admin",
-  "roles": [
-    "manage",
-    "shell",
-    "usermgr",
-    "view"
-  ]
-}
-```
+## Issuer and access URL
 
-### RBAC
+The issuer and access URL have different purposes.
 
-App Mesh implements role-based access control (RBAC). Users are assigned roles, each containing specific permissions. Every API request undergoes user password verification and permission checks.
+- The `issuer` is the identity in the token `iss` claim. All cluster nodes must use the same value.
+- The `access_url` is the route that one process uses to reach the same authentication service.
 
-### Multi-tenant Applications
+The access URL can use a private route. This route must resolve to the same issuer. Discovery must publish the canonical issuer.
 
-Applications managed by App Mesh can define access permissions for other users and groups. You can:
-
-* Register an application visible only to yourself.
-* Register an application for your user group.
+Use HTTPS for a remote access URL. Keep TLS verification enabled. Supply a CA file when the service uses a private CA.
 
-## Security Data Storage
+## Token validation
 
-### Local YAML File
+The Engine accepts an RFC 6750 `Authorization: Bearer` value. The Engine performs these checks:
 
-App Mesh uses a local YAML file `security.yaml` to persist all user definitions. This file can only be read and written by the root user.
-
-### Consul User/Role
+1. It reads OpenID Connect discovery from the configured access URL.
+2. It compares the discovered issuer with the configured issuer.
+3. It accepts only configured asymmetric signature algorithms. The default is RS256.
+4. It selects a signing key by `kid`.
+5. It verifies the signature, issuer, audience, expiry, and not-before values.
+6. It derives a principal ID from the immutable issuer and subject.
+7. It loads the current App Mesh authorization data for that principal.
 
-App Mesh supports storing security content in Consul, enabling all App Mesh instances to share centralized user information.
+Every token must contain the `appmesh-api` audience. A display name, email address, group, or token role does not grant an App Mesh permission.
 
-### OAuth2
+The Engine caches discovery data and signing keys for a limited time. An unknown key ID can cause one controlled refresh. A bounded negative cache limits repeated refresh attempts. The Engine does not fall back to local token signing or a second issuer.
 
-App Mesh supports Keycloak OIDC authentication. When enabled, App Mesh validates the
-Keycloak-issued access token (signature, issuer, expiry, and client binding) on every
-request. Authorization is driven entirely by Keycloak: the **client roles carried in the
-token are used directly as App Mesh permissions** — there is no local role-to-permission
-mapping in OAuth2 mode.
-
-#### Setup
+## Transport behavior
 
-1. **Start Keycloak**
+- REST validates the bearer on each protected request.
+- TCP carries the bearer in each request envelope. The Engine validates it for each request.
+- WSS validates the bearer during the WebSocket upgrade. The Engine pins the principal to that connection.
 
-   ```bash
-   docker run --restart=always -d -p 8080:8080 \
-     -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
-     --name keycloak quay.io/keycloak/keycloak:latest start-dev
-   ```
+A direct WSS frame does not need to repeat the bearer. A forwarded WSS frame must contain the same bearer. The gateway rejects a frame that resolves to a different principal. The target validates the bearer again.
 
-2. **Configure the realm and client** (Keycloak admin console)
-
-   * *Manage realms → Create realm*: create `appmesh-realm`.
-   * *Authentication → Required Actions*: disable all required actions.
-   * *Users → Add user*: create a user (e.g. `mesh`) with a permanent password.
-   * *Clients → Create client*: create `appmesh-client`; enable **Client authentication**
-     and **Direct access grants**.
-   * *Users → Add user*: as above.
-
-3. **Create permission roles on the client** (this is what grants access)
-
-   App Mesh authorizes each request against a permission key. In OAuth2 mode every
-   permission key must exist as a **client role on `appmesh-client`**, named *exactly* as
-   the key below, and be assigned to the user (directly or via a composite role / group).
-   A user without the matching client role is denied that operation.
-
-   The full permission-key set (use these exact strings as client-role names):
-
-   ```text
-   app-view            app-output-view     app-view-all        host-resource-view
-   app-reg             app-control         app-delete          app-subscribe
-   app-run-async       app-run-sync        app-run-async-output app-run-task
-   file-download       file-upload
-   label-view          label-set           label-delete
-   config-view         config-set
-   passwd-change-self  passwd-change-user
-   user-add            user-delete         user-lock           user-unlock
-   user-list           user-totp-active    user-totp-disable   user-token-renew
-   role-view           role-set            role-delete         permission-list
-   ```
-
-   > **Note:** local user/role/credential management is delegated to Keycloak in OAuth2 mode.
-   > Change-password, user add/delete, lock/unlock, TOTP setup/disable, and role create/delete
-   > return HTTP 400 (*"not supported in OAuth2 mode"*) — perform these in the Keycloak console.
-   > The related keys above only gate those endpoints and are otherwise unused.
-
-   Recommended: instead of assigning ~30 roles per user, create **composite client roles**
-   that bundle a set, e.g.:
-
-   * `appmesh-admin` → composite of all keys above.
-   * `appmesh-operator` → `app-view`, `app-view-all`, `app-output-view`, `app-control`,
-     `app-run-sync`, `app-run-async`, `app-run-async-output`, `app-run-task`,
-     `host-resource-view`, `passwd-change-self`, `user-token-renew`.
-   * `appmesh-viewer` → `app-view`, `app-view-all`, `app-output-view`, `host-resource-view`.
-
-   Then *Users → Role Mappings → Assign client roles*: assign the composite role to the user.
-   (Composite roles expand to their member roles in the token, so App Mesh sees the
-   individual permission keys.)
-
-4. **Enable OAuth2 in App Mesh**
-
-   * Set `SecurityInterface: oauth2` in `config.yaml`.
-   * Configure `oauth2.yaml` with `auth_server_url`, `realm`, and `client_id`.
-   * Provide the client secret via the environment variable
-     `APPMESH_Keycloak_client_secret` — **do not** commit it to `oauth2.yaml`. Leave the
-     YAML value empty for a public client.
-   * The local `security.yaml` role/permission definitions are **not used** for
-     authorization in OAuth2 mode and can be ignored.
-
-#### Token validation rules
-
-* **Client binding (mandatory):** the token must target `client_id` via its `azp` or `aud`
-  claim. Tokens issued for another client in the same realm are rejected.
-* **Audience isolation:** appmesh audiences encode a target host (used for remote-run
-  isolation). A Keycloak access token cannot carry that claim, so requests asking for a
-  specific non-default audience are rejected under OAuth2.
-* **Authorization:** the client roles found under this client's `resource_access` entry in
-  the token are taken as the user's permission set and matched directly against the
-  permission key the requested API requires. Roles granted on *other* clients in the realm
-  are ignored.
-
-#### Verifying the setup
-
-After assigning roles, decode a freshly issued access token (e.g. paste it into a JWT
-viewer) and confirm the permission keys appear under
-`resource_access["appmesh-client"].roles`. If an API returns `403`/permission-denied,
-the corresponding key is missing from that list — add the client role in Keycloak and
-re-login to pick it up.
-
-#### Token lifecycle
-
-The login response includes a `refresh_token` in OAuth2 mode. Clients that proxy through
-the daemon (rather than talking to Keycloak directly) use it as follows:
-
-* **Renewal:** `POST /appmesh/token/renew` with the refresh token in the `X-Refresh-Token`
-  header. The daemon exchanges it with Keycloak (`grant_type=refresh_token`) and returns a
-  fresh access/refresh token pair.
-* **Logoff:** `POST /appmesh/self/logoff` with the refresh token in `X-Refresh-Token`
-  revokes the Keycloak session server-side (end-session endpoint) in addition to the local
-  blacklist. Without the header, only the local session is revoked.
+Reconnect after a token refresh. A WSS frame cannot change the pinned principal.
 
-#### User profile resolution (admin API)
+File upload and download endpoints validate the bearer before file access. They also enforce the required file permission.
 
-Some operations need a user *profile* object (not just authorization), e.g. resolving an
-application owner, deciding the run-as OS user, and serving `GET /appmesh/user/self`. A
-Keycloak identity is resolved through the Keycloak **admin API**, so users do **not** need to
-be duplicated in the local `security.yaml`.
+## Principal and authorization model
 
-* **Resolution order:** a user also defined locally in `security.yaml` wins (this lets you keep
-  a local `exec_user` override for that name); otherwise the profile is fetched from Keycloak
-  and cached (~5 min).
-* **What is populated (display only):** `email`, the first Keycloak `group`, and this client's
-  role-mappings as `roles`. Per-request **authorization still uses the token** (`resource_access`),
-  never this profile — so the profile is informational (it drives `user/self` and owner/group
-  fields), and stale/empty roles here cannot grant or deny access.
-* **Run-as user:** unless a matching local user defines `exec_user`, apps run as the configured
-  default OS user (`DefaultExecUser`), not a per-Keycloak-user mapping.
+The principal ID is stable for one issuer and subject. The Engine does not use a username as an ownership key.
 
-To enable the admin lookups the client must be usable as a service account:
+`authorization.yaml` contains:
 
-1. **Client authentication = On** (confidential client) and **Service accounts roles = On**
-   (enables the `client_credentials` grant).
-2. Grant the client's **service account** these `realm-management` client roles:
-   * `view-users` — read the user, their groups, and their client role-mappings.
-   * `view-clients` — resolve the client's internal id used for the role-mapping lookup.
-3. Provide the client secret via `APPMESH_Keycloak_client_secret` (see below).
+- principal status;
+- role definitions;
+- role bindings;
+- optional operating-system execution mappings;
+- the first-administrator role;
+- the durable first-administrator enrollment state.
 
-**Graceful degradation:** if no client secret is configured or the service account lacks the
-roles above, profile resolution falls back to a **name-only** user (so an authenticated
-identity never breaks owner/exec-user resolution). A username that genuinely does not exist in
-Keycloak still returns `404`.
+It does not contain a password, refresh token, MFA seed, or directory group.
 
-> **Secret injection:** the client secret is read from the `APPMESH_Keycloak_client_secret`
-> environment variable (it overrides the `client_secret` value in `oauth2.yaml`). Leave the
-> YAML value empty and inject the secret via the environment so it is not committed.
+An application stores `owner_principal_id`. A response can also contain `owner_display_name`. The display name is for output only. It does not affect authorization.
 
-#### Limitations
+The Engine refuses to delete a principal that owns an application. A deleted principal becomes a role-free tombstone. This rule prevents automatic provisioning from creating a new owner with the same identity.
 
-* **Signing algorithms:** asymmetric RS/ES/PS families (RS256/384/512, ES256/384/512,
-  PS256/384/512) are accepted. HMAC (`HS*`) and `none` are rejected by design to prevent
-  algorithm-confusion forgery.
-* **User management in OAuth2 mode:** `add/delete/lock/unlock/change-password` and TOTP setup
-  act on the interim local store, not Keycloak. Manage those in Keycloak; the local endpoints
-  are not authoritative for Keycloak identities.
-* **Secured env encryption:** a Keycloak-owned application's encrypted environment variables are
-  keyed from local password material, which a Keycloak-only user does not have. Prefer a
-  locally-defined owner for apps that rely on encrypted env vars.
+## First administrator
 
-## REST
+The built-in installation creates one packaged administrator identity. This identity has no App Mesh role before enrollment.
 
-### SSL
+The CLI can assign the first administrator role after a successful normal sign-in. The Engine accepts the assignment only when all conditions are true:
 
-SSL is enabled by default for REST services to ensure secure communication. You can configure custom SSL certificate files.
+- the verified subject is the packaged administrator subject;
+- the request uses a direct loopback connection;
+- the node is the built-in standalone node or authentication owner;
+- the durable enrollment state is open;
+- the assignment has not succeeded before.
 
-### JWT Authentication
+The Engine does not use the username, email address, display name, group, or token role for this decision. A forwarded request cannot complete enrollment. A direct remote request cannot complete enrollment.
 
-All REST methods require authentication by default. JWT authentication protects APIs, with each user having role-based permissions to access corresponding methods.
+The operation writes the role binding and closes the enrollment state in one atomic change. A later role removal does not reopen enrollment.
 
-#### JWT Sign Algorithm
+## Built-in credentials
 
-App Mesh supports three JWT signing algorithms:
+The built-in profile creates an administrator and a read-only viewer. Setup generates random passwords. It stores each initial password in a private credential file. It stores only the password hash in the authentication-service runtime configuration.
 
-* HS256 - Uses JWTSalt as the secret key
-* RS256 - Uses public and private PEM key files for signing
-* ES256 - Uses public and private PEM key files with ECDSA algorithm
+The launcher does not put a password in a command argument or environment variable. It does not write a password to a log.
 
+Use an external authentication deployment when you need user lifecycle management, MFA, password reset, or directory policy.
 
-### Cookie Authentication & CSRF
+## Secret protection
 
-Browsers may authenticate with a cookie: sending `X-Set-Cookie: true` on login makes the
-server issue the JWT as an `appmesh_auth_token` cookie (HttpOnly, Secure, SameSite=Strict).
-Programmatic SDK clients use the `Authorization: Bearer` header instead and are not affected by
-anything in this section.
+The package creates a 256-bit master key for application `sec_env` values. The Engine uses AES-256-GCM. The key file must be a regular owner-only file.
 
-CSRF protection for cookie auth is enforced **in the daemon**, uniformly across all transports
-(HTTP, WebSocket, and agent-proxied TCP) — the agent/SDKs need no special CSRF handling:
+Back up the master key with application state. App Mesh cannot recover encrypted values without this key.
 
-* **Baseline:** `SameSite=Strict` keeps the auth cookie off cross-site requests.
-* **Origin check:** a cookie-authenticated state-changing request (POST/PUT/DELETE) must be
-  same-origin, or carry an `Origin` listed in `REST.CsrfAllowedOrigins` (config.yaml, or the
-  `APPMESH_REST_CsrfAllowedOrigins` env override). Cross-origin cookie requests are rejected
-  with `403`. The `Origin` header is set by the browser and cannot be forged by cross-site
-  page script, which makes it a reliable CSRF signal; non-browser clients send no cookie and
-  are exempt.
+## Shared authentication service
 
-**When to configure `CsrfAllowedOrigins`:** only when the browser UI runs on a *different origin*
-than the API but the *same site* — e.g. the UI is served from a sibling subdomain or a different
-port (`https://ui.example.com` calling `https://api.example.com`). In that case add the UI's origin
-to the list (multiple values supported). You do **not** need it when:
+A cluster uses one logical issuer. Each Engine validates tokens locally. Each Engine also uses the shared App Mesh authorization data.
 
-* UI and API share one origin (e.g. both behind a single nginx domain) — same-origin is always allowed; or
-* the UI is on a completely different domain — `SameSite=Strict` stops the browser from sending the
-  cookie at all, so cookie auth can't be used there regardless.
+A follower does not create built-in credentials. It does not run a second authentication-service writer. It trusts the same issuer as the owner.
 
-### PSK (Pre-Shared Key)
+The built-in database supports one active authentication owner. Use this failover sequence:
 
-Non-user client requests are authenticated through PSK verification.
+1. Stop or fence the old owner.
+2. Restore or mount the persisted authentication state on the new owner.
+3. Set the new node role to `owner`.
+4. Update private access routes.
+5. Start the new owner.
+6. Verify discovery, signing keys, sign-in, and authorization.
 
-## Encryption
+Do not run two active owners against copied or shared writable database state. Use an external service with replicated storage when you need active-active availability.
 
-### Encrypt Application Environment
+## Direct and forwarded requests
 
-For applications requiring confidential information, encrypted environment variables can be used to store sensitive data.
+A direct client gets authentication configuration from the selected Engine. It gets a token from the configured authentication service. The selected Engine validates that token.
 
-### Encrypt User Password
+A forwarded client sends discovery through the gateway to the target Engine. It then gets a token directly from the shared authentication service. The gateway forwards the bearer without a change. The target Engine validates the token and applies its authorization data.
 
-Password encryption is supported, allowing storage of encrypted passwords in YAML or Consul.
+Forwarded session reuse is safe only when each target advertises the same issuer, client ID, and audience. The CLI checks these values before it uses a stored session.
 
-## Reference
+The gateway validates the bearer before it resolves or connects to the target. The target validates the same bearer again. The gateway does not forward a managed-process proof. It marks the request as forwarded so that the target can reject direct-only operations.
 
-* [User Role](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html)
-* [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html)
-* [MFA](https://app-mesh.readthedocs.io/en/latest/MFA.html)
+Anonymous forwarding is limited to these discovery requests:
+
+- `GET /.well-known/oauth-protected-resource`;
+- `GET /appmesh/auth/config`.
+
+HTTP, TCP, and WSS can forward normal request methods. HTTP supports one response for each request. Forwarded subscriptions require TCP or WSS because events need a persistent connection.
+
+## Internal proofs
+
+Some local operations use a narrow internal proof. Examples include a workflow capability, a managed-process key, Agent-to-daemon HMAC, and optional mTLS.
+
+An internal proof does not create a principal. It does not replace a user bearer. Each proof has a limited operation and transport scope.
+
+## Removed interfaces
+
+The Engine does not provide these interfaces:
+
+- local username and password login;
+- daemon-issued identity tokens;
+- token renewal or a token blacklist;
+- authentication cookies;
+- local user and group management;
+- password changes;
+- Engine-managed TOTP;
+- an upstream identity-provider proxy.
+
+The public authentication endpoints are:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /.well-known/oauth-protected-resource` | Return resource metadata. |
+| `GET /appmesh/auth/config` | Return public issuer, audience, client, scopes, and flow hints. |
+| `GET /appmesh/principal/self` | Return the verified principal and effective authorization. |
+| `GET /appmesh/principal/self/permissions` | Return effective permission IDs. |
+
+The first-administrator endpoint is a restricted authorization operation. It is not a login endpoint.

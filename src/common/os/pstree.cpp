@@ -6,6 +6,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "process.h"
+
 namespace os
 {
 	std::shared_ptr<ProcessTree> ProcessTree::find(pid_t pid) const
@@ -40,11 +42,23 @@ namespace os
 
 	uint64_t ProcessTree::totalFileDescriptors() const
 	{
-		uint64_t result = std::accumulate(
-			children.begin(), children.end(),
-			static_cast<uint64_t>(os::getOpenFileDescriptorCount(process.pid)),
-			[](const uint64_t &files, const ProcessTree &process)
-			{ return files + process.totalFileDescriptors(); });
+		return totalFileDescriptors(os::cmdline(process.pid));
+	}
+
+	uint64_t ProcessTree::totalFileDescriptors(const std::string &rootCommand) const
+	{
+		// A forked child inherits a full copy of the root's descriptor table and
+		// only drops it at exec, so for a window after every spawn the tree total
+		// is inflated by the root's own count. A pre-exec copy still runs the
+		// root's exact command line; such descendants are skipped. Command lines
+		// are read live because snapshot entries carry at best a truncated comm.
+		uint64_t result = os::getOpenFileDescriptorCount(process.pid);
+		for (const ProcessTree &child : children)
+		{
+			if (!rootCommand.empty() && os::cmdline(child.process.pid) == rootCommand)
+				continue;
+			result += child.totalFileDescriptors(rootCommand);
+		}
 		return result;
 	}
 

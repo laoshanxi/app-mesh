@@ -16,21 +16,27 @@ endif()
 
 project(appmesh
     LANGUAGES CXX C
-    VERSION 2.2.1
+    VERSION 3.0.0
     DESCRIPTION "Application Management Service"
 )
 
 # =============================================================================
 # C++ Standard Configuration
 # =============================================================================
-if(WIN32)
-    set(CMAKE_CXX_STANDARD 20)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
-    set(CMAKE_CXX_STANDARD 11)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
-    set(CMAKE_CXX_STANDARD 14)
-else()
-    set(CMAKE_CXX_STANDARD 17)
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+    if(WIN32)
+        set(CMAKE_CXX_STANDARD 20)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
+        set(CMAKE_CXX_STANDARD 11)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
+        set(CMAKE_CXX_STANDARD 14)
+    else()
+        set(CMAKE_CXX_STANDARD 17)
+    endif()
+endif()
+
+if(CMAKE_CXX_STANDARD LESS 11)
+    message(FATAL_ERROR "App Mesh requires C++11 or newer")
 endif()
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -172,7 +178,7 @@ macro(add_catch_test name)
 endmacro()
 if(NOT APPMESH_NO_TESTS)
     enable_testing()
-    # add_subdirectory(test)
+    add_subdirectory(test)
 
     add_custom_target(python_tests
         COMMAND python3 -m unittest discover
@@ -262,7 +268,7 @@ add_custom_target(pack
             "${RUST_CLI_BINARY}"
             "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/"
 
-    # 3. packaging
+    # 3. Copy prepared third-party artifacts and build the native package.
     COMMAND ${CMAKE_COMMAND} -E env
         PROJECT_NAME=${PROJECT_NAME}
         PROJECT_VERSION=${PROJECT_VERSION}

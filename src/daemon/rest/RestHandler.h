@@ -43,18 +43,12 @@ protected:
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 
-	/// Build the JWT response body. @param issueRefresh mints a local-mode refresh token;
-	/// set it only where a session begins or rotates (login, TOTP validate, renew), never
-	/// where an existing token is echoed back. Ignored under Keycloak, which passes its own.
-	nlohmann::json createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token = nullptr, const std::string *refreshToken = nullptr, bool issueRefresh = false);
-	void apiUserLogin(const std::shared_ptr<HttpRequest> &message);
-	void apiUserLogoff(const std::shared_ptr<HttpRequest> &message);
-	void apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message);
-	void apiUserAuth(const std::shared_ptr<HttpRequest> &message);
-	void apiUserTotpSecret(const std::shared_ptr<HttpRequest> &message);
-	void apiUserTotpSetup(const std::shared_ptr<HttpRequest> &message);
-	void apiUserTotpValidate(const std::shared_ptr<HttpRequest> &message);
-	void apiUserTotpDisable(const std::shared_ptr<HttpRequest> &message);
+	void apiAuthConfig(const std::shared_ptr<HttpRequest> &message);
+	void apiProtectedResourceMetadata(const std::shared_ptr<HttpRequest> &message);
+	void apiWorkflowCapability(const std::shared_ptr<HttpRequest> &message);
+	void apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &message);
+	void apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &message);
+	void apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &message);
 
 	void apiAppView(const std::shared_ptr<HttpRequest> &message);
 	void apiAppOutputView(const std::shared_ptr<HttpRequest> &message);
@@ -89,15 +83,11 @@ protected:
 	void apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message);
 
 	void apiPermissionsView(const std::shared_ptr<HttpRequest> &message);
-	void apiUserPermissionsView(const std::shared_ptr<HttpRequest> &message);
-	void apiUserChangePwd(const std::shared_ptr<HttpRequest> &message);
-	void apiUserLock(const std::shared_ptr<HttpRequest> &message);
-	void apiUserUnlock(const std::shared_ptr<HttpRequest> &message);
-	void apiUserView(const std::shared_ptr<HttpRequest> &message);
-	void apiUserAdd(const std::shared_ptr<HttpRequest> &message);
-	void apiUserDel(const std::shared_ptr<HttpRequest> &message);
-	void apiUsersView(const std::shared_ptr<HttpRequest> &message);
-	void apiUserGroupsView(const std::shared_ptr<HttpRequest> &message);
+	void apiPrincipalPermissionsView(const std::shared_ptr<HttpRequest> &message);
+	void apiPrincipalSelf(const std::shared_ptr<HttpRequest> &message);
+	void apiPrincipalsView(const std::shared_ptr<HttpRequest> &message);
+	void apiPrincipalUpdate(const std::shared_ptr<HttpRequest> &message);
+	void apiPrincipalDelete(const std::shared_ptr<HttpRequest> &message);
 
 	void apiRolesView(const std::shared_ptr<HttpRequest> &message);
 	void apiRoleUpdate(const std::shared_ptr<HttpRequest> &message);
