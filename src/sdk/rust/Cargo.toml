@@ -33,7 +33,7 @@ http = "1"
 bytes = "1"
 async-trait = "0.1"
 encoding_rs = "0.8"
-tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 serde_bytes = "0.11"
 iso8601-duration = "0.2"
