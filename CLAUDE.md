@@ -210,6 +210,7 @@ LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`).
 - Logging: `LOG_DBG << "msg";` — never `std::cout` or `printf`.
 - Config env overrides: `APPMESH_<Section>_<Key>` (e.g. `APPMESH_REST_RestListenPort=6060`).
 - REST API spec: `src/daemon/rest/openapi.yaml` (OpenAPI 3.1.0) — keep this in sync with handler changes.
+- Technical documentation: write in ASD-STE100 Simplified Technical English.
 - Pre-commit hooks enforce: cpplint, pylint, golangci-lint, shellcheck, eslint, Checkstyle, gitleaks, trailing-whitespace, end-of-file-fixer.
 
 ## Key Dependencies

@@ -1,3 +1,17 @@
+# App Mesh cluster with the bundled authentication service.
+#
+# appmesh_master owns the authentication service (Dex) and the SQLite identity
+# state. Slaves join as followers. A follower runs no Dex, creates no
+# credentials, and verifies tokens against the master's issuer. The issuer is
+# the compose-network route to the master's Dex listener. Keep it as one
+# identical string on every node and client.
+#
+# In-network usage (the issuer hostname resolves only inside the network):
+#   appm -H wss://appmesh_master:6058 -F appmesh_slave1 logon
+#   appm -H wss://appmesh_master:6058 -F appmesh_slave1 view
+# From the host, a CLI uses the published master ports and routes the issuer
+# traffic through the loopback-published Dex port:
+#   appm -H https://127.0.0.1:6060 --auth-access-url http://127.0.0.1:6062/auth logon
 name: appmesh_cluster
 services:
   appmesh_master:
@@ -7,8 +21,29 @@ services:
     image: laoshanxi/appmesh
     environment:
       - APPMESH_REST_PrometheusExporterListenPort=6061
+      # Cluster authentication owner: runs the bundled Dex.
+      - APPMESH_AUTH_ROLE=owner
+      # Canonical issuer for the whole cluster, reachable over the compose
+      # network. Dex advertises exactly this string in discovery.
+      - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
+      # Bind the Dex listener to the protected compose network for followers.
+      # Never publish this plaintext listener beyond a protected network.
+      - APPMESH_AUTH_DEX_LISTEN=0.0.0.0:6062
+    healthcheck:
+      # Gates follower startup on authentication readiness. The daemon's
+      # prewarm tolerates a short residual gap, and restart: always recovers.
+      test: ["CMD", "/opt/appmesh/script/appmesh-auth.sh", "service-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     ports:
       - "443:443" # for appmesh_ui
+      - "6060:6060" # master REST API for host CLI/SDK
+      # Issuer route for host-side password/device flows only. The port is
+      # plaintext and binds to host loopback; use --auth-access-url on the CLI.
+      # Remove it if unneeded.
+      - "127.0.0.1:6062:6062"
     cap_drop:
       - ALL
     security_opt:
@@ -32,8 +67,17 @@ services:
     restart: always
     image: laoshanxi/appmesh
     mem_limit: 4G
+    depends_on:
+      appmesh_master:
+        condition: service_healthy
     environment:
       - APPMESH_REST_PrometheusExporterListenPort=6061
+      # Follower: no local authentication service; same issuer as the master.
+      - APPMESH_AUTH_ROLE=follower
+      - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
+      # Explicit discovery/JWKS route. The packaged default points at loopback,
+      # and a follower has no local Dex.
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
     cap_drop:
       - ALL
     security_opt:
@@ -50,8 +94,14 @@ services:
     restart: always
     image: laoshanxi/appmesh
     mem_limit: 3G
+    depends_on:
+      appmesh_master:
+        condition: service_healthy
     environment:
       - APPMESH_REST_PrometheusExporterListenPort=6061
+      - APPMESH_AUTH_ROLE=follower
+      - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
     cap_drop:
       - ALL
     security_opt:
@@ -68,8 +118,14 @@ services:
     restart: always
     image: laoshanxi/appmesh
     mem_limit: 3G
+    depends_on:
+      appmesh_master:
+        condition: service_healthy
     environment:
       - APPMESH_REST_PrometheusExporterListenPort=6061
+      - APPMESH_AUTH_ROLE=follower
+      - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
     cap_drop:
       - ALL
     security_opt:

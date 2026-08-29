@@ -32,7 +32,7 @@ constexpr int FORWARD_CONNECT_TIMEOUT_SECONDS = 10;
 bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<HttpRequest> request)
 {
 	// TOCTOU fix: check closed and bind atomically under the same lock
-	ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, pending_requests.mutex(), false);
+	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex(), false);
 	if (closed.load(std::memory_order_acquire))
 		return false;
 	return pending_requests.bind(uuid, std::move(request)) == 0;
@@ -40,7 +40,7 @@ bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<H
 
 std::shared_ptr<HttpRequest> ForwardingConnection::findRequest(const std::string &uuid)
 {
-	ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, pending_requests.mutex(), nullptr);
+	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex(), nullptr);
 	std::shared_ptr<HttpRequest> request;
 	pending_requests.find(uuid, request);
 	return request;
@@ -58,7 +58,7 @@ void ForwardingConnection::rememberSubscription(const std::string &subscriptionI
 {
 	if (subscriptionId.empty() || !isPersistentClient(request))
 		return;
-	ACE_GUARD(ACE_Thread_Mutex, guard, subscriptions.mutex());
+	ACE_GUARD(ACE_Recursive_Thread_Mutex, guard, subscriptions.mutex());
 	std::shared_ptr<HttpRequest> previous;
 	subscriptions.unbind(subscriptionId, previous);
 	subscriptions.bind(subscriptionId, std::move(request));
@@ -66,7 +66,7 @@ void ForwardingConnection::rememberSubscription(const std::string &subscriptionI
 
 std::shared_ptr<HttpRequest> ForwardingConnection::findSubscription(const std::string &subscriptionId)
 {
-	ACE_GUARD_RETURN(ACE_Thread_Mutex, guard, subscriptions.mutex(), nullptr);
+	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, subscriptions.mutex(), nullptr);
 	std::shared_ptr<HttpRequest> request;
 	subscriptions.find(subscriptionId, request);
 	return request;
@@ -128,7 +128,7 @@ void ForwardingConnection::failAll(const std::string &msg)
 {
 	std::vector<std::string> keys;
 	{
-		ACE_GUARD(ACE_Thread_Mutex, guard, pending_requests.mutex());
+		ACE_GUARD(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex());
 		closed.store(true, std::memory_order_release);
 		for (auto iter = pending_requests.begin(); iter != pending_requests.end(); ++iter)
 		{
@@ -146,7 +146,7 @@ void ForwardingConnection::failAll(const std::string &msg)
 
 	std::vector<std::pair<std::string, std::shared_ptr<HttpRequest>>> activeSubscriptions;
 	{
-		ACE_GUARD(ACE_Thread_Mutex, guard, subscriptions.mutex());
+		ACE_GUARD(ACE_Recursive_Thread_Mutex, guard, subscriptions.mutex());
 		for (auto iter = subscriptions.begin(); iter != subscriptions.end(); ++iter)
 			activeSubscriptions.emplace_back((*iter).ext_id_, (*iter).int_id_);
 		subscriptions.unbind_all();

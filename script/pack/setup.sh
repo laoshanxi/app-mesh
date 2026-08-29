@@ -40,6 +40,7 @@ AUTH_ACCESS_URL_EXPLICIT=0
 AUTH_ISSUER_EXPLICIT=0
 AUTH_TLS_VERIFY_EXPLICIT=0
 AUTH_CA_PATH_EXPLICIT=0
+AUTH_ROLE_EXPLICIT=0
 PREVIOUS_AUTH_MODE=""
 if [ "${APPMESH_AUTH_ACCESS_URL+x}" = x ] || [ "${APPMESH_DEX_ACCESS_URL+x}" = x ]; then
     AUTH_ACCESS_URL_EXPLICIT=1
@@ -52,6 +53,9 @@ if [ "${APPMESH_AUTH_TLS_VERIFY+x}" = x ] || [ "${APPMESH_DEX_TLS_VERIFY+x}" = x
 fi
 if [ "${APPMESH_AUTH_CA_PATH+x}" = x ] || [ "${APPMESH_DEX_CA_PATH+x}" = x ]; then
     AUTH_CA_PATH_EXPLICIT=1
+fi
+if [ "${APPMESH_AUTH_ROLE+x}" = x ]; then
+    AUTH_ROLE_EXPLICIT=1
 fi
 
 ################################################################################
@@ -69,7 +73,11 @@ Usage: setup.sh [authentication options]
 
 Authentication options (Linux/macOS):
   --auth-mode builtin|external  Select the bundled or external authentication service
-  --oidc-issuer URL             Canonical external issuer (required for external mode)
+  --auth-role standalone|owner|follower
+                                Cluster role of the bundled authentication service.
+                                owner runs the authentication service; follower joins
+                                an owner and runs no local authentication service
+  --oidc-issuer URL             Canonical issuer (required for external mode and follower role)
   --oidc-access-url URL         Per-node discovery/JWKS route (defaults to the issuer)
   --oidc-tls-verify BOOL        Verify the external route certificate: true or false (default: true)
   --oidc-ca-path PATH           Optional CA file or directory for the external route
@@ -77,8 +85,11 @@ Authentication options (Linux/macOS):
   -h, --help                    Show this help
 
 The equivalent non-interactive environment variables are APPMESH_AUTH_MODE,
-APPMESH_AUTH_ISSUER, APPMESH_AUTH_ACCESS_URL, APPMESH_AUTH_TLS_VERIFY, and
-APPMESH_AUTH_CA_PATH. This interface never accepts user or client passwords.
+APPMESH_AUTH_ROLE, APPMESH_AUTH_ISSUER, APPMESH_AUTH_ACCESS_URL,
+APPMESH_AUTH_TLS_VERIFY, and APPMESH_AUTH_CA_PATH. They also select the
+settings during package installation, which runs this script with the
+administrator environment. This interface never accepts user or client
+passwords.
 EOF
 }
 
@@ -97,6 +108,13 @@ parse_arguments() {
             shift 2
             ;;
         --auth-mode=*) export APPMESH_AUTH_MODE="${1#*=}"; shift ;;
+        --auth-role)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_ROLE="$2"
+            AUTH_ROLE_EXPLICIT=1
+            shift 2
+            ;;
+        --auth-role=*) export APPMESH_AUTH_ROLE="${1#*=}"; AUTH_ROLE_EXPLICIT=1; shift ;;
         --oidc-issuer)
             require_option_value "$1" "${2:-}"
             export APPMESH_AUTH_ISSUER="$2"
@@ -351,6 +369,32 @@ configure_authentication() {
     esac
     write_env_entry "$ENV_FILE" APPMESH_AUTH_MODE "$mode"
 
+    # Cluster role of the bundled authentication service. setup_env_file() has
+    # already persisted any explicitly passed or preserved APPMESH_AUTH_ROLE;
+    # without a selection the packaged auth-stack.yaml default applies. The
+    # package post-install runs this script with the administrator environment,
+    # so APPMESH_AUTH_ROLE also selects the role at dpkg/rpm install time.
+    local role=""
+    role=$(read_env_entry APPMESH_AUTH_ROLE 2>/dev/null || true)
+    if [ -n "$role" ]; then
+        case "$role" in
+        standalone | owner | follower) ;;
+        *) die "APPMESH_AUTH_ROLE must be standalone, owner, or follower" ;;
+        esac
+        if [ "$mode" = "external" ]; then
+            if [ "$AUTH_ROLE_EXPLICIT" -eq 1 ]; then
+                die "--auth-role requires builtin mode; external mode runs no local authentication service"
+            fi
+            # A stale role selection from a previous builtin installation is
+            # meaningless in external mode; drop it instead of failing upgrade.
+            remove_env_entry "$ENV_FILE" APPMESH_AUTH_ROLE
+            role=""
+            info "Removed the stale authentication role selection for external mode."
+        else
+            info "Authentication role set to ${role}."
+        fi
+    fi
+
     issuer=$(read_env_entry APPMESH_AUTH_ISSUER 2>/dev/null || read_env_entry APPMESH_DEX_ISSUER 2>/dev/null || true)
     access_url=$(read_env_entry APPMESH_AUTH_ACCESS_URL 2>/dev/null || read_env_entry APPMESH_DEX_ACCESS_URL 2>/dev/null || true)
     tls_verify=$(read_env_entry APPMESH_AUTH_TLS_VERIFY 2>/dev/null || read_env_entry APPMESH_DEX_TLS_VERIFY 2>/dev/null || true)
@@ -415,11 +459,21 @@ configure_authentication() {
         [ -z "$issuer" ] || validate_oidc_url APPMESH_AUTH_ISSUER "$issuer"
         [ -z "$access_url" ] || validate_oidc_url APPMESH_AUTH_ACCESS_URL "$access_url"
         [ -z "$tls_verify" ] || normalize_tls_verify "$tls_verify" >/dev/null
+        if [ "$role" = "follower" ]; then
+            # A follower runs no local authentication service. It must carry the
+            # owner's canonical issuer and a route to it; without an explicit
+            # access route the owner issuer itself is the route.
+            [ -n "$issuer" ] || die "Follower role requires --oidc-issuer or APPMESH_AUTH_ISSUER of the authentication owner"
+            access_url=${access_url:-$issuer}
+            write_env_entry "$ENV_FILE" APPMESH_AUTH_ACCESS_URL "$access_url"
+            info "This node joins the authentication owner at ${issuer}."
+        fi
         set_auth_app_status 1
         info "Authentication mode set to builtin. The bundled authentication service is enabled."
         # Without the launcher installed, the authentication App self-bootstraps instead.
         if [ -x "$AUTH_LAUNCHER" ]; then
             APPMESH_AUTH_MODE="$mode" \
+                APPMESH_AUTH_ROLE="$role" \
                 APPMESH_AUTH_ISSUER="${issuer:-http://127.0.0.1:6062/auth}" \
                 APPMESH_AUTH_ACCESS_URL="${access_url:-http://127.0.0.1:6062/auth}" \
                 APPMESH_AUTH_TLS_VERIFY="${tls_verify:-true}" \

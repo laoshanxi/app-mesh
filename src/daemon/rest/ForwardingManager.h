@@ -19,9 +19,11 @@ class Response;
 struct ForwardingConnection
 {
 	SocketStreamPtr stream;
-	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Thread_Mutex>;
+	// ACE_Map_Manager operations lock internally, so an external guard over the
+	// same map re-enters; the lock must be recursive or addRequest() deadlocks.
+	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
 	PendingRequestMap pending_requests;
-	using SubscriptionMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Thread_Mutex>;
+	using SubscriptionMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
 	SubscriptionMap subscriptions;
 	std::atomic<bool> closed{false};
 

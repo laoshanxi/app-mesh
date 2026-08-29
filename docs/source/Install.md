@@ -99,6 +99,50 @@ sudo /opt/appmesh/script/appmesh-auth.sh rotate-initial-password
 sudo systemctl restart appmesh
 ```
 
+## Cluster authentication service
+
+A cluster runs the bundled authentication service on one node and joins the
+other nodes to it. The owner runs Dex and holds the identity state. A follower
+runs no authentication service, creates no built-in credentials, and verifies
+tokens against the owner's issuer.
+
+Set the owner node:
+
+```shell
+sudo /opt/appmesh/script/setup.sh \
+  --auth-mode builtin \
+  --auth-role owner \
+  --oidc-issuer https://owner.example.com:6060/auth
+```
+
+Join a follower node. The issuer must be the same string on every node;
+`--oidc-access-url` defaults to the issuer:
+
+```shell
+sudo /opt/appmesh/script/setup.sh \
+  --auth-mode builtin \
+  --auth-role follower \
+  --oidc-issuer https://owner.example.com:6060/auth
+```
+
+`--auth-role` accepts `standalone` (packaged default), `owner`, and
+`follower`. A follower without an issuer is a setup error. A role selection
+from a previous builtin installation is removed automatically when you switch
+to external mode.
+
+Package installation runs the same setup with the administrator environment.
+A node can therefore join during `dpkg`/`rpm` installation:
+
+```shell
+sudo APPMESH_AUTH_ROLE=follower \
+     APPMESH_AUTH_ISSUER=https://owner.example.com:6060/auth \
+     dpkg -i appmesh_*.deb
+```
+
+See [Security](Security.md) for the forwarding authentication model and the
+authorization-data consistency rule. A worked multi-node example is
+`script/docker/docker-compose.yaml`.
+
 ## External authentication service
 
 Use external mode when an operator manages the OpenID Connect issuer.
@@ -142,6 +186,7 @@ Use these environment variables for non-interactive authentication setup:
 
 ```text
 APPMESH_AUTH_MODE
+APPMESH_AUTH_ROLE
 APPMESH_AUTH_ISSUER
 APPMESH_AUTH_ACCESS_URL
 APPMESH_AUTH_TLS_VERIFY
