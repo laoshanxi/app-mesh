@@ -114,18 +114,6 @@ public class AppMeshClientTCP extends AppMeshClient {
             return this;
         }
 
-        /** Cookie file path for persistent token storage. */
-        public Builder cookieFile(String cookieFile) {
-            base.cookieFile(cookieFile);
-            return this;
-        }
-
-        /** Enable automatic token refresh before expiration. */
-        public Builder autoRefreshToken(boolean enable) {
-            base.autoRefreshToken(enable);
-            return this;
-        }
-
         /** Connection timeout in milliseconds for HTTPS side-channel requests. */
         public Builder connectTimeoutMs(int ms) {
             base.connectTimeoutMs(ms);

@@ -2,18 +2,41 @@
 ################################################################################
 # Build Script for App-Mesh Packages
 ################################################################################
-set -e
+set -euo pipefail
 
-export PACKAGE_HOME="${CMAKE_INSTALL_PREFIX}"
+export PACKAGE_HOME="${CMAKE_INSTALL_PREFIX:-}"
 export INSTALL_LOCATION="/opt/appmesh"
-export GOARCH=$(go env GOARCH)
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 info() { log "INFO" "$@"; }
 die() { log "ERROR" "$@" && exit 1; }
 
+[[ -z "${CMAKE_SOURCE_DIR:-}" ]] && die "CMAKE_SOURCE_DIR is not set"
 [[ -z "${CMAKE_BINARY_DIR:-}" ]] && die "CMAKE_BINARY_DIR is not set"
 [[ ! -d "${CMAKE_BINARY_DIR}" ]] && die "Directory ${CMAKE_BINARY_DIR} does not exist"
+[[ -z "${CMAKE_INSTALL_PREFIX:-}" ]] && die "CMAKE_INSTALL_PREFIX is not set"
+[[ ! -d "${PACKAGE_HOME}" ]] && die "Package root does not exist: ${PACKAGE_HOME}"
+
+export GOARCH
+GOARCH=$(go env GOARCH)
+
+################################################################################
+# Copy the Dex server binary into the main package. Dex is installed like the
+# other Go tools (cfssl/nfpm) by script/bootstrap/install_build_deps*.sh; the
+# password-hash helper is repo-native (src/auth) and already staged by cmake.
+################################################################################
+copy_dex() {
+    local dex_bin
+    dex_bin="$(command -v dex || true)"
+    if [[ -z "$dex_bin" ]]; then
+        dex_bin="$(go env GOPATH 2>/dev/null)/bin/dex"
+    fi
+    [[ -n "$dex_bin" && -x "$dex_bin" ]] ||         die "Dex binary not found in PATH"
+    # A reused staging prefix may contain binaries from retired layouts.
+    rm -f "${PACKAGE_HOME}/bin/dex-password-hash" "${PACKAGE_HOME}/bin/appmesh-password-hash"
+    install -m 755 "$dex_bin" "${PACKAGE_HOME}/bin/dex"
+    info "Copied Dex server binary ${dex_bin} into the main package"
+}
 
 ################################################################################
 # macOS Code Signing Function
@@ -22,13 +45,13 @@ codesign_macos_binaries() {
     local package_root="$1"
     [[ -z "$package_root" ]] && die "package_root parameter required"
     [[ ! -d "$package_root" ]] && die "Package root does not exist: $package_root"
-    
+
     info "Ad-hoc code signing binaries and libraries in $package_root..."
-    
+
     local signed_count=0
     local failed_count=0
     local lib_suffix=".dylib"
-    
+
     # Find and sign all dylibs and executable files
     while IFS= read -r -d '' file; do
         if codesign --force --sign - "$file" 2>/dev/null; then
@@ -38,26 +61,31 @@ codesign_macos_binaries() {
             ((failed_count++))
         fi
     done < <(find "$package_root" -type f \( -name "*${lib_suffix}" -o -perm -111 \) -print0)
-    
+
     info "Code signing completed: $signed_count signed, $failed_count failed"
     return 0
 }
-
 
 info "Packaging contents of: ${PACKAGE_HOME}"
 # Clean previous artifacts
 find . -maxdepth 1 -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.pkg" \) -delete
 
 if [[ "$OSTYPE" == "linux"* ]]; then
+    # Dex is a mandatory content of the Linux and macOS main packages.
+    copy_dex
+
     # Render nfpm config
     envsubst <"${CMAKE_SOURCE_DIR}/script/pack/nfpm.yaml" >"${CMAKE_BINARY_DIR}/nfpm_config.yaml"
     if grep -q '\${[^}]*}' "${CMAKE_BINARY_DIR}/nfpm_config.yaml"; then
         die "Variables not substituted in nfpm.yaml"
     fi
 
-    export GLIBC_VERSION=$(ldd --version | awk 'NR==1{print $NF}')
-    export GCC_VERSION=$(gcc -dumpversion)
-    export ARCH=$(arch)
+    export GLIBC_VERSION
+    GLIBC_VERSION=$(ldd --version | awk 'NR==1{print $NF}')
+    export GCC_VERSION
+    GCC_VERSION=$(gcc -dumpversion)
+    export ARCH
+    ARCH=$(arch)
 
     info "Building DEB/RPM (GLIBC: $GLIBC_VERSION, GCC: $GCC_VERSION, ARCH: $ARCH)"
     nfpm pkg --config "${CMAKE_BINARY_DIR}/nfpm_config.yaml" --packager deb
@@ -70,8 +98,13 @@ if [[ "$OSTYPE" == "linux"* ]]; then
     done
 
 elif [[ "$OSTYPE" == "darwin"* ]]; then
-    export MACOS_VERSION=$(sw_vers -productVersion | cut -d '.' -f1)
-    export CLANG_VERSION=$(clang --version | awk -F ' ' '/Apple clang version/ {print $4}' | cut -d '.' -f1)
+    # Dex is a mandatory content of the Linux and macOS main packages.
+    copy_dex
+
+    export MACOS_VERSION
+    MACOS_VERSION=$(sw_vers -productVersion | cut -d '.' -f1)
+    export CLANG_VERSION
+    CLANG_VERSION=$(clang --version | awk -F ' ' '/Apple clang version/ {print $4}' | cut -d '.' -f1)
     export PACKAGE_FILE_NAME="${CMAKE_BINARY_DIR}/${PROJECT_NAME}_${PROJECT_VERSION}_clang_${CLANG_VERSION}_macos_${MACOS_VERSION}_${GOARCH}.pkg"
 
     # Generate component plist to enable relocation

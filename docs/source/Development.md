@@ -2,78 +2,56 @@
 
 ![block-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/block_diagram.png)
 
-## REST APIs
+## REST API source of truth
 
-Method | URI | Body/Headers | Desc
----|---|---|---
-POST| /appmesh/login | Authorization=Basic base64(NAME:PASSWD) <br> Optional: <br> X-Expire-Seconds=600 <br> X-Totp-Code=TOTP_KEY <br> X-Audience=appmesh-service | User login, return JWT token or Totp-Challenge for TOTP validate next
-POST | /appmesh/totp/validate | { "user_name":"NAME", "totp_code":"TOTP_KEY", "totp_challenge":"CHALLANGE_ABC", "expire_seconds":"360000" } | Validate TOTP key (valid and not expired) and challenge, return JWT token
-POST| /appmesh/auth | Authorization="Bearer <JWT_TOKEN>" <br> Optional: <br> X-Permission=<PERMISSION-ID> <br> X-Audience=appmesh-service | JWT token and permission authenticate
-POST| /appmesh/token/renew | Authorization="Bearer <JWT_TOKEN>" <br> Optional: <br> X-Expire-Seconds=600 | Logoff old token and return new token
-POST| /appmesh/self/logoff | Authorization="Bearer <JWT_TOKEN>" | Logoff token
-POST | /appmesh/totp/secret | | Generate TOTP secret for user to enable TOTP, return mfa_uri
-POST | /appmesh/totp/setup | Totp=base64(TOTP_KEY) | Setup TOTP, bind TOTP secret to user, return new JWT token
-POST | /appmesh/totp/${USER}/disable | | disable TOTP, USER can be self
--|-|-|-
-GET | /appmesh/app/${APP-NAME} | | Get an application information
-GET | /appmesh/app/${APP-NAME}/health | | Get application health status, no authentication required, 0 is health and 1 is unhealthy
-GET | /appmesh/app/${APP-NAME}/output?stdout_position=128&stdout_index=0&process_uuid=uuidabc&stdout_maxsize=1024 | | Get app output <br> Optional: <br> stdout_position is the position value return by header 'X-Output-Position' <br> stdout_index to identify the process start index <br> process_uuid used to explicit lock a process
-POST| /appmesh/app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.
-POST| /appmesh/app/run?timeout=5 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
-GET | /appmesh/applications | | Get all application information
-PUT | /appmesh/app/${APP-NAME} | {"command": "/bin/sleep 60", "name": "ping", "exec_user": "root", "working_dir": "/tmp" } | Register a new application
-POST| /appmesh/app/${APP-NAME}/enable | | Enable an application
-POST| /appmesh/app/${APP-NAME}/disable | | Disable an application
-DELETE| /appmesh/app/${APP-NAME} | | Deregister an application
--|-|-|-
-POST| /appmesh/app/${APP-NAME}/subscribe?events=START,STDOUT | | Subscribe to app events (TCP/WSS only), [detail](EventSubscription.md)
-POST| /appmesh/subscribe?events=START,STDOUT | | Subscribe to events from all apps (TCP/WSS only)
-DELETE| /appmesh/app/${APP-NAME}/subscribe?subscription_id=abc | | Unsubscribe from app events
-DELETE| /appmesh/subscribe?subscription_id=abc | | Unsubscribe from all-app events
--|-|-|-
-GET | /appmesh/file/download | Header: <br> X-File-Path=/opt/remote/filename | Download a file from REST server and grant permission
-POST| /appmesh/file/upload | Header: <br> X-File-Path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
--|-|-|-
-GET | /appmesh/labels | { "os": "linux","arch": "x86_64" } | Get labels
-POST| /appmesh/labels | { "os": "linux","arch": "x86_64" } | Update labels
-PUT | /appmesh/label/abc?value=123 |  | Set a label
-DELETE| /appmesh/label/abc |  | Delete a label
--|-|-|-
-GET | /appmesh/config |  | Get basic configurations
-POST| /appmesh/config |  | Set basic configurations
--|-|-|-
-POST| /appmesh/user/admin/passwd | { "new_password": base64(passwd) } | Change user password, username can be `self`
-POST| /appmesh/user/${USER}/lock | | admin user to lock a user
-POST| /appmesh/user/${USER}/unlock | | admin user to unlock a user
-GET | /appmesh/user/self | | View user self
-PUT | /appmesh/user/${USER} | | Add a user to Users
-DEL | /appmesh/user/${USER} | | Delete a user
-GET | /appmesh/users | | Get user list
-GET | /appmesh/roles | | Get role list
-POST| /appmesh/role/roleA | | Update roleA with defined permissions
-DELETE| /appmesh/role/roleA | | Delete roleA
-GET | /appmesh/user/permissions |  | Get user self permissions, user token is required in header
-GET | /appmesh/permissions |  | Get all permissions
-GET | /appmesh/user/groups |  | Get all user groups
--|-|-|-
-GET | /appmesh/metrics | | Get Prometheus exporter metrics
-GET | /appmesh/resources | | Get host resource usage
+The normative API description is `src/daemon/rest/openapi.yaml`. App Mesh is an
+OAuth protected resource: except for discovery/readiness endpoints, requests use
+a Dex access token in the `Authorization: Bearer` header.
 
-## How to build App Mesh
+Authentication and Principal endpoints:
 
-See document [Build App Mesh guidance](https://app-mesh.readthedocs.io/en/latest/Build.html).
+| Method | URI | Purpose |
+|---|---|---|
+| GET | `/.well-known/oauth-protected-resource` | RFC 9728 resource metadata |
+| GET | `/appmesh/auth/config` | public Dex issuer/audience/client/flow hints |
+| GET | `/appmesh/principal/self` | current verified Principal and permissions |
+| GET | `/appmesh/principal/self/permissions` | current effective permission IDs |
+| GET | `/appmesh/principals` | list App Mesh authorization overlays |
+| POST | `/appmesh/principal/{principal_id}` | create or update an overlay |
+| DELETE | `/appmesh/principal/{principal_id}` | delete an authorization overlay, not an IdP user |
+| GET | `/appmesh/roles` | list App Mesh roles |
+| POST | `/appmesh/role/{role}` | update a permission set |
+| DELETE | `/appmesh/role/{role}` | delete an unbound role |
+| GET | `/appmesh/permissions` | list known permission IDs |
 
-## How to enable valgrind memory test
+Application, task, event, file, label, configuration, metrics, and resource
+endpoints remain documented in OpenAPI. Applications use
+`owner_principal_id`; REST input cannot create `system: true` applications or
+choose an arbitrary process user.
 
-App Mesh can test memory issue by valgrind to find potential memory leaks. build `/opt/appmesh/bin/appmesh` binary with debug mode `cmake -DCMAKE_BUILD_TYPE=Debug ..`, use `touch /opt/appmesh/bin/appmesh.valgrind` to enable and restart `/opt/appmesh/bin/appmesh` to run some cases, use `touch /opt/appmesh/bin/appmesh.valgrind.stop` to finish memory test and check memory report in dir `/opt/appmesh/bin/`.
+There are no Engine endpoints for username/password login, token renewal,
+logout/blacklist, TOTP, directory users, password changes, groups, or upstream
+identity-provider administration. Those operations belong to Dex or its
+operator-managed upstream identity provider.
+
+## Python SDK authentication
+
+`AppMeshClient` accepts only a caller-supplied `bearer_token` and has no local
+login or cookie persistence; `DexOAuthClient` implements the OAuth flows
+(PKCE, Device Authorization, refresh, revocation, Client Credentials) against an
+independently configured Dex route. See [Security](Security.md) for an example.
+
+## Build
+
+See [Build App Mesh guidance](Build.md).
 
 ## Integrations
 
-- [Remote Execution Skill](https://github.com/laoshanxi/app-mesh/tree/main/.agents/skills/appmesh-remote) — Local development plus an App Mesh remote execution sandbox for Codex and Claude Code
-- [MCP Server](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp_server) — Standalone MCP server (Streamable HTTP + OAuth) for LLM clients to manage App Mesh
-- [MCP Bridge](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp_bridge) — stdio MCP server + WebSocket tunnel for relaying to a remote LLM gateway
-- [MQTT Bridge](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mqtt) — IoT integration via MQTT
+- [Remote Execution Skill](https://github.com/laoshanxi/app-mesh/tree/main/.agents/skills/appmesh-remote)
+- [MCP Server](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp_server) — Dex-protected Streamable HTTP resource server
+- [MCP Bridge](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mcp_bridge)
+- [MQTT Bridge](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk/mqtt)
 
-## Mind diagram
+## Diagrams
 
 ![mind-diagram](https://github.com/laoshanxi/picture/raw/master/appmesh/mind.png)

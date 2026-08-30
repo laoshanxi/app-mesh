@@ -64,7 +64,7 @@ class AppMeshWorker:
                 `request_timeout`) are ignored.
             logger: Optional logger instance.
         """
-        self._client = client or AppMeshClient(base_url, ssl_verify, ssl_client_cert, request_timeout, auto_refresh_token=False)  # Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+        self._client = client or AppMeshClient(base_url, ssl_verify, ssl_client_cert, request_timeout)
         self._logger = logger or logging.getLogger(__name__)
 
     @staticmethod
@@ -103,7 +103,7 @@ class AppMeshWorker:
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
-        query_params = {"process_key": pkey}
+        headers = {"X-AppMesh-Process-Key": pkey}
         failed_attempts = 0
 
         while True:
@@ -115,7 +115,7 @@ class AppMeshWorker:
                 resp = self._client._request_http(
                     AppMeshClient._Method.GET,
                     path=path,
-                    query=query_params,
+                    header=headers,
                     raise_on_fail=False,
                 )
 
@@ -155,12 +155,12 @@ class AppMeshWorker:
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
-        query_params = {"process_key": pkey}
+        headers = {"X-AppMesh-Process-Key": pkey}
 
         resp = self._client._request_http(
             AppMeshClient._Method.PUT,
             path=path,
-            query=query_params,
+            header=headers,
             body=result,
         )
 

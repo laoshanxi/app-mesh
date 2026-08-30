@@ -120,7 +120,7 @@ impl Requester for TCPRequester {
         };
 
         // Build the request message and send it while holding the transport lock.
-        let send_result: Result<Option<HashMap<String, String>>> = (|| {
+        let send_result: Result<()> = (|| {
             let mut transport = self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner());
 
             if !transport.connected() {
@@ -137,10 +137,11 @@ impl Requester for TCPRequester {
             req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_TCP.into());
 
             if let Some(token) = self.get_access_token() {
-                req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
+                req.headers.insert(
+                    HTTP_HEADER_JWT_AUTHORIZATION.into(),
+                    format!("{}{}", HTTP_HEADER_AUTH_BEARER, token),
+                );
             }
-            // Save headers ref before consuming for token sync
-            let req_headers = headers.clone();
             if let Some(h) = headers {
                 req.headers.extend(h);
             }
@@ -154,12 +155,12 @@ impl Requester for TCPRequester {
             let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
             transport.send_message(&data)?;
 
-            Ok(req_headers)
+            Ok(())
         })();
         // Transport lock released here.
 
-        let req_headers = match send_result {
-            Ok(h) => h,
+        match send_result {
+            Ok(()) => {}
             Err(e) => {
                 // Nothing was sent; remove the pending entry so it cannot leak.
                 if let Some(ref demuxer) = active_demuxer {
@@ -167,7 +168,7 @@ impl Requester for TCPRequester {
                 }
                 return Err(e);
             }
-        };
+        }
 
         let resp = if let Some(rx) = rx {
             match rx.await {
@@ -191,12 +192,7 @@ impl Requester for TCPRequester {
             });
         }
 
-        let http_resp = resp.into_http_response()?;
-
-        // Auto-sync token from auth endpoint responses
-        crate::requester::sync_transport_token(&http_resp, path, &req_headers, self);
-
-        Ok(http_resp)
+        resp.into_http_response()
     }
 
     fn handle_token_update(&self, token: Option<String>) {

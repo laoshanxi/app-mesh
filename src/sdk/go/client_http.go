@@ -4,10 +4,8 @@ package appmesh
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -16,46 +14,22 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/pquerna/otp"
 	"go.uber.org/atomic"
 )
 
 // AppMeshClient interacts with App Mesh REST APIs.
 type AppMeshClient struct {
 	req              Requester
-	forwardTo        string // Forward target host
-	cookieFile       string
 	sslClientCert    string // Client SSL certificate file.
 	sslClientCertKey string // Client SSL certificate key file.
 	sslCAFile        string // Trusted CA file/dir.
-
-	// Token auto-refresh
-	autoRefreshToken bool
-	useRefreshToken  *bool         // nil: follow autoRefreshToken; see Option.UseRefreshToken
-	refreshStop      chan struct{} // closed to signal the goroutine to exit
-	refreshMu        sync.Mutex    // protects refreshStop
-
-	// Refresh token from login/renew responses; issued by both Keycloak and local-JWT
-	// daemons, empty against an older daemon that returns none. Atomic: the auto-refresh
-	// goroutine and user calls race on it.
-	refreshToken atomic.String
-
-	// Expire seconds from login, replayed on renew so the caller's TTL is kept.
-	tokenExpireSeconds atomic.Int32
-
-	// Serializes renewals. Rotation makes a refresh token single-use, so two concurrent
-	// renewals would present the same one and the loser would be told it is revoked —
-	// permanently wedging a client that has no other credential.
-	renewMu sync.Mutex
 }
 
 // Option for NewHttpClient
 type Option struct {
 	AppMeshUri string // URI of the App Mesh server; use "https://127.0.0.1:6060" for HTTP or "127.0.0.1:6059" for TCP.
-	CookieFile string // Cookie file path for persistence
 	ForwardTo  string // The target host to which all requests will be forwarded; with this set, AppMeshUri will act as a proxy to forward requests.
 
 	SslClientCertificateFile    string // Path to the client certificate file (PEM format), leave empty to disable client authentication.
@@ -71,21 +45,14 @@ type Option struct {
 	// InsecureSkipVerify disables server certificate verification (testing only; same as SslTrustedCA = "").
 	InsecureSkipVerify bool
 
-	JwtToken string // JWT token set directly without server verification (no network call).
+	JwtToken string // Dex access token set directly without a network call.
 
 	// HTTPTimeout is the overall timeout for http.Client requests; honored when non-zero.
 	HTTPTimeout time.Duration
-
-	AutoRefreshToken bool // Enable automatic token refresh before expiration.
-
-	// UseRefreshToken asks the daemon to issue a refresh token on login/renew. nil follows
-	// AutoRefreshToken, which already says whether this client is long-lived; a refresh token
-	// is long-lived, so a one-shot caller would leak one per invocation.
-	UseRefreshToken *bool
 }
 
 // NewHTTPClient builds an HTTP-backed client for App Mesh REST APIs.
-// It does not authenticate; call Login or SetToken afterward.
+// It does not authenticate; obtain a Dex access token separately and call SetToken.
 func NewHTTPClient(options Option) (*AppMeshClient, error) {
 	return newHTTPClientWithRequester(options, nil)
 }
@@ -118,7 +85,7 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	if r != nil {
 		req = r
 	} else {
-		httpClient, err := newHTTPConnection(clientCertFile, clientCertKeyFile, caFile, options.CookieFile)
+		httpClient, err := newHTTPConnection(clientCertFile, clientCertKeyFile, caFile)
 		if err != nil {
 			return nil, err
 		}
@@ -135,12 +102,9 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 
 	c := &AppMeshClient{
 		req:              req,
-		cookieFile:       options.CookieFile,
 		sslClientCert:    clientCertFile,
 		sslClientCertKey: clientCertKeyFile,
 		sslCAFile:        caFile,
-		autoRefreshToken: options.AutoRefreshToken,
-		useRefreshToken:  options.UseRefreshToken,
 	}
 
 	if options.JwtToken != "" {
@@ -150,303 +114,52 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	return c, nil
 }
 
-// wantRefreshToken resolves Option.UseRefreshToken: an explicit setting wins, otherwise
-// auto-refresh decides, since only a long-lived client has anywhere to keep the credential.
-func (r *AppMeshClient) wantRefreshToken() bool {
-	if r.useRefreshToken != nil {
-		return *r.useRefreshToken
-	}
-	return r.autoRefreshToken
-}
-
-// captureRefreshToken stores the refresh token from a login/renew response body.
-// Both modes rotate it on renew, so a present value replaces the stored one; an
-// absent value keeps it.
-func (r *AppMeshClient) captureRefreshToken(raw []byte) {
-	var result JWTResponse
-	if err := json.Unmarshal(raw, &result); err == nil && result.RefreshToken != "" {
-		r.refreshToken.Store(result.RefreshToken)
-	}
-}
-
-// Login authenticates with username/password and updates this client session on success.
-// It returns a TOTP challenge string when the server responds with HTTP 428 and no code was
-// provided; otherwise it returns an empty string. An empty challenge with a nil error means
-// the client is fully authenticated. When auto refresh is enabled, a successful login also
-// starts the background token refresh loop.
-// On a non-empty challenge, either retry Login with the TOTP code or pass the
-// challenge to ValidateTotp.
-func (r *AppMeshClient) Login(username string, password string, totpCode string, tokenExpire int, audience string) (string, error) {
-	return r.LoginContext(context.Background(), username, password, totpCode, tokenExpire, audience)
-}
-
-// LoginContext is Login bounded by ctx. Prefer it on a control loop: an unbounded login is
-// just as capable of stalling the caller as any other request.
-func (r *AppMeshClient) LoginContext(ctx context.Context, username string, password string, totpCode string, tokenExpire int, audience string) (string, error) {
-	if username == "" || password == "" {
-		return "", fmt.Errorf("username and password are required")
-	}
-
-	headers := map[string]string{
-		"Authorization":        "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password)),
-		headerJWTExpireSeconds: fmt.Sprintf("%d", tokenExpire),
-		headerJWTSetCookie:     strconv.FormatBool(true),
-	}
-	// Omitted, not "false", when declined: the daemon only issues on an explicit opt-in.
-	if r.wantRefreshToken() {
-		headers[headerJWTWantRefreshToken] = "true"
-	}
-	if audience != "" && audience != DefaultJWTAudience {
-		headers["X-Audience"] = audience
-	}
-	if totpCode != "" {
-		headers["X-Totp-Code"] = totpCode
-	}
-
-	code, raw, _, err := r.req.SendContext(ctx, http.MethodPost, "/appmesh/login", nil, headers, nil)
-	if err != nil {
-		return "", fmt.Errorf("login request failed: %w", err)
-	}
-	switch code {
-	case http.StatusOK:
-		r.captureRefreshToken(raw)
-		r.tokenExpireSeconds.Store(int32(tokenExpire))
-		r.StartTokenRefresh()
-		return "", nil
-
-	case 428: // HTTP 428 Precondition Required (TOTP challenge)
-		var resp map[string]interface{}
-		if err := json.Unmarshal(raw, &resp); err == nil {
-			if challenge, ok := resp["totp_challenge"].(string); ok {
-				if totpCode == "" {
-					return challenge, nil
-				}
-				if err := r.ValidateTotp(username, challenge, totpCode, tokenExpire); err != nil {
-					return "", fmt.Errorf("TOTP validation failed: %w", err)
-				}
-				return "", nil
-			}
-		}
-		return "", fmt.Errorf("TOTP challenge required or server error: %s", string(raw))
-
-	default:
-		return "", newAPIError("login", code, string(raw))
-	}
-}
-
-// ValidateTotp completes a TOTP challenge flow and stores the issued JWT in this client.
-func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode string, tokenExpire int) error {
-	if username == "" || challenge == "" || totpCode == "" {
-		return fmt.Errorf("username, challenge, and TOTP code are required")
-	}
-
-	type TotpReq struct {
-		UserName      string `json:"user_name"`
-		TotpCode      string `json:"totp_code"`
-		TotpChallenge string `json:"totp_challenge"`
-		ExpireSeconds int    `json:"expire_seconds"`
-	}
-	req := TotpReq{
-		UserName:      username,
-		TotpCode:      totpCode,
-		TotpChallenge: challenge,
-		ExpireSeconds: tokenExpire,
-	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal TOTP request: %w", err)
-	}
-	headers := map[string]string{headerJWTSetCookie: "true"}
-	if r.wantRefreshToken() {
-		headers[headerJWTWantRefreshToken] = "true"
-	}
-	code, raw, _, err := r.post("/appmesh/totp/validate", nil, headers, body)
-	if err != nil {
-		return fmt.Errorf("TOTP validation request failed: %w", err)
-	}
-	if code == http.StatusOK {
-		// A validated challenge completes the login, so it owes the same session setup
-		// as Login (this path previously never started auto-refresh at all).
-		r.captureRefreshToken(raw)
-		r.tokenExpireSeconds.Store(int32(tokenExpire))
-		r.StartTokenRefresh()
-		return nil
-	}
-	return newAPIError("TOTP validation", code, string(raw))
-}
-
-// Logout invalidates the current session on the server and clears the locally stored token.
-func (r *AppMeshClient) Logout() (bool, error) {
-	// Lets the daemon revoke server-side: Keycloak end-session, or the local blacklist.
-	var headers map[string]string
-	if rt := r.refreshToken.Load(); rt != "" {
-		headers = map[string]string{headerJWTRefreshToken: rt}
-	}
-	code, raw, _, err := r.post("/appmesh/self/logoff", nil, headers, nil)
-	r.StopTokenRefresh()
-	if err != nil {
-		return false, fmt.Errorf("logout request failed: %w", err)
-	}
-	if code != http.StatusOK {
-		return false, newAPIError("logout", code, string(raw))
-	}
-	r.refreshToken.Store("")
-	return true, nil
-}
-
-// SetToken sets a JWT token directly without server-side verification.
-// Use when the token is already known to be valid.
-// For server-side verification, use Authenticate() instead.
+// SetToken attaches a caller-owned Dex access token in memory. Engine validates it
+// when an API request is made; the SDK never sends credentials or refresh tokens.
 func (r *AppMeshClient) SetToken(token string) {
-	r.req.setToken(token)
-	r.StartTokenRefresh()
+	r.req.setToken(strings.TrimSpace(token))
 }
 
-// GetToken returns the current JWT access token, or empty if not authenticated.
+// ClearToken removes the locally attached bearer without contacting Engine or Dex.
+func (r *AppMeshClient) ClearToken() {
+	r.req.setToken("")
+}
+
+// GetToken returns the current in-memory Dex access token.
 func (r *AppMeshClient) GetToken() string {
 	return r.req.getAccessToken()
 }
 
-// Authenticate validates the provided JWT token with the server.
-// When updateSession is true, the verified token is applied to the current client session and local auth
-// state is updated on success.
-// When updateSession is false, the token is only verified and the current client session remains unchanged.
-func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audience string, updateSession bool) (bool, error) {
-	if jwtToken == "" {
-		return false, fmt.Errorf("JWT token is required")
-	}
-
-	headers := Headers{"Authorization": "Bearer " + jwtToken}
-	if permission != "" {
-		headers["X-Permission"] = permission
-	}
-	if audience != "" && audience != DefaultJWTAudience {
-		headers["X-Audience"] = audience
-	}
-	if updateSession {
-		headers[headerJWTSetCookie] = "true"
-	}
-
-	code, raw, _, err := r.post("/appmesh/auth", nil, headers, nil)
+// GetAuthConfig returns the public Dex/OIDC configuration advertised by Engine.
+func (r *AppMeshClient) GetAuthConfig() (map[string]interface{}, error) {
+	code, raw, _, err := r.get("/appmesh/auth/config", nil, nil)
 	if err != nil {
-		return false, fmt.Errorf("authentication request failed: %w", err)
+		return nil, fmt.Errorf("get auth config request failed: %w", err)
 	}
 	if code != http.StatusOK {
-		return false, newAPIError("authentication", code, string(raw))
+		return nil, newAPIError("get auth config", code, string(raw))
 	}
-	return true, nil
+	result := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal auth config: %w", err)
+	}
+	return result, nil
 }
 
-// RenewToken renews the current JWT token.
-//
-// A held refresh token is the sole credential the daemon needs, so renewal succeeds
-// even after the access token expired — that is how a missed refresh window recovers
-// without a re-login. Without one, the daemon authenticates the access token instead.
-func (r *AppMeshClient) RenewToken() (bool, error) {
-	r.renewMu.Lock()
-	defer r.renewMu.Unlock()
-
-	headers := map[string]string{}
-	if r.wantRefreshToken() {
-		headers[headerJWTWantRefreshToken] = "true"
-	}
-	if rt := r.refreshToken.Load(); rt != "" {
-		headers[headerJWTRefreshToken] = rt
-	}
-	// Replay the login TTL; otherwise the daemon applies its own default.
-	if exp := r.tokenExpireSeconds.Load(); exp > 0 {
-		headers[headerJWTExpireSeconds] = strconv.Itoa(int(exp))
-	}
-	code, raw, _, err := r.post("/appmesh/token/renew", nil, headers, nil)
+// GetCurrentPrincipal returns the verified Dex principal represented by the bearer.
+func (r *AppMeshClient) GetCurrentPrincipal() (map[string]interface{}, error) {
+	code, raw, _, err := r.get("/appmesh/principal/self", nil, nil)
 	if err != nil {
-		return false, fmt.Errorf("token renewal request failed: %w", err)
-	}
-	if code == http.StatusOK {
-		// Both modes rotate the refresh token on renew — store the new one for the next cycle.
-		r.captureRefreshToken(raw)
-		return true, nil
-	}
-	// A rejected refresh token will never be accepted again (rotated away, revoked, or the
-	// session ended). Drop it so the next attempt falls back to presenting the access token
-	// instead of replaying a credential that is now guaranteed to fail.
-	if code == http.StatusUnauthorized {
-		r.refreshToken.Store("")
-	}
-	return false, newAPIError("token renewal", code, string(raw))
-}
-
-// GetTotpUri retrieves the TOTP provisioning URI (otpauth://...) for setting up 2FA
-// authentication, e.g. for rendering a QR code in an authenticator app.
-func (r *AppMeshClient) GetTotpUri() (string, error) {
-	code, raw, _, err := r.post("/appmesh/totp/secret", nil, nil, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to get TOTP URI: %w", err)
-	}
-	if code == http.StatusOK {
-		var resp map[string]interface{}
-		if err := json.Unmarshal(raw, &resp); err != nil {
-			return "", fmt.Errorf("failed to unmarshal TOTP URI response: %w", err)
-		}
-		if mfa, ok := resp["mfa_uri"].(string); ok {
-			decoded, err := base64.StdEncoding.DecodeString(mfa)
-			if err != nil {
-				return "", fmt.Errorf("failed to decode MFA URI: %w", err)
-			}
-			return string(decoded), nil
-		}
-	}
-	return "", newAPIErrorText("get TOTP URI", code, string(raw), fmt.Sprintf("failed to get TOTP URI with status %d: %s", code, string(raw)))
-}
-
-// GetTotpSecret retrieves the TOTP provisioning URI and extracts only the raw secret component.
-// Use GetTotpUri for the full otpauth:// provisioning URI.
-func (r *AppMeshClient) GetTotpSecret() (string, error) {
-	uri, err := r.GetTotpUri()
-	if err != nil {
-		return "", err
-	}
-	key, err := otp.NewKeyFromURL(uri)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse OTP key from URL: %w", err)
-	}
-	return key.Secret(), nil
-}
-
-// EnableTotp configures TOTP 2FA for the current user and returns a new token.
-func (r *AppMeshClient) EnableTotp(totpCode string) (string, error) {
-	if totpCode == "" {
-		return "", fmt.Errorf("TOTP code is required")
-	}
-
-	headers := map[string]string{"X-Totp-Code": totpCode}
-	code, raw, _, err := r.post("/appmesh/totp/setup", nil, headers, nil)
-	if err != nil {
-		return "", fmt.Errorf("TOTP setup request failed: %w", err)
-	}
-	if code == http.StatusOK {
-		result := JWTResponse{}
-		if err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result); err != nil {
-			return "", fmt.Errorf("failed to decode JWT response: %w", err)
-		}
-		return result.AccessToken, nil
-	}
-	return "", newAPIError("TOTP setup", code, string(raw))
-}
-
-// DisableTotp disables TOTP 2FA for the specified user (or "self" if empty).
-func (r *AppMeshClient) DisableTotp(user string) (bool, error) {
-	if user == "" {
-		user = "self"
-	}
-	path := fmt.Sprintf("/appmesh/totp/%s/disable", user)
-	code, raw, _, err := r.post(path, nil, nil, nil)
-	if err != nil {
-		return false, fmt.Errorf("disable TOTP request failed: %w", err)
+		return nil, fmt.Errorf("get current principal request failed: %w", err)
 	}
 	if code != http.StatusOK {
-		return false, newAPIError("disable TOTP", code, string(raw))
+		return nil, newAPIError("get current principal", code, string(raw))
 	}
-	return true, nil
+	result := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal current principal: %w", err)
+	}
+	return result, nil
 }
 
 // ListLabels retrieves all available labels from the server.
@@ -1049,153 +762,82 @@ func (r *AppMeshClient) GetMetrics() (string, error) {
 	return "", newAPIError("get metrics", code, string(raw))
 }
 
-// UpdatePassword changes the password for a user (default is "self").
-func (r *AppMeshClient) UpdatePassword(oldPassword, newPassword, username string) (bool, error) {
-	if oldPassword == "" || newPassword == "" {
-		return false, fmt.Errorf("old password and new password are required")
-	}
-
-	if username == "" {
-		username = "self"
-	}
-	payload := map[string]string{
-		"old_password": base64.StdEncoding.EncodeToString([]byte(oldPassword)),
-		"new_password": base64.StdEncoding.EncodeToString([]byte(newPassword)),
-	}
-	body, err := json.Marshal(payload)
+// ListPrincipals returns App Mesh authorization overlays keyed by immutable Dex principal ID.
+func (r *AppMeshClient) ListPrincipals() (map[string]interface{}, error) {
+	code, raw, _, err := r.get("/appmesh/principals", nil, nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to marshal password update payload: %w", err)
-	}
-	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/passwd", username), nil, nil, body)
-	if err != nil {
-		return false, fmt.Errorf("update password request failed: %w", err)
+		return nil, fmt.Errorf("list principals request failed: %w", err)
 	}
 	if code != http.StatusOK {
-		return false, newAPIErrorText("update password", code, "", fmt.Sprintf("update password failed with status %d", code))
+		return nil, newAPIError("list principals", code, string(raw))
+	}
+	principals := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &principals); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal principals: %w", err)
+	}
+	return principals, nil
+}
+
+// UpdatePrincipal creates or replaces an App Mesh authorization overlay. It does
+// not create or modify an identity-provider account.
+func (r *AppMeshClient) UpdatePrincipal(principalID string, policy map[string]interface{}) (bool, error) {
+	if strings.TrimSpace(principalID) == "" || policy == nil {
+		return false, fmt.Errorf("principal ID and policy are required")
+	}
+	body, err := json.Marshal(policy)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal principal policy: %w", err)
+	}
+	code, raw, _, err := r.post("/appmesh/principal/"+url.PathEscape(principalID), nil, nil, body)
+	if err != nil {
+		return false, fmt.Errorf("update principal request failed: %w", err)
+	}
+	if code != http.StatusOK {
+		return false, newAPIError("update principal", code, string(raw))
 	}
 	return true, nil
 }
 
-// AddUser creates a new user with the specified configuration.
-func (r *AppMeshClient) AddUser(username string, user map[string]interface{}) (bool, error) {
-	if username == "" {
-		return false, fmt.Errorf("username is required")
+// DeletePrincipal removes only the Engine authorization overlay.
+func (r *AppMeshClient) DeletePrincipal(principalID string) (bool, error) {
+	if strings.TrimSpace(principalID) == "" {
+		return false, fmt.Errorf("principal ID is required")
 	}
-	if user == nil {
-		return false, fmt.Errorf("user JSON is required")
-	}
-
-	body, err := json.Marshal(user)
+	code, raw, _, err := r.req.Send(http.MethodDelete, "/appmesh/principal/"+url.PathEscape(principalID), nil, nil, nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to marshal user JSON: %w", err)
+		return false, fmt.Errorf("delete principal request failed: %w", err)
 	}
-	code, raw, err := r.put(fmt.Sprintf("/appmesh/user/%s", username), nil, nil, body)
-	if err != nil {
-		return false, fmt.Errorf("add user request failed: %w", err)
-	}
-	if code != http.StatusOK {
-		return false, newAPIError("add user", code, string(raw))
+	if code != http.StatusNoContent && code != http.StatusOK {
+		return false, newAPIError("delete principal", code, string(raw))
 	}
 	return true, nil
 }
 
-// DeleteUser removes a user from the system.
-func (r *AppMeshClient) DeleteUser(username string) (bool, error) {
-	if username == "" {
-		return false, fmt.Errorf("username is required")
-	}
-
-	code, raw, err := r.delete(fmt.Sprintf("/appmesh/user/%s", username))
+// GetPrincipalPermissions returns effective permissions for the current principal.
+func (r *AppMeshClient) GetPrincipalPermissions() ([]string, error) {
+	code, raw, _, err := r.get("/appmesh/principal/self/permissions", nil, nil)
 	if err != nil {
-		return false, fmt.Errorf("delete user request failed: %w", err)
+		return nil, fmt.Errorf("get principal permissions request failed: %w", err)
 	}
 	if code != http.StatusOK {
-		return false, newAPIError("delete user", code, string(raw))
+		return nil, newAPIError("get principal permissions", code, string(raw))
 	}
-	return true, nil
+	var permissions []string
+	if err := json.Unmarshal(raw, &permissions); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal principal permissions: %w", err)
+	}
+	return permissions, nil
 }
 
-// LockUser disables login for the specified user.
-func (r *AppMeshClient) LockUser(username string) (bool, error) {
-	if username == "" {
-		return false, fmt.Errorf("username is required")
-	}
-
-	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/lock", username), nil, nil, nil)
-	if err != nil {
-		return false, fmt.Errorf("lock user request failed: %w", err)
-	}
-	if code != http.StatusOK {
-		return false, newAPIErrorText("lock user", code, "", fmt.Sprintf("lock user failed with status %d", code))
-	}
-	return true, nil
-}
-
-// UnlockUser re-enables login for the specified user.
-func (r *AppMeshClient) UnlockUser(username string) (bool, error) {
-	if username == "" {
-		return false, fmt.Errorf("username is required")
-	}
-
-	code, _, _, err := r.post(fmt.Sprintf("/appmesh/user/%s/unlock", username), nil, nil, nil)
-	if err != nil {
-		return false, fmt.Errorf("unlock user request failed: %w", err)
-	}
-	if code != http.StatusOK {
-		return false, newAPIErrorText("unlock user", code, "", fmt.Sprintf("unlock user failed with status %d", code))
-	}
-	return true, nil
-}
-
-// ListUsers retrieves all users visible to the current user as the daemon's raw
-// JSON document keyed by user name (schema is daemon-owned).
-func (r *AppMeshClient) ListUsers() (map[string]interface{}, error) {
-	code, raw, _, err := r.get("/appmesh/users", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("view users request failed: %w", err)
-	}
-	if code != http.StatusOK {
-		return nil, newAPIError("list users", code, string(raw))
-	}
-	users := map[string]interface{}{}
-	if err := json.Unmarshal(raw, &users); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal users: %w", err)
-	}
-	return users, nil
-}
-
-// GetCurrentUser retrieves the current authenticated user as the daemon's raw
-// JSON document (schema is daemon-owned).
+// GetCurrentUser is a source-compatibility alias for GetCurrentPrincipal. It does
+// not query or mutate an identity-provider user account.
 func (r *AppMeshClient) GetCurrentUser() (map[string]interface{}, error) {
-	code, raw, _, err := r.get("/appmesh/user/self", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("view self request failed: %w", err)
-	}
-	user := map[string]interface{}{}
-	if code == http.StatusOK {
-		if err := json.Unmarshal(raw, &user); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal user data: %w", err)
-		}
-		return user, nil
-	}
-	return nil, newAPIErrorText("view self", code, "", fmt.Sprintf("view self failed with status %d", code))
+	return r.GetCurrentPrincipal()
 }
 
-// ListGroups retrieves all user groups; each element is the daemon's raw JSON
-// group document (schema is daemon-owned).
-func (r *AppMeshClient) ListGroups() ([]map[string]interface{}, error) {
-	code, raw, _, err := r.get("/appmesh/user/groups", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("view groups request failed: %w", err)
-	}
-	if code != http.StatusOK {
-		return nil, newAPIError("list groups", code, string(raw))
-	}
-	groups := []map[string]interface{}{}
-	if err := json.Unmarshal(raw, &groups); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal groups: %w", err)
-	}
-	return groups, nil
+// GetUserPermissions is a source-compatibility alias for GetPrincipalPermissions.
+func (r *AppMeshClient) GetUserPermissions() ([]string, error) {
+	return r.GetPrincipalPermissions()
 }
 
 // ListPermissions retrieves all available permissions in the system.
@@ -1210,22 +852,6 @@ func (r *AppMeshClient) ListPermissions() ([]string, error) {
 	var perms []string
 	if err := json.Unmarshal(raw, &perms); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal permissions: %w", err)
-	}
-	return perms, nil
-}
-
-// GetUserPermissions retrieves permissions assigned to the current user.
-func (r *AppMeshClient) GetUserPermissions() ([]string, error) {
-	code, raw, _, err := r.get("/appmesh/user/permissions", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("view user permissions request failed: %w", err)
-	}
-	if code != http.StatusOK {
-		return nil, newAPIError("view user permissions", code, string(raw))
-	}
-	var perms []string
-	if err := json.Unmarshal(raw, &perms); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal user permissions: %w", err)
 	}
 	return perms, nil
 }
@@ -1319,7 +945,6 @@ func (r *AppMeshClient) DeleteLabel(labelName string) (bool, error) {
 
 // Close the client and release resources.
 func (r *AppMeshClient) Close() {
-	r.StopTokenRefresh()
 	r.req.Close()
 }
 
@@ -1368,152 +993,4 @@ func (r *AppMeshClient) post(path string, params url.Values, headers map[string]
 func (r *AppMeshClient) delete(path string) (int, []byte, error) {
 	code, raw, _, err := r.req.Send(http.MethodDelete, path, nil, nil, nil)
 	return code, raw, err
-}
-
-// decodeJwtTimes extracts the "exp" and "iat" claims from a JWT without verifying
-// the signature. iat is 0 when the claim is absent; callers must cope.
-func decodeJwtTimes(token string) (int64, int64, error) {
-	parts := strings.SplitN(token, ".", 3)
-	if len(parts) < 2 {
-		return 0, 0, fmt.Errorf("invalid JWT token format")
-	}
-	// Base64url decode the payload (2nd part)
-	payload := parts[1]
-	// Add padding if needed
-	switch len(payload) % 4 {
-	case 2:
-		payload += "=="
-	case 3:
-		payload += "="
-	}
-	decoded, err := base64.URLEncoding.DecodeString(payload)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to decode JWT payload: %w", err)
-	}
-	var claims map[string]interface{}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return 0, 0, fmt.Errorf("failed to parse JWT claims: %w", err)
-	}
-	exp, ok := claims["exp"].(float64)
-	if !ok {
-		return 0, 0, fmt.Errorf("JWT token missing exp claim")
-	}
-	iat, _ := claims["iat"].(float64)
-	return int64(exp), int64(iat), nil
-}
-
-// refreshMargin returns how long before expiry to renew: a fraction of the token's
-// own lifetime, floored at tokenRefreshOffsetSeconds.
-func refreshMargin(token string, exp, iat int64) time.Duration {
-	lifetime := time.Duration(exp-iat) * time.Second
-	if iat <= 0 || lifetime <= 0 {
-		lifetime = time.Until(time.Unix(exp, 0)) // no usable iat
-	}
-	margin := max(time.Duration(float64(lifetime)*(1-tokenRefreshLifetimeRatio)),
-		tokenRefreshOffsetSeconds*time.Second)
-
-	// Jitter derived from the token: stable across polls, distinct per client.
-	h := fnv.New32a()
-	h.Write([]byte(token))
-	spread := float64(margin) * tokenRefreshJitterRatio
-	margin += time.Duration((float64(h.Sum32()%2001)/1000.0 - 1.0) * spread)
-
-	// Clamp last: the 30s floor (and its jitter) must never exceed the token's own life,
-	// or every renewal would land past the refresh point and the loop would spin at ~1Hz.
-	if lifetime > 0 && margin > lifetime/2 {
-		margin = lifetime / 2
-	}
-	return margin
-}
-
-// refreshPlan reports how long to sleep and whether a renewal is due afterwards.
-// Sleep is capped at the poll interval so a token replaced elsewhere is noticed.
-func (r *AppMeshClient) refreshPlan() (time.Duration, bool) {
-	const poll = tokenRefreshIntervalSeconds * time.Second
-
-	token := r.req.getAccessToken()
-	if token == "" {
-		// A held refresh token can still mint a new access token, so an access token lost
-		// to an expired cookie is recoverable — but only if we actually try. With neither
-		// credential there is nothing to renew, so just idle.
-		if r.refreshToken.Load() != "" {
-			return time.Second, true
-		}
-		return poll, false
-	}
-	exp, iat, err := decodeJwtTimes(token)
-	if err != nil {
-		return poll, true // unreadable lifetime: fall back to the fixed cadence
-	}
-
-	switch wait := time.Until(time.Unix(exp, 0).Add(-refreshMargin(token, exp, iat))); {
-	case wait <= 0:
-		return time.Second, true // at or past the refresh point
-	case wait > poll:
-		return poll, false // not due; wake only to re-evaluate
-	default:
-		return wait, true
-	}
-}
-
-// refreshRetryDelay is the bounded backoff for the nth renewal failure (n >= 1).
-func refreshRetryDelay(failures int) time.Duration {
-	secs := min(tokenRefreshRetryBaseSeconds<<min(max(failures-1, 0), 16), tokenRefreshRetryMaxSeconds)
-	return time.Duration(secs) * time.Second
-}
-
-// StartTokenRefresh starts background auto-refresh when AutoRefreshToken is enabled.
-// Renews once the token has consumed tokenRefreshLifetimeRatio of its lifetime; failed
-// renewals retry with bounded backoff. Concurrent calls replace the existing goroutine.
-func (r *AppMeshClient) StartTokenRefresh() {
-	if !r.autoRefreshToken {
-		return
-	}
-	r.refreshMu.Lock()
-	if r.refreshStop != nil {
-		close(r.refreshStop)
-	}
-	stop := make(chan struct{})
-	r.refreshStop = stop
-	r.refreshMu.Unlock()
-
-	go func() {
-		failures := 0
-		for {
-			delay, due := r.refreshPlan()
-			if failures > 0 {
-				delay, due = refreshRetryDelay(failures), true // retry, not the stale plan
-			}
-			select {
-			case <-stop:
-				return
-			case <-time.After(delay):
-			}
-			if !due {
-				continue
-			}
-			if _, err := r.RenewToken(); err != nil {
-				failures++
-				// Log sparsely: a daemon outage must not flood at the backoff rate.
-				if failures == 1 || failures%tokenRefreshLogEvery == 0 {
-					logf("Auto-refresh: token renewal failed (attempt %d): %v", failures, err)
-				}
-				continue
-			}
-			if failures > 0 {
-				logf("Auto-refresh: token renewal recovered after %d failure(s)", failures)
-			}
-			failures = 0
-		}
-	}()
-}
-
-// StopTokenRefresh stops the background token auto-refresh goroutine if one is running.
-func (r *AppMeshClient) StopTokenRefresh() {
-	r.refreshMu.Lock()
-	defer r.refreshMu.Unlock()
-	if r.refreshStop != nil {
-		close(r.refreshStop)
-		r.refreshStop = nil
-	}
 }

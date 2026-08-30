@@ -1,0 +1,19 @@
+---
+OIDC:
+  # Dex is the sole issuer trusted by App Mesh. External IdPs remain Dex connectors.
+  issuer: http://127.0.0.1:6062/dex
+
+  # Network address this engine node uses to reach Dex discovery/JWKS. It may differ
+  # from the canonical issuer in container, cluster, or hairpin deployments.
+  # Discovery and token `iss` must still equal `issuer` exactly.
+  dex_access_url: http://127.0.0.1:6062/dex
+  dex_tls_verify: true
+  dex_ca_path: ""
+
+  # RFC 9728 protected-resource identifier and Dex dynamic audience target.
+  resource_url: https://127.0.0.1:6060/appmesh
+  resource_audience: appmesh-api
+  public_client_id: appmesh-cli
+
+  scopes: [openid, profile, email, groups, offline_access]
+  allowed_algorithms: [RS256]

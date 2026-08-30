@@ -62,8 +62,9 @@ checkout
 ## Run it
 
 The engine is driven through the `run_task` Task API (the `appm` CLI and SDKs wrap this).
-Every call carries the **caller's JWT**; the engine authenticates it, enforces per-workflow
-ownership, and runs the steps **as the caller** (recorded as `actor`).
+Every call carries the caller's **Dex access token**. The Engine validates it and resolves
+an immutable Principal ID; the workflow engine enforces ownership and runs manual steps as
+that Principal. The Principal ID, not a username, is recorded as `actor`.
 
 ### Via the CLI
 
@@ -79,9 +80,10 @@ appm workflow logs -w spec-pipeline-demo <run_id>           # flow log
 
 ```python
 import json
+import os
 from appmesh import AppMeshClient
-c = AppMeshClient(base_url="https://127.0.0.1:6060", ssl_verify=False); c.login("admin", "***")
-tok = c._get_access_token()
+tok = os.environ["APPMESH_BEARER_TOKEN"]
+c = AppMeshClient(base_url="https://127.0.0.1:6060", bearer_token=tok, ssl_verify=False)
 def call(action, **kw):
     return json.loads(c.run_task("workflow", json.dumps({"action": action, "token": tok, **kw}), 90))
 
@@ -94,7 +96,7 @@ print(call("run_detail", workflow="spec-pipeline-demo", run_id=rid)["data"]["sta
 
 Default (all reviews approve):
 ```
-FINAL: success   (actor=admin)
+FINAL: success   (actor=<immutable-principal-id>)
   rework_spec   skipped         # failure-path not taken
   implement     success         # step log shows "attempt 2"  -> retry fired
   ... all other jobs success
@@ -116,25 +118,26 @@ FINAL: failure
    command bodies.)
 2. **Secrets**: put `ANTHROPIC_API_KEY` etc. on the workflow App's `sec_env` (encrypted at
    rest; surfaced to steps as env vars). Never inline keys in the YAML.
-3. **Tenant permissions**: a workflow runs steps as the triggering caller, so that user needs
+3. **Tenant permissions**: a manual workflow runs steps as the triggering Principal, so it needs
    the permissions the engine uses per step:
    `app-run-task, app-run-async, app-run-sync, app-subscribe, app-output-view, app-delete`
    (plus `label-view` if you use node selectors). Missing `app-subscribe` is the classic
    "every command step fails to start" symptom.
-4. **Ownership/roles**: the registrant owns the workflow; only the owner or a workflow admin
-   (`APPMESH_WORKFLOW_ADMINS`) may run/manage it. Each run is isolated and audited (`actor`).
+4. **Ownership/roles**: the registrant's immutable Principal ID owns the workflow; only the
+   owner or a Principal with `workflow-admin` may run/manage it. Registering an automatic
+   trigger also requires `workflow-admin`. Each run is isolated and audited (`actor`).
 
 ## Caveats (by design)
 
 - **Acyclic DAG** — there is no literal review↔fix loop. Bounded iteration is `retry`
   (single step) or **re-trigger** the workflow (`rerun`); a true multi-round loop must run
   *inside* a step's agent.
-- **Long runs vs token validity** — steps run with the caller's token; a run that outlives the
-  token will fail closed mid-flight. Trigger with a token whose lifetime covers the run, and
-  use a non-renewing (one-shot) token so a session refresh doesn't revoke it mid-run.
-- **Automatic (cron/event) triggers** have no caller identity — the workflow must declare an
-  `execution_identity` (see [Workflow.md](Workflow.md)) or the run fails closed; the engine's
-  own identity is never used to run steps (ADR 0004).
+- **Long manual runs vs token validity** — manual steps use the caller's current Dex bearer;
+  a run that outlives it fails closed. Use the standard Dex refresh/login flow before
+  starting a run; the workflow engine never persists a human refresh token.
+- **Automatic and recovered runs** use a short-lived, local Engine capability bound to the
+  workflow owner and current run. Engine re-checks that owner's active RBAC on every step
+  operation; the workflow service stores no Dex client secret or refresh token.
 - Placeholder commands (`claude`/`openspec`/`gh`/`./scripts/*`) must exist in the daemon's
   environment; otherwise those steps fail at the command (a useful orchestration smoke test).
 

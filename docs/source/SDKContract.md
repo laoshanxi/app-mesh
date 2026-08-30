@@ -128,22 +128,61 @@ round-trip as exit codes, not be conflated with error sentinels (S6).
   gone) and never after a disconnect (the daemon is unreachable and may still
   be running the process) (S8).
 
-## Auth Token Synchronization (TCP/WSS)
+## Dex bearer authentication
 
-The HTTP transport relies on `Set-Cookie` and the HTTP library's cookie jar.
-TCP/WSS transports must extract the new `access_token` from auth endpoint JSON
-bodies themselves — only on HTTP 200, and only for these paths:
+App Mesh clients send only Dex access tokens as RFC 6750 bearer values. They do
+not call Engine login, refresh, logout, password, TOTP, user, or group endpoints,
+and they do not synchronize tokens from response bodies or cookies.
 
-| Path | When to apply the body's `access_token` |
-|---|---|
-| `/appmesh/login`, `/appmesh/auth`, `/appmesh/totp/validate` | only when the **request** carried `X-Set-Cookie: true` |
-| `/appmesh/token/renew`, `/appmesh/totp/setup` | always (client already has an active session) |
-| `/appmesh/self/logoff` | clear the cached token |
+The Python and Rust SDKs implement the full contract below. This is a 3.0
+breaking change: Engine-owned password/TOTP login, cookies, local refresh, and
+Keycloak-specific OAuth behavior are removed rather than silently retargeted to
+Dex.
 
-This list is duplicated in Python (`transport_mixin.py`), Go (`requester.go`),
-Rust (`requester.rs`), and JavaScript (`appmesh_tcp.js`); keep all of them —
-and this table — in sync.
+- `AppMeshClient(base_url=..., bearer_token=...)` selects the Engine target and
+  attaches a caller-supplied Dex access token;
+- `AppMeshClient(..., token_provider=...)` asks a `TokenProvider` for a usable access
+  token before a request and retries one replayable request after a 401 when that
+  provider can refresh; 403 is never refreshed or retried;
+- `StaticAccessTokenProvider` is in-memory and never refreshes. `DexOAuthClient` is
+  the refresh-capable provider for authorization code + PKCE, device authorization,
+  refresh, and best-effort revocation. Dex 2.45.1 does not implement the OAuth
+  client-credentials grant, so SDKs do not expose or emulate it;
+- `DexOAuthClient.from_appmesh(..., dex_access_url=...)` selects an independent
+  Dex network route. Discovery issuer equality is exact even when endpoint routing
+  is rewritten, and only back-channel requests use `dex_access_url`: browser
+  authorization and device-verification URLs remain the canonical public URLs
+  published by Dex;
+- `complete_authorization_callback` validates an in-memory, single-use state before
+  exchanging a code. The SDK consumes access tokens, not ID-token identity claims;
+  nonce-bearing requests require a caller-supplied standards-compliant ID-token
+  validator;
+- token responses live in memory only unless the application explicitly stores
+  them; refresh and revocation go directly to Dex, and refresh tokens are never
+  installed in the Engine client or sent to Engine;
+- CLI/SDK clients reject Engine/proxy cookies at the HTTP session policy layer and
+  therefore never retain or replay them.
 
+TCP and WSS send the same bearer header as HTTP. WSS also supplies it on the HTTP
+upgrade so Engine can pin the authenticated Principal to the session. A refreshed
+token is used after reconnect; framed requests are authorized from the pinned
+Principal and cannot switch identity. Transport responses never update the token
+implicitly.
+
+The Rust SDK exposes `DexOAuthConfig`, `DexOAuthClient`, `TokenSet`,
+`TokenProvider`, and `StaticAccessTokenProvider`. It validates authorization-flow
+ID tokens with the discovered RS256 JWKS (`alg`, `kid`, signature, issuer,
+audience/authorized party, expiry, not-before, and nonce). An application may
+register a token-update callback to persist rotated token sets; the SDK itself
+does not select storage. `AppMeshClient::set_token_provider` consults the provider
+before requests and retries one safe replayable request after a 401.
+
+Go, Java, JavaScript, and C++ are deliberately bearer-only clients: they expose
+an in-memory token setter/clearer and do not implement a partial OAuth client.
+Applications that need interactive or refresh-capable login obtain tokens from
+Dex through a standards-based OAuth library and supply the access token to the
+SDK. Removed credential methods fail at compile/import time rather than treating
+old Engine credentials as Dex credentials.
 ## Worker Task Loop (`fetch_task` / `send_task_result`)
 
 The worker half of the client/worker model: an App Mesh-managed application
@@ -176,11 +215,15 @@ The two task-loop methods:
 
 | Operation | Endpoint |
 |---|---|
-| Fetch task | `GET /appmesh/app/{app_name}/task?process_key=...` |
-| Return result | `PUT /appmesh/app/{app_name}/task?process_key=...` |
+| Fetch task | `GET /appmesh/app/{app_name}/task` |
+| Return result | `PUT /appmesh/app/{app_name}/task` |
 
 `APP_MESH_PROCESS_KEY` and `APP_MESH_APPLICATION_NAME` are injected by the
-daemon; a missing variable is an immediate error, never retried.
+daemon; a missing variable is an immediate error, never retried. Worker SDKs
+send the process proof only in `X-AppMesh-Process-Key`, never in a URL or query
+string. Engine accepts it only on a direct loopback/private transport, and a
+bearer-less WebSocket session is restricted to GET/PUT task RPC for the same
+managed application process.
 
 ### Retry policy
 
@@ -235,7 +278,6 @@ one SDK's demuxer/wait path, add or check the matching scenario in the others.
 | S6 | Process killed by signal (negative exit code) | negative code returned as the exit code, not treated as an error/sentinel |
 | S7 | Response arrives immediately after send | not dropped (pending waiter registered before send) |
 | S8 | App removed while waiting | app-removed signaling; no `delete_app` attempt |
-| S9 | Token renew while other demuxer traffic is in flight | renew reply matched by UUID and applied; unrelated responses not cross-wired |
 
 ### Coverage status
 

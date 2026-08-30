@@ -12,19 +12,10 @@
       "pattern": "^[a-zA-Z0-9_-]+$",
       "description": "Unique workflow identifier."
     },
-    "owner": {
-      "type": "string",
-      "description": "Ignored by the engine (a YAML owner would be spoofable). Ownership is the authenticated registrant."
-    },
     "permission": {
       "type": "integer",
       "minimum": 0,
       "description": "Copied to the workflow's App permission; not consulted by workflow authorization (owner/admin only)."
-    },
-    "execution_identity": {
-      "type": "string",
-      "pattern": "^[a-zA-Z0-9_.@-]+$",
-      "description": "App Mesh user whose credentials the engine uses to run steps. The engine must hold this identity's credential (APPMESH_EXEC_IDENTITIES) and the registrant may bind only itself or (as a workflow admin) any configured identity. When omitted, manual runs use the caller's identity and automatic (event) triggers fail closed."
     },
     "on": {
       "$ref": "#/$defs/TriggerConfig"
@@ -324,7 +315,7 @@
         "forward_token": {
           "type": "boolean",
           "default": false,
-          "description": "Inject the run's caller JWT into the JSON payload's \"token\" field before sending. For identity-forwarding targets (e.g. llm-agent) that read the caller token from the payload body. No-op for non-object payloads, when an author-set \"token\" is present, or for automatic/recovered runs (no caller token)."
+          "description": "Inject a manual run's Engine-validated caller bearer into the JSON payload's \"token\" field before sending. Automatic/recovered runs have no caller bearer, and internal capabilities are never forwarded. No-op for non-object payloads or when an author-set \"token\" is present."
         }
       }
     },

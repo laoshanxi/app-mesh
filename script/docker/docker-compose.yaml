@@ -1,39 +1,18 @@
 name: appmesh_cluster
 services:
-  consul:
-    hostname: consul
-    container_name: consul
-    image: hashicorp/consul
-    restart: always # https://www.consul.io/docs/agent/options
-    command: consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 --bind=0.0.0.0 -bootstrap-expect=1 -ui
-    volumes:
-      - /etc/hosts:/etc/hosts:ro
-    ports: # https://www.consul.io/docs/install/ports
-      - "8500:8500"
-      - "8600:8600"
-      - "8301:8301"
-      - "8302:8302"
-      - "8300:8300"
-
   appmesh_master:
     hostname: appmesh_master
     container_name: appmesh_master
     restart: always
     image: laoshanxi/appmesh
     environment:
-      - APPMESH_Consul_Url=http://consul:8500
-      - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
-      - APPMESH_REST_JWT_JWTSalt=MY_CLUSTER_SALT
       - APPMESH_REST_PrometheusExporterListenPort=6061
-      - APPMESH_Consul_IsMainNode=true
     ports:
       - "443:443" # for appmesh_ui
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    depends_on:
-      - consul
     logging:
       driver: "json-file"
       options:
@@ -54,19 +33,11 @@ services:
     image: laoshanxi/appmesh
     mem_limit: 4G
     environment:
-      - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
-      - APPMESH_REST_JWT_JWTSalt=MY_CLUSTER_SALT
       - APPMESH_REST_PrometheusExporterListenPort=6061
-      - APPMESH_Consul_Url=http://consul:8500
-      - APPMESH_Consul_IsMainNode=false
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    links:
-      - consul
-    depends_on:
-      - consul
     logging:
       driver: "json-file"
       options:
@@ -80,19 +51,11 @@ services:
     image: laoshanxi/appmesh
     mem_limit: 3G
     environment:
-      - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
-      - APPMESH_REST_JWT_JWTSalt=MY_CLUSTER_SALT
       - APPMESH_REST_PrometheusExporterListenPort=6061
-      - APPMESH_Consul_Url=http://consul:8500
-      - APPMESH_Consul_IsMainNode=false
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    links:
-      - consul
-    depends_on:
-      - consul
     logging:
       driver: "json-file"
       options:
@@ -106,19 +69,11 @@ services:
     image: laoshanxi/appmesh
     mem_limit: 3G
     environment:
-      - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
-      - APPMESH_REST_JWT_JWTSalt=MY_CLUSTER_SALT
       - APPMESH_REST_PrometheusExporterListenPort=6061
-      - APPMESH_Consul_Url=http://consul:8500
-      - APPMESH_Consul_IsMainNode=false
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    links:
-      - consul
-    depends_on:
-      - consul
     logging:
       driver: "json-file"
       options:

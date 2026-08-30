@@ -15,6 +15,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/expression"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/models"
+	"github.com/laoshanxi/app-mesh/src/workflow/internal/tlsconf"
 	"github.com/rs/xid"
 )
 
@@ -24,9 +25,9 @@ const (
 	defaultMaxTime   = 172800
 )
 
-// StepAppPrefix tags daemon Apps spawned for command steps. The trigger service
-// uses it to sweep orphans on startup; the executor uses it to decide whether
-// to DeleteApp at step end.
+// StepAppPrefix tags daemon Apps spawned for command steps. Workflow startup
+// reconciliation uses this prefix together with Engine-auditable metadata; the
+// executor uses it to decide whether to DeleteApp at step end.
 const StepAppPrefix = "wf-cmd-"
 
 type StepExecutor struct {
@@ -34,7 +35,8 @@ type StepExecutor struct {
 	Ctx            *expression.Context
 	JobName        string
 	Depth          int
-	CallerToken    string   // execution-identity token (caller for manual runs, else execution_identity; empty for recovered); injected into forward_token payloads
+	CallerToken    string   // human caller Dex bearer only; internal capabilities are never injected into payloads
+	ProcessUUID    string   // current managed Workflow process; used only to tag local temporary Apps
 	ClusterNodes   []string // known cluster node addresses for label-based routing
 	TargetHost     string   // resolved target host for current job (set by engine per-job)
 	ServerURI      string   // base server URI for creating forwarding clients
@@ -80,12 +82,20 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secEnv map[string]str
 	}
 	appName := StepAppPrefix + xid.New().String()
 	command := expression.SubstituteForJob(step.Command, e.Ctx, e.JobName)
+	metadataBytes, _ := json.Marshal(map[string]string{
+		"type":         "workflow-step",
+		"workflow_id":  e.Ctx.WfName,
+		"run_id":       e.Ctx.WfRunID,
+		"process_uuid": e.ProcessUUID,
+	})
+	metadata := json.RawMessage(metadataBytes)
 	app := appmesh.Application{
 		Name:      appName,
 		Command:   &command,
 		ShellMode: &shell,
 		Env:       envPtr(env),
 		SecEnv:    envPtr(secEnv),
+		Metadata:  &metadata,
 	}
 	if step.Workdir != "" {
 		workdir := expression.SubstituteForJob(step.Workdir, e.Ctx, e.JobName)
@@ -193,7 +203,7 @@ func appLevelError(resp string) (string, bool) {
 	return env.Message, true
 }
 
-// injectToken adds the caller JWT as the "token" field of a JSON-object payload, for
+// injectToken adds the run's Dex bearer as the "token" field of a JSON-object payload, for
 // message steps with forward_token. It is a no-op when the payload is not a JSON object
 // or already carries a "token" (an author-set value wins). Field order is not preserved
 // (irrelevant for JSON). The caller guarantees token != "".
@@ -369,9 +379,8 @@ func (e *StepExecutor) cancelContext() context.Context {
 // clientForTarget returns the TCP client for the target node.
 // For local execution returns the shared client. For remote execution,
 // creates a forwarding client once per job and caches it (closed via Close()).
-// Pushes the latest local token on every call so the remote client doesn't
-// hold an obsolete JWT after the local client's auto-refresh rotates it
-// (the daemon blacklists rotated tokens).
+// Pushes the latest execution credential on every call so a caller bearer or
+// renewed local run capability is reflected by an already-open client.
 func (e *StepExecutor) clientForTarget() (*appmesh.AppMeshClient, error) {
 	if e.TargetHost == "" {
 		return e.Client, nil
@@ -381,12 +390,13 @@ func (e *StepExecutor) clientForTarget() (*appmesh.AppMeshClient, error) {
 		e.remoteClient.SetToken(token)
 		return e.remoteClient.AppMeshClient, nil
 	}
-	c, err := appmesh.NewTCPClient(appmesh.Option{
-		AppMeshUri:         e.ServerURI,
-		ForwardTo:          e.TargetHost,
-		JwtToken:           token,
-		InsecureSkipVerify: true,
-	})
+	option := appmesh.Option{
+		AppMeshUri: e.ServerURI,
+		ForwardTo:  e.TargetHost,
+		JwtToken:   token,
+	}
+	tlsconf.Apply(&option)
+	c, err := appmesh.NewTCPClient(option)
 	if err != nil {
 		return nil, fmt.Errorf("connect to remote node %s: %w", e.TargetHost, err)
 	}

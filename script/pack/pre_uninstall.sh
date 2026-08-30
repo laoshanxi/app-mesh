@@ -2,10 +2,10 @@
 
 ################################################################################
 # RPM/DEB/PKG Pre-Uninstallation Script
-# Purpose: Prepare system for package removal by stopping applications and
-# preserving their configurations.
+# Purpose: Stop the App Mesh service before package files are removed.
+# Service deregistration and file cleanup belong to post_uninstall.sh.
 # Usage: Automatically executed before package uninstallation.
-# Supports: Linux and macOS
+# Supports: Linux (systemd, init.d) and macOS (launchd)
 ################################################################################
 
 set +e # Allow script to continue on errors
@@ -14,7 +14,6 @@ set -u # Exit on undefined variables
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 info() { log "INFO" "$@"; }
 error() { log "ERROR" "$@"; }
-die() { error "$@" && exit 1; }
 
 detect_os() {
     case "$(uname -s)" in
@@ -24,73 +23,25 @@ detect_os() {
     esac
 }
 
-find_install_dir() {
-    local default_install_dir="/opt/appmesh"
-    local os_type
-    os_type=$(detect_os)
-    local install_path=""
-
-    if [[ "$os_type" == "macos" ]]; then
-        local launchd_file="/Library/LaunchDaemons/com.laoshanxi.appmesh.plist"
-        if [[ -f "$launchd_file" ]]; then
-            install_path=$(plutil -extract ProgramArguments.0 raw "$launchd_file" 2>/dev/null | xargs dirname | xargs dirname 2>/dev/null || echo "")
-            if [[ -n "$install_path" && -d "$install_path" ]]; then
-                echo "$install_path"
-                return
-            fi
-        fi
-    else
-        local systemd_file="/etc/systemd/system/appmesh.service"
-        if [[ -f "$systemd_file" ]]; then
-            install_path=$(grep "^WorkingDirectory=" "$systemd_file" | cut -d'=' -f2 | tr -d ' ')
-            if [[ -n "$install_path" && -d "$install_path" ]]; then
-                echo "$install_path"
-                return
-            fi
-        fi
-    fi
-
-    echo "$default_install_dir"
-}
-
-setup_platform_vars() {
-    readonly INSTALL_DIR=$(find_install_dir)
-    readonly APPM_BIN="${INSTALL_DIR}/bin/appm"
-    readonly APPS_DIR="${INSTALL_DIR}/work/apps"
-    readonly BACKUP_DIR="${INSTALL_DIR}/work/.apps_backup"
-}
-
-backup_configurations() {
-    if [[ -d "$APPS_DIR" ]] && [[ -n "$(ls -A "$APPS_DIR" 2>/dev/null)" ]]; then
-        info "Creating backup of application configurations"
-        mkdir -p "$(dirname "$BACKUP_DIR")"
-        local os_type
-        os_type=$(detect_os)
-        if [[ "$os_type" == "linux" ]]; then
-            cp -rf "$APPS_DIR" "$BACKUP_DIR"
-        else
-            cp -R "$APPS_DIR" "$BACKUP_DIR"
-        fi
+stop_systemd_service() {
+    if [[ -f /etc/systemd/system/appmesh.service ]]; then
+        info "Stopping systemd service"
+        systemctl stop appmesh 2>/dev/null || error "Failed to stop appmesh service"
     fi
 }
 
-stop_applications() {
-    info "Stopping all active applications"
-
-    if [[ -n "${SUDO_USER:-}" ]]; then
-        sudo -u "$SUDO_USER" "$APPM_BIN" disable --all
-    else
-        "$APPM_BIN" disable --all
+stop_initd_service() {
+    if [[ -f /etc/init.d/appmesh ]]; then
+        info "Stopping init.d service"
+        service appmesh stop 2>/dev/null || error "Failed to stop appmesh service"
     fi
 }
 
-restore_configurations() {
-    if [[ -d "$BACKUP_DIR" ]] && [[ -n "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]]; then
-        info "Restoring application configurations"
-        mkdir -p "$APPS_DIR"
-        rm -rf "${APPS_DIR:?}"/*
-        mv -f "${BACKUP_DIR}"/* "${APPS_DIR}/"
-        rm -rf "$BACKUP_DIR"
+stop_launchd_service() {
+    local launchd_file="/Library/LaunchDaemons/com.laoshanxi.appmesh.plist"
+    if [[ -f "$launchd_file" ]]; then
+        info "Stopping launchd service"
+        launchctl unload "$launchd_file" 2>/dev/null || error "Failed to unload com.laoshanxi.appmesh service"
     fi
 }
 
@@ -98,12 +49,20 @@ restore_configurations() {
 # Main Function
 ################################################################################
 main() {
-    info "Starting pre-uninstallation preparation"
+    info "Stopping App Mesh service before uninstallation"
 
-    setup_platform_vars
-    backup_configurations
-    stop_applications
-    restore_configurations
+    case "$(detect_os)" in
+    macos)
+        stop_launchd_service
+        ;;
+    linux)
+        stop_systemd_service
+        stop_initd_service
+        ;;
+    *)
+        error "Unsupported operating system, skipping service stop"
+        ;;
+    esac
 
     info "Pre-uninstallation preparation completed"
 }

@@ -1,8 +1,9 @@
 // src/daemon/rest/RestHandler.cpp
 #include <algorithm>
-#include <cerrno>
+#include <cctype>
 #include <chrono>
-#include <cstdlib>
+#include <cstdio>
+#include <set>
 
 #include <boost/algorithm/string_regex.hpp>
 
@@ -14,10 +15,9 @@
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
-#include "../security/JwtToken.h"
-#include "../security/SecurityKeycloak.h"
-#include "../security/TokenBlacklist.h"
-#include "../security/User.h"
+#include "../security/InternalCapability.h"
+#include "../security/SecretProtector.h"
+#include "../security/Security.h"
 #if defined(HAVE_UWEBSOCKETS)
 #include "uwebsockets/ReplyContext.h"
 #else
@@ -33,15 +33,59 @@
 constexpr auto CONTENT_TYPE_HTML = "text/html; charset=utf-8";
 constexpr auto CONTENT_TYPE_YAML = "application/x-yaml";
 
+namespace
+{
+	constexpr auto FIRST_ADMIN_ENROLLMENT_HEADER = "X-AppMesh-First-Admin-Enrollment";
+
+	// uWS renders IPv6 without '::' compression and a dual-stack 127.0.0.1 peer
+	// as v4-mapped "0000:...:ffff:7fxx:xxxx", so parse the 8-group form explicitly.
+	bool isUwsLoopbackGroups(const std::string &peer)
+	{
+		if (peer.empty() || peer.size() >= 64 || peer.find("::") != std::string::npos)
+			return false;
+		unsigned int g[8];
+		if (sscanf(peer.c_str(), "%x:%x:%x:%x:%x:%x:%x:%x",
+				&g[0], &g[1], &g[2], &g[3], &g[4], &g[5], &g[6], &g[7]) != 8)
+			return false;
+		const bool leadingZero = !g[0] && !g[1] && !g[2] && !g[3] && !g[4];
+		return (leadingZero && !g[5] && !g[6] && g[7] == 1) ||			 // ::1
+			   (leadingZero && g[5] == 0xffff && (g[6] >> 8) == 0x7f); // ::ffff:127.x.x.x
+	}
+
+	bool isLoopbackPeer(std::string peer)
+	{
+		peer = Utility::stdStringTrim(peer);
+		if (peer.empty())
+			return false;
+
+		// Agent uses net/http RemoteAddr (host:port); direct listeners record only the
+		// socket address. Never consult Forwarded or X-Forwarded-* for this decision.
+		if (peer.front() == '[')
+		{
+			const auto end = peer.find(']');
+			if (end == std::string::npos)
+				return false;
+			const auto suffix = peer.substr(end + 1);
+			if (!suffix.empty() && suffix.front() != ':')
+				return false;
+			peer = peer.substr(1, end - 1);
+		}
+		else if (peer.rfind("127.0.0.1:", 0) == 0)
+		{
+			peer = "127.0.0.1";
+		}
+
+		return peer == "127.0.0.1" || peer == "::1" || isUwsLoopbackGroups(peer);
+	}
+}
+
 // 1. Authentication
-constexpr auto REST_PATH_LOGIN = "/appmesh/login";
-constexpr auto REST_PATH_LOG_OFF = "/appmesh/self/logoff";
-constexpr auto REST_PATH_AUTH = "/appmesh/auth";
-constexpr auto REST_PATH_TOKEN_RENEW = "/appmesh/token/renew";
-constexpr auto REST_PATH_SEC_TOTP_SECRET = "/appmesh/totp/secret";
-constexpr auto REST_PATH_SEC_TOTP_SETUP = "/appmesh/totp/setup";
-constexpr auto REST_PATH_SEC_TOTP_VALIDATE = "/appmesh/totp/validate";
-constexpr auto REST_PATH_SEC_TOTP_DISABLE = R"(/appmesh/totp/([^/\*]+)/disable)";
+constexpr auto REST_PATH_AUTH_CONFIG = "/appmesh/auth/config";
+constexpr auto REST_PATH_PROTECTED_RESOURCE_METADATA = "/.well-known/oauth-protected-resource";
+constexpr auto REST_PATH_INTERNAL_WORKFLOW_CAPABILITY = "/appmesh/internal/workflow/capability";
+constexpr auto REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS = "/appmesh/internal/workflow/cleanup-orphans";
+constexpr auto REST_PATH_INTERNAL_WORKFLOW_REGISTRY = "/appmesh/internal/workflow/registry";
+constexpr auto REST_PATH_ENROLL_FIRST_ADMIN = "/appmesh/auth/enroll-first-admin";
 
 // 2. View Application
 constexpr auto REST_PATH_APP_VIEW = R"(/appmesh/app/([^/\*]+))";
@@ -77,19 +121,14 @@ constexpr auto REST_PATH_CONFIG_VIEW = "/appmesh/config";
 constexpr auto REST_PATH_CONFIG_SET = "/appmesh/config";
 
 // 9. Security
-constexpr auto REST_PATH_SEC_USER_CHANGE_PWD = R"(/appmesh/user/([^/\*]+)/passwd)";
-constexpr auto REST_PATH_SEC_USER_LOCK = R"(/appmesh/user/([^/\*]+)/lock)";
-constexpr auto REST_PATH_SEC_USER_UNLOCK = R"(/appmesh/user/([^/\*]+)/unlock)";
-constexpr auto REST_PATH_SEC_USER_ADD = R"(/appmesh/user/([^/\*]+))";
-constexpr auto REST_PATH_SEC_USER_VIEW = "/appmesh/user/self";
-constexpr auto REST_PATH_SEC_USER_DELETE = R"(/appmesh/user/([^/\*]+))";
-constexpr auto REST_PATH_SEC_USER_VIEW_ALL = "/appmesh/users";
+constexpr auto REST_PATH_PRINCIPAL_SELF = "/appmesh/principal/self";
 constexpr auto REST_PATH_SEC_ROLE_VIEW_ALL = "/appmesh/roles";
 constexpr auto REST_PATH_SEC_ROLE_UPDATE = R"(/appmesh/role/([^/\*]+))";
 constexpr auto REST_PATH_SEC_ROLE_DELETE = R"(/appmesh/role/([^/\*]+))";
-constexpr auto REST_PATH_SEC_USER_PERM_VIEW = "/appmesh/user/permissions";
+constexpr auto REST_PATH_PRINCIPAL_PERMISSIONS = "/appmesh/principal/self/permissions";
 constexpr auto REST_PATH_SEC_PERM_VIEW_ALL = "/appmesh/permissions";
-constexpr auto REST_PATH_SEC_USER_GROUPS_VIEW = "/appmesh/user/groups";
+constexpr auto REST_PATH_PRINCIPALS = "/appmesh/principals";
+constexpr auto REST_PATH_PRINCIPAL = R"(/appmesh/principal/([^/\*]+))";
 
 // 10. resources
 constexpr auto REST_PATH_PROMETHEUS_METRICS = "/appmesh/metrics";
@@ -98,22 +137,6 @@ constexpr auto REST_PATH_RESOURCE_VIEW = "/appmesh/resources";
 // 11. Subscribe
 constexpr auto REST_PATH_APP_SUBSCRIBE = R"(/appmesh/app/([^/\*]+)/subscribe)";
 constexpr auto REST_PATH_APP_SUBSCRIBE_ALL = "/appmesh/subscribe";
-
-// Parse client-supplied token lifetime; robust to malformed input and capped at MAX to prevent
-// effectively non-expiring tokens. Empty/"0" => default.
-static int parseTokenTimeout(const std::string &raw)
-{
-	if (raw.empty() || raw == "0")
-		return DEFAULT_TOKEN_EXPIRE_SECONDS;
-
-	char *end = nullptr;
-	errno = 0;
-	const long long parsed = std::strtoll(raw.c_str(), &end, 10);
-	if (errno != 0 || end == raw.c_str() || *end != '\0' || parsed <= 0)
-		throw std::invalid_argument("Invalid token expire seconds");
-
-	return static_cast<int>(std::min<long long>(parsed, MAX_TOKEN_EXPIRE_SECONDS));
-}
 
 RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 {
@@ -124,14 +147,12 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 	bindRestMethod(web::http::methods::GET, "/", std::bind(&RestHandler::apiIndex, this, std::placeholders::_1));
 
 	// 1. Authentication
-	bindRestMethod(web::http::methods::POST, REST_PATH_LOGIN, std::bind(&RestHandler::apiUserLogin, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_LOG_OFF, std::bind(&RestHandler::apiUserLogoff, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_AUTH, std::bind(&RestHandler::apiUserAuth, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_TOKEN_RENEW, std::bind(&RestHandler::apiUserTokenRenew, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_TOTP_SECRET, std::bind(&RestHandler::apiUserTotpSecret, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_TOTP_SETUP, std::bind(&RestHandler::apiUserTotpSetup, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_TOTP_VALIDATE, std::bind(&RestHandler::apiUserTotpValidate, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_TOTP_DISABLE, std::bind(&RestHandler::apiUserTotpDisable, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_AUTH_CONFIG, std::bind(&RestHandler::apiAuthConfig, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PROTECTED_RESOURCE_METADATA, std::bind(&RestHandler::apiProtectedResourceMetadata, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CAPABILITY, std::bind(&RestHandler::apiWorkflowCapability, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS, std::bind(&RestHandler::apiWorkflowCleanupOrphans, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_INTERNAL_WORKFLOW_REGISTRY, std::bind(&RestHandler::apiWorkflowRegistry, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_ENROLL_FIRST_ADMIN, std::bind(&RestHandler::apiEnrollFirstAdmin, this, std::placeholders::_1));
 
 	// 2. View Application
 	bindRestMethod(web::http::methods::GET, REST_PATH_APP_VIEW, std::bind(&RestHandler::apiAppView, this, std::placeholders::_1));
@@ -170,19 +191,15 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 	bindRestMethod(web::http::methods::POST, REST_PATH_CONFIG_SET, std::bind(&RestHandler::apiBasicConfigSet, this, std::placeholders::_1));
 
 	// 9. Security
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_CHANGE_PWD, std::bind(&RestHandler::apiUserChangePwd, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_LOCK, std::bind(&RestHandler::apiUserLock, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_UNLOCK, std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::PUT, REST_PATH_SEC_USER_ADD, std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_VIEW, std::bind(&RestHandler::apiUserView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_USER_DELETE, std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_VIEW_ALL, std::bind(&RestHandler::apiUsersView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPAL_SELF, std::bind(&RestHandler::apiPrincipalSelf, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPALS, std::bind(&RestHandler::apiPrincipalsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_PRINCIPAL, std::bind(&RestHandler::apiPrincipalUpdate, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_PRINCIPAL, std::bind(&RestHandler::apiPrincipalDelete, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_ROLE_VIEW_ALL, std::bind(&RestHandler::apiRolesView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_ROLE_UPDATE, std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_ROLE_DELETE, std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_PERM_VIEW, std::bind(&RestHandler::apiUserPermissionsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPAL_PERMISSIONS, std::bind(&RestHandler::apiPrincipalPermissionsView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_PERM_VIEW_ALL, std::bind(&RestHandler::apiPermissionsView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_GROUPS_VIEW, std::bind(&RestHandler::apiUserGroupsView, this, std::placeholders::_1));
 
 	// 10. metrics
 	bindRestMethod(web::http::methods::GET, METRIC_PATH, std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
@@ -365,11 +382,11 @@ void RestHandler::apiIndex(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app, bool requestWrite)
 {
-	const auto tokenUser = getJwtUserName(message);
+	const auto tokenUser = permissionCheck(message, "");
 	const auto &appName = app->getName();
-	if (!Configuration::instance()->checkOwnerPermission(tokenUser, app->getOwner(), app->getOwnerPermission(), requestWrite))
+	if (!Configuration::instance()->checkOwnerPermission(tokenUser, app->getOwnerPrincipalId(), app->getOwnerPermission(), requestWrite))
 	{
-		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to <%s> app <%s>", tokenUser.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
+		throw AuthorizationException(Utility::stringFormat("Principal <%s> is not allowed to <%s> app <%s>", tokenUser.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
 	}
 	if (requestWrite && appName == SEPARATE_AGENT_APP_NAME)
 	{
@@ -531,11 +548,9 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 	}
 	else
 	{
-		// Establish a VERIFIED identity before the owner shortcut. getJwtUserName() only
-		// decodes the token and is forgeable; relying on it here would let a crafted token
-		// claim to be the app owner and skip the delete-permission check entirely.
+		// Establish a verified Dex principal before applying the owner shortcut.
 		const auto tokenUser = permissionCheck(message, "");
-		if (!(app->getOwner() && app->getOwner()->getName() == tokenUser))
+		if (app->getOwnerPrincipalId() != tokenUser)
 		{
 			// only check delete permission for none-self app
 			permissionCheck(message, PERMISSION_KEY_app_delete);
@@ -563,7 +578,7 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiFileDownload() ";
 
-	auto uname = permissionCheck(message, PERMISSION_KEY_file_download);
+	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
 		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
@@ -598,8 +613,7 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	}
 	else
 	{
-		// Download from WebSocket HTTP
-		headers[HTTP_HEADER_JWT_Authorization] = JwtToken::generate(uname, "", WEBSOCKET_FILE_AUDIENCE, WEBSOCKET_FILE_OPERATION_TIMEOUT);
+		// WebSocket clients reuse their original Dex bearer; never echo it in a response.
 	}
 	message->reply(web::http::status_codes::OK, body, headers);
 }
@@ -607,7 +621,7 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiFileUpload() ";
-	auto uname = permissionCheck(message, PERMISSION_KEY_file_upload);
+	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
 		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
@@ -638,8 +652,7 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 	}
 	else
 	{
-		// Upload from WebSocket HTTP
-		headers[HTTP_HEADER_JWT_Authorization] = JwtToken::generate(uname, "", WEBSOCKET_FILE_AUDIENCE, WEBSOCKET_FILE_OPERATION_TIMEOUT);
+		// WebSocket clients reuse their original Dex bearer; never echo it in a response.
 	}
 	message->reply(web::http::status_codes::OK, body, headers);
 	// set permission
@@ -693,12 +706,10 @@ void RestHandler::apiLabelDel(const std::shared_ptr<HttpRequest> &message)
 	message->reply(web::http::status_codes::OK, Utility::text2json("Label delete success"));
 }
 
-void RestHandler::apiUserPermissionsView(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiPrincipalPermissionsView(const std::shared_ptr<HttpRequest> &message)
 {
-	const auto result = JwtToken::verify(getJwtToken(message));
-	const auto &userName = std::get<0>(result);
-	const auto &groupName = std::get<1>(result);
-	const auto permissions = Security::instance()->getUserPermissions(userName, groupName);
+	const auto principalId = permissionCheck(message, "");
+	const auto permissions = Security::instance()->permissions(principalId);
 	auto json = nlohmann::json::array();
 	for (auto &perm : permissions)
 	{
@@ -729,185 +740,297 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 	message->reply(web::http::status_codes::OK, Configuration::instance()->AsJson());
 }
 
-void RestHandler::apiUserChangePwd(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiAuthConfig(const std::shared_ptr<HttpRequest> &message)
 {
-	const static char fname[] = "RestHandler::apiUserChangePwd() ";
+	message->reply(web::http::status_codes::OK, Security::instance()->authConfig());
+}
 
-	const auto path = (curlpp::unescape(message->m_relative_uri));
-	auto targetUser = regexSearch(path, REST_PATH_SEC_USER_CHANGE_PWD);
-	const auto tokenUser = getJwtUserName(message);
-	if (targetUser == "self")
+void RestHandler::apiProtectedResourceMetadata(const std::shared_ptr<HttpRequest> &message)
+{
+	message->reply(web::http::status_codes::OK, Security::instance()->protectedResourceMetadata());
+}
+
+void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &message)
+{
+	// This route is intentionally absent from OpenAPI.  tcpClientId and the peer
+	// address come from the accepted socket, not from request headers/body.
+	if (message->tcpClientId() <= 0 || !SocketServer::isLoopbackClient(message->tcpClientId()))
+		throw AuthorizationException("workflow capabilities are available only over local TCP");
+
+	const auto workflowProcess = Configuration::instance()->getApp("workflow", false);
+	if (!workflowProcess || !workflowProcess->isSystemProtected())
+		throw AuthorizationException("managed Workflow system application is unavailable");
+	const auto processKey = message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY);
+	const auto processUuid = workflowProcess->currentProcessUuidForKey(processKey);
+	if (processUuid.empty())
+		throw AuthorizationException("workflow process proof is invalid or superseded");
+
+	const auto request = message->extractJson();
+	if (!request.is_object())
+		throw std::invalid_argument("workflow capability request must be an object");
+	const auto audience = GET_JSON_STR_VALUE(request, "audience");
+	const auto ttlSeconds = request.contains("expires_in") ? request.at("expires_in").get<std::int64_t>() : 300;
+	if (ttlSeconds < 60 || ttlSeconds > 300)
+		throw std::invalid_argument("workflow capability expires_in must be between 60 and 300 seconds");
+	if (!request.contains("operations") || !request.at("operations").is_array())
+		throw std::invalid_argument("workflow capability operations must be an array");
+
+	std::set<std::string> operations;
+	for (const auto &entry : request.at("operations"))
 	{
-		targetUser = tokenUser;
+		if (!entry.is_string() || entry.get<std::string>().empty())
+			throw std::invalid_argument("workflow capability operation must be a non-empty string");
+		operations.insert(entry.get<std::string>());
 	}
-	// permission check
-	if (targetUser == tokenUser)
+	if (operations.empty())
+		throw std::invalid_argument("workflow capability requires at least one operation");
+
+	InternalCapability::Audience capabilityAudience;
+	std::string workflowId;
+	std::string runId;
+	std::string ownerPrincipalId;
+	std::set<std::string> allowedOperations;
+	if (audience == InternalCapability::audienceName(InternalCapability::Audience::WorkflowControl))
 	{
-		permissionCheck(message, PERMISSION_KEY_change_passwd_self);
+		capabilityAudience = InternalCapability::Audience::WorkflowControl;
+		workflowId = "__control__";
+		runId = processUuid;
+		ownerPrincipalId = "internal:workflow-controller:" + processUuid;
+		allowedOperations = {PERMISSION_KEY_view_all_app, PERMISSION_KEY_app_subscribe};
+	}
+	else if (audience == InternalCapability::audienceName(InternalCapability::Audience::WorkflowRun))
+	{
+		capabilityAudience = InternalCapability::Audience::WorkflowRun;
+		workflowId = GET_JSON_STR_VALUE(request, "workflow_id");
+		runId = GET_JSON_STR_VALUE(request, "run_id");
+		auto validIdentifier = [](const std::string &value)
+		{
+			return !value.empty() && value.size() <= 128 &&
+				std::all_of(value.begin(), value.end(), [](unsigned char c)
+							{ return std::isalnum(c) || c == '-' || c == '_'; });
+		};
+		if (!validIdentifier(workflowId) || !validIdentifier(runId))
+			throw std::invalid_argument("workflow_id and run_id must be safe identifiers");
+
+		const auto workflow = Configuration::instance()->getApp("workflow-" + workflowId, false);
+		if (!workflow)
+			throw NotFoundException("registered workflow was not found");
+		const auto definition = workflow->AsJson(false);
+		if (!definition.contains(JSON_KEY_APP_metadata) ||
+			!definition.at(JSON_KEY_APP_metadata).is_object() ||
+			GET_JSON_STR_VALUE(definition.at(JSON_KEY_APP_metadata), "type") != "workflow")
+			throw AuthorizationException("capability target is not an Engine-managed workflow definition");
+		ownerPrincipalId = workflow->getOwnerPrincipalId();
+		if (ownerPrincipalId.empty())
+			throw AuthorizationException("registered workflow has no owner Principal");
+		allowedOperations = {
+			PERMISSION_KEY_run_app_async,
+			PERMISSION_KEY_view_app,
+			PERMISSION_KEY_view_app_output,
+			PERMISSION_KEY_app_delete,
+			PERMISSION_KEY_run_task,
+			PERMISSION_KEY_app_subscribe,
+			PERMISSION_KEY_label_view,
+		};
+		const auto currentPermissions = Security::instance()->permissions(ownerPrincipalId);
+		for (const auto &operation : operations)
+			if (currentPermissions.count(operation) == 0)
+				throw AuthorizationException("workflow owner does not currently allow operation: " + operation);
 	}
 	else
 	{
-		permissionCheck(message, PERMISSION_KEY_change_passwd_user);
+		throw std::invalid_argument("workflow capability audience is invalid");
 	}
 
-	const auto body = message->extractJson();
-	if (!HAS_JSON_FIELD(body, HTTP_BODY_KEY_OLD_PASSWORD))
-	{
-		throw std::invalid_argument("can not find old password from body");
-	}
-	auto curPasswd = Utility::decode64(GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_OLD_PASSWORD));
-	if (!HAS_JSON_FIELD(body, HTTP_BODY_KEY_NEW_PASSWORD))
-	{
-		throw std::invalid_argument("can not find new password from body");
-	}
-	auto newPasswd = Utility::decode64(GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_NEW_PASSWORD));
+	for (const auto &operation : operations)
+		if (allowedOperations.count(operation) == 0)
+			throw AuthorizationException("operation is outside the workflow capability allow-list: " + operation);
 
-	if (Configuration::instance()->getPasswordComplexityEnabled())
+	const auto capability = InternalCapability::instance().issue(
+		capabilityAudience, workflowId, runId, ownerPrincipalId, processUuid, operations, ttlSeconds);
+	const auto expiresAt = std::chrono::duration_cast<std::chrono::seconds>(
+		std::chrono::system_clock::now().time_since_epoch()).count() + ttlSeconds;
+	nlohmann::json response;
+	response["capability"] = capability;
+	response["expires_at"] = expiresAt;
+	response["owner_principal_id"] = ownerPrincipalId;
+	response["process_uuid"] = processUuid;
+	message->reply(web::http::status_codes::OK, response);
+}
+
+void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &message)
+{
+	// This is a private startup reconciliation operation, not an app-delete
+	// permission. HTTP, WSS, forwarded, and non-loopback TCP requests are denied.
+	if (message->tcpClientId() <= 0 || !SocketServer::isLoopbackClient(message->tcpClientId()))
+		throw AuthorizationException("workflow orphan cleanup is available only over local TCP");
+
+	const auto workflowProcess = Configuration::instance()->getApp("workflow", false);
+	if (!workflowProcess || !workflowProcess->isSystemProtected())
+		throw AuthorizationException("managed Workflow system application is unavailable");
+	const auto processKey = message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY);
+	const auto processUuid = workflowProcess->currentProcessUuidForKey(processKey);
+	if (processUuid.empty())
+		throw AuthorizationException("workflow process proof is invalid or superseded");
+
+	constexpr const char *stepPrefix = "wf-cmd-";
+	const auto prefixLength = std::char_traits<char>::length(stepPrefix);
+	auto validIdentifier = [](const std::string &value)
 	{
-		std::string complexityError;
-		if (!Utility::isPasswordComplex(newPasswd, complexityError))
-		{
-			throw std::invalid_argument(complexityError);
-		}
+		return !value.empty() && value.size() <= 128 &&
+			std::all_of(value.begin(), value.end(), [](unsigned char c)
+						{ return std::isalnum(c) || c == '-' || c == '_'; });
+	};
+
+	std::size_t removed = 0;
+	auto config = Configuration::instance();
+	for (const auto &app : config->getApps())
+	{
+		if (!app || app->isSystemProtected())
+			continue;
+		const auto &name = app->getName();
+		if (name.size() <= prefixLength || name.compare(0, prefixLength, stepPrefix) != 0)
+			continue;
+
+		const auto definition = app->AsJson(false);
+		if (!definition.contains(JSON_KEY_APP_metadata) ||
+			!definition.at(JSON_KEY_APP_metadata).is_object())
+			continue;
+		const auto &metadata = definition.at(JSON_KEY_APP_metadata);
+		if (!metadata.contains("type") || !metadata.at("type").is_string() ||
+			metadata.at("type").get<std::string>() != "workflow-step" ||
+			!metadata.contains("workflow_id") || !metadata.at("workflow_id").is_string() ||
+			!metadata.contains("run_id") || !metadata.at("run_id").is_string() ||
+			!metadata.contains("process_uuid") || !metadata.at("process_uuid").is_string())
+			continue;
+		const auto workflowId = metadata.at("workflow_id").get<std::string>();
+		const auto runId = metadata.at("run_id").get<std::string>();
+		const auto creatorProcessUuid = metadata.at("process_uuid").get<std::string>();
+		if (!validIdentifier(workflowId) || !validIdentifier(runId) ||
+			creatorProcessUuid.empty() || creatorProcessUuid == processUuid)
+			continue;
+
+		// removeApp's expected pointer makes the snapshot race-safe. A replacement
+		// with the same name is not removed.
+		const auto mutation = config->lockAppMutation();
+		if (!config->isCurrentApp(name, app))
+			continue;
+		config->removeApp(name, app.get());
+		++removed;
 	}
 
-	if (!Security::instance()->verifyUserKey(targetUser, curPasswd))
-	{
-		throw std::invalid_argument(Utility::stringFormat("old password for user <%s> is incorrect", targetUser.c_str()));
-	}
-	Security::instance()->changeUserPasswd(targetUser, newPasswd);
-	// Invalidate everything already issued to this user. Changing a password is the
-	// standard response to a suspected compromise, and without this the old access token —
-	// and the refresh token that can keep minting new ones — would survive it.
-	Security::instance()->getUserInfo(targetUser)->revokeIssuedTokens();
-	Security::instance()->save();
+	nlohmann::json response;
+	response["removed"] = removed;
+	message->reply(web::http::status_codes::OK, response);
+}
 
-	// Re-encrypt sec_env for all apps owned by the changed user (key material changed).
+void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &message)
+{
+	// This private endpoint is the control capability's only registry view. It
+	// deliberately does not expose arbitrary applications or bypass their owner
+	// permissions through the synthetic Workflow controller principal.
+	const auto principalId = permissionCheck(message, PERMISSION_KEY_view_all_app);
+	if (principalId.compare(0, std::char_traits<char>::length("internal:workflow-controller:"),
+			"internal:workflow-controller:") != 0)
+	{
+		throw AuthorizationException("workflow registry is available only to the managed Workflow controller");
+	}
+
+	nlohmann::json result = nlohmann::json::array();
 	for (const auto &app : Configuration::instance()->getApps())
 	{
-		if (app->getOwner() && app->getOwner()->getName() == targetUser)
+		if (!app || app->getName().compare(0, std::char_traits<char>::length("workflow-"),
+				"workflow-") != 0)
+			continue;
+		const auto definition = app->AsJson(true);
+		if (!definition.contains(JSON_KEY_APP_metadata) ||
+			!definition.at(JSON_KEY_APP_metadata).is_object())
+			continue;
+		const auto &metadata = definition.at(JSON_KEY_APP_metadata);
+		if (!metadata.contains("type") || !metadata.at("type").is_string() ||
+			metadata.at("type").get<std::string>() != "workflow")
+			continue;
+		result.push_back(definition);
+	}
+	message->reply(web::http::status_codes::OK, result);
+}
+
+void RestHandler::apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &message)
+{
+	if (!isLoopbackPeer(message->m_remote_address))
+		throw AuthorizationException("first-admin enrollment requires a direct loopback client");
+
+	// TCP requests can self-declare client_addr. Trust the Agent-captured socket peer
+	// only after verifying the private Agent-to-Engine envelope.
+	if (message->tcpClientId() > 0)
+	{
+		try
 		{
-			app->save();
+			message->verifyHMAC();
+		}
+		catch (const std::exception &)
+		{
+			throw AuthorizationException("first-admin enrollment requires a trusted local transport");
 		}
 	}
 
-	LOG_INF << fname << "Password of user <" << targetUser << "> changed by <" << tokenUser << ">";
-	message->reply(web::http::status_codes::OK, Utility::text2json("password changed success"));
-}
+	const auto enrollmentToken = Utility::stdStringTrim(
+		message->m_headers.get(FIRST_ADMIN_ENROLLMENT_HEADER));
+	if (enrollmentToken.empty())
+		throw AuthorizationException("first-admin enrollment proof is invalid");
 
-void RestHandler::apiUserLock(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserLock() ";
-
-	const auto path = (curlpp::unescape(message->m_relative_uri));
-	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_lock_user);
-	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_LOCK);
-
-	if (pathUserName == JWT_ADMIN_NAME)
-	{
-		throw std::invalid_argument("User admin can not be locked");
-	}
-
-	Security::instance()->getUserInfo(pathUserName)->lock();
-	Security::instance()->save();
-
-	LOG_INF << fname << "User <" << pathUserName << "> locked by <" << tokenUser << ">";
-	message->reply(web::http::status_codes::OK, Utility::text2json("Lock user success"));
-}
-
-void RestHandler::apiUserUnlock(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserUnlock() ";
-
-	const auto path = (curlpp::unescape(message->m_relative_uri));
-	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_unlock_user);
-	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_UNLOCK);
-
-	Security::instance()->getUserInfo(pathUserName)->unlock();
-	Security::instance()->save();
-
-	LOG_INF << fname << "User <" << pathUserName << "> unlocked by <" << tokenUser << ">";
-	message->reply(web::http::status_codes::OK, Utility::text2json("Unlock user success"));
-}
-
-void RestHandler::apiUserAdd(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserAdd() ";
-
-	const auto path = (curlpp::unescape(message->m_relative_uri));
-	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_add_user);
-	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_ADD);
-
-	const auto userJson = message->extractJson();
-	if (Configuration::instance()->getPasswordComplexityEnabled())
-	{
-		const auto rawPasswd = Utility::decode64(GET_JSON_STR_VALUE(userJson, JSON_KEY_USER_key));
-		if (!rawPasswd.empty())
-		{
-			std::string complexityError;
-			if (!Utility::isPasswordComplex(rawPasswd, complexityError))
-			{
-				throw std::invalid_argument(complexityError);
-			}
-		}
-	}
-	Security::instance()->addUser(pathUserName, userJson);
-	Security::instance()->save();
-
-	LOG_INF << fname << "User <" << pathUserName << "> added by <" << tokenUser << ">";
-	message->reply(web::http::status_codes::OK, Utility::text2json("User add success"));
-}
-
-void RestHandler::apiUserView(const std::shared_ptr<HttpRequest> &message)
-{
-	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
-	{
-		const auto token = getJwtToken(message);
-		message->reply(web::http::status_codes::OK, keycloak->getKeycloakUser(token));
-	}
+	// A WebSocket client presents its bearer only during the upgrade, which pins
+	// the verified principal on the session (same dual path as permissionCheck).
+	// HTTP/TCP callers still prove identity with the per-request Authorization header.
+	std::shared_ptr<AuthorizationPrincipal> enrolled;
+	if (!message->transportPrincipalId().empty())
+		enrolled = Security::instance()->enrollFirstAdminPinned(
+			message->transportPrincipalId(), enrollmentToken);
 	else
-	{
-		const auto tokenUser = getJwtUserName(message);
-		auto user = Security::instance()->getUserInfo(tokenUser);
-		auto userJson = user->AsJson();
-		userJson[JSON_KEY_USER_audience] = getJwtUserAudience(message);
-		message->reply(web::http::status_codes::OK, User::clearConfidentialInfo(userJson));
-	}
+		enrolled = Security::instance()->enrollFirstAdmin(
+			getDexBearerToken(message), enrollmentToken);
+	auto response = enrolled->asJson();
+	response["permissions"] = Security::instance()->permissions(enrolled->id());
+	message->reply(web::http::status_codes::OK, response);
 }
 
-void RestHandler::apiUserDel(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiPrincipalSelf(const std::shared_ptr<HttpRequest> &message)
 {
-	const static char fname[] = "RestHandler::apiUserDel() ";
-
-	const auto path = (curlpp::unescape(message->m_relative_uri));
-	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_delete_user);
-	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_DELETE);
-
-	Security::instance()->delUser(pathUserName);
-	Security::instance()->save();
-
-	LOG_INF << fname << "User <" << pathUserName << "> deleted by <" << tokenUser << ">";
-	message->reply(web::http::status_codes::OK, Utility::text2json("User delete success"));
+	const auto principalId = permissionCheck(message, "");
+	auto response = Security::instance()->principal(principalId)->asJson();
+	response["permissions"] = Security::instance()->permissions(principalId);
+	message->reply(web::http::status_codes::OK, response);
 }
 
-void RestHandler::apiUsersView(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiPrincipalsView(const std::shared_ptr<HttpRequest> &message)
 {
-	permissionCheck(message, PERMISSION_KEY_get_users);
+	permissionCheck(message, PERMISSION_KEY_principal_list);
+	message->reply(web::http::status_codes::OK, Security::instance()->principalsJson());
+}
 
-	auto users = Security::instance()->getUsersJson();
-	for (auto &user : users.items())
-	{
-		User::clearConfidentialInfo(user.value());
-	}
+void RestHandler::apiPrincipalUpdate(const std::shared_ptr<HttpRequest> &message)
+{
+	permissionCheck(message, PERMISSION_KEY_principal_update);
+	const auto path = curlpp::unescape(message->m_relative_uri);
+	const auto principalId = regexSearch(path, REST_PATH_PRINCIPAL);
+	Security::instance()->updatePrincipal(principalId, message->extractJson());
+	message->reply(web::http::status_codes::OK, Security::instance()->principal(principalId)->asJson());
+}
 
-	message->reply(web::http::status_codes::OK, users);
+void RestHandler::apiPrincipalDelete(const std::shared_ptr<HttpRequest> &message)
+{
+	permissionCheck(message, PERMISSION_KEY_principal_delete);
+	const auto path = curlpp::unescape(message->m_relative_uri);
+	const auto principalId = regexSearch(path, REST_PATH_PRINCIPAL);
+	Security::instance()->deletePrincipal(principalId);
+	message->reply(web::http::status_codes::NoContent);
 }
 
 void RestHandler::apiRolesView(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_role_view);
 
-	message->reply(web::http::status_codes::OK, Security::instance()->getRolesJson());
+	message->reply(web::http::status_codes::OK, Security::instance()->rolesJson());
 }
 
 void RestHandler::apiRoleUpdate(const std::shared_ptr<HttpRequest> &message)
@@ -918,8 +1041,7 @@ void RestHandler::apiRoleUpdate(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_role_update);
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_UPDATE);
 
-	Security::instance()->addRole(message->extractJson(), pathRoleName);
-	Security::instance()->save();
+	Security::instance()->updateRole(pathRoleName, message->extractJson());
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("Role update success"));
@@ -934,29 +1056,17 @@ void RestHandler::apiRoleDelete(const std::shared_ptr<HttpRequest> &message)
 
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_DELETE);
 
-	Security::instance()->delRole(pathRoleName);
-	Security::instance()->save();
+	Security::instance()->deleteRole(pathRoleName);
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by <" << tokenUser << ">";
 	message->reply(web::http::status_codes::OK, Utility::text2json("Role delete success"));
-}
-
-void RestHandler::apiUserGroupsView(const std::shared_ptr<HttpRequest> &message)
-{
-	auto groups = Security::instance()->getAllUserGroups();
-	auto json = nlohmann::json::array();
-	for (const auto &grp : groups)
-	{
-		json.push_back(std::string(grp));
-	}
-	message->reply(web::http::status_codes::OK, json);
 }
 
 void RestHandler::apiPermissionsView(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_permission_list);
 
-	auto permissions = Security::instance()->getAllPermissions();
+	auto permissions = Security::instance()->allPermissions();
 	auto json = nlohmann::json::array();
 	for (auto &perm : permissions)
 	{
@@ -967,9 +1077,12 @@ void RestHandler::apiPermissionsView(const std::shared_ptr<HttpRequest> &message
 
 void RestHandler::apiHealth(const std::shared_ptr<HttpRequest> &message)
 {
+	permissionCheck(message, PERMISSION_KEY_view_app);
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_HEALTH);
-	auto health = Configuration::instance()->getApp(appName)->health();
+	const auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, false);
+	auto health = app->health();
 	auto body = std::to_string(health);
 	message->reply(web::http::status_codes::OK, body);
 }
@@ -978,484 +1091,10 @@ void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiRestMetrics() ";
 	LOG_DBG << fname << "Entered";
+	permissionCheck(message, PERMISSION_KEY_view_host_resource);
 
 	auto body = m_metrics->collectData();
 	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
-}
-
-// Whether the client can manage a refresh token. Opt-in, because a client that ignores it
-// never presents it on logoff, which would leave a live credential behind.
-static bool wantsRefreshToken(const std::shared_ptr<HttpRequest> &message)
-{
-	return (GET_HTTP_HEADER(message, HTTP_HEADER_JWT_want_refresh_token)) == "true";
-}
-
-nlohmann::json RestHandler::createJwtResponse(const std::shared_ptr<HttpRequest> &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token, const std::string *refreshToken, bool issueRefresh)
-{
-	const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	const auto exp = now + timeoutSeconds;
-
-	nlohmann::json result;
-	result["token_type"] = HTTP_HEADER_JWT_Bearer;
-	result[HTTP_HEADER_JWT_access_token] = token ? *token : JwtToken::generate(uname, ugroup, audience, timeoutSeconds);
-	if (refreshToken && !refreshToken->empty())
-	{
-		result[HTTP_HEADER_JWT_refresh_token_key] = *refreshToken;
-	}
-	else if (issueRefresh && !dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
-	{
-		// The refresh token must outlive the access token — that is the whole point — but it
-		// scales with the caller's chosen TTL instead of a fixed floor, so shortening the
-		// access token actually shortens the credential pair rather than pinning a 7-day one.
-		const int refreshSeconds = std::min(MAX_TOKEN_EXPIRE_SECONDS,
-											std::max(timeoutSeconds * REFRESH_TOKEN_EXPIRE_MULTIPLE,
-													 timeoutSeconds + REFRESH_TOKEN_EXPIRE_MIN_MARGIN_SECONDS));
-		result[HTTP_HEADER_JWT_refresh_token_key] = JwtToken::generateRefresh(uname, ugroup, refreshSeconds);
-	}
-	result[HTTP_BODY_KEY_JWT_expires_in] = timeoutSeconds;
-	result["expire_time"] = exp;
-
-	// Optional OpenID/OAuth-style fields
-	result["issued_at"] = now;
-
-	// User profile (optional)
-	nlohmann::json profile;
-	profile["name"] = uname;
-	profile["group"] = ugroup;
-	profile["auth_time"] = now;
-	result["profile"] = std::move(profile);
-
-	return result;
-}
-
-void RestHandler::apiUserLogin(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserLogin() ";
-
-	// mandatory
-	auto authorization = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_Authorization);
-	if (!Utility::startWith(authorization, HTTP_HEADER_Auth_BasicSpace))
-	{
-		throw std::invalid_argument("unrecognized authorization type");
-	}
-	authorization = Utility::stdStringTrim(authorization, HTTP_HEADER_Auth_BasicSpace, true, false);
-	authorization = Utility::decode64(authorization);
-	// Split on the first ':' only — passwords may contain ':'
-	const auto colonPos = authorization.find(':');
-	const auto uname = (colonPos != std::string::npos) ? authorization.substr(0, colonPos) : "";
-	const auto passwd = (colonPos != std::string::npos) ? authorization.substr(colonPos + 1) : "";
-	// option
-	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
-	const auto audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
-	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
-	int timeoutSeconds = parseTokenTimeout(timeout);
-
-	// Internal audiences are daemon-minted only: the file audience bypasses RBAC on the
-	// WebSocket file endpoints, and the refresh audience would hand out a credential that
-	// sits outside the rotation chain and survives logoff.
-	if (audience == WEBSOCKET_FILE_AUDIENCE || audience == JWT_REFRESH_AUDIENCE)
-	{
-		throw std::invalid_argument("illegal audience");
-	}
-
-	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
-	{
-		const auto tokenResp = keycloak->getKeycloakToken(uname, passwd, totp, timeoutSeconds);
-		const int expiresIn = tokenResp.expiresIn > 0 ? static_cast<int>(tokenResp.expiresIn) : timeoutSeconds;
-		message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, expiresIn, "Keycloak", audience, &tokenResp.accessToken, &tokenResp.refreshToken));
-		LOG_DBG << fname << "User <" << uname << "> login from Keycloak success";
-	}
-	else
-	{
-		const auto user = Security::instance()->getUserInfo(uname);
-		if (!Security::instance()->verifyUserKey(uname, passwd))
-		{
-			// passwd failed
-			message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Authentication failed"));
-		}
-		else if (user && !user->mfaEnabled())
-		{
-			// verify without TOTP
-			message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), audience, nullptr, nullptr, wantsRefreshToken(message)));
-			LOG_DBG << fname << "User <" << uname << "> login success";
-		}
-		else if (user && user->mfaEnabled())
-		{
-			// verify with TOTP
-			if (totp.empty())
-			{
-				// require TOTP valiate, TODO: check standard RFC 7235 https://developer.aliyun.com/article/1430310
-				std::map<std::string, std::string> headers;
-				headers["WWW-Authenticate"] = "TOTP realm=\"TOTP Authentication\", qop=\"auth\"";
-				const int challengeTimeout = 3 * 60; // set to expire after 3 minutes
-				auto result = nlohmann::json::object();
-				result["status"] = std::string("TOTP_CHALLENGE_REQUIRED");
-				result["digits"] = 6;
-				result["algorithm"] = std::string("SHA1"); // TOTP hash algorithm (RFC 6238)
-				result["period"] = 30;					   // TOTP time step in seconds (RFC 6238 default)
-				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(JwtToken::generate(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
-				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = std::time(nullptr) + challengeTimeout;
-				message->reply(web::http::status_codes::PreconditionRequired, std::move(result), std::move(headers));
-				LOG_DBG << fname << "User <" << uname << "> request TOTP key success";
-			}
-			else
-			{
-				if (user->totpValidateCode(totp))
-				{
-					message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), audience, nullptr, nullptr, wantsRefreshToken(message)));
-					LOG_DBG << fname << "User <" << uname << "> login with TOTP success";
-				}
-				else
-				{
-					// totp failed
-					message->reply(web::http::status_codes::Unauthorized, Utility::text2json("Authentication failed"));
-				}
-			}
-		}
-	}
-}
-
-void RestHandler::apiUserLogoff(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserLogoff() ";
-
-	const auto refreshToken = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_refresh_token);
-	const auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance());
-
-	// Either credential may authenticate a logoff: the refresh token outlives the access
-	// token, so an expired access token must not strand the credential that can still mint.
-	bool authenticated = false;
-	std::string uname;
-
-	// Retire the access token (local blacklist only) when it is still presentable.
-	try
-	{
-		const auto token = getJwtToken(message);
-		uname = std::get<0>(JwtToken::verify(token));
-		TOKEN_BLACK_LIST::instance()->addToken(token, JwtHelper::decode(token).get_expires_at());
-		authenticated = true;
-	}
-	catch (const std::exception &e)
-	{
-		LOG_DBG << fname << "access token not revocable (" << e.what() << "); trying the refresh token";
-	}
-
-	if (!refreshToken.empty())
-	{
-		try
-		{
-			if (keycloak)
-			{
-				// The local blacklist only blocks this daemon; ending the Keycloak-side
-				// session needs the refresh token, which Keycloak itself validates. Gate it
-				// the same way renew does: unauthenticated in this branch, so without a
-				// well-formedness check it relays any string to the IdP.
-				(void)JwtHelper::decode(refreshToken);
-				keycloak->logoutKeycloak(refreshToken);
-			}
-			else
-			{
-				// Verify first, so logoff cannot be used to blacklist arbitrary strings.
-				uname = std::get<0>(JwtToken::verifyRefresh(refreshToken));
-				TOKEN_BLACK_LIST::instance()->addToken(refreshToken, JwtHelper::decode(refreshToken).get_expires_at());
-			}
-			authenticated = true;
-			LOG_DBG << fname << "User <" << uname << "> refresh token revoked";
-		}
-		catch (const std::exception &e)
-		{
-			LOG_WAR << fname << "User <" << uname << "> refresh token revocation failed: " << e.what();
-		}
-	}
-	else if (keycloak)
-	{
-		LOG_WAR << fname << "User <" << uname << "> logoff without refresh token; Keycloak session remains active until expiry";
-	}
-
-	if (!authenticated)
-	{
-		throw std::domain_error("Logoff requires a valid access token or refresh token");
-	}
-
-	message->reply(web::http::status_codes::OK);
-	LOG_DBG << fname << "User <" << uname << "> logoff success";
-}
-
-// Audience for a token minted by the refresh-token flow, which carries none of its own.
-// Carried over from the access token the caller presents, so a custom-audience client is
-// not silently downgraded on its first refresh-based renewal; the default otherwise.
-//
-// Deliberately NOT taken from the X-Audience header. The caller must not choose the
-// audience of a token the daemon mints: the WebSocket file endpoints authorize on audience
-// alone (Session.cpp verifyToken), with no permission check, so an X-Audience of
-// appmesh-file-service would hand any user with user-token-renew arbitrary file read and
-// write. apiUserLogin rejects the same thing for the same reason.
-static std::string renewAudience(const std::shared_ptr<HttpRequest> &message)
-{
-	try
-	{
-		if (message->m_headers.count(HTTP_HEADER_JWT_Authorization))
-		{
-			const auto audiences = JwtHelper::decode(JwtHelper::normalizeBearerToken(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second)).get_audience();
-			// Reject internal audiences: the presented token is not verified here, so a
-			// forged one must not be able to select a privileged scope either.
-			if (!audiences.empty() && *audiences.begin() != WEBSOCKET_FILE_AUDIENCE && *audiences.begin() != JWT_REFRESH_AUDIENCE)
-			{
-				return *audiences.begin();
-			}
-		}
-	}
-	catch (const std::exception &)
-	{
-		// Unreadable access token: fall through to the default audience.
-	}
-	return HTTP_HEADER_JWT_Audience_appmesh;
-}
-
-void RestHandler::apiUserTokenRenew(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserTokenRenew() ";
-
-	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
-	int timeoutSeconds = parseTokenTimeout(timeout);
-	const auto refreshToken = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_refresh_token);
-
-	// A presented refresh token is the sole credential this endpoint needs, in either mode.
-	// No permissionCheck on the access token first: it may already have expired, and renewing
-	// anyway is the entire point of a refresh token.
-
-	if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
-	{
-		// OAuth2 renewal exchanges the Keycloak refresh token for a fresh access token.
-		// The client supplies the refresh token it received at login via X-Refresh-Token.
-		if (refreshToken.empty())
-		{
-			throw std::invalid_argument("Token renewal requires the refresh token in the X-Refresh-Token header");
-		}
-
-		// Cheap local sanity check before forwarding. Without it this endpoint is an
-		// unauthenticated oracle that relays any string to Keycloak's token endpoint and
-		// reports back whether it was accepted, and an outbound amplifier into Keycloak's
-		// brute-force detector. Signature validation stays Keycloak's job.
-		try
-		{
-			(void)JwtHelper::decode(refreshToken);
-		}
-		catch (const std::exception &)
-		{
-			throw std::invalid_argument("Malformed refresh token");
-		}
-
-		const auto tokenResp = keycloak->refreshKeycloakToken(refreshToken, timeoutSeconds);
-		const int expiresIn = tokenResp.expiresIn > 0 ? static_cast<int>(tokenResp.expiresIn) : timeoutSeconds;
-
-		// Authorize on the freshly issued token, not the possibly-expired one the caller sent.
-		// Also validates Keycloak's response before we hand it back.
-		const auto verified = keycloak->verifyKeycloakToken(JwtHelper::decode(tokenResp.accessToken), HTTP_HEADER_JWT_Audience_appmesh);
-		const auto &tokenUser = std::get<0>(verified);
-		if (std::get<2>(verified).count(PERMISSION_KEY_user_token_renew) == 0)
-		{
-			throw std::invalid_argument(Utility::stringFormat("Permission denied: user '%s' lacks required permission '%s'", tokenUser.c_str(), PERMISSION_KEY_user_token_renew));
-		}
-
-		message->reply(web::http::status_codes::OK, createJwtResponse(message, tokenUser, expiresIn, "Keycloak", "", &tokenResp.accessToken, &tokenResp.refreshToken));
-		LOG_DBG << fname << "User <" << tokenUser << "> renew Keycloak token success";
-		return;
-	}
-
-	if (!refreshToken.empty())
-	{
-		// Local refresh-token flow: authenticate on the refresh token alone.
-		const auto verified = JwtToken::verifyRefresh(refreshToken);
-		const auto &refreshUser = std::get<0>(verified);
-		const auto &refreshGroup = std::get<1>(verified);
-
-		const auto permissions = Security::instance()->getUserPermissions(refreshUser, refreshGroup);
-		if (permissions.count(PERMISSION_KEY_user_token_renew) == 0)
-		{
-			throw std::invalid_argument(Utility::stringFormat("Permission denied: user '%s' lacks required permission '%s'", refreshUser.c_str(), PERMISSION_KEY_user_token_renew));
-		}
-
-		// Rotate: retire the presented refresh token so a captured copy cannot be replayed.
-		// The atomic revoke is the real gate — verifyRefresh's blacklist check above is a
-		// cheap early-out, but two concurrent renews on the worker pool would both pass it
-		// and fork the token chain. Losing that race means the token was already consumed.
-		if (!TOKEN_BLACK_LIST::instance()->revokeOnce(refreshToken, JwtHelper::decode(refreshToken).get_expires_at()))
-		{
-			throw std::domain_error("Refresh token has been revoked");
-		}
-
-		// The old access token is left alone: it is short-lived and expires on its own, and
-		// blacklisting one per renew is the churn this flow exists to remove.
-		message->reply(web::http::status_codes::OK, createJwtResponse(message, refreshUser, timeoutSeconds, refreshGroup, renewAudience(message), nullptr, nullptr, true));
-		LOG_DBG << fname << "User <" << refreshUser << "> renew token via refresh token success";
-		return;
-	}
-
-	// Legacy flow (older SDK, or a token installed via SetToken): the access token
-	// authenticates its own renewal and is retired.
-	permissionCheck(message, PERMISSION_KEY_user_token_renew);
-
-	// verify current token
-	const auto token = getJwtToken(message);
-	const auto verify = JwtToken::verify(token);
-	const auto &uname = std::get<0>(verify);
-	const auto &userGroup = std::get<1>(verify);
-
-	// TODO: limit renew time, consider setup
-	const auto decodedToken = JwtHelper::decode(token);
-	const auto expireTime = decodedToken.get_expires_at();
-	const auto audiences = decodedToken.get_audience();
-	const auto audience = audiences.empty()
-							  ? HTTP_HEADER_JWT_Audience_appmesh
-							  : *audiences.begin(); // safe copy
-	// const auto issueTime = decodedToken.get_issued_at();
-	// const auto oneThirdTime = issueTime + (decodedToken.get_expires_at() - issueTime) / 3;
-	// if (oneThirdTime < std::chrono::system_clock::now())
-	//{
-	//	throw std::invalid_argument("The current time is still before the midpoint of the expire time");
-	//}
-
-	// Hand back a refresh token when the client asked for one: this is how a client that
-	// started without one upgrades into the refresh flow after a single legacy renewal.
-	message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, userGroup, audience, nullptr, nullptr, wantsRefreshToken(message)));
-
-	// retire current token
-	TOKEN_BLACK_LIST::instance()->addToken(token, expireTime);
-	LOG_DBG << fname << "User <" << uname << "> renew token success";
-}
-
-void RestHandler::apiUserAuth(const std::shared_ptr<HttpRequest> &message)
-{
-	const std::string permission = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_auth_permission);
-	std::string audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
-	if (audience.empty())
-		audience = HTTP_HEADER_JWT_Audience_appmesh;
-
-	const auto tokenUser = permissionCheck(message, permission, audience); // External audience verification
-
-	const auto token = getJwtToken(message);
-	const auto decodedToken = JwtHelper::decode(token);
-	const auto expireTime = decodedToken.get_expires_at();
-	const auto audiences = decodedToken.get_audience();
-	audience = audiences.empty() ? audience : *audiences.begin(); // safe copy
-	auto timeoutSeconds = std::chrono::system_clock::to_time_t(expireTime) - std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-
-	message->reply(web::http::status_codes::OK, createJwtResponse(message, tokenUser, timeoutSeconds, "", audience, &token));
-}
-
-void RestHandler::apiUserTotpSecret(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserTotpSecret() ";
-	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_totp_active);
-
-	const auto user = Security::instance()->getUserInfo(tokenUser);
-	const auto mfaSecret = user->totpGenerateKey();
-	user->totpActive(false); // set to under setup status
-	// otpauth://totp/{label}?secret={secret}&issuer={issuer}
-	const auto totpUri = Utility::stringFormat(
-		"otpauth://totp/%s?secret=%s&issuer=%s", tokenUser.c_str(), mfaSecret.c_str(), "AppMesh");
-
-	auto result = nlohmann::json();
-	result[HTTP_BODY_KEY_MFA_URI] = nlohmann::json(Utility::encode64(totpUri));
-
-	// Persist before replying: a save() failure must surface as an error, not double-reply
-	// (RestBase re-replies on exception) after a success was already sent.
-	Security::instance()->save();
-
-	message->reply(web::http::status_codes::OK, result);
-
-	LOG_DBG << fname << "User <" << tokenUser << "> get TOTP secret";
-}
-
-void RestHandler::apiUserTotpSetup(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserTotpSetup() ";
-	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_totp_active);
-	std::string totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
-
-	// get user
-	const auto user = Security::instance()->getUserInfo(tokenUser);
-	if (user->getMfaKey().empty())
-		throw std::invalid_argument("please generate TOTP secret first");
-	user->totpValidateCode(totp);
-
-	// Persist before renewing (renew sends the reply): a save() failure after the reply
-	// would double-reply. Token renewal doesn't read totpActive, so order is preserved.
-	user->totpActive(true);
-	Security::instance()->save();
-
-	// re-new token (sends the success reply)
-	apiUserTokenRenew(message);
-
-	LOG_DBG << fname << "User <" << tokenUser << "> setup TOTP success";
-}
-
-void RestHandler::apiUserTotpValidate(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserTotpValidate() ";
-
-	const auto body = message->extractJson();
-	const auto uname = GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_JWT_username);
-	const auto totp = GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_JWT_totp);
-	const auto totpChallenge = GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_JWT_totp_challenge);
-	const auto timeout = GET_JSON_INT64_VALUE(body, HTTP_BODY_KEY_JWT_expire_seconds);
-	// Route through parseTokenTimeout like every other entry point: the raw int64 was neither
-	// clamped to MAX_TOKEN_EXPIRE_SECONDS nor checked for a positive value, and narrowing it
-	// straight to int is implementation-defined.
-	int timeoutSeconds = parseTokenTimeout(timeout == 0 ? std::string() : std::to_string(timeout));
-
-	LOG_DBG << fname << "Validating TOTP for user <" << uname << ">";
-	const auto user = Security::instance()->getUserInfo(uname);
-	if (!user->mfaEnabled())
-		throw std::invalid_argument("TOTP authentication not enabled for current user");
-	if (totp.empty())
-		throw std::invalid_argument("no TOTP key provided");
-
-	// Challenge first: it is the only artifact proving the caller completed the password
-	// login, and this endpoint has no permissionCheck. Validating the code before it would
-	// let an unauthenticated caller brute-force the second factor and read the answer off
-	// the status code.
-	std::string token;
-	user->totpValidateChallenge(totpChallenge, token);
-
-	// Then the second factor itself. Without this a correct password plus any six digits
-	// completed an MFA login — the code was never checked on this path.
-	user->totpValidateCode(totp);
-	assert(token.empty() == false);
-	message->reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), "", &token, nullptr, wantsRefreshToken(message)));
-
-	LOG_DBG << fname << "User <" << uname << "> validate TOTP key success";
-}
-
-void RestHandler::apiUserTotpDisable(const std::shared_ptr<HttpRequest> &message)
-{
-	const static char fname[] = "RestHandler::apiUserTotpDisable() ";
-
-	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_totp_disable);
-	const auto path = (curlpp::unescape(message->m_relative_uri));
-	const auto pathUserName = regexSearch(path, REST_PATH_SEC_TOTP_DISABLE);
-	const auto &userName = (pathUserName == "self") ? tokenUser : pathUserName;
-
-	auto user = Security::instance()->getUserInfo(userName);
-	if (user)
-	{
-		if (user->getName() != JWT_ADMIN_NAME && (pathUserName != "self" && pathUserName != tokenUser))
-		{
-			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
-		}
-		user->totpDeactive();
-		// Persist before replying: a failure here must surface as an error, not follow a
-		// success the client already received.
-		Security::instance()->save();
-		message->reply(web::http::status_codes::OK, Utility::text2json("2FA deactive success"));
-		LOG_DBG << fname << "User <" << userName << "> disable TOTP success";
-	}
-	else
-	{
-		LOG_WAR << fname << "User <" << userName << "> not found";
-		throw std::invalid_argument("user not found");
-	}
 }
 
 void RestHandler::apiAppView(const std::shared_ptr<HttpRequest> &message)
@@ -1472,9 +1111,12 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 {
 	const static char fname[] = "RestHandler::parseAndRegRunApp() ";
 
+	const auto callerPrincipalId = permissionCheck(message, "");
 	auto jsonApp = message->extractJson();
 	// from_recover is a server-internal flag; never trust it from REST input.
 	jsonApp.erase(JSON_KEY_APP_from_recover);
+	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_system))
+		throw AuthorizationException("system applications cannot be registered through the application API");
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	std::shared_ptr<Application> fromApp;
 	if (clientProvideAppName.length() > 0)
@@ -1484,6 +1126,8 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 		fromApp = Configuration::instance()->getApp(clientProvideAppName, false);
 		if (fromApp)
 		{
+			if (fromApp->isSystemProtected())
+				throw AuthorizationException("system applications cannot be used as on-demand run templates");
 			// COPY from existing application
 			// require app read permission
 			checkAppAccessPermission(message, fromApp, false);
@@ -1509,23 +1153,18 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 			}
 			else if (HAS_JSON_FIELD(existApp, JSON_KEY_APP_sec_env))
 			{
-				// Inherited sec_env from AsJson is encrypted with the SOURCE app's owner key.
-				// Decrypt back to plaintext here (we still have the source owner); FromJson
-				// will store as-is since from_recover is not set, and AsJson re-encrypts
-				// later with the NEW owner's key when this copy is persisted.
-				auto srcOwner = fromApp->getOwner();
-				if (srcOwner)
+				// Inherited sec_env is protected with a context containing the source app name.
+				nlohmann::json decrypted = nlohmann::json::object();
+				for (auto &env : existApp[JSON_KEY_APP_sec_env].items())
 				{
-					nlohmann::json decrypted = nlohmann::json::object();
-					for (auto &env : existApp[JSON_KEY_APP_sec_env].items())
-					{
-						decrypted[env.key()] = srcOwner->decrypt(env.value().get<std::string>());
-					}
-					existApp[JSON_KEY_APP_sec_env] = std::move(decrypted);
+					const std::string context = fromApp->getName() + '\0' + env.key();
+					decrypted[env.key()] = SecretProtector::instance().unprotect(
+						env.value().get<std::string>(), context);
 				}
+				existApp[JSON_KEY_APP_sec_env] = std::move(decrypted);
 			}
 			existApp[JSON_KEY_APP_name] = Configuration::instance()->generateRunAppName(clientProvideAppName);
-			existApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
+			existApp[JSON_KEY_APP_owner_principal_id] = callerPrincipalId;
 			jsonApp = std::move(existApp);
 		}
 		else
@@ -1554,7 +1193,11 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 		throw std::invalid_argument("Zero timeout and lifecycle speficied");
 
 	jsonApp[JSON_KEY_APP_status] = (static_cast<int>(STATUS::NOTAVAILABLE));
-	jsonApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
+	jsonApp[JSON_KEY_APP_owner_principal_id] = callerPrincipalId;
+	jsonApp.erase(JSON_KEY_APP_execution_user);
+	const auto executionUser = Security::instance()->principal(callerPrincipalId)->executionUser();
+	if (!executionUser.empty())
+		jsonApp[JSON_KEY_APP_execution_user] = executionUser;
 	auto app = Configuration::instance()->addApp(jsonApp, false);
 	if (fromApp)
 		LOG_INF << fname << "Run application <" << app->getName() << "> from <" << fromApp->getName() << ">";
@@ -1636,7 +1279,14 @@ void RestHandler::apiRemoveMessage(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiGetMessage(const std::shared_ptr<HttpRequest> &message)
 {
-	const std::string processKey = getHttpQueryString(*message, HTTP_QUERY_KEY_process_key);
+	if (!message->isManagedPrivateTransport() || !message->transportPrincipalId().empty())
+		throw AuthorizationException("worker task RPC is available only to a managed local process");
+	if (message->m_query.count("process_key") != 0)
+		throw std::invalid_argument("process_key query authentication is not supported");
+	const std::string processKey = Utility::stdStringTrim(
+		message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
+	if (processKey.empty())
+		throw AuthorizationException("managed process proof is required");
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 	auto app = Configuration::instance()->getApp(appName);
@@ -1648,7 +1298,14 @@ void RestHandler::apiGetMessage(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiSendMessageResponse(const std::shared_ptr<HttpRequest> &message)
 {
-	const std::string processKey = getHttpQueryString(*message, HTTP_QUERY_KEY_process_key);
+	if (!message->isManagedPrivateTransport() || !message->transportPrincipalId().empty())
+		throw AuthorizationException("worker task RPC is available only to a managed local process");
+	if (message->m_query.count("process_key") != 0)
+		throw std::invalid_argument("process_key query authentication is not supported");
+	const std::string processKey = Utility::stdStringTrim(
+		message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
+	if (processKey.empty())
+		throw AuthorizationException("managed process proof is required");
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
@@ -1722,7 +1379,28 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 		}
 	}
 
-	jsonApp[JSON_KEY_APP_owner] = tokenUser;
+	// The registering principal owns the application. A principal holding
+	// <app-manage-all> may register it on behalf of another active principal by
+	// setting owner_principal_id (administrative takeover or ownership transfer);
+	// any other caller is always forced to itself.
+	auto ownerPrincipalId = tokenUser;
+	const auto requestedOwner = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_owner_principal_id);
+	if (!requestedOwner.empty() &&
+		Security::instance()->permissions(tokenUser).count(PERMISSION_KEY_app_manage_all) != 0)
+	{
+		// NotFoundException maps to 404 when the target principal does not exist.
+		const auto target = Security::instance()->principal(requestedOwner);
+		if (!target->active())
+			throw std::invalid_argument("owner_principal_id must reference an active principal: " + requestedOwner);
+		ownerPrincipalId = target->id();
+		LOG_INF << fname << "Application <" << appName << "> owner set to <" << ownerPrincipalId
+				<< "> by <" << tokenUser << ">";
+	}
+	jsonApp[JSON_KEY_APP_owner_principal_id] = ownerPrincipalId;
+	jsonApp.erase(JSON_KEY_APP_execution_user);
+	const auto executionUser = Security::instance()->principal(ownerPrincipalId)->executionUser();
+	if (!executionUser.empty())
+		jsonApp[JSON_KEY_APP_execution_user] = executionUser;
 	std::string subId;
 	nlohmann::json result;
 	bool stale = false;

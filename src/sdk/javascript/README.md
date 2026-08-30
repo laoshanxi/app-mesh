@@ -22,7 +22,7 @@ npm i appmesh
 import { AppMeshClient } from "appmesh";
 
 const client = new AppMeshClient();
-await client.login("username", "password");
+client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
 ```
 
 #### Browser (VUE Example)
@@ -370,7 +370,7 @@ await server.send_task_result(
 import { AppMeshClient } from "appmesh";
 
 const client = new AppMeshClient();
-await client.login("username", "password");
+client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
 
 const result = await client.run_task(
   "my-app",
@@ -404,4 +404,4 @@ await server.send_task_result(JSON.stringify(result));
 
 ## Behavioral contract
 
-Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, auth-token sync) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/SDKContract.md).
+Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, Dex bearer authentication) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/SDKContract.md).

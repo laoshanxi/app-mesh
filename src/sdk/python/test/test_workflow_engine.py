@@ -45,8 +45,6 @@ from _support import config
 # not urllib3 — so ssl_verify=False emits no per-request InsecureRequestWarning noise.
 WSS_ADDRESS = ("127.0.0.1", 6058)
 
-USER = config.USER
-DEFAULT_CRED = config.CRED
 WF_APP = "workflow"           # engine App name (default install)
 MSG_APP = "pytask"            # shipped App used to exercise message steps
 POLL_TIMEOUT = 45             # seconds to wait for a run to reach a terminal state
@@ -61,7 +59,7 @@ class TestWorkflowEngine(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = AppMeshClientWSS(wss_address=WSS_ADDRESS, ssl_verify=False)
-        cls.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(cls.client)
 
     @classmethod
     def tearDownClass(cls):
@@ -85,14 +83,14 @@ class TestWorkflowEngine(unittest.TestCase):
     def call(self, action, **kw):
         """Send one workflow action and return the parsed JSON response.
 
-        The caller's JWT is carried in the payload: the engine uses it to authenticate
+        The caller's Dex access token is carried in the payload: the engine uses it to authenticate
         the caller (owner authz) and to run the workflow's steps under that identity.
 
         A transport/auth failure (non-JSON body or a revoked-token error) is raised as a
         RuntimeError rather than returned as a business error, so it cannot masquerade as
         a workflow-validation rejection in the negative tests.
         """
-        payload = {"action": action, "token": self.client._get_access_token(), **kw}
+        payload = {"action": action, "token": self.client._get_bearer_token(), **kw}
         raw = self.client.run_task(WF_APP, json.dumps(payload), timeout=90)
         try:
             resp = json.loads(raw)
@@ -170,7 +168,6 @@ jobs:
             self.assertEqual(self.call("workflow_rm", workflow=name).get("status"), "ok")
         finally:
             self.cleanup(name)
-
     def test_02_expr_workflow_and_input_vars(self):
         """${{ workflow.run_id }} and ${{ inputs.* }} resolve inside commands."""
         name = "ut-expr"
@@ -705,27 +702,6 @@ jobs:
         finally:
             self.cleanup(*cases.keys())
 
-    def test_18b_execution_identity_unconfigured_rejected(self):
-        """A workflow naming an execution_identity the engine has no credential
-        for is rejected at registration (ADR 0004). The default test engine has
-        no APPMESH_EXEC_IDENTITIES, so any execution_identity is unconfigured."""
-        name = "ut-execid"
-        yaml = """
-name: ut-execid
-execution_identity: svc-does-not-exist
-jobs:
-  j:
-    steps:
-      - name: s
-        command: "echo hi"
-"""
-        try:
-            resp = self.add(name, yaml)
-            self.assertEqual(resp.get("status"), "error", "unconfigured execution_identity should be rejected")
-            self.assertIn("execution_identity", (resp.get("message") or "").lower())
-        finally:
-            self.cleanup(name)
-
     def test_19_validation_cycle_and_bad_needs(self):
         """A dependency cycle and a missing dependency both fail (add or run)."""
         cyc = """
@@ -846,287 +822,3 @@ jobs:
             )
         finally:
             self.cleanup(name)
-
-
-# ===================== Multi-tenant authorization (Phase 1 + 2) =====================
-# Kept in this single workflow test module. Verifies owner isolation, admin override,
-# list filtering, owner-is-registrant, token-required auth, and caller-scoped step
-# execution. Uses the same run_task Task API as the engine tests above.
-#
-# Auto-runs when the environment supports it; otherwise skips with a reason (it never
-# reds CI on an unprepared environment). setUpClass probes two prerequisites:
-#   1. the deployed engine is token-aware (rebuilt), and
-#   2. the `workflow` App is reachable via run_task by non-admin users.
-# The test-user password reuses APPMESH_TEST_CRED (no credential is generated). To run
-# against existing App Mesh accounts, set APPMESH_TEST_USER1/2 (and optionally their
-# *_PWD); pre-existing accounts are used as-is and never modified or deleted — they must
-# already hold `app-run-task`, else the suite skips. By default it provisions two
-# throwaway non-admin users and removes them afterwards.
-
-USER_PWD = os.environ.get("APPMESH_TEST_USER_PWD") or DEFAULT_CRED  # reused, never generated
-USER1 = os.environ.get("APPMESH_TEST_USER1", "wf-alice")
-USER2 = os.environ.get("APPMESH_TEST_USER2", "wf-bob")
-USER1_PWD = os.environ.get("APPMESH_TEST_USER1_PWD") or USER_PWD
-USER2_PWD = os.environ.get("APPMESH_TEST_USER2_PWD") or USER_PWD
-WF_RUNNER_ROLE = "wf-runner"
-# A workflow tenant runs steps under its own identity, so it needs every permission the
-# engine invokes per step: run the step App (run-async/run-task), stream its output
-# (subscribe + output-view), and clean it up (delete). app-subscribe is essential —
-# WaitForAsyncRun subscribes to STDOUT/EXIT; without it every command step fails to start.
-WF_RUNNER_PERMS = [
-    "app-run-task", "app-run-async", "app-run-sync",
-    "app-subscribe", "app-view", "app-view-all", "app-output-view", "app-delete",
-]
-TRIVIAL_WF = """
-name: {name}
-jobs:
-  j:
-    steps:
-      - name: s
-        command: "echo hi"
-"""
-
-
-class TestWorkflowAuthz(unittest.TestCase):
-    """Owner isolation, admin override, and caller-scoped execution (Phase 1 + 2)."""
-
-    # Transport/auth failure markers — never folded into a business error, so a dead
-    # session fails loudly instead of masquerading as an authz decision.
-    @classmethod
-    def setUpClass(cls):
-        cls._created = []        # only users this run created — never touch pre-existing ones
-        cls._made_role = False
-        cls.admin = AppMeshClientWSS(wss_address=WSS_ADDRESS, ssl_verify=False)
-        cls.admin.login(USER, DEFAULT_CRED)
-
-        # Prereq 1: is the deployed engine token-aware? An old engine accepts a
-        # token-less request; if so this build isn't deployed here — skip, don't fail.
-        probe = cls.admin.run_task(WF_APP, json.dumps({"action": "workflow_list"}), 10)
-        try:
-            if json.loads(probe).get("status") == "ok":
-                raise unittest.SkipTest("workflow engine is not token-aware (rebuilt engine not deployed)")
-        except json.JSONDecodeError:
-            pass  # non-JSON transport response; let provisioning below surface it
-
-        # Provision the two tenants and confirm a non-admin can actually reach the engine
-        # (Prereq 2: workflow App run-task perm). Any failure -> skip (env not ready).
-        try:
-            cls.admin.update_role(WF_RUNNER_ROLE, WF_RUNNER_PERMS)
-            cls._made_role = True
-            cls.alice = cls._make_user(USER1, USER1_PWD)
-            cls.bob = cls._make_user(USER2, USER2_PWD)
-            cls._call(cls.alice, "workflow_list")
-        except unittest.SkipTest:
-            raise
-        except Exception as e:
-            cls._cleanup()
-            raise unittest.SkipTest(f"multi-tenant authz environment not ready: {e}")
-
-    @classmethod
-    def _cleanup(cls):
-        for u in getattr(cls, "_created", []):
-            try:
-                cls.admin.delete_user(u)
-            except Exception:
-                pass
-        if getattr(cls, "_made_role", False):
-            try:
-                cls.admin.delete_role(WF_RUNNER_ROLE)
-            except Exception:
-                pass
-
-    @classmethod
-    def tearDownClass(cls):
-        cls._cleanup()  # needs cls.admin alive — close the websockets after
-        for c in (getattr(cls, "admin", None), getattr(cls, "alice", None), getattr(cls, "bob", None)):
-            if c is not None:
-                try:
-                    c.close()
-                except Exception:
-                    pass
-
-    @classmethod
-    def _make_user(cls, name, pwd):
-        # Provision only if absent; a pre-existing account is used as-is, never reset or
-        # deleted (so designating a real user, e.g. APPMESH_TEST_USER1=mesh, is safe).
-        if name not in (cls.admin.list_users() or {}):
-            cls.admin.add_user(name, {"name": name, "key": pwd, "roles": [WF_RUNNER_ROLE], "group": "user"})
-            cls._created.append(name)
-        c = AppMeshClientWSS(wss_address=WSS_ADDRESS, ssl_verify=False)
-        c.login(name, pwd)
-        return c
-
-    @classmethod
-    def _call(cls, client, action, **kw):
-        """Send one action using `client`'s own JWT as identity; raise on transport/auth failure."""
-        payload = {"action": action, "token": client._get_access_token(), **kw}
-        raw = client.run_task(WF_APP, json.dumps(payload), timeout=90)
-        try:
-            resp = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            raise RuntimeError(f"non-JSON engine response (transport/auth failure?): {raw!r}")
-        if resp.get("status") == "error" and any(m in (resp.get("message") or "") for m in _INFRA_MARKERS):
-            raise RuntimeError(f"infrastructure failure, not an authz decision: {resp.get('message')}")
-        return resp
-
-    def _add(self, client, name, yaml=None):
-        body = (yaml or TRIVIAL_WF.format(name=name)).strip() + "\n"
-        return self._call(client, "workflow_add", workflow=name, content=body)
-
-    def _rm_as_admin(self, *names):
-        for n in names:
-            self._call(self.admin, "workflow_rm", workflow=n)
-
-    def _wait(self, client, name, run_id, timeout=POLL_TIMEOUT):
-        detail = {}
-        for _ in range(timeout):
-            time.sleep(1)
-            detail = self._call(client, "run_detail", workflow=name, run_id=run_id).get("data") or {}
-            if detail.get("status") in TERMINAL:
-                break
-        return detail.get("status", "")
-
-    # ---- Phase 1: owner authorization ----
-
-    def test_30_owner_can_manage_own_workflow(self):
-        """The registrant becomes the owner and can run/view its own workflow."""
-        name = "az-own"
-        try:
-            self.assertEqual(self._add(self.alice, name).get("status"), "ok")
-            run = self._call(self.alice, "run", workflow=name)
-            self.assertEqual(run.get("status"), "ok", run.get("message"))
-            run_id = (run.get("data") or {}).get("run_id", "")
-            self.assertEqual(self._wait(self.alice, name, run_id), "success")
-            # The run record audits the triggering user.
-            detail = self._call(self.alice, "run_detail", workflow=name, run_id=run_id).get("data") or {}
-            self.assertEqual(detail.get("actor"), USER1, "run record should audit the triggering user")
-        finally:
-            self._rm_as_admin(name)
-
-    def test_31_other_user_denied_on_foreign_workflow(self):
-        """bob cannot run / view / remove / read logs of a workflow alice owns."""
-        name = "az-alice-only"
-        try:
-            self.assertEqual(self._add(self.alice, name).get("status"), "ok")
-            run = self._call(self.alice, "run", workflow=name)
-            run_id = (run.get("data") or {}).get("run_id", "")
-            for action, kw in (
-                ("run", {"workflow": name}),
-                ("rerun", {"workflow": name, "run_id": run_id}),
-                ("workflow_rm", {"workflow": name}),
-                ("workflow_get", {"workflow": name}),
-                ("run_detail", {"workflow": name, "run_id": run_id}),
-                ("log", {"workflow": name, "run_id": run_id}),
-                ("cancel", {"workflow": name, "run_id": run_id}),
-            ):
-                resp = self._call(self.bob, action, **kw)
-                self.assertEqual(resp.get("status"), "error", f"bob should be denied {action}")
-                self.assertIn("permission denied", (resp.get("message") or "").lower(), f"{action}: {resp.get('message')}")
-        finally:
-            self._rm_as_admin(name)
-
-    def test_32_admin_manages_any_workflow(self):
-        """A workflow admin can run and remove a workflow owned by someone else."""
-        name = "az-bob-flow"
-        try:
-            self.assertEqual(self._add(self.bob, name).get("status"), "ok")
-            self.assertEqual(self._call(self.admin, "run", workflow=name).get("status"), "ok")
-            self.assertEqual(self._call(self.admin, "workflow_rm", workflow=name).get("status"), "ok")
-        finally:
-            self._rm_as_admin(name)
-
-    def test_33_list_is_filtered_by_owner(self):
-        """workflow_list shows a user only their own; admin sees both."""
-        a, b = "az-list-a", "az-list-b"
-        try:
-            self.assertEqual(self._add(self.alice, a).get("status"), "ok")
-            self.assertEqual(self._add(self.bob, b).get("status"), "ok")
-            alice_names = {w.get("name") for w in (self._call(self.alice, "workflow_list").get("data") or [])}
-            bob_names = {w.get("name") for w in (self._call(self.bob, "workflow_list").get("data") or [])}
-            admin_names = {w.get("name") for w in (self._call(self.admin, "workflow_list").get("data") or [])}
-            self.assertIn(a, alice_names)
-            self.assertNotIn(b, alice_names)
-            self.assertIn(b, bob_names)
-            self.assertNotIn(a, bob_names)
-            self.assertTrue({a, b} <= admin_names)
-        finally:
-            self._rm_as_admin(a, b)
-
-    def test_34_owner_is_registrant_not_yaml(self):
-        """workflow_add ignores a forged YAML `owner`; owner is the authenticated caller."""
-        name = "az-forge"
-        forged = """
-name: az-forge
-owner: admin
-jobs:
-  j:
-    steps:
-      - name: s
-        command: "echo hi"
-"""
-        try:
-            self.assertEqual(self._add(self.alice, name, forged).get("status"), "ok")
-            # Forged owner=admin is ignored -> alice owns it -> bob is still denied.
-            self.assertEqual(self._call(self.bob, "run", workflow=name).get("status"), "error")
-            # The engine tracks the owner (in App metadata) as the registrant, surfaced by list.
-            mine = {w.get("name"): w.get("owner") for w in (self._call(self.alice, "workflow_list").get("data") or [])}
-            self.assertEqual(mine.get(name), USER1)
-        finally:
-            self._rm_as_admin(name)
-
-    def test_35_missing_token_rejected(self):
-        """A payload with no token is rejected (fail-closed)."""
-        raw = self.alice.run_task(WF_APP, json.dumps({"action": "workflow_list"}), timeout=30)
-        try:
-            resp = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            resp = {"status": "error", "message": raw}
-        self.assertEqual(resp.get("status"), "error")
-        self.assertIn("authentication", (resp.get("message") or "").lower())
-
-    def test_36_invalid_token_rejected(self):
-        """A malformed/forged token is rejected by the engine."""
-        payload = {"action": "workflow_list", "token": "not.a.valid.jwt"}
-        raw = self.alice.run_task(WF_APP, json.dumps(payload), timeout=30)
-        try:
-            resp = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            resp = {"status": "error", "message": raw}
-        self.assertEqual(resp.get("status"), "error")
-        self.assertIn("authentication", (resp.get("message") or "").lower())
-
-    # ---- Phase 2: caller-scoped execution ----
-
-    def test_37_step_runs_as_caller(self):
-        """A step's ephemeral wf-cmd-* App is owned by the triggering caller, not admin."""
-        name = "az-exec"
-        slow = """
-name: az-exec
-jobs:
-  j:
-    steps:
-      - name: slow
-        command: "sleep 6 && echo done"
-"""
-        try:
-            self.assertEqual(self._add(self.alice, name, slow).get("status"), "ok")
-            run = self._call(self.alice, "run", workflow=name)
-            run_id = (run.get("data") or {}).get("run_id", "")
-            self.assertTrue(run_id)
-            owner_seen = None
-            for _ in range(10):
-                time.sleep(1)
-                for app in self.admin.list_apps():
-                    if str(getattr(app, "name", "")).startswith("wf-cmd-"):
-                        owner_seen = getattr(app, "owner", None)
-                        break
-                if owner_seen is not None:
-                    break
-            self._wait(self.alice, name, run_id)
-            self.assertEqual(owner_seen, USER1, "step App was not owned by the triggering caller")
-        finally:
-            self._rm_as_admin(name)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

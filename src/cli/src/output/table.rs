@@ -2,7 +2,7 @@ use appmesh::Application;
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::format::{human_readable_duration, human_readable_size};
+use super::format::{human_readable_duration, human_readable_size, short_principal};
 
 const COLUMN_PADDING: usize = 2;
 
@@ -13,9 +13,9 @@ struct Column {
 
 fn format_status(app: &Application) -> String {
     match app.status {
-        Some(1) => "enabled".to_string(),
-        Some(0) => "disabled".to_string(),
-        _ => "-".to_string(),
+        Some(true) => "enabled".to_string(),
+        Some(false) => "disabled".to_string(),
+        None => "-".to_string(),
     }
 }
 
@@ -66,7 +66,10 @@ fn format_row(i: usize, app: &Application) -> Vec<String> {
     vec![
         i.to_string(),
         app.name.clone().unwrap_or_default(),
-        app.owner.clone().unwrap_or_else(|| "-".to_string()),
+        app.owner_principal_id
+            .as_deref()
+            .map(short_principal)
+            .unwrap_or_else(|| "-".to_string()),
         format_status(app),
         format_health(app),
         app.pid

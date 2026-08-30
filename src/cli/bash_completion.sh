@@ -1,6 +1,6 @@
 # bash/zsh completion for appmesh CLI (appm) -*- shell-script -*-
 
-_appm_global_flags="-H --host-url -F --forward-to -U --user -X --password -v --verbose -h --help -V --version"
+_appm_global_flags="-H --host-url -F --forward-to -v --verbose -h --help -V --version"
 
 _appm() {
     local cur prev words cword
@@ -18,10 +18,11 @@ _appm() {
         cword=$COMP_CWORD
     fi
 
-    local commands="logon logoff logout loginfo ls list view add reg rm remove unreg enable disable restart run exec shell get put label log config resource metric passwd mfa lock user appmgpwd appmginit"
+    local commands="logon logoff logout loginfo ls list view add reg rm remove unreg enable disable restart run exec shell get put label log config resource metric workflow wf"
 
-    local flags_logon="--timeout --audience --show-token"
-    local flags_loginfo="--show-token"
+    local flags_logon="--device --dex-access-url --login-timeout --enroll-first-admin --first-admin-token-file"
+    local flags_logoff="--local-only"
+    local flags_loginfo=""
     local flags_add="--app --cmd --description --working-dir --status --shell --session-login --health-check --docker-image --pid --begin-time --end-time --daily-begin --daily-end --interval --cron --memory-limit --virtual-memory --cpu-shares --log-cache-size --permission --metadata --env --security-env --stop-timeout --exit --control --stdin --force"
     local flags_rm="--app --force"
     local flags_view="--long --show-output --pstree --app --log-index --follow --json"
@@ -35,10 +36,6 @@ _appm() {
     local flags_put="--remote --local --no-attr"
     local flags_label="--view --add --delete --label"
     local flags_log="--level"
-    local flags_passwd="--target"
-    local flags_lock="--target --lock"
-    local flags_user="--json --all --force"
-    local flags_mfa="--add --delete"
 
     case "${prev}" in
         --app)
@@ -59,7 +56,7 @@ _appm() {
         -r|--remote|-l|--local|--stdin|-m|--metadata|-j|--json)
             if declare -f _filedir >/dev/null 2>&1; then _filedir; else COMPREPLY=( $(compgen -f -- "${cur}") ); fi
             return ;;
-        -H|--host-url|-F|--forward-to|-U|--user|-X|--password|-t|--timeout|-T|--lifetime|-a|--audience)
+        -H|--host-url|-F|--forward-to|-t|--timeout|-T|--lifetime|--dex-access-url|--login-timeout|--first-admin-token-file)
             return ;;
     esac
 
@@ -73,6 +70,7 @@ _appm() {
         local cmd_flags=""
         case "${subcmd}" in
             logon)                      cmd_flags="${flags_logon}" ;;
+            logoff|logout)              cmd_flags="${flags_logoff}" ;;
             loginfo)                    cmd_flags="${flags_loginfo}" ;;
             add|reg)                    cmd_flags="${flags_add}" ;;
             rm|remove|unreg)            cmd_flags="${flags_rm}" ;;
@@ -87,10 +85,6 @@ _appm() {
             put)                        cmd_flags="${flags_put}" ;;
             label)                      cmd_flags="${flags_label}" ;;
             log)                        cmd_flags="${flags_log}" ;;
-            passwd)                     cmd_flags="${flags_passwd}" ;;
-            lock)                       cmd_flags="${flags_lock}" ;;
-            user)                       cmd_flags="${flags_user}" ;;
-            mfa)                        cmd_flags="${flags_mfa}" ;;
         esac
         COMPREPLY=( $(compgen -W "${cmd_flags} ${_appm_global_flags}" -- "${cur}") )
         return
