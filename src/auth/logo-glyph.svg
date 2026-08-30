@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 366 366" width="366" height="366">
+  <title>App Mesh</title>
+  <defs>
+    <linearGradient id="badge" gradientUnits="userSpaceOnUse" x1="183" y1="18" x2="183" y2="348">
+      <stop offset="0" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <pattern id="mesh" width="30" height="52" patternUnits="userSpaceOnUse">
+      <path d="M0 0 L30 52 M30 0 L0 52" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="2"/>
+    </pattern>
+    <clipPath id="badgeClip">
+      <path d="M183 18 L325.9 100.5 L325.9 265.5 L183 348 L40.1 265.5 L40.1 100.5 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M183 18 L325.9 100.5 L325.9 265.5 L183 348 L40.1 265.5 L40.1 100.5 Z"
+        fill="url(#badge)" stroke="url(#badge)" stroke-width="20" stroke-linejoin="round"/>
+  <rect x="30" y="8" width="306" height="350" fill="url(#mesh)" clip-path="url(#badgeClip)"/>
+  <g stroke="#FFFFFF" stroke-linecap="round" fill="none">
+    <path d="M183 95 L105 268" stroke-width="38"/>
+    <path d="M183 95 L261 268" stroke-width="38"/>
+    <path d="M130 224 H236" stroke-width="34"/>
+  </g>
+  <circle cx="183" cy="95" r="16" fill="#F59E0B" stroke="#FFFFFF" stroke-width="5"/>
+</svg>

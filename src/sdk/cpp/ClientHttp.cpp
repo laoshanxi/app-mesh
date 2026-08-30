@@ -38,6 +38,11 @@ std::shared_ptr<int> AppRun::wait(OutputHandler stdoutHandler, int timeout)
 
 // === AppMeshClient implementation ===
 
+AppMeshClient::AppMeshClient()
+{
+    applyConfig(ClientHttpConfig());
+}
+
 AppMeshClient::AppMeshClient(const ClientHttpConfig &config)
 {
     applyConfig(config);
@@ -46,12 +51,10 @@ AppMeshClient::AppMeshClient(const ClientHttpConfig &config)
 void AppMeshClient::applyConfig(const ClientHttpConfig &config)
 {
     m_url = config.url;
-    m_useRefreshToken = config.useRefreshToken;
-
-    if (config.cookieFile.empty())
-        RestClient::setSessionConfiguration(SessionConfig::MemorySession());
-    else
-        RestClient::setSessionConfiguration(SessionConfig::FileSession(config.cookieFile));
+    // Engine accepts only Authorization: Bearer. Disable libcurl's cookie engine so
+    // a proxy or legacy server cannot create an implicit authentication session.
+    RestClient::setSessionConfiguration(SessionConfig());
+    setBearerToken(config.bearerToken);
 
     // Missing/unreadable CA path: absent default falls back to the system trust store
     // (verification stays on); an explicit path is a hard error (RestClient would silently skip CAINFO/CAPATH).
@@ -74,11 +77,6 @@ void AppMeshClient::applyConfig(const ClientHttpConfig &config)
     RestClient::defaultSslConfiguration(ssl);
 }
 
-bool AppMeshClient::wantRefreshToken() const
-{
-    return m_useRefreshToken;
-}
-
 void AppMeshClient::setForwardTo(const std::string &url)
 {
     m_forwardTo = url;
@@ -89,170 +87,28 @@ const std::string &AppMeshClient::getForwardTo() const
     return m_forwardTo;
 }
 
-// Authentication Management
-std::string AppMeshClient::login(const std::string &username, const std::string &password,
-                              const std::string &totp, int tokenExpire, const std::string &audience)
+// Authentication boundary
+void AppMeshClient::setBearerToken(const std::string &token)
 {
-    RestClient::clearSession();
-    // Drop any credential from a previous session: it belongs to the token jar just cleared.
-    this->setRefreshToken(std::string());
-
-    std::map<std::string, std::string> header;
-    header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_Auth_BasicSpace) +
-                                            Utility::encode64(username + ":" + password);
-    header[HTTP_HEADER_KEY_X_SET_COOKIE] = "true";
-    // Omitted, not "false", when declined: the daemon only issues on an explicit opt-in.
-    if (this->wantRefreshToken())
-        header[HTTP_HEADER_JWT_want_refresh_token] = "true";
-
-    if (tokenExpire > 0)
-        header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(tokenExpire);
-    if (!audience.empty())
-        header[HTTP_HEADER_JWT_audience] = audience;
-    if (!totp.empty())
-        header[HTTP_HEADER_JWT_totp] = totp;
-
-    auto response = this->requestHttp(ErrorPolicy::Return, web::http::methods::POST, "/appmesh/login", nullptr, header);
-
-    if (response->status_code == web::http::status_codes::PreconditionRequired)
-    {
-        // TOTP required (HTTP 428)
-        auto jsonResponse = nlohmann::json::parse(response->text);
-        if (jsonResponse.contains(REST_TEXT_TOTP_CHALLENGE_JSON_KEY))
-        {
-            auto totpChallenge = jsonResponse.at(REST_TEXT_TOTP_CHALLENGE_JSON_KEY).get<std::string>();
-            if (totp.empty())
-                return totpChallenge;
-            this->validateTotp(username, totpChallenge, totp, tokenExpire);
-        }
-    }
-    else if (response->status_code != web::http::status_codes::OK)
-    {
-        throw AppMeshHttpError(response->status_code, response->text);
-    }
-    else
-    {
-        this->captureRefreshToken(response->text);
-        this->setLoginExpireSeconds(tokenExpire);
-    }
-
-    return std::string();
+    std::lock_guard<std::mutex> guard(m_authMutex);
+    m_bearerToken = token;
 }
 
-void AppMeshClient::validateTotp(const std::string &username, const std::string &challenge,
-                              const std::string &totp, int tokenExpire)
+void AppMeshClient::clearBearerToken()
 {
-    std::map<std::string, std::string> header = {{HTTP_HEADER_KEY_X_SET_COOKIE, "true"}};
-    if (this->wantRefreshToken())
-        header[HTTP_HEADER_JWT_want_refresh_token] = "true";
-
-    nlohmann::json body = {
-        {HTTP_BODY_KEY_JWT_username, username},
-        {HTTP_BODY_KEY_JWT_totp, totp},
-        {HTTP_BODY_KEY_JWT_totp_challenge, challenge},
-        {HTTP_BODY_KEY_JWT_expire_seconds, tokenExpire}};
-
-    auto response = this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/totp/validate", &body, header);
-
-    // A validated challenge completes the login, so it owes the same credential setup.
-    this->captureRefreshToken(response->text);
-    this->setLoginExpireSeconds(tokenExpire);
-}
-
-std::tuple<bool, std::string> AppMeshClient::authenticate(const std::string &token,
-                                                       const std::string &permission,
-                                                       const std::string &audience, bool updateSession)
-{
-    std::map<std::string, std::string> header = {
-        {HTTP_HEADER_JWT_Authorization, JwtHelper::buildBearerAuthorization(token)}};
-
-    if (!permission.empty())
-        header[HTTP_HEADER_JWT_auth_permission] = permission;
-    if (!audience.empty())
-        header[HTTP_HEADER_JWT_audience] = audience;
-    if (updateSession)
-        header[HTTP_HEADER_KEY_X_SET_COOKIE] = "true";
-
-    auto resp = this->requestHttp(ErrorPolicy::Return, web::http::methods::POST, "/appmesh/auth", nullptr, header);
-    return std::make_tuple(resp->status_code == web::http::status_codes::OK, resp->text);
-}
-
-void AppMeshClient::logout()
-{
-    // Present the refresh token so the daemon revokes it too; otherwise it stays able to
-    // mint access tokens until it expires, long after the access token is blacklisted.
-    std::map<std::string, std::string> header;
-    const auto refreshToken = this->getRefreshToken();
-    if (!refreshToken.empty())
-        header[HTTP_HEADER_JWT_refresh_token] = refreshToken;
-
-    this->requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/self/logoff", nullptr, header);
-    RestClient::clearSession();
-    this->setRefreshToken(std::string());
-}
-
-void AppMeshClient::renewToken(int tokenExpire)
-{
-    // Rotation makes a refresh token single-use, so two concurrent renewals would present
-    // the same one and the loser would be told it is revoked. Held across the HTTP call;
-    // m_authMutex stays a leaf lock, so there is no lock-order cycle with RestClient's.
-    std::lock_guard<std::mutex> renewGuard(m_renewMutex);
-
-    std::map<std::string, std::string> header;
-    if (this->wantRefreshToken())
-        header[HTTP_HEADER_JWT_want_refresh_token] = "true";
-
-    const auto refreshToken = this->getRefreshToken();
-    if (!refreshToken.empty())
-        header[HTTP_HEADER_JWT_refresh_token] = refreshToken;
-
-    // Replay the login TTL; otherwise the daemon silently applies its own default.
-    if (tokenExpire <= 0)
-        tokenExpire = this->getLoginExpireSeconds();
-    if (tokenExpire > 0)
-        header[HTTP_HEADER_JWT_expire_seconds] = std::to_string(tokenExpire);
-
-    auto response = this->requestHttp(ErrorPolicy::Return, web::http::methods::POST, "/appmesh/token/renew", nullptr, header);
-
-    if (response->status_code == web::http::status_codes::OK)
-    {
-        this->captureRefreshToken(response->text);
-        return;
-    }
-
-    // A rejected refresh token will never be accepted again (rotated away, revoked, or the
-    // session ended). Drop it so the next attempt falls back to the access token instead of
-    // replaying a credential that is now guaranteed to fail.
-    // Compare-and-clear: logout() or another path may have replaced the token while this
-    // request was in flight, and clearing unconditionally would discard a valid one.
-    if (response->status_code == web::http::status_codes::Unauthorized)
-        this->clearRefreshTokenIf(refreshToken);
-
-    throw AppMeshHttpError(response->status_code, response->text);
+    setBearerToken(std::string());
 }
 
 std::string AppMeshClient::getAuthToken() const
 {
-    return RestClient::getCookie(COOKIE_TOKEN);
+    std::lock_guard<std::mutex> guard(m_authMutex);
+    return m_bearerToken;
 }
 
-std::string AppMeshClient::getTotpUri()
+nlohmann::json AppMeshClient::getAuthConfig() const
 {
-    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/totp/secret");
-    auto result = nlohmann::json::parse(response->text);
-    return Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
-}
-
-void AppMeshClient::enableTotp(const std::string &totp)
-{
-    std::map<std::string, std::string> header = {{HTTP_HEADER_JWT_totp, totp}};
-    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, "/appmesh/totp/setup", nullptr, header);
-}
-
-void AppMeshClient::disableTotp(const std::string &user)
-{
-    const std::string restPath = "/appmesh/totp/" + user + "/disable";
-    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath);
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/auth/config");
+    return nlohmann::json::parse(response->text);
 }
 
 // Application View
@@ -539,56 +395,33 @@ void AppMeshClient::deleteLabel(const std::string &label)
     requestHttp(ErrorPolicy::Throw, web::http::methods::DEL, restPath);
 }
 
-// User Management
-void AppMeshClient::updatePassword(const std::string &oldPwd, const std::string &newPwd, const std::string &user)
+nlohmann::json AppMeshClient::getCurrentPrincipal() const
 {
-    nlohmann::json jsonObj = {
-        {HTTP_BODY_KEY_OLD_PASSWORD, Utility::encode64(oldPwd)},
-        {HTTP_BODY_KEY_NEW_PASSWORD, Utility::encode64(newPwd)}};
-
-    const std::string restPath = "/appmesh/user/" + user + "/passwd";
-    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath, &jsonObj);
-}
-
-nlohmann::json AppMeshClient::getCurrentUser() const
-{
-    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/user/self");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/principal/self");
     return nlohmann::json::parse(response->text);
 }
 
-nlohmann::json AppMeshClient::listUsers() const
+nlohmann::json AppMeshClient::listPrincipals() const
 {
-    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/users");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/principals");
     return nlohmann::json::parse(response->text);
 }
 
-void AppMeshClient::addUser(const std::string &username, const nlohmann::json &user)
+void AppMeshClient::updatePrincipal(const std::string &principal, const nlohmann::json &value)
 {
-    const std::string restPath = "/appmesh/user/" + username;
-    requestHttp(ErrorPolicy::Throw, web::http::methods::PUT, restPath, &user);
+    const std::string restPath = "/appmesh/principal/" + Utility::encodeURIComponent(principal);
+    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath, &value);
 }
 
-void AppMeshClient::deleteUser(const std::string &user)
+void AppMeshClient::deletePrincipal(const std::string &principal)
 {
-    const std::string restPath = "/appmesh/user/" + user;
+    const std::string restPath = "/appmesh/principal/" + Utility::encodeURIComponent(principal);
     requestHttp(ErrorPolicy::Throw, web::http::methods::DEL, restPath);
 }
 
-void AppMeshClient::lockUser(const std::string &user)
+std::set<std::string> AppMeshClient::getPrincipalPermissions() const
 {
-    const std::string restPath = "/appmesh/user/" + user + "/lock";
-    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath);
-}
-
-void AppMeshClient::unlockUser(const std::string &user)
-{
-    const std::string restPath = "/appmesh/user/" + user + "/unlock";
-    requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath);
-}
-
-std::set<std::string> AppMeshClient::getUserPermissions() const
-{
-    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/user/permissions");
+    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/principal/self/permissions");
     auto result = nlohmann::json::parse(response->text);
     std::set<std::string> permissions;
     for (const auto &perm : result)
@@ -596,6 +429,16 @@ std::set<std::string> AppMeshClient::getUserPermissions() const
         permissions.insert(perm.get<std::string>());
     }
     return permissions;
+}
+
+nlohmann::json AppMeshClient::getCurrentUser() const
+{
+    return getCurrentPrincipal();
+}
+
+std::set<std::string> AppMeshClient::getUserPermissions() const
+{
+    return getPrincipalPermissions();
 }
 
 std::set<std::string> AppMeshClient::listPermissions() const
@@ -625,18 +468,6 @@ std::map<std::string, std::set<std::string>> AppMeshClient::listRoles() const
         roles[item.key()] = permissions;
     }
     return roles;
-}
-
-std::set<std::string> AppMeshClient::listGroups() const
-{
-    auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, "/appmesh/user/groups");
-    auto result = nlohmann::json::parse(response->text);
-    std::set<std::string> groups;
-    for (const auto &group : result)
-    {
-        groups.insert(group.get<std::string>());
-    }
-    return groups;
 }
 
 void AppMeshClient::updateRole(const std::string &role, const std::set<std::string> &rolePermissions)
@@ -691,6 +522,10 @@ std::shared_ptr<CurlResponse> AppMeshClient::requestHttp(ErrorPolicy errorPolicy
 
 void AppMeshClient::addCommonHeaders(std::map<std::string, std::string> &header) const
 {
+    const auto token = getAuthToken();
+    if (!token.empty() && header.count(HTTP_HEADER_JWT_Authorization) == 0)
+        header[HTTP_HEADER_JWT_Authorization] = JwtHelper::buildBearerAuthorization(token);
+
     if (!m_forwardTo.empty())
     {
         if (m_forwardTo.find(':') == std::string::npos)
@@ -698,55 +533,4 @@ void AppMeshClient::addCommonHeaders(std::map<std::string, std::string> &header)
         else
             header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
     }
-}
-
-// Private members
-void AppMeshClient::captureRefreshToken(const std::string &responseBody)
-{
-    try
-    {
-        const auto result = nlohmann::json::parse(responseBody);
-        if (result.is_object() && result.contains(HTTP_HEADER_JWT_refresh_token_key) &&
-            result.at(HTTP_HEADER_JWT_refresh_token_key).is_string())
-        {
-            const auto token = result.at(HTTP_HEADER_JWT_refresh_token_key).get<std::string>();
-            if (!token.empty())
-                this->setRefreshToken(token);
-        }
-    }
-    catch (const std::exception &)
-    {
-        // Not a token response body: keep whatever is already held.
-    }
-}
-
-std::string AppMeshClient::getRefreshToken() const
-{
-    std::lock_guard<std::mutex> guard(m_authMutex);
-    return m_refreshToken;
-}
-
-void AppMeshClient::setRefreshToken(const std::string &token)
-{
-    std::lock_guard<std::mutex> guard(m_authMutex);
-    m_refreshToken = token;
-}
-
-void AppMeshClient::clearRefreshTokenIf(const std::string &presented)
-{
-    std::lock_guard<std::mutex> guard(m_authMutex);
-    if (m_refreshToken == presented)
-        m_refreshToken.clear();
-}
-
-int AppMeshClient::getLoginExpireSeconds() const
-{
-    std::lock_guard<std::mutex> guard(m_authMutex);
-    return m_loginExpireSeconds;
-}
-
-void AppMeshClient::setLoginExpireSeconds(int seconds)
-{
-    std::lock_guard<std::mutex> guard(m_authMutex);
-    m_loginExpireSeconds = seconds;
 }

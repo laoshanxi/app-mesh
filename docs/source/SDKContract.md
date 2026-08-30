@@ -128,21 +128,56 @@ round-trip as exit codes, not be conflated with error sentinels (S6).
   gone) and never after a disconnect (the daemon is unreachable and may still
   be running the process) (S8).
 
-## Auth Token Synchronization (TCP/WSS)
+## Bearer authentication
 
-The HTTP transport relies on `Set-Cookie` and the HTTP library's cookie jar.
-TCP/WSS transports must extract the new `access_token` from auth endpoint JSON
-bodies themselves — only on HTTP 200, and only for these paths:
+App Mesh clients send access tokens as RFC 6750 bearer values. They do not call an Engine login, refresh, password, TOTP, user, or group endpoint. They do not get tokens from response cookies or response bodies.
 
-| Path | When to apply the body's `access_token` |
-|---|---|
-| `/appmesh/login`, `/appmesh/auth`, `/appmesh/totp/validate` | only when the **request** carried `X-Set-Cookie: true` |
-| `/appmesh/token/renew`, `/appmesh/totp/setup` | always (client already has an active session) |
-| `/appmesh/self/logoff` | clear the cached token |
+The Python and Rust SDKs implement this token-provider contract:
 
-This list is duplicated in Python (`transport_mixin.py`), Go (`requester.go`),
-Rust (`requester.rs`), and JavaScript (`appmesh_tcp.js`); keep all of them —
-and this table — in sync.
+- `AppMeshClient(base_url=..., bearer_token=...)` selects the Engine and attaches a caller-supplied access token.
+- `AppMeshClient(..., token_provider=...)` asks a `TokenProvider` for a usable access token before a request.
+- A client can retry one replayable request after a 401 when the provider can refresh.
+- A client does not refresh or retry after a 403.
+- `StaticAccessTokenProvider` keeps one caller-supplied token in memory. It does not refresh.
+- `OAuthClient` supports authorization code with PKCE, device authorization, refresh, and best-effort revocation.
+- The Rust `OAuthClient` also supports the built-in password exchange that the CLI uses.
+- `OAuthClient.from_appmesh(..., access_url=...)` selects a separate route to the same authentication service.
+- Discovery must publish the configured issuer. Route changes do not change issuer validation.
+- `complete_authorization_callback` validates a single-use state before it exchanges a code.
+- A nonce-bearing request requires a standards-compliant ID-token validator.
+- A refresh token stays in the token provider. The SDK does not send it to the Engine.
+- The SDK does not persist a token unless the application supplies persistence.
+
+Python exports `OAuthClient` and `OAuthError`. Rust exports `OAuthConfig`, `OAuthClient`, `TokenSet`, `TokenProvider`, and `StaticAccessTokenProvider`. Provider-specific names from SDK 3.0 remain compatibility aliases. New code must use the provider-neutral names.
+
+Rust validates authorization-flow ID tokens with discovered RS256 signing keys. It checks `alg`, `kid`, signature, issuer, audience, authorized party, expiry, not-before, and nonce. An application can register a callback to persist a rotated token set.
+
+TCP and WSS send the same bearer as HTTP. WSS also sends it during the HTTP upgrade. The Engine pins the authenticated principal to the connection. Reconnect after a token refresh.
+
+Go, Java, JavaScript, and C++ are bearer-only clients. They provide an in-memory token setter and clearer. Use a standards-based OAuth library when an application needs interactive sign-in or token refresh.
+
+## Forwarding
+
+HTTP, TCP, and WSS support forwarding for normal request methods. The client adds `X-Target-Host` to each forwarded request. The client also adds the current bearer.
+
+WSS sends the bearer during the gateway upgrade. It also sends the bearer in each forwarded frame. The gateway checks that the frame bearer has the principal that the upgrade established. The target validates the bearer again.
+
+The gateway validates a protected request before it opens a target connection. It removes `X-Target-Host` before it sends the request to the target. This rule prevents a forwarding loop.
+
+The two public discovery requests can forward without a bearer:
+
+- `GET /.well-known/oauth-protected-resource`;
+- `GET /appmesh/auth/config`.
+
+Forwarded subscriptions require TCP or WSS. The gateway keeps the subscription route after the first response. It sends all later event frames to the client that created the subscription. It removes the route after unsubscribe or disconnect. HTTP forwarding rejects a subscription request with status 405.
+
+## File-transfer attributes
+
+File upload/download transfers content by default. Applying or sending POSIX
+mode, owner, and group metadata is opt-in because identities commonly differ
+between machines and containers. Python, JavaScript, and C++ therefore default
+their optional permission/attribute argument to `false`; Go, Rust, and Java
+require an explicit boolean. The CLI uses `--apply-permissions` to opt in.
 
 ## Worker Task Loop (`fetch_task` / `send_task_result`)
 
@@ -176,17 +211,22 @@ The two task-loop methods:
 
 | Operation | Endpoint |
 |---|---|
-| Fetch task | `GET /appmesh/app/{app_name}/task?process_key=...` |
-| Return result | `PUT /appmesh/app/{app_name}/task?process_key=...` |
+| Fetch task | `GET /appmesh/app/{app_name}/task` |
+| Return result | `PUT /appmesh/app/{app_name}/task` |
 
 `APP_MESH_PROCESS_KEY` and `APP_MESH_APPLICATION_NAME` are injected by the
-daemon; a missing variable is an immediate error, never retried.
+daemon; a missing variable is an immediate error, never retried. Worker SDKs
+send the process proof only in `X-AppMesh-Process-Key`, never in a URL or query
+string. Engine accepts it only on a direct loopback/private transport, and a
+bearer-less WebSocket session is restricted to GET/PUT task RPC for the same
+managed application process.
 
 ### Retry policy
 
-Normative: the fetch loop retries indefinitely with a **fixed 100 ms floor per
-attempt** — if an attempt (request + failure handling) took less than 100 ms,
-sleep the remainder; otherwise retry immediately. No backoff.
+Normative: except for the permanent 400 and superseded-process 412 cases below,
+the fetch loop retries indefinitely with a **fixed 100 ms floor per attempt** —
+if an attempt (request + failure handling) took less than 100 ms, sleep the
+remainder; otherwise retry immediately. No backoff.
 
 Python additionally accepts an optional `max_retries` cap (exhaustion raises
 `AppMeshError`); the other SDKs retry forever.
@@ -204,6 +244,22 @@ error — never call `exit()` from library code:
 | Rust | `Err(AppMeshError::ProcessSuperseded)` |
 | Java | throws `ProcessSupersededException` |
 | JavaScript | throws `ProcessSupersededError` |
+
+### Permanently rejected worker request (HTTP 400)
+
+HTTP 400 means the worker request is invalid or uses an obsolete protocol such
+as `process_key` query authentication. Repeating the same request cannot recover,
+so the loop MUST stop immediately and return/throw a permanent error. Library
+code does not call `exit()`; a dedicated worker entry point should exit after
+receiving this signal.
+
+| SDK | 400 signal |
+|---|---|
+| Python | raises `AppMeshWorkerRejectedError` |
+| Go | returns an error wrapping `ErrWorkerRejected` |
+| Rust | `Err(AppMeshError::RequestFailed { status: 400, .. })` |
+| Java | throws `IllegalStateException` |
+| JavaScript | throws `WorkerRejectedError` |
 
 ### Cancellation signaling per SDK
 
@@ -235,7 +291,6 @@ one SDK's demuxer/wait path, add or check the matching scenario in the others.
 | S6 | Process killed by signal (negative exit code) | negative code returned as the exit code, not treated as an error/sentinel |
 | S7 | Response arrives immediately after send | not dropped (pending waiter registered before send) |
 | S8 | App removed while waiting | app-removed signaling; no `delete_app` attempt |
-| S9 | Token renew while other demuxer traffic is in flight | renew reply matched by UUID and applied; unrelated responses not cross-wired |
 
 ### Coverage status
 

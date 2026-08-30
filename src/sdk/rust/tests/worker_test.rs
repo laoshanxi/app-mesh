@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use appmesh::{AppMeshWorker, ClientBuilder};
-    use mockito::{Matcher, Server};
+    use mockito::Server;
 
     #[tokio::test]
     async fn test_fetch_task_success() {
@@ -14,7 +14,7 @@ mod tests {
 
         server
             .mock("GET", "/appmesh/app/test-app/task")
-            .match_query(Matcher::UrlEncoded("process_key".into(), "abc".into()))
+            .match_header("X-AppMesh-Process-Key", "abc")
             .with_status(200)
             .with_body("payload")
             .create_async()
@@ -40,7 +40,7 @@ mod tests {
 
         server
             .mock("PUT", "/appmesh/app/test-app/task")
-            .match_query(Matcher::UrlEncoded("process_key".into(), "abc".into()))
+            .match_header("X-AppMesh-Process-Key", "abc")
             .with_status(500)
             .with_body("server error")
             .create_async()

@@ -44,6 +44,8 @@ namespace os
         friend std::shared_ptr<ProcessTree> pstree(pid_t, const std::list<Process> &);
 
         ProcessTree(const Process &_process, const std::list<ProcessTree> &_children);
+
+        uint64_t totalFileDescriptors(const std::string &rootCommand) const;
     };
 
     std::ostream &operator<<(std::ostream &stream, const ProcessTree &tree);

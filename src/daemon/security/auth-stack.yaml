@@ -1,0 +1,17 @@
+---
+AuthStack:
+  # standalone: one-node installation; owner: active auth node; follower: no local Dex.
+  # APPMESH_AUTH_ROLE is the per-node runtime override used by immutable images.
+  role: standalone
+
+  # The web UI has one deterministic redirect URI: <origin of browser_entry> +
+  # /oauth/callback. browser_entry lives in oidc.yaml (APPMESH_AUTH_BROWSER_ENTRY
+  # overrides it); empty derives the daemon HTTPS REST listener. Every fronted
+  # entry (web UI, agent, daemon) serves that path and relays the code to the
+  # web UI origin carried in the OAuth state.
+
+  # The issuer listener stays on loopback. Agent is the only public proxy.
+  # APPMESH_AUTH_DEX_LISTEN overrides this only when Dex must be reachable over
+  # a protected cluster network. Never expose this plaintext listener publicly.
+  dex_listen: 127.0.0.1:6062
+  dex_telemetry_listen: 127.0.0.1:6063

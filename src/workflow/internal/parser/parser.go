@@ -12,11 +12,6 @@ import (
 
 var safeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-// usernamePattern matches App Mesh usernames used as execution_identity. It is
-// intentionally broader than safeNamePattern (allows '.', '@') to cover emails
-// and service-account naming.
-var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.@-]+$`)
-
 // inputKeyPattern: input keys must be usable as env var names.
 var inputKeyPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
@@ -86,12 +81,6 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 	// and the user's intent (serialize runs) would be silently lost.
 	if wf.Concurrency != nil && wf.Concurrency.Group == "" {
 		return nil, fmt.Errorf("concurrency.group is required when concurrency is set")
-	}
-
-	// execution_identity, when set, must be a plausible username (the engine will
-	// log in as it). Binding authorization happens at registration (workflow_add).
-	if wf.ExecutionIdentity != "" && !usernamePattern.MatchString(wf.ExecutionIdentity) {
-		return nil, fmt.Errorf("execution_identity %q must match [a-zA-Z0-9_.@-]+", wf.ExecutionIdentity)
 	}
 
 	// Validate input keys are safe identifiers and types are from the documented enum.

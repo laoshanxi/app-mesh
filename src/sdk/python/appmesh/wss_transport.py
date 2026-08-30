@@ -56,6 +56,15 @@ class WSSTransport:
         self._websocket = None
         self._connect_timeout = self.WSS_CONNECT_TIMEOUT
         self._message_timeout = self.WSS_MESSAGE_TIMEOUT
+        self._bearer_token: Optional[str] = None
+
+    def set_bearer_token(self, token: Optional[str]) -> None:
+        """Set the bearer used on the next WebSocket upgrade.
+
+        An established session keeps its pinned identity; a refreshed token is
+        used automatically after reconnect.
+        """
+        self._bearer_token = token or None
 
     def __enter__(self):
         """Context manager entry."""
@@ -114,11 +123,13 @@ class WSSTransport:
 
         try:
             # Create WebSocket connection using websocket-client library
+            headers = [f"Authorization: Bearer {self._bearer_token}"] if self._bearer_token else None
             self._websocket = create_connection(
                 uri,
                 timeout=self._connect_timeout,
                 subprotocols=["appmesh-ws"],
                 sslopt=sslopt if sslopt else None,
+                header=headers,
             )
             # Set receive timeout for blocking recv calls
             self._websocket.settimeout(self._message_timeout)

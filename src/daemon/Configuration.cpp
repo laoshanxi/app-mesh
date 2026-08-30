@@ -19,7 +19,6 @@
 #include "rest/RestHandler.h"
 #include "security/HMACVerifier.h"
 #include "security/Security.h"
-#include "security/User.h"
 
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
@@ -214,12 +213,6 @@ std::string Configuration::getRestListenAddress()
 	return m_rest->m_restListenAddress;
 }
 
-std::string Configuration::getRestJwtIssuer()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_jwt->m_jwtIssuer.empty() ? MY_HOST_NAME : m_rest->m_jwt->m_jwtIssuer;
-}
-
 int Configuration::getRestTcpPort()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -239,7 +232,7 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 	std::copy_if(allApp.begin(), allApp.end(), std::back_inserter(apps),
 				 [this, &user, returnUnPersistApp](std::shared_ptr<Application> app)
 				 {
-					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) && // access permission check
+					 return (checkOwnerPermission(user, app->getOwnerPrincipalId(), app->getOwnerPermission(), false) && // access permission check
 							 ((returnUnPersistApp) || (!returnUnPersistApp && app->isPersistAble())) &&		  // status filter
 							 (app->getName() != SEPARATE_AGENT_APP_NAME));									  // not expose rest process
 				 });
@@ -277,6 +270,7 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 void Configuration::loadApps(const boost::filesystem::path &appDir)
 {
 	const static char fname[] = "Configuration::loadApps() ";
+	std::vector<std::string> failedDefinitions;
 
 	if (fs::exists(appDir) && fs::is_directory(appDir))
 	{
@@ -297,6 +291,7 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 				catch (const std::exception &e)
 				{
 					LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
+					failedDefinitions.push_back(path);
 				}
 			}
 		}
@@ -317,8 +312,16 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 				catch (const std::exception &e)
 				{
 					LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
+					failedDefinitions.push_back(path);
 				}
 			}
+		}
+		if (!failedDefinitions.empty())
+		{
+			throw std::runtime_error(Utility::stringFormat(
+				"refusing partial application recovery: %zu definition(s) failed validation; "
+				"correct or explicitly migrate the files reported above before restarting",
+				failedDefinitions.size()));
 		}
 	}
 	else
@@ -331,6 +334,8 @@ void Configuration::disableApp(const std::string &appName)
 {
 	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
 	auto app = getApp(appName);
+	if (app->isSystemProtected())
+		throw AuthorizationException("system applications cannot be disabled through the application API");
 	app->disable();
 	app->save();
 }
@@ -338,6 +343,8 @@ void Configuration::enableApp(const std::string &appName)
 {
 	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
 	auto app = getApp(appName);
+	if (app->isSystemProtected())
+		throw AuthorizationException("system applications cannot be changed through the application API");
 	app->enable();
 	app->save();
 }
@@ -419,12 +426,6 @@ bool Configuration::getRestEnabled() const
 	return m_rest->m_restEnabled;
 }
 
-bool Configuration::getPasswordComplexityEnabled() const
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_passwordComplexityEnabled;
-}
-
 bool Configuration::getCorsDisabled() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -467,68 +468,47 @@ const std::string Configuration::getPosixTimezone() const
 	return m_baseConfig->m_posixTimezone;
 }
 
-const std::shared_ptr<Configuration::JsonJwt> Configuration::getJwt() const
+bool Configuration::checkOwnerPermission(const std::string &principalId, const std::string &ownerPrincipalId,
+	int appPermission, bool requestWrite) const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_jwt;
-}
-
-bool Configuration::checkOwnerPermission(const std::string &user, const std::shared_ptr<User> &appOwner, int appPermission, bool requestWrite) const
-{
-	// if app has not defined user, return true
-	// if same user, return true
-	// if not defined permission, return true
-	// if no session user which is internal call, return true
-	// if user is admin, return true
-	if (user.empty() || appOwner == nullptr || user == appOwner->getName() || appPermission == 0 || user == JWT_ADMIN_NAME)
+	if (principalId.empty() || ownerPrincipalId.empty() || principalId == ownerPrincipalId || appPermission == 0)
 	{
 		return true;
 	}
 
-	auto userObj = Security::instance()->getUserInfo(user);
-	if (userObj->getGroup() == appOwner->getGroup())
+	// Explicit management permissions bypass the owner/other share bits:
+	// <app-manage-all> covers every operation, <app-view-all> only read access.
+	// Principals that are not provisioned (e.g. the synthetic workflow controller
+	// identity) get no bypass and fall through to the share bits below.
+	try
 	{
-		auto groupPerm = appPermission / 1 % 10;
-		if (groupPerm <= static_cast<int>(PERMISSION::GROUP_DENY))
-			return false;
-		if (!requestWrite &&
-			(groupPerm == static_cast<int>(PERMISSION::GROUP_READ) ||
-			 groupPerm == static_cast<int>(PERMISSION::GROUP_WRITE)))
-		{
+		const auto granted = Security::instance()->permissions(principalId);
+		if (granted.count(PERMISSION_KEY_app_manage_all) != 0)
 			return true;
-		}
-		if (requestWrite && groupPerm == static_cast<int>(PERMISSION::GROUP_WRITE))
+		if (!requestWrite && granted.count(PERMISSION_KEY_view_all_app) != 0)
 			return true;
 	}
-	else
+	catch (const std::exception &)
 	{
-		auto otherPerm = 10 * (appPermission / 10 % 10);
-		if (otherPerm <= static_cast<int>(PERMISSION::OTHER_DENY))
-			return false;
-		if (!requestWrite &&
-			(otherPerm == static_cast<int>(PERMISSION::OTHER_READ) ||
-			 otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)))
-		{
-			return true;
-		}
-		if (requestWrite && otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE))
-			return true;
 	}
-	return false;
+
+	const auto otherPerm = 10 * (appPermission / 10 % 10);
+	if (otherPerm <= static_cast<int>(PERMISSION::OTHER_DENY))
+		return false;
+	if (!requestWrite &&
+		(otherPerm == static_cast<int>(PERMISSION::OTHER_READ) ||
+		 otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)))
+	{
+		return true;
+	}
+	return requestWrite && otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE);
 }
 
 void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	// Mask the JWT salt (HS256 signing secret) in a local copy before logging
 	auto configJson = this->AsJson();
-	if (HAS_JSON_FIELD(configJson, JSON_KEY_REST) && HAS_JSON_FIELD(configJson.at(JSON_KEY_REST), JSON_KEY_JWT))
-	{
-		auto &jwt = configJson[JSON_KEY_REST][JSON_KEY_JWT];
-		if (HAS_JSON_FIELD(jwt, JSON_KEY_JWTSalt))
-			jwt[JSON_KEY_JWTSalt] = Utility::maskSecret(GET_JSON_STR_VALUE(jwt, JSON_KEY_JWTSalt));
-	}
 	LOG_DBG << fname << '\n'
 			<< configJson.dump(2);
 
@@ -543,7 +523,16 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 {
 	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
 	auto app = parseApp(jsonApp);
+	// Re-check the immutable owner binding while holding the same mutation lock
+	// used by Principal deletion. A request authenticated just before an
+	// administrator tombstones that Principal must not create a newly orphaned
+	// application after the deletion commits.
+	Security::instance()->principal(app->getOwnerPrincipalId());
 	std::shared_ptr<Application> oldApp = getApp(app->getName(), false);
+	if (persistable && app->isSystemProtected())
+		throw AuthorizationException("system applications can only be loaded from the installed apps directory");
+	if (oldApp && oldApp->isSystemProtected())
+		throw AuthorizationException("system applications cannot be replaced through the application API");
 	if (oldApp)
 	{
 		if (!persistable)
@@ -589,6 +578,9 @@ void Configuration::removeApp(const std::string &appName, const Application *exp
 		LOG_DBG << fname << "Ignoring stale remove for application <" << appName << ">";
 		return;
 	}
+	auto current = getApp(appName, false);
+	if (current && current->isSystemProtected())
+		throw AuthorizationException("system applications cannot be removed through the application API");
 
 	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
 
@@ -731,8 +723,6 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 			auto rest = jsonValue.at(JSON_KEY_REST);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestEnabled))
 				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_PasswordComplexityEnabled))
-				SET_COMPARE(this->m_rest->m_passwordComplexityEnabled, newConfig->m_rest->m_passwordComplexityEnabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsDisabled))
 				SET_COMPARE(this->m_rest->m_corsDisabled, newConfig->m_rest->m_corsDisabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CsrfAllowedOrigins))
@@ -775,21 +765,6 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyClient, newConfig->m_rest->m_ssl->m_sslVerifyClient);
 			}
 
-			// JWT
-			if (HAS_JSON_FIELD(rest, JSON_KEY_JWT))
-			{
-				auto sec = rest.at(JSON_KEY_JWT);
-				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTSalt))
-					SET_COMPARE(this->m_rest->m_jwt->m_jwtSalt, newConfig->m_rest->m_jwt->m_jwtSalt);
-				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTAlgorithm))
-					SET_COMPARE(this->m_rest->m_jwt->m_jwtAlgorithm, newConfig->m_rest->m_jwt->m_jwtAlgorithm);
-				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTIssuer))
-					SET_COMPARE(this->m_rest->m_jwt->m_jwtIssuer, newConfig->m_rest->m_jwt->m_jwtIssuer);
-				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTAudience))
-					SET_COMPARE(this->m_rest->m_jwt->m_jwtAudience, newConfig->m_rest->m_jwt->m_jwtAudience);
-				if (HAS_JSON_FIELD(sec, JSON_KEY_SECURITY_Interface))
-					SET_COMPARE(this->m_rest->m_jwt->m_jwtInterface, newConfig->m_rest->m_jwt->m_jwtInterface);
-			}
 		}
 
 		// Labels
@@ -805,7 +780,7 @@ bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 	const static char fname[] = "Configuration::overrideConfigWithEnv() ";
 	LOG_INF << fname << "Applying environment variable overrides to configuration";
 	// environment "APPMESH_LogLevel=INFO" can override main configuration
-	// environment "APPMESH_Security_JWTEnabled=false" can override Security configuration
+	// Nested keys in config.yaml can be overridden with APPMESH_<section>_<key>.
 	bool applyConfig = false;
 	for (char **var = environ; *var != nullptr; var++)
 	{
@@ -984,7 +959,7 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 	restApp[JSON_KEY_APP_command] = std::move(cmd);
 	restApp[JSON_KEY_APP_description] = std::string("REST agent for App Mesh");
 	restApp[JSON_KEY_APP_owner_permission] = (11);
-	restApp[JSON_KEY_APP_owner] = std::string(JWT_ADMIN_NAME);
+	restApp[JSON_KEY_APP_owner_principal_id] = AuthorizationStore::systemPrincipalId();
 	restApp[JSON_KEY_APP_stdout_cache_num] = (3);
 
 	auto objBehavior = nlohmann::json::object();
@@ -1008,7 +983,6 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_restTcpPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestTcpPort);
 	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_PasswordComplexityEnabled, rest->m_passwordComplexityEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_CorsDisabled, rest->m_corsDisabled);
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CsrfAllowedOrigins) && jsonValue.at(JSON_KEY_CsrfAllowedOrigins).is_array())
 	{
@@ -1043,11 +1017,6 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSL))
 	{
 		rest->m_ssl = JsonSsl::FromJson(jsonValue.at(JSON_KEY_SSL));
-	}
-	// JWT
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT))
-	{
-		rest->m_jwt = JsonJwt::FromJson(jsonValue.at(JSON_KEY_JWT));
 	}
 	return rest;
 }
@@ -1116,26 +1085,22 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
 	result[JSON_KEY_RestTcpPort] = (m_restTcpPort);
 	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
-	result[JSON_KEY_PasswordComplexityEnabled] = (m_passwordComplexityEnabled);
 	result[JSON_KEY_CorsDisabled] = (m_corsDisabled);
 	result[JSON_KEY_CsrfAllowedOrigins] = m_csrfAllowedOrigins;
 	result[JSON_KEY_FileAllowedBaseDir] = std::string(m_fileAllowedBaseDir);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
 
-	// JWT
-	result[JSON_KEY_JWT] = m_jwt->AsJson();
 	return result;
 }
 
 Configuration::JsonRest::JsonRest()
-	: m_restEnabled(false), m_passwordComplexityEnabled(false), m_corsDisabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
+	: m_restEnabled(false), m_corsDisabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
 	  m_IOThreadPoolSize(DEFAULT_IO_THREAD_POOL_SIZE),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
 	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(0)
 {
 	m_ssl = std::make_shared<JsonSsl>();
-	m_jwt = std::make_shared<JsonJwt>();
 }
 
 std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const nlohmann::json &jsonValue)
@@ -1169,58 +1134,4 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 Configuration::JsonSsl::JsonSsl()
 	: m_sslVerifyServer(false), m_sslVerifyServerDelegate(false), m_sslVerifyClient(false)
 {
-}
-
-Configuration::JsonJwt::JsonJwt()
-{
-}
-
-std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const nlohmann::json &jsonObj)
-{
-	auto security = std::make_shared<Configuration::JsonJwt>();
-	security->m_jwtSalt = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTSalt);
-	security->m_jwtAlgorithm = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTAlgorithm);
-	if (security->m_jwtAlgorithm.empty())
-	{
-		security->m_jwtAlgorithm = APPMESH_JWT_ALGORITHM_HS256;
-	}
-	else if (security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_HS256 && security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_RS256 && security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_ES256)
-	{
-		throw std::invalid_argument("Invalid JWT Algorithm");
-	}
-	security->m_jwtIssuer = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTIssuer);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_JWTAudience))
-	{
-		for (const auto &value : jsonObj[JSON_KEY_JWTAudience])
-		{
-			if (!value.is_string())
-				throw std::invalid_argument("Invalid JWT Audience type");
-			security->m_jwtAudience.insert(value.get<std::string>());
-		}
-	}
-
-	// Add default audience
-	if (security->m_jwtAudience.empty())
-	{
-		security->m_jwtAudience.insert(HTTP_HEADER_JWT_Audience_appmesh);
-	}
-
-	security->m_jwtInterface = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SECURITY_Interface);
-	return security;
-}
-
-nlohmann::json Configuration::JsonJwt::AsJson() const
-{
-	auto result = nlohmann::json::object();
-	result[JSON_KEY_JWTSalt] = std::string(m_jwtSalt);
-	result[JSON_KEY_JWTAlgorithm] = std::string(m_jwtAlgorithm);
-	result[JSON_KEY_JWTIssuer] = Configuration::instance()->getRestJwtIssuer();
-	result[JSON_KEY_JWTAudience] = m_jwtAudience;
-	result[JSON_KEY_SECURITY_Interface] = std::string(m_jwtInterface);
-	return result;
-}
-
-std::string Configuration::JsonJwt::getJwtInterface() const
-{
-	return m_jwtInterface;
 }
