@@ -259,7 +259,12 @@ fi
 make && make install
 
 cd $ROOTDIR
-git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
+# v2.x branch head dropped the C++11 `operator "" _x` space form; GCC 4.8 pins v2.13.10
+if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+    git clone --depth=1 -b v2.13.10 https://github.com/catchorg/Catch2.git
+else
+    git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
+fi
 cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
 
 cd ${ROOTDIR}

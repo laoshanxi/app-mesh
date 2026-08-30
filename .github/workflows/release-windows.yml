@@ -113,10 +113,16 @@ jobs:
 
           # The unauthenticated RFC 9728 metadata must name the packaged issuer.
           function Get-EngineJson([string]$Path) {
-            for ($i = 0; $i -lt 15; $i++) {
+            # The engine opens the REST listener only after startup-app readiness
+            # and OIDC/JWKS prewarm; each phase may take up to 120 s.
+            for ($i = 0; $i -lt 60; $i++) {
               $raw = curl.exe -sk --fail "https://127.0.0.1:6060$Path"
               if ($LASTEXITCODE -eq 0 -and $raw) { return ($raw | ConvertFrom-Json) }
               Start-Sleep -Seconds 2
+            }
+            & "C:\local\appmesh\bin\nssm.exe" status AppMeshService
+            if (Test-Path "C:\local\appmesh\work\server.log") {
+              Get-Content "C:\local\appmesh\work\server.log" -Tail 60
             }
             throw "Engine did not answer $Path"
           }
