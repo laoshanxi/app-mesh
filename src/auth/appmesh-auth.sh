@@ -53,24 +53,29 @@ fi
 if [[ ! -f "${OIDC_CONFIG}" ]]; then
     OIDC_CONFIG="${APPMESH_ROOT}/config/oidc.yaml"
 fi
+DAEMON_CONFIG="${APPMESH_ROOT}/work/config/config.yaml"
+if [[ ! -f "${DAEMON_CONFIG}" ]]; then
+    DAEMON_CONFIG="${APPMESH_ROOT}/config/config.yaml"
+fi
 
 config_value() {
-    local key=$1
-    local fallback=$2
-    local value
-    value=$(awk -v wanted="${key}:" '$1 == wanted { $1=""; sub(/^[[:space:]]+/, ""); gsub(/^"|"$/, ""); print; exit }' "${AUTH_STACK_CONFIG}")
-    if [[ -n "${value}" ]]; then
-        printf '%s' "${value}"
-    else
-        printf '%s' "${fallback}"
-    fi
+    yaml_value "${AUTH_STACK_CONFIG}" "$1" "$2"
 }
 
 oidc_value() {
-    local key=$1
-    local fallback=$2
+    yaml_value "${OIDC_CONFIG}" "$1" "$2"
+}
+
+yaml_value() {
+    local file=$1
+    local key=$2
+    local fallback=$3
     local value
-    value=$(awk -v wanted="${key}:" '$1 == wanted { $1=""; sub(/^[[:space:]]+/, ""); gsub(/^"|"$/, ""); print; exit }' "${OIDC_CONFIG}")
+    [[ -f "${file}" ]] || {
+        printf '%s' "${fallback}"
+        return
+    }
+    value=$(awk -v wanted="${key}:" '$1 == wanted { $1=""; sub(/^[[:space:]]+/, ""); gsub(/^"|"$/, ""); print; exit }' "${file}")
     if [[ -n "${value}" ]]; then
         printf '%s' "${value}"
     else
@@ -597,6 +602,26 @@ yaml_quote() {
     printf "'%s'" "${value}"
 }
 
+# Single web redirect URI: <origin of browser_entry>/oauth/callback. An empty
+# browser_entry derives the daemon's own HTTPS REST listener, the same default
+# the daemon advertises in /appmesh/auth/config, so Dex and the advertised
+# entry always agree on one address.
+derive_web_redirect_uri() {
+    local browser_entry=${APPMESH_AUTH_BROWSER_ENTRY:-$(oidc_value browser_entry "")}
+    if [[ -z "${browser_entry}" ]]; then
+        local address=${APPMESH_REST_RestListenAddress:-$(yaml_value "${DAEMON_CONFIG}" RestListenAddress 127.0.0.1)}
+        local port=${APPMESH_REST_RestListenPort:-$(yaml_value "${DAEMON_CONFIG}" RestListenPort 6060)}
+        browser_entry="https://${address}:${port}"
+    fi
+    local scheme=${browser_entry%%://*}
+    [[ "${scheme}" != "${browser_entry}" ]] || {
+        echo "browser_entry must be an absolute http(s) URL: ${browser_entry}" >&2
+        return 1
+    }
+    local rest=${browser_entry#*://}
+    printf '%s://%s/oauth/callback' "${scheme}" "${rest%%[/?#]*}"
+}
+
 render_dex_config() {
     [[ -f "${DEX_CONFIG_TEMPLATE}" ]] || {
         echo "The authentication configuration template is unavailable: ${DEX_CONFIG_TEMPLATE}" >&2
@@ -606,8 +631,8 @@ render_dex_config() {
     local issuer=${APPMESH_AUTH_ISSUER:-${APPMESH_DEX_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}}
     local listen=${APPMESH_AUTH_DEX_LISTEN:-$(config_value dex_listen 127.0.0.1:6062)}
     local telemetry_listen=${APPMESH_AUTH_DEX_TELEMETRY_LISTEN:-$(config_value dex_telemetry_listen 127.0.0.1:6063)}
-    local web_callback
-    web_callback=$(config_value web_callback https://127.0.0.1:6060/oauth/callback)
+    local web_redirect_uri
+    web_redirect_uri=$(derive_web_redirect_uri) || return 1
     validate_admin_credentials
     validate_guest_credentials
     ensure_automation_client
@@ -617,7 +642,7 @@ render_dex_config() {
     automation_secret=$(automation_client_value secret)
     local public_value
     for public_value in \
-        "${issuer}" "${listen}" "${telemetry_listen}" "${web_callback}" \
+        "${issuer}" "${listen}" "${telemetry_listen}" "${web_redirect_uri}" \
         "${DEX_INITIAL_ADMIN_EMAIL}" "${DEX_INITIAL_ADMIN_USERNAME}" \
         "${DEX_INITIAL_ADMIN_USER_ID}" "${password_hash}" \
         "${DEX_INITIAL_GUEST_EMAIL}" "${DEX_INITIAL_GUEST_USERNAME}" \
@@ -646,7 +671,7 @@ render_dex_config() {
                 printf '  http: %s\n' "$(yaml_quote "${telemetry_listen}")"
                 ;;
             "    redirectURIs: [__APPMESH_DEX_WEB_CALLBACK__]")
-                printf '    redirectURIs: [%s]\n' "$(yaml_quote "${web_callback}")"
+                printf '    redirectURIs: [%s]\n' "$(yaml_quote "${web_redirect_uri}")"
                 ;;
             "  - email: __APPMESH_DEX_INITIAL_ADMIN_EMAIL__")
                 printf '  - email: %s\n' "$(yaml_quote "${DEX_INITIAL_ADMIN_EMAIL}")"

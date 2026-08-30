@@ -38,6 +38,7 @@ readonly AUTH_APP_NAMES=(auth-service)
 
 AUTH_ACCESS_URL_EXPLICIT=0
 AUTH_ISSUER_EXPLICIT=0
+AUTH_BROWSER_ENTRY_EXPLICIT=0
 AUTH_TLS_VERIFY_EXPLICIT=0
 AUTH_CA_PATH_EXPLICIT=0
 AUTH_ROLE_EXPLICIT=0
@@ -47,6 +48,9 @@ if [ "${APPMESH_AUTH_ACCESS_URL+x}" = x ] || [ "${APPMESH_DEX_ACCESS_URL+x}" = x
 fi
 if [ "${APPMESH_AUTH_ISSUER+x}" = x ] || [ "${APPMESH_DEX_ISSUER+x}" = x ]; then
     AUTH_ISSUER_EXPLICIT=1
+fi
+if [ "${APPMESH_AUTH_BROWSER_ENTRY+x}" = x ]; then
+    AUTH_BROWSER_ENTRY_EXPLICIT=1
 fi
 if [ "${APPMESH_AUTH_TLS_VERIFY+x}" = x ] || [ "${APPMESH_DEX_TLS_VERIFY+x}" = x ]; then
     AUTH_TLS_VERIFY_EXPLICIT=1
@@ -79,6 +83,8 @@ Authentication options (Linux/macOS):
                                 an owner and runs no local authentication service
   --oidc-issuer URL             Canonical issuer (required for external mode and follower role)
   --oidc-access-url URL         Per-node discovery/JWKS route (defaults to the issuer)
+  --oidc-browser-entry URL      Browser entry that fronts the issuer path
+                                (defaults to the issuer; required for the follower role)
   --oidc-tls-verify BOOL        Verify the external route certificate: true or false (default: true)
   --oidc-ca-path PATH           Optional CA file or directory for the external route
   --clear-oidc-ca               Remove a previously configured external CA path
@@ -86,10 +92,10 @@ Authentication options (Linux/macOS):
 
 The equivalent non-interactive environment variables are APPMESH_AUTH_MODE,
 APPMESH_AUTH_ROLE, APPMESH_AUTH_ISSUER, APPMESH_AUTH_ACCESS_URL,
-APPMESH_AUTH_TLS_VERIFY, and APPMESH_AUTH_CA_PATH. They also select the
-settings during package installation, which runs this script with the
-administrator environment. This interface never accepts user or client
-passwords.
+APPMESH_AUTH_BROWSER_ENTRY, APPMESH_AUTH_TLS_VERIFY, and APPMESH_AUTH_CA_PATH.
+They also select the settings during package installation, which runs this
+script with the administrator environment. This interface never accepts user
+or client passwords.
 EOF
 }
 
@@ -129,6 +135,13 @@ parse_arguments() {
             shift 2
             ;;
         --oidc-access-url=*) export APPMESH_AUTH_ACCESS_URL="${1#*=}"; AUTH_ACCESS_URL_EXPLICIT=1; shift ;;
+        --oidc-browser-entry)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_BROWSER_ENTRY="$2"
+            AUTH_BROWSER_ENTRY_EXPLICIT=1
+            shift 2
+            ;;
+        --oidc-browser-entry=*) export APPMESH_AUTH_BROWSER_ENTRY="${1#*=}"; AUTH_BROWSER_ENTRY_EXPLICIT=1; shift ;;
         --oidc-tls-verify)
             require_option_value "$1" "${2:-}"
             export APPMESH_AUTH_TLS_VERIFY="$2"
@@ -330,6 +343,31 @@ normalize_tls_verify() {
     esac
 }
 
+# A node that verifies against a remote authentication service must reach the
+# advertised browser entry. The check uses the configured TLS posture.
+verify_auth_entry_reachable() {
+    local url="$1"
+    local tls_verify="$2"
+    local ca_path="$3"
+    command -v curl >/dev/null 2>&1 || {
+        error "curl is not available; skipped the authentication entry reachability check: $url"
+        return 0
+    }
+    local curl_args=(--fail --silent --show-error --connect-timeout 5 --max-time 15 --output /dev/null)
+    case "$tls_verify" in
+    false | FALSE | False | 0) curl_args+=(--insecure) ;;
+    esac
+    if [ -n "$ca_path" ]; then
+        if [ -d "$ca_path" ]; then
+            curl_args+=(--capath "$ca_path")
+        else
+            curl_args+=(--cacert "$ca_path")
+        fi
+    fi
+    curl "${curl_args[@]}" "$url" ||
+        die "The authentication entry is not reachable: $url. Check the address and the network, then run setup again."
+}
+
 set_auth_app_status() {
     local status="$1"
     local app_name=""
@@ -358,6 +396,7 @@ configure_authentication() {
     local mode=""
     local issuer=""
     local access_url=""
+    local browser_entry=""
     local tls_verify=""
     local ca_path=""
 
@@ -397,6 +436,7 @@ configure_authentication() {
 
     issuer=$(read_env_entry APPMESH_AUTH_ISSUER 2>/dev/null || read_env_entry APPMESH_DEX_ISSUER 2>/dev/null || true)
     access_url=$(read_env_entry APPMESH_AUTH_ACCESS_URL 2>/dev/null || read_env_entry APPMESH_DEX_ACCESS_URL 2>/dev/null || true)
+    browser_entry=$(read_env_entry APPMESH_AUTH_BROWSER_ENTRY 2>/dev/null || true)
     tls_verify=$(read_env_entry APPMESH_AUTH_TLS_VERIFY 2>/dev/null || read_env_entry APPMESH_DEX_TLS_VERIFY 2>/dev/null || true)
     ca_path=$(read_env_entry APPMESH_AUTH_CA_PATH 2>/dev/null || read_env_entry APPMESH_DEX_CA_PATH 2>/dev/null || true)
 
@@ -409,20 +449,24 @@ configure_authentication() {
         # repeated external-mode setup preserves the established selection.
         if [ "$PREVIOUS_AUTH_MODE" != "external" ]; then
             [ "$AUTH_ACCESS_URL_EXPLICIT" -eq 1 ] || access_url=""
+            [ "$AUTH_BROWSER_ENTRY_EXPLICIT" -eq 1 ] || browser_entry=""
             [ "$AUTH_TLS_VERIFY_EXPLICIT" -eq 1 ] || tls_verify=""
             [ "$AUTH_CA_PATH_EXPLICIT" -eq 1 ] || ca_path=""
         fi
         [ -n "$issuer" ] || die "External authentication requires --oidc-issuer or APPMESH_AUTH_ISSUER"
         access_url=${access_url:-$issuer}
+        browser_entry=${browser_entry:-$issuer}
         tls_verify=$(normalize_tls_verify "${tls_verify:-true}")
         validate_oidc_url APPMESH_AUTH_ISSUER "$issuer"
         validate_oidc_url APPMESH_AUTH_ACCESS_URL "$access_url"
+        validate_oidc_url APPMESH_AUTH_BROWSER_ENTRY "$browser_entry"
         if [ -n "$ca_path" ]; then
             [[ "$ca_path" = /* ]] || die "APPMESH_AUTH_CA_PATH must be an absolute path"
             [ -e "$ca_path" ] || die "APPMESH_AUTH_CA_PATH does not exist: $ca_path"
         fi
         write_env_entry "$ENV_FILE" APPMESH_AUTH_ISSUER "$issuer"
         write_env_entry "$ENV_FILE" APPMESH_AUTH_ACCESS_URL "$access_url"
+        write_env_entry "$ENV_FILE" APPMESH_AUTH_BROWSER_ENTRY "$browser_entry"
         write_env_entry "$ENV_FILE" APPMESH_AUTH_TLS_VERIFY "$tls_verify"
         if [ -n "$ca_path" ]; then
             write_env_entry "$ENV_FILE" APPMESH_AUTH_CA_PATH "$ca_path"
@@ -435,6 +479,9 @@ configure_authentication() {
         remove_env_entry "$ENV_FILE" APPMESH_DEX_TLS_VERIFY
         remove_env_entry "$ENV_FILE" APPMESH_DEX_CA_PATH
         info "Authentication mode set to external. The bundled authentication service is disabled."
+        # The whole configuration is persisted above, so a failed check keeps the
+        # selection and a repeated setup re-runs only the check.
+        verify_auth_entry_reachable "$browser_entry" "$tls_verify" "$ca_path"
     else
         # Changing from external mode discards external-only routing/TLS state
         # unless this invocation supplies a replacement. The canonical issuer is
@@ -458,14 +505,20 @@ configure_authentication() {
         fi
         [ -z "$issuer" ] || validate_oidc_url APPMESH_AUTH_ISSUER "$issuer"
         [ -z "$access_url" ] || validate_oidc_url APPMESH_AUTH_ACCESS_URL "$access_url"
+        [ -z "$browser_entry" ] || validate_oidc_url APPMESH_AUTH_BROWSER_ENTRY "$browser_entry"
         [ -z "$tls_verify" ] || normalize_tls_verify "$tls_verify" >/dev/null
         if [ "$role" = "follower" ]; then
             # A follower runs no local authentication service. It must carry the
             # owner's canonical issuer and a route to it; without an explicit
             # access route the owner issuer itself is the route.
             [ -n "$issuer" ] || die "Follower role requires --oidc-issuer or APPMESH_AUTH_ISSUER of the authentication owner"
+            # The owner issuer is an internal route that a browser cannot reach;
+            # only the owner's browser entry fronts the issuer path.
+            [ -n "$browser_entry" ] || die "Follower role requires --oidc-browser-entry or APPMESH_AUTH_BROWSER_ENTRY of the authentication owner"
             access_url=${access_url:-$issuer}
             write_env_entry "$ENV_FILE" APPMESH_AUTH_ACCESS_URL "$access_url"
+            write_env_entry "$ENV_FILE" APPMESH_AUTH_BROWSER_ENTRY "$browser_entry"
+            verify_auth_entry_reachable "$browser_entry" "${tls_verify:-true}" "$ca_path"
             info "This node joins the authentication owner at ${issuer}."
         fi
         set_auth_app_status 1
@@ -476,6 +529,7 @@ configure_authentication() {
                 APPMESH_AUTH_ROLE="$role" \
                 APPMESH_AUTH_ISSUER="${issuer:-http://127.0.0.1:6062/auth}" \
                 APPMESH_AUTH_ACCESS_URL="${access_url:-http://127.0.0.1:6062/auth}" \
+                APPMESH_AUTH_BROWSER_ENTRY="$browser_entry" \
                 APPMESH_AUTH_TLS_VERIFY="${tls_verify:-true}" \
                 APPMESH_AUTH_CA_PATH="$ca_path" \
                 "$AUTH_LAUNCHER" bootstrap || die "Authentication bootstrap failed"

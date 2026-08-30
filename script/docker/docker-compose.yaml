@@ -10,8 +10,12 @@
 #   appm -H wss://appmesh_master:6058 -F appmesh_slave1 logon
 #   appm -H wss://appmesh_master:6058 -F appmesh_slave1 view
 # From the host, a CLI uses the published master ports and routes the issuer
-# traffic through the loopback-published Dex port:
-#   appm -H https://127.0.0.1:6060 --auth-access-url http://127.0.0.1:6062/auth logon
+# traffic through the loopback-published Dex port. The cluster issuer is plain
+# HTTP on the protected compose network, so the login opts in explicitly:
+#   appm -H https://127.0.0.1:6060 --auth-access-url http://127.0.0.1:6062/auth --auth-allow-http logon
+# Point --auth-access-url at a proxy entry (agent, or the published web UI at
+# https://127.0.0.1/auth) instead to get the same login page the browser sees,
+# logo included; the raw Dex port serves no login assets.
 name: appmesh_cluster
 services:
   appmesh_master:
@@ -26,6 +30,10 @@ services:
       # Canonical issuer for the whole cluster, reachable over the compose
       # network. Dex advertises exactly this string in discovery.
       - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
+      # Browser entry that fronts the issuer path: the published web UI (443)
+      # proxies /auth and the login logo. Advertised in /appmesh/auth/config so
+      # WSS/TCP CLI logins hand the browser a reachable, branded address.
+      - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
       # Bind the Dex listener to the protected compose network for followers.
       # Never publish this plaintext listener beyond a protected network.
       - APPMESH_AUTH_DEX_LISTEN=0.0.0.0:6062
@@ -78,6 +86,10 @@ services:
       # Explicit discovery/JWKS route. The packaged default points at loopback,
       # and a follower has no local Dex.
       - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
+      # Browser entry from the master: the published web UI (443) fronts the
+      # issuer path. The issuer route resolves only inside the network, so a
+      # follower cannot derive the entry and carries the owner value.
+      - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
     cap_drop:
       - ALL
     security_opt:
@@ -102,6 +114,8 @@ services:
       - APPMESH_AUTH_ROLE=follower
       - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
       - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
+      # Same browser entry as the master; it fronts the issuer path.
+      - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
     cap_drop:
       - ALL
     security_opt:
@@ -126,6 +140,8 @@ services:
       - APPMESH_AUTH_ROLE=follower
       - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
       - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
+      # Same browser entry as the master; it fronts the issuer path.
+      - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
     cap_drop:
       - ALL
     security_opt:

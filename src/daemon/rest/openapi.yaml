@@ -48,6 +48,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthConfig"
 
+  /appmesh/logo.svg:
+    get:
+      tags: [Discovery]
+      summary: Branding logo for the authentication-service login page
+      description: |
+        The login page references its logo issuer-path relative, and every public
+        entry (agent, web UI proxy) resolves it to this route, so the asset follows
+        the address the browser used.
+      security: []
+      responses:
+        "200":
+          description: The SVG logo served by this node.
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+
+  /oauth/callback:
+    get:
+      tags: [Discovery]
+      summary: Static OAuth callback relay page
+      description: |
+        The web UI requests <browser_entry-origin>/oauth/callback in the
+        authorization-code flow. Every fronted entry serves this static page.
+        It decodes the web UI origin from the OAuth state parameter and returns
+        the unchanged query string to the fixed /oauth/callback path on that
+        origin. Invalid or missing state or code shows an error and never
+        redirects. The agent serves the byte-identical page.
+      security: []
+      responses:
+        "200":
+          description: The static relay page.
+          content:
+            text/html:
+              schema:
+                type: string
+
   /appmesh/auth/enroll-first-admin:
     post:
       tags: [Authorization]
@@ -570,10 +607,17 @@ components:
           items: { type: string }
     AuthConfig:
       type: object
-      required: [issuer, resource, audience, public_client_id, scopes, flows, first_admin_enrollment]
+      required: [issuer, resource, browser_entry, audience, public_client_id, scopes, flows, first_admin_enrollment]
       properties:
         issuer: { type: string, format: uri }
         resource: { type: string, format: uri }
+        browser_entry:
+          type: string
+          format: uri
+          description: Browser entry that fronts the issuer path (agent or web
+            proxy). The web UI registers <origin>/oauth/callback on it as its
+            single redirect URI. Defaults to this node's HTTPS REST listener
+            when not configured.
         audience: { type: string }
         public_client_id: { type: string }
         scopes:

@@ -34,3 +34,27 @@ async fn live_device_flow_authorization_pending() {
         DevicePoll::Pending | DevicePoll::SlowDown
     ));
 }
+
+// Plain-HTTP issuers stay fail-closed unless the caller opts in; the opt-in is
+// the supported route for cluster issuers on a protected network.
+#[tokio::test]
+async fn plain_http_issuer_requires_opt_in() {
+    const UNROUTABLE_HTTP_ISSUER: &str = "http://issuer.invalid:6062/auth";
+
+    let error = DexOAuthClient::discover(DexOAuthConfig::new(
+        UNROUTABLE_HTTP_ISSUER,
+        UNROUTABLE_HTTP_ISSUER,
+        "appmesh-cli",
+    ))
+    .await
+    .expect_err("plain-HTTP issuer must be rejected by default");
+    assert!(error.to_string().contains("must use HTTPS"), "got: {error}");
+
+    let relaxed = DexOAuthClient::discover(
+        DexOAuthConfig::new(UNROUTABLE_HTTP_ISSUER, UNROUTABLE_HTTP_ISSUER, "appmesh-cli")
+            .allow_plain_http(true),
+    )
+    .await
+    .expect_err("the .invalid host never resolves");
+    assert!(!relaxed.to_string().contains("must use HTTPS"), "got: {relaxed}");
+}

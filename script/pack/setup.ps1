@@ -16,6 +16,9 @@ param(
     # Per-node discovery/JWKS route; defaults to the issuer.
     [string]$AccessUrl = "",
 
+    # Browser entry that fronts the issuer path; defaults to the issuer.
+    [string]$BrowserEntry = "",
+
     # Verify the external route certificate: true or false (default: true).
     [string]$TlsVerify = "true",
 
@@ -55,6 +58,8 @@ function ConvertTo-YamlDoubleQuotedScalar {
 Test-OidcUrl "-Issuer" $Issuer
 if (-not $AccessUrl) { $AccessUrl = $Issuer }
 Test-OidcUrl "-AccessUrl" $AccessUrl
+if (-not $BrowserEntry) { $BrowserEntry = $Issuer }
+Test-OidcUrl "-BrowserEntry" $BrowserEntry
 
 switch ($TlsVerify.ToLowerInvariant()) {
     "true" { $TlsVerify = "true" }
@@ -132,6 +137,7 @@ function Set-AuthServiceStatus {
 
 Update-OidcField -Path $OverrideOidc -Field "issuer" -Value $Issuer
 Update-OidcField -Path $OverrideOidc -Field "access_url" -Value $AccessUrl
+Update-OidcField -Path $OverrideOidc -Field "browser_entry" -Value $BrowserEntry
 Update-OidcField -Path $OverrideOidc -Field "tls_verify" -Value $TlsVerify
 if ($ClearCa) {
     Update-OidcField -Path $OverrideOidc -Field "ca_path" -Value ""
@@ -139,7 +145,26 @@ if ($ClearCa) {
 elseif ($CaPath) {
     Update-OidcField -Path $OverrideOidc -Field "ca_path" -Value (ConvertTo-YamlDoubleQuotedScalar $CaPath)
 }
-Write-Host "Configured external authentication issuer <${Issuer}> (access: ${AccessUrl}, TLS verify: ${TlsVerify})" -ForegroundColor Green
+Write-Host "Configured external authentication issuer <${Issuer}> (access: ${AccessUrl}, entry: ${BrowserEntry}, TLS verify: ${TlsVerify})" -ForegroundColor Green
+
+# The node must reach the advertised browser entry. The check uses the
+# configured TLS posture. curl.exe ships with Windows 10 1803 and later.
+$curlExe = Get-Command curl.exe -ErrorAction SilentlyContinue
+if (-not $curlExe) {
+    Write-Warning "curl.exe is not available; skipped the authentication entry reachability check: $BrowserEntry"
+}
+else {
+    $curlArgs = @("-fsS", "--connect-timeout", "5", "--max-time", "15", "--output", "NUL", $BrowserEntry)
+    if ($TlsVerify -eq "false") { $curlArgs += "--insecure" }
+    if ($CaPath) {
+        if (Test-Path -LiteralPath $CaPath -PathType Container) { $curlArgs += @("--capath", $CaPath) }
+        else { $curlArgs += @("--cacert", $CaPath) }
+    }
+    & $curlExe.Source @curlArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fatal "The authentication entry is not reachable: $BrowserEntry. Check the address and the network, then run setup again."
+    }
+}
 Set-AuthServiceStatus 0
 Write-Host "Authentication mode set to external. The bundled authentication service is disabled." -ForegroundColor Green
 

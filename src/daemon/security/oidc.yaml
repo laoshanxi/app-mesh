@@ -7,6 +7,15 @@ OIDC:
   # from the canonical issuer in container, cluster, or hairpin deployments.
   # Discovery and token `iss` must still equal `issuer` exactly.
   access_url: http://127.0.0.1:6062/auth
+
+  # Browser entry that fronts the full issuer path (agent or web proxy), advertised in
+  # /appmesh/auth/config. WSS/TCP clients cannot derive it from their own connection, so
+  # they use it for browser-facing URLs (device verification, authorization). The entry
+  # must serve the whole issuer path, logo included. The web UI registers
+  # <origin>/oauth/callback on it as its single redirect URI; appmesh-auth.sh renders the
+  # same URI from this value. Empty: this daemon's own HTTPS REST listener
+  # (RestListenAddress:RestListenPort) is the entry.
+  browser_entry: ""
   tls_verify: true
   ca_path: ""
 

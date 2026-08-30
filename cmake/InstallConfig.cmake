@@ -79,10 +79,11 @@ if(WIN32)
 endif()
 
 # Scripts (script/)
-install(FILES 
+install(FILES
     "${SRC}/script/pack/grafana_infinity.html"
     "${SRC}/src/daemon/rest/openapi.yaml"
     "${SRC}/src/daemon/rest/index.html"
+    "${SRC}/src/auth/logo.svg"
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/bash_completion.sh>
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/container_monitor.py>
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/appmesh_agent.py>

@@ -32,6 +32,7 @@
 // Content-type constants
 constexpr auto CONTENT_TYPE_HTML = "text/html; charset=utf-8";
 constexpr auto CONTENT_TYPE_YAML = "application/x-yaml";
+constexpr auto CONTENT_TYPE_SVG = "image/svg+xml";
 
 namespace
 {
@@ -118,6 +119,8 @@ namespace
 
 // 1. Authentication
 constexpr auto REST_PATH_AUTH_CONFIG = "/appmesh/auth/config";
+constexpr auto REST_PATH_LOGO = "/appmesh/logo.svg";
+constexpr auto REST_PATH_OAUTH_CALLBACK = "/oauth/callback";
 constexpr auto REST_PATH_PROTECTED_RESOURCE_METADATA = "/.well-known/oauth-protected-resource";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CAPABILITY = "/appmesh/internal/workflow/capability";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS = "/appmesh/internal/workflow/cleanup-orphans";
@@ -185,6 +188,8 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 
 	// 1. Authentication
 	bindRestMethod(web::http::methods::GET, REST_PATH_AUTH_CONFIG, std::bind(&RestHandler::apiAuthConfig, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_LOGO, std::bind(&RestHandler::apiLogo, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_OAUTH_CALLBACK, std::bind(&RestHandler::apiOauthCallback, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_PROTECTED_RESOURCE_METADATA, std::bind(&RestHandler::apiProtectedResourceMetadata, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CAPABILITY, std::bind(&RestHandler::apiWorkflowCapability, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS, std::bind(&RestHandler::apiWorkflowCleanupOrphans, this, std::placeholders::_1));
@@ -375,6 +380,12 @@ const std::string &RestHandler::getOpenApiContent()
 	return content;
 }
 
+const std::string &RestHandler::getLogoContent()
+{
+	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "logo.svg").string());
+	return content;
+}
+
 const std::string &RestHandler::getIndexHtmlContent()
 {
 	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "index.html").string());
@@ -389,6 +400,85 @@ void RestHandler::apiOpenApi(const std::shared_ptr<HttpRequest> &message)
 
 	std::string content = getOpenApiContent();
 	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_YAML);
+}
+
+// Branding asset for the authentication-service login page: frontend.logoURL
+// in dex.yaml is issuer-path relative, and public entries proxy it here, so
+// the asset follows whatever host and port the browser used. Public like the
+// login page itself.
+void RestHandler::apiLogo(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiLogo() ";
+	LOG_DBG << fname << "Serving logo";
+
+	std::string content = getLogoContent();
+	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_SVG);
+}
+
+// Static relay page for the browser OAuth callback. Byte-identical copy in the
+// Go agent (auth_relay.go); change both together.
+constexpr auto OAUTH_CALLBACK_RELAY_HTML = R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>App Mesh sign-in</title>
+</head>
+<body>
+<p id="message">Completing the sign-in.</p>
+<script>
+(function () {
+  "use strict";
+  var fail = function () {
+    document.getElementById("message").textContent =
+      "The sign-in link is not valid. Start the sign-in again from the App Mesh page.";
+  };
+  var query = new URLSearchParams(window.location.search);
+  var state = query.get("state");
+  var code = query.get("code");
+  if (!state || !code) {
+    fail();
+    return;
+  }
+  var decoded = state.replace(/-/g, "+").replace(/_/g, "/");
+  while (decoded.length % 4 !== 0) {
+    decoded += "=";
+  }
+  var payload;
+  try {
+    payload = JSON.parse(atob(decoded));
+  } catch (error) {
+    fail();
+    return;
+  }
+  var target;
+  try {
+    target = new URL(payload && typeof payload.o === "string" ? payload.o : "");
+  } catch (error) {
+    target = null;
+  }
+  if (!target || (target.protocol !== "https:" && target.protocol !== "http:") || !target.host) {
+    fail();
+    return;
+  }
+  window.location.replace(target.origin + "/oauth/callback" + window.location.search);
+})();
+</script>
+</body>
+</html>)HTML";
+
+// The browser lands on <browser_entry-origin>/oauth/callback after the
+// authorization-code flow. The static page hands the unchanged query string to
+// the web UI origin carried in the state parameter, and only to the fixed
+// /oauth/callback path on that origin. PKCE keeps a relayed code useless to any
+// other origin. Public like the login page itself.
+void RestHandler::apiOauthCallback(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiOauthCallback() ";
+	LOG_DBG << fname << "Serving the OAuth callback relay page";
+
+	std::string content(OAUTH_CALLBACK_RELAY_HTML);
+	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
 }
 
 void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)

@@ -79,7 +79,8 @@ load_auth_environment() {
             name=${assignment%%=*}
             case "$name" in
             APPMESH_AUTH_MODE | APPMESH_AUTH_ROLE | APPMESH_AUTH_ISSUER | \
-                APPMESH_AUTH_ACCESS_URL | APPMESH_AUTH_TLS_VERIFY | APPMESH_AUTH_CA_PATH | \
+                APPMESH_AUTH_ACCESS_URL | APPMESH_AUTH_BROWSER_ENTRY | APPMESH_AUTH_TLS_VERIFY | \
+                APPMESH_AUTH_CA_PATH | \
                 APPMESH_DEX_ISSUER | APPMESH_DEX_ACCESS_URL | APPMESH_DEX_TLS_VERIFY | APPMESH_DEX_CA_PATH)
                 export "$assignment"
                 ;;

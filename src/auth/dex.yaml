@@ -5,6 +5,16 @@
 ---
 issuer: __APPMESH_DEX_ISSUER__
 
+# Browser-facing login page branding (Dex defaults would show "dex" and its own
+# logo). The logo URL is issuer-path relative: every login page resolves it to
+# <entry-address>/auth/logo.svg, so it follows whatever host and port the
+# browser used. Public entries route it to the daemon's /appmesh/logo.svg asset:
+# the agent redirects, the web UI proxy rewrites. A browser that reaches Dex
+# directly (no proxy entry) shows the text branding only.
+frontend:
+  issuer: App Mesh
+  logoURL: logo.svg
+
 storage:
   type: sqlite3
   config:
@@ -58,6 +68,10 @@ staticClients:
 
   # Browser authorization-code client. The browser uses PKCE directly; the Agent
   # only serves/proxies traffic and never exchanges codes or stores OAuth tokens.
+  # Exactly one redirect URI is registered: <origin of browser_entry> +
+  # /oauth/callback (appmesh-auth.sh derives it; empty browser_entry means the
+  # daemon HTTPS REST listener). Every fronted entry serves that path and hands
+  # the code and state to the web UI origin carried in the state parameter.
   - id: appmesh-web
     name: App Mesh Web
     public: true

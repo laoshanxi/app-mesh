@@ -125,6 +125,10 @@ void OidcTokenVerifier::loadConfig()
 	const char *accessUrl = environment("APPMESH_AUTH_ACCESS_URL", "APPMESH_DEX_ACCESS_URL");
 	if (accessUrl != nullptr && accessUrl[0] != '\0')
 		m_config.dexAccessUrl = normalizeIssuer(accessUrl);
+	m_config.browserEntry = Utility::stdStringTrim(GET_JSON_STR_VALUE(oidc, "browser_entry"));
+	const char *browserEntry = std::getenv("APPMESH_AUTH_BROWSER_ENTRY");
+	if (browserEntry != nullptr && browserEntry[0] != '\0')
+		m_config.browserEntry = normalizeIssuer(browserEntry);
 	const char *caPath = environment("APPMESH_AUTH_CA_PATH", "APPMESH_DEX_CA_PATH");
 	if (caPath != nullptr && caPath[0] != '\0')
 		m_config.dexCaPath = caPath;
@@ -295,6 +299,10 @@ nlohmann::json OidcTokenVerifier::publicConfig() const
 	result["audience"] = m_config.resourceAudience;
 	result["public_client_id"] = m_config.publicClientId;
 	result["scopes"] = m_config.scopes;
+	// An unconfigured entry defaults to this daemon's own HTTPS REST listener, so
+	// bare deployments and dev servers need no manual redirect registration.
+	result["browser_entry"] = !m_config.browserEntry.empty() ? m_config.browserEntry
+		: "https://" + Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
 	result["flows"] = nlohmann::json::array({"authorization_code_pkce", "device_code"});
 	return result;
 }

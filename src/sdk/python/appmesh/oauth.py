@@ -47,6 +47,7 @@ class OAuthClient(TokenProvider):
         scopes: Optional[Iterable[str]] = None,
         ssl_verify: Union[bool, str] = True,
         timeout: Optional[Tuple[float, float]] = None,
+        allow_plain_http: bool = False,
         **legacy_options,
     ):
         if access_url is None:
@@ -61,8 +62,8 @@ class OAuthClient(TokenProvider):
             raise ValueError("access_url is required")
 
         self.appmesh_client = appmesh_client
-        self.issuer = self._normalize_base_url(issuer, "issuer")
-        self.access_url = self._normalize_base_url(access_url, "access_url")
+        self.issuer = self._normalize_base_url(issuer, "issuer", allow_plain_http)
+        self.access_url = self._normalize_base_url(access_url, "access_url", allow_plain_http)
         self.client_id = client_id
         self.audience = audience
         selected_scopes = self._DEFAULT_SCOPES if scopes is None else scopes
@@ -127,7 +128,7 @@ class OAuthClient(TokenProvider):
             return dict(self._tokens)
 
     @staticmethod
-    def _normalize_base_url(value: str, name: str) -> str:
+    def _normalize_base_url(value: str, name: str, allow_plain_http: bool = False) -> str:
         """Validate and normalize an absolute HTTP(S) service base URL."""
         if not isinstance(value, str) or not value.strip():
             raise ValueError(name + " is required")
@@ -147,8 +148,11 @@ class OAuthClient(TokenProvider):
             or port is not None and not 0 < port < 65536
         ):
             raise ValueError(name + " must be an absolute HTTP(S) URL without credentials, query, or fragment")
-        if parsed.scheme == "http" and not OAuthClient._is_loopback_host(parsed.hostname):
-            raise ValueError(name + " must use HTTPS unless it targets loopback")
+        if parsed.scheme == "http" and not allow_plain_http and not OAuthClient._is_loopback_host(parsed.hostname):
+            raise ValueError(
+                name
+                + " must use HTTPS unless it targets loopback; set allow_plain_http=True to allow plain HTTP on a trusted network"
+            )
         return candidate
 
     @staticmethod

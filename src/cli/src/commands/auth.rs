@@ -18,6 +18,8 @@ struct EngineAuthConfig {
     audience: String,
     public_client_id: String,
     #[serde(default)]
+    browser_entry: String,
+    #[serde(default)]
     scopes: Vec<String>,
     #[serde(default)]
     flows: Vec<String>,
@@ -40,6 +42,14 @@ fn builtin_email(username: &str) -> Option<String> {
     (!username.contains('@')).then(|| format!("{username}@{BUILTIN_EMAIL_DOMAIN}"))
 }
 
+// Cluster issuers are plain HTTP on a protected network; the opt-in keeps the
+// default fail-closed for every other deployment.
+fn env_allows_plain_http() -> bool {
+    std::env::var("APPMESH_AUTH_ALLOW_HTTP")
+        .map(|value| !matches!(value.trim().to_ascii_lowercase().as_str(), "" | "0" | "false" | "no"))
+        .unwrap_or(false)
+}
+
 pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
     let engine = build_client(cli).await?;
     let engine_endpoint = get_current_endpoint(cli)?;
@@ -60,12 +70,24 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
         .clone()
         .or_else(|| std::env::var("APPMESH_AUTH_ACCESS_URL").ok())
         .or_else(|| std::env::var("APPMESH_DEX_ACCESS_URL").ok())
+        // The advertised browser_entry is a redirect origin for browsers, not a
+        // client discovery route: it carries no issuer path and may use TLS the
+        // CLI does not trust. Discovery defaults to the issuer itself.
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| issuer.clone());
 
     let oauth_config = OAuthConfig::new(issuer, access_url, advertised.public_client_id)
         .audience(advertised.audience)
-        .scopes(advertised.scopes);
+        .scopes(advertised.scopes)
+        .allow_plain_http(args.auth_allow_http || env_allows_plain_http());
+    // The advertised browser entry is a front-channel origin only: the SDK maps
+    // login and device verification URLs onto it so the browser gets the entry
+    // that serves the login assets and the callback relay. Discovery and token
+    // requests keep using the access URL.
+    let oauth_config = match advertised.browser_entry.trim().is_empty() {
+        true => oauth_config,
+        false => oauth_config.browser_entry(advertised.browser_entry.trim()),
+    };
     let oauth = OAuthClient::discover(oauth_config.clone())
         .await
         .context("Authentication service discovery failed")?;

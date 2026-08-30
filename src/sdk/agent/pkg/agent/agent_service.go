@@ -193,6 +193,10 @@ func ListenAndServeREST(ctx context.Context) error {
 	// docker.sock proxy
 	RegisterDockerRoutes(router)
 
+	// Static relay page for the browser OAuth callback on this entry origin.
+	// Must stay ahead of the catch-all forward to the daemon.
+	RegisterAuthRelayRoutes(router)
+
 	// Route only the configured authentication surface. Upstream identity providers
 	// stay behind that service and are never routed by the agent.
 	authProxy, authPath, err := newAuthReverseProxy()
@@ -200,6 +204,7 @@ func ListenAndServeREST(ctx context.Context) error {
 		return err
 	}
 	if authPath != "" {
+		RegisterAuthLogoRoutes(router, authPath)
 		router.Path(authPath).Handler(authProxy)
 		router.PathPrefix(authPath + "/").Handler(authProxy)
 	} else {

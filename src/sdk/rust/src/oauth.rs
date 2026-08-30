@@ -61,6 +61,16 @@ pub struct OAuthConfig {
     pub audience: Option<String>,
     #[serde(default)]
     pub scopes: Vec<String>,
+    /// Allow a plain-HTTP issuer and access URL on non-loopback hosts. Off by
+    /// default; enable only on networks where the traffic path is trusted.
+    #[serde(default)]
+    pub allow_plain_http: bool,
+    /// Origin browsers use for the front-channel pages (login, device
+    /// verification). When set, authorization and verification URLs are
+    /// rewritten onto this origin; the back-channel (discovery, token, JWKS)
+    /// keeps using access_url. Empty: front-channel follows access_url.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_entry: Option<String>,
 }
 
 /// Compatibility alias for SDK 3.0 applications.
@@ -79,11 +89,23 @@ impl OAuthConfig {
             client_id: client_id.into(),
             audience: None,
             scopes: DEFAULT_OAUTH_SCOPES.iter().map(|scope| (*scope).to_string()).collect(),
+            allow_plain_http: false,
+            browser_entry: None,
         }
     }
 
     pub fn audience(mut self, audience: impl Into<String>) -> Self {
         self.audience = Some(audience.into());
+        self
+    }
+
+    pub fn browser_entry(mut self, entry: impl Into<String>) -> Self {
+        self.browser_entry = Some(entry.into());
+        self
+    }
+
+    pub fn allow_plain_http(mut self, allow: bool) -> Self {
+        self.allow_plain_http = allow;
         self
     }
 
@@ -93,8 +115,13 @@ impl OAuthConfig {
     }
 
     fn validate_and_normalize(mut self) -> Result<Self> {
-        self.issuer = normalize_base_url(&self.issuer, "issuer")?;
-        self.access_url = normalize_base_url(&self.access_url, "access_url")?;
+        self.issuer = normalize_base_url(&self.issuer, "issuer", self.allow_plain_http)?;
+        self.access_url = normalize_base_url(&self.access_url, "access_url", self.allow_plain_http)?;
+        if let Some(entry) = self.browser_entry.as_mut() {
+            // The entry is browser-facing; plain HTTP is the operator's choice,
+            // same as an explicit plain-HTTP access URL.
+            *entry = normalize_base_url(entry, "browser_entry", true)?;
+        }
         if self.client_id.trim().is_empty() {
             return Err(AppMeshError::ConfigurationError("OAuth client_id is required".into()));
         }
@@ -434,9 +461,10 @@ impl OAuthClient {
         let state = random_urlsafe(2);
         let nonce = random_urlsafe(2);
         let scope = self.user_scope();
-        // Authorization is a front-channel navigation. Preserve the canonical URL
-        // published by the issuer; access_url is only for SDK back-channel HTTP requests.
-        let mut authorization_url = Url::parse(&self.metadata.authorization_endpoint)?;
+        // Authorization is a front-channel navigation, but the published issuer
+        // address may be loopback or cluster-internal. Follow the access URL so
+        // the browser reaches a fronting entry (agent, web proxy).
+        let mut authorization_url = Url::parse(&self.front_channel_endpoint(&self.metadata.authorization_endpoint)?)?;
         authorization_url
             .query_pairs_mut()
             .append_pair("response_type", "code")
@@ -502,8 +530,13 @@ impl OAuthClient {
                 )
             })?;
         validate_published_endpoint(&self.config, verification_uri)?;
+        // Front-channel URL: the browser must reach the entry from this machine.
+        // The entry (when advertised) serves the login assets and the relay;
+        // otherwise the browser follows the access URL.
+        device.verification_uri = Some(self.front_channel_endpoint(verification_uri)?);
         if let Some(uri) = device.verification_uri_complete.as_deref() {
             validate_published_endpoint(&self.config, uri)?;
+            device.verification_uri_complete = Some(self.front_channel_endpoint(uri)?);
         }
         if device.device_code.is_empty() || device.user_code.is_empty() {
             return Err(AppMeshError::AuthenticationFailed(
@@ -751,6 +784,28 @@ impl OAuthClient {
         Ok(access.to_string())
     }
 
+    // Front-channel (browser) URLs go through the advertised entry when one is
+    // set: the entry fronts the whole issuer path and serves the login assets
+    // (logo) and the callback relay. Only the origin of the entry is used; the
+    // issuer path is kept. Without an entry, the browser follows the access URL.
+    fn front_channel_endpoint(&self, published: &str) -> Result<String> {
+        let Some(entry) = self.config.browser_entry.as_deref().filter(|entry| !entry.trim().is_empty()) else {
+            return self.access_endpoint(published);
+        };
+        validate_published_endpoint(&self.config, published)?;
+        let published = Url::parse(published)?;
+        let issuer = Url::parse(&self.config.issuer)?;
+        let issuer_path = issuer.path().trim_end_matches('/');
+        let suffix = published.path().strip_prefix(issuer_path).ok_or_else(|| {
+            AppMeshError::AuthenticationFailed("The endpoint is outside the configured issuer path".into())
+        })?;
+        let mut target = Url::parse(entry.trim_end_matches('/'))?;
+        target.set_path(&format!("{}{}", issuer_path, suffix));
+        target.set_query(published.query());
+        target.set_fragment(None);
+        Ok(target.to_string())
+    }
+
     async fn fetch_jwks(&self) -> Result<JsonWebKeySet> {
         let response = self.http.get(self.access_endpoint(&self.metadata.jwks_uri)?).send().await?;
         let status = response.status();
@@ -874,7 +929,7 @@ impl TokenProvider for OAuthClient {
     }
 }
 
-fn normalize_base_url(value: &str, field: &str) -> Result<String> {
+fn normalize_base_url(value: &str, field: &str, allow_plain_http: bool) -> Result<String> {
     let value = value.trim().trim_end_matches('/');
     let parsed = Url::parse(value).map_err(|error| {
         AppMeshError::ConfigurationError(format!("invalid {} URL: {}", field, error))
@@ -891,9 +946,9 @@ fn normalize_base_url(value: &str, field: &str) -> Result<String> {
             field
         )));
     }
-    if parsed.scheme() == "http" && !parsed.host_str().is_some_and(is_loopback_host) {
+    if parsed.scheme() == "http" && !allow_plain_http && !parsed.host_str().is_some_and(is_loopback_host) {
         return Err(AppMeshError::ConfigurationError(format!(
-            "{} must use HTTPS unless it targets loopback",
+            "{} must use HTTPS unless it targets loopback; set --auth-allow-http (APPMESH_AUTH_ALLOW_HTTP=1) to allow plain HTTP on a trusted network",
             field
         )));
     }

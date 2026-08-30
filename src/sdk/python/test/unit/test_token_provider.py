@@ -189,3 +189,16 @@ class TokenProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlainHttpIssuerPolicy(unittest.TestCase):
+    """Plain-HTTP issuers stay fail-closed unless the caller opts in."""
+
+    def test_plain_http_issuer_requires_opt_in(self):
+        url = "http://appmesh_master:6062/auth"
+        with self.assertRaisesRegex(ValueError, "must use HTTPS"):
+            DexOAuthClient._normalize_base_url(url, "issuer")
+        with self.assertRaisesRegex(ValueError, "must use HTTPS"):
+            DexOAuthClient._normalize_base_url(url, "access_url")
+        self.assertEqual(DexOAuthClient._normalize_base_url(url, "issuer", True), url)
+        self.assertEqual(DexOAuthClient._normalize_base_url(url, "access_url", True), url)

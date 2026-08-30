@@ -27,6 +27,7 @@ public:
 	// Static content serving utilities
 	static const std::string &getOpenApiContent();
 	static const std::string &getIndexHtmlContent();
+	static const std::string &getLogoContent();
 
 	// Prometheus metrics, forwarded to the owned exporter so that callers keep using RESTHANDLER
 	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
@@ -44,6 +45,8 @@ protected:
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 
 	void apiAuthConfig(const std::shared_ptr<HttpRequest> &message);
+	void apiLogo(const std::shared_ptr<HttpRequest> &message);
+	void apiOauthCallback(const std::shared_ptr<HttpRequest> &message);
 	void apiProtectedResourceMetadata(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowCapability(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &message);

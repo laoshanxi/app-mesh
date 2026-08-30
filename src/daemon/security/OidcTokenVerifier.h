@@ -18,6 +18,12 @@ public:
 	{
 		std::string issuer;
 		std::string dexAccessUrl;
+		/// Browser entry that fronts the issuer path (agent or web proxy), advertised
+		/// in the public auth config so WSS/TCP clients can hand browser flows an
+		/// address they can actually reach. The web UI registers <origin>/oauth/callback
+		/// on it as its single redirect URI. Empty: this daemon's own HTTPS REST
+		/// listener is advertised.
+		std::string browserEntry;
 		bool dexTlsVerify{true};
 		std::string dexCaPath;
 		std::string resourceUrl;

@@ -112,6 +112,10 @@ pub struct LogonArgs {
     #[arg(long = "auth-access-url", alias = "dex-access-url")]
     pub auth_access_url: Option<String>,
 
+    /// Allow a plain-HTTP issuer and access URL on non-loopback hosts (trusted networks only)
+    #[arg(long = "auth-allow-http")]
+    pub auth_allow_http: bool,
+
     /// Maximum seconds to wait for the browser callback when using --browser
     #[arg(long = "login-timeout", default_value_t = 300)]
     pub login_timeout: u64,

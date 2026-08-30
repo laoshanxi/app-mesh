@@ -25,6 +25,10 @@ $AuthStateDir = Join-Path $AppMeshRoot "work\auth"
 $AuthSecretDir = Join-Path $AuthStateDir "secrets"
 $AuthStackConfig = Join-Path $AppMeshRoot "work\config\auth-stack.yaml"
 $OidcConfig = Join-Path $AppMeshRoot "work\config\oidc.yaml"
+$DaemonConfig = Join-Path $AppMeshRoot "work\config\config.yaml"
+if (-not (Test-Path -LiteralPath $DaemonConfig -PathType Leaf)) {
+    $DaemonConfig = Join-Path $AppMeshRoot "config\config.yaml"
+}
 $DexConfigTemplate = Join-Path $AppMeshRoot "config\dex.yaml"
 $DexRuntimeDir = Join-Path $AuthStateDir "dex"
 $DexRuntimeConfig = Join-Path $DexRuntimeDir "dex.yaml"
@@ -337,6 +341,27 @@ function Initialize-AuthState {
     if (-not (Test-Path -LiteralPath $ready)) { Write-PrivateText $ready "ready`n" }
 }
 
+# Single web redirect URI: <origin of browser_entry> + /oauth/callback. An empty
+# browser_entry derives the daemon's own HTTPS REST listener, the same default
+# the daemon advertises in /appmesh/auth/config, so Dex and the advertised
+# entry always agree on one address.
+function Get-WebRedirectUri {
+    $browserEntry = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_BROWSER_ENTRY" "" $OidcConfig "browser_entry" ""
+    if (-not $browserEntry) {
+        $address = Get-EnvironmentOrYaml "APPMESH_REST_RestListenAddress" $DaemonConfig "RestListenAddress" "127.0.0.1"
+        $port = Get-EnvironmentOrYaml "APPMESH_REST_RestListenPort" $DaemonConfig "RestListenPort" "6060"
+        $browserEntry = "https://${address}:${port}"
+    }
+    $schemeSeparator = $browserEntry.IndexOf("://")
+    if ($schemeSeparator -lt 1) {
+        throw "browser_entry must be an absolute http(s) URL: $browserEntry"
+    }
+    $rest = $browserEntry.Substring($schemeSeparator + 3)
+    $end = $rest.IndexOfAny([char[]]@("/", "?", "#"))
+    if ($end -ge 0) { $rest = $rest.Substring(0, $end) }
+    return $browserEntry.Substring(0, $schemeSeparator + 3) + $rest + "/oauth/callback"
+}
+
 function Render-DexConfig {
     Assert-PlainFile $DexConfigTemplate "authentication configuration template"
     $admin = Read-KeyValueFile $AdminCredentials
@@ -345,7 +370,7 @@ function Render-DexConfig {
     $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" "APPMESH_DEX_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
     $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_DEX_LISTEN" $AuthStackConfig "dex_listen" "127.0.0.1:6062"
     $telemetry = Get-EnvironmentOrYaml "APPMESH_AUTH_DEX_TELEMETRY_LISTEN" $AuthStackConfig "dex_telemetry_listen" "127.0.0.1:6063"
-    $callback = Get-YamlScalar $AuthStackConfig "web_callback" "https://127.0.0.1:6060/oauth/callback"
+    $webRedirectUri = Get-WebRedirectUri
 
     $content = [System.IO.File]::ReadAllText($DexConfigTemplate)
     $replacements = [ordered]@{
@@ -353,7 +378,7 @@ function Render-DexConfig {
         "__APPMESH_DEX_STORAGE_PATH__" = (Join-Path $DexRuntimeDir "dex.db")
         "__APPMESH_DEX_LISTEN__" = $listen
         "__APPMESH_DEX_TELEMETRY_LISTEN__" = $telemetry
-        "__APPMESH_DEX_WEB_CALLBACK__" = $callback
+        "__APPMESH_DEX_WEB_CALLBACK__" = $webRedirectUri
         "__APPMESH_DEX_INITIAL_ADMIN_EMAIL__" = $AdminEmail
         "__APPMESH_DEX_INITIAL_ADMIN_PASSWORD_HASH__" = $admin.password_hash
         "__APPMESH_DEX_INITIAL_ADMIN_USERNAME__" = $AdminUsername
@@ -367,6 +392,7 @@ function Render-DexConfig {
     foreach ($marker in $replacements.Keys) {
         $content = $content.Replace($marker, (ConvertTo-YamlSingleQuotedScalar ([string]$replacements[$marker])))
     }
+
     if ($content.Contains("__APPMESH_")) { throw "The authentication configuration template contains an unresolved marker" }
     Write-PrivateText $DexRuntimeConfig $content
 }
