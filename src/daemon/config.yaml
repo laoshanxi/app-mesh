@@ -48,9 +48,6 @@ REST:
   # Number of threads to handle I/O operations.
   IOThreadPoolSize: 2
 
-  # Enables or disables password complexity validation when changing passwords.
-  PasswordComplexityEnabled: false
-
   # When true, CORS headers will not be added to responses.
   CorsDisabled: false
 
@@ -64,27 +61,6 @@ REST:
 
   # Allowed base directory for file upload/download operations.
   FileAllowedBaseDir:
-
-  # JWT Authentication Configuration
-  JWT:
-    # Salt for JWT token generation. IMPORTANT: Change this in production.
-    JWTSalt: How_AreU!ApPMEsh
-
-    # JWT sign algorithm (HS256,RS256).
-    # - HS256 use JWTSalt as secret
-    # - RS256 use public/private key pair in ssl directory
-    # - ES256 use ECDSA public/private key pair in ssl directory
-    Algorithm: HS256
-
-    # Name of the JWT token issuer, typically set to your organization or service name.
-    # Defaults to the hostname if left empty.
-    Issuer: ""
-
-    # Audience for the JWT token.
-    Audience: ["appmesh-service", "appmesh-file-service", "your-service-api"]
-
-    # Authentication type to use [local/consul/oauth2].
-    SecurityInterface: local
 
   SSL:
     # Path to the Certificate Authority (CA) certificate.
@@ -107,7 +83,8 @@ REST:
     # Verify certificates for delegated connections; false accepts invalid/self-signed certificates.
     VerifyServerDelegate: false
 
-# Node labels with 2 default samples provided.
-Labels:
-  arch: x86_64
-  os_version: centos7.6
+# Node labels. The daemon adds the automatic host name, arch, and (on Linux)
+# os_version labels at startup; list only custom labels here, e.g.
+#   Labels:
+#     env: production
+Labels: {}

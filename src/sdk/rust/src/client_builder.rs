@@ -23,7 +23,6 @@ type Result<T> = std::result::Result<T, AppMeshError>;
 /// let client = ClientBuilder::new()
 ///     .url("https://appmesh.example.com:6060")
 ///     .ssl_ca_cert("/path/to/ca.pem")
-///     .cookie_file("/tmp/cookies.txt")
 ///     .timeout_secs(30)
 ///     .build()?;
 /// # Ok::<(), appmesh::AppMeshError>(())
@@ -34,12 +33,10 @@ pub struct ClientBuilder {
     ssl_ca_cert: Option<String>,
     ssl_client_cert: Option<PathBuf>,
     ssl_client_key: Option<PathBuf>,
-    cookie_file: Option<String>,
     jwt_token: Option<String>,
     timeout: Option<Duration>,
     danger_accept_invalid_certs: bool,
-    auto_refresh_token: bool,
-    use_refresh_token: Option<bool>,
+    provider_auto_refresh: bool,
 }
 
 impl ClientBuilder {
@@ -87,31 +84,16 @@ impl ClientBuilder {
         self
     }
 
-    /// Enable automatic JWT token refresh before expiration.
-    /// The refresh loop starts after the first successful login, or call
-    /// [`AppMeshClient::schedule_token_refresh`] to start it explicitly.
-    pub fn auto_refresh_token(mut self, enable: bool) -> Self {
-        self.auto_refresh_token = enable;
-        self
-    }
-
-    /// Ask the daemon for a refresh token on login/renew. Unset follows
-    /// [`Self::auto_refresh_token`], which already says whether this client is long-lived;
-    /// a refresh token is long-lived, so a one-shot client would leak one per invocation.
-    pub fn use_refresh_token(mut self, enable: bool) -> Self {
-        self.use_refresh_token = Some(enable);
+    /// Enable background access-token refresh through an installed provider.
+    /// Call [`AppMeshClient::schedule_token_refresh`] after installing the provider.
+    pub fn provider_auto_refresh(mut self, enable: bool) -> Self {
+        self.provider_auto_refresh = enable;
         self
     }
 
     /// Set a JWT token directly without server verification (no network call).
     pub fn jwt_token(mut self, token: impl Into<String>) -> Self {
         self.jwt_token = Some(token.into());
-        self
-    }
-
-    /// Enable cookie persistence to a file.
-    pub fn cookie_file(mut self, path: impl Into<String>) -> Self {
-        self.cookie_file = Some(path.into());
         self
     }
 
@@ -141,8 +123,7 @@ impl ClientBuilder {
     /// Build the HTTP client.
     ///
     /// If `jwt_token()` was provided, the token is attached locally without a verification request.
-    /// If `auto_refresh_token(true)` was set, refresh is enabled but still requires a successful
-    /// login (or another stored token) before the refresh loop can do useful work.
+    /// If `provider_auto_refresh(true)` was set, refresh requires an installed token provider.
     pub fn build(self) -> Result<Arc<AppMeshClient>> {
         self.validate()?;
 
@@ -152,19 +133,16 @@ impl ClientBuilder {
             self.url,
             self.ssl_ca_cert,
             ssl_client_cert,
-            self.cookie_file,
             self.timeout,
             self.danger_accept_invalid_certs,
         )?;
-
-        client.set_use_refresh_token(self.use_refresh_token);
 
         if let Some(token) = &self.jwt_token {
             client.set_token(token);
         }
 
-        if self.auto_refresh_token {
-            client.set_auto_refresh_token(true);
+        if self.provider_auto_refresh {
+            client.set_provider_auto_refresh(true);
         }
 
         Ok(client)

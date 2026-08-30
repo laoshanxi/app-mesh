@@ -16,9 +16,11 @@ esac
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
-export ROOTDIR=$(pwd)/appmesh.tmp
-mkdir -p ${ROOTDIR}
-cd ${ROOTDIR}
+
+ROOTDIR="$(pwd)/appmesh.tmp"
+export ROOTDIR
+mkdir -p "${ROOTDIR}"
+cd "${ROOTDIR}"
 
 # check root permission
 if [ "$(id -u)" != "0" ]; then
@@ -199,6 +201,11 @@ go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssljson@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
+# Dex OIDC server: follow master via the project fork, which carries the
+# refresh-token rotation SQLite deadlock fix until upstream merges it.
+git clone --quiet --depth 1 https://github.com/laoshanxi/dex.git
+(cd dex && CGO_ENABLED=1 go build -trimpath -buildvcs=false -ldflags "-s -w" -o /usr/local/bin/dex ./cmd/dex)
+
 cd $ROOTDIR
 # Message Pack
 # https://github.com/msgpack/msgpack-c/tree/cpp_master
@@ -225,7 +232,13 @@ cp croncpp/include/croncpp.h /usr/local/include/
 git clone --depth=1 https://github.com/laoshanxi/wildcards.git
 cp -rf wildcards/single_include/ /usr/local/include/wildcards
 
-git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
+# prometheus-cpp master needs C++14/17 (transparent comparator, nested namespace);
+# CentOS 7 (GCC 4.8, C++11) pins the last C++11-capable release
+if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+    git clone --depth=1 -b v1.3.0 https://github.com/jupp0r/prometheus-cpp.git
+else
+    git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
+fi
 cp -rf prometheus-cpp/core/src /usr/local/src/prometheus
 cp -rf prometheus-cpp/core/include/prometheus /usr/local/include/
 cat << EOF > /usr/local/include/prometheus/detail/core_export.h

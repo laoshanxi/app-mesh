@@ -15,9 +15,11 @@ esac
 export DEBIAN_FRONTEND=noninteractive
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
-export ROOTDIR=$(pwd)/appmesh.tmp
-mkdir -p ${ROOTDIR}
-cd ${ROOTDIR}
+
+ROOTDIR="$(pwd)/appmesh.tmp"
+export ROOTDIR
+mkdir -p "${ROOTDIR}"
+cd "${ROOTDIR}"
 
 apt update
 # apt full-upgrade -q -y
@@ -69,6 +71,11 @@ BUILDFLAGS="-trimpath -buildvcs=false"
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssljson@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+# Dex OIDC server: follow master via the project fork, which carries the
+# refresh-token rotation SQLite deadlock fix until upstream merges it.
+git clone --quiet --depth 1 https://github.com/laoshanxi/dex.git
+(cd dex && CGO_ENABLED=1 go build -trimpath -buildvcs=false -ldflags "-s -w" -o /usr/local/bin/dex ./cmd/dex)
 
 #messagepack Python pip
 apt install -y python3-pip

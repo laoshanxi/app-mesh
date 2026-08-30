@@ -2,198 +2,108 @@
 
 ## Status
 
-Proposed — partially implemented. Implemented: the step-result isolation and
-cancel-propagation changes below, and the **`execution_identity`** part of the identity
-model (service-account model — see "Identity Model"). Not implemented: the unified Run API,
-single-mode engine, and external-trigger model. ADRs 0001–0003 describe the implemented
-architecture; ADR 0006 covers the shipped ownership/authz layer this builds on.
+Proposed, with the identity portion superseded by ADR 0009. Step-result isolation and
+cancel propagation are implemented; the unified Run API, single-mode engine, and external
+trigger model remain proposals.
 
 ## Context
 
-The engine has two separate execution paths:
-
-1. **CLI path**: `appm workflow run` → registers a temporary App running `wf-engine run` → daemon manages the process.
-2. **Serve path**: `wf-engine serve` → internal goroutine calls `engine.Run` directly.
-
-These paths have different run lifecycle management, different logging, and different cancel semantics. The event listener is baked into the engine binary, making the engine responsible for both "what to run" and "when to run" — two orthogonal concerns.
-
-GitHub Actions separates these clearly: the platform manages run creation/scheduling; the runner only executes. App Mesh should follow the same separation.
+The engine has historically had separate CLI and long-running service execution paths.
+Those paths differ in lifecycle management, logging, cancellation, and trigger handling.
+The intended direction is to separate run creation from run execution, as GitHub Actions
+separates platform scheduling from runners.
 
 ## Decision
 
-### Core Principle
+All trigger sources should create the same Run resource. The workflow engine should only
+pick up pending Runs, execute their DAGs, archive logs, and record terminal state. Cron and
+event watchers should be ordinary App Mesh Apps that call the Run API.
 
-**All workflow execution goes through a single Run API. The engine only executes — it never decides when to run.**
-
-### Run Lifecycle
-
-```
-                     ┌─────────────┐
-          ┌─────────>│   pending    │
-          │          └──────┬──────┘
-          │                 │ engine picks up
-          │          ┌──────▼──────┐
-          │          │   running    │
-          │          └──────┬──────┘
-          │                 │
-          │     ┌───────────┼───────────┐
-          │     │           │           │
-          │ ┌───▼───┐ ┌────▼────┐ ┌───▼──────┐
-          │ │success │ │ failure │ │cancelled │
-          │ └───────┘ └─────────┘ └──────────┘
-          │
-    create run (from any source)
-```
-
-### Unified Run API
-
-All trigger sources produce the same action — create a Run record:
-
-| Source | How it creates a Run |
-|--------|---------------------|
-| CLI | `appm workflow run <name>` → calls Run API |
-| REST API | `POST /appmesh/workflow/{name}/run` (future daemon endpoint, or engine HTTP API) |
-| App Event | A small event-watcher App calls Run API on matching events |
-| workflow_call | Parent engine calls Run API for sub-workflow |
-
-The engine's job is only: pick up pending Runs → execute → update status.
-
-### Execution Model
-
-The `wf-engine` binary has a single mode:
+The proposed lifecycle is:
 
 ```
-wf-engine --server 127.0.0.1:6059
+pending -> running -> success | failure | cancelled
 ```
 
-It runs as a long-lived App Mesh App and:
-1. Watches the Run queue (polls workdir or listens for notifications).
-2. Picks up `pending` Runs, marks them `running`.
-3. Executes the workflow DAG (reusing existing parser/expression/dag/executor).
-4. Archives logs, updates checkpoint, marks Run `success`/`failure`.
+### Identity and authorization
 
-No `run` vs `serve` split. No built-in event listener.
+ADR 0009 replaces this ADR's former user/password execution-identity design:
 
-### Trigger as External Wrapper
+- `resource_owner` is the immutable App Mesh Principal ID that registered the workflow.
+- `actor` is the immutable Principal ID that initiated the Run.
+- A manual Run executes with the caller's access token after the Engine validates it
+  and resolves it to that Principal.
+- An automatic or recovered Run executes with a short-lived Engine-local capability bound
+  to its workflow, run, current owner, current Workflow process, and operation allow-list.
+- Registering automatic triggers requires the `workflow-admin` permission.
+- Workflow YAML cannot choose another user's identity. There is no stored username/password
+  map, impersonation, or Engine-local login path.
+- Tokens remain ephemeral and are never written to Run records, checkpoints, or logs.
 
-Cron and event triggers are separate lightweight Apps, not part of the engine:
+Step authorization is enforced by App Mesh RBAC for the validated caller or, for an
+automatic/recovered Run, the capability's current owner binding. Engine re-checks that
+owner's active status, ownership, and permission for every operation. The Workflow process
+is not an OAuth client and holds no OAuth client secret. The capability is bound to the Run
+lifecycle, owner, managed Workflow process, and operation set; it is not a single-target
+credential. App and message steps may still address an existing application when the bound
+owner's normal RBAC and application-access checks allow it. Newly created `wf-cmd-*`
+applications and every later operation on them must carry metadata matching the capability's
+workflow ID, run ID, and process UUID.
 
-```yaml
-# Cron trigger — a regular App Mesh cron app
-name: cron-data-pipeline
-command: "appm workflow run data-pipeline"
-start_interval_seconds: "0 2 * * *"
-cron: true
+### Run Record
 
-# Event trigger — a small script that subscribes and fires
-name: event-trigger-deploy
-command: "workflow-event-trigger --watch collector --on EXIT --run deploy-pipeline"
-behavior:
-  exit: restart
-```
-
-This leverages App Mesh's existing cron and process management instead of reimplementing them.
-
-### Identity Model
-
-Three distinct identities per Run, following GitHub Actions semantics:
-
-| Identity | What it is | How it's set |
-|----------|-----------|-------------|
-| **resource_owner** | Who owns the workflow definition | `workflow.owner` field → App Mesh App owner |
-| **actor** | Who triggered this Run | Recorded in Run record: CLI user, event source |
-| **execution_identity** | What API credentials steps use | `execution_identity` YAML field; else the triggering caller (manual) or fail-closed (automatic) |
-
-Step permission check: when a step references an existing App (`app: deployer`), the daemon checks whether `execution_identity` has permission to run that App, using App Mesh's existing RBAC.
-
-**Implemented (service-account model).** Since the daemon cannot mint a token for an
-arbitrary user (signing keys are daemon-side; `/appmesh/login` requires a password), the
-engine authenticates as a real App Mesh user to obtain `execution_identity`'s token. Admin
-provisions credentials as the secured env var `APPMESH_EXEC_IDENTITIES` (a JSON map
-`{"user":"password"}`); a workflow selects one via the `execution_identity` field. At
-registration the caller may bind only itself or (as a workflow admin) any configured
-identity, so a workflow cannot run as an identity more privileged than its registrant is
-allowed to use. When no `execution_identity` is set, manual runs use the caller's token
-(ADR 0006 Phase 2) and automatic (event) triggers **fail closed** — the engine's own
-identity is never used to execute steps. The `resource_owner`-as-default and a daemon-side
-impersonation/token-exchange endpoint (which would avoid storing service-account passwords)
-remain future work.
-
-### Run Record (replaces checkpoint)
+A future unified Run record replaces the split checkpoint and run index. Identity fields
+contain stable Principal IDs, never usernames or credentials:
 
 ```json
 {
   "run_id": "abc123",
   "workflow": "data-pipeline",
-  "actor": "admin",
-  "source": "cli",
+  "resource_owner_principal_id": "principal-owner-id",
+  "actor_principal_id": "principal-caller-id",
+  "source": "manual",
   "status": "running",
   "created_at": "2026-05-23T10:00:00Z",
   "started_at": "2026-05-23T10:00:01Z",
-  "execution_identity": "svc-pipeline",
   "inputs": {"env": "prod"},
   "jobs": {
-    "build": {"status": "success", "finished_at": "..."},
-    "test":  {"status": "running"},
-    "deploy": {"status": "pending"}
+    "build": {"status": "success"},
+    "test": {"status": "running"}
   }
 }
 ```
 
-This is the single source of truth for run state — combining the old checkpoint.json and runs.json into one record per run.
+For a newly automatic Run, the v1 audit record uses the non-Principal actor marker
+`internal:workflow-trigger`; a recovered Run preserves the original Run's actor and source
+while acquiring a new local capability. The owner Principal ID is recorded separately. A
+future unified Run schema should represent this distinction explicitly rather than putting
+an internal marker in a field named `actor_principal_id`.
 
-### Step Context Isolation
+### Step context isolation
 
-Problem (fixed in the engine): steps shared one global `expression.Context.Steps` map, so two parallel jobs with a step named `test` overwrote each other.
+Step results are job-scoped internally so parallel jobs cannot overwrite one another.
+`${{ steps.compile.stdout }}` resolves in the current job; cross-job references use
+`${{ jobs.build.steps.compile.stdout }}`.
 
-Fix: step results are scoped by job name internally:
+### Cancel propagation
 
-```
-context.Steps["build.compile"] = {stdout: "...", exit_code: 0}
-context.Steps["test.run-tests"] = {stdout: "...", exit_code: 1}
-```
-
-In YAML expressions, `${{ steps.compile.stdout }}` resolves within the current job's scope. Cross-job references use `${{ jobs.build.steps.compile.stdout }}`.
-
-### Cancel Propagation
-
-Problem (addressed in the engine): cancel only checked between DAG layers, so a long-running step was not interrupted.
-
-Fix: when a Run is cancelled:
-1. Set Run status to `cancelled`.
-2. For each running step's temporary App, call `DELETE /appmesh/app/{name}` to kill the process.
-3. The executor's `Wait` returns with error, step is marked `cancelled`.
-
-This requires the engine to track the mapping: `{run_id, job, step} → app_name`.
-
-## Existing Code Reused
-
-| Module | Reuse | Changes needed |
-|--------|-------|----------------|
-| `parser/` | 100% | None |
-| `expression/` | 95% | Add job-scoped step key prefix |
-| `dag/` | 100% | None |
-| `executor/` | 90% | Return app_name for cancel tracking |
-| `engine/` | 70% | Remove trigger integration, add Run record management |
-| `workdir/` | 90% | Run record replaces checkpoint+index |
-| `logger/` | 100% | None |
-| `trigger/` | **Remove** | Replaced by external wrapper Apps |
-| `checkpoint/` | **Replace** | Merged into Run record |
-| `concurrency/` | 80% | Move to Run API layer |
+Cancellation marks the Run cancelled, deletes every active temporary step App, and records
+each affected step as cancelled. The engine tracks `{run_id, job, step} -> app_name` for
+this purpose.
 
 ## Consequences
 
-### Benefits
+- Run lifecycle and trigger sources can converge on one API and one execution path.
+- Manual authorization expires with the caller's access token and fails closed.
+- Automatic and recovered execution remains possible without retaining human credentials.
+- The local capability issuer and the current managed Workflow process form a narrow trust
+  boundary; capabilities are short-lived, route-bound, and re-evaluated against owner RBAC.
+- Workflow registry discovery uses a private capability route that returns only
+  `workflow-*` definitions; the synthetic controller cannot list arbitrary applications.
+- Implementing the unified queue/API and external trigger wrappers remains future work.
 
-- **Single execution path**: no CLI-vs-serve divergence.
-- **Separation of concerns**: engine executes, triggers are external.
-- **Simpler binary**: no event subscription, no registry scanning.
-- **Leverages App Mesh**: event triggers are just Apps, managed by the daemon.
-- **Clean identity model**: actor, owner, execution_identity are explicit.
-- **Correct cancel**: propagates to running processes.
+## References
 
-### Trade-offs
-
-- **Requires a Run queue/API**: either daemon support or a file-based queue in workdir.
-- **External trigger setup**: user must register separate trigger Apps (vs the current auto-subscribe).
-- **More moving parts to deploy**: engine App + trigger App(s) vs single engine App.
+- ADR 0002 — workflow stored as a special App.
+- ADR 0006 — workflow authorization policy.
+- ADR 0009 — authentication service and immutable Principal identity.

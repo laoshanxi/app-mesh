@@ -10,7 +10,7 @@ import (
 type Registry struct {
 	mu        sync.RWMutex
 	workflows map[string]*models.Workflow
-	owners    map[string]string // workflow name -> owner username (from the wf-<name> App)
+	owners    map[string]string // workflow name -> immutable owner Principal ID
 }
 
 func NewRegistry() *Registry {

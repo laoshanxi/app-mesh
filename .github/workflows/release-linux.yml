@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  APPMESH_VERSION: "2.2.1"
+  APPMESH_VERSION: "3.0.0"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
@@ -77,7 +77,7 @@ jobs:
           BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu24 /bin/bash --login -c "set -e; rustc --version; mkdir ubuntu24_$BUILD_DIR; cd ubuntu24_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
           # Test
-          docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace ubuntu:24.04 /bin/bash -c "set -e; cd ubuntu24_$BUILD_DIR; apt update; apt install -y ./appmesh_*.deb; /opt/appmesh/script/appmesh.initd.sh start; sleep 3; cat /opt/appmesh/work/server.log; appm ls; appm resource"
+          docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace ubuntu:24.04 /bin/bash -c "set -e; cd ubuntu24_$BUILD_DIR; apt update; apt install -y ./appmesh_*.deb curl python3; /opt/appmesh/script/appmesh.initd.sh start; sleep 3; cat /opt/appmesh/work/server.log; TOKEN=; for attempt in 1 2 3 4 5 6 7 8 9 10; do TOKEN=\$(/opt/appmesh/script/appmesh-auth.sh automation-token) && break; sleep 2; done; test -n \"\$TOKEN\"; APPMESH_BEARER_TOKEN=\$TOKEN appm ls"
 
       - name: Build Ubuntu 22
         run: |
@@ -127,15 +127,7 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. OAuth2" >> CHANGELOG.txt
-          echo "2. C++ SDK" >> CHANGELOG.txt
-          echo "3. Rust SDK" >> CHANGELOG.txt
-          echo "4. WebSocket service" >> CHANGELOG.txt
-          echo "5. Python WebSocket SDK" >> CHANGELOG.txt
-          echo "6. TCP protocol forwarding" >> CHANGELOG.txt
-          echo "7. Async none-blocking IO" >> CHANGELOG.txt
-          echo "8. Standard GNU installation dirs" >> CHANGELOG.txt
-          echo "9. cgroup V2 support" >> CHANGELOG.txt
+          echo "Dex-only OIDC authentication (daemon, CLI, SDKs, web UI)" >> CHANGELOG.txt
           ls -R
 
       - name: Install package signing dependencies
@@ -237,7 +229,7 @@ jobs:
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           body_path: CHANGELOG.txt
-          name: "Security"
+          name: "OpenID Connect (OIDC)"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}

@@ -6,7 +6,7 @@
 
 **One secure daemon to run, schedule, and remote-control apps across machines.**
 
-A lightweight C++ daemon with JWT/RBAC security, a CLI, REST APIs, SDKs in 6 languages, and a built-in workflow engine.
+A lightweight C++ daemon with OAuth/OIDC authentication and RBAC, a CLI, REST APIs, SDKs in 6 languages, and a built-in workflow engine.
 
 Use App Mesh to:
 
@@ -24,18 +24,25 @@ Start the daemon in Docker:
 docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
 ```
 
-Manage applications with the `appm` CLI:
+Manage applications with the `appm` CLI. Every protected request needs a bearer
+token. Run `appm logon` once. Built-in mode reads a masked password from the
+terminal. Use `--device` or `--browser` when the selected authentication service
+requires one of those flows. Automation can set `APPMESH_BEARER_TOKEN` to a
+caller-acquired access token.
 
 ```shell
+# Interactive user session
+$ appm logon
+
 # List registered applications
 $ appm ls
-ID  NAME    OWNER  STATUS    HEALTH  PID  USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
-1   pyexec  mesh   disabled  -       -    -     -         -     -       37s  -         0       "python3 ../../bin/py_exec.py"
-2   ping    mesh   enabled   OK      747  root  5.9 MiB   0     -       37s  37s       1       "ping cloudflare.com"
-3   pytask  mesh   enabled   OK      748  root  29.7 MiB  0     -       37s  37s       1       "python3 ../../bin/py_task.py"
+ID  NAME    OWNER           STATUS    HEALTH  PID  USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
+1   pyexec  system  disabled  -       -    -     -         -     -       37s  -         0       "python3 ../../bin/py_exec.py"
+2   ping    system  enabled   OK      747  root  5.9 MiB   0     -       37s  37s       1       "ping cloudflare.com"
+3   pytask  system  enabled   OK      748  root  29.7 MiB  0     -       37s  37s       1       "python3 ../../bin/py_task.py"
 
 # Register a new application
-$ appm add -a myapp -c "ping www.baidu.com"
+$ APPMESH_BEARER_TOKEN="$TOKEN" appm add -a myapp -c "ping www.baidu.com"
 
 # View its live output
 $ appm ls -a myapp -o
@@ -48,9 +55,9 @@ PING www.baidu.com (183.2.172.17) 56(84) bytes of data.
 Send tasks to a running application and get responses back through the SDK:
 
 ```python
+import os
 from appmesh import AppMeshClient
-client = AppMeshClient()
-client.login("USER-NAME", "USER-PWD")
+client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
 
 result_from_server = "0"
 for i in range(10):
@@ -69,9 +76,8 @@ For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, 
 | Scheduling             | Long- and short-running apps, periodic jobs, cron expressions, custom timings, and policy-driven [start/exit behaviors](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)       |
 | Remote execution       | Run commands and scripts on any node; send [in-memory tasks](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) to running applications for high-performance computing                                       |
 | Workflow engine        | GitHub-Actions-style [YAML pipelines](https://app-mesh.readthedocs.io/en/latest/Workflow.html) with DAG scheduling, running natively on App Mesh                                                                     |
-| Security               | [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html) + [RBAC](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html) with multi-tenant isolation; [OAuth](src/sdk/python/test/tools/oauth/smoke_oauth2.py), [2FA](https://app-mesh.readthedocs.io/en/latest/MFA.html); YAML-based user storage (local, or Consul for clustering); SSL/TLS on TCP/HTTP/WebSocket; CSRF tokens; HMAC-PSK verification |
+| Security | OAuth/OIDC bearer authentication (RFC 6750) with Principal-based RBAC and multi-tenant isolation; SSL/TLS on TCP/HTTP/WebSocket; HMAC-PSK internal verification |
 | Observability          | Built-in [Prometheus exporter](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html), [Grafana datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html), [Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) integration, host/app resource metrics |
-| Clustering             | [Consul-based cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html) and request forwarding across nodes                                                                                         |
 | Extras                 | File upload/download API, remote shell execution, hot config reload, bash completion                                                                                                                                 |
 
 Runs on Linux, macOS, and Windows (x86 and ARM).
@@ -135,8 +141,6 @@ appm workflow runs pipeline               # view history
 
 - [Run non-container applications on Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
 - [Kubernetes local-PV provisioning via Open Service Broker](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
-- [Secure multi-node cluster with Consul](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
-- [Standalone JWT authentication server](https://app-mesh.readthedocs.io/en/latest/success/standalone_JWT_server.html) · [JWT auth service with REST API and web UI](script/docker/docker-compose-auth-service.yaml)
 
 ## 🆚 Comparison
 

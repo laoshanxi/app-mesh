@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
 )
@@ -13,6 +12,10 @@ import (
 // ErrProcessSuperseded indicates the server rejected the process key (HTTP 412):
 // this process instance has been superseded by another and should stop fetching tasks.
 var ErrProcessSuperseded = errors.New("process superseded: process key mismatch")
+
+// ErrWorkerRejected indicates a permanent worker request error (HTTP 400).
+// Retrying the same request cannot recover; the worker entry point should exit.
+var ErrWorkerRejected = errors.New("worker task request permanently rejected")
 
 // WorkerHTTPContext runs a worker-side task loop (fetch task, send result) against
 // the App Mesh REST service over HTTPS.
@@ -22,9 +25,8 @@ type WorkerHTTPContext struct {
 }
 
 // NewHTTPContext creates a server-side task context over HTTP. Server endpoints
-// authenticate via APP_MESH_PROCESS_KEY, not JWT, so token refresh is forced off.
+// authenticate via APP_MESH_PROCESS_KEY; the worker is not an OAuth client.
 func NewHTTPContext(options Option) (*WorkerHTTPContext, error) {
-	options.AutoRefreshToken = false
 	httpClient, err := NewHTTPClient(options)
 	if err != nil {
 		return nil, err
@@ -32,7 +34,6 @@ func NewHTTPContext(options Option) (*WorkerHTTPContext, error) {
 	return &WorkerHTTPContext{client: httpClient}, nil
 }
 func newHTTPContextWithRequester(options Option, r Requester) (*WorkerHTTPContext, error) {
-	options.AutoRefreshToken = false
 	httpClient, err := newHTTPClientWithRequester(options, r)
 	if err != nil {
 		return nil, err
@@ -55,9 +56,10 @@ func (r *WorkerHTTPContext) getRuntimeEnv() (key, appName string, err error) {
 }
 
 // FetchTask fetches task data (payload) for the current application process.
-// It retries until success with a fixed 100ms floor per attempt (SDKContract.md).
+// It retries transient failures until success with a fixed 100ms floor per attempt
+// (SDKContract.md).
 // It returns ErrProcessSuperseded when the server responds 412 (this process
-// instance has been replaced).
+// instance has been replaced), and ErrWorkerRejected for a permanent HTTP 400.
 func (r *WorkerHTTPContext) FetchTask() (string, error) {
 	return r.FetchTaskContext(context.Background())
 }
@@ -71,8 +73,7 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 	}
 
 	path := "/appmesh/app/" + appName + "/task"
-	query := url.Values{}
-	query.Set("process_key", key)
+	headers := map[string]string{"X-AppMesh-Process-Key": key}
 
 	// Fixed 100ms floor per attempt: sleep only the remainder if the attempt
 	// finished early; otherwise retry immediately. No backoff (SDKContract.md).
@@ -80,7 +81,7 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 
 	for {
 		attemptStart := time.Now()
-		status, body, _, err := r.client.req.SendContext(ctx, http.MethodGet, path, query, nil, nil)
+		status, body, _, err := r.client.req.SendContext(ctx, http.MethodGet, path, nil, headers, nil)
 		if err != nil {
 			if ctx.Err() != nil {
 				return "", fmt.Errorf("fetch_task canceled: %w", ctx.Err())
@@ -90,6 +91,8 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 			return string(body), nil
 		} else if status == http.StatusPreconditionFailed {
 			return "", ErrProcessSuperseded
+		} else if status == http.StatusBadRequest {
+			return "", fmt.Errorf("%w: status %d: %s", ErrWorkerRejected, status, string(body))
 		} else {
 			logf("fetch_task failed with status %d: %s, retrying...", status, string(body))
 		}
@@ -112,11 +115,12 @@ func (r *WorkerHTTPContext) SendTaskResult(result string) error {
 	}
 
 	path := "/appmesh/app/" + appName + "/task"
-	query := url.Values{}
-	query.Set("process_key", processKey)
-	headers := map[string]string{"Content-Type": "text/plain"}
+	headers := map[string]string{
+		"Content-Type":          "text/plain",
+		"X-AppMesh-Process-Key": processKey,
+	}
 
-	status, body, err := r.client.put(path, query, headers, []byte(result))
+	status, body, err := r.client.put(path, nil, headers, []byte(result))
 	if err != nil {
 		return err
 	}
