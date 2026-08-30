@@ -1,5 +1,4 @@
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 fn appm() -> Command {
     Command::new(env!("CARGO_BIN_EXE_appm"))
@@ -17,7 +16,7 @@ fn test_help_lists_core_commands() {
     for cmd in [
         "logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable", "restart",
         "run", "exec", "shell", "get", "put", "label", "log", "config", "resource", "metric",
-        "passwd", "lock", "user", "mfa", "appmgpwd", "appmginit",
+        "workflow",
     ] {
         assert!(s.contains(cmd), "missing command: {}", cmd);
     }
@@ -44,7 +43,7 @@ fn test_short_help_flag() {
 #[test]
 fn test_global_flags_in_help() {
     let s = stdout_of(&["--help"]);
-    for flag in ["--host-url", "--forward-to", "--user", "--password", "--verbose"] {
+    for flag in ["--host-url", "--forward-to", "--verbose"] {
         assert!(s.contains(flag), "missing global flag: {}", flag);
     }
 }
@@ -53,7 +52,7 @@ fn test_global_flags_in_help() {
 fn test_global_short_flags_accepted() {
     // All short global flags before subcommand + --help
     let out = appm()
-        .args(["-H", "localhost:6058", "-U", "admin", "-X", "pass", "-v", "logon", "--help"])
+        .args(["-H", "localhost:6058", "-F", "worker-1", "-v", "logon", "--help"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -98,10 +97,12 @@ fn test_alias_content_matches_primary() {
 #[test]
 fn test_help_logon_all_flags() {
     let s = stdout_of(&["logon", "--help"]);
-    for f in ["--timeout", "--audience", "--show-token"] {
-        assert!(s.contains(f), "logon missing {}", f);
+    for flag in [
+        "--device", "--dex-access-url", "--login-timeout",
+        "--enroll-first-admin", "--first-admin-token-file",
+    ] {
+        assert!(s.contains(flag), "logon missing {}", flag);
     }
-    // audience is optional with no default
 }
 
 #[test]
@@ -202,30 +203,6 @@ fn test_help_log_all_flags() {
     assert!(s.contains("--level"));
 }
 
-#[test]
-fn test_help_passwd_all_flags() {
-    let s = stdout_of(&["passwd", "--help"]);
-    assert!(s.contains("--target"));
-}
-
-#[test]
-fn test_help_lock_all_flags() {
-    let s = stdout_of(&["lock", "--help"]);
-    for f in ["--target", "--lock"] { assert!(s.contains(f), "lock missing {}", f); }
-}
-
-#[test]
-fn test_help_user_all_flags() {
-    let s = stdout_of(&["user", "--help"]);
-    for f in ["--json", "--all", "--force"] { assert!(s.contains(f), "user missing {}", f); }
-}
-
-#[test]
-fn test_help_mfa_all_flags() {
-    let s = stdout_of(&["mfa", "--help"]);
-    for f in ["--add", "--delete"] { assert!(s.contains(f), "mfa missing {}", f); }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Required argument validation
 // ═══════════════════════════════════════════════════════════════════════════
@@ -247,21 +224,11 @@ fn test_put_requires_local()        { assert_err_contains(&["put", "--remote", "
 #[test]
 fn test_log_requires_level()        { assert_err_contains(&["log"], "--level"); }
 #[test]
-fn test_lock_requires_target()      { assert_err_contains(&["lock", "--lock", "true"], "--target"); }
-#[test]
-fn test_lock_requires_lock_flag()   { assert_err_contains(&["lock", "--target", "admin"], "--lock"); }
-#[test]
 fn test_exec_requires_command()     { assert!(!appm().args(["exec"]).output().unwrap().status.success()); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Clap type validation
 // ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_lock_invalid_bool() {
-    let out = appm().args(["lock", "--target", "admin", "--lock", "notbool"]).output().unwrap();
-    assert!(!out.status.success());
-}
 
 #[test]
 fn test_add_invalid_status_bool() {
@@ -294,100 +261,10 @@ fn test_view_invalid_log_index_type() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// appmgpwd — local PBKDF2 password hashing utility (no daemon)
 // ═══════════════════════════════════════════════════════════════════════════
 
-fn assert_pbkdf2_format(hash: &str) {
-    assert!(hash.starts_with("$pbkdf2$100000$"), "expected PBKDF2 prefix, got: {}", hash);
-    let parts: Vec<&str> = hash[8..].split('$').collect();
-    assert_eq!(parts.len(), 3);
-    assert_eq!(parts[1].len(), 32); // 16-byte salt hex
-    assert_eq!(parts[2].len(), 64); // 32-byte key hex
-    assert!(parts[1].chars().all(|c| c.is_ascii_hexdigit()));
-    assert!(parts[2].chars().all(|c| c.is_ascii_hexdigit()));
-}
-
-#[test]
-fn test_appmgpwd_single() {
-    let s = stdout_of(&["appmgpwd", "admin"]);
-    assert_pbkdf2_format(s.trim());
-}
-
-#[test]
-fn test_appmgpwd_multiple() {
-    let lines = stdout_lines(&["appmgpwd", "admin", "test"]);
-    assert_eq!(lines.len(), 2);
-    assert_pbkdf2_format(&lines[0]);
-    assert_pbkdf2_format(&lines[1]);
-    assert_ne!(lines[0], lines[1]);
-}
-
-#[test]
-fn test_appmgpwd_empty_string() {
-    let s = stdout_of(&["appmgpwd", ""]);
-    assert_pbkdf2_format(s.trim());
-}
-
-#[test]
-fn test_appmgpwd_special_chars() {
-    let s = stdout_of(&["appmgpwd", "p@ss!word#123"]);
-    assert_pbkdf2_format(s.trim());
-}
-
-#[test]
-fn test_appmgpwd_unique_salt() {
-    let h1 = stdout_of(&["appmgpwd", "admin"]);
-    let h2 = stdout_of(&["appmgpwd", "admin"]);
-    assert_ne!(h1.trim(), h2.trim());
-}
-
-#[test]
-fn test_appmgpwd_stdin_mode() {
-    let out = pipe_stdin(&["appmgpwd"], b"admin\ntest\n");
-    assert!(out.status.success());
-    let lines = lines_of(&out.stdout);
-    assert_eq!(lines.len(), 2);
-    assert_pbkdf2_format(&lines[0]);
-    assert_pbkdf2_format(&lines[1]);
-}
-
-#[test]
-fn test_appmgpwd_stdin_skips_blank_lines() {
-    let out = pipe_stdin(&["appmgpwd"], b"\nadmin\n\n\n");
-    assert!(out.status.success());
-    let lines = lines_of(&out.stdout);
-    assert_eq!(lines.len(), 1);
-    assert_pbkdf2_format(&lines[0]);
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// appmginit — stub
 // ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_appmginit_exit_code_1() {
-    let out = appm().args(["appmginit"]).output().unwrap();
-    assert_eq!(out.status.code(), Some(1));
-}
-
-#[test]
-fn test_appmginit_error_message_non_root() {
-    let out = appm().args(["appmginit"]).output().unwrap();
-    let err = String::from_utf8_lossy(&out.stderr);
-    // Non-root: "Only root user can generate an initial password."
-    // or: "Cannot detect App Mesh installation directory"
-    assert!(
-        err.contains("root user") || err.contains("Cannot detect") || err.contains("only run once"),
-        "unexpected error: {}",
-        err
-    );
-}
-
-#[test]
-fn test_appmginit_help() {
-    let out = appm().args(["appmginit", "--help"]).output().unwrap();
-    assert!(out.status.success());
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Exit code behavior
@@ -401,11 +278,27 @@ fn test_error_exits_1() {
 }
 
 #[test]
-fn test_error_with_force_flag_exits_zero() {
+fn test_rm_force_error_exits_nonzero() {
+    // `rm --force` only skips the interactive confirmation; a failed request
+    // (here: unreachable server — same Err propagation as a 401/403/5xx from
+    // the daemon) must still exit 1, so `appm rm -a x --force || die` works.
     let out = appm()
         .args(["-H", "127.0.0.1:1", "rm", "-a", "nonexist", "--force"])
         .output().unwrap();
-    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn test_add_force_error_exits_nonzero() {
+    // `add --force` must not mask a failed registration (e.g. server 400)
+    // as success — the exit code is the only signal a script gets.
+    let out = appm()
+        .args([
+            "-H", "127.0.0.1:1",
+            "add", "-a", "nonexist", "-c", "echo", "--force",
+        ])
+        .output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[cfg(unix)]
@@ -430,19 +323,19 @@ fn test_watch_mode_failure_exits_nonzero() {
 
 #[cfg(unix)]
 #[test]
-fn test_error_with_short_f_flag_exits_zero() {
-    // -f on rm is --force; raw argv scan sees "-f"
+fn test_rm_short_f_error_exits_nonzero() {
+    // -f on rm is --force: skip confirmation only, never skip the error exit.
     let out = appm()
         .args(["-H", "127.0.0.1:1", "rm", "-a", "nonexist", "-f"])
         .output().unwrap();
-    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
 fn test_help_always_exits_zero() {
     for cmd in ["logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable",
                 "restart", "run", "exec", "shell", "get", "put", "label", "log",
-                "config", "resource", "metric", "passwd", "lock", "user", "mfa", "appmgpwd", "appmginit"] {
+                "config", "resource", "metric", "workflow"] {
         let out = appm().args([cmd, "--help"]).output().unwrap();
         assert!(out.status.success(), "{} --help should exit 0", cmd);
     }
@@ -451,11 +344,6 @@ fn test_help_always_exits_zero() {
 // ═══════════════════════════════════════════════════════════════════════════
 // Default values in help text
 // ═══════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn test_default_logon_audience() {
-    assert!(stdout_of(&["logon", "--help"]).contains("--audience"));
-}
 
 #[test]
 fn test_default_run_lifetime() {
@@ -484,23 +372,17 @@ fn test_put_nonexistent_local_file() {
         .output().unwrap();
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("Local file not found") || err.contains("not found"));
+    // `put` authenticates before touching the local file, so without a stored
+    // Dex session the auth gate fires first; either way the command must fail.
+    assert!(
+        err.contains("Local file not found")
+            || err.contains("not found")
+            || err.contains("No Dex session is configured")
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// user --json with non-existent file (no daemon)
 // ═══════════════════════════════════════════════════════════════════════════
-
-#[cfg(unix)]
-#[test]
-fn test_user_json_nonexistent_file() {
-    let out = appm()
-        .args(["-H", "127.0.0.1:1", "user", "--json", "/no/such/user.json"])
-        .output().unwrap();
-    assert!(!out.status.success());
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("Failed to read user JSON") || err.contains("No such file"));
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Multiple -e env flags accumulate
@@ -536,7 +418,13 @@ fn test_add_stdin_nonexistent_file() {
         .output().unwrap();
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("Failed to read") || err.contains("No such file"));
+    // `add` authenticates before reading the file, so without a stored Dex
+    // session the auth gate fires first; either way the command must fail.
+    assert!(
+        err.contains("Failed to read")
+            || err.contains("No such file")
+            || err.contains("No Dex session is configured")
+    );
 }
 
 #[test]
@@ -561,6 +449,29 @@ fn test_add_stdin_valid_yaml_file() {
     );
 }
 
+#[test]
+fn test_add_stdin_legacy_owner_yaml_is_accepted_locally() {
+    // A legacy `owner:` key must be forwarded to the daemon (which rejects it
+    // with an explicit migration error), never rejected or swallowed locally:
+    // local parsing succeeds and the request proceeds to the network stage.
+    let dir = tempfile::tempdir().unwrap();
+    let yaml_path = dir.path().join("legacy.yaml");
+    std::fs::write(&yaml_path, "name: legacyapp\ncommand: echo hi\nowner: admin\n").unwrap();
+
+    let out = appm()
+        .args([
+            "-H", "127.0.0.1:1",
+            "add", "--stdin", yaml_path.to_str().unwrap(), "--force",
+        ])
+        .output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !err.contains("Invalid YAML") && !err.contains("Invalid application"),
+        "legacy owner YAML should parse locally; got: {}",
+        err
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // add --metadata with @file (no daemon)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -573,7 +484,11 @@ fn test_add_metadata_file_not_found() {
         .output().unwrap();
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("does not exist"));
+    // Without a stored Dex session the auth gate fires before metadata parsing.
+    assert!(
+        err.contains("does not exist")
+            || err.contains("No Dex session is configured")
+    );
 }
 
 #[test]
@@ -672,30 +587,6 @@ fn test_shell_trailing_args_optional() {
 
 fn stdout_of(args: &[&str]) -> String {
     String::from_utf8_lossy(&appm().args(args).output().unwrap().stdout).to_string()
-}
-
-fn stdout_lines(args: &[&str]) -> Vec<String> {
-    stdout_of(args).trim().lines().map(|l| l.to_string()).collect()
-}
-
-fn lines_of(raw: &[u8]) -> Vec<String> {
-    String::from_utf8_lossy(raw)
-        .trim()
-        .lines()
-        .map(|l| l.to_string())
-        .collect()
-}
-
-fn pipe_stdin(args: &[&str], input: &[u8]) -> std::process::Output {
-    let mut child = appm()
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.as_mut().unwrap().write_all(input).unwrap();
-    child.wait_with_output().unwrap()
 }
 
 fn assert_err_contains(args: &[&str], needle: &str) {

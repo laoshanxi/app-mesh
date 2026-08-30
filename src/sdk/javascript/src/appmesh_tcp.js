@@ -6,7 +6,7 @@ import fs from 'fs'
 import os from 'os'
 import { v1 as uuidv1 } from 'uuid'
 import msgpack from 'msgpack-lite'
-import AppMeshClient, { AppMeshError, TotpRequiredError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE } from './appmesh.js'
+import AppMeshClient, { AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE } from './appmesh.js'
 
 // Constants
 const TCP_BLOCK_SIZE = 16 * 1024 - 128 // TLS-optimized chunk size
@@ -19,14 +19,6 @@ const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = 'X-Recv-File-Socket'
 const HTTP_HEADER_KEY_USER_AGENT = 'User-Agent'
 const HTTP_HEADER_KEY_X_FILE_PATH = 'X-File-Path'
 const HTTP_HEADER_KEY_AUTH = 'Authorization'
-
-// Auth endpoints returning a new access_token in the JSON body (allowlist per
-// docs/source/SDKContract.md "Auth Token Synchronization").
-// Login/auth/totp_validate: apply token only when the request carried X-Set-Cookie: true
-const AUTH_SET_COOKIE_PATHS = new Set(['/appmesh/login', '/appmesh/auth', '/appmesh/totp/validate'])
-// Renew/setup: always apply (client already has an active session)
-const AUTH_RENEW_PATHS = new Set(['/appmesh/token/renew', '/appmesh/totp/setup'])
-const LOGOFF_PATH = '/appmesh/self/logoff'
 
 /**
  * TCP transport for secure TLS connections and framed App Mesh messages.
@@ -342,7 +334,7 @@ class AppMeshClientTCP extends AppMeshClient {
     super('https://127.0.0.1:6060', sslConfig)
     this.tcpTransport = new TCPTransport(tcpAddress, sslConfig)
 
-    // Store JWT token explicitly since cookies don't work with TCP
+    // Store the caller-owned bearer explicitly for TCP requests.
     this._token = ''
   }
 
@@ -371,57 +363,15 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Handle token updates for transports that cannot rely on cookies.
-   *
-   * This method is called after login, renew_token, and authenticate operations.
-   * Since TCP doesn't support cookies, we store the token explicitly.
+   * Handle caller-owned bearer updates for TCP.
    *
    * @param {string} token - New JWT token
    * @private
    * @override
    */
   _handleTokenUpdate (token) {
-    // Base implementation stores the token and handles refresh scheduling
     super._handleTokenUpdate(token)
     this._token = token || ''
-  }
-
-  /**
-   * Extract and apply a token from auth endpoint responses. TCP has no Set-Cookie,
-   * so the token comes from the JSON body — only on HTTP 200 and only for the
-   * SDKContract.md auth endpoint allowlist.
-   * @param {Object} response - Normalized response object from _request
-   * @param {string} path - Request URI path
-   * @param {Object} requestHeaders - Headers sent with the request
-   * @private
-   */
-  _syncTransportToken (response, path, requestHeaders) {
-    if (response.status !== 200) return
-
-    if (path === LOGOFF_PATH) {
-      this._handleTokenUpdate(null)
-      return
-    }
-
-    // Login/auth/totp_validate: apply only when client requested cookie mode
-    if (AUTH_SET_COOKIE_PATHS.has(path)) {
-      if (!requestHeaders || requestHeaders['X-Set-Cookie'] !== 'true') return
-    } else if (!AUTH_RENEW_PATHS.has(path)) {
-      return
-    }
-
-    let data = response.data
-    // Parse if it's a Buffer containing JSON
-    if (Buffer.isBuffer(data)) {
-      try {
-        data = JSON.parse(data.toString(ENCODING_UTF8))
-      } catch (e) {
-        return // Not JSON, ignore
-      }
-    }
-    if (data && data.access_token) {
-      this._handleTokenUpdate(data.access_token)
-    }
   }
 
   /**
@@ -447,7 +397,7 @@ class AppMeshClientTCP extends AppMeshClient {
     // Add authentication token if available
     const token = this._getAccessToken()
     if (token) {
-      request.headers[HTTP_HEADER_KEY_AUTH] = token
+      request.headers[HTTP_HEADER_KEY_AUTH] = `Bearer ${token}`
     }
 
     if (options.headers) {
@@ -507,15 +457,9 @@ class AppMeshClientTCP extends AppMeshClient {
       config: options
     }
 
-    // Sync token from auth endpoint responses (login, authenticate, renew_token, logoff)
-    this._syncTransportToken(result, path, request.headers)
-
-    // Mirror the HTTP transport: never swallow a non-200 into a success value
-    if (result.status !== 200) {
+    // Mirror the HTTP transport: never swallow a non-2xx into a success value.
+    if (result.status < 200 || result.status >= 300) {
       const errMsg = this._extractErrorMessage(result.data)
-      if (result.status === 428) {
-        throw new TotpRequiredError(errMsg, result.data)
-      }
       throw new AppMeshError(errMsg, result.status, result.data)
     }
 

@@ -9,8 +9,11 @@ set -euo pipefail
 # Disable Homebrew auto-update
 export HOMEBREW_NO_AUTO_UPDATE=1
 
+
 # Define key directories
-SRC_DIR="$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SRC_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
+
 TMP_DIR="$(mktemp -d "$(pwd)/appmesh.tmp.XXXXXX")"
 BUILD_THREADS=$(sysctl -n hw.ncpu || echo 4)
 
@@ -85,6 +88,10 @@ BUILDFLAGS="-trimpath -buildvcs=false"
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssljson@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+# Dex OIDC server
+git clone --quiet --depth 1 https://github.com/dexidp/dex.git
+(cd dex && CGO_ENABLED=1 go build -trimpath -buildvcs=false -ldflags "-s -w" -o /usr/local/bin/dex ./cmd/dex)
 
 echo "Installing spdlog from source (pinned to v1.17.0)..."
 cd ${TMP_DIR}

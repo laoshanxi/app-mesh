@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,7 +24,12 @@ type (
 		CorsDisabled                 bool   `yaml:"CorsDisabled"`
 
 		SSL appmesh.SSLConfig `yaml:"SSL"`
-		JWT appmesh.JWTConfig `yaml:"JWT"`
+	}
+	OIDCConfig struct {
+		Issuer       string `yaml:"issuer" mapstructure:"issuer"`
+		DexAccessURL string `yaml:"dex_access_url" mapstructure:"dex_access_url"`
+		DexTLSVerify bool   `yaml:"dex_tls_verify" mapstructure:"dex_tls_verify"`
+		DexCAPath    string `yaml:"dex_ca_path" mapstructure:"dex_ca_path"`
 	}
 
 	Configuration struct {
@@ -53,15 +59,21 @@ var ConfigData = Configuration{
 			VerifyServer:                true,
 			VerifyServerDelegate:        true,
 		},
-		JWT: appmesh.JWTConfig{
-			JWTSalt: "",
-		},
 	},
+}
+
+var OIDCData = OIDCConfig{
+	Issuer:       "http://127.0.0.1:6062/dex",
+	DexAccessURL: "http://127.0.0.1:6062/dex",
+	DexTLSVerify: true,
 }
 
 func init() {
 	if err := readConfig(); err != nil {
 		logger.Errorf("Failed to initialize config: %v", err)
+	}
+	if err := readOIDCConfig(); err != nil {
+		logger.Errorf("Failed to initialize OIDC config: %v", err)
 	}
 }
 
@@ -101,6 +113,69 @@ func readConfig() error {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	return nil
+}
+
+func readOIDCConfig() error {
+	config := viper.New()
+	config.SetDefault("OIDC.dex_tls_verify", true)
+	config.SetConfigName("oidc")
+	config.SetConfigType("yaml")
+	if !IsAgentProdEnv() {
+		config.AddConfigPath("../../../../daemon/security")
+	}
+	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "work/config/"))
+	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "config"))
+	if err := config.ReadInConfig(); err != nil {
+		return fmt.Errorf("failed to read oidc config file: %w", err)
+	}
+	var root struct {
+		OIDC OIDCConfig `mapstructure:"OIDC"`
+	}
+	if err := config.Unmarshal(&root); err != nil {
+		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
+	}
+	if root.OIDC.Issuer == "" {
+		return fmt.Errorf("OIDC issuer is required")
+	}
+	if value := os.Getenv("APPMESH_DEX_ISSUER"); value != "" {
+		root.OIDC.Issuer = value
+	}
+	if value := os.Getenv("APPMESH_DEX_ACCESS_URL"); value != "" {
+		root.OIDC.DexAccessURL = value
+	}
+	if value := os.Getenv("APPMESH_DEX_CA_PATH"); value != "" {
+		root.OIDC.DexCAPath = value
+	}
+	if value := os.Getenv("APPMESH_DEX_TLS_VERIFY"); value != "" {
+		root.OIDC.DexTLSVerify = value != "0" && !strings.EqualFold(value, "false")
+	}
+	root.OIDC.Issuer = strings.TrimRight(root.OIDC.Issuer, "/")
+	root.OIDC.DexAccessURL = strings.TrimRight(root.OIDC.DexAccessURL, "/")
+	if root.OIDC.Issuer == "" || root.OIDC.DexAccessURL == "" {
+		return fmt.Errorf("OIDC issuer and dex_access_url must be non-empty absolute URLs")
+	}
+	if err := validateAbsoluteHTTPURL(root.OIDC.Issuer); err != nil {
+		return fmt.Errorf("invalid OIDC issuer: %w", err)
+	}
+	if err := validateAbsoluteHTTPURL(root.OIDC.DexAccessURL); err != nil {
+		return fmt.Errorf("invalid OIDC dex_access_url: %w", err)
+	}
+	OIDCData = root.OIDC
+	return nil
+}
+
+func validateAbsoluteHTTPURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return err
+	}
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.Hostname() == "" {
+		return fmt.Errorf("must be an absolute HTTP(S) URL")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return fmt.Errorf("credentials, query, and fragment are not allowed")
+	}
 	return nil
 }
 

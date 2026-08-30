@@ -67,7 +67,23 @@ Default to surfacing uncertainty, not hiding it.
 
 ## Project Overview
 
-App Mesh is a C++17 cross-platform (Linux/macOS/Windows) application management platform — one secure daemon to run, schedule, and remote-control apps across machines, with RBAC/JWT security, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, JavaScript, and C++.
+App Mesh is a C++17 cross-platform (Linux/macOS/Windows) application management platform — one secure daemon to run, schedule, and remote-control apps across machines, with Dex/OIDC bearer authentication, Principal-based RBAC, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, JavaScript, and C++.
+
+## Daemon Ports
+
+Three listener ports are defined by `src/daemon/config.yaml` (`REST` section; env override `APPMESH_REST_<Key>`, e.g. `APPMESH_REST_RestListenPort`):
+
+| Port | Config key | Transport / purpose |
+|------|------------|---------------------|
+| 6060 | `RestListenPort` | HTTPS REST API — the primary management surface (also what the Go agent reverse-proxies) |
+| 6059 | `RestTcpPort` | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) |
+| 6058 | `WebSocketPort` | WSS API — WebSocket transport used by SDK clients and event subscribe (`ClientWSS`) |
+
+All three authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs. The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
+
+## Binary Inspection Tools
+
+When analyzing built binaries or debugging native issues, binary-inspection tooling is allowed and encouraged: `otool`/`nm`/`strings`/`dSYMutil` on macOS (Linux: `objdump`/`readelf`/`ldd`), and language servers (LSP/clangd via the IDE) for code navigation. Prefer these over guesswork when verifying symbol presence, linked libraries, stripped symbols, or crash backtraces.
 
 ## Build & Test
 
@@ -127,7 +143,7 @@ The core service. Initialization flows through `main.cpp`: ACE framework init �
 | `rest/` | HTTP/WebSocket/TCP server, REST endpoint routing, worker thread pool, event pub/sub |
 | `application/` | App lifecycle (spawn, enable/disable, schedule, health), cron support, task messaging |
 | `process/` | Process wrappers: native (`AppProcess`), Docker CLI (`DockerProcess`), Docker API (`DockerApiProcess`), cgroup resource limits (`LinuxCgroup`) |
-| `security/` | Pluggable auth backends: local JSON, Consul, Keycloak/OAuth2. JWT tokens, RBAC, HMAC PSK |
+| `security/` | Dex-only OIDC verification, immutable Principal mapping, authorization roles, secret protection, and process HMAC PSK |
 
 **Singletons** (ACE_Singleton pattern, access via `::instance()`):
 
@@ -135,11 +151,10 @@ The core service. Initialization flows through `main.cpp`: ACE framework init �
 |-------|-------|--------|
 | `RESTHANDLER` | `RestHandler` | `rest/RestHandler.h` |
 | `WORKER` | `Worker` | `rest/Worker.h` |
-| `TOKEN_BLACK_LIST` | `TokenBlacklist` | `security/TokenBlacklist.h` |
 | `EVENT_DISPATCHER` | `EventDispatcher` | `rest/EventDispatcher.h` |
 | `HMACVerifierSingleton` | `HMACVerifier` | `security/HMACVerifier.h` |
 
-Other singletons use `static instance()`: `Configuration`, `Security`, `ResourceCollection`, `PersistManager`, `HealthCheckTask`, `ConsulConnection`.
+Other singletons use `static instance()`: `Configuration`, `Security`, `ResourceCollection`, `PersistManager`, and `HealthCheckTask`.
 
 **Request flow:** Client → `SocketServer` (accept) → `SocketStream` (parse HTTP) → `WORKER` queue (lock-free `moodycamel::BlockingConcurrentQueue`) → `RestHandler` (regex-based route dispatch) → handler method → response.
 
@@ -149,7 +164,7 @@ Shared C++ library used by the daemon. Notable:
 - `StreamLogger.h` — logging macros (`LOG_DBG`, `LOG_INF`, `LOG_WAR`, `LOG_ERR`) wrapping spdlog
 - `Utility.h` — string ops, file helpers, ID generation
 - `DateTime.h` / `DurationParse.h` — time and duration parsing
-- `JwtHelper.h` — JWT encode/decode
+- `JwtHelper.h` — bearer normalization and unverified token parsing used only alongside OIDC verification
 - `RestClient.h` — HTTP client for inter-service calls
 - `lwsservice/` — libwebsockets server/client wrappers
 
@@ -157,13 +172,13 @@ Shared C++ library used by the daemon. Notable:
 
 `appm` command-line tool, written in Rust. Uses clap for argument parsing and the Rust SDK (`src/sdk/rust`) for WSS communication with the daemon. Key structure:
 - `src/main.rs` — entry point, clap command definitions
-- `src/commands/` — subcommand handlers (app management, user, config, file, run)
+- `src/commands/` — subcommand handlers (Dex bearer import, app management, config, file, run)
 - `tests/integration_test.rs` — CLI argument parsing and subcommand tests (no daemon needed)
 - `tests/remote_test.rs` — integration tests against a running daemon (run with `--ignored`)
 
 ### Agent (`src/sdk/agent/`)
 
-REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP requests from clients and forwards them to the daemon via TCP, offloading traffic and reducing pressure on the C++ core. Also provides a Docker daemon reverse proxy (`/appmesh/docker/*`), Prometheus metrics exporter, and Consul service registration.
+REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP requests from clients and forwards them to the daemon via TCP, offloading traffic and reducing pressure on the C++ core. Also provides a Docker daemon reverse proxy (`/appmesh/docker/*`), and Prometheus metrics exporter.
 
 ### SDKs (`src/sdk/`)
 
@@ -181,7 +196,7 @@ Each SDK provides client libraries for interacting with the daemon plus a server
 ### MCP (`src/sdk/mcp_server/`, `src/sdk/mcp_bridge/`)
 
 Model Context Protocol integration, enabling AI agents to manage applications via MCP. Two flavors:
-- `mcp_server/` — standalone MCP server over **Streamable HTTP** with an **OAuth 2.1** bridge (clients log in once and auto-refresh; the App Mesh JWT is the access token, RBAC enforced by the daemon). Exposes the Python SDK's daemon operations as tools. Designed to run as an App Mesh App.
+- `mcp_server/` — standalone MCP OAuth Resource Server over **Streamable HTTP**. It validates Dex access tokens against the canonical issuer, may reach Dex through a separately configured access address, and forwards the caller bearer unchanged to App Mesh. It does not mint a second token or expose an upstream IdP. Designed to run as an App Mesh App.
 - `mcp_bridge/` — a stdio MCP server plus `mcp_pipe.py`, a stdio↔WebSocket tunnel for relaying a local MCP server out to a remote LLM gateway.
 
 ### LLM Agent (`src/sdk/llm-agent/`)
@@ -203,4 +218,4 @@ C++ (daemon): ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohma
 
 Rust (CLI): clap, tokio, rustls, serde/serde_json/serde_yaml, anyhow. The CLI depends on the Rust SDK crate (`src/sdk/rust`).
 
-Go (agent): gorilla/mux, gorilla/websocket, consul/api, viper, zap, msgpack.
+Go (agent): gorilla/mux, gorilla/websocket, viper, zap, msgpack.

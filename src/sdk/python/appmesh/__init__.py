@@ -19,7 +19,10 @@ __all__ = [
     "AppMeshClient",
     "AppMeshClientTCP",
     "AppMeshClientWSS",
-    "AppMeshClientOAuth",
+    "DexOAuthClient",
+    "DexOAuthError",
+    "TokenProvider",
+    "StaticAccessTokenProvider",
     "AppMeshWorker",
     "AppMeshWorkerTCP",
     "AppMeshWorkerWSS",
@@ -44,7 +47,10 @@ _LAZY_IMPORTS = {
     "AppMeshClient": ("client_http", "AppMeshClient"),  # from .client_http import AppMeshClient
     "AppMeshClientTCP": ("client_tcp", "AppMeshClientTCP"),  # from .client_tcp import AppMeshClientTCP
     "AppMeshClientWSS": ("client_wss", "AppMeshClientWSS"),  # from .client_wss import AppMeshClientWSS
-    "AppMeshClientOAuth": ("client_http_oauth", "AppMeshClientOAuth"),  # from .client_http_oauth import AppMeshClientOAuth
+    "DexOAuthClient": ("dex_oauth", "DexOAuthClient"),  # from .dex_oauth import DexOAuthClient
+    "DexOAuthError": ("dex_oauth", "DexOAuthError"),  # from .dex_oauth import DexOAuthError
+    "TokenProvider": ("token_provider", "TokenProvider"),  # from .token_provider import TokenProvider
+    "StaticAccessTokenProvider": ("token_provider", "StaticAccessTokenProvider"),  # from .token_provider import StaticAccessTokenProvider
     "AppMeshWorker": ("worker_http", "AppMeshWorker"),  # from .worker_http import AppMeshWorker
     "AppMeshWorkerTCP": ("worker_tcp", "AppMeshWorkerTCP"),  # from .worker_tcp import AppMeshWorkerTCP
     "AppMeshWorkerWSS": ("worker_wss", "AppMeshWorkerWSS"),  # from .worker_wss import AppMeshWorkerWSS
@@ -69,7 +75,8 @@ if TYPE_CHECKING:
     from .client_http import AppMeshClient  # noqa: F401
     from .client_tcp import AppMeshClientTCP  # noqa: F401
     from .client_wss import AppMeshClientWSS  # noqa: F401
-    from .client_http_oauth import AppMeshClientOAuth  # noqa: F401
+    from .dex_oauth import DexOAuthClient, DexOAuthError  # noqa: F401
+    from .token_provider import StaticAccessTokenProvider, TokenProvider  # noqa: F401
     from .worker_http import AppMeshWorker  # noqa: F401
     from .worker_tcp import AppMeshWorkerTCP  # noqa: F401
     from .worker_wss import AppMeshWorkerWSS  # noqa: F401

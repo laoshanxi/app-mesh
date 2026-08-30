@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 const BUILD_TAG: &str = match option_env!("BUILD_TAG") {
     Some(tag) => tag,
@@ -19,14 +20,6 @@ pub struct Cli {
     #[arg(short = 'F', long = "forward-to", global = true)]
     pub forward_to: Option<String>,
 
-    /// Login username
-    #[arg(short = 'U', long = "user", global = true)]
-    pub user: Option<String>,
-
-    /// Login password
-    #[arg(short = 'X', long = "password", global = true)]
-    pub password: Option<String>,
-
     /// Enable debug logging
     #[arg(short = 'v', long = "verbose", global = true)]
     pub verbose: bool,
@@ -34,14 +27,14 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Login to App Mesh
+    /// Sign in to Dex with a browser or device flow
     Logon(LogonArgs),
 
-    /// Logout from App Mesh
+    /// Revoke Dex tokens when supported and clear the local session
     #[command(alias = "logout")]
     Logoff(LogoffArgs),
 
-    /// Display current logged-in user
+    /// Show the current Dex session and Engine principal
     Loginfo(LoginfoArgs),
 
     /// Register a new application
@@ -95,24 +88,6 @@ pub enum Commands {
     /// Show Prometheus metrics
     Metric(MetricArgs),
 
-    /// Change user password
-    Passwd(PasswdArgs),
-
-    /// Lock or unlock a user
-    Lock(LockArgs),
-
-    /// Manage users
-    User(UserArgs),
-
-    /// Two-factor authentication management
-    Mfa(MfaArgs),
-
-    /// Encrypt password (local utility)
-    Appmgpwd(AppmgpwdArgs),
-
-    /// Initialize admin password (root-only)
-    Appmginit(AppmginitArgs),
-
     /// Manage workflows
     #[command(alias = "wf")]
     Workflow(WorkflowArgs),
@@ -122,28 +97,36 @@ pub enum Commands {
 
 #[derive(Parser)]
 pub struct LogonArgs {
-    /// Session duration (seconds or ISO 8601 duration)
-    #[arg(short = 't', long = "timeout")]
-    pub timeout: Option<String>,
+    /// Use RFC 8628 Device Authorization instead of the system browser
+    #[arg(long = "device")]
+    pub device: bool,
 
-    /// JWT audience
-    #[arg(short = 'a', long = "audience")]
-    pub audience: Option<String>,
+    /// Optional client-reachable Dex route; defaults to the advertised issuer
+    #[arg(long = "dex-access-url")]
+    pub dex_access_url: Option<String>,
 
-    /// Display the returned JWT token
-    #[arg(long = "show-token")]
-    pub show_token: bool,
+    /// Maximum seconds to wait for the browser callback
+    #[arg(long = "login-timeout", default_value_t = 300)]
+    pub login_timeout: u64,
+
+    /// Enroll this verified local Dex identity as the one-time first administrator
+    #[arg(long = "enroll-first-admin")]
+    pub enroll_first_admin: bool,
+
+    /// Override the daemon-generated first-admin proof file
+    #[arg(long = "first-admin-token-file", requires = "enroll_first_admin")]
+    pub first_admin_token_file: Option<PathBuf>,
 }
 
 #[derive(Parser)]
-pub struct LogoffArgs {}
+pub struct LogoffArgs {
+    /// Clear local state without attempting Dex revocation
+    #[arg(long = "local-only")]
+    pub local_only: bool,
+}
 
 #[derive(Parser)]
-pub struct LoginfoArgs {
-    /// Display current session token
-    #[arg(long = "show-token")]
-    pub show_token: bool,
-}
+pub struct LoginfoArgs {}
 
 // ─── App Management ──────────────────────────────────────────────────────────
 
@@ -512,63 +495,6 @@ pub struct ResourceArgs {}
 
 #[derive(Parser)]
 pub struct MetricArgs {}
-
-// ─── User Management ────────────────────────────────────────────────────────
-
-#[derive(Parser)]
-pub struct PasswdArgs {
-    /// Target user (default: self)
-    #[arg(short = 't', long = "target")]
-    pub target: Option<String>,
-}
-
-#[derive(Parser)]
-pub struct LockArgs {
-    /// Target user
-    #[arg(short = 't', long = "target", required = true)]
-    pub target: String,
-
-    /// Lock (true) or unlock (false)
-    #[arg(short = 'k', long = "lock", required = true)]
-    pub lock: bool,
-}
-
-#[derive(Parser)]
-pub struct UserArgs {
-    /// Path to JSON file with user definition
-    #[arg(short = 'j', long = "json")]
-    pub json: Option<String>,
-
-    /// List all users
-    #[arg(short = 'A', long = "all")]
-    pub all: bool,
-
-    /// Skip confirmation
-    #[arg(short = 'f', long = "force")]
-    pub force: bool,
-}
-
-#[derive(Parser)]
-pub struct MfaArgs {
-    /// Activate MFA
-    #[arg(short = 'a', long = "add")]
-    pub add: bool,
-
-    /// Deactivate MFA
-    #[arg(short = 'd', long = "delete")]
-    pub delete: bool,
-}
-
-// ─── Admin ──────────────────────────────────────────────────────────────────
-
-#[derive(Parser)]
-pub struct AppmgpwdArgs {
-    /// Passwords to encrypt
-    pub passwords: Vec<String>,
-}
-
-#[derive(Parser)]
-pub struct AppmginitArgs {}
 
 // ─── Workflow Management ───────────────────────────────────────────────────
 

@@ -9,8 +9,7 @@
 
 class HttpRequest;
 
-/// REST base class: routing, HTTP-level JWT extraction, and permission checking.
-/// Token generation and verification logic lives in JwtToken (security layer).
+/// REST base class: routing, Dex bearer extraction, and permission checking.
 class RestBase
 {
 public:
@@ -31,14 +30,10 @@ public:
     void handle_head(const std::shared_ptr<HttpRequest> &message);
 
 protected:
-    /// Check permission for the request, returns the authenticated username.
-    std::string permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
-    /// Extract username from the JWT token in the request.
-    std::string getJwtUserName(const std::shared_ptr<HttpRequest> &message);
-    /// Extract audience set from the JWT token in the request.
-    std::set<std::string> getJwtUserAudience(const std::shared_ptr<HttpRequest> &message);
-    /// Extract the raw JWT token string from the Authorization header.
-    std::string getJwtToken(const std::shared_ptr<HttpRequest> &message);
+    /// Check permission for the request, returns the authenticated principal ID.
+    std::string permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission);
+    /// Extract and normalize the Dex bearer token from the Authorization header.
+    std::string getDexBearerToken(const std::shared_ptr<HttpRequest> &message);
 
 protected:
     // API functions

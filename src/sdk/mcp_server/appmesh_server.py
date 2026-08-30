@@ -5,11 +5,9 @@ App Mesh MCP Server
 Exposes App Mesh daemon operations as MCP tools over **Streamable HTTP**, so MCP
 clients (Claude, etc.) can manage applications remotely.
 
-Authentication is OAuth 2.1 (see ``auth.py``): the client runs a browser login
-once, the MCP server exchanges App Mesh username/password for a JWT, and that JWT
-becomes the OAuth access token. Every tool forwards the caller's JWT to the daemon,
-so the daemon's RBAC stays the single source of truth — this server holds no
-credentials of its own.
+Authentication is delegated entirely to Dex (see ``auth.py``). This process is an
+OAuth resource server: it validates the Dex access token and forwards the same token
+to the daemon, so it never receives a password and never issues another token.
 
 Designed to run **as an App Mesh App** (see ``appmesh_mcp_app.yaml``) so it can be
 enabled / disabled / removed at any time, independently of the daemon.
@@ -26,6 +24,11 @@ Environment:
     APPMESH_MCP_PORT   bind port (default 6071)
     APPMESH_MCP_PUBLIC_URL  public base URL used in OAuth metadata (default https://<host>:<port>)
     APPMESH_MCP_TLS_CERT / APPMESH_MCP_TLS_KEY  enable HTTPS for the MCP endpoint
+    APPMESH_DEX_ISSUER      canonical Dex issuer embedded in tokens (required)
+    APPMESH_DEX_ACCESS_URL  network address this process uses to reach Dex (required)
+    APPMESH_DEX_CA_PATH     CA file/dir for verifying Dex independently (optional)
+    APPMESH_DEX_TLS_VERIFY  set "false" to disable Dex TLS verification (dev only)
+    APPMESH_DEX_AUDIENCE    App Mesh resource audience (default appmesh-api)
 """
 
 # pylint: disable=line-too-long,broad-exception-caught
@@ -33,7 +36,6 @@ Environment:
 import logging
 import os
 from typing import Optional
-from urllib import parse
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken
@@ -41,7 +43,7 @@ from fastmcp.server.auth import AccessToken
 
 from appmesh import App, AppMeshClient
 
-from auth import AppMeshOAuthProvider, appmesh_url, make_appmesh_client
+from auth import appmesh_url, make_appmesh_client, make_auth_provider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("AppMesh-MCP")
@@ -62,18 +64,13 @@ def _public_url() -> str:
     return f"{scheme}://{host}:{port}"
 
 
-auth_provider = AppMeshOAuthProvider(base_url=_public_url())
+auth_provider = make_auth_provider(base_url=_public_url())
 mcp = FastMCP("AppMesh", auth=auth_provider)
 
 
-@mcp.custom_route("/login", methods=["GET", "POST"])
-async def _login(request):  # noqa: ANN001 - Starlette Request
-    return await auth_provider.login_page(request)
-
-
 def _client(token: AccessToken) -> AppMeshClient:
-    """Build an App Mesh client bound to the caller's JWT (the OAuth access token)."""
-    return make_appmesh_client(jwt_token=token.token)
+    """Build an App Mesh client bound to the caller's Dex access token."""
+    return make_appmesh_client(bearer_token=token.token)
 
 
 # --------------------------------------------------------------------------- #
@@ -195,8 +192,7 @@ def _daemon_public_url() -> str:
 
 
 _CURL_TOKEN_NOTE = (
-    "Set APPMESH_TOKEN to your App Mesh JWT before running (the same token this MCP "
-    "session authenticated with, or `appm logon -U <user> --show-token`). "
+    "Set APPMESH_TOKEN to a Dex access token for the App Mesh API before running. "
     "Add -k if the daemon uses a self-signed certificate."
 )
 
@@ -260,45 +256,28 @@ def delete_label(label_name: str, token: AccessToken = CurrentAccessToken()) -> 
 
 
 # --------------------------------------------------------------------------- #
-# Users / RBAC
+# Principals / RBAC
 # --------------------------------------------------------------------------- #
-@mcp.tool(description="Get the current authenticated user's profile.")
-def get_current_user(token: AccessToken = CurrentAccessToken()) -> dict:
-    return _client(token).get_current_user()
+@mcp.tool(description="Get the current Dex principal and its App Mesh authorization overlay.")
+def get_current_principal(token: AccessToken = CurrentAccessToken()) -> dict:
+    return _client(token).get_current_principal()
 
 
-@mcp.tool(description="List all users.")
-def list_users(token: AccessToken = CurrentAccessToken()) -> dict:
-    return _client(token).list_users()
+@mcp.tool(description="List App Mesh authorization principals. This does not list identity-provider users.")
+def list_principals(token: AccessToken = CurrentAccessToken()) -> dict:
+    return _client(token).list_principals()
 
 
-@mcp.tool(description="Create or update a user. 'user_data' is the user definition dict.")
-def add_user(username: str, user_data: dict, token: AccessToken = CurrentAccessToken()) -> dict:
-    _client(token).add_user(username, user_data)
+@mcp.tool(description="Create or update roles, status, and execution mapping for a Dex principal.")
+def update_principal(principal_id: str, principal_data: dict, token: AccessToken = CurrentAccessToken()) -> dict:
+    _client(token).update_principal(principal_id, principal_data)
     return {"success": True}
 
 
-@mcp.tool(description="Delete a user by name.")
-def delete_user(username: str, token: AccessToken = CurrentAccessToken()) -> dict:
-    _client(token).delete_user(username)
+@mcp.tool(description="Delete an App Mesh principal policy. This never deletes an identity-provider user.")
+def delete_principal(principal_id: str, token: AccessToken = CurrentAccessToken()) -> dict:
+    _client(token).delete_principal(principal_id)
     return {"success": True}
-
-
-@mcp.tool(description="Lock a user account.")
-def lock_user(username: str, token: AccessToken = CurrentAccessToken()) -> dict:
-    _client(token).lock_user(username)
-    return {"success": True}
-
-
-@mcp.tool(description="Unlock a user account.")
-def unlock_user(username: str, token: AccessToken = CurrentAccessToken()) -> dict:
-    _client(token).unlock_user(username)
-    return {"success": True}
-
-
-@mcp.tool(description="List all user groups.")
-def list_groups(token: AccessToken = CurrentAccessToken()) -> dict:
-    return {"groups": _client(token).list_groups()}
 
 
 @mcp.tool(description="List all permission IDs defined in the system.")
@@ -306,9 +285,9 @@ def list_permissions(token: AccessToken = CurrentAccessToken()) -> dict:
     return {"permissions": _client(token).list_permissions()}
 
 
-@mcp.tool(description="List the current user's effective permissions.")
-def get_user_permissions(token: AccessToken = CurrentAccessToken()) -> dict:
-    return {"permissions": _client(token).get_user_permissions()}
+@mcp.tool(description="List the current principal's effective permissions.")
+def get_principal_permissions(token: AccessToken = CurrentAccessToken()) -> dict:
+    return {"permissions": _client(token).get_principal_permissions()}
 
 
 @mcp.tool(description="List all roles and their permission sets.")
@@ -325,36 +304,6 @@ def update_role(role_name: str, permission_set: list, token: AccessToken = Curre
 @mcp.tool(description="Delete a role by name.")
 def delete_role(role_name: str, token: AccessToken = CurrentAccessToken()) -> dict:
     _client(token).delete_role(role_name)
-    return {"success": True}
-
-
-# --------------------------------------------------------------------------- #
-# Sensitive operations (forwarded as-is; arguments are never logged)
-# --------------------------------------------------------------------------- #
-@mcp.tool(description="Change a user's password. Defaults to the current user ('self').")
-def update_password(old_password: str, new_password: str, username: str = "self", token: AccessToken = CurrentAccessToken()) -> dict:
-    _client(token).update_password(old_password, new_password, username)
-    return {"success": True}
-
-
-@mcp.tool(description="Get the TOTP (2FA) secret for the current user.")
-def get_totp_secret(token: AccessToken = CurrentAccessToken()) -> dict:
-    totp_uri = _client(token).get_totp_uri()
-    secret = parse.parse_qs(parse.urlparse(totp_uri).query).get("secret")
-    if not secret:
-        raise ValueError("TOTP URI does not contain a 'secret' field")
-    return {"secret": secret[0]}
-
-
-@mcp.tool(description="Enable TOTP (2FA) for the current user using a valid TOTP code.")
-def enable_totp(totp_code: str, token: AccessToken = CurrentAccessToken()) -> dict:
-    _client(token).enable_totp(totp_code)
-    return {"success": True}
-
-
-@mcp.tool(description="Disable TOTP (2FA) for the specified user (default 'self').")
-def disable_totp(user: str = "self", token: AccessToken = CurrentAccessToken()) -> dict:
-    _client(token).disable_totp(username=user)
     return {"success": True}
 
 

@@ -92,6 +92,14 @@ public:
 	int tcpClientId() const { return m_tcpClientId; }
 	const LwsSessionRef &lwsRef() const { return m_lwsRef; }
 	const std::shared_ptr<WSS::ReplyContext> &uwsReplyContext() const { return m_uwsReplyContext; }
+	/// Bind the immutable principal established by a WebSocket upgrade. Framed
+	/// requests may omit Authorization; policy is still checked for every route.
+	void bindTransportPrincipal(std::string principalId);
+	const std::string &transportPrincipalId() const { return m_transportPrincipalId; }
+	/// Mark a loopback-only WebSocket session that is restricted to managed worker RPC.
+	void markManagedWorkerTransport() { m_managedWorkerTransport = true; }
+	bool isManagedWorkerTransport() const { return m_managedWorkerTransport; }
+	bool isManagedPrivateTransport() const;
 
 private:
 	void notifyReply(int status) const;
@@ -99,6 +107,8 @@ private:
 	const int m_tcpClientId;
 	LwsSessionRef m_lwsRef;
 	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;
+	std::string m_transportPrincipalId;
+	bool m_managedWorkerTransport{false};
 };
 
 class Application;

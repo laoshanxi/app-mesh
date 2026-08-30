@@ -2,11 +2,30 @@
 # Example for App Mesh Client.
 # Install appmesh package: python3 -m pip install --upgrade appmesh
 
+import os
 from time import sleep
-from appmesh import AppMeshClient, App
+from appmesh import AppMeshClient, App, DexOAuthClient
 
-client = AppMeshClient()
-client.login("admin", "admin123")
+# Engine traffic and authentication traffic are separate routes, even on one node.
+engine_url = os.environ.get("APPMESH_ENGINE_URL", "https://127.0.0.1:6060")
+dex_access_url = os.environ.get("APPMESH_DEX_ACCESS_URL", "http://127.0.0.1:6062/dex")
+engine_ca = os.environ.get("APPMESH_ENGINE_CA")
+dex_ca = os.environ.get("APPMESH_DEX_CA_PATH")
+client = AppMeshClient(
+    base_url=engine_url,
+    # None retains the SDK's installed App Mesh CA auto-detection.
+    ssl_verify=engine_ca or None,
+    bearer_token=os.environ.get("APPMESH_BEARER_TOKEN"),
+)
+
+
+def dex_oauth_client():
+    """Build OAuth discovery against the selected Dex route, not the Engine host."""
+    return DexOAuthClient.from_appmesh(
+        client,
+        dex_access_url=dex_access_url,
+        dex_ssl_verify=dex_ca or True,
+    )
 
 
 def demo_task_execute():

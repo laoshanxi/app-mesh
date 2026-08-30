@@ -1,0 +1,72 @@
+---
+Authorization:
+  # `explicit` rejects unknown Dex subjects. `explicit-or-minimal` creates an active principal
+  # with no roles, so authentication succeeds but protected operations remain forbidden.
+  provisioning: explicit-or-minimal
+
+  # Built-in mode grants this role exactly once through the loopback enrollment API.
+  # The durable marker prevents enrollment from reopening if the administrator is later removed.
+  first_admin_role: appmesh-admin
+  first_admin_enrolled: false
+
+  principals:
+    system:appmesh:
+      kind: system
+      issuer: appmesh-internal
+      subject: appmesh
+      status: active
+      execution_user: ""
+      roles: []
+
+    # Pre-seeded read-only binding for the packaged guest login (Dex static
+    # password `guest@appmesh.local`, userID 93ad39b4-eb6f-4945-97a1-3366451867fb).
+    # The key is the deterministic stable identifier for the factory-default
+    # issuer: "oidc:" + SHA-256 hex of issuer + NUL + Dex sub, where the Dex
+    # static-password sub is base64url(protobuf{field1: userID, field2: "local"}).
+    # With a custom issuer this entry never matches and is simply inert; remove
+    # or re-provision it by hand then.
+    oidc:c5608b13011c28fef423fd4c76f57dcd9500018c60d8cde72c28ad232a5b4e3e:
+      kind: user
+      issuer: http://127.0.0.1:6062/dex
+      subject: CiQ5M2FkMzliNC1lYjZmLTQ5NDUtOTdhMS0zMzY2NDUxODY3ZmISBWxvY2Fs
+      status: active
+      execution_user: ""
+      roles: [appmesh-viewer]
+
+  roles:
+    appmesh-admin:
+      - app-control
+      - app-delete
+      - app-manage-all
+      - app-reg
+      - app-subscribe
+      - app-run-async
+      - app-run-sync
+      - app-run-task
+      - app-view-all
+      - app-view
+      - app-output-view
+      - config-set
+      - config-view
+      - file-download
+      - file-upload
+      - host-resource-view
+      - label-delete
+      - label-set
+      - label-view
+      - permission-list
+      - principal-delete
+      - principal-list
+      - principal-set
+      - role-delete
+      - role-set
+      - role-view
+      - workflow-admin
+    appmesh-viewer:
+      - app-view-all
+      - app-view
+      - app-output-view
+      - config-view
+      - host-resource-view
+      - label-view
+      - role-view

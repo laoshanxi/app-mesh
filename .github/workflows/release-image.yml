@@ -157,7 +157,16 @@ jobs:
           run: |
             timeout 30s /opt/appmesh/script/docker-entrypoint.sh &
             sleep 5
-            appm ls && appm resource
+            # Dex-only image: every request needs a bearer. Exchange the
+            # launcher-generated appmesh-automation credential (written on first
+            # start under work/auth/secrets) for a client_credentials token.
+            TOKEN=""
+            for _ in $(seq 1 10); do
+              TOKEN=$(python3 -c "import json,urllib.request,urllib.parse; cred=dict(line.strip().split(\"=\",1) for line in open(\"/opt/appmesh/work/auth/secrets/automation-client\") if \"=\" in line); data=urllib.parse.urlencode({\"grant_type\":\"client_credentials\",\"client_id\":cred[\"client_id\"],\"client_secret\":cred[\"secret\"],\"scope\":\"audience:server:client_id:appmesh-api\"}).encode(); print(json.load(urllib.request.urlopen(\"http://127.0.0.1:6062/dex/token\", data, timeout=10))[\"access_token\"])") && break
+              sleep 2
+            done
+            [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
+            APPMESH_BEARER_TOKEN="$TOKEN" appm ls && APPMESH_BEARER_TOKEN="$TOKEN" appm resource
 
       - name: Verify LLM Image
         uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3
