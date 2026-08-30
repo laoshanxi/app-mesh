@@ -30,20 +30,26 @@ sudo yum install appmesh_3.0.0_gcc_9_glibc_2.31_x86_64.rpm
 sudo systemctl enable --now appmesh
 ```
 
-Use `zypper` instead of `yum` on SUSE.
+The RPM is signed. Use `zypper` instead of `yum` on SUSE.
 
 ### DEB
 
 ```shell
-sudo dpkg --import gpg_public.key
 sudo -E apt install ./appmesh_3.0.0_gcc_7_glibc_2.27_x86_64.deb
 sudo systemctl enable --now appmesh
+```
+
+The DEB is not signed. Verify it with the release checksums:
+
+```shell
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
 ```
 
 ## macOS installation
 
 ```shell
-sudo installer -pkg appmesh_3.0.0_clang_17_macos_15_arm64.pkg -target /
+sudo installer -pkg appmesh_3.0.0_clang_17_macos_15_arm64.pkg -target / -dumplog
 sudo launchctl load -w /Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 ```
 

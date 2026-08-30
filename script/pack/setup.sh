@@ -912,6 +912,11 @@ print_startup_instructions() {
         ;;
     esac
 
+    local rest_port
+    rest_port=$(read_env_entry APPMESH_REST_RestListenPort 2>/dev/null || echo 6060)
+    info "  Web console (open after the service starts):"
+    info "    https://<this-host>:${rest_port}"
+
     if [ "$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)" = "builtin" ]; then
         info "  Sign in after the service starts. appm logon reads the built-in account"
         info "  password from the masked TTY prompt; no password CLI option exists."
