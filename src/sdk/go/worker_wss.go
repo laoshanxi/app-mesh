@@ -7,9 +7,8 @@ type WorkerWSSContext struct {
 }
 
 // NewWSSContext creates a server-side task context over WSS. Server endpoints
-// authenticate via APP_MESH_PROCESS_KEY, not JWT, so token refresh is forced off.
+// authenticate via APP_MESH_PROCESS_KEY; the worker is not an OAuth client.
 func NewWSSContext(options Option) (*WorkerWSSContext, error) {
-	options.AutoRefreshToken = false
 	wssClient, err := NewWSSClient(options)
 	if err != nil {
 		return nil, err

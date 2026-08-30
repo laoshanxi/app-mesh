@@ -138,10 +138,8 @@ jobs:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Unique workflow identifier. Used as part of the registered App name (`workflow-{name}`). Must match `[a-zA-Z0-9_-]+`. |
-| `owner` | string | no | — | **Ignored by the engine** (a YAML-supplied owner would be spoofable). Ownership is always the authenticated user who registers the workflow; only the owner or a workflow admin (`APPMESH_WORKFLOW_ADMINS`) can operate on it. Execution identity is separate — see `execution_identity`. |
 | `permission` | integer | no | 0 | Copied onto the registered `workflow-{name}` App's permission field. **Not consulted by the engine's workflow actions** — those check owner/admin only. It affects daemon-side App access (e.g. who sees the pseudo-App), same semantics as App Mesh App permission. |
-| `execution_identity` | string | no | — | App Mesh user whose credentials the engine uses to run this workflow's steps (ADR 0004). The engine must hold that identity's credential in `APPMESH_EXEC_IDENTITIES`, and at registration the caller may bind only itself or (as a workflow admin) any configured identity. **When omitted:** manual runs execute under the *triggering caller's* identity; automatic (event) triggers **fail closed** (they have no caller identity, and the engine never runs steps under its own privileged identity). Must match `[a-zA-Z0-9_.@-]+`. |
-| `on` | object | no | — | Trigger configuration. Omit to allow only manual/API triggering. |
+| `on` | object | no | — | Trigger configuration. Omit to allow only manual/API triggering. Registering any automatic trigger requires the authenticated Principal to have `workflow-admin`; automatic and recovered runs use a short-lived local Engine capability bounded by the workflow owner's current RBAC. |
 | `concurrency` | object | no | — | Concurrency control. Omit to allow unlimited parallel runs. |
 | `env` | object | no | — | Global environment variables inherited by all Steps. Keys are variable names, values are strings. Supports `${{ }}` expressions. |
 | `sec_env` | object | no | — | Global encrypted environment variables. Same as App Mesh `sec_env`. Inherited by all Steps. |
@@ -401,7 +399,7 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
 |-------|------|----------|---------|-------------|
 | `message.app` | string | yes | — | Name of the running App to send the message to. |
 | `message.payload` | string | yes | — | Request payload. Supports `${{ }}` expressions. |
-| `message.forward_token` | boolean | no | `false` | Inject the run's caller JWT into the JSON payload's `token` field before sending. For a target App that reads the caller token from the payload body. No-op when the payload isn't a JSON object, when an author-set `token` is already present, or for automatic/recovered runs (which carry no caller token). |
+| `message.forward_token` | boolean | no | `false` | Inject a manual run's Engine-validated caller bearer into the JSON payload's `token` field before sending. Automatic/recovered runs have no caller bearer, and internal capabilities are never forwarded. Also a no-op when the payload is not a JSON object or an author-set `token` is already present. |
 
 ```yaml
 - name: inference

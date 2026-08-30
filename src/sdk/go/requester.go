@@ -2,7 +2,6 @@ package appmesh
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,47 +12,6 @@ import (
 
 	"go.uber.org/atomic"
 )
-
-// Auth endpoints where the server returns a new access_token in the JSON body.
-var (
-	// Login/auth/totp_validate: apply token only when X-Set-Cookie header is present
-	authSetCookiePaths = map[string]bool{
-		"/appmesh/login":         true,
-		"/appmesh/auth":          true,
-		"/appmesh/totp/validate": true,
-	}
-	// Renew/setup: always apply (client already has an active session)
-	authRenewPaths = map[string]bool{
-		"/appmesh/token/renew": true,
-		"/appmesh/totp/setup":  true,
-	}
-)
-
-// syncTransportToken extracts and applies token from auth endpoint responses (TCP/WSS).
-// HTTP transport relies on Set-Cookie for automatic cookie jar updates.
-func syncTransportToken(statusCode int, raw []byte, apiPath string, headers map[string]string, r Requester) {
-	if statusCode != http.StatusOK {
-		return
-	}
-
-	if apiPath == "/appmesh/self/logoff" {
-		r.handleTokenUpdate("")
-		return
-	}
-
-	if authSetCookiePaths[apiPath] {
-		if headers == nil || headers[headerJWTSetCookie] != "true" {
-			return
-		}
-	} else if !authRenewPaths[apiPath] {
-		return
-	}
-
-	var result JWTResponse
-	if err := json.Unmarshal(raw, &result); err == nil && result.AccessToken != "" {
-		r.handleTokenUpdate(result.AccessToken)
-	}
-}
 
 // Requester defines the interface for making HTTP requests.
 type Requester interface {
@@ -74,6 +32,7 @@ type HTTPRequester struct {
 	baseURL    url.URL
 
 	forwardingHost *atomic.String
+	accessToken    atomic.String
 }
 
 // REST request
@@ -118,9 +77,6 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 		return nil, fmt.Errorf("http client is nil")
 	}
 
-	// Snapshot token before request for change detection
-	oldToken := h.getAccessToken()
-
 	// Build URL
 	u := h.baseURL
 	u.Path = path.Join(u.Path, apiPath)
@@ -135,7 +91,7 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 
 	// Apply implicit auth only when the caller did not provide an explicit Authorization header.
 	if _, hasAuth := headers["Authorization"]; !hasAuth {
-		if accessToken := h.httpClient.getCookie(cookieToken, &h.baseURL); accessToken != "" {
+		if accessToken := h.accessToken.Load(); accessToken != "" {
 			req.Header.Set("Authorization", "Bearer "+accessToken)
 		}
 	}
@@ -175,16 +131,6 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	// Auto-detect token changes from server Set-Cookie responses.
-	// Re-set via setToken() to ensure persistence: setCookie() adds an
-	// Expires fallback when a cookie file is configured, so the
-	// persistent-cookiejar treats the entry as persistent even if the
-	// server's Set-Cookie omitted Max-Age.
-	newToken := h.getAccessToken()
-	if newToken != oldToken {
-		h.setToken(newToken)
-	}
-
 	return resp, nil
 }
 
@@ -196,14 +142,13 @@ func (h *HTTPRequester) Close() {
 }
 
 func (h *HTTPRequester) handleTokenUpdate(token string) {
-	h.httpClient.SaveCookies()
+	h.accessToken.Store(token)
 }
 func (h *HTTPRequester) setToken(token string) {
-	h.httpClient.setCookie(cookieToken, token, &h.baseURL)
-	h.handleTokenUpdate(token)
+	h.accessToken.Store(token)
 }
 func (h *HTTPRequester) getAccessToken() string {
-	return h.httpClient.getCookie(cookieToken, &h.baseURL)
+	return h.accessToken.Load()
 }
 func (h *HTTPRequester) setForwardTo(forwardTo string) {
 	h.forwardingHost.Store(forwardTo)
@@ -305,9 +250,6 @@ func (t *TCPRequester) SendContext(ctx context.Context, method, apiPath string, 
 	for key, value := range resp.Headers {
 		respHeaders.Add(key, value)
 	}
-
-	// Auto-sync token from auth endpoint responses
-	syncTransportToken(resp.HttpStatus, resp.Body, apiPath, headers, t)
 
 	return resp.HttpStatus, resp.Body, respHeaders, nil
 }
@@ -464,11 +406,6 @@ func (w *WSSRequester) SendContext(ctx context.Context, method string, apiPath s
 		return 0, nil, nil, err
 	}
 
-	token := w.token.Load()
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
 	// A caller-supplied X-Target-Host header overrides the client-wide forward
 	// target for this request only ("" disables forwarding).
 	forwardingHost, forwardOverridden := headers[headerTargetHost]
@@ -499,9 +436,6 @@ func (w *WSSRequester) SendContext(ctx context.Context, method string, apiPath s
 	for key, value := range resp.Headers {
 		respHeaders.Add(key, value)
 	}
-
-	// Auto-sync token from auth endpoint responses
-	syncTransportToken(resp.HttpStatus, resp.Body, apiPath, headers, w)
 
 	return resp.HttpStatus, resp.Body, respHeaders, nil
 }

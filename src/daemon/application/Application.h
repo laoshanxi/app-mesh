@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include <boost/smart_ptr/shared_ptr.hpp>
 #include <boost/thread/mutex.hpp>
@@ -22,7 +23,6 @@
 #include "AppUtils.h"
 
 class AppTimer;
-class User;
 class CounterMetric;
 class GaugeMetric;
 class AppProcess;
@@ -44,13 +44,16 @@ public:
 	pid_t getpid() const;
 	int health() const;
 	const std::string &healthCheckCmd() const;
-	const std::shared_ptr<User> &getOwner() const;
+	const std::string &getOwnerPrincipalId() const;
 	int getOwnerPermission() const;
 	STATUS getStatus() const;
 	bool isPersistAble() const;
 	bool isManaged() const;
 	bool isOneShot() const;
 	bool isEnabled() const;
+	bool isSystemProtected() const;
+	int startupPhase() const;
+	const std::vector<std::string> &dependencies() const;
 	void health(bool health);
 	void setUnPersistable();
 
@@ -82,6 +85,11 @@ public:
 	void fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	std::tuple<int, std::string> taskStatus();
+	/// Proves possession of the current managed process key and returns the
+	/// daemon-assigned process UUID.  The key itself is never promoted to an
+	/// authorization identity.
+	std::string currentProcessUuidForKey(const std::string &processKey);
+	bool isCurrentProcessUuid(const std::string &processUuid);
 
 	// Prometheus metrics
 	void initMetrics();
@@ -142,7 +150,8 @@ private:
 	{
 		Managed,
 		OneShot,
-		SystemAgent
+		SystemAgent,
+		System
 	};
 
 	// Definition and ownership
@@ -152,7 +161,9 @@ private:
 	std::string m_name;
 	std::string m_commandLine;
 	std::string m_description;
-	std::shared_ptr<User> m_owner; // TODO: when user is removed, need remove associated app, otherwise, app invoke will fail
+	std::string m_ownerPrincipalId;
+	std::string m_executionUser;
+	int m_startupPhase;
 	int m_ownerPermission;
 	std::string m_workdir;
 	std::string m_stdoutFile;

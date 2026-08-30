@@ -27,7 +27,9 @@ Restart=always
 RestartSec=2
 StartLimitIntervalSec=0
 StartLimitBurst=0
-KillMode=process
+# App Mesh supervises Dex and other child Apps. Stop the entire unit
+# cgroup so mode switches/upgrades cannot leave old auth processes behind.
+KillMode=control-group
 # inherit/null/tty/journal/syslog/kmsg
 StandardOutput=null
 User=

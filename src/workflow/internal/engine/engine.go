@@ -15,6 +15,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/models"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/parser"
+	"github.com/laoshanxi/app-mesh/src/workflow/internal/tlsconf"
 	"github.com/rs/xid"
 )
 
@@ -59,6 +60,14 @@ func (a *ActiveSteps) Remove(jobName, stepName string) {
 	a.mu.Unlock()
 }
 
+// SetClient switches cancellation to the run-scoped execution credential once
+// it has been issued. Before this point no step can have registered itself.
+func (a *ActiveSteps) SetClient(client *appmesh.AppMeshClient) {
+	a.mu.Lock()
+	a.client = client
+	a.mu.Unlock()
+}
+
 // KillAll deletes all tracked running step apps from daemon (local and remote).
 // Remote kills run in parallel to avoid one unreachable node blocking the rest.
 func (a *ActiveSteps) KillAll() {
@@ -68,7 +77,11 @@ func (a *ActiveSteps) KillAll() {
 		apps[k] = v
 	}
 	a.apps = make(map[string]activeApp)
+	client := a.client
 	a.mu.Unlock()
+	if client == nil {
+		return
+	}
 
 	var wg sync.WaitGroup
 	for _, app := range apps {
@@ -76,17 +89,21 @@ func (a *ActiveSteps) KillAll() {
 			continue
 		}
 		if app.targetHost == "" {
-			a.client.DeleteApp(app.appName)
+			client.DeleteApp(app.appName)
 		} else {
 			wg.Add(1)
 			go func(aa activeApp) {
 				defer wg.Done()
-				c, err := appmesh.NewTCPClient(appmesh.Option{
-					AppMeshUri:         a.serverURI,
-					ForwardTo:          aa.targetHost,
-					JwtToken:           a.client.GetToken(),
-					InsecureSkipVerify: true,
-				})
+				// The forwarded kill carries the run credential, so the daemon
+				// certificate must be verified (fail closed) like every
+				// credential-bearing client.
+				option := appmesh.Option{
+					AppMeshUri: a.serverURI,
+					ForwardTo:  aa.targetHost,
+					JwtToken:   client.GetToken(),
+				}
+				tlsconf.Apply(&option)
+				c, err := appmesh.NewTCPClient(option)
 				if err == nil {
 					c.DeleteApp(aa.appName)
 					c.CloseConnection()
@@ -99,19 +116,20 @@ func (a *ActiveSteps) KillAll() {
 
 // Options configures workflow execution.
 type Options struct {
-	ClusterNodes      []string                              // known cluster node addresses
-	ServerURI         string                                // TCP server address for forwarding clients
-	DefaultTargetHost string                                // inherited target from parent job (sub-workflows)
-	CompletedJobs     map[string]string                     // jobs to skip on recovery
-	RecoveredSteps    map[string]map[string]map[string]any  // job → step → {stdout, exit_code, status, response}
-	OnJobDone         JobCallback                           // checkpoint update
-	OnStepDone        StepCallback                          // stdout archival (called after step, with full stdout)
-	StepLogPathFn     func(jobName, stepName string) string // returns file path for streaming step log
-	Log               logger.Log                            // per-run logger (nil = global stdout)
-	ActiveSteps       *ActiveSteps                          // cancel tracking (nil = no tracking)
-	CancelCtx         context.Context                       // workflow cancel context (passed to executors)
-	WorkflowBaseDir   string                                // base directory for workflow YAML files
-	CallerToken       string                                // run's caller JWT (empty for auto/recovered runs); injected into forward_token message payloads
+	ClusterNodes        []string                              // known cluster node addresses
+	ServerURI           string                                // TCP server address for forwarding clients
+	DefaultTargetHost   string                                // inherited target from parent job (sub-workflows)
+	CompletedJobs       map[string]string                     // jobs to skip on recovery
+	RecoveredSteps      map[string]map[string]map[string]any  // job → step → {stdout, exit_code, status, response}
+	OnJobDone           JobCallback                           // checkpoint update
+	OnStepDone          StepCallback                          // stdout archival (called after step, with full stdout)
+	StepLogPathFn       func(jobName, stepName string) string // returns file path for streaming step log
+	Log                 logger.Log                            // per-run logger (nil = global stdout)
+	ActiveSteps         *ActiveSteps                          // cancel tracking (nil = no tracking)
+	CancelCtx           context.Context                       // workflow cancel context (passed to executors)
+	WorkflowBaseDir     string                                // base directory for workflow YAML files
+	CallerToken         string                                // human caller Dex bearer only; internal capabilities never enter message payloads
+	WorkflowProcessUUID string                                // managed Workflow process that owns temporary command-step Apps
 }
 
 func (o *Options) log() logger.Log {
@@ -252,6 +270,7 @@ func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int,
 		ServerURI:    opts.ServerURI,
 		CancelCtx:    opts.CancelCtx,
 		CallerToken:  opts.CallerToken,
+		ProcessUUID:  opts.WorkflowProcessUUID,
 	}
 	exec.RunSubWorkflow = func(ctx context.Context, wfName string, inputs map[string]string, subDepth int) (int, map[string]string) {
 		subOpts := opts

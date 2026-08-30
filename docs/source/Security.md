@@ -1,274 +1,300 @@
 # Security
 
-App Mesh acts as enterprise middleware, implementing security at multiple levels to provide a secure platform.
+App Mesh is an OAuth 2.0 protected resource. Dex is the only trusted identity
+issuer. Linux and macOS main packages include the same bundled Dex stack with
+its simple local-password bootstrap profile; Windows packages trust an
+externally operated Dex only.
 
-## Security Concepts
+## Trust boundaries
 
-### User
+| Component | Responsibility | Not responsible for |
+|---|---|---|
+| Dex | login, built-in bootstrap credential or external connectors, OAuth/OIDC grants, signed access tokens | App Mesh permissions or process execution |
+| App Mesh Engine | validate Dex access tokens, resolve Principal, enforce authorization and ownership | passwords, MFA, users, token issuance, upstream IdP APIs |
+| Agent | expose the configured Dex issuer path and transparently forward caller bearers to Engine | OAuth login/code exchange, token storage/refresh, or upstream IdP proxying |
+| MCP | publish protected-resource metadata and transparently forward caller bearers to Engine | OAuth login/code exchange, token storage/refresh, token issuance, or independent authorization |
+| Python SDK | OAuth client flows and bearer attachment | local password login or token signing |
 
-App Mesh has built-in user management. Each user can define a process execution OS user for application execution. Each user has:
+Keycloak, Entra ID, Okta, SAML bridges, and other identity systems may be Dex
+connectors. Engines, agents, SDKs, and MCP never trust or expose those systems
+directly.
 
-* Password
-* MFA key
-* Roles
+## Canonical issuer and access route
 
-```bash
-$ appm user
-{
-  "email": "admin@appmesh.com",
-  "exec_user": "root",
-  "group": "admin",
-  "locked": false,
-  "mfa_enabled": false,
-  "name": "admin",
-  "roles": [
-    "manage",
-    "shell",
-    "usermgr",
-    "view"
-  ]
-}
+Every process distinguishes these values:
+
+- `issuer`: the canonical Dex URL embedded in the token `iss` claim. It is a
+  security identity and must be identical on all nodes and clients.
+- `dex_access_url`: the network route that one process uses to reach the same
+  Dex instance. It may be loopback, an App Mesh auth-owner address, a service
+  name, or an internal VIP.
+
+For example, a node may validate tokens whose issuer is
+`https://appmesh.example.com/dex` while fetching discovery and JWKS from
+`http://10.20.0.5:6062/dex`. Discovery must still publish the canonical issuer;
+endpoint rewriting is accepted only inside that issuer path.
+
+Engine and Agent read `config/oidc.yaml`. The explicit environment overrides
+are:
+
+```text
+APPMESH_DEX_ISSUER
+APPMESH_DEX_ACCESS_URL
+APPMESH_DEX_TLS_VERIFY
+APPMESH_DEX_CA_PATH
 ```
 
-### RBAC
-
-App Mesh implements role-based access control (RBAC). Users are assigned roles, each containing specific permissions. Every API request undergoes user password verification and permission checks.
-
-### Multi-tenant Applications
-
-Applications managed by App Mesh can define access permissions for other users and groups. You can:
-
-* Register an application visible only to yourself.
-* Register an application for your user group.
-
-## Security Data Storage
-
-### Local YAML File
-
-App Mesh uses a local YAML file `security.yaml` to persist all user definitions. This file can only be read and written by the root user.
-
-### Consul User/Role
-
-App Mesh supports storing security content in Consul, enabling all App Mesh instances to share centralized user information.
-
-### OAuth2
-
-App Mesh supports Keycloak OIDC authentication. When enabled, App Mesh validates the
-Keycloak-issued access token (signature, issuer, expiry, and client binding) on every
-request. Authorization is driven entirely by Keycloak: the **client roles carried in the
-token are used directly as App Mesh permissions** — there is no local role-to-permission
-mapping in OAuth2 mode.
-
-#### Setup
-
-1. **Start Keycloak**
-
-   ```bash
-   docker run --restart=always -d -p 8080:8080 \
-     -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
-     --name keycloak quay.io/keycloak/keycloak:latest start-dev
-   ```
-
-2. **Configure the realm and client** (Keycloak admin console)
-
-   * *Manage realms → Create realm*: create `appmesh-realm`.
-   * *Authentication → Required Actions*: disable all required actions.
-   * *Users → Add user*: create a user (e.g. `mesh`) with a permanent password.
-   * *Clients → Create client*: create `appmesh-client`; enable **Client authentication**
-     and **Direct access grants**.
-   * *Users → Add user*: as above.
-
-3. **Create permission roles on the client** (this is what grants access)
-
-   App Mesh authorizes each request against a permission key. In OAuth2 mode every
-   permission key must exist as a **client role on `appmesh-client`**, named *exactly* as
-   the key below, and be assigned to the user (directly or via a composite role / group).
-   A user without the matching client role is denied that operation.
-
-   The full permission-key set (use these exact strings as client-role names):
-
-   ```text
-   app-view            app-output-view     app-view-all        host-resource-view
-   app-reg             app-control         app-delete          app-subscribe
-   app-run-async       app-run-sync        app-run-async-output app-run-task
-   file-download       file-upload
-   label-view          label-set           label-delete
-   config-view         config-set
-   passwd-change-self  passwd-change-user
-   user-add            user-delete         user-lock           user-unlock
-   user-list           user-totp-active    user-totp-disable   user-token-renew
-   role-view           role-set            role-delete         permission-list
-   ```
-
-   > **Note:** local user/role/credential management is delegated to Keycloak in OAuth2 mode.
-   > Change-password, user add/delete, lock/unlock, TOTP setup/disable, and role create/delete
-   > return HTTP 400 (*"not supported in OAuth2 mode"*) — perform these in the Keycloak console.
-   > The related keys above only gate those endpoints and are otherwise unused.
-
-   Recommended: instead of assigning ~30 roles per user, create **composite client roles**
-   that bundle a set, e.g.:
-
-   * `appmesh-admin` → composite of all keys above.
-   * `appmesh-operator` → `app-view`, `app-view-all`, `app-output-view`, `app-control`,
-     `app-run-sync`, `app-run-async`, `app-run-async-output`, `app-run-task`,
-     `host-resource-view`, `passwd-change-self`, `user-token-renew`.
-   * `appmesh-viewer` → `app-view`, `app-view-all`, `app-output-view`, `host-resource-view`.
-
-   Then *Users → Role Mappings → Assign client roles*: assign the composite role to the user.
-   (Composite roles expand to their member roles in the token, so App Mesh sees the
-   individual permission keys.)
-
-4. **Enable OAuth2 in App Mesh**
-
-   * Set `SecurityInterface: oauth2` in `config.yaml`.
-   * Configure `oauth2.yaml` with `auth_server_url`, `realm`, and `client_id`.
-   * Provide the client secret via the environment variable
-     `APPMESH_Keycloak_client_secret` — **do not** commit it to `oauth2.yaml`. Leave the
-     YAML value empty for a public client.
-   * The local `security.yaml` role/permission definitions are **not used** for
-     authorization in OAuth2 mode and can be ignored.
-
-#### Token validation rules
-
-* **Client binding (mandatory):** the token must target `client_id` via its `azp` or `aud`
-  claim. Tokens issued for another client in the same realm are rejected.
-* **Audience isolation:** appmesh audiences encode a target host (used for remote-run
-  isolation). A Keycloak access token cannot carry that claim, so requests asking for a
-  specific non-default audience are rejected under OAuth2.
-* **Authorization:** the client roles found under this client's `resource_access` entry in
-  the token are taken as the user's permission set and matched directly against the
-  permission key the requested API requires. Roles granted on *other* clients in the realm
-  are ignored.
-
-#### Verifying the setup
-
-After assigning roles, decode a freshly issued access token (e.g. paste it into a JWT
-viewer) and confirm the permission keys appear under
-`resource_access["appmesh-client"].roles`. If an API returns `403`/permission-denied,
-the corresponding key is missing from that list — add the client role in Keycloak and
-re-login to pick it up.
-
-#### Token lifecycle
-
-The login response includes a `refresh_token` in OAuth2 mode. Clients that proxy through
-the daemon (rather than talking to Keycloak directly) use it as follows:
-
-* **Renewal:** `POST /appmesh/token/renew` with the refresh token in the `X-Refresh-Token`
-  header. The daemon exchanges it with Keycloak (`grant_type=refresh_token`) and returns a
-  fresh access/refresh token pair.
-* **Logoff:** `POST /appmesh/self/logoff` with the refresh token in `X-Refresh-Token`
-  revokes the Keycloak session server-side (end-session endpoint) in addition to the local
-  blacklist. Without the header, only the local session is revoked.
-
-#### User profile resolution (admin API)
-
-Some operations need a user *profile* object (not just authorization), e.g. resolving an
-application owner, deciding the run-as OS user, and serving `GET /appmesh/user/self`. A
-Keycloak identity is resolved through the Keycloak **admin API**, so users do **not** need to
-be duplicated in the local `security.yaml`.
-
-* **Resolution order:** a user also defined locally in `security.yaml` wins (this lets you keep
-  a local `exec_user` override for that name); otherwise the profile is fetched from Keycloak
-  and cached (~5 min).
-* **What is populated (display only):** `email`, the first Keycloak `group`, and this client's
-  role-mappings as `roles`. Per-request **authorization still uses the token** (`resource_access`),
-  never this profile — so the profile is informational (it drives `user/self` and owner/group
-  fields), and stale/empty roles here cannot grant or deny access.
-* **Run-as user:** unless a matching local user defines `exec_user`, apps run as the configured
-  default OS user (`DefaultExecUser`), not a per-Keycloak-user mapping.
-
-To enable the admin lookups the client must be usable as a service account:
-
-1. **Client authentication = On** (confidential client) and **Service accounts roles = On**
-   (enables the `client_credentials` grant).
-2. Grant the client's **service account** these `realm-management` client roles:
-   * `view-users` — read the user, their groups, and their client role-mappings.
-   * `view-clients` — resolve the client's internal id used for the role-mapping lookup.
-3. Provide the client secret via `APPMESH_Keycloak_client_secret` (see below).
-
-**Graceful degradation:** if no client secret is configured or the service account lacks the
-roles above, profile resolution falls back to a **name-only** user (so an authenticated
-identity never breaks owner/exec-user resolution). A username that genuinely does not exist in
-Keycloak still returns `404`.
-
-> **Secret injection:** the client secret is read from the `APPMESH_Keycloak_client_secret`
-> environment variable (it overrides the `client_secret` value in `oauth2.yaml`). Leave the
-> YAML value empty and inject the secret via the environment so it is not committed.
-
-#### Limitations
-
-* **Signing algorithms:** asymmetric RS/ES/PS families (RS256/384/512, ES256/384/512,
-  PS256/384/512) are accepted. HMAC (`HS*`) and `none` are rejected by design to prevent
-  algorithm-confusion forgery.
-* **User management in OAuth2 mode:** `add/delete/lock/unlock/change-password` and TOTP setup
-  act on the interim local store, not Keycloak. Manage those in Keycloak; the local endpoints
-  are not authoritative for Keycloak identities.
-* **Secured env encryption:** a Keycloak-owned application's encrypted environment variables are
-  keyed from local password material, which a Keycloak-only user does not have. Prefer a
-  locally-defined owner for apps that rely on encrypted env vars.
-
-## REST
-
-### SSL
-
-SSL is enabled by default for REST services to ensure secure communication. You can configure custom SSL certificate files.
-
-### JWT Authentication
-
-All REST methods require authentication by default. JWT authentication protects APIs, with each user having role-based permissions to access corresponding methods.
-
-#### JWT Sign Algorithm
-
-App Mesh supports three JWT signing algorithms:
-
-* HS256 - Uses JWTSalt as the secret key
-* RS256 - Uses public and private PEM key files for signing
-* ES256 - Uses public and private PEM key files with ECDSA algorithm
-
-
-### Cookie Authentication & CSRF
-
-Browsers may authenticate with a cookie: sending `X-Set-Cookie: true` on login makes the
-server issue the JWT as an `appmesh_auth_token` cookie (HttpOnly, Secure, SameSite=Strict).
-Programmatic SDK clients use the `Authorization: Bearer` header instead and are not affected by
-anything in this section.
-
-CSRF protection for cookie auth is enforced **in the daemon**, uniformly across all transports
-(HTTP, WebSocket, and agent-proxied TCP) — the agent/SDKs need no special CSRF handling:
-
-* **Baseline:** `SameSite=Strict` keeps the auth cookie off cross-site requests.
-* **Origin check:** a cookie-authenticated state-changing request (POST/PUT/DELETE) must be
-  same-origin, or carry an `Origin` listed in `REST.CsrfAllowedOrigins` (config.yaml, or the
-  `APPMESH_REST_CsrfAllowedOrigins` env override). Cross-origin cookie requests are rejected
-  with `403`. The `Origin` header is set by the browser and cannot be forged by cross-site
-  page script, which makes it a reliable CSRF signal; non-browser clients send no cookie and
-  are exempt.
-
-**When to configure `CsrfAllowedOrigins`:** only when the browser UI runs on a *different origin*
-than the API but the *same site* — e.g. the UI is served from a sibling subdomain or a different
-port (`https://ui.example.com` calling `https://api.example.com`). In that case add the UI's origin
-to the list (multiple values supported). You do **not** need it when:
-
-* UI and API share one origin (e.g. both behind a single nginx domain) — same-origin is always allowed; or
-* the UI is on a completely different domain — `SameSite=Strict` stops the browser from sending the
-  cookie at all, so cookie auth can't be used there regardless.
-
-### PSK (Pre-Shared Key)
-
-Non-user client requests are authenticated through PSK verification.
-
-## Encryption
-
-### Encrypt Application Environment
-
-For applications requiring confidential information, encrypted environment variables can be used to store sensitive data.
-
-### Encrypt User Password
-
-Password encryption is supported, allowing storage of encrypted passwords in YAML or Consul.
-
-## Reference
-
-* [User Role](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html)
-* [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html)
-* [MFA](https://app-mesh.readthedocs.io/en/latest/MFA.html)
+TLS verification is enabled by default for HTTPS Dex routes. Disabling it must be
+an explicit deployment choice.
+
+The Python SDK specifies its routes independently:
+
+```python
+from appmesh import AppMeshClient, DexOAuthClient
+
+engine = AppMeshClient(base_url="https://engine-node:6060")
+oauth = DexOAuthClient.from_appmesh(
+    engine,
+    dex_access_url="https://dex-network-route/dex",
+    verify="/path/to/dex-ca.pem",
+)
+```
+
+The Engine host and Dex access host are deliberately not inferred from each
+other, including for a local Engine.
+
+## Token validation
+
+The Engine accepts only an RFC 6750 `Authorization: Bearer` value. It:
+
+1. reads OIDC discovery from `dex_access_url`;
+2. requires discovery `issuer` to exactly match `issuer`;
+3. accepts only configured asymmetric algorithms (RS256 by default);
+4. selects a Dex JWKS key by `kid`;
+5. verifies signature, issuer, expiry/not-before, and audience;
+6. derives a stable Principal ID from SHA-256(`issuer NUL subject`);
+7. resolves App Mesh authorization by that immutable Principal ID.
+
+Every accepted token requires the `appmesh-api` resource audience; there is no
+alternate client-ID audience path for service tokens. The bundled
+`appmesh-automation` confidential client requests that same audience through the
+`audience:server:client_id:appmesh-api` scope and its client-credentials token
+passes the identical signature, issuer, and audience checks. Mutable names,
+email addresses, LDAP groups, and token role claims never grant Engine
+permissions.
+
+Discovery and keys are cached with bounded refresh. Unknown key IDs share a
+global refresh interval and a bounded negative cache, so random key IDs cannot
+amplify requests to Dex. If Dex is temporarily unreachable, a previously cached
+matching key may continue validating an unexpired token; the Engine never falls
+back to local signing or another issuer.
+
+## OAuth flows
+
+- Interactive/browser clients: Authorization Code with PKCE S256.
+- Headless native clients: Device Authorization Grant where supported.
+- Interactive delegation to Agent, MCP, and Workflow: relay the caller's bearer;
+  these components do not mint or exchange it.
+- Autonomous workloads: the bundled `appmesh-automation` confidential client
+  uses the Client Credentials grant with the App Mesh resource audience; the
+  launcher generates and persists its secret, and its Principal is provisioned
+  explicitly like any other binding — no Engine role is ever inferred from the
+  client id. Machine tokens carry no refresh token. See
+  [Deployment Guide](Install.md) for the token exchange.
+- Refresh and revocation: clients communicate directly with Dex.
+
+Engine performs the authoritative token validation and authorization, so any
+Agent-local privileged operation must first obtain an Engine decision.
+
+The Engine has no login, refresh, logout, password, MFA, token-issuance, or
+token-introspection proxy endpoints. The public discovery helpers are:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /.well-known/oauth-protected-resource` | RFC 9728 resource metadata |
+| `GET /appmesh/auth/config` | public issuer, audience, scopes, client, and flow hints |
+| `GET /appmesh/principal/self` | verified Principal and effective permissions |
+| `GET /appmesh/principal/self/permissions` | effective permission IDs |
+
+Built-in mode also has a deliberately non-public, one-time
+`POST /appmesh/auth/enroll-first-admin` authorization operation. It accepts an
+already verified Dex user Principal; it is not a login or token endpoint. The
+operation requires both a direct loopback socket peer and the current mode-0600
+runtime enrollment proof. Agent-to-Engine TCP requests must additionally carry
+the private Agent envelope before the Engine trusts the Agent-captured socket
+peer. `Forwarded` and `X-Forwarded-*` headers are never used for this decision.
+The enrollment API is compiled into every non-Windows build (`_WIN32` gating in
+the authorization store); Windows never opens it — its operator provisions the
+first `authorization.yaml` Principal binding manually.
+
+## Built-in local credential
+
+The built-in v1 profile enables Dex's password database and seeds one static
+bootstrap identity. Its random plaintext and bcrypt hash begin in a private
+mode-0600 credential file; only the hash is rendered into Dex's mode-0600
+runtime YAML. The launcher can explicitly rotate the random credential or
+remove the recoverable plaintext after enrollment without disabling the hash.
+It never logs the password or passes it in argv or an environment variable.
+
+This is deliberately a small installation bootstrap, not an Engine user store.
+Engine, CLI, SDKs, Agent, and MCP expose no password or local-user API. Use an
+external Dex deployment and appropriate connectors when multi-user lifecycle,
+MFA, self-service reset, or directory policy is required.
+
+## Authorization and execution mapping
+
+`authorization.yaml` stores no credentials. It contains:
+
+- immutable OIDC Principal bindings;
+- active/disabled/tombstoned status;
+- App Mesh roles and permission sets;
+- optional operating-system `execution_user` mapping;
+- the first-administrator role and durable single-use enrollment marker.
+
+Principal APIs manage only this authorization overlay:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /appmesh/principals` | list overlays |
+| `POST /appmesh/principal/{principal_id}` | create/update a binding or policy |
+| `DELETE /appmesh/principal/{principal_id}` | tombstone an unowned overlay, never a directory user |
+| `GET /appmesh/roles` | list App Mesh roles |
+| `POST /appmesh/role/{role}` | update a permission set |
+| `DELETE /appmesh/role/{role}` | delete an unbound non-bootstrap role |
+
+Applications are owned by `owner_principal_id`, not a username. Packaged System
+Apps are owned by `system:appmesh`; REST callers cannot create System Apps.
+Process user selection comes from an explicit application `execution_user`,
+then the Principal mapping, then `DefaultExecUser`/daemon identity according to
+the platform policy.
+
+Principal deletion is intentionally not a record erase. Engine refuses deletion
+while any loaded application is owned by that Principal, then persists a
+role-free tombstone with the immutable issuer/subject binding. This prevents
+automatic provisioning from recreating the identity as a new owner and leaves
+the durable first-administrator enrollment marker closed. Roles likewise cannot
+be deleted while referenced by either a Principal or an explicitly configured
+service-principal mapping.
+
+The Engine never infers administrator rights from a username, display name,
+email address, group, subject literal, or connector claim: in built-in mode a
+local operator explicitly enrolls the first verified OIDC Principal. The
+assignment and single-use marker are written atomically; disabling or deleting
+that Principal does not reopen enrollment.
+
+## Authentication mode and bundled startup
+
+Linux main packages always contain the pinned, checksummed Dex runtime and its
+stdin-only bcrypt helper.
+Setup records an explicit `APPMESH_AUTH_MODE` in the root-only service environment
+file. `builtin` is the out-of-the-box default and enables the runtime as protected
+System Apps:
+
+```text
+post-install bootstrap (setup.sh / docker entrypoint) -> auth-dex -> ingress/normal apps
+```
+
+`external` requires `APPMESH_DEX_ISSUER`, accepts only the public access URL and
+TLS/CA routing settings, and disables both local auth System Apps. It never
+accepts a password or OAuth client secret. The packaged runtime remains
+available so an operator can switch modes deliberately; setup reapplies the
+persisted choice after upgrades. See [Deployment Guide](Install.md) for the
+non-interactive environment and setup options.
+
+Secrets are generated at runtime with restrictive permissions under
+`work/auth/secrets`. The launcher passes the initial password only on the hash
+helper's stdin and renders only its bcrypt hash into private runtime YAML; it
+never logs either value. The workflow child receives no OAuth client credential;
+automatic and recovered runs use short-lived, Engine-local capabilities. Dex
+data lives under `work/auth`, so that directory must be on persistent storage.
+
+Container images discard all mutable state created by the package post-install
+step before the final layer. The non-root entrypoint initializes only missing
+state in `work`, including per-instance TLS material under `work/ssl`; it never
+ships a reusable master key, initial password, enrollment proof, issuer database,
+or TLS private key. `APPMESH_AUTH_MODE=external` is enforced by both the
+entrypoint and the launcher so a stale packaged App status cannot start Dex.
+
+Persisted application `sec_env` values use AES-256-GCM and a node-local 256-bit
+SecretProtector master key. Setup atomically creates
+`work/auth/secrets/secret-master-key`, records only its path in the service
+environment, and preserves the file on upgrade. The daemon verifies a regular,
+owner-only file and fails startup if the configured key is missing, unsafe, or
+cannot authenticate stored values. Back up this key with the application state;
+losing it is intentionally not recoverable through a weaker fallback.
+
+Application files from the username/password security model require an explicit
+offline migration: a legacy `owner` username cannot be inferred as an immutable
+`(issuer, subject)` binding, and legacy per-user `sec_env` ciphertext cannot be
+decrypted without the former credential material. Engine reports every rejected
+file and aborts application recovery instead of silently omitting it. Provision
+the target Principal, replace `owner` with its `owner_principal_id`, and
+re-register secured values through an authenticated application update while the
+old deployment can still decrypt them.
+
+Engine initializes the authorization store and OIDC verifier before creating
+any TCP or WebSocket listener. A configuration or authorization-state failure
+therefore aborts startup without exposing an API listener. Dex itself may come
+online afterward because it is a managed dependency; until discovery/JWKS is
+reachable, protected requests fail closed as authentication unavailable.
+
+User WebSocket connections authenticate their Dex bearer during the HTTP
+upgrade. Engine pins the resulting immutable Principal ID to the session and
+checks current RBAC for every framed operation; a frame cannot switch identity.
+Token refresh takes effect on the next connection. The only bearer-less upgrade
+is a direct loopback managed-worker session, which is restricted to GET/PUT task
+RPC and must prove the current process with `X-AppMesh-Process-Key`. Agent strips
+that private header and the retired `process_key` query parameter.
+
+The HTTPS streaming endpoints `/appmesh/file/download/ws` and
+`/appmesh/file/upload/ws` independently authenticate the bearer and enforce
+`file-download` or `file-upload` immediately before filesystem access. A prior
+control request is not treated as an authorization grant.
+
+While first-administrator enrollment is open, the daemon keeps
+`work/auth/secrets/first-admin-enrollment-token`: a fresh 256-bit CSPRNG value
+per daemon start, readable only by the daemon owner (and root), removed as soon
+as enrollment commits. External mode, follower nodes, and non-Linux
+installations remove/disable this proof and the API. An invalid
+``APPMESH_AUTH_MODE`` or ``AuthStack.role`` aborts startup instead of opening
+enrollment under an ambiguous deployment role.
+
+Windows does not install the local auth System Apps or launcher, and the setup
+script does not auto-register the bundled workflow App on that platform; macOS
+installs and bootstraps the same bundled auth stack as Linux.
+
+## Cluster mode
+
+The bundled SQLite configuration is single-active:
+
+- one `standalone` or `owner` node runs Dex;
+- `follower` nodes do not receive local credential state and do not start a
+  second writer;
+- every Engine trusts the same canonical issuer and sets its own
+  `dex_access_url` to the owner/private route;
+- authorization state must be distributed by the cluster configuration
+  mechanism or an operator-controlled configuration rollout.
+
+Failover is controlled, not automatic active-active. Stop or fence the old owner,
+restore/mount the persisted `work/auth` state on the promoted node, set its
+`AuthStack.role` to `owner`, update node access routes, and then start it.
+Never run two SQLite Dex owners against copied or shared writable state.
+
+For deployments that require active-active identity and issuer storage, replace
+the bundled persistence design with supported external replicated storage as a
+separate architecture decision; the out-of-box mode does not pretend SQLite is a
+distributed database.
+
+## Removed interfaces
+
+The following are intentionally gone from the Engine:
+
+- local username/password login and password hashing;
+- daemon-issued JWTs, signing salts, token renewal, and blacklist;
+- cookies and `X-Set-Cookie` authentication;
+- local user CRUD, groups, lock/unlock, and password change;
+- Engine TOTP setup/validation;
+- Keycloak-specific code, admin APIs, and configuration;
+- Consul-backed authentication.
+
+Only Dex access tokens cross the Engine authentication boundary.

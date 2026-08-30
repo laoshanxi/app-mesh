@@ -1,0 +1,12 @@
+---
+name: auth-dex
+description: sole OpenID Connect issuer trusted by App Mesh
+command: ../../script/appmesh-auth.sh dex
+health_check_cmd: ../../script/appmesh-auth.sh dex-health
+owner_principal_id: system:appmesh
+permission: 10
+system: true
+startup_phase: auth-issuer
+status: 1
+behavior:
+  exit: restart

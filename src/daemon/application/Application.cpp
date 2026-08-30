@@ -27,7 +27,7 @@
 #include "../rest/RestHandler.h"
 #include "../security/HMACVerifier.h"
 #include "../security/Security.h"
-#include "../security/User.h"
+#include "../security/SecretProtector.h"
 #include "AppTimer.h"
 
 namespace
@@ -136,7 +136,7 @@ struct Application::Runtime
 };
 
 Application::Application()
-	: m_kind(Kind::Managed), m_ownerPermission(0), m_metadata(EMPTY_STR_JSON),
+	: m_kind(Kind::Managed), m_startupPhase(100), m_ownerPermission(0), m_metadata(EMPTY_STR_JSON),
 	  m_shellApp(false), m_sessionLogin(false), m_stdoutCacheNum(0),
 	  m_startTime(AppTimer::TIME_UNSET), m_endTime(std::chrono::system_clock::time_point::max()),
 	  m_startInterval(0), m_bufferTime(0), m_scheduleKind(ScheduleKind::Continuous),
@@ -189,14 +189,21 @@ bool Application::isEnabled() const
 	return (m_status.load() == STATUS::ENABLED);
 }
 
+bool Application::isSystemProtected() const
+{
+	return m_kind == Kind::System || m_kind == Kind::SystemAgent;
+}
+
+int Application::startupPhase() const { return m_startupPhase; }
+
 const std::string &Application::healthCheckCmd() const
 {
 	return m_healthCheckCmd;
 }
 
-const std::shared_ptr<User> &Application::getOwner() const
+const std::string &Application::getOwnerPrincipalId() const
 {
-	return m_owner;
+	return m_ownerPrincipalId;
 }
 
 int Application::getOwnerPermission() const
@@ -253,12 +260,31 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	const static char fname[] = "Application::FromJson() ";
 	app->m_name = normalizeAppName(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
 
-	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner));
-	if (!ownerStr.empty())
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_owner))
+		throw std::invalid_argument(
+			"legacy application owner cannot be mapped safely to an immutable OIDC Principal; "
+			"provision the corresponding Dex Principal and replace owner with owner_principal_id");
+	app->m_ownerPrincipalId = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner_principal_id));
+	if (app->m_ownerPrincipalId.empty())
+		throw std::invalid_argument("application owner_principal_id is required");
+	app->m_executionUser = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_execution_user));
+	if (GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_system))
 	{
-		app->m_owner = Security::instance()->getUserInfo(ownerStr);
+		app->m_kind = Kind::System;
+		if (app->m_ownerPrincipalId != AuthorizationStore::systemPrincipalId())
+			throw std::invalid_argument("system application must be owned by system:appmesh");
 	}
-
+	const auto startupPhase = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_startup_phase);
+	if (!startupPhase.empty())
+	{
+		static const std::map<std::string, int> phases = {
+			{"auth-issuer", 20},
+			{"ingress", 30}, {"normal", 100}};
+		auto phase = phases.find(startupPhase);
+		if (phase == phases.end())
+			throw std::invalid_argument("invalid application startup_phase");
+		app->m_startupPhase = phase->second;
+	}
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_owner_permission);
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
 	app->m_sessionLogin = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_session_login);
@@ -305,7 +331,11 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_status))
 	{
-		app->m_status.store(static_cast<STATUS>(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status)));
+		// Boolean is the documented wire form; numeric 1/0 stays accepted for
+		// persisted YAML files and internal registrations.
+		const auto &statusValue = jsonObj.at(JSON_KEY_APP_status);
+		const int status = statusValue.is_boolean() ? (statusValue.get<bool>() ? 1 : 0) : statusValue.get<int>();
+		app->m_status.store(static_cast<STATUS>(status));
 	}
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_resource_limit))
@@ -328,9 +358,28 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		auto envs = jsonObj.at(JSON_KEY_APP_sec_env);
 		for (auto &env : envs.items())
 		{
-			if (fromRecover && app->m_owner)
+			if (fromRecover)
 			{
-				app->m_secEnvMap[env.key()] = app->m_owner->decrypt(env.value().get<std::string>());
+				if (!env.value().is_string() ||
+					!Utility::startWith(env.value().get<std::string>(), "sp1:"))
+				{
+					throw std::invalid_argument(
+						"persisted sec_env uses legacy per-user encryption and cannot be migrated safely "
+						"without the former credential material; re-register the secured value through "
+						"an authenticated application update");
+				}
+				const std::string context = app->m_name + '\0' + env.key();
+				try
+				{
+					app->m_secEnvMap[env.key()] = SecretProtector::instance().unprotect(
+						env.value().get<std::string>(), context);
+				}
+				catch (const std::exception &)
+				{
+					throw std::invalid_argument(
+						"persisted sec_env could not be authenticated; restore the original "
+						"SecretProtector master key before starting App Mesh");
+				}
 			}
 			else
 			{
@@ -554,6 +603,13 @@ bool Application::attach(int pid)
 		for (const auto &request : supersededRequests)
 			if (request)
 				request->interrupt();
+		// A recovered process with a custom probe is not ready merely because
+		// its PID exists. Keep dependents blocked until HealthCheckTask succeeds.
+		health(m_healthCheckCmd.empty());
+	}
+	else
+	{
+		health(false);
 	}
 
 	// 3. Publish the recovered run-state and schedule intent before opening the
@@ -823,6 +879,11 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	if (lifecycleGuard.owns_lock())
 		lifecycleGuard.unlock();
 
+	// A new PID has not passed readiness yet. This closes the interval between
+	// process publication and onStartAccepted(), during which a dependent App
+	// could otherwise observe health left over from the previous run.
+	health(false);
+
 	if (previousBuffer)
 		terminate(std::move(previousBuffer));
 	if (bufferPrevious)
@@ -920,7 +981,9 @@ void Application::onStartAccepted(const std::string &runId, pid_t pid)
 		if (metrics->owner == this && metrics->startCount)
 			metrics->startCount->metric().Increment();
 	}
-	health(true);
+	// Starting a process establishes liveness, not readiness. Applications with
+	// a custom probe become healthy only after HealthCheckTask observes success.
+	health(m_healthCheckCmd.empty());
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START,
 										  {{"pid", pid}, {"process_uuid", runId}});
 }
@@ -991,6 +1054,32 @@ std::tuple<int, std::string> Application::taskStatus()
 	return m_task.taskStatus();
 }
 
+std::string Application::currentProcessUuidForKey(const std::string &processKey)
+{
+	if (processKey.empty())
+		return {};
+	auto processLock = m_process.synchronize();
+	if (!(*processLock) || !Utility::secureCompare((*processLock)->getkey(), processKey))
+		return {};
+	const auto run = m_runtime->load();
+	if (run.id != (*processLock)->getuuid() ||
+		(run.phase != Runtime::Run::Phase::Starting && run.phase != Runtime::Run::Phase::Running))
+		return {};
+	return (*processLock)->getuuid();
+}
+
+bool Application::isCurrentProcessUuid(const std::string &processUuid)
+{
+	if (processUuid.empty())
+		return false;
+	auto processLock = m_process.synchronize();
+	if (!(*processLock) || !Utility::secureCompare((*processLock)->getuuid(), processUuid))
+		return false;
+	const auto run = m_runtime->load();
+	return run.id == processUuid &&
+		(run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running);
+}
+
 const std::string Application::getExecUser() const
 {
 	if (m_kind == Kind::SystemAgent)
@@ -1001,12 +1090,8 @@ const std::string Application::getExecUser() const
 #if defined(_WIN32)
 	return "";
 #else
-	std::string executeUser;
-	if (m_owner)
-	{
-		executeUser = m_owner->getExecUserOverride();
-	}
-	else if (!Configuration::instance()->getDisableExecUser())
+	std::string executeUser = m_executionUser;
+	if (executeUser.empty() && !Configuration::instance()->getDisableExecUser())
 	{
 		executeUser = Configuration::instance()->getDefaultExecUser();
 	}
@@ -1065,6 +1150,15 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 		}
 		auto output = process->getOutputMsg(&position, maxSize);
 		return std::make_tuple(output, finished, exitCode);
+	}
+
+	// A caller asking for a specific run (process uuid, current index) while this app
+	// hosts no run object would otherwise poll the stdout file forever without ever
+	// receiving an exit status; fail fast instead so clients can distinguish "gone"
+	// from "pending".
+	if (!processUuid.empty() && index == 0)
+	{
+		throw NotFoundException("No corresponding process running or the given process uuid is wrong");
 	}
 
 	auto file = m_stdoutFileQueue->getFileName(index);
@@ -1202,10 +1296,22 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 
 	LOG_DBG << fname << "Application: " << m_name;
 	result[JSON_KEY_APP_name] = std::string(m_name);
-	if (m_owner)
+	if (!m_ownerPrincipalId.empty())
 	{
-		result[JSON_KEY_APP_owner] = std::string(m_owner->getName());
+		result[JSON_KEY_APP_owner_principal_id] = m_ownerPrincipalId;
 	}
+	if (!m_executionUser.empty())
+	{
+		result[JSON_KEY_APP_execution_user] = m_executionUser;
+	}
+	if (m_kind == Kind::System)
+		result[JSON_KEY_APP_system] = true;
+	static const std::map<int, std::string> phaseNames = {
+		{20, "auth-issuer"},
+		{30, "ingress"}, {100, "normal"}};
+	auto phaseName = phaseNames.find(m_startupPhase);
+	if (phaseName != phaseNames.end() && m_startupPhase != 100)
+		result[JSON_KEY_APP_startup_phase] = phaseName->second;
 	if (m_ownerPermission)
 	{
 		result[JSON_KEY_APP_owner_permission] = (m_ownerPermission);
@@ -1242,7 +1348,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	{
 		result[JSON_KEY_APP_working_dir] = std::string(m_workdir);
 	}
-	result[JSON_KEY_APP_status] = (int)m_status.load();
+	result[JSON_KEY_APP_status] = isEnabled();
 	if (m_resourceLimit)
 	{
 		result[JSON_KEY_APP_resource_limit] = m_resourceLimit->AsJson();
@@ -1259,17 +1365,11 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (m_secEnvMap.size() && !returnRuntimeInfo)
 	{
 		// Only include sec_env when saving to disk (not in API responses).
-		auto owner = getOwner();
-		if (!owner)
-		{
-			// Refuse to persist sec_env without an owner — we would have to write
-			// plaintext to disk, which silently leaks secrets.
-			throw std::invalid_argument("cannot persist sec_env for application <" + m_name + "> without an owner");
-		}
 		nlohmann::json envs = nlohmann::json::object();
 		for (const auto &pair : m_secEnvMap)
 		{
-			envs[pair.first] = owner->encrypt(pair.second);
+			const std::string context = m_name + '\0' + pair.first;
+			envs[pair.first] = SecretProtector::instance().protect(pair.second, context);
 		}
 		result[JSON_KEY_APP_sec_env] = std::move(envs);
 	}
@@ -1449,10 +1549,8 @@ void Application::dump()
 	LOG_DBG << fname << "m_sessionLogin:" << m_sessionLogin;
 	LOG_DBG << fname << "behavior:" << behaviorAsJson();
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
-	if (m_owner)
-	{
-		LOG_DBG << fname << "m_owner:" << m_owner->getName();
-	}
+	LOG_DBG << fname << "m_ownerPrincipalId:" << m_ownerPrincipalId;
+	LOG_DBG << fname << "m_executionUser:" << m_executionUser;
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << (int)m_status.load();
 	const auto dumpPid = m_runtime->load().pid;

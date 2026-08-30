@@ -6,6 +6,7 @@ Passes user commands to native App Mesh to launch applications outside
 the Docker container while maintaining monitoring and lifecycle management.
 """
 
+import os
 import socket
 import sys
 import warnings
@@ -16,11 +17,6 @@ import appmesh
 
 # Suppress SSL warnings for internal connections
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
-
-# Configuration
-DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "admin123"
-
 
 def get_shadow_app_name():
     """
@@ -86,8 +82,10 @@ def main():
 
     try:
         # Initialize appmesh (container image has no CA bundle; daemon uses a self-signed cert)
-        appmesh_client = appmesh.AppMeshClient(ssl_verify=False)
-        appmesh_client.login(DEFAULT_USERNAME, DEFAULT_PASSWORD)
+        appmesh_client = appmesh.AppMeshClient(
+            ssl_verify=False,
+            bearer_token=os.environ["APPMESH_BEARER_TOKEN"],
+        )
 
         # Start monitor application
         monitor_app = create_monitor_app(native_app_name, monitor_app_name)

@@ -499,6 +499,38 @@ function Install-GoTools {
     Write-Host "Go tools installed successfully (minimal size)" -ForegroundColor Green
 }
 
+function Install-Dex {
+    Write-Host "Installing Dex OIDC server..." -ForegroundColor Cyan
+
+    $env:GOBIN = "C:\local\bin"
+    $env:CGO_ENABLED = "1"
+
+    New-Item -ItemType Directory -Force -Path $env:GOBIN | Out-Null
+
+    $ldflags = "-s -w"
+    $buildFlags = @("-trimpath", "-buildvcs=false")
+
+    Write-Host "Cloning Dex..." -ForegroundColor Yellow
+    git clone --quiet --depth 1 https://github.com/dexidp/dex.git dex
+    if ($LASTEXITCODE -ne 0) {
+        throw "git clone failed for Dex"
+    }
+
+    try {
+        Push-Location dex
+        go build @buildFlags -ldflags="$ldflags" -o "$env:GOBIN\dex.exe" ./cmd/dex
+        if ($LASTEXITCODE -ne 0) {
+            throw "go build failed for Dex"
+        }
+    }
+    finally {
+        Pop-Location
+        Remove-Item -Recurse -Force dex -ErrorAction SilentlyContinue
+    }
+
+    Write-Host "Dex installed successfully (minimal size)" -ForegroundColor Green
+}
+
 function Build-NativeLibraries {
     Write-Host "Building native libraries..." -ForegroundColor Cyan
     Write-Host "Native library compilation completed" -ForegroundColor Green
@@ -598,6 +630,9 @@ try {
     Install-PythonPackages
     Install-Go
     Install-GoTools
+
+    Install-Dex
+
     Install-Rust
     Install-NsisPlugin
     Build-NativeLibraries

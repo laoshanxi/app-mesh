@@ -29,8 +29,9 @@ per-session stdout — and App Mesh streams per App — so each interactive sess
 its own **worker App** (the same binary with `--session-worker`). Both Apps are
 **admin-provisioned**; `llm-agent` registers nothing itself (no dynamic spawn, no
 `AddApp`). It holds **no daemon credentials**: the task RPC uses the daemon-injected
-`APP_MESH_PROCESS_KEY`, and every other daemon call runs under the caller's token from
-the request payload. See *Process topology* and *Identity & Multi-Tenancy*.
+`APP_MESH_PROCESS_KEY`. A delegated daemon call may use the Engine-validated human Dex
+bearer from a manual run; Engine-local workflow capabilities are never forwarded.
+See *Process topology* and *Identity & Multi-Tenancy*.
 
 The original first cut (since superseded — see the banner above) implemented: a
 per-tenant handler App, a disk-persisted session store with TTL reaping, a hand-rolled
@@ -88,7 +89,7 @@ Scenario A (DAG)                         Scenario B (interactive)
         └──────────────┬─────────────────┘  │  ├── own working dir               │
                        │                     │  └── idle / lifetime reaper        │
    both: session store · agent loop · tools catalog · per-tenant budget · L1/L2/L3
-                       │ tool call = RunTask (under caller token)        │
+                       │ tool call = RunTask (manual caller bearer only) │
                        ▼                                                 ▼
                                   registered tool Apps (metadata.tool)
 ```
@@ -115,11 +116,9 @@ engine unchanged. A worker process gets its own `APP_MESH_PROCESS_KEY`, so its
 - A tool is a registered App that carries its LLM function schema in the App's
   `metadata.tool` (description, JSON-schema parameters) — the same pattern the workflow
   engine uses to store workflows as Apps with `metadata.type=workflow`.
-- The catalog (`llm_agent/tools.py`) is built by **listing Apps under the caller's
-  token** and filtering to those with a `metadata.tool` schema. Because tool discovery
-  and invocation both run under the caller's token (see *Identity & Multi-Tenancy*), the catalog is
-  **automatically scoped to what the tenant could already run directly** — no separate
-  allowlist to maintain.
+- The original catalog (`llm_agent/tools.py`) was built by listing Apps under a manual
+  run's Dex bearer and filtering to those with a `metadata.tool` schema. Tool
+  discovery and invocation therefore remained within that Principal's App Mesh RBAC.
 - **Tool I/O contract:** tools are task Apps invoked via `RunTask`. The agent's JSON
   arguments are the task payload; the tool returns a structured JSON response. The
   calling session's `session_id` and a per-session `workdir` are injected into the
@@ -164,43 +163,32 @@ engine unchanged. A worker process gets its own `APP_MESH_PROCESS_KEY`, so its
 
 ## Identity & Multi-Tenancy
 
-Reuses the workflow engine's existing three-layer model (ADR 0006), extended to sessions.
+Authentication follows ADR 0009 and the workflow policy in ADR 0006.
 
 | Layer | Question | Enforced by |
 |---|---|---|
 | L1 | May you talk to the App at all? | daemon RBAC (`app-run-task`) |
-| L2 | May you act on *this* session? | the App's PDP — `session.owner == caller \|\| isAdmin` |
-| L3 | What may a tool do? | the **caller's own token** runs the tool → daemon per-App ACL applies |
+| L2 | May you act on *this* session? | App policy keyed by immutable Principal ID |
+| L3 | What may a delegated tool do? | App Mesh RBAC for the effective Dex Principal |
 
-- **Execution identity:** every call re-authenticates with the **caller's current token**
-  (taken from the task payload, validated via a `get_current_user` self-lookup, never
-  persisted). The session is **data owned by the App**; whoever calls uses their own
-  identity. This reuses the engine's invoker-rights model with no new infrastructure.
-- **Session authorization** mirrors L2 for workflows; session storage is **namespaced
-  per tenant** so cross-tenant reads are physically impossible.
+- **Manual workflow run:** the Engine validates the caller's Dex bearer and maps it to an
+  immutable Principal ID. The bearer is ephemeral and never persisted in session state.
+- **Automatic/recovered workflow run:** the local Engine issues a short-lived capability
+  bound to the workflow owner, run, and current Workflow process, and re-checks the owner's
+  RBAC on every operation. Registering such a trigger requires `workflow-admin`.
+- **Session authorization** uses Principal IDs rather than usernames and remains
+  namespaced per tenant.
 - **Per-tenant model credentials:** each tenant has its own LLM API key / gateway,
   supplied as an App **secured (encrypted) env var** — never plaintext config.
-- **No service identity:** `llm-agent` holds no daemon credentials. The task RPC
-  authenticates with the daemon-injected `APP_MESH_PROCESS_KEY`. The original design had
-  identity forwarded **in the payload body** (the workflow engine's `message` step still
-  injects the invoker's JWT when `forward_token: true` is set, since the task RPC
-  transport is authed by the process key) with `llm-agent` validating and adopting it.
-  **The shipped agent does not do this** — it ignores any `token` field, performs no
-  token validation of its own, and relies entirely on the daemon's RBAC gate on
-  `run_task` (see the README: "no auth or quota of its own").
-  - **Automatic-trigger identity (shipped behavior):** `llm-agent` itself performs no token
-    validation. The workflow side now supplies the identity: an automatic (event) trigger
-    must declare a workflow `execution_identity` (ADR 0004 — shipped), under whose token the
-    `message` step runs and whose JWT `forward_token` injects. A workflow without one fails
-    closed at run time, so an event trigger can no longer drive `llm-agent` with no identity
-    at all. A daemon-side act-as/token-exchange model (avoiding stored service-account
-    credentials) remains future work.
+- **Task transport:** `llm-agent` fetches its Task through the daemon-injected
+  `APP_MESH_PROCESS_KEY`. The shipped agent does not validate a second token from the
+  message body; it relies on the daemon's RBAC gate. `forward_token` can forward a manual
+  run's human caller bearer to a target that explicitly needs delegated authorization. It
+  is a no-op for automatic/recovered runs: internal capabilities never enter payloads.
 - **Robustness:** untrusted client fields (per-turn limits) are coerced defensively, so a
   malformed payload returns a clean error rather than crashing the serving App.
-- **Token-expiry note:** because Scenario B is interactive (each turn arrives with the
-  caller's then-current token), per-call re-auth fits naturally. The only exposure is a
-  *single* turn whose loop outlives the token — that fails closed. A long-lived
-  `execution_identity` / act-as model is **Deferred** (ADR 0004 Phase 3).
+- **Token expiry:** delegated calls fail closed when their Dex bearer expires. The agent
+  never retains human refresh tokens.
 
 ## Streaming (Scenario B only)
 
@@ -296,7 +284,7 @@ First cut reuses the engine's existing facilities; no new subsystem.
 | Agent loop | Inside the App; DAG stays static; engine unchanged |
 | Tools | Registered Apps only; schema in `metadata.tool`; I/O via `RunTask` (structured); `session_id` + `workdir` injected |
 | Session | Cross-run + idle TTL; disk-persisted, rebuilt on restart; no KV-cache resume |
-| Identity | No service credentials: task RPC via `APP_MESH_PROCESS_KEY`; every other call under the caller's token (validated per request); session = data owned by the App (L1/L2/L3) |
+| Identity | Task RPC via `APP_MESH_PROCESS_KEY`; only manual runs may delegate the Engine-validated human Dex bearer; internal workflow capabilities never leave Engine transport; session ownership uses immutable Principal IDs |
 | Streaming | Scenario B only; out-of-band `Subscribe(STDOUT)` on the worker = a clean per-session stream; rejected on the shared App |
 | Budget | per-turn (operator ceiling, caller may only lower) + per-tenant file-locked ledger; hard ceilings |
 | Backends | `fake` / `anthropic` / `openai` (+ OpenAI-compatible via base URL) / `gemini`; key as secured env |
@@ -310,7 +298,6 @@ First cut reuses the engine's existing facilities; no new subsystem.
 - Automatic context compaction / summarization (Context section).
 - In-band cancel / interrupt primitive (Control Plane section).
 - Inference-service-as-App lifecycle management + per-tenant routing table.
-- `execution_identity` / act-as for cross-user shared sessions (ADR 0004 Phase 3).
 - KV-cache-level session resume.
 - GPU-aware scheduling / bin-packing; mixed inference routing within a tenant.
 - Full prompt/tool-call trace observability.
@@ -325,4 +312,5 @@ First cut reuses the engine's existing facilities; no new subsystem.
 - [WorkflowDesign.md](WorkflowDesign.md) — workflow engine (DAG, steps, `message`/RunTask, Subscribe/STDOUT, registry scan).
 - [CONTEXT.md](CONTEXT.md) — domain glossary (App, Task, Event, message step).
 - ADR 0006 — workflow multi-tenant authorization (L1/L2/L3, invoker rights).
-- ADR 0004 — unified run / identity model (resource_owner / actor / execution_identity).
+- ADR 0004 — proposed unified Run model (resource owner and actor Principal IDs).
+- ADR 0009 — Dex-only authentication and Principal mapping.

@@ -1,149 +1,126 @@
-# OS User Design
+# OS Execution User Design
 
 ## Overview
 
-App Mesh has two types of users:
+App Mesh separates authenticated identity from operating-system process identity:
 
-- **API Users** control *what you can do* — login identity with password, roles, and permissions (e.g., `admin`, `mesh`, `test`). Configured in `security.yaml` or via OAuth2/Consul.
-- **OS Users** control *who runs your applications* — the Linux/macOS user identity (UID/GID) under which child processes execute. Each API user can be mapped to an OS user via the `exec_user` field.
+- A **Principal** is the immutable App Mesh identity derived from a Dex token. Roles and
+  permissions decide what it may do.
+- An **execution user** is the Linux/macOS account under which a native child process runs.
+  It does not authenticate the Principal or grant App Mesh permissions.
 
+The optional `execution_user` policy belongs to the Principal overlay in
+`authorization.yaml`. It is not stored in Dex, an upstream IdP, or a legacy Engine user record.
+
+```text
+Dex token -> (issuer, subject) -> Principal ID -> execution_user -> native child UID/GID
 ```
-API User "deploy"  ──(exec_user: "www-data")──►  Applications run as OS user "www-data"
-API User "admin"   ──(exec_user: "")──────────►  Applications run as DefaultExecUser or daemon user
-API User "test"    ──(exec_user: "nobody")────►  Applications run as OS user "nobody"
-```
 
-### Which Mode Should I Use?
+When a Principal registers or runs an application through REST, the Engine derives
+`owner_principal_id` from the validated bearer, ignores a caller-supplied execution user,
+and copies the Principal's configured `execution_user` into the application definition.
+This prevents a caller from selecting a more privileged OS account.
 
-| My Scenario | Recommended Mode | Why |
-|-------------|-----------------|-----|
-| Docker container | **Non-root** (default) | Simple and secure, no configuration needed |
-| Single server, one team | **Non-root** | All apps share one OS user, minimal attack surface |
-| CI runner / automation | **Non-root** | No need for user isolation |
-| Multi-tenant, shared host | **Root** | Different teams' apps run as different OS users |
-| Strict process isolation required | **Root** | Each API user maps to a separate OS user |
+Changing a Principal mapping affects newly registered/run applications. Update or
+re-register existing persistent applications when their materialized execution user must
+change.
 
-### Non-Root Mode (Recommended)
+## Which Mode Should I Use?
 
-The daemon runs as a regular OS user (e.g., `appmesh`). All applications run as that same user regardless of `exec_user` settings. This is the simplest and most secure setup.
+| Scenario | Recommended mode | Reason |
+|----------|------------------|--------|
+| Docker container | non-root (default) | one fixed UID/GID and the smallest host privilege surface |
+| Single server or CI runner | non-root | application-level OS-user switching is unnecessary |
+| Shared multi-tenant host | root, only when required | allows approved Principals to map to isolated OS accounts |
+| Strict native process isolation | root, with explicit mappings | each approved Principal can receive a distinct non-root OS account |
 
-**Package install:**
+## Non-Root Mode (Recommended)
+
+The daemon runs as a regular OS user, such as `appmesh`. Native managed applications run
+as that same user; per-Principal switching is unavailable when the daemon is not root.
 
 ```bash
-# Create user and install
 groupadd -r appmesh && useradd -m -r -g appmesh appmesh
 export APPMESH_DAEMON_EXEC_USER=appmesh
 export APPMESH_DAEMON_EXEC_USER_GROUP=appmesh
 dpkg -i appmesh.deb  # or rpm -ivh appmesh.rpm
 ```
 
-**Docker:** Works out of the box, no configuration needed.
+The Docker image runs as UID/GID `482:482` and sets
+`APPMESH_BaseConfig_DisableExecUser=true`. A `docker_image` application follows its
+image's own `USER` declaration.
 
-```bash
-docker run -d laoshanxi/appmesh
-```
+## Root Mode
 
-### Root Mode
-
-The daemon runs as root and can switch to different OS users when spawning applications. Configure `DefaultExecUser` for a global default, and optionally set `exec_user` per API user for fine-grained control.
-
-**Package install:**
-
-```bash
-# Install without specifying a daemon user (defaults to root)
-dpkg -i appmesh.deb
-```
-
-Then configure user mapping:
+A root daemon may switch native child processes to approved non-root OS accounts. Enable
+switching and set a safe global fallback in `config.yaml`:
 
 ```yaml
-# config.yaml
 BaseConfig:
-  DefaultExecUser: "appmesh"   # Fallback OS user
-  DisableExecUser: false       # Enable per-user switching
-
-# security.yaml
-Users:
-  admin:
-    exec_user: ""              # Uses DefaultExecUser → appmesh
-  deploy:
-    exec_user: "www-data"      # deploy's apps run as www-data
-  test:
-    exec_user: "nobody"        # test's apps run as nobody
+  DefaultExecUser: "appmesh"
+  DisableExecUser: false
 ```
 
-Container images default to non-root mode. An explicit `--user 0:0` override runs
-the daemon and native managed applications as root. OS-user switching additionally
-requires `DisableExecUser=false` and the required container capabilities.
+Configure the Principal-to-OS-user policy in `authorization.yaml`. Principal IDs are stable
+bindings to Dex issuer and subject; display names are not authorization keys.
 
-### Execution User Priority
-
-When an application starts, the OS user is determined by:
-
-1. The API user's `exec_user` field (if set and `DisableExecUser=false`)
-2. The global `DefaultExecUser` from `config.yaml` (if set and `DisableExecUser=false`)
-3. The daemon process's own OS user (final fallback)
-
-Execution-user switching is disabled when `DisableExecUser=true` or the daemon's
-current UID is non-zero. This is a platform rule, not a container check, so all
-applications in non-root mode run as the daemon's own user.
-
-The Docker image runs as UID/GID `482:482` and sets
-`APPMESH_BaseConfig_DisableExecUser=true`. The normal environment override path
-keeps that value authoritative during startup, SIGHUP reloads, and REST updates;
-there is no container-specific execution-user policy in C++. A `docker_image`
-application is separate and follows its image's own `USER` declaration.
-
----
-
-## Internals
-
-### Installation
-
-**Non-root package install** — on systemd and launchd, the installer writes the service user/group into the native service definition, runs `chown` on the install directory, and saves environment variables to `/opt/appmesh/appmesh.default`. systemd loads it with `EnvironmentFile`, init.d (which remains root-managed) parses and exports its entries before startup, launchd receives the same values through its native `EnvironmentVariables` dictionary, and Docker uses its process environment. Native service managers execute `bin/appmesh` directly.
-
-**Root package install** — systemd service keeps empty `User=`/`Group=` fields (systemd treats empty as root).
-
-**Docker startup chain:**
-
-```
-tini (PID 1)
-  → docker-entrypoint.sh
-    → appmesh  (482:482 by default, or an explicit root override)
+```yaml
+Authorization:
+  principals:
+    "<stable-principal-id>":
+      kind: user
+      issuer: "https://auth.example.com/dex"
+      subject: "directory-subject-id"
+      status: active
+      execution_user: "www-data"
+      roles: ["deployer"]
 ```
 
-The Dockerfile selects the pre-created `appmesh` user with fixed UID/GID 482, sets `APPMESH_BaseConfig_DisableExecUser=true`, and makes the complete `/opt/appmesh` tree owned by that identity. The Docker-only entrypoint verifies writable runtime paths, handles initialization and startup-command arguments, then replaces itself with `bin/appmesh`. An explicit `--user` override works when that identity can write the mounted runtime directories. Docker configuration comes from the inherited process environment; it does not load `appmesh.default`. Bind mounts that replace image directories must be writable by the selected identity.
+Do not put passwords, Dex client secrets, or access tokens in this file.
 
-Configuration persistence writes a temporary file in `work/config` and atomically
-replaces the destination while preserving its mode. This supports readable files
-copied into a UID-482-owned directory; single-file bind mounts are not writable
-configuration targets because container runtimes do not permit replacing them.
+## Resolution and Enforcement
 
-### Security
+For REST-created applications, the effective native user is resolved as follows:
 
-- When switching users, any `exec_user` name resolving to UID 0 is rejected; the literal username `"root"` skips user switching entirely, so the process inherits the daemon's own OS user.
-- If `DisableExecUser=false` but the daemon is not running as root, a warning is logged and user switching is disabled at runtime.
-- With the image-default `DisableExecUser=true`, native managed applications inherit UID/GID 482; uploads keep the daemon owner and owner-read permission, and runtime-copied files must be readable by UID 482.
-- In containers, Fixed 482:482 (appmesh) are used as valid execution users even without a corresponding `/etc/passwd` entry.
+1. Validate the Dex bearer and resolve its immutable Principal.
+2. Materialize the Principal overlay's `execution_user` on the application, if configured.
+3. Otherwise use `BaseConfig.DefaultExecUser`, when switching is enabled.
+4. Otherwise inherit the daemon process user.
+
+Packaged System Apps are trusted installation artifacts owned by `system:appmesh`; remote
+callers cannot create them. Any explicit execution-user setting in such an artifact is part
+of the operator-controlled package policy, not user input.
+
+Execution-user switching is disabled when `DisableExecUser=true` or the daemon is not
+running as root. Windows does not perform Unix user switching.
+
+## Installation and Container Behavior
+
+- Non-root systemd and launchd installs write the selected service user/group into the
+  native service definition and persist install environment in
+  `/opt/appmesh/appmesh.default`.
+- A root systemd install leaves `User=` and `Group=` empty.
+- The Docker entrypoint verifies writable runtime paths, then replaces itself with the
+  daemon. Bind-mounted runtime directories must be writable by the selected container UID.
+- Docker configuration comes from process environment; it does not load
+  `appmesh.default`.
+- An explicit `--user 0:0` runs the container daemon as root, but user switching still
+  requires `DisableExecUser=false` and the necessary container capabilities.
+
+## Security Constraints
+
+- A resolved execution user whose UID is 0 is rejected for child-user switching.
+- The image-default UID/GID 482 inherits ownership of native managed processes when
+  switching is disabled.
+- Ownership remains `owner_principal_id`; an OS account name is never a resource owner or
+  authorization identity.
 
 ## Configuration Reference
 
-| Config Key | Location | Default | Description |
-|-----------|----------|---------|-------------|
-| `APPMESH_DAEMON_EXEC_USER` | Install env var | (empty) | OS user for the daemon process; written to systemd `User=` or launchd `UserName` |
-| `APPMESH_DAEMON_EXEC_USER_GROUP` | Install env var | (empty) | OS group for the daemon process; written to systemd `Group=` or launchd `GroupName` |
-| `BaseConfig.DefaultExecUser` | `config.yaml` | `""` | Global default OS user for child app execution |
-| `BaseConfig.DisableExecUser` | `config.yaml` | `false` | When `true`, skip per-user resolution; non-root daemons also disable it automatically at runtime |
-| `exec_user` | `security.yaml` per user | `""` | Per-API-user OS execution identity |
-
-## Mode Comparison
-
-|  | Non-Root Mode | Root Mode |
-|--|---------------|-----------|
-| **Daemon user** | Specified OS user | root |
-| **Child app user** | Same as daemon (no switching) | Per `exec_user` / `DefaultExecUser` |
-| **Package install** | Set `APPMESH_DAEMON_EXEC_USER` | Do not set (defaults to root) |
-| **Docker** | Default `482:482` (`appmesh`) | Explicit `--user 0:0` |
-| **DisableExecUser** | No effect (switching unavailable) | Set `false` to enable per-user switching |
-| **Security posture** | Least privilege, no escalation path | Root daemon, higher risk surface |
-| **Use case** | Single-tenant, containers, CI | Multi-tenant, user isolation |
+| Key | Location | Default | Purpose |
+|-----|----------|---------|---------|
+| `APPMESH_DAEMON_EXEC_USER` | install environment | empty | OS user for the daemon service |
+| `APPMESH_DAEMON_EXEC_USER_GROUP` | install environment | empty | OS group for the daemon service |
+| `BaseConfig.DefaultExecUser` | `config.yaml` | `""` | fallback native child user |
+| `BaseConfig.DisableExecUser` | `config.yaml` | `false` | disable native child-user switching |
+| `execution_user` | Principal in `authorization.yaml` | `""` | native child user materialized for that Principal's applications |

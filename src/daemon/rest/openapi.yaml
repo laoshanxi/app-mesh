@@ -1,1871 +1,697 @@
----
 openapi: 3.1.0
 info:
-  title: App Mesh REST API
+  title: App Mesh API
+  version: 3.0.0
   description: |
-    API documentation for App Mesh.
+    App Mesh is an OAuth 2.0 protected resource. Dex is the only trusted issuer.
+    This API never accepts usernames, passwords, MFA codes, upstream IdP tokens,
+    or locally issued App Mesh credentials.
+servers:
+  - url: https://127.0.0.1:6060
 
-    **Cluster forwarding:** Any request can include the `X-Target-Host` header
-    (e.g. `hostname:port`) to forward it to another App Mesh node in the cluster.
-    When the port is omitted, the current service port is used.
-  version: 2.2.1
+tags:
+  - name: Discovery
+  - name: Principal
+  - name: Authorization
+  - name: Applications
+  - name: Tasks
+  - name: EventSubscription
+  - name: Configuration
+  - name: Files
+  - name: Labels
+  - name: Observability
 
 paths:
-  /appmesh/login:
-    post:
-      summary: Authenticate user and obtain access token.
-      tags: [Identity]
-      security:
-        - BasicAuth: []
-      parameters:
-        - name: X-Totp-Code
-          in: header
-          required: false
-          schema:
-            type: string
-          description: Optional TOTP code for two-factor authentication.
-        - name: X-Expire-Seconds
-          in: header
-          required: false
-          schema:
-            type: integer
-            default: 3600
-          description: Optional token expiration time in seconds.
-        - name: X-Audience
-          in: header
-          required: false
-          schema:
-            type: string
-            default: "appmesh-service"
-          description: JWT audience.
-        - name: X-Set-Cookie
-          in: header
-          required: false
-          schema:
-            type: boolean
-            default: false
-          description: Optional to request cookie authentication.
-        - name: X-Refresh-Token-Request
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: ["true"]
-          description: |
-            Set to "true" to be issued a refresh token alongside the access token. Opt-in: a
-            client that cannot store and replay one would never present it on logoff, leaving
-            it valid until expiry.
+  /.well-known/oauth-protected-resource:
+    get:
+      tags: [Discovery]
+      summary: OAuth protected resource metadata
+      security: []
       responses:
         "200":
-          $ref: "#/components/responses/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "428":
-          description: Precondition Required - TOTP required.
-          headers:
-            WWW-Authenticate:
-              schema:
-                type: string
-              description: TOTP authentication challenge metadata.
+          description: RFC 9728 metadata pointing only to the configured Dex issuer.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  totp_challenge:
-                    type: string
-                    example: "CHALLENGE-ABC"
-                  status:
-                    type: string
-                    example: "TOTP_CHALLENGE_REQUIRED"
-                  algorithm:
-                    type: string
-                    example: "HS256"
-                  digits:
-                    type: integer
-                    example: 6
-                  period:
-                    type: integer
-                    example: 60
-                  expires:
-                    type: integer
-                    example: 1704067380
+                $ref: "#/components/schemas/ProtectedResourceMetadata"
 
-  /appmesh/auth:
+  /appmesh/auth/config:
+    get:
+      tags: [Discovery]
+      summary: Public Dex client configuration
+      security: []
+      responses:
+        "200":
+          description: Dex issuer, App Mesh resource, audience, public client, scopes, and supported flows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthConfig"
+
+  /appmesh/auth/enroll-first-admin:
     post:
-      summary: Verify user token and optionally apply it to HTTP cookie authentication.
       tags: [Authorization]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: X-Set-Cookie
-          in: header
-          required: false
-          schema:
-            type: boolean
-            default: false
-          description: Optional to apply the verified token to HTTP cookie authentication.
-        - name: X-Permission
-          in: header
-          schema:
-            type: string
-          description: Permission name to verify.
-        - name: X-Audience
-          in: header
-          schema:
-            type: string
-            default: "appmesh-service"
-          description: JWT audience.
-      responses:
-        "200":
-          $ref: "#/components/responses/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /appmesh/self/logoff:
-    post:
-      summary: Log out the current user.
-      tags: [Identity]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: X-Refresh-Token
-          in: header
-          required: false
-          schema:
-            type: string
-          description: |
-            In OAuth2 mode revokes the Keycloak session server-side; in local-JWT mode revokes
-            the refresh token so it can no longer mint access tokens. Omitting it leaves the
-            refresh token valid until expiry.
-      responses:
-        "200":
-          description: User logged out successfully.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /appmesh/token/renew:
-    post:
-      summary: Renew access token.
+      summary: Enroll the first built-in App Mesh administrator
       description: |
-        Issues a fresh access token plus a rotated refresh token. Authenticates on
-        X-Refresh-Token when present (allowing recovery from an expired access token),
-        otherwise on the Bearer access token.
-      tags: [Identity]
-      security:
-        - BearerAuth: []
-        - {}
+        One-time operator action available only on a built-in standalone/owner node
+        while no administrator has ever been enrolled. The caller must present a verified Dex bearer over a
+        direct loopback connection and the current daemon-generated enrollment proof.
+        WebSocket callers are identified by the principal their upgrade verified and
+        pinned on the session; frames never re-send the Authorization header.
+        Agent-forwarded TCP requests are accepted only with the private Agent-to-Engine
+        envelope; forwarded address headers are never trusted.
       parameters:
-        - name: X-Expire-Seconds
+        - name: X-AppMesh-First-Admin-Enrollment
           in: header
-          required: false
-          schema:
-            type: integer
-            default: 3600
-          description: Optional token expiration time in seconds.
-        - name: X-Refresh-Token
-          in: header
-          required: false
-          schema:
-            type: string
-          description: |
-            Exchanged for a fresh access token and a rotated refresh token. Required in OAuth2
-            mode, optional but recommended in local-JWT mode: when supplied it is the only
-            credential checked, so renewal succeeds even if the Bearer token has expired.
-            When omitted, the access token authenticates the renewal and is then revoked.
+          required: true
+          schema: { type: string, minLength: 64, maxLength: 64 }
       responses:
         "200":
-          $ref: "#/components/responses/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /appmesh/totp/secret:
-    post:
-      summary: Generate TOTP secret.
-      tags: [TwoFactor]
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: TOTP secret generated successfully.
+          description: The verified OIDC Principal was atomically enrolled as first administrator.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  mfa_uri:
-                    type: string
-                    format: base64
-                    example: "base64-encoded-mfa-uri(otpauth://totp/admin?secret=secret&issuer=AppMesh)"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                $ref: "#/components/schemas/Principal"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
 
-  /appmesh/totp/setup:
-    post:
-      summary: Setup TOTP for user and get new token.
-      tags: [TwoFactor]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: X-Totp-Code
-          in: header
-          required: true
-          schema:
-            type: string
-          description: 6-digit TOTP code.
-      responses:
-        "200":
-          $ref: "#/components/responses/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /appmesh/totp/validate:
-    post:
-      summary: Validate TOTP code and get token.
-      tags: [TwoFactor]
-      parameters:
-        - name: X-Set-Cookie
-          in: header
-          required: false
-          schema:
-            type: boolean
-            default: false
-          description: Request to set cookie for authentication.
-      requestBody:
-        description: TOTP validation request.
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [user_name, totp_challenge, totp_code]
-              properties:
-                user_name:
-                  type: string
-                  example: "admin"
-                  description: User name.
-                totp_challenge:
-                  type: string
-                  example: "CHALLENGE-ABC"
-                  description: TOTP challenge from login response.
-                totp_code:
-                  type: string
-                  example: "123456"
-                  description: 6-digit TOTP code.
-                expire_seconds:
-                  type: integer
-                  example: 3600
-                  description: Optional token expiration time in seconds.
-      responses:
-        "200":
-          $ref: "#/components/responses/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /appmesh/totp/{user_name}/disable:
-    post:
-      summary: Disable TOTP for user.
-      tags: [TwoFactor]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: user_name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: TOTP disabled successfully.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /appmesh/app/{app_name}/output:
+  /appmesh/principal/self:
     get:
-      summary: Retrieve application output.
-      tags: [ApplicationMonitor]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: stdout_position
-          in: query
-          schema:
-            type: integer
-          description: Starting read position, 0 means from the beginning.
-        - name: stdout_index
-          in: query
-          schema:
-            type: integer
-          description: History process stdout index, 0 for current running process.
-        - name: stdout_maxsize
-          in: query
-          schema:
-            type: integer
-          description: Maximum buffer size to read.
-        - name: process_uuid
-          in: query
-          schema:
-            type: string
-          description: Specify the process ID for asynchronous app run.
-        - name: timeout
-          in: query
-          schema:
-            type: integer
-          description: Wait time (seconds) for the running process to get the output.
+      tags: [Principal]
+      summary: Current verified Dex principal and App Mesh authorization
       responses:
         "200":
-          description: Application output retrieved successfully.
-          headers:
-            X-Output-Position:
-              schema:
-                type: integer
-              description: Next read position for incremental output retrieval.
-            X-Exit-Code:
-              schema:
-                type: integer
-              description: Process exit code (present only when the process has finished).
+          description: Principal metadata and effective permissions.
           content:
-            text/plain:
+            application/json:
               schema:
-                type: string
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+                $ref: "#/components/schemas/Principal"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/AuthUnavailable" }
 
-  /appmesh/applications:
+  /appmesh/principal/self/permissions:
     get:
-      summary: List all applications.
-      tags: [ApplicationManagement]
-      security:
-        - BearerAuth: []
+      tags: [Authorization]
+      summary: Current principal effective permissions
       responses:
         "200":
-          description: List of applications retrieved successfully.
+          description: Permission identifiers.
           content:
             application/json:
               schema:
                 type: array
-                items:
-                  type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+                items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /appmesh/app/{app_name}/health:
+  /appmesh/principals:
     get:
-      summary: Check application health status.
-      tags: [ApplicationMonitor]
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
+      tags: [Authorization]
+      summary: List App Mesh authorization principals
+      description: This is authorization state, not an identity-directory user list.
       responses:
         "200":
-          description: Application health status (0 means healthy).
-          content:
-            text/plain:
-              schema:
-                type: integer
-                example: 0
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/app/{app_name}/disable:
-    post:
-      summary: Disable Application
-      tags: [ApplicationManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Application name.
-      responses:
-        "200":
-          description: Application disabled successfully.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/app/{app_name}:
-    get:
-      summary: View Application
-      tags: [ApplicationManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Application name.
-      responses:
-        "200":
-          description: Application details retrieved successfully.
+          description: Principals keyed by stable principal ID.
           content:
             application/json:
               schema:
                 type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+                additionalProperties:
+                  $ref: "#/components/schemas/Principal"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
-    put:
-      summary: Add Application
-      tags: [ApplicationManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Application name.
-        - name: subscribe_events
-          in: query
-          required: false
-          schema:
-            type: string
-          description: |
-            Comma-separated event types to subscribe atomically with app registration.
-            Subscription is created before the app starts to ensure no events are missed.
-            Values: START, EXIT, STDOUT, HEALTH, STATUS, REMOVED, ALL.
-            Requires TCP or WebSocket connection. Response includes subscription_id when active.
+  /appmesh/principal/{principal_id}:
+    parameters:
+      - $ref: "#/components/parameters/PrincipalId"
+    post:
+      tags: [Authorization]
+      summary: Update an App Mesh principal policy
+      description: Updates roles, status, or execution mapping only. It never changes directory identity data.
       requestBody:
-        description: Application definition
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                  pattern: "^[A-Za-z0-9_-]{1,128}$"
-                  example: "test-ping"
-                description:
-                  type: string
-                  example: "appmesh ping test"
-                command:
-                  type: string
-                  example: "ping github.com -w 300"
-                shell:
-                  type: boolean
-                  example: true
-                behavior:
-                  type: object
-                  properties:
-                    control:
-                      type: object
-                      additionalProperties:
-                        type: string
-                      example:
-                        "0": "standby"
-                    exit:
-                      type: string
-                      example: "standby"
-              required:
-                - name
-                - command
+              $ref: "#/components/schemas/PrincipalPolicy"
       responses:
         "200":
-          description: Application added successfully.
+          description: Updated authorization principal.
           content:
             application/json:
               schema:
-                type: object
-                description: |
-                  The registered application definition (runtime info, encrypted
-                  sec_env stripped). Includes subscription_id when subscribe_events
-                  created a subscription on a persistent connection.
-                properties:
-                  subscription_id:
-                    type: string
-                    description: Present only when subscribe_events created a subscription.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
+                $ref: "#/components/schemas/Principal"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
-      summary: Delete Application
-      tags: [ApplicationManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Application name.
+      tags: [Authorization]
+      summary: Delete an App Mesh authorization principal
       responses:
-        "200":
-          description: Application deleted successfully.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/app/{app_name}/enable:
-    post:
-      summary: Enable Application
-      tags: [ApplicationManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Application name.
-      responses:
-        "200":
-          description: Application enabled successfully.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/app/run:
-    post:
-      summary: Run Application Asynchronously
-      tags: [ApplicationRun]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: timeout
-          in: query
-          required: false
-          schema:
-            type: integer
-          description: Maximum run time for the remote process, in seconds.
-        - name: lifecycle
-          in: query
-          required: false
-          schema:
-            type: integer
-          description: Maximum lifecycle time for the remote process, in seconds.
-      requestBody:
-        description: Application JSON definition.
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                  pattern: "^[A-Za-z0-9_-]{1,128}$"
-                command:
-                  type: string
-                shell:
-                  type: boolean
-                session_login:
-                  type: boolean
-      responses:
-        "200":
-          description: Application running asynchronously.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  name:
-                    type: string
-                    description: Application name assigned to the async run.
-                  process_uuid:
-                    type: string
-                    description: Unique process ID for tracking the async run.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/app/syncrun:
-    post:
-      summary: Run Application Synchronously
-      tags: [ApplicationRun]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: timeout
-          in: query
-          required: false
-          schema:
-            type: integer
-          description: Maximum run time for the remote process, in seconds.
-        - name: lifecycle
-          in: query
-          required: false
-          schema:
-            type: integer
-          description: Maximum lifecycle time for the remote process, in seconds.
-      requestBody:
-        description: Application JSON definition.
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                  pattern: "^[A-Za-z0-9_-]{1,128}$"
-                command:
-                  type: string
-                shell:
-                  type: boolean
-                session_login:
-                  type: boolean
-      responses:
-        "200":
-          description: Application running synchronously.
-          headers:
-            X-Exit-Code:
-              schema:
-                type: integer
-              description: Process exit code.
-          content:
-            text/plain:
-              schema:
-                type: string
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/app/{app_name}/task:
-    post:
-      summary: Execute task on remote application and wait for result
-      description: |
-        Sends a task payload to a running App Mesh application and waits synchronously 
-        for the result. The target application must be running and capable of processing 
-        the task data. This is useful for request-response patterns where you need 
-        immediate feedback from the application.
-      tags: [TaskRun]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-            default: "pytask"
-          description: Name of the target application registered in App Mesh.
-        - name: timeout
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 60
-          description: Maximum time in seconds to wait for a response from the application.
-      requestBody:
-        description: Payload to deliver to the application.
-        required: true
-        content:
-          text/plain:
-            schema:
-              type: string
-              default: "import sys;print(sys.version_info)"
-      responses:
-        "200":
-          description: Task executed successfully. Returns the result from the remote application.
-          content:
-            text/plain:
-              schema:
-                type: string
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "408":
-          description: Task timeout.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "417":
-          description: Task interrupt.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-    delete:
-      summary: Remove a submitted task
-      description: |
-        Client delete a submitted message which is under processing for an application.
-      tags: [TaskRun]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-            default: "pytask"
-          description: Name of the target application registered in App Mesh.
-      responses:
-        "200":
-          description: Task exist and removed successfully.
-        "208":
-          description: Task not exist.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-    get:
-      summary: Fetch task data for the current application process
-      description: |
-        Used by the App Mesh application process to retrieve the payload sent by a client.
-        Requires valid process UUID to identify the correct task.
-      tags: [TaskRun]
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-            default: "pytask"
-          description: Name of the current application registered in App Mesh.
-        - name: process_key
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Credential of the running application process.
-      responses:
-        "200":
-          description: Task data retrieved successfully.
-          content:
-            text/plain:
-              schema:
-                type: string
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-    put:
-      summary: Return the result of a task to the original client
-      description: |
-        Used by the App Mesh application process to return the result of the processed task back to the client.
-        Requires the process UUID to correlate with the original task.
-      tags: [TaskRun]
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-            default: "pytask"
-          description: Name of the current application registered in App Mesh.
-        - name: process_key
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Credential of the running application process.
-      requestBody:
-        description: Result payload to be returned to the client.
-        required: true
-        content:
-          text/plain:
-            schema:
-              type: string
-      responses:
-        "200":
-          description: Task result successfully returned.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/file/download:
-    get:
-      summary: Download File
-      tags: [FileOperation]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: X-File-Path
-          in: header
-          required: true
-          schema:
-            type: string
-          description: The remote file path.
-      responses:
-        "200":
-          description: File downloaded.
-          headers:
-            X-File-Mode:
-              schema:
-                type: integer
-              description: POSIX file permission bits in decimal (e.g. 493 for 0o755).
-            X-File-User:
-              schema:
-                type: string
-              description: File owner username or UID.
-            X-File-Group:
-              schema:
-                type: string
-              description: File group name or GID.
-          content:
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/file/upload:
-    post:
-      summary: Upload File
-      tags: [FileOperation]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: X-File-Path
-          in: header
-          required: true
-          schema:
-            type: string
-          description: The remote file path.
-        - name: X-File-Mode
-          in: header
-          required: false
-          schema:
-            type: integer
-          description: POSIX file permission bits in decimal (e.g. 493 for 0o755).
-        - name: X-File-User
-          in: header
-          required: false
-          schema:
-            type: string
-          description: File owner username or UID.
-        - name: X-File-Group
-          in: header
-          required: false
-          schema:
-            type: string
-          description: File group name or GID.
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [filename, file]
-              properties:
-                filename:
-                  type: string
-                  description: Base name of the file on the remote server.
-                file:
-                  type: string
-                  format: binary
-          application/octet-stream:
-            schema:
-              type: string
-              format: binary
-              description: Raw file content as the request body; the remote path is taken from the X-File-Path header.
-      responses:
-        "200":
-          description: File uploaded successfully.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/labels:
-    get:
-      summary: View All Labels
-      tags: [Configuration]
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: List of labels.
-          content:
-            application/json:
-              schema:
-                type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/label/{label_name}:
-    put:
-      summary: Add Label
-      tags: [Configuration]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: label_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Label name.
-        - name: value
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Label value.
-      responses:
-        "201":
-          description: Label added.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-    delete:
-      summary: Delete Label
-      tags: [Configuration]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: label_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Label name.
-      responses:
-        "200":
-          description: Label deleted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/config:
-    get:
-      summary: View Config
-      tags: [Configuration]
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: Configuration details.
-          content:
-            application/json:
-              schema:
-                type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-    post:
-      summary: Set Config
-      tags: [Configuration]
-      security:
-        - BearerAuth: []
-      requestBody:
-        description: Configuration JSON segment.
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        "200":
-          description: Configuration set.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/user/{user_name}/passwd:
-    post:
-      summary: Change User Password
-      tags: [UserManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: user_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: User name.
-      requestBody:
-        description: New password definition. The password must be base64 encoded.
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - old_password
-                - new_password
-              properties:
-                old_password:
-                  type: string
-                  format: byte
-                  description: Base64 encoded old password
-                new_password:
-                  type: string
-                  format: byte
-                  description: Base64 encoded new password
-      responses:
-        "200":
-          description: Password changed.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/user/{user_name}/lock:
-    post:
-      summary: Lock User
-      tags: [UserManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: user_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: User name.
-      responses:
-        "200":
-          description: User locked.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/user/{user_name}/unlock:
-    post:
-      summary: Unlock User
-      tags: [UserManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: user_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: User name.
-      responses:
-        "200":
-          description: User unlocked.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/user/{user_name}:
-    put:
-      summary: Add User
-      tags: [UserManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: user_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: User name.
-      requestBody:
-        description: User definition.
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                email:
-                  type: string
-                exec_user:
-                  type: string
-                group:
-                  type: string
-                key:
-                  type: string
-                locked:
-                  type: boolean
-                mfa_enabled:
-                  type: boolean
-                mfa_key:
-                  type: string
-                roles:
-                  type: array
-                  items:
-                    type: string
-      responses:
-        "201":
-          description: User added.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-    delete:
-      summary: Delete User
-      tags: [UserManagement]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: user_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: User name.
-      responses:
-        "200":
-          description: User deleted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/user/self:
-    get:
-      summary: View Self User
-      tags: [UserManagement]
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: User details.
-          content:
-            application/json:
-              schema:
-                type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/users:
-    get:
-      summary: View All Users
-      tags: [UserManagement]
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: List of users.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+        "204": { description: Principal policy removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /appmesh/roles:
     get:
-      summary: View All Roles
       tags: [Authorization]
-      security:
-        - BearerAuth: []
+      summary: List App Mesh roles
       responses:
         "200":
-          description: List of roles.
+          description: Role-to-permission mapping.
           content:
             application/json:
               schema:
                 type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+                additionalProperties:
+                  type: array
+                  items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
-  /appmesh/role/{role_name}:
+  /appmesh/role/{role}:
+    parameters:
+      - name: role
+        in: path
+        required: true
+        schema: { type: string }
     post:
-      summary: Update Role
       tags: [Authorization]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: role_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Role name.
+      summary: Create or replace a role
       requestBody:
-        description: |
-          Role permission definition.
-          example: ["app-control", "app-delete"]
         required: true
         content:
           application/json:
             schema:
               type: array
-              items:
-                type: string
+              items: { type: string }
       responses:
-        "200":
-          description: Role updated.
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
+        "200": { description: Role saved. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     delete:
-      summary: Delete Role
       tags: [Authorization]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: role_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Role name.
+      summary: Delete an unused role
       responses:
-        "200":
-          description: Role deleted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/user/permissions:
-    get:
-      summary: View User Permissions
-      tags: [Authorization]
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: List of user permissions.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+        "200": { description: Role deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /appmesh/permissions:
     get:
-      summary: View All Permissions
       tags: [Authorization]
-      security:
-        - BearerAuth: []
+      summary: List available permission identifiers
       responses:
         "200":
-          description: List of permissions.
+          description: Permission identifiers.
           content:
             application/json:
               schema:
                 type: array
-                items:
-                  type: string
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+                items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
-  /appmesh/user/groups:
+  /appmesh/applications:
     get:
-      summary: View User Groups
-      tags: [UserManagement]
-      security:
-        - BearerAuth: []
+      tags: [Applications]
+      summary: List visible applications
       responses:
         "200":
-          description: List of user groups.
+          description: Applications visible under the current principal policy.
           content:
             application/json:
               schema:
                 type: array
-                items:
-                  type: string
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+                items: { $ref: "#/components/schemas/Application" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
-  /appmesh/metrics:
+  /appmesh/app/{name}:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
     get:
-      summary: View Prometheus Metrics
-      tags: [Monitoring]
+      tags: [Applications]
+      summary: Get an application
       responses:
         "200":
-          description: Prometheus text-based exposition format.
-          content:
-            text/plain:
-              schema:
-                type: string
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /appmesh/resources:
-    get:
-      summary: View Server Resources Usage Information
-      tags: [Monitoring]
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: Resource details in JSON format.
+          description: Application.
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/HostResources"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
+              schema: { $ref: "#/components/schemas/Application" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Applications]
+      summary: Register or update a non-system application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Application" }
+      responses:
+        "200": { description: Application saved. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Applications]
+      summary: Delete a non-system application
+      responses:
+        "200": { description: Application deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
-  /appmesh/app/{app_name}/subscribe:
+  /appmesh/app/{name}/enable:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
     post:
-      summary: Subscribe to application events
-      description: |
-        Subscribe to real-time events for a specific application.
-        Requires a persistent connection (TCP or WebSocket).
-        Events are pushed as unsolicited Response messages with request_uri="/appmesh/event".
-      tags: [EventSubscription]
-      security:
-        - BearerAuth: []
+      tags: [Applications]
+      summary: Enable a non-system application
+      responses:
+        "200": { description: Application enabled. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/app/{name}/disable:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [Applications]
+      summary: Disable a non-system application
+      responses:
+        "200": { description: Application disabled. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/app/{name}/output:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    get:
+      tags: [Applications]
+      summary: Read application output
+      responses:
+        "200": { description: Output bytes or text. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/app/{name}/health:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    get:
+      tags: [Applications]
+      summary: Get application health
+      responses:
+        "200": { description: Application health result. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/app/run:
+    post:
+      tags: [Applications]
+      summary: Start an asynchronous command
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Application" }
+      responses:
+        "200": { description: Run identifier and process metadata. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/app/syncrun:
+    post:
+      tags: [Applications]
+      summary: Run a command synchronously
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Application" }
+      responses:
+        "200": { description: Command output and exit status. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/app/{name}/task:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [Tasks]
+      summary: Send a task request to a managed application
+      description: Requires the app-run-task permission and write access to the target application.
       parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Application name.
-        - name: events
+        - name: timeout
           in: query
           required: false
-          schema:
-            type: string
-          description: |
-            Comma-separated event types to subscribe.
-            Values: START, EXIT, STDOUT, HEALTH, STATUS, REMOVED.
-            Default: all events.
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: false
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
       responses:
-        "200":
-          description: Subscription created successfully.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subscription_id:
-                    type: string
-                    example: "cqk8g7l4d"
-                  app_name:
-                    type: string
-                    example: "myapp"
-                  events:
-                    type: array
-                    items:
-                      type: string
-                    example: ["START", "EXIT", "STDOUT"]
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "405":
-          description: Subscribe requires a persistent connection (TCP or WebSocket).
+        "200": { description: Task response returned by the managed application. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
-      summary: Unsubscribe from application events
-      tags: [EventSubscription]
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: app_name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Application name.
-        - name: subscription_id
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Subscription ID returned by the subscribe endpoint.
+      tags: [Tasks]
+      summary: Cancel the pending task request for a managed application
+      description: Requires the app-run-task permission and write access to the target application.
       responses:
-        "200":
-          description: Unsubscribed successfully.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Subscription not found.
+        "200": { description: Pending task request removed. }
+        "208": { description: No pending task request was removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /appmesh/app/{name}/subscribe:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [EventSubscription]
+      summary: Subscribe to events from one application
+      description: Requires app-subscribe permission, read access to the target application, and a persistent TCP or WebSocket connection.
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionEvents"
+      responses:
+        "200": { $ref: "#/components/responses/SubscriptionCreated" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "405": { description: A persistent TCP or WebSocket connection is required. }
+    delete:
+      tags: [EventSubscription]
+      summary: Remove an event subscription
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionId"
+      responses:
+        "200": { description: Subscription removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /appmesh/subscribe:
     post:
+      tags: [EventSubscription]
       summary: Subscribe to events from all applications
-      description: |
-        Subscribe to real-time events from all applications (wildcard subscription).
-        Requires a persistent connection (TCP or WebSocket).
-      tags: [EventSubscription]
-      security:
-        - BearerAuth: []
+      description: Requires both app-subscribe and app-view-all permissions and a persistent TCP or WebSocket connection.
       parameters:
-        - name: events
-          in: query
-          required: false
-          schema:
-            type: string
-          description: |
-            Comma-separated event types. Default: all events.
+        - $ref: "#/components/parameters/SubscriptionEvents"
       responses:
-        "200":
-          description: Subscription created successfully.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subscription_id:
-                    type: string
-                  app_name:
-                    type: string
-                    example: "*"
-                  events:
-                    type: array
-                    items:
-                      type: string
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "405":
-          description: Subscribe requires a persistent connection (TCP or WebSocket).
+        "200": { $ref: "#/components/responses/SubscriptionCreated" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "405": { description: A persistent TCP or WebSocket connection is required. }
     delete:
-      summary: Unsubscribe from all-app events
       tags: [EventSubscription]
-      security:
-        - BearerAuth: []
+      summary: Remove an event subscription
       parameters:
-        - name: subscription_id
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Subscription ID.
+        - $ref: "#/components/parameters/SubscriptionId"
+      responses:
+        "200": { description: Subscription removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /appmesh/config:
+    get:
+      tags: [Configuration]
+      summary: Get runtime configuration
+      responses:
+        "200": { description: Runtime configuration. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Configuration]
+      summary: Update runtime configuration
+      responses:
+        "200": { description: Updated runtime configuration. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/file/download:
+    get:
+      tags: [Files]
+      summary: Download a file
+      responses:
+        "200": { description: File stream negotiation response. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/file/upload:
+    post:
+      tags: [Files]
+      summary: Upload a file
+      responses:
+        "200": { description: File stream negotiation response. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/labels:
+    get:
+      tags: [Labels]
+      summary: List host labels
+      responses:
+        "200": { description: Label mapping. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/label/{label}:
+    parameters:
+      - name: label
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Labels]
+      summary: Set a host label
+      responses:
+        "200": { description: Label saved. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [Labels]
+      summary: Delete a host label
+      responses:
+        "200": { description: Label deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/resources:
+    get:
+      tags: [Observability]
+      summary: Get host resources
+      responses:
+        "200": { description: Host resource snapshot. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/metrics:
+    get:
+      tags: [Observability]
+      summary: Get Prometheus metrics
       responses:
         "200":
-          description: Unsubscribed successfully.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Subscription not found.
+          description: Prometheus text exposition.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /metrics:
+    get:
+      tags: [Observability]
+      summary: Get Prometheus metrics
+      description: Compatibility alias for /appmesh/metrics. Requires host-resource-view permission.
+      responses:
+        "200":
+          description: Prometheus text exposition.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
 components:
   securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: |
-        JWT token obtained from /appmesh/login endpoint. 
-        Include in Authorization header as: Bearer <token>
-    BasicAuth:
-      type: http
-      scheme: basic
-      description: |
-        Username and password for initial authentication.
-        Only used for login endpoint.
-    CookieAuth:
-      type: apiKey
-      in: cookie
-      name: appmesh_auth_token
-      description: |
-        Cookie-based authentication. When a request to /appmesh/login, /appmesh/auth,
-        or /appmesh/totp/validate carries the `X-Set-Cookie: true` header, the server
-        issues the JWT via a Set-Cookie `appmesh_auth_token` (HttpOnly, Secure,
-        SameSite=Strict).
+    dexBearer:
+      type: oauth2
+      description: Dex is the sole authorization server. Discover endpoints from its OIDC metadata.
+      flows:
+        authorizationCode:
+          authorizationUrl: http://127.0.0.1:6062/dex/auth
+          tokenUrl: http://127.0.0.1:6062/dex/token
+          scopes:
+            openid: Establish the Dex subject.
+            profile: Request display claims.
+            email: Request email claims.
+            offline_access: Allow Dex refresh tokens for trusted clients.
 
-        CSRF protection is enforced by the daemon (uniformly for direct and agent-proxied
-        requests): a cookie-authenticated state-changing request must be same-origin or carry
-        an `Origin` listed in the `CsrfAllowedOrigins` config. Cross-origin cookie requests are
-        rejected with 403. `SameSite=Strict` on the auth cookie is the baseline. Token
-        (`Authorization` / Bearer) requests carry no cookie and are exempt.
+  parameters:
+    PrincipalId:
+      name: principal_id
+      in: path
+      required: true
+      schema: { type: string }
+    AppName:
+      name: name
+      in: path
+      required: true
+      schema: { type: string }
+    SubscriptionEvents:
+      name: events
+      in: query
+      required: false
+      description: Comma-separated application event names. The server default selects all supported events.
+      schema: { type: string }
+    SubscriptionId:
+      name: subscription_id
+      in: query
+      required: true
+      schema: { type: string, minLength: 1 }
 
   schemas:
-    HostResources:
+    ProtectedResourceMetadata:
       type: object
-      required:
-        - schema_version
-        - collected_at_unix_seconds
-        - cpu_effective_processors
-        - cpu_source
-        - memory_source
-        - swap_source
-        - cgroup_version
-        - mem_total_bytes
-        - mem_available_bytes
-        - collector_errors
+      required: [resource, authorization_servers]
       properties:
-        schema_version:
-          type: integer
-          example: 3
-        collected_at_unix_seconds:
-          type: integer
-          format: int64
-        collector_errors:
+        resource: { type: string, format: uri }
+        authorization_servers:
+          type: array
+          items: { type: string, format: uri }
+        scopes_supported:
+          type: array
+          items: { type: string }
+        bearer_methods_supported:
+          type: array
+          items: { type: string }
+    AuthConfig:
+      type: object
+      required: [issuer, resource, audience, public_client_id, scopes, flows]
+      properties:
+        issuer: { type: string, format: uri }
+        resource: { type: string, format: uri }
+        audience: { type: string }
+        public_client_id: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        flows:
           type: array
           items:
             type: string
-          description: Bounded collector identifiers that failed during this snapshot.
-        in_container:
-          type: boolean
-        appmesh_version:
-          type: string
-        os:
-          type: string
-        architecture:
-          type: string
-        cpu_cores:
-          type: integer
-        cpu_sockets:
-          type: integer
-        cpu_processors:
-          type: integer
-        cpu_effective_processors:
-          type: integer
-        cpu_quota_cores:
-          type: number
-          format: double
-          description: Zero when no finite CPU quota is configured.
-        cpu_source:
-          type: string
-          enum: [host, cgroup]
-        memory_source:
-          type: string
-          enum: [host, cgroup]
-        swap_source:
-          type: string
-          enum: [host, cgroup]
-        cgroup_version:
-          type: string
-          enum: [none, v1, v2]
-        mem_total_bytes:
-          type: integer
-          format: int64
-        mem_available_bytes:
-          type: integer
-          format: int64
-        mem_current_bytes:
-          type: integer
-          format: int64
-        mem_swap_total_bytes:
-          type: integer
-          format: int64
-        mem_swap_free_bytes:
-          type: integer
-          format: int64
-        mem_swap_current_bytes:
-          type: integer
-          format: int64
-        mem_applications:
-          type: integer
-          format: int64
-          description: Deduplicated RSS bytes for all currently managed application process trees.
-        mem_daemon_process_tree_bytes:
-          type: integer
-          format: int64
-          description: RSS bytes for the App Mesh daemon process tree.
-        fd:
-          type: integer
-          format: int64
-          description: Open descriptors or handles in the App Mesh daemon process tree.
-        net:
+            enum: [authorization_code_pkce, device_code]
+    Principal:
+      type: object
+      required: [principal_id, kind, issuer, subject, status, roles]
+      properties:
+        principal_id: { type: string }
+        kind: { type: string, enum: [user, service, system] }
+        issuer: { type: string, format: uri-reference }
+        subject: { type: string }
+        display_name: { type: string }
+        email: { type: string }
+        connector_id: { type: string }
+        status: { type: string, enum: [active, disabled, tombstoned] }
+        execution_user: { type: string }
+        roles:
           type: array
-          description: Addresses assigned to active physical and virtual network interfaces; loopback is excluded.
-          items:
-            type: object
-            properties:
-              name:
-                type: string
-              address:
-                type: string
-              ipv6:
-                type: boolean
-        fs:
+          items: { type: string }
+        permissions:
           type: array
-          description: Mounted local logical disks; virtual, remote, bind, and unmounted volumes are excluded.
-          items:
-            type: object
-            properties:
-              device:
-                type: string
-              mount_point:
-                type: string
-              size:
-                type: integer
-                format: int64
-              used:
-                type: integer
-                format: int64
-              available:
-                type: integer
-                format: int64
-                description: Free bytes available to the current process.
-              usage:
-                type: number
-                format: double
-
-    ErrorResponse:
+          items: { type: string }
+    PrincipalPolicy:
       type: object
       properties:
-        message:
+        status: { type: string, enum: [active, disabled, tombstoned] }
+        execution_user: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+      additionalProperties: false
+    Application:
+      type: object
+      properties:
+        name: { type: string }
+        command: { type: string }
+        owner_principal_id:
           type: string
-          description: Error message text
-      required:
-        - message
-      example:
-        message: "Error message"
+          description: >-
+            Owning principal. Forced to the caller on register, unless the caller
+            holds the app-manage-all permission and names another existing active
+            principal here (ownership transfer or administrative takeover).
+        permission:
+          type: integer
+          description: >-
+            Share bits for principals other than the owner, encoded as two decimal
+            digits <other><group>. Only the tens (other) digit is enforced:
+            1 = deny, 2 = read, 3 = read and write (write implies read).
+            0 (default) makes the application accessible to every principal.
+            Holders of app-view-all bypass these bits for read access and holders
+            of app-manage-all for every operation.
+        execution_user: { type: string, readOnly: true }
+        system: { type: boolean, readOnly: true }
+        startup_phase:
+          type: string
+          enum: [auth-issuer, ingress, normal]
+          readOnly: true
+        status:
+          type: boolean
+          description: >-
+            Whether the application is enabled. Registration and update bodies may
+            also carry the legacy numeric form (1/0), which stays accepted for
+            compatibility with persisted definitions.
+      additionalProperties: true
+    Error:
+      type: object
+      properties:
+        message: { type: string }
 
   responses:
-    BadRequest:
-      description: Invalid request parameters or malformed request body
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-          example:
-            message: "Invalid parameter: id must be an integer"
-
     Unauthorized:
-      description: Authentication required or invalid credentials
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-          example:
-            message: "Unauthorized access, please provide valid credentials"
-
-    Forbidden:
-      description: Insufficient permissions for the requested operation
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-          example:
-            message: "Forbidden: insufficient permissions"
-
-    NotFound:
-      description: Requested resource not found
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-          example:
-            message: "Path not found GET:/unknown/path"
-
-    PreconditionFailed:
-      description: Request could not be processed due to logical/semantic issues
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-          example:
-            message: "Precondition failed: runtime validation error"
-
-    InternalServerError:
-      description: Unexpected internal server error
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-          examples:
-            known:
-              summary: Known exception
-              value:
-                message: "Internal server error"
-            unknown:
-              summary: Unknown exception
-              value:
-                message: "Unknown exception"
-
-    TokenResponse:
-      description: Successful token generation.
+      description: Missing, invalid, expired, wrong-issuer, or wrong-audience Dex bearer token.
       headers:
-        Set-Cookie:
-          schema:
-            type: string
-          description: |
-            Present only when the request carried `X-Set-Cookie: true`. Sets the
-            `appmesh_auth_token` JWT cookie for subsequent cookie-based authentication.
+        WWW-Authenticate:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The verified principal lacks the required App Mesh permission.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    SubscriptionCreated:
+      description: Subscription created.
       content:
         application/json:
           schema:
             type: object
+            required: [subscription_id, app_name, events]
             properties:
-              profile:
-                type: object
-                properties:
-                  name:
-                    type: string
-                    example: "admin"
-                  group:
-                    type: string
-                    example: "admin"
-                  auth_time:
-                    type: integer
-                    example: 1704067200
-              access_token:
-                type: string
-                example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              refresh_token:
-                type: string
-                description: |
-                  Issued by login, TOTP validate and token renew when the request opts in via
-                  X-Refresh-Token-Request (OAuth2 mode always issues one). Supply it back via
-                  X-Refresh-Token to renew, or to revoke on logoff. It outlives the access
-                  token, so renewal works after that token has expired. Rotated on every renew:
-                  the old value is revoked and rejected if replayed. Revocation state is held
-                  per daemon and is not replicated across a cluster, so a token rotated on one
-                  node is not rejected by another that shares the JWT signing key.
-                example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              token_type:
-                type: string
-                example: "Bearer"
-              issued_at:
-                type: integer
-                example: 1704067200
-              expire_time:
-                type: integer
-                example: 1704070800
-              expires_in:
-                type: integer
-                example: 3600
+              subscription_id: { type: string }
+              app_name: { type: string }
+              events:
+                type: array
+                items: { type: string }
+    AuthUnavailable:
+      description: Dex discovery or JWKS is unavailable and no usable cached key exists.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+security:
+  - dexBearer: [openid]

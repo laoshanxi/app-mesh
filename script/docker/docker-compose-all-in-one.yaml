@@ -5,26 +5,11 @@ networks:
   backend:
 
 services:
-  consul:
-    hostname: consul
-    restart: always
-    image: hashicorp/consul # https://www.consul.io/docs/agent/options
-    command: consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 --bind=0.0.0.0 -bootstrap-expect=1 -ui
-    ports: # https://www.consul.io/docs/install/ports
-      - "8500:8500"
-      - "8600:8600"
-      - "8301:8301"
-      - "8302:8302"
-      - "8300:8300"
-    networks:
-      - backend
-
   appmesh_node:
     hostname: appmesh_node
     restart: always
     image: laoshanxi/appmesh:latest
     environment:
-      - APPMESH_Consul_Url=http://consul:8500
       - APPMESH_REST_PrometheusExporterListenPort=6061
     volumes:
       - /opt/appmesh/work # mount this to enable configuration persist
@@ -35,11 +20,8 @@ services:
     ports:
       - "443:443" # for appmesh_ui
       - "6061:6061" # Prometheus Exporter
-    depends_on:
-      - consul
     networks:
       - frontend
-      - backend
 
   appmesh-ui:
     restart: always
@@ -77,7 +59,6 @@ services:
       - "3000:3000"
     networks:
       - frontend
-      - backend
 
   prometheus:
     restart: always
@@ -93,7 +74,6 @@ services:
       - "9090:9090"
     networks:
       - frontend
-      - backend
 
   node_exporter: # https://www.cnblogs.com/weifeng1463/p/12828961.html
     hostname: node_exporter
@@ -108,7 +88,6 @@ services:
       - "9100:9100"
     networks:
       - frontend
-      - backend
 
   alertmanager: # https://www.cnblogs.com/aixing/archive/2004/01/13/13327157.html
     hostname: alertmanager
@@ -121,6 +100,5 @@ services:
       - "9093:9093"
     networks:
       - frontend
-      - backend
     depends_on:
       - prometheus

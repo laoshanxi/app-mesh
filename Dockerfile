@@ -5,6 +5,9 @@
 #     docker run -d laoshanxi/appmesh ping github.com
 #  2. Run a native one-shot command after the "appm" marker
 #     docker run --rm laoshanxi/appmesh appm ls
+#     The daemon is Dex-only: unauthenticated requests get 401. Obtain a token
+#     first (APPMESH_BEARER_TOKEN from the automation client credential in
+#     work/auth/secrets/automation-client, or run `appm logon` interactively).
 #  Build targets:
 #     appmesh    - default runtime without llm-agent
 #     llm_agent  - optional runtime with llm-agent app and requirements
@@ -22,6 +25,14 @@ ARG APPMESH_ID=482
 ENV APPMESH_BaseConfig_DisableExecUser=true
 # Listen on all container interfaces.
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
+# Containers initialize per-instance TLS material under the persistent work
+# volume. No private key generated while building this image is reused.
+ENV APPMESH_REST_SSL_SSLCaPath=/opt/appmesh/work/ssl/ca.pem
+ENV APPMESH_REST_SSL_SSLCertificateFile=/opt/appmesh/work/ssl/server.pem
+ENV APPMESH_REST_SSL_SSLCertificateKeyFile=/opt/appmesh/work/ssl/server-key.pem
+ENV APPMESH_REST_SSL_SSLClientCertificateFile=/opt/appmesh/work/ssl/client.pem
+ENV APPMESH_REST_SSL_SSLClientCertificateKeyFile=/opt/appmesh/work/ssl/client-key.pem
+ENV APPMESH_AUTH_MODE=builtin
 COPY --chmod=0755 --from=build_stage /workspace/app-mesh/script/pack/docker-entrypoint.sh /opt/appmesh/script/
 RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/tmp/build \
 	apt-get update && \
@@ -33,10 +44,16 @@ RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/
 		/var/lib/dpkg/info/*.md5sums && \
 	rm -rf /opt/appmesh/apps/ping.yaml /opt/appmesh/apps/llm-agent.yaml \
 		/opt/appmesh/lib/llm-agent /opt/appmesh/ssl/cfssl* && \
+	find /opt/appmesh/work -mindepth 1 -maxdepth 1 -exec rm -rf -- '{}' + && \
+	rm -f /opt/appmesh/ssl/ca.pem /opt/appmesh/ssl/ca-key.pem \
+		/opt/appmesh/ssl/server.pem /opt/appmesh/ssl/server-key.pem \
+		/opt/appmesh/ssl/client.pem /opt/appmesh/ssl/client-key.pem && \
 	groupadd -r -g "$APPMESH_ID" appmesh && \
 	useradd -m -r -u "$APPMESH_ID" -g appmesh appmesh && \
-	touch /opt/appmesh/appmesh.pid && \
-	chown -R appmesh:appmesh /opt/appmesh && \
+	install -d -m 0700 -o appmesh -g appmesh /opt/appmesh/work && \
+	install -m 0640 -o appmesh -g appmesh /dev/null /opt/appmesh/appmesh.pid && \
+	chown root:appmesh /opt/appmesh/config/authorization.yaml && \
+	chmod 0640 /opt/appmesh/config/authorization.yaml && \
 	ldd /usr/local/bin/appm && /usr/local/bin/appm -V && /opt/appmesh/bin/appmesh -V
 EXPOSE 6060
 # Native managed processes inherit this identity.

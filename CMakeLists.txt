@@ -172,7 +172,7 @@ macro(add_catch_test name)
 endmacro()
 if(NOT APPMESH_NO_TESTS)
     enable_testing()
-    # add_subdirectory(test)
+    add_subdirectory(test)
 
     add_custom_target(python_tests
         COMMAND python3 -m unittest discover
@@ -262,7 +262,7 @@ add_custom_target(pack
             "${RUST_CLI_BINARY}"
             "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/"
 
-    # 3. packaging
+    # 3. Copy prepared third-party artifacts and build the native package.
     COMMAND ${CMAKE_COMMAND} -E env
         PROJECT_NAME=${PROJECT_NAME}
         PROJECT_VERSION=${PROJECT_VERSION}

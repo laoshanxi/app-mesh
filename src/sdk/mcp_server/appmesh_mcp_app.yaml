@@ -12,17 +12,21 @@
 # Adjust paths to where this directory is deployed (default assumes
 # /opt/appmesh/sdk/mcp_server) and run `pip install -r requirements.txt` first.
 name: mcp-server
-description: App Mesh MCP Server (Streamable HTTP, OAuth bridge)
+description: App Mesh MCP Server (Streamable HTTP, Dex protected resource)
 command: python3 appmesh_server.py
 working_dir: /opt/appmesh/sdk/mcp_server
 shell: false
-owner: mesh
 permission: 11
 env:
   # App Mesh REST endpoint the MCP server forwards tool calls to.
   APPMESH_URL: https://127.0.0.1:6060
   # Verify the daemon's TLS cert; set the CA path, or "false" for loopback dev.
   APPMESH_CA: /opt/appmesh/ssl/ca.pem
+  # Canonical issuer is security identity; access URL is this process's network route.
+  APPMESH_DEX_ISSUER: https://your-host/dex
+  APPMESH_DEX_ACCESS_URL: http://127.0.0.1:6062/dex
+  APPMESH_DEX_TLS_VERIFY: "true"
+  APPMESH_DEX_AUDIENCE: appmesh-api
   # MCP listener.
   APPMESH_MCP_HOST: 0.0.0.0
   APPMESH_MCP_PORT: "6071"
@@ -34,6 +38,9 @@ env:
 behavior:
   # Keep the long-running MCP server alive.
   exit: keepalive
-# Liveness probe: the OAuth discovery endpoint is always served.
-# Verifies TLS against the App Mesh CA (matches APPMESH_CA above).
-health_check_cmd: curl -sf --cacert /opt/appmesh/ssl/ca.pem https://127.0.0.1:6071/.well-known/oauth-authorization-server -o /dev/null
+# Liveness probe: RFC 9728 protected-resource metadata is always served.
+# FastMCP serves MCP at /mcp, so the metadata route carries that resource-path
+# suffix (/.well-known/oauth-protected-resource/mcp, RFC 9728 section 3.1);
+# the bare path without the suffix is not registered. Verifies TLS against the
+# App Mesh CA (matches APPMESH_CA above).
+health_check_cmd: curl -sf --cacert /opt/appmesh/ssl/ca.pem https://127.0.0.1:6071/.well-known/oauth-protected-resource/mcp -o /dev/null

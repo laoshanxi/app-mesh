@@ -6,6 +6,7 @@
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
+#include "../security/Security.h"
 #include "Data.h"
 #include "ForwardingManager.h"
 #include "HttpRequest.h"
@@ -200,12 +201,47 @@ static bool isCsrfViolation(const std::shared_ptr<HttpRequest> &request)
 bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 {
 	static const char fname[] = "Worker::process() ";
+	if (request->m_relative_uri.find("?process_key=") != std::string::npos ||
+		request->m_relative_uri.find("&process_key=") != std::string::npos)
+	{
+		LOG_WAR << fname << "Rejected legacy process-key URI authentication";
+		request->reply(web::http::status_codes::BadRequest,
+			Utility::text2json("process_key URI authentication is not supported"));
+		return true;
+	}
 
 	LOG_DBG << fname << request->m_method << " from <"
 				<< request->m_remote_address << "> path <"
 				<< request->m_relative_uri << "> id <"
 				<< request->m_uuid << ">";
 	RESTHANDLER::instance()->observeHttpRequest(request);
+
+	if (!request->transportPrincipalId().empty() &&
+		request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
+	{
+		try
+		{
+			const auto framePrincipal = Security::authenticateBearerAuthorization(
+				request->m_headers.get(HTTP_HEADER_JWT_Authorization));
+			if (framePrincipal.id() != request->transportPrincipalId())
+			{
+				request->reply(web::http::status_codes::Forbidden,
+					Utility::text2json("WebSocket frame cannot change the session principal"));
+				return true;
+			}
+		}
+		catch (const AuthenticationUnavailableException &e)
+		{
+			request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+			return true;
+		}
+		catch (const std::exception &e)
+		{
+			request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
+				{{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+			return true;
+		}
+	}
 
 	if (isCsrfViolation(request))
 	{
@@ -217,6 +253,13 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 
 	if (request->m_headers.contains(HTTP_HEADER_KEY_Forwarding_Host))
 	{
+		if (request->isManagedWorkerTransport() ||
+			request->m_headers.contains(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY))
+		{
+			request->reply(web::http::status_codes::Forbidden,
+				Utility::text2json("managed process proof cannot be forwarded"));
+			return true;
+		}
 		std::string host = request->m_headers.get(HTTP_HEADER_KEY_Forwarding_Host);
 		request->m_headers.erase(HTTP_HEADER_KEY_Forwarding_Host); // prevent loop forwarding
 		return forward(std::move(host), request);

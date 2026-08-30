@@ -17,7 +17,7 @@ from requests.structures import CaseInsensitiveDict
 from .app import App
 from .app_run import OutputHandler
 from .client_http import AppMeshClient
-from .exceptions import AppMeshAppRemovedError, AppMeshConnectionError
+from .exceptions import AppMeshAppRemovedError, AppMeshAuthError, AppMeshConnectionError
 from .subscribe import (
     EVENT_TYPE_DISCONNECTED,
     AppEvent,
@@ -29,26 +29,17 @@ from .tcp_messages import RequestMessage, ResponseMessage
 
 logger = logging.getLogger(__name__)
 
-# Auth endpoints where the server returns a new access_token in the JSON body.
-# Login/auth/totp_validate: apply token only when X-Set-Cookie header is present
-_AUTH_SET_COOKIE_PATHS = frozenset({"/appmesh/login", "/appmesh/auth", "/appmesh/totp/validate"})
-# Renew/setup: always apply (client already has an active session)
-_AUTH_RENEW_PATHS = frozenset({"/appmesh/token/renew", "/appmesh/totp/setup"})
-_LOGOFF_PATH = "/appmesh/self/logoff"
-
-
 class TransportClientMixin:
     """Mixin providing shared request/response logic for TCP and WSS transport clients.
 
     Design note: TCP/WSS clients deliberately inherit AppMeshClient rather than wrap it —
     every REST method funnels through ``_request_http``, so overriding that one choke point
     with msgpack framing (adapted into a ``requests.Response``) reuses all inherited methods
-    and token/cookie persistence unchanged, at the cost of a mostly idle ``requests.Session``
+    and bearer-token injection unchanged, at the cost of a mostly idle ``requests.Session``
     (which the WSS client reuses for its file-transfer HTTPS data channel).
 
     Subclasses must define:
         - _transport: the transport object (TCPTransport or WSSTransport)
-        - _token: the current access token string
         - _HTTP_USER_AGENT_TRANSPORT: user agent string for this transport
     """
 
@@ -77,43 +68,6 @@ class TransportClientMixin:
 
         raise TypeError(f"Unsupported body type: {type(body)}")
 
-    def _on_token_changed(self, token: Optional[str]) -> None:
-        """Store token locally and delegate to base class."""
-        self._token = token
-        super()._on_token_changed(token)
-
-    def _get_access_token(self) -> Optional[str]:
-        """Get the current access token."""
-        return self._token
-
-    def _sync_transport_token(self, response, path: str, request_headers: Optional[dict]) -> None:
-        """Extract and apply token from auth endpoint responses (TCP/WSS only).
-
-        HTTP transport relies on Set-Cookie for automatic cookie jar updates;
-        TCP/WSS must extract the token from the JSON response body.
-        """
-        if response.status_code != HTTPStatus.OK:
-            return
-
-        if path == _LOGOFF_PATH:
-            self._on_token_changed(None)
-            return
-
-        # Login/auth/totp_validate: apply only when client requested cookie mode
-        if path in _AUTH_SET_COOKIE_PATHS:
-            if not request_headers or request_headers.get("X-Set-Cookie") != "true":
-                return
-        elif path not in _AUTH_RENEW_PATHS:
-            return
-
-        # Extract access_token from JSON body
-        try:
-            token = response.json().get("access_token")
-            if token:
-                self._on_token_changed(token)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
-
     def _request_http(
         self,
         method: AppMeshClient._Method,
@@ -136,81 +90,107 @@ class TransportClientMixin:
         Returns:
             Simulated HTTP response.
         """
-        transport = self._transport
-        if not transport.connected():
-            transport.connect()
-
-        # Prepare request message (ensure no fields are assigned None!)
-        appmesh_request = RequestMessage()
-        appmesh_request.uuid = str(uuid.uuid4())
-        appmesh_request.http_method = method.value
-        appmesh_request.request_uri = path
-        appmesh_request.client_addr = self._transport_client_addr
-        appmesh_request.headers[self._HTTP_HEADER_KEY_USER_AGENT] = self._HTTP_USER_AGENT_TRANSPORT
-
-        # Add authentication token
-        token = self._get_access_token()
-        if token:
-            appmesh_request.headers[self._HTTP_HEADER_KEY_AUTH] = token
-
-        # Add forwarding host
-        target_host = self.forward_to
-        if target_host:
-            appmesh_request.headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = target_host
-
-        # Add custom headers
-        if header:
-            appmesh_request.headers.update(header)
-
-        # Add query parameters
-        if query:
-            appmesh_request.query.update(query)
-
-        # Prepare body
         body_bytes = self._convert_bytes(body)
-        if body_bytes:
-            appmesh_request.body = body_bytes
+        caller_manages_auth = bool(
+            header and any(key.lower() == self._HTTP_HEADER_KEY_AUTH.lower() for key in header)
+        )
+        provider = None if caller_manages_auth else self._token_provider
+        rejected_token = None
 
-        # Send request and receive response
-        data = appmesh_request.serialize()
+        for attempt in range(2):
+            transport = self._transport
 
-        if self._demuxer and self._demuxer._running:
-            # Demuxer is active — route through it to avoid concurrent socket reads.
-            # No wait cap: a falsy result means the demuxer stopped (disconnect), not a slow request.
-            appmesh_resp = self._demuxer.send_and_receive(appmesh_request.uuid, data)
-            if not appmesh_resp:
-                transport.close()
-                raise AppMeshConnectionError(f"{self._transport_name} connection lost while waiting for response")
-        else:
-            transport.send_message(data)
-            resp_data = transport.receive_message()
-            if not resp_data:  # Covers None and empty bytes
-                transport.close()
-                raise AppMeshConnectionError(f"{self._transport_name} connection broken")
-            appmesh_resp = ResponseMessage.from_bytes(resp_data)
-        response = requests.Response()
-        response.status_code = appmesh_resp.http_status
-        response.headers = CaseInsensitiveDict(appmesh_resp.headers)
+            token = None
+            if provider is not None:
+                token = self._get_bearer_token(
+                    force_refresh=attempt == 1,
+                    rejected_token=rejected_token,
+                )
+            elif header:
+                authorization = next(
+                    (value for key, value in header.items() if key.lower() == self._HTTP_HEADER_KEY_AUTH.lower()),
+                    None,
+                )
+                if authorization and authorization.lower().startswith("bearer "):
+                    token = authorization[7:].strip()
 
-        # Set response content
-        if isinstance(appmesh_resp.body, bytes):
-            response._content = appmesh_resp.body
-        else:
-            response._content = str(appmesh_resp.body).encode(self._ENCODING_UTF8)
+            set_handshake_token = getattr(transport, "set_bearer_token", None)
+            if set_handshake_token:
+                set_handshake_token(token)
+            if not transport.connected():
+                transport.connect()
 
-        # Set content type
-        if appmesh_resp.body_msg_type:
-            response.headers["Content-Type"] = appmesh_resp.body_msg_type
+            # Prepare request message (ensure no fields are assigned None!)
+            appmesh_request = RequestMessage()
+            appmesh_request.uuid = str(uuid.uuid4())
+            appmesh_request.http_method = method.value
+            appmesh_request.request_uri = path
+            appmesh_request.client_addr = self._transport_client_addr
+            appmesh_request.headers[self._HTTP_HEADER_KEY_USER_AGENT] = self._HTTP_USER_AGENT_TRANSPORT
 
-        if raise_on_fail and response.status_code != HTTPStatus.PRECONDITION_REQUIRED:
-            response.reason = str(response._content)
-            response.url = f"{str(transport)}/{path.lstrip('/')}"
-            response.raise_for_status()
+            if provider is not None:
+                # WSS authenticates once during upgrade; TCP has no handshake
+                # and therefore carries the bearer in each request envelope.
+                if token and not set_handshake_token:
+                    appmesh_request.headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {token}"
 
-        # Auto-sync token from auth endpoint responses
-        self._sync_transport_token(response, path, header)
+            target_host = self.forward_to
+            if target_host:
+                appmesh_request.headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = target_host
+            if header:
+                appmesh_request.headers.update(header)
+            if query:
+                appmesh_request.query.update(query)
+            if body_bytes:
+                appmesh_request.body = body_bytes
 
-        return AppMeshClient._EncodingResponse(response)
+            data = appmesh_request.serialize()
+            if self._demuxer and self._demuxer._running:
+                # Demuxer is active — route through it to avoid concurrent socket reads.
+                appmesh_resp = self._demuxer.send_and_receive(appmesh_request.uuid, data)
+                if not appmesh_resp:
+                    transport.close()
+                    raise AppMeshConnectionError(f"{self._transport_name} connection lost while waiting for response")
+            else:
+                transport.send_message(data)
+                resp_data = transport.receive_message()
+                if not resp_data:  # Covers None and empty bytes
+                    transport.close()
+                    raise AppMeshConnectionError(f"{self._transport_name} connection broken")
+                appmesh_resp = ResponseMessage.from_bytes(resp_data)
+
+            response = requests.Response()
+            response.status_code = appmesh_resp.http_status
+            response.headers = CaseInsensitiveDict(appmesh_resp.headers)
+            if isinstance(appmesh_resp.body, bytes):
+                response._content = appmesh_resp.body
+            else:
+                response._content = str(appmesh_resp.body).encode(self._ENCODING_UTF8)
+            if appmesh_resp.body_msg_type:
+                response.headers["Content-Type"] = appmesh_resp.body_msg_type
+
+            if (
+                response.status_code == HTTPStatus.UNAUTHORIZED
+                and attempt == 0
+                and provider is not None
+                and provider.can_refresh
+            ):
+                rejected_token = token
+                continue
+
+            if raise_on_fail:
+                response.reason = str(response._content)
+                response.url = f"{str(transport)}/{path.lstrip('/')}"
+                if response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+                    raise AppMeshAuthError(
+                        f"HTTP {response.status_code}: {response.reason}",
+                        response.status_code,
+                    )
+                response.raise_for_status()
+
+            return AppMeshClient._EncodingResponse(response)
+
+        raise AppMeshAuthError("TokenProvider failed to replace a rejected access token", HTTPStatus.UNAUTHORIZED)
 
     def add_app(self, app: App, subscribe_events: Optional[list] = None, callback: Optional[EventCallback] = None) -> App:
         """Register an app, optionally subscribing atomically and wiring a local callback.
@@ -283,6 +263,9 @@ class TransportClientMixin:
         if self._demuxer and self._demuxer._running:
             return
         transport = self._transport
+        set_handshake_token = getattr(transport, "set_bearer_token", None)
+        if set_handshake_token:
+            set_handshake_token(self._get_bearer_token())
         if not transport.connected():
             transport.connect()
         self._demuxer = MessageDemuxer(transport)

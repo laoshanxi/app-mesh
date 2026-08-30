@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
 )
@@ -22,9 +21,8 @@ type WorkerHTTPContext struct {
 }
 
 // NewHTTPContext creates a server-side task context over HTTP. Server endpoints
-// authenticate via APP_MESH_PROCESS_KEY, not JWT, so token refresh is forced off.
+// authenticate via APP_MESH_PROCESS_KEY; the worker is not an OAuth client.
 func NewHTTPContext(options Option) (*WorkerHTTPContext, error) {
-	options.AutoRefreshToken = false
 	httpClient, err := NewHTTPClient(options)
 	if err != nil {
 		return nil, err
@@ -32,7 +30,6 @@ func NewHTTPContext(options Option) (*WorkerHTTPContext, error) {
 	return &WorkerHTTPContext{client: httpClient}, nil
 }
 func newHTTPContextWithRequester(options Option, r Requester) (*WorkerHTTPContext, error) {
-	options.AutoRefreshToken = false
 	httpClient, err := newHTTPClientWithRequester(options, r)
 	if err != nil {
 		return nil, err
@@ -71,8 +68,7 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 	}
 
 	path := "/appmesh/app/" + appName + "/task"
-	query := url.Values{}
-	query.Set("process_key", key)
+	headers := map[string]string{"X-AppMesh-Process-Key": key}
 
 	// Fixed 100ms floor per attempt: sleep only the remainder if the attempt
 	// finished early; otherwise retry immediately. No backoff (SDKContract.md).
@@ -80,7 +76,7 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 
 	for {
 		attemptStart := time.Now()
-		status, body, _, err := r.client.req.SendContext(ctx, http.MethodGet, path, query, nil, nil)
+		status, body, _, err := r.client.req.SendContext(ctx, http.MethodGet, path, nil, headers, nil)
 		if err != nil {
 			if ctx.Err() != nil {
 				return "", fmt.Errorf("fetch_task canceled: %w", ctx.Err())
@@ -112,11 +108,12 @@ func (r *WorkerHTTPContext) SendTaskResult(result string) error {
 	}
 
 	path := "/appmesh/app/" + appName + "/task"
-	query := url.Values{}
-	query.Set("process_key", processKey)
-	headers := map[string]string{"Content-Type": "text/plain"}
+	headers := map[string]string{
+		"Content-Type":          "text/plain",
+		"X-AppMesh-Process-Key": processKey,
+	}
 
-	status, body, err := r.client.put(path, query, headers, []byte(result))
+	status, body, err := r.client.put(path, nil, headers, []byte(result))
 	if err != nil {
 		return err
 	}

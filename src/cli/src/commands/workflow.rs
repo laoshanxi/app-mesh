@@ -9,6 +9,7 @@ use crate::app::{
     WorkflowRmArgs, WorkflowRunArgs, WorkflowRunsArgs,
 };
 use crate::client::build_client_with_auth;
+use crate::output::format::short_principal;
 
 const WORKFLOW_TRIGGER_APP: &str = "workflow";
 
@@ -41,7 +42,7 @@ fn parse_resp(resp: &str) -> Result<serde_json::Value> {
     Ok(v)
 }
 
-/// Attach the caller's session JWT to a workflow action payload. The engine
+/// Attach the caller's Dex access token to a workflow action payload. The engine
 /// authenticates the caller from this token and runs the workflow's steps under that
 /// identity; the engine is fail-closed, so a payload without a token is rejected.
 fn with_token(client: &appmesh::AppMeshClientWSS, mut payload: serde_json::Value) -> serde_json::Value {
@@ -82,12 +83,13 @@ async fn list(cli: &Cli) -> Result<i32> {
     let v = parse_resp(&resp)?;
     let wfs = v["data"].as_array().cloned().unwrap_or_default();
     if wfs.is_empty() { eprintln!("No workflows registered."); return Ok(0); }
-    println!("{:<25} {:<12} {:<12} {:<25}", "WORKFLOW", "OWNER", "LAST STATUS", "LAST RUN");
-    println!("{}", "-".repeat(75));
+    // OWNER is 18 wide to fit the shortened `oidc:<12 hex>` principal form.
+    println!("{:<25} {:<18} {:<12} {:<25}", "WORKFLOW", "OWNER", "LAST STATUS", "LAST RUN");
+    println!("{}", "-".repeat(83));
     for w in &wfs {
-        println!("{:<25} {:<12} {:<12} {:<25}",
+        println!("{:<25} {:<18} {:<12} {:<25}",
             w["name"].as_str().unwrap_or("-"),
-            w["owner"].as_str().unwrap_or("-"),
+            short_principal(w["owner"].as_str().unwrap_or("-")),
             w["last_run_status"].as_str().unwrap_or("-"),
             w["last_run_at"].as_str().unwrap_or("-"));
     }

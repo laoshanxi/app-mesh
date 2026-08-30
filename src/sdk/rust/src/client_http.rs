@@ -4,21 +4,21 @@ use async_trait::async_trait;
 use base64::Engine;
 use bytes::Bytes;
 use log::{debug, error, info, warn};
-use reqwest::{cookie::CookieStore, cookie::Jar, header::HeaderValue, Client as ReqwestClient, Method, StatusCode};
+use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
 use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
-use crate::persistent_jar::PersistentJar;
+use crate::oauth::TokenProvider;
 use crate::requester::Requester;
 use crate::response_ext::ResponseExt;
 use crate::subscribe::EventCallback;
@@ -51,8 +51,7 @@ macro_rules! hmap {
 pub struct HTTPRequester {
     url: String,
     client: ReqwestClient,
-    pub(crate) persistent_jar: Option<PersistentJar>,
-    pub(crate) cookie_jar: Arc<Jar>,
+    access_token: Arc<RwLock<Option<String>>>,
     forward_to: Arc<Mutex<Option<String>>>,
 }
 
@@ -61,25 +60,15 @@ impl HTTPRequester {
         url: String,
         ssl_verify: Option<String>,
         ssl_client_cert: Option<(String, String)>,
-        cookie_file: Option<String>,
         timeout: Option<Duration>,
         danger_accept_invalid_certs: bool,
     ) -> Result<Self> {
-        // Cookie setup
-        let (cookie_jar, persistent_jar) = match &cookie_file {
-            Some(f) if !f.is_empty() => {
-                let pj = PersistentJar::new(&url, f)?;
-                (pj.jar(), Some(pj))
-            }
-            _ => (Arc::new(Jar::default()), None),
-        };
-
         let timeout = timeout.unwrap_or(Duration::from_secs(60));
         // reqwest uses `rustls-no-provider`; install a process-default provider to avoid panics.
         crate::tls_config::ensure_crypto_provider();
-        let mut client_builder = ReqwestClient::builder()
-            .cookie_provider(cookie_jar.clone())
-            .timeout(timeout);
+        // Engine SDK sessions deliberately have no cookie store. Browser application
+        // state is a separate concern; SDK authentication is RFC 6750 Bearer-only.
+        let mut client_builder = ReqwestClient::builder().timeout(timeout);
 
         // SSL setup. Verification is disabled only on explicit intent (danger
         // flag or the legacy empty CA path). A configured-but-missing CA is a hard
@@ -120,8 +109,7 @@ impl HTTPRequester {
         Ok(Self {
             url,
             client: client_builder.build()?,
-            persistent_jar,
-            cookie_jar,
+            access_token: Arc::new(RwLock::new(None)),
             forward_to: Arc::new(Mutex::new(None)),
         })
     }
@@ -143,21 +131,16 @@ impl HTTPRequester {
         })
     }
 
-    fn get_cookie(&self, name: &str) -> Option<String> {
-        let url = self.url.parse().ok()?;
-        self.cookie_jar.cookies(&url).and_then(|header_value: HeaderValue| {
-            let s = header_value.to_str().ok()?;
-            s.split(';')
-                .map(|s| s.trim())
-                .find(|s| s.starts_with(&format!("{name}=")))
-                .map(|s| s[name.len() + 1..].to_string())
-        })
-    }
-
     fn add_common_headers(&self, headers: &mut HashMap<String, String>) {
         headers
             .entry(HTTP_HEADER_KEY_USER_AGENT.to_string())
             .or_insert_with(|| HTTP_USER_AGENT.to_string());
+
+        if let Some(token) = self.access_token.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            headers
+                .entry(HTTP_HEADER_JWT_AUTHORIZATION.to_string())
+                .or_insert_with(|| format!("{}{}", HTTP_HEADER_AUTH_BEARER, token));
+        }
 
         // Poisoning is benign here (guarded state stays valid), so recover the guard.
         if let Some(forward_to) = self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
@@ -207,22 +190,13 @@ impl HTTPRequester {
             req = req.query(&query);
         }
 
-        // Snapshot token before request for change detection
-        let old_token = self.get_access_token();
-
         let resp = req.send().await?;
 
         if fail_on_error && !resp.status().is_success() && resp.status() != StatusCode::PRECONDITION_REQUIRED {
             let status = resp.status();
             let text = resp.text().await?;
-            error!("HTTP {} error: {}", status, text);
+            error!("HTTP {} error for {} {}", status, method, path);
             return Err(AppMeshError::RequestFailed { status, message: text });
-        }
-
-        // Auto-detect token changes from server Set-Cookie responses
-        let new_token = self.get_access_token();
-        if new_token != old_token {
-            self.handle_token_update(new_token);
         }
 
         Ok(resp)
@@ -261,22 +235,12 @@ impl Requester for HTTPRequester {
         *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) = url;
     }
 
-    fn handle_token_update(&self, _token: Option<String>) {
-        if let Some(pj) = &self.persistent_jar {
-            if let Err(e) = pj.save() {
-                error!("Failed to save cookies after token update: {}", e);
-            }
-        }
-    }
-
-    fn set_cookie(&self, cookie_str: &str) {
-        if let Ok(url) = self.url.parse() {
-            self.cookie_jar.add_cookie_str(cookie_str, &url);
-        }
+    fn handle_token_update(&self, token: Option<String>) {
+        *self.access_token.write().unwrap_or_else(|e| e.into_inner()) = token;
     }
 
     fn get_access_token(&self) -> Option<String> {
-        self.get_cookie(COOKIE_TOKEN)
+        self.access_token.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -292,19 +256,14 @@ pub struct AppMeshClient {
     url: String,
     /// Whether automatic token refresh is enabled.
     auto_refresh: AtomicBool,
-    /// Caller's refresh-token opt-in; `None` follows `auto_refresh`. See
-    /// [`crate::ClientBuilder::use_refresh_token`].
-    use_refresh_token: Mutex<Option<bool>>,
     /// Handle to the background token-refresh task (if running).
     refresh_handle: Mutex<Option<JoinHandle<()>>>,
-    /// Refresh token from login/renew; issued by both Keycloak and local-JWT daemons,
-    /// `None` against an older daemon that returns none.
-    refresh_token: Mutex<Option<String>>,
-    /// Expire seconds from login, replayed on renew so the caller's TTL is kept.
-    token_expire_seconds: Mutex<Option<i32>>,
     /// Serializes renewals. Rotation makes a refresh token single-use, so two concurrent
     /// renewals would present the same one and the loser would be told it is revoked.
     renew_lock: tokio::sync::Mutex<()>,
+    /// Optional external token source. It owns refresh/revocation; the Engine client
+    /// receives only the current access token.
+    token_provider: Mutex<Option<Arc<dyn TokenProvider>>>,
 }
 
 impl std::fmt::Debug for AppMeshClient {
@@ -326,22 +285,19 @@ impl AppMeshClient {
         url: Option<String>,
         ssl_verify: Option<String>,
         ssl_client_cert: Option<(String, String)>,
-        cookie_file: Option<String>,
         timeout: Option<Duration>,
         danger_accept_invalid_certs: bool,
     ) -> Result<Arc<Self>> {
         let url = url.unwrap_or_else(|| DEFAULT_HTTP_URL.to_string());
         let requester =
-            HTTPRequester::new(url.clone(), ssl_verify, ssl_client_cert, cookie_file, timeout, danger_accept_invalid_certs)?;
+            HTTPRequester::new(url.clone(), ssl_verify, ssl_client_cert, timeout, danger_accept_invalid_certs)?;
         Ok(Arc::new(Self {
             req: Box::new(requester),
             url,
             auto_refresh: AtomicBool::new(false),
-            use_refresh_token: Mutex::new(None),
             refresh_handle: Mutex::new(None),
-            refresh_token: Mutex::new(None),
-            token_expire_seconds: Mutex::new(None),
             renew_lock: tokio::sync::Mutex::new(()),
+            token_provider: Mutex::new(None),
         }))
     }
 
@@ -351,36 +307,20 @@ impl AppMeshClient {
             req: requester,
             url,
             auto_refresh: AtomicBool::new(false),
-            use_refresh_token: Mutex::new(None),
             refresh_handle: Mutex::new(None),
-            refresh_token: Mutex::new(None),
-            token_expire_seconds: Mutex::new(None),
             renew_lock: tokio::sync::Mutex::new(()),
+            token_provider: Mutex::new(None),
         })
     }
 
     /// Enable or disable background token auto-refresh.
-    pub fn set_auto_refresh_token(self: &Arc<Self>, enable: bool) {
+    pub fn set_provider_auto_refresh(self: &Arc<Self>, enable: bool) {
         self.auto_refresh.store(enable, Ordering::Relaxed);
         if !enable {
             self.cancel_refresh_task();
         } else if self.get_access_token().is_some() {
             self.schedule_token_refresh();
         }
-    }
-
-    /// Set the caller's refresh-token opt-in; `None` follows the auto-refresh setting.
-    pub(crate) fn set_use_refresh_token(&self, enable: Option<bool>) {
-        *self.use_refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = enable;
-    }
-
-    /// Resolve the tri-state opt-in: an explicit choice wins, otherwise auto-refresh decides —
-    /// only a long-lived client has somewhere to keep (and eventually revoke) the credential.
-    fn wants_refresh_token(&self) -> bool {
-        self.use_refresh_token
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .unwrap_or_else(|| self.auto_refresh.load(Ordering::Relaxed))
     }
 
     /// Close the client and release resources.
@@ -411,236 +351,113 @@ impl AppMeshClient {
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>> {
-        self.req.send(method, path, body, headers, query, fail_on_error).await
+        self.send(method, path, body, headers, query, fail_on_error).await
+    }
+
+    /// Install an external access-token provider. The provider is consulted before
+    /// every request, and only its access token is ever attached to Engine traffic.
+    pub fn set_token_provider(&self, provider: Option<Arc<dyn TokenProvider>>) {
+        *self.token_provider.lock().unwrap_or_else(|error| error.into_inner()) = provider;
+    }
+
+    async fn prepare_bearer(&self) -> Result<Option<Arc<dyn TokenProvider>>> {
+        let provider = self
+            .token_provider
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        if let Some(provider) = provider.as_ref() {
+            self.req.handle_token_update(Some(provider.access_token().await?));
+        }
+        Ok(provider)
+    }
+
+    async fn send(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&[u8]>,
+        headers: Option<HashMap<String, String>>,
+        query: Option<HashMap<String, String>>,
+        fail_on_error: bool,
+    ) -> Result<http::Response<Bytes>> {
+        let provider = self.prepare_bearer().await?;
+        let Some(provider) = provider else {
+            return self.req.send(method, path, body, headers, query, fail_on_error).await;
+        };
+
+        // Keep the first response available so a static/non-refreshable provider still
+        // reports the Engine's 401. Retry only safe, replayable methods.
+        let response = self
+            .req
+            .send(method.clone(), path, body, headers.clone(), query.clone(), false)
+            .await?;
+        let replayable = method == Method::GET || method == Method::HEAD || method == Method::OPTIONS;
+        if response.status() == StatusCode::UNAUTHORIZED && replayable {
+            if let Ok(tokens) = provider.force_refresh().await {
+                self.req.handle_token_update(Some(tokens.access_token));
+                return self.req.send(method, path, body, headers, query, fail_on_error).await;
+            }
+        }
+        if fail_on_error
+            && !response.status().is_success()
+            && response.status() != StatusCode::PRECONDITION_REQUIRED
+        {
+            return Err(AppMeshError::RequestFailed {
+                status: response.status(),
+                message: String::from_utf8_lossy(response.body()).into_owned(),
+            });
+        }
+        Ok(response)
     }
 }
 
 // -- Authentication ---------------------------------------------------------
 
 impl AppMeshClient {
-    /// Store the refresh token from a login/renew response body, if present.
-    ///
-    /// Both modes rotate it on renew, so a present value replaces the stored one; an absent
-    /// value leaves it untouched. Transport-agnostic: `resp` carries the body on all.
-    fn capture_refresh_token(&self, resp: &http::Response<Bytes>) {
-        if let Ok(json) = serde_json::from_slice::<Value>(resp.body()) {
-            if let Some(rt) = json.get(HTTP_BODY_KEY_REFRESH_TOKEN).and_then(|v| v.as_str()) {
-                *self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = Some(rt.to_string());
-            }
-        }
-    }
-
-    /// Login with username/password and update this client session on success.
-    ///
-    /// Returns the TOTP challenge string when the server replies with HTTP 428 and no valid code
-    /// was supplied; otherwise returns an empty string after storing the issued JWT/cookie.
-    pub async fn login(
-        self: &Arc<Self>,
-        username: &str,
-        password: &str,
-        totp: Option<&str>,
-        token_expire: Option<i32>,
-        audience: Option<&str>,
-    ) -> Result<String> {
-        let mut headers = hmap! {
-            HTTP_HEADER_JWT_AUTHORIZATION => format!(
-                "{}{}",
-                HTTP_HEADER_AUTH_BASIC,
-                base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password))
-            ),
-            HTTP_HEADER_JWT_SET_COOKIE => "true"
-        };
-
-        // Opt in only when the caller wants one — the header is the daemon's sole trigger,
-        // and omitting it (rather than sending "false") is what suppresses issuance.
-        if self.wants_refresh_token() {
-            headers.insert(HTTP_HEADER_JWT_WANT_REFRESH_TOKEN.into(), "true".into());
-        }
-        if let Some(seconds) = token_expire {
-            headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.into(), seconds.to_string());
-        }
-        if let Some(aud) = audience {
-            headers.insert(HTTP_HEADER_JWT_AUDIENCE.into(), aud.to_string());
-        }
-        if let Some(totp_code) = totp {
-            headers.insert(HTTP_HEADER_JWT_TOTP.into(), totp_code.to_string());
-        }
-
-        let resp = self.req.send(Method::POST, "/appmesh/login", None, Some(headers), None, false).await?;
-
-        // Handle TOTP challenge (HTTP 428)
-        if resp.status() == StatusCode::PRECONDITION_REQUIRED {
-            let json: Value = resp.json()?;
-            if let Some(challenge) = json.get(REST_TEXT_TOTP_CHALLENGE_JSON_KEY) {
-                return Ok(challenge.as_str().unwrap_or("").to_string());
-            }
-            return Err(AppMeshError::AuthenticationFailed(json.to_string()));
-        } else if resp.status() != StatusCode::OK {
-            let text = resp.text()?;
-            return Err(AppMeshError::AuthenticationFailed(text));
-        }
-
-        self.capture_refresh_token(&resp);
-        *self.token_expire_seconds.lock().unwrap_or_else(|e| e.into_inner()) = token_expire;
-        // Arm the loop here too, not only in login_and_refresh(): validate_totp() and
-        // set_token() already do, so leaving plain login() out gave a non-TOTP caller a
-        // silently dead refresh loop — the exact failure this rework exists to remove.
-        if self.auto_refresh.load(Ordering::Relaxed) {
-            self.schedule_token_refresh();
-        }
-
-        Ok(String::new())
-    }
-
-    /// Login and automatically start token refresh if `auto_refresh_token` is enabled.
-    ///
-    /// This is the recommended way to login when using `Arc<AppMeshClient>`, as it
-    /// schedules the background refresh task after a successful login.
-    pub async fn login_and_refresh(
-        self: &Arc<Self>,
-        username: &str,
-        password: &str,
-        totp: Option<&str>,
-        token_expire: Option<i32>,
-        audience: Option<&str>,
-    ) -> Result<String> {
-        let result = self.login(username, password, totp, token_expire, audience).await?;
-        if result.is_empty() && self.auto_refresh.load(Ordering::Relaxed) {
-            self.schedule_token_refresh();
-        }
-        Ok(result)
-    }
-
-    /// Validate a TOTP challenge and store the returned JWT in this client session.
-    pub async fn validate_totp(
-        self: &Arc<Self>,
-        username: &str,
-        challenge: &str,
-        totp: &str,
-        token_expire: i32,
-    ) -> Result<()> {
-        let mut headers = hmap! {
-            HTTP_HEADER_JWT_SET_COOKIE => "true"
-        };
-        if self.wants_refresh_token() {
-            headers.insert(HTTP_HEADER_JWT_WANT_REFRESH_TOKEN.into(), "true".into());
-        }
-
-        let body = json!({
-            HTTP_BODY_KEY_JWT_USERNAME: username,
-            HTTP_BODY_KEY_JWT_TOTP: totp,
-            HTTP_BODY_KEY_JWT_TOTP_CHALLENGE: challenge,
-            HTTP_BODY_KEY_JWT_EXPIRE_SECONDS: token_expire
-        });
-        let body_bytes = serde_json::to_vec(&body)?;
-
-        let resp =
-            self.req.send(Method::POST, "/appmesh/totp/validate", Some(&body_bytes), Some(headers), None, true).await?;
-        // A validated challenge completes the login: same session setup as login(),
-        // auto-refresh included (this path previously never started it).
-        self.capture_refresh_token(&resp);
-        *self.token_expire_seconds.lock().unwrap_or_else(|e| e.into_inner()) = Some(token_expire);
-        if self.auto_refresh.load(Ordering::Relaxed) {
-            self.schedule_token_refresh();
-        }
-        Ok(())
-    }
-
     /// Get the current access token, if any.
     pub fn get_access_token(&self) -> Option<String> {
         self.req.get_access_token()
     }
 
-    /// Set a JWT token directly without server-side verification.
-    /// Use when the token is already known to be valid.
-    /// For server-side verification, use [`Self::authenticate`] instead.
+    /// Set a caller-owned Dex access token without contacting Engine.
+    /// Engine validates it when an API request is made.
     pub fn set_token(self: &Arc<Self>, token: &str) {
-        let cookie_str = format!("{}={}", COOKIE_TOKEN, token);
-        self.req.set_cookie(&cookie_str);
         self.req.handle_token_update(Some(token.to_string()));
         if self.auto_refresh.load(Ordering::Relaxed) {
             self.schedule_token_refresh();
         }
     }
 
-    /// Verify the supplied JWT token with the server and optionally update this client session.
-    ///
-    /// Returns `(bool, String)` where the bool is `true` only for HTTP 200 and
-    /// the String is the raw response body (diagnostic text on failure).
-    pub async fn authenticate(
-        &self,
-        token: &str,
-        permission: Option<&str>,
-        audience: Option<&str>,
-        update_session: bool,
-    ) -> Result<(bool, String)> {
-        let mut headers =
-            hmap! { HTTP_HEADER_JWT_AUTHORIZATION => format!("{}{}", HTTP_HEADER_AUTH_BEARER, token) };
-
-        if let Some(perm) = permission {
-            headers.insert(HTTP_HEADER_JWT_AUTH_PERMISSION.into(), perm.to_string());
-        }
-        if let Some(aud) = audience {
-            headers.insert(HTTP_HEADER_JWT_AUDIENCE.into(), aud.to_string());
-        }
-        if update_session {
-            headers.insert(HTTP_HEADER_JWT_SET_COOKIE.into(), "true".into());
-        }
-        let resp = self.req.send(Method::POST, "/appmesh/auth", None, Some(headers), None, false).await?;
-
-        let is_ok = resp.status() == StatusCode::OK;
-        let text = resp.text()?;
-        Ok((is_ok, text))
-    }
-
-    /// Logout from the current session.
-    pub async fn logout(&self) -> Result<()> {
+    /// Clear the locally attached bearer without calling Engine or Dex.
+    pub fn clear_token(&self) {
         self.cancel_refresh_task();
-        // OAuth2 (Keycloak) proxy mode: present the refresh token so the daemon can revoke the
-        // Keycloak session server-side. Local-JWT mode has none stored, so no header is sent.
-        let refresh_token = self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let headers = refresh_token.map(|rt| hmap! { HTTP_HEADER_JWT_REFRESH_TOKEN => rt });
-        self.req.send(Method::POST, "/appmesh/self/logoff", None, headers, None, true).await?;
-        *self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        Ok(())
+        self.req.handle_token_update(None);
     }
 
-    /// Renew the current JWT token.
-    ///
-    /// A held refresh token is the sole credential the daemon needs, so renewal succeeds
-    /// even after the access token expired. Without one, the daemon authenticates the
-    /// access token instead. `token_expire` defaults to the login value when `None`.
-    pub async fn renew_token(&self, token_expire: Option<i32>) -> Result<()> {
-        let _guard = self.renew_lock.lock().await;
-
-        let mut headers: HashMap<String, String> = hmap! {};
-        if self.wants_refresh_token() {
-            headers.insert(HTTP_HEADER_JWT_WANT_REFRESH_TOKEN.into(), "true".into());
-        }
-        let expire =
-            token_expire.or(*self.token_expire_seconds.lock().unwrap_or_else(|e| e.into_inner()));
-        if let Some(sec) = expire {
-            headers.insert(HTTP_HEADER_JWT_EXPIRE_SECONDS.into(), sec.to_string());
-        }
-        let refresh_token = self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        if let Some(rt) = refresh_token {
-            headers.insert(HTTP_HEADER_JWT_REFRESH_TOKEN.into(), rt);
-        }
-        let headers = if headers.is_empty() { None } else { Some(headers) };
-
-        let resp = match self.req.send(Method::POST, "/appmesh/token/renew", None, headers, None, true).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                // A rejected refresh token will never be accepted again. Drop it so the next
-                // attempt presents the access token instead of replaying a dead credential.
-                if matches!(&e, AppMeshError::RequestFailed { status, .. } if *status == StatusCode::UNAUTHORIZED) {
-                    *self.refresh_token.lock().unwrap_or_else(|e| e.into_inner()) = None;
-                }
-                return Err(e);
-            }
+    /// Revoke through the installed Dex token provider and clear local bearer state.
+    pub async fn revoke_provider_tokens(&self) -> Result<()> {
+        self.cancel_refresh_task();
+        let provider = self.token_provider.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let result = match provider {
+            Some(provider) => provider.revoke().await.map(|_| ()),
+            None => Ok(()),
         };
-        // Both modes rotate the refresh token on every renew — capture the new one.
-        self.capture_refresh_token(&resp);
+        self.req.handle_token_update(None);
+        result
+    }
+
+    /// Refresh through the installed provider. Refresh tokens never go to Engine.
+    pub async fn refresh_provider_token(&self) -> Result<()> {
+        let _guard = self.renew_lock.lock().await;
+        let provider = self
+            .token_provider
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+            .ok_or_else(|| AppMeshError::AuthenticationFailed("no token provider is installed".into()))?;
+        let tokens = provider.force_refresh().await?;
+        self.req.handle_token_update(Some(tokens.access_token));
         Ok(())
     }
 
@@ -682,7 +499,7 @@ impl AppMeshClient {
                 }
 
                 debug!("Auto-refresh: attempting token renewal");
-                match client.renew_token(None).await {
+                match client.refresh_provider_token().await {
                     Ok(()) => {
                         if failures > 0 {
                             info!("Auto-refresh: token renewal recovered after {} failure(s)", failures);
@@ -742,8 +559,12 @@ impl AppMeshClient {
         let Some(jwt_str) = client.get_access_token() else {
             // A held refresh token can still mint a new access token; with neither
             // credential there is nothing to renew, so just idle.
-            let has_refresh = client.refresh_token.lock().unwrap_or_else(|e| e.into_inner()).is_some();
-            return if has_refresh { (Duration::from_secs(1), true) } else { (poll, false) };
+            let has_provider = client
+                .token_provider
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .is_some();
+            return if has_provider { (Duration::from_secs(1), true) } else { (poll, false) };
         };
 
         // Unreadable lifetime: fall back to the fixed cadence.
@@ -794,126 +615,62 @@ impl AppMeshClient {
         Some((exp, iat))
     }
 
-    /// Get the raw TOTP secret for MFA setup.
-    /// Use [`Self::get_totp_uri`] for the full `otpauth://` provisioning URI.
-    pub async fn get_totp_secret(&self) -> Result<String> {
-        let totp_uri = self.fetch_totp_uri().await?;
-        Self::parse_totp_uri(&totp_uri)
-    }
-
-    /// Get the full `otpauth://` TOTP provisioning URI for MFA setup (e.g. for QR code generation).
-    pub async fn get_totp_uri(&self) -> Result<String> {
-        self.fetch_totp_uri().await
-    }
-
-    /// Fetch and base64-decode the TOTP provisioning URI from the server.
-    async fn fetch_totp_uri(&self) -> Result<String> {
-        let resp = self.req.send(Method::POST, "/appmesh/totp/secret", None, None, None, true).await?;
-
-        let val: Value = resp.json()?;
-        let encoded =
-            val[HTTP_BODY_KEY_MFA_URI].as_str().ok_or_else(|| AppMeshError::Other("Invalid MFA URI".into()))?;
-
-        let decoded = base64::engine::general_purpose::STANDARD.decode(encoded)?;
-        Ok(String::from_utf8_lossy(&decoded).to_string())
-    }
-
-    fn parse_totp_uri(uri: &str) -> Result<String> {
-        if let Some(query_start) = uri.find('?') {
-            for param in uri[query_start + 1..].split('&') {
-                if let Some(eq_pos) = param.find('=') {
-                    if &param[..eq_pos] == "secret" {
-                        return Ok(param[eq_pos + 1..].to_string());
-                    }
-                }
-            }
-        }
-        Err(AppMeshError::Other("TOTP URI does not contain a 'secret' field".into()))
-    }
-
-    /// Enable TOTP with a verification code.
-    pub async fn enable_totp(&self, totp: &str) -> Result<()> {
-        let headers = hmap! { HTTP_HEADER_JWT_TOTP => totp };
-
-        self.req.send(Method::POST, "/appmesh/totp/setup", None, Some(headers), None, true).await?;
-        Ok(())
-    }
-
-    /// Disable TOTP for a user (`None` = current user).
-    pub async fn disable_totp(&self, user: Option<&str>) -> Result<()> {
-        let user = user.unwrap_or("self");
-        self.req.send(Method::POST, &format!("/appmesh/totp/{}/disable", user), None, None, None, true).await?;
-        Ok(())
-    }
 }
 
-// -- User Management --------------------------------------------------------
+// -- Principal and authorization management --------------------------------
 
 impl AppMeshClient {
-    pub async fn update_password(&self, old: &str, new: &str, user: Option<&str>) -> Result<()> {
-        let user = user.unwrap_or("self");
-        let body = json!({
-            HTTP_BODY_KEY_OLD_PASSWORD: base64::engine::general_purpose::STANDARD.encode(old),
-            HTTP_BODY_KEY_NEW_PASSWORD: base64::engine::general_purpose::STANDARD.encode(new)
-        });
-        let body_bytes = serde_json::to_vec(&body)?;
+    pub async fn get_current_principal(&self) -> Result<Value> {
+        let resp = self.send(Method::GET, "/appmesh/principal/self", None, None, None, true).await?;
+        resp.json()
+    }
 
-        self.req
-            .send(Method::POST, &format!("/appmesh/user/{}/passwd", user), Some(&body_bytes), None, None, true)
+    pub async fn list_principals(&self) -> Result<Value> {
+        let resp = self.send(Method::GET, "/appmesh/principals", None, None, None, true).await?;
+        resp.json()
+    }
+
+    pub async fn update_principal(&self, principal_id: &str, policy: Value) -> Result<()> {
+        let body_bytes = serde_json::to_vec(&policy)?;
+        self.send(
+            Method::POST,
+            &format!("/appmesh/principal/{}", encode_path_segment(principal_id)),
+            Some(&body_bytes),
+            None,
+            None,
+            true,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_principal(&self, principal_id: &str) -> Result<()> {
+        self.send(
+            Method::DELETE,
+            &format!("/appmesh/principal/{}", encode_path_segment(principal_id)),
+            None,
+            None,
+            None,
+            true,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_principal_permissions(&self) -> Result<Vec<String>> {
+        let resp = self
+            .send(Method::GET, "/appmesh/principal/self/permissions", None, None, None, true)
             .await?;
-        Ok(())
-    }
-
-    pub async fn get_current_user(&self) -> Result<Value> {
-        let resp = self.req.send(Method::GET, "/appmesh/user/self", None, None, None, true).await?;
-        resp.json()
-    }
-
-    pub async fn list_users(&self) -> Result<Value> {
-        let resp = self.req.send(Method::GET, "/appmesh/users", None, None, None, true).await?;
-        resp.json()
-    }
-
-    pub async fn add_user(&self, user: Value) -> Result<()> {
-        let name =
-            user["name"].as_str().ok_or_else(|| AppMeshError::ConfigurationError("Missing username".into()))?;
-        let body_bytes = serde_json::to_vec(&user)?;
-        self.req.send(Method::PUT, &format!("/appmesh/user/{}", name), Some(&body_bytes), None, None, true).await?;
-        Ok(())
-    }
-
-    pub async fn delete_user(&self, user: &str) -> Result<()> {
-        self.req.send(Method::DELETE, &format!("/appmesh/user/{}", user), None, None, None, true).await?;
-        Ok(())
-    }
-
-    pub async fn lock_user(&self, user: &str) -> Result<()> {
-        self.req.send(Method::POST, &format!("/appmesh/user/{}/lock", user), None, None, None, true).await?;
-        Ok(())
-    }
-
-    pub async fn unlock_user(&self, user: &str) -> Result<()> {
-        self.req.send(Method::POST, &format!("/appmesh/user/{}/unlock", user), None, None, None, true).await?;
-        Ok(())
-    }
-
-    pub async fn list_groups(&self) -> Result<Vec<String>> {
-        let resp = self.req.send(Method::GET, "/appmesh/user/groups", None, None, None, true).await?;
-        json_string_array(&resp.json()?)
-    }
-
-    pub async fn get_user_permissions(&self) -> Result<Vec<String>> {
-        let resp = self.req.send(Method::GET, "/appmesh/user/permissions", None, None, None, true).await?;
         json_string_array(&resp.json()?)
     }
 
     pub async fn list_permissions(&self) -> Result<Vec<String>> {
-        let resp = self.req.send(Method::GET, "/appmesh/permissions", None, None, None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/permissions", None, None, None, true).await?;
         json_string_array(&resp.json()?)
     }
 
     pub async fn list_roles(&self) -> Result<HashMap<String, Vec<String>>> {
-        let resp = self.req.send(Method::GET, "/appmesh/roles", None, None, None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/roles", None, None, None, true).await?;
         let json: Value = resp.json()?;
         let mut roles = HashMap::new();
         if let Some(obj) = json.as_object() {
@@ -929,14 +686,13 @@ impl AppMeshClient {
 
     pub async fn update_role(&self, role: &str, permissions: Vec<String>) -> Result<()> {
         let body_bytes = serde_json::to_vec(&permissions)?;
-        self.req
-            .send(Method::POST, &format!("/appmesh/role/{}", role), Some(&body_bytes), None, None, true)
+        self.send(Method::POST, &format!("/appmesh/role/{}", role), Some(&body_bytes), None, None, true)
             .await?;
         Ok(())
     }
 
     pub async fn delete_role(&self, role: &str) -> Result<()> {
-        self.req.send(Method::DELETE, &format!("/appmesh/role/{}", role), None, None, None, true).await?;
+        self.send(Method::DELETE, &format!("/appmesh/role/{}", role), None, None, None, true).await?;
         Ok(())
     }
 }
@@ -948,12 +704,16 @@ fn json_string_array(json: &Value) -> Result<Vec<String>> {
         .ok_or_else(|| AppMeshError::SerializationError(format!("Expected JSON array, got: {}", json)))
 }
 
+fn encode_path_segment(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
 // -- Application Management -------------------------------------------------
 
 impl AppMeshClient {
     /// List all applications.
     pub async fn list_apps(&self) -> Result<Vec<Application>> {
-        let resp = self.req.send(Method::GET, "/appmesh/applications", None, None, None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/applications", None, None, None, true).await?;
         let apps: Vec<Application> = resp.json()?;
         Ok(apps)
     }
@@ -961,7 +721,7 @@ impl AppMeshClient {
     /// Get a single application by name.
     pub async fn get_app(&self, name: &str) -> Result<Application> {
         let resp =
-            self.req.send(Method::GET, &format!("/appmesh/app/{}", name), None, None, None, true).await?;
+            self.send(Method::GET, &format!("/appmesh/app/{}", name), None, None, None, true).await?;
         resp.json()
     }
 
@@ -995,9 +755,7 @@ impl AppMeshClient {
             query.insert(HTTP_QUERY_KEY_STDOUT_TIMEOUT.into(), t.to_string());
         }
 
-        let resp = self
-            .req
-            .send(Method::GET, &format!("/appmesh/app/{}/output", name), None, None, Some(query), false)
+        let resp = self.send(Method::GET, &format!("/appmesh/app/{}/output", name), None, None, Some(query), false)
             .await?;
 
         // Now we can read headers *and* body without cloning, thanks to &self on ResponseExt
@@ -1025,7 +783,7 @@ impl AppMeshClient {
     /// Check application health (returns `true` if healthy).
     pub async fn check_app_health(&self, name: &str) -> Result<bool> {
         let resp =
-            self.req.send(Method::GET, &format!("/appmesh/app/{}/health", name), None, None, None, true).await?;
+            self.send(Method::GET, &format!("/appmesh/app/{}/health", name), None, None, None, true).await?;
         let text = resp.text()?;
         Ok(text.trim() == "0")
     }
@@ -1052,7 +810,7 @@ impl AppMeshClient {
             q
         });
         let resp =
-            self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, query, true).await?;
+            self.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, query, true).await?;
         resp.json()
     }
 
@@ -1063,7 +821,7 @@ impl AppMeshClient {
             .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
         let body_bytes = serde_json::to_vec(&app)?;
         let resp =
-            self.req.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true).await?;
+            self.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true).await?;
         resp.json()
     }
 
@@ -1103,7 +861,7 @@ impl AppMeshClient {
             }
         }
 
-        let resp = self.req.send(Method::POST, &path, None, None, query, true).await?;
+        let resp = self.send(Method::POST, &path, None, None, query, true).await?;
         let result: SubscriptionResult = resp.json()?;
 
         // Re-register callback with the actual subscription_id from server
@@ -1129,13 +887,13 @@ impl AppMeshClient {
 
         let mut query = HashMap::new();
         query.insert("subscription_id".to_string(), subscription_id.to_string());
-        let resp = self.req.send(Method::DELETE, "/appmesh/subscribe", None, None, Some(query), false).await?;
+        let resp = self.send(Method::DELETE, "/appmesh/subscribe", None, None, Some(query), false).await?;
         Ok(resp.status() == StatusCode::OK)
     }
 
     pub async fn delete_app(&self, name: &str) -> Result<bool> {
         let resp =
-            self.req.send(Method::DELETE, &format!("/appmesh/app/{}", name), None, None, None, false).await?;
+            self.send(Method::DELETE, &format!("/appmesh/app/{}", name), None, None, None, false).await?;
         match resp.status() {
             StatusCode::OK => Ok(true),
             StatusCode::NOT_FOUND => Ok(false),
@@ -1147,12 +905,12 @@ impl AppMeshClient {
     }
 
     pub async fn enable_app(&self, name: &str) -> Result<()> {
-        self.req.send(Method::POST, &format!("/appmesh/app/{}/enable", name), None, None, None, true).await?;
+        self.send(Method::POST, &format!("/appmesh/app/{}/enable", name), None, None, None, true).await?;
         Ok(())
     }
 
     pub async fn disable_app(&self, name: &str) -> Result<()> {
-        self.req.send(Method::POST, &format!("/appmesh/app/{}/disable", name), None, None, None, true).await?;
+        self.send(Method::POST, &format!("/appmesh/app/{}/disable", name), None, None, None, true).await?;
         Ok(())
     }
 }
@@ -1175,9 +933,7 @@ impl AppMeshClient {
         };
         let body_bytes = serde_json::to_vec(app)?;
 
-        let resp = self
-            .req
-            .send(Method::POST, "/appmesh/app/syncrun", Some(&body_bytes), None, Some(query), false)
+        let resp = self.send(Method::POST, "/appmesh/app/syncrun", Some(&body_bytes), None, Some(query), false)
             .await?;
 
         let mut code = None;
@@ -1224,7 +980,7 @@ impl AppMeshClient {
         let body_bytes = serde_json::to_vec(app)?;
 
         let resp =
-            self.req.send(Method::POST, "/appmesh/app/run", Some(&body_bytes), None, Some(query), true).await?;
+            self.send(Method::POST, "/appmesh/app/run", Some(&body_bytes), None, Some(query), true).await?;
 
         let json: Value = resp.json()?;
         Ok(AppRun {
@@ -1317,9 +1073,7 @@ impl AppMeshClient {
         let query = hmap! { HTTP_QUERY_KEY_TIMEOUT => timeout };
         let body_bytes = serde_json::to_vec(&data)?;
 
-        let resp = self
-            .req
-            .send(Method::POST, &format!("/appmesh/app/{}/task", name), Some(&body_bytes), None, Some(query), true)
+        let resp = self.send(Method::POST, &format!("/appmesh/app/{}/task", name), Some(&body_bytes), None, Some(query), true)
             .await?;
         resp.text()
     }
@@ -1327,7 +1081,7 @@ impl AppMeshClient {
     /// Cancel a running task.
     pub async fn cancel_task(&self, name: &str) -> Result<bool> {
         let resp =
-            self.req.send(Method::DELETE, &format!("/appmesh/app/{}/task", name), None, None, None, false).await?;
+            self.send(Method::DELETE, &format!("/appmesh/app/{}/task", name), None, None, None, false).await?;
         Ok(resp.status() == StatusCode::OK)
     }
 }
@@ -1335,20 +1089,44 @@ impl AppMeshClient {
 // -- System Management ------------------------------------------------------
 
 impl AppMeshClient {
+    /// Return the public Dex/OIDC configuration advertised by the Engine.
+    /// Login, refresh, and revocation still go directly to Dex.
+    pub async fn get_auth_config(&self) -> Result<Value> {
+        let resp = self.send(Method::GET, "/appmesh/auth/config", None, None, None, true).await?;
+        resp.json()
+    }
+
+    /// Atomically enroll the current verified Dex user as the first App Mesh
+    /// administrator. The Engine accepts this only from loopback in built-in mode.
+    /// Callers must read the daemon-generated proof from its owner-only runtime file
+    /// and must not persist or log it.
+    pub async fn enroll_first_admin(&self, enrollment_proof: &str) -> Result<Value> {
+        if enrollment_proof.len() != 64 || !enrollment_proof.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(AppMeshError::ConfigurationError(
+                "first-admin enrollment proof is invalid".into(),
+            ));
+        }
+        let headers = hmap! { "X-AppMesh-First-Admin-Enrollment" => enrollment_proof };
+        let resp = self
+            .send(Method::POST, "/appmesh/auth/enroll-first-admin", None, Some(headers), None, true)
+            .await?;
+        resp.json()
+    }
+
     pub async fn get_host_resources(&self) -> Result<Value> {
-        let resp = self.req.send(Method::GET, "/appmesh/resources", None, None, None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/resources", None, None, None, true).await?;
         resp.json()
     }
 
     pub async fn get_config(&self) -> Result<Value> {
-        let resp = self.req.send(Method::GET, "/appmesh/config", None, None, None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/config", None, None, None, true).await?;
         resp.json()
     }
 
     pub async fn set_config(&self, config: Value) -> Result<Value> {
         let body_bytes = serde_json::to_vec(&config)?;
         let resp =
-            self.req.send(Method::POST, "/appmesh/config", Some(&body_bytes), None, None, true).await?;
+            self.send(Method::POST, "/appmesh/config", Some(&body_bytes), None, None, true).await?;
         resp.json()
     }
 
@@ -1359,7 +1137,7 @@ impl AppMeshClient {
     }
 
     pub async fn get_metrics(&self) -> Result<String> {
-        let resp = self.req.send(Method::GET, "/appmesh/metrics", None, None, None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/metrics", None, None, None, true).await?;
         resp.text()
     }
 }
@@ -1368,20 +1146,20 @@ impl AppMeshClient {
 
 impl AppMeshClient {
     pub async fn list_labels(&self) -> Result<Value> {
-        let resp = self.req.send(Method::GET, "/appmesh/labels", None, None, None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/labels", None, None, None, true).await?;
         resp.json()
     }
 
 
     pub async fn add_label(&self, label: &str, value: &str) -> Result<()> {
         let query = hmap! { HTTP_QUERY_KEY_VALUE => value };
-        self.req.send(Method::PUT, &format!("/appmesh/label/{}", label), None, None, Some(query), true).await?;
+        self.send(Method::PUT, &format!("/appmesh/label/{}", label), None, None, Some(query), true).await?;
         Ok(())
     }
 
 
     pub async fn delete_label(&self, label: &str) -> Result<()> {
-        self.req.send(Method::DELETE, &format!("/appmesh/label/{}", label), None, None, None, true).await?;
+        self.send(Method::DELETE, &format!("/appmesh/label/{}", label), None, None, None, true).await?;
         Ok(())
     }
 
@@ -1412,6 +1190,7 @@ impl AppMeshClient {
         let local_path = Path::new(local_file);
 
         // Stream response chunks to disk (bounded memory) when the transport supports it.
+        self.prepare_bearer().await?;
         if let Some(mut resp) = self
             .req
             .send_streaming(Method::GET, "/appmesh/file/download", None, Some(headers.clone()), None, true)
@@ -1431,7 +1210,7 @@ impl AppMeshClient {
 
         // Buffered fallback for transports without HTTP streaming.
         let resp =
-            self.req.send(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
+            self.send(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
         fs::write(local_path, resp.bytes())?;
 
         if preserve_permissions {
@@ -1472,6 +1251,7 @@ impl AppMeshClient {
 
         // Stream the file as the request body (bounded memory) when the transport supports it.
         // Explicit Content-Length keeps the wire format identical to the buffered upload.
+        self.prepare_bearer().await?;
         let file = tokio::fs::File::open(local_path).await?;
         let file_len = file.metadata().await?.len();
         let mut streaming_headers = headers.clone();
@@ -1494,8 +1274,7 @@ impl AppMeshClient {
 
         // Buffered fallback for transports without HTTP streaming.
         let file_content = fs::read(local_file)?;
-        self.req
-            .send(Method::POST, "/appmesh/file/upload", Some(&file_content), Some(headers), None, true)
+        self.send(Method::POST, "/appmesh/file/upload", Some(&file_content), Some(headers), None, true)
             .await?;
         Ok(())
     }
