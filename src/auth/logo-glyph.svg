@@ -1,11 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 366" width="1000" height="366">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 366 366" width="366" height="366">
   <title>App Mesh</title>
   <defs>
     <linearGradient id="badge" gradientUnits="userSpaceOnUse" x1="183" y1="18" x2="183" y2="348">
-      <stop offset="0" stop-color="#2563EB"/>
-      <stop offset="1" stop-color="#06B6D4"/>
-    </linearGradient>
-    <linearGradient id="word" gradientUnits="userSpaceOnUse" x1="380" y1="0" x2="960" y2="0">
       <stop offset="0" stop-color="#2563EB"/>
       <stop offset="1" stop-color="#06B6D4"/>
     </linearGradient>
@@ -25,7 +21,4 @@
     <path d="M130 224 H236" stroke-width="34"/>
   </g>
   <circle cx="183" cy="95" r="16" fill="#F59E0B" stroke="#FFFFFF" stroke-width="5"/>
-  <text x="380" y="232" font-family="'Helvetica Neue', Helvetica, Arial, 'DejaVu Sans', sans-serif"
-        font-size="148" font-weight="700" fill="url(#word)"
-        textLength="580" lengthAdjust="spacingAndGlyphs">App Mesh</text>
 </svg>

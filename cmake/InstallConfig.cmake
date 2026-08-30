@@ -84,6 +84,7 @@ install(FILES
     "${SRC}/src/daemon/rest/openapi.yaml"
     "${SRC}/src/daemon/rest/index.html"
     "${SRC}/src/auth/logo.svg"
+    "${SRC}/src/auth/logo-glyph.svg"
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/bash_completion.sh>
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/container_monitor.py>
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/appmesh_agent.py>
