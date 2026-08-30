@@ -33,6 +33,7 @@
 constexpr auto CONTENT_TYPE_HTML = "text/html; charset=utf-8";
 constexpr auto CONTENT_TYPE_YAML = "application/x-yaml";
 constexpr auto CONTENT_TYPE_SVG = "image/svg+xml";
+constexpr auto CONTENT_TYPE_PNG = "image/png";
 
 namespace
 {
@@ -120,6 +121,7 @@ namespace
 // 1. Authentication
 constexpr auto REST_PATH_AUTH_CONFIG = "/appmesh/auth/config";
 constexpr auto REST_PATH_LOGO = "/appmesh/logo.svg";
+constexpr auto REST_PATH_FAVICON = "/appmesh/favicon.png";
 constexpr auto REST_PATH_OAUTH_CALLBACK = "/oauth/callback";
 constexpr auto REST_PATH_PROTECTED_RESOURCE_METADATA = "/.well-known/oauth-protected-resource";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CAPABILITY = "/appmesh/internal/workflow/capability";
@@ -189,6 +191,7 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 	// 1. Authentication
 	bindRestMethod(web::http::methods::GET, REST_PATH_AUTH_CONFIG, std::bind(&RestHandler::apiAuthConfig, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_LOGO, std::bind(&RestHandler::apiLogo, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_FAVICON, std::bind(&RestHandler::apiFavicon, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_OAUTH_CALLBACK, std::bind(&RestHandler::apiOauthCallback, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_PROTECTED_RESOURCE_METADATA, std::bind(&RestHandler::apiProtectedResourceMetadata, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CAPABILITY, std::bind(&RestHandler::apiWorkflowCapability, this, std::placeholders::_1));
@@ -386,6 +389,12 @@ const std::string &RestHandler::getLogoContent()
 	return content;
 }
 
+const std::string &RestHandler::getFaviconContent()
+{
+	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "favicon.png").string());
+	return content;
+}
+
 const std::string &RestHandler::getIndexHtmlContent()
 {
 	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "index.html").string());
@@ -413,6 +422,15 @@ void RestHandler::apiLogo(const std::shared_ptr<HttpRequest> &message)
 
 	std::string content = getLogoContent();
 	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_SVG);
+}
+
+void RestHandler::apiFavicon(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiFavicon() ";
+	LOG_DBG << fname << "Serving favicon";
+
+	std::string content = getFaviconContent();
+	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_PNG);
 }
 
 // Static relay page for the browser OAuth callback. Byte-identical copy in the

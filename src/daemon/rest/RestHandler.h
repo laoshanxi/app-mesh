@@ -28,6 +28,7 @@ public:
 	static const std::string &getOpenApiContent();
 	static const std::string &getIndexHtmlContent();
 	static const std::string &getLogoContent();
+	static const std::string &getFaviconContent();
 
 	// Prometheus metrics, forwarded to the owned exporter so that callers keep using RESTHANDLER
 	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
@@ -46,6 +47,7 @@ protected:
 
 	void apiAuthConfig(const std::shared_ptr<HttpRequest> &message);
 	void apiLogo(const std::shared_ptr<HttpRequest> &message);
+	void apiFavicon(const std::shared_ptr<HttpRequest> &message);
 	void apiOauthCallback(const std::shared_ptr<HttpRequest> &message);
 	void apiProtectedResourceMetadata(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowCapability(const std::shared_ptr<HttpRequest> &message);

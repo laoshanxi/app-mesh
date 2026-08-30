@@ -65,6 +65,23 @@ paths:
               schema:
                 type: string
 
+  /appmesh/favicon.png:
+    get:
+      tags: [Discovery]
+      summary: Branding favicon for the authentication-service login page
+      description: |
+        The login page loads its favicon from the issuer-relative theme path, and
+        every public entry (agent, web UI proxy) resolves it to this route.
+      security: []
+      responses:
+        "200":
+          description: The PNG favicon served by this node.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+
   /oauth/callback:
     get:
       tags: [Discovery]
