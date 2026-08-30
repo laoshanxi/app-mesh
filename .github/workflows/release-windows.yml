@@ -8,11 +8,19 @@ on:
       - ".github/workflows/release-windows.yml"
       - "src/**"
       - "script/**"
+      - "test/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "go.mod"
+      - "go.sum"
+      - "LICENSE"
+      - "NOTICE"
+      - "THIRD_PARTY_LICENSES/**"
 
 permissions: read-all
 
 env:
-  APPMESH_VERSION: "2.2.1"
+  APPMESH_VERSION: "3.0.0"
 
 jobs:
   build:
@@ -69,40 +77,90 @@ jobs:
           name: windows-${{ github.sha }}
 
       - run: choco install 7zip -y
-      - run: python -m pip install --upgrade --no-user appmesh pyotp
 
       - name: Run tests
         shell: pwsh
         run: |
-          # Install package
-          7z x .\appmesh_2.2.1_windows_x64.exe -oC:\local\appmesh
+          # Install package (extract the NSIS payload; the service is set up below
+          # exactly like the installer's own section does).
+          $installer = Get-ChildItem -Filter "appmesh_*_windows_x64.exe" | Select-Object -First 1
+          if (-not $installer) { throw "installer exe not found" }
+          7z x $installer.FullName -oC:\local\appmesh | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "7z extraction failed" }
           ls "C:\local\appmesh"
-          Push-Location
+
+          # Windows ships the bundled System App with its native PowerShell
+          # launcher and executable runtime.
+          foreach ($required in @("apps\auth-service.yaml", "config\auth-stack.yaml", "config\dex.yaml", "config\oidc.yaml", "config\authorization.yaml", "script\appmesh-auth.ps1", "script\setup.ps1", "bin\dex.exe", "bin\password-hash.exe", "bin\appmesh.exe", "bin\appm.exe", "bin\agent.exe", "bin\nssm.exe", "bin\wf-engine.exe", "bin\openssl.exe")) {
+            if (-not (Test-Path (Join-Path "C:\local\appmesh" $required))) { throw "missing package file: $required" }
+          }
+          if (-not (Select-String -Path "C:\local\appmesh\apps\pyrun.yaml" -Pattern "python\.exe" -Quiet)) { throw "apps were not patched from python3 to python.exe" }
+          if (-not (Select-String -Path "C:\local\appmesh\apps\auth-service.yaml" -Pattern "appmesh-auth\.ps1" -Quiet)) { throw "authentication service was not patched to the Windows launcher" }
+
+          # Per-node TLS material (normally produced by the NSIS install section).
           & "C:\local\appmesh\ssl\generate_ssl_cert.ps1"
-          Pop-Location
+          if ($LASTEXITCODE -ne 0) { throw "SSL certificate generation failed" }
 
-          # Start service
-          C:\local\appmesh\bin\nssm.exe install AppMeshService "C:\local\appmesh\bin\appmesh.exe"
-          C:\local\appmesh\bin\nssm.exe set AppMeshService Start SERVICE_AUTO_START
-          C:\local\appmesh\bin\nssm.exe start AppMeshService
+          # Register and start the service.
+          & "C:\local\appmesh\bin\nssm.exe" install AppMeshService "C:\local\appmesh\bin\appmesh.exe"
+          if ($LASTEXITCODE -ne 0) { throw "failed to install AppMeshService" }
+          & "C:\local\appmesh\bin\nssm.exe" set AppMeshService AppDirectory "C:\local\appmesh"
+          if ($LASTEXITCODE -ne 0) { throw "failed to configure AppMeshService application directory" }
+          & "C:\local\appmesh\bin\nssm.exe" set AppMeshService Start SERVICE_AUTO_START
+          if ($LASTEXITCODE -ne 0) { throw "failed to configure AppMeshService start mode" }
+          & "C:\local\appmesh\bin\nssm.exe" start AppMeshService
+          if ($LASTEXITCODE -ne 0) { throw "failed to start AppMeshService" }
 
-          Start-Sleep -Seconds 2
-          #Start-Process -FilePath "C:\local\appmesh\bin\appmesh.exe" -WindowStyle Hidden
-          #Start-Sleep -Seconds 2
+          # The unauthenticated RFC 9728 metadata must name the packaged issuer.
+          function Get-EngineJson([string]$Path) {
+            # The engine opens the REST listener only after startup-app readiness
+            # and OIDC/JWKS prewarm; each phase may take up to 120 s.
+            for ($i = 0; $i -lt 60; $i++) {
+              $raw = curl.exe -sk --fail "https://127.0.0.1:6060$Path"
+              if ($LASTEXITCODE -eq 0 -and $raw) { return ($raw | ConvertFrom-Json) }
+              Start-Sleep -Seconds 2
+            }
+            & "C:\local\appmesh\bin\nssm.exe" status AppMeshService
+            if (Test-Path "C:\local\appmesh\work\server.log") {
+              Get-Content "C:\local\appmesh\work\server.log" -Tail 60
+            }
+            throw "Engine did not answer $Path"
+          }
+          $metadata = Get-EngineJson "/.well-known/oauth-protected-resource"
+          $status = (& "C:\local\appmesh\bin\nssm.exe" status AppMeshService) -join ""
+          if ($status -notmatch "SERVICE_RUNNING") { throw "AppMeshService is not running: $status" }
+          if ($metadata.authorization_servers[0] -ne "http://127.0.0.1:6062/auth") {
+            throw "unexpected default issuer: $($metadata.authorization_servers[0])"
+          }
 
-          ls "C:\local\appmesh"
-          cat "C:\local\appmesh\work\server.log"
-
-          C:\local\appmesh\bin\appm -V
+          # The bundled service must issue the maintenance token used by package
+          # lifecycle commands, and the Engine must accept it.
+          $token = ""
+          for ($attempt = 0; $attempt -lt 15; $attempt++) {
+            $token = (& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\local\appmesh\script\appmesh-auth.ps1" automation-token) -join ""
+            if ($LASTEXITCODE -eq 0 -and $token) { break }
+            Start-Sleep -Seconds 2
+          }
+          if (-not $token) { throw "bundled authentication service did not issue an automation token" }
+          $env:APPMESH_BEARER_TOKEN = $token
           & "C:\local\appmesh\bin\appm.exe" ls
-          & "C:\local\appmesh\bin\appm.exe" resource
+          if ($LASTEXITCODE -ne 0) { throw "Engine rejected the bundled authentication token" }
+          Remove-Item Env:APPMESH_BEARER_TOKEN
+          $token = ""
 
-          ls "C:\local\appmesh\work\stdout"
-          cat "C:\local\appmesh\work\stdout\*.out"
+          # Switching intentionally to an external issuer remains supported.
+          & "C:\local\appmesh\script\setup.ps1" -Issuer "https://auth.ci.example.internal/oidc" -AccessUrl "http://10.99.0.1:6062/auth" -TlsVerify false
+          if ($LASTEXITCODE -ne 0) { throw "setup.ps1 failed" }
+          $config = Get-EngineJson "/appmesh/auth/config"
+          if ($config.issuer -ne "https://auth.ci.example.internal/oidc") {
+            throw "setup.ps1 did not change the advertised issuer: $($config.issuer)"
+          }
 
-          # TODO: ping not work on github action windows host, consider to use curl
-          #python src\sdk\python\test\integration\test_client.py
-          python src\sdk\python\sample.py
+          # Fail-closed: after switching to external mode, unauthenticated CLI
+          # calls still fail; there is no anonymous local fallback.
+          & "C:\local\appmesh\bin\appm.exe" -V
+          & "C:\local\appmesh\bin\appm.exe" ls
+          if ($LASTEXITCODE -eq 0) { throw "appm ls must require an authenticated session" }
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
@@ -125,7 +183,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          name: "Security"
+          name: "OpenID Connect (OIDC)"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}

@@ -1,6 +1,7 @@
 // src/daemon/rest/Data.h
 #pragma once
 #include <cstdint>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -30,6 +31,11 @@ struct LwsSessionRef
 	const void *wsi = nullptr;
 	uint64_t reqId = 0;		// ABA protection for HTTP responses
 	uint64_t sessionId = 0; // ABA protection for WS sessions
+	// Server-side transport identity, captured from the accepted socket. Empty
+	// when the transport cannot vouch for it; never client-supplied.
+	std::string peerAddress;
+	std::string principalId;
+	bool managedWorker = false;
 	explicit operator bool() const { return wsi != nullptr; }
 };
 
@@ -41,10 +47,6 @@ public:
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
-	// HTTP protocol headers and cookies
-	bool handleAuthCookies(const HttpHeaderMap *requestHeaders = nullptr);
-	bool setAuthCookie();
-	void clearAuthCookie();
 	void applyCorsHeaders();
 	void applySecurityHeaders();
 
@@ -70,8 +72,6 @@ public:
 	bool deserialize(const ByteBuffer &data);
 
 	bool contain_body() const;
-	bool convertCookieToAuthorization();
-
 public:
 	std::string uuid;
 	std::string request_uri;

@@ -8,11 +8,14 @@ on:
       - ".github/workflows/release-macos.yml"
       - "src/**"
       - "script/**"
+      - "test/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
 
 permissions: read-all
 
 env:
-  APPMESH_VERSION: "2.2.1"
+  APPMESH_VERSION: "3.0.0"
 
 jobs:
   build:
@@ -52,6 +55,7 @@ jobs:
           echo "Building the project..."
           make -j"$(sysctl -n hw.ncpu)"
           make pack
+          make test ARGS='-V --no-tests=error'
 
       - name: Upload packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -105,9 +109,36 @@ jobs:
           sudo cp -a /opt/appmesh/bin/appmesh /cores/appmesh.macos.bin || true
           sudo chmod a+r /cores/appmesh.macos.bin 2>/dev/null || true
 
-          # Start App Mesh
+          # Start App Mesh — Dex-only authentication bootstrap first (same
+          # flow as ci-test):
+          # 1) precompute the machine-client Principal and seed
+          #    authorization.yaml before the first start (Dex derives the
+          #    client_credentials subject deterministically from the client id:
+          #    base64url of protobuf field 1 = the id, so no running Dex is
+          #    needed here);
+          # 2) once the daemon is up, exchange the launcher-generated
+          #    appmesh-automation secret for a client_credentials token.
           appm -V || true
-          sudo bash /opt/appmesh/script/appmesh.initd.sh start || true
+          DEX_ISSUER="http://127.0.0.1:6062/auth"
+          AUTOMATION_SUB=$(python3 -c 'import base64; cid=b"appmesh-automation"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip("="))')
+          PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c 'import hashlib,os; print(hashlib.sha256(os.environ["DEX_ISSUER"].encode()+b"\x00"+os.environ["AUTOMATION_SUB"].encode()).hexdigest())')"
+          sudo install -d -m 700 /opt/appmesh/work/config
+          sudo DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" PRINCIPAL_ID="$PRINCIPAL_ID" bash -c '
+              SEED=/opt/appmesh/work/config/authorization.yaml
+              {
+                  sed -n "1,/^  principals:$/p" /opt/appmesh/config/authorization.yaml
+                  printf "    %s:\n" "$PRINCIPAL_ID"
+                  printf "      kind: service\n      issuer: %s\n      subject: %s\n      status: active\n      execution_user: \"\"\n      roles: [appmesh-ci]\n" "$DEX_ISSUER" "$AUTOMATION_SUB"
+                  sed -n "/^  principals:$/,/^  roles:$/p" /opt/appmesh/config/authorization.yaml | tail -n +2
+                  printf "    appmesh-ci:\n"
+                  sed -n "/^    appmesh-admin:$/,/^    appmesh-viewer:$/p" /opt/appmesh/config/authorization.yaml | sed "1d;\$d"
+                  sed -n "/^  roles:$/,\$p" /opt/appmesh/config/authorization.yaml | tail -n +2
+              } > "$SEED"
+              chmod 600 "$SEED"
+          '
+          echo "seeded authorization principal $PRINCIPAL_ID"
+
+          sudo bash /opt/appmesh/script/appmesh.initd.sh start
 
           # Check
           sudo otool /opt/appmesh/bin/appmesh -L
@@ -119,13 +150,19 @@ jobs:
           tail /opt/appmesh/work/server.log
           tail /opt/appmesh/work/stdout/appmesh.agent.out
           # sudo lldb -p $(cat /opt/appmesh/appmesh.pid) -o "thread backtrace all" -o "quit" || true
-          appm ls
-          appm resource
+
+          TOKEN=""
+          for _ in $(seq 1 15); do
+              TOKEN=$(sudo /opt/appmesh/script/appmesh-auth.sh automation-token) && break
+              sleep 2
+          done
+          [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
+          export APPMESH_BEARER_TOKEN="$TOKEN"
+          export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
+          appm ls && appm resource
 
           # Force daemon LogLevel=DEBUG at runtime via REST API (most reliable).
-          appm logon -U admin -X admin123 || true
           appm log -L DEBUG || true
-          appm loginfo || true
 
           # test appmesh python sdk
           python3 -m pip install --break-system-packages --upgrade appmesh pyotp
@@ -183,7 +220,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          name: "Security"
+          name: "OpenID Connect (OIDC)"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}

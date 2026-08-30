@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,27 +28,69 @@ import (
 
 // Constants for REST paths and headers
 const (
-	COOKIE_TOKEN                = "appmesh_auth_token"
-	REST_PATH_LOGIN             = "/appmesh/login"
-	REST_PATH_AUTH              = "/appmesh/auth"
-	REST_PATH_TOTP_VALIDATE     = "/appmesh/totp/validate"
-	REST_PATH_LOGOFF            = "/appmesh/self/logoff"
-	REST_PATH_TOKEN_RENEW       = "/appmesh/token/renew"
-	REST_PATH_TOTP_SETUP        = "/appmesh/totp/setup"
 	REST_PATH_UPLOAD            = "/appmesh/file/upload"
 	REST_PATH_DOWNLOAD          = "/appmesh/file/download"
 	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
 	USER_AGENT_APPMESH_SDK      = "appmesh/sdk"
 	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
 
-	HTTP_HEADER_KEY_X_SET_COOKIE       = "X-Set-Cookie"
 	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
+	HTTP_HEADER_KEY_AUTHORIZATION      = "Authorization"
+	HTTP_HEADER_KEY_APPMESH_FORWARDED  = "X-AppMesh-Forwarded"
+	HTTP_HEADER_KEY_APPMESH_ROUTE      = "X-AppMesh-Forward-Route"
+	HTTP_HEADER_KEY_APPMESH_PROCESS    = "X-AppMesh-Process-Key"
 	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
 	HTTP_HEADER_KEY_File_Path          = "X-File-Path"
 
 	TCP_CHUNK_BLOCK_SIZE = appmesh.TCPChunkBlockSize
 )
+
+func isPublicForwardRequest(r *http.Request) bool {
+	return r.Method == http.MethodGet &&
+		(r.URL.Path == "/appmesh/auth/config" || r.URL.Path == "/.well-known/oauth-protected-resource")
+}
+
+func isSubscriptionRequest(r *http.Request) bool {
+	return r.URL.Path == "/appmesh/subscribe" || strings.HasSuffix(r.URL.Path, "/subscribe") ||
+		r.URL.Query().Get("subscribe_events") != ""
+}
+
+func stripInternalClientProof(r *http.Request) {
+	r.Header.Del(HTTP_HEADER_KEY_APPMESH_PROCESS)
+	r.Header.Del(HTTP_HEADER_KEY_APPMESH_FORWARDED)
+	r.Header.Del(HTTP_HEADER_KEY_APPMESH_ROUTE)
+	query := r.URL.Query()
+	if _, supplied := query["process_key"]; supplied {
+		query.Del("process_key")
+		r.URL.RawQuery = query.Encode()
+	}
+}
+
+func validateForwardBearer(ctx context.Context, localConn *Connection, authorization string) (*Response, error) {
+	request := &Request{appmesh.NewRequest()}
+	request.HttpMethod = http.MethodGet
+	request.RequestUri = "/appmesh/principal/self"
+	request.ClientAddress = "agent-forward-check"
+	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
+	request.Headers[HTTP_HEADER_KEY_AUTHORIZATION] = authorization
+	return localConn.sendRequestDataWithContext(ctx, request)
+}
+
+func writeForwardValidationResponse(w http.ResponseWriter, response *Response) {
+	for key, value := range response.Headers {
+		w.Header().Set(key, value)
+	}
+	if response.BodyMsgType != "" {
+		w.Header().Set("Content-Type", response.BodyMsgType)
+	}
+	w.WriteHeader(response.HttpStatus)
+	if len(response.Body) > 0 {
+		if _, err := w.Write(response.Body); err != nil {
+			logger.Warnf("Failed to write forwarding authentication response: %v", err)
+		}
+	}
+}
 
 var (
 	logger         = utils.GetLogger()
@@ -150,10 +193,82 @@ func ListenAndServeREST(ctx context.Context) error {
 	// docker.sock proxy
 	RegisterDockerRoutes(router)
 
+	// Static relay page for the browser OAuth callback on this entry origin.
+	// Must stay ahead of the catch-all forward to the daemon.
+	RegisterAuthRelayRoutes(router)
+
+	// Route only the configured authentication surface. Upstream identity providers
+	// stay behind that service and are never routed by the agent.
+	authProxy, authPath, err := newAuthReverseProxy()
+	if err != nil {
+		return err
+	}
+	if authPath != "" {
+		RegisterAuthLogoRoutes(router, authPath)
+		router.Path(authPath).Handler(authProxy)
+		router.PathPrefix(authPath + "/").Handler(authProxy)
+	} else {
+		logger.Infof("The OIDC issuer has no path. The authentication service is reached directly at <%s>.", config.OIDCData.Issuer)
+	}
+
 	// Forward all remaining requests, including static content, to the daemon.
 	router.PathPrefix("/").HandlerFunc(HandleAppMeshRequest)
 
 	return StartHTTPSServer(ctx, listenAddr, router)
+}
+
+func newAuthReverseProxy() (http.Handler, string, error) {
+	issuer, err := url.Parse(config.OIDCData.Issuer)
+	if err != nil || (issuer.Scheme != "http" && issuer.Scheme != "https") || issuer.Host == "" || issuer.Hostname() == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" {
+		return nil, "", fmt.Errorf("invalid OIDC issuer")
+	}
+	target, err := url.Parse(config.OIDCData.AccessURL)
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.Hostname() == "" || target.User != nil || target.RawQuery != "" || target.ForceQuery || target.Fragment != "" {
+		return nil, "", fmt.Errorf("invalid OIDC access URL")
+	}
+	issuerPath := strings.TrimSuffix(issuer.Path, "/")
+	// An issuer without a path uses the target's
+	// root: the director below forwards request paths unchanged. Such an issuer
+	// cannot be mounted under the agent's "/" catch-all (which serves the local
+	// daemon), so callers reach it directly and no sub-path is registered.
+	targetPath := strings.TrimSuffix(target.Path, "/")
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	var authRoots *x509.CertPool
+	if config.OIDCData.CAPath != "" {
+		authRoots, err = appmesh.LoadCA(config.OIDCData.CAPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to load the authentication-service CA: %w", err)
+		}
+	}
+	proxy.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: !config.OIDCData.TLSVerify,
+			RootCAs:            authRoots,
+		},
+		DialContext:     (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		IdleConnTimeout: 90 * time.Second,
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, proxyErr error) {
+		logger.Warnf("Authentication-service reverse proxy failed: %v", proxyErr)
+		utils.HttpError(w, "Authentication service is unavailable", http.StatusBadGateway)
+	}
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		incomingPath := req.URL.Path
+		originalDirector(req)
+		suffix := strings.TrimPrefix(incomingPath, issuerPath)
+		if suffix != "" && !strings.HasPrefix(suffix, "/") {
+			suffix = "/" + suffix
+		}
+		req.URL.Path = targetPath + suffix
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
+		req.URL.RawPath = ""
+		req.Host = target.Host
+	}
+	return proxy, issuerPath, nil
 }
 
 // StartHTTPSServer starts the HTTPS server with the provided router
@@ -246,6 +361,8 @@ func serveTLS(ctx context.Context, address string, server *http.Server) error {
 
 // HandleAppMeshRequest processes AppMesh requests
 func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
+	stripInternalClientProof(r)
+
 	localConn, err := getLocalConnection()
 	if err != nil {
 		logger.Errorf("Failed to connect to local daemon: %v", err)
@@ -258,20 +375,41 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	forwardingHost := string(r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST))
 	if forwardingHost != "" {
 		r.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
+		if !isPublicForwardRequest(r) {
+			authorization := strings.TrimSpace(r.Header.Get(HTTP_HEADER_KEY_AUTHORIZATION))
+			if authorization == "" {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="appmesh"`)
+				utils.HttpError(w, "Forwarded requests require bearer authentication", http.StatusUnauthorized)
+				return
+			}
+			validation, validationErr := validateForwardBearer(r.Context(), localConn, authorization)
+			if validationErr != nil {
+				logger.Errorf("Failed to validate forwarding authentication: %v", validationErr)
+				utils.HttpError(w, "authentication service is unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if validation.HttpStatus < http.StatusOK || validation.HttpStatus >= http.StatusMultipleChoices {
+				writeForwardValidationResponse(w, validation)
+				return
+			}
+		}
+		if isSubscriptionRequest(r) {
+			utils.HttpError(w, "Forwarded subscriptions require TCP or WebSocket", http.StatusMethodNotAllowed)
+			return
+		}
+
 		logger.Debugf("Forward request to %s", forwardingHost)
 
 		forwardingURL, err := appmesh.ParseURL(forwardingHost)
-		if err != nil {
+		if err != nil || (forwardingURL.Scheme != "http" && forwardingURL.Scheme != "https") ||
+			forwardingURL.Hostname() == "" || forwardingURL.User != nil ||
+			(forwardingURL.Path != "" && forwardingURL.Path != "/") || forwardingURL.RawQuery != "" ||
+			forwardingURL.Fragment != "" {
 			logger.Errorf("Failed to parse target host %q: %v", forwardingHost, err)
 			utils.HttpError(w, "invalid target host", http.StatusBadRequest)
 			return
 		}
-		forwardingAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(forwardingURL.Hostname(), forwardingURL.Port()))
-		if err != nil {
-			logger.Errorf("Failed to resolve target host %q: %v", forwardingHost, err)
-			utils.HttpError(w, "invalid target host", http.StatusBadRequest)
-			return
-		}
+		r.Header.Set(HTTP_HEADER_KEY_APPMESH_FORWARDED, "1")
 
 		// If no port is provided, use HTTP forwarding
 		if forwardingURL.Port() == "" || forwardingURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
@@ -280,6 +418,12 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		} else {
 			// Forward with TCP protocol over a pooled connection
+			forwardingAddr, resolveErr := net.ResolveTCPAddr("tcp", net.JoinHostPort(forwardingURL.Hostname(), forwardingURL.Port()))
+			if resolveErr != nil {
+				logger.Errorf("Failed to resolve target host %q: %v", forwardingHost, resolveErr)
+				utils.HttpError(w, "invalid target host", http.StatusBadRequest)
+				return
+			}
 			targetConnection, err = getOrCreateConnection(forwardingAddr, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
@@ -325,7 +469,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reply to client
-	resp.writeToHTTPResponse(w, r, request)
+	resp.writeToHTTPResponse(w, r)
 
 	// Handle file upload after response to client
 	if resp.TempUploadFilePath != "" {

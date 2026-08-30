@@ -23,6 +23,7 @@ endif()
 target_link_libraries(common
   PRIVATE
     ${CURL_LIB}
+    ${ZLIB_LIBRARIES} # static libcurl content_encoding needs zlib
     ZLIB::ZLIB # nghttp2
     ${ACE_LIBRARY}
     ${ACE_SSL_LIBRARY}

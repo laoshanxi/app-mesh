@@ -9,11 +9,7 @@ require (
 )
 
 require (
-	github.com/boombuler/barcode v1.1.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/juju/go4 v0.0.0-20160222163258-40d72ab9641a // indirect
-	github.com/juju/persistent-cookiejar v1.0.0 // indirect
-	github.com/pquerna/otp v1.5.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect

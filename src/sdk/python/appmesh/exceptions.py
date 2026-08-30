@@ -37,3 +37,11 @@ class AppMeshAppRemovedError(AppMeshError):
 
 class AppMeshProcessSupersededError(AppMeshError):
     """The current process key was superseded by a newer process instance (HTTP 412)."""
+
+
+class AppMeshWorkerRejectedError(AppMeshError):
+    """The daemon permanently rejected a worker task request (HTTP 400)."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code

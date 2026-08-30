@@ -25,8 +25,8 @@ public class AppMeshWorker {
 
     /** Create a worker-side helper with the default HTTP client. */
     public AppMeshWorker() {
-        // Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
-        this(new AppMeshClient.Builder().autoRefreshToken(false).build());
+        // The worker uses its Engine-injected process capability and is not an OAuth client.
+        this(new AppMeshClient.Builder().build());
     }
 
     /** Create a worker-side helper around an existing client. */
@@ -62,14 +62,17 @@ public class AppMeshWorker {
     /**
      * Fetch a task payload from the App Mesh service.
      *
-     * <p>Retries until successful or cancelled via {@link #stop()} (or thread
-     * interruption), in which case {@code null} is returned. If a request fails
-     * within 100ms, sleeps briefly before retrying; otherwise retries immediately.
+     * <p>Retries transient failures until successful or cancelled via {@link #stop()}
+     * (or thread interruption), in which case {@code null} is returned. HTTP 400/412
+     * stop the loop. If a request fails within 100ms, sleeps briefly before retrying;
+     * otherwise retries immediately.
      *
      * @return the raw task payload bytes provided by the invoking client, or
      *         {@code null} when the fetch loop was cancelled
      * @throws ProcessSupersededException when the service reports (HTTP 412) that
      *         this process key is no longer valid and the task loop must stop
+     * @throws IllegalStateException when the service permanently rejects the worker
+     *         request with HTTP 400
      */
     public byte[] fetchTask() {
         String[] env = getRuntimeEnv();
@@ -82,13 +85,13 @@ public class AppMeshWorker {
             throw new RuntimeException("UTF-8 encoding not supported", e);
         }
 
-        Map<String, String> query = new HashMap<>();
-        query.put("process_key", pkey);
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-AppMesh-Process-Key", pkey);
 
         while (!stopped) {
             long attemptStart = System.nanoTime();
             try {
-                HttpURLConnection conn = client.request("GET", path, null, null, query);
+                HttpURLConnection conn = client.request("GET", path, null, headers, null);
                 int status = conn.getResponseCode();
                 if (status == HttpURLConnection.HTTP_OK) {
                     return Utils.readResponseBytes(conn);
@@ -97,6 +100,12 @@ public class AppMeshWorker {
                     LOGGER.log(Level.SEVERE, "Process key mismatch (412): this process has been superseded");
                     throw new ProcessSupersededException(
                             "Process key mismatch (412): this process has been superseded by a newer instance");
+                }
+                if (status == HttpURLConnection.HTTP_BAD_REQUEST) {
+                    String error = Utils.readErrorResponse(conn);
+                    String message = "fetchTask permanently rejected with status 400: " + error;
+                    LOGGER.log(Level.SEVERE, message);
+                    throw new IllegalStateException(message);
                 }
                 LOGGER.log(Level.WARNING, "fetchTask failed with status {0}: retrying...", status);
             } catch (IOException e) {
@@ -127,11 +136,11 @@ public class AppMeshWorker {
         String appName = env[1];
         String path = "/appmesh/app/" + URLEncoder.encode(appName, StandardCharsets.UTF_8.name()).replace("+", "%20") + "/task";
 
-        Map<String, String> query = new HashMap<>();
-        query.put("process_key", pkey);
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-AppMesh-Process-Key", pkey);
 
         String body = result == null ? "" : new String(result, StandardCharsets.UTF_8);
-        HttpURLConnection conn = client.request("PUT", path, body, null, query);
+        HttpURLConnection conn = client.request("PUT", path, body, headers, null);
         int status = conn.getResponseCode();
         if (status != HttpURLConnection.HTTP_OK) {
             String err = Utils.readErrorResponse(conn);

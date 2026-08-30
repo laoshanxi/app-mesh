@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,7 +24,15 @@ type (
 		CorsDisabled                 bool   `yaml:"CorsDisabled"`
 
 		SSL appmesh.SSLConfig `yaml:"SSL"`
-		JWT appmesh.JWTConfig `yaml:"JWT"`
+	}
+	OIDCConfig struct {
+		Issuer          string `yaml:"issuer" mapstructure:"issuer"`
+		AccessURL       string `yaml:"access_url" mapstructure:"access_url"`
+		TLSVerify       bool   `yaml:"tls_verify" mapstructure:"tls_verify"`
+		CAPath          string `yaml:"ca_path" mapstructure:"ca_path"`
+		LegacyAccessURL string `yaml:"-" mapstructure:"dex_access_url"`
+		LegacyTLSVerify *bool  `yaml:"-" mapstructure:"dex_tls_verify"`
+		LegacyCAPath    string `yaml:"-" mapstructure:"dex_ca_path"`
 	}
 
 	Configuration struct {
@@ -53,15 +62,21 @@ var ConfigData = Configuration{
 			VerifyServer:                true,
 			VerifyServerDelegate:        true,
 		},
-		JWT: appmesh.JWTConfig{
-			JWTSalt: "",
-		},
 	},
+}
+
+var OIDCData = OIDCConfig{
+	Issuer:    "http://127.0.0.1:6062/auth",
+	AccessURL: "http://127.0.0.1:6062/auth",
+	TLSVerify: true,
 }
 
 func init() {
 	if err := readConfig(); err != nil {
 		logger.Errorf("Failed to initialize config: %v", err)
+	}
+	if err := readOIDCConfig(); err != nil {
+		logger.Errorf("Failed to initialize OIDC config: %v", err)
 	}
 }
 
@@ -101,6 +116,86 @@ func readConfig() error {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	return nil
+}
+
+func readOIDCConfig() error {
+	config := viper.New()
+	config.SetConfigName("oidc")
+	config.SetConfigType("yaml")
+	if !IsAgentProdEnv() {
+		config.AddConfigPath("../../../../daemon/security")
+	}
+	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "work/config/"))
+	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "config"))
+	if err := config.ReadInConfig(); err != nil {
+		return fmt.Errorf("failed to read oidc config file: %w", err)
+	}
+	root := struct {
+		OIDC OIDCConfig `mapstructure:"OIDC"`
+	}{OIDC: OIDCConfig{TLSVerify: true}}
+	if err := config.Unmarshal(&root); err != nil {
+		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
+	}
+	if root.OIDC.AccessURL == "" {
+		root.OIDC.AccessURL = root.OIDC.LegacyAccessURL
+	}
+	if root.OIDC.CAPath == "" {
+		root.OIDC.CAPath = root.OIDC.LegacyCAPath
+	}
+	if !config.IsSet("OIDC.tls_verify") && root.OIDC.LegacyTLSVerify != nil {
+		root.OIDC.TLSVerify = *root.OIDC.LegacyTLSVerify
+	}
+	if root.OIDC.Issuer == "" {
+		return fmt.Errorf("OIDC issuer is required")
+	}
+	if value := firstNonEmptyEnv("APPMESH_AUTH_ISSUER", "APPMESH_DEX_ISSUER"); value != "" {
+		root.OIDC.Issuer = value
+	}
+	if value := firstNonEmptyEnv("APPMESH_AUTH_ACCESS_URL", "APPMESH_DEX_ACCESS_URL"); value != "" {
+		root.OIDC.AccessURL = value
+	}
+	if value := firstNonEmptyEnv("APPMESH_AUTH_CA_PATH", "APPMESH_DEX_CA_PATH"); value != "" {
+		root.OIDC.CAPath = value
+	}
+	if value := firstNonEmptyEnv("APPMESH_AUTH_TLS_VERIFY", "APPMESH_DEX_TLS_VERIFY"); value != "" {
+		root.OIDC.TLSVerify = value != "0" && !strings.EqualFold(value, "false")
+	}
+	root.OIDC.Issuer = strings.TrimRight(root.OIDC.Issuer, "/")
+	root.OIDC.AccessURL = strings.TrimRight(root.OIDC.AccessURL, "/")
+	if root.OIDC.Issuer == "" || root.OIDC.AccessURL == "" {
+		return fmt.Errorf("OIDC issuer and access URL must be non-empty absolute URLs")
+	}
+	if err := validateAbsoluteHTTPURL(root.OIDC.Issuer); err != nil {
+		return fmt.Errorf("invalid OIDC issuer: %w", err)
+	}
+	if err := validateAbsoluteHTTPURL(root.OIDC.AccessURL); err != nil {
+		return fmt.Errorf("invalid OIDC access URL: %w", err)
+	}
+	OIDCData = root.OIDC
+	return nil
+}
+
+func firstNonEmptyEnv(names ...string) string {
+	for _, name := range names {
+		if value := os.Getenv(name); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func validateAbsoluteHTTPURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return err
+	}
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.Hostname() == "" {
+		return fmt.Errorf("must be an absolute HTTP(S) URL")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return fmt.Errorf("credentials, query, and fragment are not allowed")
+	}
 	return nil
 }
 

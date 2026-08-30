@@ -1,61 +1,74 @@
-// src/daemon/security/Security.h
 #pragma once
 
-#include <map>
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <set>
+#include <stdexcept>
 #include <string>
 
-#include "User.h"
+#include "AuthorizationStore.h"
+#include "Principal.h"
 
+class AuthenticationUnavailableException : public std::runtime_error
+{
+public:
+	explicit AuthenticationUnavailableException(const std::string &message) : std::runtime_error(message) {}
+};
+
+class AuthorizationException : public std::runtime_error
+{
+public:
+	explicit AuthorizationException(const std::string &message) : std::runtime_error(message) {}
+};
+
+/// Runtime authentication facade. Dex establishes identity; AuthorizationStore establishes
+/// local permissions. Passwords, MFA, token issuance, and upstream IdP APIs are intentionally
+/// absent from this contract.
 class Security
 {
 public:
-    // Virtual destructor to ensure proper destruction of derived class objects
-    virtual ~Security() = default;
-    virtual void init() = 0;
-    virtual void save() = 0;
-    virtual bool encryptKey() { return false; };
+	virtual ~Security() = default;
+	virtual void initialize() = 0;
+	virtual void prewarmAuthentication() = 0;
+	virtual Principal authenticate(const std::string &token) = 0;
+	virtual std::shared_ptr<AuthorizationPrincipal> enrollFirstAdmin(
+		const std::string &bearerToken) = 0;
+	/// Enroll the principal pinned by the transport (verified at the WebSocket
+	/// upgrade, when the bearer was presented and the store record resolved).
+	/// Frames on that transport never re-present the Authorization header.
+	virtual std::shared_ptr<AuthorizationPrincipal> enrollFirstAdminPinned(
+		const std::string &principalId) = 0;
+	virtual std::shared_ptr<AuthorizationPrincipal> principal(const std::string &principalId) const = 0;
+	virtual std::set<std::string> permissions(const std::string &principalId) const = 0;
+	virtual std::set<std::string> allPermissions() const = 0;
 
-    // Global singleton instance management
-    static void init(const std::string &plugin);
-    static std::shared_ptr<Security> instance();
-    static void instance(std::shared_ptr<Security> instance);
+	virtual nlohmann::json authConfig() const = 0;
+	virtual nlohmann::json protectedResourceMetadata() const = 0;
+	virtual nlohmann::json principalsJson() const = 0;
+	virtual nlohmann::json rolesJson() const = 0;
+	virtual void updatePrincipal(const std::string &principalId, const nlohmann::json &definition) = 0;
+	virtual void deletePrincipal(const std::string &principalId) = 0;
+	virtual void updateRole(const std::string &role, const nlohmann::json &permissions) = 0;
+	virtual void deleteRole(const std::string &role) = 0;
 
-    // Authentication
-    virtual bool verifyUserKey(const std::string &userName, const std::string &userKey) = 0;
-    virtual void changeUserPasswd(const std::string &userName, const std::string &newPwd) = 0;
+	static void init();
+	static std::shared_ptr<Security> instance();
+	/// Parse an HTTP Authorization value, authenticate its Bearer token, and
+	/// return the verified OIDC principal. This is the shared boundary used by
+	/// REST and WebSocket transports.
+	static Principal authenticateBearerAuthorization(const std::string &authorization);
+	/// Re-check the current local policy for an already authenticated principal.
+	static void requirePermission(const std::string &principalId, const std::string &permission);
 
-    // User management
-    virtual std::shared_ptr<User> getUserInfo(const std::string &userName) = 0;
-    virtual std::map<std::string, std::shared_ptr<User>> getUsers() const = 0;
-    virtual nlohmann::json getUsersJson() const = 0;
-    virtual std::shared_ptr<User> addUser(const std::string &userName, const nlohmann::json &userJson) = 0;
-    virtual void delUser(const std::string &name) = 0;
-
-    // Role management
-    virtual nlohmann::json getRolesJson() const = 0;
-    virtual void addRole(const nlohmann::json &obj, std::string name) = 0;
-    virtual void delRole(const std::string &name) = 0;
-    virtual std::shared_ptr<Role> getRole(const std::string &roleName) = 0;
-
-    // Permission management
-    virtual std::set<std::string> getAllUserGroups() const = 0;
-    virtual std::set<std::string> getUserPermissions(const std::string &userName, const std::string &userGroup) = 0;
-    virtual std::set<std::string> getAllPermissions() = 0;
-
-    // Prevent direct instantiation of this class
-    Security() = default;
+	Security() = default;
 
 private:
-    // Disable copy and assignment
-    Security(const Security &) = delete;
-    Security &operator=(const Security &) = delete;
-    Security(Security &&) = delete;
-    Security &operator=(Security &&) = delete;
+	Security(const Security &) = delete;
+	Security &operator=(const Security &) = delete;
+	Security(Security &&) = delete;
+	Security &operator=(Security &&) = delete;
 
-    static std::shared_ptr<Security> m_instance;
-    static std::recursive_mutex m_mutex;
+	static std::shared_ptr<Security> m_instance;
+	static std::recursive_mutex m_mutex;
 };

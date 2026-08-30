@@ -146,7 +146,14 @@ get_process_metrics() {
     if [ -d "/proc/${pid}/fd" ]; then
         _fds=$(ls "/proc/${pid}/fd" 2>/dev/null | wc -l | tr -d ' ')
     elif command -v lsof >/dev/null 2>&1; then
-        _fds=$(lsof -p "${pid}" 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
+        # lsof prints nothing when it lacks permission (non-root vs a root
+        # daemon). A live process always has fds, so empty output means
+        # unknown, not zero.
+        local lsof_out
+        lsof_out=$(lsof -p "${pid}" 2>/dev/null)
+        if [ -n "${lsof_out}" ]; then
+            _fds=$(printf '%s\n' "${lsof_out}" | tail -n +2 | wc -l | tr -d ' ')
+        fi
     fi
     if [ -d "/proc/${pid}/task" ]; then
         _threads=$(ls "/proc/${pid}/task" 2>/dev/null | wc -l | tr -d ' ')
@@ -358,10 +365,12 @@ start_watchdog() {
             local probe_url="https://127.0.0.1:${daemon_port}/appmesh/resources"
             local probe_ok=1
             if command -v curl >/dev/null 2>&1; then
-                timeout 5 curl -sk -o /dev/null "${probe_url}" >/dev/null 2>&1 && probe_ok=0
+                # --max-time, not GNU timeout: macOS has no `timeout` command,
+                # and a missing binary fails the probe on every tick (rc=127).
+                curl -sk --max-time 5 -o /dev/null "${probe_url}" >/dev/null 2>&1 && probe_ok=0
             else
                 # wget returns non-zero for HTTP 401; check for any HTTP response instead
-                timeout 5 wget --no-check-certificate --server-response -O /dev/null "${probe_url}" 2>&1 | grep -q "HTTP/" && probe_ok=0
+                wget --no-check-certificate --timeout=5 --server-response -O /dev/null "${probe_url}" 2>&1 | grep -q "HTTP/" && probe_ok=0
             fi
             if [ "${probe_ok}" -eq 0 ]; then
                 healthy="OK"

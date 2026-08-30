@@ -15,12 +15,12 @@ Use SDK AppMeshClient.run_app_async() to run process or Python code segment by A
 ```python
 #!/usr/bin/python3
 from datetime import datetime
+import os
 # python3 -m pip install --upgrade appmesh
 import appmesh
 
-# login
-client = appmesh.AppMeshClient()
-client.login("admin", "admin123")
+# Acquire the OAuth token outside the Engine client, for example with the CLI.
+client = appmesh.AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
 
 start_time = datetime.now()
 # create async run

@@ -102,8 +102,12 @@ impl Requester for WSSRequester {
         };
 
         // Build and send the request message.
-        let send_result: Result<Option<HashMap<String, String>>, AppMeshError> = async {
+        let send_result: Result<(), AppMeshError> = async {
             let mut transport = self.transport.lock().await;
+
+            transport.set_bearer_token(
+                self.token.read().unwrap_or_else(|e| e.into_inner()).clone(),
+            );
 
             if !transport.connected() {
                 transport.connect().await?;
@@ -117,16 +121,20 @@ impl Requester for WSSRequester {
             req.client_addr = "wss-client".to_string();
             req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_WSS.into());
 
-            // Poisoning is benign here (guarded state stays valid), so recover the guard.
-            if let Some(token) = self.token.read().unwrap_or_else(|e| e.into_inner()).clone() {
-                req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), token);
-            }
-            if let Some(ref fwd) = *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) {
-                req.headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.into(), fwd.clone());
+            if let Some(fwd) = self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                req.headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.into(), fwd);
+                // The gateway authenticates the WSS upgrade, but the forwarded
+                // target receives a new TCP request and must validate the bearer
+                // independently. The gateway also checks that this bearer resolves
+                // to the principal pinned on the WebSocket session.
+                if let Some(token) = self.token.read().unwrap_or_else(|e| e.into_inner()).clone() {
+                    req.headers.insert(
+                        HTTP_HEADER_JWT_AUTHORIZATION.into(),
+                        format!("{}{}", HTTP_HEADER_AUTH_BEARER, token),
+                    );
+                }
             }
 
-            // Save headers ref before consuming for token sync
-            let req_headers = headers.clone();
             if let Some(h) = headers {
                 req.headers.extend(h);
             }
@@ -140,13 +148,13 @@ impl Requester for WSSRequester {
             let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
             transport.send_message(&data).await?;
 
-            Ok(req_headers)
+            Ok(())
         }
         .await;
         // Transport lock released here.
 
-        let req_headers = match send_result {
-            Ok(h) => h,
+        match send_result {
+            Ok(()) => {}
             Err(e) => {
                 // Nothing was sent; remove the pending entry so it cannot leak.
                 if let Some(ref demuxer) = active_demuxer {
@@ -154,7 +162,7 @@ impl Requester for WSSRequester {
                 }
                 return Err(e);
             }
-        };
+        }
 
         let resp = if let Some(rx) = rx {
             match rx.await {
@@ -178,12 +186,7 @@ impl Requester for WSSRequester {
             });
         }
 
-        let http_resp = resp.into_http_response()?;
-
-        // Auto-sync token from auth endpoint responses
-        crate::requester::sync_transport_token(&http_resp, path, &req_headers, self);
-
-        Ok(http_resp)
+        resp.into_http_response()
     }
 
     fn set_forward_to(&self, url: Option<String>) {
@@ -217,6 +220,9 @@ impl Requester for WSSRequester {
     async fn enable_demuxer(&self) -> Result<(), AppMeshError> {
         {
             let mut transport = self.transport.lock().await;
+            transport.set_bearer_token(
+                self.token.read().unwrap_or_else(|e| e.into_inner()).clone(),
+            );
             if !transport.connected() {
                 transport.connect().await?;
             }
@@ -356,6 +362,43 @@ impl AppMeshClientWSS {
         &self.client
     }
 
+    /// Fetch the public `/appmesh/auth/config` over the HTTPS side channel.
+    ///
+    /// The WSS transport presents its bearer only during the WebSocket upgrade and
+    /// a transport connected without a token stays anonymous for its whole
+    /// lifetime, so pre-login discovery must never open the WebSocket. This GET
+    /// reuses the file-transfer HTTPS client (same TLS settings) and is answered
+    /// anonymously by the daemon. `forward_to` mirrors the WSS `X-Target-Host`
+    /// forwarding so discovery targets the same Engine as later calls.
+    pub async fn get_auth_config_https(
+        &self,
+        forward_to: Option<&str>,
+    ) -> std::result::Result<serde_json::Value, AppMeshError> {
+        let url = format!("{}/appmesh/auth/config", self.base_url);
+        let mut request = self.http_client.get(&url);
+        if let Some(target) = forward_to {
+            request = request.header(HTTP_HEADER_KEY_FORWARDING_HOST, target);
+        }
+        let response = request.send().await.map_err(|e| {
+            AppMeshError::ConnectionError(format!("Auth config discovery failed: {}", e))
+        })?;
+        let status = response.status();
+        if !status.is_success() {
+            let message = response.text().await.unwrap_or_default();
+            return Err(AppMeshError::RequestFailed {
+                status,
+                message: if message.is_empty() {
+                    "Auth config discovery failed".into()
+                } else {
+                    message
+                },
+            });
+        }
+        response.json().await.map_err(|e| {
+            AppMeshError::SerializationError(format!("Invalid auth config response: {}", e))
+        })
+    }
+
     /// Gracefully close the client, awaiting the WebSocket close handshake.
     /// The synchronous `close()` (also invoked by `Drop`) can only fire-and-forget the
     /// transport close; use this to be sure the close frame is sent. Safe to call repeatedly.
@@ -390,16 +433,11 @@ impl AppMeshClientWSS {
             .raw_request(Method::GET, "/appmesh/file/download", None, Some(headers), None, true)
             .await?;
 
-        let auth_token = resp
-            .headers()
-            .get(HTTP_HEADER_JWT_AUTHORIZATION)
-            .ok_or_else(|| AppMeshError::RequestFailed {
+        let auth_token = self.client.get_access_token().ok_or_else(|| AppMeshError::RequestFailed {
                 status: StatusCode::UNAUTHORIZED,
-                message: "Server did not respond with file transfer authentication".into(),
-            })?
-            .to_str()
-            .unwrap_or_default()
-            .to_string();
+                message: "File transfer requires a bearer token".into(),
+            })?;
+        let auth_token = format!("Bearer {}", auth_token);
 
         let url = format!("{}/appmesh/file/download/ws", self.base_url);
         let mut response = self
@@ -492,21 +530,16 @@ impl AppMeshClientWSS {
         let mut headers = HashMap::new();
         headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
 
-        let resp = self
+        self
             .client
             .raw_request(Method::POST, "/appmesh/file/upload", None, Some(headers), None, true)
             .await?;
 
-        let auth_token = resp
-            .headers()
-            .get(HTTP_HEADER_JWT_AUTHORIZATION)
-            .ok_or_else(|| AppMeshError::RequestFailed {
+        let auth_token = self.client.get_access_token().ok_or_else(|| AppMeshError::RequestFailed {
                 status: StatusCode::UNAUTHORIZED,
-                message: "Server did not respond with file transfer authentication".into(),
-            })?
-            .to_str()
-            .unwrap_or_default()
-            .to_string();
+                message: "File transfer requires a bearer token".into(),
+            })?;
+        let auth_token = format!("Bearer {}", auth_token);
 
         let mut upload_headers = reqwest::header::HeaderMap::new();
         upload_headers.insert(

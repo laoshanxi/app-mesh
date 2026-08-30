@@ -9,6 +9,7 @@ use crate::app::{
     WorkflowRmArgs, WorkflowRunArgs, WorkflowRunsArgs,
 };
 use crate::client::build_client_with_auth;
+use crate::output::format::{principal_display, truncate_with_marker};
 
 const WORKFLOW_TRIGGER_APP: &str = "workflow";
 
@@ -41,9 +42,10 @@ fn parse_resp(resp: &str) -> Result<serde_json::Value> {
     Ok(v)
 }
 
-/// Attach the caller's session JWT to a workflow action payload. The engine
-/// authenticates the caller from this token and runs the workflow's steps under that
-/// identity; the engine is fail-closed, so a payload without a token is rejected.
+/// Attach the caller's access token to a workflow action payload. The engine
+/// authenticates the action from this token, keeps it in memory for optional
+/// shared-issuer forwarding, and uses an Engine-issued capability for local steps.
+/// The engine is fail-closed, so a payload without a token is rejected.
 fn with_token(client: &appmesh::AppMeshClientWSS, mut payload: serde_json::Value) -> serde_json::Value {
     if let Some(obj) = payload.as_object_mut() {
         obj.insert("token".to_string(), json!(client.get_access_token()));
@@ -82,12 +84,18 @@ async fn list(cli: &Cli) -> Result<i32> {
     let v = parse_resp(&resp)?;
     let wfs = v["data"].as_array().cloned().unwrap_or_default();
     if wfs.is_empty() { eprintln!("No workflows registered."); return Ok(0); }
-    println!("{:<25} {:<12} {:<12} {:<25}", "WORKFLOW", "OWNER", "LAST STATUS", "LAST RUN");
-    println!("{}", "-".repeat(75));
+    // OWNER prefers a response-only display label and falls back to the stable
+    // Principal ID when the issuer supplied no human-readable name.
+    println!("{:<25} {:<18} {:<12} {:<25}", "WORKFLOW", "OWNER", "LAST STATUS", "LAST RUN");
+    println!("{}", "-".repeat(83));
     for w in &wfs {
-        println!("{:<25} {:<12} {:<12} {:<25}",
-            w["name"].as_str().unwrap_or("-"),
+        let owner = principal_display(
             w["owner"].as_str().unwrap_or("-"),
+            w["owner_display_name"].as_str(),
+        );
+        println!("{:<25} {:<18} {:<12} {:<25}",
+            w["name"].as_str().unwrap_or("-"),
+            truncate_with_marker(&owner, 18),
             w["last_run_status"].as_str().unwrap_or("-"),
             w["last_run_at"].as_str().unwrap_or("-"));
     }
