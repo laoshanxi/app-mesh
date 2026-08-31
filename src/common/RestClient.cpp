@@ -295,6 +295,18 @@ static void saveCookiesAfterRequest(CURL *curl, const SessionConfig &config, std
 	}
 }
 
+// A URL path joins with '/', never the native separator: fs::path would
+// render http://host:port\path on Windows and libcurl rejects the URL.
+static std::string joinUrl(const std::string &host, const std::string &path)
+{
+	if (path.empty())
+		return host;
+	std::string url = host;
+	if (!url.empty() && url.back() != '/' && path.front() != '/')
+		url += '/';
+	return url + path;
+}
+
 std::shared_ptr<CurlResponse> RestClient::request(
 	const std::string &host,
 	const web::http::method &mtd,
@@ -317,7 +329,7 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	}
 
 	// Build URL with query parameters
-	auto url = (fs::path(host) / path).string();
+	auto url = joinUrl(host, path);
 	if (!query.empty())
 	{
 		url += "?";
@@ -442,7 +454,7 @@ std::shared_ptr<CurlResponse> RestClient::upload(
 	form.addFile(fieldName, file);
 
 	// Configure CURL options
-	const std::string url = (fs::path(host) / path).string();
+	const std::string url = joinUrl(host, path);
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
 	curl_easy_setopt(curl, CURLOPT_MIMEPOST, form.getMime()); // Use the MIME API
@@ -512,7 +524,7 @@ std::shared_ptr<CurlResponse> RestClient::download(
 	}
 
 	// Configure CURL options
-	const std::string url = (fs::path(host) / path).string();
+	const std::string url = joinUrl(host, path);
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, CONNECT_TIMEOUT_SECONDS);

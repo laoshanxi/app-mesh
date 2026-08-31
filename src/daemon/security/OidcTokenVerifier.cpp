@@ -489,6 +489,9 @@ std::string OidcTokenVerifier::transportUrl(const std::string &publishedUrl) con
 std::string OidcTokenVerifier::normalizeIssuer(std::string issuer)
 {
 	issuer = Utility::stdStringTrim(issuer);
+	// Windows components may hand out native-separator URLs (a path-joined
+	// issuer renders as http://host:port\auth). A URL must use '/' only.
+	std::replace(issuer.begin(), issuer.end(), '\\', '/');
 	while (issuer.size() > 1 && issuer[issuer.size() - 1] == '/')
 		issuer.erase(issuer.size() - 1);
 	return issuer;

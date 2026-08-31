@@ -106,6 +106,22 @@ jobs:
           & "C:\local\appmesh\ssl\generate_ssl_cert.ps1"
           if ($LASTEXITCODE -ne 0) { throw "SSL certificate generation failed" }
 
+          # Surface the one-shot auth bootstrap result directly in the step log;
+          # the service action repeats the same steps idempotently on start.
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\local\appmesh\script\appmesh-auth.ps1" bootstrap
+          if ($LASTEXITCODE -ne 0) { throw "auth bootstrap failed (exit $LASTEXITCODE)" }
+
+          # Show exactly the OIDC configuration the engine will resolve.
+          foreach ($cfg in @("config\oidc.yaml", "work\config\oidc.yaml")) {
+            $cfgPath = Join-Path "C:\local\appmesh" $cfg
+            if (Test-Path $cfgPath) {
+              Write-Host "===== $cfg (first 12 lines) ====="
+              Get-Content $cfgPath -TotalCount 12 | ForEach-Object { Write-Host $_ }
+            } else {
+              Write-Host "===== ${cfg}: absent ====="
+            }
+          }
+
           # Register and start the service.
           & "C:\local\appmesh\bin\nssm.exe" install AppMeshService "C:\local\appmesh\bin\appmesh.exe"
           if ($LASTEXITCODE -ne 0) { throw "failed to install AppMeshService" }
@@ -139,6 +155,20 @@ jobs:
               } else {
                 Write-Host "===== ${log}: missing ====="
               }
+            }
+            $serverLog = "C:\local\appmesh\work\server.log"
+            if (Test-Path $serverLog) {
+              Write-Host "===== work\server.log (head 40) ====="
+              Get-Content $serverLog -TotalCount 40 | ForEach-Object { Write-Host $_ }
+            }
+            $stdoutDir = "C:\local\appmesh\work\stdout"
+            if (Test-Path $stdoutDir) {
+              Get-ChildItem $stdoutDir -File | ForEach-Object {
+                Write-Host "===== stdout/$($_.Name) (tail 60) ====="
+                Get-Content $_.FullName -Tail 60 | ForEach-Object { Write-Host $_ }
+              }
+            } else {
+              Write-Host "===== work\stdout: missing ====="
             }
             throw "Engine did not answer $Path"
           }

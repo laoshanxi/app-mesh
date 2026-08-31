@@ -104,7 +104,10 @@ function Write-PrivateText {
         Protect-PrivatePath $temporary
         if (Test-Path -LiteralPath $Path) {
             Assert-PlainFile $Path "authentication state file"
-            [System.IO.File]::Replace($temporary, $Path, $null)
+            # [System.IO.File]::Replace with a $null backup throws "The path is
+            # not of a legal form" under Windows PowerShell 5.1; Move-Item -Force
+            # overwrites atomically on the same volume, like mv -f on POSIX.
+            Move-Item -LiteralPath $temporary -Destination $Path -Force
         } else {
             [System.IO.File]::Move($temporary, $Path)
         }
@@ -435,9 +438,12 @@ function Request-AutomationToken {
             $curlArguments += @("--cacert", $caPath)
         }
     }
-    $curlArguments += @("--header", "Content-Type: application/x-www-form-urlencoded", "--data-binary", "@-", "--url", ($accessUrl.TrimEnd('/') + "/token"))
     $body = "grant_type=client_credentials&client_id=$AutomationClientId&client_secret=$($credential.secret)&scope=audience%3Aserver%3Aclient_id%3Aappmesh-api"
-    $response = ($body | & curl.exe @curlArguments) -join ""
+    # Pass the body as an argument: piping a string into a native command under
+    # Windows PowerShell 5.1 appends CRLF, and the trailing newline in the last
+    # form field makes dex reject the token request with 400.
+    $curlArguments += @("--header", "Content-Type: application/x-www-form-urlencoded", "--data", $body, "--url", ($accessUrl.TrimEnd('/') + "/token"))
+    $response = (& curl.exe @curlArguments) -join ""
     $body = $null
     if ($LASTEXITCODE -ne 0) { throw "The token request failed" }
     $token = ($response | ConvertFrom-Json).access_token
