@@ -75,7 +75,8 @@ yaml_value() {
         printf '%s' "${fallback}"
         return
     }
-    value=$(awk -v wanted="${key}:" '$1 == wanted { $1=""; sub(/^[[:space:]]+/, ""); gsub(/^"|"$/, ""); print; exit }' "${file}")
+    # mawk 1.3.3 (Ubuntu 18.04) has no POSIX character classes; use plain space/tab.
+    value=$(awk -v wanted="${key}:" '$1 == wanted { $1=""; sub(/^[ \t]+/, ""); gsub(/^"|"$/, ""); print; exit }' "${file}")
     if [[ -n "${value}" ]]; then
         printf '%s' "${value}"
     else

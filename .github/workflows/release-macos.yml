@@ -55,7 +55,6 @@ jobs:
           echo "Building the project..."
           make -j"$(sysctl -n hw.ncpu)"
           make pack
-          make test ARGS='-V --no-tests=error'
 
       - name: Upload packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

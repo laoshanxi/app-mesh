@@ -373,9 +373,11 @@ function Render-DexConfig {
     $webRedirectUri = Get-WebRedirectUri
 
     $content = [System.IO.File]::ReadAllText($DexConfigTemplate)
+    # Windows runs the CGO-free dex build: memory storage, no SQLite database.
+    # A template change leaves the marker unresolved and fails the check below.
+    $content = $content -replace "(?m)^  type: sqlite3\r?\n  config:\r?\n    file: __APPMESH_DEX_STORAGE_PATH__\r?$", "  type: memory"
     $replacements = [ordered]@{
         "__APPMESH_DEX_ISSUER__" = $issuer
-        "__APPMESH_DEX_STORAGE_PATH__" = (Join-Path $DexRuntimeDir "dex.db")
         "__APPMESH_DEX_LISTEN__" = $listen
         "__APPMESH_DEX_TELEMETRY_LISTEN__" = $telemetry
         "__APPMESH_DEX_WEB_CALLBACK__" = $webRedirectUri

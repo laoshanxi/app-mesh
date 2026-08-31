@@ -97,6 +97,11 @@ jobs:
           if (-not (Select-String -Path "C:\local\appmesh\apps\pyrun.yaml" -Pattern "python\.exe" -Quiet)) { throw "apps were not patched from python3 to python.exe" }
           if (-not (Select-String -Path "C:\local\appmesh\apps\auth-service.yaml" -Pattern "appmesh-auth\.ps1" -Quiet)) { throw "authentication service was not patched to the Windows launcher" }
 
+          # dex is a CGO-free (memory storage) build; it must run without any
+          # runtime DLL beside it, exactly like an installed machine.
+          & "C:\local\appmesh\bin\dex.exe" version
+          if ($LASTEXITCODE -ne 0) { throw "dex.exe failed to run (exit $LASTEXITCODE)" }
+
           # Per-node TLS material (normally produced by the NSIS install section).
           & "C:\local\appmesh\ssl\generate_ssl_cert.ps1"
           if ($LASTEXITCODE -ne 0) { throw "SSL certificate generation failed" }
@@ -108,6 +113,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "failed to configure AppMeshService application directory" }
           & "C:\local\appmesh\bin\nssm.exe" set AppMeshService Start SERVICE_AUTO_START
           if ($LASTEXITCODE -ne 0) { throw "failed to configure AppMeshService start mode" }
+          # Match installer.nsi: capture service output and throttle the crash-restart loop.
+          & "C:\local\appmesh\bin\nssm.exe" set AppMeshService AppStdout "C:\local\appmesh\install_stdout.log"
+          & "C:\local\appmesh\bin\nssm.exe" set AppMeshService AppStderr "C:\local\appmesh\install_stderr.log"
+          & "C:\local\appmesh\bin\nssm.exe" set AppMeshService AppExit Default Restart
+          & "C:\local\appmesh\bin\nssm.exe" set AppMeshService AppRestartDelay 5000
           & "C:\local\appmesh\bin\nssm.exe" start AppMeshService
           if ($LASTEXITCODE -ne 0) { throw "failed to start AppMeshService" }
 
@@ -116,13 +126,19 @@ jobs:
             # The engine opens the REST listener only after startup-app readiness
             # and OIDC/JWKS prewarm; each phase may take up to 120 s.
             for ($i = 0; $i -lt 60; $i++) {
-              $raw = curl.exe -sk --fail "https://127.0.0.1:6060$Path"
+              $raw = curl.exe -sk --fail --max-time 5 "https://127.0.0.1:6060$Path"
               if ($LASTEXITCODE -eq 0 -and $raw) { return ($raw | ConvertFrom-Json) }
               Start-Sleep -Seconds 2
             }
-            & "C:\local\appmesh\bin\nssm.exe" status AppMeshService
-            if (Test-Path "C:\local\appmesh\work\server.log") {
-              Get-Content "C:\local\appmesh\work\server.log" -Tail 60
+            Write-Host ("nssm status: " + ((& "C:\local\appmesh\bin\nssm.exe" status AppMeshService 2>&1) -join ""))
+            foreach ($log in @("install_stderr.log", "install_stdout.log", "work\server.log")) {
+              $p = Join-Path "C:\local\appmesh" $log
+              if (Test-Path $p) {
+                Write-Host "===== $log (tail 60) ====="
+                Get-Content $p -Tail 60 | ForEach-Object { Write-Host $_ }
+              } else {
+                Write-Host "===== ${log}: missing ====="
+              }
             }
             throw "Engine did not answer $Path"
           }

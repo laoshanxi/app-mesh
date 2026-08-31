@@ -504,7 +504,9 @@ function Install-Dex {
     Write-Host "Installing Dex OIDC server..." -ForegroundColor Cyan
 
     $env:GOBIN = "C:\local\bin"
-    $env:CGO_ENABLED = "1"
+    # Windows dex uses memory storage, so no SQLite driver and no CGO: the
+    # binary has no mingw runtime dependency.
+    $env:CGO_ENABLED = "0"
 
     New-Item -ItemType Directory -Force -Path $env:GOBIN | Out-Null
 
