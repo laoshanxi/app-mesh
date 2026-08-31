@@ -193,7 +193,10 @@ function New-SecureHex {
 function Get-PasswordHash {
     param([string]$Password)
     Assert-PlainFile $PasswordHashHelper "password-hash helper"
-    $hash = (($Password + "`n") | & $PasswordHashHelper) -join ""
+    # The helper trims one trailing '\n' then one '\r' (password-hash/main.go);
+    # PowerShell's native pipe appends exactly one CRLF, so the manual "`n"
+    # would leave a stray newline in the hashed password and break logins.
+    $hash = ($Password | & $PasswordHashHelper) -join ""
     if ($LASTEXITCODE -ne 0 -or $hash -notmatch '^\$2[aby]\$10\$[./A-Za-z0-9]{53}$') {
         throw "password-hash helper returned an invalid bcrypt hash"
     }

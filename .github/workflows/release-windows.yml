@@ -194,19 +194,23 @@ jobs:
           Remove-Item Env:APPMESH_BEARER_TOKEN
           $token = ""
 
-          # Switching intentionally to an external issuer remains supported.
-          & "C:\local\appmesh\script\setup.ps1" -Issuer "https://auth.ci.example.internal/oidc" -AccessUrl "http://10.99.0.1:6062/auth" -TlsVerify false
-          if ($LASTEXITCODE -ne 0) { throw "setup.ps1 failed" }
-          $config = Get-EngineJson "/appmesh/auth/config"
-          if ($config.issuer -ne "https://auth.ci.example.internal/oidc") {
-            throw "setup.ps1 did not change the advertised issuer: $($config.issuer)"
-          }
-
-          # Fail-closed: after switching to external mode, unauthenticated CLI
-          # calls still fail; there is no anonymous local fallback.
-          & "C:\local\appmesh\bin\appm.exe" -V
+          # Fail-closed while the engine is up: with no bearer, appm must get 401.
           & "C:\local\appmesh\bin\appm.exe" ls
           if ($LASTEXITCODE -eq 0) { throw "appm ls must require an authenticated session" }
+
+          # Switching to an external issuer remains supported. The engine fails
+          # fast when the external issuer is unreachable (by design), so verify
+          # the persisted switch instead of a live engine. setup.ps1's reachability
+          # gate is satisfied by the still-running local dex JWKS route.
+          & "C:\local\appmesh\script\setup.ps1" -Issuer "https://auth.ci.example.internal/oidc" -AccessUrl "http://10.99.0.1:6062/auth" -BrowserEntry "http://127.0.0.1:6062/auth/keys" -TlsVerify false
+          if ($LASTEXITCODE -ne 0) { throw "setup.ps1 failed" }
+          $override = Get-Content "C:\local\appmesh\work\config\oidc.yaml" -Raw
+          if ($override -notmatch "issuer:\s*https://auth\.ci\.example\.internal/oidc") { throw "setup.ps1 did not persist the issuer override" }
+          if ($override -notmatch "access_url:\s*http://10\.99\.0\.1:6062/auth") { throw "setup.ps1 did not persist the access URL override" }
+          if ($override -notmatch "tls_verify:\s*false") { throw "setup.ps1 did not persist the TLS override" }
+          $envExtra = (& "C:\local\appmesh\bin\nssm.exe" get AppMeshService AppEnvironmentExtra) -join ""
+          if ($envExtra -notmatch "APPMESH_AUTH_MODE=external") { throw "setup.ps1 did not set external auth mode on the service" }
+          if (-not (Select-String -Path "C:\local\appmesh\apps\auth-service.yaml" -Pattern "^status:\s*0\s*$" -Quiet)) { throw "the bundled auth app was not disabled" }
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
