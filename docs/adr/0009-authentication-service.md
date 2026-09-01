@@ -22,7 +22,7 @@ App Mesh authorization uses the immutable issuer and subject. A token group, rol
 
 The Engine does not manage an identity password, MFA method, or directory group. An external deployment can configure upstream systems as Dex connectors.
 
-The default package includes Dex. The service runs as the protected `auth-service` System App. External mode disables this System App and uses an operator-managed issuer.
+The default package includes Dex. The service runs as the protected `identity` System App. External mode disables this System App and uses an operator-managed issuer.
 
 The CLI and SDK use provider-neutral language. Their public names are `OAuthClient`, `OAuthConfig`, and `OAuthError`. SDK 3.0 provider-specific names remain compatibility aliases. New documentation and examples do not use those aliases.
 
@@ -59,6 +59,6 @@ The forwarding gateway validates the caller bearer before it opens a target conn
 
 ## Compatibility
 
-The implementation accepts the legacy `APPMESH_DEX_*` environment variables and SDK aliases during migration. New configuration uses `APPMESH_AUTH_*`, `access_url`, `tls_verify`, and `ca_path`.
+Configuration uses the `APPMESH_AUTH_*` environment variables and the `access_url`, `tls_verify`, and `ca_path` keys.
 
 An upgrade migrates the old initial credential file names to provider-neutral names. It keeps the password hashes and identity subjects unchanged.

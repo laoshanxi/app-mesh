@@ -69,7 +69,6 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
         .auth_access_url
         .clone()
         .or_else(|| std::env::var("APPMESH_AUTH_ACCESS_URL").ok())
-        .or_else(|| std::env::var("APPMESH_DEX_ACCESS_URL").ok())
         // The advertised browser_entry is a redirect origin for browsers, not a
         // client discovery route: it carries no issuer path and may use TLS the
         // CLI does not trust. Discovery defaults to the issuer itself.

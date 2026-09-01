@@ -1,0 +1,16 @@
+[package]
+name = "passhash"
+version = "3.0.0"
+edition = "2021"
+description = "stdin-only bcrypt helper for appmesh-auth"
+
+[dependencies]
+bcrypt = "0.17"
+zeroize = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

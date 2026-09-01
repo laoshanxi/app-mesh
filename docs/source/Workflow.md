@@ -165,11 +165,11 @@ Sends a JSON payload to another App via the Task API (`run_task`). The target Ap
 # message-demo.yaml
 name: message-demo
 jobs:
-  call-pytask:
+  call-py-task:
     steps:
       - name: ask
         message:
-          app: "pytask"      # pytask is shipped with the daemon
+          app: "py-task"     # py-task is shipped with the daemon
           payload: 'print("hello from message step")'
         timeout: 30
 ```

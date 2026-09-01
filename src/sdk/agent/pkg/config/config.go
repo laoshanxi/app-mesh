@@ -30,9 +30,6 @@ type (
 		AccessURL       string `yaml:"access_url" mapstructure:"access_url"`
 		TLSVerify       bool   `yaml:"tls_verify" mapstructure:"tls_verify"`
 		CAPath          string `yaml:"ca_path" mapstructure:"ca_path"`
-		LegacyAccessURL string `yaml:"-" mapstructure:"dex_access_url"`
-		LegacyTLSVerify *bool  `yaml:"-" mapstructure:"dex_tls_verify"`
-		LegacyCAPath    string `yaml:"-" mapstructure:"dex_ca_path"`
 	}
 
 	Configuration struct {
@@ -137,28 +134,19 @@ func readOIDCConfig() error {
 	if err := config.Unmarshal(&root); err != nil {
 		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
 	}
-	if root.OIDC.AccessURL == "" {
-		root.OIDC.AccessURL = root.OIDC.LegacyAccessURL
-	}
-	if root.OIDC.CAPath == "" {
-		root.OIDC.CAPath = root.OIDC.LegacyCAPath
-	}
-	if !config.IsSet("OIDC.tls_verify") && root.OIDC.LegacyTLSVerify != nil {
-		root.OIDC.TLSVerify = *root.OIDC.LegacyTLSVerify
-	}
 	if root.OIDC.Issuer == "" {
 		return fmt.Errorf("OIDC issuer is required")
 	}
-	if value := firstNonEmptyEnv("APPMESH_AUTH_ISSUER", "APPMESH_DEX_ISSUER"); value != "" {
+	if value := firstNonEmptyEnv("APPMESH_AUTH_ISSUER"); value != "" {
 		root.OIDC.Issuer = value
 	}
-	if value := firstNonEmptyEnv("APPMESH_AUTH_ACCESS_URL", "APPMESH_DEX_ACCESS_URL"); value != "" {
+	if value := firstNonEmptyEnv("APPMESH_AUTH_ACCESS_URL"); value != "" {
 		root.OIDC.AccessURL = value
 	}
-	if value := firstNonEmptyEnv("APPMESH_AUTH_CA_PATH", "APPMESH_DEX_CA_PATH"); value != "" {
+	if value := firstNonEmptyEnv("APPMESH_AUTH_CA_PATH"); value != "" {
 		root.OIDC.CAPath = value
 	}
-	if value := firstNonEmptyEnv("APPMESH_AUTH_TLS_VERIFY", "APPMESH_DEX_TLS_VERIFY"); value != "" {
+	if value := firstNonEmptyEnv("APPMESH_AUTH_TLS_VERIFY"); value != "" {
 		root.OIDC.TLSVerify = value != "0" && !strings.EqualFold(value, "false")
 	}
 	root.OIDC.Issuer = strings.TrimRight(root.OIDC.Issuer, "/")

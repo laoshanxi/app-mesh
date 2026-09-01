@@ -390,7 +390,7 @@ class FileTransferMixin:
             self.assertEqual(
                 0,
                 self.client.run_app_sync(
-                    App({"name": "pyexec", "metadata": f"import os; [os.remove(r'{remote}') if os.path.exists(r'{remote}') else None]"})
+                    App({"name": "py-exec", "metadata": f"import os; [os.remove(r'{remote}') if os.path.exists(r'{remote}') else None]"})
                 )[0],
             )
             self.assertIsNone(self.client.upload_file(local_file=local_src, remote_file=remote))

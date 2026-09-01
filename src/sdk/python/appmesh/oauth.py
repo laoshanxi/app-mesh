@@ -48,14 +48,7 @@ class OAuthClient(TokenProvider):
         ssl_verify: Union[bool, str] = True,
         timeout: Optional[Tuple[float, float]] = None,
         allow_plain_http: bool = False,
-        **legacy_options,
     ):
-        if access_url is None:
-            access_url = legacy_options.pop("dex_access_url", None)
-        if "dex_ssl_verify" in legacy_options:
-            ssl_verify = legacy_options.pop("dex_ssl_verify")
-        if legacy_options:
-            raise TypeError("Unsupported option: " + next(iter(legacy_options)))
         if not client_id:
             raise ValueError("client_id is required")
         if not access_url:
@@ -80,14 +73,6 @@ class OAuthClient(TokenProvider):
         self._grant_kind: Optional[str] = None
         self._pending_authorizations: Dict[str, Dict[str, Any]] = {}
 
-    def __getattr__(self, name: str):
-        """Resolve SDK 3.0 attribute names without adding them to the public API."""
-        if name == "dex_access_url":
-            return self.access_url
-        if name == "dex_ssl_verify":
-            return self.ssl_verify
-        raise AttributeError(name)
-
     @classmethod
     def from_appmesh(
         cls,
@@ -96,7 +81,6 @@ class OAuthClient(TokenProvider):
         client_id: Optional[str] = None,
         scopes: Optional[Iterable[str]] = None,
         ssl_verify: Union[bool, str] = True,
-        **legacy_options,
     ) -> "OAuthClient":
         """Construct from App Mesh's public ``/appmesh/auth/config`` response.
 
@@ -104,12 +88,6 @@ class OAuthClient(TokenProvider):
         how this process reaches the authentication service. The canonical issuer
         comes from the Engine and must match discovery and token claims.
         """
-        if access_url is None:
-            access_url = legacy_options.pop("dex_access_url", None)
-        if "dex_ssl_verify" in legacy_options:
-            ssl_verify = legacy_options.pop("dex_ssl_verify")
-        if legacy_options:
-            raise TypeError("Unsupported option: " + next(iter(legacy_options)))
         config = appmesh_client.get_auth_config()
         return cls(
             appmesh_client=appmesh_client,

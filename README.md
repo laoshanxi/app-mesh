@@ -37,9 +37,9 @@ $ appm logon
 # List registered applications
 $ appm ls
 ID  NAME    OWNER           STATUS    HEALTH  PID  USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
-1   pyexec  system  disabled  -       -    -     -         -     -       37s  -         0       "python3 ../../bin/py_exec.py"
+1   py-exec system  disabled  -       -    -     -         -     -       37s  -         0       "python3 ../../bin/py_exec.py"
 2   ping    system  enabled   OK      747  root  5.9 MiB   0     -       37s  37s       1       "ping cloudflare.com"
-3   pytask  system  enabled   OK      748  root  29.7 MiB  0     -       37s  37s       1       "python3 ../../bin/py_task.py"
+3   py-task system  enabled   OK      748  root  29.7 MiB  0     -       37s  37s       1       "python3 ../../bin/py_task.py"
 
 # Register a new application
 $ APPMESH_BEARER_TOKEN="$TOKEN" appm add -a myapp -c "ping www.baidu.com"
@@ -62,7 +62,7 @@ client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
 result_from_server = "0"
 for i in range(10):
     task_data = f"print({result_from_server} + {i}, end='')"
-    result_from_server = client.run_task(app_name="pytask", data=task_data)
+    result_from_server = client.run_task(app_name="py-task", data=task_data)
     print(result_from_server)
 ```
 

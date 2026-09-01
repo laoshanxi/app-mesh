@@ -8,7 +8,7 @@
 
 ADR 0009 defines one logical issuer per cluster. It defines the node roles
 `standalone`, `owner`, and `follower`. The runtime already contains the
-required pieces: role resolution, the inert `auth-service` App on followers,
+required pieces: role resolution, the inert `identity` App on followers,
 and bearer validation at the gateway and at the target. Three gaps remain.
 Each gap blocks a working multi-node deployment of the bundled stack.
 
@@ -57,7 +57,7 @@ Each gap blocks a working multi-node deployment of the bundled stack.
                                 │ forwarded requests (TLS TCP :6059,
                                 │ msgpack, bearer unchanged)
                  ┌─ follower nodes ────────────────────────────┐
-                 │ Engine only. auth-service App holds inert.   │
+                 │ Engine only. identity App holds inert.       │
                  │ Discovery/JWKS fetched from the owner.       │
                  └──────────────────────────────────────────────┘
 ```
@@ -75,7 +75,7 @@ Two routes give followers access to the owner:
 | Route | issuer / access_url | When to use |
 |---|---|---|
 | A. Agent proxy (default) | `https://owner.example.com:6060/auth` | TLS front door. This route matches the rule "the issuer listener stays on loopback, Agent is the only public proxy". |
-| B. Protected network | `http://<owner-cluster-address>:6062/auth` with `APPMESH_AUTH_DEX_LISTEN` bound to the cluster interface | Container or compose networks and private networks only. Do not expose the plaintext listener publicly. |
+| B. Protected network | `http://<owner-cluster-address>:6062/auth` with `APPMESH_AUTH_LISTEN` bound to the cluster interface | Container or compose networks and private networks only. Do not expose the plaintext listener publicly. |
 
 The docker-compose cluster uses route B. The compose network is a protected
 cluster network.
@@ -109,7 +109,7 @@ sudo /opt/appmesh/script/setup.sh --auth-mode builtin --auth-role follower \
 
 Effects:
 
-- The `auth-service` App stays enabled and inert (`hold_system_app`). It
+- The `identity` App stays enabled and inert (`hold_system_app`). It
   stays healthy, starts no local Dex, writes no authentication state, and
   does not trigger the restart policy.
 - The Engine fetches discovery and JWKS through `access_url`. It rejects
@@ -129,7 +129,7 @@ packaged `auth-stack.yaml` default (`standalone`) then applies.
 | `OIDC.issuer` / `APPMESH_AUTH_ISSUER` | canonical issuer | identical string |
 | `OIDC.access_url` / `APPMESH_AUTH_ACCESS_URL` | loopback `http://127.0.0.1:6062/auth` is valid | a route that reaches the owner's Dex |
 | `OIDC.tls_verify`, `OIDC.ca_path` | as the route requires | as the route requires |
-| Dex process | runs as `auth-service` System App | never runs |
+| Dex process | runs as `identity` System App | never runs |
 | first-admin enrollment window | open until claimed, loopback only | none (`AuthorizationStore` opens it only for standalone/owner) |
 
 ## Forward authentication
@@ -199,7 +199,7 @@ example watch-and-push or mutation forwarding to a configured writer node.
 
 - `appmesh_master`: `APPMESH_AUTH_ROLE=owner`,
   `APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth`, and
-  `APPMESH_AUTH_DEX_LISTEN=0.0.0.0:6062`. The compose network only reaches
+  `APPMESH_AUTH_LISTEN=0.0.0.0:6062`. The compose network only reaches
   this listener. Do not publish the port publicly. A container healthcheck
   calls `appmesh-auth.sh service-health`.
 - `appmesh_slave*`: `depends_on: appmesh_master: service_healthy`,

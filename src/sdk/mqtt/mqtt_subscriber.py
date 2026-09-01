@@ -16,7 +16,7 @@ appmesh_client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
 
 def process_device_data(data):
     """Local processing logic - send to App Mesh"""
-    appmesh_client.run_task(app_name="pytask", data=data)
+    appmesh_client.run_task(app_name="py-task", data=data)
     print("Sent to App Mesh")
 
 

@@ -24,7 +24,7 @@ def _ssl_verify():
 
 
 def auth_issuer() -> str:
-    value = os.environ.get("APPMESH_AUTH_ISSUER") or os.environ.get("APPMESH_DEX_ISSUER")
+    value = os.environ.get("APPMESH_AUTH_ISSUER")
     if not value:
         raise RuntimeError("APPMESH_AUTH_ISSUER is required")
     return _absolute_base_url(value, "APPMESH_AUTH_ISSUER")
@@ -32,7 +32,7 @@ def auth_issuer() -> str:
 
 def auth_access_url() -> str:
     """Return the network route that this process uses for signing keys."""
-    value = os.environ.get("APPMESH_AUTH_ACCESS_URL") or os.environ.get("APPMESH_DEX_ACCESS_URL")
+    value = os.environ.get("APPMESH_AUTH_ACCESS_URL")
     if not value:
         raise RuntimeError("APPMESH_AUTH_ACCESS_URL is required")
     return _absolute_base_url(value, "APPMESH_AUTH_ACCESS_URL")
@@ -59,14 +59,12 @@ def _absolute_base_url(value: str, name: str) -> str:
 
 
 def _auth_ssl_verify():
-    ca = os.environ.get("APPMESH_AUTH_CA_PATH") or os.environ.get("APPMESH_DEX_CA_PATH")
+    ca = os.environ.get("APPMESH_AUTH_CA_PATH")
     if ca:
         if not os.path.exists(ca):
             raise RuntimeError("APPMESH_AUTH_CA_PATH does not exist")
         return ca
-    value = os.environ.get("APPMESH_AUTH_TLS_VERIFY")
-    if value is None:
-        value = os.environ.get("APPMESH_DEX_TLS_VERIFY", "true")
+    value = os.environ.get("APPMESH_AUTH_TLS_VERIFY", "true")
     return value.lower() not in ("false", "0", "no")
 
 
@@ -115,9 +113,7 @@ def _auth_jwks_uri(issuer: str, access_url: str) -> str:
 def make_auth_provider(base_url: str) -> RemoteAuthProvider:
     issuer = auth_issuer()
     access_url = auth_access_url()
-    audience = os.environ.get("APPMESH_AUTH_AUDIENCE") or os.environ.get(
-        "APPMESH_DEX_AUDIENCE", "appmesh-api"
-    )
+    audience = os.environ.get("APPMESH_AUTH_AUDIENCE", "appmesh-api")
     verifier = JWTVerifier(
         jwks_uri=_auth_jwks_uri(issuer, access_url),
         issuer=issuer,

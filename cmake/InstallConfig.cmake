@@ -43,7 +43,7 @@ endif()
 
 # Application Configs (apps/). The auth System Apps ship only where the
 # bundled auth stack is installed.
-set(APPS_EXCLUDE_AUTH PATTERN "auth-*.yaml" EXCLUDE)
+set(APPS_EXCLUDE_AUTH PATTERN "identity.yaml" EXCLUDE)
 if(APPMESH_INSTALL_AUTH_CONFIG)
     set(APPS_EXCLUDE_AUTH "")
 endif()
@@ -64,7 +64,7 @@ if(WIN32)
             # Simple + reliable replacement
             string(REPLACE "python3" "python.exe" _content "${_content}")
             get_filename_component(_app_name "${_yml}" NAME)
-            if(_app_name STREQUAL "auth-service.yaml")
+            if(_app_name STREQUAL "identity.yaml")
                 # Like the daemon-generated agent App, select the native launcher
                 # for Windows while keeping the same System App definition.
                 string(REPLACE

@@ -50,9 +50,6 @@ _LAZY_IMPORTS = {
     "AppMeshClientWSS": ("client_wss", "AppMeshClientWSS"),  # from .client_wss import AppMeshClientWSS
     "OAuthClient": ("oauth", "OAuthClient"),  # from .oauth import OAuthClient
     "OAuthError": ("oauth", "OAuthError"),  # from .oauth import OAuthError
-    # Compatibility aliases are available but are not part of the documented API.
-    "DexOAuthClient": ("dex_oauth", "DexOAuthClient"),
-    "DexOAuthError": ("dex_oauth", "DexOAuthError"),
     "TokenProvider": ("token_provider", "TokenProvider"),  # from .token_provider import TokenProvider
     "StaticAccessTokenProvider": ("token_provider", "StaticAccessTokenProvider"),  # from .token_provider import StaticAccessTokenProvider
     "AppMeshWorker": ("worker_http", "AppMeshWorker"),  # from .worker_http import AppMeshWorker

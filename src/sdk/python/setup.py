@@ -11,7 +11,7 @@ def get_version():
     """PyPI package version"""
     # 3.0 removes Engine-owned login/user APIs in favor of standard OAuth and
     # principal-based authorization. This is intentionally a major release.
-    return "3.0.0"
+    return "3.0.1"
 
 
 # Dependencies

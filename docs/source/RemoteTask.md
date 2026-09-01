@@ -22,7 +22,7 @@ for i in range(10):
     # task data
     task_data = f"print({count_in_server}+{i}, end='')"
     # remote invoke and get result
-    count_in_server = client.run_task(app_name="pytask", data=task_data)
+    count_in_server = client.run_task(app_name="py-task", data=task_data)
     # print
     print(count_in_server)
 ```
@@ -51,8 +51,8 @@ if __name__ == "__main__":
 ```shell
 $ appm ls
 ID  NAME    OWNER  STATUS    HEALTH  PID    USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
-1   pytask  system  enabled   OK      16412        32.7 MiB  0     1       8h             2       "python.exe ../../bi*"
-2   pyexec  system  disabled  -       -      -     -         -     -       8h   -         0       "python.exe ../../bi*"
+1   py-task  system  enabled  OK      16412        32.7 MiB  0     1       8h             2       "python.exe ../../bi*"
+2   py-exec  system  disabled  -       -      -     -         -     -       8h   -         0       "python.exe ../../bi*"
 3   ping    system  enabled   OK      -      -     -         -     0       8h   -         1       "ping github.com"
 
 $ python3 sample.py
@@ -67,7 +67,7 @@ $ python3 sample.py
 36
 45
 
-$ appm ls -a pytask | grep task_
+$ appm ls -a py-task | grep task_
 task_id: 23
 task_status: busy
 ```

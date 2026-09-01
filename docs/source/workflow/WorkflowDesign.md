@@ -25,7 +25,7 @@ App Mesh daemon
   │
   │  FetchTask / SendTaskResult loop
   ▼
-wf-engine (Go, single long-lived process)
+workflow (Go, single long-lived process)
   ├── Task RPC handler  — 12 actions for CRUD + run + observability
   ├── Trigger service   — event listener, concurrency manager, checkpoint recovery
   └── Engine core       — parser → DAG → expression → executor → logger/checkpoint/workdir
@@ -37,7 +37,7 @@ wf-engine (Go, single long-lived process)
         │  RunAppAsync, Subscribe, GetAppOutput, RunTask, DeleteApp
 ```
 
-The `wf-engine` binary is a pre-installed App (named `workflow`) that auto-starts on daemon boot. All workflow operations — registration, execution, cancellation, querying — go through the Task API. There is one execution path: goroutines.
+The `workflow` binary is a pre-installed App that auto-starts on daemon boot. All workflow operations — registration, execution, cancellation, querying — go through the Task API. There is one execution path: goroutines.
 
 ## Architecture Layers
 
@@ -300,7 +300,7 @@ by the local Engine after the current managed Workflow process proves its proces
 ```
 daemon starts workflow App
   → Engine injects APP_MESH_PROCESS_KEY
-  → wf-engine requests a capability over loopback TCP
+  → workflow requests a capability over loopback TCP
   → Engine derives owner from workflow-{name}, binds workflow/run/process/ops/expiry
   → each step operation is checked against the capability and current owner RBAC
 ```
@@ -455,7 +455,7 @@ App Mesh daemon
   │
   │  POST /appmesh/app/workflow/task
   ▼
-wf-engine (Go)
+workflow (Go)
   │
   │  FetchTask() → dispatch(action) → SendTaskResult(json_response)
 ```
