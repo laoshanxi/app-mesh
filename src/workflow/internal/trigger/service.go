@@ -38,7 +38,7 @@ const CapabilityRequestTimeout = scanRequestTimeout
 // CapabilityLifetime is the Engine-enforced maximum. Runs renew one minute
 // before expiry, so workflow duration is not limited to five minutes.
 const CapabilityLifetime = 5 * time.Minute
-const capabilityRefreshMargin = time.Minute
+const CapabilityRefreshMargin = time.Minute
 
 var runCapabilityOperations = []string{
 	"app-run-async",
@@ -652,7 +652,7 @@ func (s *Service) startCapabilityRenewal(parent context.Context, client *appmesh
 			return false
 		}
 		for {
-			wait := time.Until(goodUntil.Add(-capabilityRefreshMargin))
+			wait := time.Until(goodUntil.Add(-CapabilityRefreshMargin))
 			if retry > 0 {
 				wait = retry
 				retry = 0

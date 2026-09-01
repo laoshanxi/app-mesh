@@ -23,7 +23,7 @@ GOARCH=$(go env GOARCH)
 ################################################################################
 # Copy the Dex server binary into the main package. Dex is installed like the
 # other Go tools (cfssl/nfpm) by script/bootstrap/install_build_deps*.sh; the
-# password-hash helper is repo-native (src/auth) and already staged by cmake.
+# passhash helper is repo-native (src/auth) and already staged by cmake.
 ################################################################################
 copy_dex() {
     local dex_bin
@@ -32,8 +32,6 @@ copy_dex() {
         dex_bin="$(go env GOPATH 2>/dev/null)/bin/dex"
     fi
     [[ -n "$dex_bin" && -x "$dex_bin" ]] ||         die "Dex binary not found in PATH"
-    # A reused staging prefix may contain binaries from retired layouts.
-    rm -f "${PACKAGE_HOME}/bin/dex-password-hash" "${PACKAGE_HOME}/bin/appmesh-password-hash"
     install -m 755 "$dex_bin" "${PACKAGE_HOME}/bin/dex"
     info "Copied Dex server binary ${dex_bin} into the main package"
 }

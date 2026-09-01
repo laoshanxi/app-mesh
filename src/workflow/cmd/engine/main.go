@@ -87,7 +87,8 @@ func main() {
 		return requestCapability(ctx, tcpClient.AppMeshClient,
 			appmesh.WorkflowRunCapabilityAudience, workflowID, runID, operations)
 	})
-	svc.SetControlRefresh(func(ctx context.Context) error {
+	// Shared control-capability refresh for the renewal loop and the reactive path.
+	controlRefresh := func(ctx context.Context) error {
 		refreshed, err := requestCapability(ctx, tcpClient.AppMeshClient,
 			appmesh.WorkflowControlCapabilityAudience, "", "", controlOperations)
 		if err != nil {
@@ -98,7 +99,8 @@ func main() {
 		}
 		tcpClient.SetToken(refreshed.Capability)
 		return nil
-	})
+	}
+	svc.SetControlRefresh(controlRefresh)
 
 	taskHandler, taskErr := api.NewTaskHandler(svc, svc.Wdir(), tcpClient.AppMeshClient, engineOption)
 	if taskErr != nil {
@@ -116,6 +118,26 @@ func main() {
 		<-sigCh
 		cancel()
 	}()
+
+	// Renew the control capability before its TTL; a failed attempt retries next tick.
+	go func() {
+		ticker := time.NewTicker(trigger.CapabilityLifetime - trigger.CapabilityRefreshMargin)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				renewCtx, renewCancel := context.WithTimeout(ctx, trigger.CapabilityRequestTimeout)
+				err := controlRefresh(renewCtx)
+				renewCancel()
+				if err != nil {
+					logger.Error("workflow control capability renewal failed (retrying next tick): " + err.Error())
+				}
+			}
+		}
+	}()
+
 	svc.Run(ctx)
 }
 

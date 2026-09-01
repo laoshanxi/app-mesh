@@ -68,6 +68,7 @@ fi
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 info() { log "INFO" "$@"; }
+warn() { log "WARN" "$@"; }
 error() { log "ERROR" "$@"; }
 die() { error "$@" && exit 1; }
 
@@ -890,47 +891,52 @@ setup_ssl_certificates() {
 
 # User-facing introduction. Plain echo on purpose: this block is an
 # introduction, not a log entry, so it carries no timestamp prefix. Each
-# platform prints only its own service commands.
+# platform prints only its own service commands. tee also copies the text to
+# NEXT_STEPS.txt without a timestamp prefix: macOS package installs swallow
+# postinstall stdout, and the file keeps the steps readable there.
 print_startup_instructions() {
     local init_system
     init_system=$(detect_init_system)
     local rest_port
     rest_port=$(read_env_entry APPMESH_REST_RestListenPort 2>/dev/null || echo 6060)
 
-    echo
-    echo "App Mesh installed to: $PROG_HOME"
-    echo
-    echo "Next steps:"
-    echo "  1. Start the service"
-    case "$init_system" in
-    "systemd")
-        echo "       sudo systemctl enable --now appmesh"
-        ;;
-    "launchd")
-        echo "       sudo launchctl load -w $LAUNCHD_FILE"
-        ;;
-    *)
-        echo "       sudo service appmesh start"
-        ;;
-    esac
-    echo "  2. Open the web console"
-    echo "       https://<this-host>:${rest_port}"
-    echo "  3. Sign in"
-    if [ "$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)" = "builtin" ]; then
-        if grep -q '^password=' "${PROG_HOME}/work/auth/secrets/initial-admin-credentials" 2>/dev/null; then
-            echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh print-initial-password"
+    {
+        echo
+        echo "App Mesh installed to: $PROG_HOME"
+        echo
+        echo "Next steps:"
+        echo "  1. Start the service"
+        case "$init_system" in
+        "systemd")
+            echo "       sudo systemctl enable --now appmesh"
+            ;;
+        "launchd")
+            echo "       sudo launchctl load -w $LAUNCHD_FILE"
+            ;;
+        *)
+            echo "       sudo service appmesh start"
+            ;;
+        esac
+        echo "  2. Open the web console"
+        echo "       https://<this-host>:${rest_port}"
+        echo "  3. Sign in"
+        if [ "$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)" = "builtin" ]; then
+            if grep -q '^password=' "${PROG_HOME}/work/auth/secrets/initial-admin-credentials" 2>/dev/null; then
+                echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh print-initial-password"
+            else
+                echo "       The initial password was removed on this host. Set a new one:"
+                echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh rotate-initial-password, then restart appmesh"
+            fi
+            echo "       appm logon --username admin@appmesh.local"
         else
-            echo "       The initial password was removed on this host. Set a new one:"
-            echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh rotate-initial-password, then restart appmesh"
+            echo "       appm logon --browser"
         fi
-        echo "       appm logon --username admin@appmesh.local"
-    else
-        echo "       appm logon --browser"
-    fi
-    echo
-    echo "Logs: ${PROG_HOME}/work/server.log"
-    echo "Docs: https://app-mesh.readthedocs.io"
-    echo
+        echo
+        echo "Logs: ${PROG_HOME}/work/server.log"
+        echo "Docs: https://app-mesh.readthedocs.io"
+        echo
+    } | tee "$PROG_HOME/NEXT_STEPS.txt" || warn "Failed to write $PROG_HOME/NEXT_STEPS.txt"
+    chmod 644 "$PROG_HOME/NEXT_STEPS.txt" 2>/dev/null || true
 }
 
 ################################################################################

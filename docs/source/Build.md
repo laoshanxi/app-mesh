@@ -78,6 +78,6 @@ cmake --build build --config Release --parallel
 cmake --build build --config Release --target pack   # NSIS installer in build\
 ```
 
-Windows packages include `dex.exe`, `password-hash.exe`, the protected
+Windows packages include `dex.exe`, `passhash.exe`, the protected
 `auth-service` App, and the native `appmesh-auth.ps1` launcher; see [Install](Install.md)
 for the deployment flow and the real-machine verification checklist.

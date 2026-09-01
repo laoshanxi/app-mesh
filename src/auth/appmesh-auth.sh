@@ -20,7 +20,7 @@ DEX_GUEST_CREDENTIAL_MARKER="${AUTH_SECRET_DIR}/dex-initial-guest-initialized"
 DEX_AUTOMATION_CLIENT_FILE="${AUTH_SECRET_DIR}/automation-client"
 AUTHORIZATION_TEMPLATE="${APPMESH_ROOT}/config/authorization.yaml"
 AUTHORIZATION_RUNTIME="${APPMESH_ROOT}/work/config/authorization.yaml"
-DEX_PASSWORD_HASH_HELPER="${APPMESH_ROOT}/bin/password-hash"
+PASSHASH_HELPER="${APPMESH_ROOT}/bin/passhash"
 readonly DEX_INITIAL_ADMIN_EMAIL="admin@appmesh.local"
 readonly DEX_INITIAL_ADMIN_USERNAME="admin"
 # Confidential client_credentials client for CI/unattended automation. Its
@@ -458,17 +458,17 @@ write_initial_credentials() {
     local include_password=${7:-yes}
     local temporary hash_file password_hash owner
 
-    [[ ! -L "${DEX_PASSWORD_HASH_HELPER}" && -f "${DEX_PASSWORD_HASH_HELPER}" && -x "${DEX_PASSWORD_HASH_HELPER}" ]] || {
-        echo "The password-hash helper is unavailable" >&2
+    [[ ! -L "${PASSHASH_HELPER}" && -f "${PASSHASH_HELPER}" && -x "${PASSHASH_HELPER}" ]] || {
+        echo "The passhash helper is unavailable" >&2
         return 1
     }
     if [[ -e "${file}" || -L "${file}" ]]; then
         private_file_metadata "${file}" >/dev/null
     fi
     owner=$(stat_fmt '%u:%g' "${AUTH_SECRET_DIR}") || return 1
-    hash_file=$(mktemp "${AUTH_SECRET_DIR}/.dex-password-hash.XXXXXX") || return 1
+    hash_file=$(mktemp "${AUTH_SECRET_DIR}/.passhash.XXXXXX") || return 1
     chmod 600 "${hash_file}"
-    if ! printf '%s\n' "${password}" | "${DEX_PASSWORD_HASH_HELPER}" >"${hash_file}"; then
+    if ! printf '%s\n' "${password}" | "${PASSHASH_HELPER}" >"${hash_file}"; then
         rm -f "${hash_file}"
         echo "failed to hash the initial ${label} password" >&2
         return 1
@@ -476,7 +476,7 @@ write_initial_credentials() {
     IFS= read -r password_hash <"${hash_file}"
     rm -f "${hash_file}"
     valid_bcrypt_hash "${password_hash}" || {
-        echo "The password-hash helper returned an invalid hash" >&2
+        echo "The passhash helper returned an invalid hash" >&2
         return 1
     }
 

@@ -37,6 +37,12 @@ Var SILENT_MODE
 !define MUI_FINISHPAGE_SHOWREADME_FUNCTION AddToPath
 !define MUI_FINISHPAGE_SHOWREADME_STATE 1 ; Checked by default
 
+; Next-step guidance on the finish page; the same details go to the install log.
+!define MUI_FINISHPAGE_TEXT "App Mesh is installed in $INSTDIR$\r$\nWeb console: https://localhost:6060$\r$\nPrint the initial administrator password:$\r$\npowershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password$\r$\nSign in: appm logon --username admin@appmesh.local$\r$\nLogs: $INSTDIR\work\server.log"
+!define MUI_FINISHPAGE_TEXT_LARGE
+!define MUI_FINISHPAGE_LINK "Documentation: https://app-mesh.readthedocs.io"
+!define MUI_FINISHPAGE_LINK_LOCATION "https://app-mesh.readthedocs.io"
+
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
 
 ; Pages

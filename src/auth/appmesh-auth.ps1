@@ -41,7 +41,7 @@ $GuestMarker = Join-Path $AuthSecretDir "dex-initial-guest-initialized"
 $AutomationClientFile = Join-Path $AuthSecretDir "automation-client"
 $AuthorizationTemplate = Join-Path $AppMeshRoot "config\authorization.yaml"
 $AuthorizationRuntime = Join-Path $AppMeshRoot "work\config\authorization.yaml"
-$PasswordHashHelper = Join-Path $AppMeshRoot "bin\password-hash.exe"
+$PasshashHelper = Join-Path $AppMeshRoot "bin\passhash.exe"
 $DexExecutable = Join-Path $AppMeshRoot "bin\dex.exe"
 
 $AdminEmail = "admin@appmesh.local"
@@ -192,13 +192,13 @@ function New-SecureHex {
 
 function Get-PasswordHash {
     param([string]$Password)
-    Assert-PlainFile $PasswordHashHelper "password-hash helper"
-    # The helper trims one trailing '\n' then one '\r' (password-hash/main.go);
+    Assert-PlainFile $PasshashHelper "passhash helper"
+    # The helper trims one trailing '\n' then one '\r' (passhash/main.go);
     # PowerShell's native pipe appends exactly one CRLF, so the manual "`n"
     # would leave a stray newline in the hashed password and break logins.
-    $hash = ($Password | & $PasswordHashHelper) -join ""
+    $hash = ($Password | & $PasshashHelper) -join ""
     if ($LASTEXITCODE -ne 0 -or $hash -notmatch '^\$2[aby]\$10\$[./A-Za-z0-9]{53}$') {
-        throw "password-hash helper returned an invalid bcrypt hash"
+        throw "passhash helper returned an invalid bcrypt hash"
     }
     return $hash
 }

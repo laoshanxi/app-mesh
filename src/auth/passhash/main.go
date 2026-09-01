@@ -1,4 +1,4 @@
-// appmesh-password-hash is the repo-native helper used by appmesh-auth to
+// passhash is the repo-native helper used by appmesh-auth to
 // seed the authentication service's initial administrator password hash. It reads the password from stdin
 // (never from argv or the environment) and writes only the bcrypt hash.
 package main

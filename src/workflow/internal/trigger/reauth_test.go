@@ -245,7 +245,7 @@ func TestCapabilityRenewalReplacesTokenBeforeExpiry(t *testing.T) {
 	})
 	expired := make(chan error, 1)
 	stop := s.startCapabilityRenewal(context.Background(), client, "wf", "run-1", "owner-1",
-		time.Now().Add(capabilityRefreshMargin+time.Second).Unix(), // renewal due in ~1s
+		time.Now().Add(CapabilityRefreshMargin+time.Second).Unix(), // renewal due in ~1s
 		func(err error) { expired <- err })
 	defer stop()
 
@@ -272,7 +272,7 @@ func TestCapabilityRenewalRetriesTransientFailure(t *testing.T) {
 	})
 	expired := make(chan error, 1)
 	stop := s.startCapabilityRenewal(context.Background(), client, "wf", "run-1", "owner-1",
-		time.Now().Add(capabilityRefreshMargin+3*time.Second).Unix(), // slack for one failed attempt
+		time.Now().Add(CapabilityRefreshMargin+3*time.Second).Unix(), // slack for one failed attempt
 		func(err error) { expired <- err })
 	defer stop()
 

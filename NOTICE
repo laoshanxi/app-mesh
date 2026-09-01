@@ -26,7 +26,7 @@ Dex
   URL: https://github.com/dexidp/dex
   Copyright: Copyright (c) The Dex Authors
 
-golang.org/x/crypto/bcrypt (used by the App Mesh password-hash helper)
+golang.org/x/crypto/bcrypt (used by the App Mesh passhash helper)
   License: BSD 3-Clause
   URL: https://pkg.go.dev/golang.org/x/crypto/bcrypt
   Copyright: Copyright (c) 2009 The Go Authors

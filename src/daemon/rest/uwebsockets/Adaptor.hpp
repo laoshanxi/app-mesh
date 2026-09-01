@@ -314,6 +314,7 @@ private:
         LOG_DBG << fname << "Enter";
 
         auto requestState = std::make_shared<Request>();
+        requestState->uuid = Utility::uuid();
 
         std::string m{req->getMethod()};
         std::transform(m.begin(), m.end(), m.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
