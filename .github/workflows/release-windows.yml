@@ -91,7 +91,7 @@ jobs:
 
           # Windows ships the bundled System App with its native PowerShell
           # launcher and executable runtime.
-          foreach ($required in @("apps\auth-service.yaml", "config\auth-stack.yaml", "config\dex.yaml", "config\oidc.yaml", "config\authorization.yaml", "script\appmesh-auth.ps1", "script\setup.ps1", "bin\dex.exe", "bin\passhash.exe", "bin\appmesh.exe", "bin\appm.exe", "bin\agent.exe", "bin\nssm.exe", "bin\wf-engine.exe", "bin\openssl.exe")) {
+          foreach ($required in @("apps\auth-service.yaml", "config\auth-stack.yaml", "config\dex.yaml", "config\oidc.yaml", "config\authorization.yaml", "script\appmesh-auth.ps1", "script\setup.ps1", "bin\dex.exe", "bin\passhash.exe", "bin\appmesh.exe", "bin\appm.exe", "bin\agent.exe", "bin\nssm.exe", "bin\workflow.exe", "bin\openssl.exe")) {
             if (-not (Test-Path (Join-Path "C:\local\appmesh" $required))) { throw "missing package file: $required" }
           }
           if (-not (Select-String -Path "C:\local\appmesh\apps\pyrun.yaml" -Pattern "python\.exe" -Quiet)) { throw "apps were not patched from python3 to python.exe" }

@@ -25,7 +25,7 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 
 ### v1 Current Implementation
 
-- **Workflow Engine** — A single Go binary (`wf-engine`) using TCP transport. Runs as a pre-installed daemon App (named `workflow`). All operations (CRUD, run, cancel, observability) go through the Task RPC interface (`run_task`). No separate run mode or temp Apps.
+- **Workflow Engine** — A single Go binary (`workflow`) using TCP transport. Runs as a pre-installed daemon App (named `workflow`). All operations (CRUD, run, cancel, observability) go through the Task RPC interface (`run_task`). No separate run mode or temp Apps.
 - **Checkpoint** — A JSON file (`checkpoint.json`) in the run directory. Records per-job completion status for crash recovery. On restart, completed jobs are skipped.
 - **runs.json** — Per-workflow run history index (separate from checkpoint).
 - **Trigger (v1)** — Built into the workflow engine: event listener subscribes to App events, fires workflow runs as goroutines. Cron is NOT built in — `on.schedule` in YAML is parsed but a warning is emitted; use external App Mesh cron apps instead.

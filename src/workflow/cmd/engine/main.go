@@ -1,9 +1,9 @@
-// wf-engine is the App Mesh Workflow Engine. Every run — human-initiated,
+// workflow is the App Mesh Workflow Engine. Every run — human-initiated,
 // Engine-initiated, or recovered — executes under a short-lived, run-bound
 // capability issued by the local Engine after proving the current managed
 // process, renewed for the run's lifetime. A human caller's Dex bearer only
 // authenticates the trigger and (forward_token) message-step payloads, and is
-// kept in memory only; wf-engine is not an OAuth client.
+// kept in memory only; workflow is not an OAuth client.
 package main
 
 import (

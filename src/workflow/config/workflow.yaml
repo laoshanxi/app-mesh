@@ -1,5 +1,5 @@
 ---
-command: ../../bin/wf-engine
+command: ../../bin/workflow
 name: workflow
 description: Workflow engine using caller bearer delegation and Engine-issued internal run capabilities
 owner_principal_id: system:appmesh

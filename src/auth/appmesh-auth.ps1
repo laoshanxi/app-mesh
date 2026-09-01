@@ -193,7 +193,7 @@ function New-SecureHex {
 function Get-PasswordHash {
     param([string]$Password)
     Assert-PlainFile $PasshashHelper "passhash helper"
-    # The helper trims one trailing '\n' then one '\r' (passhash/main.go);
+    # The helper trims one trailing '\n' then one '\r' (passhash/src/main.rs);
     # PowerShell's native pipe appends exactly one CRLF, so the manual "`n"
     # would leave a stray newline in the hashed password and break logins.
     $hash = ($Password | & $PasshashHelper) -join ""

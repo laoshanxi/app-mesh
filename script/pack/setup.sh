@@ -645,7 +645,7 @@ provision_secret_master_key() {
 }
 
 prepare_workflow_app() {
-    # The launcher only execs wf-engine; authentication mode does not affect
+    # The launcher only execs the workflow binary; authentication mode does not affect
     # registration because Workflow is no longer an OAuth service client.
     # Platforms without the Linux launcher must not auto-register this App.
     if [ ! -x "$AUTH_LAUNCHER" ]; then

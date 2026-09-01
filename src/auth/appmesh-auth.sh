@@ -385,7 +385,7 @@ request_automation_token() {
 }
 
 valid_bcrypt_hash() {
-    [[ "$1" =~ ^\$2a\$10\$[./A-Za-z0-9]{53}$ ]]
+    [[ "$1" =~ ^\$2[aby]\$10\$[./A-Za-z0-9]{53}$ ]]
 }
 
 validate_initial_credentials() {
