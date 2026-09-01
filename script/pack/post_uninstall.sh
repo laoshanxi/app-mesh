@@ -34,6 +34,12 @@ setup_platform_vars() {
         readonly SERVICE_NAME="com.laoshanxi.appmesh"
         readonly SYSTEMD_FILE=""
         readonly INITD_FILE=""
+        # This hook is embedded in the package and runs from a package-manager
+        # temp directory, so the script location cannot reveal the install
+        # directory (unlike setup.sh, which lives in <install>/script/).
+        # macOS package hooks receive the install location as their first
+        # argument; keep the default prefix as fallback.
+        readonly PROG_HOME="${1:-/opt/appmesh}"
     else
         readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
         readonly SYSTEMD_FILE="/etc/systemd/system/appmesh.service"
@@ -149,8 +155,8 @@ cleanup_macos_specific() {
 
     if [[ "$os_type" == "macos" ]]; then
         info "Performing macOS-specific cleanup"
-        find /opt/appmesh -name ".DS_Store" -delete 2>/dev/null || true
-        xattr -rc /opt/appmesh 2>/dev/null || true
+        find "$PROG_HOME" -name ".DS_Store" -delete 2>/dev/null || true
+        xattr -rc "$PROG_HOME" 2>/dev/null || true
     fi
 }
 

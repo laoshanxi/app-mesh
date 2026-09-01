@@ -102,7 +102,7 @@ def _serve(handler: Handler):
     """fetch_task → dispatch → send_task_result loop (serial). The request is bracketed
     in-flight so a worker reaper never exits mid-request."""
     import json
-    from appmesh import AppMeshProcessSupersededError, AppMeshWorkerTCP
+    from appmesh import AppMeshProcessSupersededError, AppMeshWorkerRejectedError, AppMeshWorkerTCP
     ctx = AppMeshWorkerTCP()
     backoff = 1.0
     while True:
@@ -111,6 +111,9 @@ def _serve(handler: Handler):
         except AppMeshProcessSupersededError:
             # App entry point: exit non-zero so the daemon treats the superseded worker as terminated.
             log.error("process key superseded — exiting session worker")
+            sys.exit(1)
+        except AppMeshWorkerRejectedError as e:
+            log.error("worker request permanently rejected — exiting session worker: %s", e)
             sys.exit(1)
         except Exception as e:
             log.warning("fetch_task error: %s; retrying in %.0fs", e, backoff)

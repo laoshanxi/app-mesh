@@ -34,7 +34,7 @@ type RunIndex struct {
 	Workflow  string            `json:"workflow"`
 	Status    string            `json:"status"`
 	Source    string            `json:"source"`
-	Actor     string            `json:"actor,omitempty"` // user who triggered the run (empty for automatic triggers)
+	Actor     string            `json:"actor,omitempty"` // caller Principal or internal:workflow-trigger audit marker
 	StartedAt string            `json:"started_at"`
 	Duration  float64           `json:"duration,omitempty"`
 	Inputs    map[string]string `json:"inputs,omitempty"`

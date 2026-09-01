@@ -3,8 +3,8 @@ name: ping
 description: appmesh ping test
 command: ping cloudflare.com
 shell: true
-owner: mesh
-permission: 33
+owner_principal_id: system:appmesh
+permission: 20
 behavior:
   control:
     "0": standby

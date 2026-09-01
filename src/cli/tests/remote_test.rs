@@ -1,7 +1,7 @@
 //! Remote integration tests — require a running App Mesh daemon.
 //!
 //! Run: cargo test --test remote_test -- --ignored --test-threads=1
-//! Env: APPMESH_TEST_CRED (default: admin123), APPMESH_HOST, APPMESH_WSS_PORT
+//! Env: APPMESH_TEST_ACCESS_TOKEN (required), APPMESH_HOST, APPMESH_WSS_PORT
 
 use appmesh::{Application, ClientBuilderWSS};
 use std::sync::Arc;
@@ -12,8 +12,9 @@ fn wss_host() -> String {
 fn wss_port() -> u16 {
     std::env::var("APPMESH_WSS_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6058)
 }
-fn cred() -> String {
-    std::env::var("APPMESH_TEST_CRED").unwrap_or_else(|_| "admin123".to_string())
+fn access_token() -> String {
+    std::env::var("APPMESH_TEST_ACCESS_TOKEN")
+        .expect("APPMESH_TEST_ACCESS_TOKEN must contain a Dex access token")
 }
 
 async fn new_client() -> Arc<appmesh::AppMeshClientWSS> {
@@ -27,7 +28,7 @@ async fn new_client() -> Arc<appmesh::AppMeshClientWSS> {
 
 async fn authed() -> Arc<appmesh::AppMeshClientWSS> {
     let c = new_client().await;
-    c.client().login("admin", &cred(), None, None, None).await.expect("login failed");
+    c.client().set_token(&access_token());
     c
 }
 
@@ -51,75 +52,23 @@ fn appm() -> std::process::Command {
     cmd
 }
 
-fn cli_login() {
-    let out = appm().args(["logon", "-U", "admin", "-X", &cred()]).output().unwrap();
-    assert!(out.status.success(), "CLI login: {}", String::from_utf8_lossy(&out.stderr));
+fn cli_auth() {
+    // Interactive OAuth is intentionally not automated with a bearer import. Run
+    // `appm logon` against the test Engine before starting these ignored tests.
+    let out = appm().arg("loginfo").output().unwrap();
+    assert!(
+        out.status.success(),
+        "CLI session missing; run appm logon first: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SDK tests via WSS: Auth (01–03)
+// SDK tests via WSS use APPMESH_TEST_ACCESS_TOKEN as a bearer.
 // ═══════════════════════════════════════════════════════════════════════════
 
-#[tokio::test]
-#[ignore]
-async fn sdk_01_login_logout() {
-    let c = new_client().await;
-    let ch = c.client().login("admin", &cred(), None, None, None).await.unwrap();
-    assert!(ch.is_empty());
-    assert!(c.get_access_token().is_some());
-    c.logout().await.unwrap();
-}
-
-#[tokio::test]
-#[ignore]
-async fn sdk_02_login_wrong_password() {
-    let c = new_client().await;
-    assert!(c.client().login("admin", "WRONG", None, None, None).await.is_err());
-}
-
-#[tokio::test]
-#[ignore]
-async fn sdk_03_current_user() {
-    let c = authed().await;
-    let u = c.get_current_user().await.unwrap();
-    assert_eq!(u["name"].as_str(), Some("admin"));
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// SDK: User / Role management (04–06)
 // ═══════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-#[ignore]
-async fn sdk_04_user_lock_unlock() {
-    let c = authed().await;
-    c.lock_user("mesh").await.unwrap();
-    c.unlock_user("mesh").await.unwrap();
-}
-
-#[tokio::test]
-#[ignore]
-async fn sdk_05_list_users_roles() {
-    let c = authed().await;
-    let users = c.list_users().await.unwrap();
-    assert!(users.is_object() || users.is_array());
-    let roles = c.list_roles().await.unwrap();
-    assert!(!roles.is_empty());
-}
-
-#[tokio::test]
-#[ignore]
-async fn sdk_06_password_change_roundtrip() {
-    let c = authed().await;
-    c.update_password(&cred(), "TempPass@789", None).await.unwrap();
-    // old password should fail now
-    let c2 = new_client().await;
-    assert!(c2.client().login("admin", &cred(), None, None, None).await.is_err());
-    // restore
-    let c3 = new_client().await;
-    c3.client().login("admin", "TempPass@789", None, None, None).await.unwrap();
-    c3.update_password("TempPass@789", &cred(), None).await.unwrap();
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SDK: Labels (07)
@@ -390,34 +339,26 @@ async fn sdk_93_upload_nonexistent_local() {
 #[test]
 #[ignore]
 fn cli_50_logon_logoff() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["logoff"]).output().unwrap();
     assert!(out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("logged off"));
-}
-
-#[test]
-#[ignore]
-fn cli_51_logon_show_token() {
-    let out = appm().args(["logon", "-U", "admin", "-X", &cred(), "--show-token"]).output().unwrap();
-    assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains('.'), "JWT should contain dots");
+    assert!(stderr.contains("Local sign-in session cleared"));
 }
 
 #[test]
 #[ignore]
 fn cli_52_loginfo() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["loginfo"]).output().unwrap();
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("User:"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Issuer:"));
 }
 
 #[test]
 #[ignore]
 fn cli_53_view_table() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["view"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("NAME"));
@@ -426,7 +367,7 @@ fn cli_53_view_table() {
 #[test]
 #[ignore]
 fn cli_54_view_json() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["view", "--json"]).output().unwrap();
     assert!(out.status.success());
     let _: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
@@ -435,7 +376,7 @@ fn cli_54_view_json() {
 #[test]
 #[ignore]
 fn cli_55_add_disable_enable_restart_rm() {
-    cli_login();
+    cli_auth();
     assert!(appm().args(["add", "-a", "CLI_ALL", "-c", "sleep 999", "--force"]).output().unwrap().status.success());
     assert!(appm().args(["disable", "-a", "CLI_ALL"]).output().unwrap().status.success());
     assert!(appm().args(["enable", "-a", "CLI_ALL"]).output().unwrap().status.success());
@@ -446,7 +387,7 @@ fn cli_55_add_disable_enable_restart_rm() {
 #[test]
 #[ignore]
 fn cli_56_run_sync() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["run", "-c", "echo cli_run", "-u", "--timeout=-5"]).output().unwrap();
     assert!(out.status.success(), "run: {}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stdout).contains("cli_run"));
@@ -455,7 +396,7 @@ fn cli_56_run_sync() {
 #[test]
 #[ignore]
 fn cli_57_run_exit_code() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["run", "-c", "exit 7", "-u", "--timeout=-5"]).output().unwrap();
     assert_eq!(out.status.code(), Some(7));
 }
@@ -463,7 +404,7 @@ fn cli_57_run_exit_code() {
 #[test]
 #[ignore]
 fn cli_58_config() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["config"]).output().unwrap();
     assert!(out.status.success());
     let j: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -473,7 +414,7 @@ fn cli_58_config() {
 #[test]
 #[ignore]
 fn cli_59_resource() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["resource"]).output().unwrap();
     assert!(out.status.success());
     let _: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -482,7 +423,7 @@ fn cli_59_resource() {
 #[test]
 #[ignore]
 fn cli_60_label_crud() {
-    cli_login();
+    cli_auth();
     assert!(appm().args(["label", "--add", "-l", "ck=cv"]).output().unwrap().status.success());
     let out = appm().args(["label"]).output().unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("ck=cv"));
@@ -492,33 +433,15 @@ fn cli_60_label_crud() {
 #[test]
 #[ignore]
 fn cli_61_log_level() {
-    cli_login();
+    cli_auth();
     assert!(appm().args(["log", "-L", "DEBUG"]).output().unwrap().status.success());
     appm().args(["log", "-L", "INFO"]).output().ok();
 }
 
 #[test]
 #[ignore]
-fn cli_62_user_info() {
-    cli_login();
-    let out = appm().args(["user"]).output().unwrap();
-    assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("admin"));
-}
-
-#[test]
-#[ignore]
-fn cli_63_user_list_all() {
-    cli_login();
-    let out = appm().args(["user", "--all"]).output().unwrap();
-    assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("mesh"));
-}
-
-#[test]
-#[ignore]
 fn cli_64_file_put_get() {
-    cli_login();
+    cli_auth();
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("up.txt");
     let dst = dir.path().join("down.txt");
@@ -532,17 +455,8 @@ fn cli_64_file_put_get() {
 
 #[test]
 #[ignore]
-fn cli_65_appmgpwd() {
-    let out = appm().args(["appmgpwd", "admin"]).output().unwrap();
-    assert!(out.status.success());
-    let hash = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    assert!(hash.starts_with("$pbkdf2$100000$"), "expected PBKDF2 format, got: {}", hash);
-}
-
-#[test]
-#[ignore]
 fn cli_66_metric() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["metric"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("appmesh_"));
@@ -552,15 +466,8 @@ fn cli_66_metric() {
 
 #[test]
 #[ignore]
-fn cli_80_logon_wrong_password() {
-    let out = appm().args(["logon", "-U", "admin", "-X", "WRONG"]).output().unwrap();
-    assert!(!out.status.success());
-}
-
-#[test]
-#[ignore]
 fn cli_81_rm_nonexistent() {
-    cli_login();
+    cli_auth();
     // rm of nonexistent should fail (SDK returns error)
     let out = appm().args(["rm", "-a", "NONEXISTENT_XYZ", "--force"]).output().unwrap();
     // delete_app returns false but doesn't error — exit 0
@@ -570,7 +477,7 @@ fn cli_81_rm_nonexistent() {
 #[test]
 #[ignore]
 fn cli_82_view_nonexistent_app() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["view", "-a", "NONEXISTENT_XYZ"]).output().unwrap();
     assert!(!out.status.success());
 }
@@ -578,7 +485,7 @@ fn cli_82_view_nonexistent_app() {
 #[test]
 #[ignore]
 fn cli_83_log_invalid_level() {
-    cli_login();
+    cli_auth();
     let out = appm().args(["log", "-L", "INVALID"]).output().unwrap();
     assert!(!out.status.success());
 }
@@ -619,7 +526,7 @@ async fn sdk_12c_run_async_captures_output() {
 #[test]
 #[ignore]
 fn cli_90_run_positive_timeout_fast() {
-    cli_login();
+    cli_auth();
     let start = std::time::Instant::now();
     let out = appm().args(["run", "-c", "echo timeout_pos", "-u", "-t", "10"]).output().unwrap();
     let elapsed = start.elapsed();
@@ -631,7 +538,7 @@ fn cli_90_run_positive_timeout_fast() {
 #[test]
 #[ignore]
 fn cli_91_run_negative_timeout_fast() {
-    cli_login();
+    cli_auth();
     let start = std::time::Instant::now();
     let out = appm().args(["run", "-c", "echo timeout_neg", "-u", "--timeout=-10"]).output().unwrap();
     let elapsed = start.elapsed();
@@ -643,19 +550,11 @@ fn cli_91_run_negative_timeout_fast() {
 #[test]
 #[ignore]
 fn cli_92_run_no_name_no_leak() {
-    cli_login();
+    cli_auth();
     // Run without -a: server assigns random name, should not leave _run_cmd_ residue
     let out = appm().args(["run", "-c", "echo no_name", "-u", "--timeout=-5"]).output().unwrap();
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("no_name"));
-}
-
-#[test]
-#[ignore]
-fn cli_93_logon_no_double_login() {
-    // logon should use build_client (not build_client_with_auth) to avoid double login
-    let out = appm().args(["logon", "-U", "admin", "-X", &cred()]).output().unwrap();
-    assert!(out.status.success());
 }
 
 #[tokio::test]

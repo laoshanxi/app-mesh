@@ -15,8 +15,7 @@ func TestAppmeshTCPFile(t *testing.T) {
 	fmt.Println(err)
 	require.Nil(t, err)
 
-	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
-	require.NoError(t, err)
+	client.SetToken(requireBearerToken(t))
 
 	var remotePath, localFile, tempFile string
 	if runtime.GOOS == "windows" {
@@ -44,9 +43,7 @@ func TestAppmeshTCPOperations(t *testing.T) {
 	require.NoError(t, err)
 	defer client.CloseConnection()
 
-	// 1. Login
-	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
-	require.NoError(t, err, "TCP login should succeed")
+	client.SetToken(requireBearerToken(t))
 
 	// 2. ListApps - verify count > 0
 	apps, err := client.ListApps()
@@ -102,8 +99,4 @@ func TestAppmeshTCPOperations(t *testing.T) {
 	_, stillPresent := tagsAfter[tagName]
 	require.False(t, stillPresent, "TCP label should be absent after deletion")
 
-	// 7. Logout
-	ok, err := client.Logout()
-	require.NoError(t, err, "TCP Logout should succeed")
-	require.True(t, ok, "TCP Logout should return true")
 }

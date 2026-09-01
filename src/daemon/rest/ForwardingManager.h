@@ -12,21 +12,31 @@
 #include <string>
 
 class HttpRequest;
+class Response;
 
 /// Represents a single forwarding connection to a remote host, with a map
 /// of pending requests awaiting responses (correlated by UUID).
 struct ForwardingConnection
 {
 	SocketStreamPtr stream;
-	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Thread_Mutex>;
+	// ACE_Map_Manager operations lock internally, so an external guard over the
+	// same map re-enters; the lock must be recursive or addRequest() deadlocks.
+	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
 	PendingRequestMap pending_requests;
+	using SubscriptionMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
+	SubscriptionMap subscriptions;
 	std::atomic<bool> closed{false};
 
 	/// Atomically checks closed flag and binds request under pending_requests lock.
 	/// Returns false if the connection is closed or bind fails.
 	bool addRequest(const std::string &uuid, std::shared_ptr<HttpRequest> request);
 
+	std::shared_ptr<HttpRequest> findRequest(const std::string &uuid);
 	std::shared_ptr<HttpRequest> takeRequest(const std::string &uuid);
+	void rememberSubscription(const std::string &subscriptionId, std::shared_ptr<HttpRequest> request);
+	std::shared_ptr<HttpRequest> findSubscription(const std::string &subscriptionId);
+	void removeSubscription(const std::string &subscriptionId);
+	void handleResponse(Response &response);
 	void failAll(const std::string &msg);
 };
 

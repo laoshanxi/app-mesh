@@ -434,32 +434,3 @@ jobs:
 		t.Fatal("app_event without app/events must be rejected")
 	}
 }
-
-// execution_identity must be a plausible username when set.
-func TestExecutionIdentityValidated(t *testing.T) {
-	good := writeTmp(t, `
-name: with-identity
-execution_identity: svc-pipeline
-jobs:
-  a:
-    steps:
-      - name: s
-        command: "true"
-`)
-	if _, err := LoadWorkflow(good); err != nil {
-		t.Fatalf("valid execution_identity rejected: %v", err)
-	}
-
-	bad := writeTmp(t, `
-name: bad-identity
-execution_identity: "has space"
-jobs:
-  a:
-    steps:
-      - name: s
-        command: "true"
-`)
-	if _, err := LoadWorkflow(bad); err == nil {
-		t.Fatal("execution_identity with a space must be rejected")
-	}
-}

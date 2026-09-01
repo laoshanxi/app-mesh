@@ -5,21 +5,22 @@ import (
 	"strings"
 
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"github.com/laoshanxi/app-mesh/src/workflow/internal/tlsconf"
 )
 
 // ResolveTargetNode finds a cluster node matching the given label selector.
 //
-// If nodeLabel contains a special key "host", its value is used directly.
-// Otherwise, queries the local client first then each node in clusterNodes
-// (via X-Target-Host forwarding) to find a label match.
-//
-// Returns the target host string or empty string for local execution.
-func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nodeLabel map[string]string, clusterNodes []string) (string, error) {
+// The local node is checked first. Remote probes carry only the caller's Dex
+// bearer, which the destination independently verifies against the shared Dex.
+func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nodeLabel map[string]string, clusterNodes []string, forwardToken string) (string, error) {
 	if len(nodeLabel) == 0 {
 		return "", nil
 	}
 
 	if host, ok := nodeLabel["host"]; ok {
+		if forwardToken == "" {
+			return "", fmt.Errorf("remote workflow host %q requires a transient caller Dex bearer", host)
+		}
 		return host, nil
 	}
 
@@ -29,17 +30,17 @@ func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nod
 		}
 	}
 
-	token := ""
-	if localClient != nil {
-		token = localClient.GetToken()
+	if forwardToken == "" {
+		return "", fmt.Errorf("no local node matches label selector %s and remote probing requires a transient caller Dex bearer", formatLabels(nodeLabel))
 	}
 	for _, node := range clusterNodes {
-		probe, err := appmesh.NewTCPClient(appmesh.Option{
-			AppMeshUri:         serverURI,
-			ForwardTo:          node,
-			JwtToken:           token,
-			InsecureSkipVerify: true,
-		})
+		probeOption := appmesh.Option{
+			AppMeshUri: serverURI,
+			ForwardTo:  node,
+			JwtToken:   forwardToken,
+		}
+		tlsconf.Apply(&probeOption)
+		probe, err := appmesh.NewTCPClient(probeOption)
 		if err != nil {
 			continue
 		}

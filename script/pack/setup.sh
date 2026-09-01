@@ -27,9 +27,40 @@ readonly INITD_SOFTLINK=/etc/init.d/appmesh
 readonly SYSTEMD_FILE=/etc/systemd/system/appmesh.service
 readonly LAUNCHD_FILE=/Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 readonly ENV_FILE="$PROG_HOME/appmesh.default"
+readonly SECRET_MASTER_KEY_FILE="${PROG_HOME}/work/auth/secrets/secret-master-key"
 readonly WORKFLOW_TEMPLATE="${PROG_HOME}/config/templates/workflow.yaml"
 readonly WORKFLOW_APP="${PROG_HOME}/work/apps/workflow.yaml"
 readonly WORKFLOW_INIT_MARKER="${PROG_HOME}/work/.workflow_initialized"
+readonly WORKFLOW_BASELINE="${PROG_HOME}/work/.workflow_builtin_template.yaml"
+readonly WORKFLOW_DISABLED_APP="${WORKFLOW_APP}.builtin-disabled"
+readonly AUTH_LAUNCHER="${PROG_HOME}/script/appmesh-auth.sh"
+readonly AUTH_APP_NAMES=(auth-service)
+
+AUTH_ACCESS_URL_EXPLICIT=0
+AUTH_ISSUER_EXPLICIT=0
+AUTH_BROWSER_ENTRY_EXPLICIT=0
+AUTH_TLS_VERIFY_EXPLICIT=0
+AUTH_CA_PATH_EXPLICIT=0
+AUTH_ROLE_EXPLICIT=0
+PREVIOUS_AUTH_MODE=""
+if [ "${APPMESH_AUTH_ACCESS_URL+x}" = x ] || [ "${APPMESH_DEX_ACCESS_URL+x}" = x ]; then
+    AUTH_ACCESS_URL_EXPLICIT=1
+fi
+if [ "${APPMESH_AUTH_ISSUER+x}" = x ] || [ "${APPMESH_DEX_ISSUER+x}" = x ]; then
+    AUTH_ISSUER_EXPLICIT=1
+fi
+if [ "${APPMESH_AUTH_BROWSER_ENTRY+x}" = x ]; then
+    AUTH_BROWSER_ENTRY_EXPLICIT=1
+fi
+if [ "${APPMESH_AUTH_TLS_VERIFY+x}" = x ] || [ "${APPMESH_DEX_TLS_VERIFY+x}" = x ]; then
+    AUTH_TLS_VERIFY_EXPLICIT=1
+fi
+if [ "${APPMESH_AUTH_CA_PATH+x}" = x ] || [ "${APPMESH_DEX_CA_PATH+x}" = x ]; then
+    AUTH_CA_PATH_EXPLICIT=1
+fi
+if [ "${APPMESH_AUTH_ROLE+x}" = x ]; then
+    AUTH_ROLE_EXPLICIT=1
+fi
 
 ################################################################################
 # Utility Functions
@@ -37,8 +68,108 @@ readonly WORKFLOW_INIT_MARKER="${PROG_HOME}/work/.workflow_initialized"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 info() { log "INFO" "$@"; }
+warn() { log "WARN" "$@"; }
 error() { log "ERROR" "$@"; }
 die() { error "$@" && exit 1; }
+
+usage() {
+    cat <<'EOF'
+Usage: setup.sh [authentication options]
+
+Authentication options (Linux/macOS):
+  --auth-mode builtin|external  Select the bundled or external authentication service
+  --auth-role standalone|owner|follower
+                                Cluster role of the bundled authentication service.
+                                owner runs the authentication service; follower joins
+                                an owner and runs no local authentication service
+  --oidc-issuer URL             Canonical issuer (required for external mode and follower role)
+  --oidc-access-url URL         Per-node discovery/JWKS route (defaults to the issuer)
+  --oidc-browser-entry URL      Browser entry that fronts the issuer path
+                                (defaults to the issuer; required for the follower role)
+  --oidc-tls-verify BOOL        Verify the external route certificate: true or false (default: true)
+  --oidc-ca-path PATH           Optional CA file or directory for the external route
+  --clear-oidc-ca               Remove a previously configured external CA path
+  -h, --help                    Show this help
+
+The equivalent non-interactive environment variables are APPMESH_AUTH_MODE,
+APPMESH_AUTH_ROLE, APPMESH_AUTH_ISSUER, APPMESH_AUTH_ACCESS_URL,
+APPMESH_AUTH_BROWSER_ENTRY, APPMESH_AUTH_TLS_VERIFY, and APPMESH_AUTH_CA_PATH.
+They also select the settings during package installation, which runs this
+script with the administrator environment. This interface never accepts user
+or client passwords.
+EOF
+}
+
+require_option_value() {
+    local option="$1"
+    local value="${2:-}"
+    [ -n "$value" ] || die "Missing value for $option"
+}
+
+parse_arguments() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+        --auth-mode)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_MODE="$2"
+            shift 2
+            ;;
+        --auth-mode=*) export APPMESH_AUTH_MODE="${1#*=}"; shift ;;
+        --auth-role)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_ROLE="$2"
+            AUTH_ROLE_EXPLICIT=1
+            shift 2
+            ;;
+        --auth-role=*) export APPMESH_AUTH_ROLE="${1#*=}"; AUTH_ROLE_EXPLICIT=1; shift ;;
+        --oidc-issuer)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_ISSUER="$2"
+            AUTH_ISSUER_EXPLICIT=1
+            shift 2
+            ;;
+        --oidc-issuer=*) export APPMESH_AUTH_ISSUER="${1#*=}"; AUTH_ISSUER_EXPLICIT=1; shift ;;
+        --oidc-access-url)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_ACCESS_URL="$2"
+            AUTH_ACCESS_URL_EXPLICIT=1
+            shift 2
+            ;;
+        --oidc-access-url=*) export APPMESH_AUTH_ACCESS_URL="${1#*=}"; AUTH_ACCESS_URL_EXPLICIT=1; shift ;;
+        --oidc-browser-entry)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_BROWSER_ENTRY="$2"
+            AUTH_BROWSER_ENTRY_EXPLICIT=1
+            shift 2
+            ;;
+        --oidc-browser-entry=*) export APPMESH_AUTH_BROWSER_ENTRY="${1#*=}"; AUTH_BROWSER_ENTRY_EXPLICIT=1; shift ;;
+        --oidc-tls-verify)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_TLS_VERIFY="$2"
+            AUTH_TLS_VERIFY_EXPLICIT=1
+            shift 2
+            ;;
+        --oidc-tls-verify=*) export APPMESH_AUTH_TLS_VERIFY="${1#*=}"; AUTH_TLS_VERIFY_EXPLICIT=1; shift ;;
+        --oidc-ca-path)
+            require_option_value "$1" "${2:-}"
+            export APPMESH_AUTH_CA_PATH="$2"
+            AUTH_CA_PATH_EXPLICIT=1
+            shift 2
+            ;;
+        --oidc-ca-path=*) export APPMESH_AUTH_CA_PATH="${1#*=}"; AUTH_CA_PATH_EXPLICIT=1; shift ;;
+        --clear-oidc-ca)
+            export APPMESH_AUTH_CA_PATH=""
+            AUTH_CA_PATH_EXPLICIT=1
+            shift
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *) die "Unknown setup option: $1" ;;
+        esac
+    done
+}
 
 get_os_type() {
     case "$(uname)" in
@@ -114,7 +245,11 @@ clean_environment() {
     info "Stopping existing service if running..."
     if [ -f "$SYSTEMD_FILE" ]; then
         systemctl stop appmesh 2>/dev/null || true
+        # Older installed units used KillMode=process. Explicitly terminate all
+        # remaining cgroup members before changing auth mode or package files.
+        systemctl kill --kill-whom=all --signal=TERM appmesh 2>/dev/null || true
         sleep 2
+        systemctl kill --kill-whom=all --signal=KILL appmesh 2>/dev/null || true
     elif [ -f "$INITD_SOFTLINK" ]; then
         service appmesh stop 2>/dev/null || true
         sleep 2
@@ -128,6 +263,23 @@ clean_environment() {
         find "${PROG_HOME}/work" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
         info "Work directory cleaned for fresh installation"
     fi
+}
+
+remove_obsolete_auth_app_definition() {
+    local obsolete_file="${PROG_HOME}/apps/auth-dex.yaml"
+
+    [ -e "$obsolete_file" ] || [ -L "$obsolete_file" ] || return 0
+    [ ! -L "$obsolete_file" ] || die "Refusing symbolic-link application definition: $obsolete_file"
+    [ -f "$obsolete_file" ] || die "Obsolete application definition is not a regular file: $obsolete_file"
+    grep -Eq '^name:[[:space:]]*auth-dex[[:space:]]*$' "$obsolete_file" || \
+        die "Refusing to remove an unrecognized application definition: $obsolete_file"
+    grep -Eq '^owner_principal_id:[[:space:]]*system:appmesh[[:space:]]*$' "$obsolete_file" || \
+        die "Refusing to remove an unrecognized application definition: $obsolete_file"
+    grep -Eq '^system:[[:space:]]*true[[:space:]]*$' "$obsolete_file" || \
+        die "Refusing to remove an unrecognized application definition: $obsolete_file"
+
+    rm -f -- "$obsolete_file"
+    info "Removed an obsolete bundled authentication application definition"
 }
 
 write_env_entry() {
@@ -149,6 +301,19 @@ write_env_entry() {
     mv "$filtered" "$target"
 }
 
+remove_env_entry() {
+    local target="$1"
+    local name="$2"
+    local filtered=""
+
+    filtered=$(mktemp "${target}.filter.XXXXXX") || die "Failed to create temporary environment file"
+    chmod 600 "$filtered"
+    if [ -s "$target" ]; then
+        awk -v key="$name" 'substr($0, 1, length(key) + 1) != key "=" { print }' "$target" >"$filtered"
+    fi
+    mv "$filtered" "$target"
+}
+
 read_env_entry() {
     local name="$1"
     awk -v key="$name" '
@@ -161,6 +326,217 @@ read_env_entry() {
             else exit 1
         }
     ' "$ENV_FILE"
+}
+
+validate_oidc_url() {
+    local name="$1"
+    local value="$2"
+    if [[ ! "$value" =~ ^https?://(\[[0-9A-Fa-f:.]+\]|[^/:?\#[:space:]@]+)(:[0-9]+)?(/[^?\#[:space:]]*)?$ ]]; then
+        die "$name must be an absolute HTTP(S) URL without credentials, query, fragment, or whitespace"
+    fi
+}
+
+normalize_tls_verify() {
+    case "$1" in
+    true | TRUE | True | 1) printf '%s' true ;;
+    false | FALSE | False | 0) printf '%s' false ;;
+    *) die "APPMESH_AUTH_TLS_VERIFY must be true or false" ;;
+    esac
+}
+
+# A node that verifies against a remote authentication service must reach the
+# advertised browser entry. The check uses the configured TLS posture.
+verify_auth_entry_reachable() {
+    local url="$1"
+    local tls_verify="$2"
+    local ca_path="$3"
+    command -v curl >/dev/null 2>&1 || {
+        error "curl is not available; skipped the authentication entry reachability check: $url"
+        return 0
+    }
+    local curl_args=(--fail --silent --show-error --connect-timeout 5 --max-time 15 --output /dev/null)
+    case "$tls_verify" in
+    false | FALSE | False | 0) curl_args+=(--insecure) ;;
+    esac
+    if [ -n "$ca_path" ]; then
+        if [ -d "$ca_path" ]; then
+            curl_args+=(--capath "$ca_path")
+        else
+            curl_args+=(--cacert "$ca_path")
+        fi
+    fi
+    curl "${curl_args[@]}" "$url" ||
+        die "The authentication entry is not reachable: $url. Check the address and the network, then run setup again."
+}
+
+set_auth_app_status() {
+    local status="$1"
+    local app_name=""
+    local app_file=""
+    local app_tmp=""
+
+    for app_name in "${AUTH_APP_NAMES[@]}"; do
+        app_file="${PROG_HOME}/apps/${app_name}.yaml"
+        [ -f "$app_file" ] || die "Bundled authentication App definition not found: $app_file"
+        grep -q '^status:' "$app_file" || die "Bundled authentication App has no status field: $app_file"
+        app_tmp=$(mktemp "${app_file}.XXXXXX") || die "Failed to create temporary App definition"
+        awk -v status="$status" '/^status:/ { print "status: " status; next } { print }' "$app_file" >"$app_tmp"
+        chmod 644 "$app_tmp"
+        mv "$app_tmp" "$app_file"
+    done
+}
+
+configure_authentication() {
+    # The bundled auth runtime and System Apps ship on Linux and macOS. Other
+    # platforms retain their existing externally managed issuer setup.
+    case "$(uname)" in
+    Linux | Darwin) ;;
+    *) return 0 ;;
+    esac
+
+    local mode=""
+    local issuer=""
+    local access_url=""
+    local browser_entry=""
+    local tls_verify=""
+    local ca_path=""
+
+    mode=$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)
+    mode=${mode:-builtin}
+    case "$mode" in
+    builtin | external) ;;
+    *) die "APPMESH_AUTH_MODE must be builtin or external" ;;
+    esac
+    write_env_entry "$ENV_FILE" APPMESH_AUTH_MODE "$mode"
+
+    # Cluster role of the bundled authentication service. setup_env_file() has
+    # already persisted any explicitly passed or preserved APPMESH_AUTH_ROLE;
+    # without a selection the packaged auth-stack.yaml default applies. The
+    # package post-install runs this script with the administrator environment,
+    # so APPMESH_AUTH_ROLE also selects the role at dpkg/rpm install time.
+    local role=""
+    role=$(read_env_entry APPMESH_AUTH_ROLE 2>/dev/null || true)
+    if [ -n "$role" ]; then
+        case "$role" in
+        standalone | owner | follower) ;;
+        *) die "APPMESH_AUTH_ROLE must be standalone, owner, or follower" ;;
+        esac
+        if [ "$mode" = "external" ]; then
+            if [ "$AUTH_ROLE_EXPLICIT" -eq 1 ]; then
+                die "--auth-role requires builtin mode; external mode runs no local authentication service"
+            fi
+            # A stale role selection from a previous builtin installation is
+            # meaningless in external mode; drop it instead of failing upgrade.
+            remove_env_entry "$ENV_FILE" APPMESH_AUTH_ROLE
+            role=""
+            info "Removed the stale authentication role selection for external mode."
+        else
+            info "Authentication role set to ${role}."
+        fi
+    fi
+
+    issuer=$(read_env_entry APPMESH_AUTH_ISSUER 2>/dev/null || read_env_entry APPMESH_DEX_ISSUER 2>/dev/null || true)
+    access_url=$(read_env_entry APPMESH_AUTH_ACCESS_URL 2>/dev/null || read_env_entry APPMESH_DEX_ACCESS_URL 2>/dev/null || true)
+    browser_entry=$(read_env_entry APPMESH_AUTH_BROWSER_ENTRY 2>/dev/null || true)
+    tls_verify=$(read_env_entry APPMESH_AUTH_TLS_VERIFY 2>/dev/null || read_env_entry APPMESH_DEX_TLS_VERIFY 2>/dev/null || true)
+    ca_path=$(read_env_entry APPMESH_AUTH_CA_PATH 2>/dev/null || read_env_entry APPMESH_DEX_CA_PATH 2>/dev/null || true)
+
+    if [ "$mode" = "external" ]; then
+        if [ "$PREVIOUS_AUTH_MODE" != "external" ] && [ "$AUTH_ISSUER_EXPLICIT" -ne 1 ]; then
+            die "Changing to external authentication requires --oidc-issuer or APPMESH_AUTH_ISSUER"
+        fi
+        # Do not silently carry built-in routing/TLS state into a different
+        # issuer deployment. Explicit values in this invocation still win;
+        # repeated external-mode setup preserves the established selection.
+        if [ "$PREVIOUS_AUTH_MODE" != "external" ]; then
+            [ "$AUTH_ACCESS_URL_EXPLICIT" -eq 1 ] || access_url=""
+            [ "$AUTH_BROWSER_ENTRY_EXPLICIT" -eq 1 ] || browser_entry=""
+            [ "$AUTH_TLS_VERIFY_EXPLICIT" -eq 1 ] || tls_verify=""
+            [ "$AUTH_CA_PATH_EXPLICIT" -eq 1 ] || ca_path=""
+        fi
+        [ -n "$issuer" ] || die "External authentication requires --oidc-issuer or APPMESH_AUTH_ISSUER"
+        access_url=${access_url:-$issuer}
+        browser_entry=${browser_entry:-$issuer}
+        tls_verify=$(normalize_tls_verify "${tls_verify:-true}")
+        validate_oidc_url APPMESH_AUTH_ISSUER "$issuer"
+        validate_oidc_url APPMESH_AUTH_ACCESS_URL "$access_url"
+        validate_oidc_url APPMESH_AUTH_BROWSER_ENTRY "$browser_entry"
+        if [ -n "$ca_path" ]; then
+            [[ "$ca_path" = /* ]] || die "APPMESH_AUTH_CA_PATH must be an absolute path"
+            [ -e "$ca_path" ] || die "APPMESH_AUTH_CA_PATH does not exist: $ca_path"
+        fi
+        write_env_entry "$ENV_FILE" APPMESH_AUTH_ISSUER "$issuer"
+        write_env_entry "$ENV_FILE" APPMESH_AUTH_ACCESS_URL "$access_url"
+        write_env_entry "$ENV_FILE" APPMESH_AUTH_BROWSER_ENTRY "$browser_entry"
+        write_env_entry "$ENV_FILE" APPMESH_AUTH_TLS_VERIFY "$tls_verify"
+        if [ -n "$ca_path" ]; then
+            write_env_entry "$ENV_FILE" APPMESH_AUTH_CA_PATH "$ca_path"
+        elif [ "$AUTH_CA_PATH_EXPLICIT" -eq 1 ] || [ "$PREVIOUS_AUTH_MODE" != "external" ]; then
+            remove_env_entry "$ENV_FILE" APPMESH_AUTH_CA_PATH
+        fi
+        set_auth_app_status 0
+        remove_env_entry "$ENV_FILE" APPMESH_DEX_ISSUER
+        remove_env_entry "$ENV_FILE" APPMESH_DEX_ACCESS_URL
+        remove_env_entry "$ENV_FILE" APPMESH_DEX_TLS_VERIFY
+        remove_env_entry "$ENV_FILE" APPMESH_DEX_CA_PATH
+        info "Authentication mode set to external. The bundled authentication service is disabled."
+        # The whole configuration is persisted above, so a failed check keeps the
+        # selection and a repeated setup re-runs only the check.
+        verify_auth_entry_reachable "$browser_entry" "$tls_verify" "$ca_path"
+    else
+        # Changing from external mode discards external-only routing/TLS state
+        # unless this invocation supplies a replacement. The canonical issuer is
+        # retained: it may be the public URL of the newly local service behind an
+        # ingress.
+        if [ "$PREVIOUS_AUTH_MODE" = "external" ]; then
+            if [ "$AUTH_ACCESS_URL_EXPLICIT" -eq 0 ]; then
+                remove_env_entry "$ENV_FILE" APPMESH_AUTH_ACCESS_URL
+                access_url=""
+            fi
+            if [ "$AUTH_TLS_VERIFY_EXPLICIT" -eq 0 ]; then
+                remove_env_entry "$ENV_FILE" APPMESH_AUTH_TLS_VERIFY
+                tls_verify=""
+            fi
+            if [ "$AUTH_CA_PATH_EXPLICIT" -eq 0 ]; then
+                remove_env_entry "$ENV_FILE" APPMESH_AUTH_CA_PATH
+                ca_path=""
+            fi
+        elif [ "$AUTH_CA_PATH_EXPLICIT" -eq 1 ] && [ -z "$ca_path" ]; then
+            remove_env_entry "$ENV_FILE" APPMESH_AUTH_CA_PATH
+        fi
+        [ -z "$issuer" ] || validate_oidc_url APPMESH_AUTH_ISSUER "$issuer"
+        [ -z "$access_url" ] || validate_oidc_url APPMESH_AUTH_ACCESS_URL "$access_url"
+        [ -z "$browser_entry" ] || validate_oidc_url APPMESH_AUTH_BROWSER_ENTRY "$browser_entry"
+        [ -z "$tls_verify" ] || normalize_tls_verify "$tls_verify" >/dev/null
+        if [ "$role" = "follower" ]; then
+            # A follower runs no local authentication service. It must carry the
+            # owner's canonical issuer and a route to it; without an explicit
+            # access route the owner issuer itself is the route.
+            [ -n "$issuer" ] || die "Follower role requires --oidc-issuer or APPMESH_AUTH_ISSUER of the authentication owner"
+            # The owner issuer is an internal route that a browser cannot reach;
+            # only the owner's browser entry fronts the issuer path.
+            [ -n "$browser_entry" ] || die "Follower role requires --oidc-browser-entry or APPMESH_AUTH_BROWSER_ENTRY of the authentication owner"
+            access_url=${access_url:-$issuer}
+            write_env_entry "$ENV_FILE" APPMESH_AUTH_ACCESS_URL "$access_url"
+            write_env_entry "$ENV_FILE" APPMESH_AUTH_BROWSER_ENTRY "$browser_entry"
+            verify_auth_entry_reachable "$browser_entry" "${tls_verify:-true}" "$ca_path"
+            info "This node joins the authentication owner at ${issuer}."
+        fi
+        set_auth_app_status 1
+        info "Authentication mode set to builtin. The bundled authentication service is enabled."
+        # Without the launcher installed, the authentication App self-bootstraps instead.
+        if [ -x "$AUTH_LAUNCHER" ]; then
+            APPMESH_AUTH_MODE="$mode" \
+                APPMESH_AUTH_ROLE="$role" \
+                APPMESH_AUTH_ISSUER="${issuer:-http://127.0.0.1:6062/auth}" \
+                APPMESH_AUTH_ACCESS_URL="${access_url:-http://127.0.0.1:6062/auth}" \
+                APPMESH_AUTH_BROWSER_ENTRY="$browser_entry" \
+                APPMESH_AUTH_TLS_VERIFY="${tls_verify:-true}" \
+                APPMESH_AUTH_CA_PATH="$ca_path" \
+                "$AUTH_LAUNCHER" bootstrap || die "Authentication bootstrap failed"
+        fi
+    fi
+    chmod 600 "$ENV_FILE"
 }
 
 setup_env_file() {
@@ -183,6 +559,8 @@ setup_env_file() {
             *=*)
                 name="${assignment%%=*}"
                 value="${assignment#*=}"
+                [ "$name" != "APPMESH_SECRET_MASTER_KEY" ] || \
+                    die "APPMESH_SECRET_MASTER_KEY is not supported; use the owner-only master-key file"
                 write_env_entry "$env_tmp" "$name" "$value"
                 ;;
             *) die "Invalid environment entry in $ENV_FILE" ;;
@@ -203,6 +581,8 @@ setup_env_file() {
     while IFS= read -r assignment || [ -n "$assignment" ]; do
         name="${assignment%%=*}"
         value="${assignment#*=}"
+        [ "$name" != "APPMESH_SECRET_MASTER_KEY" ] || \
+            die "APPMESH_SECRET_MASTER_KEY is not supported; use the owner-only master-key file"
         info "Applying environment variable: $name"
         write_env_entry "$env_tmp" "$name" "$value"
     done < <(printenv | grep '^APPMESH_')
@@ -213,7 +593,7 @@ setup_env_file() {
     fi
 
     mv "$env_tmp" "$ENV_FILE"
-    # setup_permissions() transfers ownership to a configured daemon user.
+    # setup_permissions() keeps this root-owned; the service manager reads it.
     chmod 600 "$ENV_FILE"
 
     # Restore the persisted service identity before regenerating definitions.
@@ -225,40 +605,89 @@ setup_env_file() {
     done
 }
 
-prepare_workflow_app() {
-    if [ "${APPMESH_SECURE_INSTALLATION:-N}" = "Y" ] || [ -f "${PROG_HOME}/work/.appmginit" ]; then
-        # A packaged default is incompatible with appmginit credentials.
-        if [ -f "$WORKFLOW_APP" ] && [ -f "$WORKFLOW_TEMPLATE" ] && cmp -s "$WORKFLOW_APP" "$WORKFLOW_TEMPLATE"; then
-            local disabled_app="${WORKFLOW_APP}.disabled"
-            [ -e "$disabled_app" ] && disabled_app="${disabled_app}.$(date +%s)"
-            mv "$WORKFLOW_APP" "$disabled_app"
-            info "Secure installation: moved the default workflow App to $disabled_app"
+provision_secret_master_key() {
+    local secret_dir=""
+    local key_tmp=""
+
+    secret_dir=$(dirname "$SECRET_MASTER_KEY_FILE")
+    [ -L "$secret_dir" ] && die "Refusing symbolic-link runtime secret directory: $secret_dir"
+    install -d -m 700 "$secret_dir"
+
+    [ -L "$SECRET_MASTER_KEY_FILE" ] && \
+        die "Refusing symbolic-link SecretProtector master key: $SECRET_MASTER_KEY_FILE"
+    if [ -e "$SECRET_MASTER_KEY_FILE" ]; then
+        [ -f "$SECRET_MASTER_KEY_FILE" ] || \
+            die "SecretProtector master key is not a regular file: $SECRET_MASTER_KEY_FILE"
+        chmod 600 "$SECRET_MASTER_KEY_FILE"
+        info "Preserving existing SecretProtector master key"
+    else
+        command -v openssl >/dev/null 2>&1 || \
+            die "OpenSSL is required to provision the SecretProtector master key"
+        key_tmp=$(mktemp "${SECRET_MASTER_KEY_FILE}.XXXXXX") || \
+            die "Failed to create temporary SecretProtector master key"
+        chmod 600 "$key_tmp"
+        if ! openssl rand -base64 32 >"$key_tmp"; then
+            rm -f "$key_tmp"
+            die "Failed to generate SecretProtector master key"
         fi
-        info "Secure installation: workflow App was not enabled with default credentials"
-        info "Provision the workflow App sec_env after the daemon starts"
-        touch "$WORKFLOW_INIT_MARKER"
-        chmod 600 "$WORKFLOW_INIT_MARKER"
+        # A hard-link publish is atomic and does not replace a key concurrently
+        # created by another setup process.
+        if ln "$key_tmp" "$SECRET_MASTER_KEY_FILE" 2>/dev/null; then
+            info "Provisioned SecretProtector master key"
+        elif [ ! -f "$SECRET_MASTER_KEY_FILE" ] || [ -L "$SECRET_MASTER_KEY_FILE" ]; then
+            rm -f "$key_tmp"
+            die "Failed to atomically publish SecretProtector master key"
+        fi
+        rm -f "$key_tmp"
+    fi
+    write_env_entry "$ENV_FILE" APPMESH_SECRET_MASTER_KEY_FILE "$SECRET_MASTER_KEY_FILE"
+    chmod 600 "$ENV_FILE"
+}
+
+prepare_workflow_app() {
+    # The launcher only execs wf-engine; authentication mode does not affect
+    # registration because Workflow is no longer an OAuth service client.
+    # Platforms without the Linux launcher must not auto-register this App.
+    if [ ! -x "$AUTH_LAUNCHER" ]; then
+        info "Bundled authentication runtime is not installed; skipping the default workflow App"
         return
     fi
+
+    [ -f "$WORKFLOW_TEMPLATE" ] || die "Workflow App template not found: $WORKFLOW_TEMPLATE"
 
     # Runtime definitions are operator state. Only initialize a missing one.
     if [ -f "$WORKFLOW_APP" ]; then
         info "Preserving existing workflow App definition at $WORKFLOW_APP"
+        if cmp -s "$WORKFLOW_APP" "$WORKFLOW_TEMPLATE"; then
+            cp "$WORKFLOW_TEMPLATE" "$WORKFLOW_BASELINE"
+            chmod 600 "$WORKFLOW_BASELINE"
+        fi
         touch "$WORKFLOW_INIT_MARKER"
         chmod 600 "$WORKFLOW_INIT_MARKER"
+        return
+    fi
+    if [ -f "$WORKFLOW_DISABLED_APP" ]; then
+        # Migrate state left by installers that disabled Workflow together with
+        # local authentication service. The current template is mode-independent.
+        mv -f "$WORKFLOW_DISABLED_APP" "$WORKFLOW_APP"
+        cp "$WORKFLOW_TEMPLATE" "$WORKFLOW_APP"
+        chmod 600 "$WORKFLOW_APP"
+        cp "$WORKFLOW_TEMPLATE" "$WORKFLOW_BASELINE"
+        chmod 600 "$WORKFLOW_BASELINE"
+        touch "$WORKFLOW_INIT_MARKER"
+        chmod 600 "$WORKFLOW_INIT_MARKER"
+        info "Restored the mode-independent bundled workflow App at $WORKFLOW_APP"
         return
     fi
     if [ -f "$WORKFLOW_INIT_MARKER" ]; then
         info "Preserving intentionally absent workflow App definition"
         return
     fi
-    if [ ! -f "$WORKFLOW_TEMPLATE" ]; then
-        die "Workflow App template not found: $WORKFLOW_TEMPLATE"
-    fi
-
     mkdir -p "$(dirname "$WORKFLOW_APP")"
     cp "$WORKFLOW_TEMPLATE" "$WORKFLOW_APP"
     chmod 600 "$WORKFLOW_APP"
+    cp "$WORKFLOW_TEMPLATE" "$WORKFLOW_BASELINE"
+    chmod 600 "$WORKFLOW_BASELINE"
     touch "$WORKFLOW_INIT_MARKER"
     chmod 600 "$WORKFLOW_INIT_MARKER"
     info "Installed default workflow App definition at $WORKFLOW_APP"
@@ -289,16 +718,6 @@ setup_service() {
     rm -f "$APPM_SOFTLINK" && ln -sf "${PROG_HOME}/bin/appm" "$APPM_SOFTLINK"
     info "Symlink for appm created at $APPM_SOFTLINK"
 
-    # Initialize secure installation if needed
-    if [ "${APPMESH_SECURE_INSTALLATION:-}" = "Y" ]; then
-        local flag_file="${PROG_HOME}/work/.appmginit"
-        if [ ! -f "$flag_file" ]; then
-            info "Performing secure installation initialization"
-            "$APPM_SOFTLINK" appmginit
-        else
-            info "Secure installation was already initialized"
-        fi
-    fi
 }
 
 install_systemd_service() {
@@ -417,13 +836,41 @@ install_initd_service() {
 
 setup_permissions() {
     info "Setting up permissions"
-    chmod 644 "${PROG_HOME}"/config/config.yaml "${PROG_HOME}"/config/security.yaml
+    local root_group=""
+    root_group=$(id -gn 0)
+
+    # Package payload remains an administrator-controlled trust boundary. This
+    # also repairs ownership left by older installers that delegated the whole
+    # installation tree to the daemon account.
+    find "${PROG_HOME}" -path "${PROG_HOME}/work" -prune -o -type d -exec chown "root:${root_group}" {} \;
+    find "${PROG_HOME}" -path "${PROG_HOME}/work" -prune -o \
+        -path "${PROG_HOME}/ssl/*" -name "*.pem" -prune -o \
+        -type f -exec chown "root:${root_group}" {} \;
+    find "${PROG_HOME}" -path "${PROG_HOME}/work" -prune -o -type d -exec chmod go-w {} \;
+    find "${PROG_HOME}" -path "${PROG_HOME}/work" -prune -o \
+        -path "${PROG_HOME}/ssl/*" -name "*.pem" -prune -o \
+        -type f -exec chmod go-w {} \;
+
+    chmod 644 "${PROG_HOME}"/config/config.yaml "${PROG_HOME}"/config/oidc.yaml
+    chmod 600 "${PROG_HOME}"/config/authorization.yaml
     find "${PROG_HOME}/script" -name "*.sh" -exec chmod +x {} \;
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER:-}" ]; then
-        local owner="${APPMESH_DAEMON_EXEC_USER}"
-        [ -n "${APPMESH_DAEMON_EXEC_USER_GROUP:-}" ] && owner="${owner}:${APPMESH_DAEMON_EXEC_USER_GROUP}"
-        chown -R "$owner" "${PROG_HOME}"
+        id -u "${APPMESH_DAEMON_EXEC_USER}" >/dev/null 2>&1 || \
+            die "Configured daemon user does not exist: ${APPMESH_DAEMON_EXEC_USER}"
+        local daemon_group="${APPMESH_DAEMON_EXEC_USER_GROUP:-}"
+        daemon_group=${daemon_group:-$(id -gn "${APPMESH_DAEMON_EXEC_USER}")}
+        local runtime_owner="${APPMESH_DAEMON_EXEC_USER}:${daemon_group}"
+
+        # Only mutable runtime state and the PID file belong to the daemon.
+        # Sensitive packaged policy stays root-owned and group-readable.
+        install -d -m 750 -o "${APPMESH_DAEMON_EXEC_USER}" -g "${daemon_group}" "${PROG_HOME}/work"
+        chown -R "${runtime_owner}" "${PROG_HOME}/work"
+        chown "root:${daemon_group}" "${PROG_HOME}/config/authorization.yaml"
+        chmod 640 "${PROG_HOME}/config/authorization.yaml"
+        : > "${PROG_HOME}/appmesh.pid"
+        chown "${runtime_owner}" "${PROG_HOME}/appmesh.pid"
+        chmod 640 "${PROG_HOME}/appmesh.pid"
     fi
 }
 
@@ -433,50 +880,86 @@ setup_ssl_certificates() {
         info "Generating SSL certificates"
         if [ -f "${ssl_dir}/generate_ssl_cert.sh" ]; then
             (cd "$ssl_dir" && bash generate_ssl_cert.sh)
-            find "$ssl_dir" -name "*.pem" -exec chmod 644 {} \;
+            # Preserve the historical generated-file defaults. Existing
+            # operator-provided TLS ownership and modes are never rewritten.
+            find "$ssl_dir" -type f -name "*.pem" -exec chmod 644 {} \;
         else
             die "SSL certificate generation script not found"
         fi
     fi
 }
 
+# User-facing introduction. Plain echo on purpose: this block is an
+# introduction, not a log entry, so it carries no timestamp prefix. Each
+# platform prints only its own service commands. tee also copies the text to
+# NEXT_STEPS.txt without a timestamp prefix: macOS package installs swallow
+# postinstall stdout, and the file keeps the steps readable there.
 print_startup_instructions() {
-    info "App Mesh installation completed successfully. Installed to: $PROG_HOME"
-    local init_system=$(detect_init_system)
+    local init_system
+    init_system=$(detect_init_system)
+    local rest_port
+    rest_port=$(read_env_entry APPMESH_REST_RestListenPort 2>/dev/null || echo 6060)
 
-    info "Startup Instructions:"
-    case "$init_system" in
-    "systemd")
-        info "  To enable App Mesh to start on boot and start it immediately:"
-        info "    sudo systemctl enable appmesh"
-        info "    sudo systemctl start appmesh"
-        ;;
-    "launchd")
-        info "  To load the App Mesh service using launchd:"
-        info "    sudo launchctl load -w $LAUNCHD_FILE"
-        info "  Alternatively, to manually start the service:"
-        info "    sudo bash ${PROG_HOME}/script/appmesh.initd.sh start"
-        ;;
-    *)
-        info "  To enable and start App Mesh service on init.d systems:"
-        info "    sudo update-rc.d appmesh defaults"
-        info "    sudo service appmesh start"
-        ;;
-    esac
+    {
+        echo
+        echo "App Mesh installed to: $PROG_HOME"
+        echo
+        echo "Next steps:"
+        echo "  1. Start the service"
+        case "$init_system" in
+        "systemd")
+            echo "       sudo systemctl enable --now appmesh"
+            ;;
+        "launchd")
+            echo "       sudo launchctl load -w $LAUNCHD_FILE"
+            ;;
+        *)
+            echo "       sudo service appmesh start"
+            ;;
+        esac
+        echo "  2. Open the web console"
+        echo "       https://<this-host>:${rest_port}"
+        echo "  3. Sign in"
+        if [ "$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)" = "builtin" ]; then
+            if grep -q '^password=' "${PROG_HOME}/work/auth/secrets/initial-admin-credentials" 2>/dev/null; then
+                echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh print-initial-password"
+            else
+                echo "       The initial password was removed on this host. Set a new one:"
+                echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh rotate-initial-password, then restart appmesh"
+            fi
+            echo "       appm logon --username admin@appmesh.local"
+        else
+            echo "       appm logon --browser"
+        fi
+        echo
+        echo "Logs: ${PROG_HOME}/work/server.log"
+        echo "Docs: https://app-mesh.readthedocs.io"
+        echo
+    } | tee "$PROG_HOME/NEXT_STEPS.txt" || warn "Failed to write $PROG_HOME/NEXT_STEPS.txt"
+    chmod 644 "$PROG_HOME/NEXT_STEPS.txt" 2>/dev/null || true
 }
 
 ################################################################################
 # Main Function
 ################################################################################
 main() {
+    parse_arguments "$@"
+
     # Check root privileges
     [[ "$(id -u)" -ne 0 ]] && die "This script must be run as root"
 
+    if [ -f "$ENV_FILE" ]; then
+        PREVIOUS_AUTH_MODE=$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)
+    fi
+
     # Clean
     clean_environment
+    remove_obsolete_auth_app_definition
 
     # Setup
     setup_env_file
+    provision_secret_master_key
+    configure_authentication
     setup_service
     prepare_workflow_app
     setup_permissions

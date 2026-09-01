@@ -27,7 +27,7 @@ Usage:
 
 Env:
     APPMESH_TEST_URL        daemon base url (default: SDK default https://127.0.0.1:6060)
-    APPMESH_TEST_CRED       admin password (default: admin123)
+    APPMESH_TEST_ACCESS_TOKEN  pre-acquired Dex access token
     STRESS_DURATION_SEC     total run time (default: 60)
     STRESS_CONCURRENCY      parallel workers per scenario (default: 3)
     STRESS_RETENTION_SEC    retention for the remove scenario, must be > daemon tick (default: 6)
@@ -52,8 +52,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(current_directory, "..", "..")))
 from appmesh import AppMeshClient, App
 
 BASE_URL = os.environ.get("APPMESH_TEST_URL")
-USER = os.environ.get("APPMESH_TEST_USER", "admin")
-CRED = os.environ.get("APPMESH_TEST_CRED", "admin123")
+ACCESS_TOKEN = os.environ.get("APPMESH_TEST_ACCESS_TOKEN")
 DURATION = int(os.environ.get("STRESS_DURATION_SEC", "60"))
 CONCURRENCY = int(os.environ.get("STRESS_CONCURRENCY", "3"))
 RETENTION_SEC = int(os.environ.get("STRESS_RETENTION_SEC", "6"))
@@ -67,7 +66,9 @@ SLOW = 1.0
 
 def new_client() -> AppMeshClient:
     c = AppMeshClient(base_url=BASE_URL) if BASE_URL else AppMeshClient()
-    c.login(USER, CRED)
+    if not ACCESS_TOKEN:
+        raise RuntimeError("APPMESH_TEST_ACCESS_TOKEN must contain a Dex access token")
+    c.set_bearer_token(ACCESS_TOKEN)
     return c
 
 

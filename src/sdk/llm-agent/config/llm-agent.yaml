@@ -21,7 +21,10 @@
 #
 # `working_dir` must contain the llm_agent package and have `claude-agent-sdk` importable.
 name: llm-agent
-owner: admin
+owner_principal_id: system:appmesh
+# OTHER_DENY (10): a system-owned agent runtime — other principals must not view
+# or control it (app-manage-all / app-view-all holders still bypass).
+permission: 10
 description: llm-agent — Claude Agent SDK handler (shared, Scenario A)
 working_dir: /opt/appmesh/lib/llm-agent          # packaged-install location; EDIT for a custom prefix
 command: python3 -m llm_agent --server 127.0.0.1:6059

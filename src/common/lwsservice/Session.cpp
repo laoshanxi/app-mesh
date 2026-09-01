@@ -2,33 +2,33 @@
 #include "Session.h"
 #include "../../daemon/rest/HttpRequest.h"
 #include "../../daemon/rest/Worker.h"
-#include "../../daemon/security/JwtToken.h"
 
 #include <cstring>
 #include <libwebsockets.h>
+#include <utility>
 
-WebSocketSession::WebSocketSession(lws *lws, uint64_t id)
-    : m_lws(lws), m_id(id), m_connected_at(std::time(nullptr))
+WebSocketSession::WebSocketSession(lws *lws, uint64_t id, std::string principalId, bool managedWorkerTransport)
+    : m_lws(lws), m_id(id), m_connected_at(std::time(nullptr)), m_peer_address([lws]()
+      {
+          char address[64] = {};
+          lws_get_peer_simple(lws, address, sizeof(address));
+          return std::string(address);
+      }()), m_principal_id(std::move(principalId)), m_managed_worker_transport(managedWorkerTransport)
 {
 }
 
 void WebSocketSession::handleRequest(const WSRequest &req)
 {
     auto request = HttpRequest::deserialize(req.m_payload, -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, nullptr);
-    WORKER::instance()->process(request);
-}
+    if (!request)
+        return;
 
-bool WebSocketSession::verifyToken(const std::string &token)
-{
-    try
-    {
-        JwtToken::verify(token, WEBSOCKET_FILE_AUDIENCE);
-        return true;
-    }
-    catch (...)
-    {
-    }
-    return false;
+    request->m_remote_address = m_peer_address;
+    if (!m_principal_id.empty())
+        request->bindTransportPrincipal(m_principal_id);
+    else if (m_managed_worker_transport)
+        request->markManagedWorkerTransport();
+    WORKER::instance()->process(request);
 }
 
 bool WebSocketSession::enqueueOutgoingMessage(std::unique_ptr<msgpack::sbuffer> payload)

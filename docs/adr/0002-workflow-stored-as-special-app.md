@@ -25,11 +25,12 @@ Workflows are registered as **special Apps** (metadata `type=workflow`) for CRUD
 
 - **Zero daemon changes**: CRUD goes through the existing App API + Task API.
 - **Ownership enforced** (since ADR 0006 Phase 1+2): the engine records the authenticated
-  registrant as owner in the App metadata (a YAML-supplied owner is ignored as spoofable)
-  and every workflow action authorizes against owner/workflow-admin, fail-closed. Manually
-  triggered runs execute steps under the triggering caller's identity; automatic (event)
-  runs execute under the workflow's declared `execution_identity`, or fail closed when none
-  is set — the engine's own identity is never used to run steps (see ADR 0004, implemented).
+  registrant's immutable Principal ID as owner in the App metadata; YAML cannot declare an
+  owner. Every workflow action authorizes against owner or `workflow-admin`, fail-closed.
+  Manual runs use the caller's Engine-validated bearer. Automatic and recovered runs
+  use a short-lived Engine-local capability bound to the workflow owner, run, current
+  Workflow process, and allowed operations. Registering an automatic trigger requires
+  `workflow-admin` (see ADR 0006 and ADR 0009).
 - **Remote management**: any SDK or CLI can manage workflows via the existing `run_task` endpoint.
 
 ### Trade-offs

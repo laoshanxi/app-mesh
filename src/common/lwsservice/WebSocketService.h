@@ -61,7 +61,7 @@ public:
     // Session management
     std::shared_ptr<WSSessionInfo> getSessionInfo(struct lws *wsi);
     std::shared_ptr<WebSocketSession> findSession(struct lws *wsi);
-    std::shared_ptr<WebSocketSession> createSession(struct lws *wsi);
+    std::shared_ptr<WebSocketSession> createSession(struct lws *wsi, std::string principalId = "", bool managedWorkerTransport = false);
     void destroySession(struct lws *wsi);
 
     // HTTP request builder

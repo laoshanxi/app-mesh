@@ -1,0 +1,100 @@
+# This is a launcher template, not a Dex runtime configuration. appmesh-auth.sh
+# replaces every placeholder marker with a YAML-quoted public setting and writes
+# the mode-0600 runtime file under work/auth/dex. Only the bcrypt hash from the
+# private initial-credential file is rendered; plaintext never enters this file.
+---
+issuer: __APPMESH_DEX_ISSUER__
+
+# Browser-facing login page branding (Dex defaults would show "dex" and its own
+# logo). The logo URL is issuer-path relative: every login page resolves it to
+# <entry-address>/auth/logo.svg, so it follows whatever host and port the
+# browser used. Public entries route it to the daemon's /appmesh/logo.svg asset:
+# the agent redirects, the web UI proxy rewrites. A browser that reaches Dex
+# directly (no proxy entry) shows the text branding only.
+frontend:
+  issuer: App Mesh
+  logoURL: logo.svg
+
+storage:
+  type: sqlite3
+  config:
+    file: __APPMESH_DEX_STORAGE_PATH__
+
+web:
+  http: __APPMESH_DEX_LISTEN__
+
+telemetry:
+  http: __APPMESH_DEX_TELEMETRY_LISTEN__
+
+oauth2:
+  responseTypes: ["code"]
+  # Password login is deliberately bound to Dex's built-in local password DB.
+  # External connectors continue to use browser or device authorization. The
+  # The auth-service System App enables Dex's current client-credentials feature flag.
+  passwordConnector: local
+  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"]
+
+expiry:
+  signingKeys: 6h
+  idTokens: 15m
+  authRequests: 5m
+  deviceRequests: 5m
+  # Refresh tokens rotate on every use; a superseded token stays valid inside
+  # reuseInterval so a CLI killed between refresh and session persist (or
+  # concurrent CLI processes) does not break the login chain. Idle logins
+  # survive validIfNotUsedFor; absoluteLifetime stays unlimited.
+  refreshTokens:
+    reuseInterval: 5m
+    validIfNotUsedFor: 168h
+
+staticClients:
+  # Resource-audience target. User clients request audience:server:client_id:appmesh-api.
+  - id: appmesh-api
+    name: App Mesh API
+    public: true
+    trustedPeers: [appmesh-cli, appmesh-web, appmesh-mcp-user, appmesh-automation]
+
+  # RFC 8252 native client. Dex restricts public clients without configured redirects to
+  # loopback/OOB redirects; the CLI always uses PKCE S256.
+  - id: appmesh-cli
+    name: App Mesh CLI
+    public: true
+
+  # Pre-registered MCP user client. Dex does not expose Dynamic Client Registration;
+  # MCP clients must be configured to use this client ID and an allowed loopback redirect.
+  - id: appmesh-mcp-user
+    name: App Mesh MCP User
+    public: true
+
+  # Browser authorization-code client. The browser uses PKCE directly; the Agent
+  # only serves/proxies traffic and never exchanges codes or stores OAuth tokens.
+  # Exactly one redirect URI is registered: <origin of browser_entry> +
+  # /oauth/callback (appmesh-auth.sh derives it; empty browser_entry means the
+  # daemon HTTPS REST listener). Every fronted entry serves that path and hands
+  # the code and state to the web UI origin carried in the state parameter.
+  - id: appmesh-web
+    name: App Mesh Web
+    public: true
+    redirectURIs: [__APPMESH_DEX_WEB_CALLBACK__]
+
+  # Confidential machine client for CI and unattended automation. It uses the
+  # client_credentials grant with scope audience:server:client_id:appmesh-api and
+  # its token subject is derived from this client id. appmesh-auth.sh generates
+  # the secret once and keeps it mode-0600 in work/auth/secrets/automation-client.
+  - id: appmesh-automation
+    name: App Mesh Automation
+    secret: __APPMESH_DEX_AUTOMATION_SECRET__
+    public: false
+
+enablePasswordDB: true
+staticPasswords:
+  - email: __APPMESH_DEX_INITIAL_ADMIN_EMAIL__
+    hash: __APPMESH_DEX_INITIAL_ADMIN_PASSWORD_HASH__
+    username: __APPMESH_DEX_INITIAL_ADMIN_USERNAME__
+    userID: __APPMESH_DEX_INITIAL_ADMIN_USER_ID__
+  # Read-only viewer identity. Its (issuer, subject) Principal is pre-seeded in
+  # the packaged authorization.yaml with the appmesh-viewer role.
+  - email: __APPMESH_DEX_INITIAL_GUEST_EMAIL__
+    hash: __APPMESH_DEX_INITIAL_GUEST_PASSWORD_HASH__
+    username: __APPMESH_DEX_INITIAL_GUEST_USERNAME__
+    userID: __APPMESH_DEX_INITIAL_GUEST_USER_ID__

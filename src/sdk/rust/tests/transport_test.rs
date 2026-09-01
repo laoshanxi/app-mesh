@@ -7,7 +7,7 @@
 //   WSS  127.0.0.1:6058
 //
 // Run:
-//   cargo test --test transport_test transport -- --test-threads=1
+//   cargo test --test transport_test -- --ignored --test-threads=1
 
 // ---------------------------------------------------------------------------
 // TCP integration tests
@@ -16,6 +16,7 @@
 #[cfg(test)]
 mod tcp {
     use appmesh::{Application, ClientBuilderTCP};
+    use std::env;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_name(prefix: &str) -> String {
@@ -29,20 +30,17 @@ mod tcp {
             .build()
             .expect("ClientBuilderTCP::build failed");
 
-        client
-            .client()
-            .login("admin", "admin123", None, None, None)
-            .await
-            .expect("TCP login failed — is AppMesh running at 127.0.0.1:6059?");
+        client.client().set_token(&env::var("APPMESH_BEARER_TOKEN").expect("APPMESH_BEARER_TOKEN is required"));
 
         client
     }
 
     // -----------------------------------------------------------------------
-    // 1. Login, list_apps, logout
+    // 1. Bearer-authenticated list_apps
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_tcp_login_and_apps() {
         let client = setup_tcp().await;
 
@@ -50,7 +48,6 @@ mod tcp {
         // The server may have zero or more apps registered; the call must succeed.
         let _ = apps;
 
-        client.logout().await.expect("TCP logout failed");
     }
 
     // -----------------------------------------------------------------------
@@ -58,6 +55,7 @@ mod tcp {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_tcp_sync_run() {
         let client = setup_tcp().await;
 
@@ -78,6 +76,7 @@ mod tcp {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_tcp_labels() {
         let client = setup_tcp().await;
         let label_key = unique_name("tcp-label");
@@ -116,6 +115,7 @@ mod tcp {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_tcp_config() {
         let client = setup_tcp().await;
 
@@ -146,6 +146,7 @@ mod tcp {
 #[cfg(test)]
 mod wss {
     use appmesh::{Application, ClientBuilderWSS};
+    use std::env;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_name(prefix: &str) -> String {
@@ -159,27 +160,23 @@ mod wss {
             .build()
             .expect("ClientBuilderWSS::build failed");
 
-        client
-            .client()
-            .login("admin", "admin123", None, None, None)
-            .await
-            .expect("WSS login failed — is AppMesh running at 127.0.0.1:6058?");
+        client.client().set_token(&env::var("APPMESH_BEARER_TOKEN").expect("APPMESH_BEARER_TOKEN is required"));
 
         client
     }
 
     // -----------------------------------------------------------------------
-    // 1. Login, list_apps, logout
+    // 1. Bearer-authenticated list_apps
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_wss_login_and_apps() {
         let client = setup_wss().await;
 
         let apps = client.list_apps().await.expect("WSS list_apps failed");
         let _ = apps;
 
-        client.logout().await.expect("WSS logout failed");
     }
 
     // -----------------------------------------------------------------------
@@ -187,6 +184,7 @@ mod wss {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_wss_sync_run() {
         let client = setup_wss().await;
 
@@ -207,6 +205,7 @@ mod wss {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_wss_app_management() {
         let client = setup_wss().await;
         let app_name = unique_name("wss-mgmt");
@@ -244,6 +243,7 @@ mod wss {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
+    #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN; run with cargo test -- --ignored"]
     async fn test_wss_config() {
         let client = setup_wss().await;
 

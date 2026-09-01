@@ -40,5 +40,5 @@ class AppMeshWorkerWSS(AppMeshWorker):
             ssl_client_cert: SSL client certificate file(s); same semantics as `AppMeshClientWSS`.
             logger: Optional logger instance.
         """
-        wss_client = AppMeshClientWSS(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, wss_address=wss_address, auto_refresh_token=False)  # Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+        wss_client = AppMeshClientWSS(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, wss_address=wss_address)
         super().__init__(client=wss_client, logger=logger)

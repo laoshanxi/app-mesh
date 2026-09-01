@@ -16,8 +16,8 @@ type pendingRun struct {
 	wfName string
 	source string
 	inputs map[string]string
-	token  string // caller JWT (in-memory only; never persisted), empty for auto triggers
-	actor  string // triggering username for audit, empty for auto triggers
+	token  string // caller Dex bearer (in-memory only; never persisted; forward_token payload identity, not the execution credential), empty for automatic triggers
+	actor  string // triggering Principal ID for audit, empty for automatic triggers
 }
 
 func NewRunManager() *RunManager {

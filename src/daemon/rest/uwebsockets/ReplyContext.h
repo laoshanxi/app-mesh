@@ -18,8 +18,11 @@ namespace WSS
         using ReplyCallback = std::function<void(std::string &&data, const std::string &status, const Headers &headers, const std::string &contentType, bool isLast, bool isBinary)>;
         enum class ProtocolType { Http, WebSocket };
 
-        explicit ReplyContext(ProtocolType protocolType, ReplyCallback callback, std::string connectionId = "", uint64_t numericId = 0)
-            : m_protocolType(protocolType), m_callback(std::move(callback)), m_connectionId(std::move(connectionId)), m_numericId(numericId) {}
+        explicit ReplyContext(ProtocolType protocolType, ReplyCallback callback, std::string connectionId = "", uint64_t numericId = 0,
+                              std::string peerAddress = "", std::string principalId = "", bool managedWorkerTransport = false)
+            : m_protocolType(protocolType), m_callback(std::move(callback)), m_connectionId(std::move(connectionId)),
+              m_numericId(numericId), m_peerAddress(std::move(peerAddress)), m_principalId(std::move(principalId)),
+              m_managedWorkerTransport(managedWorkerTransport) {}
 
         ReplyContext(const ReplyContext &) = delete;
         ReplyContext &operator=(const ReplyContext &) = delete;
@@ -61,6 +64,9 @@ namespace WSS
         ProtocolType getProtocolType() const { return m_protocolType; }
         const std::string &getConnectionId() const { return m_connectionId; }
         uint64_t getNumericId() const { return m_numericId; }
+        const std::string &getPeerAddress() const { return m_peerAddress; }
+        const std::string &getPrincipalId() const { return m_principalId; }
+        bool isManagedWorkerTransport() const { return m_managedWorkerTransport; }
 
     private:
         void invokeCallback(std::string &&data, const std::string &status, const Headers &headers, const std::string &contentType, bool isLast, bool isBinary)
@@ -88,6 +94,9 @@ namespace WSS
         ReplyCallback m_callback;
         std::string m_connectionId;
         uint64_t m_numericId{0};
+        std::string m_peerAddress;
+        std::string m_principalId;
+        bool m_managedWorkerTransport{false};
         bool m_completed{false};
         std::atomic<bool> m_aborted{false};
         mutable std::mutex m_mutex;

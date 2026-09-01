@@ -32,8 +32,14 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	// Windows Implementation
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
 
-	// Create a batch file name: workdir/shell/appmesh.<app_name>.bat
-	const auto fileName = Utility::stringFormat("%s\\appmesh.%s.bat", shellDir.c_str(), name.c_str());
+	// The script file name carries a per-instance suffix: a re-registered app of the
+	// same name must not collide with the previous instance's script. The old script
+	// stays mode 0500 until the previous Application object is destroyed (pending
+	// request references can delay that past the new registration), so reusing the
+	// name made every new run fail to open the file for writing. Stale scripts left
+	// by an unclean shutdown block the name the same way.
+	// Create a batch file name: workdir/shell/appmesh.<app_name>.<instance>.bat
+	const auto fileName = Utility::stringFormat("%s\\appmesh.%s.%s.bat", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
 
 	// Open batch file for writing
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
@@ -68,7 +74,8 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 #else
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
 	const static std::string defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
-	const auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", shellDir.c_str(), name.c_str());
+	// Per-instance suffix: see the Windows branch for why same-name script reuse is unsafe.
+	const auto fileName = Utility::stringFormat("%s/appmesh.%s.%s.sh", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
 
 	// Open shell file for writing
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);

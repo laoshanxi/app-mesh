@@ -157,8 +157,8 @@ class App:
         """metadata string/JSON (input for app, pass to process stdin)"""
         self.working_dir = _get_str(data, "working_dir")
         """working directory"""
-        self.status = _get_int(data, "status")
-        """app status: 1 for enabled, 0 for disabled"""
+        self.status = _get_bool(data, "status")
+        """app status: True for enabled, False for disabled"""
         self.docker_image = _get_str(data, "docker_image")
         """Docker image for containerized execution"""
         self.stdout_cache_num = _get_int(data, "stdout_cache_num")
@@ -177,13 +177,13 @@ class App:
         self.health_check_cmd = _get_str(data, "health_check_cmd")
         """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
         self.permission = _get_int(data, "permission")
-        """app user permission, two decimal digits [others][group], each digit deny:1, read:2, write:3 (see ``set_permission()``, ``group_permission``/``others_permission``)."""
+        """app user permission, two decimal digits [others][group], each digit deny:1, read:2, write:3. Only the tens digit (others) is evaluated by the daemon for non-owner access; see ``set_permission()``."""
         self.behavior = App.Behavior(_get_item(data, "behavior"))
 
         self.env = data.get("env", {}) if data else {}
         """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)"""
         self.sec_env = data.get("sec_env", {}) if data else {}
-        """security environment variables, encrypt in server side with app owner's cipher"""
+        """security environment variables protected by Engine at rest"""
         self.pid = _get_int(data, "pid")
         """process id used to attach to the running process"""
         self.resource_limit = App.ResourceLimitation(_get_item(data, "resource_limit"))
@@ -193,10 +193,12 @@ class App:
         """app register time"""
         self.starts = _get_int(data, "starts")
         """number of times started"""
-        self.owner = _get_str(data, "owner")
-        """owner name of app mesh user who created the app"""
+        self.owner_principal_id = _get_str(data, "owner_principal_id")
+        """immutable principal ID that owns the app (assigned by Engine)"""
+        self.owner_display_name = _get_str(data, "owner_display_name")
+        """response-only owner label for display; never an authorization key"""
         self.user = _get_str(data, "pid_user")
-        """process OS user name (wire field ``pid_user``); distinct from ``owner``, the App Mesh user who created the app"""
+        """process OS user name (wire field ``pid_user``); distinct from the owning principal"""
         self.pstree = _get_str(data, "pstree")
         """process tree"""
         self.container_id = _get_str(data, "container_id")
@@ -232,8 +234,8 @@ class App:
 
     @property
     def is_enabled(self) -> Optional[bool]:
-        """Typed view of ``status``: ``True`` when enabled (1), ``False`` when disabled (0), ``None`` when unset."""
-        return None if self.status is None else self.status == 1
+        """Typed view of ``status``: ``True`` when enabled, ``False`` when disabled, ``None`` when unset."""
+        return self.status
 
     @staticmethod
     def _permission_digit(digit: int) -> Optional["App.Permission"]:
@@ -242,11 +244,6 @@ class App:
             return App.Permission(str(digit))
         except ValueError:
             return None
-
-    @property
-    def group_permission(self) -> Optional["App.Permission"]:
-        """Typed view of the group-user digit (ones place) of the ``permission`` int."""
-        return None if self.permission is None else self._permission_digit(self.permission % 10)
 
     @property
     def others_permission(self) -> Optional["App.Permission"]:
@@ -263,9 +260,14 @@ class App:
         target = self.sec_env if secure else self.env
         target[key] = value
 
-    def set_permission(self, group_user: Permission, others_user: Permission) -> None:
-        """Define application permissions based on user roles."""
-        self.permission = int(others_user.value) * 10 + int(group_user.value)
+    def set_permission(self, others_user: Permission) -> None:
+        """Define the application permission for non-owner principals.
+
+        The daemon reads only the ``others`` grant (tens digit); the ones digit mirrors
+        it because the daemon never evaluates a group digit.
+        """
+        others = int(others_user.value)
+        self.permission = others * 10 + others
 
     def __str__(self) -> str:
         """Return a JSON string representation of the application."""

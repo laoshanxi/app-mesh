@@ -9,8 +9,9 @@ Exercise a RUNNING daemon via the Python SDK:
   test_10 recurring replacement with retention buffer
   test_11 agent PSK restart doesn't deadlock the timer thread (APPMESH_TEST_AGENT=1)
 
-Prereqs: a daemon at https://127.0.0.1:6060 (APPMESH_TEST_URL), admin/admin123
-(APPMESH_TEST_CRED). test_02 uses retention > the daemon's ScheduleInterval.
+Prereqs: a daemon at https://127.0.0.1:6060 (APPMESH_TEST_URL) and a Dex
+access token in APPMESH_TEST_ACCESS_TOKEN. test_02 uses retention > the daemon's
+ScheduleInterval.
 
 Usage:
     cd src/sdk/python/test
@@ -33,8 +34,6 @@ from appmesh import AppMeshClient, App
 from _support import ssl_shim  # noqa: F401  # APPMESH_TEST_SSL_VERIFY override for self-signed daemons
 from _support import config
 
-USER = config.USER
-DEFAULT_CRED = config.CRED
 BASE_URL = config.BASE_URL  # None -> SDK default (https://127.0.0.1:6060)
 # retention used by test_02; MUST exceed the daemon ScheduleIntervalSeconds (default 2s)
 # to reproduce the old "REMOVE re-arms every tick and never fires" bug.
@@ -56,7 +55,7 @@ def _poll(predicate, timeout: float, interval: float = 0.2):
 class TestRunStateE2E(unittest.TestCase):
     def setUp(self):
         self.client = AppMeshClient(base_url=BASE_URL) if BASE_URL else AppMeshClient()
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._created = set()
 
     def tearDown(self):

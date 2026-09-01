@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,6 +43,12 @@ public class WSSTransport implements AutoCloseable {
     private int connectTimeout = WSS_CONNECT_TIMEOUT;
     // null = follow connectTimeout (legacy coupling kept for backward compatibility)
     private Integer connectionLostTimeout;
+    private volatile String authorization;
+
+    public WSSTransport setAuthorization(String authorization) {
+        this.authorization = authorization;
+        return this;
+    }
 
     public WSSTransport(String host, int port) {
         this(host, port, null);
@@ -86,7 +94,11 @@ public class WSSTransport implements AutoCloseable {
         lastError.set(null);
 
         URI uri = new URI(toString() + "/");
-        client = new WebSocketClient(uri, draft) {
+        Map<String, String> upgradeHeaders = new HashMap<>();
+        if (authorization != null && !authorization.isEmpty()) {
+            upgradeHeaders.put("Authorization", authorization);
+        }
+        client = new WebSocketClient(uri, draft, upgradeHeaders, connectTimeout * 1000) {
             @Override
             public void onOpen(ServerHandshake handshake) {
                 // Connection established successfully

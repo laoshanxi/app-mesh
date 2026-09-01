@@ -6,6 +6,7 @@
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
+#include "../security/Security.h"
 #include "Data.h"
 #include "ForwardingManager.h"
 #include "HttpRequest.h"
@@ -22,6 +23,24 @@
 // Global backpressure cap on the shared inbound queue (TCP + lws + uWS). Bounds a
 // request-flood DoS: a client sending faster than workers drain is shed, not buffered.
 static constexpr size_t MAX_PENDING_REQUESTS = 10000;
+
+namespace
+{
+	bool isPublicForwardRequest(const std::shared_ptr<HttpRequest> &request)
+	{
+		return request->m_method == web::http::methods::GET &&
+			(request->m_relative_uri == "/appmesh/auth/config" ||
+			 request->m_relative_uri == "/.well-known/oauth-protected-resource");
+	}
+
+	bool isSubscriptionRequest(const std::shared_ptr<HttpRequest> &request)
+	{
+		const auto &path = request->m_relative_uri;
+		return path == "/appmesh/subscribe" ||
+			(path.size() > 10 && path.compare(path.size() - 10, 10, "/subscribe") == 0) ||
+			request->m_query.count("subscribe_events") != 0;
+	}
+}
 
 struct HttpRequestContext
 {
@@ -200,12 +219,47 @@ static bool isCsrfViolation(const std::shared_ptr<HttpRequest> &request)
 bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 {
 	static const char fname[] = "Worker::process() ";
+	if (request->m_relative_uri.find("?process_key=") != std::string::npos ||
+		request->m_relative_uri.find("&process_key=") != std::string::npos)
+	{
+		LOG_WAR << fname << "Rejected legacy process-key URI authentication";
+		request->reply(web::http::status_codes::BadRequest,
+			Utility::text2json("process_key URI authentication is not supported"));
+		return true;
+	}
 
 	LOG_DBG << fname << request->m_method << " from <"
 				<< request->m_remote_address << "> path <"
 				<< request->m_relative_uri << "> id <"
 				<< request->m_uuid << ">";
 	RESTHANDLER::instance()->observeHttpRequest(request);
+
+	if (!request->transportPrincipalId().empty() &&
+		request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
+	{
+		try
+		{
+			const auto framePrincipal = Security::authenticateBearerAuthorization(
+				request->m_headers.get(HTTP_HEADER_JWT_Authorization));
+			if (framePrincipal.id() != request->transportPrincipalId())
+			{
+				request->reply(web::http::status_codes::Forbidden,
+					Utility::text2json("WebSocket frame cannot change the session principal"));
+				return true;
+			}
+		}
+		catch (const AuthenticationUnavailableException &e)
+		{
+			request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+			return true;
+		}
+		catch (const std::exception &e)
+		{
+			request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
+				{{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+			return true;
+		}
+	}
 
 	if (isCsrfViolation(request))
 	{
@@ -217,8 +271,61 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 
 	if (request->m_headers.contains(HTTP_HEADER_KEY_Forwarding_Host))
 	{
+		if (request->isManagedWorkerTransport() ||
+			request->m_headers.contains(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY))
+		{
+			request->reply(web::http::status_codes::Forbidden,
+				Utility::text2json("managed process proof cannot be forwarded"));
+			return true;
+		}
+
+		const bool publicRequest = isPublicForwardRequest(request);
+		if (!publicRequest && !request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
+		{
+			request->reply(web::http::status_codes::Unauthorized,
+				Utility::text2json("Forwarded requests require bearer authentication"),
+				{{"WWW-Authenticate", "Bearer realm=\"appmesh\""}});
+			return true;
+		}
+		// A WebSocket frame with a bearer was already checked against the pinned
+		// session principal above. HTTP and TCP have no pinned principal, so validate
+		// their bearer before the gateway opens an outbound connection. The target
+		// validates the unchanged bearer again and makes the authorization decision.
+		if (!publicRequest && request->transportPrincipalId().empty())
+		{
+			try
+			{
+				Security::authenticateBearerAuthorization(
+					request->m_headers.get(HTTP_HEADER_JWT_Authorization));
+			}
+			catch (const AuthenticationUnavailableException &e)
+			{
+				request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+				return true;
+			}
+			catch (const std::exception &e)
+			{
+				request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
+					{{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+				return true;
+			}
+		}
+
+		if (isSubscriptionRequest(request) && !request->isPersistentClientTransport())
+		{
+			request->reply(web::http::status_codes::MethodNotAllowed,
+				Utility::text2json("Forwarded subscriptions require TCP or WebSocket"));
+			return true;
+		}
 		std::string host = request->m_headers.get(HTTP_HEADER_KEY_Forwarding_Host);
 		request->m_headers.erase(HTTP_HEADER_KEY_Forwarding_Host); // prevent loop forwarding
+		request->m_headers.erase(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE);
+		// The target uses this marker only to deny operations that require a
+		// direct client. A caller can forge the marker only to deny its own request.
+		request->m_headers[HTTP_HEADER_KEY_APPMESH_FORWARDED] = "1";
+		// Subscription events can race their create response. Carry an internal
+		// correlation key so the gateway can route those early events safely.
+		request->m_headers[HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE] = request->m_uuid;
 		return forward(std::move(host), request);
 	}
 

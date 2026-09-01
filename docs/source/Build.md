@@ -62,3 +62,22 @@ The public pre-build Docker images can be used to build binary directly:
 - laoshanxi/appmesh:build_ubuntu18
 - laoshanxi/appmesh:build_ubuntu22
 - laoshanxi/appmesh:build_ubuntu24
+
+### Windows
+
+Run the bootstrap once as Administrator (installs the MSVC/vcpkg dependencies,
+Go tools including the Dex server for local debugging, Rust, NSIS, and the
+EnVar NSIS plugin), then build:
+
+```powershell
+.\script\bootstrap\install_build_deps.ps1
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake --build build --config Release --parallel
+cmake --build build --config Release --target pack   # NSIS installer in build\
+```
+
+Windows packages include `dex.exe`, `passhash.exe`, the protected
+`auth-service` App, and the native `appmesh-auth.ps1` launcher; see [Install](Install.md)
+for the deployment flow and the real-machine verification checklist.

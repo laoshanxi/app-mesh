@@ -2,7 +2,9 @@ use appmesh::Application;
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::format::{human_readable_duration, human_readable_size};
+use super::format::{
+    human_readable_duration, human_readable_size, principal_display, truncate_with_marker,
+};
 
 const COLUMN_PADDING: usize = 2;
 
@@ -13,9 +15,9 @@ struct Column {
 
 fn format_status(app: &Application) -> String {
     match app.status {
-        Some(1) => "enabled".to_string(),
-        Some(0) => "disabled".to_string(),
-        _ => "-".to_string(),
+        Some(true) => "enabled".to_string(),
+        Some(false) => "disabled".to_string(),
+        None => "-".to_string(),
     }
 }
 
@@ -66,7 +68,10 @@ fn format_row(i: usize, app: &Application) -> Vec<String> {
     vec![
         i.to_string(),
         app.name.clone().unwrap_or_default(),
-        app.owner.clone().unwrap_or_else(|| "-".to_string()),
+        app.owner_principal_id
+            .as_deref()
+            .map(|principal| principal_display(principal, app.owner_display_name.as_deref()))
+            .unwrap_or_else(|| "-".to_string()),
         format_status(app),
         format_health(app),
         app.pid
@@ -124,7 +129,7 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     // Widen columns based on actual data (excluding COMMAND)
     for row in &rows {
         for (col, cell) in columns.iter_mut().zip(row.iter()).take(col_count - 1) {
-            let needed = cell.len() + COLUMN_PADDING;
+            let needed = cell.chars().count() + COLUMN_PADDING;
             if needed > col.width {
                 col.width = needed;
             }
@@ -175,8 +180,8 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     for row in &rows {
         for (col, cell) in columns.iter().zip(row.iter()).take(visible_cols) {
             let max_len = col.width.saturating_sub(COLUMN_PADDING);
-            if cell.len() > max_len {
-                let truncated = format!("{}*", &cell[..max_len.saturating_sub(1)]);
+            if cell.chars().count() > max_len {
+                let truncated = truncate_with_marker(cell, max_len);
                 write!(out, "{:<width$}", truncated, width = col.width).ok();
             } else {
                 write!(out, "{:<width$}", cell, width = col.width).ok();
@@ -184,9 +189,9 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
         }
         if cmd_width > 0 {
             let cmd = &row[col_count - 1];
-            if cmd.len() > cmd_width && !long_mode {
+            if cmd.chars().count() > cmd_width && !long_mode {
                 // Truncate command with * suffix
-                let truncated = format!("{}*", &cmd[..cmd_width.saturating_sub(1)]);
+                let truncated = truncate_with_marker(cmd, cmd_width);
                 write!(out, "{}", truncated).ok();
             } else {
                 write!(out, "{}", cmd).ok();

@@ -402,7 +402,8 @@ public class Utils {
         }
     }
 
-    private static byte[] readAllBytes(InputStream input) throws IOException {
+    /** Java 8-compatible replacement for InputStream.readAllBytes() (Java 9+). */
+    static byte[] readAllBytes(InputStream input) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         byte[] buffer = new byte[1024];
         int bytesRead;

@@ -1,0 +1,12 @@
+.git
+.github
+.cache
+.venv
+build*
+cmake-build-*
+target
+**/target
+__pycache__
+*.pyc
+*.core
+core.*

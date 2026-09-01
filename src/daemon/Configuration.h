@@ -13,7 +13,7 @@
 #include <nlohmann/json.hpp>
 
 class RestHandler;
-class User;
+class AuthorizationStore;
 class Label;
 class Application;
 
@@ -52,20 +52,6 @@ public:
 		JsonSsl();
 	};
 
-	struct JsonJwt
-	{
-		JsonJwt();
-		static std::shared_ptr<JsonJwt> FromJson(const nlohmann::json &jsonObj);
-		nlohmann::json AsJson() const;
-		std::string getJwtInterface() const;
-
-		std::string m_jwtSalt;
-		std::string m_jwtAlgorithm;
-		std::string m_jwtIssuer;
-		std::set<std::string> m_jwtAudience;
-		std::string m_jwtInterface;
-	};
-
 	struct JsonRest
 	{
 		JsonRest();
@@ -73,7 +59,6 @@ public:
 		nlohmann::json AsJson() const;
 
 		bool m_restEnabled;
-		bool m_passwordComplexityEnabled;
 		bool m_corsDisabled;
 		std::set<std::string> m_csrfAllowedOrigins; // CSRF: Origins allowed for cookie-auth state-changing requests
 		std::string m_fileAllowedBaseDir;
@@ -85,7 +70,6 @@ public:
 		int m_restTcpPort;
 		int m_webSocketPort;
 		std::shared_ptr<JsonSsl> m_ssl;
-		std::shared_ptr<JsonJwt> m_jwt;
 	};
 
 	Configuration();
@@ -116,7 +100,6 @@ public:
 	int getRestListenPort();
 	int getPromListenPort() const;
 	std::string getRestListenAddress();
-	std::string getRestJwtIssuer();
 	int getRestTcpPort();
 	int getWebSocketPort();
 	nlohmann::json serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
@@ -140,7 +123,6 @@ public:
 	std::string getSSLCertificateKeyFile() const;
 	std::string getSSLCaPath() const;
 	bool getRestEnabled() const;
-	bool getPasswordComplexityEnabled() const;
 	bool getCorsDisabled() const;
 	std::set<std::string> getCsrfAllowedOrigins() const;
 	std::string getFileAllowedBaseDir() const;
@@ -149,13 +131,14 @@ public:
 	const std::string getDescription() const;
 	const std::string getPosixTimezone() const;
 
-	const std::shared_ptr<JsonJwt> getJwt() const;
-	bool checkOwnerPermission(const std::string &user, const std::shared_ptr<User> &appOwner, int appPermission, bool requestWrite) const;
+	bool checkOwnerPermission(const std::string &principalId, const std::string &ownerPrincipalId,
+		int appPermission, bool requestWrite) const;
 
 	void dump();
 
 private:
 	friend class RestHandler;
+	friend class AuthorizationStore;
 	std::unique_lock<std::recursive_mutex> lockAppMutation() const;
 	bool isCurrentApp(const std::string &appName, const std::shared_ptr<Application> &expected) const;
 	void addApp2Map(std::shared_ptr<Application> app);

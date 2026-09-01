@@ -1,20 +1,13 @@
-// wf-engine is the App Mesh Workflow Engine.
-// It runs as a long-lived daemon App and handles all workflow operations
-// via the App Mesh Task API (run_task).
-//
-// Authentication via sec_env (set on the workflow App definition):
-//
-//	APPMESH_USER     — login username (default: admin)
-//	APPMESH_PASSWORD — login password
-//	APPMESH_EXEC_IDENTITIES — optional JSON map {"user":"password", ...} of
-//	                  execution identities a workflow may run as (ADR 0004).
-//
-// The daemon decrypts sec_env at rest and passes plain env vars to this process.
+// wf-engine is the App Mesh Workflow Engine. Every run — human-initiated,
+// Engine-initiated, or recovered — executes under a short-lived, run-bound
+// capability issued by the local Engine after proving the current managed
+// process, renewed for the run's lifetime. A human caller's Dex bearer only
+// authenticates the trigger and (forward_token) message-step payloads, and is
+// kept in memory only; wf-engine is not an OAuth client.
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -22,103 +15,94 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/api"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/logger"
+	"github.com/laoshanxi/app-mesh/src/workflow/internal/tlsconf"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/trigger"
 )
 
+var controlOperations = []string{"app-view-all", "app-subscribe"}
+
 func main() {
-	var (
-		server       string
-		clusterNodes string
-	)
+	var server, clusterNodes string
 	flag.StringVar(&server, "server", "127.0.0.1:6059", "App Mesh TCP server address (host:port)")
 	flag.StringVar(&clusterNodes, "cluster-nodes", "", "Comma-separated cluster node addresses")
 	flag.Parse()
 
-	// Route SDK diagnostics into our stdout logger; by default they go to stderr, a
-	// different stream from the engine's own log, so failures that explain our symptoms
-	// (a failed token auto-refresh, say) landed where nobody would correlate them.
-	// logger.Error, not Info: every SDK logf call site is a warning or a failure (token
-	// renewal, callback panic, unusable CA), and Info emits no level prefix at all — an
-	// operator alerting on ERROR would miss the very line that explains the outage.
 	appmesh.SetLogger(func(format string, args ...any) {
 		logger.Error("SDK " + fmt.Sprintf(format, args...))
 	})
 
-	user := os.Getenv("APPMESH_USER")
-	if user == "" {
-		user = "admin"
-	}
-	password := os.Getenv("APPMESH_PASSWORD")
-	token := os.Getenv("APPMESH_JWT_TOKEN")
-
-	if password == "" && token == "" {
-		fmt.Fprintln(os.Stderr, "Authentication required."+
-			"\n  Set APPMESH_PASSWORD via App sec_env (recommended):"+
-			"\n    appm add -a workflow -z APPMESH_PASSWORD=<password>"+
-			"\n  Or set APPMESH_JWT_TOKEN env var (fallback).")
-		os.Exit(1)
-	}
-
-	tcpClient, err := newTCPClient(server, token)
+	engineOption := newEngineOption(server, "")
+	tcpClient, err := appmesh.NewTCPClient(engineOption)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "TCP client error: %v\n", err)
+		fmt.Fprintln(os.Stderr, "TCP client error:", err)
 		os.Exit(1)
 	}
 	defer tcpClient.CloseConnection()
-
-	// This single connection is shared by the scan loop, the task dispatch loop
-	// (CRUD + auth checks), and step cleanup. Enable the demuxer so those goroutines
-	// can't cross-wire each other's responses on the shared socket. (Previously this
-	// happened only incidentally, once a step's WaitForAsyncRun subscribed.)
 	tcpClient.EnableConcurrency()
 
-	if password != "" {
-		if _, err := tcpClient.Login(user, password, "", 86400, ""); err != nil {
-			fmt.Fprintf(os.Stderr, "Login failed: %v\n", err)
-			os.Exit(1)
-		}
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), trigger.CapabilityRequestTimeout)
+	removedOrphans, err := tcpClient.CleanupWorkflowOrphansContext(cleanupCtx)
+	cleanupCancel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Engine workflow orphan cleanup failed:", err)
+		os.Exit(1)
 	}
+	if removedOrphans > 0 {
+		logger.Info(fmt.Sprintf("removed %d temporary App(s) left by a prior Workflow process", removedOrphans))
+	}
+
+	controlCtx, controlCancel := context.WithTimeout(context.Background(), trigger.CapabilityRequestTimeout)
+	controlCapability, err := requestCapability(controlCtx, tcpClient.AppMeshClient,
+		appmesh.WorkflowControlCapabilityAudience, "", "", controlOperations)
+	controlCancel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Engine workflow control capability failed:", err)
+		os.Exit(1)
+	}
+	tcpClient.SetToken(controlCapability.Capability)
+	engineOption.JwtToken = controlCapability.Capability
 
 	workflowDir, err := filepath.Abs(filepath.Join("..", "workflow"))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve workflow directory: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Failed to resolve workflow directory:", err)
 		os.Exit(1)
 	}
-	os.MkdirAll(workflowDir, 0755)
+	if err := os.MkdirAll(workflowDir, 0755); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to create workflow directory:", err)
+		os.Exit(1)
+	}
 	if err := os.Chdir(workflowDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to enter workflow directory %s: %v\n", workflowDir, err)
+		fmt.Fprintln(os.Stderr, "Failed to enter workflow directory:", err)
 		os.Exit(1)
 	}
+
 	svc := trigger.NewService(tcpClient.AppMeshClient, server, parseCSV(clusterNodes), workflowDir)
-
-	if creds, err := parseExecIdentities(os.Getenv("APPMESH_EXEC_IDENTITIES")); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid APPMESH_EXEC_IDENTITIES: %v\n", err)
-		os.Exit(1)
-	} else if len(creds) > 0 {
-		svc.SetExecIdentities(creds)
-		logger.Info(fmt.Sprintf("Loaded %d execution identities for execution_identity workflows", len(creds)))
-	}
-
-	if password != "" {
-		svc.SetReAuth(func() error {
-			// Bounded: this is called from the trigger service's Run goroutine, and token
-			// expiry correlates with daemon trouble — exactly when a reply may be lost.
-			ctx, cancel := context.WithTimeout(context.Background(), trigger.ReAuthTimeout)
-			defer cancel()
-			_, err := tcpClient.LoginContext(ctx, user, password, "", 86400, "")
-			return err
-		})
-	}
-
-	taskHandler, taskErr := api.NewTaskHandler(svc, svc.Wdir(), tcpClient.AppMeshClient, appmesh.Option{
-		AppMeshUri:         server,
-		JwtToken:           tcpClient.GetToken(),
-		InsecureSkipVerify: true,
+	svc.SetProcessUUID(controlCapability.ProcessUUID)
+	svc.SetCapabilityIssuer(func(ctx context.Context, workflowID, runID string, operations []string) (appmesh.WorkflowCapability, error) {
+		return requestCapability(ctx, tcpClient.AppMeshClient,
+			appmesh.WorkflowRunCapabilityAudience, workflowID, runID, operations)
 	})
+	// Shared control-capability refresh for the renewal loop and the reactive path.
+	controlRefresh := func(ctx context.Context) error {
+		refreshed, err := requestCapability(ctx, tcpClient.AppMeshClient,
+			appmesh.WorkflowControlCapabilityAudience, "", "", controlOperations)
+		if err != nil {
+			return err
+		}
+		if refreshed.ProcessUUID != controlCapability.ProcessUUID {
+			return fmt.Errorf("Engine returned a workflow control capability for a different process")
+		}
+		tcpClient.SetToken(refreshed.Capability)
+		return nil
+	}
+	svc.SetControlRefresh(controlRefresh)
+
+	taskHandler, taskErr := api.NewTaskHandler(svc, svc.Wdir(), tcpClient.AppMeshClient, engineOption)
 	if taskErr != nil {
 		logger.Error("Task handler init failed: " + taskErr.Error())
 	} else {
@@ -128,7 +112,6 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
@@ -136,40 +119,45 @@ func main() {
 		cancel()
 	}()
 
+	// Renew the control capability before its TTL; a failed attempt retries next tick.
+	go func() {
+		ticker := time.NewTicker(trigger.CapabilityLifetime - trigger.CapabilityRefreshMargin)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				renewCtx, renewCancel := context.WithTimeout(ctx, trigger.CapabilityRequestTimeout)
+				err := controlRefresh(renewCtx)
+				renewCancel()
+				if err != nil {
+					logger.Error("workflow control capability renewal failed (retrying next tick): " + err.Error())
+				}
+			}
+		}
+	}()
+
 	svc.Run(ctx)
 }
 
-func newTCPClient(server, token string) (*appmesh.AppMeshClientTCP, error) {
-	return appmesh.NewTCPClient(appmesh.Option{
-		AppMeshUri:         server,
-		JwtToken:           token,
-		InsecureSkipVerify: true,
-		// Auto-refresh keeps the long-lived engine session valid. It is safe because the
-		// shared connection enables the demuxer (see EnableConcurrency in main): the renew
-		// reply is correlated by UUID and the new token is installed correctly, so the
-		// prior cross-wiring that left a revoked token in place (-> 401) cannot occur.
-		AutoRefreshToken: true,
+func requestCapability(ctx context.Context, client *appmesh.AppMeshClient, audience, workflowID, runID string, operations []string) (appmesh.WorkflowCapability, error) {
+	return client.RequestWorkflowCapabilityContext(ctx, appmesh.WorkflowCapabilityRequest{
+		Audience:   audience,
+		Workflow:   workflowID,
+		RunID:      runID,
+		Operations: operations,
+		ExpiresIn:  int(trigger.CapabilityLifetime / time.Second),
 	})
 }
 
-// parseExecIdentities parses the APPMESH_EXEC_IDENTITIES secured env var: a JSON
-// object mapping execution-identity usernames to passwords. Empty/unset yields a
-// nil map (no identities configured). Credentials are never logged.
-func parseExecIdentities(s string) (map[string]string, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, nil
+func newEngineOption(server, token string) appmesh.Option {
+	option := appmesh.Option{
+		AppMeshUri: server,
+		JwtToken:   token,
 	}
-	var creds map[string]string
-	if err := json.Unmarshal([]byte(s), &creds); err != nil {
-		return nil, fmt.Errorf("expected a JSON object {\"user\":\"password\"}: %w", err)
-	}
-	for user, pwd := range creds {
-		if user == "" || pwd == "" {
-			return nil, fmt.Errorf("execution identity entries must have a non-empty user and password")
-		}
-	}
-	return creds, nil
+	tlsconf.Apply(&option)
+	return option
 }
 
 func parseCSV(s string) []string {
@@ -177,11 +165,10 @@ func parseCSV(s string) []string {
 		return nil
 	}
 	parts := strings.Split(s, ",")
-	var result []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			result = append(result, part)
 		}
 	}
 	return result

@@ -1,6 +1,6 @@
 [package]
 name = "appm"
-version = "2.2.1"
+version = "3.0.0"
 edition = "2021"
 description = "App Mesh CLI - Rust implementation using WSS transport"
 
@@ -23,16 +23,12 @@ log = "0.4"
 env_logger = "0.11"
 anyhow = "1"
 sha2 = "0.10"
-pbkdf2 = { version = "0.12", features = ["hmac"] }
-rand = "0.8"
-hex = "0.4"
 url = "2"
+uuid = { version = "1", features = ["v4", "fast-rng"] }
 jiff = "0.2"
 tempfile = "3"
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+zeroize = "1"
 
 [profile.release]
 opt-level = "z"

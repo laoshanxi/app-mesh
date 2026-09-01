@@ -11,7 +11,7 @@ use crate::util::{confirm, parse};
 pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
 
-    let app = if let Some(ref stdin_src) = args.stdin {
+    let (app, raw_app) = if let Some(ref stdin_src) = args.stdin {
         read_app_from_stdin(stdin_src)?
     } else {
         if args.app.is_none()
@@ -20,12 +20,14 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
         {
             bail!("Application name (-a) and command (-c) or docker image (-I) are required.");
         }
-        build_app_from_args(args)?
+        (build_app_from_args(args)?, serde_json::Value::Null)
     };
 
     let app_name = app.name.as_deref().unwrap_or("unknown");
 
-    // Only prompt when app already exists (matching C++ behavior)
+    // Only prompt when app already exists (matching C++ behavior). A declined
+    // confirmation is a non-zero exit: nothing was registered, and scripts must
+    // not mistake a skipped update for success (same rule as a failed request).
     let app_exists = client.get_app(app_name).await.is_ok();
     if app_exists
         && !args.force
@@ -35,7 +37,7 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
             app_name
         ))
     {
-        return Ok(0);
+        return Ok(1);
     }
 
     // Validate interval > stop_timeout
@@ -49,13 +51,25 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
         }
     }
 
-    let result = client.add_app(&app, None).await.context("Failed to add application")?;
+    let result = if args.stdin.is_some() {
+        // Submit the caller's document unchanged (including keys the typed model
+        // lacks, e.g. a legacy `owner:`), so daemon-side fail-loud validation —
+        // like the explicit legacy-owner migration error — reaches the user
+        // instead of the app being silently registered to the caller.
+        client.add_app_raw(raw_app).await.context("Failed to add application")?
+    } else {
+        client.add_app(&app, None).await.context("Failed to add application")?
+    };
     let json = serde_json::to_value(&result)?;
     format::print_yaml(&json)?;
     Ok(0)
 }
 
-fn read_app_from_stdin(source: &str) -> Result<Application> {
+/// Parse a `--stdin` document (`std`, `<file>` or `@<file>`) into the typed
+/// [`Application`] (for early field validation and the name lookup) and also
+/// return the raw JSON, which `add` forwards to the daemon because the typed
+/// model silently ignores unknown keys.
+fn read_app_from_stdin(source: &str) -> Result<(Application, serde_json::Value)> {
     let content = if source == "std" {
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf)?;
@@ -66,8 +80,9 @@ fn read_app_from_stdin(source: &str) -> Result<Application> {
     };
 
     let yaml: serde_json::Value = serde_yaml::from_str(&content).context("Invalid YAML input")?;
-    let app: Application = serde_json::from_value(yaml).context("Invalid application definition")?;
-    Ok(app)
+    let app: Application =
+        serde_json::from_value(yaml.clone()).context("Invalid application definition")?;
+    Ok((app, yaml))
 }
 
 fn build_app_from_args(args: &AddArgs) -> Result<Application> {
@@ -162,7 +177,7 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
 
     // Fields that need direct assignment on the struct
     if let Some(status) = args.status {
-        app.status = Some(u32::from(status));
+        app.status = Some(status);
     }
     if let Some(pid) = args.pid {
         app.pid = Some(pid);
@@ -251,15 +266,20 @@ pub async fn rm(cli: &Cli, args: &RmArgs) -> Result<i32> {
     if !args.force {
         let names = args.app.join(", ");
         if !confirm::confirm(&format!("Remove application(s) '{}'?", names)) {
-            return Ok(0);
+            return Ok(1);
         }
     }
 
     for name in &args.app {
-        client
+        // delete_app maps 404 to Ok(false); surface it instead of exiting 0
+        // while nothing was actually removed.
+        if !client
             .delete_app(name)
             .await
-            .context(format!("Failed to remove '{}'", name))?;
+            .context(format!("Failed to remove '{}'", name))?
+        {
+            eprintln!("Warning: application '{}' does not exist", name);
+        }
     }
     Ok(0)
 }
@@ -487,7 +507,14 @@ async fn get_app_names(
 ) -> Result<Vec<String>> {
     if all {
         let apps = client.list_apps().await.context("Failed to list apps")?;
-        Ok(apps.iter().filter_map(|a| a.name.clone()).collect())
+        // System Apps (including the bundled authentication service) are lifecycle-managed
+        // by the daemon and its service manager. The application API rejects
+        // attempts to disable them, so --all means every non-system App.
+        Ok(apps
+            .iter()
+            .filter(|app| app.system != Some(true))
+            .filter_map(|app| app.name.clone())
+            .collect())
     } else if explicit.is_empty() {
         bail!("No application name specified. Use -a <name> or -A for all.");
     } else {
@@ -498,6 +525,21 @@ async fn get_app_names(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stdin_document_keeps_legacy_owner_key_for_daemon() {
+        // The typed `Application` drops unknown keys, so `add --stdin` must submit
+        // the raw document; otherwise a legacy `owner:` is silently swallowed and
+        // the daemon's explicit migration error never fires — the app would be
+        // registered to the caller without the user ever seeing why that is wrong.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy.yaml");
+        std::fs::write(&path, "name: old\ncommand: echo hi\nowner: admin\n").unwrap();
+        let (app, raw) = read_app_from_stdin(path.to_str().unwrap()).unwrap();
+        assert_eq!(app.name.as_deref(), Some("old"));
+        assert!(app.owner_principal_id.is_none(), "typed model must not invent an owner");
+        assert_eq!(raw["owner"], "admin", "raw document is what gets forwarded");
+    }
 
     #[test]
     fn datetime_offset_is_absolute() {

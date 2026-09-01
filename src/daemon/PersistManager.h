@@ -30,7 +30,6 @@ struct Snapshot
 	void persist();
 
 	std::map<std::string, AppSnap> m_apps;
-	std::unordered_map<std::string, std::chrono::system_clock::time_point> m_tokenBlackList;
 };
 
 /// <summary>

@@ -1,6 +1,7 @@
 # mqtt_subscriber.py
 # pylint: disable=line-too-long,broad-exception-caught
 import json
+import os
 import time
 import paho.mqtt.client as mqtt
 from appmesh import AppMeshClient
@@ -10,8 +11,7 @@ from config import BROKER, PORT, TOPIC
 
 CLIENT_ID = "iot-data-processor"
 
-appmesh_client = AppMeshClient()
-appmesh_client.login("admin", "admin123")
+appmesh_client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
 
 
 def process_device_data(data):

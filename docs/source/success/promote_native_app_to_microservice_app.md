@@ -30,20 +30,25 @@ docker run -d -m 8g --restart=always \
 
 ### Security
 
-App Mesh by default enable JWT authentication for all REST requests, we need to get JWT token:
+App Mesh accepts OAuth access tokens. Acquire a token through the standard
+Authorization Code with PKCE, Device Authorization, or an approved service-client flow,
+then provide it through the environment. The issuer and the authentication-service route
+may be configured independently; see [Security](../Security.md).
 
 ```shell
-curl -X POST -k -H "Authorization:Basic $(echo -n admin:admin123 | base64)" https://localhost:6060/appmesh/login
+export APPMESH_BEARER_TOKEN="$(your-oauth-client)"
 ```
 
-BTW, the admin user password can be changed by `appm passwd` or by mounting a customized security file `-v /opt/user/security.yaml:/opt/appmesh/config/security.yaml`
+App Mesh never receives an identity-provider password. Manage users and password policy upstream;
+manage App Mesh Principal roles in `authorization.yaml` or through the Principal APIs.
 
 ### Call microservice
 
-With JWT token, you can call native app by App Mesh REST now, the body can include you remote application start command and metadata for stdin:
+With the bearer, call the native app through App Mesh REST. The body can include the
+remote application command and metadata for stdin:
 
 ```shell
-curl -X POST -k -H "Authorization:Bearer $JWT_TOKEN" \
+curl --cacert "$APPMESH_CA" -X POST -H "Authorization: Bearer $APPMESH_BEARER_TOKEN" \
 -d '{ "command" : "python3 /usr/share/myapp.py", "metadata": "std input text data" }' \
 https://appmesh-host:6060/appmesh/app/syncrun?timeout=30
 ```

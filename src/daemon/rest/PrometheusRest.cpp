@@ -205,7 +205,7 @@ CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, pro
 	: m_metric(nullptr), m_family(&family), m_promRegistry(registry), m_name(name)
 {
 	const static char fname[] = "CounterMetric::CounterMetric() ";
-	std::map<std::string, std::string> commonLabels = {{"host", MY_HOST_NAME}};
+	prometheus::Labels commonLabels = {{"host", MY_HOST_NAME}};
 	commonLabels.insert(label.begin(), label.end());
 	m_metric = &((family.Add(commonLabels)));
 
@@ -230,7 +230,7 @@ GaugeMetric::GaugeMetric(std::shared_ptr<prometheus::Registry> registry, prometh
 {
 	const static char fname[] = "GaugeMetric::GaugeMetric() ";
 
-	std::map<std::string, std::string> commonLabels = {{"host", MY_HOST_NAME}};
+	prometheus::Labels commonLabels = {{"host", MY_HOST_NAME}};
 	commonLabels.insert(label.begin(), label.end());
 	m_metric = &((family.Add(commonLabels)));
 
@@ -255,7 +255,7 @@ HistogramMetric::HistogramMetric(std::shared_ptr<prometheus::Registry> registry,
 	std::map<std::string, std::string> label, const std::vector<double> &buckets)
 	: m_metric(nullptr), m_family(&family), m_promRegistry(registry), m_name(name)
 {
-	std::map<std::string, std::string> commonLabels = {{"host", MY_HOST_NAME}};
+	prometheus::Labels commonLabels = {{"host", MY_HOST_NAME}};
 	commonLabels.insert(label.begin(), label.end());
 	m_metric = &(family.Add(commonLabels, buckets));
 }

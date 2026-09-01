@@ -29,6 +29,15 @@ class ProcessSupersededError extends AppMeshError {
   }
 }
 
+/** Permanent worker request rejection (HTTP 400); retrying cannot recover. */
+class WorkerRejectedError extends AppMeshError {
+  /** @param {string} message @param {any} responseData */
+  constructor (message, responseData = null) {
+    super(message, 400, responseData, 'WORKER_REJECTED')
+    this.name = 'WorkerRejectedError'
+  }
+}
+
 /**
  * True when `value` looks like a {host, port} address object rather than an SSL config.
  * Mirrors the acceptance logic in appmesh_tcp.js (kept local: appmesh_tcp.js is lazy-imported).
@@ -91,10 +100,8 @@ class AppMeshWorker {
    * @param {Object} [options.logger=console] - Logger instance
    * @param {AppMeshClient} [options.client] - Optional pre-built `AppMeshClient` instance to reuse.
    *   When supplied, `baseURL` and `sslConfig` are ignored and the worker shares the caller's
-   *   client (and therefore its token-refresh state). Use this when a single process needs both
-   *   client (outbound calls like `AddApp`) and worker (`fetch_task`/`send_task_result`) roles to
-   *   avoid two independent `/token/renew` loops fighting each other — the daemon blacklists
-   *   the previous token on every renew, so the slower refresher gets 401 "Token has been revoked".
+   *   client (and therefore its caller-owned bearer). Use this when a single process needs both
+   *   client (outbound calls like `AddApp`) and worker (`fetch_task`/`send_task_result`) roles.
    *
    * @example
    * import fs from 'fs';
@@ -109,7 +116,7 @@ class AppMeshWorker {
    * @example
    * // Share a single client between client-role and worker-role usage:
    * const client = new AppMeshClient('https://127.0.0.1:6060', sslConfig);
-   * await client.login('user', 'pass');
+   * client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
    * const worker = new AppMeshWorker('https://127.0.0.1:6060', sslConfig, { client });
    */
   constructor (
@@ -125,7 +132,6 @@ class AppMeshWorker {
       this._client = options.client
     } else {
       this._client = new AppMeshClient(baseURL, sslConfig)
-      this._client.set_auto_refresh_token(false) // Task endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
     }
     this._logger = options.logger || console
     this._stopped = false
@@ -167,15 +173,17 @@ class AppMeshWorker {
    * Fetch task data in the currently running App Mesh application process.
    *
    * Used by App Mesh application process to obtain the payload from App Mesh service
-   * that a client pushed to it. This method will retry indefinitely until successful
-   * or cancelled via {@link AppMeshWorker#stop}, in which case `null` is resolved.
+   * that a client pushed to it. This method retries transient failures indefinitely
+   * until successful or cancelled via {@link AppMeshWorker#stop}; HTTP 400/412 stop
+   * the loop. Cancellation resolves `null`.
    *
    * @async
    * @returns {Promise<string|Buffer|null>} The raw payload bytes/body provided by the
    *   invoking client, or `null` when the fetch loop was cancelled via stop()
    * @throws {ProcessSupersededError} The daemon reported HTTP 412 — this process key was
-   *   superseded by a newer process instance; the caller should stop serving (an app
-   *   entry point typically catches this and exits).
+   *   superseded by a newer process instance.
+   * @throws {WorkerRejectedError} The daemon reported a permanent HTTP 400; an app entry
+   *   point should stop serving and exit.
    */
   async fetch_task () {
     const { processKey, appName } = this._getRuntimeEnv()
@@ -187,7 +195,7 @@ class AppMeshWorker {
       const attemptStart = Date.now()
       try {
         const response = await this._client.request('get', path, null, {
-          params: { process_key: processKey }
+          headers: { 'X-AppMesh-Process-Key': processKey }
         })
 
         if (response.status === 200) {
@@ -199,6 +207,12 @@ class AppMeshWorker {
         if (response.status === 412) {
           throw new ProcessSupersededError(
             'Process key mismatch (412): this process has been superseded by a newer instance',
+            response.data
+          )
+        }
+        if (response.status === 400) {
+          throw new WorkerRejectedError(
+            'fetch_task permanently rejected with status 400',
             response.data
           )
         }
@@ -217,6 +231,12 @@ class AppMeshWorker {
               'Process key mismatch (412): this process has been superseded by a newer instance',
               error.responseData
             )
+        }
+        if (error.statusCode === 400) {
+          this._logger.error(`fetch_task permanently rejected: ${error.message}`)
+          throw error instanceof WorkerRejectedError
+            ? error
+            : new WorkerRejectedError(error.message, error.responseData)
         }
         this._logger.warn(`fetch_task error: ${error.message}, retrying...`)
       }
@@ -247,7 +267,7 @@ class AppMeshWorker {
     let response
     try {
       response = await this._client.request('put', path, result, {
-        params: { process_key: processKey }
+        headers: { 'X-AppMesh-Process-Key': processKey }
       })
     } catch (error) {
       // request() throws AppMeshError on non-200
@@ -309,7 +329,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
-   * @param {AppMeshClientTCP} [options.client] - Pre-built client to reuse (shares token-refresh state); see AppMeshWorker for why. When set, sslConfig/tcpAddress are ignored.
+   * @param {AppMeshClientTCP} [options.client] - Pre-built client to reuse (shares its caller-owned bearer); when set, sslConfig/tcpAddress are ignored.
    *
    * @example
    * import fs from 'fs';
@@ -324,7 +344,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    * // Share a single TCP client between client-role and worker-role usage:
    * import { AppMeshClientTCP } from 'appmesh/tcp';
    * const client = new AppMeshClientTCP(sslConfig, ['127.0.0.1', 6059]);
-   * await client.login('user', 'pass');
+   * client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
    * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6059], { client });
    */
   constructor (
@@ -353,7 +373,6 @@ class AppMeshWorkerTCP extends AppMeshWorker {
     if (!this._client) {
       const { AppMeshClientTCP } = await import('./appmesh_tcp.js')
       this._client = new AppMeshClientTCP(this._sslConfig, this._tcpAddress)
-      this._client.set_auto_refresh_token(false) // Task endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
     }
     return this._client
   }
@@ -420,6 +439,7 @@ export {
   AppMeshWorker,
   AppMeshWorkerTCP,
   ProcessSupersededError,
+  WorkerRejectedError,
   withServer
 }
 export default AppMeshWorker

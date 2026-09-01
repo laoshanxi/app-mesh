@@ -2,11 +2,30 @@
 # Example for App Mesh Client.
 # Install appmesh package: python3 -m pip install --upgrade appmesh
 
+import os
 from time import sleep
-from appmesh import AppMeshClient, App
+from appmesh import AppMeshClient, App, OAuthClient
 
-client = AppMeshClient()
-client.login("admin", "admin123")
+# Engine traffic and authentication traffic are separate routes, even on one node.
+engine_url = os.environ.get("APPMESH_ENGINE_URL", "https://127.0.0.1:6060")
+auth_access_url = os.environ.get("APPMESH_AUTH_ACCESS_URL", "http://127.0.0.1:6062/auth")
+engine_ca = os.environ.get("APPMESH_ENGINE_CA")
+auth_ca = os.environ.get("APPMESH_AUTH_CA_PATH")
+client = AppMeshClient(
+    base_url=engine_url,
+    # None retains the SDK's installed App Mesh CA auto-detection.
+    ssl_verify=engine_ca or None,
+    bearer_token=os.environ.get("APPMESH_BEARER_TOKEN"),
+)
+
+
+def oauth_client():
+    """Build OAuth discovery against the selected authentication route."""
+    return OAuthClient.from_appmesh(
+        client,
+        access_url=auth_access_url,
+        ssl_verify=auth_ca or True,
+    )
 
 
 def demo_task_execute():

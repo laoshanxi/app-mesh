@@ -9,8 +9,8 @@ Two interaction models (see README "Two scenarios, two Apps"):
 Prereqs: a running daemon with the `llm-agent` App enabled and a Claude key set
 (ANTHROPIC_API_KEY as a secured env var; the claude-agent-sdk wheel bundles the Claude
 Code CLI, so no Node is needed). For B, an admin-provisioned worker
-(--worker-app/--worker-session). The caller logs in (daemon RBAC needs app-run-task, and
-app-subscribe for B streaming).
+(--worker-app/--worker-session). The caller supplies a bearer whose Engine
+principal has app-run-task and, for B streaming, app-subscribe.
 
 Run:
   python3 user_scenarios.py --list
@@ -33,9 +33,9 @@ class LLMAgent:
         self.app = app
         self.task_timeout = task_timeout
 
-    def login(self, user, password):
-        # login() attaches the session cookie used to authorize run_task at the daemon.
-        self.client.login(user, password)
+    def with_bearer(self, bearer):
+        """Attach a caller-obtained access token. The agent is not an OAuth client."""
+        self.client.set_bearer_token(bearer)
         return self
 
     def _act(self, app, action, **fields):
@@ -168,8 +168,6 @@ def main():
     p.add_argument("--host", default=os.environ.get("APPMESH_TCP_HOST", "127.0.0.1"))
     p.add_argument("--port", default=os.environ.get("APPMESH_TCP_PORT", "6059"))
     p.add_argument("--app", default=os.environ.get("LLMAGENT_APP", "llm-agent"))
-    p.add_argument("--user", default=os.environ.get("APPMESH_USER", "admin"))
-    p.add_argument("--password", default=os.environ.get("APPMESH_PASSWORD", "admin123"))
     p.add_argument("--worker-app", default=os.environ.get("LLMAGENT_WORKER_APP", ""))
     p.add_argument("--worker-session", default=os.environ.get("LLMAGENT_WORKER_SESSION", ""))
     p.add_argument("--task-timeout", type=int, default=int(os.environ.get("LLMAGENT_TASK_TIMEOUT", "120")))
@@ -182,8 +180,11 @@ def main():
     if any(n not in SCENARIOS for n in names):
         print("unknown scenario; try --list", file=sys.stderr)
         return 2
-    a = LLMAgent(cfg.host, cfg.port, cfg.app, cfg.task_timeout).login(cfg.user, cfg.password)
-    print(f"connected to {cfg.host}:{cfg.port}, app {cfg.app!r} (user {cfg.user!r})\n")
+    bearer = os.environ.get("APPMESH_BEARER_TOKEN")
+    if not bearer:
+        p.error("APPMESH_BEARER_TOKEN is required. Obtain it from the authentication service.")
+    a = LLMAgent(cfg.host, cfg.port, cfg.app, cfg.task_timeout).with_bearer(bearer)
+    print(f"connected to {cfg.host}:{cfg.port}, app {cfg.app!r}\n")
     fails = 0
     for n in names:
         print(f"=== {n} ===")

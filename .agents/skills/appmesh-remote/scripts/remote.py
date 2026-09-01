@@ -26,9 +26,8 @@ warnings.filterwarnings("ignore", module="urllib3")
 
 # --- Configuration ---
 
-HOST = os.environ.get("APPMESH_HOST", "https://127.0.0.1:6060")
-USER = os.environ.get("APPMESH_USER", "admin")
-PASS = os.environ.get("APPMESH_PASSWORD", "admin123")
+ENGINE_URL = os.environ.get("APPMESH_ENGINE_URL", "https://127.0.0.1:6060")
+ACCESS_TOKEN = os.environ.get("APPMESH_ACCESS_TOKEN", "").strip()
 WORKSPACE = os.environ.get("APPMESH_WORKSPACE", "")
 SSL_VERIFY_ENV = os.environ.get("APPMESH_SSL_VERIFY", "false")
 SSL_VERIFY = {"true": True, "false": False}.get(SSL_VERIFY_ENV.lower(), SSL_VERIFY_ENV)
@@ -40,16 +39,18 @@ if EXTRA:
 
 
 def get_client():
-    """Create and authenticate App Mesh client."""
+    """Create an App Mesh client with an OAuth access token."""
     from appmesh import AppMeshClient
 
-    client = AppMeshClient(base_url=HOST, ssl_verify=SSL_VERIFY, ssl_client_cert=None, auto_refresh_token=True)
-    try:
-        client.login(USER, PASS)
-    except Exception as e:
-        print(f"[error] Failed to connect to {HOST}: {e}")
+    if not ACCESS_TOKEN:
+        print("[error] APPMESH_ACCESS_TOKEN is not set.")
         sys.exit(1)
-    return client
+    return AppMeshClient(
+        base_url=ENGINE_URL,
+        ssl_verify=SSL_VERIFY,
+        ssl_client_cert=None,
+        bearer_token=ACCESS_TOKEN,
+    )
 
 
 # --- Core Functions ---
@@ -66,7 +67,7 @@ def _hash_file(path):
 
 def _sync_marker_path():
     """Path to the local marker file that stores the last synced tar hash."""
-    tag = hashlib.sha256(f"{HOST}:{WORKSPACE}".encode()).hexdigest()[:12]
+    tag = hashlib.sha256(f"{ENGINE_URL}:{WORKSPACE}".encode()).hexdigest()[:12]
     return os.path.join(tempfile.gettempdir(), f"_appmesh_sync_marker_{tag}")
 
 

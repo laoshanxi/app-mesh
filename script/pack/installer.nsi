@@ -1,5 +1,5 @@
 !define APP_NAME "appmesh"
-!define APP_VERSION "2.2.1"
+!define APP_VERSION "3.0.0"
 !define COMPANY_NAME "laoshanxi"
 !define INSTALL_DIR "C:\local\${APP_NAME}"
 
@@ -18,6 +18,16 @@ Var START_APPMESH
 Var NSSM_PATH
 Var SILENT_MODE
 
+!macro ExecNssmChecked Command Description
+    nsExec::ExecToLog '${Command}'
+    Pop $0
+    ${If} $0 != 0
+        DetailPrint "ERROR: ${Description} failed (exit code $0)"
+        MessageBox MB_ICONSTOP "${Description} failed (exit code $0)" /SD IDOK
+        Abort
+    ${EndIf}
+!macroend
+
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchAppIfChecked
 !define MUI_FINISHPAGE_RUN_TEXT "Start AppMeshService now"
@@ -26,6 +36,12 @@ Var SILENT_MODE
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "Add $INSTDIR\bin to system PATH"
 !define MUI_FINISHPAGE_SHOWREADME_FUNCTION AddToPath
 !define MUI_FINISHPAGE_SHOWREADME_STATE 1 ; Checked by default
+
+; Next-step guidance on the finish page; the same details go to the install log.
+!define MUI_FINISHPAGE_TEXT "App Mesh is installed in $INSTDIR$\r$\nWeb console: https://localhost:6060$\r$\nPrint the initial administrator password:$\r$\npowershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password$\r$\nSign in: appm logon --username admin@appmesh.local$\r$\nLogs: $INSTDIR\work\server.log"
+!define MUI_FINISHPAGE_TEXT_LARGE
+!define MUI_FINISHPAGE_LINK "Documentation: https://app-mesh.readthedocs.io"
+!define MUI_FINISHPAGE_LINK_LOCATION "https://app-mesh.readthedocs.io"
 
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
 
@@ -55,15 +71,12 @@ Section "Install"
 install_files:
     SetOutPath "$INSTDIR"
     File /r "..\..\build\package_root\*"
+    ; Remove the obsolete packaged definition before the service starts. Its old
+    ; application name would otherwise start a second authentication process.
+    Delete "$INSTDIR\apps\auth-dex.yaml"
 
     StrCpy $START_APPMESH "$INSTDIR\bin\appmesh.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"
-
-    ; Preserve an existing runtime definition during upgrades.
-    CreateDirectory "$INSTDIR\work\apps"
-    IfFileExists "$INSTDIR\work\apps\workflow.yaml" workflow_ready 0
-    CopyFiles /SILENT "$INSTDIR\config\templates\workflow.yaml" "$INSTDIR\work\apps"
-workflow_ready:
 
     ; Generate SSL certs
     DetailPrint "Starting SSL certificate generation"
@@ -78,16 +91,26 @@ workflow_ready:
         DetailPrint "SUCCESS: SSL certificate generation completed"
     ${EndIf}
     ; Install service
-    nsExec::ExecToLog '"$NSSM_PATH" install AppMeshService "$START_APPMESH"'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppDirectory "$INSTDIR"'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Start SERVICE_AUTO_START'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Type SERVICE_WIN32_OWN_PROCESS'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Description "App Mesh background service"'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService DependOnService Dhcp Tcpip Netman'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppStdout "$INSTDIR\install_stdout.log"'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppStderr "$INSTDIR\install_stderr.log"'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppExit Default Restart'
-    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppRestartDelay 5000'
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" install AppMeshService "$START_APPMESH"' "AppMeshService installation"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService AppDirectory "$INSTDIR"' "AppMeshService application-directory configuration"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService Start SERVICE_AUTO_START' "AppMeshService start-mode configuration"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService Type SERVICE_WIN32_OWN_PROCESS' "AppMeshService type configuration"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService Description "App Mesh background service"' "AppMeshService description configuration"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService DependOnService Dhcp Tcpip Netman' "AppMeshService dependency configuration"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService AppStdout "$INSTDIR\install_stdout.log"' "AppMeshService stdout configuration"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService AppStderr "$INSTDIR\install_stderr.log"' "AppMeshService stderr configuration"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService AppExit Default Restart' "AppMeshService restart-policy configuration"
+    !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService AppRestartDelay 5000' "AppMeshService restart-delay configuration"
+
+    ; Windows ships the same protected bundled authentication service as Linux/macOS.
+    ; setup.ps1 remains available when an operator intentionally selects an
+    ; external issuer instead.
+    DetailPrint "The bundled authentication service will start with AppMeshService."
+    DetailPrint "Optional external issuer configuration:"
+    DetailPrint "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\setup.ps1 -Issuer https://auth.example.com/oidc"
+    DetailPrint "Print the packaged administrator password after startup:"
+    DetailPrint "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password"
+    DetailPrint "After startup, run appm logon locally with the packaged administrator; first-admin enrollment is automatic."
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -102,7 +125,7 @@ SectionEnd
 
 Function LaunchAppIfChecked
     ; start the service if the user checked the box
-    nsExec::ExecToLog '"$INSTDIR\bin\nssm.exe" start AppMeshService'
+    !insertmacro ExecNssmChecked '"$INSTDIR\bin\nssm.exe" start AppMeshService' "AppMeshService start"
 FunctionEnd
 
 Function AddToPath

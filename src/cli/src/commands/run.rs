@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use appmesh::{Application, AppMeshClient, ExitAction};
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::app::{Cli, ExecArgs, RunArgs, ShellArgs};
 use crate::client::build_client_with_auth;
@@ -161,21 +162,9 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
     let lifecycle = AppMeshClient::parse_duration(&args.lifetime)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    // Show connection info (matching C++ format, stdout)
-    let user_info = client.get_current_user().await.ok();
-    let exec_user = user_info
-        .as_ref()
-        .and_then(|v| v["exec_user"].as_str())
-        .unwrap_or("unknown");
-    let appmesh_user = user_info
-        .as_ref()
-        .and_then(|v| v["name"].as_str())
-        .unwrap_or("unknown");
+    // The daemon resolves the immutable principal and its execution mapping.
     let url = crate::client::get_current_url(cli);
-    println!(
-        "Connected to <{}@{}> as exec user <{}>",
-        appmesh_user, url, exec_user
-    );
+    println!("Connected to <{}>", url);
 
     let history_path = config::shell_history_path();
     let mut rl = rustyline::DefaultEditor::new().context("Failed to initialize readline")?;
@@ -292,12 +281,9 @@ fn build_exec_app(
         builder = builder.working_dir(&cwd.to_string_lossy());
     }
 
-    // Forward ALL current environment variables (matching C++ behavior)
-    for (key, value) in std::env::vars() {
-        builder = builder.env(&key, &value);
-    }
-
-    // Override with user-specified env vars
+    // Ambient process variables are never copied to the remote application. Name-
+    // based secret deny-lists miss standard credentials such as AWS_SECRET_ACCESS_KEY;
+    // every forwarded value must therefore be an explicit --env decision.
     for env_str in extra_env {
         if let Some((k, v)) = env_str.split_once('=') {
             builder = builder.env(k, v);
@@ -307,18 +293,14 @@ fn build_exec_app(
     builder.build()
 }
 
-async fn derive_exec_app_name(client: &appmesh::AppMeshClientWSS) -> String {
-    let appmesh_user = client
-        .get_current_user()
-        .await
-        .ok()
-        .and_then(|v| v["name"].as_str().map(String::from))
-        .unwrap_or_else(|| "unknown".to_string());
-
-    let os_user = get_os_username();
-    let bash_pid = get_shell_pid();
-
-    format!("{}_{}_{}", appmesh_user, os_user, bash_pid)
+async fn derive_exec_app_name(_client: &appmesh::AppMeshClientWSS) -> String {
+    let os_user: String = get_os_username()
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+        .take(32)
+        .collect();
+    let os_user = if os_user.is_empty() { "user" } else { &os_user };
+    format!("shell_{}_{}", os_user, Uuid::new_v4().simple())
 }
 
 fn get_os_username() -> String {
@@ -326,94 +308,3 @@ fn get_os_username() -> String {
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "user".to_string())
 }
-
-/// Walk up the process tree to find the nearest shell (bash, sh, etc.)
-/// Falls back to current PID if no shell found.
-fn get_shell_pid() -> u32 {
-    // VSCode integrated terminal reuses the same bash process
-    if std::env::var("VSCODE_PID").is_ok() {
-        return std::process::id();
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(pid) = find_shell_pid_linux() {
-            return pid;
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(pid) = find_shell_pid_macos() {
-            return pid;
-        }
-    }
-
-    std::process::id()
-}
-
-#[cfg(target_os = "linux")]
-fn find_shell_pid_linux() -> Option<u32> {
-    let mut ppid = get_ppid()?;
-    while ppid > 1 {
-        let comm = std::fs::read_to_string(format!("/proc/{}/comm", ppid)).ok()?;
-        if is_shell_process(comm.trim()) {
-            return Some(ppid);
-        }
-        let stat = std::fs::read_to_string(format!("/proc/{}/stat", ppid)).ok()?;
-        let after_paren = stat.find(')')?.checked_add(2)?;
-        let fields: Vec<&str> = stat[after_paren..].split_whitespace().collect();
-        ppid = fields.get(1)?.parse().ok()?;
-    }
-    Some(ppid)
-}
-
-#[cfg(target_os = "macos")]
-fn find_shell_pid_macos() -> Option<u32> {
-    let mut ppid = get_ppid()?;
-    while ppid > 1 {
-        let output = std::process::Command::new("ps")
-            .args(["-p", &ppid.to_string(), "-o", "comm="])
-            .output()
-            .ok()?;
-        let comm = String::from_utf8_lossy(&output.stdout);
-        let name = comm.trim().rsplit('/').next().unwrap_or("");
-        if is_shell_process(name) {
-            return Some(ppid);
-        }
-        let output = std::process::Command::new("ps")
-            .args(["-p", &ppid.to_string(), "-o", "ppid="])
-            .output()
-            .ok()?;
-        ppid = String::from_utf8_lossy(&output.stdout).trim().parse().ok()?;
-    }
-    Some(ppid)
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn get_ppid() -> Option<u32> {
-    #[cfg(target_os = "linux")]
-    {
-        let stat = std::fs::read_to_string(format!("/proc/{}/stat", std::process::id())).ok()?;
-        let after_paren = stat.find(')')?.checked_add(2)?;
-        let fields: Vec<&str> = stat[after_paren..].split_whitespace().collect();
-        fields.get(1)?.parse().ok()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let output = std::process::Command::new("ps")
-            .args(["-p", &std::process::id().to_string(), "-o", "ppid="])
-            .output()
-            .ok()?;
-        String::from_utf8_lossy(&output.stdout).trim().parse().ok()
-    }
-}
-
-#[cfg(unix)]
-fn is_shell_process(name: &str) -> bool {
-    matches!(
-        name.to_lowercase().as_str(),
-        "bash" | "sh" | "dash" | "zsh" | "fish" | "cmd.exe" | "powershell.exe" | "pwsh.exe"
-    )
-}
-

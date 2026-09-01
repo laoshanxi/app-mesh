@@ -4,14 +4,11 @@ package agent
 import (
 	"bufio"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path"
-	"strconv"
-	"strings"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
@@ -130,14 +127,11 @@ func (r *Response) readFileFromConn(conn *Connection, targetFilePath string) err
 }
 
 // writeToHTTPResponse applies the response to the HTTP response writer
-func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request, request *Request) {
+func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request) {
 	// Set headers
 	for k, v := range r.Headers {
 		w.Header().Set(k, v)
 	}
-
-	// Set cookies
-	r.handleAuthCookies(w, req, request)
 
 	// Handle the response body based on the path
 	if r.RequestUri == REST_PATH_DOWNLOAD || r.RequestUri == REST_PATH_UPLOAD {
@@ -161,108 +155,4 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request,
 		}
 		logger.Debugf("REST call finished %s", r.UUID)
 	}
-}
-
-// handleAuthCookies manages authentication cookies based on the HTTP request and response
-// It handles three scenarios:
-// 1. Setting cookies on successful login
-// 2. Refreshing cookies on token renewal
-// 3. Removing cookies on logout
-func (r *Response) handleAuthCookies(w http.ResponseWriter, req *http.Request, request *Request) {
-	// Only proceed for successful responses
-	if r.HttpStatus != http.StatusOK {
-		return
-	}
-
-	switch r.RequestUri {
-	case REST_PATH_LOGIN, REST_PATH_TOTP_VALIDATE, REST_PATH_AUTH:
-		r.setSecureHeaders(w)
-		// Set cookie if explicitly requested via header and value is true
-		if setCookieVal, ok := request.Headers[HTTP_HEADER_KEY_X_SET_COOKIE]; ok {
-			if requestSetCookie, _ := strconv.ParseBool(setCookieVal); requestSetCookie {
-				r.setAuthCookie(w, req)
-			}
-		}
-
-	case REST_PATH_TOKEN_RENEW, REST_PATH_TOTP_SETUP:
-		r.setSecureHeaders(w)
-		// Verify cookie exists and has valid value
-		cookie, err := req.Cookie(COOKIE_TOKEN)
-		if err != nil {
-			logger.Debugf("No cookie present for %s", r.UUID)
-			return
-		}
-		if cookie.Value == "" {
-			logger.Debugf("Empty cookie value for %s", r.UUID)
-			return
-		}
-		r.setAuthCookie(w, req)
-
-	case REST_PATH_LOGOFF:
-		// Clear existing cookie if present
-		if _, err := req.Cookie(COOKIE_TOKEN); err == nil {
-			r.clearAuthCookie(w, req)
-		}
-	}
-}
-
-// setAuthCookie extracts JWT token from response body and creates an auth cookie
-func (r *Response) setAuthCookie(w http.ResponseWriter, req *http.Request) {
-	logger.Infof("Creating authentication cookie for %s", r.UUID)
-
-	// Parse JWT from response body
-	var jwtResponse struct {
-		AccessToken   string  `json:"access_token"`
-		ExpireSeconds float64 `json:"expire_seconds"`
-	}
-
-	if err := json.Unmarshal(r.Body, &jwtResponse); err != nil {
-		logger.Warnf("Failed to unmarshal JWT response body for %s: %v", r.UUID, err)
-		return
-	}
-
-	// Validate token presence
-	if jwtResponse.AccessToken == "" {
-		logger.Warnf("Missing access_token in response body for %s", r.UUID)
-		return
-	}
-
-	// Create cookie with standard security settings
-	cookie := &http.Cookie{
-		Name:     COOKIE_TOKEN,
-		Value:    strings.TrimPrefix(jwtResponse.AccessToken, "Bearer "),
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   req.TLS != nil,
-		SameSite: http.SameSiteStrictMode,
-	}
-
-	// Set expiration if available
-	if jwtResponse.ExpireSeconds > 0 {
-		cookie.MaxAge = int(jwtResponse.ExpireSeconds)
-	}
-
-	http.SetCookie(w, cookie)
-	// CSRF is enforced by the daemon via an Origin check; no companion CSRF cookie is needed.
-}
-
-// clearAuthCookie invalidates the authentication cookie
-func (r *Response) clearAuthCookie(w http.ResponseWriter, req *http.Request) {
-	logger.Debugf("Clearing authentication cookie for %s", r.UUID)
-	http.SetCookie(w, &http.Cookie{
-		Name:     COOKIE_TOKEN,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   req.TLS != nil,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   -1, // Expire immediately
-	})
-}
-
-// setSecureHeaders sets security headers for sensitive responses
-func (r *Response) setSecureHeaders(w http.ResponseWriter) {
-	// Prevent sensitive responses (like JWTs) from being cached by browsers or proxies.
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
 }

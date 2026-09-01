@@ -15,8 +15,7 @@ func TestAppmeshWSSLogin(t *testing.T) {
 	require.NoError(t, err)
 	defer client.CloseConnection()
 
-	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
-	require.NoError(t, err)
+	client.SetToken(requireBearerToken(t))
 
 	apps, err := client.ListApps()
 	require.NoError(t, err)
@@ -35,8 +34,6 @@ func TestAppmeshWSSLogin(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res)
 
-	_, err = client.Logout()
-	require.NoError(t, err)
 }
 
 func TestAppmeshWSSOperations(t *testing.T) {
@@ -47,9 +44,7 @@ func TestAppmeshWSSOperations(t *testing.T) {
 	require.NoError(t, err)
 	defer client.CloseConnection()
 
-	// 1. Login
-	_, err = client.Login("admin", "admin123", "", DefaultTokenExpireSeconds, "")
-	require.NoError(t, err, "WSS login should succeed")
+	client.SetToken(requireBearerToken(t))
 
 	// 2. RunAppSync - echo command, verify exit code 0
 	cmd := "echo hello_wss"
@@ -82,7 +77,7 @@ func TestAppmeshWSSOperations(t *testing.T) {
 	require.NoError(t, err, "WSS AddApp should succeed")
 	require.NotNil(t, addedApp, "WSS AddApp should return the created app")
 	require.Equal(t, testAppName, addedApp.Name, "WSS AddApp returned app should have correct name")
-	t.Logf("WSS AddApp: %s status=%d", addedApp.Name, addedApp.Status)
+	t.Logf("WSS AddApp: %s status=%t", addedApp.Name, addedApp.Status)
 
 	disabled, err := client.DisableApp(testAppName)
 	require.NoError(t, err, "WSS DisableApp should succeed")
@@ -102,19 +97,10 @@ func TestAppmeshWSSOperations(t *testing.T) {
 	require.NotEmpty(t, cfg, "WSS GetConfig should return non-empty data")
 	t.Logf("WSS GetConfig keys: %d", len(cfg))
 
-	// 5. ListUsers / GetCurrentUser
-	users, err := client.ListUsers()
-	require.NoError(t, err, "WSS ListUsers should succeed")
-	require.NotEmpty(t, users, "WSS ListUsers should return at least one user")
-	t.Logf("WSS ListUsers count: %d", len(users))
-
+	// 5. Current principal
 	self, err := client.GetCurrentUser()
 	require.NoError(t, err, "WSS GetCurrentUser should succeed")
 	require.NotEmpty(t, self, "WSS GetCurrentUser should return non-empty data")
 	t.Logf("WSS GetCurrentUser: %v", self)
 
-	// 6. Logout
-	ok, err := client.Logout()
-	require.NoError(t, err, "WSS Logout should succeed")
-	require.True(t, ok, "WSS Logout should return true")
 }

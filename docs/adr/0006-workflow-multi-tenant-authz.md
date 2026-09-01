@@ -1,188 +1,100 @@
-# ADR 0006 — Workflow Multi-Tenant Authorization (Phase 1 + 2)
+# ADR 0006 — Workflow Multi-Tenant Authorization
 
 ## Status
 
-Accepted — implemented (Phase 1 + 2). The engine enforces per-workflow ownership and
-runs steps under the triggering caller's identity; the Go SDK (`EnableConcurrency`),
-the workflow engine, and the Rust CLI (`appm workflow`, all 12 actions) now carry the
-caller token in the run_task payload. This is a concrete, simplified subset of the
-identity model in ADR 0004; the full `execution_identity` / automatic-trigger model
-(Phase 3 below) remains the longer-term target and is still Proposed in ADR 0004.
+Accepted. Authentication and identity details were revised by ADR 0009.
 
 ## Context
 
-Today the workflow engine has effectively no authorization beyond one coarse gate
-(see ADR 0005 and the corrected note in ADR 0002):
-
-- The engine logs in once as a single fixed identity (`APPMESH_USER`, default
-  `admin`) via `sec_env`, and **every** step and CRUD call uses that one JWT.
-- The only access check is `app-run-task` + write-access on the single `workflow`
-  engine App. Past that gate, `TaskHandler.dispatch` does **zero** per-action /
-  per-workflow authorization — any reachable caller can run / cancel / delete / read
-  logs of **any** workflow.
-- `workflow-<name>` Apps record `owner`/`permission`, but nothing reads them.
-- Steps run as `admin`, so any user who can trigger a workflow gets admin-level
-  command execution (privilege escalation / confused deputy).
-
-Goal: support two roles —
-- **user**: submit and manage **their own** workflows;
-- **admin**: view and manage **all** workflows —
-with steps executing under the **triggering caller's** authority, not admin's.
-
-### Why not extend daemon RBAC for per-workflow rules
-
-From the daemon's view the engine is a *single* App; `run_task` carries an opaque
-body, so the daemon cannot see the `action`/`workflow` inside. Daemon RBAC can only
-gate "may you talk to the engine at all." Per-workflow authorization therefore lives
-**inside the engine** (the engine is its own Policy Decision Point); the daemon stays
-the authenticator (IdP) and the step-execution substrate.
+The daemon sees the workflow engine as one App, while workflow names and actions are inside
+the Task payload. Daemon RBAC can decide whether a Principal may call the engine, but the
+engine must enforce ownership and action-specific policy for individual workflows.
 
 ## Decision
 
-Three authorization layers:
+Authorization has three layers:
 
-| Layer | Question | Enforced by |
+| Layer | Question | Enforcement |
 |-------|----------|-------------|
-| **L1** | May you send a task to the engine? | daemon RBAC `app-run-task` (already exists, ADR 0005) |
-| **L2** | May you run/view/manage *this* workflow? | engine PDP — `owner == caller \|\| isAdmin` |
-| **L3** | What may a step do? | the caller's own token runs the step → daemon's per-App ACL/RBAC applies naturally |
+| L1 | May the caller send a Task to the workflow engine? | App Mesh `app-run-task` permission |
+| L2 | May the caller view, run, or manage this workflow? | workflow engine policy using immutable Principal IDs |
+| L3 | What may a step do? | App Mesh RBAC for the caller or the run capability's bound owner |
 
-### Identity — token in the `run_task` payload (no daemon change, no new API)
+### Caller authentication
 
-Because Phase 2 already needs the caller's token to run steps, that same token is the
-trusted identity source for Phase 1 — one token serves both, so **no C++ daemon change
-and no new backend API are required**.
+Every workflow request carries the caller's access token. The workflow engine submits
+that token to the Engine's Principal self endpoint. The Engine validates issuer, signature,
+audience, and token time constraints, then returns the stable Principal ID and permissions.
+The workflow engine does not decode an unverified token to establish identity.
 
-1. The client puts its JWT in the `run_task` payload: `Request.Token`.
-2. On every request the engine validates it via the Go SDK
-   `Authenticate(token, "", "", false)`. Invalid / expired / blacklisted → reject
-   (fail-closed).
-3. The verified caller username is taken from the token's `sub` claim (App Mesh sets
-   `set_subject(userName)`, `JwtToken.cpp:46`).
-4. The token is **stripped from `Request` immediately after authentication** and is
-   **never written** to run records, checkpoints, `runs.json`, or logs.
+The token is removed from request data immediately after validation and is never persisted
+or logged.
 
-### L2 authorization (Phase 1) — engine PDP
+### Ownership and administration
 
-Predicate:
+`workflow_add` derives the owner from the authenticated registrant. A YAML `owner` value is
+ignored and must not influence authorization. Owner and actor values stored in workflow/run
+state are immutable Principal IDs, not usernames.
+
+The policy is:
 
 ```
-isAdmin(caller)        = caller ∈ APPMESH_WORKFLOW_ADMINS   // comma-separated username
-                         // allowlist, default {"admin"}; evaluated in the engine (PDP)
-canAccess(caller, wf)  = isAdmin(caller) || caller == wf.owner   // wf.owner from workflow-<name> App
+canAccess(principal, workflow) =
+    principal.id == workflow.owner_principal_id ||
+    principal.permissions contains "workflow-admin"
 ```
 
-The admin check is a **username allowlist** (`APPMESH_WORKFLOW_ADMINS`), chosen for
-simplicity and zero RBAC setup (the default `admin` user is a workflow admin out of the
-box, and the Python tests need no role wiring). Tradeoff: it is more brittle than an
-RBAC permission — renaming a user loses admin, and admin cannot be granted via a role.
-A future hardening is to switch `isAdmin` to an RBAC predicate
-(`Authenticate(token, "workflow-manage")`) so admin is role-grantable; deferred.
+The owner may operate on their workflow. A Principal with `workflow-admin` may operate on
+all workflows. Listing filters out inaccessible workflows.
 
-Per-action matrix in `dispatch`:
+Registering a workflow with an automatic trigger requires `workflow-admin`, because those
+runs execute without a human caller.
 
-| action | RBAC perm (L1 already passed) | ownership (L2) | note |
-|--------|------|------|------|
-| `workflow_add` | — | new: none; overwrite existing: `canAccess` | **owner forced = verified caller** (stop trusting YAML `owner`) |
-| `workflow_rm` | — | `canAccess` | |
-| `run` / `rerun` / `cancel` | — | `canAccess` | |
-| `workflow_get` / `workflow_inputs` | — | `canAccess` | |
-| `runs` / `run_detail` / `log` / `step_log` | — | `canAccess` | logs may contain secrets → owner-only |
-| `workflow_list` | — | filter | user sees own; admin sees all |
+### Effective identity for steps
 
-Also record `actor = caller` in the run record for audit (the ADR 0004 `actor`).
+- Manual Run: use the validated caller's access token; record the caller Principal ID
+  as `actor`.
+- Automatic or recovered execution: the managed Workflow process proves its current
+  `APP_MESH_PROCESS_KEY` over loopback TCP and asks Engine for an opaque capability bound to
+  workflow ID, run ID, current owner Principal, allowed operations, process UUID, and a
+  maximum five-minute lifetime. A newly automatic Run records `internal:workflow-trigger`
+  as its actor marker; recovery preserves the original actor and trigger source.
 
-### L3 execution (Phase 2) — invoker rights
+Workflow definitions cannot select an arbitrary execution identity. The Engine has no local
+password login, user credential map, impersonation, or token-minting path. The workflow
+capability is not an OAuth/JWT identity token: Engine signs and validates it with a
+daemon-only key, accepts it only on an actual loopback TCP peer, and intersects every
+operation with the owner's current active RBAC. Principal disable, ownership changes, and
+role removal therefore take effect immediately. Long runs renew before expiry using the
+same local process proof; capabilities are never persisted or placed in message payloads.
+The binding scopes the Run lifecycle, owner, process, routes, and operations rather than one
+arbitrary existing App: App/message steps may target an existing App only through its normal
+owner/RBAC/access checks. A command step may create only a reserved `wf-cmd-*` App whose
+workflow/run/process metadata matches the capability, and subsequent operations on that
+temporary App repeat the metadata check.
 
-Steps run as the **triggering caller**, not admin:
+### Action policy
 
-- The caller token is threaded `dispatch → TriggerManual → triggerRun → startRun →
-  launchRun` (in-memory only; queued runs hold it in the in-memory queue entry).
-- In `launchRun` the engine builds a **caller-scoped** `AppMeshClient` from the token
-  and passes it as the existing `client` arg to `engine.RunWithContext`. The engine /
-  executor are otherwise unchanged — they already use whatever client they are handed
-  (`StepExecutor.Client`, `clientForTarget` forwards `client.GetToken()` to remote
-  nodes). This keeps Phase 2 nearly zero-change in the execution path.
-- The engine's **own** identity (`s.client`) is used **only for the control plane** —
-  registry scan / `ListApps`, registering & removing `workflow-<name>` Apps, orphan and
-  cancel cleanup. It **no longer executes steps**. It should therefore be **downgraded
-  from `admin` to a least-privilege service account** (only `app-reg`, `app-delete`,
-  `app-view-all`, `app-run-task`), not the broad `admin` it defaults to today.
-
-Result: a step can do exactly what the caller could do directly — privilege
-escalation disappears, and the daemon's existing per-App owner/permission enforces it.
-
-### Ownership is derived, not declared
-
-`owner` is established from the **authenticated registrant** at `workflow_add`, not from
-the YAML. Consequently the workflow YAML's `owner` field is **no longer needed and is
-ignored** (trusting it was the spoofable-owner hole), and `permission` (rwx bits) is
-unused in the own-vs-all model — access is `owner || isAdmin`. Both fields can be
-dropped from workflow YAML; reintroduce `permission` only if/when group sharing
-(read-only collaborators, etc.) is added.
-
-Note: this is distinct from the engine App's `sec_env` login (`APPMESH_USER`/
-`APPMESH_PASSWORD`), which still authenticates the engine to the daemon and stays
-(downgraded to a service account, above).
-
-### Token lifecycle — Plan A (chosen), expiry deferred
-
-- **Plan A**: use the caller's current token as-is; a run is bounded by that token's
-  validity. Token expiry / user disabled → remaining steps fail closed. This is the
-  *desired* security semantic (a workflow must not keep acting after the caller's
-  authorization lapses) and needs no long-lived stored credential.
-- **Expiry handling is explicitly deferred** for now — long-running workflows that
-  outlive the token are out of scope for the first implementation.
-- **Known constraint (renew blacklists the prior token, `RestHandler.cpp:977`):** the
-  trigger must use a **dedicated, non-renewing token** (e.g. a one-shot CLI login
-  token), *not* an auto-refreshing session token — otherwise the caller's next session
-  renew blacklists the token mid-run and kills the DAG.
-- Rejected: auto-minting / passing around a long-lived token (largest credential-leak
-  surface). Engine-side `RenewToken()` to extend long runs is a possible future
-  enhancement (the old "Plan B"), out of scope here.
-
-## Scope of change (as implemented)
-
-| Component | File(s) | Change | Status |
-|-----------|---------|--------|--------|
-| Engine API | `internal/api/task_handler.go` | `Request.Token`; `authenticate()` + `authorize()`; strip token; `owner = caller` on add; `workflow_list` filter; `ownerOf` reads the registry (no per-action `GetApp`) | ✅ done |
-| Engine service | `internal/trigger/service.go` | thread token `TriggerManual→triggerRunToken→startRun→launchRun`; build caller-scoped client in `launchRun`; `EnableConcurrency()` on it; **manual runs fail-closed on crash recovery** | ✅ done |
-| Engine registry | `internal/trigger/{registry,scanner}.go` | store owner per workflow (from the scan's `ListApps` + on registration) for local owner lookup | ✅ done |
-| Engine concurrency | `internal/trigger/concurrency.go` | carry token in the in-memory `pendingRun` queue entry | ✅ done |
-| Engine main | `cmd/engine/main.go` | `EnableConcurrency()` on the shared mgmt connection; **auto-refresh kept** (safe once the demuxer is on) | ✅ done |
-| Go SDK | `src/sdk/go/subscribe.go` | public `EnableConcurrency()` (proactively start the response demuxer) | ✅ done |
-| CLI | `src/cli/src/commands/workflow.rs` | `with_token()` helper; inject caller JWT into every payload (14 injection sites across the 12 actions — `follow` reuses `log`/`run_detail`) | ✅ done |
-| Tests | `src/sdk/python/test/test_workflow_engine.py` | `TestWorkflowAuthz` class; token in `call()`; health-probe `setUp` | ✅ done |
-| Run record | `internal/workdir` + `internal/trigger/checkpoint.go` | `actor` (triggering user) on `RunRecord` + `RunIndex`, threaded `TriggerManual→…→SaveRunning`; surfaced via `run_detail`/`runs` | ✅ done |
-| Daemon (C++) | — | **none** | — |
-| Operator config | env `APPMESH_WORKFLOW_ADMINS` | comma-separated workflow-admin usernames (default `admin`) | — |
+| Action | Required workflow policy |
+|--------|--------------------------|
+| add new manual-only workflow | authenticated Principal; owner derived from caller |
+| add workflow with automatic trigger | `workflow-admin` |
+| overwrite/remove/get/run/rerun/cancel/read logs | owner or `workflow-admin` |
+| list | return owned workflows, or all for `workflow-admin` |
 
 ## Consequences
 
-- **+** Tenant isolation (own-vs-all) and the admin/user roles; privilege escalation
-  removed (steps run as the caller).
-- **+** No C++ daemon change, no new backend API; reuses `Authenticate` + per-App ACL.
-- **+** Token never persisted; fail-closed on expiry/blacklist/disable.
-- **+** Per-action overhead is one local `Authenticate` round-trip; owner lookup is an
-  in-memory registry hit (no `GetApp`).
-- **Crash recovery:** manual (caller-initiated) runs are **not** resumed after an engine
-  restart — the in-memory caller token is gone, and resuming under the engine identity
-  would be an escalation. They are marked `cancelled` ("re-run required"). (Update: since
-  `execution_identity` shipped (ADR 0004), a run resumes only if the workflow declares an
-  `execution_identity` the engine can re-authenticate as; otherwise it fails closed — the
-  engine identity is never used to resume.)
-- **−** Long-running workflows are bounded by token validity (expiry deferred).
-- **−** Trigger clients must use a non-renewing token (operational discipline + docs).
-- Automatic (cron/event) triggers have no caller token. They now run under a declared
-  `execution_identity` (service-account model, shipped in ADR 0004) or fail closed.
-  Running them under the workflow *owner* without stored credentials still needs a daemon
-  `act-as` / token-exchange capability — that part remains **Phase 3**, tracked by ADR 0004.
+- Stable Principal IDs survive directory display-name and username changes.
+- Manual steps have exactly the caller's App Mesh authority and fail closed when the access
+  token is no longer valid.
+- Automatic and recovered runs do not require stored human credentials.
+- Automatic authority is run-scoped and cannot outlive owner/RBAC changes.
+- Bearer tokens are ephemeral request material and cannot appear in durable run state.
+- Node-local capabilities cannot be forwarded to a remote Engine; cluster delegation needs
+  a future Engine-mediated protocol.
 
 ## References
 
-- ADR 0002 — workflow stored as special App (ownership metadata; "stored but not
-  enforced" note).
-- ADR 0004 — unified run management / identity model (resource_owner / actor /
-  execution_identity); partially implemented (`execution_identity` shipped; unified Run
-  API and daemon act-as still Proposed).
-- ADR 0005 — `run_task` messaging and the L1 gate.
+- ADR 0002 — workflow storage and ownership metadata.
+- ADR 0004 — proposed unified Run model.
+- ADR 0009 — authentication service and Principal mapping.

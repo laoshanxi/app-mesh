@@ -135,6 +135,56 @@ TEST_CASE("json", "[Utility]")
 	REQUIRE(nullBody.is_null());
 }
 
+TEST_CASE("yaml-json conversion", "[Utility]")
+{
+	init();
+
+	// Empty YAML collections must convert to empty JSON collections, not null:
+	// authorization.yaml ships `service_principal_roles: {}` and `roles: []`, and the
+	// AuthorizationStore rejects them with "must be an object/array" if they parse as null.
+	const auto root = Utility::yamlToJson(YAML::Load(
+		"Authorization:\n"
+		"  service_principal_roles: {}\n"
+		"  principals:\n"
+		"    system:appmesh:\n"
+		"      roles: []\n"));
+	REQUIRE(root.is_object());
+	REQUIRE(root.at("Authorization").is_object());
+	REQUIRE(root.at("Authorization").at("service_principal_roles").is_object());
+	REQUIRE(root.at("Authorization").at("principals").at("system:appmesh").at("roles").is_array());
+
+	// AuthorizationStore::saveLocked() persists this shape via jsonToYaml and the next
+	// daemon start reloads it via yamlToJson; the round-trip must be lossless.
+	const auto reloaded = Utility::yamlToJson(YAML::Load(Utility::jsonToYaml(root)));
+	REQUIRE(reloaded == root);
+
+	// Null and scalar conversion behavior stays unchanged.
+	const auto scalars = Utility::yamlToJson(YAML::Load("a: null\nb: true\nc: 3\nd: 1.5\ne: text\n"));
+	REQUIRE(scalars.at("a").is_null());
+	REQUIRE(scalars.at("b") == true);
+	REQUIRE(scalars.at("c") == 3);
+	REQUIRE(scalars.at("d") == 1.5);
+	REQUIRE(scalars.at("e") == "text");
+
+	// Quoted scalars stay strings even when the text looks like bool/number/null:
+	// app env values (e.g. auth-dex DEX_CLIENT_CREDENTIAL_GRANT_ENABLED_BY_DEFAULT)
+	// are read with get<std::string>() and a coerced boolean aborts daemon startup.
+	const auto quoted = Utility::yamlToJson(YAML::Load(
+		"a: \"true\"\nb: \"3\"\nc: \"null\"\nd: \"+08\"\n"));
+	REQUIRE(quoted.at("a") == "true");
+	REQUIRE(quoted.at("b") == "3");
+	REQUIRE(quoted.at("c") == "null");
+	REQUIRE(quoted.at("d") == "+08");
+
+	// Application::save() persists app definitions via jsonToYaml and the next
+	// daemon start reloads them via yamlToJson; bool/number-looking strings must
+	// survive that round-trip or the app file becomes unloadable after an update.
+	nlohmann::json appEnv;
+	appEnv["env"]["DEX_CLIENT_CREDENTIAL_GRANT_ENABLED_BY_DEFAULT"] = "true";
+	appEnv["env"]["PORT"] = "6062";
+	REQUIRE(Utility::yamlToJson(YAML::Load(Utility::jsonToYaml(appEnv))) == appEnv);
+}
+
 TEST_CASE("boost_regex", "[boost_regex]")
 {
 	constexpr auto REST_PATH_CLOUD_APP_OUT_VIEW = R"(/appmesh/cloud/app/([^/\*]+)/output/([^/\*]+))";
@@ -170,7 +220,8 @@ TEST_CASE("ACE_Map_Manager", "[ACE]")
 	ACE_OS::sleep(waitTimeout);
 	auto end = std::chrono::system_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-	REQUIRE(duration.count() == 30);
+	// Wall-clock sleep is "at least" the requested 30ms; scheduler jitter adds more under load.
+	REQUIRE(duration.count() >= 30);
 }
 
 TEST_CASE("JSON", "[nlohmann json]")

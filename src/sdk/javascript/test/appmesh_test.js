@@ -4,8 +4,7 @@ import { join } from 'path'
 import { writeFileSync, readFileSync, unlinkSync } from 'fs'
 
 const baseURL = process.env.APPMESH_URL || 'https://127.0.0.1:6060'
-const username = process.env.APPMESH_USER || 'admin'
-const password = process.env.APPMESH_PASS || 'admin123'
+const accessToken = process.env.APPMESH_BEARER_TOKEN
 
 let passed = 0
 let failed = 0
@@ -24,73 +23,12 @@ async function assert(name, fn) {
 async function test() {
   // Self-signed local daemon: explicitly disable server certificate verification
   const client = new AppMeshClient(baseURL, { rejectUnauthorized: false })
+  if (!accessToken) throw new Error('APPMESH_BEARER_TOKEN is required; obtain it directly from Dex')
+  client.set_bearer_token(accessToken)
 
   console.log('=== JavaScript SDK Integration Tests ===\n')
 
-  // ---- Authentication ----
-  await assert('login', async () => {
-    await client.login(username, password)
-  })
-
-  await assert('authenticate (updateSession=true)', async () => {
-    const cookieStr = client._client?.defaults?.headers?.Cookie || ''
-    const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
-    const token = match ? match.split('=').slice(1).join('=') : null
-    if (!token) throw new Error('expected token after login')
-    const result = await client.authenticate(token)
-    if (!result.success) throw new Error(`authenticate failed: ${result.responseText}`)
-  })
-
-  await assert('authenticate (updateSession=false)', async () => {
-    const cookieStr = client._client?.defaults?.headers?.Cookie || ''
-    const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
-    const token = match ? match.split('=').slice(1).join('=') : null
-    if (!token) throw new Error('expected token after login')
-    const result = await client.authenticate(token, null, undefined, false)
-    if (!result.success) throw new Error(`authenticate failed: ${result.responseText}`)
-  })
-
-  await assert('authenticate (with permission)', async () => {
-    const cookieStr = client._client?.defaults?.headers?.Cookie || ''
-    const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
-    const token = match ? match.split('=').slice(1).join('=') : null
-    if (!token) throw new Error('expected token after login')
-    const ok = await client.authenticate(token, 'app-view', undefined, false)
-    if (!ok.success) throw new Error(`permission check failed: ${ok.responseText}`)
-    let threw = false
-    try {
-      await client.authenticate(token, 'no-such-perm', undefined, false)
-    } catch (_) {
-      threw = true
-    }
-    if (!threw) throw new Error('should throw with invalid permission')
-  })
-
-  await assert('authenticate (with audience)', async () => {
-    // re-login with specific audience
-    await client.login(username, password, null, null, 'appmesh-service')
-    const cookieStr = client._client?.defaults?.headers?.Cookie || ''
-    const match = cookieStr.split('; ').find(c => c.startsWith('appmesh_auth_token='))
-    const token = match ? match.split('=').slice(1).join('=') : null
-    if (!token) throw new Error('expected token after audience login')
-    const ok = await client.authenticate(token, null, 'appmesh-service', false)
-    if (!ok.success) throw new Error(`audience check failed: ${ok.responseText}`)
-    let threw = false
-    try {
-      await client.authenticate(token, null, 'wrong-audience', false)
-    } catch (_) {
-      threw = true
-    }
-    if (!threw) throw new Error('should throw with wrong audience')
-    // re-login with default audience for remaining tests
-    await client.login(username, password)
-  })
-
-  await assert('renew_token', async () => {
-    await client.renew_token('P1D')
-  })
-
-  // ---- User / Roles ----
+  // ---- Principal / Roles ----
   await assert('get_user_permissions', async () => {
     const perms = await client.get_user_permissions()
     if (!Array.isArray(perms)) throw new Error('expected array')
@@ -104,11 +42,6 @@ async function test() {
   await assert('list_roles', async () => {
     const roles = await client.list_roles()
     if (!roles) throw new Error('expected roles object')
-  })
-
-  await assert('list_users', async () => {
-    const users = await client.list_users()
-    if (!users) throw new Error('expected users object')
   })
 
   // ---- Config / Resources ----
@@ -194,16 +127,6 @@ async function test() {
     if (labels2['js_test_label']) throw new Error('label should be deleted')
   })
 
-  // ---- Token Auto-Refresh ----
-  await assert('set_auto_refresh_token', async () => {
-    client.set_auto_refresh_token(true)
-    if (!client._autoRefreshEnabled) throw new Error('expected enabled')
-    if (!client._refreshTimer) throw new Error('expected timer')
-    client.set_auto_refresh_token(false)
-    if (client._autoRefreshEnabled) throw new Error('expected disabled')
-    if (client._refreshTimer) throw new Error('expected no timer')
-  })
-
   // ---- App Output ----
   await assert('get_app_output', async () => {
     const appName = 'js_test_output'
@@ -252,33 +175,11 @@ async function test() {
     }
   })
 
-  // ---- Permissions / Groups ----
+  // ---- Permissions ----
   await assert('list_permissions', async () => {
     const perms = await client.list_permissions()
     if (!Array.isArray(perms)) throw new Error('expected array')
     if (perms.length === 0) throw new Error('expected at least one permission')
-  })
-
-  await assert('list_groups', async () => {
-    const groups = await client.list_groups()
-    if (!Array.isArray(groups)) throw new Error('expected array')
-  })
-
-  // ---- Password Update ----
-  await assert('update_password', async () => {
-    const newPass = 'admin123_tmp_js'
-    try {
-      const ok1 = await client.update_password(password, newPass)
-      if (!ok1) throw new Error('password change failed')
-    } finally {
-      // Always restore original password
-      try { await client.update_password(newPass, password) } catch (_) {
-        // If client token is invalid after password change, re-login with new password
-        await client.login('admin', newPass)
-        await client.update_password(newPass, password)
-        await client.login('admin', password)
-      }
-    }
   })
 
   // ---- Set Config ----
@@ -297,11 +198,6 @@ async function test() {
 
     // Restore original level
     await client.set_config({ BaseConfig: { LogLevel: originalLevel } })
-  })
-
-  // ---- Logout ----
-  await assert('logout', async () => {
-    await client.logout()
   })
 
   // ---- Summary ----

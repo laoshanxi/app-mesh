@@ -7,7 +7,10 @@
 param(
     [string]$WorkingDir
 )
-$env:PATH = "C:\local\appmesh\bin;C:\Program Files\OpenSSL-Win64\bin;C:\local\bin;C:\go\bin;C:\vcpkg\installed\x64-windows\bin;" + $env:PATH
+# The bundled openssl.exe lives next to the daemon (bin\), which also covers
+# installs relocated away from the default C:\local\appmesh directory.
+$InstallBinDir = Join-Path $PSScriptRoot "..\bin"
+$env:PATH = "$InstallBinDir;C:\Program Files\OpenSSL-Win64\bin;C:\local\bin;C:\go\bin;C:\vcpkg\installed\x64-windows\bin;" + $env:PATH
 
 Set-PSDebug -Trace 0
 $ErrorActionPreference = "Stop"
@@ -412,53 +415,6 @@ function Test-Certificates {
     return $errorCount -eq 0
 }
 
-function New-ES256KeyPair {
-    Write-Log "Generating ECDSA keys for JWT ES256..."
-    
-    if ((Test-Path "jwt-ec-private.pem") -or (Test-Path "jwt-ec-public.pem")) {
-        Write-Log "Warning: JWT EC key files already exist, skipping generation"
-        return $true
-    }
-    
-    try {
-        & openssl ecparam -genkey -name prime256v1 -noout -out jwt-ec-private.pem
-        & openssl ec -in jwt-ec-private.pem -pubout -out jwt-ec-public.pem
-        
-        Write-Log "✓ Successfully created jwt-ec-private.pem and jwt-ec-public.pem"
-        return $true
-    }
-    catch {
-        Write-Log "Error: Failed to generate ES256 key pair"
-        return $false
-    }
-}
-
-function New-RS256KeyPair {
-    Write-Log "Converting SSL keys to JWT RS256 format..."
-    
-    if (!(Test-Path "server-key.pem") -or !(Test-Path "server.pem")) {
-        Write-Log "Error: Required input files (server-key.pem, server.pem) not found"
-        return $false
-    }
-    
-    if ((Test-Path "jwt-private.pem") -or (Test-Path "jwt-public.pem")) {
-        Write-Log "Warning: JWT key files already exist, skipping conversion"
-        return $true
-    }
-    
-    try {
-        & openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in server-key.pem -out jwt-private.pem
-        & openssl x509 -pubkey -noout -in server.pem | Out-File -FilePath jwt-public.pem -Encoding ASCII
-        
-        Write-Log "✓ Successfully created jwt-private.pem and jwt-public.pem"
-        return $true
-    }
-    catch {
-        Write-Log "Error: Failed to convert to RS256 format"
-        return $false
-    }
-}
-
 function Remove-TempFiles {
     Write-Log "Cleaning up configuration files..."
     Remove-Item -Path $CA_CONFIG, $CA_CSR -ErrorAction SilentlyContinue
@@ -487,8 +443,6 @@ function Main {
         exit 1
     }
     
-    $null = New-RS256KeyPair
-    $null = New-ES256KeyPair
     Remove-TempFiles
     
     Write-Log "Certificate generation completed successfully"

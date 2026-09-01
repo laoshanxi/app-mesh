@@ -7,9 +7,8 @@ type WorkerTCPContext struct {
 }
 
 // NewTCPContext creates a server-side task context over TCP. Server endpoints
-// authenticate via APP_MESH_PROCESS_KEY, not JWT, so token refresh is forced off.
+// authenticate via APP_MESH_PROCESS_KEY; the worker is not an OAuth client.
 func NewTCPContext(options Option) (*WorkerTCPContext, error) {
-	options.AutoRefreshToken = false
 	tcpClient, err := NewTCPClient(options)
 	if err != nil {
 		return nil, err

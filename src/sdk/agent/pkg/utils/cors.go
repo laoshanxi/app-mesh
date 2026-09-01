@@ -37,14 +37,6 @@ var allowedHeaders = []string{
 	"DNT",
 	"Cache-Control",
 	"Authorization",
-	// Security headers
-	"X-Audience",
-	"X-Permission",
-	"X-Totp-Code",
-	"X-Expire-Seconds",
-	"X-Refresh-Token",
-	"X-Refresh-Token-Request",
-	"X-Set-Cookie",
 	// Proxy header
 	"X-Target-Host",
 	// File headers

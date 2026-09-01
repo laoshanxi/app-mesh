@@ -27,6 +27,54 @@ pub fn human_readable_size(bytes: u64) -> String {
     format!("{:.1}Pi", size)
 }
 
+/// Compact form of an immutable Principal ID for table columns. A full OIDC
+/// principal (`oidc:<64 hex chars>`) is unreadable and overflows narrow columns,
+/// so keep the prefix plus the first 12 hex chars; short principals such as
+/// `system:appmesh` are shown as-is. The full ID stays visible in `view -a`.
+pub fn short_principal(principal: &str) -> String {
+    const HEX_DIGITS: usize = 12;
+    match principal.strip_prefix("oidc:") {
+        Some(hex) if hex.len() > HEX_DIGITS => match hex.get(..HEX_DIGITS) {
+            Some(prefix) => format!("oidc:{}", prefix),
+            None => principal.to_string(),
+        },
+        _ => principal.to_string(),
+    }
+}
+
+pub fn truncate_with_marker(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    if max_chars == 0 {
+        return String::new();
+    }
+    let mut result: String = value.chars().take(max_chars.saturating_sub(1)).collect();
+    result.push('*');
+    result
+}
+
+/// User-facing label for an immutable Principal ID. Display names are mutable
+/// presentation data only; callers must keep using the full ID for authorization.
+pub fn principal_display(principal: &str, display_name: Option<&str>) -> String {
+    const MAX_DISPLAY_CHARS: usize = 24;
+    if principal == "system:appmesh" {
+        return "system".to_string();
+    }
+    if let Some(name) = display_name {
+        let single_line = name
+            .split_whitespace()
+            .map(|part| part.chars().filter(|c| !c.is_control()).collect::<String>())
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !single_line.is_empty() {
+            return truncate_with_marker(&single_line, MAX_DISPLAY_CHARS);
+        }
+    }
+    short_principal(principal)
+}
+
 pub fn human_readable_duration(seconds: u64) -> String {
     if seconds < 60 {
         return format!("{}s", seconds);
@@ -48,4 +96,34 @@ pub fn human_readable_duration(seconds: u64) -> String {
         return format!("{}d{}h", d, h);
     }
     format!("{}d", d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{principal_display, short_principal, truncate_with_marker};
+
+    #[test]
+    fn short_principal_truncates_oidc_hash() {
+        // Owner columns must stay narrow: a full 64-hex OIDC principal collapses
+        // to its prefix plus 12 hex chars while remaining unambiguous next to
+        // other owners in the same table.
+        let full = format!("oidc:3f9a2b71c0d4{}", "0".repeat(52));
+        assert_eq!(short_principal(&full), "oidc:3f9a2b71c0d4");
+    }
+
+    #[test]
+    fn short_principal_keeps_short_ids_as_is() {
+        assert_eq!(short_principal("system:appmesh"), "system:appmesh");
+        // An oidc: principal whose hash is already short is not mangled.
+        assert_eq!(short_principal("oidc:abc"), "oidc:abc");
+    }
+
+    #[test]
+    fn principal_display_prefers_human_labels() {
+        assert_eq!(principal_display("system:appmesh", Some("ignored")), "system");
+        assert_eq!(principal_display("oidc:abc", Some(" admin\n user ")), "admin user");
+        assert_eq!(principal_display("oidc:abc", Some("admin\u{1b}[31m")), "admin[31m");
+        assert_eq!(principal_display("oidc:abc", Some("  ")), "oidc:abc");
+        assert_eq!(truncate_with_marker("所有者名称", 4), "所有者*");
+    }
 }

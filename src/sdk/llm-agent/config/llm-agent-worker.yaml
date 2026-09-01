@@ -11,7 +11,7 @@
 # The client then talks to this App directly:
 #   run_task("llm-agent-sess-S1", {"action":"session_send","session_id":"S1","stream":true}) + Subscribe(STDOUT).
 name: llm-agent-sess-S1                          # convention: <shared-app>-sess-<id>
-owner: admin                                     # session owner — must be an existing daemon user
+# Engine assigns owner_principal_id from the authenticated registrar.
 permission: 11                                   # access gate: the daemon's owner-permission decides who may
 #                                                  run_task/subscribe. ones digit = group, tens digit = other;
 #                                                  1=deny 2=read 3=write. 11 = owner(+admin) only; 0/unset = no

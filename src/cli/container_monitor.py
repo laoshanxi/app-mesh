@@ -2,16 +2,12 @@
 #!/usr/bin/env python3
 """Monitor a Docker container and clean up the corresponding App Mesh applications when it exits."""
 
+import os
 import sys
 
 # python3 -m pip install --upgrade appmesh docker
 from appmesh import AppMeshClient
 import docker
-
-# Configuration
-DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "admin123"
-
 
 def main():
     """Main function to monitor container and cleanup applications."""
@@ -37,8 +33,7 @@ def main():
 
     # Clean up App Mesh applications
     try:
-        appmesh_client = AppMeshClient()
-        appmesh_client.login(DEFAULT_USERNAME, DEFAULT_PASSWORD)
+        appmesh_client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
 
         for app in app_names:
             print(f"Deleting App Mesh application: {app}")

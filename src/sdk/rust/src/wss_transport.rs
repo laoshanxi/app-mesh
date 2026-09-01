@@ -22,6 +22,7 @@ pub struct WSSTransport {
     ssl_client_cert: Option<ClientCert>,
     writer: Option<SplitSink>,
     reader: Arc<Mutex<Option<SplitStream>>>,
+    bearer_token: Option<String>,
 }
 
 impl WSSTransport {
@@ -33,7 +34,12 @@ impl WSSTransport {
             ssl_client_cert,
             writer: None,
             reader: Arc::new(Mutex::new(None)),
+            bearer_token: None,
         }
+    }
+
+    pub fn set_bearer_token(&mut self, token: Option<String>) {
+        self.bearer_token = token.filter(|value| !value.is_empty());
     }
 
     pub async fn connect(&mut self) -> Result<(), AppMeshError> {
@@ -43,6 +49,12 @@ impl WSSTransport {
         let mut request =
             url.to_string().into_client_request().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
         request.headers_mut().insert("Sec-WebSocket-Protocol", "appmesh-ws".parse().unwrap());
+        if let Some(token) = &self.bearer_token {
+            let value = format!("Bearer {}", token).parse::<http::HeaderValue>().map_err(|e| {
+                AppMeshError::ConfigurationError(format!("Invalid WebSocket authorization header: {}", e))
+            })?;
+            request.headers_mut().insert("Authorization", value);
+        }
 
         let connector = build_rustls_connector(&self.ssl_verify, self.ssl_client_cert.as_ref())?;
 
@@ -173,4 +185,3 @@ fn build_rustls_connector(
     };
     Ok(Connector::Rustls(Arc::new(crypto)))
 }
-

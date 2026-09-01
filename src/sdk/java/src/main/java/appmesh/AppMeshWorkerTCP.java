@@ -7,7 +7,7 @@ public class AppMeshWorkerTCP extends AppMeshWorker {
     }
 
     public AppMeshWorkerTCP(String host, int port) {
-        // Worker endpoints use APP_MESH_PROCESS_KEY; AppMeshClient Builder defaults autoRefreshToken=false.
+        // Worker endpoints use APP_MESH_PROCESS_KEY; the worker is not an OAuth client.
         super(new AppMeshClientTCP(host, port));
     }
 

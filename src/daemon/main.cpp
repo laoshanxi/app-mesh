@@ -1,4 +1,5 @@
 // src/daemon/main.cpp
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -60,7 +61,6 @@
 #include "rest/Worker.h"
 #include "security/HMACVerifier.h"
 #include "security/Security.h"
-#include "security/TokenBlacklist.h"
 #if !defined(NDEBUG) && !defined(_WIN32)
 #include "../common/Valgrind.h"
 #endif
@@ -108,6 +108,8 @@ public:
 	void initializeRestService();
 	void startWorkerThreadPool();
 	void startAgentApplication();
+	void startStartupApplications();
+	void prewarmAuthentication();
 
 	// High availability
 	void performHighAvailabilityRecovery();
@@ -119,6 +121,7 @@ public:
 
 	// Shutdown
 	void performShutdown();
+	void stopManagedApplications();
 	void cleanWorkerThreads();
 	void cleanupResources();
 
@@ -166,6 +169,7 @@ int main(int argc, char *argv[])
 int AppMeshDaemon::run(int argc, char *argv[])
 {
 	const static char fname[] = "AppMeshDaemon::run() ";
+	int result = 0;
 
 	try
 	{
@@ -179,18 +183,20 @@ int AppMeshDaemon::run(int argc, char *argv[])
 		setupSignalHandlers();
 		recoverApplications();
 
-		initializeRestService();
-
 		performHighAvailabilityRecovery();
+		startStartupApplications();
+		prewarmAuthentication();
+		initializeRestService();
 		runMainLoop();
 	}
 	catch (const std::exception &e)
 	{
 		LOG_ERR << fname << "Fatal exception during daemon startup or execution: " << e.what();
+		result = 1;
 	}
 
 	performShutdown();
-	return 0;
+	return result;
 }
 
 void AppMeshDaemon::initializeEnvironment()
@@ -261,7 +267,7 @@ void AppMeshDaemon::initializeSecurity()
 {
 	const static char fname[] = "AppMeshDaemon::initializeSecurity() ";
 
-	Security::init(Configuration::instance()->getJwt()->getJwtInterface());
+	Security::init();
 
 	LOG_INF << fname << "Security initialized";
 }
@@ -537,10 +543,6 @@ void AppMeshDaemon::performHighAvailabilityRecovery()
 		snap = std::make_shared<Snapshot>();
 	}
 
-	// Recover token blacklist
-	LOG_INF << fname << "Recovering token blacklist";
-	TOKEN_BLACK_LIST::instance()->init(snap->m_tokenBlackList);
-
 	// Recover application processes
 	LOG_INF << fname << "Recovering application processes";
 	auto apps = config->getApps();
@@ -574,6 +576,8 @@ void AppMeshDaemon::runMainLoop()
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
 	int tcpErrorCounter = 0;
+	// Health checks every 30 schedule ticks: each check spawns a process.
+	int healthCheckTick = 0;
 	LOG_INF << fname << "Entering main application monitoring loop";
 
 	while (!QuitHandler::instance()->shouldExit())
@@ -589,7 +593,8 @@ void AppMeshDaemon::runMainLoop()
 				break;
 
 			PersistManager::instance()->persistSnapshot();
-			HealthCheckTask::instance()->doHealthCheck();
+			if (healthCheckTick++ % 30 == 0)
+				HealthCheckTask::instance()->doHealthCheck();
 
 			// Refresh all process metrics once per completed scrape.
 			if (config->prometheusEnabled())
@@ -632,6 +637,114 @@ void AppMeshDaemon::runMainLoop()
 	LOG_INF << fname << "Exiting main monitoring loop";
 }
 
+void AppMeshDaemon::startStartupApplications()
+{
+	const static char fname[] = "AppMeshDaemon::startStartupApplications() ";
+	const auto startupTimeout = std::chrono::seconds(120);
+	const auto retryInterval = std::chrono::seconds(1);
+
+	auto config = Configuration::instance();
+	// Managed app commands are authored relative to work/tmp (for example,
+	// ../../script/appmesh-auth.sh). Enter the same directory used by the main
+	// scheduler before launching any readiness phase.
+	const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	fs::current_path(tmpDir);
+	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
+
+	auto apps = config->getApps();
+	std::stable_sort(apps.begin(), apps.end(), [](const std::shared_ptr<Application> &left,
+		const std::shared_ptr<Application> &right)
+		{
+			if (left->startupPhase() != right->startupPhase())
+				return left->startupPhase() < right->startupPhase();
+			return left->getName() < right->getName();
+		});
+
+	std::vector<int> startupPhases;
+	for (const auto &app : apps)
+	{
+		if (!app || !app->isManaged() || !app->isEnabled() ||
+			app->startupPhase() >= Application::DEFAULT_STARTUP_PHASE)
+			continue;
+		if (startupPhases.empty() || startupPhases.back() != app->startupPhase())
+			startupPhases.push_back(app->startupPhase());
+	}
+
+	for (const int phase : startupPhases)
+	{
+		LOG_INF << fname << "Starting readiness phase <" << phase << ">";
+		const auto deadline = std::chrono::steady_clock::now() + startupTimeout;
+		while (!QuitHandler::instance()->shouldExit())
+		{
+			for (const auto &app : apps)
+			{
+				if (!app || !app->isManaged() || app->startupPhase() > phase)
+					continue;
+				try
+				{
+					app->execute(nullptr, false);
+				}
+				catch (const std::exception &ex)
+				{
+					LOG_ERR << fname << "Startup application <" << app->getName()
+							<< "> execute failed: " << ex.what();
+				}
+			}
+
+			HealthCheckTask::instance()->doHealthCheck();
+			bool ready = true;
+			std::string pending;
+			for (const auto &app : apps)
+			{
+				if (!app || !app->isManaged() || !app->isEnabled() || app->startupPhase() > phase)
+					continue;
+				if (app->getpid() <= 1 || app->health() != 0)
+				{
+					ready = false;
+					if (!pending.empty())
+						pending += ", ";
+					pending += app->getName();
+				}
+			}
+			if (ready)
+			{
+				LOG_INF << fname << "Readiness phase <" << phase << "> completed";
+				break;
+			}
+			if (std::chrono::steady_clock::now() >= deadline)
+				throw std::runtime_error("startup readiness timed out for applications: " + pending);
+			std::this_thread::sleep_for(retryInterval);
+		}
+		if (QuitHandler::instance()->shouldExit())
+			throw std::runtime_error("shutdown requested during startup readiness");
+	}
+}
+
+void AppMeshDaemon::prewarmAuthentication()
+{
+	const static char fname[] = "AppMeshDaemon::prewarmAuthentication() ";
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+	std::string lastError;
+	while (!QuitHandler::instance()->shouldExit())
+	{
+		try
+		{
+			Security::instance()->prewarmAuthentication();
+			LOG_INF << fname << "OIDC discovery and JWKS are ready";
+			return;
+		}
+		catch (const std::exception &ex)
+		{
+			lastError = ex.what();
+			if (std::chrono::steady_clock::now() >= deadline)
+				break;
+			LOG_WAR << fname << "OIDC discovery/JWKS not ready: " << lastError;
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
+	}
+	throw std::runtime_error("OIDC discovery/JWKS readiness failed: " + lastError);
+}
+
 bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 {
 	const static char fname[] = "AppMeshDaemon::checkTcpConnection() ";
@@ -644,12 +757,19 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 	return true;
 }
 
-// TODO: health and dependency start
 void AppMeshDaemon::executeApplications()
 {
 	const static char fname[] = "AppMeshDaemon::executeApplications() ";
 
-	auto allApps = Configuration::instance()->getApps();
+	auto config = Configuration::instance();
+	auto allApps = config->getApps();
+	std::stable_sort(allApps.begin(), allApps.end(), [](const std::shared_ptr<Application> &left,
+		const std::shared_ptr<Application> &right)
+		{
+			if (left->startupPhase() != right->startupPhase())
+				return left->startupPhase() < right->startupPhase();
+			return left->getName() < right->getName();
+		});
 	void *const processSnapshot = m_ptreeReady ? static_cast<void *>(&m_ptree) : nullptr;
 	m_ptreeReady = false;
 	const bool refreshMetrics = m_ptreeRefreshPending;
@@ -661,7 +781,6 @@ void AppMeshDaemon::executeApplications()
 		{
 			continue;
 		}
-
 		try
 		{
 			app->execute(processSnapshot, refreshMetrics);
@@ -684,6 +803,7 @@ void AppMeshDaemon::performShutdown()
 	LOG_INF << fname << "Beginning shutdown sequence";
 
 	QuitHandler::instance()->requestExit();
+	stopManagedApplications();
 	if (m_processReactor)
 		m_processReactor->end_reactor_event_loop();
 
@@ -701,6 +821,40 @@ void AppMeshDaemon::performShutdown()
 	spdlog::shutdown();
 	ACE_OS::_exit(0);
 	ACE::fini();
+}
+
+void AppMeshDaemon::stopManagedApplications()
+{
+	const static char fname[] = "AppMeshDaemon::stopManagedApplications() ";
+
+	auto apps = Configuration::instance()->getApps();
+	std::stable_sort(apps.begin(), apps.end(), [](const std::shared_ptr<Application> &left,
+		const std::shared_ptr<Application> &right)
+		{
+			if (left->startupPhase() != right->startupPhase())
+				return left->startupPhase() > right->startupPhase();
+			return left->getName() > right->getName();
+		});
+	for (const auto &app : apps)
+	{
+		if (!app || !app->isManaged())
+			continue;
+		try
+		{
+			// destroy() is intentionally non-persistent here: package removal and
+			// ordinary service restarts must not rewrite each App's enabled state.
+			app->destroy();
+			LOG_INF << fname << "Stopped application <" << app->getName() << ">";
+		}
+		catch (const std::exception &ex)
+		{
+			LOG_WAR << fname << "Failed to stop application <" << app->getName() << ">: " << ex.what();
+		}
+		catch (...)
+		{
+			LOG_WAR << fname << "Failed to stop application <" << app->getName() << ">";
+		}
+	}
 }
 
 void AppMeshDaemon::cleanWorkerThreads()

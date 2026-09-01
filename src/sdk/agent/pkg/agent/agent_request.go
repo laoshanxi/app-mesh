@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
@@ -20,6 +19,15 @@ type Request struct {
 func newRequestFromHTTP(req *http.Request) (*Request, error) {
 	// Remove "Connection" header to avoid proxying it
 	req.Header.Del("Connection")
+	// Process proof is an Engine-injected local secret, never a public proxy
+	// credential. Do not let an external caller smuggle it onto Agent's private
+	// loopback connection to Engine or leave it in request/query logs.
+	req.Header.Del("X-AppMesh-Process-Key")
+	query := req.URL.Query()
+	if _, supplied := query["process_key"]; supplied {
+		query.Del("process_key")
+		req.URL.RawQuery = query.Encode()
+	}
 
 	r := &Request{appmesh.NewRequest()}
 	r.HttpMethod = req.Method
@@ -53,10 +61,6 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 		}
 	}
 
-	// Relay cookie auth to the daemon. CSRF is enforced by the daemon (Origin check on
-	// cookie-authenticated state-changing requests); the agent forwards Cookie + Origin as-is.
-	r.applyCookieAuth(req)
-
 	return r, nil
 }
 
@@ -80,24 +84,4 @@ func (r *Request) loadBodyFromHTTP(req *http.Request) error {
 	// req.Body = io.NopCloser(bytes.NewBuffer(buf.Bytes()))
 
 	return nil
-}
-
-// applyCookieAuth relays the auth cookie as an Authorization header. CSRF is enforced by the
-// daemon (Origin check); SameSite=Strict on the cookie is the baseline.
-func (r *Request) applyCookieAuth(req *http.Request) {
-	// Already token-authenticated — nothing to do.
-	if req.Header.Get("Authorization") != "" {
-		return
-	}
-
-	authCookie, _ := req.Cookie(COOKIE_TOKEN)
-	if authCookie == nil {
-		return
-	}
-	authCookieValue := strings.TrimSpace(authCookie.Value)
-	if authCookieValue == "" {
-		return
-	}
-
-	r.Headers["Authorization"] = "Bearer " + authCookieValue
 }

@@ -603,8 +603,8 @@ func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 // EnableConcurrency makes this client's transport safe for concurrent use by multiple
 // goroutines. It starts the response demuxer, which correlates each reply to its request
 // by UUID; without it a TCP/WSS connection shared across goroutines uses a synchronous
-// send-then-read that can cross-wire responses (e.g. a token-renew reply consumed by an
-// unrelated call, leaving a stale/revoked token in place). No-op on transports without
+// send-then-read that can cross-wire responses (e.g. one call's reply consumed by an
+// unrelated call, so both callers get the wrong response). No-op on transports without
 // multiplexing (HTTP) and idempotent (Subscribe also enables it on demand).
 func (c *AppMeshClient) EnableConcurrency() {
 	if sub, ok := c.req.(subscribableRequester); ok {

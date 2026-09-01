@@ -40,5 +40,5 @@ class AppMeshWorkerTCP(AppMeshWorker):
             tcp_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6059).
             logger: Optional logger instance.
         """
-        tcp_client = AppMeshClientTCP(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, tcp_address=tcp_address, auto_refresh_token=False)  # Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+        tcp_client = AppMeshClientTCP(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, tcp_address=tcp_address)
         super().__init__(client=tcp_client, logger=logger)

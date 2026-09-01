@@ -138,10 +138,8 @@ jobs:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Unique workflow identifier. Used as part of the registered App name (`workflow-{name}`). Must match `[a-zA-Z0-9_-]+`. |
-| `owner` | string | no | — | **Ignored by the engine** (a YAML-supplied owner would be spoofable). Ownership is always the authenticated user who registers the workflow; only the owner or a workflow admin (`APPMESH_WORKFLOW_ADMINS`) can operate on it. Execution identity is separate — see `execution_identity`. |
 | `permission` | integer | no | 0 | Copied onto the registered `workflow-{name}` App's permission field. **Not consulted by the engine's workflow actions** — those check owner/admin only. It affects daemon-side App access (e.g. who sees the pseudo-App), same semantics as App Mesh App permission. |
-| `execution_identity` | string | no | — | App Mesh user whose credentials the engine uses to run this workflow's steps (ADR 0004). The engine must hold that identity's credential in `APPMESH_EXEC_IDENTITIES`, and at registration the caller may bind only itself or (as a workflow admin) any configured identity. **When omitted:** manual runs execute under the *triggering caller's* identity; automatic (event) triggers **fail closed** (they have no caller identity, and the engine never runs steps under its own privileged identity). Must match `[a-zA-Z0-9_.@-]+`. |
-| `on` | object | no | — | Trigger configuration. Omit to allow only manual/API triggering. |
+| `on` | object | no | — | Trigger configuration. Omit to allow only manual/API triggering. Registering any automatic trigger requires the authenticated Principal to have `workflow-admin`; automatic and recovered runs use a short-lived local Engine capability bounded by the workflow owner's current RBAC. |
 | `concurrency` | object | no | — | Concurrency control. Omit to allow unlimited parallel runs. |
 | `env` | object | no | — | Global environment variables inherited by all Steps. Keys are variable names, values are strings. Supports `${{ }}` expressions. |
 | `sec_env` | object | no | — | Global encrypted environment variables. Same as App Mesh `sec_env`. Inherited by all Steps. |
@@ -279,7 +277,7 @@ Map of job name → Job definition. Job names must match `[a-zA-Z0-9_-]+`.
 |-------|------|----------|---------|-------------|
 | `needs` | list[string] | no | — | Job names that must complete before this job starts. Forms the DAG. |
 | `if` | string | no | — | Expression. Job runs only if true. Available functions: `success()`, `failure()`, `always()`. Default behavior: job runs only if all `needs` jobs succeeded. |
-| `node_label` | object | no | — | Key-value label selector for target node. Step execution is routed to a node matching all labels via `X-Target-Host`. |
+| `node_label` | object | no | — | Target node selector. A `host` key routes directly; other keys are matched against node labels. Remote execution requires a manual caller bearer valid on the cluster's shared issuer. |
 | `env` | object | no | — | Job-level environment variables. Merged with global `env` (job wins on conflict). |
 | `sec_env` | object | no | — | Job-level encrypted environment variables. Merged with global `sec_env`. |
 | `steps` | list[Step] | yes | — | Ordered list of Steps to execute serially. At least one step required. |
@@ -401,7 +399,7 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
 |-------|------|----------|---------|-------------|
 | `message.app` | string | yes | — | Name of the running App to send the message to. |
 | `message.payload` | string | yes | — | Request payload. Supports `${{ }}` expressions. |
-| `message.forward_token` | boolean | no | `false` | Inject the run's caller JWT into the JSON payload's `token` field before sending. For a target App that reads the caller token from the payload body. No-op when the payload isn't a JSON object, when an author-set `token` is already present, or for automatic/recovered runs (which carry no caller token). |
+| `message.forward_token` | boolean | no | `false` | Inject a manual run's Engine-validated caller bearer into the JSON payload's `token` field before sending. Automatic/recovered runs have no caller bearer, and internal capabilities are never forwarded. Also a no-op when the payload is not a JSON object or an author-set `token` is already present. |
 
 ```yaml
 - name: inference
@@ -639,9 +637,19 @@ jobs:
 ```
 
 Resolution order:
+
 1. If `node_label` has a `host` key, use that address directly.
 2. Otherwise, check the local node's labels for a match.
 3. If no local match, query each `--cluster-nodes` address until a match is found.
+
+Cross-node workflow execution keeps node-local capabilities inside the source Engine. For a
+manual run, the Engine holds the caller's access token only in memory and uses it for
+remote label probes, step calls, and cancellation. The destination node validates issuer,
+audience, signature, expiry, and RBAC again. This requires one canonical issuer across
+the participating nodes. Automatic and recovered runs have no persisted user bearer, so a
+remote-only selector fails closed; a selector that matches the local node remains usable.
+Long-running manual workflows must also complete remote calls before the retained access
+token expires because the workflow process never receives a refresh token.
 
 ---
 

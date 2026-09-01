@@ -9,6 +9,7 @@ from urllib import parse
 
 # Local imports
 from .client_http import AppMeshClient
+from .token_provider import TokenProvider
 from .wss_transport import WSSTransport
 from .transport_mixin import TransportClientMixin
 
@@ -36,8 +37,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
 
     Example:
         >>> from appmesh import AppMeshClientWSS
-        >>> client = AppMeshClientWSS()
-        >>> client.login("your-name", "your-password")
+        >>> client = AppMeshClientWSS(bearer_token="access-token")
         >>> client.download_file("/tmp/os-release", "os-release")
     """
 
@@ -50,8 +50,9 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         wss_address: Tuple[str, int] = ("127.0.0.1", 6058),
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
-        auto_refresh_token: bool = False,
-        use_refresh_token: Optional[bool] = None,
+        *,
+        bearer_token: Optional[str] = None,
+        token_provider: Optional[TokenProvider] = None,
     ):
         """Construct a WSS transport client that reuses the standard App Mesh client API.
 
@@ -65,6 +66,8 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             ssl_client_cert: SSL client certificate:
               - str: Path to single PEM with cert+key
               - tuple: (cert_path, key_path)
+            bearer_token: Caller-owned access token.
+            token_provider: Provider that supplies and refreshes access tokens.
 
         Note:
             WSS connections require an explicit full-chain CA specification for certificate validation,
@@ -72,7 +75,6 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         """
         ssl_verify = AppMeshClient._resolve_ssl_verify(ssl_verify)
         self.wss_transport = WSSTransport(address=wss_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
-        self._token = ""
         self._transport_client_addr = "wss-client"
         self._transport_name = "WebSocket"
         # http and websocket share same address
@@ -81,8 +83,8 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             base_url=f"https://{host}:{port}",
             ssl_verify=ssl_verify,
             ssl_client_cert=ssl_client_cert,
-            auto_refresh_token=auto_refresh_token,
-            use_refresh_token=use_refresh_token,
+            bearer_token=bearer_token,
+            token_provider=token_provider,
         )
 
     @property
@@ -109,7 +111,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         except Exception:
             pass  # Never raise in __del__
 
-    def download_file(self, remote_file: str, local_file: Optional[str] = None, preserve_permissions: bool = True) -> None:
+    def download_file(self, remote_file: str, local_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
         """Copy a remote file to local through the WSS control channel plus HTTPS data channel.
 
         Args:
@@ -120,15 +122,17 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         if not local_file:
             local_file = Path(remote_file).name
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
-        resp = self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
-        if self._HTTP_HEADER_KEY_AUTH not in resp.headers:
-            raise ValueError(f"Server did not respond with file transfer authentication: {self._HTTP_HEADER_KEY_AUTH}")
+        # Control-channel precheck (permission/existence); raises on failure.
+        self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
+        token = self._get_bearer_token()
+        if not token:
+            raise ValueError("File transfer requires a bearer token")
 
         # Use requests to GET file
         local_path = Path(local_file)
         header = {
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
-            AppMeshClient._HTTP_HEADER_KEY_AUTH: resp.headers[self._HTTP_HEADER_KEY_AUTH],
+            AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
         }
         path = "/appmesh/file/download/ws"
         rest_url = parse.urljoin(self.base_url, path)
@@ -146,7 +150,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         else:
             r.raise_for_status()
 
-    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = True) -> None:
+    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
         """Upload a local file through the WSS control channel plus HTTPS data channel.
 
         Args:
@@ -157,9 +161,11 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         if not remote_file:
             remote_file = Path(local_file).name
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
-        resp = self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)
-        if self._HTTP_HEADER_KEY_AUTH not in resp.headers:
-            raise ValueError(f"Server did not respond with file transfer authentication: {self._HTTP_HEADER_KEY_AUTH}")
+        # Control-channel precheck (permission/existence); raises on failure.
+        self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)
+        token = self._get_bearer_token()
+        if not token:
+            raise ValueError("File transfer requires a bearer token")
 
         local_path = Path(local_file)
         if not local_path.exists():
@@ -168,7 +174,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         # Upload file with http
         path = "/appmesh/file/upload/ws"
         header = {
-            AppMeshClient._HTTP_HEADER_KEY_AUTH: resp.headers[self._HTTP_HEADER_KEY_AUTH],
+            AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
         }
         if preserve_permissions:

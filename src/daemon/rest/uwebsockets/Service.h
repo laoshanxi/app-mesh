@@ -81,6 +81,15 @@ namespace WSS
     {
         std::weak_ptr<void> connectionPtr;
         std::string subProtocol;
+        std::string principalId;
+        bool managedWorkerTransport{false};
+    };
+
+    struct WSUpgradeDecision
+    {
+        bool accepted{false};
+        std::string principalId;
+        bool managedWorkerTransport{false};
     };
 
     // Route match result containing captured groups from regex
@@ -139,8 +148,12 @@ namespace WSS
     public:
         using WebSocketType = uWS::WebSocket<SSL, true, SessionData>;
 
-        WSConnection(WebSocketType *ws, std::string id, std::string protocol, std::shared_ptr<LoopGuard> loopGuard, uint64_t numericId = 0)
-            : m_ws(ws), m_id(std::move(id)), m_protocol(std::move(protocol)), m_valid(true), m_loopGuard(std::move(loopGuard)), m_numericId(numericId) {}
+        WSConnection(WebSocketType *ws, std::string id, std::string protocol, std::shared_ptr<LoopGuard> loopGuard,
+                     uint64_t numericId = 0, std::string peerAddress = "", std::string principalId = "",
+                     bool managedWorkerTransport = false)
+            : m_ws(ws), m_id(std::move(id)), m_protocol(std::move(protocol)), m_valid(true),
+              m_loopGuard(std::move(loopGuard)), m_numericId(numericId), m_peerAddress(std::move(peerAddress)),
+              m_principalId(std::move(principalId)), m_managedWorkerTransport(managedWorkerTransport) {}
 
         // Sends data to the client safely from ANY thread.
         void send(std::string &&data, uWS::OpCode opcode = uWS::OpCode::TEXT)
@@ -186,6 +199,9 @@ namespace WSS
         const std::string &getId() const { return m_id; }
         uint64_t getNumericId() const { return m_numericId; }
         const std::string &getProtocol() const { return m_protocol; }
+        const std::string &getPeerAddress() const { return m_peerAddress; }
+        const std::string &getPrincipalId() const { return m_principalId; }
+        bool isManagedWorkerTransport() const { return m_managedWorkerTransport; }
 
     private:
         // Helper function to execute a WebSocket operation on the owner thread.
@@ -239,6 +255,9 @@ namespace WSS
         bool m_valid;
         std::shared_ptr<LoopGuard> m_loopGuard;
         const uint64_t m_numericId;
+        const std::string m_peerAddress;
+        const std::string m_principalId;
+        const bool m_managedWorkerTransport;
         mutable std::mutex m_mutex;
     };
 
@@ -257,6 +276,7 @@ namespace WSS
         using WSMessageHandler = std::function<void(std::string_view message, WSConnectionPtr connection, ReplyContextPtr replyCtx, bool isBinary)>;
         using WSOpenHandler = std::function<void(WSConnectionPtr connection)>;
         using WSCloseHandler = std::function<void(const std::string &connID, int code, std::string_view message)>;
+        using WSUpgradeHandler = std::function<WSUpgradeDecision(std::string_view authorization, std::string_view peerAddress)>;
 
         Server(int port, SSLContextOptions ssl = {}, int numThreads = 1)
             : m_port(port), m_numThreads(std::max(1, numThreads)), m_ssl(std::move(ssl)),
@@ -318,6 +338,12 @@ namespace WSS
         {
             checkNotRunning();
             m_wsCloseHandler = std::move(handler);
+        }
+
+        void onWSUpgrade(WSUpgradeHandler handler)
+        {
+            checkNotRunning();
+            m_wsUpgradeHandler = std::move(handler);
         }
 
         // Sends data to a specific client. Thread-safe.
@@ -517,7 +543,10 @@ namespace WSS
                     }
                 },
                 connection ? connection->getId() : std::string(),
-                connection ? connection->getNumericId() : 0);
+                connection ? connection->getNumericId() : 0,
+                connection ? connection->getPeerAddress() : std::string(),
+                connection ? connection->getPrincipalId() : std::string(),
+                connection && connection->isManagedWorkerTransport());
         }
 
         // Factory for creating a safe HTTP reply context
@@ -744,9 +773,24 @@ namespace WSS
                              return;
                          }
                      }
-                     // If no protocol header was sent, we accept without a subprotocol (acceptedProtocol stays empty)
+                     const auto peer = res->getRemoteAddressAsText();
+                     const auto authorization = req->getHeader("authorization");
+                     const auto decision = m_wsUpgradeHandler
+                         ? m_wsUpgradeHandler(authorization, peer)
+                         : WSUpgradeDecision{};
+                     if (!decision.accepted)
+                     {
+                         res->writeStatus("401 Unauthorized")
+                            ->writeHeader("WWW-Authenticate", "Bearer realm=\"appmesh\"")
+                            ->end("Authentication required");
+                         return;
+                     }
+                     // The upgrade pins either an OIDC principal or a loopback-only
+                     // managed-worker session. Frames cannot upgrade their authority.
                      res->template upgrade<SessionData>(
-                         SessionData{.subProtocol = acceptedProtocol},
+                         SessionData{.subProtocol = acceptedProtocol,
+                                     .principalId = decision.principalId,
+                                     .managedWorkerTransport = decision.managedWorkerTransport},
                          req->getHeader("sec-websocket-key"),
                          acceptedProtocol.empty() ? std::string_view() : std::string_view(acceptedProtocol),
                          req->getHeader("sec-websocket-extensions"),
@@ -768,7 +812,8 @@ namespace WSS
 
                          SessionData *data = ws->getUserData();
                          if (!data) return;
-                         auto connection = createConnection(ws, data->subProtocol, threadId);
+                         auto connection = createConnection(ws, data->subProtocol, threadId,
+                             data->principalId, data->managedWorkerTransport);
                          data->connectionPtr = connection;
 
                          if (auto handler = m_wsOpenHandler)
@@ -879,11 +924,15 @@ namespace WSS
             });
         }
 
-        WSConnectionPtr createConnection(WebSocketType *ws, const std::string &subProtocol, int threadId)
+        WSConnectionPtr createConnection(WebSocketType *ws, const std::string &subProtocol, int threadId,
+                                         const std::string &principalId, bool managedWorkerTransport)
         {
             uint64_t numericId = m_nextConnId.fetch_add(1);
             std::string connId = "appmesh-ws-" + std::to_string(numericId);
-            auto connection = std::make_shared<WSConnectionType>(ws, connId, subProtocol, m_loopGuards[threadId], numericId);
+            const auto peer = ws->getRemoteAddressAsText();
+            auto connection = std::make_shared<WSConnectionType>(ws, connId, subProtocol,
+                m_loopGuards[threadId], numericId, std::string(peer.begin(), peer.end()),
+                principalId, managedWorkerTransport);
             std::unique_lock<std::shared_mutex> lock(m_connectionsMutex);
             m_connections[connId] = connection;
             return connection;
@@ -925,6 +974,7 @@ namespace WSS
         WSMessageHandler m_wsMessageHandler;
         WSOpenHandler m_wsOpenHandler;
         WSCloseHandler m_wsCloseHandler;
+        WSUpgradeHandler m_wsUpgradeHandler;
 
         mutable std::shared_mutex m_connectionsMutex;
         std::unordered_map<std::string, WSConnectionPtr> m_connections;

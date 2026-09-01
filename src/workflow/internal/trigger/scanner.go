@@ -20,9 +20,9 @@ func ScanWorkflows(client *appmesh.AppMeshClient, registry *Registry) error {
 	ctx, cancel := context.WithTimeout(context.Background(), scanRequestTimeout)
 	defer cancel()
 
-	apps, err := client.ListAppsContext(ctx)
+	apps, err := client.ListWorkflowRegistryContext(ctx)
 	if err != nil {
-		logger.Error("failed to list apps: " + err.Error())
+		logger.Error("failed to list workflow registry: " + err.Error())
 		return err
 	}
 

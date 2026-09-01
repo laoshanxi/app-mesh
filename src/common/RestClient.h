@@ -100,7 +100,8 @@ public:
 		std::map<std::string, std::string> header,
 		std::map<std::string, std::string> query,
 		std::map<std::string, std::string> formData = {},
-		long timeoutSeconds = 0);
+		long timeoutSeconds = 0,
+		const ClientSSLConfig *sslConfig = nullptr);
 
 	/**
 	 * @brief Uploads a file using multipart/form-data
@@ -186,7 +187,7 @@ private:
 	 * @brief Configures SSL parameters for a CURL handle
 	 * @param curl The CURL handle to configure
 	 */
-	static void setSslConfig(CURL *curl);
+	static void setSslConfig(CURL *curl, const ClientSSLConfig *sslConfig = nullptr);
 
 	/**
 	 * @brief Configures session/cookie parameters for a CURL handle

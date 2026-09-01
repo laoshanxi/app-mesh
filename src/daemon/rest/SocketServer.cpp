@@ -161,4 +161,10 @@ void SocketServer::closeClient(int clientId)
     }
 }
 
+bool SocketServer::isLoopbackClient(int clientId)
+{
+	auto client = findClient(clientId);
+	return client.stream() != nullptr && client->remotePeerIsLoopback();
+}
+
 int SocketServer::getId() const { return m_id; }

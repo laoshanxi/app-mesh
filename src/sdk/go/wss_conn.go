@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -25,7 +26,7 @@ func NewWSSConnection() *WSSConnection {
 
 // Connect establishes a WSS connection to the given address (url.URL expected).
 // sslClientCert and sslClientCertKey may be empty. sslCAPath may be empty to skip verification.
-func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, sslCAPath string) error {
+func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, sslCAPath, bearerToken string) error {
 	tlsConf := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 	}
@@ -70,7 +71,11 @@ func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, ssl
 		u.Scheme = "ws"
 	}
 
-	conn, _, err := dialer.Dial(u.String(), nil)
+	headers := http.Header{}
+	if bearerToken != "" {
+		headers.Set("Authorization", "Bearer "+bearerToken)
+	}
+	conn, _, err := dialer.Dial(u.String(), headers)
 	if err != nil {
 		return fmt.Errorf("failed to dial wss %s: %w", u.String(), err)
 	}

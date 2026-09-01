@@ -553,6 +553,14 @@ appm workflow run remote-label-demo -f
 appm workflow rm remote-label-demo
 ```
 
+Remote routing is available for manual runs only when the participating nodes trust the
+same canonical issuer. The source forwards the caller's in-memory access token and the
+destination validates it again. The renewable workflow run capability remains local and is
+never sent through `X-Target-Host`. Automatic and recovered runs have no retained caller
+token, so remote-only selectors fail closed; local label matches continue to work. The
+retained access token is not refreshable by the workflow process and must remain valid when
+each remote request is made.
+
 ## Triggers
 
 ### Manual
@@ -586,11 +594,10 @@ appm workflow runs trigger-on-event           # check accumulated runs
 appm workflow rm trigger-on-event
 ```
 
-> **Automatic triggers require an `execution_identity`.** An event-triggered run has no
-> human caller, so it has no identity to run steps under. The engine never falls back to its
-> own (privileged) identity — a workflow with `on.app_event` that does not set
-> [`execution_identity`](#execution-identity) will **fail closed** at run time. Add one to
-> enable automatic triggering.
+> **Automatic triggers require `workflow-admin` at registration.** Event-triggered and
+> recovered runs use a short-lived Engine-local capability bound to the registered owner,
+> workflow, run, and current Workflow process. They never retain or impersonate the
+> registrant's identity credentials.
 
 ### Schedule (External)
 
@@ -623,54 +630,32 @@ on:
         value: "${{ jobs.deploy.steps.publish.stdout }}"
 ```
 
-## Execution Identity
+## Identity And Authorization
 
-Every step runs under an App Mesh identity, and the daemon enforces that identity's RBAC
-on everything the step does (running an App, sending a task, creating a command App). The
-identity is resolved per run:
+Every step is authorized as an App Mesh Principal, and the daemon applies that Principal's
+RBAC to App runs, messages, and temporary command Apps:
 
-| Run | `execution_identity` set | Identity used |
-|-----|--------------------------|---------------|
-| Manual (`appm workflow run`) | no | the **triggering caller** |
-| Manual | yes | the configured **execution_identity** |
-| Automatic (`on.app_event`) | no | **none — run fails closed** |
-| Automatic | yes | the configured **execution_identity** |
+| Run source | Effective identity | Actor stored in the Run |
+|------------|--------------------|-------------------------|
+| Manual (`appm workflow run`) | caller's Engine-validated bearer | caller's immutable Principal ID |
+| Automatic (`on.app_event`) | Engine-local run capability, re-checked against current owner RBAC | `internal:workflow-trigger` marker |
+| Recovery after engine restart | newly issued Engine-local run capability, re-checked against current owner RBAC | original Run actor is preserved |
 
-The engine's own (admin) credentials are **never** used to run steps — they serve only the
-engine's control plane (registration scan, step-App cleanup). This closes the escalation
-where any user who could register an event-triggered workflow would have its steps executed
-with admin rights.
+The Engine validates the issuer, signature, audience, and token times. It maps the bearer to
+an immutable Principal ID. For a manual cross-node job, the workflow process retains the
+access token in memory for the run and forwards it to the destination Engine, which repeats
+validation and authorization. The bearer is never written to run records, checkpoints, or
+logs. Local execution uses only the Engine-issued run capability.
 
-### Configuring an execution identity
-
-Because the daemon cannot mint a token for an arbitrary user, the engine authenticates as a
-real App Mesh user. An admin provisions the credentials as a secured env var on the engine
-App — a JSON map of `username → password`:
-
-```bash
-appm add -a workflow -z 'APPMESH_EXEC_IDENTITIES={"svc-pipeline":"<password>"}'
-```
-
-Then a workflow references it:
-
-```yaml
-name: nightly-pipeline
-execution_identity: svc-pipeline    # steps run as svc-pipeline
-on:
-  app_event:
-    app: "data-collector"
-    events: [EXIT]
-jobs:
-  process:
-    steps:
-      - name: handle
-        command: "echo running as the service account"
-```
-
-At registration the caller may bind `execution_identity` only to **itself**, or — as a
-workflow admin (`APPMESH_WORKFLOW_ADMINS`) — to any configured identity. Binding an identity
-the engine has no credential for is rejected. Give the service account the **least privilege**
-its steps need.
+Workflow YAML cannot choose or impersonate another identity. Ownership is always derived
+from the Principal that registers the workflow. Registering an automatic trigger requires
+the `workflow-admin` permission because it authorizes later execution without a live human
+bearer. Those runs receive only the operations requested by the workflow engine and still
+allowed by the current owner's RBAC. No authentication-service Principal or client secret is involved.
+The capability covers the Run lifecycle rather than granting one arbitrary target: existing
+Apps used by app/message steps retain their normal owner and access checks, while command
+steps can create only matching `wf-cmd-*` temporary Apps. Workflow discovery uses a private
+controller route that exposes only registered workflow definitions.
 
 ## Encrypted Environment Variables
 
@@ -724,7 +709,6 @@ Save as `ci-cd.yaml`:
 
 ```yaml
 name: ci-cd
-owner: admin
 
 on:
   manual:

@@ -31,7 +31,7 @@ Optional coverage:
     --fail-on-skip           fail the suite if an optional capability is absent
 
 Environment:
-    APPMESH_TEST_URL, APPMESH_TEST_USER, APPMESH_TEST_CRED
+    APPMESH_TEST_URL, APPMESH_TEST_ACCESS_TOKEN
     APPMESH_TEST_SSL_VERIFY, APPMESH_TEST_TCP_HOST, APPMESH_TEST_TCP_PORT
     APPMESH_TEST_WSS_HOST, APPMESH_TEST_WSS_PORT
 """
@@ -74,8 +74,7 @@ class CaseSkipped(RuntimeError):
 @dataclasses.dataclass(frozen=True)
 class Config:
     url: Optional[str]
-    user: str
-    credential: str
+    bearer_token: Optional[str]
     ssl_verify: object
     tcp_host: str
     tcp_port: int
@@ -124,8 +123,7 @@ def parse_ssl_verify(value: str) -> object:
 def make_config(args: argparse.Namespace) -> Config:
     return Config(
         url=os.environ.get("APPMESH_TEST_URL"),
-        user=os.environ.get("APPMESH_TEST_USER", "admin"),
-        credential=os.environ.get("APPMESH_TEST_CRED", "admin123"),
+        bearer_token=os.environ.get("APPMESH_TEST_ACCESS_TOKEN"),
         ssl_verify=parse_ssl_verify(os.environ.get("APPMESH_TEST_SSL_VERIFY", "false")),
         tcp_host=os.environ.get("APPMESH_TEST_TCP_HOST", "127.0.0.1"),
         tcp_port=int(os.environ.get("APPMESH_TEST_TCP_PORT", "6059")),
@@ -166,7 +164,9 @@ class Context:
             )
         else:
             raise ValueError(f"unsupported transport: {self.transport}")
-        client.login(self.config.user, self.config.credential)
+        if not self.config.bearer_token:
+            raise RuntimeError("APPMESH_TEST_ACCESS_TOKEN must contain a Dex access token")
+        client.set_bearer_token(self.config.bearer_token)
         return client
 
     @contextlib.contextmanager

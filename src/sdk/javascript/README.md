@@ -22,7 +22,7 @@ npm i appmesh
 import { AppMeshClient } from "appmesh";
 
 const client = new AppMeshClient();
-await client.login("username", "password");
+client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
 ```
 
 #### Browser (VUE Example)
@@ -92,7 +92,7 @@ npm install msgpack-lite uuid
 #### Basic HTTP Server
 
 ```javascript
-import { AppMeshWorker, ProcessSupersededError } from "appmesh/worker";
+import { AppMeshWorker, ProcessSupersededError, WorkerRejectedError } from "appmesh/worker";
 
 const server = new AppMeshWorker();
 
@@ -107,8 +107,8 @@ try {
   // Return result to client
   await server.send_task_result(result);
 } catch (error) {
-  if (error instanceof ProcessSupersededError) {
-    // This process instance was replaced by the daemon (HTTP 412) — stop serving.
+  if (error instanceof ProcessSupersededError || error instanceof WorkerRejectedError) {
+    // This process was replaced (412), or its request is permanently invalid (400).
     // Exiting is an app entry-point decision; the SDK only surfaces the error.
     console.error(error.message);
     process.exit(1);
@@ -193,11 +193,11 @@ new AppMeshWorker(baseURL, sslConfig, options);
 
 ###### `fetch_task()`
 
-Fetch task payload from the App Mesh service. Automatically retries on failure.
+Fetch task payload from the App Mesh service. Automatically retries transient failures.
 
 **Returns:** `Promise<string|Buffer>` - The payload sent by the client
 
-**Throws:** `ProcessSupersededError` if the daemon reports HTTP 412 (this process was superseded by a newer instance) - the caller should stop serving; exit at the app entry point if appropriate
+**Throws:** `ProcessSupersededError` for HTTP 412, or `WorkerRejectedError` for a permanent HTTP 400. The caller should stop serving; exit at the app entry point if appropriate.
 
 **Example:**
 
@@ -370,7 +370,7 @@ await server.send_task_result(
 import { AppMeshClient } from "appmesh";
 
 const client = new AppMeshClient();
-await client.login("username", "password");
+client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
 
 const result = await client.run_task(
   "my-app",
@@ -404,4 +404,4 @@ await server.send_task_result(JSON.stringify(result));
 
 ## Behavioral contract
 
-Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, auth-token sync) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/SDKContract.md).
+Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, and bearer authentication) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/SDKContract.md).

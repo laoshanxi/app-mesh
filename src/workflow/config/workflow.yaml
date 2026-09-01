@@ -1,24 +1,12 @@
-# Pre-installed App definition for the workflow engine.
-# Installed as a template and materialized during a non-secure package install.
-# Daemon auto-loads and starts this App on boot.
-#
-# sec_env values are encrypted with the default admin key.
-# To change credentials: appm add -a workflow -z APPMESH_PASSWORD=<new>
-#
-# To let workflows declare `execution_identity: <user>` (ADR 0004), provision
-# the identities' credentials as a JSON map in a secured env var:
-#   appm add -a workflow -z 'APPMESH_EXEC_IDENTITIES={"svc-pipeline":"<password>"}'
-# Only identities listed here can be bound by a workflow's execution_identity.
-
+---
 command: ../../bin/wf-engine
 name: workflow
-owner: admin
-description: Workflow engine
+description: Workflow engine using caller bearer delegation and Engine-issued internal run capabilities
+owner_principal_id: system:appmesh
+system: true
+startup_phase: normal
 behavior:
   exit: restart
-sec_env:
-  APPMESH_USER: 4EfiWHZL
-  APPMESH_PASSWORD: 4EfiWHZ6JZjG
 metadata:
   type: workflow-system
 status: 1

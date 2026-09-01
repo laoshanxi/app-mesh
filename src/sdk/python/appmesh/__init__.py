@@ -19,7 +19,10 @@ __all__ = [
     "AppMeshClient",
     "AppMeshClientTCP",
     "AppMeshClientWSS",
-    "AppMeshClientOAuth",
+    "OAuthClient",
+    "OAuthError",
+    "TokenProvider",
+    "StaticAccessTokenProvider",
     "AppMeshWorker",
     "AppMeshWorkerTCP",
     "AppMeshWorkerWSS",
@@ -30,6 +33,7 @@ __all__ = [
     "AppMeshRequestError",
     "AppMeshAppRemovedError",
     "AppMeshProcessSupersededError",
+    "AppMeshWorkerRejectedError",
     "AppEvent",
     "SubscriptionResult",
     "OutputHandler",
@@ -44,7 +48,13 @@ _LAZY_IMPORTS = {
     "AppMeshClient": ("client_http", "AppMeshClient"),  # from .client_http import AppMeshClient
     "AppMeshClientTCP": ("client_tcp", "AppMeshClientTCP"),  # from .client_tcp import AppMeshClientTCP
     "AppMeshClientWSS": ("client_wss", "AppMeshClientWSS"),  # from .client_wss import AppMeshClientWSS
-    "AppMeshClientOAuth": ("client_http_oauth", "AppMeshClientOAuth"),  # from .client_http_oauth import AppMeshClientOAuth
+    "OAuthClient": ("oauth", "OAuthClient"),  # from .oauth import OAuthClient
+    "OAuthError": ("oauth", "OAuthError"),  # from .oauth import OAuthError
+    # Compatibility aliases are available but are not part of the documented API.
+    "DexOAuthClient": ("dex_oauth", "DexOAuthClient"),
+    "DexOAuthError": ("dex_oauth", "DexOAuthError"),
+    "TokenProvider": ("token_provider", "TokenProvider"),  # from .token_provider import TokenProvider
+    "StaticAccessTokenProvider": ("token_provider", "StaticAccessTokenProvider"),  # from .token_provider import StaticAccessTokenProvider
     "AppMeshWorker": ("worker_http", "AppMeshWorker"),  # from .worker_http import AppMeshWorker
     "AppMeshWorkerTCP": ("worker_tcp", "AppMeshWorkerTCP"),  # from .worker_tcp import AppMeshWorkerTCP
     "AppMeshWorkerWSS": ("worker_wss", "AppMeshWorkerWSS"),  # from .worker_wss import AppMeshWorkerWSS
@@ -55,6 +65,7 @@ _LAZY_IMPORTS = {
     "AppMeshRequestError": ("exceptions", "AppMeshRequestError"),  # from .exceptions import AppMeshRequestError
     "AppMeshAppRemovedError": ("exceptions", "AppMeshAppRemovedError"),  # from .exceptions import AppMeshAppRemovedError
     "AppMeshProcessSupersededError": ("exceptions", "AppMeshProcessSupersededError"),  # from .exceptions import AppMeshProcessSupersededError
+    "AppMeshWorkerRejectedError": ("exceptions", "AppMeshWorkerRejectedError"),  # from .exceptions import AppMeshWorkerRejectedError
     "AppEvent": ("subscribe", "AppEvent"),  # from .subscribe import AppEvent
     "SubscriptionResult": ("subscribe", "SubscriptionResult"),  # from .subscribe import SubscriptionResult
     "OutputHandler": ("app_run", "OutputHandler"),  # from .app_run import OutputHandler
@@ -69,11 +80,12 @@ if TYPE_CHECKING:
     from .client_http import AppMeshClient  # noqa: F401
     from .client_tcp import AppMeshClientTCP  # noqa: F401
     from .client_wss import AppMeshClientWSS  # noqa: F401
-    from .client_http_oauth import AppMeshClientOAuth  # noqa: F401
+    from .oauth import OAuthClient, OAuthError  # noqa: F401
+    from .token_provider import StaticAccessTokenProvider, TokenProvider  # noqa: F401
     from .worker_http import AppMeshWorker  # noqa: F401
     from .worker_tcp import AppMeshWorkerTCP  # noqa: F401
     from .worker_wss import AppMeshWorkerWSS  # noqa: F401
-    from .exceptions import AppMeshError, AppMeshAuthError, AppMeshConnectionError, AppMeshTimeoutError, AppMeshRequestError, AppMeshAppRemovedError, AppMeshProcessSupersededError  # noqa: F401
+    from .exceptions import AppMeshError, AppMeshAuthError, AppMeshConnectionError, AppMeshTimeoutError, AppMeshRequestError, AppMeshAppRemovedError, AppMeshProcessSupersededError, AppMeshWorkerRejectedError  # noqa: F401
     from .subscribe import AppEvent, SubscriptionResult  # noqa: F401
     from .app_run import OutputHandler, print_output_handler  # noqa: F401
 

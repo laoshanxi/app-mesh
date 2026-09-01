@@ -7,7 +7,6 @@
 #include "PersistManager.h"
 #include "application/Application.h"
 #include "process/AppProcess.h"
-#include "security/TokenBlacklist.h"
 
 #define SNAPSHOT_JSON_KEY_pid "pid"
 #define SNAPSHOT_JSON_KEY_starttime "starttime"
@@ -54,7 +53,6 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			}
 		}
 	}
-	snap->m_tokenBlackList = TOKEN_BLACK_LIST::instance()->getTokens();
 	return snap;
 }
 
@@ -115,15 +113,6 @@ bool Snapshot::operator==(const Snapshot &snap) const
 			return false;
 		}
 	}
-	if (snap.m_tokenBlackList.size() != m_tokenBlackList.size())
-		return false;
-	else
-		for (const auto &token : m_tokenBlackList)
-		{
-			if (snap.m_tokenBlackList.count(token.first) == 0)
-				return false;
-		}
-
 	return true;
 }
 
@@ -142,12 +131,6 @@ nlohmann::json Snapshot::AsJson() const
 	}
 	result["Applications"] = std::move(apps);
 
-	// TODO: use seperate persist file or move to 3rd storage
-	// TokenBlackList
-	nlohmann::json tokens = nlohmann::json::object();
-	for (const auto &token : m_tokenBlackList)
-		tokens[token.first] = std::chrono::system_clock::to_time_t(token.second);
-	result["TokenBlackList"] = std::move(tokens);
 	return result;
 }
 
@@ -168,11 +151,6 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const nlohmann::json &obj)
 							GET_JSON_INT_VALUE(app.value(), SNAPSHOT_JSON_KEY_pid),
 							GET_JSON_INT64_VALUE(app.value(), SNAPSHOT_JSON_KEY_starttime))));
 				}
-			}
-		if (obj.contains("TokenBlackList"))
-			for (auto &token : obj.at("TokenBlackList").items())
-			{
-				snap->m_tokenBlackList.insert(std::make_pair(token.key(), std::chrono::system_clock::from_time_t(token.value().get<int64_t>())));
 			}
 	}
 	return snap;

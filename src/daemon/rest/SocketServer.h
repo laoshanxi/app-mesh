@@ -20,6 +20,7 @@ public:
 
     static bool replyTcp(int clientId, std::unique_ptr<Response> &&resp);
     static void closeClient(int clientID);
+	static bool isLoopbackClient(int clientId);
 
     int getId() const;
     static SocketStreamPtr findClient(int clientId);

@@ -28,7 +28,7 @@ type RetryPolicy struct {
 type MessageConfig struct {
 	App     string `yaml:"app"`
 	Payload string `yaml:"payload"`
-	// ForwardToken injects the run's caller JWT into the JSON payload's "token" field
+	// ForwardToken injects a human caller's Dex bearer into the JSON payload's "token" field
 	// before RunTask (opt-in). Used by identity-forwarding targets like llm-agent that
 	// read the caller token from the payload body. No-op for auto/recovered runs (no
 	// caller token) or non-object payloads; an author-set "token" wins.
@@ -45,23 +45,23 @@ type StepResult struct {
 }
 
 type Step struct {
-	Name        string            `yaml:"name"`
-	Type        StepType          `yaml:"-"`
-	Command     string            `yaml:"command,omitempty"`
-	App         string            `yaml:"app,omitempty"`
-	Message     *MessageConfig    `yaml:"message,omitempty"`
-	WorkflowRef string            `yaml:"workflow,omitempty"`
-	With        map[string]string `yaml:"with,omitempty"`
-	Workdir     string            `yaml:"workdir,omitempty"`
-	Shell       *bool             `yaml:"shell,omitempty"`
-	DockerImage string            `yaml:"docker_image,omitempty"`
-	Condition   string            `yaml:"if,omitempty"`
-	Timeout     int               `yaml:"timeout,omitempty"`
-	Retry       *RetryPolicy      `yaml:"retry,omitempty"`
-	ContinueOnError bool          `yaml:"continue-on-error,omitempty"`
-	Env         map[string]string `yaml:"env,omitempty"`
-	SecEnv      map[string]string `yaml:"sec_env,omitempty"`
-	Result      StepResult        `yaml:"-"`
+	Name            string            `yaml:"name"`
+	Type            StepType          `yaml:"-"`
+	Command         string            `yaml:"command,omitempty"`
+	App             string            `yaml:"app,omitempty"`
+	Message         *MessageConfig    `yaml:"message,omitempty"`
+	WorkflowRef     string            `yaml:"workflow,omitempty"`
+	With            map[string]string `yaml:"with,omitempty"`
+	Workdir         string            `yaml:"workdir,omitempty"`
+	Shell           *bool             `yaml:"shell,omitempty"`
+	DockerImage     string            `yaml:"docker_image,omitempty"`
+	Condition       string            `yaml:"if,omitempty"`
+	Timeout         int               `yaml:"timeout,omitempty"`
+	Retry           *RetryPolicy      `yaml:"retry,omitempty"`
+	ContinueOnError bool              `yaml:"continue-on-error,omitempty"`
+	Env             map[string]string `yaml:"env,omitempty"`
+	SecEnv          map[string]string `yaml:"sec_env,omitempty"`
+	Result          StepResult        `yaml:"-"`
 }
 
 type Job struct {
@@ -121,15 +121,12 @@ type ConcurrencyConfig struct {
 }
 
 type Workflow struct {
-	Name       string `yaml:"name"`
-	Owner      string `yaml:"owner,omitempty"`
-	Permission int    `yaml:"permission,omitempty"`
-	// App Mesh user whose credentials run this workflow's steps (APPMESH_EXEC_IDENTITIES);
-	// empty = caller for manual runs, fail-closed for auto triggers. See ADR 0004.
-	ExecutionIdentity string             `yaml:"execution_identity,omitempty"`
-	On                *TriggerConfig     `yaml:"on,omitempty"`
-	Concurrency       *ConcurrencyConfig `yaml:"concurrency,omitempty"`
-	Env               map[string]string  `yaml:"env,omitempty"`
-	SecEnv            map[string]string  `yaml:"sec_env,omitempty"`
-	Jobs              map[string]*Job    `yaml:"jobs"`
+	Name        string             `yaml:"name"`
+	Owner       string             `yaml:"owner,omitempty"`
+	Permission  int                `yaml:"permission,omitempty"`
+	On          *TriggerConfig     `yaml:"on,omitempty"`
+	Concurrency *ConcurrencyConfig `yaml:"concurrency,omitempty"`
+	Env         map[string]string  `yaml:"env,omitempty"`
+	SecEnv      map[string]string  `yaml:"sec_env,omitempty"`
+	Jobs        map[string]*Job    `yaml:"jobs"`
 }

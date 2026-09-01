@@ -13,7 +13,7 @@ from typing import Optional, Tuple, Union
 
 # Local imports
 from .client_http import AppMeshClient
-from .exceptions import AppMeshError, AppMeshProcessSupersededError
+from .exceptions import AppMeshError, AppMeshProcessSupersededError, AppMeshWorkerRejectedError
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class AppMeshWorker:
                 `request_timeout`) are ignored.
             logger: Optional logger instance.
         """
-        self._client = client or AppMeshClient(base_url, ssl_verify, ssl_client_cert, request_timeout, auto_refresh_token=False)  # Server endpoints use APP_MESH_PROCESS_KEY; no JWT refresh needed.
+        self._client = client or AppMeshClient(base_url, ssl_verify, ssl_client_cert, request_timeout)
         self._logger = logger or logging.getLogger(__name__)
 
     @staticmethod
@@ -83,8 +83,9 @@ class AppMeshWorker:
         """Fetch task data in the currently running App Mesh application process.
 
         Used by an App Mesh application process to obtain the payload from the App Mesh
-        service that a client pushed to it. By default retries indefinitely until successful.
-        If a request fails within 100ms, sleeps briefly before retrying; otherwise retries immediately.
+        service that a client pushed to it. By default retries transient failures indefinitely;
+        HTTP 400/412 stop the loop. If a request fails within 100ms, sleeps briefly before
+        retrying; otherwise retries immediately.
 
         Args:
             stop_event: Optional cancellation event checked between attempts; when set,
@@ -99,11 +100,13 @@ class AppMeshWorker:
         Raises:
             AppMeshProcessSupersededError: The daemon reported HTTP 412 — this process key was
                 superseded by a newer process instance; the caller should stop serving.
+            AppMeshWorkerRejectedError: The daemon reported HTTP 400 — the worker request is
+                incompatible or invalid and retrying cannot recover it.
             AppMeshError: Cancelled via ``stop_event`` or ``max_retries`` exhausted.
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
-        query_params = {"process_key": pkey}
+        headers = {"X-AppMesh-Process-Key": pkey}
         failed_attempts = 0
 
         while True:
@@ -115,7 +118,7 @@ class AppMeshWorker:
                 resp = self._client._request_http(
                     AppMeshClient._Method.GET,
                     path=path,
-                    query=query_params,
+                    header=headers,
                     raise_on_fail=False,
                 )
 
@@ -126,8 +129,13 @@ class AppMeshWorker:
                     self._logger.error("Process key mismatch (412): this process has been superseded")
                     raise AppMeshProcessSupersededError("Process key mismatch (412): this process has been superseded by a newer instance")
 
+                if resp.status_code == HTTPStatus.BAD_REQUEST:
+                    message = f"fetch_task permanently rejected with status 400: {resp.text}"
+                    self._logger.error(message)
+                    raise AppMeshWorkerRejectedError(message)
+
                 self._logger.warning("fetch_task failed with status %d: %s, retrying...", resp.status_code, resp.text)
-            except AppMeshProcessSupersededError:
+            except (AppMeshProcessSupersededError, AppMeshWorkerRejectedError):
                 raise
             except Exception as ex:
                 self._logger.warning("fetch_task request failed: %s, retrying...", ex)
@@ -155,12 +163,12 @@ class AppMeshWorker:
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
-        query_params = {"process_key": pkey}
+        headers = {"X-AppMesh-Process-Key": pkey}
 
         resp = self._client._request_http(
             AppMeshClient._Method.PUT,
             path=path,
-            query=query_params,
+            header=headers,
             body=result,
         )
 

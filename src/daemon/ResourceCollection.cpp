@@ -296,6 +296,9 @@ nlohmann::json ResourceCollection::AsJson()
 		result[("fd")] = 0;
 		collectorErrors.push_back("daemon_process_tree_unavailable");
 	}
+	// Daemon process only. "fd" above sums the whole daemon tree (dex, agent,
+	// app children) whose churn is unrelated to daemon-side fd leaks.
+	result["fd_daemon"] = os::getOpenFileDescriptorCount(getPid());
 
 	std::unordered_map<pid_t, std::vector<pid_t>> children;
 	for (const auto &process : processes)

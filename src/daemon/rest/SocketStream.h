@@ -344,6 +344,9 @@ public:
 	// Close from user side (close function is already used for interface)
 	void shutdown();
 	bool connected() const;
+	/// True only when the accepted socket peer is a loopback address.  This uses
+	/// the address recorded by the socket itself, never client-supplied request data.
+	bool remotePeerIsLoopback() const;
 
 protected:
 	// --- ACE_Svc_Handler Overrides ---

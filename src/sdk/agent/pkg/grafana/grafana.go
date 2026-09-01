@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -28,9 +29,12 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 	if err != nil {
 		return nil, fmt.Errorf("create app mesh client: %w", err)
 	}
-	if _, err := client.Authenticate(authKey, "", "", true); err != nil {
-		return nil, fmt.Errorf("authenticate: %w", err)
+	scheme, bearer, found := strings.Cut(strings.TrimSpace(authKey), " ")
+	bearer = strings.TrimSpace(bearer)
+	if !found || !strings.EqualFold(scheme, "Bearer") || bearer == "" {
+		return nil, fmt.Errorf("bearer authorization is required")
 	}
+	client.SetToken(bearer)
 	apps, err := client.ListApps()
 	if err != nil {
 		return nil, fmt.Errorf("list apps: %w", err)
@@ -52,12 +56,16 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 		t := time.Unix(*meshApp.RegisterTime, 0)
 		regTimes = append(regTimes, t)
 		appNames = append(appNames, meshApp.Name)
-		if meshApp.Owner != nil {
-			appOwner = append(appOwner, *meshApp.Owner)
+		if meshApp.OwnerPrincipalID != nil {
+			appOwner = append(appOwner, *meshApp.OwnerPrincipalID)
 		} else {
 			appOwner = append(appOwner, "")
 		}
-		appStatus = append(appStatus, float64(meshApp.Status))
+		if meshApp.Status {
+			appStatus = append(appStatus, 1)
+		} else {
+			appStatus = append(appStatus, 0)
+		}
 		appHealth = append(appHealth, float64(*meshApp.Health))
 		if meshApp.Pid != nil {
 			appPid = append(appPid, float64(*meshApp.Pid))

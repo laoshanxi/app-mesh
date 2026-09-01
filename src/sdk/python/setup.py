@@ -9,7 +9,9 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 def get_version():
     """PyPI package version"""
-    return "2.3.3"
+    # 3.0 removes Engine-owned login/user APIs in favor of standard OAuth and
+    # principal-based authorization. This is intentionally a major release.
+    return "3.0.0"
 
 
 # Dependencies
@@ -19,7 +21,6 @@ install_requires = [
     "msgpack",
     "requests_toolbelt",
     "aniso8601",
-    "PyJWT",
     "dataclasses; python_version < '3.7'",
 ]
 
