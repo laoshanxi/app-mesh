@@ -18,6 +18,7 @@ set -euo pipefail
 #===============================================================================
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly CERT_OUTPUT_DIR="${APPMESH_SSL_OUTPUT_DIR:-${SCRIPT_DIR}}"
 readonly CERT_VALIDITY_DAYS=3650
 readonly CERT_VALIDITY_HOURS="87600h"
 readonly KEY_ALGO="ecdsa"
@@ -36,7 +37,7 @@ readonly CERT_CLIENT_CN="appmesh-client"
 # Tool detection flag
 USE_CFSSL=false
 # TODO: macOS keep use cfssl due to SAN and CA extensions compatibility on different OpenSSL versions
-export PATH="/opt/appmesh/ssl/:$PATH"
+export PATH="${SCRIPT_DIR}:$PATH"
 
 #===============================================================================
 # Utility Functions
@@ -388,31 +389,6 @@ create_certs_openssl() {
 }
 
 #===============================================================================
-# JWT Key Generation
-#===============================================================================
-
-generate_jwt_keys() {
-    log "Generating JWT keys..."
-
-    # ES256 keypair
-    if [[ ! -f jwt-ec-private.pem ]]; then
-        local tmpkey="jwt-ec-temp.pem"
-        openssl ecparam -genkey -name "$EC_CURVE" -noout -out "$tmpkey"
-        openssl pkcs8 -topk8 -nocrypt -in "$tmpkey" -out jwt-ec-private.pem
-        openssl ec -in jwt-ec-private.pem -pubout -out jwt-ec-public.pem 2>/dev/null
-        cleanup_file "$tmpkey"
-        log_success "Generated jwt-ec-private.pem, jwt-ec-public.pem (ES256)"
-    fi
-
-    # Convert server key for RS256/ES256 (from server cert)
-    if [[ -f server-key.pem && ! -f jwt-private.pem ]]; then
-        openssl pkcs8 -topk8 -nocrypt -in server-key.pem -out jwt-private.pem
-        openssl x509 -pubkey -noout -in server.pem > jwt-public.pem
-        log_success "Generated jwt-private.pem, jwt-public.pem"
-    fi
-}
-
-#===============================================================================
 # Verification
 #===============================================================================
 
@@ -487,7 +463,10 @@ verify_certificates() {
 
 main() {
     log "Starting SSL certificate generation..."
-    cd "$SCRIPT_DIR"
+    [[ ! -L "$CERT_OUTPUT_DIR" ]] || die "Refusing symbolic-link certificate output directory"
+    mkdir -p "$CERT_OUTPUT_DIR"
+    [[ -d "$CERT_OUTPUT_DIR" ]] || die "Certificate output path is not a directory"
+    cd "$CERT_OUTPUT_DIR"
 
     check_dependencies
 
@@ -505,14 +484,10 @@ main() {
         die "Certificate verification failed"
     fi
 
-    generate_jwt_keys
-
     log "Generated files:"
     log "  CA:     ca.pem, ca-key.pem"
     log "  Server: server.pem, server-key.pem"
     log "  Client: client.pem, client-key.pem"
-    log "  JWT:    jwt-private.pem, jwt-public.pem, jwt-ec-private.pem, jwt-ec-public.pem"
-
     log ""
     log "Test commands:"
     log "  Server: openssl s_server -cert server.pem -key server-key.pem -CAfile ca.pem -Verify 1 -port 8443"

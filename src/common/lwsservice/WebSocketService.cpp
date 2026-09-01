@@ -12,6 +12,7 @@
 #include "../../daemon/rest/EventDispatcher.h"
 #include "../../daemon/rest/HttpRequest.h"
 #include "../../daemon/rest/Worker.h"
+#include "../../daemon/security/Security.h"
 #include "../Utility.h"
 #include "WebSocketService.h"
 
@@ -51,6 +52,15 @@ struct HttpSessionData
 static inline HttpSessionData *http_pss(struct lws *wsi)
 {
     return static_cast<HttpSessionData *>(lws_get_opaque_user_data(wsi));
+}
+
+static bool is_loopback_peer(struct lws *wsi)
+{
+    char address[64] = {};
+    lws_get_peer_simple(wsi, address, sizeof(address));
+    const std::string peer(address);
+    return peer == "::1" || peer == "0:0:0:0:0:0:0:1" ||
+           peer.rfind("127.", 0) == 0 || peer.rfind("::ffff:127.", 0) == 0;
 }
 
 // -------------------------------
@@ -199,6 +209,10 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
     {
         // Get the scheme (e.g., "Bearer" or "Basic")
         ssnInfo->auth_scheme = getAuthScheme();
+        // Some libwebsockets versions expose the authorization value and scheme as
+        // separate fragments; normalize to the actual HTTP field value for the shared bearer parser.
+        if (!ssnInfo->auth_scheme.empty() && ssnInfo->authorization.find(' ') == std::string::npos)
+            ssnInfo->authorization = ssnInfo->auth_scheme + " " + ssnInfo->authorization;
     }
 
     // ---- Custom headers ----
@@ -294,9 +308,8 @@ std::unique_ptr<Request> WebSocketService::buildHttpRequest(struct lws *wsi)
 
     // IMPORTANT: Distinguish HTTP vs WebSocket
     req->headers[HTTP_HEADER_KEY_X_LWS_Protocol] = HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
-
-    // Convert cookie to Authorization header if present (follows agent_request.go pattern)
-    req->convertCookieToAuthorization();
+	if (!ssnInfo->authorization.empty())
+		req->headers[HTTP_HEADER_JWT_Authorization] = ssnInfo->authorization;
 
     return req;
 }
@@ -310,12 +323,12 @@ std::shared_ptr<WebSocketSession> WebSocketService::findSession(struct lws *wsi)
     return nullptr;
 }
 
-std::shared_ptr<WebSocketSession> WebSocketService::createSession(struct lws *wsi)
+std::shared_ptr<WebSocketSession> WebSocketService::createSession(struct lws *wsi, std::string principalId, bool managedWorkerTransport)
 {
     const static char fname[] = "WebSocketService::createSession() ";
 
     uint64_t session_id = m_next_session_id.fetch_add(1);
-    auto ssn = std::make_shared<WebSocketSession>(wsi, session_id);
+    auto ssn = std::make_shared<WebSocketSession>(wsi, session_id, std::move(principalId), managedWorkerTransport);
     {
         std::lock_guard<std::mutex> lock(m_sessions_mutex);
         // Enforce concurrent session limit
@@ -490,7 +503,16 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // 1. File download
         if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download/ws" && !ssnInfo->ext_x_file_path.empty())
         {
-            if (!WebSocketSession::verifyToken(ssnInfo->authorization))
+            try
+            {
+                const auto principal = Security::authenticateBearerAuthorization(ssnInfo->authorization);
+                Security::requirePermission(principal.id(), PERMISSION_KEY_file_download);
+            }
+            catch (const AuthorizationException &)
+            {
+                return lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, "Permission denied");
+            }
+            catch (...)
             {
                 return lws_return_http_status(wsi, HTTP_STATUS_UNAUTHORIZED, "Authentication failed");
             }
@@ -505,7 +527,16 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // 2. File upload setup
         if (ssnInfo->method == "POST" && ssnInfo->path == "/appmesh/file/upload/ws" && !ssnInfo->ext_x_file_path.empty())
         {
-            if (!WebSocketSession::verifyToken(ssnInfo->authorization))
+            try
+            {
+                const auto principal = Security::authenticateBearerAuthorization(ssnInfo->authorization);
+                Security::requirePermission(principal.id(), PERMISSION_KEY_file_upload);
+            }
+            catch (const AuthorizationException &)
+            {
+                return lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, "Permission denied");
+            }
+            catch (...)
             {
                 return lws_return_http_status(wsi, HTTP_STATUS_UNAUTHORIZED, "Authentication failed");
             }
@@ -632,8 +663,6 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
 
             int status_code = http_resp.http_status > 0 ? http_resp.http_status : HTTP_STATUS_OK;
 
-            // Handle authentication cookies (Set-Cookie header)
-            http_resp.handleAuthCookies(pss->http_request ? &pss->http_request->headers : nullptr);
             http_resp.applyCorsHeaders();
             http_resp.applySecurityHeaders();
 
@@ -754,9 +783,49 @@ int WebSocketService::handleWebSocketCallback(struct lws *wsi, enum lws_callback
     const static char fname[] = "WebSocketService::handleWebSocketCallback() ";
     switch (reason)
     {
+    case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+    {
+        const auto info = getSessionInfo(wsi);
+        if (!info)
+            return 1;
+        if (info->authorization.empty())
+            return is_loopback_peer(wsi) ? 0 : 1;
+        try
+        {
+            Security::authenticateBearerAuthorization(info->authorization);
+            return 0;
+        }
+        catch (...)
+        {
+            // Never let an authentication exception cross the C callback boundary.
+            return 1;
+        }
+    }
+
     case LWS_CALLBACK_ESTABLISHED:
     {
-        auto ssn = createSession(wsi);
+        const auto info = getSessionInfo(wsi);
+        std::string principalId;
+        bool managedWorkerTransport = false;
+        if (info && !info->authorization.empty())
+        {
+            try
+            {
+                principalId = Security::authenticateBearerAuthorization(info->authorization).id();
+            }
+            catch (...)
+            {
+                // The filter already authenticated this upgrade, but repeat safely in
+                // case the bearer expired before establishment.
+                return -1;
+            }
+        }
+        else if (is_loopback_peer(wsi))
+            managedWorkerTransport = true;
+        else
+            return -1;
+
+        auto ssn = createSession(wsi, std::move(principalId), managedWorkerTransport);
         // Session limit reached
         if (!ssn)
             return -1;
@@ -875,7 +944,20 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
     }
     else
     {
-        WORKER::instance()->queueLwsRequest(std::move(req.m_payload), LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id});
+        LwsSessionRef ref{req.m_session_ref, req.m_req_id, req.m_session_id};
+        // A WebSocket frame can self-declare Request.client_addr. Carry the accepted
+        // socket's identity so the worker overrides it, matching the uWS transport
+        // and WebSocketSession::handleRequest().
+        if (req.m_type == WSRequest::Type::WebSocketMessage)
+        {
+            if (auto session = findSession((lws *)req.m_session_ref))
+            {
+                ref.peerAddress = session->getPeerAddress();
+                ref.principalId = session->getPrincipalId();
+                ref.managedWorker = session->isManagedWorkerTransport();
+            }
+        }
+        WORKER::instance()->queueLwsRequest(std::move(req.m_payload), std::move(ref));
     }
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/models"
 	"github.com/laoshanxi/app-mesh/src/workflow/internal/parser"
+	"github.com/laoshanxi/app-mesh/src/workflow/internal/tlsconf"
 	"github.com/rs/xid"
 )
 
@@ -33,10 +34,11 @@ type activeApp struct {
 
 // ActiveSteps tracks currently running step app names for cancel propagation.
 type ActiveSteps struct {
-	mu        sync.Mutex
-	apps      map[string]activeApp // "job.step" → app info
-	client    *appmesh.AppMeshClient
-	serverURI string
+	mu           sync.Mutex
+	apps         map[string]activeApp // "job.step" → app info
+	client       *appmesh.AppMeshClient
+	serverURI    string
+	forwardToken string // transient shared-Dex bearer; never a local run capability
 }
 
 func NewActiveSteps(client *appmesh.AppMeshClient, serverURI string) *ActiveSteps {
@@ -59,8 +61,25 @@ func (a *ActiveSteps) Remove(jobName, stepName string) {
 	a.mu.Unlock()
 }
 
-// KillAll deletes all tracked running step apps from daemon (local and remote).
-// Remote kills run in parallel to avoid one unreachable node blocking the rest.
+// SetClient switches cancellation to the run-scoped execution credential once
+// it has been issued. Before this point no step can have registered itself.
+func (a *ActiveSteps) SetClient(client *appmesh.AppMeshClient) {
+	a.mu.Lock()
+	a.client = client
+	a.mu.Unlock()
+}
+
+// SetForwardToken installs the human caller's Dex bearer for remote cleanup.
+// It is kept in memory only and is distinct from the node-local run capability.
+func (a *ActiveSteps) SetForwardToken(token string) {
+	a.mu.Lock()
+	a.forwardToken = token
+	a.mu.Unlock()
+}
+
+// KillAll deletes all tracked local and remote step apps. Remote calls carry
+// only the caller's shared-Dex bearer; the node-local run capability never
+// crosses the forwarding boundary.
 func (a *ActiveSteps) KillAll() {
 	a.mu.Lock()
 	apps := make(map[string]activeApp, len(a.apps))
@@ -68,7 +87,13 @@ func (a *ActiveSteps) KillAll() {
 		apps[k] = v
 	}
 	a.apps = make(map[string]activeApp)
+	client := a.client
+	serverURI := a.serverURI
+	forwardToken := a.forwardToken
 	a.mu.Unlock()
+	if client == nil {
+		return
+	}
 
 	var wg sync.WaitGroup
 	for _, app := range apps {
@@ -76,42 +101,46 @@ func (a *ActiveSteps) KillAll() {
 			continue
 		}
 		if app.targetHost == "" {
-			a.client.DeleteApp(app.appName)
-		} else {
-			wg.Add(1)
-			go func(aa activeApp) {
-				defer wg.Done()
-				c, err := appmesh.NewTCPClient(appmesh.Option{
-					AppMeshUri:         a.serverURI,
-					ForwardTo:          aa.targetHost,
-					JwtToken:           a.client.GetToken(),
-					InsecureSkipVerify: true,
-				})
-				if err == nil {
-					c.DeleteApp(aa.appName)
-					c.CloseConnection()
-				}
-			}(app)
+			client.DeleteApp(app.appName)
+			continue
 		}
+		if forwardToken == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(aa activeApp) {
+			defer wg.Done()
+			option := appmesh.Option{
+				AppMeshUri: serverURI,
+				ForwardTo:  aa.targetHost,
+				JwtToken:   forwardToken,
+			}
+			tlsconf.Apply(&option)
+			if c, err := appmesh.NewTCPClient(option); err == nil {
+				c.DeleteApp(aa.appName)
+				c.CloseConnection()
+			}
+		}(app)
 	}
 	wg.Wait()
 }
 
 // Options configures workflow execution.
 type Options struct {
-	ClusterNodes      []string                              // known cluster node addresses
-	ServerURI         string                                // TCP server address for forwarding clients
-	DefaultTargetHost string                                // inherited target from parent job (sub-workflows)
-	CompletedJobs     map[string]string                     // jobs to skip on recovery
-	RecoveredSteps    map[string]map[string]map[string]any  // job → step → {stdout, exit_code, status, response}
-	OnJobDone         JobCallback                           // checkpoint update
-	OnStepDone        StepCallback                          // stdout archival (called after step, with full stdout)
-	StepLogPathFn     func(jobName, stepName string) string // returns file path for streaming step log
-	Log               logger.Log                            // per-run logger (nil = global stdout)
-	ActiveSteps       *ActiveSteps                          // cancel tracking (nil = no tracking)
-	CancelCtx         context.Context                       // workflow cancel context (passed to executors)
-	WorkflowBaseDir   string                                // base directory for workflow YAML files
-	CallerToken       string                                // run's caller JWT (empty for auto/recovered runs); injected into forward_token message payloads
+	ClusterNodes        []string                              // known cluster node addresses
+	ServerURI           string                                // TCP server address for forwarding clients
+	DefaultTargetHost   string                                // inherited target from parent job (sub-workflows)
+	CompletedJobs       map[string]string                     // jobs to skip on recovery
+	RecoveredSteps      map[string]map[string]map[string]any  // job → step → {stdout, exit_code, status, response}
+	OnJobDone           JobCallback                           // checkpoint update
+	OnStepDone          StepCallback                          // stdout archival (called after step, with full stdout)
+	StepLogPathFn       func(jobName, stepName string) string // returns file path for streaming step log
+	Log                 logger.Log                            // per-run logger (nil = global stdout)
+	ActiveSteps         *ActiveSteps                          // cancel tracking (nil = no tracking)
+	CancelCtx           context.Context                       // workflow cancel context (passed to executors)
+	WorkflowBaseDir     string                                // base directory for workflow YAML files
+	CallerToken         string                                // human caller Dex bearer only; internal capabilities never enter message payloads
+	WorkflowProcessUUID string                                // managed Workflow process that owns temporary command-step Apps
 }
 
 func (o *Options) log() logger.Log {
@@ -134,6 +163,7 @@ func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appm
 	if opts.ActiveSteps == nil {
 		opts.ActiveSteps = NewActiveSteps(client, opts.ServerURI)
 	}
+	opts.ActiveSteps.SetForwardToken(opts.CallerToken)
 	opts.CancelCtx = cancelCtx
 
 	// Apply input defaults and validate required inputs.
@@ -252,6 +282,7 @@ func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int,
 		ServerURI:    opts.ServerURI,
 		CancelCtx:    opts.CancelCtx,
 		CallerToken:  opts.CallerToken,
+		ProcessUUID:  opts.WorkflowProcessUUID,
 	}
 	exec.RunSubWorkflow = func(ctx context.Context, wfName string, inputs map[string]string, subDepth int) (int, map[string]string) {
 		subOpts := opts
@@ -260,12 +291,17 @@ func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int,
 		return runSubWorkflow(ctx, client, wfName, inputs, subDepth, subOpts)
 	}
 	if len(job.NodeLabel) > 0 {
-		target, err := executor.ResolveTargetNode(client, opts.ServerURI, job.NodeLabel, opts.ClusterNodes)
+		target, err := executor.ResolveTargetNode(
+			client, opts.ServerURI, job.NodeLabel, opts.ClusterNodes, opts.CallerToken,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("node resolution failed for job '%s': %w", job.Name, err)
 		}
 		exec.TargetHost = target
 	} else if opts.DefaultTargetHost != "" {
+		if opts.CallerToken == "" {
+			return nil, fmt.Errorf("cross-node job %q requires a transient caller Dex bearer", job.Name)
+		}
 		exec.TargetHost = opts.DefaultTargetHost
 	}
 	return exec, nil

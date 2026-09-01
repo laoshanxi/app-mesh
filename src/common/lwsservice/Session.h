@@ -65,13 +65,11 @@ struct Buffer
 class WebSocketSession
 {
 public:
-    explicit WebSocketSession(lws *lws, uint64_t id);
+    explicit WebSocketSession(lws *lws, uint64_t id, std::string principalId = "", bool managedWorkerTransport = false);
     ~WebSocketSession() = default;
 
     // Processes incoming request and generates response
     void handleRequest(const WSRequest &req);
-    static bool verifyToken(const std::string &token);
-
     // Enqueue outbound message; false if queue full. Copies into LWS_PRE-prefixed buffer.
     bool enqueueOutgoingMessage(std::unique_ptr<msgpack::sbuffer> payload);
 
@@ -83,6 +81,9 @@ public:
     struct lws *getWsi() const;
     uint64_t getId() const;
     std::time_t getConnectionAt() const;
+    const std::string &getPeerAddress() const { return m_peer_address; }
+    const std::string &getPrincipalId() const { return m_principal_id; }
+    bool isManagedWorkerTransport() const { return m_managed_worker_transport; }
 
     std::vector<std::uint8_t> onReceive(const void *in, size_t len, bool is_first, bool is_final);
 
@@ -90,6 +91,9 @@ private:
     lws *m_lws;
     const uint64_t m_id;
     const std::time_t m_connected_at;
+    const std::string m_peer_address;
+    const std::string m_principal_id;
+    const bool m_managed_worker_transport;
     Buffer m_buffer;
 
     mutable std::mutex m_outgoing_mutex;

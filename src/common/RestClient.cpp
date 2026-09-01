@@ -295,6 +295,18 @@ static void saveCookiesAfterRequest(CURL *curl, const SessionConfig &config, std
 	}
 }
 
+// A URL path joins with '/', never the native separator: fs::path would
+// render http://host:port\path on Windows and libcurl rejects the URL.
+static std::string joinUrl(const std::string &host, const std::string &path)
+{
+	if (path.empty())
+		return host;
+	std::string url = host;
+	if (!url.empty() && url.back() != '/' && path.front() != '/')
+		url += '/';
+	return url + path;
+}
+
 std::shared_ptr<CurlResponse> RestClient::request(
 	const std::string &host,
 	const web::http::method &mtd,
@@ -303,7 +315,8 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	std::map<std::string, std::string> header,
 	std::map<std::string, std::string> query,
 	std::map<std::string, std::string> formData,
-	long timeoutSeconds)
+	long timeoutSeconds,
+	const ClientSSLConfig *sslConfig)
 {
 	CurlGlobalInitializer::instance();
 
@@ -316,7 +329,7 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	}
 
 	// Build URL with query parameters
-	auto url = (fs::path(host) / path).string();
+	auto url = joinUrl(host, path);
 	if (!query.empty())
 	{
 		url += "?";
@@ -380,7 +393,7 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	}
 
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
-	setSslConfig(curl);
+	setSslConfig(curl, sslConfig);
 	setSessionConfig(curl); // Configure session/cookie handling
 
 	// Perform the request
@@ -441,7 +454,7 @@ std::shared_ptr<CurlResponse> RestClient::upload(
 	form.addFile(fieldName, file);
 
 	// Configure CURL options
-	const std::string url = (fs::path(host) / path).string();
+	const std::string url = joinUrl(host, path);
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
 	curl_easy_setopt(curl, CURLOPT_MIMEPOST, form.getMime()); // Use the MIME API
@@ -511,7 +524,7 @@ std::shared_ptr<CurlResponse> RestClient::download(
 	}
 
 	// Configure CURL options
-	const std::string url = (fs::path(host) / path).string();
+	const std::string url = joinUrl(host, path);
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, CONNECT_TIMEOUT_SECONDS);
@@ -579,15 +592,16 @@ void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 	m_sslConfig = sslConfig;
 }
 
-void RestClient::setSslConfig(CURL *curl)
+void RestClient::setSslConfig(CURL *curl, const ClientSSLConfig *sslConfig)
 {
-	bool verbose = spdlog::default_logger()->level() <= spdlog::level::debug;
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
+	const auto &config = sslConfig == nullptr ? m_sslConfig : *sslConfig;
+	// libcurl's verbose trace includes request headers and can expose bearer credentials.
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
 
-	const bool verify = m_sslConfig.m_verify_client || m_sslConfig.m_verify_server;
+	const bool verify = config.m_verify_client || config.m_verify_server;
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify);
-	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, m_sslConfig.m_verify_server ? 2L : 0L);
-	curl_easy_setopt(curl, CURLOPT_SSLVERSION, m_sslConfig.m_ssl_version);
+	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, config.m_verify_server ? 2L : 0L);
+	curl_easy_setopt(curl, CURLOPT_SSLVERSION, config.m_ssl_version);
 
 #if defined(_WIN32)
 	// CURLOPT_SSL_OPTIONS is a bitmask replaced on each call: both flags must be OR'd in one setopt.
@@ -595,31 +609,31 @@ void RestClient::setSslConfig(CURL *curl)
 #endif
 
 	// Client certificate configuration
-	if (m_sslConfig.m_verify_client &&
-		!m_sslConfig.m_certificate.empty() &&
-		!m_sslConfig.m_private_key.empty())
+	if (config.m_verify_client &&
+		!config.m_certificate.empty() &&
+		!config.m_private_key.empty())
 	{
-		curl_easy_setopt(curl, CURLOPT_SSLCERT, m_sslConfig.m_certificate.c_str());
+		curl_easy_setopt(curl, CURLOPT_SSLCERT, config.m_certificate.c_str());
 		curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
-		curl_easy_setopt(curl, CURLOPT_SSLKEY, m_sslConfig.m_private_key.c_str());
+		curl_easy_setopt(curl, CURLOPT_SSLKEY, config.m_private_key.c_str());
 		curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
 
-		if (!m_sslConfig.m_private_key_passwd.empty())
+		if (!config.m_private_key_passwd.empty())
 		{
-			curl_easy_setopt(curl, CURLOPT_KEYPASSWD, m_sslConfig.m_private_key_passwd.c_str());
+			curl_easy_setopt(curl, CURLOPT_KEYPASSWD, config.m_private_key_passwd.c_str());
 		}
 	}
 
 	// Server verification configuration
-	if (m_sslConfig.m_verify_server && !m_sslConfig.m_ca_location.empty())
+	if (config.m_verify_server && !config.m_ca_location.empty())
 	{
-		if (Utility::isDirExist(m_sslConfig.m_ca_location))
+		if (Utility::isDirExist(config.m_ca_location))
 		{
-			curl_easy_setopt(curl, CURLOPT_CAPATH, m_sslConfig.m_ca_location.c_str());
+			curl_easy_setopt(curl, CURLOPT_CAPATH, config.m_ca_location.c_str());
 		}
-		else if (Utility::isFileExist(m_sslConfig.m_ca_location))
+		else if (Utility::isFileExist(config.m_ca_location))
 		{
-			curl_easy_setopt(curl, CURLOPT_CAINFO, m_sslConfig.m_ca_location.c_str());
+			curl_easy_setopt(curl, CURLOPT_CAINFO, config.m_ca_location.c_str());
 		}
 	}
 }

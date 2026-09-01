@@ -90,14 +90,6 @@ impl AppRun {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct User {
-    pub name: String,
-    pub roles: Vec<String>,
-    pub locked: bool,
-    pub totp_enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Behavior {
     pub exit: Option<ExitAction>,
     pub control: Option<HashMap<String, String>>,
@@ -168,7 +160,7 @@ pub struct Application {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<u32>,
+    pub status: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docker_image: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -204,7 +196,20 @@ pub struct Application {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub starts: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub owner: Option<String>,
+    pub owner_principal_id: Option<String>,
+    /// Response-only human label for the owner. Authorization always uses
+    /// `owner_principal_id`; the daemon ignores this mutable value in requests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_display_name: Option<String>,
+    /// Present only in daemon responses (omitted by `AsJson` when unset).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_user: Option<String>,
+    /// True only for daemon-managed system applications.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<bool>,
+    /// Startup phase name; the daemon omits the default ("normal") phase.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub startup_phase: Option<String>,
     #[serde(rename = "pid_user", skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

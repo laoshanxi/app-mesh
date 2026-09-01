@@ -12,17 +12,14 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.zip.CRC32;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
@@ -44,11 +41,9 @@ public class AppMeshClient implements Closeable {
     private static final String HTTP_USER_AGENT_HEADER_NAME = "User-Agent";
     private static final String HTTP_USER_AGENT = "appmesh/java";
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String BASIC_PREFIX = "Basic ";
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
     private static final String ACCEPT_HEADER = "Accept";
     private static final String JSON_CONTENT_TYPE = "application/json; utf-8";
-    private static final int HTTP_PRECONDITION_REQUIRED = 428;
 
     private static final int DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
     private static final int DEFAULT_READ_TIMEOUT_MS = 300_000;
@@ -58,35 +53,9 @@ public class AppMeshClient implements Closeable {
             System.getProperty("os.name", "").toLowerCase().contains("win")
                     ? "c:/local/appmesh/ssl" : "/opt/appmesh/ssl";
     private static final String DEFAULT_SSL_CA_CERT = DEFAULT_SSL_DIR + "/ca.pem";
-    private static final String DEFAULT_SSL_CLIENT_CERT = DEFAULT_SSL_DIR + "/client.pem";
-    private static final String DEFAULT_SSL_CLIENT_KEY = DEFAULT_SSL_DIR + "/client-key.pem";
-
-    // Opt-in: the daemon only issues a refresh token to clients that ask for one, and this
-    // SDK stores and replays it.
-    private static final String WANT_REFRESH_TOKEN_HEADER = "X-Refresh-Token-Request";
-
-    // Auto-refresh pacing: the loop polls every TOKEN_REFRESH_POLL_SECONDS but renews only
-    // once the token has burned TOKEN_REFRESH_LIFETIME_RATIO of its own lifetime.
-    private static final long TOKEN_REFRESH_POLL_SECONDS = 300; // poll cap, NOT a renew interval
-    private static final long TOKEN_REFRESH_OFFSET_SECONDS = 30; // floor for the pre-expiry margin
-    private static final double TOKEN_REFRESH_LIFETIME_RATIO = 0.6; // rest is the retry budget
-    private static final double TOKEN_REFRESH_JITTER_RATIO = 0.1; // of the margin, so clients don't renew in lockstep
-    private static final long TOKEN_REFRESH_RETRY_BASE_SECONDS = 5;
-    private static final long TOKEN_REFRESH_RETRY_MAX_SECONDS = 60;
-    private static final int TOKEN_REFRESH_LOG_EVERY = 10; // log 1st failure, then every Nth
 
     private final String baseURL;
     private final AtomicReference<String> jwtToken = new AtomicReference<>(null);
-    // Refresh token from a login/TOTP/renew response; issued by both Keycloak and local-JWT
-    // daemons, absent against an older daemon that returns none. Echoed back on renew/logoff.
-    // Package-private so the pacing tests can seed it without a daemon.
-    final AtomicReference<String> refreshToken = new AtomicReference<>(null);
-    // Expire seconds from login, replayed on renew so the caller's TTL is kept; 0 = unknown.
-    private final AtomicLong loginExpireSeconds = new AtomicLong(0);
-    // Serializes renewals. Rotation makes a refresh token single-use, so two concurrent
-    // renewals would present the same one and the loser would be told it is revoked —
-    // permanently wedging a client that has no other credential.
-    private final Object renewLock = new Object();
     private volatile String forwardTo;
 
     // Per-instance SSL (avoids modifying JVM global defaults)
@@ -97,21 +66,6 @@ public class AppMeshClient implements Closeable {
     private final int connectTimeoutMs;
     private final int readTimeoutMs;
 
-    // Cookie file persistence
-    private final String cookieFile;
-
-    // Token auto-refresh: one daemon thread per client, woken by refreshMonitor.
-    private final boolean autoRefreshToken;
-    // Caller's refresh-token opt-in; null follows autoRefreshToken. See Builder#useRefreshToken.
-    private final Boolean useRefreshToken;
-    private final Object refreshMonitor = new Object();
-    private volatile Thread refreshThread; // guarded by refreshMonitor for writes
-    private boolean refreshStop; // guarded by refreshMonitor
-    // Set by stopTokenRefresh(); makes stop terminal so a renewal completing afterwards
-    // cannot resurrect the loop. Cleared only by an explicit startTokenRefresh().
-    private boolean refreshClosed; // guarded by refreshMonitor
-    private boolean refreshWake; // guarded by refreshMonitor
-
     /**
      * Internal constructor used by Builder and subclasses.
      */
@@ -121,21 +75,8 @@ public class AppMeshClient implements Closeable {
         this.readTimeoutMs = builder.readTimeoutMs;
         this.disableHostnameVerification = builder.disableSSLVerification;
 
-        this.cookieFile = builder.cookieFile;
-        this.autoRefreshToken = builder.autoRefreshToken;
-        this.useRefreshToken = builder.useRefreshToken;
-
-        // Load token from cookie file if exists
-        if (this.cookieFile != null && !this.cookieFile.isEmpty()) {
-            String savedToken = loadTokenFromFile();
-            if (savedToken != null) {
-                this.jwtToken.set(savedToken);
-            }
-        }
-
         if (builder.jwtToken != null) {
             this.jwtToken.set(builder.jwtToken);
-            onTokenChanged(builder.jwtToken);
         }
 
         // Explicit non-empty CA path must be readable; auto-detected defaults fall back to system trust
@@ -168,9 +109,6 @@ public class AppMeshClient implements Closeable {
         private String clientCertKeyFilePath;
         private char[] keyPassword;
         private String jwtToken;
-        private String cookieFile;
-        private boolean autoRefreshToken = false;
-        private Boolean useRefreshToken = null;
         private boolean disableSSLVerification = false;
         private int connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private int readTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
@@ -178,11 +116,9 @@ public class AppMeshClient implements Closeable {
         private boolean caCertExplicitlySet = false;
 
         public Builder() {
-            // Auto-detect default SSL certificates if the directory exists
+            // Auto-detect only the trust anchor. Client identities are always opt-in.
             if (new java.io.File(DEFAULT_SSL_DIR).isDirectory()) {
                 this.caCertFilePath = DEFAULT_SSL_CA_CERT;
-                this.clientCertFilePath = DEFAULT_SSL_CLIENT_CERT;
-                this.clientCertKeyFilePath = DEFAULT_SSL_CLIENT_KEY;
             }
         }
 
@@ -231,28 +167,6 @@ public class AppMeshClient implements Closeable {
         /** Initialize with an existing JWT token (no server verification). */
         public Builder jwtToken(String jwtToken) {
             this.jwtToken = jwtToken;
-            return this;
-        }
-
-        /** Cookie file path for persistent token storage. */
-        public Builder cookieFile(String cookieFile) {
-            this.cookieFile = cookieFile;
-            return this;
-        }
-
-        /** Enable automatic token refresh before expiration. */
-        public Builder autoRefreshToken(boolean enable) {
-            this.autoRefreshToken = enable;
-            return this;
-        }
-
-        /**
-         * Ask the daemon for a refresh token on login/renew. {@code null} (default) follows
-         * {@link #autoRefreshToken(boolean)}, which already says whether this client is
-         * long-lived; a refresh token is long-lived, so a one-shot client would leak one per run.
-         */
-        public Builder useRefreshToken(Boolean enable) {
-            this.useRefreshToken = enable;
             return this;
         }
 
@@ -359,710 +273,40 @@ public class AppMeshClient implements Closeable {
 
     @Override
     public void close() {
-        stopTokenRefresh();
         this.jwtToken.set(null);
-        this.refreshToken.set(null);
     }
 
-    // -------- Token Persistence --------
+    // -------- Bearer authentication --------
 
-    private void onTokenChanged(String token) {
-        if (cookieFile != null && !cookieFile.isEmpty()) {
-            saveTokenToFile(token);
-        }
-        if (token != null && !token.isEmpty() && autoRefreshToken) {
-            armTokenRefresh();
-        }
+    /** Attach a caller-owned access token in memory. */
+    public void setBearerToken(String token) {
+        String value = token == null ? null : token.trim();
+        this.jwtToken.set(value == null || value.isEmpty() ? null : value);
     }
 
-    /**
-     * Read a successful auth response: extract access_token, apply to this client, persist.
-     *
-     * @return the extracted JWT token
-     */
-    private String applyAuthToken(String responseContent) {
-        JSONObject jsonResponse = new JSONObject(responseContent);
-        String token = jsonResponse.getString("access_token");
-        this.jwtToken.set(token);
-        // Keycloak (OAuth2) mode returns a rotating refresh token; capture it when present so it
-        // can be echoed on renew/logoff. It rotates on every renew, so a present value replaces
-        // the stored one. It is absent in local-JWT mode, where we must not clear any prior value.
-        String refresh = jsonResponse.optString("refresh_token", null);
-        if (refresh != null && !refresh.isEmpty()) {
-            this.refreshToken.set(refresh);
-        }
-        onTokenChanged(token);
-        return token;
-    }
-
-    private String applyAuthToken(HttpURLConnection conn) throws IOException {
-        return applyAuthToken(Utils.readResponse(conn));
-    }
-
-    private void saveTokenToFile(String token) {
-        try {
-            File file = new File(cookieFile);
-            File parent = file.getParentFile();
-            if (parent != null && !parent.exists()) {
-                parent.mkdirs();
-            }
-            try (java.io.PrintWriter pw = new java.io.PrintWriter(file)) {
-                pw.println("# Netscape HTTP Cookie File");
-                if (token != null && !token.isEmpty()) {
-                    pw.println("localhost\tTRUE\t/\tTRUE\t0\tappmesh_auth_token\t" + token);
-                }
-            }
-            // Set file permissions to 600 on Unix
-            if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
-                file.setReadable(false, false);
-                file.setWritable(false, false);
-                file.setReadable(true, true);
-                file.setWritable(true, true);
-            }
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to save token to cookie file", e);
-        }
-    }
-
-    private String loadTokenFromFile() {
-        try {
-            File file = new File(cookieFile);
-            if (!file.exists()) {
-                return null;
-            }
-            try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(file))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    line = line.trim();
-                    if (line.isEmpty() || line.startsWith("#")) continue;
-                    String[] parts = line.split("\t");
-                    if (parts.length == 7 && "appmesh_auth_token".equals(parts[5])) {
-                        return parts[6];
-                    }
-                }
-            }
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to load token from cookie file", e);
-        }
-        return null;
-    }
-
-    // -------- Token Auto-Refresh --------
-
-    /**
-     * Start background token auto-refresh when enabled for this client.
-     *
-     * <p>Renewal happens once the token has consumed {@code TOKEN_REFRESH_LIFETIME_RATIO} of its
-     * lifetime, not on a fixed cadence; failed renewals retry with bounded backoff. Calling this
-     * while the loop already runs only wakes it to re-plan against the token that just changed.
-     */
-    public void startTokenRefresh() {
-        if (!autoRefreshToken) return;
-        synchronized (refreshMonitor) {
-            refreshClosed = false; // explicit call: the caller wants the loop running
-        }
-        armTokenRefresh();
-    }
-
-    /**
-     * Start the loop unless it has been stopped for good. Used by the internal token-changed
-     * callback: a renewal already in flight when stop was called will complete and land here,
-     * and without the refreshClosed guard it would spawn a thread with refreshStop=false that
-     * nothing can ever stop — leaking a renewer past close() and writing credentials back
-     * after logout() cleared them.
-     */
-    private void armTokenRefresh() {
-        if (!autoRefreshToken) return;
-        synchronized (refreshMonitor) {
-            if (refreshClosed) return;
-            if (refreshThread != null && refreshThread.isAlive()) {
-                refreshWake = true;
-                refreshMonitor.notifyAll();
-                return;
-            }
-            refreshStop = false;
-            refreshWake = false;
-            Thread t = new Thread(this::tokenRefreshLoop, "appmesh-token-refresh");
-            t.setDaemon(true);
-            refreshThread = t;
-            t.start();
-        }
-    }
-
-    /**
-     * Stop background token auto-refresh. Terminal: a renewal still in flight cannot restart
-     * the loop when it completes. Call startTokenRefresh() explicitly to re-arm.
-     */
-    public void stopTokenRefresh() {
-        Thread t;
-        synchronized (refreshMonitor) {
-            refreshClosed = true;
-            t = refreshThread;
-            if (t == null) return;
-            refreshStop = true;
-            refreshMonitor.notifyAll();
-        }
-        // The join stays OUTSIDE the monitor on purpose: the loop thread needs the monitor to
-        // finish its own renewal callback, so joining while holding it deadlocks immediately.
-        if (t != Thread.currentThread()) {
-            try {
-                t.join(5000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        synchronized (refreshMonitor) {
-            if (refreshThread == t) refreshThread = null;
-        }
-    }
-
-    /**
-     * Background loop: sleep, renew when due, repeat until stopped.
-     *
-     * <p>Failures retry with bounded backoff rather than disarming the loop: with a refresh token
-     * the daemon can still issue a new access token long after the old one expired.
-     */
-    private void tokenRefreshLoop() {
-        final Thread self = Thread.currentThread();
-        int failures = 0;
-        while (true) {
-            RefreshPlan plan = computeRefreshPlan();
-            long delaySeconds = plan.delaySeconds;
-            boolean due = plan.due;
-            if (failures > 0) {
-                delaySeconds = refreshRetryDelay(failures); // retry, not the stale plan
-                due = true;
-            }
-            // Deadline loop: a spurious wakeup must not be mistaken for the refresh point.
-            long deadline = System.currentTimeMillis() + delaySeconds * 1000L;
-            boolean woken = false;
-            synchronized (refreshMonitor) {
-                while (true) {
-                    if (refreshStop || refreshThread != self) return;
-                    if (refreshWake) {
-                        refreshWake = false;
-                        woken = true;
-                        break;
-                    }
-                    long remaining = deadline - System.currentTimeMillis();
-                    if (remaining <= 0) break;
-                    try {
-                        refreshMonitor.wait(remaining);
-                    } catch (InterruptedException e) {
-                        self.interrupt();
-                        return;
-                    }
-                }
-            }
-            if (woken) {
-                // Token changed externally: the failure history no longer applies to it.
-                failures = 0;
-                continue;
-            }
-            if (!due) continue; // woke short of the refresh point
-            try {
-                renewToken();
-            } catch (Exception e) {
-                failures++;
-                // Log sparsely: a daemon outage must not flood at the backoff rate.
-                if (failures == 1 || failures % TOKEN_REFRESH_LOG_EVERY == 0) {
-                    LOGGER.log(Level.WARNING, "Auto-refresh: token renewal failed (attempt " + failures + ")", e);
-                }
-                continue;
-            }
-            if (failures > 0) {
-                LOGGER.info("Auto-refresh: token renewal recovered after " + failures + " failure(s)");
-            }
-            failures = 0;
-        }
-    }
-
-    /** How long the refresh loop sleeps, and whether a renewal is due once it elapses. */
-    static final class RefreshPlan {
-        final long delaySeconds;
-        final boolean due;
-
-        RefreshPlan(long delaySeconds, boolean due) {
-            this.delaySeconds = delaySeconds;
-            this.due = due;
-        }
-    }
-
-    /**
-     * Seconds before expiry at which to renew: a fraction of the token's own lifetime,
-     * floored at {@code TOKEN_REFRESH_OFFSET_SECONDS}.
-     */
-    static double refreshMargin(String token, long exp, long iat) {
-        double lifetime = (iat > 0 && exp > iat) ? (double) (exp - iat) : exp - System.currentTimeMillis() / 1000.0;
-        double margin = Math.max(lifetime * (1 - TOKEN_REFRESH_LIFETIME_RATIO), TOKEN_REFRESH_OFFSET_SECONDS);
-
-        // Jitter derived from the token: stable across polls, distinct per client.
-        CRC32 crc = new CRC32();
-        crc.update(token.getBytes(StandardCharsets.UTF_8));
-        double spread = margin * TOKEN_REFRESH_JITTER_RATIO;
-        margin += ((crc.getValue() % 2001) / 1000.0 - 1.0) * spread;
-
-        // Clamp last: the 30s floor (and its jitter) must never exceed the token's own life,
-        // or every renewal would land past the refresh point and the loop would spin at ~1Hz.
-        return lifetime > 0 ? Math.min(margin, lifetime / 2) : margin;
-    }
-
-    /**
-     * Plan the next loop iteration. Sleep is capped at {@code TOKEN_REFRESH_POLL_SECONDS} so a
-     * token replaced elsewhere is noticed, but a wake-up short of the refresh point does not renew.
-     */
-    RefreshPlan computeRefreshPlan() {
-        String token = this.jwtToken.get();
-        if (token == null || token.isEmpty()) {
-            // A held refresh token can still mint a new access token, so an access token lost to
-            // an expired cookie is recoverable — but only if we actually try. With neither
-            // credential there is nothing to renew, so just idle.
-            String refresh = this.refreshToken.get();
-            if (refresh != null && !refresh.isEmpty()) {
-                return new RefreshPlan(1, true);
-            }
-            return new RefreshPlan(TOKEN_REFRESH_POLL_SECONDS, false);
-        }
-
-        long exp;
-        long iat;
-        try {
-            long[] times = decodeJwtTimes(token);
-            exp = times[0];
-            iat = times[1];
-        } catch (Exception e) {
-            return new RefreshPlan(TOKEN_REFRESH_POLL_SECONDS, true); // unreadable lifetime: fixed cadence
-        }
-
-        double wait = exp - refreshMargin(token, exp, iat) - System.currentTimeMillis() / 1000.0;
-        if (wait <= 0) {
-            return new RefreshPlan(1, true); // at or past the refresh point
-        }
-        if (wait > TOKEN_REFRESH_POLL_SECONDS) {
-            return new RefreshPlan(TOKEN_REFRESH_POLL_SECONDS, false); // not due; wake only to re-evaluate
-        }
-        return new RefreshPlan(Math.max(1, (long) Math.ceil(wait)), true);
-    }
-
-    /** Bounded exponential backoff for the nth consecutive renewal failure (n &gt;= 1). */
-    static long refreshRetryDelay(int failures) {
-        int shift = Math.min(Math.max(failures - 1, 0), 16);
-        return Math.min(TOKEN_REFRESH_RETRY_BASE_SECONDS << shift, TOKEN_REFRESH_RETRY_MAX_SECONDS);
-    }
-
-    /**
-     * Extract the {@code exp} and {@code iat} claims from a JWT without verifying the signature.
-     *
-     * @return {@code {exp, iat}}; iat is 0 when the claim is absent, and callers must cope
-     */
-    static long[] decodeJwtTimes(String token) {
-        String[] parts = token.split("\\.");
-        if (parts.length < 2) throw new IllegalArgumentException("Invalid JWT");
-        String payload = parts[1];
-        // Add base64 padding
-        switch (payload.length() % 4) {
-            case 2: payload += "=="; break;
-            case 3: payload += "="; break;
-        }
-        byte[] decoded = Base64.getUrlDecoder().decode(payload);
-        JSONObject claims = new JSONObject(new String(decoded, StandardCharsets.UTF_8));
-        return new long[] { claims.getLong("exp"), claims.optLong("iat", 0) };
-    }
-
-    // -------- Authentication --------
-
-    /** Typed result of a login attempt: either an issued JWT token or a pending TOTP challenge. */
-    public static class LoginResult {
-        private final String token;
-        private final String totpChallenge;
-
-        LoginResult(String token, String totpChallenge) {
-            this.token = token;
-            this.totpChallenge = totpChallenge;
-        }
-
-        /** The issued JWT token, or null when MFA is still required. */
-        public String getToken() {
-            return token;
-        }
-
-        /** The TOTP challenge to pass to {@link #validateTotp}, or null when login completed. */
-        public String getTotpChallenge() {
-            return totpChallenge;
-        }
-
-        /** Whether the server requires a TOTP code to complete this login. */
-        public boolean isMfaRequired() {
-            return totpChallenge != null;
-        }
-    }
-
-    /**
-     * Login with username/password and attach the issued token to this client.
-     *
-     * <p>On immediate success the result carries the JWT token. When the server replies with
-     * HTTP 428 and no valid TOTP code was supplied, the result carries the TOTP challenge
-     * instead ({@link LoginResult#isMfaRequired()} returns true); complete the login with
-     * {@link #validateTotp}. On success, the token is persisted to the configured cookie file
-     * and background refresh starts when enabled.
-     *
-     * @param username login name
-     * @param password login password
-     * @param totpCode TOTP code (null if not using MFA)
-     * @param tokenExpireSeconds token expiry in seconds
-     * @param audience JWT audience (null = default)
-     * @return a {@link LoginResult} holding either the JWT token or the TOTP challenge
-     * @throws IOException on network or authentication failure
-     */
-    public LoginResult login(String username, String password, String totpCode, long tokenExpireSeconds,
-            String audience) throws IOException {
-        return loginImpl(username, password, totpCode, Long.valueOf(tokenExpireSeconds), audience);
-    }
-
-    /**
-     * Login with username/password and attach the issued token to this client.
-     *
-     * @param tokenExpire token expiry as an ISO 8601 duration, e.g. {@code "P1W"}
-     *                    (null = server default)
-     * @see #login(String, String, String, long, String)
-     */
-    public LoginResult login(String username, String password, String totpCode, String tokenExpire,
-            String audience) throws IOException {
-        return loginImpl(username, password, totpCode,
-                tokenExpire == null ? null : Long.valueOf(Utils.toSeconds(tokenExpire)), audience);
-    }
-
-    /**
-     * Resolve the tri-state refresh-token opt-in: an explicit choice wins, otherwise auto-refresh
-     * decides — only a long-lived client has somewhere to keep (and eventually revoke) the
-     * credential. Package-private so the tri-state test can assert it without a daemon.
-     */
-    boolean wantsRefreshToken() {
-        return this.useRefreshToken != null ? this.useRefreshToken.booleanValue() : this.autoRefreshToken;
-    }
-
-    private LoginResult loginImpl(String username, String password, String totpCode, Long tokenExpireSeconds,
-            String audience) throws IOException {
-        Map<String, String> headers = new HashMap<>();
-        String basic = BASIC_PREFIX
-                + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
-        headers.put(AUTHORIZATION_HEADER, basic);
-        headers.put("X-Set-Cookie", "true");
-        // Opt in only when the caller wants one — the header is the daemon's sole trigger, and
-        // omitting it (rather than sending "false") is what suppresses issuance.
-        if (wantsRefreshToken()) {
-            headers.put(WANT_REFRESH_TOKEN_HEADER, "true");
-        }
-        if (tokenExpireSeconds != null) {
-            headers.put("X-Expire-Seconds", Long.toString(tokenExpireSeconds));
-        }
-        if (totpCode != null && !totpCode.isEmpty()) {
-            headers.put("X-Totp-Code", totpCode);
-        }
-        if (audience != null && !audience.isEmpty()) {
-            headers.put("X-Audience", audience);
-        }
-
-        HttpURLConnection conn = request("POST", "/appmesh/login", null, headers, null);
-        int statusCode = conn.getResponseCode();
-
-        if (statusCode == HttpURLConnection.HTTP_OK) {
-            // Remember the TTL before the token lands: applyAuthToken arms the refresh loop,
-            // whose renewals must replay it.
-            rememberExpireSeconds(tokenExpireSeconds);
-            return new LoginResult(applyAuthToken(conn), null);
-        } else if (statusCode == HTTP_PRECONDITION_REQUIRED) {
-            String responseContent = Utils.readResponseSafe(conn);
-            JSONObject jsonResponse = new JSONObject(responseContent);
-            if (jsonResponse.has("totp_challenge")) {
-                String challenge = jsonResponse.getString("totp_challenge");
-                if (totpCode != null && !totpCode.isEmpty()) {
-                    return new LoginResult(validateTotpImpl(username, challenge, totpCode, tokenExpireSeconds), null);
-                }
-                return new LoginResult(null, challenge);
-            }
-            throw new IOException("Login failed: HTTP " + statusCode + " - " + responseContent);
-        }
-
-        String errorBody = Utils.readErrorResponse(conn);
-        throw new IOException("Login failed: HTTP " + statusCode + " - " + errorBody);
-    }
-
-    /**
-     * Validate a TOTP challenge and store the returned JWT in this client session.
-     *
-     * @param tokenExpireSeconds token expiry in seconds
-     * @return the JWT token on success
-     */
-    public String validateTotp(String username, String challenge, String code, long tokenExpireSeconds)
-            throws IOException {
-        return validateTotpImpl(username, challenge, code, Long.valueOf(tokenExpireSeconds));
-    }
-
-    /**
-     * Validate a TOTP challenge and store the returned JWT in this client session.
-     *
-     * @param tokenExpire token expiry as an ISO 8601 duration, e.g. {@code "P1W"}
-     *                    (null = server default)
-     * @return the JWT token on success
-     */
-    public String validateTotp(String username, String challenge, String code, String tokenExpire)
-            throws IOException {
-        return validateTotpImpl(username, challenge, code,
-                tokenExpire == null ? null : Long.valueOf(Utils.toSeconds(tokenExpire)));
-    }
-
-    private String validateTotpImpl(String username, String challenge, String code, Long tokenExpireSeconds)
-            throws IOException {
-        JSONObject body = new JSONObject();
-        body.put("user_name", username);
-        body.put("totp_code", code);
-        body.put("totp_challenge", challenge);
-        if (tokenExpireSeconds != null) {
-            body.put("expire_seconds", tokenExpireSeconds.longValue());
-        }
-        Map<String, String> headers = new HashMap<>();
-        headers.put("X-Set-Cookie", "true");
-        if (wantsRefreshToken()) {
-            headers.put(WANT_REFRESH_TOKEN_HEADER, "true");
-        }
-        HttpURLConnection conn = request("POST", "/appmesh/totp/validate", body, headers, null);
-        if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
-            // A validated challenge completes the login, so it owes the same session setup as
-            // login(): capture the refresh token, remember the TTL, arm auto-refresh.
-            rememberExpireSeconds(tokenExpireSeconds);
-            return applyAuthToken(conn);
-        }
-        String errorBody = Utils.readResponseSafe(conn);
-        throw new IOException("TOTP validation failed: HTTP " + conn.getResponseCode() + " - " + errorBody);
-    }
-
-    /**
-     * Logout from the current session and clear any locally stored token state.
-     *
-     * <p>The local token state is cleared even when the server call fails.
-     *
-     * @return true when the server acknowledged the logoff
-     * @throws IOException on network failure or a non-2xx server response
-     */
-    public boolean logout() throws IOException {
-        stopTokenRefresh();
-        try {
-            Map<String, String> headers = null;
-            // Keycloak (OAuth2) mode revokes the server-side session via the refresh token;
-            // omitted in local-JWT mode where no refresh token is stored.
-            String refresh = this.refreshToken.get();
-            if (refresh != null && !refresh.isEmpty()) {
-                headers = new HashMap<>();
-                headers.put("X-Refresh-Token", refresh);
-            }
-            HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, headers, null);
-            return ensureOk("logout", conn);
-        } finally {
-            this.jwtToken.set(null);
-            this.refreshToken.set(null);
-            onTokenChanged(null);
-        }
-    }
-
-    /**
-     * Set a JWT token directly without server-side verification.
-     * Use when the token is already known to be valid.
-     * For server-side verification, use {@link #authenticate(String, String, String, boolean)} instead.
-     */
+    /** Source-compatible alias for {@link #setBearerToken(String)}. */
     public void setToken(String token) {
-        this.jwtToken.set(token);
-        onTokenChanged(token);
+        setBearerToken(token);
     }
 
-    /** Typed result of a token verification attempt. */
-    public static class AuthResult {
-        private final boolean success;
-        private final String response;
-
-        AuthResult(boolean success, String response) {
-            this.success = success;
-            this.response = response;
-        }
-
-        /** Whether the server accepted the token (and permission/audience checks, if any). */
-        public boolean isSuccess() {
-            return success;
-        }
-
-        /** The raw server response body (error details when {@link #isSuccess()} is false). */
-        public String getResponse() {
-            return response;
-        }
+    /** Remove the locally attached bearer without contacting Engine or the authentication service. */
+    public void clearBearerToken() {
+        this.jwtToken.set(null);
     }
 
-    /**
-     * Verify the provided JWT token with the server and optionally check permission.
-     *
-     * <p>When {@code updateSession} is {@code true}, the verified token is applied to this client session
-     * and the stored JWT token is updated on success. When {@code false}, the token is only
-     * verified and the local client state is left unchanged.
-     *
-     * @param token          JWT token to verify
-     * @param permission     optional permission to check (null to skip)
-     * @param audience       optional JWT audience (null to skip)
-     * @param updateSession  if true, update this client session with the verified token on success
-     * @return the verification outcome and server response
-     */
-    public AuthResult authenticate(String token, String permission, String audience, boolean updateSession)
-            throws IOException {
-        Map<String, String> headers = new HashMap<>();
-        headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
-        if (audience != null && !audience.isEmpty()) {
-            headers.put("X-Audience", audience);
-        }
-        if (permission != null && !permission.isEmpty()) {
-            headers.put("X-Permission", permission);
-        }
-        if (updateSession) {
-            headers.put("X-Set-Cookie", "true");
-        }
-        HttpURLConnection conn = request("POST", "/appmesh/auth", null, headers, null);
-        boolean ok = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
-        String responseText = Utils.readResponseSafe(conn);
-        if (updateSession && ok) {
-            applyAuthToken(responseText);
-        }
-        return new AuthResult(ok, responseText);
+    /** Return the current in-memory access token, or null. */
+    public String getToken() {
+        return this.jwtToken.get();
     }
 
-    /**
-     * Verify the provided JWT token with the server and optionally check permission.
-     * Defaults to {@code updateSession=true}, matching the Python SDK behavior.
-     *
-     * @return the verification outcome and server response
-     */
-    public AuthResult authenticate(String token, String permission, String audience) throws IOException {
-        return authenticate(token, permission, audience, true);
+    /** Return Engine's public OAuth/OIDC configuration. */
+    public JSONObject getAuthConfig() throws IOException {
+        return new JSONObject(Utils.readResponse(request("GET", "/appmesh/auth/config", null, null, null)));
     }
 
-    /**
-     * Renew the current JWT token with the server-default expiry.
-     *
-     * @return the new JWT token
-     */
-    public String renewToken() throws IOException {
-        return renewTokenImpl(null);
-    }
-
-    /**
-     * Renew the current JWT token.
-     *
-     * @param tokenExpireSeconds token expiry in seconds
-     * @return the new JWT token
-     */
-    public String renewToken(long tokenExpireSeconds) throws IOException {
-        return renewTokenImpl(Long.valueOf(tokenExpireSeconds));
-    }
-
-    /**
-     * Renew the current JWT token.
-     *
-     * @param tokenExpire token expiry as an ISO 8601 duration, e.g. {@code "P1D"}
-     *                    (null = server default)
-     * @return the new JWT token
-     */
-    public String renewToken(String tokenExpire) throws IOException {
-        return renewTokenImpl(tokenExpire == null ? null : Long.valueOf(Utils.toSeconds(tokenExpire)));
-    }
-
-    /** Record the TTL a session was established with, so renewals can replay it. */
-    private void rememberExpireSeconds(Long tokenExpireSeconds) {
-        this.loginExpireSeconds.set(tokenExpireSeconds == null ? 0 : tokenExpireSeconds.longValue());
-    }
-
-    private String renewTokenImpl(Long tokenExpireSeconds) throws IOException {
-        // Single-flight: a rotated refresh token is single-use, so a second concurrent renewal
-        // would present an already-spent credential and wedge the client for good.
-        synchronized (renewLock) {
-            Map<String, String> headers = new HashMap<>();
-            if (wantsRefreshToken()) {
-                headers.put(WANT_REFRESH_TOKEN_HEADER, "true");
-            }
-            // Replay the TTL the session was created with. Omit the header when unknown so the
-            // daemon applies its own default rather than silently upgrading a short-lived token.
-            long expire = tokenExpireSeconds != null ? tokenExpireSeconds.longValue() : this.loginExpireSeconds.get();
-            if (expire > 0) {
-                headers.put("X-Expire-Seconds", Long.toString(expire));
-            }
-            // A held refresh token is the sole credential the daemon needs, so renewal succeeds
-            // even after the access token expired; without one the access token is authenticated.
-            String refresh = this.refreshToken.get();
-            if (refresh != null && !refresh.isEmpty()) {
-                headers.put("X-Refresh-Token", refresh);
-            }
-            HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
-            if (conn.getResponseCode() == HttpURLConnection.HTTP_UNAUTHORIZED) {
-                // A rejected refresh token will never be accepted again (rotated away, revoked, or
-                // the session ended). Drop it so the next attempt falls back to the access token
-                // instead of replaying a credential that is now guaranteed to fail.
-                this.refreshToken.set(null);
-                throw new IOException("Token renewal failed: HTTP 401 - " + Utils.readErrorResponse(conn));
-            }
-            // Both modes rotate the refresh token on renew — applyAuthToken stores the new one.
-            return applyAuthToken(conn);
-        }
-    }
-
-    /**
-     * Return the TOTP provisioning URI ({@code otpauth://...}) for the current user,
-     * decoded from the server's base64 {@code mfa_uri} payload.
-     */
-    public String getTotpUri() throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/totp/secret", null, null, null);
-        String responseContent = Utils.readResponse(conn);
-        JSONObject jsonResponse = new JSONObject(responseContent);
-        String mfaUri = jsonResponse.getString("mfa_uri");
-        return new String(Base64.getDecoder().decode(mfaUri), StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Return the raw TOTP secret parsed from the provisioning URI's {@code secret} parameter.
-     * Use {@link #getTotpUri()} for the full {@code otpauth://} URI.
-     */
-    public String getTotpSecret() throws IOException {
-        String uri = getTotpUri();
-        int query = uri.indexOf('?');
-        if (query >= 0) {
-            for (String param : uri.substring(query + 1).split("&")) {
-                if (param.startsWith("secret=")) {
-                    return java.net.URLDecoder.decode(param.substring("secret=".length()), "UTF-8");
-                }
-            }
-        }
-        throw new IOException("TOTP URI does not contain a 'secret' field");
-    }
-
-    /** Enable TOTP for the current user with a 6-digit verification code; returns the new JWT token. */
-    public String enableTotp(String totpCode) throws IOException {
-        if (totpCode == null || !totpCode.matches("\\d{6}")) {
-            throw new IllegalArgumentException("TOTP code must be a 6-digit number");
-        }
-        Map<String, String> headers = new HashMap<>();
-        headers.put("X-Totp-Code", totpCode);
-        HttpURLConnection conn = request("POST", "/appmesh/totp/setup", null, headers, null);
-        if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
-            return applyAuthToken(conn);
-        }
-        String errorBody = Utils.readResponseSafe(conn);
-        throw new IOException("TOTP setup failed: HTTP " + conn.getResponseCode() + " - " + errorBody);
-    }
-
-    /** Disable TOTP for the current user. */
-    public boolean disableTotp() throws IOException {
-        return disableTotp("self");
-    }
-
-    /** Disable TOTP for a specific user. Throws IOException on failure. */
-    public boolean disableTotp(String user) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/totp/" + encodeURIComponent(user) + "/disable", null, null,
-                null);
-        return ensureOk("disableTotp", conn);
+    /** Return the verified principal represented by the current bearer. */
+    public JSONObject getCurrentPrincipal() throws IOException {
+        return new JSONObject(Utils.readResponse(request("GET", "/appmesh/principal/self", null, null, null)));
     }
 
     // -------- Labels / Tags --------
@@ -1582,65 +826,31 @@ public class AppMeshClient implements Closeable {
         return Utils.readResponse(conn);
     }
 
-    // -------- User Management --------
+    // -------- Principal authorization --------
 
-    /** Change password for a specific user. Throws IOException on failure. */
-    public boolean updatePassword(String oldPassword, String newPassword, String username) throws IOException {
-        JSONObject body = new JSONObject();
-        body.put("old_password", Base64.getEncoder().encodeToString(oldPassword.getBytes(StandardCharsets.UTF_8)));
-        body.put("new_password", Base64.getEncoder().encodeToString(newPassword.getBytes(StandardCharsets.UTF_8)));
-        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(username) + "/passwd", body,
-                null, null);
-        return ensureOk("updatePassword", conn);
+    /** List Engine authorization overlays keyed by immutable principal ID. */
+    public JSONObject listPrincipals() throws IOException {
+        return new JSONObject(Utils.readResponse(request("GET", "/appmesh/principals", null, null, null)));
     }
 
-    /** Change password for the current user. */
-    public boolean updatePassword(String oldPassword, String newPassword) throws IOException {
-        return updatePassword(oldPassword, newPassword, "self");
+    /** Update an Engine authorization overlay; this never changes IdP account data. */
+    public boolean updatePrincipal(String principalId, JSONObject policy) throws IOException {
+        HttpURLConnection conn = request("POST", "/appmesh/principal/" + encodeURIComponent(principalId), policy, null, null);
+        return ensureOk("updatePrincipal", conn);
     }
 
-    /** Add or update a user. Throws IOException on failure. */
-    public boolean addUser(String username, JSONObject userData) throws IOException {
-        HttpURLConnection conn = request("PUT", "/appmesh/user/" + encodeURIComponent(username), userData, null, null);
-        return ensureOk("addUser", conn);
+    /** Delete only the Engine authorization overlay for a principal. */
+    public boolean deletePrincipal(String principalId) throws IOException {
+        HttpURLConnection conn = request("DELETE", "/appmesh/principal/" + encodeURIComponent(principalId), null, null, null);
+        int status = conn.getResponseCode();
+        if (status == HttpURLConnection.HTTP_NO_CONTENT || status == HttpURLConnection.HTTP_OK) return true;
+        if (status == HttpURLConnection.HTTP_NOT_FOUND) return false;
+        throw new IOException("deletePrincipal failed with status " + status + ": " + Utils.readErrorResponse(conn));
     }
 
-    /** Delete a user. Returns false when the user does not exist; throws IOException on other failures. */
-    public boolean deleteUser(String username) throws IOException {
-        HttpURLConnection conn = request("DELETE", "/appmesh/user/" + encodeURIComponent(username), null, null, null);
-        return ensureOkOrNotFound("deleteUser", conn);
-    }
-
-    /** Lock a user account. Throws IOException on failure. */
-    public boolean lockUser(String username) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(username) + "/lock", null, null,
-                null);
-        return ensureOk("lockUser", conn);
-    }
-
-    /** Unlock a user account. Throws IOException on failure. */
-    public boolean unlockUser(String username) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/user/" + encodeURIComponent(username) + "/unlock", null,
-                null, null);
-        return ensureOk("unlockUser", conn);
-    }
-
-    /** List all users. */
-    public JSONObject listUsers() throws IOException {
-        HttpURLConnection conn = request("GET", "/appmesh/users", null, null, null);
-        return new JSONObject(Utils.readResponse(conn));
-    }
-
-    /** Get current authenticated user info. */
+    /** Safe source-compatibility alias; returns a Principal, not an IdP user record. */
     public JSONObject getCurrentUser() throws IOException {
-        HttpURLConnection conn = request("GET", "/appmesh/user/self", null, null, null);
-        return new JSONObject(Utils.readResponse(conn));
-    }
-
-    /** List user groups. */
-    public JSONObject listGroups() throws IOException {
-        HttpURLConnection conn = request("GET", "/appmesh/user/groups", null, null, null);
-        return new JSONObject(Utils.readResponse(conn));
+        return getCurrentPrincipal();
     }
 
     // -------- Permissions & Roles --------
@@ -1656,15 +866,20 @@ public class AppMeshClient implements Closeable {
         return permissions;
     }
 
-    /** List permissions for the current user. */
-    public Set<String> getUserPermissions() throws IOException {
-        HttpURLConnection conn = request("GET", "/appmesh/user/permissions", null, null, null);
+    /** List effective permissions for the current verified principal. */
+    public Set<String> getPrincipalPermissions() throws IOException {
+        HttpURLConnection conn = request("GET", "/appmesh/principal/self/permissions", null, null, null);
         JSONArray jsonArray = new JSONArray(Utils.readResponse(conn));
         Set<String> permissions = new HashSet<>();
         for (int i = 0; i < jsonArray.length(); i++) {
             permissions.add(jsonArray.getString(i));
         }
         return permissions;
+    }
+
+    /** Safe source-compatibility alias for {@link #getPrincipalPermissions()}. */
+    public Set<String> getUserPermissions() throws IOException {
+        return getPrincipalPermissions();
     }
 
     /** List all roles and their permissions. */

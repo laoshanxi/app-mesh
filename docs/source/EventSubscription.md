@@ -153,10 +153,10 @@ client.Unsubscribe(result.SubscriptionID)
 ### Python
 
 ```python
+import os
 from appmesh import AppMeshClientTCP, App
 
-client = AppMeshClientTCP()
-client.login("admin", "admin123")
+client = AppMeshClientTCP(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
 
 # Subscribe to events
 def on_event(event):
@@ -180,7 +180,7 @@ client.unsubscribe(result.subscription_id)
 import { AppMeshClientTCP } from 'appmesh/tcp'
 
 const client = new AppMeshClientTCP()
-await client.login('admin', 'admin123')
+client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN)
 
 // Subscribe
 const result = await client.subscribe('myapp', ['START', 'EXIT'], (event) => {
@@ -195,7 +195,7 @@ await client.unsubscribe(result.subscription_id)
 
 ```java
 AppMeshClientTCP client = new AppMeshClientTCP.Builder().disableSSLVerify().build();
-client.login("admin", "admin123");
+client.setBearerToken(System.getenv("APPMESH_BEARER_TOKEN"));
 
 // Subscribe to events
 JSONObject result = client.subscribe("myapp", "START", "EXIT");
@@ -214,7 +214,7 @@ client.unsubscribe(subId);
 
 ```rust
 let client = ClientBuilderTCP::new().danger_accept_invalid_certs(true).build()?;
-client.login("admin", "admin123", None, None, None).await?;
+client.client().set_token(&std::env::var("APPMESH_BEARER_TOKEN")?);
 
 // Subscribe to events
 let result = client.subscribe("myapp", Some(&["START", "EXIT"])).await?;

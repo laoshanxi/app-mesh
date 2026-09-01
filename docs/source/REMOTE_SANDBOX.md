@@ -40,20 +40,23 @@ Two channels:
 
 ## 3. Environment Variables
 
-| Variable               | Purpose                                  | Example                      |
-| ---------------------- | ---------------------------------------- | ---------------------------- |
-| `APPMESH_HOST`         | App Mesh server URL                      | `https://192.168.1.100:6060` |
-| `APPMESH_USER`         | Login username                           | `admin`                      |
-| `APPMESH_PASSWORD`     | Login password                           | `PASSWORD`                   |
-| `APPMESH_WORKSPACE`    | Remote working directory                 | `/home/dev/app-mesh`         |
-| `APPMESH_SSL_VERIFY`   | SSL certificate verification             | `false`                      |
-| `APPMESH_SYNC_EXCLUDE` | Extra exclude patterns (comma-separated) | `*.o,dist/`                  |
+| Variable                   | Purpose                                  | Example                      |
+| -------------------------- | ---------------------------------------- | ---------------------------- |
+| `APPMESH_ENGINE_URL`       | Target App Mesh Engine URL               | `https://192.168.1.100:6060` |
+| `APPMESH_ACCESS_TOKEN`     | OAuth access token used as the bearer    | Set from the OAuth result    |
+| `APPMESH_WORKSPACE`        | Remote working directory                 | `/home/dev/app-mesh`         |
+| `APPMESH_SSL_VERIFY`       | Engine certificate verification          | `true`                       |
+| `APPMESH_SYNC_EXCLUDE`     | Extra exclude patterns (comma-separated) | `*.o,dist/`                  |
 
-**Minimum config** (two variables):
+Obtain `APPMESH_ACCESS_TOKEN` before you start the remote tool. The tool never
+receives an identity-provider password.
+
+**Runtime config:**
 
 ```bash
-export APPMESH_HOST=https://192.168.1.100:6060
+export APPMESH_ENGINE_URL=https://192.168.1.100:6060
 export APPMESH_WORKSPACE=/home/dev/app-mesh
+# Set APPMESH_ACCESS_TOKEN from an OAuth result in the calling environment.
 ```
 
 ## 4. Prerequisites
@@ -102,7 +105,7 @@ Commands:
 
 - `run_app_async` (not `run_app_sync`) for all execution — enables real-time stdout streaming
 - `run_app_sync` only for quick infrastructure ops (extract tar, chmod, rm)
-- `auto_refresh_token=True` for long sessions
+- The bearer is supplied through `APPMESH_ACCESS_TOKEN`; the OAuth client performs renewal
 - `ssl_verify=False` by default (self-signed certs common in dev)
 - Exit code propagation: `sys.exit(rc)` so the coding agent sees build failures
 
@@ -115,8 +118,9 @@ Commands:
 pip install appmesh
 
 # 2. Set environment variables
-export APPMESH_HOST=https://192.168.1.100:6060
+export APPMESH_ENGINE_URL=https://192.168.1.100:6060
 export APPMESH_WORKSPACE=/home/dev/app-mesh
+# Set APPMESH_ACCESS_TOKEN from an OAuth result in the calling environment.
 
 # 3. Start a supported coding agent
 codex   # or: claude

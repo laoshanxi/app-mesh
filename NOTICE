@@ -21,6 +21,16 @@ OpenSSL
   URL: https://www.openssl.org/
   Copyright: Copyright (c) The OpenSSL Project Authors
 
+Dex
+  License: Apache License 2.0
+  URL: https://github.com/dexidp/dex
+  Copyright: Copyright (c) The Dex Authors
+
+golang.org/x/crypto/bcrypt (used by the App Mesh passhash helper)
+  License: BSD 3-Clause
+  URL: https://pkg.go.dev/golang.org/x/crypto/bcrypt
+  Copyright: Copyright (c) 2009 The Go Authors
+
 libcurl
   License: MIT/X (curl license)
   URL: https://curl.se/
@@ -112,19 +122,15 @@ Python SDK (appmesh):
   msgpack - Apache License 2.0
   requests_toolbelt - Apache License 2.0
   aniso8601 - BSD 3-Clause
-  PyJWT - MIT
 
 Go SDK:
   gorilla/mux - BSD 3-Clause
-  juju/persistent-cookiejar - BSD 3-Clause
   pkg/errors - BSD 2-Clause
-  pquerna/otp - Apache License 2.0
   rs/xid - MIT
   uber-go/zap - MIT
   uber-go/atomic - MIT
   vmihailenco/msgpack - BSD 2-Clause
   golang.org/x/sys - BSD 3-Clause
-  hashicorp/consul/api - MPL 2.0
   stretchr/testify - MIT (test dependency only)
 
 Rust SDK (appmesh):
@@ -183,15 +189,7 @@ Note on Copyleft Dependencies
 The following dependencies use copyleft or restrictive licenses. Users should
 be aware of their obligations when distributing App Mesh or its components.
 
-1. hashicorp/consul/api (MPL 2.0)
-   - Used by: Go SDK (consul service discovery)
-   - Boundary: Imported as a Go module dependency. App Mesh does not modify
-     any MPL-licensed source files.
-   - MPL 2.0 obligation: File-level copyleft only. Modifications to the
-     original MPL-licensed files must be shared under MPL. Combining with
-     other-licensed code in separate files is permitted.
-
-2. org.json (JSON License — "Good, not Evil" clause)
+1. org.json (JSON License — "Good, not Evil" clause)
    - Used by: Java SDK
    - Boundary: Included as a Maven dependency, not bundled.
    - Risk: The "shall be used for Good, not Evil" clause is considered

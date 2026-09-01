@@ -13,9 +13,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from appmesh import App, print_output_handler
 from _support import config
 
-USER = config.USER
-DEFAULT_CRED = config.CRED
-
 
 def get_test_paths():
     local_tmpdir = tempfile.gettempdir()
@@ -42,6 +39,23 @@ def get_long_running_command():
     return "python3 -c 'import time; [print(i) or time.sleep(1) for i in range(30)]'"
 
 
+def sample_daemon_fd(client, samples=3, interval=0.5):
+    """Minimum of N fd_daemon scrapes.
+
+    The daemon fd count has transient churn (in-flight spawn cleanup, timer
+    queues, keep-alive sockets); a min over several scrapes keeps that churn
+    out of leak assertions. Uses fd_daemon (daemon process only) — the tree-wide
+    fd metric also sums dex/agent/child churn the test does not control.
+    """
+    values = []
+    for i in range(samples):
+        values.append(client.get_host_resources().get("fd_daemon"))
+        if i + 1 < samples:
+            time.sleep(interval)
+    assert all(v is not None and v > 0 for v in values), f"fd_daemon missing or zero in host resources: {values}"
+    return min(values)
+
+
 # ---------------------------------------------------------------------------
 # Mixin: shared tests for all protocols (01-15)
 # ---------------------------------------------------------------------------
@@ -53,80 +67,41 @@ class ProtocolTestMixin:
 
     # -- Authentication -----------------------------------------------------
 
-    def test_01_login_logout(self):
-        """Login, verify token, logout, verify locked out."""
-        self.client.login(USER, DEFAULT_CRED)
-        token = self.client._get_access_token()
-        self.assertIsNotNone(token)
-        self.assertTrue(self.client.authenticate(token)[0])
-        self.assertTrue(self.client.logout())
+    def test_01_bearer_context(self):
+        """A caller-supplied Dex token is attached and can be cleared locally."""
+        config.attach_test_bearer(self.client)
+        self.assertIsNotNone(self.client._get_bearer_token())
+        self.client.clear_bearer_token()
         with self.assertRaises(Exception):
             self.client.list_apps()
 
-    def test_02_auth_audience(self):
-        """Audience-scoped authentication."""
-        with self.assertRaises(Exception):
-            self.client.login(USER, DEFAULT_CRED, audience="appmesh-service-na")
-        self.client.login(USER, DEFAULT_CRED, audience="your-service-api")
-        token = self.client._get_access_token()
-        self.assertFalse(self.client.authenticate(token)[0])
-        self.assertTrue(self.client.authenticate(token, audience="your-service-api")[0])
+    def test_02_auth_config(self):
+        """The protected resource advertises Dex as its only issuer."""
+        advertised = self.client.get_auth_config()
+        self.assertIn("issuer", advertised)
+        self.assertIn("audience", advertised)
+        self.assertIn("public_client_id", advertised)
 
-    def test_03_renew_token(self):
-        """Token renewal returns a different token."""
-        self.client.login(USER, DEFAULT_CRED)
-        t1 = self.client._get_access_token()
-        self.client.renew_token(100)
-        t2 = self.client._get_access_token()
-        self.assertNotEqual(t1, t2)
-        self.assertTrue(self.client.authenticate(t2)[0])
+    def test_03_current_principal(self):
+        """The daemon exposes the principal derived from the Dex access token."""
+        config.attach_test_bearer(self.client)
+        principal = self.client.get_current_principal()
+        self.assertIn("principal_id", principal)
+        self.assertIn(principal["kind"], ("user", "service"))
 
-    # -- User / Role management ---------------------------------------------
-
-    def test_04_user_management(self):
-        """User-related endpoints."""
-        self.client.login(USER, DEFAULT_CRED)
+    def test_04_authorization_view(self):
+        """Authorization data is principal-based; directory users are not exposed."""
+        config.attach_test_bearer(self.client)
         self.assertIn("permission-list", self.client.list_permissions())
-        self.assertIn("permission-list", self.client.get_user_permissions())
-        self.assertIn("mesh", self.client.list_users())
-        self.assertEqual(self.client.get_current_user()["email"], "admin@appmesh.com")
-        self.assertIsNone(self.client.lock_user("mesh"))
-        self.assertIsNone(self.client.unlock_user("mesh"))
-
-    def test_05_credential_change(self):
-        """Change credential, verify old fails, new works, restore."""
-        self.client.login(USER, DEFAULT_CRED)
-        temp_cred = "Admin@456"
-        try:
-            self.assertIsNone(self.client.update_password(DEFAULT_CRED, temp_cred))
-            with self.assertRaises(Exception):
-                self.client.login(USER, DEFAULT_CRED)
-            self.assertIsNone(self.client.login(USER, temp_cred))
-            self.assertIsNone(self.client.update_password(temp_cred, DEFAULT_CRED))
-        finally:
-            try:
-                self.client.login(USER, temp_cred)
-                self.client.update_password(temp_cred, DEFAULT_CRED)
-            except Exception:
-                pass
-
-    def test_06_roles_and_groups(self):
-        """Role and group listing."""
-        self.client.login(USER, DEFAULT_CRED)
-        self.assertIsNone(
-            self.client.update_role(
-                "manage",
-                ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"],
-            )
-        )
-        self.assertIn("manage", self.client.list_roles())
-        self.assertIn("admin", self.client.list_groups())
+        self.assertIn("permission-list", self.client.get_principal_permissions())
+        self.assertIsInstance(self.client.list_principals(), dict)
+        self.assertIsInstance(self.client.list_roles(), dict)
 
     # -- Labels / Tags ------------------------------------------------------
 
     def test_07_labels(self):
         """CRUD for labels."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self.assertIsNone(self.client.add_label("PyTag", "PyValue"))
         self.assertIn("PyTag", self.client.list_labels())
         self.assertIsNone(self.client.delete_label("PyTag"))
@@ -136,7 +111,7 @@ class ProtocolTestMixin:
 
     def test_08_app_list_and_get(self):
         """List applications and inspect one."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         apps = self.client.list_apps()
         self.assertGreater(len(apps), 0)
         first_app = apps[0].name
@@ -150,7 +125,7 @@ class ProtocolTestMixin:
 
     def test_09_app_add_enable_disable_delete(self):
         """Full lifecycle: add -> disable -> enable -> delete."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app = self.client.add_app(App({"command": "sleep 1000", "name": "SDK_TEST"}))
         self.assertTrue(hasattr(app, "name"))
         self.assertIsNone(self.client.disable_app("SDK_TEST"))
@@ -162,21 +137,21 @@ class ProtocolTestMixin:
 
     def test_10_app_run_sync(self):
         """Synchronous app execution."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         metadata = {"subject": "subject", "message": "msg"}
         app_data = {"command": "whoami", "metadata": json.dumps(metadata)}
         self.assertEqual(0, self.client.run_app_sync(app=App(app_data), max_time=5, lifecycle=6)[0])
 
     def test_11_app_run_timeout(self):
         """Long-running command killed by timeout exits non-zero."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         exit_code = self.client.run_app_sync(App({"command": get_long_running_command(), "shell": True}), max_time=3)[0]
         self.assertIsNotNone(exit_code)
         self.assertNotEqual(0, exit_code)
 
     def test_12_app_run_async(self):
         """Async run with wait."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         run = self.client.run_app_async(App({"command": get_long_running_command(), "shell": True}), max_time=4)
         run.wait()
 
@@ -184,7 +159,7 @@ class ProtocolTestMixin:
 
     def test_13_config_and_metrics(self):
         """Server config, metrics, and log level."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         resources = self.client.get_host_resources()
         self.assertEqual(resources.get("schema_version"), 3)
         self.assertIn("cpu_effective_processors", resources)
@@ -199,7 +174,7 @@ class ProtocolTestMixin:
 
     def test_14_get_config_roundtrip(self):
         """get_config / set_config roundtrip."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         orig = self.client.get_config()
         self.assertIn("REST", orig)
         result = self.client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
@@ -209,26 +184,26 @@ class ProtocolTestMixin:
     def test_15_context_manager(self):
         """Client used as context manager."""
         with self._create_client() as c:
-            c.login(USER, DEFAULT_CRED)
+            config.attach_test_bearer(c)
             apps = c.list_apps()
             self.assertGreater(len(apps), 0)
 
     def test_17_fd_no_leak_on_app_lifecycle(self):
-        """Spawn-and-cleanup loop must not leak file descriptors.
+        """Daemon-only spawn-and-cleanup loop must not leak file descriptors.
 
-        Each AppProcess opens a stdout pipe (2 fds) + log file (1 fd); after the
-        child exits and ~AppProcess runs they must all be released. Allow a small
-        slack for daemon-internal churn (timer queues, log rotation, etc.).
+        Each AppProcess opens a stdout pipe (2 fds) + log file (1 fd) in the
+        daemon; after the child exits and ~AppProcess runs they must all be
+        released. Assert on fd_daemon (daemon process only) — the tree-wide fd
+        metric also sums dex/agent/child churn the test does not control.
         """
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         # Warm-up: ensures lazy resources (sockets, log files) are already open.
         for i in range(3):
             name = f"SDK_FD_WARM_{i}"
             self.client.add_app(App({"command": "true", "name": name, "shell": True}))
             self.client.delete_app(name)
         time.sleep(2)
-        baseline = self.client.get_host_resources().get("fd")
-        self.assertIsNotNone(baseline)
+        baseline = sample_daemon_fd(self.client)
 
         # Spawn-and-delete a batch of short-lived apps.
         N = 20
@@ -236,12 +211,12 @@ class ProtocolTestMixin:
             name = f"SDK_FD_LOOP_{i}"
             self.client.add_app(App({"command": "echo fd_test", "name": name, "shell": True}))
             self.client.delete_app(name)
-        time.sleep(3)  # let exit finalization / ~AppProcess run for all of them
+        time.sleep(5)  # let exit finalization / ~AppProcess run for all of them
 
-        after = self.client.get_host_resources().get("fd")
+        after = sample_daemon_fd(self.client)
         delta = after - baseline
         # Generous threshold — anything close to N would indicate a per-spawn leak.
-        self.assertLess(delta, 10, f"fd grew by {delta} after {N} spawns (baseline={baseline}, after={after})")
+        self.assertLess(delta, 10, f"fd_daemon grew by {delta} after {N} spawns (baseline={baseline}, after={after})")
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +227,7 @@ class AppOutputMixin:
 
     def test_30_app_output_basic(self):
         """Read output from a running app, verify non-empty."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app_name = "SDK_OUTPUT_30"
         try:
             self.client.add_app(App({"command": "echo hello_output_test", "name": app_name, "shell": True}))
@@ -264,7 +239,7 @@ class AppOutputMixin:
 
     def test_31_app_output_incremental_position(self):
         """Two reads using stdout_position, verify continuation."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app_name = "SDK_OUTPUT_31"
         try:
             self.client.add_app(App({"command": "seq 1 20", "name": app_name, "shell": True}))
@@ -280,7 +255,7 @@ class AppOutputMixin:
 
     def test_32_app_output_maxsize_limit(self):
         """stdout_maxsize limits output — smaller maxsize returns less data."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app_name = "SDK_OUTPUT_32"
         try:
             self.client.add_app(App({"command": "seq 1 1000", "name": app_name, "shell": True}))
@@ -293,7 +268,7 @@ class AppOutputMixin:
 
     def test_33_app_output_exit_code(self):
         """Synchronous run returns exit_code via run_app_sync."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         exit_code, output = self.client.run_app_sync(App({"command": "echo done", "shell": True}), max_time=5)
         self.assertIsNotNone(exit_code)
         self.assertEqual(exit_code, 0)
@@ -301,7 +276,7 @@ class AppOutputMixin:
 
     def test_34_app_output_long_poll(self):
         """Long-poll timeout=2 on idle app blocks approximately 2s."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app_name = "SDK_OUTPUT_34"
         try:
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
@@ -315,50 +290,28 @@ class AppOutputMixin:
 
 
 # ---------------------------------------------------------------------------
-# User management CRUD tests (40-43)
+# Principal authorization tests (40-43)
 # ---------------------------------------------------------------------------
-class UserManagementMixin:
-    """Tests for add_user, delete_user, roles."""
+class PrincipalManagementMixin:
+    """Tests for Dex-principal authorization overlays and roles."""
 
-    def test_40_add_and_delete_user(self):
-        """Create user, verify in list, delete, verify gone."""
-        self.client.login(USER, DEFAULT_CRED)
-        username = "sdk_test_user_40"
-        try:
-            self.client.add_user(username, {"key": "Test@1234", "roles": ["manage"]})
-            users = self.client.list_users()
-            self.assertIn(username, users)
-        finally:
-            try:
-                self.client.delete_user(username)
-            except Exception:
-                pass
-        users = self.client.list_users()
-        self.assertNotIn(username, users)
+    def test_40_current_principal_is_listed(self):
+        config.attach_test_bearer(self.client)
+        principal_id = self.client.get_current_principal()["principal_id"]
+        self.assertIn(principal_id, self.client.list_principals())
 
-    def test_41_add_user_with_roles(self):
-        """Create user with role and group, verify attributes."""
-        self.client.login(USER, DEFAULT_CRED)
-        username = "sdk_test_user_41"
-        try:
-            self.client.add_user(username, {"key": "Test@1234", "roles": ["manage"], "group": "admin"})
-            users = self.client.list_users()
-            self.assertIn(username, users)
-        finally:
-            try:
-                self.client.delete_user(username)
-            except Exception:
-                pass
+    def test_41_effective_permissions(self):
+        config.attach_test_bearer(self.client)
+        self.assertIsInstance(self.client.get_principal_permissions(), list)
 
-    def test_42_delete_nonexistent_user(self):
-        """Deleting nonexistent user raises exception."""
-        self.client.login(USER, DEFAULT_CRED)
+    def test_42_delete_nonexistent_principal(self):
+        config.attach_test_bearer(self.client)
         with self.assertRaises(Exception):
-            self.client.delete_user("nonexistent_user_xyz_42")
+            self.client.delete_principal("oidc:nonexistent-principal-42")
 
     def test_43_delete_role(self):
         """Create role, verify, delete, verify gone."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         role_name = "sdk_test_role_43"
         try:
             self.client.update_role(role_name, ["app-control"])
@@ -380,7 +333,7 @@ class TaskOperationMixin:
 
     def test_50_run_task_echo(self):
         """Register an echo app, run_task, verify response."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app_name = "SDK_TASK_50"
         try:
             self.client.add_app(App({"command": "cat", "name": app_name, "shell": True}))
@@ -394,7 +347,7 @@ class TaskOperationMixin:
 
     def test_51_cancel_task_no_pending(self):
         """cancel_task when nothing pending returns False."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app_name = "SDK_TASK_51"
         try:
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
@@ -414,7 +367,7 @@ class FileTransferMixin:
     def test_20_file_download(self):
         """Download server log to local."""
         paths = get_test_paths()
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         local = "download_test.log"
         try:
             if os.path.exists(local):
@@ -428,7 +381,7 @@ class FileTransferMixin:
     def test_21_file_upload_download_roundtrip(self):
         """Upload a file, then download it, verify content exists."""
         paths = get_test_paths()
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         local_src = "roundtrip_src.log"
         local_dst = "roundtrip_dst.log"
         remote = paths["remote_tmp"]
@@ -451,7 +404,7 @@ class FileTransferMixin:
     def test_22_download_readonly_file(self):
         """Download a read-only system file."""
         paths = get_test_paths()
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         local = "etc_download"
         try:
             self.assertIsNone(self.client.download_file(paths["etc_file"], local))
@@ -469,29 +422,12 @@ class SubscribeMixin:
     """Subscribe/publish integration tests. Requires TCP or WSS transport."""
 
     def _ensure_subscribe_permission(self):
-        """Grant app-subscribe to admin by adding a subscriber role and updating the user."""
-        if not getattr(SubscribeMixin, "_subscribe_permission_granted", False):
-            self.client.update_role("subscriber", ["app-subscribe"])
-            users = self.client.list_users()
-            admin_data = users.get("admin", {})
-            if isinstance(admin_data, dict):
-                admin_roles = list(admin_data.get("roles", []))
-                if "subscriber" not in admin_roles:
-                    admin_roles.append("subscriber")
-                    user_body = {
-                        "roles": admin_roles,
-                        "email": admin_data.get("email", "admin@appmesh.com"),
-                        "group": admin_data.get("group", "admin"),
-                    }
-                    if admin_data.get("exec_user"):
-                        user_body["exec_user"] = admin_data["exec_user"]
-                    self.client.add_user("admin", user_body)
-            self.client.login(USER, DEFAULT_CRED)
-            SubscribeMixin._subscribe_permission_granted = True
+        """The pre-provisioned test principal must include app-subscribe."""
+        self.assertIn("app-subscribe", self.client.get_principal_permissions())
 
     def test_60_subscribe_process_start(self):
         """Subscribe to START, enable a disabled app, verify event."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_60"
         sub_result = None
@@ -520,7 +456,7 @@ class SubscribeMixin:
 
     def test_61_subscribe_process_exit(self):
         """Subscribe to EXIT, verify exit event with exit_code."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_61"
         sub_id = None
@@ -557,7 +493,7 @@ class SubscribeMixin:
 
     def test_62_subscribe_stdout(self):
         """Subscribe to stdout, verify output data events arrive."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_62"
         sub_result = None
@@ -587,7 +523,7 @@ class SubscribeMixin:
 
     def test_63_unsubscribe_stops_events(self):
         """After unsubscribe, no more callbacks."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_63"
         sub_result = None
@@ -629,7 +565,7 @@ class SubscribeMixin:
         when the demuxer mis-routes a concurrent event message as the
         subscribe response — a transport-layer timing issue tracked separately.
         """
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_64"
         sub_result = None
@@ -653,7 +589,7 @@ class SubscribeMixin:
 
     def test_65_subscribe_multiple_event_types(self):
         """Subscribe to both START and EXIT, verify both arrive."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_65"
         sub_result = None
@@ -691,7 +627,7 @@ class SubscribeMixin:
 
         Conformance: S4 (partial) — see docs/source/SDKContract.md.
         """
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_66"
         try:
@@ -715,7 +651,7 @@ class SubscribeMixin:
 
     def test_67_subscribe_app_removed(self):
         """Subscribe to REMOVED, delete app, verify event."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_67"
         sub_result = None
@@ -745,7 +681,7 @@ class SubscribeMixin:
 
     def test_68_subscribe_status_change(self):
         """Subscribe to STATUS, enable/disable, verify event."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_SUB_68"
         sub_result = None
@@ -776,7 +712,7 @@ class SubscribeMixin:
         Captures stdout to assert the subscribe/dispatch path actually delivered the
         process output (not just that the run exited with 0).
         """
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         run = self.client.run_app_async(
             App({"command": "echo streaming-ok && exit 0", "shell": True}),
@@ -804,7 +740,7 @@ class SubscribeWildcardMixin:
 
     def test_70_wildcard_subscribe_all(self):
         """Subscribe '*' to START, register 2 apps, verify events from both."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app1 = "SDK_WILD_70A"
         app2 = "SDK_WILD_70B"
@@ -834,7 +770,7 @@ class SubscribeWildcardMixin:
 
     def test_71_wildcard_unsubscribe(self):
         """Subscribe '*', receive events, unsubscribe, verify no more."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_WILD_71"
         sub_result = None
@@ -868,7 +804,7 @@ class SubscribeWildcardMixin:
 
     def test_72_multiple_subs_same_app(self):
         """Two subscriptions on same app, different events, verify isolation."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_WILD_72"
         sub1 = sub2 = None
@@ -912,7 +848,7 @@ class SubscribeWildcardMixin:
 
     def test_73_event_sequence_monotonic(self):
         """Event sequence numbers increase monotonically."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_WILD_73"
         sub_result = None
@@ -963,7 +899,7 @@ class StressTestMixin:
 
     def test_80_stress_rapid_add_delete_cycle(self):
         """20x add+delete loop, verify no leftover."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app_name = "SDK_STRESS_80"
         for _ in range(20):
             self.client.add_app(App({"command": "sleep 1", "name": app_name}))
@@ -972,7 +908,7 @@ class StressTestMixin:
 
     def test_81_stress_rapid_enable_disable_cycle(self):
         """20x enable/disable on one app, verify valid state."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         app_name = "SDK_STRESS_81"
         try:
             self.client.add_app(App({"command": "sleep 1000", "name": app_name}))
@@ -986,13 +922,13 @@ class StressTestMixin:
 
     def test_82_stress_concurrent_clients_list_apps(self):
         """5 threads x 10 list_apps calls, verify all succeed."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         errors = []
 
         def worker():
             c = self._create_client()
             try:
-                c.login(USER, DEFAULT_CRED)
+                config.attach_test_bearer(c)
                 for _ in range(10):
                     apps = c.list_apps()
                     if len(apps) == 0:
@@ -1014,14 +950,14 @@ class StressTestMixin:
 
     def test_83_stress_concurrent_add_delete(self):
         """5 threads each add+delete unique app simultaneously."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         barrier = threading.Barrier(5, timeout=10)
         errors = []
 
         def worker(idx):
             try:
                 c = self._create_client()
-                c.login(USER, DEFAULT_CRED)
+                config.attach_test_bearer(c)
                 name = f"SDK_STRESS_83_{idx}"
                 c.add_app(App({"command": "sleep 1", "name": name}))
                 barrier.wait()
@@ -1040,22 +976,22 @@ class StressTestMixin:
 
     def test_84_stress_rapid_run_sync(self):
         """10x run_app_sync with trivial command, verify all exit_code=0."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         for _ in range(10):
             exit_code, _ = self.client.run_app_sync(App({"command": "echo ok", "shell": True}), max_time=5)
             self.assertEqual(0, exit_code)
 
-    def test_85_stress_rapid_login_logout(self):
-        """10x login/logout cycle."""
+    def test_85_stress_rapid_bearer_attach_clear(self):
+        """10x caller-managed bearer attach/clear cycle."""
         for _ in range(10):
-            self.client.login(USER, DEFAULT_CRED)
+            config.attach_test_bearer(self.client)
             apps = self.client.list_apps()
             self.assertGreater(len(apps), 0)
-            self.client.logout()
+            self.client.clear_bearer_token()
 
     def test_86_stress_rapid_label_churn(self):
         """20x add+delete label."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         for i in range(20):
             label = f"STRESS_LABEL_{i}"
             self.client.add_label(label, f"value_{i}")
@@ -1070,7 +1006,7 @@ class StressTestMixin:
         worker must finish within DEADLINE; if any thread is stuck the join
         times out and the test fails with a clear message.
         """
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         N = 6
         DEADLINE = 60  # whole test must finish well under this
         barrier = threading.Barrier(N, timeout=15)
@@ -1081,7 +1017,7 @@ class StressTestMixin:
             name = f"SDK_STRESS_87_{idx}"
             try:
                 c = self._create_client()
-                c.login(USER, DEFAULT_CRED)
+                config.attach_test_bearer(c)
                 # All workers start the lifecycle storm together
                 barrier.wait()
                 c.add_app(App({"command": "sleep 30", "name": name, "status": 0}))
@@ -1124,15 +1060,14 @@ class StressTestMixin:
         different threads and m_selfRef stays held, AppProcess refcounts get
         stuck > 0 and ~AppProcess never runs — leaking pipe + log fds per spawn.
         """
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         # Warm-up to settle lazy resources before baseline.
         for i in range(3):
             n = f"SDK_FD_STRESS_WARM_{i}"
             self.client.add_app(App({"command": "true", "name": n, "shell": True}))
             self.client.delete_app(n)
         time.sleep(2)
-        baseline = self.client.get_host_resources().get("fd")
-        self.assertIsNotNone(baseline)
+        baseline = sample_daemon_fd(self.client)
 
         N_WORKERS = 4
         CYCLES_PER_WORKER = 5
@@ -1141,7 +1076,7 @@ class StressTestMixin:
         def worker(idx):
             c = self._create_client()
             try:
-                c.login(USER, DEFAULT_CRED)
+                config.attach_test_bearer(c)
                 for j in range(CYCLES_PER_WORKER):
                     name = f"SDK_FD_STRESS_{idx}_{j}"
                     c.add_app(App({"command": "echo fd_stress", "name": name, "shell": True}))
@@ -1164,11 +1099,11 @@ class StressTestMixin:
         self.assertEqual(errors, [], f"Worker errors: {errors}")
         time.sleep(5)  # let exit finalization / ~AppProcess fully drain
 
-        after = self.client.get_host_resources().get("fd")
+        after = sample_daemon_fd(self.client)
         delta = after - baseline
         total_spawns = N_WORKERS * CYCLES_PER_WORKER
         # A per-spawn leak would push delta well above this.
-        self.assertLess(delta, 5, f"fd grew by {delta} after {total_spawns} concurrent spawns "
+        self.assertLess(delta, 5, f"fd_daemon grew by {delta} after {total_spawns} concurrent spawns "
                                    f"(baseline={baseline}, after={after})")
 
 
@@ -1180,7 +1115,7 @@ class SubscribeStressMixin:
 
     def test_90_subscribe_stress_during_rapid_add_delete(self):
         """Wildcard subscribe, rapidly add+delete 5 apps, verify events received."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         sub_result = None
         app_names = [f"SDK_CHAOS_90_{i}" for i in range(5)]
@@ -1211,7 +1146,7 @@ class SubscribeStressMixin:
 
     def test_91_subscribe_stress_during_rapid_enable_disable(self):
         """Subscribe STATUS, 5x enable/disable, verify events."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_91"
         sub_result = None
@@ -1239,7 +1174,7 @@ class SubscribeStressMixin:
 
     def test_92_subscribe_stress_many_subscriptions(self):
         """Create 10 subscriptions on different apps, verify callbacks fire."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_names = [f"SDK_CHAOS_92_{i}" for i in range(10)]
         subs = []
@@ -1281,7 +1216,7 @@ class SubscribeStressMixin:
 
     def test_93_subscribe_stress_recreate_app(self):
         """Subscribe -> delete -> re-create same name -> verify new events."""
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_93"
         sub_result = None
@@ -1321,7 +1256,7 @@ class SubscribeStressMixin:
         The app paces its output to exercise sustained event delivery after the atomic
         subscription has installed the connection demuxer.
         """
-        self.client.login(USER, DEFAULT_CRED)
+        config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()
         app_name = "SDK_CHAOS_94"
         result = None

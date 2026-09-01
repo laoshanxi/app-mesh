@@ -1,0 +1,84 @@
+---
+Authorization:
+  # `explicit` rejects unknown Dex subjects. `explicit-or-minimal` creates an active principal
+  # with no roles, so authentication succeeds but protected operations remain forbidden.
+  provisioning: explicit-or-minimal
+
+  # Built-in mode grants this role exactly once through the loopback enrollment API.
+  # The durable marker prevents enrollment from reopening if the administrator is later removed.
+  first_admin_role: appmesh-admin
+  # Immutable Dex subject derived from the packaged administrator's static userID.
+  # This is public identity metadata, not a credential. Only this verified subject
+  # may perform the automatic one-time local enrollment.
+  first_admin_subject: CiQyZDFjOGMzOC0zODk4LTRjODktYTc4Yi0zY2FhNDJmMjAzYzESBWxvY2Fs
+  first_admin_enrolled: false
+
+  principals:
+    system:appmesh:
+      kind: system
+      issuer: appmesh-internal
+      subject: appmesh
+      status: active
+      execution_user: ""
+      roles: []
+
+    # Pre-seeded read-only binding for the packaged guest login
+    # (`guest@appmesh.local`, user ID 93ad39b4-eb6f-4945-97a1-3366451867fb).
+    # The key is the deterministic stable identifier for the factory-default
+    # issuer: "oidc:" + SHA-256 hex of issuer + NUL + subject. The static-password
+    # subject is base64url(protobuf{field1: userID, field2: "local"}).
+    # With a custom built-in issuer this entry stays inert; bootstrap adds the
+    # equivalent binding for the configured issuer without rewriting this file.
+    oidc:eaa48d4270588186389c55543f43ff103c67a26f13b21a447d0da5e16dd8083f:
+      kind: user
+      issuer: http://127.0.0.1:6062/auth
+      subject: CiQ5M2FkMzliNC1lYjZmLTQ5NDUtOTdhMS0zMzY2NDUxODY3ZmISBWxvY2Fs
+      status: active
+      execution_user: ""
+      roles: [appmesh-viewer]
+
+  roles:
+    # Package lifecycle automation may enumerate and stop non-system Apps. It
+    # deliberately has no Principal, role, configuration, or first-admin
+    # administration capabilities. app-manage-all only bypasses per-App owner
+    # share bits; app-control remains required for enable/disable operations.
+    appmesh-maintenance:
+      - app-control
+      - app-manage-all
+      - app-view-all
+    appmesh-admin:
+      - app-control
+      - app-delete
+      - app-manage-all
+      - app-reg
+      - app-subscribe
+      - app-run-async
+      - app-run-sync
+      - app-run-task
+      - app-view-all
+      - app-view
+      - app-output-view
+      - config-set
+      - config-view
+      - file-download
+      - file-upload
+      - host-resource-view
+      - label-delete
+      - label-set
+      - label-view
+      - permission-list
+      - principal-delete
+      - principal-list
+      - principal-set
+      - role-delete
+      - role-set
+      - role-view
+      - workflow-admin
+    appmesh-viewer:
+      - app-view-all
+      - app-view
+      - app-output-view
+      - config-view
+      - host-resource-view
+      - label-view
+      - role-view

@@ -30,13 +30,13 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 - **runs.json** — Per-workflow run history index (separate from checkpoint).
 - **Trigger (v1)** — Built into the workflow engine: event listener subscribes to App events, fires workflow runs as goroutines. Cron is NOT built in — `on.schedule` in YAML is parsed but a warning is emitted; use external App Mesh cron apps instead.
 - **Cancel** — `cancelRun` cancels the goroutine context AND calls `KillAll()` on tracked active step Apps via `DeleteApp`.
-- **Identity** — manual runs execute steps under the triggering caller's identity; automatic (event) runs use the workflow's declared `execution_identity` or fail closed (ADR 0006, plus the shipped `execution_identity` part of ADR 0004). The triggering user is recorded as `actor` in the run record.
+- **Identity** — manual runs use the caller's Engine-validated bearer; automatic and recovered execution uses a short-lived local Engine capability bound to the current owner and managed Workflow process. Owners and human actors are immutable Principal IDs; a new automatic Run uses the explicit `internal:workflow-trigger` audit marker, while recovery preserves the original actor/source. Registering an automatic trigger requires `workflow-admin` (ADR 0006 and ADR 0009).
 
-### v2 Target (ADR 0004 — mostly not implemented; `execution_identity` has shipped)
+### v2 Target (ADR 0004 — mostly not implemented)
 
 - **Unified Run Management** — All trigger sources create a Run Record via a single API. Engine only executes, never decides when to run. Triggers are fully external.
-- **Run Record** — Single source of truth replacing checkpoint.json + runs.json. Contains actor, execution_identity, per-job state.
-- **Actor** — Who triggered the Run. **Execution Identity** — What credentials steps use. **Resource Owner** — Who owns the workflow. Three distinct roles.
+- **Run Record** — Single source of truth replacing checkpoint.json + runs.json. Contains immutable owner/actor Principal IDs, trigger source, and per-job state. It never contains a bearer token.
+- **Actor** — Principal that initiated a manual Run, or the explicit `internal:workflow-trigger` marker for a newly automatic Run; recovery preserves this original value. **Resource Owner** — Principal that registered the workflow and whose current RBAC bounds the local run capability.
 - **First-class Workflow resource** — Daemon-native, not a pseudo-App.
 
 ### Data Lifecycle
@@ -74,5 +74,5 @@ Step references are scoped to the current Job. Cross-job references use the `job
 | Task | Request-response message API (`/app/{name}/task`) | Do not use. Use "Step" or "message step" instead. |
 | App | A real managed process | In v1, workflow is registered as a special App for CRUD/RBAC. Not a runnable App. |
 | Run | `POST /app/run` executes an App (App Run) | `appm workflow run` creates a Workflow Run. Internally each step creates an App Run. |
-| Owner | App Mesh user who owns an App | Resource Owner — who owns the workflow definition (the authenticated registrant). `actor` and `execution_identity` are tracked separately (ADR 0006/0004). |
+| Owner | Immutable Principal that owns an App | Resource Owner — Principal ID derived from the authenticated registrant. Actor is tracked separately (ADR 0006/0009). |
 | Trigger | Not a concept in App Mesh core | v1: built-in event listener. v2: external App Mesh cron/event apps. |

@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <typeinfo>
+#include <utility>
 #include <vector>
 
 #include <ace/OS.h>
@@ -72,8 +73,9 @@ namespace std
 #endif
 #endif
 
-// std::exchange polyfill: available since GCC 4.9 / C++14, missing on GCC 4.8.x
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 9))
+// std::exchange is a C++14 library feature. Provide it for every non-Windows
+// C++11 build, including modern GCC/Clang invoked with -std=c++11.
+#if (__cplusplus <= 201103L) && !defined(_WIN32)
 namespace std
 {
 	template <typename T, typename U>
@@ -139,21 +141,13 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define GET_HTTP_HEADER(message, headerName) \
 	message->m_headers.count(headerName) > 0 ? message->m_headers.find(headerName)->second : std::string()
 #define APPMESH_CONFIG_YAML_FILE "config.yaml"
-#define APPMESH_SECURITY_YAML_FILE "security.yaml"
 #define APPMESH_CONSUL_API_CONFIG_FILE "consul.yaml"
-#define APPMESH_OAUTH2_CONFIG_FILE "oauth2.yaml"
-#define APPMESH_APPMG_INIT_FLAG_FILE ".appmginit"
+#define APPMESH_OIDC_CONFIG_FILE "oidc.yaml"
+#define APPMESH_AUTHORIZATION_CONFIG_FILE "authorization.yaml"
 #define APPMESH_APPLICATION_DIR "apps"
 #define APPMESH_WORK_DIR "work"
 #define APPMESH_WORK_TMP_DIR "tmp"
 #define APPMESH_WORK_CONFIG_DIR "config"
-#define APPMESH_JWT_RS256_PUBLIC_KEY_FILE "ssl/jwt-public.pem"
-#define APPMESH_JWT_RS256_PRIVATE_KEY_FILE "ssl/jwt-private.pem"
-#define APPMESH_JWT_ES256_PUBLIC_KEY_FILE "ssl/jwt-ec-public.pem"
-#define APPMESH_JWT_ES256_PRIVATE_KEY_FILE "ssl/jwt-ec-private.pem"
-#define APPMESH_JWT_ALGORITHM_RS256 "RS256"
-#define APPMESH_JWT_ALGORITHM_HS256 "HS256"
-#define APPMESH_JWT_ALGORITHM_ES256 "ES256"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
@@ -163,15 +157,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define REST_REQUEST_TIMEOUT_SECONDS 60
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
 #define WEBSOCKET_FILE_OPERATION_TIMEOUT 30
-#define WEBSOCKET_FILE_AUDIENCE "appmesh-file-service"
-// Local-mode refresh token audience: only /appmesh/token/renew accepts it; the normal
-// API audience check rejects it everywhere else.
-#define JWT_REFRESH_AUDIENCE "appmesh-refresh"
-
-#define JWT_USER_KEY "mesh123"
-#define JWT_USER_NAME "mesh"
-#define JWT_ADMIN_NAME "admin"
-#define APPMESH_PASSWD_MIN_LENGTH 8 // OWASP ASVS 2.1.1: minimum 12 characters
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 
@@ -209,7 +194,6 @@ public:
 	static bool isFileExist(const std::string &path);
 	static bool isPathTraversalSafe(const std::string &baseDir, const std::string &filePath);
 	static bool validateFilePath(const std::string &filePath, const std::string &allowedBaseDir);
-	static bool isPasswordComplex(const std::string &password, std::string &errorMsg);
 	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
 	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
 	static bool removeDir(const std::string &path);
@@ -228,11 +212,6 @@ public:
 	static bool endWith(const std::string &str, const std::string &end);
 	static size_t charCount(const std::string &str, char c);
 	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos = 0);
-	static std::string hash(const std::string &str);
-	static const std::string PBKDF2_PREFIX;
-	static std::string hashPassword(const std::string &password);
-	static bool isValidPasswordHash(const std::string &str);
-	static bool verifyPassword(const std::string &password, const std::string &stored);
 	static std::string shortID();
 	static std::string uuid();
 	static std::string stringFormat(const char *fmt_str, ...);
@@ -311,8 +290,6 @@ public:
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
 #define SEPARATE_AGENT_APP_NAME "agent"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
-#define REST_TEXT_TOTP_CHALLENGE_JSON_KEY "totp_challenge"
-#define REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY "expires"
 
 #define JSON_KEY_BaseConfig "BaseConfig"
 #define JSON_KEY_Description "Description"
@@ -325,7 +302,6 @@ public:
 #define JSON_KEY_RestListenPort "RestListenPort"
 #define JSON_KEY_RestListenAddress "RestListenAddress"
 #define JSON_KEY_RestTcpPort "RestTcpPort"
-#define JSON_KEY_PasswordComplexityEnabled "PasswordComplexityEnabled"
 #define JSON_KEY_FileAllowedBaseDir "FileAllowedBaseDir"
 #define JSON_KEY_CorsDisabled "CorsDisabled"
 #define JSON_KEY_CsrfAllowedOrigins "CsrfAllowedOrigins"
@@ -346,30 +322,17 @@ public:
 #define JSON_KEY_SSLClientCertificateKeyFile "SSLClientCertificateKeyFile"
 #define JSON_KEY_SSLCaPath "SSLCaPath"
 
-#define JSON_KEY_JWT "JWT"
-#define JSON_KEY_JWTSalt "JWTSalt"
-#define JSON_KEY_JWTAlgorithm "Algorithm"
-#define JSON_KEY_JWTIssuer "Issuer"
-#define JSON_KEY_JWTAudience "Audience"
-#define JSON_KEY_SECURITY_Interface "SecurityInterface"
-#define JSON_KEY_JWT_Keycloak "Keycloak"
-#define JSON_KEY_JWT_Keycloak_URL "auth_server_url"
-#define JSON_KEY_JWT_Keycloak_Realm "realm"
-#define JSON_KEY_JWT_Keycloak_ClientID "client_id"
-#define JSON_KEY_JWT_Keycloak_ClientSecret "client_secret"
-#define ENV_APPMESH_Keycloak_client_secret "APPMESH_Keycloak_client_secret"
-
 #define JSON_KEY_WorkerThreadPoolSize "WorkerThreadPoolSize"
 #define JSON_KEY_IOThreadPoolSize "IOThreadPoolSize"
-#define JSON_KEY_Roles "Roles"
-#define JSON_KEY_Groups "Groups"
 #define JSON_KEY_Labels "Labels"
-#define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
-#define JSON_KEY_SECURITY_EncryptKey "EncryptKey"
 #define JSON_KEY_VERSION "Version"
-#define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_owner "owner"
+#define JSON_KEY_APP_owner_principal_id "owner_principal_id"
+#define JSON_KEY_APP_owner_display_name "owner_display_name"
+#define JSON_KEY_APP_execution_user "execution_user"
+#define JSON_KEY_APP_system "system"
+#define JSON_KEY_APP_startup_phase "startup_phase"
 #define JSON_KEY_APP_owner_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"
 #define JSON_KEY_APP_shell_mode "shell"
@@ -436,46 +399,9 @@ public:
 #define JSON_KEY_TIME_POSTTIX_STR "_TEXT"
 #define EMPTY_PLACEHOLDER "-"
 
-#define JSON_KEY_USER_readonly_name "name"
-#define JSON_KEY_USER_key "key"
-#define JSON_KEY_USER_email "email"
-#define JSON_KEY_USER_group "group"
-#define JSON_KEY_USER_roles "roles"
-#define JSON_KEY_USER_locked "locked"
-// Tokens issued before this instant are rejected. Bumped when a credential change
-// must invalidate everything already handed out (e.g. a password change).
-#define JSON_KEY_USER_token_epoch "token_epoch"
-#define JSON_KEY_USER_metadata "metadata"
-#define JSON_KEY_USER_mfa_key "mfa_key"
-#define JSON_KEY_USER_mfa_enabled "mfa_enabled"
-
-#define JSON_KEY_USER_exec_user "exec_user"
-#define JSON_KEY_USER_audience "audience"
-
-#define JSON_KEY_USER_key_method_local "local"
-#define JSON_KEY_USER_key_method_consul "consul"
-#define JSON_KEY_USER_key_method_oauth2 "oauth2"
-
-#define HTTP_HEADER_JWT "JWT"
-#define HTTP_HEADER_JWT_Audience_appmesh "appmesh-service"
-#define HTTP_HEADER_JWT_name "name"
-#define HTTP_HEADER_JWT_user_group "group"
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization
 #define HTTP_HEADER_JWT_Bearer "Bearer"
 #define HTTP_HEADER_JWT_BearerSpace "Bearer "
-#define HTTP_HEADER_Auth_BasicSpace "Basic "
-#define HTTP_HEADER_JWT_access_token "access_token"
-#define HTTP_HEADER_JWT_refresh_token_key "refresh_token"
-
-#define HTTP_HEADER_JWT_expire_seconds "X-Expire-Seconds"
-#define HTTP_HEADER_JWT_refresh_token "X-Refresh-Token"
-// Opt-in: only clients that set this get a refresh token. A client that cannot store
-// and replay one would otherwise be issued a credential it never sends back on
-// logoff, leaving it live until expiry.
-#define HTTP_HEADER_JWT_want_refresh_token "X-Refresh-Token-Request"
-#define HTTP_HEADER_JWT_audience "X-Audience"
-#define HTTP_HEADER_JWT_totp "X-Totp-Code"
-#define HTTP_HEADER_JWT_auth_permission "X-Permission"
 #define HTTP_HEADER_KEY_exit_code "X-Exit-Code"
 #define HTTP_HEADER_KEY_output_pos "X-Output-Position"
 #define HTTP_HEADER_KEY_file_path "X-File-Path"
@@ -485,24 +411,17 @@ public:
 #define HTTP_HEADER_KEY_X_Send_File_Socket "X-Send-File-Socket"
 #define HTTP_HEADER_KEY_X_Recv_File_Socket "X-Recv-File-Socket"
 #define HTTP_HEADER_KEY_Forwarding_Host "X-Target-Host"
+#define HTTP_HEADER_KEY_APPMESH_FORWARDED "X-AppMesh-Forwarded"
+#define HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE "X-AppMesh-Forward-Route"
 #define HTTP_HEADER_KEY_X_LWS_Protocol "x-lws-protocol"
 #define HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP "HTTP"
-
-#define HTTP_BODY_KEY_MFA_URI "mfa_uri"
-#define HTTP_BODY_KEY_OLD_PASSWORD "old_password"
-#define HTTP_BODY_KEY_NEW_PASSWORD "new_password"
-#define HTTP_BODY_KEY_JWT_username "user_name"
-#define HTTP_BODY_KEY_JWT_totp "totp_code"
-#define HTTP_BODY_KEY_JWT_totp_challenge "totp_challenge"
-#define HTTP_BODY_KEY_JWT_expire_seconds "expire_seconds"
-#define HTTP_BODY_KEY_JWT_expires_in "expires_in"
+#define HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY "X-AppMesh-Process-Key"
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"
 #define HTTP_QUERY_KEY_stdout_maxsize "stdout_maxsize"
 #define HTTP_QUERY_KEY_stdout_timeout "timeout"
 #define HTTP_QUERY_KEY_process_uuid "process_uuid"
-#define HTTP_QUERY_KEY_process_key "process_key"
 #define HTTP_QUERY_KEY_html "html"
 #define HTTP_QUERY_KEY_json "json"
 #define HTTP_QUERY_KEY_timeout "timeout"
@@ -513,8 +432,6 @@ public:
 #define HTTP_QUERY_KEY_label_value "value"
 
 // Cookie
-#define COOKIE_TOKEN "appmesh_auth_token"
-#define HTTP_HEADER_KEY_X_SET_COOKIE "X-Set-Cookie"
 
 #define PERMISSION_KEY_view_app "app-view"
 #define PERMISSION_KEY_view_app_output "app-output-view"
@@ -523,6 +440,7 @@ public:
 #define PERMISSION_KEY_app_reg "app-reg"
 #define PERMISSION_KEY_app_control "app-control"
 #define PERMISSION_KEY_app_delete "app-delete"
+#define PERMISSION_KEY_app_manage_all "app-manage-all"
 #define PERMISSION_KEY_run_app_async "app-run-async"
 #define PERMISSION_KEY_run_app_sync "app-run-sync"
 #define PERMISSION_KEY_run_app_async_output "app-run-async-output"
@@ -534,16 +452,9 @@ public:
 #define PERMISSION_KEY_label_delete "label-delete"
 #define PERMISSION_KEY_config_view "config-view"
 #define PERMISSION_KEY_config_set "config-set"
-#define PERMISSION_KEY_change_passwd_self "passwd-change-self"
-#define PERMISSION_KEY_change_passwd_user "passwd-change-user"
-#define PERMISSION_KEY_lock_user "user-lock"
-#define PERMISSION_KEY_unlock_user "user-unlock"
-#define PERMISSION_KEY_add_user "user-add"
-#define PERMISSION_KEY_delete_user "user-delete"
-#define PERMISSION_KEY_user_totp_disable "user-totp-disable"
-#define PERMISSION_KEY_user_totp_active "user-totp-active"
-#define PERMISSION_KEY_user_token_renew "user-token-renew"
-#define PERMISSION_KEY_get_users "user-list"
+#define PERMISSION_KEY_principal_update "principal-set"
+#define PERMISSION_KEY_principal_delete "principal-delete"
+#define PERMISSION_KEY_principal_list "principal-list"
 #define PERMISSION_KEY_role_update "role-set"
 #define PERMISSION_KEY_role_delete "role-delete"
 #define PERMISSION_KEY_role_view "role-view"

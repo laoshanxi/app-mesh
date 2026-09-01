@@ -18,36 +18,18 @@ const (
 	DefaultHTTPURI            = "https://127.0.0.1:6060"
 	DefaultTCPURI             = "127.0.0.1:6059"
 	DefaultTokenExpireSeconds = 7 * (60 * 60 * 24) // default 7 day(s)
-	DefaultJWTAudience        = "appmesh-service"
 )
 
-// Internal wire-protocol constants (headers, cookies, user agents).
+// Internal wire-protocol constants (headers and user agents).
 const (
-	userAgentHeaderName         = "User-Agent"
-	headerJWTSetCookie          = "X-Set-Cookie"
-	headerJWTRefreshToken       = "X-Refresh-Token"
-	cookieToken                 = "appmesh_auth_token"
-	userAgent                   = "appmesh/golang"
-	userAgentTCP                = "appmesh/golang/tcp"
-	userAgentWSS                = "appmesh/golang/wss"
-	headerSendFileSocket        = "X-Send-File-Socket"
-	headerRecvFileSocket        = "X-Recv-File-Socket"
-	headerFilePath              = "X-File-Path"
-	headerTargetHost            = "X-Target-Host"
-	headerJWTExpireSeconds      = "X-Expire-Seconds"
-	headerJWTWantRefreshToken   = "X-Refresh-Token-Request"
-	tokenRefreshIntervalSeconds = 300 // poll cap, NOT a renew interval
-	tokenRefreshOffsetSeconds   = 30  // floor for the pre-expiry margin
-)
-
-// Auto-refresh pacing: the loop polls every tokenRefreshIntervalSeconds but renews
-// only once the token has burned tokenRefreshLifetimeRatio of its lifetime.
-const (
-	tokenRefreshLifetimeRatio    = 0.6 // rest is the retry budget
-	tokenRefreshJitterRatio      = 0.1 // of the margin, so clients don't renew in lockstep
-	tokenRefreshRetryBaseSeconds = 5
-	tokenRefreshRetryMaxSeconds  = 60
-	tokenRefreshLogEvery         = 10 // log 1st failure, then every Nth
+	userAgentHeaderName  = "User-Agent"
+	userAgent            = "appmesh/golang"
+	userAgentTCP         = "appmesh/golang/tcp"
+	userAgentWSS         = "appmesh/golang/wss"
+	headerSendFileSocket = "X-Send-File-Socket"
+	headerRecvFileSocket = "X-Recv-File-Socket"
+	headerFilePath       = "X-File-Path"
+	headerTargetHost     = "X-Target-Host"
 )
 
 // Platform-aware default SSL paths.
@@ -73,18 +55,20 @@ func init() {
 // Application represents the application configuration and status.
 type Application struct {
 	// Main definition
-	Name           string           `json:"name"`
-	Owner          *string          `json:"owner"`
-	Permission     *int             `json:"permission"`
-	ShellMode      *bool            `json:"shell"`
-	SessionLogin   *bool            `json:"session_login"`
-	Command        *string          `json:"command"`
-	Description    *string          `json:"description"`
-	WorkingDir     *string          `json:"working_dir"`
-	HealthCheckCMD *string          `json:"health_check_cmd"`
-	Status         int              `json:"status"`
-	StdoutCacheNum *int             `json:"stdout_cache_num"`
-	Metadata       *json.RawMessage `json:"metadata,omitempty"`
+	Name             string           `json:"name"`
+	OwnerPrincipalID *string          `json:"owner_principal_id,omitempty"`
+	// OwnerDisplayName is response-only presentation data; authorization uses OwnerPrincipalID.
+	OwnerDisplayName *string          `json:"owner_display_name,omitempty"`
+	Permission       *int             `json:"permission"`
+	ShellMode        *bool            `json:"shell"`
+	SessionLogin     *bool            `json:"session_login"`
+	Command          *string          `json:"command"`
+	Description      *string          `json:"description"`
+	WorkingDir       *string          `json:"working_dir"`
+	HealthCheckCMD   *string          `json:"health_check_cmd"`
+	Status           bool             `json:"status"`
+	StdoutCacheNum   *int             `json:"stdout_cache_num"`
+	Metadata         *json.RawMessage `json:"metadata,omitempty"`
 
 	// Time
 	StartTime     *int64 `json:"start_time"`
@@ -162,19 +146,6 @@ type ResourceLimitation struct {
 	CpuShares       int `json:"cpu_shares"`
 }
 
-// JWTResponse represents the response containing JWT token information.
-type JWTResponse struct {
-	AccessToken   string `json:"access_token"`
-	RefreshToken  string `json:"refresh_token"`
-	ExpireSeconds int    `json:"expire_seconds"`
-	ExpireTime    int    `json:"expire_time"`
-	Profile       struct {
-		AuthTime int    `json:"auth_time"`
-		Name     string `json:"name"`
-	} `json:"profile"`
-	TokenType string `json:"token_type"`
-}
-
 // AppOutput represents the result of an AppMeshClient.GetAppOutput call.
 type AppOutput struct {
 	// HttpSuccess is true only when the server responded with HTTP 200 OK.
@@ -217,11 +188,6 @@ type SSLConfig struct {
 	SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`
 	SSLClientCertificateFile    string `yaml:"SSLClientCertificateFile"`
 	SSLClientCertificateKeyFile string `yaml:"SSLClientCertificateKeyFile"`
-}
-
-// JWT Config
-type JWTConfig struct {
-	JWTSalt string `yaml:"JWTSalt"`
 }
 
 // Request represents the message sent over TCP.
