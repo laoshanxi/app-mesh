@@ -91,8 +91,32 @@ jobs:
           sudo apt install -y ./appmesh_*.deb
           sudo /opt/appmesh/script/appmesh.initd.sh start
           sleep 3
-          sudo python3 -m pip install docker --break-system-packages
-          sudo docker run --net=host -v /opt/appmesh/ssl/:/opt/appmesh/ssl/ "${IMG_NAME}" ps -ef
+          # The agent needs app-run-async and app-delete, which the automation
+          # Principal lacks. The CLI logon does the one-time first-admin
+          # enrollment; the password grant then yields an admin bearer.
+          ADMIN_PW=$(sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password)
+          printf '%s\n' "$ADMIN_PW" | sudo script -qc "appm logon -u admin@appmesh.local" /dev/null >/dev/null
+          ADMIN_JWT=""
+          for _ in $(seq 1 10); do
+            ADMIN_JWT=$(curl -s -X POST \
+              -d "grant_type=password&client_id=appmesh-cli&username=admin@appmesh.local&password=${ADMIN_PW}&scope=openid%20audience:server:client_id:appmesh-api" \
+              http://127.0.0.1:6062/auth/token |
+              sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
+            [ -n "$ADMIN_JWT" ] && break
+            sleep 2
+          done
+          [ -n "$ADMIN_JWT" ] || { echo "failed to obtain the admin password-grant token"; exit 1; }
+          # container_monitor.py runs on the host, so the host needs both modules
+          sudo python3 -m pip install appmesh docker --break-system-packages
+          sudo rm -f /tmp/container.id
+          sudo docker run --net=host --cidfile=/tmp/container.id -v /tmp/container.id:/tmp/container.id \
+            -e APPMESH_BEARER_TOKEN="${ADMIN_JWT}" "${IMG_NAME}" ps -ef
+          # container_monitor.py on the host must delete both Apps after exit
+          for _ in $(seq 1 10); do
+            sudo APPMESH_BEARER_TOKEN="${ADMIN_JWT}" appm ls | grep -qF "$(cat /tmp/container.id)" || exit 0
+            sleep 2
+          done
+          echo "the monitor App cleanup failed"; exit 1
 
   merge-and-push:
     name: Merge and Push Multi-arch Image

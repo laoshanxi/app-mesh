@@ -40,15 +40,19 @@ def get_shadow_app_name():
     return socket.gethostname()
 
 
-def create_monitor_app(shadow_app_name, monitor_app_name):
+def create_monitor_app(shadow_app_name, monitor_app_name, bearer_token):
     """Create the monitor application configuration."""
-    return appmesh.App(
+    monitor_app = appmesh.App(
         {
             "name": monitor_app_name,
             "command": f"python3 /opt/appmesh/script/container_monitor.py {shadow_app_name} {monitor_app_name}",
             "behavior": {"exit": "remove"},
         }
     )
+    # The daemon spawns the monitor on the host; sec_env passes the bearer
+    # without storing the token in plaintext.
+    monitor_app.set_env("APPMESH_BEARER_TOKEN", bearer_token, secure=True)
+    return monitor_app
 
 
 def create_native_app(name, command):
@@ -81,14 +85,15 @@ def main():
     command = " ".join(sys.argv[1:])
 
     try:
+        bearer_token = os.environ["APPMESH_BEARER_TOKEN"]
         # Initialize appmesh (container image has no CA bundle; daemon uses a self-signed cert)
         appmesh_client = appmesh.AppMeshClient(
             ssl_verify=False,
-            bearer_token=os.environ["APPMESH_BEARER_TOKEN"],
+            bearer_token=bearer_token,
         )
 
         # Start monitor application
-        monitor_app = create_monitor_app(native_app_name, monitor_app_name)
+        monitor_app = create_monitor_app(native_app_name, monitor_app_name, bearer_token)
         appmesh_client.run_app_async(app=monitor_app)
 
         # Start shadow application
