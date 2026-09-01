@@ -1,7 +1,7 @@
 // Package tlsconf resolves the Workflow engine's TLS policy for connections
 // that carry real credentials (caller Dex bearers, run/control capabilities).
 //
-// It mirrors the daemon's OIDC semantics (oidc.yaml dex_tls_verify/dex_ca_path):
+// It mirrors the daemon's OIDC semantics (oidc.yaml tls_verify/ca_path):
 // server-certificate verification is on by default, an optional CA path pins
 // the trust anchor, and only an explicit opt-out disables verification. All
 // engine clients that transport a bearer or capability must resolve their

@@ -33,7 +33,7 @@ def demo_task_execute():
     count_in_server = "0"
     for i in range(10):
         task_data = f"print({count_in_server} + {i}, end='')"
-        count_in_server = client.run_task(app_name="pytask", data=task_data)
+        count_in_server = client.run_task(app_name="py-task", data=task_data)
         print(count_in_server)
 
 

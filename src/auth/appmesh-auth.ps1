@@ -2,7 +2,7 @@
 ################################################################################
 ## Native Windows launcher for the bundled authentication System App.
 ##
-## The Linux/macOS package uses appmesh-auth.sh. The installed auth-service.yaml is
+## The Linux/macOS package uses appmesh-auth.sh. The installed identity.yaml is
 ## patched on Windows to invoke this script, while retaining the same actions and
 ## persisted work/auth layout.
 ################################################################################
@@ -160,19 +160,13 @@ function Get-EnvironmentOrYaml {
 function Get-AuthEnvironmentOrYaml {
     param(
         [string]$EnvironmentName,
-        [string]$LegacyEnvironmentName,
         [string]$Path,
         [string]$Field,
-        [string]$Fallback,
-        [string]$LegacyField = ""
+        [string]$Fallback
     )
     $value = [Environment]::GetEnvironmentVariable($EnvironmentName)
-    if (-not $value) { $value = [Environment]::GetEnvironmentVariable($LegacyEnvironmentName) }
     if ($value) { return $value }
     $value = Get-YamlScalar -Path $Path -Field $Field -Fallback ""
-    if (-not $value -and $LegacyField) {
-        $value = Get-YamlScalar -Path $Path -Field $LegacyField -Fallback ""
-    }
     if ($value) { return $value }
     return $Fallback
 }
@@ -294,7 +288,7 @@ function ConvertTo-YamlSingleQuotedScalar {
 
 function Seed-BuiltinPrincipals {
     Assert-PlainFile $AuthorizationTemplate "authorization template"
-    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" "APPMESH_DEX_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
+    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
     $automationId = Get-StablePrincipalId $issuer $AutomationSubject
     $guestId = Get-StablePrincipalId $issuer $GuestSubject
     $source = if (Test-Path -LiteralPath $AuthorizationRuntime) { $AuthorizationRuntime } else { $AuthorizationTemplate }
@@ -352,7 +346,7 @@ function Initialize-AuthState {
 # the daemon advertises in /appmesh/auth/config, so Dex and the advertised
 # entry always agree on one address.
 function Get-WebRedirectUri {
-    $browserEntry = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_BROWSER_ENTRY" "" $OidcConfig "browser_entry" ""
+    $browserEntry = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_BROWSER_ENTRY" $OidcConfig "browser_entry" ""
     if (-not $browserEntry) {
         $address = Get-EnvironmentOrYaml "APPMESH_REST_RestListenAddress" $DaemonConfig "RestListenAddress" "127.0.0.1"
         $port = Get-EnvironmentOrYaml "APPMESH_REST_RestListenPort" $DaemonConfig "RestListenPort" "6060"
@@ -373,29 +367,29 @@ function Render-DexConfig {
     $admin = Read-KeyValueFile $AdminCredentials
     $guest = Read-KeyValueFile $GuestCredentials
     $automation = Read-KeyValueFile $AutomationClientFile
-    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" "APPMESH_DEX_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
-    $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_DEX_LISTEN" $AuthStackConfig "dex_listen" "127.0.0.1:6062"
-    $telemetry = Get-EnvironmentOrYaml "APPMESH_AUTH_DEX_TELEMETRY_LISTEN" $AuthStackConfig "dex_telemetry_listen" "127.0.0.1:6063"
+    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
+    $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_LISTEN" $AuthStackConfig "listen" "127.0.0.1:6062"
+    $telemetry = Get-EnvironmentOrYaml "APPMESH_AUTH_TELEMETRY_LISTEN" $AuthStackConfig "telemetry_listen" "127.0.0.1:6063"
     $webRedirectUri = Get-WebRedirectUri
 
     $content = [System.IO.File]::ReadAllText($DexConfigTemplate)
     # Windows runs the CGO-free dex build: memory storage, no SQLite database.
     # A template change leaves the marker unresolved and fails the check below.
-    $content = $content -replace "(?m)^  type: sqlite3\r?\n  config:\r?\n    file: __APPMESH_DEX_STORAGE_PATH__\r?$", "  type: memory"
+    $content = $content -replace "(?m)^  type: sqlite3\r?\n  config:\r?\n    file: __APPMESH_AUTH_STORAGE_PATH__\r?$", "  type: memory"
     $replacements = [ordered]@{
-        "__APPMESH_DEX_ISSUER__" = $issuer
-        "__APPMESH_DEX_LISTEN__" = $listen
-        "__APPMESH_DEX_TELEMETRY_LISTEN__" = $telemetry
-        "__APPMESH_DEX_WEB_CALLBACK__" = $webRedirectUri
-        "__APPMESH_DEX_INITIAL_ADMIN_EMAIL__" = $AdminEmail
-        "__APPMESH_DEX_INITIAL_ADMIN_PASSWORD_HASH__" = $admin.password_hash
-        "__APPMESH_DEX_INITIAL_ADMIN_USERNAME__" = $AdminUsername
-        "__APPMESH_DEX_INITIAL_ADMIN_USER_ID__" = $AdminUserId
-        "__APPMESH_DEX_INITIAL_GUEST_EMAIL__" = $GuestEmail
-        "__APPMESH_DEX_INITIAL_GUEST_PASSWORD_HASH__" = $guest.password_hash
-        "__APPMESH_DEX_INITIAL_GUEST_USERNAME__" = $GuestUsername
-        "__APPMESH_DEX_INITIAL_GUEST_USER_ID__" = $GuestUserId
-        "__APPMESH_DEX_AUTOMATION_SECRET__" = $automation.secret
+        "__APPMESH_AUTH_ISSUER__" = $issuer
+        "__APPMESH_AUTH_LISTEN__" = $listen
+        "__APPMESH_AUTH_TELEMETRY_LISTEN__" = $telemetry
+        "__APPMESH_AUTH_WEB_CALLBACK__" = $webRedirectUri
+        "__APPMESH_AUTH_INITIAL_ADMIN_EMAIL__" = $AdminEmail
+        "__APPMESH_AUTH_INITIAL_ADMIN_PASSWORD_HASH__" = $admin.password_hash
+        "__APPMESH_AUTH_INITIAL_ADMIN_USERNAME__" = $AdminUsername
+        "__APPMESH_AUTH_INITIAL_ADMIN_USER_ID__" = $AdminUserId
+        "__APPMESH_AUTH_INITIAL_GUEST_EMAIL__" = $GuestEmail
+        "__APPMESH_AUTH_INITIAL_GUEST_PASSWORD_HASH__" = $guest.password_hash
+        "__APPMESH_AUTH_INITIAL_GUEST_USERNAME__" = $GuestUsername
+        "__APPMESH_AUTH_INITIAL_GUEST_USER_ID__" = $GuestUserId
+        "__APPMESH_AUTH_AUTOMATION_SECRET__" = $automation.secret
     }
     foreach ($marker in $replacements.Keys) {
         $content = $content.Replace($marker, (ConvertTo-YamlSingleQuotedScalar ([string]$replacements[$marker])))
@@ -429,9 +423,9 @@ function Assert-BuiltinOwner {
 function Request-AutomationToken {
     Assert-BuiltinOwner
     $credential = Read-KeyValueFile $AutomationClientFile
-    $accessUrl = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ACCESS_URL" "APPMESH_DEX_ACCESS_URL" $OidcConfig "access_url" "http://127.0.0.1:6062/auth" "dex_access_url"
-    $tlsVerify = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_TLS_VERIFY" "APPMESH_DEX_TLS_VERIFY" $OidcConfig "tls_verify" "true" "dex_tls_verify"
-    $caPath = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_CA_PATH" "APPMESH_DEX_CA_PATH" $OidcConfig "ca_path" "" "dex_ca_path"
+    $accessUrl = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ACCESS_URL" $OidcConfig "access_url" "http://127.0.0.1:6062/auth"
+    $tlsVerify = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_TLS_VERIFY" $OidcConfig "tls_verify" "true"
+    $caPath = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_CA_PATH" $OidcConfig "ca_path" ""
     $curlArguments = @("--fail", "--silent", "--show-error", "--connect-timeout", "2", "--max-time", "8", "--request", "POST")
     if ($tlsVerify -in @("false", "False", "FALSE", "0")) { $curlArguments += "--insecure" }
     if ($caPath) {
@@ -509,7 +503,7 @@ try {
         }
         { $_ -in @("service-health", "dex-health") } {
             if ((Get-AuthMode) -ne "builtin" -or -not (Test-AuthOwner)) { exit 0 }
-            $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_DEX_TELEMETRY_LISTEN" $AuthStackConfig "dex_telemetry_listen" "127.0.0.1:6063"
+            $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_TELEMETRY_LISTEN" $AuthStackConfig "telemetry_listen" "127.0.0.1:6063"
             & curl.exe --fail --silent --show-error --max-time 2 "http://$listen/healthz" | Out-Null
             exit $LASTEXITCODE
         }

@@ -123,7 +123,8 @@ class WSSTransport:
 
         try:
             # Create WebSocket connection using websocket-client library
-            headers = [f"Authorization: Bearer {self._bearer_token}"] if self._bearer_token else None
+            # websocket-client crashes on header=None ('in None'); pass an empty list instead
+            headers = [f"Authorization: Bearer {self._bearer_token}"] if self._bearer_token else []
             self._websocket = create_connection(
                 uri,
                 timeout=self._connect_timeout,

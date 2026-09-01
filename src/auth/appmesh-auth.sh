@@ -86,14 +86,13 @@ yaml_value() {
 
 oidc_auth_value() {
     local key=$1
-    local legacy_key=$2
-    local fallback=$3
+    local fallback=$2
     local value
     value=$(oidc_value "${key}" '')
     if [[ -n "${value}" ]]; then
         printf '%s' "${value}"
     else
-        oidc_value "${legacy_key}" "${fallback}"
+        printf '%s' "${fallback}"
     fi
 }
 
@@ -254,7 +253,7 @@ seed_builtin_principals() {
 
     local issuer issuer_yaml automation_id guest_id source temporary
     local add_automation=1 add_guest=1 add_role=1
-    issuer=${APPMESH_AUTH_ISSUER:-${APPMESH_DEX_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}}
+    issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
     issuer_yaml=$(yaml_quote "${issuer}") || return 1
     automation_id=$(stable_principal_id "${issuer}" "${DEX_AUTOMATION_SUBJECT}") || {
         echo "failed to derive the automation Principal ID" >&2
@@ -352,9 +351,9 @@ request_automation_token() {
     validate_automation_client
 
     local access_url tls_verify ca_path client_secret response token
-    access_url=${APPMESH_AUTH_ACCESS_URL:-${APPMESH_DEX_ACCESS_URL:-$(oidc_auth_value access_url dex_access_url http://127.0.0.1:6062/auth)}}
-    tls_verify=${APPMESH_AUTH_TLS_VERIFY:-${APPMESH_DEX_TLS_VERIFY:-$(oidc_auth_value tls_verify dex_tls_verify true)}}
-    ca_path=${APPMESH_AUTH_CA_PATH:-${APPMESH_DEX_CA_PATH:-$(oidc_auth_value ca_path dex_ca_path '')}}
+    access_url=${APPMESH_AUTH_ACCESS_URL:-$(oidc_auth_value access_url http://127.0.0.1:6062/auth)}
+    tls_verify=${APPMESH_AUTH_TLS_VERIFY:-$(oidc_auth_value tls_verify true)}
+    ca_path=${APPMESH_AUTH_CA_PATH:-$(oidc_auth_value ca_path '')}
     client_secret=$(automation_client_value secret)
 
     local curl_args=(--fail --silent --show-error --connect-timeout 2 --max-time 8 --request POST)
@@ -629,9 +628,9 @@ render_dex_config() {
         return 1
     }
 
-    local issuer=${APPMESH_AUTH_ISSUER:-${APPMESH_DEX_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}}
-    local listen=${APPMESH_AUTH_DEX_LISTEN:-$(config_value dex_listen 127.0.0.1:6062)}
-    local telemetry_listen=${APPMESH_AUTH_DEX_TELEMETRY_LISTEN:-$(config_value dex_telemetry_listen 127.0.0.1:6063)}
+    local issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
+    local listen=${APPMESH_AUTH_LISTEN:-$(config_value listen 127.0.0.1:6062)}
+    local telemetry_listen=${APPMESH_AUTH_TELEMETRY_LISTEN:-$(config_value telemetry_listen 127.0.0.1:6063)}
     local web_redirect_uri
     web_redirect_uri=$(derive_web_redirect_uri) || return 1
     validate_admin_credentials
@@ -659,46 +658,46 @@ render_dex_config() {
     local line
     while IFS= read -r line || [[ -n "${line}" ]]; do
         case "${line}" in
-            "issuer: __APPMESH_DEX_ISSUER__")
+            "issuer: __APPMESH_AUTH_ISSUER__")
                 printf 'issuer: %s\n' "$(yaml_quote "${issuer}")"
                 ;;
-            "    file: __APPMESH_DEX_STORAGE_PATH__")
+            "    file: __APPMESH_AUTH_STORAGE_PATH__")
                 printf '    file: %s\n' "$(yaml_quote "${AUTH_STATE_DIR}/dex/dex.db")"
                 ;;
-            "  http: __APPMESH_DEX_LISTEN__")
+            "  http: __APPMESH_AUTH_LISTEN__")
                 printf '  http: %s\n' "$(yaml_quote "${listen}")"
                 ;;
-            "  http: __APPMESH_DEX_TELEMETRY_LISTEN__")
+            "  http: __APPMESH_AUTH_TELEMETRY_LISTEN__")
                 printf '  http: %s\n' "$(yaml_quote "${telemetry_listen}")"
                 ;;
-            "    redirectURIs: [__APPMESH_DEX_WEB_CALLBACK__]")
+            "    redirectURIs: [__APPMESH_AUTH_WEB_CALLBACK__]")
                 printf '    redirectURIs: [%s]\n' "$(yaml_quote "${web_redirect_uri}")"
                 ;;
-            "  - email: __APPMESH_DEX_INITIAL_ADMIN_EMAIL__")
+            "  - email: __APPMESH_AUTH_INITIAL_ADMIN_EMAIL__")
                 printf '  - email: %s\n' "$(yaml_quote "${DEX_INITIAL_ADMIN_EMAIL}")"
                 ;;
-            "    hash: __APPMESH_DEX_INITIAL_ADMIN_PASSWORD_HASH__")
+            "    hash: __APPMESH_AUTH_INITIAL_ADMIN_PASSWORD_HASH__")
                 printf '    hash: %s\n' "$(yaml_quote "${password_hash}")"
                 ;;
-            "    username: __APPMESH_DEX_INITIAL_ADMIN_USERNAME__")
+            "    username: __APPMESH_AUTH_INITIAL_ADMIN_USERNAME__")
                 printf '    username: %s\n' "$(yaml_quote "${DEX_INITIAL_ADMIN_USERNAME}")"
                 ;;
-            "    userID: __APPMESH_DEX_INITIAL_ADMIN_USER_ID__")
+            "    userID: __APPMESH_AUTH_INITIAL_ADMIN_USER_ID__")
                 printf '    userID: %s\n' "$(yaml_quote "${DEX_INITIAL_ADMIN_USER_ID}")"
                 ;;
-            "  - email: __APPMESH_DEX_INITIAL_GUEST_EMAIL__")
+            "  - email: __APPMESH_AUTH_INITIAL_GUEST_EMAIL__")
                 printf '  - email: %s\n' "$(yaml_quote "${DEX_INITIAL_GUEST_EMAIL}")"
                 ;;
-            "    hash: __APPMESH_DEX_INITIAL_GUEST_PASSWORD_HASH__")
+            "    hash: __APPMESH_AUTH_INITIAL_GUEST_PASSWORD_HASH__")
                 printf '    hash: %s\n' "$(yaml_quote "${guest_password_hash}")"
                 ;;
-            "    username: __APPMESH_DEX_INITIAL_GUEST_USERNAME__")
+            "    username: __APPMESH_AUTH_INITIAL_GUEST_USERNAME__")
                 printf '    username: %s\n' "$(yaml_quote "${DEX_INITIAL_GUEST_USERNAME}")"
                 ;;
-            "    userID: __APPMESH_DEX_INITIAL_GUEST_USER_ID__")
+            "    userID: __APPMESH_AUTH_INITIAL_GUEST_USER_ID__")
                 printf '    userID: %s\n' "$(yaml_quote "${DEX_INITIAL_GUEST_USER_ID}")"
                 ;;
-            "    secret: __APPMESH_DEX_AUTOMATION_SECRET__")
+            "    secret: __APPMESH_AUTH_AUTOMATION_SECRET__")
                 printf '    secret: %s\n' "$(yaml_quote "${automation_secret}")"
                 ;;
             *)
@@ -807,8 +806,8 @@ case "${action}" in
         if ! is_builtin_auth || ! is_auth_owner; then
             exit 0
         fi
-        dex_telemetry_listen=${APPMESH_AUTH_DEX_TELEMETRY_LISTEN:-$(config_value dex_telemetry_listen 127.0.0.1:6063)}
-        exec curl --fail --silent --show-error --max-time 2 "http://${dex_telemetry_listen}/healthz"
+        telemetry_listen=${APPMESH_AUTH_TELEMETRY_LISTEN:-$(config_value telemetry_listen 127.0.0.1:6063)}
+        exec curl --fail --silent --show-error --max-time 2 "http://${telemetry_listen}/healthz"
         ;;
     automation-token)
         request_automation_token

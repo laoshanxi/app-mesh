@@ -36,7 +36,7 @@ services:
       - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
       # Bind the Dex listener to the protected compose network for followers.
       # Never publish this plaintext listener beyond a protected network.
-      - APPMESH_AUTH_DEX_LISTEN=0.0.0.0:6062
+      - APPMESH_AUTH_LISTEN=0.0.0.0:6062
     healthcheck:
       # Gates follower startup on authentication readiness. The daemon's
       # prewarm tolerates a short residual gap, and restart: always recovers.

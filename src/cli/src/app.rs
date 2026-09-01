@@ -109,7 +109,7 @@ pub struct LogonArgs {
     pub browser: bool,
 
     /// Optional client route to the authentication service; defaults to the issuer
-    #[arg(long = "auth-access-url", alias = "dex-access-url")]
+    #[arg(long = "auth-access-url")]
     pub auth_access_url: Option<String>,
 
     /// Allow a plain-HTTP issuer and access URL on non-loopback hosts (trusted networks only)

@@ -1,4 +1,4 @@
-"""Unit coverage for the Python Dex TokenProvider boundary."""
+"""Unit coverage for the Python OAuth TokenProvider boundary."""
 
 import json
 import unittest
@@ -7,7 +7,7 @@ from unittest.mock import patch
 import requests
 
 from appmesh.client_http import AppMeshClient
-from appmesh.dex_oauth import DexOAuthClient, DexOAuthError
+from appmesh.oauth import OAuthClient, OAuthError
 from appmesh.token_provider import TokenProvider
 
 
@@ -54,12 +54,12 @@ class _EngineSession:
         pass
 
 
-class _DexSession:
+class _OAuthSession:
     ISSUER = "https://auth.example/dex"
 
     def __init__(self):
         self.posted_forms = []
-        # patch("appmesh.dex_oauth.requests.Session") patches the shared requests
+        # patch("appmesh.oauth.requests.Session") patches the shared requests
         # module, so AppMeshClient constructed inside the patched scope also gets
         # this fake; give it the jar surface the Engine client configures.
         self.cookies = requests.cookies.RequestsCookieJar()
@@ -121,46 +121,46 @@ class TokenProviderTests(unittest.TestCase):
         self.assertEqual(1, provider.refreshes)
         self.assertEqual(["Bearer old-token", "Bearer new-token"], client.session.authorization)
 
-    @patch("appmesh.dex_oauth.requests.Session", return_value=_DexSession())
+    @patch("appmesh.oauth.requests.Session", return_value=_OAuthSession())
     def test_front_channel_urls_remain_canonical(self, _session):
         engine = AppMeshClient(ssl_verify=True)
-        oauth = DexOAuthClient(
+        oauth = OAuthClient(
             appmesh_client=engine,
-            issuer=_DexSession.ISSUER,
-            dex_access_url="http://127.0.0.1:6062/dex",
+            issuer=_OAuthSession.ISSUER,
+            access_url="http://127.0.0.1:6062/dex",
             client_id="appmesh-cli",
         )
 
         request = oauth.authorization_request("http://127.0.0.1:49152/callback")
         device = oauth.device_authorization()
 
-        self.assertTrue(request["authorization_url"].startswith(_DexSession.ISSUER + "/auth?"))
-        self.assertEqual(_DexSession.ISSUER + "/device", device["verification_uri"])
-        self.assertEqual(_DexSession.ISSUER + "/device?user_code=ABCD", device["verification_uri_complete"])
+        self.assertTrue(request["authorization_url"].startswith(_OAuthSession.ISSUER + "/auth?"))
+        self.assertEqual(_OAuthSession.ISSUER + "/device", device["verification_uri"])
+        self.assertEqual(_OAuthSession.ISSUER + "/device?user_code=ABCD", device["verification_uri_complete"])
 
-    @patch("appmesh.dex_oauth.requests.Session", return_value=_DexSession())
+    @patch("appmesh.oauth.requests.Session", return_value=_OAuthSession())
     def test_callback_rejects_unknown_state_before_code_exchange(self, _session):
         engine = AppMeshClient(ssl_verify=True)
-        oauth = DexOAuthClient(
+        oauth = OAuthClient(
             appmesh_client=engine,
-            issuer=_DexSession.ISSUER,
-            dex_access_url="http://127.0.0.1:6062/dex",
+            issuer=_OAuthSession.ISSUER,
+            access_url="http://127.0.0.1:6062/dex",
             client_id="appmesh-cli",
         )
         oauth.authorization_request("http://127.0.0.1:49152/callback")
 
-        with self.assertRaises(DexOAuthError):
+        with self.assertRaises(OAuthError):
             oauth.complete_authorization_callback(
                 "http://127.0.0.1:49152/callback?code=code&state=attacker-state"
             )
 
-    @patch("appmesh.dex_oauth.requests.Session", return_value=_DexSession())
+    @patch("appmesh.oauth.requests.Session", return_value=_OAuthSession())
     def test_nonce_request_requires_id_token_validator(self, _session):
         engine = AppMeshClient(ssl_verify=True)
-        oauth = DexOAuthClient(
+        oauth = OAuthClient(
             appmesh_client=engine,
-            issuer=_DexSession.ISSUER,
-            dex_access_url="http://127.0.0.1:6062/dex",
+            issuer=_OAuthSession.ISSUER,
+            access_url="http://127.0.0.1:6062/dex",
             client_id="appmesh-cli",
         )
         request = oauth.authorization_request(
@@ -168,18 +168,18 @@ class TokenProviderTests(unittest.TestCase):
             nonce="expected-nonce",
         )
 
-        with self.assertRaises(DexOAuthError):
+        with self.assertRaises(OAuthError):
             oauth.complete_authorization_callback(
                 "http://127.0.0.1:49152/callback?code=code&state=" + request["state"]
             )
 
-    @patch("appmesh.dex_oauth.requests.Session", return_value=_DexSession())
+    @patch("appmesh.oauth.requests.Session", return_value=_OAuthSession())
     def test_revoke_without_endpoint_still_clears_engine_bearer(self, _session):
         engine = AppMeshClient(ssl_verify=True)
-        oauth = DexOAuthClient(
+        oauth = OAuthClient(
             appmesh_client=engine,
-            issuer=_DexSession.ISSUER,
-            dex_access_url="http://127.0.0.1:6062/dex",
+            issuer=_OAuthSession.ISSUER,
+            access_url="http://127.0.0.1:6062/dex",
             client_id="appmesh-cli",
         )
         oauth._install({"access_token": "access-token", "token_type": "Bearer", "expires_in": 300})
@@ -197,8 +197,8 @@ class PlainHttpIssuerPolicy(unittest.TestCase):
     def test_plain_http_issuer_requires_opt_in(self):
         url = "http://appmesh_master:6062/auth"
         with self.assertRaisesRegex(ValueError, "must use HTTPS"):
-            DexOAuthClient._normalize_base_url(url, "issuer")
+            OAuthClient._normalize_base_url(url, "issuer")
         with self.assertRaisesRegex(ValueError, "must use HTTPS"):
-            DexOAuthClient._normalize_base_url(url, "access_url")
-        self.assertEqual(DexOAuthClient._normalize_base_url(url, "issuer", True), url)
-        self.assertEqual(DexOAuthClient._normalize_base_url(url, "access_url", True), url)
+            OAuthClient._normalize_base_url(url, "access_url")
+        self.assertEqual(OAuthClient._normalize_base_url(url, "issuer", True), url)
+        self.assertEqual(OAuthClient._normalize_base_url(url, "access_url", True), url)

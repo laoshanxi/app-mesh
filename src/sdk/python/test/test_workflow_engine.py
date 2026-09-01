@@ -46,7 +46,7 @@ from _support import config
 WSS_ADDRESS = ("127.0.0.1", 6058)
 
 WF_APP = "workflow"           # engine App name (default install)
-MSG_APP = "pytask"            # shipped App used to exercise message steps
+MSG_APP = "py-task"           # shipped App used to exercise message steps
 POLL_TIMEOUT = 45             # seconds to wait for a run to reach a terminal state
 TERMINAL = ("success", "failure", "cancelled")
 # Response markers that mean an infra/auth failure, not a workflow/authz outcome.

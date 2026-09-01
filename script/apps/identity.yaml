@@ -1,5 +1,5 @@
 ---
-name: auth-service
+name: identity
 description: bundled OpenID Connect authentication service
 command: ../../script/appmesh-auth.sh service
 health_check_cmd: ../../script/appmesh-auth.sh service-health

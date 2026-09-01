@@ -104,35 +104,32 @@ void OidcTokenVerifier::loadConfig()
 
 	const auto &oidc = root.at("OIDC");
 	m_config.issuer = normalizeIssuer(GET_JSON_STR_VALUE(oidc, "issuer"));
-	const char *accessUrlKey = oidc.contains("access_url") ? "access_url" : "dex_access_url";
-	const char *tlsVerifyKey = oidc.contains("tls_verify") ? "tls_verify" : "dex_tls_verify";
-	const char *caPathKey = oidc.contains("ca_path") ? "ca_path" : "dex_ca_path";
-	m_config.dexAccessUrl = normalizeIssuer(GET_JSON_STR_VALUE(oidc, accessUrlKey));
-	if (oidc.contains(tlsVerifyKey))
+	m_config.dexAccessUrl = normalizeIssuer(GET_JSON_STR_VALUE(oidc, "access_url"));
+	if (oidc.contains("tls_verify"))
 	{
-		if (!oidc.at(tlsVerifyKey).is_boolean())
+		if (!oidc.at("tls_verify").is_boolean())
 			throw std::invalid_argument("OIDC tls_verify must be true or false");
-		m_config.dexTlsVerify = oidc.at(tlsVerifyKey).get<bool>();
+		m_config.dexTlsVerify = oidc.at("tls_verify").get<bool>();
 	}
-	m_config.dexCaPath = Utility::stdStringTrim(GET_JSON_STR_VALUE(oidc, caPathKey));
-	auto environment = [](const char *primary, const char *legacy) {
-		const char *value = std::getenv(primary);
-		return value != nullptr && value[0] != '\0' ? value : std::getenv(legacy);
+	m_config.dexCaPath = Utility::stdStringTrim(GET_JSON_STR_VALUE(oidc, "ca_path"));
+	auto environment = [](const char *name) {
+		const char *value = std::getenv(name);
+		return value != nullptr && value[0] != '\0' ? value : nullptr;
 	};
-	const char *issuer = environment("APPMESH_AUTH_ISSUER", "APPMESH_DEX_ISSUER");
+	const char *issuer = environment("APPMESH_AUTH_ISSUER");
 	if (issuer != nullptr && issuer[0] != '\0')
 		m_config.issuer = normalizeIssuer(issuer);
-	const char *accessUrl = environment("APPMESH_AUTH_ACCESS_URL", "APPMESH_DEX_ACCESS_URL");
+	const char *accessUrl = environment("APPMESH_AUTH_ACCESS_URL");
 	if (accessUrl != nullptr && accessUrl[0] != '\0')
 		m_config.dexAccessUrl = normalizeIssuer(accessUrl);
 	m_config.browserEntry = Utility::stdStringTrim(GET_JSON_STR_VALUE(oidc, "browser_entry"));
 	const char *browserEntry = std::getenv("APPMESH_AUTH_BROWSER_ENTRY");
 	if (browserEntry != nullptr && browserEntry[0] != '\0')
 		m_config.browserEntry = normalizeIssuer(browserEntry);
-	const char *caPath = environment("APPMESH_AUTH_CA_PATH", "APPMESH_DEX_CA_PATH");
+	const char *caPath = environment("APPMESH_AUTH_CA_PATH");
 	if (caPath != nullptr && caPath[0] != '\0')
 		m_config.dexCaPath = caPath;
-	const char *tlsVerify = environment("APPMESH_AUTH_TLS_VERIFY", "APPMESH_DEX_TLS_VERIFY");
+	const char *tlsVerify = environment("APPMESH_AUTH_TLS_VERIFY");
 	if (tlsVerify != nullptr && tlsVerify[0] != '\0')
 	{
 		std::string value(tlsVerify);

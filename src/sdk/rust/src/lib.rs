@@ -31,8 +31,6 @@ pub use oauth::{
     DevicePoll, OAuthClient, OAuthConfig, OidcMetadata,
     StaticAccessTokenProvider, TokenProvider, TokenSet,
 };
-#[doc(hidden)]
-pub use oauth::{DexOAuthClient, DexOAuthConfig};
 pub use models::{
     AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
     ExitAction, OutputFn, OutputHandler, Permission, ResourceLimitation, SubscriptionResult,

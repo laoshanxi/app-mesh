@@ -73,10 +73,6 @@ pub struct OAuthConfig {
     pub browser_entry: Option<String>,
 }
 
-/// Compatibility alias for SDK 3.0 applications.
-#[doc(hidden)]
-pub type DexOAuthConfig = OAuthConfig;
-
 impl OAuthConfig {
     pub fn new(
         issuer: impl Into<String>,
@@ -334,10 +330,6 @@ pub struct OAuthClient {
     token_update_callback: Mutex<Option<Arc<TokenUpdateCallback>>>,
     token_update_pending: AtomicBool,
 }
-
-/// Compatibility alias for SDK 3.0 applications.
-#[doc(hidden)]
-pub type DexOAuthClient = OAuthClient;
 
 type TokenUpdateCallback =
     dyn Fn(&TokenSet) -> std::result::Result<(), AppMeshError> + Send + Sync;

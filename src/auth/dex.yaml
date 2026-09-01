@@ -3,7 +3,7 @@
 # the mode-0600 runtime file under work/auth/dex. Only the bcrypt hash from the
 # private initial-credential file is rendered; plaintext never enters this file.
 ---
-issuer: __APPMESH_DEX_ISSUER__
+issuer: __APPMESH_AUTH_ISSUER__
 
 # Browser-facing login page branding (Dex defaults would show "dex" and its own
 # logo). The logo URL is issuer-path relative: every login page resolves it to
@@ -18,19 +18,19 @@ frontend:
 storage:
   type: sqlite3
   config:
-    file: __APPMESH_DEX_STORAGE_PATH__
+    file: __APPMESH_AUTH_STORAGE_PATH__
 
 web:
-  http: __APPMESH_DEX_LISTEN__
+  http: __APPMESH_AUTH_LISTEN__
 
 telemetry:
-  http: __APPMESH_DEX_TELEMETRY_LISTEN__
+  http: __APPMESH_AUTH_TELEMETRY_LISTEN__
 
 oauth2:
   responseTypes: ["code"]
   # Password login is deliberately bound to Dex's built-in local password DB.
-  # External connectors continue to use browser or device authorization. The
-  # The auth-service System App enables Dex's current client-credentials feature flag.
+  # External connectors continue to use browser or device authorization.
+  # The identity System App enables Dex's current client-credentials feature flag.
   passwordConnector: local
   grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"]
 
@@ -75,7 +75,7 @@ staticClients:
   - id: appmesh-web
     name: App Mesh Web
     public: true
-    redirectURIs: [__APPMESH_DEX_WEB_CALLBACK__]
+    redirectURIs: [__APPMESH_AUTH_WEB_CALLBACK__]
 
   # Confidential machine client for CI and unattended automation. It uses the
   # client_credentials grant with scope audience:server:client_id:appmesh-api and
@@ -83,18 +83,18 @@ staticClients:
   # the secret once and keeps it mode-0600 in work/auth/secrets/automation-client.
   - id: appmesh-automation
     name: App Mesh Automation
-    secret: __APPMESH_DEX_AUTOMATION_SECRET__
+    secret: __APPMESH_AUTH_AUTOMATION_SECRET__
     public: false
 
 enablePasswordDB: true
 staticPasswords:
-  - email: __APPMESH_DEX_INITIAL_ADMIN_EMAIL__
-    hash: __APPMESH_DEX_INITIAL_ADMIN_PASSWORD_HASH__
-    username: __APPMESH_DEX_INITIAL_ADMIN_USERNAME__
-    userID: __APPMESH_DEX_INITIAL_ADMIN_USER_ID__
+  - email: __APPMESH_AUTH_INITIAL_ADMIN_EMAIL__
+    hash: __APPMESH_AUTH_INITIAL_ADMIN_PASSWORD_HASH__
+    username: __APPMESH_AUTH_INITIAL_ADMIN_USERNAME__
+    userID: __APPMESH_AUTH_INITIAL_ADMIN_USER_ID__
   # Read-only viewer identity. Its (issuer, subject) Principal is pre-seeded in
   # the packaged authorization.yaml with the appmesh-viewer role.
-  - email: __APPMESH_DEX_INITIAL_GUEST_EMAIL__
-    hash: __APPMESH_DEX_INITIAL_GUEST_PASSWORD_HASH__
-    username: __APPMESH_DEX_INITIAL_GUEST_USERNAME__
-    userID: __APPMESH_DEX_INITIAL_GUEST_USER_ID__
+  - email: __APPMESH_AUTH_INITIAL_GUEST_EMAIL__
+    hash: __APPMESH_AUTH_INITIAL_GUEST_PASSWORD_HASH__
+    username: __APPMESH_AUTH_INITIAL_GUEST_USERNAME__
+    userID: __APPMESH_AUTH_INITIAL_GUEST_USER_ID__

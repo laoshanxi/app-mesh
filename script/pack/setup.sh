@@ -34,7 +34,7 @@ readonly WORKFLOW_INIT_MARKER="${PROG_HOME}/work/.workflow_initialized"
 readonly WORKFLOW_BASELINE="${PROG_HOME}/work/.workflow_builtin_template.yaml"
 readonly WORKFLOW_DISABLED_APP="${WORKFLOW_APP}.builtin-disabled"
 readonly AUTH_LAUNCHER="${PROG_HOME}/script/appmesh-auth.sh"
-readonly AUTH_APP_NAMES=(auth-service)
+readonly AUTH_APP_NAMES=(identity)
 
 AUTH_ACCESS_URL_EXPLICIT=0
 AUTH_ISSUER_EXPLICIT=0
@@ -43,19 +43,19 @@ AUTH_TLS_VERIFY_EXPLICIT=0
 AUTH_CA_PATH_EXPLICIT=0
 AUTH_ROLE_EXPLICIT=0
 PREVIOUS_AUTH_MODE=""
-if [ "${APPMESH_AUTH_ACCESS_URL+x}" = x ] || [ "${APPMESH_DEX_ACCESS_URL+x}" = x ]; then
+if [ "${APPMESH_AUTH_ACCESS_URL+x}" = x ]; then
     AUTH_ACCESS_URL_EXPLICIT=1
 fi
-if [ "${APPMESH_AUTH_ISSUER+x}" = x ] || [ "${APPMESH_DEX_ISSUER+x}" = x ]; then
+if [ "${APPMESH_AUTH_ISSUER+x}" = x ]; then
     AUTH_ISSUER_EXPLICIT=1
 fi
 if [ "${APPMESH_AUTH_BROWSER_ENTRY+x}" = x ]; then
     AUTH_BROWSER_ENTRY_EXPLICIT=1
 fi
-if [ "${APPMESH_AUTH_TLS_VERIFY+x}" = x ] || [ "${APPMESH_DEX_TLS_VERIFY+x}" = x ]; then
+if [ "${APPMESH_AUTH_TLS_VERIFY+x}" = x ]; then
     AUTH_TLS_VERIFY_EXPLICIT=1
 fi
-if [ "${APPMESH_AUTH_CA_PATH+x}" = x ] || [ "${APPMESH_DEX_CA_PATH+x}" = x ]; then
+if [ "${APPMESH_AUTH_CA_PATH+x}" = x ]; then
     AUTH_CA_PATH_EXPLICIT=1
 fi
 if [ "${APPMESH_AUTH_ROLE+x}" = x ]; then
@@ -282,6 +282,44 @@ remove_obsolete_auth_app_definition() {
     info "Removed an obsolete bundled authentication application definition"
 }
 
+# Bundled System Apps renamed in one release keep their state across an upgrade:
+# the definition in apps/ and the persisted copy in work/apps/ move to the new
+# name. When both names exist, the old copy is removed only after it is
+# validated as the bundled definition.
+migrate_renamed_bundled_apps() {
+    local pair
+    local old_name
+    local new_name
+    local dir
+    local old_file
+    local new_file
+
+    for pair in "auth-service:identity" "pytask:py-task" "pyexec:py-exec"; do
+        old_name="${pair%%:*}"
+        new_name="${pair#*:}"
+        for dir in "${PROG_HOME}/apps" "${PROG_HOME}/work/apps"; do
+            old_file="${dir}/${old_name}.yaml"
+            new_file="${dir}/${new_name}.yaml"
+            [ -e "$old_file" ] || continue
+            [ ! -L "$old_file" ] || die "Refusing symbolic-link application definition: $old_file"
+            [ -f "$old_file" ] || die "Renamed application definition is not a regular file: $old_file"
+            grep -Eq "^name:[[:space:]]*${old_name}[[:space:]]*$" "$old_file" || \
+                die "Refusing to migrate an unrecognized application definition: $old_file"
+            grep -Eq '^owner_principal_id:[[:space:]]*system:appmesh[[:space:]]*$' "$old_file" || \
+                die "Refusing to migrate an unrecognized application definition: $old_file"
+            grep -Eq '^system:[[:space:]]*true[[:space:]]*$' "$old_file" || \
+                die "Refusing to migrate an unrecognized application definition: $old_file"
+            if [ -e "$new_file" ]; then
+                rm -f -- "$old_file"
+                info "Removed the superseded <${old_name}> application definition (${dir})"
+            else
+                mv -- "$old_file" "$new_file"
+                info "Renamed the bundled application <${old_name}> to <${new_name}> (${dir})"
+            fi
+        done
+    done
+}
+
 write_env_entry() {
     local target="$1"
     local name="$2"
@@ -435,11 +473,11 @@ configure_authentication() {
         fi
     fi
 
-    issuer=$(read_env_entry APPMESH_AUTH_ISSUER 2>/dev/null || read_env_entry APPMESH_DEX_ISSUER 2>/dev/null || true)
-    access_url=$(read_env_entry APPMESH_AUTH_ACCESS_URL 2>/dev/null || read_env_entry APPMESH_DEX_ACCESS_URL 2>/dev/null || true)
+    issuer=$(read_env_entry APPMESH_AUTH_ISSUER 2>/dev/null || true)
+    access_url=$(read_env_entry APPMESH_AUTH_ACCESS_URL 2>/dev/null || true)
     browser_entry=$(read_env_entry APPMESH_AUTH_BROWSER_ENTRY 2>/dev/null || true)
-    tls_verify=$(read_env_entry APPMESH_AUTH_TLS_VERIFY 2>/dev/null || read_env_entry APPMESH_DEX_TLS_VERIFY 2>/dev/null || true)
-    ca_path=$(read_env_entry APPMESH_AUTH_CA_PATH 2>/dev/null || read_env_entry APPMESH_DEX_CA_PATH 2>/dev/null || true)
+    tls_verify=$(read_env_entry APPMESH_AUTH_TLS_VERIFY 2>/dev/null || true)
+    ca_path=$(read_env_entry APPMESH_AUTH_CA_PATH 2>/dev/null || true)
 
     if [ "$mode" = "external" ]; then
         if [ "$PREVIOUS_AUTH_MODE" != "external" ] && [ "$AUTH_ISSUER_EXPLICIT" -ne 1 ]; then
@@ -475,10 +513,6 @@ configure_authentication() {
             remove_env_entry "$ENV_FILE" APPMESH_AUTH_CA_PATH
         fi
         set_auth_app_status 0
-        remove_env_entry "$ENV_FILE" APPMESH_DEX_ISSUER
-        remove_env_entry "$ENV_FILE" APPMESH_DEX_ACCESS_URL
-        remove_env_entry "$ENV_FILE" APPMESH_DEX_TLS_VERIFY
-        remove_env_entry "$ENV_FILE" APPMESH_DEX_CA_PATH
         info "Authentication mode set to external. The bundled authentication service is disabled."
         # The whole configuration is persisted above, so a failed check keeps the
         # selection and a repeated setup re-runs only the check.
@@ -897,8 +931,6 @@ setup_ssl_certificates() {
 print_startup_instructions() {
     local init_system
     init_system=$(detect_init_system)
-    local rest_port
-    rest_port=$(read_env_entry APPMESH_REST_RestListenPort 2>/dev/null || echo 6060)
 
     {
         echo
@@ -917,9 +949,7 @@ print_startup_instructions() {
             echo "       sudo service appmesh start"
             ;;
         esac
-        echo "  2. Open the web console"
-        echo "       https://<this-host>:${rest_port}"
-        echo "  3. Sign in"
+        echo "  2. Sign in"
         if [ "$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)" = "builtin" ]; then
             if grep -q '^password=' "${PROG_HOME}/work/auth/secrets/initial-admin-credentials" 2>/dev/null; then
                 echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh print-initial-password"
@@ -934,6 +964,18 @@ print_startup_instructions() {
         echo
         echo "Logs: ${PROG_HOME}/work/server.log"
         echo "Docs: https://app-mesh.readthedocs.io"
+        if command -v rpm >/dev/null 2>&1 && rpm -q appmesh >/dev/null 2>&1; then
+            echo "Uninstall: sudo yum remove appmesh"
+        elif command -v dpkg >/dev/null 2>&1 && dpkg -s appmesh >/dev/null 2>&1; then
+            echo "Uninstall: sudo apt remove appmesh"
+        elif [ "$init_system" = "launchd" ]; then
+            echo "Uninstall:"
+            echo "       sudo launchctl unload -w $LAUNCHD_FILE"
+            echo "       sudo rm -rf $PROG_HOME $LAUNCHD_FILE /usr/local/bin/appm"
+            echo "       sudo pkgutil --forget com.laoshanxi.appmesh"
+        else
+            echo "Uninstall: sudo service appmesh stop; sudo rm -rf $PROG_HOME"
+        fi
         echo
     } | tee "$PROG_HOME/NEXT_STEPS.txt" || warn "Failed to write $PROG_HOME/NEXT_STEPS.txt"
     chmod 644 "$PROG_HOME/NEXT_STEPS.txt" 2>/dev/null || true
@@ -955,6 +997,7 @@ main() {
     # Clean
     clean_environment
     remove_obsolete_auth_app_definition
+    migrate_renamed_bundled_apps
 
     # Setup
     setup_env_file

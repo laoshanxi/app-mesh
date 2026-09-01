@@ -3,13 +3,13 @@
 //! These tests are skipped unless DEX_ISSUER and DEX_ACCESS_URL are set. They never
 //! use a username/password grant and never send refresh tokens to App Mesh.
 
-use appmesh::{DexOAuthClient, DexOAuthConfig, DevicePoll};
+use appmesh::{OAuthClient, OAuthConfig, DevicePoll};
 
-fn live_config() -> Option<DexOAuthConfig> {
+fn live_config() -> Option<OAuthConfig> {
     let issuer = std::env::var("DEX_ISSUER").ok()?;
     let access_url = std::env::var("DEX_ACCESS_URL").ok()?;
     Some(
-        DexOAuthConfig::new(
+        OAuthConfig::new(
             issuer,
             access_url,
             std::env::var("DEX_CLIENT_ID").unwrap_or_else(|_| "appmesh-cli".into()),
@@ -24,7 +24,7 @@ async fn live_device_flow_authorization_pending() {
         eprintln!("SKIP live_device_flow_authorization_pending: Dex environment is not set");
         return;
     };
-    let oauth = DexOAuthClient::discover(config).await.expect("discover Dex");
+    let oauth = OAuthClient::discover(config).await.expect("discover oauth");
     let device = oauth.request_device_authorization().await.expect("request device authorization");
     assert!(!device.device_code.is_empty());
     assert!(!device.user_code.is_empty());
@@ -41,7 +41,7 @@ async fn live_device_flow_authorization_pending() {
 async fn plain_http_issuer_requires_opt_in() {
     const UNROUTABLE_HTTP_ISSUER: &str = "http://issuer.invalid:6062/auth";
 
-    let error = DexOAuthClient::discover(DexOAuthConfig::new(
+    let error = OAuthClient::discover(OAuthConfig::new(
         UNROUTABLE_HTTP_ISSUER,
         UNROUTABLE_HTTP_ISSUER,
         "appmesh-cli",
@@ -50,8 +50,8 @@ async fn plain_http_issuer_requires_opt_in() {
     .expect_err("plain-HTTP issuer must be rejected by default");
     assert!(error.to_string().contains("must use HTTPS"), "got: {error}");
 
-    let relaxed = DexOAuthClient::discover(
-        DexOAuthConfig::new(UNROUTABLE_HTTP_ISSUER, UNROUTABLE_HTTP_ISSUER, "appmesh-cli")
+    let relaxed = OAuthClient::discover(
+        OAuthConfig::new(UNROUTABLE_HTTP_ISSUER, UNROUTABLE_HTTP_ISSUER, "appmesh-cli")
             .allow_plain_http(true),
     )
     .await

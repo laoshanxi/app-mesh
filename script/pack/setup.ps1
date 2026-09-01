@@ -86,7 +86,7 @@ $AppMeshHome = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $PackagedOidc = Join-Path $AppMeshHome "config\oidc.yaml"
 $OverrideDir = Join-Path $AppMeshHome "work\config"
 $OverrideOidc = Join-Path $OverrideDir "oidc.yaml"
-$AuthServiceDefinition = Join-Path $AppMeshHome "apps\auth-service.yaml"
+$AuthServiceDefinition = Join-Path $AppMeshHome "apps\identity.yaml"
 $NssmExe = Join-Path $AppMeshHome "bin\nssm.exe"
 
 if (-not (Test-Path $PackagedOidc)) {
