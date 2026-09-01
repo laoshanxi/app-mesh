@@ -92,7 +92,10 @@ jobs:
         working-directory: build
         run: |
           export PATH="${PWD}/cov-analysis/bin:${PATH}"
-          cov-build --dir cov-int make
+          # Coverity scans C/C++ only. The default target also builds the Rust
+          # (passhash) and Go (workflow) helpers, whose toolchains are not
+          # configured in this container; build the daemon target instead.
+          cov-build --dir cov-int make appmesh
 
       - name: Archive Coverity results
         working-directory: build
