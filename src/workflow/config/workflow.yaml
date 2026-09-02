@@ -5,6 +5,9 @@ description: Workflow engine using caller bearer delegation and Engine-issued in
 owner_principal_id: system:appmesh
 system: true
 startup_phase: normal
+env:
+  # Verify the daemon REST callback (self-signed cert) during principal lookup.
+  APPMESH_CA: /opt/appmesh/ssl/ca.pem
 behavior:
   exit: restart
 metadata:

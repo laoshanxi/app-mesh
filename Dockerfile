@@ -67,7 +67,10 @@ COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/sdk/llm-
 COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/sdk/llm-agent/requirements.txt /opt/appmesh/lib/llm-agent/requirements.txt
 COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/sdk/llm-agent/config/llm-agent.yaml /opt/appmesh/apps/llm-agent.yaml
 # Optional llm-agent deps; includes Claude Code.
-RUN pip3 install --break-system-packages --no-cache-dir -r /opt/appmesh/lib/llm-agent/requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r /opt/appmesh/lib/llm-agent/requirements.txt && \
+    # This image runs the agent: auto-start the App on boot.
+    sed -i 's/^status: false$/status: true/' /opt/appmesh/apps/llm-agent.yaml && \
+    grep -q '^status: true$' /opt/appmesh/apps/llm-agent.yaml
 USER ${APPMESH_ID}:${APPMESH_ID}
 
 FROM runtime_base AS appmesh

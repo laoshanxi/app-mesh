@@ -185,7 +185,7 @@ void Configuration::addApp2Map(std::shared_ptr<Application> app)
 	const static char fname[] = "Configuration::addApp2Map() ";
 	if (m_apps.bind(app->getName(), app) == 1)
 	{
-		LOG_ERR << fname << "Application <" << app->getName() << "> already exists";
+		LOG_WAR << fname << "Application <" << app->getName() << "> already exists, keep the loaded definition";
 	}
 }
 

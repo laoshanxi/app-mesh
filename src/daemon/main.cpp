@@ -340,8 +340,10 @@ void AppMeshDaemon::recoverApplications()
 	LOG_INF << fname << "Starting application recovery process";
 
 	auto config = Configuration::instance();
-	config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR);
+	// Persisted definitions first: a registered app must keep winning over its
+	// pre-loaded twin after a restart.
 	config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR);
+	config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR);
 
 	LOG_INF << fname << "Applications recovered";
 }
