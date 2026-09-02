@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use appmesh::{AppEvent, Application, AppMeshClient, ExitAction};
+use serde_json::{json, Value};
 use std::io::{self, IsTerminal, Read, Write};
 use std::sync::Arc;
 
@@ -56,6 +57,8 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
         // lacks, e.g. a legacy `owner:`), so daemon-side fail-loud validation —
         // like the explicit legacy-owner migration error — reaches the user
         // instead of the app being silently registered to the caller.
+        // -e/-z bypass build_app_from_args on this path; overlay them onto the document.
+        let raw_app = overlay_env_args(raw_app, args)?;
         client.add_app_raw(raw_app).await.context("Failed to add application")?
     } else {
         client.add_app(&app, None).await.context("Failed to add application")?
@@ -83,6 +86,32 @@ fn read_app_from_stdin(source: &str) -> Result<(Application, serde_json::Value)>
     let app: Application =
         serde_json::from_value(yaml.clone()).context("Invalid application definition")?;
     Ok((app, yaml))
+}
+
+/// Overlay -e/-z onto a --stdin/-D document; without it they were silently dropped.
+fn overlay_env_args(mut doc: Value, args: &AddArgs) -> Result<Value> {
+    fn overlay(doc: &mut Value, field: &str, pairs: &[String]) -> Result<()> {
+        if pairs.is_empty() {
+            return Ok(());
+        }
+        let object = doc
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("the document is not a JSON object"))?;
+        let slot = object.entry(field).or_insert_with(|| json!({}));
+        let map = slot
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("document field `{}` is not a map", field))?;
+        for pair in pairs {
+            let (key, value) = pair
+                .split_once('=')
+                .ok_or_else(|| anyhow::anyhow!("Invalid environment variable format: {}", pair))?;
+            map.insert(key.to_string(), json!(value));
+        }
+        Ok(())
+    }
+    overlay(&mut doc, "env", &args.env)?;
+    overlay(&mut doc, "sec_env", &args.security_env)?;
+    Ok(doc)
 }
 
 fn build_app_from_args(args: &AddArgs) -> Result<Application> {

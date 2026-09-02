@@ -26,4 +26,4 @@ env:
   LLMAGENT_WORKSPACE_DIR: ./llm-agent-workspace
   LLMAGENT_SESSION_IDLE_MINUTES: "30"
   LLMAGENT_SESSION_MAX_HOURS: "8"
-status: 1
+status: true

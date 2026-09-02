@@ -1,6 +1,5 @@
 # Pre-installed App definition for llm-agent — the shared handler (Scenario A, batch/DAG).
-# The daemon auto-loads it on boot but does NOT start it (status: 0); enable on demand:
-#   appm enable -a llm-agent
+# Stopped by default; enable after you register a key. The llm image starts it on boot.
 #
 # It runs the Claude Agent SDK; the SDK inherits this App's env and passes it to the
 # bundled Claude Code CLI, so the model/provider is chosen purely via env (CLI uses no
@@ -36,4 +35,4 @@ env:
   #           LLMAGENT_ALLOWED_TOOLS, LLMAGENT_PERMISSION_MODE, LLMAGENT_MAX_ITERATIONS.
 metadata:
   type: llm-agent-system
-status: 0
+status: false

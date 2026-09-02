@@ -39,7 +39,7 @@ package registers nothing itself):
 | | Scenario A — batch / DAG | Scenario B — interactive |
 |---|---|---|
 | App | one shared App — `llm-agent` | one worker App per session — `<app>-sess-<id>` |
-| Started by | loaded at boot, `status: 0` → `appm enable -a llm-agent` | admin, per session |
+| Started by | llm image: started at boot; other installs: `appm enable -a llm-agent` after registration | admin, per session |
 | Sessions | many | exactly one, pre-assigned |
 | Streaming | no (returns the final answer) | yes (worker streams to its own STDOUT) |
 | Lifecycle | long-lived (`exit: restart`) | exits on close/idle/max-life → daemon removes it (`exit: remove`) |
@@ -121,17 +121,15 @@ Errors come back as `{ "status":"error", "message":"..." }`.
 ## Install & run
 
 Packaged by [`CMakeLists.txt`](CMakeLists.txt): the `llm_agent` package installs to
-`<prefix>/lib/llm-agent` and `config/llm-agent.yaml` to `<prefix>/apps/`, so the daemon
-auto-loads the shared App on boot but does **not** start it (`status: 0`). The pre-loaded
-definition carries **no Claude key**, so enabling it as-is fails on the first turn —
-register it with a key (recommended), or attach the secured env to the pre-loaded App and
-then `appm enable`. A source install to a custom prefix must also edit the yaml's
-`working_dir`.
+`<prefix>/lib/llm-agent` and `config/llm-agent.yaml` to `<prefix>/apps/`. The pre-loaded
+definition carries **no model credential** and stays stopped (`status: false`) — the llm
+image alone overrides it to started. Register a key before the first turn. A source
+install to a custom prefix must also edit the yaml's `working_dir`.
 
 ```bash
-# register the shared App WITH a key (replaces the keyless pre-loaded definition), then start it:
-appm add -a llm-agent -z ANTHROPIC_API_KEY=<key> -e LLMAGENT_MODEL=claude-opus-4-8
-appm enable -a llm-agent
+# register with a key (replaces the keyless pre-loaded definition). -D submits the full
+# definition (command/working_dir included); --force skips the exists prompt:
+appm add -D @/opt/appmesh/apps/llm-agent.yaml -z ANTHROPIC_API_KEY=<key> -e LLMAGENT_MODEL=claude-opus-4-8 --force
 ```
 
 Smoke-test once it is up:
@@ -230,24 +228,24 @@ App, put the same env in `config/llm-agent-worker.yaml`.)
 
 ```bash
 # Claude — Anthropic API (default)
-appm add -a llm-agent -z ANTHROPIC_API_KEY=<key> -e LLMAGENT_MODEL=claude-opus-4-8
+appm add -D @/opt/appmesh/apps/llm-agent.yaml -z ANTHROPIC_API_KEY=<key> -e LLMAGENT_MODEL=claude-opus-4-8 --force
 
 # Claude — Amazon Bedrock (AWS_ACCESS_KEY_ID is an identifier → -e; the secret key → -z.
 #                          Or omit both and use an instance role.)
-appm add -a llm-agent \
+appm add -D @/opt/appmesh/apps/llm-agent.yaml --force \
   -e CLAUDE_CODE_USE_BEDROCK=1 -e AWS_REGION=us-east-1 \
   -e AWS_ACCESS_KEY_ID=<id> -z AWS_SECRET_ACCESS_KEY=<secret> \
   -e LLMAGENT_MODEL='anthropic.claude-opus-4-8'
 
 # Claude — Google Vertex (auth via ADC / a mounted service-account key)
-appm add -a llm-agent \
+appm add -D @/opt/appmesh/apps/llm-agent.yaml --force \
   -e CLAUDE_CODE_USE_VERTEX=1 \
   -e ANTHROPIC_VERTEX_PROJECT_ID=<gcp-project> -e CLOUD_ML_REGION=us-east5 \
   -e GOOGLE_APPLICATION_CREDENTIALS=/opt/appmesh/work/llm-agent-workspace/sa.json \
   -e LLMAGENT_MODEL=claude-opus-4-8
 
 # DeepSeek (native Anthropic endpoint)
-appm add -a llm-agent \
+appm add -D @/opt/appmesh/apps/llm-agent.yaml --force \
   -e ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic \
   -z ANTHROPIC_AUTH_TOKEN=<deepseek-key> \
   -e LLMAGENT_MODEL='deepseek-v4-pro[1m]' \
@@ -257,7 +255,7 @@ appm add -a llm-agent \
   -e CLAUDE_CODE_SUBAGENT_MODEL=deepseek-v4-flash
 
 # Qwen — Model Studio (Beijing, pay-as-you-go)
-appm add -a llm-agent \
+appm add -D @/opt/appmesh/apps/llm-agent.yaml --force \
   -e ANTHROPIC_BASE_URL=https://dashscope.aliyuncs.com/apps/anthropic \
   -z ANTHROPIC_AUTH_TOKEN=<dashscope-key> \
   -e LLMAGENT_MODEL=qwen3.7-max \
@@ -267,7 +265,7 @@ appm add -a llm-agent \
   -e CLAUDE_CODE_SUBAGENT_MODEL=qwen3.6-flash
 
 # GLM — Zhipu
-appm add -a llm-agent \
+appm add -D @/opt/appmesh/apps/llm-agent.yaml --force \
   -e ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic \
   -z ANTHROPIC_AUTH_TOKEN=<zhipu-key> \
   -e LLMAGENT_MODEL='glm-5.2[1m]' \
@@ -278,7 +276,7 @@ appm add -a llm-agent \
   -e CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000
 
 # MiniMax (China; international: api.minimax.io)
-appm add -a llm-agent \
+appm add -D @/opt/appmesh/apps/llm-agent.yaml --force \
   -e ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic \
   -z ANTHROPIC_AUTH_TOKEN=<minimax-key> \
   -e LLMAGENT_MODEL='MiniMax-M3[1m]' \
