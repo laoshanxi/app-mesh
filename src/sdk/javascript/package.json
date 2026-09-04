@@ -63,7 +63,7 @@
     "axios": "^1.8.4"
   },
   "optionalDependencies": {
-    "msgpack-lite": "^0.1.26",
+    "msgpack-lite": "^0.2.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
