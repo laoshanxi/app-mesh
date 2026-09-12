@@ -57,7 +57,15 @@ fi
 
 # Install the packages, skipping if they are already installed
 for package in "${BREW_PACKAGES[@]}"; do
-    if command -v "$package" &>/dev/null; then
+    # brew rust/openssl@3 expose no same-named binary; probe the real command,
+    # else an already-present toolchain still pulls the brew formula (rust
+    # currently requires llvm@22, which has no arm64_sonoma bottle).
+    case "$package" in
+        rust)      probe="rustc" ;;
+        openssl@3) probe="openssl" ;;
+        *)         probe="$package" ;;
+    esac
+    if command -v "$probe" &>/dev/null; then
         echo "$package is already installed, skipping."
     else
         echo "Installing $package..."
