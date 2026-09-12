@@ -179,6 +179,10 @@ pub struct Application {
     pub retention: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health_check_cmd: Option<String>,
+    /// Dependency names; each must be registered, enabled, running, and healthy
+    /// before this application starts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depends_on: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -230,6 +234,9 @@ pub struct Application {
     pub last_exit_time: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// Response-only: dependencies not yet satisfied at the last scheduler pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_for: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_start_time: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -356,6 +363,12 @@ impl ApplicationBuilder {
 
     pub fn health_check_cmd(mut self, cmd: &str) -> Self {
         self.app.health_check_cmd = Some(cmd.to_string());
+        self
+    }
+
+    /// Set the dependency names (continuously scheduled applications only).
+    pub fn depends_on(mut self, names: Vec<String>) -> Self {
+        self.app.depends_on = Some(names);
         self
     }
 

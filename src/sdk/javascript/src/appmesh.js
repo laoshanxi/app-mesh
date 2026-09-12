@@ -406,6 +406,7 @@ class AppMeshClient {
    *   daily_limitation: { daily_start: "", daily_end: "" },
    *   retention: null,
    *   health_check_cmd: null,
+   *   depends_on: [],
    *   permission: null,
    *   env: {},
    *   sec_env: {},

@@ -1309,6 +1309,8 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 			}
 			existApp[JSON_KEY_APP_name] = Configuration::instance()->generateRunAppName(clientProvideAppName);
 			existApp[JSON_KEY_APP_owner_principal_id] = callerPrincipalId;
+			// On-demand runs are explicit user actions and bypass the dependency gate.
+			existApp.erase(JSON_KEY_APP_depends_on);
 			jsonApp = std::move(existApp);
 		}
 		else

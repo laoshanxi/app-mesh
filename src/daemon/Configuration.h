@@ -95,6 +95,15 @@ public:
 	std::shared_ptr<Application> addApp(const nlohmann::json &jsonApp, bool persistable = true);
 	void removeApp(const std::string &appName, const Application *expected = nullptr);
 	std::shared_ptr<Application> parseApp(const nlohmann::json &jsonApp);
+	/// Registers a parsed application from app recovery without REST-path
+	/// validation (see validateRecoveredDependencies). Takes the app mutation lock.
+	void registerRecoveredApp(const std::shared_ptr<Application> &app);
+	/// Rejects non-converging depends_on: on-demand or recurring apps, unknown
+	/// names, cycles.
+	void validateDependencies(const std::shared_ptr<Application> &app, bool persistable) const noexcept(false);
+	/// Graph-wide depends_on validation of recovered apps; call once after all
+	/// loadApps calls. Cycles refuse partial recovery, dangling names only warn.
+	void validateRecoveredDependencies() const noexcept(false);
 
 	int getScheduleInterval();
 	int getRestListenPort();
@@ -141,7 +150,8 @@ private:
 	friend class AuthorizationStore;
 	std::unique_lock<std::recursive_mutex> lockAppMutation() const;
 	bool isCurrentApp(const std::string &appName, const std::shared_ptr<Application> &expected) const;
-	void addApp2Map(std::shared_ptr<Application> app);
+	/// True when depends_on edges reachable from `seedDeps` reach `targetName`.
+	bool dependencyCycleExists(const std::vector<std::string> &seedDeps, const std::string &targetName) const;
 
 private:
 	mutable ACE_Map_Manager<std::string, std::shared_ptr<Application>, ACE_Recursive_Thread_Mutex> m_apps;

@@ -344,6 +344,8 @@ void AppMeshDaemon::recoverApplications()
 	// pre-loaded twin after a restart.
 	config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR);
 	config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR);
+	// Validate the dependency graph once after both directories are loaded.
+	config->validateRecoveredDependencies();
 
 	LOG_INF << fname << "Applications recovered";
 }

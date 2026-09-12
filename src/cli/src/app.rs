@@ -167,6 +167,11 @@ pub struct AddArgs {
     #[arg(short = 'K', long = "health-check")]
     pub health_check: Option<String>,
 
+    /// Dependencies: start only after each named app is running and healthy
+    /// (repeatable: -n APP_NAME)
+    #[arg(short = 'n', long = "depends-on")]
+    pub depends_on: Vec<String>,
+
     /// Docker image
     #[arg(short = 'I', long = "docker-image")]
     pub docker_image: Option<String>,

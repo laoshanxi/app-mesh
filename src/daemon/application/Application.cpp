@@ -1,6 +1,7 @@
 // src/daemon/application/Application.cpp
 #include "Application.h"
 
+#include <algorithm>
 #include <limits>
 #include <list>
 #include <utility>
@@ -200,6 +201,13 @@ bool Application::isSystemProtected() const
 
 int Application::startupPhase() const { return m_startupPhase; }
 
+const std::vector<std::string> &Application::dependsOn() const { return m_dependsOn; }
+
+const std::vector<std::string> Application::waitingFor() const
+{
+	return *m_waitingFor.synchronize();
+}
+
 const std::string &Application::healthCheckCmd() const
 {
 	return m_healthCheckCmd;
@@ -332,6 +340,25 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	}
 
 	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_working_dir));
+
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_depends_on))
+	{
+		const auto &dependsOn = jsonObj.at(JSON_KEY_APP_depends_on);
+		if (!dependsOn.is_array())
+			throw std::invalid_argument("depends_on must be an array of application names");
+		for (const auto &dep : dependsOn)
+		{
+			if (!dep.is_string())
+				throw std::invalid_argument("depends_on must be an array of application names");
+			const auto depName = Utility::stdStringTrim(dep.get<std::string>());
+			if (depName.empty())
+				continue;
+			if (depName == app->m_name)
+				throw std::invalid_argument("depends_on must not reference the application itself");
+			if (std::find(app->m_dependsOn.begin(), app->m_dependsOn.end(), depName) == app->m_dependsOn.end())
+				app->m_dependsOn.push_back(depName);
+		}
+	}
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_status))
 	{
@@ -708,6 +735,53 @@ void Application::execute(void *ptree, bool refreshMetrics)
 	collectMetrics(ptree, refreshMetrics);
 }
 
+bool Application::unmetDependencies(std::vector<std::string> &unmet) const
+{
+	// Point-in-time schedules have no defined gating; registration rejects them.
+	if (m_dependsOn.empty() || isRecurring())
+		return true;
+	for (const auto &depName : m_dependsOn)
+	{
+		// getApp takes only the app map lock; safe under the config mutation lock.
+		const auto dep = Configuration::instance()->getApp(depName, false);
+		// Unregistered names (deleted dependency) do not gate.
+		if (!dep)
+			continue;
+		if (dep->isEnabled() && dep->getpid() > 1 && dep->health() == 0)
+			continue;
+		unmet.push_back(depName);
+	}
+	return unmet.empty();
+}
+
+bool Application::refreshDependencyGate()
+{
+	const static char fname[] = "Application::refreshDependencyGate() ";
+
+	std::vector<std::string> unmet;
+	const bool satisfied = unmetDependencies(unmet);
+	{
+		auto locked = m_waitingFor.synchronize();
+		if (*locked == unmet)
+			return satisfied;
+		*locked = unmet;
+	}
+	if (satisfied)
+		LOG_INF << fname << "Dependencies of application <" << m_name << "> are satisfied";
+	else
+	{
+		std::string pending;
+		for (const auto &depName : unmet)
+		{
+			if (!pending.empty())
+				pending += ", ";
+			pending += depName;
+		}
+		LOG_INF << fname << "Application <" << m_name << "> waits for dependencies: <" << pending << ">";
+	}
+	return satisfied;
+}
+
 void Application::maintainRuntime(const std::chrono::system_clock::time_point &now)
 {
 	const auto needsPolledExitReport = [](const std::shared_ptr<AppProcess> &process)
@@ -754,20 +828,26 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 	const auto currentProcess = m_process.get();
 	const bool processRunning = currentProcess && currentProcess->running();
 
+	// Dependency gate, outside lifecycleMutex: unmet dependencies hold the plan
+	// and armed starts; the next tick retries.
+	const bool dependenciesReady = refreshDependencyGate();
+
 	std::uint64_t lifecycleGeneration = 0;
 	{
 		// Serialize only schedule/restart decisions.
 		std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
 		if (m_runtime->needsSchedulePlan())
 		{
-			if (this->available(now))
-				scheduleNext(now);
-			else
+			if (!this->available(now))
 				m_runtime->suspendSchedule();
+			else if (dependenciesReady)
+				scheduleNext(now);
+			// else: keep NeedsPlan so the next tick re-evaluates.
 		}
 		if (isEnabled() && !processRunning && m_runtime->consumeRestartEvaluation())
 			applyExitPolicy();
-		lifecycleGeneration = consumeScheduledStart(now);
+		// An armed start stays armed and fires once the gate opens.
+		lifecycleGeneration = dependenciesReady ? consumeScheduledStart(now) : 0;
 	}
 	if (lifecycleGeneration != 0)
 		startRun(false, 0, nullptr, lifecycleGeneration);
@@ -1354,6 +1434,10 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	{
 		result[JSON_KEY_APP_working_dir] = std::string(m_workdir);
 	}
+	if (!m_dependsOn.empty())
+	{
+		result[JSON_KEY_APP_depends_on] = m_dependsOn;
+	}
 	result[JSON_KEY_APP_status] = isEnabled();
 	if (m_resourceLimit)
 	{
@@ -1484,6 +1568,11 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		if (!err.empty())
 		{
 			result[JSON_KEY_APP_last_error] = std::string(err);
+		}
+		const auto waitingFor = this->waitingFor();
+		if (!waitingFor.empty())
+		{
+			result[JSON_KEY_APP_waiting_for] = waitingFor;
 		}
 		result[JSON_KEY_APP_starts] = static_cast<long long>(starts);
 		auto nextLaunch = run.nextLaunch;

@@ -176,6 +176,8 @@ class App:
         """extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')."""
         self.health_check_cmd = _get_str(data, "health_check_cmd")
         """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
+        self.depends_on = _get_item(data, "depends_on")
+        """list of application names this app depends on; each must be registered, enabled, running and healthy before this app starts (continuously scheduled apps only, ``Optional[List[str]]``)"""
         self.permission = _get_int(data, "permission")
         """app user permission, two decimal digits [others][group], each digit deny:1, read:2, write:3. Only the tens digit (others) is evaluated by the daemon for non-owner access; see ``set_permission()``."""
         self.behavior = App.Behavior(_get_item(data, "behavior"))
@@ -217,6 +219,8 @@ class App:
         """last exit time"""
         self.last_error = _get_str(data, "last_error")
         """last error message"""
+        self.waiting_for = _get_item(data, "waiting_for")
+        """read-only: dependency names not yet satisfied at the last scheduler pass (``Optional[List[str]]``, absent when nothing is held)"""
         self.next_start_time = _get_int(data, "next_start_time")
         """next start time"""
         self.health = _get_int(data, "health")

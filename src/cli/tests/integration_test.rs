@@ -117,7 +117,7 @@ fn test_help_add_all_flags() {
     let s = stdout_of(&["add", "--help"]);
     for f in [
         "--app", "--cmd", "--description", "--working-dir", "--status",
-        "--shell", "--session-login", "--health-check", "--docker-image", "--pid",
+        "--shell", "--session-login", "--health-check", "--depends-on", "--docker-image", "--pid",
         "--begin-time", "--end-time", "--daily-begin", "--daily-end", "--interval", "--cron",
         "--memory-limit", "--virtual-memory", "--cpu-shares", "--log-cache-size",
         "--permission", "--metadata", "--env", "--security-env",

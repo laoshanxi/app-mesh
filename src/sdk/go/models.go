@@ -55,20 +55,23 @@ func init() {
 // Application represents the application configuration and status.
 type Application struct {
 	// Main definition
-	Name             string           `json:"name"`
-	OwnerPrincipalID *string          `json:"owner_principal_id,omitempty"`
+	Name             string  `json:"name"`
+	OwnerPrincipalID *string `json:"owner_principal_id,omitempty"`
 	// OwnerDisplayName is response-only presentation data; authorization uses OwnerPrincipalID.
-	OwnerDisplayName *string          `json:"owner_display_name,omitempty"`
-	Permission       *int             `json:"permission"`
-	ShellMode        *bool            `json:"shell"`
-	SessionLogin     *bool            `json:"session_login"`
-	Command          *string          `json:"command"`
-	Description      *string          `json:"description"`
-	WorkingDir       *string          `json:"working_dir"`
-	HealthCheckCMD   *string          `json:"health_check_cmd"`
-	Status           bool             `json:"status"`
-	StdoutCacheNum   *int             `json:"stdout_cache_num"`
-	Metadata         *json.RawMessage `json:"metadata,omitempty"`
+	OwnerDisplayName *string `json:"owner_display_name,omitempty"`
+	Permission       *int    `json:"permission"`
+	ShellMode        *bool   `json:"shell"`
+	SessionLogin     *bool   `json:"session_login"`
+	Command          *string `json:"command"`
+	Description      *string `json:"description"`
+	WorkingDir       *string `json:"working_dir"`
+	HealthCheckCMD   *string `json:"health_check_cmd"`
+	// DependsOn lists app names that must be running and healthy before this
+	// app starts (continuously scheduled apps only).
+	DependsOn      []string         `json:"depends_on,omitempty"`
+	Status         bool             `json:"status"`
+	StdoutCacheNum *int             `json:"stdout_cache_num"`
+	Metadata       *json.RawMessage `json:"metadata,omitempty"`
 
 	// Time
 	StartTime     *int64 `json:"start_time"`
@@ -105,6 +108,8 @@ type Application struct {
 
 	Version   *int    `json:"version"`
 	LastError *string `json:"last_error"`
+	// WaitingFor lists unsatisfied dependencies at the last scheduler pass; response-only.
+	WaitingFor []string `json:"waiting_for,omitempty"`
 
 	DockerImage *string `json:"docker_image"`
 

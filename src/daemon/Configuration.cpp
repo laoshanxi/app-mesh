@@ -180,9 +180,10 @@ std::vector<std::shared_ptr<Application>> Configuration::getApps() const
 	return apps;
 }
 
-void Configuration::addApp2Map(std::shared_ptr<Application> app)
+void Configuration::registerRecoveredApp(const std::shared_ptr<Application> &app)
 {
-	const static char fname[] = "Configuration::addApp2Map() ";
+	const static char fname[] = "Configuration::registerRecoveredApp() ";
+	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
 	if (m_apps.bind(app->getName(), app) == 1)
 	{
 		LOG_WAR << fname << "Application <" << app->getName() << "> already exists, keep the loaded definition";
@@ -286,7 +287,7 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 					auto jsonObj = Utility::yamlToJson(YAML::LoadFile(path));
 					jsonObj[JSON_KEY_APP_from_recover] = true;
 					auto app = this->parseApp(jsonObj);
-					this->addApp2Map(app);
+					this->registerRecoveredApp(app);
 				}
 				catch (const std::exception &e)
 				{
@@ -307,7 +308,7 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 					auto jsonObj = nlohmann::json::parse(std::ifstream(path));
 					jsonObj[JSON_KEY_APP_from_recover] = true;
 					auto app = this->parseApp(jsonObj);
-					this->addApp2Map(app);
+					this->registerRecoveredApp(app);
 				}
 				catch (const std::exception &e)
 				{
@@ -327,6 +328,42 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 	else
 	{
 		Utility::createDirectory(appDir.string());
+	}
+}
+
+void Configuration::validateRecoveredDependencies() const
+{
+	const static char fname[] = "Configuration::validateRecoveredDependencies() ";
+	// Graph-wide validation; call once after every loadApps call so a dependency
+	// in a later directory is not reported as unknown. Dangling references only
+	// warn (they do not gate at runtime); cycles refuse partial recovery.
+	std::vector<std::string> failedDefinitions;
+	for (const auto &app : getApps())
+	{
+		const auto &dependsOn = app->dependsOn();
+		if (dependsOn.empty())
+			continue;
+		if (app->isRecurring())
+			LOG_WAR << fname << "depends_on ignored for recurring application <" << app->getName() << ">";
+		for (const auto &depName : dependsOn)
+		{
+			if (!getApp(depName, false))
+				LOG_WAR << fname << "Application <" << app->getName()
+						<< "> depends on unknown application <" << depName << ">";
+		}
+		if (dependencyCycleExists(dependsOn, app->getName()))
+		{
+			LOG_ERR << fname << "depends_on cycle detected through application <" << app->getName()
+					<< ">; edit its definition to break the cycle";
+			failedDefinitions.push_back(app->getName());
+		}
+	}
+	if (!failedDefinitions.empty())
+	{
+		throw std::runtime_error(Utility::stringFormat(
+			"refusing partial application recovery: %zu definition(s) failed validation; "
+			"correct or explicitly migrate the definitions reported above before restarting",
+			failedDefinitions.size()));
 	}
 }
 
@@ -519,6 +556,48 @@ void Configuration::dump()
 	}
 }
 
+void Configuration::validateDependencies(const std::shared_ptr<Application> &app, bool persistable) const
+{
+	const auto &dependsOn = app->dependsOn();
+	if (dependsOn.empty())
+		return;
+	if (!persistable)
+		throw std::invalid_argument("depends_on is not supported for on-demand applications");
+	if (app->isRecurring())
+		throw std::invalid_argument("depends_on is only supported for continuously scheduled applications");
+	for (const auto &depName : dependsOn)
+	{
+		if (!getApp(depName, false))
+			throw std::invalid_argument("depends_on references unknown application: " + depName);
+	}
+	if (dependencyCycleExists(dependsOn, app->getName()))
+		throw std::invalid_argument("depends_on cycle detected through application: " + app->getName());
+}
+
+bool Configuration::dependencyCycleExists(const std::vector<std::string> &seedDeps, const std::string &targetName) const
+{
+	// Walks depends_on edges from the candidate's own dependencies; registered
+	// graphs are cycle-free, so any cycle returns to the candidate name.
+	std::set<std::string> visited(seedDeps.begin(), seedDeps.end());
+	std::vector<std::string> pending(seedDeps.begin(), seedDeps.end());
+	while (!pending.empty())
+	{
+		const auto current = pending.back();
+		pending.pop_back();
+		if (current == targetName)
+			return true;
+		const auto app = getApp(current, false);
+		if (!app)
+			continue;
+		for (const auto &dep : app->dependsOn())
+		{
+			if (visited.insert(dep).second)
+				pending.push_back(dep);
+		}
+	}
+	return false;
+}
+
 std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp, bool persistable)
 {
 	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
@@ -528,6 +607,8 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 	// administrator tombstones that Principal must not create a newly orphaned
 	// application after the deletion commits.
 	Security::instance()->principal(app->getOwnerPrincipalId());
+	// Reject unusable depends_on definitions before any state is replaced.
+	validateDependencies(app, persistable);
 	std::shared_ptr<Application> oldApp = getApp(app->getName(), false);
 	if (persistable && app->isSystemProtected())
 		throw AuthorizationException("system applications can only be loaded from the installed apps directory");

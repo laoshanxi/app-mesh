@@ -6,7 +6,7 @@
 
 **One secure daemon to run, schedule, and remote-control apps across machines.**
 
-A lightweight C++ daemon with OAuth/OIDC authentication and RBAC, a CLI, REST APIs, SDKs in 6 languages, and a built-in workflow engine.
+App Mesh is a lightweight, cross-platform daemon that secures access with OAuth, offers official APIs and SDKs, and automates operations with built-in workflow engine and LLM Agent.
 
 Use App Mesh to:
 
@@ -24,15 +24,11 @@ Start the daemon in Docker:
 docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
 ```
 
-Manage applications with the `appm` CLI. Every protected request needs a bearer
-token. Run `appm logon` once. Built-in mode reads a masked password from the
-terminal. Use `--device` or `--browser` when the selected authentication service
-requires one of those flows. Automation can set `APPMESH_BEARER_TOKEN` to a
-caller-acquired access token.
+Manage applications with the `appm` CLI — sign in first with `appm logon`.
 
 ```shell
-# Interactive user session
-$ appm logon
+# Sign in once (non-interactive)
+$ sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password | script -qc "appm logon -u admin@appmesh.local" /dev/null
 
 # List registered applications
 $ appm ls
@@ -42,7 +38,7 @@ ID  NAME    OWNER           STATUS    HEALTH  PID  USER  MEMORY    %CPU  RETURN 
 3   py-task system  enabled   OK      748  root  29.7 MiB  0     -       37s  37s       1       "python3 ../../bin/py_task.py"
 
 # Register a new application
-$ APPMESH_BEARER_TOKEN="$TOKEN" appm add -a myapp -c "ping www.baidu.com"
+$ appm add -a myapp -c "ping www.baidu.com"
 
 # View its live output
 $ appm ls -a myapp -o
