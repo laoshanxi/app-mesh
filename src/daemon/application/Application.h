@@ -52,10 +52,14 @@ public:
 	bool isPersistAble() const;
 	bool isManaged() const;
 	bool isOneShot() const;
+	/// True for cron and interval schedules (point-in-time runs).
+	bool isRecurring() const;
 	bool isEnabled() const;
 	bool isSystemProtected() const;
 	int startupPhase() const;
-	const std::vector<std::string> &dependencies() const;
+	const std::vector<std::string> &dependsOn() const;
+	// Dependency names not yet satisfied at the last scheduler pass (runtime info).
+	const std::vector<std::string> waitingFor() const;
 	void health(bool health);
 	void setUnPersistable();
 
@@ -108,6 +112,10 @@ private:
 
 	// Lifecycle convergence (scheduler thread)
 	void maintainRuntime(const std::chrono::system_clock::time_point &now);
+	// Fills `unmet` with dependencies that are disabled, not running, or unhealthy.
+	bool unmetDependencies(std::vector<std::string> &unmet) const;
+	// Recomputes the gate, updates the waiting_for snapshot, logs transitions.
+	bool refreshDependencyGate();
 	void stopUnavailableRun(const std::chrono::system_clock::time_point &now);
 	bool stopCurrentRun();
 	void stopAllProcesses();
@@ -136,7 +144,6 @@ private:
 	void scheduleNext(std::chrono::system_clock::time_point startFrom = std::chrono::system_clock::now());
 	void scheduleStartAt(const std::chrono::system_clock::time_point &when);
 	std::uint64_t consumeScheduledStart(const std::chrono::system_clock::time_point &now);
-	bool isRecurring() const;
 
 	// Effective launch configuration
 	const std::string getExecUser() const;
@@ -166,6 +173,7 @@ private:
 	std::string m_ownerPrincipalId;
 	std::string m_executionUser;
 	int m_startupPhase;
+	std::vector<std::string> m_dependsOn;
 	int m_ownerPermission;
 	std::string m_workdir;
 	std::string m_stdoutFile;
@@ -217,6 +225,8 @@ private:
 	std::unique_ptr<Runtime> m_runtime;
 
 	boost::synchronized_value<std::string> m_lastError;
+	// Unmet dependency names at the last scheduler pass (served by AsJson(true)).
+	boost::synchronized_value<std::vector<std::string>> m_waitingFor;
 	TaskRequest m_task;
 
 	// Metrics shared by replacement Application instances

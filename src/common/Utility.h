@@ -333,6 +333,7 @@ public:
 #define JSON_KEY_APP_execution_user "execution_user"
 #define JSON_KEY_APP_system "system"
 #define JSON_KEY_APP_startup_phase "startup_phase"
+#define JSON_KEY_APP_depends_on "depends_on"
 #define JSON_KEY_APP_owner_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"
 #define JSON_KEY_APP_shell_mode "shell"
@@ -355,6 +356,7 @@ public:
 #define JSON_KEY_APP_last_error "last_error"
 #define JSON_KEY_APP_from_recover "from_recover"
 #define JSON_KEY_APP_starts "starts"
+#define JSON_KEY_APP_waiting_for "waiting_for"
 #define REST_PATH_UPLOAD "/appmesh/file/upload"
 #define REST_PATH_DOWNLOAD "/appmesh/file/download"
 

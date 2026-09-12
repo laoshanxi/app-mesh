@@ -88,7 +88,7 @@ fn read_app_from_stdin(source: &str) -> Result<(Application, serde_json::Value)>
     Ok((app, yaml))
 }
 
-/// Overlay -e/-z onto a --stdin/-D document; without it they were silently dropped.
+/// Overlay -e/-z/-n onto a --stdin/-D document; without it they were silently dropped.
 fn overlay_env_args(mut doc: Value, args: &AddArgs) -> Result<Value> {
     fn overlay(doc: &mut Value, field: &str, pairs: &[String]) -> Result<()> {
         if pairs.is_empty() {
@@ -111,6 +111,12 @@ fn overlay_env_args(mut doc: Value, args: &AddArgs) -> Result<Value> {
     }
     overlay(&mut doc, "env", &args.env)?;
     overlay(&mut doc, "sec_env", &args.security_env)?;
+    if !args.depends_on.is_empty() {
+        let object = doc
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("the document is not a JSON object"))?;
+        object.insert("depends_on".to_string(), json!(args.depends_on));
+    }
     Ok(doc)
 }
 
@@ -135,6 +141,9 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
     builder = builder.session_login(args.session_login);
     if let Some(ref hc) = args.health_check {
         builder = builder.health_check_cmd(hc);
+    }
+    if !args.depends_on.is_empty() {
+        builder = builder.depends_on(args.depends_on.clone());
     }
     if let Some(ref img) = args.docker_image {
         builder = builder.docker_image(img);

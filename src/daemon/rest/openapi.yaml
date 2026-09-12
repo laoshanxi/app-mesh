@@ -717,6 +717,27 @@ components:
           type: string
           enum: [auth-issuer, ingress, normal]
           readOnly: true
+        depends_on:
+          type: array
+          items: { type: string }
+          uniqueItems: true
+          description: >-
+            Application names this application depends on. Every dependency must be
+            registered, enabled, running, and healthy before this application starts
+            or restarts. A dependency that stops does not stop this application; it
+            only holds the next start until the dependency is healthy again. A name
+            that is not registered does not gate (for example, the dependency was
+            deleted); registration itself requires every name to exist. Only
+            continuously scheduled applications accept dependencies (cron and
+            interval schedules are rejected), and cycles are rejected. On-demand
+            runs bypass this gate.
+        waiting_for:
+          type: array
+          items: { type: string }
+          readOnly: true
+          description: >-
+            Dependencies not yet satisfied at the last scheduler pass. Present only
+            while the application is held back by its dependency gate.
         status:
           type: boolean
           description: >-

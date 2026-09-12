@@ -22,6 +22,11 @@ fn format_status(app: &Application) -> String {
 }
 
 fn format_health(app: &Application) -> String {
+    // A gated app that is not running: show why. A running app stays OK/-
+    // even when a dependency is down (the gate only holds the next start).
+    if app.pid.is_none() && app.waiting_for.as_ref().is_some_and(|w| !w.is_empty()) {
+        return "waiting".to_string();
+    }
     match app.health {
         Some(0) => "OK".to_string(),
         _ => "-".to_string(),
