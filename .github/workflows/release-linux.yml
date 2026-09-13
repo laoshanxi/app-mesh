@@ -41,12 +41,12 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@v2.19.4
         with:
           egress-policy: audit
 
       - name: Checkout Github code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@v6
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -55,10 +55,10 @@ jobs:
 
       - name: Download Syft
         id: syft
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action/download-syft@v0.24.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@v4
 
       - name: build on centos7
         run: |
@@ -97,7 +97,7 @@ jobs:
           docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/bash --login -c "set -e; rustc --version; mkdir ubuntu18_$BUILD_DIR; cd ubuntu18_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
 
       - name: Upload packages
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}-${{ github.sha }}
           path: |
@@ -117,11 +117,11 @@ jobs:
 
     steps:
       - name: Download amd64 packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@v8
         with:
           name: amd64-${{ github.sha }}
       - name: Download arm64 packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@v8
         with:
           name: arm64-${{ github.sha }}
 
@@ -211,22 +211,22 @@ jobs:
           done
 
       - name: Attest Build Provenance (RPM)
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@v4.1.1
         with:
           subject-path: "*/*.rpm"
 
       - name: Attest Build Provenance (DEB)
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@v4.1.1
         with:
           subject-path: "*/*.deb"
 
       - name: Attest Build Provenance (SBOM)
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@v4.1.1
         with:
           subject-path: "*.sbom.*.json"
 
       - name: Release Packages
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@v3.0.2
         with:
           body_path: CHANGELOG.txt
           name: "OpenID Connect (OIDC)"
