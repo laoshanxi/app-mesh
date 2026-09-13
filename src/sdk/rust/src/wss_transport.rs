@@ -6,6 +6,8 @@ use crate::error::AppMeshError;
 pub use crate::tls_config::{ClientCert, SslVerify};
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::CertificateDer;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, protocol::Message};
@@ -125,7 +127,7 @@ fn build_rustls_connector(
         if p.is_file() {
             let pem_data = std::fs::read(p)
                 .map_err(|e| AppMeshError::ConfigurationError(format!("Failed to read CA cert: {}", e)))?;
-            for cert in rustls_pemfile::certs(&mut &pem_data[..]) {
+            for cert in CertificateDer::pem_slice_iter(&pem_data) {
                 let cert = cert.map_err(|e| {
                     AppMeshError::ConfigurationError(format!("Invalid CA cert '{}': {}", path, e))
                 })?;
@@ -146,7 +148,7 @@ fn build_rustls_connector(
                             e
                         ))
                     })?;
-                    for cert in rustls_pemfile::certs(&mut &pem_data[..]).flatten() {
+                    for cert in CertificateDer::pem_slice_iter(&pem_data).flatten() {
                         let _ = root_store.add(cert);
                     }
                 }

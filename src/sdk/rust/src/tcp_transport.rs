@@ -7,6 +7,8 @@
 //!   + payload bytes
 
 use byteorder::{BigEndian, WriteBytesExt};
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::CertificateDer;
 use rustls::StreamOwned;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -202,7 +204,7 @@ fn build_rustls_client_config(
         if p.is_file() {
             let pem = std::fs::read(p)
                 .map_err(|e| TransportError::ConfigError(format!("Failed to read CA certificate '{}': {}", path, e)))?;
-            for cert in rustls_pemfile::certs(&mut &pem[..]) {
+            for cert in CertificateDer::pem_slice_iter(&pem) {
                 let cert = cert
                     .map_err(|e| TransportError::ConfigError(format!("Invalid CA certificate '{}': {}", path, e)))?;
                 root_store.add(cert).map_err(|e| TransportError::ConfigError(e.to_string()))?;
@@ -219,7 +221,7 @@ fn build_rustls_client_config(
                             e
                         ))
                     })?;
-                    for cert in rustls_pemfile::certs(&mut &pem[..]).flatten() {
+                    for cert in CertificateDer::pem_slice_iter(&pem).flatten() {
                         let _ = root_store.add(cert);
                     }
                 }
