@@ -1,6 +1,9 @@
 // tls_config.rs
 //! Shared TLS type definitions used by TCP and WSS transports.
 
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::CertificateDer;
+
 /// SSL verification configuration
 #[derive(Clone, Debug)]
 pub enum SslVerify {
@@ -38,6 +41,23 @@ mod tests {
     #[test]
     fn empty_ca_path_is_legacy_explicit_disable() {
         assert!(matches!(resolve_ssl_verify(Some(String::new())), Ok(SslVerify::False)));
+    }
+    #[test]
+    fn load_private_key_reads_pkcs8_and_sec1() {
+        // Keys must load as PrivateKeyDer regardless of PEM encoding, or mutual TLS fails at connect time.
+        const PKCS8: &str = "-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg3LaVdCLGXM4mlGY2
+mkgNk37uPSZdkXfcVKzreVKfNOmhRANCAASXmzeuIAcNLhtT0l8OMZUIZYSriby7
+YSdAnsxpYaKuG7gII3dhHJcMT0/s/muVW7z2sCoGxJrizXXnRXJ/KTyy
+-----END PRIVATE KEY-----";
+        const SEC1: &str = "-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEINy2lXQixlzOJpRmNppIDZN+7j0mXZF33FSs63lSnzTpoAoGCCqGSM49
+AwEHoUQDQgAEl5s3riAHDS4bU9JfDjGVCGWEq4m8u2EnQJ7MaWGirhu4CCN3YRyX
+DE9P7P5rlVu89rAqBsSa4s1150Vyfyk8sg==
+-----END EC PRIVATE KEY-----";
+        assert!(matches!(load_private_key(PKCS8.as_bytes()), Ok(rustls::pki_types::PrivateKeyDer::Pkcs8(_))));
+        assert!(matches!(load_private_key(SEC1.as_bytes()), Ok(rustls::pki_types::PrivateKeyDer::Sec1(_))));
+        assert!(load_private_key(b"-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n").is_err());
     }
     #[test]
     fn explicit_ca_path_is_pinned() {
@@ -126,16 +146,32 @@ pub(crate) fn load_client_auth(
     };
 
     let chain: Vec<rustls::pki_types::CertificateDer<'static>> =
-        rustls_pemfile::certs(&mut &cert_pem[..])
+        CertificateDer::pem_slice_iter(&cert_pem)
             .collect::<Result<_, _>>()
             .map_err(|e| format!("Invalid client certificate PEM: {}", e))?;
     if chain.is_empty() {
         return Err("Client certificate PEM contains no certificates".into());
     }
 
-    let key = rustls_pemfile::private_key(&mut &key_pem[..])
-        .map_err(|e| format!("Invalid client key PEM: {}", e))?
-        .ok_or_else(|| "Client key PEM contains no private key".to_string())?;
+    let key = load_private_key(&key_pem)?;
 
     Ok((chain, key))
+}
+
+/// Extract the first unencrypted private key (PKCS#8, PKCS#1 RSA, or SEC1 EC) from PEM bytes.
+fn load_private_key(pem: &[u8]) -> Result<rustls::pki_types::PrivateKeyDer<'static>, String> {
+    use rustls::pki_types::pem::{PemObject, SectionKind};
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer};
+
+    for item in <(SectionKind, Vec<u8>)>::pem_slice_iter(pem) {
+        let (kind, der) = item.map_err(|e| format!("Invalid client key PEM: {}", e))?;
+        let key = match kind {
+            SectionKind::PrivateKey => PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(der)),
+            SectionKind::RsaPrivateKey => PrivateKeyDer::Pkcs1(PrivatePkcs1KeyDer::from(der)),
+            SectionKind::EcPrivateKey => PrivateKeyDer::Sec1(PrivateSec1KeyDer::from(der)),
+            _ => continue,
+        };
+        return Ok(key);
+    }
+    Err("Client key PEM contains no private key".into())
 }

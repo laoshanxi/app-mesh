@@ -23,12 +23,12 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@v2.19.4
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
       - name: Checkout Github code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@v6
 
       - name: Cmake init with Debug mode
         run: |
@@ -69,7 +69,7 @@ jobs:
 
       - name: Cache Coverity Build Tool
         id: cov-build-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: build/cov-analysis
           key: cov-build-cxx-linux64-${{ steps.coverity-cache-lookup.outputs.hash }}

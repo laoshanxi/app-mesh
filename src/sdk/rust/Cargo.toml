@@ -1,6 +1,6 @@
 [package]
 name = "appmesh"
-version = "3.0.2"
+version = "3.0.3"
 edition = "2021"
 description = "AppMesh SDK for Rust"
 license = "MIT"
@@ -38,7 +38,6 @@ futures-util = "0.3"
 serde_bytes = "0.11"
 iso8601-duration = "0.2"
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
-rustls-pemfile = "2"
 webpki-roots = "1"
 
 [target.'cfg(unix)'.dependencies]
