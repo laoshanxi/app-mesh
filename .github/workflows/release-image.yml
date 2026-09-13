@@ -146,7 +146,7 @@ jobs:
           done
 
       - name: Generate Docker Image SBOM
-        uses: anchore/sbom-action@v0.24.0
+        uses: anchore/sbom-action@v0.24.2
         with:
           image: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}
           format: spdx-json
