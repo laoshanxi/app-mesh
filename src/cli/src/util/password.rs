@@ -25,3 +25,19 @@ pub fn prompt_password(prompt: &str) -> Result<String> {
     rpassword::prompt_password_with_config(prompt, config)
         .context("read password from interactive console")
 }
+
+/// Read a single password line from standard input for an explicitly
+/// non-interactive caller (`appm logon --password-stdin`). Unlike argv or an
+/// environment variable, a pipe never appears in process listings; a terminal
+/// is refused so the password is not echoed back to the screen.
+pub fn read_password_stdin() -> Result<String> {
+    let stdin = std::io::stdin();
+    if stdin.is_terminal() {
+        bail!("--password-stdin requires a piped or redirected standard input");
+    }
+    let mut line = String::new();
+    stdin
+        .read_line(&mut line)
+        .context("read password from standard input")?;
+    Ok(line.trim_end_matches(['\r', '\n']).to_string())
+}

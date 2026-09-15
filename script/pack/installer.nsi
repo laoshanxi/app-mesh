@@ -71,9 +71,17 @@ Section "Install"
 install_files:
     SetOutPath "$INSTDIR"
     File /r "..\..\build\package_root\*"
-    ; Remove the obsolete packaged definition before the service starts. Its old
-    ; application name would otherwise start a second authentication process.
+    ; Remove the obsolete packaged definitions before the service starts. Their
+    ; old application names would otherwise start a second authentication
+    ; process and duplicate the bundled applications renamed in this release
+    ; (pyrun.yaml defines the application <pyexec>).
     Delete "$INSTDIR\apps\auth-dex.yaml"
+    Delete "$INSTDIR\apps\auth-service.yaml"
+    Delete "$INSTDIR\apps\pytask.yaml"
+    Delete "$INSTDIR\apps\pyrun.yaml"
+    Delete "$INSTDIR\work\apps\auth-service.yaml"
+    Delete "$INSTDIR\work\apps\pytask.yaml"
+    Delete "$INSTDIR\work\apps\pyexec.yaml"
 
     StrCpy $START_APPMESH "$INSTDIR\bin\appmesh.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"

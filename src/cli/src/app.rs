@@ -96,9 +96,13 @@ pub enum Commands {
 
 #[derive(Parser)]
 pub struct LogonArgs {
-    /// Built-in username; password is always read from the TTY and has no option
+    /// Built-in username; password is read from the TTY prompt, or from standard input with --password-stdin
     #[arg(short = 'u', long = "username", conflicts_with_all = ["device", "browser"])]
     pub username: Option<String>,
+
+    /// Read the password from standard input instead of the TTY prompt (for non-interactive pipelines)
+    #[arg(long = "password-stdin", conflicts_with_all = ["device", "browser"])]
+    pub password_stdin: bool,
 
     /// Use RFC 8628 Device Authorization instead of built-in password login
     #[arg(long = "device", conflicts_with = "browser")]

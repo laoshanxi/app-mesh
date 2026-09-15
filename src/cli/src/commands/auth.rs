@@ -10,7 +10,7 @@ use crate::app::{Cli, LoginfoArgs, LogoffArgs, LogonArgs};
 use crate::client::{build_client, build_client_with_auth, get_current_endpoint};
 use crate::output::format::short_principal;
 use crate::util::config::{self, StoredSession};
-use crate::util::password::{prompt_password, prompt_username};
+use crate::util::password::{prompt_password, prompt_username, read_password_stdin};
 
 #[derive(Debug, Deserialize)]
 struct EngineAuthConfig {
@@ -107,7 +107,11 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
         if username.is_empty() {
             bail!("Username cannot be empty");
         }
-        let password = Zeroizing::new(prompt_password("Password: ")?);
+        let password = Zeroizing::new(if args.password_stdin {
+            read_password_stdin()?
+        } else {
+            prompt_password("Password: ")?
+        });
         if password.is_empty() {
             bail!("Password cannot be empty");
         }
