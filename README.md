@@ -28,7 +28,7 @@ Manage applications with the `appm` CLI — sign in first with `appm logon`.
 
 ```shell
 # Sign in once (non-interactive)
-$ sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password | script -qc "appm logon -u admin@appmesh.local" /dev/null
+$ sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password | appm logon -u admin@appmesh.local --password-stdin
 
 # List registered applications
 $ appm ls

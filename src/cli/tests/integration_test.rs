@@ -106,9 +106,23 @@ fn test_alias_content_matches_primary() {
 fn test_help_logon_all_flags() {
     let s = stdout_of(&["logon", "--help"]);
     for flag in [
-        "--device", "--browser", "--auth-access-url", "--login-timeout",
+        "--device", "--browser", "--auth-access-url", "--login-timeout", "--password-stdin",
     ] {
         assert!(s.contains(flag), "logon missing {}", flag);
+    }
+}
+
+#[test]
+fn test_logon_password_stdin_conflicts_with_other_flows() {
+    // --password-stdin shares the built-in password flow with --username, so it
+    // must be rejected next to --device/--browser rather than silently ignored.
+    for conflict in [["--password-stdin", "--device"], ["--password-stdin", "--browser"]] {
+        let out = appm()
+            .args(["-H", "localhost:6058", "logon", "-u", "nobody@example.com"])
+            .args(conflict)
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "logon accepted {:?}", conflict);
     }
 }
 

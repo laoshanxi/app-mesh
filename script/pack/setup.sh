@@ -285,20 +285,23 @@ remove_obsolete_auth_app_definition() {
 # Bundled System Apps renamed in one release keep their state across an upgrade:
 # the definition in apps/ and the persisted copy in work/apps/ move to the new
 # name. When both names exist, the old copy is removed only after it is
-# validated as the bundled definition.
+# validated as the bundled definition. Each entry is <file>:<app>:<new> because
+# the 3.0.0 file <pyrun.yaml> already defined the application <pyexec>.
 migrate_renamed_bundled_apps() {
-    local pair
+    local triple
     local old_name
     local new_name
     local dir
     local old_file
     local new_file
 
-    for pair in "auth-service:identity" "pytask:py-task" "pyexec:py-exec"; do
-        old_name="${pair%%:*}"
-        new_name="${pair#*:}"
+    for triple in "auth-service:auth-service:identity" "pytask:pytask:py-task" \
+        "pyrun:pyexec:py-exec" "pyexec:pyexec:py-exec"; do
+        old_name="${triple#*:}"
+        old_name="${old_name%%:*}"
+        new_name="${triple##*:}"
         for dir in "${PROG_HOME}/apps" "${PROG_HOME}/work/apps"; do
-            old_file="${dir}/${old_name}.yaml"
+            old_file="${dir}/${triple%%:*}.yaml"
             new_file="${dir}/${new_name}.yaml"
             [ -e "$old_file" ] || continue
             [ ! -L "$old_file" ] || die "Refusing symbolic-link application definition: $old_file"
@@ -307,8 +310,11 @@ migrate_renamed_bundled_apps() {
                 die "Refusing to migrate an unrecognized application definition: $old_file"
             grep -Eq '^owner_principal_id:[[:space:]]*system:appmesh[[:space:]]*$' "$old_file" || \
                 die "Refusing to migrate an unrecognized application definition: $old_file"
-            grep -Eq '^system:[[:space:]]*true[[:space:]]*$' "$old_file" || \
-                die "Refusing to migrate an unrecognized application definition: $old_file"
+            # Only <auth-service> carried the system flag in its bundled definition.
+            if [ "$old_name" = "auth-service" ]; then
+                grep -Eq '^system:[[:space:]]*true[[:space:]]*$' "$old_file" || \
+                    die "Refusing to migrate an unrecognized application definition: $old_file"
+            fi
             if [ -e "$new_file" ]; then
                 rm -f -- "$old_file"
                 info "Removed the superseded <${old_name}> application definition (${dir})"
