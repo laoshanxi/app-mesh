@@ -4,17 +4,36 @@
 
 # App Mesh
 
-**One secure daemon to run, schedule, and remote-control apps across machines.**
+**One secure, lightweight daemon to run, schedule, and remote-control apps across machines.**
 
-App Mesh is a lightweight, cross-platform daemon that secures access with OAuth, offers official APIs and SDKs, and automates operations with built-in workflow engine and LLM Agent.
+## 🧭 Concepts
 
-Use App Mesh to:
+App Mesh gives you two capabilities: **Hosting** and **Computing**.
 
-- **Operate services** — manage long-running processes like systemd does, plus health checks, cgroup limits, Docker apps, multi-tenancy, and a [Web GUI](https://github.com/laoshanxi/app-mesh-ui).
-- **Execute remotely** — run commands, scripts, or [in-memory tasks](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) on any node via CLI, REST, or SDK.
-- **Power AI agents** — provide [sandboxed build-and-run environments](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html) for AI coding assistants, [MCP servers](src/sdk/mcp_server), and [LLM agent runtimes](src/sdk/llm-agent).
+### 🎛 Hosting
 
-<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
+Declare an app once. The daemon keeps it running.
+
+- **Lifecycle** — start, stop, and recover the app after a crash or a daemon restart
+- **Scheduling** — cron, fixed intervals, start and end dates, daily time windows
+- **Protection** — health checks, CPU and memory limits, OS user, tenant isolation
+- **Any app** — a native process or a Docker app
+
+Think systemd on every machine. Or Kubernetes desired state, for any app.
+
+### 🧮 Computing
+
+Submit work to any node. Get the result back.
+
+- **Command or script** — starts a new process, runs once
+- **Task message** — reuses a warm app that is already running, no startup cost
+- **Parallel and control** — fan out work across nodes; run sync or async, stream output, set timeouts
+- **Workflow** — chain many work items into a DAG pipeline and run it natively
+- **AI** — send task messages to a hosted LLM agent, or give coding agents a sandbox node to build and run
+
+Think serverless, on your own machines.
+
+<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" alt="App Mesh architecture" align=center /></div>
 
 ## ⚡ Quick Start
 
@@ -24,31 +43,44 @@ Start the daemon in Docker:
 docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
 ```
 
-Manage applications with the `appm` CLI — sign in first with `appm logon`.
+Host your first app with the `appm` CLI — open a shell in the daemon container:
 
 ```shell
+$ docker exec -ti appmesh bash
+
 # Sign in once (non-interactive)
-$ sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password | appm logon -u admin@appmesh.local --password-stdin
+$ /opt/appmesh/script/appmesh-auth.sh print-initial-password | appm logon -u admin@appmesh.local --password-stdin
 
 # List registered applications
 $ appm ls
-ID  NAME    OWNER           STATUS    HEALTH  PID  USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
-1   py-exec system  disabled  -       -    -     -         -     -       37s  -         0       "python3 ../../bin/py_exec.py"
-2   ping    system  enabled   OK      747  root  5.9 MiB   0     -       37s  37s       1       "ping cloudflare.com"
-3   py-task system  enabled   OK      748  root  29.7 MiB  0     -       37s  37s       1       "python3 ../../bin/py_task.py"
+ID  NAME      OWNER   STATUS    HEALTH  PID  USER     MEMORY  %CPU  RETURN
+0   py-task   system  enabled   OK      557  appmesh  34.4Mi  0     -
+1   py-exec   system  disabled  -       -    -        -       -     -
+2   identity  system  enabled   OK      344  appmesh  42.3Mi  0     -
+3   workflow  system  enabled   OK      558  appmesh  13.5Mi  0     -
 
 # Register a new application
-$ appm add -a myapp -c "ping www.baidu.com"
+$ appm add -a myapp -c "python3 -u -c 'import time; [print(i, time.ctime()) or time.sleep(1) for i in range(10)]'"
 
 # View its live output
 $ appm ls -a myapp -o
-PING www.baidu.com (183.2.172.17) 56(84) bytes of data.
-64 bytes from 183.2.172.17 (183.2.172.17): icmp_seq=1 ttl=52 time=34.9 ms
+0 Wed Sep 16 10:56:12 2026
+1 Wed Sep 16 10:56:13 2026
+2 Wed Sep 16 10:56:14 2026
 
 # appm -h for more usage
 ```
 
-Send tasks to a running application and get responses back through the SDK:
+Send a task message to a running app through the SDK. Mint an admin token first — the same password grant that `appm logon` uses:
+
+```shell
+$ export APPMESH_BEARER_TOKEN=$(curl -s -u "appmesh-cli:" -X POST http://127.0.0.1:6062/auth/token \
+    --data-urlencode grant_type=password \
+    --data-urlencode "username=admin@appmesh.local" \
+    --data-urlencode "password=$(/opt/appmesh/script/appmesh-auth.sh print-initial-password)" \
+    --data-urlencode "scope=openid audience:server:client_id:appmesh-api" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+```
 
 ```python
 import os
@@ -66,26 +98,17 @@ For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, 
 
 ## 🚀 Core Capabilities
 
-| Capability             | What you get                                                                                                                                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Application management | Full remote CRUD and control — cgroup limits, OS user, environment variables, Docker apps, stdin/stdout — with monitoring of start counts, exit codes, errors, and [health checks](https://app-mesh.readthedocs.io/) |
-| Scheduling             | Long- and short-running apps, periodic jobs, cron expressions, custom timings, and policy-driven [start/exit behaviors](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)       |
-| Remote execution       | Run commands and scripts on any node; send [in-memory tasks](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) to running applications for high-performance computing                                       |
-| Workflow engine        | GitHub-Actions-style [YAML pipelines](https://app-mesh.readthedocs.io/en/latest/Workflow.html) with DAG scheduling, running natively on App Mesh                                                                     |
-| Security | OAuth/OIDC bearer authentication (RFC 6750) with Principal-based RBAC and multi-tenant isolation; SSL/TLS on TCP/HTTP/WebSocket; HMAC-PSK internal verification |
-| Observability          | Built-in [Prometheus exporter](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html), [Grafana datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html), [Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) integration, host/app resource metrics |
-| Extras                 | File upload/download API, remote shell execution, hot config reload, bash completion                                                                                                                                 |
+| Pillar    | Capability             | What you get                                                                                                                                                                                                                                                                          |
+| --------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hosting   | Application management | Full remote CRUD and control — cgroup limits, OS user, environment variables, Docker apps, stdin/stdout — with monitoring of start counts, exit codes, errors, and [health checks](https://app-mesh.readthedocs.io/)                                                                  |
+| Hosting   | Scheduling             | Long- and short-running apps, periodic jobs, cron expressions, custom timings, and policy-driven [start/exit behaviors](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)                                                                        |
+| Computing | Remote execution       | Run commands and scripts on any node; send [in-memory tasks](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) to running applications for high-performance computing                                                                                                        |
+| Computing | Workflow engine        | GitHub-Actions-style [YAML pipelines](https://app-mesh.readthedocs.io/en/latest/Workflow.html) with DAG scheduling, running natively on App Mesh                                                                                                                                      |
+| Platform  | Security               | OAuth/OIDC bearer authentication (RFC 6750) with Principal-based RBAC and multi-tenant isolation; SSL/TLS on TCP/HTTP/WebSocket; HMAC-PSK internal verification                                                                                                                       |
+| Platform  | Observability          | Built-in [Prometheus exporter](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html), [Grafana datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html), [Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) integration, host/app resource metrics |
+| Platform  | Extras                 | File upload/download API, remote shell execution, hot config reload, bash completion                                                                                                                                                                                                  |
 
 Runs on Linux, macOS, and Windows (x86 and ARM).
-
-## 🤖 AI & LLM Integration
-
-App Mesh's secure remote-execution core makes it a natural runtime for AI workloads:
-
-- **[Remote sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)** — give agents an isolated build-and-run environment instead of your local shell.
-- **[MCP server](src/sdk/mcp_server)** — manage App Mesh from AI clients over Model Context Protocol (Streamable HTTP with OAuth 2.1, RBAC enforced by the daemon).
-- **[LLM agent runtime](src/sdk/llm-agent)** — host Claude-Agent-SDK-based agents as managed App Mesh applications; see the [architecture design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/sdk/llm-agent/SOP.md)).
-- **[Remote execution skill](.agents/skills/appmesh-remote)** for Codex and Claude Code, and **[MQTT bridge](src/sdk/mqtt)** for IoT scenarios.
 
 ## 🔄 Workflow Pipeline
 
@@ -103,13 +126,22 @@ appm workflow run pipeline -e env=prod -f # run and follow output
 appm workflow runs pipeline               # view history
 ```
 
+## 🤖 AI & LLM Integration
+
+The Computing pillar makes App Mesh a natural runtime for AI workloads:
+
+- **[Remote sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)** — give agents an isolated build-and-run environment instead of your local shell.
+- **[MCP server](src/sdk/mcp_server)** — manage App Mesh from AI clients over Model Context Protocol (Streamable HTTP with OAuth 2.1, RBAC enforced by the daemon).
+- **[LLM agent runtime](src/sdk/llm-agent)** — host Claude-Agent-SDK-based agents as managed App Mesh applications; see the [architecture design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/sdk/llm-agent/SOP.md)).
+- **[Remote execution skill](.agents/skills/appmesh-remote)** for Codex and Claude Code, and **[MQTT bridge](src/sdk/mqtt)** for IoT scenarios.
+
 ## 🧰 Interfaces & SDKs
 
-| Interface | Details                                                                                                                                     |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI       | [`appm` command reference](https://app-mesh.readthedocs.io/en/latest/CLI.html)                                                               |
-| REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml) |
-| Web GUI   | [app-mesh-ui](https://github.com/laoshanxi/app-mesh-ui)                                                                                       |
+| Interface | Details                                                                                                                                                                                                                                                                                                  |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI       | [`appm` command reference](https://app-mesh.readthedocs.io/en/latest/CLI.html)                                                                                                                                                                                                                           |
+| REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)                                                                              |
+| Web GUI   | [app-mesh-ui](https://github.com/laoshanxi/app-mesh-ui)                                                                                                                                                                                                                                                  |
 | SDKs      | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) · [Golang](src/sdk/go/client_http.go) · [Rust](src/sdk/rust) · [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) · [JavaScript](https://www.npmjs.com/package/appmesh) · [C++](src/sdk/cpp) |
 
 ## 💡 Success Stories
@@ -120,7 +152,7 @@ appm workflow runs pipeline               # view history
 - [LLM agent runtime hosted as an App Mesh app](src/sdk/llm-agent) · [architecture and workflow design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/sdk/llm-agent/SOP.md))
 - [Manage App Mesh from AI clients via MCP (HTTP + OAuth)](src/sdk/mcp_server)
 
-**Remote computing**
+**Computing**
 
 - [In-memory remote task execution](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
 - [Remote command and Python script execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
@@ -140,24 +172,25 @@ appm workflow runs pipeline               # view history
 
 ## 🆚 Comparison
 
-| Feature                  | App Mesh | [Supervisor](http://supervisord.org/) | [crontab](https://crontab.guru/) |
-| ------------------------ | -------- | ------------------------------------- | -------------------------------- |
-| Schedule accuracy        | Seconds  | Seconds                               | Minutes                          |
-| Language                 | C++17    | Python                                | C                                |
-| Web GUI                  | √        | √                                     |                                  |
-| Command lines            | √        | √                                     | √                                |
-| SDK                      | √        |                                       |                                  |
-| Cron schedule expression | √        |                                       | √                                |
-| Manage docker app        | √        |                                       |                                  |
-| Session login            | √        |                                       |                                  |
-| Manage stdout/stderr     | √        | √                                     |                                  |
-| Health check             | √        |                                       |                                  |
-| Authentication           | √        | √                                     |                                  |
-| Multi-tenant             | √        |                                       | √                                |
+| Feature                  | App Mesh | [systemd](https://systemd.io/) | [crontab](https://crontab.guru/) |
+| ------------------------ | -------- | ------------------------------ | -------------------------------- |
+| Schedule accuracy        | Seconds  | Seconds                        | Minutes                          |
+| Language                 | C++17    | C                              | C                                |
+| Web GUI                  | √        |                                |                                  |
+| Command lines            | √        | √                              | √                                |
+| SDK                      | √        |                                |                                  |
+| Cron schedule expression | √        |                                | √                                |
+| Manage docker app        | √        |                                |                                  |
+| Session login            | √        |                                |                                  |
+| Manage stdout/stderr     | √        | √                              |                                  |
+| Health check             | √        |                                |                                  |
+| Authentication           | √        |                                |                                  |
+| Multi-tenant             | √        |                                | √                                |
 
 ## 📚 Documentation
 
 - [Read the Docs](https://app-mesh.readthedocs.io/) — full documentation
+- [Feature Overview](docs/source/FeatureOverview.md) — the full capability map behind Hosting and Computing
 - [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html)
 - [Security](https://app-mesh.readthedocs.io/en/latest/Security.html)
 - [Workflow Guide](https://app-mesh.readthedocs.io/en/latest/Workflow.html)
