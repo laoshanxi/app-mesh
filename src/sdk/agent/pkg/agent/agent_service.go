@@ -488,8 +488,13 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 
 // ForwardAppMeshRequest forwards the incoming request to another host and copies the response back.
 func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHost *url.URL) {
+	// A bare host must not fall back to the scheme default port (443): use the configured REST listen port
+	targetHost := forwardingHost.Host
+	if forwardingHost.Port() == "" {
+		targetHost = net.JoinHostPort(forwardingHost.Hostname(), strconv.Itoa(config.ConfigData.REST.RestListenPort))
+	}
 	// Create a new request to be sent to the target server
-	targetURL := fmt.Sprintf("%s://%s%s?%s", forwardingHost.Scheme, forwardingHost.Host, r.URL.Path, r.URL.RawQuery)
+	targetURL := fmt.Sprintf("%s://%s%s?%s", forwardingHost.Scheme, targetHost, r.URL.Path, r.URL.RawQuery)
 	logger.Debugf("Forwarding request: %s %s", r.Method, targetURL)
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
 	if err != nil {

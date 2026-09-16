@@ -17,7 +17,7 @@ from requests.structures import CaseInsensitiveDict
 from .app import App
 from .app_run import OutputHandler
 from .client_http import AppMeshClient
-from .exceptions import AppMeshAppRemovedError, AppMeshAuthError, AppMeshConnectionError
+from .exceptions import AppMeshAppRemovedError, AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
 from .subscribe import (
     EVENT_TYPE_DISCONNECTED,
     AppEvent,
@@ -191,7 +191,10 @@ class TransportClientMixin:
                         f"HTTP {response.status_code}: {response.reason}",
                         response.status_code,
                     )
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except requests.exceptions.HTTPError as e:
+                    raise AppMeshRequestError(f"HTTP request failed: {e}") from e
 
             return AppMeshClient._EncodingResponse(response)
 

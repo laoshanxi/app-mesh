@@ -479,7 +479,7 @@ class AppMeshClient:
 
         Returns:
             bool: ``True`` when the app was deleted, ``False`` when it did not exist (404).
-            Any other non-OK status is logged and raised as an HTTP error.
+            Any other non-OK status is logged and raised as an ``AppMeshRequestError``.
         """
         resp = self._request_http(AppMeshClient._Method.DELETE, path=f"/appmesh/app/{app_name}", raise_on_fail=False)
 
@@ -489,7 +489,10 @@ class AppMeshClient:
             return False
 
         logger.warning("Failed to delete app: %s", resp.text)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise AppMeshRequestError(f"Failed to delete app: {e}") from e
         return False
 
     def enable_app(self, app_name: str) -> None:

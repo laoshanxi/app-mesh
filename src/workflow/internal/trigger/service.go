@@ -574,6 +574,10 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			ActiveSteps:         active,
 			WorkflowBaseDir:     s.wdir.BaseDir(),
 			WorkflowProcessUUID: s.processUUID,
+			// Explicit capability identity: the daemon validates temporary App
+			// metadata against exactly these values (issued in resolveExecCredential).
+			CapabilityWorkflowID: wf.Name,
+			CapabilityRunID:      runID,
 			OnJobDone: func(jobName, status, targetHost string, steps map[string]map[string]any) {
 				cpSteps := make(map[string]StepState, len(steps))
 				for name, data := range steps {

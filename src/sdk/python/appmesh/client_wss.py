@@ -7,8 +7,12 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 from urllib import parse
 
+# Third-party imports
+import requests
+
 # Local imports
 from .client_http import AppMeshClient
+from .exceptions import AppMeshRequestError
 from .token_provider import TokenProvider
 from .wss_transport import WSSTransport
 from .transport_mixin import TransportClientMixin
@@ -148,7 +152,10 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             if preserve_permissions:
                 AppMeshClient._apply_file_attributes(local_path, r.headers)
         else:
-            r.raise_for_status()
+            try:
+                r.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                raise AppMeshRequestError(f"File download failed: {e}") from e
 
     def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
         """Upload a local file through the WSS control channel plus HTTPS data channel.
@@ -183,4 +190,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
 
         with local_path.open("rb") as fp:
             r = self.session.post(url=rest_url, stream=True, data=fp, timeout=self.request_timeout, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify)
-            r.raise_for_status()
+            try:
+                r.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                raise AppMeshRequestError(f"File upload failed: {e}") from e

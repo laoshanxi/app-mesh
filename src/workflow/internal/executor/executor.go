@@ -31,20 +31,24 @@ const (
 const StepAppPrefix = "wf-cmd-"
 
 type StepExecutor struct {
-	Client         *appmesh.AppMeshClient
-	Ctx            *expression.Context
-	JobName        string
-	Depth          int
-	CallerToken    string   // human caller Dex bearer only; internal capabilities are never injected into payloads
-	ProcessUUID    string   // current managed Workflow process; used only to tag local temporary Apps
-	ClusterNodes   []string // known cluster node addresses for label-based routing
-	TargetHost     string   // resolved target host for current job (set by engine per-job)
-	ServerURI      string   // base server URI for creating forwarding clients
-	OnAppStart     func(appName string)
-	OnAppEnd       func(appName string)
-	StepLogPath    string                                                                                                 // path to write streaming step log (set per-step by engine)
-	CancelCtx      context.Context                                                                                        // workflow cancel context (nil = background)
-	RunSubWorkflow func(ctx context.Context, wfName string, inputs map[string]string, depth int) (int, map[string]string) // in-process sub-workflow execution (set by engine)
+	Client      *appmesh.AppMeshClient
+	Ctx         *expression.Context
+	JobName     string
+	Depth       int
+	CallerToken string // human caller Dex bearer only; internal capabilities are never injected into payloads
+	ProcessUUID string // current managed Workflow process; used only to tag local temporary Apps
+	// Capability-bound identity for temporary App metadata: sub-workflows keep the
+	// top-level run identity because the capability is issued for the top-level run only.
+	CapabilityWorkflowID string
+	CapabilityRunID      string
+	ClusterNodes         []string // known cluster node addresses for label-based routing
+	TargetHost           string   // resolved target host for current job (set by engine per-job)
+	ServerURI            string   // base server URI for creating forwarding clients
+	OnAppStart           func(appName string)
+	OnAppEnd             func(appName string)
+	StepLogPath          string                                                                                                 // path to write streaming step log (set per-step by engine)
+	CancelCtx            context.Context                                                                                        // workflow cancel context (nil = background)
+	RunSubWorkflow       func(ctx context.Context, wfName string, inputs map[string]string, depth int) (int, map[string]string) // in-process sub-workflow execution (set by engine)
 
 	remoteClient *appmesh.AppMeshClientTCP // per-job cached remote connection (nil = local)
 }
@@ -82,13 +86,7 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secEnv map[string]str
 	}
 	appName := StepAppPrefix + xid.New().String()
 	command := expression.SubstituteForJob(step.Command, e.Ctx, e.JobName)
-	metadataBytes, _ := json.Marshal(map[string]string{
-		"type":         "workflow-step",
-		"workflow_id":  e.Ctx.WfName,
-		"run_id":       e.Ctx.WfRunID,
-		"process_uuid": e.ProcessUUID,
-	})
-	metadata := json.RawMessage(metadataBytes)
+	metadata := stepAppMetadata(e.CapabilityWorkflowID, e.CapabilityRunID, e.Ctx, e.ProcessUUID)
 	app := appmesh.Application{
 		Name:      appName,
 		Command:   &command,
@@ -271,6 +269,27 @@ func (e *StepExecutor) execWorkflow(step *models.Step, _, _ map[string]string) m
 		Outputs:  outputs,
 		Duration: dur,
 	}
+}
+
+// stepAppMetadata binds a temporary command-step App to the run capability.
+// The daemon rejects an App whose metadata does not equal the capability claims
+// exactly, so a sub-workflow must stamp the top-level run identity here even
+// though its expression context carries the sub-workflow identity.
+func stepAppMetadata(capabilityWorkflowID, capabilityRunID string, ectx *expression.Context, processUUID string) json.RawMessage {
+	workflowID, runID := capabilityWorkflowID, capabilityRunID
+	if workflowID == "" {
+		workflowID = ectx.WfName
+	}
+	if runID == "" {
+		runID = ectx.WfRunID
+	}
+	metadataBytes, _ := json.Marshal(map[string]string{
+		"type":         "workflow-step",
+		"workflow_id":  workflowID,
+		"run_id":       runID,
+		"process_uuid": processUUID,
+	})
+	return metadataBytes
 }
 
 func (e *StepExecutor) runAndWait(app appmesh.Application, timeout int) models.StepResult {
