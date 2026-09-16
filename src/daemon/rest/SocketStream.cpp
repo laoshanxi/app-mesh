@@ -3,6 +3,10 @@
 
 #include <climits>
 
+#if !defined(_WIN32)
+#include <sys/socket.h>
+#endif
+
 // SSL_Stream_Ex methods
 void SSL_Stream_Ex::set_ssl_context(ACE_SSL_Context *ctx)
 {
@@ -327,9 +331,22 @@ void SocketStream::defer_mask(ACE_Reactor_Mask bit, bool enable)
 
 void SocketStream::apply_mask_ops(ACE_Reactor_Mask add, ACE_Reactor_Mask clr)
 {
+	const static char fname[] = "SocketStream::apply_mask_ops() ";
+
 	// Caller must NOT hold m_io_mutex: mask_ops acquires the reactor token.
 	if (add)
-		enable_mask(add);
+	{
+		if (enable_mask(add) == -1)
+		{
+			// A handle the reactor refuses is dead or closed. Without this the
+			// send queue silently black-holes: everything is enqueued, nothing is
+			// ever drained, and no close callback fires. Close the stream so
+			// pending requests fail instead of hanging.
+			LOG_WAR << fname << "Registering with the reactor failed; closing stream " << this;
+			shutdown();
+			return;
+		}
+	}
 	if (clr)
 	{
 		disable_mask(clr);
@@ -538,6 +555,56 @@ void SocketStream::shutdown()
 bool SocketStream::connected() const
 {
 	return m_state.load(std::memory_order_acquire) == ConnState::OPEN;
+}
+
+bool SocketStream::socketAlive() const
+{
+	const static char fname[] = "SocketStream::socketAlive() ";
+
+	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
+		return false;
+
+	// Probe without locks: m_io_mutex must not be taken here (callers hold the
+	// forwarding pool lock; the reactor path takes m_io_mutex first). The fd is
+	// closed strictly after the state flips away from OPEN, so re-checking the
+	// state after the probe fences the fd-recycling race.
+	const ACE_HANDLE handle = this->get_handle();
+	if (handle == ACE_INVALID_HANDLE)
+	{
+		LOG_WAR << fname << "Stream reports OPEN but has no handle";
+		return false;
+	}
+
+#if defined(_WIN32)
+	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
+		return false;
+	return true;
+#else
+	int soError = 0;
+	socklen_t soLen = sizeof(soError);
+	if (::getsockopt(handle, SOL_SOCKET, SO_ERROR, &soError, &soLen) != 0 || soError != 0)
+	{
+		LOG_WAR << fname << "Stream reports OPEN but socket error is pending: " << soError;
+		return false;
+	}
+
+#if defined(__linux__)
+	// SO_ERROR alone misses a half-closed socket: after a missed peer FIN the
+	// kernel state is CLOSE_WAIT with no error yet. TCP_INFO exposes it.
+	struct tcp_info info;
+	socklen_t infoLen = sizeof(info);
+	std::memset(&info, 0, infoLen);
+	if (::getsockopt(handle, IPPROTO_TCP, TCP_INFO, &info, &infoLen) == 0 &&
+		info.tcpi_state != TCP_ESTABLISHED)
+	{
+		LOG_WAR << fname << "Stream reports OPEN but TCP state is " << static_cast<int>(info.tcpi_state);
+		return false;
+	}
+#endif
+	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
+		return false;
+	return true;
+#endif
 }
 
 int SocketStream::handle_input(ACE_HANDLE fd)
