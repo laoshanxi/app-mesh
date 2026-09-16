@@ -593,6 +593,20 @@ private:
             }
         }
 
+        // Capture POSIX attribute headers while `req` is alive: uWS invalidates the
+        // request once the response starts. Same headers the REST upload path
+        // (RestHandler::apiFileUpload) reads from the request headers.
+        HttpHeaderMap attrHeaders;
+        auto captureAttr = [&req, &attrHeaders](std::string_view lowerName, std::string_view canonicalName)
+        {
+            auto value = req->getHeader(lowerName);
+            if (!value.empty())
+                attrHeaders.emplace(canonicalName, std::string(value));
+        };
+        captureAttr("x-file-mode", HTTP_HEADER_KEY_file_mode);
+        captureAttr("x-file-user", HTTP_HEADER_KEY_file_user);
+        captureAttr("x-file-group", HTTP_HEADER_KEY_file_group);
+
         auto parentPath = filePath.parent_path();
         std::error_code ec;
         if (!parentPath.empty() && !std::filesystem::exists(parentPath, ec))
@@ -631,7 +645,7 @@ private:
         });
 
         // Handle incoming data chunks
-        res->onData([res, state](std::string_view chunk, bool isLast)
+        res->onData([res, state, attrHeaders](std::string_view chunk, bool isLast)
         {
             const static char fname[] = "WebSocketAdaptor::upload::onData() ";
 
@@ -701,6 +715,10 @@ private:
                 }
 
                 LOG_INF << fname << "File uploaded successfully: " << state->path << " (" << state->totalBytes << " bytes)";
+
+                // Apply caller-supplied POSIX attributes after the file commits,
+                // mirroring the REST upload path.
+                Utility::applyFilePermission(state->path, attrHeaders);
 
                 if (!state->responded.exchange(true, std::memory_order_acq_rel))
                 {
