@@ -28,6 +28,10 @@ services:
     image: laoshanxi/appmesh-ui:latest
     depends_on:
       - appmesh_node
+    # Shares the node's network namespace. The image itself waits for the
+    # loopback API upstream before nginx binds 443, and exits after 60s of
+    # unreachability so restart: always re-creates the container into the
+    # node's live namespace — no healthy-gating is needed here.
     network_mode: "service:appmesh_node" # make sure in same network with appmesh
 
   loki:

@@ -214,6 +214,36 @@ example watch-and-push or mutation forwarding to a configured writer node.
   is routing-only. The published endpoints still must sit on the issuer
   origin.
 
+### First sign-in in the compose cluster
+
+The compose network runs the issuer over plain HTTP. The enrollment
+accepts a loopback client only. Do the first sign-in inside the master
+container. Use the loopback WSS listener and the packaged administrator
+password:
+
+```shell
+docker exec appmesh_master sh -c 'printf "%s\n" "$(grep "^password=" /opt/appmesh/work/auth/secrets/initial-admin-credentials | cut -d= -f2-)" | /opt/appmesh/bin/appm -H wss://127.0.0.1:6058 logon --username admin@appmesh.local --password-stdin --auth-allow-http'
+```
+
+- `--auth-allow-http` is necessary. The issuer uses plain HTTP on the
+  protected compose network.
+- The server certificate of the master covers `127.0.0.1`, the container
+  address, `appmesh_master`, and `localhost`.
+- Then copy the owner's `work/config/authorization.yaml` to every
+  follower and restart the follower daemons. See "Authorization data
+  consistency" above. A fresh follower has no `work/config` directory.
+  Create the directory before the first copy.
+
+### Web UI entry
+
+The `appmesh_ui` service shares the network namespace of
+`appmesh_master` and serves HTTPS on port 443. Point a browser at
+`https://<host>/`. The UI proxies `/appmesh/` to the master agent on
+6060 and `/auth/` to the master Dex listener. The UI image waits for
+the API upstream before nginx starts. If the upstream stays
+unreachable for 60 seconds, the container exits. The restart policy
+then attaches a new container to the live namespace of the master.
+
 ## Verification
 
 The verification runs in the `appmesh-e2e` environment against a
@@ -233,7 +263,8 @@ port ranges separate the instances.
    response.
 6. Send a tampered token to both nodes. Expect rejection.
 
-The results are recorded in `ClusterAuthProgress.md`.
+This procedure was verified in the `appmesh-e2e` environment against the
+packaged compose cluster.
 
 ## Limitations
 

@@ -182,16 +182,34 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 	const std::string key = host + ":" + std::to_string(port); // same host may serve different ports
 
 	// Phase 1: check under lock, remove stale
+	std::shared_ptr<ForwardingConnection> deadConn;
 	{
 		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, m_connections.mutex(), nullptr);
 
 		if (m_connections.find(key, conn) == 0)
 		{
+			// A pooled entry can outlive its socket: if the peer closed while this
+			// stream's reactor registration was lost, the close callback never fired
+			// and the entry still looks open. Reusing it would silently queue every
+			// request on a dead stream — validate the connection's own state first.
 			if (!conn->closed.load(std::memory_order_acquire))
-				return conn;
+			{
+				if (conn->stream && conn->stream->socketAlive())
+					return conn;
+				LOG_WAR << fname << "Pooled connection to " << key << " is dead; evicting and reconnecting";
+				deadConn = conn;
+			}
 			m_connections.unbind(key);
 			conn.reset();
 		}
+	}
+	// Outside m_connections: failAll touches client replies, shutdown() can take
+	// m_io_mutex — keep the lock order m_io_mutex → m_connections (reactor path).
+	if (deadConn)
+	{
+		deadConn->failAll("Forwarding host connection lost");
+		if (deadConn->stream)
+			deadConn->stream->shutdown();
 	}
 
 	// Phase 2: create connection outside lock (avoids holding map lock during connect)

@@ -17,6 +17,7 @@ Welcome to AppMesh's documentation!
    Development.md
    SDKContract.md
    Install.md
+   cluster/ClusterAuthDesign.md
    Loki.md
    PROMETHEUS.md
    Security.md

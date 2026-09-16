@@ -344,6 +344,11 @@ public:
 	// Close from user side (close function is already used for interface)
 	void shutdown();
 	bool connected() const;
+	/// Socket-level liveness check for pool reuse: the handle must be valid and
+	/// report no error, and the TCP state must still be established. Catches a
+	/// stream whose peer went away while the close callback was lost — such a
+	/// stream looks OPEN but silently swallows everything queued on it.
+	bool socketAlive() const;
 	/// True only when the accepted socket peer is a loopback address.  This uses
 	/// the address recorded by the socket itself, never client-supplied request data.
 	bool remotePeerIsLoopback() const;
