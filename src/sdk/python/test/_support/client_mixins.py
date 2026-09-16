@@ -10,7 +10,7 @@ import threading
 import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))  # -> src/sdk/python
-from appmesh import App, print_output_handler
+from appmesh import App, AppMeshRequestError, print_output_handler
 from _support import config
 
 
@@ -218,6 +218,90 @@ class ProtocolTestMixin:
         # Generous threshold — anything close to N would indicate a per-spawn leak.
         self.assertLess(delta, 10, f"fd_daemon grew by {delta} after {N} spawns (baseline={baseline}, after={after})")
 
+    def test_18_app_depends_on_gate(self):
+        """A dependent app starts only after its dependency is enabled, running, and healthy.
+
+        The gate is what makes depends_on usable for startup order: without it,
+        a dependent would race its dependency and fail on the missing service.
+        """
+        config.attach_test_bearer(self.client)
+        dep_name = "SDK_DEP_18_DEP"
+        app_name = "SDK_DEP_18"
+        try:
+            # Self-dependency is rejected at registration: it could never be satisfied.
+            # All transports raise AppMeshRequestError for rejected requests.
+            with self.assertRaises(AppMeshRequestError):
+                self.client.add_app(App({"command": "true", "name": app_name, "shell": True, "depends_on": [app_name]}))
+
+            # Dependency registered but disabled: the dependent must be held back.
+            self.client.add_app(App({"command": "sleep 120", "name": dep_name, "shell": True, "status": 0}))
+            self.client.add_app(App({"command": "sleep 120", "name": app_name, "shell": True, "depends_on": [dep_name]}))
+            deadline = time.time() + 3
+            while time.time() < deadline:
+                held = self.client.get_app(app_name)
+                if held.pid is not None or held.waiting_for:
+                    break
+                time.sleep(0.5)
+            self.assertIsNone(held.pid, "dependent must not start while its dependency is down")
+            self.assertEqual(held.waiting_for, [dep_name])
+
+            # Once the dependency runs, the held start must fire on its own.
+            self.client.enable_app(dep_name)
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                started = self.client.get_app(app_name)
+                if started.pid is not None:
+                    break
+                time.sleep(0.5)
+            self.assertIsNotNone(started.pid, "dependent must start once its dependency is healthy")
+        finally:
+            self.client.delete_app(app_name)
+            self.client.delete_app(dep_name)
+
+    def test_19_app_depends_on_no_stop_on_dep_failure(self):
+        """A dependency stopping must not stop the dependent; it only holds the next start.
+
+        Otherwise one crashed dependency would cascade-kill every dependent app
+        on the node — the gate is a start-order control, not a runtime coupling.
+        """
+        config.attach_test_bearer(self.client)
+        dep_name = "SDK_DEP_19_DEP"
+        app_name = "SDK_DEP_19"
+        try:
+            self.client.add_app(App({"command": "sleep 120", "name": dep_name, "shell": True}))
+            self.client.add_app(App({"command": "sleep 120", "name": app_name, "shell": True, "depends_on": [dep_name]}))
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                if self.client.get_app(app_name).pid is not None:
+                    break
+                time.sleep(0.5)
+            self.assertIsNotNone(self.client.get_app(app_name).pid, "dependent must be running before the failure")
+
+            # Dependency failure: the dependent must keep running.
+            self.client.disable_app(dep_name)
+            time.sleep(3)
+            survivor = self.client.get_app(app_name)
+            self.assertIsNotNone(survivor.pid, "dependent must survive its dependency stopping")
+            self.assertEqual(survivor.waiting_for, [dep_name])
+
+            # The next start is held while the dependency is down.
+            self.client.disable_app(app_name)
+            self.client.enable_app(app_name)
+            time.sleep(3)
+            self.assertIsNone(self.client.get_app(app_name).pid, "restart must wait for the dependency")
+
+            # Recovery: re-enabling the dependency releases the held start.
+            self.client.enable_app(dep_name)
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                if self.client.get_app(app_name).pid is not None:
+                    break
+                time.sleep(0.5)
+            self.assertIsNotNone(self.client.get_app(app_name).pid, "dependent must restart once the dependency recovers")
+        finally:
+            self.client.delete_app(app_name)
+            self.client.delete_app(dep_name)
+
 
 # ---------------------------------------------------------------------------
 # App output detailed tests (30-34)
@@ -331,19 +415,20 @@ class PrincipalManagementMixin:
 class TaskOperationMixin:
     """Tests for run_task and cancel_task."""
 
-    def test_50_run_task_echo(self):
-        """Register an echo app, run_task, verify response."""
+    def test_50_run_task_execute(self):
+        """Run a task on the bundled py-task worker and verify the result.
+
+        A task needs a worker that registers with fetch_task. A plain process
+        (the former `cat` design) can never receive one, so the daemon answers
+        400 "No process running" by design.
+        """
         config.attach_test_bearer(self.client)
-        app_name = "SDK_TASK_50"
         try:
-            self.client.add_app(App({"command": "cat", "name": app_name, "shell": True}))
-            time.sleep(1)
-            result = self.client.run_task(app_name, "hello_task", timeout=5)
-            self.assertIn("hello_task", result)
+            self.client.get_app("py-task")
         except Exception:
-            pass
-        finally:
-            self.client.delete_app(app_name)
+            self.skipTest("bundled py-task app is not registered on this daemon")
+        result = self.client.run_task("py-task", "print('hello_task', end='')", timeout=10)
+        self.assertIn("hello_task", result)
 
     def test_51_cancel_task_no_pending(self):
         """cancel_task when nothing pending returns False."""

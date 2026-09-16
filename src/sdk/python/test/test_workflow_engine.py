@@ -71,7 +71,7 @@ class TestWorkflowEngine(unittest.TestCase):
     def setUp(self):
         """Health probe: fail fast if the engine session is unhealthy, so a dead session
         surfaces as an error here instead of silently flipping the negative tests
-        (18/19) green (CLAUDE.md Rule 12 — fail loud)."""
+        (18/19) green (CLAUDE.md Rule 11 — fail loud)."""
         probe = self.call("workflow_list")
         self.assertEqual(probe.get("status"), "ok", f"engine health probe failed: {probe.get('message')}")
 
@@ -79,7 +79,7 @@ class TestWorkflowEngine(unittest.TestCase):
 
     # Substrings that mark a transport/auth failure (a dead session), NOT a workflow
     # business error. These must NOT be folded into {"status":"error"} or a negative
-    # test would pass on a broken session and mask the real failure (CLAUDE.md Rule 12).
+    # test would pass on a broken session and mask the real failure (CLAUDE.md Rule 11).
     def call(self, action, **kw):
         """Send one workflow action and return the parsed JSON response.
 
@@ -822,3 +822,7 @@ jobs:
             )
         finally:
             self.cleanup(name)
+
+
+if __name__ == "__main__":
+    unittest.main()

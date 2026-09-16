@@ -267,7 +267,10 @@ async fn sdk_31_app_output_incremental() {
 async fn sdk_40_subscribe_stdout() {
     let c = authed().await;
     let _ = c.delete_app("RUST_SUB").await;
-    let app = Application::builder("RUST_SUB").command("echo sub_test").shell(true).build();
+    // Register disabled: `echo` exits in milliseconds, so output must be produced
+    // only after the subscription is active, or no STDOUT event can ever arrive.
+    let mut app = Application::builder("RUST_SUB").command("echo sub_test").shell(true).build();
+    app.status = Some(false);
     c.add_app(&app, None).await.unwrap();
 
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -282,6 +285,7 @@ async fn sdk_40_subscribe_stdout() {
 
     let sub = c.subscribe("RUST_SUB", Some(&["STDOUT"]), Some(on_event)).await.unwrap();
     assert!(!sub.subscription_id.is_empty());
+    c.enable_app("RUST_SUB").await.unwrap();
     let ok = tokio::time::timeout(std::time::Duration::from_secs(10), rx).await;
     c.unsubscribe(&sub.subscription_id).await.ok();
     c.delete_app("RUST_SUB").await.ok();

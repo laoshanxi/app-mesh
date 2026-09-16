@@ -127,20 +127,22 @@ func (a *ActiveSteps) KillAll() {
 
 // Options configures workflow execution.
 type Options struct {
-	ClusterNodes        []string                              // known cluster node addresses
-	ServerURI           string                                // TCP server address for forwarding clients
-	DefaultTargetHost   string                                // inherited target from parent job (sub-workflows)
-	CompletedJobs       map[string]string                     // jobs to skip on recovery
-	RecoveredSteps      map[string]map[string]map[string]any  // job → step → {stdout, exit_code, status, response}
-	OnJobDone           JobCallback                           // checkpoint update
-	OnStepDone          StepCallback                          // stdout archival (called after step, with full stdout)
-	StepLogPathFn       func(jobName, stepName string) string // returns file path for streaming step log
-	Log                 logger.Log                            // per-run logger (nil = global stdout)
-	ActiveSteps         *ActiveSteps                          // cancel tracking (nil = no tracking)
-	CancelCtx           context.Context                       // workflow cancel context (passed to executors)
-	WorkflowBaseDir     string                                // base directory for workflow YAML files
-	CallerToken         string                                // human caller Dex bearer only; internal capabilities never enter message payloads
-	WorkflowProcessUUID string                                // managed Workflow process that owns temporary command-step Apps
+	ClusterNodes         []string                              // known cluster node addresses
+	ServerURI            string                                // TCP server address for forwarding clients
+	DefaultTargetHost    string                                // inherited target from parent job (sub-workflows)
+	CompletedJobs        map[string]string                     // jobs to skip on recovery
+	RecoveredSteps       map[string]map[string]map[string]any  // job → step → {stdout, exit_code, status, response}
+	OnJobDone            JobCallback                           // checkpoint update
+	OnStepDone           StepCallback                          // stdout archival (called after step, with full stdout)
+	StepLogPathFn        func(jobName, stepName string) string // returns file path for streaming step log
+	Log                  logger.Log                            // per-run logger (nil = global stdout)
+	ActiveSteps          *ActiveSteps                          // cancel tracking (nil = no tracking)
+	CancelCtx            context.Context                       // workflow cancel context (passed to executors)
+	WorkflowBaseDir      string                                // base directory for workflow YAML files
+	CallerToken          string                                // human caller Dex bearer only; internal capabilities never enter message payloads
+	WorkflowProcessUUID  string                                // managed Workflow process that owns temporary command-step Apps
+	CapabilityWorkflowID string                                // workflow identity bound to the run capability; sub-workflows inherit the top-level value
+	CapabilityRunID      string                                // run identity bound to the run capability; sub-workflows inherit the top-level value
 }
 
 func (o *Options) log() logger.Log {
@@ -204,6 +206,15 @@ func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appm
 	ectx.Inputs = inputs
 	if wf.Env != nil {
 		ectx.Env = wf.Env
+	}
+
+	// The run capability is issued once for the top-level run; sub-workflows
+	// inherit that identity so their temporary Apps pass the daemon capability check.
+	if opts.CapabilityWorkflowID == "" {
+		opts.CapabilityWorkflowID = wf.Name
+	}
+	if opts.CapabilityRunID == "" {
+		opts.CapabilityRunID = runID
 	}
 
 	log.WorkflowStarted(wf.Name, runID)
@@ -274,15 +285,17 @@ func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appm
 
 func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int, opts Options, job *models.Job) (*executor.StepExecutor, error) {
 	exec := &executor.StepExecutor{
-		Client:       client,
-		Ctx:          ectx,
-		JobName:      job.Name,
-		Depth:        depth,
-		ClusterNodes: opts.ClusterNodes,
-		ServerURI:    opts.ServerURI,
-		CancelCtx:    opts.CancelCtx,
-		CallerToken:  opts.CallerToken,
-		ProcessUUID:  opts.WorkflowProcessUUID,
+		Client:               client,
+		Ctx:                  ectx,
+		JobName:              job.Name,
+		Depth:                depth,
+		ClusterNodes:         opts.ClusterNodes,
+		ServerURI:            opts.ServerURI,
+		CancelCtx:            opts.CancelCtx,
+		CallerToken:          opts.CallerToken,
+		ProcessUUID:          opts.WorkflowProcessUUID,
+		CapabilityWorkflowID: opts.CapabilityWorkflowID,
+		CapabilityRunID:      opts.CapabilityRunID,
 	}
 	exec.RunSubWorkflow = func(ctx context.Context, wfName string, inputs map[string]string, subDepth int) (int, map[string]string) {
 		subOpts := opts
@@ -636,6 +649,11 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 		WorkflowBaseDir:   opts.WorkflowBaseDir,
 		ActiveSteps:       opts.ActiveSteps,
 		CallerToken:       opts.CallerToken, // forward caller identity into sub-workflow message steps
+		// Capability-bound identity and process UUID stay at the top-level values:
+		// the daemon validates temporary App metadata against the top-level run capability.
+		WorkflowProcessUUID:  opts.WorkflowProcessUUID,
+		CapabilityWorkflowID: opts.CapabilityWorkflowID,
+		CapabilityRunID:      opts.CapabilityRunID,
 	}
 
 	exitCode, subCtx := RunWithContext(ctx, wf, client, inputs, runID, depth, subOpts)

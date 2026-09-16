@@ -1,7 +1,6 @@
 package appmesh
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,7 +11,6 @@ import (
 
 func TestAppmeshTCPFile(t *testing.T) {
 	client, err := NewTCPClient(Option{InsecureSkipVerify: true})
-	fmt.Println(err)
 	require.Nil(t, err)
 
 	client.SetToken(requireBearerToken(t))
