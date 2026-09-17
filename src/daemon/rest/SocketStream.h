@@ -344,10 +344,10 @@ public:
 	// Close from user side (close function is already used for interface)
 	void shutdown();
 	bool connected() const;
-	/// Socket-level liveness check for pool reuse: the handle must be valid and
-	/// report no error, and the TCP state must still be established. Catches a
-	/// stream whose peer went away while the close callback was lost — such a
-	/// stream looks OPEN but silently swallows everything queued on it.
+	/// Socket-level liveness for pool reuse: valid handle, clean SO_ERROR, and
+	/// (Linux only) TCP state ESTABLISHED. Catches a stream whose close callback
+	/// was lost — it looks OPEN but swallows everything queued on it. A missed
+	/// peer FIN stays undetected on macOS/Windows.
 	bool socketAlive() const;
 	/// True only when the accepted socket peer is a loopback address.  This uses
 	/// the address recorded by the socket itself, never client-supplied request data.
@@ -366,6 +366,9 @@ private:
 
 	int enable_mask(ACE_Reactor_Mask bit);
 	int disable_mask(ACE_Reactor_Mask bit);
+	// Enable a mask, healing a registration lost to fd-number recycling.
+	// Returns false only for a dead socket — the caller must close the stream.
+	bool ensure_mask(ACE_Reactor_Mask bit);
 	void defer_mask(ACE_Reactor_Mask bit, bool enable); // Record a mask change; caller holds m_io_mutex
 	void apply_mask_ops(ACE_Reactor_Mask add, ACE_Reactor_Mask clr); // Caller must NOT hold m_io_mutex
 
