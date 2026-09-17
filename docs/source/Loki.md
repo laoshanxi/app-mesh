@@ -23,9 +23,9 @@ docker-compose -f docker-compose-all-in-one.yaml up -d
 
 ### Configure Grafana
 
-1. Open Grafana on 3000 port (http://grafana_node:3000/)
+1. Open Grafana on 3000 port (http://127.0.0.1:3000/)
 2. Add DataSource: Loki
-3. Input Loki address: http://script_loki_1:3100 (this address is Grafana access Loki docker container name)
+3. Input Loki address: http://loki:3100 (this address is the Loki service name on the Docker network). The `grafana` service and the `loki` service must share one Docker network.
 4. Select Explore -> Log labels -> job
 
 ### Stop and clean

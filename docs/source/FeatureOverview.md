@@ -137,8 +137,8 @@ bounded authority.
 
 - Authenticate users and establish renewable sessions.
 - Use token-based or OAuth-based authentication.
-- Require multi-factor authentication.
-- Manage users, roles, groups, and permissions.
+- Require multi-factor authentication at the identity provider.
+- Manage principals, roles, and permissions. Keep users and groups at the identity provider.
 - Associate applications with owners.
 - Apply application-level read and write permissions.
 - Protect sensitive runtime configuration.

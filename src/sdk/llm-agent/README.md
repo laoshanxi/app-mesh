@@ -65,7 +65,7 @@ client / workflow step
    ▼
 App Mesh daemon ── task RPC (auth: daemon-injected APP_MESH_PROCESS_KEY; RBAC) ──▶ llm_agent App
         handler: session_send → claude-agent-sdk query() with cwd=<workspace>/<session_id>
-                 (continue_conversation when that cwd already exists) → stream / final answer
+                 (continue_conversation when a prior turn completed in that cwd) → stream / final answer
 ```
 
 ## Access control
@@ -132,7 +132,8 @@ install to a custom prefix must also edit the yaml's `working_dir`.
 appm add -D @/opt/appmesh/apps/llm-agent.yaml -z ANTHROPIC_API_KEY=<key> -e LLMAGENT_MODEL=claude-opus-4-8 --force
 ```
 
-Smoke-test once it is up:
+Smoke-test once it is up (export `APPMESH_BEARER_TOKEN` with a valid access token first —
+the script reads it, see [SOP.md](SOP.md) step 3):
 
 ```bash
 python3 examples/user_scenarios.py a_single

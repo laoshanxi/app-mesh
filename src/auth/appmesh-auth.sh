@@ -323,6 +323,7 @@ seed_builtin_principals() {
                 print "      - app-control"
                 print "      - app-manage-all"
                 print "      - app-view-all"
+                print "      - host-resource-view"
                 role_added = 1
                 next
             }

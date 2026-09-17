@@ -16,7 +16,7 @@ docker run -d --name mosquitto \
 Available ports:
 
 - 1883: MQTT TCP port (primary)
-- 9001: WebSocket port (optional)
+- 9001: WebSocket port (optional; the provided `mosquitto.conf` does not enable this listener)
 
 Note: The default configuration enables anonymous access for testing purposes. Configure authentication for production use.
 
@@ -26,6 +26,12 @@ Install the Python MQTT client:
 
 ```bash
 pip install paho-mqtt
+```
+
+Set the App Mesh bearer token before you run `mqtt_subscriber.py`:
+
+```bash
+export APPMESH_BEARER_TOKEN=<access-token>
 ```
 
 ## Usage Examples

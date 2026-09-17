@@ -11,6 +11,11 @@ scrape_configs:
       - targets: ["node_exporter:9100"]
   - job_name: "appmesh"
     scrape_interval: 10s
+    # /metrics requires a bearer with host-resource-view. The
+    # appmesh_metrics_auth compose service renews this file every 5 minutes;
+    # the token inside lives for 15 minutes and is re-read on every scrape.
+    authorization:
+      credentials_file: /metrics-token/token
     static_configs:
       - targets: ["appmesh_node:6061"]
 

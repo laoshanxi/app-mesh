@@ -42,10 +42,13 @@ Authorization:
     # deliberately has no Principal, role, configuration, or first-admin
     # administration capabilities. app-manage-all only bypasses per-App owner
     # share bits; app-control remains required for enable/disable operations.
+    # host-resource-view is read-only; it lets the automation client scrape
+    # /metrics (for example the packaged Prometheus stack).
     appmesh-maintenance:
       - app-control
       - app-manage-all
       - app-view-all
+      - host-resource-view
     appmesh-admin:
       - app-control
       - app-delete

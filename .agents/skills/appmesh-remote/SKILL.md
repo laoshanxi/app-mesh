@@ -19,8 +19,9 @@ python3 <skill-dir>/scripts/remote.py <command> [arguments]
 ```
 
 In this repository the canonical path is
-`.agents/skills/appmesh-remote/scripts/remote.py`. Claude Code reaches the same file
-through the repository-level `.claude` link to `.agents`.
+`.agents/skills/appmesh-remote/scripts/remote.py`. This repository does not
+carry a `.claude` link to `.agents`; see `references/configuration.md` for the
+link commands when installing the skill in another repository.
 
 ## Load supporting guidance when needed
 
@@ -31,7 +32,8 @@ through the repository-level `.claude` link to `.agents`.
   execution, deployment, output, or cleanup failure.
 
 Before remote execution, confirm that the App Mesh Python SDK is installed, a
-daemon is reachable, and `APPMESH_WORKSPACE` identifies the remote source tree.
+daemon is reachable, `APPMESH_ACCESS_TOKEN` holds a valid access token, and
+`APPMESH_WORKSPACE` identifies the remote source tree.
 
 Treat credentials and TLS settings as user-provided configuration. Never invent
 or print secret values.

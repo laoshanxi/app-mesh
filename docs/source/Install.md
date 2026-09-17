@@ -26,7 +26,7 @@ Mount `/var/run/docker.sock` only when App Mesh must manage Docker images. Grant
 
 ```shell
 sudo rpm --import gpg_public.key
-sudo yum install appmesh_3.0.0_gcc_9_glibc_2.31_x86_64.rpm
+sudo yum install appmesh_3.0.0_gcc_11_glibc_2.35_x86_64.rpm
 sudo systemctl enable --now appmesh
 ```
 

@@ -195,7 +195,7 @@ new AppMeshWorker(baseURL, sslConfig, options);
 
 Fetch task payload from the App Mesh service. Automatically retries transient failures.
 
-**Returns:** `Promise<string|Buffer>` - The payload sent by the client
+**Returns:** `Promise<string|Buffer|null>` - The payload sent by the client, or `null` when the fetch loop is cancelled via `stop()`
 
 **Throws:** `ProcessSupersededError` for HTTP 412, or `WorkerRejectedError` for a permanent HTTP 400. The caller should stop serving; exit at the app entry point if appropriate.
 
@@ -223,6 +223,14 @@ Return processed result back to the client.
 ```javascript
 const result = { status: "success", data: processedData };
 await server.send_task_result(JSON.stringify(result));
+```
+
+###### `stop()`
+
+Cancel the fetch loop. A running `fetch_task()` call resolves `null`.
+
+```javascript
+server.stop();
 ```
 
 #### AppMeshWorkerTCP

@@ -86,7 +86,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 
 **Interfaces exposed:**
 - `Registry.Get(name) *Workflow` — used by Layer 2 to fetch definitions.
-- `Registry.Update(name, wf)` / `Registry.Remove(name)` — used by Layer 6 on add/remove.
+- `Registry.Update(name, wf, owner)` / `Registry.Remove(name)` — used by Layer 6 on add/remove.
 - `Registry.WatchingApp(app, event) []*Workflow` — used by event listener in Layer 2.
 
 ### Layer 2 — Run Lifecycle
@@ -133,13 +133,13 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 
 - `RunWithContext` is the entry point. It first deep-copies the workflow (`cloneWorkflow`) so each run has isolated `Job.Status` and `Step.Result` fields — this eliminates data races between concurrent runs of the same workflow.
 - `dag.TopoSort` computes execution layers from `needs` dependencies. Each layer is a set of jobs with no inter-dependencies.
-- **Single-job layers** run in an anonymous function (so `defer exec.Close()` fires per-iteration, not at function return).
-- **Multi-job layers** run as parallel goroutines with `sync.WaitGroup`. Each goroutine has `defer recover()` to prevent one job's panic from crashing the entire run.
+- Every job in a layer runs in its own goroutine (`sync.WaitGroup`), so `defer exec.Close()` fires per job, not at function return.
+- Each job goroutine has `defer recover()` to prevent one job's panic from crashing the entire run.
 - `evaluateNeeds` checks dependency statuses following GitHub Actions semantics: `success` = all deps succeeded; `failure` = at least one dep failed; `skipped` is neutral (blocks success but doesn't trigger failure).
 - `runJob` evaluates the `if` condition with `EvalConditionForJobWithStatus`, which supports `always()`, `success()`, `failure()`, and comparison operators.
 - `runStep` handles retry with configurable backoff (fixed or exponential, capped at 3600s). Retry sleep is cancel-aware via `time.NewTimer` + `select` on context.
 - Cancel propagation: the cancel context is checked at layer boundaries and inside `waitWithContext`. `KillAll` runs remote kills in parallel goroutines to avoid one unreachable node blocking the rest.
-- Sub-workflows: `RunSubWorkflow` receives a derived context with timeout (`context.WithTimeout`). The sub-workflow gets its own `ActiveSteps` tracker (not shared with parent) and its own cloned workflow. Outputs are evaluated from the sub-workflow's expression context.
+- Sub-workflows: `RunSubWorkflow` receives a derived context with timeout (`context.WithTimeout`). The sub-workflow shares the parent's `ActiveSteps` tracker (so cancel propagates to its step Apps) and runs its own cloned workflow. Outputs are evaluated from the sub-workflow's expression context.
 
 **Interfaces exposed:**
 - `RunWithContext(ctx, wf, client, inputs, runID, depth, opts) (exitCode, *Context)` — used by Layer 2.
@@ -590,7 +590,6 @@ All actions return errors in the same format:
 
 | Limitation | Impact | Direction |
 |------------|--------|-----------|
-| Pending runs cannot be cancelled by run ID | `cancel` only works on running runs; pending (queued) runs must wait or be removed via `workflow_rm` | Add `CancelPendingRun` to remove from queue and mark "cancelled" |
 | File-based Run state (`runs.json` + checkpoint) | Not a transactional Run record | Single Run record per run |
 | Pseudo-App workflow storage | Reuses daemon App model but is not a first-class workflow resource | First-class Workflow API/resource |
 | Identity metadata uses stable Principal IDs | Directory names can change without changing ownership | Keep owner/actor as immutable Principal IDs |

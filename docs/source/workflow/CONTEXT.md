@@ -5,10 +5,10 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 ## Core Concepts (Existing App Mesh)
 
 - **App** — A managed process definition registered with App Mesh. Has a command, owner, env, lifecycle behavior, and resource limits. Persisted as YAML in `/opt/appmesh/work/apps/`.
-- **Task** — A request-response message sent to a running App via `POST /app/{name}/task`. The client sends a payload, the App fetches it, processes it, and replies. Synchronous from the caller's perspective.
+- **Task** — A request-response message sent to a running App via `POST /appmesh/app/{name}/task`. The client sends a payload, the App fetches it, processes it, and replies. Synchronous from the caller's perspective.
 - **Event** — A notification dispatched by App Mesh when an App's state changes. Six types: PROCESS_START, PROCESS_EXIT, STDOUT_OUTPUT, HEALTH_CHANGE, STATUS_CHANGE, APP_REMOVED.
 - **Label** — A key-value tag on a node (not an App). Used for node selection and routing in multi-node clusters.
-- **App Run** — The act of executing an App via `POST /app/run` (async) or `POST /app/syncrun` (sync). Returns a process_uuid for tracking. Distinct from Workflow Run.
+- **App Run** — The act of executing an App via `POST /appmesh/app/run` (async) or `POST /appmesh/app/syncrun` (sync). Returns a process_uuid for tracking. Distinct from Workflow Run.
 
 ## Workflow Concepts
 
@@ -53,7 +53,7 @@ Step references are scoped to the current Job. Cross-job references use the `job
 
 - **`${{ steps.<name>.stdout }}`** — Captured stdout of a completed Step (current job scope).
 - **`${{ steps.<name>.exit_code }}`** — Integer exit code.
-- **`${{ steps.<name>.status }}`** — `success` or `failure`.
+- **`${{ steps.<name>.status }}`** — `success`, `failure`, or `skipped`.
 - **`${{ steps.<name>.response }}`** — Response body from a message Step.
 - **`${{ steps.<name>.outputs.<key> }}`** — Output from a workflow Step's `workflow_call` outputs (evaluated in-process from sub-workflow expression context).
 - **`${{ jobs.<name>.status }}`** — Status of a completed Job.
@@ -71,8 +71,8 @@ Step references are scoped to the current Job. Cross-job references use the `job
 
 | Ambiguous term | In App Mesh core | In Workflow layer |
 |----------------|-----------------|-------------------|
-| Task | Request-response message API (`/app/{name}/task`) | Do not use. Use "Step" or "message step" instead. |
+| Task | Request-response message API (`/appmesh/app/{name}/task`) | Do not use. Use "Step" or "message step" instead. |
 | App | A real managed process | In v1, workflow is registered as a special App for CRUD/RBAC. Not a runnable App. |
-| Run | `POST /app/run` executes an App (App Run) | `appm workflow run` creates a Workflow Run. Internally each step creates an App Run. |
+| Run | `POST /appmesh/app/run` executes an App (App Run) | `appm workflow run` creates a Workflow Run. Internally each step creates an App Run. |
 | Owner | Immutable Principal that owns an App | Resource Owner — Principal ID derived from the authenticated registrant. Actor is tracked separately (ADR 0006/0009). |
 | Trigger | Not a concept in App Mesh core | v1: built-in event listener. v2: external App Mesh cron/event apps. |

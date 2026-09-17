@@ -324,7 +324,7 @@ Each Step has a `name` and exactly one of four type keys: `command`, `app`, `mes
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `max` | integer | yes | — | Maximum number of retry attempts (not counting the initial run). |
-| `backoff` | string | no | `"fixed"` | `"fixed"`: wait `interval` seconds between retries. `"exponential"`: wait `interval * 2^attempt` seconds. |
+| `backoff` | string | no | `"fixed"` | `"fixed"`: wait `interval` seconds between retries. `"exponential"`: wait `interval` seconds before the first retry; the wait doubles for each later retry. |
 | `interval` | integer | no | 10 | Base wait time in seconds between retries. |
 
 ```yaml
@@ -658,7 +658,7 @@ token expires because the workflow process never receives a refresh token.
 Each run writes a `checkpoint.json` file that tracks per-job completion status. If the workflow engine crashes mid-run:
 
 1. On restart, the engine scans for `checkpoint.json` files with `status: running`.
-2. Jobs marked `success` or `skipped` in the checkpoint are not re-executed.
+2. Jobs marked `success`, `skipped`, or `failure` in the checkpoint are not re-executed.
 3. The run resumes from the first incomplete job.
 
 Checkpoint file location: `/opt/appmesh/work/workflow/{name}/runs/{run-id}/checkpoint.json`

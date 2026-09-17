@@ -36,9 +36,9 @@ operator-managed upstream identity provider.
 
 ## Python SDK authentication
 
-`AppMeshClient` accepts only a caller-supplied `bearer_token` and has no local
-login or cookie persistence; `OAuthClient` implements the OAuth flows
-(PKCE, Device Authorization, refresh, revocation, Client Credentials) against an
+`AppMeshClient` accepts a caller-supplied `bearer_token` or `token_provider`
+and has no local login or cookie persistence; `OAuthClient` implements the
+OAuth flows (PKCE, Device Authorization, refresh, revocation) against an
 independently configured authentication-service route. See [Security](Security.md) for an example.
 
 ## Build

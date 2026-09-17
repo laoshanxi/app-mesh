@@ -141,16 +141,16 @@ Runs an existing registered App. Useful for long-running services or pre-configu
 # app-step-demo.yaml
 name: app-step-demo
 jobs:
-  use-ping:
+  use-py-exec:
     steps:
-      - name: ping-once
-        app: "ping"          # an existing registered App
+      - name: exec-once
+        app: "py-exec"       # an existing registered App
         timeout: 10
 ```
 
 ```bash
-# Make sure the target App exists first (ping is shipped with the daemon)
-appm ls | grep ping
+# Make sure the target App exists first (py-exec is shipped with the daemon)
+appm ls | grep py-exec
 
 appm workflow add -f app-step-demo.yaml
 appm workflow run app-step-demo -f

@@ -1,6 +1,6 @@
 DOCKER_IMG_NAME=nginx:mainline-alpine
 CONTAINER_NAME=docker_proxy
-NGINX_PORT=6058
+NGINX_PORT=6057
 
 # SDK: https://docs.docker.com/engine/api/sdk/
 # Sample: https://stackoverflow.com/questions/39848796/allow-nginx-to-read-docker-sock

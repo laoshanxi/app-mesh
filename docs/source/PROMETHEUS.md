@@ -25,10 +25,10 @@ docker-compose -f docker-compose-all-in-one.yaml up -d
 
 ### Configure Grafana
 
-1. Access Prometheus 9090 UI (http://prom_node:9090/) to verify
-2. Open Grafana on 3000 port (http://grafana_node:3000/)
+1. Access Prometheus 9090 UI (http://127.0.0.1:9090/) to verify
+2. Open Grafana on 3000 port (http://127.0.0.1:3000/)
 3. Add DataSource: Prometheus
-4. Input Prometheus address: http://script_prometheus_1:9090 (this address is Grafana access Prometheus docker container name)
+4. Input Prometheus address: http://prometheus:9090 (this address is the Prometheus service name on the Docker network)
 5. Select Explore -> Metrics
 
 ### Design
@@ -38,7 +38,28 @@ The daemon owns the in-memory registry. The Go agent listens on
 REST must be enabled. Port `0` disables the listener; `6061` is a typical value. Use
 node-exporter separately when full host metrics are required.
 The dedicated listener accepts only `GET`/`HEAD` and always targets the local daemon;
-the agent forwarding header is rejected on this endpoint.
+the agent forwarding header is rejected on this endpoint. The daemon requires a bearer
+token with the `host-resource-view` permission for `/metrics`. A scrape without a valid
+token gets status 401.
+
+### Scrape authentication
+
+An automation token lives for 15 minutes. Do not write a token into the scrape job.
+Renew it instead. The all-in-one compose file runs the full chain:
+
+1. The `appmesh_metrics_auth` service runs inside the App Mesh container network.
+   It calls `appmesh-auth.sh automation-token` every 5 minutes. The command uses the
+   bundled `appmesh-automation` client and the local Dex token endpoint.
+2. The service writes the token to the shared `metrics_token` volume. The file mode
+   is 0644 because the Prometheus container runs as user `nobody`. The volume is a
+   tmpfs volume, so the token never reaches the host disk.
+3. The `appmesh` scrape job reads the file on every scrape with
+   `authorization.credentials_file`.
+4. The `appmesh-automation` client holds the `appmesh-maintenance` role. The role
+   includes `host-resource-view`.
+
+For a scrape job outside the compose file, run a renewal loop with the same command.
+Grant the principal a role that includes `host-resource-view`.
 
 ### Defined Metrics
 

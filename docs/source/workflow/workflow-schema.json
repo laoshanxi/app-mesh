@@ -333,7 +333,7 @@
           "type": "string",
           "enum": ["fixed", "exponential"],
           "default": "fixed",
-          "description": "fixed: constant interval. exponential: interval * 2^attempt."
+          "description": "fixed: constant interval. exponential: interval seconds before the first retry; the wait doubles for each later retry."
         },
         "interval": {
           "type": "integer",

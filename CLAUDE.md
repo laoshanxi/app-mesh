@@ -64,17 +64,17 @@ Default to surfacing uncertainty, not hiding it.
 
 App Mesh is a C++17 cross-platform (Linux/macOS/Windows) application management platform — one secure daemon to run, schedule, and remote-control apps across machines, with Dex/OIDC bearer authentication, Principal-based RBAC, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, JavaScript, and C++.
 
-## Daemon Ports
+## Ports
 
-Three listener ports are defined by `src/daemon/config.yaml` (`REST` section; env override `APPMESH_REST_<Key>`, e.g. `APPMESH_REST_RestListenPort`):
+The `REST` section of `src/daemon/config.yaml` defines three port keys (env override `APPMESH_REST_<Key>`, e.g. `APPMESH_REST_RestListenPort`). The Go agent reads the same config file and env prefix, so an override affects both processes.
 
-| Port | Config key | Transport / purpose |
-|------|------------|---------------------|
-| 6060 | `RestListenPort` | HTTPS REST API — the primary management surface (also what the Go agent reverse-proxies) |
-| 6059 | `RestTcpPort` | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) |
-| 6058 | `WebSocketPort` | WSS API — WebSocket transport used by SDK clients and event subscribe (`ClientWSS`) |
+| Port | Config key | Bound by | Transport / purpose |
+|------|------------|----------|---------------------|
+| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6059. Clients treat this as the primary management surface. The daemon never binds this port; it only uses the value to build URLs (OIDC, Docker API). |
+| 6059 | `RestTcpPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
+| 6058 | `WebSocketPort` | daemon | Single uWS listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`) and event subscribe |
 
-All three authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs. The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
+All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs. The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
 
 ## Binary Inspection Tools
 
