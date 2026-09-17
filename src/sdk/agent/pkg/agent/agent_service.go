@@ -433,6 +433,24 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A plain HTTP client behind this agent ends its connection with the response,
+	// so pushed events can never reach it. The daemon sees only this agent's pooled
+	// TCP connection (always "persistent") and would bind subscriptions to it whose
+	// event responses are then dropped here. Mirror the daemon's direct-HTTP
+	// behavior: reject subscribe endpoints (POST only; DELETE unsubscribes) and
+	// drop subscribe_events on app registration.
+	if forwardingHost == "" {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/subscribe") {
+			utils.HttpError(w, "Subscribe requires a persistent connection (TCP or WebSocket)", http.StatusMethodNotAllowed)
+			return
+		}
+		query := r.URL.Query()
+		if _, supplied := query["subscribe_events"]; supplied {
+			query.Del("subscribe_events")
+			r.URL.RawQuery = query.Encode()
+		}
+	}
+
 	// Handle X-File-Path URI decode
 	if filePath := r.Header.Get(HTTP_HEADER_KEY_File_Path); filePath != "" {
 		r.Header.Set(HTTP_HEADER_KEY_File_Path, utils.DecodeURIComponent(filePath))

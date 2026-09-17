@@ -7,6 +7,7 @@ synchronization excludes, or installing the skill in another repository.
 
 - Install the App Mesh Python SDK with `pip install appmesh`.
 - Provide a reachable App Mesh daemon.
+- Set `APPMESH_ACCESS_TOKEN` to a valid access token for the daemon.
 - Set `APPMESH_WORKSPACE` to the remote working directory before `sync`,
   `sync-exec`, or `deploy`.
 
@@ -14,21 +15,19 @@ synchronization excludes, or installing the skill in another repository.
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `APPMESH_HOST` | App Mesh REST endpoint | `https://127.0.0.1:6060` |
+| `APPMESH_ENGINE_URL` | App Mesh REST endpoint | `https://127.0.0.1:6060` |
+| `APPMESH_ACCESS_TOKEN` | Access token sent to the daemon | Required |
 | `APPMESH_WORKSPACE` | Remote source directory | Required for sync and deploy |
-| `APPMESH_USER` | Login user | `admin` |
-| `APPMESH_PASSWORD` | Login password | Development default from the SDK tool |
 | `APPMESH_SSL_VERIFY` | `true`, `false`, or a CA path | `false` |
 | `APPMESH_SYNC_EXCLUDE` | Extra comma-separated tar exclude patterns | Empty |
 
 Configure real credentials explicitly. Prefer certificate verification outside
-isolated development nodes, and never print passwords or private key material.
+isolated development nodes, and never print access tokens or private key material.
 
 ```bash
-export APPMESH_HOST=https://192.168.1.100:6060
+export APPMESH_ENGINE_URL=https://192.168.1.100:6060
+export APPMESH_ACCESS_TOKEN='<access token>'
 export APPMESH_WORKSPACE=/home/dev/myproject
-export APPMESH_USER=admin
-export APPMESH_PASSWORD='<password>'
 export APPMESH_SSL_VERIFY=/path/to/ca.pem
 export APPMESH_SYNC_EXCLUDE='*.o,dist/'
 ```

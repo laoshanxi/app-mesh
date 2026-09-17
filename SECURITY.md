@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.2.x   | Yes                |
-| < 2.2   | No                 |
+| 3.0.x   | Yes                |
+| < 3.0   | No                 |
 
 ## Reporting a Vulnerability
 
@@ -41,10 +41,10 @@ If you discover a security vulnerability in App Mesh, please report it responsib
 
 This project employs the following security practices:
 
-- **Static Analysis**: CodeQL and Coverity scans on every PR and weekly schedules
+- **Static Analysis**: CodeQL scans on every PR and weekly schedules; Coverity scans on pushes to main
 - **Dependency Scanning**: Dependabot alerts and dependency review on pull requests
 - **SBOM**: Software Bill of Materials generated with each release (SPDX format)
 - **Build Provenance**: Artifact attestations for release builds
 - **OpenSSF Scorecard**: Continuous security posture monitoring
 - **Secret Detection**: gitleaks pre-commit hook to prevent credential leaks
-- **Package Signing**: GPG-signed deb/rpm packages
+- **Package Signing**: GPG-signed RPM packages; DEB packages are unsigned and covered by the signed SHA256SUMS.asc checksums

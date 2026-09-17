@@ -195,13 +195,12 @@ User: "commit and push"
 └── references/
     ├── configuration.md
     └── troubleshooting.md
-
-.claude -> .agents
 ```
 
-The `.agents/` directory is the canonical source used by Codex. The repository's
-`.claude` directory is a link to `.agents`, so Claude Code discovers the same
-skills and settings without maintaining a second directory.
+The `.agents/` directory is the canonical source used by Codex. Claude Code
+discovers the same skills through a `.claude` link to `.agents`. This repository
+does not carry the link. See "Install in another repository" below for the link
+commands.
 
 ### Install in another repository
 

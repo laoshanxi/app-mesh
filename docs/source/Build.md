@@ -13,7 +13,7 @@ $ git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
 $ sudo bash app-mesh/script/bootstrap/install_openssl.sh
 $ sudo bash app-mesh/script/bootstrap/install_build_deps.sh
 # clean
-$ rm -rf app-mesh dep
+$ rm -rf app-mesh appmesh.tmp
 ```
 
 After environment was setup with above steps, use bellow steps to build App Mesh. `make test ARGS="-V"` is used to run Unit Test after `make`.

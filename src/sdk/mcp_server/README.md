@@ -28,6 +28,7 @@ export APPMESH_MCP_PUBLIC_URL=https://appmesh.example.com:6071
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `APPMESH_URL` | `https://127.0.0.1:6060` | Engine REST URL. |
+| `APPMESH_DAEMON_PUBLIC_URL` | `APPMESH_URL` value | Daemon URL for the file tools. The returned curl commands run on the client machine. Set it when the client reaches the daemon through a different address. |
 | `APPMESH_CA` | unset | CA file or directory for Engine TLS. |
 | `APPMESH_SSL_VERIFY` | `true` | Engine TLS verification when no CA path is set. |
 | `APPMESH_AUTH_ISSUER` | required | Canonical issuer in the token `iss` claim. |

@@ -7,8 +7,10 @@ deployment, output, or cleanup failure.
 
 - `APPMESH_WORKSPACE not set`: configure the remote source directory before
   `sync`, `sync-exec`, or `deploy`.
-- `Failed to connect`: verify `APPMESH_HOST`, network reachability, daemon status,
-  username, and password.
+- `APPMESH_ACCESS_TOKEN is not set`: supply a valid access token in the
+  environment before you run the tool.
+- `Failed to connect`: verify `APPMESH_ENGINE_URL`, `APPMESH_ACCESS_TOKEN`,
+  network reachability, and daemon status.
 - TLS verification failure: provide the correct CA file through
   `APPMESH_SSL_VERIFY`. Use `false` only for an explicitly trusted development
   node.

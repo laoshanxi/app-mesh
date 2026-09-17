@@ -4,6 +4,19 @@ networks:
   frontend:
   backend:
 
+volumes:
+  # Short-lived automation bearer for the Prometheus scrape job. Written by
+  # appmesh_metrics_auth, read by prometheus. Do not publish this volume.
+  # tmpfs keeps the token off the host disk. A plain named volume would be
+  # root-owned; uid 482 is the image's fixed container identity (Dockerfile
+  # APPMESH_ID), so the non-root refresher can create the token file.
+  metrics_token:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: uid=482,mode=0755
+
 services:
   appmesh_node:
     hostname: appmesh_node
@@ -19,9 +32,53 @@ services:
       - no-new-privileges:true
     ports:
       - "443:443" # for appmesh_ui
-      - "6061:6061" # Prometheus Exporter
+      - "6061:6061" # Prometheus Exporter (bearer token still required)
     networks:
       - frontend
+
+  # /metrics requires a bearer token with host-resource-view. The automation
+  # token lives only 15 minutes, so renew it: write a fresh token to the
+  # shared metrics_token volume every 5 minutes. Shares the node's network
+  # namespace so appmesh-auth.sh reaches the loopback-only Dex token endpoint,
+  # and the node's work volume so it reads the generated client secret.
+  appmesh_metrics_auth:
+    restart: always
+    image: laoshanxi/appmesh:latest
+    depends_on:
+      - appmesh_node
+    network_mode: "service:appmesh_node"
+    volumes_from:
+      - appmesh_node
+    volumes:
+      - metrics_token:/metrics-token
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The `appm` marker runs the loop without the daemon. The entrypoint sets
+    # umask 077, so chmod 0644 keeps the file readable by the prometheus
+    # container (user nobody). The rename keeps prometheus from reading a
+    # partially written token. After 5 minutes of failures the loop exits, so
+    # restart: always re-creates this container into the node's live network
+    # namespace (same recovery as appmesh-ui).
+    command:
+      - appm
+      - sh
+      - -c
+      - |
+        fails=0
+        while true; do
+          if /opt/appmesh/script/appmesh-auth.sh automation-token >/metrics-token/token.new 2>/dev/null; then
+            chmod 644 /metrics-token/token.new
+            mv -f /metrics-token/token.new /metrics-token/token
+            fails=0
+            sleep 300
+          else
+            fails=$$((fails+1))
+            if [ "$$fails" -ge 20 ]; then exit 1; fi
+            sleep 15
+          fi
+        done
 
   appmesh-ui:
     restart: always
@@ -63,6 +120,7 @@ services:
       - "3000:3000"
     networks:
       - frontend
+      - backend # reach loki for the Loki data source
 
   prometheus:
     restart: always
@@ -71,9 +129,12 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    depends_on:
+      - appmesh_metrics_auth
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prom_alert_rules.yml:/etc/prometheus/rules.yml:ro
+      - metrics_token:/metrics-token:ro
     ports:
       - "9090:9090"
     networks:

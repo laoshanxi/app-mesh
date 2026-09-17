@@ -52,7 +52,7 @@ Each gap blocks a working multi-node deployment of the bundled stack.
                  ┌─ owner node ────────────────────────────────┐
  clients ──────► │ Agent :6060 (public TLS)                    │
                  │   └─ /auth/* ──► Dex 127.0.0.1:6062 (loopback) │
-                 │ Engine :6060 HTTPS / :6059 TCP / :6058 WSS   │
+                 │ Engine :6058 HTTPS + WSS / :6059 TCP         │
                  └──────────────┬───────────────────────────────┘
                                 │ forwarded requests (TLS TCP :6059,
                                 │ msgpack, bearer unchanged)

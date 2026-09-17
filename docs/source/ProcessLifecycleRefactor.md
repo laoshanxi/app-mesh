@@ -611,7 +611,7 @@ Docker CLI 与 Docker API 是 daemon 级 backend 配置，单个 daemon 不能�
 | `async_client_wait` | `run_app_async(str)`、`client.wait_for_async_run` |
 | `async_start_failure` | on-demand rejected start |
 | `run_existing_app` | 通过 `App({name})` 运行已注册 app 的临时副本 |
-| `start_failure_recovery` | managed start error、修正 command 后 accepted-start count 增加 |
+| `registered_start_failure_recovery` | managed start error、修正 command 后 accepted-start count 增加 |
 | `disable_enable` | exit time 收敛与 enable 后 accepted-start count 增加 |
 | `lifecycle_generation` | 不等待旧 exit 的快速 disable→enable，隔离 stale start/exit/replan ABA |
 | `natural_restart` | natural exit、restart latch、backoff 路径 |
@@ -643,7 +643,7 @@ Docker CLI 与 Docker API 是 daemon 级 backend 配置，单个 daemon 不能�
 
 | 生产区域 | 对应 runtime case |
 |---|---|
-| `AppProcess` start/resolve/exit/finalize/CV wait | `sync_*`、`async_*`、`start_failure_recovery`、`delete_running` |
+| `AppProcess` start/resolve/exit/finalize/CV wait | `sync_*`、`async_*`、`registered_start_failure_recovery`、`delete_running` |
 | `Application` schedule/restart/generation/retention | `disable_enable`、`lifecycle_generation`、`natural_restart`、`exit_behavior_matrix`、`recurring_retention_buffer`、`remove_after_exit` |
 | `AppTimer`、start/end、daily normalization | `periodic`、`interval_anchor`、`valid_time_window`、`daily_range_shapes`、`daily_limitation`、`daily_recurring` |
 | `HttpRequest` run completion 与 output long-poll | `sync_success`、`sync_nonzero`、`async_fast_exit`、`async_client_wait`、`output_final_drain` |

@@ -34,13 +34,23 @@ async fn authed() -> Arc<appmesh::AppMeshClientWSS> {
 
 /// APPMESH_HOME with a config.yaml disabling server cert verification —
 /// the test daemon uses a self-signed cert (CLI equivalent of the SDK's
-/// danger_accept_invalid_certs above).
+/// danger_accept_invalid_certs above). The address keys are required: the CLI
+/// applies a config's VerifyServer only when the -H endpoint matches
+/// RestListenAddress + WebSocketPort.
 fn test_appmesh_home() -> &'static std::path::Path {
     static HOME: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
     HOME.get_or_init(|| {
         let dir = std::env::temp_dir().join("appmesh-cli-remote-test");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("config.yaml"), "REST:\n  SSL:\n    VerifyServer: false\n").unwrap();
+        std::fs::write(
+            dir.join("config.yaml"),
+            format!(
+                "REST:\n  RestListenAddress: {}\n  WebSocketPort: {}\n  SSL:\n    VerifyServer: false\n",
+                wss_host(),
+                wss_port()
+            ),
+        )
+        .unwrap();
         dir
     })
 }
@@ -342,7 +352,9 @@ async fn sdk_93_upload_nonexistent_local() {
 
 #[test]
 #[ignore]
-fn cli_50_logon_logoff() {
+fn cli_99_logon_logoff() {
+    // Must run last: logoff clears the shared sign-in session that every other
+    // cli_* test needs, and ignored tests execute in name order.
     cli_auth();
     let out = appm().args(["logoff"]).output().unwrap();
     assert!(out.status.success());

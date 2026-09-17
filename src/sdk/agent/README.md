@@ -6,7 +6,7 @@ The agent provides access to Docker daemon through two methods:
 
 ### Docker API Proxy (/appmesh/docker/\*)
 
-The agent proxies Docker daemon REST API requests under the `/appmesh/docker` prefix.
+The agent proxies Docker daemon REST API requests under the `/appmesh/docker` prefix. The daemon is the only caller. Each request must carry the PSK headers `X-Request-ID` and `X-Request-HMAC`. The agent rejects a request without valid PSK headers with status 407.
 
 | Endpoint                       | Method   | Description                |
 | ------------------------------ | -------- | -------------------------- |
@@ -18,21 +18,10 @@ The agent proxies Docker daemon REST API requests under the `/appmesh/docker` pr
 | `/appmesh/docker/version`      | GET      | Docker version info        |
 | `/appmesh/docker/_ping`        | GET      | Docker daemon health check |
 
-Examples:
-
-```bash
-# List all Docker containers
-curl -k https://127.0.0.1:6060/appmesh/docker/containers/json
-
-# List all Docker images
-curl -k https://127.0.0.1:6060/appmesh/docker/images/json
-
-# Get Docker version
-curl -k https://127.0.0.1:6060/appmesh/docker/version
-```
-
 Implementation Details:
 
+- The daemon (`DockerApiProcess`) sends the PSK headers. It signs the `X-Request-ID` value with the shared process HMAC key.
+- The agent registers these routes only when `/var/run/docker.sock` exists.
 - The agent proxies requests to Docker daemon socket at /var/run/docker.sock
 - TLS encryption is handled by the agent's main HTTPS server
 - All Docker API operations are available through the /appmesh/docker prefix

@@ -419,6 +419,48 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    get:
+      tags: [Tasks]
+      summary: Fetch the next task payload for a managed application process
+      description: |
+        Worker RPC. Only a managed local process on a direct private transport
+        can call this operation; a bearer-authenticated client must use POST.
+        The process proof goes in the X-AppMesh-Process-Key header. The
+        process_key query parameter is not supported. The request waits until a
+        task arrives.
+      security: []
+      parameters:
+        - name: X-AppMesh-Process-Key
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Task payload sent by the invoking client. }
+        "400": { description: Worker request permanently rejected. A retry cannot recover it. }
+        "412": { description: Process key superseded by a newer process instance. }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Tasks]
+      summary: Return the task result from a managed application process
+      description: |
+        Worker RPC. Use the same transport and header requirements as the fetch
+        operation.
+      security: []
+      parameters:
+        - name: X-AppMesh-Process-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200": { description: Result accepted. The daemon delivers it to the invoking client. }
+        "400": { description: Worker request permanently rejected. A retry cannot recover it. }
+        "412": { description: Process key superseded by a newer process instance. }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /appmesh/app/{name}/subscribe:
     parameters:

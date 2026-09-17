@@ -130,7 +130,7 @@ Response {
 ```go
 // Subscribe to events
 client, _ := appmesh.NewTCPClient(appmesh.Option{})
-client.Login("admin", "admin123", "", 0, "")
+client.SetToken(os.Getenv("APPMESH_BEARER_TOKEN"))
 
 result, _ := client.Subscribe(appmesh.SubscribeOption{
     AppName: "myapp",
@@ -140,9 +140,10 @@ result, _ := client.Subscribe(appmesh.SubscribeOption{
 })
 
 // Register app with atomic subscribe
+command := "ping github.com"
 app, _ := client.AddApp(appmesh.Application{
     Name:    "myapp",
-    Command: ptr("ping github.com"),
+    Command: &command,
 }, "START", "EXIT", "STDOUT")
 fmt.Println("subscription_id:", app.SubscriptionID)
 
@@ -217,7 +218,7 @@ let client = ClientBuilderTCP::new().danger_accept_invalid_certs(true).build()?;
 client.client().set_token(&std::env::var("APPMESH_BEARER_TOKEN")?);
 
 // Subscribe to events
-let result = client.subscribe("myapp", Some(&["START", "EXIT"])).await?;
+let result = client.subscribe("myapp", Some(&["START", "EXIT"]), None).await?;
 
 // Register app with atomic subscribe
 let app = Application::builder("myapp").command("ping github.com").build();

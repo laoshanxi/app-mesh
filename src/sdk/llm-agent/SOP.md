@@ -53,7 +53,7 @@ TOKEN=$(curl -s -u "appmesh-cli:" -X POST http://127.0.0.1:6062/auth/token \
   -d grant_type=password -d username=admin@appmesh.local -d "password=<your password>" \
   --data-urlencode "scope=openid audience:server:client_id:appmesh-api" \
   | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
-echo ${#TOKEN}   # > 0 means success; expires in ~10 minutes
+echo ${#TOKEN}   # > 0 means success; expires in 15 minutes
 ```
 
 ## 4. Workflow mode — staged develop / test pipeline

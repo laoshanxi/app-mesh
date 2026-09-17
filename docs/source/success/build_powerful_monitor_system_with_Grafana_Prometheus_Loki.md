@@ -23,6 +23,8 @@ cd app-mesh
 
 ### Deploy all in one YAML
 
+This output comes from an older stack version. The current stack prints different service names.
+
 ```shell
 cd app-mesh/script/docker
 $ docker-compose -f docker-compose-all-in-one.yaml up -d
@@ -38,7 +40,12 @@ Creating script_appmesh-ui_1    ... done
 
 ```
 
-Then you can access App Mesh UI (<https://192.168.3.24/>) with initial user (admin/admin123).
+Then you can access App Mesh UI (<https://192.168.3.24/>). Sign in with the user `admin@appmesh.local`. Setup generates the initial password and stores it in a credential file. Read the password from the `appmesh_node` container:
+
+```shell
+docker-compose -f docker-compose-all-in-one.yaml exec appmesh_node \
+  sh -c 'grep "^password=" /opt/appmesh/work/auth/secrets/initial-admin-credentials'
+```
 
 <img src="https://raw.githubusercontent.com/laoshanxi/picture/master/appmesh/1.png" />
 
@@ -85,7 +92,7 @@ Query metrics: appmesh_application_process_resident_memory_bytes
 Stop node exporter to trigger alertmanager, you will get bellow email:
 
 ```shell
-docker stop script_node_exporter_1
+docker-compose -f docker-compose-all-in-one.yaml stop node_exporter
 ```
 
 <img src="https://raw.githubusercontent.com/laoshanxi/picture/master/wiki/email.png" />
