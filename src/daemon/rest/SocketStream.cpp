@@ -3,10 +3,6 @@
 
 #include <climits>
 
-#if !defined(_WIN32)
-#include <sys/socket.h>
-#endif
-
 // SSL_Stream_Ex methods
 void SSL_Stream_Ex::set_ssl_context(ACE_SSL_Context *ctx)
 {
@@ -331,21 +327,11 @@ void SocketStream::defer_mask(ACE_Reactor_Mask bit, bool enable)
 
 void SocketStream::apply_mask_ops(ACE_Reactor_Mask add, ACE_Reactor_Mask clr)
 {
-	const static char fname[] = "SocketStream::apply_mask_ops() ";
-
 	// Caller must NOT hold m_io_mutex: mask_ops acquires the reactor token.
-	if (add)
+	if (add && !ensure_mask(add))
 	{
-		if (enable_mask(add) == -1)
-		{
-			// A handle the reactor refuses is dead or closed. Without this the
-			// send queue silently black-holes: everything is enqueued, nothing is
-			// ever drained, and no close callback fires. Close the stream so
-			// pending requests fail instead of hanging.
-			LOG_WAR << fname << "Registering with the reactor failed; closing stream " << this;
-			shutdown();
-			return;
-		}
+		shutdown();
+		return;
 	}
 	if (clr)
 	{
@@ -360,8 +346,11 @@ void SocketStream::apply_mask_ops(ACE_Reactor_Mask add, ACE_Reactor_Mask clr)
 				needWrite = m_state.load(std::memory_order_acquire) == ConnState::OPEN &&
 							(!m_send_state.is_empty() || m_ssl_retry.want_write_for_recv);
 			}
-			if (needWrite)
-				enable_mask(ACE_Event_Handler::WRITE_MASK);
+			if (needWrite && !ensure_mask(ACE_Event_Handler::WRITE_MASK))
+			{
+				shutdown();
+				return;
+			}
 		}
 	}
 }
@@ -412,10 +401,13 @@ int SocketStream::open(void *acceptor_or_connector)
 	{
 		LOG_WAR << fname << "Failed to disable Nagle's algorithm (TCP_NODELAY): " << last_error_msg();
 	}
-	// Enable non-blocking mode
+	// Enable non-blocking mode. A blocking socket would pin a reactor thread —
+	// fail the open instead of continuing.
 	if (this->peer().enable(ACE_NONBLOCK) == -1)
 	{
 		LOG_ERR << fname << "Failed to enable non-blocking mode: " << last_error_msg();
+		m_state.store(ConnState::CLOSED, std::memory_order_release);
+		return -1;
 	}
 	this->peer().get_remote_addr(m_target);
 
@@ -564,47 +556,46 @@ bool SocketStream::socketAlive() const
 	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
 		return false;
 
-	// Probe without locks: m_io_mutex must not be taken here (callers hold the
-	// forwarding pool lock; the reactor path takes m_io_mutex first). The fd is
-	// closed strictly after the state flips away from OPEN, so re-checking the
-	// state after the probe fences the fd-recycling race.
-	const ACE_HANDLE handle = this->get_handle();
-	if (handle == ACE_INVALID_HANDLE)
+	// Lock-free probe: the pool lock is held and m_io_mutex would invert the
+	// reactor lock order. The fd closes only after the state flips, so re-check
+	// the state after probing to fence fd recycling.
+	if (this->get_handle() == ACE_INVALID_HANDLE)
 	{
 		LOG_WAR << fname << "Stream reports OPEN but has no handle";
 		return false;
 	}
 
-#if defined(_WIN32)
-	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
-		return false;
-	return true;
-#else
+	// peer().get_option() keeps the probe cross-platform (int optlen, WinSock
+	// included); raw ::getsockopt would need a socklen_t type split.
 	int soError = 0;
-	socklen_t soLen = sizeof(soError);
-	if (::getsockopt(handle, SOL_SOCKET, SO_ERROR, &soError, &soLen) != 0 || soError != 0)
+	int soLen = sizeof(soError);
+	if (this->peer().get_option(SOL_SOCKET, SO_ERROR, &soError, &soLen) == -1)
+	{
+		LOG_WAR << fname << "Stream reports OPEN but SO_ERROR probe failed: " << last_error_msg();
+		return false;
+	}
+	if (soError != 0)
 	{
 		LOG_WAR << fname << "Stream reports OPEN but socket error is pending: " << soError;
 		return false;
 	}
 
 #if defined(__linux__)
-	// SO_ERROR alone misses a half-closed socket: after a missed peer FIN the
-	// kernel state is CLOSE_WAIT with no error yet. TCP_INFO exposes it.
+	// SO_ERROR stays 0 on a missed peer FIN (CLOSE_WAIT); TCP_INFO exposes it.
+	// A failed probe stays lenient: it must not evict a healthy connection.
 	struct tcp_info info;
-	socklen_t infoLen = sizeof(info);
+	int infoLen = sizeof(info);
 	std::memset(&info, 0, infoLen);
-	if (::getsockopt(handle, IPPROTO_TCP, TCP_INFO, &info, &infoLen) == 0 &&
-		info.tcpi_state != TCP_ESTABLISHED)
+	if (this->peer().get_option(IPPROTO_TCP, TCP_INFO, &info, &infoLen) == -1)
+		LOG_WAR << fname << "TCP_INFO probe failed, skipping half-close check: " << last_error_msg();
+	else if (info.tcpi_state != TCP_ESTABLISHED)
 	{
 		LOG_WAR << fname << "Stream reports OPEN but TCP state is " << static_cast<int>(info.tcpi_state);
 		return false;
 	}
 #endif
-	if (m_state.load(std::memory_order_acquire) != ConnState::OPEN)
-		return false;
-	return true;
-#endif
+
+	return m_state.load(std::memory_order_acquire) == ConnState::OPEN;
 }
 
 int SocketStream::handle_input(ACE_HANDLE fd)
@@ -876,6 +867,31 @@ int SocketStream::disable_mask(ACE_Reactor_Mask bit)
 	if (auto r = this->reactor())
 		return r->mask_ops(this, bit, ACE_Reactor::CLR_MASK);
 	return -1;
+}
+
+// Enable a reactor mask, healing a registration lost to fd-number recycling
+// (a late remove keyed on a recycled handle drops a healthy stream's entry).
+// Returns false only for a dead socket — the caller must close the stream, or
+// the send queue black-holes with no close callback.
+bool SocketStream::ensure_mask(ACE_Reactor_Mask bit)
+{
+	const static char fname[] = "SocketStream::ensure_mask() ";
+
+	if (enable_mask(bit) != -1)
+		return true;
+
+	// Re-register like open() does; socketAlive() keeps a dead socket on the
+	// close path instead of re-registering it.
+	if (this->reactor() && socketAlive() &&
+		this->reactor()->register_handler(this, ACE_Event_Handler::READ_MASK) == 0 &&
+		enable_mask(bit) != -1)
+	{
+		LOG_WAR << fname << "Stream " << this << " re-registered after a lost registration";
+		return true;
+	}
+	LOG_WAR << fname << "Registering with the reactor failed; closing stream " << this
+			<< " | " << last_error_msg();
+	return false;
 }
 
 // Fire sites invoke the callback members directly: immutable after open() (rule 3),
