@@ -211,17 +211,17 @@ jobs:
           done
 
       - name: Attest Build Provenance (RPM)
-        uses: actions/attest-build-provenance@v4.1.1
+        uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: "*/*.rpm"
 
       - name: Attest Build Provenance (DEB)
-        uses: actions/attest-build-provenance@v4.1.1
+        uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: "*/*.deb"
 
       - name: Attest Build Provenance (SBOM)
-        uses: actions/attest-build-provenance@v4.1.1
+        uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: "*.sbom.*.json"
 
