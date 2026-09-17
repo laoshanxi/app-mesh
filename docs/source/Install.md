@@ -152,6 +152,13 @@ See [Security](Security.md) for the forwarding authentication model and the
 authorization-data consistency rule. A worked multi-node example is
 `script/docker/docker-compose.yaml`.
 
+The compose cluster runs the issuer over plain HTTP on its protected
+network. Do the first sign-in inside the master container over the loopback
+WSS listener. Then copy the authorization data of the owner to every
+follower. The `appmesh_ui` service serves the web UI on port 443. See
+[ClusterAuthDesign](cluster/ClusterAuthDesign.md) for the exact commands
+and the UI entry.
+
 ## External authentication service
 
 Use external mode when an operator manages the OpenID Connect issuer.
