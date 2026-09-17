@@ -66,13 +66,11 @@ services:
     restart: always
     image: laoshanxi/appmesh-ui
     depends_on:
-      appmesh_master:
-        condition: service_healthy
-    # Shares the master's network namespace. A restart of the master gives it
-    # a new namespace, and `docker compose restart` does not honor depends_on
-    # ordering: a UI restarted alongside it can land in the dead namespace
-    # (443 reset from outside, 502 inside). After any master restart, run
-    # `docker compose restart appmesh_ui` once the master is healthy again.
+      - appmesh_master
+    # Shares the master's network namespace. The image itself waits for the
+    # loopback API upstream before nginx binds 443, and exits after 60s of
+    # unreachability so restart: always re-creates the container into the
+    # master's live namespace — no healthy-gating is needed here.
     network_mode: "service:appmesh_master"
 
   appmesh_slave1:

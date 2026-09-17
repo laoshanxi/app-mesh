@@ -11,12 +11,6 @@ services:
     image: laoshanxi/appmesh:latest
     environment:
       - APPMESH_REST_PrometheusExporterListenPort=6061
-    healthcheck:
-      test: ["CMD", "/opt/appmesh/script/appmesh-auth.sh", "service-health"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
     volumes:
       - /opt/appmesh/work # mount this to enable configuration persist
     cap_drop:
@@ -33,12 +27,11 @@ services:
     restart: always
     image: laoshanxi/appmesh-ui:latest
     depends_on:
-      appmesh_node:
-        condition: service_healthy
-    # Shares the node's network namespace. `docker compose restart` does not
-    # honor depends_on ordering: after restarting appmesh_node, restart this
-    # service too (`docker compose restart appmesh-ui`) or the UI keeps
-    # serving through the dead namespace (443 reset from outside, 502 inside).
+      - appmesh_node
+    # Shares the node's network namespace. The image itself waits for the
+    # loopback API upstream before nginx binds 443, and exits after 60s of
+    # unreachability so restart: always re-creates the container into the
+    # node's live namespace — no healthy-gating is needed here.
     network_mode: "service:appmesh_node" # make sure in same network with appmesh
 
   loki:
