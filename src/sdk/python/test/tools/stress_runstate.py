@@ -10,7 +10,7 @@ LogFileQueue lock.
 
 Scenarios (see docs/adr/0007):
   restart   §2/§3 exit-driven restart
-  remove    §6   REMOVE one-shot latch (retention > schedule interval)
+  remove    §6   REMOVE one-shot latch (stop_grace_period > schedule interval)
   periodic  §5   periodic loop after simulate-hack removal
   toggle    §4   disable/enable reschedule (m_needsSchedule)
   read      §1/§8 concurrent status reads during rapid restart
@@ -30,7 +30,7 @@ Env:
     APPMESH_TEST_ACCESS_TOKEN  pre-acquired Dex access token
     STRESS_DURATION_SEC     total run time (default: 60)
     STRESS_CONCURRENCY      parallel workers per scenario (default: 3)
-    STRESS_RETENTION_SEC    retention for the remove scenario, must be > daemon tick (default: 6)
+    STRESS_RETENTION_SEC    stop grace period for the remove scenario, must be > daemon tick (default: 6)
     STRESS_SCENARIOS        comma list to restrict scenarios (default: all)
 
 Note: timing assertions scale by a load factor (worker count) — the daemon runs all timers on
@@ -106,12 +106,12 @@ def app_exists(client, name) -> bool:
     return any(a.name == name for a in client.list_apps())
 
 
-# status: 0=DISABLED 1=ENABLED 2=NOTAVAILABLE. Reads strand (ENABLED+pid=0+no next_start) vs
+# enabled: 0=DISABLED 1=ENABLED. Reads strand (ENABLED+pid=0+no next_start) vs
 # slow (pid>0 or next_start armed) on failure.
 def app_state(client, name) -> str:
     try:
         a = client.get_app(name)
-        return (f"status={a.status} pid={a.pid} starts={a.starts} "
+        return (f"enabled={a.enabled} pid={a.pid} starts={a.starts} "
                 f"next_start={a.next_start_time} health={a.health} err={a.last_error!r}")
     except Exception as ex:  # noqa: BLE001
         return f"<get_app failed: {ex}>"
@@ -139,16 +139,16 @@ def scenario_restart(client, name):
 
 def scenario_remove(client, name):
     client.add_app(App({"name": name, "command": "sh -c 'exit 0'", "shell": True,
-                        "behavior": {"exit": "remove"}, "retention": str(RETENTION_SEC)}))
+                        "behavior": {"exit": "remove"}, "stop_grace_period": str(RETENTION_SEC)}))
     if not app_exists(client, name):
         raise AssertionError(f"{name}: missing right after add")
     r = progress(lambda: not app_exists(client, name), RETENTION_SEC + int(24 * SLOW), int(12 * SLOW))
-    _judge(client, name, f"REMOVE app not deleted (retention={RETENTION_SEC}s)", r)
+    _judge(client, name, f"REMOVE app not deleted (stop_grace_period={RETENTION_SEC}s)", r)
 
 
 def scenario_periodic(client, name):
     client.add_app(App({"name": name, "command": "echo tick", "shell": True,
-                        "start_interval_seconds": "2"}))
+                        "interval": "2"}))
     base = starts(client, name)
     # interval=2s -> 2 occurrences need >=4s ideal, plus scheduling latency under load.
     r = progress(lambda: starts(client, name) >= base + 2, int(16 * SLOW), int(12 * SLOW))
@@ -302,7 +302,7 @@ def main():
     SLOW = min(4.0, max(1.0, total_workers / 8.0))  # scale timing assertions with timer-thread contention
 
     print(f"soak: {DURATION}s, {CONCURRENCY} workers x {len(names)} scenarios "
-          f"({names}), retention={RETENTION_SEC}s, load_factor={SLOW:.2f}", flush=True)
+          f"({names}), stop_grace_period={RETENTION_SEC}s, load_factor={SLOW:.2f}", flush=True)
     deadline = time.time() + DURATION
     tasks = [(scn, SCENARIOS[scn], w) for scn in names for w in range(CONCURRENCY)]
 

@@ -155,9 +155,9 @@ pub struct AddArgs {
     #[arg(short = 'w', long = "working-dir")]
     pub working_dir: Option<String>,
 
-    /// Initial status (true=enabled, false=disabled)
-    #[arg(short = 's', long = "status")]
-    pub status: Option<bool>,
+    /// Initial enabled state (true=enabled, false=disabled)
+    #[arg(short = 's', long = "enabled")]
+    pub enabled: Option<bool>,
 
     /// Enable shell mode
     #[arg(short = 'u', long = "shell")]
@@ -200,13 +200,13 @@ pub struct AddArgs {
     #[arg(short = 'E', long = "daily-end")]
     pub daily_end: Option<String>,
 
-    /// Start interval (ISO 8601 duration or cron expression)
+    /// Start interval (seconds or ISO 8601 duration)
     #[arg(short = 'i', long = "interval")]
     pub interval: Option<String>,
 
-    /// Use cron expression for interval
-    #[arg(short = 'Y', long = "cron")]
-    pub cron: bool,
+    /// Cron expression schedule (e.g., '0 5 * * *')
+    #[arg(short = 'Y', long = "cron-schedule")]
+    pub cron_schedule: Option<String>,
 
     /// Memory limit in MB
     #[arg(short = 'M', long = "memory-limit")]
@@ -220,9 +220,9 @@ pub struct AddArgs {
     #[arg(short = 'C', long = "cpu-shares")]
     pub cpu_shares: Option<i32>,
 
-    /// Number of stdout cache files
-    #[arg(short = 'N', long = "log-cache-size")]
-    pub log_cache_size: Option<u32>,
+    /// Number of rotated stdout backup files
+    #[arg(short = 'N', long = "stdout-backup-count")]
+    pub stdout_backup_count: Option<u32>,
 
     /// Permission bits
     #[arg(short = 'p', long = "permission")]
@@ -237,20 +237,20 @@ pub struct AddArgs {
     pub env: Vec<String>,
 
     /// Encrypted environment variables (repeatable: -z K=V)
-    #[arg(short = 'z', long = "security-env")]
-    pub security_env: Vec<String>,
+    #[arg(short = 'z', long = "secret-env")]
+    pub secret_env: Vec<String>,
 
-    /// Process stop timeout (ISO 8601 duration)
-    #[arg(short = 'R', long = "stop-timeout")]
-    pub stop_timeout: Option<String>,
+    /// Process stop grace period (ISO 8601 duration)
+    #[arg(short = 'R', long = "stop-grace-period")]
+    pub stop_grace_period: Option<String>,
 
     /// Exit behavior: restart|standby|keepalive|remove
     #[arg(short = 'Q', long = "exit")]
     pub exit: Option<String>,
 
-    /// Exit code behavior (repeatable: --control CODE:ACTION)
-    #[arg(short = 'T', long = "control")]
-    pub control: Vec<String>,
+    /// Exit code behavior (repeatable: --exit-code-actions CODE:ACTION)
+    #[arg(short = 'T', long = "exit-code-actions")]
+    pub exit_code_actions: Vec<String>,
 
     /// Read YAML from stdin ('std') or file
     #[arg(short = 'D', long = "stdin")]

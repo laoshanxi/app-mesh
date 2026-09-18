@@ -214,10 +214,10 @@ std::string Configuration::getRestListenAddress()
 	return m_rest->m_restListenAddress;
 }
 
-int Configuration::getRestTcpPort()
+int Configuration::getTcpApiPort()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_restTcpPort;
+	return m_rest->m_tcpApiPort;
 }
 
 int Configuration::getWebSocketPort()
@@ -491,12 +491,6 @@ std::size_t Configuration::getIOThreadPoolSize() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_IOThreadPoolSize;
-}
-
-const std::string Configuration::getDescription() const
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_baseConfig->m_hostDescription;
 }
 
 const std::string Configuration::getPosixTimezone() const
@@ -777,8 +771,6 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_BaseConfig))
 		{
 			auto baseConfig = jsonValue.at(JSON_KEY_BaseConfig);
-			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_Description))
-				SET_COMPARE(this->m_baseConfig->m_hostDescription, newConfig->m_baseConfig->m_hostDescription);
 			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_LogLevel))
 			{
 				if (this->m_baseConfig->m_logLevel != newConfig->m_baseConfig->m_logLevel)
@@ -814,8 +806,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort))
 				SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_RestTcpPort))
-				SET_COMPARE(this->m_rest->m_restTcpPort, newConfig->m_rest->m_restTcpPort);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_TcpApiPort))
+				SET_COMPARE(this->m_rest->m_tcpApiPort, newConfig->m_rest->m_tcpApiPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_WebSocketPort))
 				SET_COMPARE(this->m_rest->m_webSocketPort, newConfig->m_rest->m_webSocketPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
@@ -840,8 +832,6 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_sslCaPath, newConfig->m_rest->m_ssl->m_sslCaPath);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyServer))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyServer, newConfig->m_rest->m_ssl->m_sslVerifyServer);
-				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyServerDelegate))
-					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyServerDelegate, newConfig->m_rest->m_ssl->m_sslVerifyServerDelegate);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyClient))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyClient, newConfig->m_rest->m_ssl->m_sslVerifyClient);
 			}
@@ -1039,9 +1029,9 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 	restApp[JSON_KEY_APP_name] = std::string(SEPARATE_AGENT_APP_NAME);
 	restApp[JSON_KEY_APP_command] = std::move(cmd);
 	restApp[JSON_KEY_APP_description] = std::string("REST agent for App Mesh");
-	restApp[JSON_KEY_APP_owner_permission] = (11);
+	restApp[JSON_KEY_APP_permission] = (11);
 	restApp[JSON_KEY_APP_owner_principal_id] = AuthorizationStore::systemPrincipalId();
-	restApp[JSON_KEY_APP_stdout_cache_num] = (3);
+	restApp[JSON_KEY_APP_stdout_backup_count] = (3);
 
 	auto objBehavior = nlohmann::json::object();
 	objBehavior[JSON_KEY_APP_behavior_exit] = std::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
@@ -1061,7 +1051,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	auto rest = std::make_shared<JsonRest>();
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
-	rest->m_restTcpPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestTcpPort);
+	rest->m_tcpApiPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_TcpApiPort);
 	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_CorsDisabled, rest->m_corsDisabled);
@@ -1110,7 +1100,6 @@ Configuration::BaseConfig::BaseConfig()
 std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(const nlohmann::json &jsonValue)
 {
 	auto config = std::make_shared<BaseConfig>();
-	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
 	config->m_defaultExecUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
 	config->m_disableExecUser = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_DisableExecUser);
 	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
@@ -1145,7 +1134,6 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 nlohmann::json Configuration::BaseConfig::AsJson() const
 {
 	auto result = nlohmann::json::object();
-	result[JSON_KEY_Description] = std::string(m_hostDescription);
 	result[JSON_KEY_DefaultExecUser] = std::string(m_defaultExecUser);
 	result[JSON_KEY_DisableExecUser] = (m_disableExecUser);
 	result[JSON_KEY_WorkingDirectory] = std::string(m_defaultWorkDir);
@@ -1164,7 +1152,7 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_RestListenPort] = (m_restListenPort);
 	result[JSON_KEY_PrometheusExporterListenPort] = (m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
-	result[JSON_KEY_RestTcpPort] = (m_restTcpPort);
+	result[JSON_KEY_TcpApiPort] = (m_tcpApiPort);
 	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
 	result[JSON_KEY_CorsDisabled] = (m_corsDisabled);
 	result[JSON_KEY_CsrfAllowedOrigins] = m_csrfAllowedOrigins;
@@ -1179,7 +1167,7 @@ Configuration::JsonRest::JsonRest()
 	: m_restEnabled(false), m_corsDisabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
 	  m_IOThreadPoolSize(DEFAULT_IO_THREAD_POOL_SIZE),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
-	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(0)
+	  m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(0)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 }
@@ -1188,7 +1176,6 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 {
 	auto ssl = std::make_shared<JsonSsl>();
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServer, ssl->m_sslVerifyServer);
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServerDelegate, ssl->m_sslVerifyServerDelegate);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyClient, ssl->m_sslVerifyClient);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
@@ -1202,7 +1189,6 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 {
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_SSLVerifyServer] = (m_sslVerifyServer);
-	result[JSON_KEY_SSLVerifyServerDelegate] = (m_sslVerifyServerDelegate);
 	result[JSON_KEY_SSLVerifyClient] = (m_sslVerifyClient);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
 	result[JSON_KEY_SSLCertificateKeyFile] = std::string(m_certKeyFile);
@@ -1213,6 +1199,6 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 }
 
 Configuration::JsonSsl::JsonSsl()
-	: m_sslVerifyServer(false), m_sslVerifyServerDelegate(false), m_sslVerifyClient(false)
+	: m_sslVerifyServer(false), m_sslVerifyClient(false)
 {
 }

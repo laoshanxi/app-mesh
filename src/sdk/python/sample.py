@@ -41,7 +41,7 @@ def demo_app_mgmt():
     """Show basic app management: add, view, enable, get output, and delete."""
     myapp = App()
     myapp.name = "myapp"
-    myapp.status = 0  # 0 = disabled
+    myapp.enabled = 0  # 0 = disabled
     myapp.command = "ping cloudflare.com"
 
     # Add app

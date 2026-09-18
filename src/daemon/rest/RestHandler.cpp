@@ -1290,22 +1290,22 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 			{
 				existApp[JSON_KEY_APP_env] = jsonApp[JSON_KEY_APP_env];
 			}
-			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_sec_env))
+			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_secret_env))
 			{
-				// Client provided fresh plaintext sec_env — leave as plaintext, no recover flag.
-				existApp[JSON_KEY_APP_sec_env] = jsonApp[JSON_KEY_APP_sec_env];
+				// Client provided fresh plaintext secret_env — leave as plaintext, no recover flag.
+				existApp[JSON_KEY_APP_secret_env] = jsonApp[JSON_KEY_APP_secret_env];
 			}
-			else if (HAS_JSON_FIELD(existApp, JSON_KEY_APP_sec_env))
+			else if (HAS_JSON_FIELD(existApp, JSON_KEY_APP_secret_env))
 			{
-				// Inherited sec_env is protected with a context containing the source app name.
+				// Inherited secret_env is protected with a context containing the source app name.
 				nlohmann::json decrypted = nlohmann::json::object();
-				for (auto &env : existApp[JSON_KEY_APP_sec_env].items())
+				for (auto &env : existApp[JSON_KEY_APP_secret_env].items())
 				{
 					const std::string context = fromApp->getName() + '\0' + env.key();
 					decrypted[env.key()] = SecretProtector::instance().unprotect(
 						env.value().get<std::string>(), context);
 				}
-				existApp[JSON_KEY_APP_sec_env] = std::move(decrypted);
+				existApp[JSON_KEY_APP_secret_env] = std::move(decrypted);
 			}
 			existApp[JSON_KEY_APP_name] = Configuration::instance()->generateRunAppName(clientProvideAppName);
 			existApp[JSON_KEY_APP_owner_principal_id] = callerPrincipalId;
@@ -1338,7 +1338,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 	if (lifecycle == 0)
 		throw std::invalid_argument("Zero timeout and lifecycle speficied");
 
-	jsonApp[JSON_KEY_APP_status] = (static_cast<int>(STATUS::NOTAVAILABLE));
+	jsonApp[JSON_KEY_APP_enabled] = (static_cast<int>(STATUS::NOTAVAILABLE));
 	jsonApp[JSON_KEY_APP_owner_principal_id] = callerPrincipalId;
 	jsonApp.erase(JSON_KEY_APP_execution_user);
 	const auto executionUser = Security::instance()->principal(callerPrincipalId)->executionUser();
@@ -1570,7 +1570,7 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 				}
 
 				auto app = config->addApp(jsonApp);
-				// Use returnRuntimeInfo=true so the response strips encrypted sec_env.
+				// Use returnRuntimeInfo=true so the response strips encrypted secret_env.
 				result = app->AsJson(true);
 			}
 		}

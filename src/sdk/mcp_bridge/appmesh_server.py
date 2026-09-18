@@ -9,7 +9,7 @@ Purpose
 -------
 This server allows large language models and MCP-compatible clients to:
 - Query a specific application's detailed configuration and runtime status
-- List all applications, optionally filtered by status
+- List all applications, optionally filtered by enabled state
 - Generate summarized health and lifecycle statistics for all applications
 
 Each exposed function is decorated as an MCP tool, allowing direct invocation
@@ -118,17 +118,17 @@ def get_application(app_name: str) -> dict:
         return {"success": False, "error": str(e), "message": f"Failed to retrieve application: {app_name}"}
 
 
-@mcp.tool(description="List applications, optionally filtered by status (enabled/disabled).")
-def list_applications(filter_status: Optional[str] = None) -> dict:
+@mcp.tool(description="List applications, optionally filtered by enabled state (enabled/disabled).")
+def list_applications(filter_enabled: Optional[str] = None) -> dict:
     """
     List all registered applications.
 
     Parameters
     ----------
-    filter_status : str, optional
-        If provided, filter applications by status:
-        - "enabled" (status = running-capable)
-        - "disabled" (status = inactive)
+    filter_enabled : str, optional
+        If provided, filter applications by enabled state:
+        - "enabled" (application is enabled)
+        - "disabled" (application is disabled)
 
     Returns
     -------
@@ -144,8 +144,8 @@ def list_applications(filter_status: Optional[str] = None) -> dict:
 
         applications = []
         for app in apps:
-            app_status = "enabled" if app.status == 1 else "disabled"
-            if filter_status and app_status.lower() != filter_status.lower():
+            app_enabled = "enabled" if app.enabled else "disabled"
+            if filter_enabled and app_enabled.lower() != filter_enabled.lower():
                 continue
             applications.append(app.to_dict())
 

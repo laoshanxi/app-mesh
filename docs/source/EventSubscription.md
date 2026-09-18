@@ -10,7 +10,7 @@ App Mesh supports real-time event subscription over persistent connections (TCP 
 | `EXIT` | Process exited | `pid`, `exit_code`, `last_error` |
 | `STDOUT` | Stdout output available | `output`, `position`, `finished` |
 | `HEALTH` | Health status changed | `health` (0=healthy, 1=unhealthy), `previous_health` |
-| `STATUS` | App enabled/disabled | `status`, `previous_status` |
+| `STATUS` | App enabled/disabled | `enabled`, `previous_enabled` |
 | `REMOVED` | App deleted | (empty) |
 
 ## REST API

@@ -13,10 +13,10 @@ struct Column {
     width: usize,
 }
 
-fn format_status(app: &Application) -> String {
-    match app.status {
-        Some(true) => "enabled".to_string(),
-        Some(false) => "disabled".to_string(),
+fn format_enabled(app: &Application) -> String {
+    match app.enabled {
+        Some(true) => "yes".to_string(),
+        Some(false) => "no".to_string(),
         None => "-".to_string(),
     }
 }
@@ -77,7 +77,7 @@ fn format_row(i: usize, app: &Application) -> Vec<String> {
             .as_deref()
             .map(|principal| principal_display(principal, app.owner_display_name.as_deref()))
             .unwrap_or_else(|| "-".to_string()),
-        format_status(app),
+        format_enabled(app),
         format_health(app),
         app.pid
             .map(|p| p.to_string())
@@ -102,7 +102,7 @@ fn format_row(i: usize, app: &Application) -> Vec<String> {
 }
 
 const TITLES: [&str; 14] = [
-    "ID", "NAME", "OWNER", "STATUS", "HEALTH", "PID", "USER", "MEMORY", "%CPU", "RETURN", "AGE",
+    "ID", "NAME", "OWNER", "ENABLED", "HEALTH", "PID", "USER", "MEMORY", "%CPU", "RETURN", "AGE",
     "DURATION", "STARTS", "COMMAND",
 ];
 

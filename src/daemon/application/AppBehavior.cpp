@@ -20,9 +20,9 @@ void AppBehavior::behaviorInit(nlohmann::json config)
         {
             m_exitEvent = str2action(exit);
         }
-        if (HAS_JSON_FIELD(config, JSON_KEY_APP_behavior_control))
+        if (HAS_JSON_FIELD(config, JSON_KEY_APP_behavior_exit_code_actions))
         {
-            auto jsonObj = config[JSON_KEY_APP_behavior_control];
+            auto jsonObj = config[JSON_KEY_APP_behavior_exit_code_actions];
             for (auto &event : jsonObj.items())
             {
                 if (Utility::isNumber(event.key()))
@@ -31,8 +31,8 @@ void AppBehavior::behaviorInit(nlohmann::json config)
                 }
                 else
                 {
-                    LOG_WAR << fname << "Invalid behavior control code <" << event.key() << ">, expected a numeric exit code";
-                    throw std::invalid_argument("invalid control code");
+                    LOG_WAR << fname << "Invalid behavior exit code <" << event.key() << ">, expected a numeric exit code";
+                    throw std::invalid_argument("invalid exit_code_actions code");
                 }
             }
         }
@@ -50,7 +50,7 @@ nlohmann::json AppBehavior::behaviorAsJson()
         {
             controls[std::to_string(control.first)] = std::string(action2str(control.second));
         }
-        result[JSON_KEY_APP_behavior_control] = std::move(controls);
+        result[JSON_KEY_APP_behavior_exit_code_actions] = std::move(controls);
     }
     return result;
 }

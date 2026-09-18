@@ -19,4 +19,8 @@ func TestConfig(t *testing.T) {
 	require.Equal(t, ConfigData.REST.RestEnabled, false)
 	require.Equal(t, ConfigData.REST.RestListenPort, 999)
 	require.Equal(t, ConfigData.REST.SSL.SSLCaPath, "DEF")
+
+	os.Setenv("APPMESH_REST_TcpApiPort", "777")
+	readConfig()
+	require.Equal(t, ConfigData.REST.TcpApiPort, 777)
 }

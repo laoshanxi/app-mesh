@@ -146,7 +146,7 @@ Application::Application()
 	  m_startTime(AppTimer::TIME_UNSET), m_endTime(std::chrono::system_clock::time_point::max()),
 	  m_startInterval(0), m_bufferTime(0), m_scheduleKind(ScheduleKind::Continuous),
 	  m_regTime(std::chrono::system_clock::now()),
-	  m_appId(Utility::shortID()), m_version(0), m_timerRemoveId(INVALID_TIMER_ID),
+	  m_appId(Utility::shortID()), m_timerRemoveId(INVALID_TIMER_ID),
 	  m_health(true),
 	  m_status(STATUS::ENABLED), m_runtime(std::make_unique<Runtime>()),
 	  m_metrics(std::make_shared<MetricsState>())
@@ -297,8 +297,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 			throw std::invalid_argument("invalid application startup_phase");
 		app->m_startupPhase = phase->second;
 	}
-	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_owner_permission);
-	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
+	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_permission);
+	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell);
 	app->m_sessionLogin = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_session_login);
 
 	if (jsonObj.contains(JSON_KEY_APP_metadata))
@@ -325,7 +325,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	const static auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout");
 	const auto fileName = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
 	app->m_stdoutFile = (outputDir / fileName).string();
-	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
+	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_backup_count);
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
 
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)
@@ -360,11 +360,11 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		}
 	}
 
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_status))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_enabled))
 	{
 		// Boolean is the documented wire form; numeric 1/0 stays accepted for
 		// persisted YAML files and internal registrations.
-		const auto &statusValue = jsonObj.at(JSON_KEY_APP_status);
+		const auto &statusValue = jsonObj.at(JSON_KEY_APP_enabled);
 		const int status = statusValue.is_boolean() ? (statusValue.get<bool>() ? 1 : 0) : statusValue.get<int>();
 		app->m_status.store(static_cast<STATUS>(status));
 	}
@@ -385,11 +385,15 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		}
 	}
 
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_sec_env))
+	const nlohmann::json *secretEnvs = nullptr;
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_secret_env))
+	{
+		secretEnvs = &jsonObj.at(JSON_KEY_APP_secret_env);
+	}
+	if (secretEnvs)
 	{
 		bool fromRecover = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover);
-		auto envs = jsonObj.at(JSON_KEY_APP_sec_env);
-		for (auto &env : envs.items())
+		for (auto &env : secretEnvs->items())
 		{
 			if (fromRecover)
 			{
@@ -397,7 +401,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 					!Utility::startWith(env.value().get<std::string>(), "sp1:"))
 				{
 					throw std::invalid_argument(
-						"persisted sec_env uses legacy per-user encryption and cannot be migrated safely "
+						"persisted secret_env uses legacy per-user encryption and cannot be migrated safely "
 						"without the former credential material; re-register the secured value through "
 						"an authenticated application update");
 				}
@@ -410,7 +414,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 				catch (const std::exception &)
 				{
 					throw std::invalid_argument(
-						"persisted sec_env could not be authenticated; restore the original "
+						"persisted secret_env could not be authenticated; restore the original "
 						"SecretProtector master key before starting App Mesh");
 				}
 			}
@@ -429,11 +433,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		app->attach(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid));
 	}
 
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_version))
-	{
-		SET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_version, app->m_version);
-	}
-
 	if (app->m_dockerImage.empty() && app->m_commandLine.empty())
 	{
 		throw std::invalid_argument("no command line provide");
@@ -445,19 +444,19 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		app->m_stdoutCacheNum = 0;
 	}
 
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_time))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_start_time))
 	{
-		app->m_startTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_time));
+		app->m_startTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_start_time));
 	}
-	else if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds))
+	else if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_interval) || HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cron_schedule))
 	{
 		// For periodic run, set default startTime to now if not specified
 		app->m_startTime = std::chrono::system_clock::now() + std::chrono::seconds(1);
 	}
 
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_end_time))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_end_time))
 	{
-		app->m_endTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_SHORT_APP_end_time));
+		app->m_endTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_end_time));
 	}
 
 	if (app->m_endTime.time_since_epoch().count())
@@ -473,9 +472,9 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		app->m_dailyLimit = DailyLimitation::FromJson(jsonObj.at(JSON_KEY_APP_daily_limitation));
 	}
 
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_register_time))
 	{
-		app->m_regTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_REG_TIME));
+		app->m_regTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_register_time));
 	}
 
 	// Init error handling
@@ -486,32 +485,38 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 
 	// Init m_timer
 	DurationParse duration;
-	app->m_bufferTimeValue = GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_retention);
+	app->m_bufferTimeValue = GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_stop_grace_period);
 	app->m_bufferTime = duration.parse(app->m_bufferTimeValue);
 
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds))
+	const bool hasInterval = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_interval);
+	const bool hasCronSchedule = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cron_schedule);
+	std::string intervalValue = hasInterval ? GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_interval) : std::string();
+	std::string cronScheduleValue = hasCronSchedule ? GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_cron_schedule) : std::string();
+	if (hasInterval && hasCronSchedule)
 	{
-		// Short running
-		const bool cronSchedule = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_SHORT_APP_cron_interval);
-		app->m_startIntervalValue = GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds);
+		throw std::invalid_argument("interval and cron_schedule are mutually exclusive");
+	}
 
-		if (cronSchedule)
+	if (!cronScheduleValue.empty())
+	{
+		// Short running on a cron expression
+		app->m_scheduleKind = ScheduleKind::Cron;
+		app->m_startIntervalValue = cronScheduleValue;
+		app->m_timer = std::make_shared<AppTimerCron>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startIntervalValue, app->m_startInterval);
+		app->m_timer->nextTime(); // Validate cron expression
+	}
+	else if (!intervalValue.empty())
+	{
+		// Short running on a fixed interval
+		app->m_scheduleKind = ScheduleKind::Interval;
+		app->m_startIntervalValue = intervalValue;
+		app->m_startInterval = duration.parse(app->m_startIntervalValue);
+		if (app->m_startInterval <= 0)
 		{
-			app->m_scheduleKind = ScheduleKind::Cron;
-			app->m_timer = std::make_shared<AppTimerCron>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startIntervalValue, app->m_startInterval);
-			app->m_timer->nextTime(); // Validate cron expression
+			LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <" << app->m_name << ">, falling back to default";
+			app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
 		}
-		else
-		{
-			app->m_scheduleKind = ScheduleKind::Interval;
-			app->m_startInterval = duration.parse(app->m_startIntervalValue);
-			if (app->m_startInterval <= 0)
-			{
-				LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <" << app->m_name << ">, falling back to default";
-				app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
-			}
-			app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
-		}
+		app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
 	}
 	else
 	{
@@ -870,7 +875,7 @@ void Application::disable()
 	}
 
 	LOG_INF << fname << "Application <" << m_name << "> disabled.";
-	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"status", "disabled"}, {"previous_status", "enabled"}});
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"enabled", false}, {"previous_enabled", true}});
 
 	stopAllProcesses();
 }
@@ -885,7 +890,7 @@ void Application::enable()
 		++m_runtime->lifecycleGeneration;
 		m_runtime->requireSchedulePlan();
 	}
-	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"status", "enabled"}, {"previous_status", "disabled"}});
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"enabled", true}, {"previous_enabled", false}});
 }
 
 std::string Application::runAsync(int timeoutSeconds)
@@ -1400,11 +1405,11 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		result[JSON_KEY_APP_startup_phase] = phaseName->second;
 	if (m_ownerPermission)
 	{
-		result[JSON_KEY_APP_owner_permission] = (m_ownerPermission);
+		result[JSON_KEY_APP_permission] = (m_ownerPermission);
 	}
 	if (m_shellApp)
 	{
-		result[JSON_KEY_APP_shell_mode] = (m_shellApp);
+		result[JSON_KEY_APP_shell] = (m_shellApp);
 	}
 	if (m_sessionLogin)
 	{
@@ -1424,7 +1429,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	}
 	if (m_stdoutCacheNum)
 	{
-		result[JSON_KEY_APP_stdout_cache_num] = (m_stdoutCacheNum);
+		result[JSON_KEY_APP_stdout_backup_count] = (m_stdoutCacheNum);
 	}
 	if (!m_healthCheckCmd.empty())
 	{
@@ -1438,7 +1443,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	{
 		result[JSON_KEY_APP_depends_on] = m_dependsOn;
 	}
-	result[JSON_KEY_APP_status] = isEnabled();
+	result[JSON_KEY_APP_enabled] = isEnabled();
 	if (m_resourceLimit)
 	{
 		result[JSON_KEY_APP_resource_limit] = m_resourceLimit->AsJson();
@@ -1454,48 +1459,47 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	}
 	if (m_secEnvMap.size() && !returnRuntimeInfo)
 	{
-		// Only include sec_env when saving to disk (not in API responses).
+		// Only include secret_env when saving to disk (not in API responses).
 		nlohmann::json envs = nlohmann::json::object();
 		for (const auto &pair : m_secEnvMap)
 		{
 			const std::string context = m_name + '\0' + pair.first;
 			envs[pair.first] = SecretProtector::instance().protect(pair.second, context);
 		}
-		result[JSON_KEY_APP_sec_env] = std::move(envs);
+		result[JSON_KEY_APP_secret_env] = std::move(envs);
 	}
 	if (!m_dockerImage.empty())
 	{
 		result[JSON_KEY_APP_docker_image] = std::string(m_dockerImage);
 	}
-	if (m_version)
-	{
-		result[JSON_KEY_APP_version] = (m_version);
-	}
 	if (m_startTime.time_since_epoch().count() && m_startTime != std::chrono::system_clock::time_point::min())
 	{
-		result[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
+		result[JSON_KEY_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
 	}
 	if (m_endTime.time_since_epoch().count() && m_endTime != std::chrono::system_clock::time_point::max())
 	{
-		result[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
+		result[JSON_KEY_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
 	}
 	if (m_dailyLimit)
 	{
 		result[JSON_KEY_APP_daily_limitation] = m_dailyLimit->AsJson();
 	}
-	result[JSON_KEY_APP_REG_TIME] = (std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
+	result[JSON_KEY_APP_register_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
 	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
 	if (m_bufferTime)
 	{
-		result[JSON_KEY_APP_retention] = std::string(m_bufferTimeValue);
-	}
-	if (m_scheduleKind == ScheduleKind::Cron)
-	{
-		result[JSON_KEY_SHORT_APP_cron_interval] = true;
+		result[JSON_KEY_APP_stop_grace_period] = std::string(m_bufferTimeValue);
 	}
 	if (!m_startIntervalValue.empty())
 	{
-		result[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_startIntervalValue);
+		if (m_scheduleKind == ScheduleKind::Cron)
+		{
+			result[JSON_KEY_APP_cron_schedule] = std::string(m_startIntervalValue);
+		}
+		else
+		{
+			result[JSON_KEY_APP_interval] = std::string(m_startIntervalValue);
+		}
 	}
 
 	if (returnRuntimeInfo)
@@ -1512,7 +1516,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		auto process = m_process.get();
 		if (run.returnCode != INVALID_RETURN_CODE)
 		{
-			result[JSON_KEY_APP_return] = run.returnCode;
+			result[JSON_KEY_APP_return_code] = run.returnCode;
 		}
 		if (process && process->running())
 		{
@@ -1532,7 +1536,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 			{
 				result[JSON_KEY_APP_memory] = (std::get<1>(usage));
 				result[JSON_KEY_APP_cpu] = (std::get<2>(usage));
-				result[JSON_KEY_APP_open_fd] = (std::get<3>(usage));
+				result[JSON_KEY_APP_fd] = (std::get<3>(usage));
 				result[JSON_KEY_APP_pstree] = std::string(std::get<4>(usage));
 				if (m_shellAppFile)
 				{
@@ -1562,7 +1566,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		result[JSON_KEY_APP_health] = (this->health());
 		if (m_stdoutFileQueue->size())
 		{
-			result[JSON_KEY_APP_stdout_cache_size] = (m_stdoutFileQueue->size());
+			result[JSON_KEY_APP_stdout_file_count] = (m_stdoutFileQueue->size());
 		}
 		auto err = getLastError();
 		if (!err.empty())
@@ -1578,7 +1582,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		auto nextLaunch = run.nextLaunch;
 		if (nextLaunch)
 		{
-			result[JSON_KEY_SHORT_APP_next_start_time] = std::chrono::duration_cast<std::chrono::seconds>((*nextLaunch).time_since_epoch()).count();
+			result[JSON_KEY_APP_next_start_time] = std::chrono::duration_cast<std::chrono::seconds>((*nextLaunch).time_since_epoch()).count();
 		}
 	}
 
@@ -1663,7 +1667,6 @@ void Application::dump()
 		std::lock_guard<std::mutex> guard(metrics->mutex);
 		LOG_DBG << fname << "m_starts:" << metrics->starts;
 	}
-	LOG_DBG << fname << "m_version:" << m_version;
 	LOG_DBG << fname << "m_lastError:" << getLastError();
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
