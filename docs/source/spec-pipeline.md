@@ -116,7 +116,7 @@ FINAL: failure
    `claude -p`/`codex` for the agent steps, your real `openspec` CLI flags, and your repo's
    `build`/`test` scripts. (The demo proves the orchestration; production just changes the
    command bodies.)
-2. **Secrets**: put `ANTHROPIC_API_KEY` etc. on the workflow App's `sec_env` (encrypted at
+2. **Secrets**: put `ANTHROPIC_API_KEY` etc. on the workflow App's `secret_env` (encrypted at
    rest; surfaced to steps as env vars). Never inline keys in the YAML.
 3. **Tenant permissions**: a manual workflow runs steps as the triggering Principal, so it needs
    the permissions the engine uses per step:

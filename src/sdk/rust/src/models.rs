@@ -92,7 +92,7 @@ impl AppRun {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Behavior {
     pub exit: Option<ExitAction>,
-    pub control: Option<HashMap<String, String>>,
+    pub exit_code_actions: Option<HashMap<String, String>>,
 }
 
 impl Behavior {
@@ -102,8 +102,8 @@ impl Behavior {
     }
 
     /// Map a specific exit code to a behavior action
-    pub fn set_control_behavior(&mut self, exit_code: i32, action: ExitAction) {
-        self.control
+    pub fn set_exit_code_action(&mut self, exit_code: i32, action: ExitAction) {
+        self.exit_code_actions
             .get_or_insert_with(HashMap::new)
             .insert(exit_code.to_string(), action.as_str().to_string());
     }
@@ -160,23 +160,25 @@ pub struct Application {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<bool>,
+    pub enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docker_image: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stdout_cache_num: Option<u32>,
+    pub stdout_backup_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_time: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<u64>,
+    /// Start interval: integer seconds or ISO 8601 duration string.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_interval_seconds: Option<String>,
+    pub interval: Option<String>,
+    /// Cron expression schedule (mutually exclusive with `interval`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cron: Option<bool>,
+    pub cron_schedule: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub daily_limitation: Option<DailyLimitation>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub retention: Option<String>,
+    pub stop_grace_period: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health_check_cmd: Option<String>,
     /// Dependency names; each must be registered, enabled, running, and healthy
@@ -190,7 +192,7 @@ pub struct Application {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sec_env: Option<HashMap<String, String>>,
+    pub secret_env: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -226,8 +228,9 @@ pub struct Application {
     pub cpu: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fd: Option<u32>,
+    /// Response-only: count of rotated stdout output files.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stdout_cache_size: Option<u32>,
+    pub stdout_file_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_start_time: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -241,8 +244,6 @@ pub struct Application {
     pub next_start_time: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub return_code: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -346,18 +347,25 @@ impl ApplicationBuilder {
         self
     }
 
-    pub fn stdout_cache_num(mut self, num: u32) -> Self {
-        self.app.stdout_cache_num = Some(num);
+    pub fn stdout_backup_count(mut self, num: u32) -> Self {
+        self.app.stdout_backup_count = Some(num);
         self
     }
 
-    pub fn cron(mut self, enabled: bool) -> Self {
-        self.app.cron = Some(enabled);
+    /// Set the start interval (integer seconds or ISO 8601 duration).
+    pub fn interval(mut self, interval: &str) -> Self {
+        self.app.interval = Some(interval.to_string());
         self
     }
 
-    pub fn retention(mut self, retention: &str) -> Self {
-        self.app.retention = Some(retention.to_string());
+    /// Set a cron expression schedule.
+    pub fn cron_schedule(mut self, expr: &str) -> Self {
+        self.app.cron_schedule = Some(expr.to_string());
+        self
+    }
+
+    pub fn stop_grace_period(mut self, period: &str) -> Self {
+        self.app.stop_grace_period = Some(period.to_string());
         self
     }
 
@@ -369,11 +377,6 @@ impl ApplicationBuilder {
     /// Set the dependency names (continuously scheduled applications only).
     pub fn depends_on(mut self, names: Vec<String>) -> Self {
         self.app.depends_on = Some(names);
-        self
-    }
-
-    pub fn start_interval_seconds(mut self, interval: &str) -> Self {
-        self.app.start_interval_seconds = Some(interval.to_string());
         self
     }
 
@@ -391,8 +394,8 @@ impl ApplicationBuilder {
     }
 
     /// Set an encrypted (secure) environment variable.
-    pub fn sec_env(mut self, key: &str, value: &str) -> Self {
-        self.app.sec_env.get_or_insert_with(HashMap::new).insert(key.to_string(), value.to_string());
+    pub fn secret_env(mut self, key: &str, value: &str) -> Self {
+        self.app.secret_env.get_or_insert_with(HashMap::new).insert(key.to_string(), value.to_string());
         self
     }
 
@@ -407,17 +410,17 @@ impl ApplicationBuilder {
     pub fn exit_behavior(mut self, action: ExitAction) -> Self {
         self.app
             .behavior
-            .get_or_insert(Behavior { exit: None, control: None })
+            .get_or_insert(Behavior { exit: None, exit_code_actions: None })
             .set_exit_behavior(action);
         self
     }
 
     /// Map a specific exit code to a behavior action.
-    pub fn control_behavior(mut self, exit_code: i32, action: ExitAction) -> Self {
+    pub fn exit_code_action(mut self, exit_code: i32, action: ExitAction) -> Self {
         self.app
             .behavior
-            .get_or_insert(Behavior { exit: None, control: None })
-            .set_control_behavior(exit_code, action);
+            .get_or_insert(Behavior { exit: None, exit_code_actions: None })
+            .set_exit_code_action(exit_code, action);
         self
     }
 

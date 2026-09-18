@@ -23,7 +23,7 @@ _appm() {
     local flags_logon="-u --username --device --browser --auth-access-url --login-timeout"
     local flags_logoff="--local-only"
     local flags_loginfo=""
-    local flags_add="--app --cmd --description --working-dir --status --shell --session-login --health-check --docker-image --pid --begin-time --end-time --daily-begin --daily-end --interval --cron --memory-limit --virtual-memory --cpu-shares --log-cache-size --permission --metadata --env --security-env --stop-timeout --exit --control --stdin --force"
+    local flags_add="--app --cmd --description --working-dir --enabled --shell --session-login --health-check --docker-image --pid --begin-time --end-time --daily-begin --daily-end --interval --cron-schedule --memory-limit --virtual-memory --cpu-shares --stdout-backup-count --permission --metadata --env --secret-env --stop-grace-period --exit --exit-code-actions --stdin --force"
     local flags_rm="--app --force"
     local flags_view="--long --show-output --pstree --app --log-index --follow --json"
     local flags_enable="--app --all"

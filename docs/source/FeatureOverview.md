@@ -47,7 +47,8 @@ App Mesh lets users declare when an application should run and how the platform
 should react when a run ends.
 
 - Define application start and end dates.
-- Restrict execution to a daily time window.
+- Restrict execution to a daily time window. Window bounds are seconds within
+  a day; the Engine reads each bound modulo 86400.
 - Run applications at fixed intervals.
 - Run applications according to cron schedules.
 - Leave an application on standby after exit.

@@ -57,7 +57,7 @@ concurrency:
 env:
   PIPELINE_VERSION: "2.0"
 
-sec_env:
+secret_env:
   DB_PASSWORD: "encrypted-value"
 
 jobs:
@@ -142,7 +142,7 @@ jobs:
 | `on` | object | no | — | Trigger configuration. Omit to allow only manual/API triggering. Registering any automatic trigger requires the authenticated Principal to have `workflow-admin`; automatic and recovered runs use a short-lived local Engine capability bounded by the workflow owner's current RBAC. |
 | `concurrency` | object | no | — | Concurrency control. Omit to allow unlimited parallel runs. |
 | `env` | object | no | — | Global environment variables inherited by all Steps. Keys are variable names, values are strings. Supports `${{ }}` expressions. |
-| `sec_env` | object | no | — | Global encrypted environment variables. Same as App Mesh `sec_env`. Inherited by all Steps. |
+| `secret_env` | object | no | — | Global encrypted environment variables. Same as App Mesh `secret_env`. Inherited by all Steps. |
 | `jobs` | object | yes | — | Map of job names to Job definitions. At least one job required. |
 
 ---
@@ -279,7 +279,7 @@ Map of job name → Job definition. Job names must match `[a-zA-Z0-9_-]+`.
 | `if` | string | no | — | Expression. Job runs only if true. Available functions: `success()`, `failure()`, `always()`. Default behavior: job runs only if all `needs` jobs succeeded. |
 | `node_label` | object | no | — | Target node selector. A `host` key routes directly; other keys are matched against node labels. Remote execution requires a manual caller bearer valid on the cluster's shared issuer. |
 | `env` | object | no | — | Job-level environment variables. Merged with global `env` (job wins on conflict). |
-| `sec_env` | object | no | — | Job-level encrypted environment variables. Merged with global `sec_env`. |
+| `secret_env` | object | no | — | Job-level encrypted environment variables. Merged with global `secret_env`. |
 | `steps` | list[Step] | yes | — | Ordered list of Steps to execute serially. At least one step required. |
 | `finally` | list[Step] | no | — | Steps that run after all `steps` complete, regardless of success or failure. Follows same Step schema. |
 
@@ -317,7 +317,7 @@ Each Step has a `name` and exactly one of four type keys: `command`, `app`, `mes
 | `retry` | object | no | — | Retry policy on failure. |
 | `continue-on-error` | bool | no | `false` | `true`: mark step as failed but continue to next step. Default: stop the job on failure. |
 | `env` | object | no | — | Step-level environment variables. Merged with job and global `env` (step wins). |
-| `sec_env` | object | no | — | Step-level encrypted environment variables. |
+| `secret_env` | object | no | — | Step-level encrypted environment variables. |
 
 ### `retry` — Retry Policy
 
@@ -374,7 +374,7 @@ Triggers an already-registered App Mesh application.
 
 The App is executed via `RunAppAsync` over TCP. The engine polls/waits for completion and captures stdout after the step finishes.
 
-Environment variables from `env`/`sec_env` are passed as overrides to the App run.
+Environment variables from `env`/`secret_env` are passed as overrides to the App run.
 
 ```yaml
 - name: deploy
@@ -508,7 +508,7 @@ Environment variables are merged with the following precedence (highest wins):
 
 ```
 step.env  >  job.env  >  global env  >  App defaults
-step.sec_env  >  job.sec_env  >  global sec_env  >  App defaults
+step.secret_env  >  job.secret_env  >  global secret_env  >  App defaults
 ```
 
 ---

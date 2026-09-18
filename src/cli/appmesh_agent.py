@@ -49,7 +49,7 @@ def create_monitor_app(shadow_app_name, monitor_app_name, bearer_token):
             "behavior": {"exit": "remove"},
         }
     )
-    # The daemon spawns the monitor on the host; sec_env passes the bearer
+    # The daemon spawns the monitor on the host; secret_env passes the bearer
     # without storing the token in plaintext.
     monitor_app.set_env("APPMESH_BEARER_TOKEN", bearer_token, secure=True)
     return monitor_app

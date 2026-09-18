@@ -425,9 +425,9 @@ set_auth_app_status() {
     for app_name in "${AUTH_APP_NAMES[@]}"; do
         app_file="${PROG_HOME}/apps/${app_name}.yaml"
         [ -f "$app_file" ] || die "Bundled authentication App definition not found: $app_file"
-        grep -q '^status:' "$app_file" || die "Bundled authentication App has no status field: $app_file"
+        grep -q '^enabled:' "$app_file" || die "Bundled authentication App has no enabled field: $app_file"
         app_tmp=$(mktemp "${app_file}.XXXXXX") || die "Failed to create temporary App definition"
-        awk -v status="$status" '/^status:/ { print "status: " status; next } { print }' "$app_file" >"$app_tmp"
+        awk -v status="$status" '/^enabled:/ { print "enabled: " status; next } { print }' "$app_file" >"$app_tmp"
         chmod 644 "$app_tmp"
         mv "$app_tmp" "$app_file"
     done

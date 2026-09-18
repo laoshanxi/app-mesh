@@ -234,7 +234,7 @@ class ProtocolTestMixin:
                 self.client.add_app(App({"command": "true", "name": app_name, "shell": True, "depends_on": [app_name]}))
 
             # Dependency registered but disabled: the dependent must be held back.
-            self.client.add_app(App({"command": "sleep 120", "name": dep_name, "shell": True, "status": 0}))
+            self.client.add_app(App({"command": "sleep 120", "name": dep_name, "shell": True, "enabled": 0}))
             self.client.add_app(App({"command": "sleep 120", "name": app_name, "shell": True, "depends_on": [dep_name]}))
             deadline = time.time() + 3
             while time.time() < deadline:
@@ -517,7 +517,7 @@ class SubscribeMixin:
         app_name = "SDK_SUB_60"
         sub_result = None
         try:
-            self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
+            self.client.add_app(App({"command": "sleep 30", "name": app_name, "enabled": 0}))
             received = []
             barrier = threading.Event()
 
@@ -558,7 +558,7 @@ class SubscribeMixin:
                     got_exit.set()
 
             registered = self.client.add_app(
-                App({"command": "sleep 30", "name": app_name, "status": 0}),
+                App({"command": "sleep 30", "name": app_name, "enabled": 0}),
                 subscribe_events=["START", "EXIT"],
                 callback=on_event,
             )
@@ -620,7 +620,7 @@ class SubscribeMixin:
                 received.append(event)
                 barrier.set()
 
-            self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
+            self.client.add_app(App({"command": "sleep 30", "name": app_name, "enabled": 0}))
             sub_result = self.client.subscribe(app_name, ["START"], callback=on_event)
             self.client.enable_app(app_name)
             self.assertTrue(barrier.wait(timeout=10), "First event not received")
@@ -690,7 +690,7 @@ class SubscribeMixin:
                 elif event.event_type == "EXIT":
                     got_exit.set()
 
-            self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
+            self.client.add_app(App({"command": "sleep 30", "name": app_name, "enabled": 0}))
             sub_result = self.client.subscribe(app_name, ["START", "EXIT"], callback=on_event)
             self.client.enable_app(app_name)
             self.assertTrue(got_start.wait(timeout=10), "START not received")
@@ -907,7 +907,7 @@ class SubscribeWildcardMixin:
                 exit_events.append(event)
                 got_exit.set()
 
-            self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
+            self.client.add_app(App({"command": "sleep 30", "name": app_name, "enabled": 0}))
             sub1 = self.client.subscribe(app_name, ["START"], callback=on_start)
             sub2 = self.client.subscribe(app_name, ["EXIT"], callback=on_exit)
             self.client.enable_app(app_name)
@@ -946,7 +946,7 @@ class SubscribeWildcardMixin:
                 if len(received) >= 3:
                     got_enough.set()
 
-            self.client.add_app(App({"command": "sleep 30", "name": app_name, "status": 0}))
+            self.client.add_app(App({"command": "sleep 30", "name": app_name, "enabled": 0}))
             sub_result = self.client.subscribe(app_name, ["START", "STATUS", "EXIT"], callback=on_event)
 
             self.client.enable_app(app_name)
@@ -1105,7 +1105,7 @@ class StressTestMixin:
                 config.attach_test_bearer(c)
                 # All workers start the lifecycle storm together
                 barrier.wait()
-                c.add_app(App({"command": "sleep 30", "name": name, "status": 0}))
+                c.add_app(App({"command": "sleep 30", "name": name, "enabled": 0}))
                 c.enable_app(name)
                 exit_code, _ = c.run_app_sync(App({"command": "echo ok", "shell": True}), max_time=5)
                 if exit_code != 0:
@@ -1268,7 +1268,7 @@ class SubscribeStressMixin:
             received_per_app = {name: [] for name in app_names}
 
             for idx, name in enumerate(app_names):
-                self.client.add_app(App({"command": "sleep 30", "name": name, "status": 0}))
+                self.client.add_app(App({"command": "sleep 30", "name": name, "enabled": 0}))
 
                 def make_cb(app_n, bar):
                     def cb(event):

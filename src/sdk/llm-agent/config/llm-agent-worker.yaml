@@ -19,11 +19,11 @@ permission: 11                                   # access gate: the daemon's own
 working_dir: /opt/appmesh/lib/llm-agent          # REQUIRED edit: dir containing the llm_agent package
 command: python3 -m llm_agent --session-worker --session-id=S1 --server=127.0.0.1:6059
 description: llm-agent interactive session worker (session=S1)
-stdout_cache_num: 1000                           # let a late STDOUT subscriber still see recent tokens
+stdout_backup_count: 1000                        # let a late STDOUT subscriber still see recent tokens
 behavior:
   exit: remove
 env:
   LLMAGENT_WORKSPACE_DIR: ./llm-agent-workspace
   LLMAGENT_SESSION_IDLE_MINUTES: "30"
   LLMAGENT_SESSION_MAX_HOURS: "8"
-status: true
+enabled: true

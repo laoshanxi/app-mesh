@@ -9,8 +9,8 @@
 #   * Steps run as the *triggering caller* (Phase 2), in the workflow workdir. cd into the repo first.
 #   * The engine DAG is ACYCLIC — there is no literal "loop back". Bounded iteration is expressed via
 #     `retry` (re-run a step until its acceptance gate passes) and a `if: failure()` rework job.
-#   * LLM/API keys are NOT included here — add a workflow-level `sec_env` block (encrypted at
-#     rest, exposed to steps as env vars), e.g. sec_env: { ANTHROPIC_API_KEY: "<encrypted>" },
+#   * LLM/API keys are NOT included here — add a workflow-level `secret_env` block (encrypted at
+#     rest, exposed to steps as env vars), e.g. secret_env: { ANTHROPIC_API_KEY: "<encrypted>" },
 #     or the `claude` CLI steps will fail for lack of a credential.
 #   * A step's stdout is consumable downstream via ${{ steps.X.stdout }} / ${{ jobs.J.steps.X.stdout }}.
 

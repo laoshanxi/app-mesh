@@ -27,7 +27,7 @@
       "$ref": "#/$defs/EnvMap",
       "description": "Global environment variables inherited by all steps."
     },
-    "sec_env": {
+    "secret_env": {
       "$ref": "#/$defs/EnvMap",
       "description": "Global encrypted environment variables."
     },
@@ -203,7 +203,7 @@
         "env": {
           "$ref": "#/$defs/EnvMap"
         },
-        "sec_env": {
+        "secret_env": {
           "$ref": "#/$defs/EnvMap"
         },
         "steps": {
@@ -294,7 +294,7 @@
         "env": {
           "$ref": "#/$defs/EnvMap"
         },
-        "sec_env": {
+        "secret_env": {
           "$ref": "#/$defs/EnvMap"
         }
       }

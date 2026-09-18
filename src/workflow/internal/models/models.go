@@ -60,7 +60,7 @@ type Step struct {
 	Retry           *RetryPolicy      `yaml:"retry,omitempty"`
 	ContinueOnError bool              `yaml:"continue-on-error,omitempty"`
 	Env             map[string]string `yaml:"env,omitempty"`
-	SecEnv          map[string]string `yaml:"sec_env,omitempty"`
+	SecretEnv       map[string]string `yaml:"secret_env,omitempty"`
 	Result          StepResult        `yaml:"-"`
 }
 
@@ -70,7 +70,7 @@ type Job struct {
 	Condition string            `yaml:"if,omitempty"`
 	NodeLabel map[string]string `yaml:"node_label,omitempty"`
 	Env       map[string]string `yaml:"env,omitempty"`
-	SecEnv    map[string]string `yaml:"sec_env,omitempty"`
+	SecretEnv map[string]string `yaml:"secret_env,omitempty"`
 	Steps     []Step            `yaml:"steps"`
 	Finally   []Step            `yaml:"finally,omitempty"`
 	Status    string            `yaml:"-"`
@@ -127,6 +127,6 @@ type Workflow struct {
 	On          *TriggerConfig     `yaml:"on,omitempty"`
 	Concurrency *ConcurrencyConfig `yaml:"concurrency,omitempty"`
 	Env         map[string]string  `yaml:"env,omitempty"`
-	SecEnv      map[string]string  `yaml:"sec_env,omitempty"`
+	SecretEnv   map[string]string  `yaml:"secret_env,omitempty"`
 	Jobs        map[string]*Job    `yaml:"jobs"`
 }

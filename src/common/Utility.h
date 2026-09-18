@@ -292,7 +292,6 @@ public:
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 
 #define JSON_KEY_BaseConfig "BaseConfig"
-#define JSON_KEY_Description "Description"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
 #define JSON_KEY_DisableExecUser "DisableExecUser"
 #define JSON_KEY_WorkingDirectory "WorkingDirectory"
@@ -301,7 +300,7 @@ public:
 #define JSON_KEY_RestEnabled "RestEnabled"
 #define JSON_KEY_RestListenPort "RestListenPort"
 #define JSON_KEY_RestListenAddress "RestListenAddress"
-#define JSON_KEY_RestTcpPort "RestTcpPort"
+#define JSON_KEY_TcpApiPort "TcpApiPort"
 #define JSON_KEY_FileAllowedBaseDir "FileAllowedBaseDir"
 #define JSON_KEY_CorsDisabled "CorsDisabled"
 #define JSON_KEY_CsrfAllowedOrigins "CsrfAllowedOrigins"
@@ -314,7 +313,6 @@ public:
 
 #define JSON_KEY_SSL "SSL"
 #define JSON_KEY_SSLVerifyServer "VerifyServer"
-#define JSON_KEY_SSLVerifyServerDelegate "VerifyServerDelegate"
 #define JSON_KEY_SSLVerifyClient "VerifyClient"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
@@ -334,23 +332,23 @@ public:
 #define JSON_KEY_APP_system "system"
 #define JSON_KEY_APP_startup_phase "startup_phase"
 #define JSON_KEY_APP_depends_on "depends_on"
-#define JSON_KEY_APP_owner_permission "permission"
+#define JSON_KEY_APP_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"
-#define JSON_KEY_APP_shell_mode "shell"
+#define JSON_KEY_APP_shell "shell"
 #define JSON_KEY_APP_session_login "session_login"
 #define JSON_KEY_APP_command "command"
 #define JSON_KEY_APP_description "description"
-#define JSON_KEY_APP_stdout_cache_size "stdout_cache_size"
-#define JSON_KEY_APP_stdout_cache_num "stdout_cache_num"
+#define JSON_KEY_APP_stdout_file_count "stdout_file_count"
+#define JSON_KEY_APP_stdout_backup_count "stdout_backup_count"
 #define JSON_KEY_APP_health_check_cmd "health_check_cmd"
 #define JSON_KEY_APP_working_dir "working_dir"
-#define JSON_KEY_APP_REG_TIME "register_time"
-#define JSON_KEY_APP_status "status"
+#define JSON_KEY_APP_register_time "register_time"
+#define JSON_KEY_APP_enabled "enabled"
 #define JSON_KEY_APP_daily_limitation "daily_limitation"
 #define JSON_KEY_APP_resource_limit "resource_limit"
 #define JSON_KEY_APP_env "env"
-#define JSON_KEY_APP_sec_env "sec_env"
-#define JSON_KEY_APP_open_fd "fd" // open_file_descriptors
+#define JSON_KEY_APP_secret_env "secret_env"
+#define JSON_KEY_APP_fd "fd" // open_file_descriptors
 #define JSON_KEY_APP_pstree "pstree"
 #define JSON_KEY_APP_docker_image "docker_image"
 #define JSON_KEY_APP_last_error "last_error"
@@ -362,7 +360,7 @@ public:
 
 #define JSON_KEY_APP_behavior "behavior"
 #define JSON_KEY_APP_behavior_exit "exit"
-#define JSON_KEY_APP_behavior_control "control"
+#define JSON_KEY_APP_behavior_exit_code_actions "exit_code_actions"
 #define JSON_KEY_APP_behavior_restart "restart"
 #define JSON_KEY_APP_behavior_keepalive "keepalive"
 #define JSON_KEY_APP_behavior_standby "standby"
@@ -371,25 +369,23 @@ public:
 // runtime attr
 #define JSON_KEY_APP_pid "pid"
 #define JSON_KEY_APP_pid_user "pid_user"
-#define JSON_KEY_APP_return "return_code"
-#define JSON_KEY_APP_id "id"
+#define JSON_KEY_APP_return_code "return_code"
 #define JSON_KEY_APP_memory "memory"
 #define JSON_KEY_APP_cpu "cpu"
 #define JSON_KEY_APP_last_start "last_start_time"
 #define JSON_KEY_APP_last_exit "last_exit_time"
 #define JSON_KEY_APP_container_id "container_id"
 #define JSON_KEY_APP_health "health"
-#define JSON_KEY_APP_version "version"
 #define JSON_KEY_APP_task_status "task_status"
 #define JSON_KEY_APP_task_id "task_id"
 
-#define JSON_KEY_APP_retention "retention" // extra timeout seconds for stopping current process
-#define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"
-#define JSON_KEY_SHORT_APP_start_time "start_time"
-#define JSON_KEY_SHORT_APP_end_time "end_time"
-#define JSON_KEY_SHORT_APP_cron_interval "cron" // start_interval_seconds will use cron format
+#define JSON_KEY_APP_stop_grace_period "stop_grace_period" // grace before terminating the previous run
+#define JSON_KEY_APP_interval "interval" // periodic schedule: int seconds or duration string
+#define JSON_KEY_APP_start_time "start_time"
+#define JSON_KEY_APP_end_time "end_time"
+#define JSON_KEY_APP_cron_schedule "cron_schedule" // presence selects the cron schedule kind
 
-#define JSON_KEY_SHORT_APP_next_start_time "next_start_time"
+#define JSON_KEY_APP_next_start_time "next_start_time"
 
 #define JSON_KEY_DAILY_LIMITATION_daily_start "daily_start"
 #define JSON_KEY_DAILY_LIMITATION_daily_end "daily_end"

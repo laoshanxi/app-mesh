@@ -223,7 +223,7 @@ def wait_disabled(ctx: Context, client, name: str, previous_exit_time, timeout: 
     def stopped():
         app = ctx.app_or_none(client, name)
         finalized = app and app.last_exit_time and app.last_exit_time != previous_exit_time
-        return app if finalized and app.status == 0 and (app.pid or 0) <= 1 else None
+        return app if finalized and app.enabled == 0 and (app.pid or 0) <= 1 else None
 
     return ctx.poll(stopped, timeout=timeout)
 
@@ -306,13 +306,13 @@ def case_run_existing_app(ctx: Context, name: str) -> None:
     with ctx.client() as client:
         try:
             client.add_app(
-                App({"name": name, "command": f"printf '{marker}\\n'", "shell": True, "status": 0})
+                App({"name": name, "command": f"printf '{marker}\\n'", "shell": True, "enabled": 0})
             )
             code, output = client.run_app_sync(App({"name": name}), max_time=10, lifecycle=20)
             require(code == 0, f"existing application run returned {code}")
             require(marker in output, "existing application run lost inherited command/stdout")
             source = client.get_app(name)
-            require(source.status == 0 and (source.pid or 0) <= 1, "run mutated the registered source app")
+            require(source.enabled == 0 and (source.pid or 0) <= 1, "run mutated the registered source app")
         finally:
             ctx.delete(client, name)
 
@@ -375,7 +375,7 @@ def case_lifecycle_generation(ctx: Context, name: str) -> None:
                 client.enable_app(name)
 
             converged = ctx.poll(
-                lambda: (lambda app: app if app and app.status == 1 and (app.pid or 0) > 1
+                lambda: (lambda app: app if app and app.enabled == 1 and (app.pid or 0) > 1
                         and (app.starts or 0) > first_starts else None)(ctx.app_or_none(client, name)),
                 timeout=max(ctx.config.timeout, 20),
             )
@@ -387,7 +387,7 @@ def case_lifecycle_generation(ctx: Context, name: str) -> None:
 
             def current_generation_stays_active():
                 app = ctx.app_or_none(client, name)
-                require(app and app.status == 1, "a stale lifecycle action disabled the current generation")
+                require(app and app.enabled == 1, "a stale lifecycle action disabled the current generation")
                 require((app.pid or 0) == stable_pid, "a stale exit replaced the current generation")
                 require((app.starts or 0) == stable_starts, "a stale decision scheduled an extra start")
                 return app if time.monotonic() >= stable_until else None
@@ -443,7 +443,7 @@ def case_exit_behavior_matrix(ctx: Context, name: str) -> None:
         },
         "control": {
             "command": "sh -c 'sleep 0.2; exit 43'",
-            "behavior": {"exit": "standby", "control": {"43": "restart"}},
+            "behavior": {"exit": "standby", "exit_code_actions": {"43": "restart"}},
         },
     }
 
@@ -487,30 +487,30 @@ def case_periodic(ctx: Context, name: str) -> None:
     cron_base = int(time.time())
     cron_expression = f"{(cron_base + 15) % 60},{(cron_base + 25) % 60} * * * * *"
     schedules = (
-        ("integer", 2, False, "2", 2),
-        ("numeric_text", "2", False, "2", 2),
-        ("iso8601", "PT2S", False, "PT2S", 2),
-        ("cron", cron_expression, True, cron_expression, 1),
+        ("integer", {"interval": 2}, "2", 2),
+        ("numeric_text", {"interval": "2"}, "2", 2),
+        ("iso8601", {"interval": "PT2S"}, "PT2S", 2),
+        ("cron", {"cron_schedule": cron_expression}, cron_expression, 1),
     )
 
     with ctx.client() as client:
         names = []
         try:
-            for suffix, interval, cron, expected_interval, _ in schedules:
+            for suffix, schedule, expected_schedule, _ in schedules:
                 app_name = f"{name}_{suffix}"[:120]
                 names.append(app_name)
                 registered = client.add_app(App({
                     "name": app_name,
                     "command": "printf periodic-marker",
                     "shell": True,
-                    "start_interval_seconds": interval,
-                    "cron": cron,
+                    **schedule,
                 }))
                 require(
-                    registered.start_interval_seconds == expected_interval,
-                    f"{suffix} schedule was not preserved: {registered.start_interval_seconds!r}",
+                    registered.interval == expected_schedule or registered.cron_schedule == expected_schedule,
+                    f"{suffix} schedule was not preserved: {registered.interval!r}/{registered.cron_schedule!r}",
                 )
-                require(bool(registered.cron) == cron, f"{suffix} cron flag was not preserved")
+                require(bool(registered.cron_schedule) == ("cron_schedule" in schedule),
+                        f"{suffix} cron schedule presence was not preserved")
 
             def schedules_started():
                 states = [ctx.app_or_none(client, app_name) for app_name in names]
@@ -543,7 +543,7 @@ def case_interval_anchor(ctx: Context, name: str) -> None:
                 "shell": True,
                 "start_time": start_at,
                 "end_time": start_at + 30,
-                "start_interval_seconds": interval,
+                "interval": interval,
             }))
 
             planned = ctx.poll(
@@ -576,8 +576,8 @@ def case_recurring_retention_buffer(ctx: Context, name: str) -> None:
                 "name": name,
                 "command": "sleep 8",
                 "shell": True,
-                "start_interval_seconds": 2,
-                "retention": "10",
+                "interval": 2,
+                "stop_grace_period": "10",
             }))
             first = wait_running(ctx, client, name)
             require(first, "recurring application never reached running")
@@ -838,8 +838,8 @@ def case_daily_recurring(ctx: Context, name: str) -> None:
     daily = {"daily_start": reopen_at % 86400, "daily_end": close_at % 86400}
     names = (f"{name}_interval"[:120], f"{name}_cron"[:120])
     definitions = (
-        {"start_interval_seconds": 2},
-        {"start_interval_seconds": ",".join(str(value) for value in cron_seconds) + " * * * * *", "cron": True},
+        {"interval": 2},
+        {"cron_schedule": ",".join(str(value) for value in cron_seconds) + " * * * * *"},
     )
 
     with ctx.client() as client:
@@ -909,7 +909,7 @@ def case_daily_recurring(ctx: Context, name: str) -> None:
 
 
 def case_remove_after_exit(ctx: Context, name: str) -> None:
-    retention = 6
+    stop_grace_period = 6
     with ctx.client() as client:
         try:
             client.add_app(
@@ -918,8 +918,8 @@ def case_remove_after_exit(ctx: Context, name: str) -> None:
                     "command": "true",
                     "shell": True,
                     "behavior": {"exit": "remove"},
-                    "retention": str(retention),
-                    "start_interval_seconds": 2,
+                    "stop_grace_period": str(stop_grace_period),
+                    "interval": 2,
                 })
             )
             exited = ctx.poll(
@@ -935,7 +935,7 @@ def case_remove_after_exit(ctx: Context, name: str) -> None:
                 require((app.starts or 0) == 1, "remove behavior allowed a pre-scheduled recurring restart")
                 return None
 
-            removed = ctx.poll(removed_without_restart, timeout=retention + ctx.config.timeout)
+            removed = ctx.poll(removed_without_restart, timeout=stop_grace_period + ctx.config.timeout)
             require(removed, "remove behavior did not delete the application")
         finally:
             ctx.delete(client, name)
@@ -1006,7 +1006,7 @@ def case_concurrent_status(ctx: Context, name: str) -> None:
                     while time.monotonic() < deadline:
                         app = client.get_app(name)
                         require(app.name == name, f"status response changed application identity: {app.name!r}")
-                        require(app.status in {0, 1}, f"invalid application status: {app.status!r}")
+                        require(app.enabled in {0, 1}, f"invalid application enabled value: {app.enabled!r}")
                         require(app.pid is None or isinstance(app.pid, int), f"invalid pid value: {app.pid!r}")
                         reads += 1
                 return reads
@@ -1030,7 +1030,7 @@ def case_stop_start_race(ctx: Context, name: str) -> None:
                     while not stop_readers.is_set():
                         app = client.get_app(name)
                         require(app.name == name, "reader observed another application")
-                        require(app.status in {0, 1}, f"reader observed invalid status: {app.status!r}")
+                        require(app.enabled in {0, 1}, f"reader observed invalid enabled value: {app.enabled!r}")
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
                 futures = [pool.submit(reader) for _ in range(4)]
@@ -1137,7 +1137,7 @@ def case_event_forced_stop(ctx: Context, name: str) -> None:
         subscription_id = None
         try:
             app = client.add_app(
-                App({"name": name, "command": "sleep 30", "shell": True, "status": 0}),
+                App({"name": name, "command": "sleep 30", "shell": True, "enabled": 0}),
                 subscribe_events=["START", "EXIT"],
                 callback=on_event,
             )
@@ -1176,7 +1176,7 @@ def case_event_subscribe_existing(ctx: Context, name: str) -> None:
                     "name": name,
                     "command": "sh -c 'printf standalone-subscribe-marker; sleep 0.2'",
                     "shell": True,
-                    "status": 0,
+                    "enabled": 0,
                 })
             )
             subscription = client.subscribe(name, ["START", "STDOUT", "EXIT"], callback=on_event)
@@ -1394,12 +1394,12 @@ CASES = (
     Case("exit_behavior_matrix", "standby, keepalive and exit-code override", "all non-remove managed exit-policy branches", case_exit_behavior_matrix),
     Case("periodic", "numeric, ISO-8601 and cron schedules", "schedule parsing/plan/consume/re-arm", case_periodic),
     Case("interval_anchor", "future start_time with repeated interval", "strict next occurrence and fixed-grid anchoring", case_interval_anchor),
-    Case("recurring_retention_buffer", "long run with shorter interval and retention", "recurring replacement and buffered old-run isolation", case_recurring_retention_buffer),
+    Case("recurring_retention_buffer", "long run with shorter interval and stop grace period", "recurring replacement and buffered old-run isolation", case_recurring_retention_buffer),
     Case("valid_time_window", "global and combined daily windows", "start/end/daily intersection gating", case_valid_time_window),
     Case("daily_range_shapes", "ordinary, overnight and full-day server ranges", "daily normalization, opening offset and range membership", case_daily_range_shapes),
     Case("daily_limitation", "daily close and reopen", "daily stop/re-plan/restart", case_daily_limitation),
     Case("daily_recurring", "daily interval and cron reopening", "occurrence then daily-opening adjustment", case_daily_recurring),
-    Case("remove_after_exit", "remove behavior retention", "one-shot exit action", case_remove_after_exit),
+    Case("remove_after_exit", "remove behavior stop grace period", "one-shot exit action", case_remove_after_exit),
     Case("output_final_drain", "large immediate stdout", "stdout teardown/final drain", case_output_final_drain),
     Case("health_check_process", "failing then successful health commands", "managed health child start/wait/finalization", case_health_check_process),
     Case("concurrent_status", "parallel reads during restart", "runtime snapshot locking", case_concurrent_status),
@@ -1465,11 +1465,11 @@ def probe_lifecycle_contract(config: Config, transport: str) -> Result:
     try:
         with ctx.client() as client:
             try:
-                client.add_app(App({"name": name, "command": "true", "shell": True, "status": 0}))
+                client.add_app(App({"name": name, "command": "true", "shell": True, "enabled": 0}))
                 app = client.get_app(name)
                 require(any(candidate.name == name for candidate in client.list_apps()), "list_apps omitted contract probe")
                 require(app.name == name, f"get_app returned the wrong application: {app.name!r}")
-                require(app.status == 0 and (app.pid or 0) <= 1,
+                require(app.enabled == 0 and (app.pid or 0) <= 1,
                         "disabled contract probe unexpectedly started")
             finally:
                 ctx.delete(client, name)

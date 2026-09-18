@@ -210,7 +210,7 @@ jobs:
           if ($override -notmatch "tls_verify:\s*false") { throw "setup.ps1 did not persist the TLS override" }
           $envExtra = (& "C:\local\appmesh\bin\nssm.exe" get AppMeshService AppEnvironmentExtra) -join ""
           if ($envExtra -notmatch "APPMESH_AUTH_MODE=external") { throw "setup.ps1 did not set external auth mode on the service" }
-          if (-not (Select-String -Path "C:\local\appmesh\apps\identity.yaml" -Pattern "^status:\s*0\s*$" -Quiet)) { throw "the bundled auth app was not disabled" }
+          if (-not (Select-String -Path "C:\local\appmesh\apps\identity.yaml" -Pattern "^enabled:\s*0\s*$" -Quiet)) { throw "the bundled auth app was not disabled" }
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v4.1.1

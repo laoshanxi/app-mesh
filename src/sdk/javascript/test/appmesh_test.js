@@ -136,7 +136,7 @@ async function test() {
       name: appName,
       command: 'echo js_output_test',
       shell: true,
-      stdout_cache_num: 3
+      stdout_backup_count: 3
     })
     // Allow the server time to execute the one-shot command
     await new Promise(resolve => setTimeout(resolve, 2000))

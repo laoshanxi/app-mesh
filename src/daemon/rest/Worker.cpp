@@ -369,7 +369,7 @@ bool Worker::forward(std::string forwardTo, const std::shared_ptr<HttpRequest> &
 	Uri parser;
 	auto uri = parser.parse(forwardTo);
 	const std::string host = uri.host;
-	uri.port = (uri.port <= 1024) ? Configuration::instance()->getRestTcpPort() : uri.port;
+	uri.port = (uri.port <= 1024) ? Configuration::instance()->getTcpApiPort() : uri.port;
 
 	return ForwardingManager::instance().forward(host, uri.port, request);
 }

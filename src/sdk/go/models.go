@@ -68,10 +68,10 @@ type Application struct {
 	HealthCheckCMD   *string `json:"health_check_cmd"`
 	// DependsOn lists app names that must be running and healthy before this
 	// app starts (continuously scheduled apps only).
-	DependsOn      []string         `json:"depends_on,omitempty"`
-	Status         bool             `json:"status"`
-	StdoutCacheNum *int             `json:"stdout_cache_num"`
-	Metadata       *json.RawMessage `json:"metadata,omitempty"`
+	DependsOn         []string         `json:"depends_on,omitempty"`
+	Enabled           bool             `json:"enabled"`
+	StdoutBackupCount *int             `json:"stdout_backup_count"`
+	Metadata          *json.RawMessage `json:"metadata,omitempty"`
 
 	// Time
 	StartTime     *int64 `json:"start_time"`
@@ -81,13 +81,13 @@ type Application struct {
 	NextStartTime *int64 `json:"next_start_time"`
 	RegisterTime  *int64 `json:"register_time"`
 
-	StopRetention *string   `json:"retention"`
-	Behavior      *Behavior `json:"behavior"`
+	StopGracePeriod *string   `json:"stop_grace_period"`
+	Behavior        *Behavior `json:"behavior"`
 	// Short running definition
-	StartIntervalSeconds *string `json:"start_interval_seconds"`
-	// StartIntervalSecondsIsCron indicates StartIntervalSeconds is a cron expression;
-	// it maps to the "cron" wire key.
-	StartIntervalSecondsIsCron *bool `json:"cron"`
+	// Interval schedules the app periodically: integer seconds or a duration string.
+	Interval *string `json:"interval"`
+	// CronSchedule schedules the app with a cron expression string.
+	CronSchedule *string `json:"cron_schedule"`
 
 	// Runtime attributes
 	Pid        *int    `json:"pid"`
@@ -103,10 +103,10 @@ type Application struct {
 	CPU    *float64 `json:"cpu"`
 	Memory *int     `json:"memory"`
 	// UUID identifies a run-application process.
-	UUID            *string `json:"process_uuid"` // For run application
-	StdoutCacheSize *int    `json:"stdout_cache_size"`
+	UUID *string `json:"process_uuid"` // For run application
+	// StdoutFileCount is the read-only count of rotated output files.
+	StdoutFileCount *int `json:"stdout_file_count"`
 
-	Version   *int    `json:"version"`
 	LastError *string `json:"last_error"`
 	// WaitingFor lists unsatisfied dependencies at the last scheduler pass; response-only.
 	WaitingFor []string `json:"waiting_for,omitempty"`
@@ -116,7 +116,7 @@ type Application struct {
 	DailyLimit    *DailyLimitation    `json:"daily_limitation"`
 	ResourceLimit *ResourceLimitation `json:"resource_limit"`
 	Env           *Environments       `json:"env"`
-	SecEnv        *Environments       `json:"sec_env"`
+	SecretEnv     *Environments       `json:"secret_env"`
 
 	TaskId     *int    `json:"task_id"`
 	TaskStatus *string `json:"task_status"`
@@ -134,8 +134,8 @@ type AppRun struct {
 
 // Behavior represents the behavior configuration of an application.
 type Behavior struct {
-	Exit    string            `json:"exit"`
-	Control map[string]string `json:"control,omitempty"`
+	Exit            string            `json:"exit"`
+	ExitCodeActions map[string]string `json:"exit_code_actions,omitempty"`
 }
 
 // DailyLimitation represents the daily time limitation for an application.
@@ -187,7 +187,6 @@ func PrintOutputHandler(data string, position int64) {
 type SSLConfig struct {
 	VerifyClient                bool   `yaml:"VerifyClient"`
 	VerifyServer                bool   `yaml:"VerifyServer"`
-	VerifyServerDelegate        bool   `yaml:"VerifyServerDelegate"`
 	SSLCaPath                   string `yaml:"SSLCaPath"`
 	SSLCertificateFile          string `yaml:"SSLCertificateFile"`
 	SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`

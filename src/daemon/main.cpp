@@ -422,7 +422,7 @@ void AppMeshDaemon::initializeRestService()
 		LOG_INF << fname << "REST service is disabled, skipping initialization";
 		return;
 	}
-	ACE_INET_Addr tcpAddr(config->getRestTcpPort(), config->getRestListenAddress().c_str());
+	ACE_INET_Addr tcpAddr(config->getTcpApiPort(), config->getRestListenAddress().c_str());
 	const std::string homeDir = Utility::getHomeDir();
 	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
 	const auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());					 // Server certificate (PEM, include intermediates)
@@ -452,7 +452,7 @@ void AppMeshDaemon::initializeRestService()
 	constexpr int FLAG_SO_REUSEADDR = 1;
 	if (m_acceptor->open(tcpAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
 	{
-		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getRestTcpPort()) + " with error: " + last_error_msg());
+		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getTcpApiPort()) + " with error: " + last_error_msg());
 	}
 
 #if !defined(_WIN32)

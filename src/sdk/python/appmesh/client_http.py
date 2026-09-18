@@ -425,7 +425,7 @@ class AppMeshClient:
             app_name: the application name
             stdout_position: start read position, 0 means start from beginning.
             stdout_index: index of history process stdout, 0 means get from current running process,
-                the stdout number depends on 'stdout_cache_size' of the application.
+                the stdout number depends on 'stdout_file_count' of the application.
             stdout_maxsize: max buffer size to read.
             process_uuid: used to get the specified process instance instead of the latest one.
             timeout: long-poll wait time in seconds before returning when no new output is available.

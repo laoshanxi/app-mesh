@@ -280,7 +280,7 @@ async fn sdk_40_subscribe_stdout() {
     // Register disabled: `echo` exits in milliseconds, so output must be produced
     // only after the subscription is active, or no STDOUT event can ever arrive.
     let mut app = Application::builder("RUST_SUB").command("echo sub_test").shell(true).build();
-    app.status = Some(false);
+    app.enabled = Some(false);
     c.add_app(&app, None).await.unwrap();
 
     let (tx, rx) = tokio::sync::oneshot::channel();

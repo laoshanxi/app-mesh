@@ -44,18 +44,18 @@ the scheduler path.
 
 | Field | Meaning and accepted form |
 | --- | --- |
-| `status` | `ENABLED` permits planning and starting; `DISABLED` cancels the plan and immediately stops current and buffered runs |
+| `enabled` | `true` permits planning and starting; `false` cancels the plan and immediately stops current and buffered runs |
 | `start_time` | Unix epoch seconds; inclusive absolute lower bound |
 | `end_time` | Unix epoch seconds; exclusive absolute upper bound |
 | `daily_limitation.daily_start` | UTC seconds since midnight, or a compatible epoch-seconds value normalized by the server |
 | `daily_limitation.daily_end` | Same representation as `daily_start`; both endpoints are required together |
-| `start_interval_seconds` | Presence selects recurring scheduling; accepts integer seconds, numeric text, or a supported ISO-8601 duration |
-| `cron` | When true, `start_interval_seconds` is interpreted as a cron expression instead of a duration |
+| `interval` | Presence selects recurring scheduling; accepts integer seconds, numeric text, or a supported ISO-8601 duration |
+| `cron_schedule` | Cron expression string; when present, it is the recurring schedule instead of `interval` |
 | `behavior.exit` | Default natural-exit action: `standby`, `restart`, `keepalive`, or `remove` |
-| `behavior.control` | Per-exit-code action overrides `behavior.exit` |
-| `retention` | Delay for `remove`; for recurring replacement, time allowed for the preceding run to finish before termination |
+| `behavior.exit_code_actions` | Per-exit-code action overrides `behavior.exit` |
+| `stop_grace_period` | Delay for `remove`; for recurring replacement, time allowed for the preceding run to finish before termination |
 
-Explicit disable or application deletion bypasses retention and stops any buffered run immediately.
+Explicit disable or application deletion bypasses `stop_grace_period` and stops any buffered run immediately.
 Each application keeps at most one buffered run; a later replacement stops the preceding buffer first.
 
 The wire representation remains unchanged. In particular, internal plan state is not exposed as a
@@ -83,7 +83,7 @@ explicit full-day form. Therefore:
 - a recurring app without `start_time` receives an initial anchor approximately one second after
   registration, and that derived anchor is serialized with the application.
 
-`available(now)` deliberately checks only enabled status and absolute expiry. It does not reject an
+`available(now)` deliberately checks only the enabled state and absolute expiry. It does not reject an
 application merely because `start_time` or the next daily opening is still in the future. This lets
 early registration create a future plan immediately. `AppTimer` performs the actual lower-bound and
 daily-window calculation, while `consumeScheduledStart` revalidates the complete range at launch time.
@@ -109,7 +109,7 @@ advance by more than a day. A candidate exactly at `daily_end` is outside the ra
 
 #### Continuous
 
-A continuous application has no `start_interval_seconds`. `nextTime(from)` returns the earliest
+A continuous application has neither `interval` nor `cron_schedule`. `nextTime(from)` returns the earliest
 allowed time at or after `from`. After a natural exit it remains stopped by default; `restart` or
 `keepalive` behavior can plan another start.
 
@@ -131,7 +131,7 @@ and falls back to seven days. Invalid duration syntax is rejected while parsing 
 
 #### Cron
 
-When `cron` is true, the raw `start_interval_seconds` value is parsed by `croncpp` and validated while
+The raw `cron_schedule` value is parsed by `croncpp` and validated while
 the application is created. The current accepted syntax includes the existing six-field expressions
 with seconds. Each plan asks the cron expression for its next occurrence and remains bounded by the
 same absolute and daily ranges.
@@ -232,8 +232,8 @@ Scheduling governs both starting and continuation:
 For continuous applications, the process gate prevents a due restart from replacing a start or run
 that is still active. A recurring occurrence deliberately replaces the current run, preserving the
 established periodic behavior once the current run has been accepted and its exit has not been
-observed. `Starting` and `Finalizing` runs still block a new start. With positive `retention`, each
-preceding run receives that much time to finish before termination; with zero retention it is
+observed. `Starting` and `Finalizing` runs still block a new start. With positive `stop_grace_period`, each
+preceding run receives that much time to finish before termination; with zero it is
 terminated immediately. The new run is always the only current run exposed by application state.
 Run identity ensures a buffered process exit cannot drive policy for the current run.
 
@@ -276,11 +276,11 @@ Per-code behavior is selected first; otherwise `behavior.exit` applies. The defa
 | --- | --- |
 | `standby` | No exit-driven plan. Continuous stays stopped; interval/cron retains the next occurrence already armed on accepted start |
 | `restart` | Call `scheduleNext(now + backoff)` and therefore honor the configured pattern and all time ranges |
-| `keepalive` | Arm `now + backoff` directly, bypassing interval/cron occurrence calculation; due-time consumption still enforces enabled status and all time ranges |
-| `remove` | Cancel any pre-armed recurring start, then schedule application deletion after `retention` |
+| `keepalive` | Arm `now + backoff` directly, bypassing interval/cron occurrence calculation; due-time consumption still enforces the enabled state and all time ranges |
+| `remove` | Cancel any pre-armed recurring start, then schedule application deletion after `stop_grace_period` |
 
 The latch is consumed once. In particular, `remove` is not re-registered on each scheduler tick, so a
-retention longer than the scheduler interval still leads to removal.
+`stop_grace_period` longer than the scheduler interval still leads to removal.
 
 ### 10. Recovery and Docker scheduling
 
@@ -331,9 +331,9 @@ The persisted application definition keeps the existing values:
 
 - absolute `start_time` and `end_time`;
 - normalized daily endpoints;
-- the raw interval/duration or cron expression and `cron` flag;
-- behavior and retention;
-- enabled/disabled status.
+- the raw `interval` duration or `cron_schedule` expression;
+- behavior and `stop_grace_period`;
+- the `enabled` flag.
 
 `next_start_time` is emitted only while a launch is armed. `Dormant` and `NeedsPlan` are private daemon
 details and are not serialized or added to any SDK. `starts` counts accepted starts, not rejected start
@@ -346,7 +346,7 @@ from the persisted definition; a live recovered attachment deliberately suppress
 | --- | --- | --- | --- |
 | Before `6e47f120` | `execute` separately performed stop, schedule, refresh, and exit-policy work; `scheduleNext` registered a `TimerManager` start callback | A missing next-launch pointer and several process timestamps carried multiple meanings | Process start ran on the shared timer thread; exit policy could be re-evaluated by polling |
 | `6e47f120` | `driveLifecycle` moved due-start consumption into the daemon tick | Added a one-shot exit latch and explicit schedule-needed state | Removed timer-callback start, temporarily blocked recurring replacement, and held the lifecycle lock across more process/backend work than necessary |
-| Current | `execute` converges once through `maintainRuntime`; the tick plans, consumes one exit decision and one due start, then starts outside the lock | `NeedsPlan / Armed / Dormant` plus current-run identity | Restores recurring replacement and retention buffering without timer-thread starts; no repeated exhausted-plan calculation or backend work under the decision lock |
+| Current | `execute` converges once through `maintainRuntime`; the tick plans, consumes one exit decision and one due start, then starts outside the lock | `NeedsPlan / Armed / Dormant` plus current-run identity | Restores recurring replacement and stop-grace-period buffering without timer-thread starts; no repeated exhausted-plan calculation or backend work under the decision lock |
 
 The historical `refresh` responsibility was not narrowed to exit polling. Stop enforcement, future
 planning, restart policy, and due-start triggering all remain part of the main-loop convergence point,
@@ -359,7 +359,7 @@ leaving room for additional runtime maintenance without restoring several loosel
   filtering.
 - Keep interval grids anchored at `start_time` and cron expressions source-based; do not anchor either
   to scheduler dispatch time.
-- Keep recurring replacement and its per-run retention handoff; do not defer a due occurrence merely
+- Keep recurring replacement and its per-run stop-grace-period handoff; do not defer a due occurrence merely
   because the preceding run is still active.
 - Keep the seven-day fallback for a parsed non-positive interval until a separately versioned input
   validation change is agreed.
@@ -395,7 +395,7 @@ runtime fields already answer user questions without committing SDKs to daemon i
 
 - early registration, combined absolute/daily ranges, and daily close/reopen have one calculation path;
 - interval schedules do not drift with scheduler lateness;
-- recurring replacement preserves the configured retention handoff for the preceding process;
+- recurring replacement preserves the configured stop-grace-period handoff for the preceding process;
 - start rejection, natural exit, and deliberate stop are distinct and cannot accidentally share retry
   behavior;
 - recurring `standby` and `remove` behavior are unambiguous despite pre-arming;
@@ -429,9 +429,9 @@ The SDK-level lifecycle verifier is expected to cover these scheduling cases:
 | `daily_range_shapes` | server-side ordinary, overnight, and full-day membership plus next-opening calculation |
 | `daily_limitation` | close/stop/reopen and SDK epoch normalization |
 | `daily_recurring` | interval and cron occurrence calculation before daily-opening adjustment |
-| `recurring_retention_buffer` | a due occurrence replaces a still-running current run with positive retention configured |
-| `remove_after_exit` | cancellation of a recurring pre-arm and one-shot retention removal |
-| `stop_start_race` | concurrent status changes, process gate, and lifecycle decision serialization |
+| `recurring_retention_buffer` | a due occurrence replaces a still-running current run with positive `stop_grace_period` configured |
+| `remove_after_exit` | cancellation of a recurring pre-arm and one-shot stop-grace-period removal |
+| `stop_start_race` | concurrent enabled/disabled changes, process gate, and lifecycle decision serialization |
 | `attach_recovery` | live attach suppression and dead/reused-PID replanning |
 | `docker_fast_exit` / `docker_image_pull` / `docker_forced_stop` | pull/container exit observation and deliberate stop, run once per CLI/API daemon profile |
 

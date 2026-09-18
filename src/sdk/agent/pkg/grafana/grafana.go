@@ -43,7 +43,7 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 	var regTimes TableTimeColumn
 	var appNames TableStringColumn
 	var appOwner TableStringColumn
-	var appStatus TableNumberColumn
+	var appEnabled TableNumberColumn
 	var appHealth TableNumberColumn
 	var appPid TableNumberColumn
 	var appMemory TableNumberColumn
@@ -61,10 +61,10 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 		} else {
 			appOwner = append(appOwner, "")
 		}
-		if meshApp.Status {
-			appStatus = append(appStatus, 1)
+		if meshApp.Enabled {
+			appEnabled = append(appEnabled, 1)
 		} else {
-			appStatus = append(appStatus, 0)
+			appEnabled = append(appEnabled, 0)
 		}
 		appHealth = append(appHealth, float64(*meshApp.Health))
 		if meshApp.Pid != nil {
@@ -94,7 +94,7 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 		{Text: "register_time", Data: regTimes},
 		{Text: "name", Data: appNames},
 		{Text: "owner", Data: appOwner},
-		{Text: "status", Data: appStatus},
+		{Text: "enabled", Data: appEnabled},
 		{Text: "pid", Data: appPid},
 		{Text: "health", Data: appHealth},
 		{Text: "memory", Data: appMemory},

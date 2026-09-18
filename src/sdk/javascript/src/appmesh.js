@@ -396,23 +396,23 @@ class AppMeshClient {
    *   description: "",
    *   metadata: "",
    *   working_dir: "",
-   *   status: 1,
+   *   enabled: 1,
    *   docker_image: "",
-   *   stdout_cache_num: 3,
+   *   stdout_backup_count: 3,
    *   start_time: "",
    *   end_time: "",
-   *   start_interval_seconds: null,
-   *   cron: false,
+   *   interval: null,
+   *   cron_schedule: null,
    *   daily_limitation: { daily_start: "", daily_end: "" },
-   *   retention: null,
+   *   stop_grace_period: null,
    *   health_check_cmd: null,
    *   depends_on: [],
    *   permission: null,
    *   env: {},
-   *   sec_env: {},
+   *   secret_env: {},
    *   pid: null,
    *   resource_limit: { cpu_shares: null, memory_mb: null, memory_virt_mb: null },
-   *   behavior: { exit: "standby", control: { "0": "keepalive" } }
+   *   behavior: { exit: "standby", exit_code_actions: { "0": "keepalive" } }
    * };
    * await client.add_app("ping", appConfig);
    */

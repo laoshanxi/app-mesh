@@ -21,7 +21,7 @@ The original design had problems:
   composite that could tear across runs.
 - **Polled exit detection (`hasExited`)** in the periodic tick, papered over by a magic `+1s`
   buffer for the start-vs-exit write ordering. Because it re-fired every tick, a `REMOVE` app
-  with `retention` greater than the tick interval re-armed its self-delete timer forever and
+  with `stop_grace_period` greater than the tick interval re-armed its self-delete timer forever and
   **was never removed** (headline bug).
 - **Overloaded sentinel:** `m_nextLaunchTime == nullptr` meant both "never scheduled" and
   "force-stopped, reschedule me"; periodic first-run *fabricated* a fake previous run.
@@ -48,8 +48,8 @@ The original design had problems:
   every tick.
 - **Natural-vs-deliberate exit:** `AppProcess::Lifecycle::terminating` + `naturalExit`; run-id
   identity allows only the current run's natural exit to request policy evaluation.
-- **Recurring retention handoff:** each due interval/cron occurrence becomes the new current run;
-  the replaced run is terminated immediately when `retention == 0`, otherwise its own delayed
+- **Recurring stop-grace-period handoff:** each due interval/cron occurrence becomes the new current run;
+  the replaced run is terminated immediately when `stop_grace_period == 0`, otherwise its own delayed
   termination keeps it alive for the configured buffer without letting its exit drive current policy.
 - **Crash-loop backoff** (k8s style): exponential 1→300s, reset after a 60s stable run;
   bypassed for periodic/cron.
@@ -73,7 +73,7 @@ The original design had problems:
 
 ## Consequences
 
-- Correctness: REMOVE-with-retention fixed; exactly-once exit handling; no torn reads;
+- Correctness: REMOVE-with-stop-grace-period fixed; exactly-once exit handling; no torn reads;
   `LogFileQueue` self-thread-safe; disable/enable invalidates stale start and exit decisions.
 - Scheduled-spawn/restart timing is tick-granular: ≤ `ScheduleIntervalSeconds` (default 2s)
   jitter. Negligible for restart/periodic/cron (second/minute-grained); on-demand `run` is
