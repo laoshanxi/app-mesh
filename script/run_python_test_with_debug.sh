@@ -34,7 +34,7 @@ fi
 SERVER_LOG="${APPMESH_SERVER_LOG:-/opt/appmesh/work/server.log}"
 PID_FILE="${APPMESH_PID_FILE:-/opt/appmesh/appmesh.pid}"
 DAEMON_BIN="${APPMESH_DAEMON_BIN:-/opt/appmesh/bin/appmesh}"
-SUSPECT_PATTERNS='500 InternalServerError|412 RuntimeError|404 NotFound|apiFileDownload|/etc/hosts|fileStat|file_download|throw|exception|deadlock|aborted|abort|crash|core dumped|signal|backtrace|terminate called|SIGSEGV|SIGABRT|error:'
+SUSPECT_PATTERNS='500 InternalServerError|412 RuntimeError|404 NotFound|apiFileDownload|/etc/hosts|fileStat|file_download|throw|exception|deadlock|aborted|abort|crash|core dumped|signal|backtrace|terminate called|SIGSEGV|SIGABRT|error:|warning:'
 
 # GitHub Actions log group helpers (plain text outside GHA)
 gha_group()    { printf '::group::%s\n' "$*"; }

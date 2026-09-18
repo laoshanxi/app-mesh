@@ -889,7 +889,9 @@ components:
               additionalProperties:
                 type: string
                 enum: [standby, restart, keepalive, remove]
-              description: Maps a numeric exit code, as string key, to the action for that code.
+              description: |-
+                Maps a numeric exit code, as string key, to the action for that code.
+                A signal-terminated run reports the signal number, for example 9 for SIGKILL.
         pid:
           type: integer
           readOnly: true
@@ -901,7 +903,9 @@ components:
         return_code:
           type: integer
           readOnly: true
-          description: Exit code of the last finished run.
+          description: |-
+            Exit code of the last finished run.
+            A signal-terminated run reports the signal number (9 for SIGKILL).
         health:
           type: integer
           readOnly: true

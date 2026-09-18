@@ -1158,6 +1158,22 @@ class StressTestMixin:
         CYCLES_PER_WORKER = 5
         errors = []
 
+        def delete_with_retry(c, name):
+            # Delete is idempotent. Under the storm a benign process-gone race
+            # can surface once as 412/409; one retry separates that from a real fault.
+            # A 404 on the retry means the first delete did remove the app.
+            try:
+                c.delete_app(name)
+            except Exception as e:
+                if "412" not in str(e) and "409" not in str(e):
+                    raise
+                time.sleep(0.2)
+                try:
+                    c.delete_app(name)
+                except Exception as e2:
+                    if "404" not in str(e2):
+                        raise
+
         def worker(idx):
             c = self._create_client()
             try:
@@ -1165,7 +1181,7 @@ class StressTestMixin:
                 for j in range(CYCLES_PER_WORKER):
                     name = f"SDK_FD_STRESS_{idx}_{j}"
                     c.add_app(App({"command": "echo fd_stress", "name": name, "shell": True}))
-                    c.delete_app(name)
+                    delete_with_retry(c, name)
             except Exception as e:
                 errors.append(f"[{idx}] {type(e).__name__}: {e}")
             finally:

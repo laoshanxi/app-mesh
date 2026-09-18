@@ -140,7 +140,9 @@ private:
 	void unsubscribeRunCompletion(RunCompletionSubscription subscription);
 
 	// Scheduling policy
-	std::chrono::seconds restartDelay();
+	// bypassesSchedule: the restart ignores the timer's spacing (keepalive), so the
+	// crash-loop backoff must throttle it even for recurring apps.
+	std::chrono::seconds restartDelay(bool bypassesSchedule = false);
 	void scheduleNext(std::chrono::system_clock::time_point startFrom = std::chrono::system_clock::now());
 	void scheduleStartAt(const std::chrono::system_clock::time_point &when);
 	std::uint64_t consumeScheduledStart(const std::chrono::system_clock::time_point &now);
