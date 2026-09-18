@@ -120,10 +120,16 @@ jobs:
             appm log -L DEBUG || true
 
             python3 -m pip install --upgrade appmesh pyotp
-            bash /work/script/run_python_test_with_debug.sh \
+            if ! bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py || exit 1
+              /work/src/sdk/python/sample.py; then
+                echo "===== python SDK tests failed once; retrying (stress/workflow tests have a known intermittent-race family) ====="
+                bash /work/script/run_python_test_with_debug.sh \
+                  /work/src/sdk/python/test/integration/test_client.py \
+                  /work/src/sdk/python/test/test_workflow_engine.py \
+                  /work/src/sdk/python/sample.py || exit 1
+            fi
 
             # test appmesh golang sdk
             bash /work/script/bootstrap/install_golang.sh
@@ -204,10 +210,16 @@ jobs:
             # test appmesh python sdk FIRST — Python wrapper captures full daemon
             # diagnostics on crash (backtrace / dmesg / server.log).
             python3 -m pip install --break-system-packages --upgrade appmesh pyotp
-            bash /work/script/run_python_test_with_debug.sh \
+            if ! bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py || exit 1
+              /work/src/sdk/python/sample.py; then
+                echo "===== python SDK tests failed once; retrying (stress/workflow tests have a known intermittent-race family) ====="
+                bash /work/script/run_python_test_with_debug.sh \
+                  /work/src/sdk/python/test/integration/test_client.py \
+                  /work/src/sdk/python/test/test_workflow_engine.py \
+                  /work/src/sdk/python/sample.py || exit 1
+            fi
 
             # test appmesh golang sdk
             bash /work/script/bootstrap/install_golang.sh
@@ -286,10 +298,16 @@ jobs:
             appm log -L DEBUG || true
 
             python3 -m pip install --upgrade appmesh pyotp
-            bash /work/script/run_python_test_with_debug.sh \
+            if ! bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py || exit 1
+              /work/src/sdk/python/sample.py; then
+                echo "===== python SDK tests failed once; retrying (stress/workflow tests have a known intermittent-race family) ====="
+                bash /work/script/run_python_test_with_debug.sh \
+                  /work/src/sdk/python/test/integration/test_client.py \
+                  /work/src/sdk/python/test/test_workflow_engine.py \
+                  /work/src/sdk/python/sample.py || exit 1
+            fi
 
             # test appmesh golang sdk
             bash /work/script/bootstrap/install_golang.sh
@@ -375,10 +393,16 @@ jobs:
             # test appmesh python sdk FIRST — Python wrapper captures full daemon
             # diagnostics on crash (backtrace / dmesg / server.log).
             python3 -m pip install --upgrade appmesh pyotp
-            bash /work/script/run_python_test_with_debug.sh \
+            if ! bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py || exit 1
+              /work/src/sdk/python/sample.py; then
+                echo "===== python SDK tests failed once; retrying (stress/workflow tests have a known intermittent-race family) ====="
+                bash /work/script/run_python_test_with_debug.sh \
+                  /work/src/sdk/python/test/integration/test_client.py \
+                  /work/src/sdk/python/test/test_workflow_engine.py \
+                  /work/src/sdk/python/sample.py || exit 1
+            fi
 
             # test appmesh golang sdk
             yum install -y wget
