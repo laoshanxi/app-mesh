@@ -204,7 +204,6 @@ private:
 	std::chrono::system_clock::time_point m_regTime;
 	std::string m_healthCheckCmd;
 	const std::string m_appId;
-	unsigned int m_version;
 
 	std::atomic_long m_timerRemoveId;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;

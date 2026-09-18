@@ -130,12 +130,12 @@ fn test_logon_password_stdin_conflicts_with_other_flows() {
 fn test_help_add_all_flags() {
     let s = stdout_of(&["add", "--help"]);
     for f in [
-        "--app", "--cmd", "--description", "--working-dir", "--status",
+        "--app", "--cmd", "--description", "--working-dir", "--enabled",
         "--shell", "--session-login", "--health-check", "--depends-on", "--docker-image", "--pid",
-        "--begin-time", "--end-time", "--daily-begin", "--daily-end", "--interval", "--cron",
-        "--memory-limit", "--virtual-memory", "--cpu-shares", "--log-cache-size",
-        "--permission", "--metadata", "--env", "--security-env",
-        "--stop-timeout", "--exit", "--control", "--stdin", "--force",
+        "--begin-time", "--end-time", "--daily-begin", "--daily-end", "--interval", "--cron-schedule",
+        "--memory-limit", "--virtual-memory", "--cpu-shares", "--stdout-backup-count",
+        "--permission", "--metadata", "--env", "--secret-env",
+        "--stop-grace-period", "--exit", "--exit-code-actions", "--stdin", "--force",
     ] {
         assert!(s.contains(f), "add missing {}", f);
     }
@@ -252,8 +252,8 @@ fn test_exec_requires_command()     { assert!(!appm().args(["exec"]).output().un
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_add_invalid_status_bool() {
-    let out = appm().args(["add", "-a", "x", "-c", "y", "--status", "notbool"]).output().unwrap();
+fn test_add_invalid_enabled_bool() {
+    let out = appm().args(["add", "-a", "x", "-c", "y", "--enabled", "notbool"]).output().unwrap();
     assert!(!out.status.success());
 }
 
@@ -420,9 +420,9 @@ fn test_add_multiple_env_flags_accepted() {
 }
 
 #[test]
-fn test_add_multiple_control_flags_accepted() {
+fn test_add_multiple_exit_code_actions_flags_accepted() {
     let out = appm()
-        .args(["add", "-a", "x", "-c", "y", "--control", "0:standby", "--control", "1:restart", "--help"])
+        .args(["add", "-a", "x", "-c", "y", "--exit-code-actions", "0:standby", "--exit-code-actions", "1:restart", "--help"])
         .output().unwrap();
     assert!(out.status.success());
 }

@@ -659,7 +659,7 @@ controller route that exposes only registered workflow definitions.
 
 ## Encrypted Environment Variables
 
-Use `sec_env` for sensitive values. They are encrypted at rest by the daemon. `env` is plaintext; `sec_env` is encrypted. Both become plain env vars inside the spawned process. `sec_env` can be set at the workflow, job, or step level (inner level wins on conflict).
+Use `secret_env` for sensitive values. They are encrypted at rest by the daemon. `env` is plaintext; `secret_env` is encrypted. Both become plain env vars inside the spawned process. `secret_env` can be set at the workflow, job, or step level (inner level wins on conflict).
 
 ```yaml
 # secrets-demo.yaml
@@ -668,7 +668,7 @@ name: secrets-demo
 env:
   API_URL: "https://api.example.com"
 
-sec_env:
+secret_env:
   API_KEY: "my-secret-token"
 
 jobs:

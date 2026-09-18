@@ -152,7 +152,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 **Behavior by step type:**
 
 - **command** (`execCommand`): Creates a temporary App (`wf-cmd-*`) with the resolved command/workdir/docker_image and runs it through the shared `runAndWait` path; the temp App is deleted at step end.
-- **app** (`execApp`): Runs an existing App by name through the same `runAndWait` path, passing `env`/`sec_env` overrides.
+- **app** (`execApp`): Runs an existing App by name through the same `runAndWait` path, passing `env`/`secret_env` overrides.
 - **runAndWait** (shared by command/app): calls `RunAppAsync`, then waits with the Go SDK's `WaitForAsyncRun`, which subscribes to `STDOUT`+`EXIT`+`REMOVED` events and backfills via `GetAppOutput` any output emitted before the subscription took effect (byte-position dedup bridges backfill and live events). Stdout chunks stream into the step log file as they arrive.
 - **message** (`execMessage`): Calls `RunTask` in a goroutine with a buffered channel. A `select` on `ctx.Done()` provides cancel support — if cancelled, the function returns immediately while the goroutine drains to the buffered channel.
 - **workflow** (`execWorkflow`): Creates a `context.WithTimeout` from the step's timeout config, passes it to `RunSubWorkflow`. The sub-workflow respects the timeout at DAG layer boundaries.
@@ -269,7 +269,7 @@ Max nesting depth is 4 levels. The target workflow YAML must be available at the
 2. Create run files: `runs.json`, `checkpoint.json`, `flow.log`, and step log paths.
 3. Build DAG layers from `jobs[*].needs`.
 4. For each job, evaluate dependencies and `if`.
-5. For each step, evaluate `if`, merge `env` and `sec_env`, substitute expressions, then dispatch through the executor.
+5. For each step, evaluate `if`, merge `env` and `secret_env`, substitute expressions, then dispatch through the executor.
 6. Stream stdout by subscribing to `STDOUT`, `EXIT`, and `REMOVED` events after `RunAppAsync`; a `GetAppOutput` backfill covers output emitted before the subscription took effect.
 7. Write step result snapshots into the expression context and checkpoint.
 8. Run `finally` steps after normal steps. `finally` steps can read `job.status`.

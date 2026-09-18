@@ -116,7 +116,7 @@ func getDelegateClient() *http.Client {
 	delegateClientOnce.Do(func() {
 		// Load custom CA if server verification is enabled
 		var serverCA *x509.CertPool
-		if config.ConfigData.REST.SSL.VerifyServerDelegate {
+		if config.ConfigData.REST.SSL.VerifyServer {
 			var err error
 			if serverCA, err = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCaPath); err != nil {
 				logger.Warnf("Failed to load delegate CA from %q: %v", config.ConfigData.REST.SSL.SSLCaPath, err)
@@ -128,7 +128,7 @@ func getDelegateClient() *http.Client {
 			// response (long-poll, async run/wait, large transfers); only connect is bounded.
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: !config.ConfigData.REST.SSL.VerifyServerDelegate,
+					InsecureSkipVerify: !config.ConfigData.REST.SSL.VerifyServer,
 					RootCAs:            serverCA, // Use the custom CA if available
 				},
 				DialContext:     (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
@@ -160,7 +160,7 @@ func MonitorConnectionResponse(conn *Connection, allowError bool) {
 // ListenAndServeREST starts the REST API server
 func ListenAndServeREST(ctx context.Context) error {
 	var listenAddr = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
-	var hostPort = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
+	var hostPort = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.TcpApiPort)
 
 	hostPort = strings.Replace(hostPort, "0.0.0.0", "127.0.0.1", 1)
 	connectAddr, err := net.ResolveTCPAddr("tcp", hostPort)
@@ -424,7 +424,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 				utils.HttpError(w, "invalid target host", http.StatusBadRequest)
 				return
 			}
-			targetConnection, err = getOrCreateConnection(forwardingAddr, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
+			targetConnection, err = getOrCreateConnection(forwardingAddr, config.ConfigData.REST.SSL.VerifyServer, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
 				utils.HttpError(w, "failed to connect to target host", http.StatusBadGateway)

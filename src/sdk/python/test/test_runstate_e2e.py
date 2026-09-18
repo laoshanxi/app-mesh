@@ -1,17 +1,17 @@
 """End-to-end tests for the RunState driving refactor (see docs/adr/0007).
 
 Exercise a RUNNING daemon via the Python SDK:
-  test_01 restart-on-exit      test_02 REMOVE deletes (retention > tick: the headline bug)
+  test_01 restart-on-exit      test_02 REMOVE deletes (stop_grace_period > tick: the headline bug)
   test_03 periodic runs        test_04 disable/enable reschedules
   test_05 concurrent reads      test_06 run sync/async
   test_07 crash-loop backoff (bounded restarts)   test_08 spawn-failure is terminal then recovers
   test_09 attach adopts a live pid & detects its exit (APPMESH_TEST_ATTACH=1, same-host)
-  test_10 recurring replacement with retention buffer
+  test_10 recurring replacement with stop grace buffer
   test_11 agent PSK restart doesn't deadlock the timer thread (APPMESH_TEST_AGENT=1)
 
 Prereqs: a daemon at https://127.0.0.1:6060 (APPMESH_TEST_URL) and a Dex
-access token in APPMESH_TEST_ACCESS_TOKEN. test_02 uses retention > the daemon's
-ScheduleInterval.
+access token in APPMESH_TEST_ACCESS_TOKEN. test_02 uses stop_grace_period > the
+daemon's ScheduleInterval.
 
 Usage:
     cd src/sdk/python/test
@@ -35,7 +35,7 @@ from _support import ssl_shim  # noqa: F401  # APPMESH_TEST_SSL_VERIFY override 
 from _support import config
 
 BASE_URL = config.BASE_URL  # None -> SDK default (https://127.0.0.1:6060)
-# retention used by test_02; MUST exceed the daemon ScheduleIntervalSeconds (default 2s)
+# stop grace period used by test_02; MUST exceed the daemon ScheduleIntervalSeconds (default 2s)
 # to reproduce the old "REMOVE re-arms every tick and never fires" bug.
 RETENTION_SEC = int(os.environ.get("APPMESH_TEST_RETENTION_SEC", "8"))
 
@@ -106,10 +106,10 @@ class TestRunStateE2E(unittest.TestCase):
             "command": "sh -c 'exit 0'",
             "shell": True,
             "behavior": {"exit": "remove"},
-            # retention > ScheduleIntervalSeconds: the OLD code re-armed the self-delete
+            # stop_grace_period > ScheduleIntervalSeconds: the OLD code re-armed the self-delete
             # timer on every tick and the app was never removed; the new one-shot latch
-            # applies the exit policy exactly once so the app is removed after `retention`.
-            "retention": str(RETENTION_SEC),
+            # applies the exit policy exactly once so the app is removed after `stop_grace_period`.
+            "stop_grace_period": str(RETENTION_SEC),
         })
         self.assertIn(name, self._app_names(), "app should exist right after registration")
         removed = _poll(lambda: name not in self._app_names(), timeout=RETENTION_SEC + 20)
@@ -125,7 +125,7 @@ class TestRunStateE2E(unittest.TestCase):
             "name": name,
             "command": "echo periodic_tick",
             "shell": True,
-            "start_interval_seconds": "3",
+            "interval": "3",
         })
         baseline = self._starts(name)
         grew = _poll(lambda: self._starts(name) >= baseline + 2, timeout=20)
@@ -260,14 +260,14 @@ class TestRunStateE2E(unittest.TestCase):
                 child.kill()
                 child.wait()
 
-    # ----- recurring occurrence replaces current; retention buffers old run --
+    # ----- recurring occurrence replaces current; stop grace buffers old run --
     def test_10_recurring_retention_buffer(self):
         name = self._name("retention_buffer")
         self._add({
             "name": name,
             "command": "sleep 8",
-            "start_interval_seconds": "2",
-            "retention": "10",
+            "interval": "2",
+            "stop_grace_period": "10",
         })
         self.assertTrue(_poll(lambda: self._starts(name) >= 1, timeout=15), "app never started")
         baseline = self._starts(name)

@@ -14,7 +14,7 @@
 #                     REQUIRED — -e ANTHROPIC_BASE_URL=<gateway> -z ANTHROPIC_AUTH_TOKEN=<cred>
 #                     -e LLMAGENT_MODEL=<gateway model name, e.g. gpt-4o>
 # Credentials must be SECURED env (-z, never in this file). The web UI (app-mesh-ui →
-# Agents → Register) writes the same env/sec_env from a guided provider form.
+# Agents → Register) writes the same env/secret_env from a guided provider form.
 #   - the `claude-agent-sdk` wheel (in requirements.txt) bundles the Claude Code CLI it
 #     drives as a subprocess — no Node.js needed.
 #
@@ -35,4 +35,4 @@ env:
   #           LLMAGENT_ALLOWED_TOOLS, LLMAGENT_PERMISSION_MODE, LLMAGENT_MAX_ITERATIONS.
 metadata:
   type: llm-agent-system
-status: false
+enabled: false

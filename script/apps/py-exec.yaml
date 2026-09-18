@@ -6,5 +6,5 @@ owner_principal_id: system:appmesh
 permission: 20
 behavior:
   exit: standby
-status: 0
-stdout_cache_num: 5
+enabled: false
+stdout_backup_count: 5

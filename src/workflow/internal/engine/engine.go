@@ -382,7 +382,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 	log.JobStarted(job.Name)
 
 	mergedEnv := mergeEnv(wf.Env, job.Env)
-	mergedSecEnv := mergeEnv(wf.SecEnv, job.SecEnv)
+	mergedSecretEnv := mergeEnv(wf.SecretEnv, job.SecretEnv)
 
 	jobFailed := false
 	for i := range job.Steps {
@@ -392,7 +392,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 			markStepsSkipped(job.Steps[i:], ectx, job.Name, "cancelled", log)
 			break
 		}
-		if !runStep(&job.Steps[i], exec, ectx, mergedEnv, mergedSecEnv, job.Name, opts, log) {
+		if !runStep(&job.Steps[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log) {
 			jobFailed = true
 			if job.Steps[i].ContinueOnError {
 				jobFailed = false
@@ -416,7 +416,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		log.JobFinallyStarted(job.Name)
 		for i := range job.Finally {
 			ectx.MarkFinallyStep(job.Name, job.Finally[i].Name)
-			runStep(&job.Finally[i], exec, ectx, mergedEnv, mergedSecEnv, job.Name, opts, log)
+			runStep(&job.Finally[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log)
 		}
 		log.JobFinallyCompleted(job.Name)
 	}
@@ -454,7 +454,7 @@ func markStepsSkipped(steps []models.Step, ectx *expression.Context, jobName, re
 	}
 }
 
-func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Context, env, secEnv map[string]string, jobName string, opts *Options, log logger.Log) bool {
+func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Context, env, secretEnv map[string]string, jobName string, opts *Options, log logger.Log) bool {
 	if step.Condition != "" {
 		if !expression.EvalConditionForJob(step.Condition, ectx, jobName) {
 			step.Result.Status = models.StatusSkipped
@@ -467,7 +467,7 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 	}
 
 	stepEnv := mergeEnv(env, step.Env)
-	stepSecEnv := mergeEnv(secEnv, step.SecEnv)
+	stepSecretEnv := mergeEnv(secretEnv, step.SecretEnv)
 
 	maxAttempts := 1
 	if step.Retry != nil {
@@ -529,7 +529,7 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 		}
 
 		log.StepStarted(step.Name)
-		result := exec.Execute(step, stepEnv, stepSecEnv)
+		result := exec.Execute(step, stepEnv, stepSecretEnv)
 		step.Result = result
 
 		exitCode := 0
@@ -685,12 +685,12 @@ func toIntFromAny(v any) int {
 func cloneWorkflow(wf *models.Workflow) *models.Workflow {
 	cp := *wf
 	cp.Env = cloneStringMap(wf.Env)
-	cp.SecEnv = cloneStringMap(wf.SecEnv)
+	cp.SecretEnv = cloneStringMap(wf.SecretEnv)
 	cp.Jobs = make(map[string]*models.Job, len(wf.Jobs))
 	for name, job := range wf.Jobs {
 		jc := *job
 		jc.Env = cloneStringMap(job.Env)
-		jc.SecEnv = cloneStringMap(job.SecEnv)
+		jc.SecretEnv = cloneStringMap(job.SecretEnv)
 		jc.Steps = cloneSteps(job.Steps)
 		jc.Finally = cloneSteps(job.Finally)
 		cp.Jobs[name] = &jc
@@ -702,7 +702,7 @@ func cloneSteps(src []models.Step) []models.Step {
 	out := make([]models.Step, len(src))
 	for i, s := range src {
 		s.Env = cloneStringMap(s.Env)
-		s.SecEnv = cloneStringMap(s.SecEnv)
+		s.SecretEnv = cloneStringMap(s.SecretEnv)
 		s.With = cloneStringMap(s.With)
 		out[i] = s
 	}

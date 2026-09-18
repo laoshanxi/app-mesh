@@ -123,7 +123,7 @@ jobs:
             bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py
+              /work/src/sdk/python/sample.py || exit 1
 
             # test appmesh golang sdk
             bash /work/script/bootstrap/install_golang.sh
@@ -207,7 +207,7 @@ jobs:
             bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py
+              /work/src/sdk/python/sample.py || exit 1
 
             # test appmesh golang sdk
             bash /work/script/bootstrap/install_golang.sh
@@ -289,7 +289,7 @@ jobs:
             bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py
+              /work/src/sdk/python/sample.py || exit 1
 
             # test appmesh golang sdk
             bash /work/script/bootstrap/install_golang.sh
@@ -378,7 +378,7 @@ jobs:
             bash /work/script/run_python_test_with_debug.sh \
               /work/src/sdk/python/test/integration/test_client.py \
               /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py
+              /work/src/sdk/python/sample.py || exit 1
 
             # test appmesh golang sdk
             yum install -y wget

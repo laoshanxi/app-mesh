@@ -247,7 +247,6 @@ nlohmann::json ResourceCollection::AsJson()
 	result["architecture"] = "unknown";
 #endif
 	result[("host_name")] = std::string((getHostName()));
-	result[("host_description")] = std::string(Configuration::instance()->getDescription());
 	static const auto osUser = os::getUsernameByUid();
 	result[("os_user")] = osUser;
 	auto arr = nlohmann::json::array();

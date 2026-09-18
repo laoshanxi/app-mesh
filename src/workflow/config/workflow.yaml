@@ -12,4 +12,4 @@ behavior:
   exit: restart
 metadata:
   type: workflow-system
-status: 1
+enabled: true

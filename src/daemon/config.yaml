@@ -1,7 +1,4 @@
 BaseConfig:
-  # A short, descriptive name for this host, such as ENV-ROLE-NUMBER (e.g., PROD-WEB-001).
-  Description: MYHOST
-
   # The default operating system user for app execution. This user will be used when no specific execution user is provided.
   DefaultExecUser: ""
 
@@ -9,7 +6,8 @@ BaseConfig:
   # Applications will follow the appmesh systemd user set during installation (APPMESH_DAEMON_EXEC_USER/APPMESH_DAEMON_EXEC_USER_GROUP).
   DisableExecUser: false
 
-  # Interval (in seconds) for application health checks.
+  # Interval (in seconds) of the scheduler loop that reconciles application state
+  # (start/stop/restart decisions, dependency gates, and health checks).
   # Increase this value if frequent checks are unnecessary.
   ScheduleIntervalSeconds: 1
 
@@ -34,7 +32,7 @@ REST:
   RestListenPort: 6060
 
   # TCP port for the TCP API.
-  RestTcpPort: 6059
+  TcpApiPort: 6059
 
   # WebSocket port for the WSS API.
   WebSocketPort: 6058
@@ -79,9 +77,6 @@ REST:
 
     # Verify certificates when App Mesh connects to a server; false accepts invalid/self-signed certificates.
     VerifyServer: false
-
-    # Verify certificates for delegated connections; false accepts invalid/self-signed certificates.
-    VerifyServerDelegate: false
 
 # Node labels. The daemon adds the automatic host name, arch, and (on Linux)
 # os_version labels at startup; list only custom labels here, e.g.

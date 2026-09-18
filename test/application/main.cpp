@@ -111,7 +111,7 @@ namespace
 			{"name", name},
 			{"command", command},
 			{"owner_principal_id", "test-owner"},
-			{"status", enabled},
+			{"enabled", enabled},
 			{"behavior", {{"exit", restartOnExit ? "restart" : "standby"}}}};
 		if (!dependsOn.empty())
 			def["depends_on"] = dependsOn;
@@ -449,7 +449,7 @@ TEST_CASE("depends_05_registration_validation", "[application]")
 		{"name", "depends_05_interval"},
 		{"command", "true"},
 		{"owner_principal_id", "test-owner"},
-		{"start_interval_seconds", "10"},
+		{"interval", "10"},
 		{"depends_on", nlohmann::json::array({"depends_05_dep"})}};
 	auto recurring = std::make_shared<Application>();
 	Application::FromJson(recurring, recurringDef);
@@ -499,10 +499,10 @@ TEST_CASE("depends_07_recovery_validation", "[application]")
 
 	writeTextFile(appDir + "/x.yaml",
 				  "name: depends_07_x\ncommand: sleep 30\nowner_principal_id: test-owner\n"
-				  "status: 1\ndepends_on:\n  - depends_07_y\n");
+				  "enabled: 1\ndepends_on:\n  - depends_07_y\n");
 	writeTextFile(appDir + "/y.yaml",
 				  "name: depends_07_y\ncommand: sleep 30\nowner_principal_id: test-owner\n"
-				  "status: 1\ndepends_on:\n  - depends_07_x\n");
+				  "enabled: 1\ndepends_on:\n  - depends_07_x\n");
 	config->loadApps(appDir);
 	REQUIRE_THROWS_AS(config->validateRecoveredDependencies(), std::runtime_error);
 	// Drop the cyclic pair from the shared map so the second half validates clean.
@@ -514,7 +514,7 @@ TEST_CASE("depends_07_recovery_validation", "[application]")
 	boost::filesystem::create_directories(appDir);
 	writeTextFile(appDir + "/z.yaml",
 				  "name: depends_07_z\ncommand: sleep 30\nowner_principal_id: test-owner\n"
-				  "status: 1\ndepends_on:\n  - depends_07_ghost\n");
+				  "enabled: 1\ndepends_on:\n  - depends_07_ghost\n");
 	config->loadApps(appDir);
 	REQUIRE_NOTHROW(config->validateRecoveredDependencies());
 	const auto dependent = config->getApp("depends_07_z", false);

@@ -1020,12 +1020,12 @@ bool Utility::createPidFile()
 void Utility::addExtraAppTimeReferStr(nlohmann::json &appJson)
 {
 	// append extra string format for time values
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_REG_TIME);
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_SHORT_APP_start_time);
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_SHORT_APP_end_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_register_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_start_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_end_time);
 	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_last_start);
 	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_last_exit);
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_SHORT_APP_next_start_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_next_start_time);
 	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_daily_limitation))
 	{
 		Utility::appendStrDayTimeAttr(appJson.at(JSON_KEY_APP_daily_limitation), JSON_KEY_DAILY_LIMITATION_daily_start);

@@ -729,9 +729,16 @@ components:
       additionalProperties: false
     Application:
       type: object
+      description: >-
+        Application definition and runtime view.
       properties:
-        name: { type: string }
-        command: { type: string }
+        name: { type: string, description: Application name. Unique registration key. }
+        command:
+          type: string
+          description: >-
+            Command line to run. Omit it when an existing application runs as
+            an on-demand template. Docker applications use docker_image instead.
+        description: { type: string, description: Free-text purpose of the application. }
         owner_principal_id:
           type: string
           description: >-
@@ -753,12 +760,21 @@ components:
             0 (default) makes the application accessible to every principal.
             Holders of app-view-all bypass these bits for read access and holders
             of app-manage-all for every operation.
-        execution_user: { type: string, readOnly: true }
-        system: { type: boolean, readOnly: true }
+        execution_user:
+          type: string
+          readOnly: true
+          description: >-
+            Operating system user that runs the process. Derived from the owner
+            Principal execution mapping; clients cannot set it directly.
+        system:
+          type: boolean
+          readOnly: true
+          description: True for bundled platform applications that the application API cannot change.
         startup_phase:
           type: string
           enum: [auth-issuer, ingress, normal]
           readOnly: true
+          description: Start order of bundled applications at daemon startup.
         depends_on:
           type: array
           items: { type: string }
@@ -780,19 +796,174 @@ components:
           description: >-
             Dependencies not yet satisfied at the last scheduler pass. Present only
             while the application is held back by its dependency gate.
-        status:
+        metadata:
+          type: object
+          description: >-
+            Free-form JSON passed to the process as stdin content. Docker
+            applications use it as the container definition.
+        shell:
+          type: boolean
+          description: Run the command through a generated shell script instead of a direct exec.
+        session_login:
+          type: boolean
+          description: Start the process as a login session (sudo --login semantics).
+        working_dir: { type: string, description: Working directory for the process. }
+        docker_image: { type: string, description: Docker image to run instead of a local command. }
+        env:
+          type: object
+          additionalProperties: { type: string }
+          description: Environment variables for the process. Every value must be a string.
+        secret_env:
+          type: object
+          additionalProperties: { type: string }
+          writeOnly: true
+          description: >-
+            Protected environment variables. Send plaintext values; the daemon
+            encrypts them before persistence. Responses never return them.
+        enabled:
           type: boolean
           description: >-
             Whether the application is enabled. Registration and update bodies may
             also carry the legacy numeric form (1/0), which stays accepted for
             compatibility with persisted definitions.
-        stdout_cache_num:
+        health_check_cmd:
+          type: string
+          description: Custom readiness probe. The application turns healthy only after this command exits 0.
+        interval:
+          type: [integer, string]
+          description: >-
+            Fixed-period schedule: seconds, or a duration string such as
+            "1m30s". Mutually exclusive with cron_schedule.
+        cron_schedule:
+          type: string
+          description: >-
+            Cron expression, for example "0 */5 * * * *". Presence of this
+            property selects the cron schedule kind. Mutually exclusive with
+            interval.
+        stop_grace_period:
+          type: [integer, string]
+          description: >-
+            Grace before the daemon terminates the previous run of a periodic
+            application, and delay before removal cleanup: seconds, or a
+            duration string such as "1m30s".
+        start_time:
+          type: integer
+          description: Epoch seconds from which the application may run.
+        end_time:
+          type: integer
+          description: Epoch seconds after which the application no longer runs.
+        daily_limitation:
+          type: object
+          description: Availability window inside one day. Both bounds are required together.
+          properties:
+            daily_start:
+              type: integer
+              description: Seconds within a day when the window opens. The value is taken modulo 86400.
+            daily_end:
+              type: integer
+              description: Seconds within a day when the window closes. The value is taken modulo 86400.
+        resource_limit:
+          type: object
+          description: Resource caps applied to the process (Linux cgroups).
+          properties:
+            memory_mb: { type: integer, description: Physical memory cap in megabytes. }
+            memory_virt_mb: { type: integer, description: Virtual memory cap in megabytes. }
+            cpu_shares: { type: integer, description: Relative CPU weight. }
+        stdout_backup_count:
           type: integer
           description: >-
             Number of stdout files from previous process runs kept in rotation.
             Each (re)start renames the current file to the next index and deletes
             files beyond this count. 0 (default) deletes the previous file on
             every restart.
+        behavior:
+          type: object
+          description: Action taken after a run exits.
+          properties:
+            exit:
+              type: string
+              enum: [standby, restart, keepalive, remove]
+              description: Action for exit codes not listed in exit_code_actions.
+            exit_code_actions:
+              type: object
+              additionalProperties:
+                type: string
+                enum: [standby, restart, keepalive, remove]
+              description: Maps a numeric exit code, as string key, to the action for that code.
+        pid:
+          type: integer
+          readOnly: true
+          description: Process ID of the current run. Omitted until a valid PID is published.
+        pid_user:
+          type: string
+          readOnly: true
+          description: Operating system user of the current process.
+        return_code:
+          type: integer
+          readOnly: true
+          description: Exit code of the last finished run.
+        health:
+          type: integer
+          readOnly: true
+          description: Health result of the last probe. 0 means healthy, 1 means unhealthy.
+        memory:
+          type: integer
+          readOnly: true
+          description: Resident memory of the current run, in bytes.
+        cpu:
+          type: integer
+          readOnly: true
+          description: CPU usage of the current run, in percent.
+        fd:
+          type: integer
+          readOnly: true
+          description: Open file descriptors of the current process.
+        pstree:
+          type: string
+          readOnly: true
+          description: Process tree under the current run.
+        container_id:
+          type: string
+          readOnly: true
+          description: Docker container ID of the current run. Docker applications only.
+        last_start_time:
+          type: integer
+          readOnly: true
+          description: Epoch seconds of the last accepted start.
+        last_exit_time:
+          type: integer
+          readOnly: true
+          description: Epoch seconds of the last exit.
+        next_start_time:
+          type: integer
+          readOnly: true
+          description: Epoch seconds of the next scheduled start.
+        starts:
+          type: integer
+          readOnly: true
+          description: Count of accepted starts since registration.
+        last_error:
+          type: string
+          readOnly: true
+          description: Last failure message, prefixed with a local timestamp.
+        task_id:
+          type: integer
+          readOnly: true
+          description: Identifier of the pending worker-task request. Present only while a task waits.
+        task_status:
+          type: string
+          readOnly: true
+          description: Status of the pending worker-task request. Present only while a task waits.
+        register_time:
+          type: integer
+          readOnly: true
+          description: Epoch seconds when the application was registered.
+        stdout_file_count:
+          type: integer
+          readOnly: true
+          description: >-
+            Count of rotated stdout files currently kept. This property is a
+            file count, not a byte size.
       additionalProperties: true
     Error:
       type: object

@@ -19,7 +19,7 @@ type (
 		RestEnabled                  bool   `yaml:"RestEnabled"`
 		RestListenAddress            string `yaml:"RestListenAddress"`
 		RestListenPort               int    `yaml:"RestListenPort"`
-		RestTcpPort                  int    `yaml:"RestTcpPort"`
+		TcpApiPort                   int    `yaml:"TcpApiPort"`
 		PrometheusExporterListenPort int    `yaml:"PrometheusExporterListenPort"`
 		CorsDisabled                 bool   `yaml:"CorsDisabled"`
 
@@ -45,7 +45,7 @@ var ConfigData = Configuration{
 		RestEnabled:                  true,
 		RestListenAddress:            "127.0.0.1",
 		RestListenPort:               6060,
-		RestTcpPort:                  6059,
+		TcpApiPort:                   6059,
 		PrometheusExporterListenPort: 0,
 		CorsDisabled:                 false,
 
@@ -57,7 +57,6 @@ var ConfigData = Configuration{
 			SSLClientCertificateKeyFile: "ssl/client-key.pem",
 			VerifyClient:                false,
 			VerifyServer:                true,
-			VerifyServerDelegate:        true,
 		},
 	},
 }

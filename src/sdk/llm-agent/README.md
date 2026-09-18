@@ -122,7 +122,7 @@ Errors come back as `{ "status":"error", "message":"..." }`.
 
 Packaged by [`CMakeLists.txt`](CMakeLists.txt): the `llm_agent` package installs to
 `<prefix>/lib/llm-agent` and `config/llm-agent.yaml` to `<prefix>/apps/`. The pre-loaded
-definition carries **no model credential** and stays stopped (`status: false`) — the llm
+definition carries **no model credential** and stays stopped (`enabled: false`) — the llm
 image alone overrides it to started. Register a key before the first turn. A source
 install to a custom prefix must also edit the yaml's `working_dir`.
 

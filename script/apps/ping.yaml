@@ -5,8 +5,8 @@ command: ping cloudflare.com
 shell: true
 owner_principal_id: system:appmesh
 permission: 20
-stdout_cache_num: 5
+stdout_backup_count: 5
 behavior:
-  control:
+  exit_code_actions:
     "0": standby
   exit: standby

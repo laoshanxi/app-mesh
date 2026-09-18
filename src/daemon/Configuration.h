@@ -29,7 +29,6 @@ public:
 		static std::shared_ptr<BaseConfig> FromJson(const nlohmann::json &jsonObj);
 		nlohmann::json AsJson() const;
 
-		std::string m_hostDescription;
 		std::string m_defaultExecUser;
 		std::string m_defaultWorkDir;
 		int m_scheduleInterval;
@@ -42,7 +41,6 @@ public:
 		static std::shared_ptr<JsonSsl> FromJson(const nlohmann::json &jsonObj);
 		nlohmann::json AsJson() const;
 		bool m_sslVerifyServer;
-		bool m_sslVerifyServerDelegate;
 		bool m_sslVerifyClient;
 		std::string m_certFile;
 		std::string m_certKeyFile;
@@ -67,7 +65,7 @@ public:
 		int m_restListenPort;
 		int m_promListenPort;
 		std::string m_restListenAddress;
-		int m_restTcpPort;
+		int m_tcpApiPort;
 		int m_webSocketPort;
 		std::shared_ptr<JsonSsl> m_ssl;
 	};
@@ -109,7 +107,7 @@ public:
 	int getRestListenPort();
 	int getPromListenPort() const;
 	std::string getRestListenAddress();
-	int getRestTcpPort();
+	int getTcpApiPort();
 	int getWebSocketPort();
 	nlohmann::json serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName, bool throwOnNotFound = true) const noexcept(false);
@@ -137,7 +135,6 @@ public:
 	std::string getFileAllowedBaseDir() const;
 	std::size_t getWorkerThreadPoolSize() const;
 	std::size_t getIOThreadPoolSize() const;
-	const std::string getDescription() const;
 	const std::string getPosixTimezone() const;
 
 	bool checkOwnerPermission(const std::string &principalId, const std::string &ownerPrincipalId,

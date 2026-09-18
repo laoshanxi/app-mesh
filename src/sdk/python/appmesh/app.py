@@ -69,7 +69,7 @@ class App:
 
     class Behavior:
         """
-        Application error handling behavior, including exit and control behaviors.
+        Application error handling behavior, including the default exit action and per-exit-code actions.
         """
 
         @unique
@@ -88,16 +88,16 @@ class App:
             self.exit = _get_str(data, "exit")
             """Default exit behavior, options: 'restart', 'standby', 'keepalive', 'remove'."""
 
-            self.control = _get_item(data, "control") or {}
-            """Exit code specific behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior"""
+            self.exit_code_actions = _get_item(data, "exit_code_actions") or {}
+            """Exit code specific behavior (exit code -> action, e.g., 0:restart, 1:standby), higher priority than default exit behavior"""
 
         def set_exit_behavior(self, action: "App.Behavior.Action") -> None:
             """Set default behavior for application exit."""
             self.exit = action.value
 
-        def set_control_behavior(self, control_code: int, action: "App.Behavior.Action") -> None:
-            """Define behavior for specific exit codes."""
-            self.control[str(control_code)] = action.value
+        def set_exit_code_action(self, exit_code: int, action: "App.Behavior.Action") -> None:
+            """Define the action for a specific exit code."""
+            self.exit_code_actions[str(exit_code)] = action.value
 
     class DailyLimitation:
         """
@@ -157,22 +157,22 @@ class App:
         """metadata string/JSON (input for app, pass to process stdin)"""
         self.working_dir = _get_str(data, "working_dir")
         """working directory"""
-        self.status = _get_bool(data, "status")
-        """app status: True for enabled, False for disabled"""
+        self.enabled = _get_bool(data, "enabled")
+        """app enable flag: True for enabled, False for disabled"""
         self.docker_image = _get_str(data, "docker_image")
         """Docker image for containerized execution"""
-        self.stdout_cache_num = _get_int(data, "stdout_cache_num")
+        self.stdout_backup_count = _get_int(data, "stdout_backup_count")
         """maximum number of stdout log files to retain"""
         self.start_time = _get_int(data, "start_time")
         """start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')"""
         self.end_time = _get_int(data, "end_time")
         """end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')"""
-        self.start_interval_seconds = _get_item(data, "start_interval_seconds")
-        """start interval seconds for short running app, support integer seconds, ISO 8601 durations and cron expression (e.g., 30, 'P1Y2M3DT4H5M6S', 'P5W', '* */5 * * * *')"""
-        self.cron = _get_bool(data, "cron")
-        """Whether the interval is specified as a cron expression"""
+        self.interval = _get_item(data, "interval")
+        """start interval for short running app: integer seconds or ISO 8601 duration (e.g., 30, 'P1Y2M3DT4H5M6S', 'P5W'); use ``cron_schedule`` for a cron expression"""
+        self.cron_schedule = _get_str(data, "cron_schedule")
+        """cron expression for the start schedule (e.g., '* */5 * * * *'); presence means the app runs on a cron schedule"""
         self.daily_limitation = App.DailyLimitation(_get_item(data, "daily_limitation"))
-        self.retention = _get_str(data, "retention")
+        self.stop_grace_period = _get_str(data, "stop_grace_period")
         """extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')."""
         self.health_check_cmd = _get_str(data, "health_check_cmd")
         """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
@@ -184,7 +184,7 @@ class App:
 
         self.env = data.get("env", {}) if data else {}
         """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)"""
-        self.sec_env = data.get("sec_env", {}) if data else {}
+        self.secret_env = data.get("secret_env", {}) if data else {}
         """security environment variables protected by Engine at rest"""
         self.pid = _get_int(data, "pid")
         """process id used to attach to the running process"""
@@ -211,8 +211,8 @@ class App:
         """cpu usage"""
         self.fd = _get_int(data, "fd")
         """file descriptor usage"""
-        self.stdout_cache_size = _get_int(data, "stdout_cache_size")
-        """number of stdout log files currently retained"""
+        self.stdout_file_count = _get_int(data, "stdout_file_count")
+        """count of rotated stdout log files currently retained"""
         self.last_start_time = _get_int(data, "last_start_time")
         """last start time"""
         self.last_exit_time = _get_int(data, "last_exit_time")
@@ -225,8 +225,6 @@ class App:
         """next start time"""
         self.health = _get_int(data, "health")
         """health status: 0 for healthy, 1 for unhealthy"""
-        self.version = _get_int(data, "version")
-        """app version"""
         self.return_code = _get_int(data, "return_code")
         """last process exit code"""
         self.task_id = _get_int(data, "task_id")
@@ -238,8 +236,8 @@ class App:
 
     @property
     def is_enabled(self) -> Optional[bool]:
-        """Typed view of ``status``: ``True`` when enabled, ``False`` when disabled, ``None`` when unset."""
-        return self.status
+        """Typed view of ``enabled``: ``True`` when enabled, ``False`` when disabled, ``None`` when unset."""
+        return self.enabled
 
     @staticmethod
     def _permission_digit(digit: int) -> Optional["App.Permission"]:
@@ -261,7 +259,7 @@ class App:
 
     def set_env(self, key: str, value: str, secure: bool = False) -> None:
         """Set an environment variable, marking it secure if specified."""
-        target = self.sec_env if secure else self.env
+        target = self.secret_env if secure else self.env
         target[key] = value
 
     def set_permission(self, others_user: Permission) -> None:

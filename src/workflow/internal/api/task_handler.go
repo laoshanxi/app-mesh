@@ -407,7 +407,7 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 	app := appmesh.Application{
 		Name:     appName,
 		Command:  &trueCmd,
-		Status:   false, // disabled
+		Enabled:  false, // disabled
 		Metadata: &metadata,
 	}
 	if wf.Permission != 0 {

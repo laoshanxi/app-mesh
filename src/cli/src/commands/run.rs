@@ -40,7 +40,7 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     let mut app = Application::default();
     app.behavior = Some(appmesh::Behavior {
         exit: Some(ExitAction::Remove),
-        control: None,
+        exit_code_actions: None,
     });
 
     if let Some(ref name) = args.app {

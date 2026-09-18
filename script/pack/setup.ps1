@@ -126,13 +126,13 @@ function Set-AuthServiceStatus {
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.AddRange([System.IO.File]::ReadAllLines($AuthServiceDefinition))
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match '^status\s*:') {
-            $lines[$i] = "status: $Status"
+        if ($lines[$i] -match '^enabled\s*:') {
+            $lines[$i] = "enabled: $Status"
             [System.IO.File]::WriteAllLines($AuthServiceDefinition, $lines, [System.Text.UTF8Encoding]::new($false))
             return
         }
     }
-    Write-Fatal "Bundled authentication App definition has no status field: $AuthServiceDefinition"
+    Write-Fatal "Bundled authentication App definition has no enabled field: $AuthServiceDefinition"
 }
 
 Update-OidcField -Path $OverrideOidc -Field "issuer" -Value $Issuer

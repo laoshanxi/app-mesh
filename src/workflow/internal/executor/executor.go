@@ -61,25 +61,25 @@ func (e *StepExecutor) Close() {
 	}
 }
 
-func (e *StepExecutor) Execute(step *models.Step, env, secEnv map[string]string) models.StepResult {
+func (e *StepExecutor) Execute(step *models.Step, env, secretEnv map[string]string) models.StepResult {
 	resolved := resolveEnv(env, e.Ctx, e.JobName)
-	resolvedSec := resolveEnv(secEnv, e.Ctx, e.JobName)
+	resolvedSecretEnv := resolveEnv(secretEnv, e.Ctx, e.JobName)
 
 	switch step.Type {
 	case models.StepCommand:
-		return e.execCommand(step, resolved, resolvedSec)
+		return e.execCommand(step, resolved, resolvedSecretEnv)
 	case models.StepApp:
-		return e.execApp(step, resolved, resolvedSec)
+		return e.execApp(step, resolved, resolvedSecretEnv)
 	case models.StepMessage:
 		return e.execMessage(step)
 	case models.StepWorkflow:
-		return e.execWorkflow(step, resolved, resolvedSec)
+		return e.execWorkflow(step, resolved, resolvedSecretEnv)
 	default:
 		return fail(1, "unknown step type", 0)
 	}
 }
 
-func (e *StepExecutor) execCommand(step *models.Step, env, secEnv map[string]string) models.StepResult {
+func (e *StepExecutor) execCommand(step *models.Step, env, secretEnv map[string]string) models.StepResult {
 	shell := true
 	if step.Shell != nil {
 		shell = *step.Shell
@@ -92,7 +92,7 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secEnv map[string]str
 		Command:   &command,
 		ShellMode: &shell,
 		Env:       envPtr(env),
-		SecEnv:    envPtr(secEnv),
+		SecretEnv: envPtr(secretEnv),
 		Metadata:  &metadata,
 	}
 	if step.Workdir != "" {
@@ -106,11 +106,11 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secEnv map[string]str
 	return e.runAndWait(app, step.Timeout)
 }
 
-func (e *StepExecutor) execApp(step *models.Step, env, secEnv map[string]string) models.StepResult {
+func (e *StepExecutor) execApp(step *models.Step, env, secretEnv map[string]string) models.StepResult {
 	app := appmesh.Application{
-		Name:   step.App,
-		Env:    envPtr(env),
-		SecEnv: envPtr(secEnv),
+		Name:      step.App,
+		Env:       envPtr(env),
+		SecretEnv: envPtr(secretEnv),
 	}
 	return e.runAndWait(app, step.Timeout)
 }

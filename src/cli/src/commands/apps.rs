@@ -41,14 +41,14 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
         return Ok(1);
     }
 
-    // Validate interval > stop_timeout
-    if args.interval.is_some() && args.stop_timeout.is_some() {
+    // Validate interval > stop_grace_period
+    if args.interval.is_some() && args.stop_grace_period.is_some() {
         let interval = AppMeshClient::parse_duration(args.interval.as_deref().unwrap())
             .map_err(|e| anyhow::anyhow!("{}", e))?;
-        let stop_timeout = AppMeshClient::parse_duration(args.stop_timeout.as_deref().unwrap())
+        let stop_grace_period = AppMeshClient::parse_duration(args.stop_grace_period.as_deref().unwrap())
             .map_err(|e| anyhow::anyhow!("{}", e))?;
-        if interval <= stop_timeout {
-            bail!("The stop-timeout must be less than the interval.");
+        if interval <= stop_grace_period {
+            bail!("The stop-grace-period must be less than the interval.");
         }
     }
 
@@ -110,7 +110,7 @@ fn overlay_env_args(mut doc: Value, args: &AddArgs) -> Result<Value> {
         Ok(())
     }
     overlay(&mut doc, "env", &args.env)?;
-    overlay(&mut doc, "sec_env", &args.security_env)?;
+    overlay(&mut doc, "secret_env", &args.secret_env)?;
     if !args.depends_on.is_empty() {
         let object = doc
             .as_object_mut()
@@ -148,23 +148,22 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
     if let Some(ref img) = args.docker_image {
         builder = builder.docker_image(img);
     }
-    if let Some(num) = args.log_cache_size {
-        builder = builder.stdout_cache_num(num);
+    if let Some(num) = args.stdout_backup_count {
+        builder = builder.stdout_backup_count(num);
     }
 
-    // Schedule: interval — store raw string for cron, parsed seconds for duration
+    // Schedule: interval (period) or cron expression
     if let Some(ref interval) = args.interval {
-        if args.cron {
-            builder = builder.cron(true);
-        } else {
-            AppMeshClient::parse_duration(interval)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-        }
-        builder = builder.start_interval_seconds(interval);
+        AppMeshClient::parse_duration(interval)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        builder = builder.interval(interval);
+    }
+    if let Some(ref expr) = args.cron_schedule {
+        builder = builder.cron_schedule(expr);
     }
 
-    if let Some(ref retention) = args.stop_timeout {
-        builder = builder.retention(retention);
+    if let Some(ref period) = args.stop_grace_period {
+        builder = builder.stop_grace_period(period);
     }
 
     // Exit behavior
@@ -172,9 +171,9 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
         let action = parse_exit_action(exit_behavior)?;
         builder = builder.exit_behavior(action);
     }
-    for ctrl in &args.control {
-        let (code, action) = parse_control(ctrl)?;
-        builder = builder.control_behavior(code, action);
+    for ctrl in &args.exit_code_actions {
+        let (code, action) = parse_exit_code_action(ctrl)?;
+        builder = builder.exit_code_action(code, action);
     }
 
     // Metadata
@@ -191,9 +190,9 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
             bail!("Invalid environment variable format: {}", env_str);
         }
     }
-    for env_str in &args.security_env {
+    for env_str in &args.secret_env {
         if let Some((k, v)) = env_str.split_once('=') {
-            builder = builder.sec_env(k, v);
+            builder = builder.secret_env(k, v);
         } else {
             bail!("Invalid environment variable format: {}", env_str);
         }
@@ -214,8 +213,8 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
     let mut app = builder.build();
 
     // Fields that need direct assignment on the struct
-    if let Some(status) = args.status {
-        app.status = Some(status);
+    if let Some(enabled) = args.enabled {
+        app.enabled = Some(enabled);
     }
     if let Some(pid) = args.pid {
         app.pid = Some(pid);
@@ -248,10 +247,10 @@ fn parse_exit_action(s: &str) -> Result<ExitAction> {
     }
 }
 
-fn parse_control(ctrl: &str) -> Result<(i32, ExitAction)> {
+fn parse_exit_code_action(ctrl: &str) -> Result<(i32, ExitAction)> {
     let (code_str, action_str) = ctrl
         .split_once(':')
-        .ok_or_else(|| anyhow::anyhow!("Invalid control format: '{}'. Use CODE:ACTION", ctrl))?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid exit code action format: '{}'. Use CODE:ACTION", ctrl))?;
     let code: i32 = code_str.trim().parse().context("Invalid exit code")?;
     let action = parse_exit_action(action_str.trim())?;
     Ok((code, action))
