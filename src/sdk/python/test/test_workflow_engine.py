@@ -226,8 +226,10 @@ jobs:
         command: "echo shipping ${{ jobs.build.steps.package.stdout }}"
 """
         try:
-            run_id, status, _ = self.add_run_wait(name, yaml)
-            self.assertEqual(status, "success")
+            run_id, status, detail = self.add_run_wait(name, yaml)
+            jobs = detail.get("jobs") if isinstance(detail, dict) else detail
+            self.assertEqual(status, "success",
+                             f"run {run_id} jobs: {json.dumps(jobs, default=str)[:2000]}")
             self.assertEqual(self.step_stdout(name, run_id, "lint", "check"), "linting 2.0.1")
             self.assertEqual(self.step_stdout(name, run_id, "build", "package"), "pkg-art-2.0.1")
             self.assertEqual(self.step_stdout(name, run_id, "deploy", "gate"), "lint=success build=success")
