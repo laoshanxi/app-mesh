@@ -786,6 +786,13 @@ components:
             Whether the application is enabled. Registration and update bodies may
             also carry the legacy numeric form (1/0), which stays accepted for
             compatibility with persisted definitions.
+        stdout_cache_num:
+          type: integer
+          description: >-
+            Number of stdout files from previous process runs kept in rotation.
+            Each (re)start renames the current file to the next index and deletes
+            files beyond this count. 0 (default) deletes the previous file on
+            every restart.
       additionalProperties: true
     Error:
       type: object

@@ -1,6 +1,11 @@
 // src/common/os/net.cpp
 #include <cerrno>  // errno
+#include <chrono>
+#include <exception> // std::current_exception, std::make_exception_ptr
+#include <future>
 #include <memory>
+#include <stdexcept>
+#include <thread>
 #include <utility> // std::move
 
 // Sockets & name resolution
@@ -92,42 +97,62 @@ namespace net
 
 	/**
 	 * @brief Gets the Fully Qualified Domain Name (FQDN) of the host
-	 * @return Host's FQDN, or short hostname if FQDN lookup fails
+	 * @return Host's FQDN, or short hostname if FQDN lookup fails or exceeds the deadline
 	 */
 	std::string hostname()
 	{
 		static const auto cached = []() -> std::string
 		{
 			const static char fname[] = "net::hostname() ";
-
+			// A synchronous resolver can block for seconds (multicast-DNS, an
+			// unreachable name server, a long search-domain list), so run the
+			// lookup on a helper thread and keep the short hostname when the
+			// deadline expires.
+			const auto resolveDeadline = std::chrono::seconds(1);
 			const auto shortHostname = boost::asio::ip::host_name();
-			try
-			{
-				boost::asio::io_context io;
-				boost::asio::ip::tcp::resolver r(io);
 
-				// Try to resolve FQDN
+			auto result = std::make_shared<std::promise<std::string>>();
+			auto future = result->get_future();
+			std::thread(
+				[result, shortHostname]
+				{
+					try
+					{
+						boost::asio::io_context io;
+						boost::asio::ip::tcp::resolver resolver(io);
+						for (const auto &entry : resolver.resolve(shortHostname, ""))
+						{
+							const auto &fq = entry.host_name();
+							if (!fq.empty())
+							{
+								result->set_value(fq);
+								return;
+							}
+						}
+						result->set_exception(std::make_exception_ptr(std::runtime_error("FQDN resolution returned no canonical name")));
+					}
+					catch (...)
+					{
+						result->set_exception(std::current_exception());
+					}
+				})
+				.detach();
+
+			if (future.wait_for(resolveDeadline) == std::future_status::ready)
+			{
 				try
 				{
-					auto results = r.resolve(shortHostname, "");
-					for (const auto &entry : results)
-					{
-						const auto &fq = entry.host_name();
-						if (!fq.empty())
-							return fq;
-					}
+					return future.get();
 				}
-				catch (const boost::system::system_error &e)
+				catch (const std::exception &e)
 				{
-					// Log and fall back to short hostname
 					LOG_WAR << fname << "FQDN resolution failed for host <" << shortHostname << ">: " << e.what();
 				}
 			}
-			catch (const std::exception &e)
+			else
 			{
-				LOG_WAR << fname << "Unexpected error resolving FQDN for host <" << shortHostname << ">, falling back to short hostname: " << e.what();
+				LOG_WAR << fname << "FQDN resolution for host <" << shortHostname << "> did not complete within 1 second, using the short hostname";
 			}
-			// Fall back to short hostname
 			return shortHostname;
 		}();
 		return cached;

@@ -7,3 +7,4 @@ permission: 20
 behavior:
   exit: standby
 status: 0
+stdout_cache_num: 5

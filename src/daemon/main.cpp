@@ -536,10 +536,17 @@ void AppMeshDaemon::performHighAvailabilityRecovery()
 	// Load snapshot
 	try
 	{
-		auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
-		auto jsonData = snapfile.empty() ? std::string("{}") : std::move(snapfile);
-		snap = Snapshot::FromJson(nlohmann::json::parse(jsonData));
-		LOG_INF << fname << "Successfully loaded snapshot file";
+		if (!Utility::isFileExist(SNAPSHOT_FILE_NAME))
+		{
+			LOG_INF << fname << "No snapshot file, starting with an empty snapshot";
+		}
+		else
+		{
+			auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
+			auto jsonData = snapfile.empty() ? std::string("{}") : std::move(snapfile);
+			snap = Snapshot::FromJson(nlohmann::json::parse(jsonData));
+			LOG_INF << fname << "Successfully loaded snapshot file";
+		}
 	}
 	catch (const std::exception &ex)
 	{

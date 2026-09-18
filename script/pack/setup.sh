@@ -258,10 +258,13 @@ clean_environment() {
         sleep 2
     fi
 
-    # Clean work directory for fresh install
+    # Clean work directory for fresh install. Authentication state (signing
+    # keys, credentials, refresh-token store) is preserved so installed
+    # clients keep their sessions across reinstalls; remove work/auth
+    # manually when a pristine identity is required.
     if [ "${APPMESH_FRESH_INSTALL:-}" = "Y" ]; then
-        find "${PROG_HOME}/work" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-        info "Work directory cleaned for fresh installation"
+        find "${PROG_HOME}/work" -mindepth 1 -maxdepth 1 ! -name auth -exec rm -rf {} +
+        info "Work directory cleaned for fresh installation (authentication state preserved)"
     fi
 }
 
