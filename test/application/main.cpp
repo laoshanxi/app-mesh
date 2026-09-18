@@ -298,6 +298,77 @@ TEST_CASE("lifecycle_04_disable_kills_run_and_reenable_starts_fresh", "[applicat
 	tickAndRequireStablePid(*app, second, 30);
 }
 
+TEST_CASE("lifecycle_05_signal_exit_reports_signal_number_and_dispatches_map", "[application]")
+{
+	// A run terminated by a signal must report the signal number (9 for SIGKILL),
+	// the same display the daemon uses for its own FORCED_TERMINATION_EXIT_CODE.
+	// WEXITSTATUS() of a signaled status is 0, so the raw ACE return value alone
+	// made a killed run look like a clean exit: the exit-code action map could
+	// not key on signals, and {"0": ...} misdispatched crashes as clean exits.
+	// Pin both the reported code and the map dispatch.
+	const auto script = tmpDir() + "/lifecycle_05.sh";
+	writeTextFile(script, "#!/bin/sh\n"
+						  "kill -9 $$\n");
+
+	nlohmann::json def = {
+		{"name", "lifecycle_05"},
+		{"command", "sh " + script},
+		{"owner_principal_id", "test-owner"},
+		{"enabled", true},
+		{"behavior", {{"exit", "standby"}, {"exit_code_actions", {{"9", "restart"}}}}}};
+	auto app = std::make_shared<Application>();
+	Application::FromJson(app, def);
+
+	tick(*app); // starts run #1, which SIGKILLs itself right away
+	// Standby alone would leave it down; only the 9 mapping can restart it.
+	REQUIRE(waitFor(10000, [&app]() { tick(*app); }, [&app]()
+	{ return app->AsJson(true)[JSON_KEY_APP_starts].get<long long>() >= 2; }));
+
+	// The recorded return_code of a finished signaled run is the signal number.
+	REQUIRE(waitFor(10000, [&app]() { tick(*app); }, [&app]()
+	{
+		const auto view = app->AsJson(true);
+		return HAS_JSON_FIELD(view, JSON_KEY_APP_return_code) &&
+			   view[JSON_KEY_APP_return_code].get<int>() == 9;
+	}));
+}
+
+TEST_CASE("lifecycle_06_keepalive_recurring_restarts_are_throttled", "[application]")
+{
+	// Keepalive restarts bypass the timer's schedule, so the crash-loop backoff is
+	// their only spacing. The recurring exemption in restartDelay() exists because
+	// interval/cron runs are normally spaced by their own schedule — a restart
+	// that ignores that schedule must not claim the exemption, or a fast-exiting
+	// recurring run restarts on every scheduler tick (an unbounded storm).
+	const auto script = tmpDir() + "/lifecycle_06.sh";
+	writeTextFile(script, "#!/bin/sh\n"
+						  "exit 3\n");
+
+	nlohmann::json def = {
+		{"name", "lifecycle_06"},
+		{"command", "sh " + script},
+		{"owner_principal_id", "test-owner"},
+		{"enabled", true},
+		{"interval", "2"},
+		{"behavior", {{"exit", "keepalive"}}}};
+	auto app = std::make_shared<Application>();
+	Application::FromJson(app, def);
+
+	// Backoff steps 1s, 2s, 4s ... give about 4 starts in 10s (the first start is
+	// ~1s out: interval apps default start_time to registration + 1s). A per-tick
+	// storm would exceed 6 within the window; a throttling regression lands below 3.
+	const auto starts = [&app]()
+	{ return app->AsJson(true)[JSON_KEY_APP_starts].get<long long>(); };
+	const auto deadline = Clock::now() + std::chrono::seconds(10);
+	while (Clock::now() < deadline)
+	{
+		tick(*app);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+	REQUIRE(starts() >= 3);
+	REQUIRE(starts() <= 6);
+}
+
 // =============================================================================
 // depends_on — dependency gate for managed starts.
 // =============================================================================

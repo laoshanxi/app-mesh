@@ -6,6 +6,7 @@
 #if !defined(_WIN32)
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -101,7 +102,16 @@ public:
 	{
 		const static char fname[] = "ExitAdapter::handle_exit() ";
 		const pid_t pid = process->getpid();
-		const int code = process->return_value();
+		int code = process->return_value();
+#if !defined(_WIN32)
+		// return_value() is WEXITSTATUS() of the raw status: 0 when a signal
+		// terminated the child. Report the signal number so exit-code policies
+		// and return_code cannot mistake a killed run for a clean exit. Matches
+		// the daemon's own FORCED_TERMINATION_EXIT_CODE display.
+		const ACE_exitcode rawStatus = process->exit_code();
+		if (WIFSIGNALED(rawStatus))
+			code = WTERMSIG(rawStatus);
+#endif
 		LOG_INF << fname << "Process <" << pid << "> exited with code <" << code << ">";
 
 		auto target = m_target.lock();

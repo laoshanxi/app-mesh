@@ -1890,7 +1890,7 @@ void Application::applyExitPolicy()
 		break;
 	case AppBehavior::Action::KEEPALIVE:
 		// Restart unconditionally (bypasses m_timer), still throttled by the crash-loop backoff.
-		scheduleStartAt(std::chrono::system_clock::now() + restartDelay());
+		scheduleStartAt(std::chrono::system_clock::now() + restartDelay(/*bypassesSchedule*/ true));
 		LOG_DBG << fname << "Next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
@@ -1903,12 +1903,13 @@ void Application::applyExitPolicy()
 	}
 }
 
-std::chrono::seconds Application::restartDelay()
+std::chrono::seconds Application::restartDelay(bool bypassesSchedule)
 {
 	// Crash-loop backoff applies only to long-running apps. Periodic/cron runs are already
 	// spaced by their own schedule (and are typically short), so adding backoff would skip
-	// occurrences and wrongly penalize healthy short tasks.
-	if (isRecurring())
+	// occurrences and wrongly penalize healthy short tasks. A restart that bypasses the
+	// schedule (keepalive) has no such spacing and must throttle itself.
+	if (isRecurring() && !bypassesSchedule)
 	{
 		return std::chrono::seconds(0);
 	}
