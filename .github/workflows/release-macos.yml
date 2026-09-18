@@ -217,7 +217,7 @@ jobs:
           done
 
       - name: Publish release
-        uses: softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@v3.0.3
         with:
           name: "OpenID Connect (OIDC)"
           tag_name: ${{ env.APPMESH_VERSION }}

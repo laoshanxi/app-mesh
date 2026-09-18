@@ -226,7 +226,7 @@ jobs:
           subject-path: "*.sbom.*.json"
 
       - name: Release Packages
-        uses: softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@v3.0.3
         with:
           body_path: CHANGELOG.txt
           name: "OpenID Connect (OIDC)"
