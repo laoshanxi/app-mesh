@@ -111,6 +111,15 @@ const TITLES: [&str; 14] = [
     "DURATION", "STARTS", "COMMAND",
 ];
 
+/// Terminal width budget for the table. One column stays free: conhost (the
+/// classic Windows console) wraps as soon as the last column is written — no
+/// deferred wrap — so a full-width row plus its newline double-spaces. Other
+/// terminals only lose one COMMAND column.
+fn table_width(detected: Option<u16>) -> usize {
+    let columns = detected.unwrap_or(80) as usize;
+    columns.saturating_sub(1)
+}
+
 pub fn print_apps(apps: &[Application], long_mode: bool) {
     if apps.is_empty() {
         eprintln!("No applications found.");
@@ -150,9 +159,7 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     let term_width = if long_mode {
         usize::MAX
     } else {
-        terminal_size::terminal_size()
-            .map(|(w, _)| w.0 as usize)
-            .unwrap_or(80)
+        table_width(terminal_size::terminal_size().map(|(w, _)| w.0))
     };
 
     // Determine how many columns (excluding COMMAND) fit
@@ -224,5 +231,14 @@ mod tests {
         write_cell(&mut buf, "所有", 6);
         write_cell(&mut buf, "abc", 6);
         assert_eq!(String::from_utf8(buf).unwrap(), "所有  abc   ");
+    }
+
+    #[test]
+    fn table_width_keeps_one_column_free() {
+        // conhost wraps a line that fills the last column (no deferred wrap),
+        // so the table must never budget the full reported width.
+        assert_eq!(table_width(Some(120)), 119);
+        assert_eq!(table_width(None), 79);
+        assert_eq!(table_width(Some(1)), 0);
     }
 }
