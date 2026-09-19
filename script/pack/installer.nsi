@@ -28,6 +28,13 @@ Var SILENT_MODE
     ${EndIf}
 !macroend
 
+; One source for the next-step guidance: each line goes to the install log
+; (DetailPrint) and to NEXT_STEPS.txt, the file the Linux/macOS packages write.
+!macro NextStep Line
+    DetailPrint "${Line}"
+    FileWrite $R0 "${Line}$\r$\n"
+!macroend
+
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchAppIfChecked
 !define MUI_FINISHPAGE_RUN_TEXT "Start AppMeshService now"
@@ -37,9 +44,10 @@ Var SILENT_MODE
 !define MUI_FINISHPAGE_SHOWREADME_FUNCTION AddToPath
 !define MUI_FINISHPAGE_SHOWREADME_STATE 1 ; Checked by default
 
-; Next-step guidance on the finish page; the same details go to the install log.
-!define MUI_FINISHPAGE_TEXT "App Mesh is installed in $INSTDIR$\r$\nWeb console: https://localhost:6060$\r$\nPrint the initial administrator password:$\r$\npowershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password$\r$\nSign in: appm logon --username admin@appmesh.local$\r$\nLogs: $INSTDIR\work\server.log"
-!define MUI_FINISHPAGE_TEXT_LARGE
+; Keep the finish page summary short: the large-text option enlarges the text
+; area over the checkboxes below it. Full steps go to NEXT_STEPS.txt and the
+; install log.
+!define MUI_FINISHPAGE_TEXT "App Mesh is installed in $INSTDIR.$\r$\nSee $INSTDIR\NEXT_STEPS.txt for the next steps."
 !define MUI_FINISHPAGE_LINK "Documentation: https://app-mesh.readthedocs.io"
 !define MUI_FINISHPAGE_LINK_LOCATION "https://app-mesh.readthedocs.io"
 
@@ -52,6 +60,15 @@ Var SILENT_MODE
 !insertmacro MUI_LANGUAGE "English"
 
 Function .onInit
+    ; A filtered token (network-share launch, RunAsInvoker shim) can start this
+    ; installer unelevated despite the manifest; fail here, not midway.
+    UserInfo::GetAccountType
+    Pop $0
+    ${If} $0 != "Admin"
+        MessageBox MB_ICONSTOP "Administrator privileges are required. Right-click the installer and select Run as administrator." /SD IDOK
+        Abort
+    ${EndIf}
+
     ; Detect if silent install (/S) is present in the command line
     StrCpy $SILENT_MODE 0
     
@@ -113,12 +130,25 @@ install_files:
     ; Windows ships the same protected bundled authentication service as Linux/macOS.
     ; setup.ps1 remains available when an operator intentionally selects an
     ; external issuer instead.
-    DetailPrint "The bundled authentication service will start with AppMeshService."
-    DetailPrint "Optional external issuer configuration:"
-    DetailPrint "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\setup.ps1 -Issuer https://auth.example.com/oidc"
-    DetailPrint "Print the packaged administrator password after startup:"
-    DetailPrint "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password"
-    DetailPrint "After startup, run appm logon locally with the packaged administrator; first-admin enrollment is automatic."
+    FileOpen $R0 "$INSTDIR\NEXT_STEPS.txt" w
+    !insertmacro NextStep "App Mesh installed to: $INSTDIR"
+    !insertmacro NextStep "The bundled authentication service starts with AppMeshService."
+    !insertmacro NextStep ""
+    !insertmacro NextStep "Next steps:"
+    !insertmacro NextStep "  1. Start the service"
+    !insertmacro NextStep "       $INSTDIR\bin\nssm.exe start AppMeshService"
+    !insertmacro NextStep "  2. Print the initial administrator password"
+    !insertmacro NextStep "       powershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password"
+    !insertmacro NextStep "  3. Sign in"
+    !insertmacro NextStep "       appm logon --username admin@appmesh.local"
+    !insertmacro NextStep ""
+    !insertmacro NextStep "Optional external issuer configuration:"
+    !insertmacro NextStep "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\setup.ps1 -Issuer https://auth.example.com/oidc"
+    !insertmacro NextStep ""
+    !insertmacro NextStep "Logs: $INSTDIR\work\server.log"
+    !insertmacro NextStep "Docs: https://app-mesh.readthedocs.io"
+    !insertmacro NextStep "Uninstall: $INSTDIR\Uninstall.exe"
+    FileClose $R0
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -148,6 +178,16 @@ Function AddToPath
     ; Pop the result (optional, for debugging/error checking)
     Pop $0
     ; DetailPrint "EnVar::AddValue PATH returned=|$0|" ; Uncomment for debugging
+FunctionEnd
+
+Function un.onInit
+    ; The service removal and the HKLM PATH change need an elevated uninstaller.
+    UserInfo::GetAccountType
+    Pop $0
+    ${If} $0 != "Admin"
+        MessageBox MB_ICONSTOP "Administrator privileges are required to uninstall App Mesh." /SD IDOK
+        Abort
+    ${EndIf}
 FunctionEnd
 
 Section "Uninstall"

@@ -60,6 +60,8 @@ Next steps: `/opt/appmesh/NEXT_STEPS.txt`.
 
 Run `appmesh_<version>_windows_x64.exe`. The default directory is `C:\local\appmesh`. The installer registers `AppMeshService`.
 
+Next steps: `C:\local\appmesh\NEXT_STEPS.txt`.
+
 Use `/S` for a silent installation. Use Add or Remove Programs to uninstall App Mesh. Use `Uninstall.exe /PURGE` only when you also want to remove local CLI session data.
 
 ## Verify the installation

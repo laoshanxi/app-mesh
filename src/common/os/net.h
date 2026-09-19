@@ -14,7 +14,7 @@ namespace net
 		std::string address; ///< IP address as string (numeric form)
 	};
 
-	// Fully Qualified Domain Name (FQDN) of the host
+	// Fully Qualified Domain Name (FQDN) of the host; the short hostname until the background lookup settles
 	std::string hostname();
 
 	// Converts a sockaddr structure to a string

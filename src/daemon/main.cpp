@@ -93,6 +93,7 @@ public:
 	void initializeEnvironment();
 	void initializeACE();
 	void initializeLogging();
+	void logStartupEnvironment();
 	void initializeConfiguration();
 	void initializeSecurity();
 	void initializeDirectories();
@@ -167,9 +168,9 @@ int main(int argc, char *argv[])
 }
 
 // Startup visibility: the locale variables decide how child applications encode their output.
-static void logStartupEnvironment()
+void AppMeshDaemon::logStartupEnvironment()
 {
-	const static char fname[] = "logStartupEnvironment() ";
+	const static char fname[] = "AppMeshDaemon::logStartupEnvironment() ";
 	LOG_INF << fname << "LANG=<" << (ACE_OS::getenv("LANG") ? ACE_OS::getenv("LANG") : "") << "> LC_ALL=<"
 			<< (ACE_OS::getenv("LC_ALL") ? ACE_OS::getenv("LC_ALL") : "") << "> APPMESH_AUTH_MODE=<"
 			<< (ACE_OS::getenv("APPMESH_AUTH_MODE") ? ACE_OS::getenv("APPMESH_AUTH_MODE") : "") << ">";
