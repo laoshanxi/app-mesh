@@ -9,10 +9,10 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Configuration
-OPENSSL_VERSION="3.0.20"
+OPENSSL_VERSION="3.5.8"
 OPENSSL_INSTALL_DIR="/usr/local/ssl"
 OPENSSL_SOURCE="https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz"
-OPENSSL_SHA256="c80a01dfc70ece4dc21168932c37739042d404d46ccc81a5986dd75314ecda6f"
+OPENSSL_SHA256="a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2"
 
 # Logging setup
 log() {

@@ -902,7 +902,7 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 	if (message->tcpClientId() <= 0 || !SocketServer::isLoopbackClient(message->tcpClientId()))
 		throw AuthorizationException("workflow capabilities are available only over local TCP");
 
-	const auto workflowProcess = Configuration::instance()->getApp("workflow", false);
+	const auto workflowProcess = Configuration::instance()->getApp(WORKFLOW_APP_NAME, false);
 	if (!workflowProcess || !workflowProcess->isSystemProtected())
 		throw AuthorizationException("managed Workflow system application is unavailable");
 	const auto processKey = message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY);
@@ -957,7 +957,7 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		if (!validIdentifier(workflowId) || !validIdentifier(runId))
 			throw std::invalid_argument("workflow_id and run_id must be safe identifiers");
 
-		const auto workflow = Configuration::instance()->getApp("workflow-" + workflowId, false);
+		const auto workflow = Configuration::instance()->getApp(WORKFLOW_DEFINITION_PREFIX + workflowId, false);
 		if (!workflow)
 			throw NotFoundException("registered workflow was not found");
 		const auto definition = workflow->AsJson(false);
@@ -1010,7 +1010,7 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 	if (message->tcpClientId() <= 0 || !SocketServer::isLoopbackClient(message->tcpClientId()))
 		throw AuthorizationException("workflow orphan cleanup is available only over local TCP");
 
-	const auto workflowProcess = Configuration::instance()->getApp("workflow", false);
+	const auto workflowProcess = Configuration::instance()->getApp(WORKFLOW_APP_NAME, false);
 	if (!workflowProcess || !workflowProcess->isSystemProtected())
 		throw AuthorizationException("managed Workflow system application is unavailable");
 	const auto processKey = message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY);
@@ -1018,7 +1018,7 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 	if (processUuid.empty())
 		throw AuthorizationException("workflow process proof is invalid or superseded");
 
-	constexpr const char *stepPrefix = "wf-cmd-";
+	constexpr const char *stepPrefix = WORKFLOW_STEP_PREFIX;
 	const auto prefixLength = std::char_traits<char>::length(stepPrefix);
 	auto validIdentifier = [](const std::string &value)
 	{
@@ -1084,8 +1084,8 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 	nlohmann::json result = nlohmann::json::array();
 	for (const auto &app : Configuration::instance()->getApps())
 	{
-		if (!app || app->getName().compare(0, std::char_traits<char>::length("workflow-"),
-				"workflow-") != 0)
+		if (!app || app->getName().compare(0, std::char_traits<char>::length(WORKFLOW_DEFINITION_PREFIX),
+				WORKFLOW_DEFINITION_PREFIX) != 0)
 			continue;
 		auto definition = app->AsJson(true);
 		if (!definition.contains(JSON_KEY_APP_metadata) ||

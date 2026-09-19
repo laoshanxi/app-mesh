@@ -1018,9 +1018,9 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
 #if defined(_WIN32)
-	auto cmd = (fs::path(Utility::getBinDir()) / "agent.exe").string();
+	auto cmd = (fs::path(Utility::getBinDir()) / SEPARATE_AGENT_APP_NAME ".exe").string();
 #else
-	auto cmd = (fs::path(Utility::getBinDir()) / "agent").string();
+	auto cmd = (fs::path(Utility::getBinDir()) / SEPARATE_AGENT_APP_NAME).string();
 #endif
 
 	LOG_INF << fname << "Agent start command <" << cmd << ">";

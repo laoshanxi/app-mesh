@@ -28,10 +28,9 @@ Var SILENT_MODE
     ${EndIf}
 !macroend
 
-; One source for the next-step guidance: each line goes to the install log
-; (DetailPrint) and to NEXT_STEPS.txt, the file the Linux/macOS packages write.
+; One source for the next-step guidance: NEXT_STEPS.txt, the file the Linux/macOS
+; packages write. The finish page shows the short form instead of the log.
 !macro NextStep Line
-    DetailPrint "${Line}"
     FileWrite $R0 "${Line}$\r$\n"
 !macroend
 
@@ -44,10 +43,12 @@ Var SILENT_MODE
 !define MUI_FINISHPAGE_SHOWREADME_FUNCTION AddToPath
 !define MUI_FINISHPAGE_SHOWREADME_STATE 1 ; Checked by default
 
-; Keep the finish page summary short: the large-text option enlarges the text
-; area over the checkboxes below it. Full steps go to NEXT_STEPS.txt and the
-; install log.
-!define MUI_FINISHPAGE_TEXT "App Mesh is installed in $INSTDIR.$\r$\nSee $INSTDIR\NEXT_STEPS.txt for the next steps."
+; The finish page carries the short form of the next steps: keep the lines short
+; and unindented, least important last, so a long install path can only clip the
+; file pointer. MUI_FINISHPAGE_TEXT_LARGE enlarges the text area so the lines fit
+; above the checkboxes. The complete text, ready to copy, is NEXT_STEPS.txt.
+!define MUI_FINISHPAGE_TEXT "Print admin password: powershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password$\r$\nSign in: appm logon -u admin@appmesh.local$\r$\nFull steps: $INSTDIR\NEXT_STEPS.txt"
+!define MUI_FINISHPAGE_TEXT_LARGE
 !define MUI_FINISHPAGE_LINK "Documentation: https://app-mesh.readthedocs.io"
 !define MUI_FINISHPAGE_LINK_LOCATION "https://app-mesh.readthedocs.io"
 
@@ -109,12 +110,12 @@ install_files:
     !insertmacro NextStep "The bundled authentication service starts with AppMeshService."
     !insertmacro NextStep ""
     !insertmacro NextStep "Next steps:"
-    !insertmacro NextStep "  1. Start the service"
-    !insertmacro NextStep "       $INSTDIR\bin\nssm.exe start AppMeshService"
-    !insertmacro NextStep "  2. Print the initial administrator password"
-    !insertmacro NextStep "       powershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password"
-    !insertmacro NextStep "  3. Sign in"
-    !insertmacro NextStep "       appm logon --username admin@appmesh.local"
+    !insertmacro NextStep "1. Start the service"
+    !insertmacro NextStep "  $INSTDIR\bin\nssm.exe start AppMeshService"
+    !insertmacro NextStep "2. Print the initial administrator password"
+    !insertmacro NextStep "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password"
+    !insertmacro NextStep "3. Sign in"
+    !insertmacro NextStep "  appm logon --username admin@appmesh.local"
     !insertmacro NextStep ""
     !insertmacro NextStep "Optional external issuer configuration:"
     !insertmacro NextStep "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\setup.ps1 -Issuer https://auth.example.com/oidc"

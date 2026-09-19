@@ -19,9 +19,6 @@
 namespace
 {
 	constexpr const char *INTERNAL_CAPABILITY_PREFIX = "amcap1.";
-	constexpr const char *WORKFLOW_APP_NAME = "workflow";
-	constexpr const char *WORKFLOW_DEFINITION_PREFIX = "workflow-";
-	constexpr const char *WORKFLOW_STEP_PREFIX = "wf-cmd-";
 
 	bool hasWorkflowStepPrefix(const std::string &appName)
 	{
