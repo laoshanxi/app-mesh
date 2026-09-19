@@ -14,6 +14,7 @@
 #include <boost/algorithm/string_regex.hpp>
 #include <catch.hpp>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -318,6 +319,97 @@ TEST_CASE("EventTypes - stringToEventBit", "[EventTypes]")
 	REQUIRE(stringToEventBit("ALL") == static_cast<uint32_t>(AppEventType::ALL_EVENTS));
 	REQUIRE(stringToEventBit("unknown_junk") == 0);
 	REQUIRE(stringToEventBit("") == 0);
+}
+
+TEST_CASE("fileBytesToUtf8", "[Utility]")
+{
+	// The daemon's stdout/log read path (Utility::readFileCpp) converts non-UTF-8
+	// app output to UTF-8: a GBK-emitting app must render correctly on every
+	// platform, and UTF-8 output must pass through byte-identical.
+
+	SECTION("valid UTF-8 passes through unchanged")
+	{
+		const std::string ascii = "plain ascii output\n";
+		REQUIRE(Utility::fileBytesToUtf8(ascii) == ascii);
+
+		const std::string chinese = "output: \xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7\n"; // 新加卷
+		REQUIRE(Utility::fileBytesToUtf8(chinese) == chinese);
+	}
+
+	SECTION("UTF-8 BOM is stripped")
+	{
+		REQUIRE(Utility::fileBytesToUtf8("\xEF\xBB\xBFhello") == "hello");
+	}
+
+	SECTION("GBK converts to UTF-8")
+	{
+		// "中文" encoded in GBK
+		REQUIRE(Utility::fileBytesToUtf8("\xD6\xD0\xCE\xC4") == "\xE4\xB8\xAD\xE6\x96\x87");
+	}
+
+	SECTION("Big5 and Shift-JIS candidates stay reachable")
+	{
+		// 0xA2 0xAB is valid Big5 but invalid GBK on both glibc and libiconv
+		REQUIRE(Utility::fileBytesToUtf8("\xA2\xAB") == "\xE2\x97\xA4");
+
+		// Half-width katakana separated by ASCII is invalid GBK/Big5 but valid Shift-JIS
+		REQUIRE(Utility::fileBytesToUtf8("\xB1\x21\xB2\x21\xB3\x21") == "\xEF\xBD\xB1\x21\xEF\xBD\xB2\x21\xEF\xBD\xB3\x21");
+	}
+
+	SECTION("trailing incomplete multi-byte character splits cleanly")
+	{
+		// "中" (D6 D0) complete plus a dangling CE lead byte: the chunk boundary cut
+		// the next character, the prefix converts and the tail passes through raw
+		REQUIRE(Utility::fileBytesToUtf8("hi \xD6\xD0\xCE") == "hi \xE4\xB8\xAD\xCE");
+
+		// Same for a cut UTF-8 character: the bytes stay untouched for the next chunk
+		const std::string splitUtf8 = std::string("abc\xE6\x96", 5);
+		REQUIRE(Utility::fileBytesToUtf8(splitUtf8) == splitUtf8);
+	}
+
+	SECTION("undetectable bytes pass through unchanged")
+	{
+		const std::string garbage = std::string("\xFF\x81\x98\x00\xDE\xAD\xBE\xEF", 8);
+		REQUIRE(Utility::fileBytesToUtf8(garbage) == garbage);
+	}
+
+	SECTION("GB18030 four-byte sequences never degrade")
+	{
+		// U+289C0 as GB18030. The bytes also contain 0x98 (undefined in CP1251)
+		// and 0x81 (undefined in CP1252), so no Latin code page can mangle them.
+		// glibc iconv converts the sequence; libiconv lacks the plane-2 range and
+		// rejects it, leaving the bytes unchanged: both outcomes beat mojibake,
+		// so accept either from whatever iconv implementation runs the test.
+		const std::string in = std::string("\x98\x30\x81\x30", 4);
+		const std::string out = Utility::fileBytesToUtf8(in);
+		REQUIRE((out == in || out == "\xF0\xA8\xA7\x80"));
+	}
+
+	SECTION("readFileCpp converts the file content it returns")
+	{
+		// Call-path smoke: the app output view and event tail reads go through
+		// readFileCpp, so GBK bytes on disk must come back as UTF-8.
+		const std::string path = "/tmp/appmesh_test_gbk.out";
+		const std::string gbk = "out \xD6\xD0\xCE\xC4\n";
+		{
+			std::ofstream f(path.c_str(), std::ios::binary | std::ios::trunc);
+			f << gbk;
+		}
+		long pos = 0;
+		REQUIRE(Utility::readFileCpp(path, &pos, 1024) == "out \xE4\xB8\xAD\xE6\x96\x87\n");
+		REQUIRE(pos == static_cast<long>(gbk.size()));
+		std::remove(path.c_str());
+	}
+
+	SECTION("utf8IncompleteTailBytes reports cut characters only")
+	{
+		REQUIRE(Utility::utf8IncompleteTailBytes("abc") == 0);
+		REQUIRE(Utility::utf8IncompleteTailBytes("abc\xE4\xB8\xAD") == 0); // complete character
+		REQUIRE(Utility::utf8IncompleteTailBytes("abc\xE6\x96") == 2);	 // 3-byte char missing one byte
+		REQUIRE(Utility::utf8IncompleteTailBytes("abc\xF0\x9F\x98") == 3); // 4-byte char missing one byte
+		REQUIRE(Utility::utf8IncompleteTailBytes("abc\x96") == 0);		  // continuation byte without a lead
+		REQUIRE(Utility::utf8IncompleteTailBytes(std::string("\x80\x80", 2)) == 0);
+	}
 }
 
 TEST_CASE("EventTypes - parseEventMask", "[EventTypes]")

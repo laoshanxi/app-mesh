@@ -1,10 +1,10 @@
 // src/common/os/net.cpp
 #include <cerrno>  // errno
 #include <chrono>
-#include <exception> // std::current_exception, std::make_exception_ptr
-#include <future>
+#include <condition_variable>
+#include <exception> // std::exception
 #include <memory>
-#include <stdexcept>
+#include <mutex>
 #include <thread>
 #include <utility> // std::move
 
@@ -97,25 +97,44 @@ namespace net
 
 	/**
 	 * @brief Gets the Fully Qualified Domain Name (FQDN) of the host
-	 * @return Host's FQDN, or short hostname if FQDN lookup fails or exceeds the deadline
+	 * @return Host's FQDN, or the short hostname while the lookup is pending or has failed
 	 */
 	std::string hostname()
 	{
-		static const auto cached = []() -> std::string
+		const static char fname[] = "net::hostname() ";
+		// Industry practice: the OS short hostname identifies the node without
+		// DNS; the FQDN is only an enrichment. A stalled resolver (multicast-DNS,
+		// an unreachable name server) must not block callers, so the lookup runs
+		// once in the background and upgrades the cached value when it settles.
+		struct FqdnCache
 		{
-			const static char fname[] = "net::hostname() ";
-			// A synchronous resolver can block for seconds (multicast-DNS, an
-			// unreachable name server, a long search-domain list), so run the
-			// lookup on a helper thread and keep the short hostname when the
-			// deadline expires.
-			const auto resolveDeadline = std::chrono::seconds(1);
-			const auto shortHostname = boost::asio::ip::host_name();
+			std::mutex mutex;
+			std::condition_variable settled;
+			const std::string shortName = boost::asio::ip::host_name();
+			std::string value = shortName;
+			bool dispatched = false;
+			bool finished = false;
+		};
+		// Leaked on purpose: the detached lookup thread may still write at shutdown.
+		static FqdnCache *const cache = new FqdnCache();
 
-			auto result = std::make_shared<std::promise<std::string>>();
-			auto future = result->get_future();
+		bool dispatch = false;
+		{
+			std::lock_guard<std::mutex> lock(cache->mutex);
+			if (!cache->dispatched)
+			{
+				cache->dispatched = true;
+				dispatch = true;
+			}
+		}
+		if (dispatch)
+		{
+			const std::string shortHostname = cache->shortName;
 			std::thread(
-				[result, shortHostname]
+				[shortHostname]
 				{
+					std::string fqdn;
+					std::string error = "FQDN resolution returned no canonical name";
 					try
 					{
 						boost::asio::io_context io;
@@ -125,37 +144,44 @@ namespace net
 							const auto &fq = entry.host_name();
 							if (!fq.empty())
 							{
-								result->set_value(fq);
-								return;
+								fqdn = fq;
+								error.clear();
+								break;
 							}
 						}
-						result->set_exception(std::make_exception_ptr(std::runtime_error("FQDN resolution returned no canonical name")));
+					}
+					catch (const std::exception &e)
+					{
+						error = e.what();
 					}
 					catch (...)
 					{
-						result->set_exception(std::current_exception());
+						error = "unknown exception";
 					}
+
+					std::lock_guard<std::mutex> lock(cache->mutex);
+					if (fqdn.empty())
+						LOG_WAR << fname << "FQDN resolution failed for host <" << shortHostname << ">: " << error;
+					else
+					{
+						cache->value = fqdn;
+						LOG_INF << fname << "FQDN resolved to <" << fqdn << ">";
+					}
+					cache->finished = true;
+					cache->settled.notify_all();
 				})
 				.detach();
 
-			if (future.wait_for(resolveDeadline) == std::future_status::ready)
+			// Give the first caller the FQDN when the resolver answers quickly.
+			std::unique_lock<std::mutex> lock(cache->mutex);
+			if (!cache->settled.wait_for(lock, std::chrono::seconds(1), [] { return cache->finished; }))
 			{
-				try
-				{
-					return future.get();
-				}
-				catch (const std::exception &e)
-				{
-					LOG_WAR << fname << "FQDN resolution failed for host <" << shortHostname << ">: " << e.what();
-				}
+				LOG_WAR << fname << "FQDN resolution for host <" << shortHostname << "> did not complete within 1 second, using the short hostname until the lookup completes";
 			}
-			else
-			{
-				LOG_WAR << fname << "FQDN resolution for host <" << shortHostname << "> did not complete within 1 second, using the short hostname";
-			}
-			return shortHostname;
-		}();
-		return cached;
+		}
+
+		std::lock_guard<std::mutex> lock(cache->mutex);
+		return cache->value;
 	}
 
 	/**
