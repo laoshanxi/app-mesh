@@ -443,19 +443,25 @@ function Install-PythonPackages {
 function Install-Go {
     Write-Host "Installing Go programming language..." -ForegroundColor Cyan
     
-    if (!(Get-Command go -ErrorAction SilentlyContinue)) {
-        $goVersion = "1.25.10"
-        $goArch = if ($architecture -eq "arm64") { "arm64" } else { "amd64" }
-        $goUrl = "https://go.dev/dl/go$goVersion.windows-$goArch.zip"
-        Save-File $goUrl "go.zip"
-        Expand-File "go.zip" "C:\"
-        $env:PATH = "C:\go\bin;$env:PATH"
-        [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Machine)
-        Write-Host "Go installed successfully" -ForegroundColor Green
+    $goVersion = "1.27.1"
+    # keep a system Go that is newer than (or equal to) the pinned version
+    $installedVer = $null
+    if (Get-Command go -ErrorAction SilentlyContinue) {
+        if ((go version) -match 'go(\d+\.\d+(\.\d+)?)') { $installedVer = $Matches[1] }
     }
-    else {
-        Write-Host "Go is already installed" -ForegroundColor Green
+    if ($installedVer -and ([version]$installedVer -ge [version]$goVersion)) {
+        Write-Host "Go already installed: $(go version)" -ForegroundColor Green
+        return
     }
+
+    Remove-Item "go.zip" -Force -ErrorAction SilentlyContinue
+    $goArch = if ($architecture -eq "arm64") { "arm64" } else { "amd64" }
+    $goUrl = "https://go.dev/dl/go$goVersion.windows-$goArch.zip"
+    Save-File $goUrl "go.zip"
+    Expand-File "go.zip" "C:\"
+    $env:PATH = "C:\go\bin;$env:PATH"
+    [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Machine)
+    Write-Host "Go installed successfully" -ForegroundColor Green
 }
 
 function Install-Rust {

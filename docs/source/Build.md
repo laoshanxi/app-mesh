@@ -40,6 +40,7 @@ There are different Dockerfile(s) with different compiler version could be selec
 - docker/Dockerfile.build_ubuntu18
 - docker/Dockerfile.build_ubuntu22
 - docker/Dockerfile.build_ubuntu24
+- docker/Dockerfile.build_debian13
 
 The Docker image build process is simple with this:
 
@@ -62,6 +63,7 @@ The public pre-build Docker images can be used to build binary directly:
 - laoshanxi/appmesh:build_ubuntu18
 - laoshanxi/appmesh:build_ubuntu22
 - laoshanxi/appmesh:build_ubuntu24
+- laoshanxi/appmesh:build_debian13
 
 ### Windows
 

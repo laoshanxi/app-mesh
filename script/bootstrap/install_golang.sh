@@ -1,10 +1,12 @@
 #!/bin/bash
 set -e
 
-GO_VER=1.25.10
+GO_VER=1.27.1
 
-if command -v go >/dev/null 2>&1 && go version | grep -q "go${GO_VER}"; then
-    echo "Go already installed: $(go version)"
+# keep a system Go that is newer than (or equal to) the pinned version
+installed_ver=$(go version 2>/dev/null | sed -n 's/.*go\([0-9]*\.[0-9]*\(\.[0-9]*\)\{0,1\}\).*/\1/p')
+if [ -n "$installed_ver" ] && [ "$installed_ver" = "$(printf '%s\n' "$GO_VER" "$installed_ver" | sort -V | tail -1)" ]; then
+    echo "Go already installed (>= ${GO_VER}): $(go version)"
     exit 0
 fi
 

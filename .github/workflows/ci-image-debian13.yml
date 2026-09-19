@@ -1,0 +1,106 @@
+name: "ci-image-debian13"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ci-image-debian13.yml"
+      - "docker/Dockerfile.build_debian13"
+      - "script/bootstrap/*"
+
+env:
+  DOCKER_REGISTRY: docker.io
+  DOCKER_IMAGE: laoshanxi/appmesh
+  IMAGE_TAG: build_debian13
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Platform Image
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Github code
+        uses: actions/checkout@v6
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}
+
+      - name: Build and Push Platform Image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.build_debian13
+          no-cache: true
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.event_name != 'pull_request' }}
+          provenance: false
+          tags: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  merge-and-push:
+    name: Merge and Push Multi-arch Image
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Login to DockerHub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create Multi-arch Manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }} \
+            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}-amd64 \
+            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}-arm64
+
+      - name: Cleanup Platform Tags
+        run: |
+          set -e
+          TOKEN=$(curl -s -X POST -H "Content-Type: application/json" \
+            -d '{"username": "'${{ secrets.DOCKERHUB_USERNAME }}'", "password": "'${{ secrets.DOCKERHUB_TOKEN }}'"}' \
+            https://hub.docker.com/v2/users/login/ | jq -r .token)
+
+          for arch in amd64 arm64; do
+            IMAGE_URL="https://hub.docker.com/v2/repositories/${{ env.DOCKER_IMAGE }}/tags/${{ env.IMAGE_TAG }}-${arch}/"
+            curl -X DELETE -H "Authorization: Bearer ${TOKEN}" ${IMAGE_URL} || echo "Failed to delete ${arch} tag"
+          done
