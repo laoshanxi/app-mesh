@@ -224,7 +224,7 @@ public class AppMeshClientTCP extends AppMeshClient {
     @Override
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-File-Path", filePath);
+        headers.put("X-File-Path", encodeURIComponent(filePath));
         headers.put("X-Recv-File-Socket", "true");
 
         // Initiate the request
@@ -281,7 +281,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         }
 
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-File-Path", remoteFile);
+        headers.put("X-File-Path", encodeURIComponent(remoteFile));
         headers.put("Content-Type", "application/octet-stream");
         headers.put("X-Send-File-Socket", "true");
 

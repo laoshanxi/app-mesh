@@ -510,13 +510,6 @@ std::shared_ptr<CurlResponse> AppMeshClient::requestHttp(ErrorPolicy errorPolicy
         throw AppMeshHttpError(resp->status_code, resp->text);
     }
 
-    if (resp->status_code == web::http::status_codes::OK &&
-        resp->header.count(web::http::header_names::content_type) &&
-        resp->header.get(web::http::header_names::content_type) == web::http::mime_types::text_plain_utf8)
-    {
-        resp->text = Utility::utf8ToLocalEncoding(resp->text);
-    }
-
     return resp;
 }
 

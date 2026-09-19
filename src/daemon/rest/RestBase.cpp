@@ -326,6 +326,12 @@ void RestBase::handleRest(const std::shared_ptr<HttpRequest> &message, const std
         message->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
             {{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
     }
+    catch (const nlohmann::json::exception &e)
+    {
+        // Client JSON fault: unparseable body or wrong-typed/missing fields
+        LOG_WAR << fname << "400 JsonError " << message->m_method << ":" << path << " - " << e.what();
+        message->reply(web::http::status_codes::BadRequest, Utility::text2json(e.what()));
+    }
     catch (const std::invalid_argument &e)
     {
         // Input issue: invalid_argument -> 400

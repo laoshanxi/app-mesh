@@ -5,7 +5,6 @@
 
 # Standard library imports
 import json
-import locale
 import logging
 import os
 import sys
@@ -154,46 +153,6 @@ class AppMeshClient:
         POST = "POST"
         DELETE = "DELETE"
         POST_STREAM = "POST_STREAM"
-
-    class _EncodingResponse(requests.Response):
-        """Response subclass that handles encoding conversion on Windows."""
-
-        def __init__(self, response: requests.Response):
-            super().__init__()
-            self.__dict__.update(response.__dict__)
-
-            self._converted_text = None
-            self._should_convert = False
-
-            # Check if we need to convert encoding on Windows
-            if sys.platform == "win32":
-                content_type = response.headers.get("Content-Type", "").lower()
-                is_ok = response.status_code == HTTPStatus.OK
-                is_utf8_text = "text/plain" in content_type and "utf-8" in content_type
-
-                if is_ok and is_utf8_text:
-                    try:
-                        local_encoding = locale.getpreferredencoding()
-                        if local_encoding.lower() not in {"utf-8", "utf8"}:
-                            # Ensure response is decoded as UTF-8 first
-                            self.encoding = "utf-8"
-                            utf8_text = self.text  # This gives us proper Unicode string
-
-                            with suppress(UnicodeEncodeError, LookupError):
-                                # Convert Unicode to local encoding, then back to Unicode
-                                local_bytes = utf8_text.encode(local_encoding, errors="replace")
-                                self._converted_text = local_bytes.decode(local_encoding)
-                                self._should_convert = True
-
-                    except (UnicodeError, LookupError):
-                        self.encoding = "utf-8"
-
-        @property
-        def text(self):
-            """Return converted text if needed, otherwise original text."""
-            if self._should_convert and self._converted_text is not None:
-                return self._converted_text
-            return super().text
 
     @classmethod
     def _resolve_ssl_verify(cls, ssl_verify: Union[bool, str, None]) -> Union[bool, str]:
@@ -700,7 +659,7 @@ class AppMeshClient:
         resp = self._request_http(
             AppMeshClient._Method.GET,
             path="/appmesh/file/download",
-            header={self._HTTP_HEADER_KEY_X_FILE_PATH: remote_file},
+            header={self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)},
         )
 
         # Write the file content locally
@@ -970,8 +929,10 @@ class AppMeshClient:
         base_headers[self._HTTP_HEADER_KEY_USER_AGENT] = self._HTTP_USER_AGENT
 
         # Convert body to JSON string if it's a dict or list
+        # allow_nan=False: NaN/Infinity are invalid JSON and the daemon rejects
+        # them with an opaque 400; fail at the sender instead.
         if isinstance(body, (dict, list)):
-            body = json.dumps(body)
+            body = json.dumps(body, allow_nan=False)
             base_headers.setdefault("Content-Type", "application/json")
 
         # Streaming/multipart bodies cannot be assumed replayable after a 401 response.
@@ -1027,7 +988,7 @@ class AppMeshClient:
                         raise AppMeshAuthError(f"HTTP {resp.status_code}: {resp.reason}", resp.status_code)
                     resp.raise_for_status()
 
-                return AppMeshClient._EncodingResponse(resp)
+                return resp
 
             raise AppMeshAuthError("TokenProvider failed to replace a rejected access token", HTTPStatus.UNAUTHORIZED)
 

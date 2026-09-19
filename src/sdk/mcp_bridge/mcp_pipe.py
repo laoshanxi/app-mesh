@@ -109,6 +109,10 @@ async def pipe_websocket_to_process(websocket, process, target: str) -> None:
     """Forward messages from WebSocket → process stdin."""
     try:
         async for message in websocket:
+            if isinstance(message, (bytes, bytearray)):
+                # Binary frames cannot be concatenated onto the text-mode stdin;
+                # decode (replacing invalid sequences) instead of crashing the pipe.
+                message = message.decode("utf-8", errors="replace")
             logger.debug(f"[{target}] << {message[:120]}")
             if process.stdin:
                 process.stdin.write(message + "\n")
@@ -153,14 +157,18 @@ async def pipe_process_stderr_to_terminal(process, target: str) -> None:
 def load_config() -> Dict:
     """
     Load config from $MCP_CONFIG or ./mcp_config.json.
-    Returns {} if missing or invalid.
+    Returns {} if the file is missing. Exits non-zero if the file exists
+    but cannot be read or parsed, so config errors surface with their real cause.
     """
     path = os.environ.get("MCP_CONFIG", os.path.join(os.getcwd(), "mcp_config.json"))
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f) or {}
-    except Exception:
+    except FileNotFoundError:
         return {}
+    except Exception as exc:
+        logger.error(f"Failed to load config file {path}: {exc}")
+        sys.exit(1)
 
 
 def build_server_command(target: Optional[str]) -> Tuple[list, Dict[str, str]]:

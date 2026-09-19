@@ -257,6 +257,45 @@ TEST_CASE("JSON", "[nlohmann json]")
 	LOG_INF << "Chinese string content: " << chinese;
 }
 
+TEST_CASE("JSON::dump replaces invalid UTF-8", "[nlohmann json]")
+{
+	init();
+
+	// A payload with invalid UTF-8 (e.g. non-UTF-8 argv in pstree) must not
+	// fail the whole reply: strict dump() throws type_error.316 -> 500/417,
+	// JSON::dump replaces the bad bytes with U+FFFD instead.
+	const std::string invalid("ab\xE6\x96\xFF");
+	nlohmann::json j = nlohmann::json{{"name", invalid}};
+	REQUIRE_THROWS_AS(j.dump(), nlohmann::json::type_error);
+
+	std::string body;
+	REQUIRE_NOTHROW(body = JSON::dump(j));
+	REQUIRE(body.find("\xEF\xBF\xBD") != std::string::npos); // U+FFFD
+	REQUIRE(body.find("ab") != std::string::npos);
+	REQUIRE(JSON::dump(j, -1, true) == body); // explicit sanitize gives the same result
+
+	// Valid UTF-8 passes through unchanged
+	nlohmann::json ok = nlohmann::json{{"name", "新加卷"}};
+	REQUIRE(JSON::dump(ok) == ok.dump());
+}
+
+TEST_CASE("yamlToJson keeps overflow double text as string", "[Utility]")
+{
+	init();
+
+	// A scalar whose magnitude exceeds DBL_MAX makes std::stod throw
+	// std::out_of_range; uncaught it aborts daemon startup (config load).
+	const std::string overflow(std::string(400, '9') + ".5");
+	const auto j = Utility::yamlToJson(YAML::Load("overflow: " + overflow));
+	REQUIRE(j["overflow"].is_string());
+	REQUIRE(j["overflow"].get<std::string>() == overflow);
+
+	// In-range doubles still become JSON numbers
+	const auto fine = Utility::yamlToJson(YAML::Load("value: 150.5"));
+	REQUIRE(fine["value"].is_number());
+	REQUIRE(fine["value"].get<double>() == 150.5);
+}
+
 TEST_CASE("EventTypes - eventTypeToString", "[EventTypes]")
 {
 	REQUIRE(std::string(eventTypeToString(AppEventType::PROCESS_START)) == "START");

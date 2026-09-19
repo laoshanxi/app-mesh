@@ -275,7 +275,7 @@ public class AppMeshClientWSS extends AppMeshClient {
     public boolean downloadFile(String remoteFile, String localFile, boolean applyFileAttributes) throws IOException {
         // Step 1: Request download via WSS to get Auth token
         Map<String, String> header = new HashMap<>();
-        header.put(HEADER_X_FILE_PATH, remoteFile);
+        header.put(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
         request("GET", "/appmesh/file/download", null, header, null);
 
         String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
@@ -287,7 +287,7 @@ public class AppMeshClientWSS extends AppMeshClient {
         URL url = new URL(getBaseURL() + "/appmesh/file/download/ws");
         HttpURLConnection conn = createSecureConnection(url);
         conn.setRequestMethod("GET");
-        conn.setRequestProperty(HEADER_X_FILE_PATH, remoteFile);
+        conn.setRequestProperty(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
         conn.setRequestProperty(HEADER_AUTHORIZATION, authToken);
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);
         conn.setReadTimeout(FILE_TRANSFER_TIMEOUT);
@@ -338,7 +338,7 @@ public class AppMeshClientWSS extends AppMeshClient {
 
         // Step 1: Request upload via WSS to get Auth token
         Map<String, String> wssHeader = new HashMap<>();
-        wssHeader.put(HEADER_X_FILE_PATH, remoteFile);
+        wssHeader.put(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
         request("POST", "/appmesh/file/upload", null, wssHeader, null);
 
         String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
@@ -352,7 +352,7 @@ public class AppMeshClientWSS extends AppMeshClient {
         conn.setDoOutput(true);
         conn.setRequestMethod("POST");
         conn.setRequestProperty(HEADER_AUTHORIZATION, authToken);
-        conn.setRequestProperty(HEADER_X_FILE_PATH, remoteFile);
+        conn.setRequestProperty(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
         conn.setRequestProperty("Content-Type", "application/octet-stream");
         conn.setRequestProperty("Content-Length", String.valueOf(file.length()));
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);

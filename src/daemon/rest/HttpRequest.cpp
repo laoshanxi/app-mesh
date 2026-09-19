@@ -114,7 +114,16 @@ void HttpRequest::notifyReply(int status) const
 
 nlohmann::json HttpRequest::extractJson() const
 {
-	return nlohmann::json::parse(*m_body);
+	// A malformed body is a client fault: rethrow as std::invalid_argument so
+	// RestBase::handleRest maps it to 400 instead of a parse_error -> 500.
+	try
+	{
+		return nlohmann::json::parse(*m_body);
+	}
+	catch (const nlohmann::json::parse_error &e)
+	{
+		throw std::invalid_argument(std::string("Invalid JSON request body: ") + e.what());
+	}
 }
 
 bool HttpRequest::reply(web::http::status_code status) const
@@ -134,7 +143,9 @@ bool HttpRequest::reply(web::http::status_code status, const std::vector<std::ui
 
 bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const
 {
-	const auto body = body_data.dump();
+	// JSON::dump falls back to error_handler_t::replace: invalid UTF-8 (e.g. non-UTF-8
+	// argv in pstree) must not turn a 200 reply into a thrown type_error.316 -> 500.
+	const auto body = JSON::dump(body_data);
 	const auto bodyBytes = std::vector<std::uint8_t>(body.begin(), body.end());
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, web::http::mime_types::application_json);
 }
@@ -554,7 +565,7 @@ bool HttpRequestOutputView::onTimerResponse()
 				{
 					jsonArray[i] = nlohmann::json{{"index", i + 1}, {"stdout", lines[i]}};
 				}
-				output = jsonArray.dump();
+				output = JSON::dump(jsonArray);
 			}
 			HttpRequest::reply(web::http::status_codes::OK, output, headers);
 		}

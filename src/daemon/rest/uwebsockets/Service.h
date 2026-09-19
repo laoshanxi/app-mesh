@@ -34,6 +34,7 @@
 #include <uWebSockets/App.h>
 #include "ReplyContext.h"
 #include "../../../common/StreamLogger.h"
+#include "../../../common/Utility.h"
 
 namespace WSS
 {
@@ -911,7 +912,7 @@ namespace WSS
                     {
                         res->writeStatus("404 Not Found");
                         res->writeHeader("Content-Type", "application/json");
-                        res->end(R"({"error":"Route not found"})");
+                        res->end(Utility::text2json("Route not found").dump());
                     }
                 }
                 catch (...)

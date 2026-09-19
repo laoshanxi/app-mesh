@@ -76,12 +76,12 @@ def _client(token: AccessToken) -> AppMeshClient:
 # --------------------------------------------------------------------------- #
 # Application management
 # --------------------------------------------------------------------------- #
-@mcp.tool(description="List all registered applications.")
+@mcp.tool(description="List all registered applications. Empty values are omitted from the returned application data.")
 def list_apps(token: AccessToken = CurrentAccessToken()) -> list:
     return [a.to_dict() for a in _client(token).list_apps()]
 
 
-@mcp.tool(description="Get detailed configuration and runtime status of one application by name.")
+@mcp.tool(description="Get detailed configuration and runtime status of one application by name. Empty values are omitted from the returned application data.")
 def get_app(app_name: str, token: AccessToken = CurrentAccessToken()) -> dict:
     return _client(token).get_app(app_name).to_dict()
 
@@ -199,11 +199,13 @@ _CURL_TOKEN_NOTE = (
 
 @mcp.tool(description="Return a ready-to-run curl command that downloads a file DIRECTLY from the App Mesh daemon to the client machine. The MCP server never reads the file — bytes stream daemon->client, never entering MCP memory or the LLM context. Works for any size.")
 def file_download_command(remote_file: str, local_file: str = "", token: AccessToken = CurrentAccessToken()) -> dict:
+    from urllib.parse import quote
+
     dst = local_file or os.path.basename(remote_file.rstrip("/")) or "download.bin"
     url = _daemon_public_url() + "/appmesh/file/download"
     command = (
         f'curl -fSL -H "Authorization: Bearer $APPMESH_TOKEN" '
-        f'-H "X-File-Path: {remote_file}" "{url}" -o "{dst}"'
+        f'-H "X-File-Path: {quote(remote_file)}" "{url}" -o "{dst}"'
     )
     return {"command": command, "remote_file": remote_file, "local_file": dst, "note": _CURL_TOKEN_NOTE}
 

@@ -290,11 +290,7 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 			return nil, err
 		}
 		if len(bodyBytes) > 0 {
-			if strings.HasSuffix(data.RequestUri, "/task") {
-				data.Body = bodyBytes // pass raw data for task request
-			} else {
-				data.Body = HtmlUnescapeBytes(bodyBytes)
-			}
+			data.Body = bodyBytes
 		}
 	}
 
@@ -510,11 +506,7 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 			return nil, err
 		}
 		if len(bodyBytes) > 0 {
-			if strings.HasSuffix(data.RequestUri, "/task") {
-				data.Body = bodyBytes
-			} else {
-				data.Body = HtmlUnescapeBytes(bodyBytes)
-			}
+			data.Body = bodyBytes
 		}
 	}
 

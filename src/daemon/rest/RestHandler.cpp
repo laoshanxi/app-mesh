@@ -729,7 +729,7 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
 		return;
 	}
-	const auto &file = (message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
 	{
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
@@ -772,7 +772,7 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
 		return;
 	}
-	const auto &file = message->m_headers.find(HTTP_HEADER_KEY_file_path)->second;
+	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
 	{
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));

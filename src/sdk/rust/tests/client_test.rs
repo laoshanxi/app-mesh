@@ -126,8 +126,64 @@ mod tests {
         let result = client.get_app_output("test-app", 0, 0, 1024, None, None).await.unwrap();
 
         assert_eq!(result.output, "test output");
-        assert_eq!(result.output_position, 100);
+        assert_eq!(result.output_position, Some(100));
         assert_eq!(result.exit_code, Some(0));
+    }
+
+    #[tokio::test]
+    async fn test_get_app_output_absent_headers_stay_none() {
+        let mut server = Server::new_async().await;
+
+        // A long-poll timeout carries no headers: no new output, process alive.
+        server
+            .mock("GET", "/appmesh/app/test-app/output")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body("")
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        let result = client.get_app_output("test-app", 0, 0, 1024, None, None).await.unwrap();
+
+        assert_eq!(result.output_position, None);
+        assert_eq!(result.exit_code, None);
+    }
+
+    #[tokio::test]
+    async fn test_get_app_output_malformed_exit_code_is_error() {
+        let mut server = Server::new_async().await;
+
+        server
+            .mock("GET", "/appmesh/app/test-app/output")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_header("X-Exit-Code", "not-a-number")
+            .with_body("output")
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        // A malformed exit code must error — defaulting to 0 would report a
+        // failed process as successful.
+        assert!(client.get_app_output("test-app", 0, 0, 1024, None, None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_app_output_malformed_position_is_error() {
+        let mut server = Server::new_async().await;
+
+        server
+            .mock("GET", "/appmesh/app/test-app/output")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_header("X-Output-Position", "bogus")
+            .with_body("output")
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        assert!(client.get_app_output("test-app", 0, 0, 1024, None, None).await.is_err());
     }
 
     #[tokio::test]
@@ -170,6 +226,82 @@ mod tests {
         let (exit_code, output) = client.run_sync("echo hello", 60, 120).await.unwrap();
         assert_eq!(exit_code, Some(0));
         assert_eq!(output, "hello");
+    }
+
+    #[tokio::test]
+    async fn test_run_app_sync_malformed_exit_code_is_error() {
+        let mut server = Server::new_async().await;
+
+        server
+            .mock("POST", "/appmesh/app/syncrun")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_header("X-Exit-Code", "NaN")
+            .with_body("execution failed")
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+
+        let app = Application::builder("test-app").command("false").build();
+        // A malformed exit code must error — reading it as 0 would turn a
+        // failed process into a success for every caller.
+        assert!(client.run_app_sync(&app, 60, 120).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_wait_poll_keeps_cursor_when_position_header_absent() {
+        let mut server = Server::new_async().await;
+
+        server
+            .mock("POST", "/appmesh/app/run")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"name":"waitapp","process_uuid":"uid-1"}"#)
+            .create_async()
+            .await;
+        // Poll 1 (no stdout_position in the query yet): deliver output and a cursor.
+        server
+            .mock("GET", "/appmesh/app/waitapp/output")
+            .match_query(Matcher::Any)
+            .expect(1)
+            .with_status(200)
+            .with_header("X-Output-Position", "5")
+            .with_body("hello")
+            .create_async()
+            .await;
+        // Poll 2 (stdout_position=5): long-poll timeout, no headers. The cursor
+        // must stay at 5 — resetting to 0 would re-deliver output from byte 0.
+        server
+            .mock("GET", "/appmesh/app/waitapp/output")
+            .match_query(Matcher::UrlEncoded("stdout_position".into(), "5".into()))
+            .expect(1)
+            .with_status(200)
+            .with_body("")
+            .create_async()
+            .await;
+        // Poll 3 must still ask from stdout_position=5 to reach the exit code.
+        server
+            .mock("GET", "/appmesh/app/waitapp/output")
+            .match_query(Matcher::UrlEncoded("stdout_position".into(), "5".into()))
+            .expect(1)
+            .with_status(200)
+            .with_header("X-Exit-Code", "0")
+            .with_body("")
+            .create_async()
+            .await;
+        server.mock("DELETE", "/appmesh/app/waitapp").with_status(200).create_async().await;
+
+        let client = create_test_client(&server);
+        let run = client
+            .run_app_async(&Application::builder("waitapp").command("echo hello").build(), 30, 60)
+            .await
+            .unwrap();
+
+        let code = client.wait_for_async_run(&run, None, 30).await.unwrap();
+        // A cursor reset would send poll 3 without stdout_position, miss the
+        // exit-code mock, and end in a caller-side timeout (None) instead.
+        assert_eq!(code, Some(0));
     }
 
     #[tokio::test]

@@ -9,6 +9,7 @@
 
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../security/HMACVerifier.h"
@@ -132,7 +133,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	// Validate input metadata format
 	if (!stdinFileContent.is_null() && !stdinFileContent.is_object())
 	{
-		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + stdinFileContent.dump();
+		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + JSON::dump(stdinFileContent);
 		LOG_WAR << fname << msg;
 		setStartError(msg);
 		return ACE_INVALID_PID;

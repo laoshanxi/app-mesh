@@ -43,7 +43,7 @@ public class AppMeshClient implements Closeable {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
     private static final String ACCEPT_HEADER = "Accept";
-    private static final String JSON_CONTENT_TYPE = "application/json; utf-8";
+    private static final String JSON_CONTENT_TYPE = "application/json";
 
     private static final int DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
     private static final int DEFAULT_READ_TIMEOUT_MS = 300_000;
@@ -353,13 +353,16 @@ public class AppMeshClient implements Closeable {
         return new JSONObject(Utils.readResponse(conn));
     }
 
-    /** Check application health (returns {@code true} if healthy). */
+    /**
+     * Check application health.
+     *
+     * @return {@code true} when healthy, {@code false} only for the daemon's unhealthy verdict
+     * @throws IOException on auth/missing-app/server errors (non-200) or network failure
+     */
     public boolean checkAppHealth(String appName) throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/app/" + encodeURIComponent(appName) + "/health", null, null,
                 null);
-        if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-            return false;
-        }
+        ensureOk("checkAppHealth", conn);
         return "0".equals(Utils.readResponse(conn).trim());
     }
 
@@ -1013,7 +1016,7 @@ public class AppMeshClient implements Closeable {
         }
     }
 
-    private String encodeURIComponent(String value) {
+    protected String encodeURIComponent(String value) {
         if (value == null)
             return null;
         try {

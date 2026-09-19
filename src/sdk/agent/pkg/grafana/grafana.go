@@ -53,8 +53,11 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 
 	for i := range apps {
 		meshApp := apps[i]
-		t := time.Unix(*meshApp.RegisterTime, 0)
-		regTimes = append(regTimes, t)
+		if meshApp.RegisterTime != nil {
+			regTimes = append(regTimes, time.Unix(*meshApp.RegisterTime, 0))
+		} else {
+			regTimes = append(regTimes, time.Time{})
+		}
 		appNames = append(appNames, meshApp.Name)
 		if meshApp.OwnerPrincipalID != nil {
 			appOwner = append(appOwner, *meshApp.OwnerPrincipalID)
@@ -66,7 +69,11 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 		} else {
 			appEnabled = append(appEnabled, 0)
 		}
-		appHealth = append(appHealth, float64(*meshApp.Health))
+		if meshApp.Health != nil {
+			appHealth = append(appHealth, float64(*meshApp.Health))
+		} else {
+			appHealth = append(appHealth, 0)
+		}
 		if meshApp.Pid != nil {
 			appPid = append(appPid, float64(*meshApp.Pid))
 		} else {
@@ -87,7 +94,11 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 		} else {
 			appReturn = append(appReturn, 0)
 		}
-		appCmd = append(appCmd, *meshApp.Command)
+		if meshApp.Command != nil {
+			appCmd = append(appCmd, *meshApp.Command)
+		} else {
+			appCmd = append(appCmd, "")
+		}
 
 	}
 	return []TableColumn{

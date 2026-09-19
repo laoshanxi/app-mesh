@@ -481,7 +481,10 @@ func (r *AppMeshClient) RunAppAsync(app Application, maxTime int, lifecycle int)
 		if err := json.Unmarshal(raw, &resp); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal async run response: %w", err)
 		}
-		name, _ := resp["name"].(string)
+		name, ok := resp["name"].(string)
+		if !ok || name == "" {
+			return nil, fmt.Errorf("async run response missing app name: %s", string(raw))
+		}
 		proc, _ := resp["process_uuid"].(string)
 		return &AppRun{AppName: name, ProcUid: proc, ForwardTo: r.getForwardTo()}, nil
 	}
@@ -614,7 +617,7 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 
 	headers := map[string]string{
 		"Content-Type": writer.FormDataContentType(),
-		"X-File-Path":  url.QueryEscape(remoteFile),
+		"X-File-Path":  escapeRemoteFilePath(remoteFile),
 	}
 	// Include POSIX metadata headers (X-File-Mode/X-File-User/X-File-Group) so the
 	// server recreates the file's permissions and ownership (see openapi.yaml).
@@ -650,7 +653,7 @@ func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttr
 		return fmt.Errorf("remote file path is required")
 	}
 
-	headers := map[string]string{"X-File-Path": url.QueryEscape(remoteFile)}
+	headers := map[string]string{"X-File-Path": escapeRemoteFilePath(remoteFile)}
 	code, body, respHdr, err := r.getStream("/appmesh/file/download", nil, headers)
 	if err != nil {
 		return fmt.Errorf("download request failed: %w", err)
@@ -739,13 +742,18 @@ func (r *AppMeshClient) SetLogLevel(level string) (string, error) {
 	}
 	if code == http.StatusOK {
 		resp := map[string]interface{}{}
-		if err := json.Unmarshal(raw, &resp); err == nil {
-			if baseCfg, ok := resp["BaseConfig"].(map[string]interface{}); ok {
-				if ll, ok := baseCfg["LogLevel"].(string); ok {
-					return ll, nil
-				}
-			}
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			return "", fmt.Errorf("failed to unmarshal set log level response: %w", err)
 		}
+		baseCfg, ok := resp["BaseConfig"].(map[string]interface{})
+		if !ok {
+			return "", fmt.Errorf("set log level response missing BaseConfig: %s", string(raw))
+		}
+		newLevel, ok := baseCfg["LogLevel"].(string)
+		if !ok {
+			return "", fmt.Errorf("set log level response missing BaseConfig.LogLevel: %s", string(raw))
+		}
+		return newLevel, nil
 	}
 	return "", newAPIError("set log level", code, string(raw))
 }
@@ -981,13 +989,28 @@ func (r *AppMeshClient) getStream(path string, params url.Values, headers map[st
 	return code, io.NopCloser(bytes.NewReader(raw)), hdr, nil
 }
 
+// withJSONContentType returns headers with Content-Type: application/json set
+// for a non-empty JSON body, so the daemon does not have to sniff the body.
+// A caller-supplied Content-Type (e.g. multipart upload) is left untouched.
+func withJSONContentType(headers map[string]string, body []byte) map[string]string {
+	if len(body) == 0 || headers["Content-Type"] != "" {
+		return headers
+	}
+	withCT := make(map[string]string, len(headers)+1)
+	for k, v := range headers {
+		withCT[k] = v
+	}
+	withCT["Content-Type"] = "application/json"
+	return withCT
+}
+
 func (r *AppMeshClient) put(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, error) {
-	code, raw, _, err := r.req.Send(http.MethodPut, path, params, headers, bytes.NewBuffer(body))
+	code, raw, _, err := r.req.Send(http.MethodPut, path, params, withJSONContentType(headers, body), bytes.NewBuffer(body))
 	return code, raw, err
 }
 
 func (r *AppMeshClient) post(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, http.Header, error) {
-	return r.req.Send(http.MethodPost, path, params, headers, bytes.NewBuffer(body))
+	return r.req.Send(http.MethodPost, path, params, withJSONContentType(headers, body), bytes.NewBuffer(body))
 }
 
 func (r *AppMeshClient) delete(path string) (int, []byte, error) {

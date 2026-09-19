@@ -171,6 +171,47 @@ func TestMessageDemuxerDisconnectBroadcast(t *testing.T) {
 	}
 }
 
+// A dropped message must be logged, not silently discarded: a malformed event
+// frame otherwise makes WaitForAsyncRun hang until timeout with no diagnostics.
+func TestMessageDemuxerLogsDroppedMalformedMessages(t *testing.T) {
+	logs := make(chan string, 4)
+	SetLogger(func(format string, args ...any) { logs <- fmt.Sprintf(format, args...) })
+	defer SetLogger(nil)
+
+	msgCh := make(chan []byte, 10)
+	readFn := func() ([]byte, error) {
+		data, ok := <-msgCh
+		if !ok {
+			return nil, fmt.Errorf("closed")
+		}
+		return data, nil
+	}
+	demuxer := newMessageDemuxer(readFn)
+	demuxer.start()
+	defer demuxer.stop()
+
+	expectLog := func(context string) {
+		t.Helper()
+		select {
+		case msg := <-logs:
+			assert.Contains(t, msg, context)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for %s drop log", context)
+		}
+	}
+
+	// Frame that does not decode as a Response at all.
+	msgCh <- []byte("not-a-msgpack-frame")
+	expectLog("readLoop:")
+
+	// Event frame whose JSON body cannot be parsed into an AppEvent.
+	resp := &Response{RequestUri: EVENT_URI, HttpStatus: 200, Body: []byte("{not-json")}
+	buf, err := resp.Serialize()
+	require.NoError(t, err)
+	msgCh <- buf
+	expectLog("dispatchEvent:")
+}
+
 // fakeWaitRequester scripts the request/response half of WaitForAsyncRun while
 // a real MessageDemuxer (fed through msgCh) delivers server-push events.
 type fakeWaitRequester struct {

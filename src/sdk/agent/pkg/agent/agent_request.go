@@ -73,12 +73,7 @@ func (r *Request) loadBodyFromHTTP(req *http.Request) error {
 		return fmt.Errorf("failed to read request body: %w", err)
 	}
 
-	// Pass raw data for task requests, otherwise HTML unescape
-	if matches := REST_PATH_TASK.FindStringSubmatch(req.URL.Path); len(matches) > 1 {
-		r.Body = bodyBytes
-	} else {
-		r.Body = appmesh.HtmlUnescapeBytes(bodyBytes)
-	}
+	r.Body = bodyBytes
 
 	// Reset the request body to allow subsequent reads
 	// req.Body = io.NopCloser(bytes.NewBuffer(buf.Bytes()))

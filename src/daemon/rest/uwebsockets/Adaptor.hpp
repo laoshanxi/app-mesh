@@ -411,7 +411,7 @@ private:
             return;
         }
 
-        std::string filePathStr(filePathHeader);
+        std::string filePathStr = Utility::decodeHeaderFilePath(std::string(filePathHeader));
         if (!Utility::validateFilePath(filePathStr, Configuration::instance()->getFileAllowedBaseDir()))
         {
             res->writeStatus("403 Forbidden")->end("Invalid file path");
@@ -449,12 +449,30 @@ private:
             return;
         }
 
-        std::string fileName = sanitizeFilename(filePath.filename().string());
+        const std::string rawFileName = filePath.filename().string();
+        const std::string fileName = sanitizeFilename(rawFileName);
+        // RFC 5987: only filename* carries the real non-ASCII name; the sanitized
+        // ASCII filename= stays as fallback for clients that ignore filename*.
+        std::string disposition = "attachment; filename=\"" + fileName + "\"";
+        if (fileName != rawFileName)
+        {
+            // encodeURIComponent leaves '()* literal; they are not RFC 5987
+            // attr-chars, so percent-encode them for a conformant ext-value.
+            std::string extValue;
+            for (char c : Utility::encodeURIComponent(rawFileName))
+            {
+                if (c == '\'' || c == '(' || c == ')' || c == '*')
+                    extValue += Utility::stringFormat("%%%02X", static_cast<unsigned char>(c));
+                else
+                    extValue += c;
+            }
+            disposition += "; filename*=UTF-8''" + extValue;
+        }
 
         // Implicitly commits "200 OK"; every error path above has already returned.
         addCors(res, req);
         res->writeHeader("Content-Type", "application/octet-stream");
-        res->writeHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+        res->writeHeader("Content-Disposition", disposition);
 
         // Handle client abort - must register before any async operation
         res->onAborted([state, filePathStr]()
@@ -566,7 +584,7 @@ private:
             return;
         }
 
-        std::string fullPath(filePathHeader);
+        std::string fullPath = Utility::decodeHeaderFilePath(std::string(filePathHeader));
         if (!Utility::validateFilePath(fullPath, Configuration::instance()->getFileAllowedBaseDir()))
         {
             res->writeStatus("403 Forbidden")->end("Invalid file path");

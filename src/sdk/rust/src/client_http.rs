@@ -636,7 +636,7 @@ impl AppMeshClient {
             Method::POST,
             &format!("/appmesh/principal/{}", encode_path_segment(principal_id)),
             Some(&body_bytes),
-            None,
+            Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
             None,
             true,
         )
@@ -686,8 +686,15 @@ impl AppMeshClient {
 
     pub async fn update_role(&self, role: &str, permissions: Vec<String>) -> Result<()> {
         let body_bytes = serde_json::to_vec(&permissions)?;
-        self.send(Method::POST, &format!("/appmesh/role/{}", role), Some(&body_bytes), None, None, true)
-            .await?;
+        self.send(
+            Method::POST,
+            &format!("/appmesh/role/{}", role),
+            Some(&body_bytes),
+            Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+            None,
+            true,
+        )
+        .await?;
         Ok(())
     }
 
@@ -704,8 +711,40 @@ fn json_string_array(json: &Value) -> Result<Vec<String>> {
         .ok_or_else(|| AppMeshError::SerializationError(format!("Expected JSON array, got: {}", json)))
 }
 
+/// Parse a numeric response header. A present-but-malformed value is an error:
+/// defaulting to 0 would report a failed process as successful.
+fn parse_numeric_header<T: std::str::FromStr>(name: &str, value: &http::HeaderValue) -> Result<T> {
+    value
+        .to_str()
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| AppMeshError::SerializationError(format!("Malformed {} response header: {:?}", name, value)))
+}
+
+/// Percent-encode a URL path segment: space becomes `%20` and `+` becomes
+/// `%2B`. Form encoding is wrong in a path — the daemon reads a `+` back as a
+/// literal plus.
 fn encode_path_segment(value: &str) -> String {
-    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => encoded.push(byte as char),
+            _ => {
+                encoded.push('%');
+                encoded.push(HEX[(byte >> 4) as usize] as char);
+                encoded.push(HEX[(byte & 0x0F) as usize] as char);
+            }
+        }
+    }
+    encoded
+}
+
+/// Percent-encode a full remote file path for the X-File-Path header:
+/// each '/'-separated segment is encoded, so separators stay literal and the
+/// daemon's single decode restores the exact path (space is %20, not '+').
+pub(crate) fn encode_file_path(path: &str) -> String {
+    path.split('/').map(encode_path_segment).collect::<Vec<_>>().join("/")
 }
 
 // -- Application Management -------------------------------------------------
@@ -720,8 +759,9 @@ impl AppMeshClient {
 
     /// Get a single application by name.
     pub async fn get_app(&self, name: &str) -> Result<Application> {
-        let resp =
-            self.send(Method::GET, &format!("/appmesh/app/{}", name), None, None, None, true).await?;
+        let resp = self
+            .send(Method::GET, &format!("/appmesh/app/{}", encode_path_segment(name)), None, None, None, true)
+            .await?;
         resp.json()
     }
 
@@ -762,19 +802,15 @@ impl AppMeshClient {
         let mut out = AppOutput {
             status_code: resp.status().as_u16(),
             output: resp.text()?,
-            output_position: 0,
+            output_position: None,
             exit_code: None,
         };
 
         if let Some(pos) = resp.headers().get(HTTP_HEADER_KEY_OUTPUT_POS) {
-            if let Ok(s) = pos.to_str() {
-                out.output_position = s.parse().unwrap_or(0);
-            }
+            out.output_position = Some(parse_numeric_header(HTTP_HEADER_KEY_OUTPUT_POS, pos)?);
         }
         if let Some(code) = resp.headers().get(HTTP_HEADER_KEY_EXIT_CODE) {
-            if let Ok(s) = code.to_str() {
-                out.exit_code = Some(s.parse().unwrap_or(0));
-            }
+            out.exit_code = Some(parse_numeric_header(HTTP_HEADER_KEY_EXIT_CODE, code)?);
         }
 
         Ok(out)
@@ -809,8 +845,16 @@ impl AppMeshClient {
             q.insert("subscribe_events".to_string(), events.join(","));
             q
         });
-        let resp =
-            self.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, query, true).await?;
+        let resp = self
+            .send(
+                Method::PUT,
+                &format!("/appmesh/app/{}", name),
+                Some(&body_bytes),
+                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                query,
+                true,
+            )
+            .await?;
         resp.json()
     }
 
@@ -820,8 +864,16 @@ impl AppMeshClient {
             .as_str()
             .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
         let body_bytes = serde_json::to_vec(&app)?;
-        let resp =
-            self.send(Method::PUT, &format!("/appmesh/app/{}", name), Some(&body_bytes), None, None, true).await?;
+        let resp = self
+            .send(
+                Method::PUT,
+                &format!("/appmesh/app/{}", name),
+                Some(&body_bytes),
+                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                None,
+                true,
+            )
+            .await?;
         resp.json()
     }
 
@@ -933,15 +985,21 @@ impl AppMeshClient {
         };
         let body_bytes = serde_json::to_vec(app)?;
 
-        let resp = self.send(Method::POST, "/appmesh/app/syncrun", Some(&body_bytes), None, Some(query), false)
+        let resp = self
+            .send(
+                Method::POST,
+                "/appmesh/app/syncrun",
+                Some(&body_bytes),
+                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                Some(query),
+                false,
+            )
             .await?;
 
         let mut code = None;
         if resp.status() == StatusCode::OK {
             if let Some(h) = resp.headers().get(HTTP_HEADER_KEY_EXIT_CODE) {
-                if let Ok(s) = h.to_str() {
-                    code = Some(s.parse().unwrap_or(0));
-                }
+                code = Some(parse_numeric_header(HTTP_HEADER_KEY_EXIT_CODE, h)?);
             }
         }
         Ok((code, resp.text()?))
@@ -979,8 +1037,16 @@ impl AppMeshClient {
         };
         let body_bytes = serde_json::to_vec(app)?;
 
-        let resp =
-            self.send(Method::POST, "/appmesh/app/run", Some(&body_bytes), None, Some(query), true).await?;
+        let resp = self
+            .send(
+                Method::POST,
+                "/appmesh/app/run",
+                Some(&body_bytes),
+                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                Some(query),
+                true,
+            )
+            .await?;
 
         let json: Value = resp.json()?;
         Ok(AppRun {
@@ -1041,7 +1107,11 @@ impl AppMeshClient {
                 .get_app_output(&run.app_name, last_output_position, 0, 10240, Some(&run.proc_uid), Some(1))
                 .await?;
 
-            last_output_position = app_out.output_position;
+            // Advance only on an explicit position: a missing header means no new
+            // output, and resetting the cursor would re-deliver from byte 0.
+            if let Some(pos) = app_out.output_position {
+                last_output_position = pos;
+            }
 
             if !app_out.output.is_empty() {
                 if let Some(ref handler) = stdout_handler {
@@ -1073,7 +1143,17 @@ impl AppMeshClient {
         let query = hmap! { HTTP_QUERY_KEY_TIMEOUT => timeout };
         let body_bytes = serde_json::to_vec(&data)?;
 
-        let resp = self.send(Method::POST, &format!("/appmesh/app/{}/task", name), Some(&body_bytes), None, Some(query), true)
+        let resp = self
+            .send(
+                Method::POST,
+                &format!("/appmesh/app/{}/task", name),
+                Some(&body_bytes),
+                // openapi types the task body as application/octet-stream; the
+                // payload is JSON bytes sent unlabeled, matching the other SDKs.
+                None,
+                Some(query),
+                true,
+            )
             .await?;
         resp.text()
     }
@@ -1118,8 +1198,16 @@ impl AppMeshClient {
 
     pub async fn set_config(&self, config: Value) -> Result<Value> {
         let body_bytes = serde_json::to_vec(&config)?;
-        let resp =
-            self.send(Method::POST, "/appmesh/config", Some(&body_bytes), None, None, true).await?;
+        let resp = self
+            .send(
+                Method::POST,
+                "/appmesh/config",
+                Some(&body_bytes),
+                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                None,
+                true,
+            )
+            .await?;
         resp.json()
     }
 
@@ -1179,7 +1267,8 @@ impl AppMeshClient {
         } else {
             local_file
         };
-        let headers = hmap! { HTTP_HEADER_KEY_X_FILE_PATH => remote_file };
+        let remote_path = encode_file_path(remote_file);
+        let headers = hmap! { HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str() };
         let local_path = Path::new(local_file);
 
         // Stream response chunks to disk (bounded memory) when the transport supports it.
@@ -1234,8 +1323,9 @@ impl AppMeshClient {
             return Err(AppMeshError::NotFound(format!("Local file not found: {}", local_file)));
         }
 
+        let remote_path = encode_file_path(remote_file);
         let mut headers = hmap! {
-            HTTP_HEADER_KEY_X_FILE_PATH => remote_file,
+            HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str(),
             HTTP_HEADER_CONTENT_TYPE => "application/octet-stream",
         };
         if preserve_permissions {
@@ -1382,6 +1472,29 @@ impl AppMeshClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_encode_path_segment_percent_encodes() {
+        // A `+` must reach the daemon as `%2B` and a space as `%20`: form
+        // encoding would turn the space into a `+`, which the daemon reads
+        // back as a literal plus.
+        assert_eq!(encode_path_segment("a b"), "a%20b");
+        assert_eq!(encode_path_segment("a+b"), "a%2Bb");
+        // Unreserved characters stay literal.
+        assert_eq!(encode_path_segment("App_1-2.~"), "App_1-2.~");
+        // Principal IDs keep their separators encoded, never mangled.
+        assert_eq!(encode_path_segment("system:appmesh"), "system%3Aappmesh");
+        assert_eq!(encode_path_segment("oidc:ab@cd"), "oidc%3Aab%40cd");
+    }
+
+    #[test]
+    fn test_parse_numeric_header_rejects_malformed() {
+        // A malformed numeric header must error, never default to 0 (= success).
+        let malformed = http::HeaderValue::from_str("NaN").unwrap();
+        assert!(parse_numeric_header::<i32>("X-Exit-Code", &malformed).is_err());
+        let valid = http::HeaderValue::from_str("42").unwrap();
+        assert_eq!(parse_numeric_header::<i32>("X-Exit-Code", &valid).unwrap(), 42);
+    }
 
     #[test]
     fn test_decode_jwt_exp_valid() {

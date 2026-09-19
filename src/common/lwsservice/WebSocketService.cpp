@@ -216,7 +216,7 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
     }
 
     // ---- Custom headers ----
-    ssnInfo->ext_x_file_path = grabCustom("X-File-Path");
+    ssnInfo->ext_x_file_path = Utility::decodeHeaderFilePath(grabCustom("X-File-Path"));
 
     return ssnInfo;
 }
