@@ -100,6 +100,30 @@ install_files:
     Delete "$INSTDIR\work\apps\pytask.yaml"
     Delete "$INSTDIR\work\apps\pyexec.yaml"
 
+    ; Windows ships the same protected bundled authentication service as Linux/macOS.
+    ; setup.ps1 remains available when an operator intentionally selects an
+    ; external issuer instead.
+    ; Written before service setup so a later failure cannot drop the steps.
+    FileOpen $R0 "$INSTDIR\NEXT_STEPS.txt" w
+    !insertmacro NextStep "App Mesh installed to: $INSTDIR"
+    !insertmacro NextStep "The bundled authentication service starts with AppMeshService."
+    !insertmacro NextStep ""
+    !insertmacro NextStep "Next steps:"
+    !insertmacro NextStep "  1. Start the service"
+    !insertmacro NextStep "       $INSTDIR\bin\nssm.exe start AppMeshService"
+    !insertmacro NextStep "  2. Print the initial administrator password"
+    !insertmacro NextStep "       powershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password"
+    !insertmacro NextStep "  3. Sign in"
+    !insertmacro NextStep "       appm logon --username admin@appmesh.local"
+    !insertmacro NextStep ""
+    !insertmacro NextStep "Optional external issuer configuration:"
+    !insertmacro NextStep "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\setup.ps1 -Issuer https://auth.example.com/oidc"
+    !insertmacro NextStep ""
+    !insertmacro NextStep "Logs: $INSTDIR\work\server.log"
+    !insertmacro NextStep "Docs: https://app-mesh.readthedocs.io"
+    !insertmacro NextStep "Uninstall: $INSTDIR\Uninstall.exe"
+    FileClose $R0
+
     StrCpy $START_APPMESH "$INSTDIR\bin\appmesh.exe"
     StrCpy $NSSM_PATH "$INSTDIR\bin\nssm.exe"
 
@@ -126,29 +150,6 @@ install_files:
     !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService AppStderr "$INSTDIR\install_stderr.log"' "AppMeshService stderr configuration"
     !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService AppExit Default Restart' "AppMeshService restart-policy configuration"
     !insertmacro ExecNssmChecked '"$NSSM_PATH" set AppMeshService AppRestartDelay 5000' "AppMeshService restart-delay configuration"
-
-    ; Windows ships the same protected bundled authentication service as Linux/macOS.
-    ; setup.ps1 remains available when an operator intentionally selects an
-    ; external issuer instead.
-    FileOpen $R0 "$INSTDIR\NEXT_STEPS.txt" w
-    !insertmacro NextStep "App Mesh installed to: $INSTDIR"
-    !insertmacro NextStep "The bundled authentication service starts with AppMeshService."
-    !insertmacro NextStep ""
-    !insertmacro NextStep "Next steps:"
-    !insertmacro NextStep "  1. Start the service"
-    !insertmacro NextStep "       $INSTDIR\bin\nssm.exe start AppMeshService"
-    !insertmacro NextStep "  2. Print the initial administrator password"
-    !insertmacro NextStep "       powershell -ExecutionPolicy Bypass -File $INSTDIR\script\appmesh-auth.ps1 print-initial-password"
-    !insertmacro NextStep "  3. Sign in"
-    !insertmacro NextStep "       appm logon --username admin@appmesh.local"
-    !insertmacro NextStep ""
-    !insertmacro NextStep "Optional external issuer configuration:"
-    !insertmacro NextStep "  powershell -ExecutionPolicy Bypass -File $INSTDIR\script\setup.ps1 -Issuer https://auth.example.com/oidc"
-    !insertmacro NextStep ""
-    !insertmacro NextStep "Logs: $INSTDIR\work\server.log"
-    !insertmacro NextStep "Docs: https://app-mesh.readthedocs.io"
-    !insertmacro NextStep "Uninstall: $INSTDIR\Uninstall.exe"
-    FileClose $R0
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
