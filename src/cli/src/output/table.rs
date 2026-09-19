@@ -21,7 +21,7 @@ struct Column {
 
 fn format_enabled(app: &Application) -> String {
     match app.enabled {
-        Some(true) => "yes".to_string(),
+        Some(true) => "Yes".to_string(),
         _ => "-".to_string(),
     }
 }
