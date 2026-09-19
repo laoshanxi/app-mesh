@@ -45,7 +45,9 @@ private:
 	void extractBatchLocked(std::string &out, long &start);
 	void scheduleCoalesceTimerLocked();
 	// Extract + dispatch under m_dispatchMu: keeps events in position order.
-	void flushBatch();
+	// flushAll also emits a trailing incomplete character instead of carrying it
+	// into a next batch that never comes (teardown path).
+	void flushBatch(bool flushAll);
 	void dispatchPayload(long start, std::string &&payload);
 
 	const std::string m_appName;

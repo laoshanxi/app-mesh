@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../../common/StreamLogger.h"
+#include "../../common/Utility.h"
 #include "../rest/EventDispatcher.h"
 
 namespace
@@ -105,7 +106,7 @@ int StdoutPump::handle_input(ACE_HANDLE)
 					scheduleCoalesceTimerLocked();
 			}
 			if (needDispatch)
-				flushBatch();
+				flushBatch(false);
 			continue;
 		}
 
@@ -136,7 +137,7 @@ int StdoutPump::handle_input(ACE_HANDLE)
 	}
 
 	if (needFlushRemaining)
-		flushBatch();
+		flushBatch(false);
 	return returnCode;
 }
 
@@ -150,7 +151,7 @@ int StdoutPump::handle_timeout(const ACE_Time_Value &, const void *)
 		std::lock_guard<std::mutex> cg(m_coalesceMu);
 		m_timerArmed = false; // ACE has already removed the one-shot timer
 	}
-	flushBatch();
+	flushBatch(false);
 	return 0;
 }
 
@@ -184,7 +185,7 @@ void StdoutPump::extractBatchLocked(std::string &out, long &start)
 	m_batchStart = 0;
 }
 
-void StdoutPump::flushBatch()
+void StdoutPump::flushBatch(bool flushAll)
 {
 	// m_dispatchMu spans extract+dispatch so concurrent flushes keep position order.
 	std::lock_guard<std::mutex> dispatchGuard(m_dispatchMu);
@@ -193,6 +194,20 @@ void StdoutPump::flushBatch()
 	{
 		std::lock_guard<std::mutex> cg(m_coalesceMu);
 		extractBatchLocked(out, start);
+		if (!flushAll)
+		{
+			// A multi-byte character split at the batch boundary would render as
+			// one U+FFFD per flush; keep a possible incomplete UTF-8 tail in the
+			// batch so the next flush dispatches the whole character. The teardown
+			// flush passes flushAll and emits every remaining byte.
+			const size_t tail = Utility::utf8IncompleteTailBytes(out);
+			if (tail > 0)
+			{
+				m_batch.assign(out, out.size() - tail, tail);
+				m_batchStart = start + static_cast<long>(out.size() - tail);
+				out.resize(out.size() - tail);
+			}
+		}
 	}
 	dispatchPayload(start, std::move(out));
 }
@@ -207,6 +222,9 @@ void StdoutPump::dispatchPayload(long start, std::string &&payload)
 		return;
 	try
 	{
+		// Same UTF-8 conversion as the disk-backed output views, so event
+		// subscribers and REST clients see identical text.
+		payload = Utility::fileBytesToUtf8(payload);
 		nlohmann::json data;
 		data["output"] = std::move(payload);
 		data["position"] = start;
@@ -261,7 +279,8 @@ void StdoutPump::finalSyncDrain()
 
 void StdoutPump::cancelCoalesceTimerAndFlush()
 {
-	flushBatch();
+	// Final flush: emit any carried incomplete-character tail, no more batches follow.
+	flushBatch(true);
 }
 
 int StdoutPump::handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask)

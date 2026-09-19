@@ -39,3 +39,9 @@ target_link_libraries(common
 if(NOT CMAKE_CXX_STANDARD GREATER_EQUAL 17)
   target_link_libraries(common PRIVATE lwsservice)
 endif()
+
+# macOS libiconv is not re-exported by libSystem; Utility.cpp uses iconv for
+# output encoding detection (glibc/musl provide it inside libc).
+if(APPLE)
+  target_link_libraries(common PRIVATE iconv)
+endif()

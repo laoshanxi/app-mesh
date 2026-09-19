@@ -166,6 +166,15 @@ int main(int argc, char *argv[])
 	}
 }
 
+// Startup visibility: the locale variables decide how child applications encode their output.
+static void logStartupEnvironment()
+{
+	const static char fname[] = "logStartupEnvironment() ";
+	LOG_INF << fname << "LANG=<" << (ACE_OS::getenv("LANG") ? ACE_OS::getenv("LANG") : "") << "> LC_ALL=<"
+			<< (ACE_OS::getenv("LC_ALL") ? ACE_OS::getenv("LC_ALL") : "") << "> APPMESH_AUTH_MODE=<"
+			<< (ACE_OS::getenv("APPMESH_AUTH_MODE") ? ACE_OS::getenv("APPMESH_AUTH_MODE") : "") << ">";
+}
+
 int AppMeshDaemon::run(int argc, char *argv[])
 {
 	const static char fname[] = "AppMeshDaemon::run() ";
@@ -175,6 +184,7 @@ int AppMeshDaemon::run(int argc, char *argv[])
 	{
 		initializeEnvironment();
 		initializeLogging();
+		logStartupEnvironment();
 		initializeConfiguration();
 		LinuxCgroup::initializeApplicationCgroups();
 		initializeACE();

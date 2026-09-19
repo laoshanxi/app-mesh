@@ -248,10 +248,13 @@ public:
 	static std::string readFileCpp(const std::string &path, long *position, long maxSize, bool readLine = false);
 
 	// Locale encoding
-	static std::string fileBytesToUtf8(const std::string &input);     // Used for read text file on windows
+	static std::string fileBytesToUtf8(const std::string &input); // Detect and convert non-UTF-8 stdout/log bytes to UTF-8
 	static std::string localEncodingToUtf8(const std::string &input); // Used for read windows system attributes
 	static std::string utf8ToLocalEncoding(const std::string &input); // Used for CLI correct display
 	static bool isValidUTF8(const std::string &str);
+	// Length (0-4) of a trailing run that may be an incomplete multi-byte UTF-8
+	// character (a lead byte plus too few continuation bytes).
+	static size_t utf8IncompleteTailBytes(const std::string &str);
 	static std::string convertToUTF8(const std::string &input, unsigned int codepage);
 	static bool createPidFile();
 	static void appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key);

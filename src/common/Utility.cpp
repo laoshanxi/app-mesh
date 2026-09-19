@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #if !defined(_WIN32)
+#include <iconv.h>
 #include <sys/file.h>
 #endif
 #include <thread>
@@ -1687,6 +1688,104 @@ bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string 
 }
 
 
+namespace
+{
+	// Encoding detection candidates in priority order, shared by all platforms:
+	// Windows converts through the code page, POSIX through the iconv name.
+	// GB18030 catches the 4-byte sequences strict GBK rejects and must precede
+	// EUC-KR because glibc's EUC-KR accepts raw C1 control bytes. CP_ACP
+	// (code page 0) has no portable POSIX equivalent and is skipped there.
+	struct EncodingCandidate
+	{
+		unsigned int codepage;
+		const char *iconvName;
+	};
+
+	const EncodingCandidate ENCODING_CANDIDATES[] = {
+		{936, "GBK"},		 // GBK/GB2312 (Simplified Chinese)
+		{950, "BIG5"},		 // Big5 (Traditional Chinese)
+		{932, "SHIFT_JIS"},	 // Shift-JIS (Japanese)
+		{54936, "GB18030"},	 // GB18030 (4-byte extensions GBK rejects)
+		{949, "EUC-KR"},	 // EUC-KR (Korean)
+		{1252, "CP1252"},	 // Windows-1252 (Western European)
+		{1251, "CP1251"},	 // Windows-1251 (Cyrillic)
+		{0, nullptr}		 // CP_ACP: system default ANSI code page (Windows only)
+	};
+
+#if !defined(_WIN32)
+	// Outcome of one strict iconv conversion attempt.
+	enum IconvOutcome
+	{
+		ICONV_REJECTED,	 // invalid byte sequence: candidate does not match
+		ICONV_ACCEPTED,	 // whole buffer converted
+		ICONV_SPLIT_TAIL // valid except an incomplete multi-byte tail (EINVAL)
+	};
+
+	// Convert input from fromCode to UTF-8 strictly (no //TRANSLIT): the first
+	// invalid sequence rejects the candidate. On ICONV_SPLIT_TAIL output holds
+	// the converted prefix and tailBytes the count of unconverted trailing bytes.
+	IconvOutcome iconvToUtf8(const std::string &input, const char *fromCode, std::string &output, size_t &tailBytes)
+	{
+		output.clear();
+		tailBytes = 0;
+
+		iconv_t cd = iconv_open("UTF-8", fromCode);
+		if (cd == reinterpret_cast<iconv_t>(-1))
+		{
+			return ICONV_REJECTED; // encoding unavailable on this system
+		}
+
+		// Every candidate maps one input byte to at most three UTF-8 bytes.
+		std::string out(input.size() * 3 + 4, '\0');
+// iconv's inbuf parameter is `char **` on glibc and Apple's SDK, but
+// `const char **` on standalone GNU libiconv. Apple defines _LIBICONV_VERSION
+// for compatibility while keeping the POSIX signature, so exclude it.
+#if defined(_LIBICONV_VERSION) && !defined(__APPLE__) && !defined(__GLIBC__)
+		const char *inPtr = input.data();
+#else
+		char *inPtr = const_cast<char *>(input.data());
+#endif
+		size_t inLeft = input.size();
+		char *outPtr = &out[0];
+		size_t outLeft = out.size();
+
+		IconvOutcome outcome = ICONV_ACCEPTED;
+		while (inLeft > 0)
+		{
+			if (iconv(cd, &inPtr, &inLeft, &outPtr, &outLeft) != static_cast<size_t>(-1))
+			{
+				break; // all input consumed
+			}
+			if (errno == EINVAL)
+			{
+				outcome = ICONV_SPLIT_TAIL;
+				break;
+			}
+			if (errno != E2BIG)
+			{
+				outcome = ICONV_REJECTED;
+				break;
+			}
+			// Should not happen with the 3x reserve; grow and continue.
+			const size_t used = static_cast<size_t>(outPtr - &out[0]);
+			out.resize(out.size() * 2);
+			outPtr = &out[0] + used;
+			outLeft = out.size() - used;
+		}
+		iconv_close(cd);
+
+		if (outcome == ICONV_REJECTED)
+		{
+			return ICONV_REJECTED;
+		}
+		tailBytes = inLeft;
+		out.resize(out.size() - outLeft);
+		output.swap(out);
+		return outcome;
+	}
+#endif // !defined(_WIN32)
+} // namespace
+
 std::string Utility::fileBytesToUtf8(const std::string &input)
 {
 #ifdef _WIN32
@@ -1749,20 +1848,10 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 		return input;
 	}
 
-	// Try common Windows codepages in order of likelihood
-	std::vector<UINT> codepages = {
-		936,   // GBK/GB2312 (Simplified Chinese)
-		950,   // Big5 (Traditional Chinese)
-		932,   // Shift-JIS (Japanese)
-		949,   // EUC-KR (Korean)
-		1252,  // Windows-1252 (Western European)
-		1251,  // Windows-1251 (Cyrillic)
-		CP_ACP // System default ANSI codepage
-	};
-
-	for (UINT codepage : codepages)
+	// Try the shared encoding candidates in order of likelihood
+	for (const EncodingCandidate &candidate : ENCODING_CANDIDATES)
 	{
-		std::string result = convertToUTF8(input, codepage);
+		std::string result = convertToUTF8(input, candidate.codepage);
 		if (!result.empty())
 		{
 			return result;
@@ -1772,6 +1861,78 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 	// If all else fails, return original
 	return input;
 #else
+	if (input.empty())
+		return input;
+
+	// Check for UTF-8 BOM
+	if (input.size() >= 3 &&
+		static_cast<unsigned char>(input[0]) == 0xEF &&
+		static_cast<unsigned char>(input[1]) == 0xBB &&
+		static_cast<unsigned char>(input[2]) == 0xBF)
+	{
+		return input.substr(3);
+	}
+
+	// Check for UTF-16 BOM: convert complete 16-bit units (a trailing odd byte
+	// is dropped, mirroring the Windows path); keep the original bytes when the
+	// payload is not decodable.
+	if (input.size() >= 2)
+	{
+		const bool utf16Le = static_cast<unsigned char>(input[0]) == 0xFF && static_cast<unsigned char>(input[1]) == 0xFE;
+		const bool utf16Be = static_cast<unsigned char>(input[0]) == 0xFE && static_cast<unsigned char>(input[1]) == 0xFF;
+		if (utf16Le || utf16Be)
+		{
+			const size_t units = (input.size() - 2) / 2;
+			std::string converted;
+			size_t tailBytes = 0;
+			if (iconvToUtf8(input.substr(2, units * 2), utf16Le ? "UTF-16LE" : "UTF-16BE", converted, tailBytes) == ICONV_ACCEPTED && !converted.empty())
+			{
+				return converted;
+			}
+			return input;
+		}
+	}
+
+	// Valid UTF-8 (includes pure ASCII) passes through unchanged: the common case
+	if (isValidUTF8(input))
+	{
+		return input;
+	}
+
+	// A trailing incomplete UTF-8 character (a chunk boundary cut a character)
+	// must not be re-detected as GBK below: the prefix is already correct UTF-8
+	// and the tail bytes continue in the next chunk.
+	const size_t tail = utf8IncompleteTailBytes(input);
+	if (tail > 0 && isValidUTF8(input.substr(0, input.size() - tail)))
+	{
+		return input;
+	}
+
+	// Try the shared encoding candidates in order of likelihood: the first
+	// candidate that converts strictly wins. A trailing incomplete multi-byte
+	// sequence (EINVAL) means the chunk split a character: convert the complete
+	// prefix and pass the tail bytes through unchanged for the next chunk.
+	for (const EncodingCandidate &candidate : ENCODING_CANDIDATES)
+	{
+		if (candidate.iconvName == nullptr)
+		{
+			continue; // CP_ACP has no portable POSIX equivalent
+		}
+		std::string converted;
+		size_t tailBytes = 0;
+		const IconvOutcome outcome = iconvToUtf8(input, candidate.iconvName, converted, tailBytes);
+		if (outcome == ICONV_ACCEPTED)
+		{
+			return converted;
+		}
+		if (outcome == ICONV_SPLIT_TAIL)
+		{
+			return converted + input.substr(input.size() - tailBytes);
+		}
+	}
+
+	// No candidate matched: keep the original bytes, JSON serialization replaces
+	// invalid UTF-8 with U+FFFD.
 	return input;
 #endif
 }
@@ -1858,6 +2019,38 @@ bool Utility::isValidUTF8(const std::string &str)
 		}
 	}
 	return true;
+}
+
+size_t Utility::utf8IncompleteTailBytes(const std::string &str)
+{
+	const size_t len = str.size();
+
+	// Count trailing continuation bytes (0x80-0xBF), at most three.
+	size_t run = 0;
+	while (run < 3 && run < len && (static_cast<unsigned char>(str[len - 1 - run]) & 0xC0) == 0x80)
+	{
+		++run;
+	}
+	if (run == len)
+	{
+		return 0; // only continuation bytes: the lead byte is not in this buffer
+	}
+
+	const unsigned char lead = static_cast<unsigned char>(str[len - 1 - run]);
+	size_t expected = 0;
+	if (lead >= 0xC2 && lead <= 0xDF)
+	{
+		expected = 1;
+	}
+	else if (lead >= 0xE0 && lead <= 0xEF)
+	{
+		expected = 2;
+	}
+	else if (lead >= 0xF0 && lead <= 0xF4)
+	{
+		expected = 3;
+	}
+	return (run < expected) ? run + 1 : 0;
 }
 
 
