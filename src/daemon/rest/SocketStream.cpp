@@ -376,14 +376,7 @@ SocketStream::~SocketStream()
 
 bool SocketStream::remotePeerIsLoopback() const
 {
-	ACE_INET_Addr remote = m_target;
-	const char *raw = remote.get_host_addr();
-	if (raw == nullptr)
-		return false;
-	const std::string address(raw);
-	return address == "::1" || address == "0:0:0:0:0:0:0:1" ||
-		address.compare(0, 4, "127.") == 0 ||
-		address.compare(0, 13, "::ffff:127.0.") == 0;
+	return m_target.is_loopback();
 }
 
 int SocketStream::open(void *acceptor_or_connector)
