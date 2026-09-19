@@ -3,10 +3,16 @@ use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::format::{
-    human_readable_duration, human_readable_size, principal_display, truncate_with_marker,
+    display_width, human_readable_duration, human_readable_size, principal_display, truncate_with_marker,
 };
 
 const COLUMN_PADDING: usize = 2;
+
+/// `{:<width$}` pads by character count; pad by display width instead so CJK
+/// cells (2 columns per character) line up with ASCII columns.
+fn write_cell(out: &mut impl Write, cell: &str, width: usize) {
+    write!(out, "{}{}", cell, " ".repeat(width.saturating_sub(display_width(cell)))).ok();
+}
 
 struct Column {
     title: &'static str,
@@ -16,8 +22,7 @@ struct Column {
 fn format_enabled(app: &Application) -> String {
     match app.enabled {
         Some(true) => "yes".to_string(),
-        Some(false) => "no".to_string(),
-        None => "-".to_string(),
+        _ => "-".to_string(),
     }
 }
 
@@ -134,7 +139,7 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     // Widen columns based on actual data (excluding COMMAND)
     for row in &rows {
         for (col, cell) in columns.iter_mut().zip(row.iter()).take(col_count - 1) {
-            let needed = cell.chars().count() + COLUMN_PADDING;
+            let needed = display_width(cell) + COLUMN_PADDING;
             if needed > col.width {
                 col.width = needed;
             }
@@ -185,16 +190,15 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     for row in &rows {
         for (col, cell) in columns.iter().zip(row.iter()).take(visible_cols) {
             let max_len = col.width.saturating_sub(COLUMN_PADDING);
-            if cell.chars().count() > max_len {
-                let truncated = truncate_with_marker(cell, max_len);
-                write!(out, "{:<width$}", truncated, width = col.width).ok();
+            if display_width(cell) > max_len {
+                write_cell(&mut out, &truncate_with_marker(cell, max_len), col.width);
             } else {
-                write!(out, "{:<width$}", cell, width = col.width).ok();
+                write_cell(&mut out, cell, col.width);
             }
         }
         if cmd_width > 0 {
             let cmd = &row[col_count - 1];
-            if cmd.chars().count() > cmd_width && !long_mode {
+            if display_width(cmd) > cmd_width && !long_mode {
                 // Truncate command with * suffix
                 let truncated = truncate_with_marker(cmd, cmd_width);
                 write!(out, "{}", truncated).ok();
@@ -206,4 +210,19 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     }
 
     out.flush().ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cell_padding_uses_display_width() {
+        // "所有" occupies 4 columns, so a 6-column cell needs 2 padding spaces —
+        // char-count padding would print 4 and misalign the next column.
+        let mut buf: Vec<u8> = Vec::new();
+        write_cell(&mut buf, "所有", 6);
+        write_cell(&mut buf, "abc", 6);
+        assert_eq!(String::from_utf8(buf).unwrap(), "所有  abc   ");
+    }
 }

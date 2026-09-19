@@ -85,7 +85,7 @@ def _make_client() -> AppMeshClient:
     )
 
 
-@mcp.tool(description="Retrieve detailed information about a single application by name.")
+@mcp.tool(description="Retrieve detailed information about a single application by name. Empty values are omitted from the returned application data.")
 def get_application(app_name: str) -> dict:
     """
     Get detailed configuration and runtime status of a specified application.
@@ -118,7 +118,7 @@ def get_application(app_name: str) -> dict:
         return {"success": False, "error": str(e), "message": f"Failed to retrieve application: {app_name}"}
 
 
-@mcp.tool(description="List applications, optionally filtered by enabled state (enabled/disabled).")
+@mcp.tool(description="List applications, optionally filtered by enabled state (enabled/disabled). Empty values are omitted from the returned application data.")
 def list_applications(filter_enabled: Optional[str] = None) -> dict:
     """
     List all registered applications.

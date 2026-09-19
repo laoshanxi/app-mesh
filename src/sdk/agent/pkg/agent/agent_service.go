@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,9 +92,8 @@ func writeForwardValidationResponse(w http.ResponseWriter, response *Response) {
 }
 
 var (
-	logger         = utils.GetLogger()
-	REST_PATH_TASK = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
-	localTCPAddr   net.Addr // local daemon TCP address, set by ListenAndServeREST
+	logger       = utils.GetLogger()
+	localTCPAddr net.Addr // local daemon TCP address, set by ListenAndServeREST
 
 	delegateClient     *http.Client
 	delegateClientOnce sync.Once
@@ -449,11 +447,6 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			query.Del("subscribe_events")
 			r.URL.RawQuery = query.Encode()
 		}
-	}
-
-	// Handle X-File-Path URI decode
-	if filePath := r.Header.Get(HTTP_HEADER_KEY_File_Path); filePath != "" {
-		r.Header.Set(HTTP_HEADER_KEY_File_Path, utils.DecodeURIComponent(filePath))
 	}
 
 	request, err := newRequestFromHTTP(r)

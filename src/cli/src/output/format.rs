@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde_json::Value;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub fn print_json(value: &Value) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
@@ -42,14 +43,47 @@ pub fn short_principal(principal: &str) -> String {
     }
 }
 
-pub fn truncate_with_marker(value: &str, max_chars: usize) -> String {
-    if value.chars().count() <= max_chars {
+/// Terminal columns a string occupies: CJK and other wide characters count 2.
+pub fn display_width(text: &str) -> usize {
+    text.width()
+}
+
+/// Pad with spaces to a display width (CJK-aware). Strings already wider than
+/// `width` are returned unchanged, like `{:<width$}` on ASCII text.
+pub fn pad_display(text: &str, width: usize) -> String {
+    let current = display_width(text);
+    if current >= width {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len() + (width - current));
+    out.push_str(text);
+    for _ in 0..(width - current) {
+        out.push(' ');
+    }
+    out
+}
+
+/// Truncate to a display width, marking the cut with `*`. Never splits a
+/// character: a wide character that does not fit is dropped whole.
+pub fn truncate_with_marker(value: &str, max_width: usize) -> String {
+    if display_width(value) <= max_width {
         return value.to_string();
     }
-    if max_chars == 0 {
+    if max_width == 0 {
         return String::new();
     }
-    let mut result: String = value.chars().take(max_chars.saturating_sub(1)).collect();
+    // Reserve one column for the marker.
+    let budget = max_width - 1;
+    let mut result = String::new();
+    let mut width = 0;
+    for ch in value.chars() {
+        let ch_width = ch.width().unwrap_or(0);
+        if width + ch_width > budget {
+            break;
+        }
+        result.push(ch);
+        width += ch_width;
+    }
     result.push('*');
     result
 }
@@ -100,7 +134,7 @@ pub fn human_readable_duration(seconds: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{principal_display, short_principal, truncate_with_marker};
+    use super::{display_width, principal_display, short_principal, truncate_with_marker};
 
     #[test]
     fn short_principal_truncates_oidc_hash() {
@@ -124,6 +158,31 @@ mod tests {
         assert_eq!(principal_display("oidc:abc", Some(" admin\n user ")), "admin user");
         assert_eq!(principal_display("oidc:abc", Some("admin\u{1b}[31m")), "admin[31m");
         assert_eq!(principal_display("oidc:abc", Some("  ")), "oidc:abc");
-        assert_eq!(truncate_with_marker("所有者名称", 4), "所有者*");
+    }
+
+    #[test]
+    fn display_width_counts_cjk_as_two_columns() {
+        assert_eq!(display_width("abc"), 3);
+        assert_eq!(display_width("所有者"), 6);
+        assert_eq!(display_width("a所b"), 4);
+    }
+
+    #[test]
+    fn truncate_never_splits_a_character_and_fits_the_width() {
+        // Each CJK char occupies 2 columns, so a 4-column limit holds one char
+        // plus the marker — never half a wide character.
+        let truncated = truncate_with_marker("所有者名称", 4);
+        assert_eq!(truncated, "所*");
+        assert!(display_width(&truncated) <= 4);
+    }
+
+    #[test]
+    fn truncate_mixed_script_respects_display_width() {
+        assert_eq!(truncate_with_marker("ab所有者名称", 5), "ab所*");
+        let truncated = truncate_with_marker("ab所有者名称", 3);
+        assert_eq!(truncated, "ab*");
+        // Short values pass through unchanged.
+        assert_eq!(truncate_with_marker("abc", 5), "abc");
+        assert_eq!(truncate_with_marker("", 5), "");
     }
 }

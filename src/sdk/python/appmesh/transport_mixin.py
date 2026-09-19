@@ -64,7 +64,9 @@ class TransportClientMixin:
             return body.encode(self._ENCODING_UTF8)
 
         if isinstance(body, (dict, list)):
-            return json.dumps(body).encode(self._ENCODING_UTF8)
+            # allow_nan=False: NaN/Infinity are invalid JSON and the daemon rejects
+            # them with an opaque 400; fail at the sender instead.
+            return json.dumps(body, allow_nan=False).encode(self._ENCODING_UTF8)
 
         raise TypeError(f"Unsupported body type: {type(body)}")
 
@@ -148,6 +150,12 @@ class TransportClientMixin:
                 appmesh_request.query.update(query)
             if body_bytes:
                 appmesh_request.body = body_bytes
+                if isinstance(body, (dict, list)) and not any(
+                    k.lower() == "content-type" for k in appmesh_request.headers
+                ):
+                    # JSON bodies carry their type unless the caller set one
+                    # (mirrors the HTTP transport and the other SDKs).
+                    appmesh_request.headers["Content-Type"] = "application/json"
 
             data = appmesh_request.serialize()
             if self._demuxer and self._demuxer._running:
@@ -196,7 +204,7 @@ class TransportClientMixin:
                 except requests.exceptions.HTTPError as e:
                     raise AppMeshRequestError(f"HTTP request failed: {e}") from e
 
-            return AppMeshClient._EncodingResponse(response)
+            return response
 
         raise AppMeshAuthError("TokenProvider failed to replace a rejected access token", HTTPStatus.UNAUTHORIZED)
 

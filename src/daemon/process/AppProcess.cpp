@@ -19,6 +19,7 @@
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #include "../../common/os/filesystem.h"
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
@@ -813,9 +814,10 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 
 		if (stdinFileContent != EMPTY_STR_JSON)
 		{
+			// JSON::dump never throws: a throw here would leave the app never started.
 			const std::string content = stdinFileContent.is_string()
 											? stdinFileContent.get<std::string>()
-											: stdinFileContent.dump();
+											: JSON::dump(stdinFileContent);
 			m_stdinFileName = os::createTmpFile(m_stdinFileName, content, 0600);
 			m_stdinHandler.reset(ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY));
 

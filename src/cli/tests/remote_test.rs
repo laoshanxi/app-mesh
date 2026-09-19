@@ -260,8 +260,8 @@ async fn sdk_31_app_output_incremental() {
     c.add_app(&app, None).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let r1 = c.get_app_output("RUST_INCR", 0, 0, 32, None, None).await.unwrap();
-    assert!(r1.output_position > 0);
-    let r2 = c.get_app_output("RUST_INCR", r1.output_position, 0, 0, None, None).await.unwrap();
+    let pos = r1.output_position.expect("first output read carries a position");
+    let r2 = c.get_app_output("RUST_INCR", pos, 0, 0, None, None).await.unwrap();
     if !r2.output.is_empty() {
         assert!(!r1.output.contains(&r2.output));
     }
@@ -368,7 +368,7 @@ fn cli_52_loginfo() {
     cli_auth();
     let out = appm().args(["loginfo"]).output().unwrap();
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("Issuer:"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Engine:"));
 }
 
 #[test]

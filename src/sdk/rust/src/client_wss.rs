@@ -1,6 +1,6 @@
 // client_wss.rs
 
-use crate::client_http::AppMeshClient;
+use crate::client_http::{encode_file_path, AppMeshClient};
 use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
@@ -426,7 +426,7 @@ impl AppMeshClientWSS {
             local_file
         };
         let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
 
         let resp = self
             .client
@@ -443,7 +443,7 @@ impl AppMeshClientWSS {
         let mut response = self
             .http_client
             .get(&url)
-            .header(HTTP_HEADER_KEY_X_FILE_PATH, remote_file)
+            .header(HTTP_HEADER_KEY_X_FILE_PATH, encode_file_path(remote_file))
             .header(HTTP_HEADER_JWT_AUTHORIZATION, &auth_token)
             .send()
             .await
@@ -528,7 +528,7 @@ impl AppMeshClientWSS {
         }
 
         let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
 
         self
             .client
@@ -550,7 +550,7 @@ impl AppMeshClientWSS {
         );
         upload_headers.insert(
             reqwest::header::HeaderName::from_bytes(HTTP_HEADER_KEY_X_FILE_PATH.as_bytes()).unwrap(),
-            reqwest::header::HeaderValue::from_str(remote_file).map_err(|e| {
+            reqwest::header::HeaderValue::from_str(&encode_file_path(remote_file)).map_err(|e| {
                 AppMeshError::ConfigurationError(format!("Invalid remote file path header value: {}", e))
             })?,
         );

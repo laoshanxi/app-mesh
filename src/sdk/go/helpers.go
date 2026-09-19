@@ -1,12 +1,10 @@
 package appmesh
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"html"
 	"net"
 	"net/url"
 	"os"
@@ -28,6 +26,17 @@ func IsFileExist(path string) bool {
 	}
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
+}
+
+// escapeRemoteFilePath percent-encodes a remote file path (RFC 3986, UTF-8 bytes)
+// for the X-File-Path header: '/' separators stay literal and a space becomes
+// %20 (never '+'), so the daemon's single percent-decode restores the exact path.
+func escapeRemoteFilePath(path string) string {
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		segments[i] = url.PathEscape(segment)
+	}
+	return strings.Join(segments, "/")
 }
 
 // LoadCertificatePair loads a TLS certificate and key from the given PEM and key file paths.
@@ -191,13 +200,4 @@ func setTCPNoDelay(conn net.Conn) error {
 	}
 
 	return tcpConn.SetNoDelay(true)
-}
-
-// HtmlUnescapeBytes unescapes HTML entities in b, returning b unchanged when no entities are present.
-// Wire/transport internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
-func HtmlUnescapeBytes(b []byte) []byte {
-	if !bytes.Contains(b, []byte{'&'}) {
-		return b
-	}
-	return []byte(html.UnescapeString(string(b)))
 }

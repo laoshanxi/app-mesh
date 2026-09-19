@@ -272,7 +272,7 @@ class App:
         self.permission = others * 10 + others
 
     def __str__(self) -> str:
-        """Return a JSON string representation of the application."""
+        """Return a JSON string representation of the application (display path; NaN-safe)."""
         return json.dumps(self.to_dict())
 
     def to_dict(self) -> Dict[str, Any]:

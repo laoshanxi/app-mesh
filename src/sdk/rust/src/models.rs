@@ -21,21 +21,25 @@ pub enum Permission {
 }
 
 /// Exit behavior action when a process terminates
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExitAction {
     Restart,
     Standby,
     Keepalive,
     Remove,
+    /// An exit behavior this SDK version does not know; the original string is
+    /// preserved so a newer daemon never breaks deserialization.
+    Unknown(String),
 }
 
 impl ExitAction {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             Self::Restart => "restart",
             Self::Standby => "standby",
             Self::Keepalive => "keepalive",
             Self::Remove => "remove",
+            Self::Unknown(other) => other,
         }
     }
 }
@@ -54,7 +58,7 @@ impl<'de> Deserialize<'de> for ExitAction {
             "standby" => Ok(Self::Standby),
             "keepalive" => Ok(Self::Keepalive),
             "remove" => Ok(Self::Remove),
-            other => Err(serde::de::Error::unknown_variant(other, &["restart", "standby", "keepalive", "remove"])),
+            _ => Ok(Self::Unknown(s)),
         }
     }
 }
@@ -67,7 +71,9 @@ impl<'de> Deserialize<'de> for ExitAction {
 pub struct AppOutput {
     pub status_code: u16,
     pub output: String,
-    pub output_position: i64,
+    /// Next stdout cursor (`X-Output-Position` header); `None` when the daemon
+    /// reported no new output.
+    pub output_position: Option<i64>,
     pub exit_code: Option<i32>,
 }
 
@@ -443,5 +449,34 @@ impl ApplicationBuilder {
     /// Consume the builder and return the finished [`Application`].
     pub fn build(self) -> Application {
         self.app
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_action_known_variants_round_trip() {
+        for (text, action) in [
+            ("restart", ExitAction::Restart),
+            ("standby", ExitAction::Standby),
+            ("keepalive", ExitAction::Keepalive),
+            ("remove", ExitAction::Remove),
+        ] {
+            assert_eq!(serde_json::from_str::<ExitAction>(&format!("\"{}\"", text)).unwrap(), action);
+            assert_eq!(serde_json::to_string(&action).unwrap(), format!("\"{}\"", text));
+        }
+        // The daemon accepts case-insensitive values.
+        assert_eq!(serde_json::from_str::<ExitAction>("\"Restart\"").unwrap(), ExitAction::Restart);
+    }
+
+    #[test]
+    fn exit_action_unknown_variant_is_preserved() {
+        // Forward compatibility: a daemon that adds one exit behavior must not
+        // fail every get_app/list_apps/add_app call in this SDK.
+        let action: ExitAction = serde_json::from_str("\"deferred\"").unwrap();
+        assert_eq!(action, ExitAction::Unknown("deferred".to_string()));
+        assert_eq!(serde_json::to_string(&action).unwrap(), "\"deferred\"");
     }
 }

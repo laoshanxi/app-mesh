@@ -191,6 +191,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Principal"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -238,6 +239,7 @@ paths:
               items: { type: string }
       responses:
         "200": { description: Role saved. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
     delete:
@@ -304,6 +306,7 @@ paths:
             schema: { $ref: "#/components/schemas/Application" }
       responses:
         "200": { description: Application saved. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -370,6 +373,7 @@ paths:
             schema: { $ref: "#/components/schemas/Application" }
       responses:
         "200": { description: Run identifier and process metadata. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -384,6 +388,7 @@ paths:
             schema: { $ref: "#/components/schemas/Application" }
       responses:
         "200": { description: Command output and exit status. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -524,6 +529,7 @@ paths:
       summary: Update runtime configuration
       responses:
         "200": { description: Updated runtime configuration. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -531,6 +537,12 @@ paths:
     get:
       tags: [Files]
       summary: Download a file
+      parameters:
+        - name: X-File-Path
+          in: header
+          required: true
+          schema: { type: string }
+          description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
       responses:
         "200": { description: File stream negotiation response. }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -540,6 +552,12 @@ paths:
     post:
       tags: [Files]
       summary: Upload a file
+      parameters:
+        - name: X-File-Path
+          in: header
+          required: true
+          schema: { type: string }
+          description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
       responses:
         "200": { description: File stream negotiation response. }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -915,7 +933,7 @@ components:
           readOnly: true
           description: Resident memory of the current run, in bytes.
         cpu:
-          type: integer
+          type: number
           readOnly: true
           description: CPU usage of the current run, in percent.
         fd:
@@ -975,6 +993,11 @@ components:
         message: { type: string }
 
   responses:
+    BadRequest:
+      description: Malformed or wrong-typed JSON request body.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     Unauthorized:
       description: Missing, invalid, expired, wrong-issuer, or wrong-audience bearer token.
       headers:

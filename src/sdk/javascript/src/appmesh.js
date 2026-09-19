@@ -169,6 +169,35 @@ function _getHeader(headers, name) {
 }
 
 /**
+ * Strict axios transformResponse: JSON-typed or JSON-looking string bodies must parse;
+ * malformed JSON raises a typed AppMeshError instead of silently degrading to a string.
+ * Text-typed bodies stay strings; non-string bodies (binary downloads, streams) pass through.
+ * @param {any} data - Response body
+ * @param {Object} [headers] - Response headers (AxiosHeaders or plain object)
+ * @param {number} [status] - HTTP status code
+ * @returns {any} Parsed JSON, raw text, or the original non-string body
+ * @throws {AppMeshError} With errorCode 'JSON_PARSE' when a JSON body fails to parse
+ * @private
+ */
+function _transformResponseJson(data, headers, status) {
+  if (typeof data !== "string" || data === "") {
+    return data;
+  }
+  const contentType = String(_getHeader(headers, "content-type") || "").toLowerCase();
+  // Parse strictly only when the server declared JSON. Every other body stays a
+  // string: task replies are typed application/octet-stream and stdout is
+  // text/plain, and both may merely look like JSON.
+  if (!contentType.includes("json")) {
+    return data;
+  }
+  try {
+    return JSON.parse(data);
+  } catch (error) {
+    throw new AppMeshError(`Response body is not valid JSON: ${error.message}`, status ?? null, data, "JSON_PARSE");
+  }
+}
+
+/**
  * Resolve a user name or numeric string to a UID (Node.js/Unix only).
  * @param {string} user - User name or numeric UID
  * @returns {Promise<number|null>} UID or null if unresolvable
@@ -268,7 +297,10 @@ class AppMeshClient {
     const axiosConfig = {
       baseURL,
       timeout: 300000, // 5 minutes
-      validateStatus: status => true
+      validateStatus: status => true,
+      // Strict JSON handling: malformed JSON bodies raise a typed error
+      // instead of axios's default silent fallback to the raw string
+      transformResponse: [_transformResponseJson]
     };
 
     // Store SSL config for deferred agent setup
@@ -301,6 +333,10 @@ class AppMeshClient {
     this._client.interceptors.response.use(
       response => response,
       error => {
+        // Typed SDK errors (e.g. JSON parse failures from transformResponse) pass through unchanged
+        if (error instanceof AppMeshError) {
+          return Promise.reject(error);
+        }
         // Network-level failure (DNS, connection refused, timeout, ...)
         const err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status ?? null, error.response?.data ?? null);
         err.cause = error;
@@ -367,19 +403,12 @@ class AppMeshClient {
   /**
    * Check app health status
    * @param {string} name - App name
-   * @returns {boolean} True if healthy; false if the daemon reports unhealthy (non-200 or missing app)
-   * @throws {AppMeshError} On network/transport failure (no HTTP status received)
+   * @returns {boolean} True if healthy; false only when the daemon's health verdict says unhealthy
+   * @throws {AppMeshError} On auth/missing-app/server errors (non-200) or network/transport failure
    */
   async check_app_health(name) {
-    try {
-      const response = await this._request("get", `/appmesh/app/${name}/health`);
-      return parseInt(response.data, 10) === 0;
-    } catch (error) {
-      if (error.statusCode != null) {
-        return false; // non-200 or missing app → not healthy
-      }
-      throw error; // network/transport failure → propagate
-    }
+    const response = await this._request("get", `/appmesh/app/${name}/health`);
+    return parseInt(response.data, 10) === 0;
   }
 
   /**

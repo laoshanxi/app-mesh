@@ -547,6 +547,24 @@ std::string Utility::decodeURIComponent(const std::string &encoded)
 	return result;
 }
 
+std::string Utility::decodeHeaderFilePath(const std::string &val)
+{
+	const static char fname[] = "Utility::decodeHeaderFilePath() ";
+	if (val.find('%') == std::string::npos)
+	{
+		return val;
+	}
+	try
+	{
+		return decodeURIComponent(val);
+	}
+	catch (const std::exception &e)
+	{
+		LOG_WAR << fname << "malformed percent escape in header value, keep raw: " << e.what();
+		return val;
+	}
+}
+
 std::string Utility::readFile(const std::string &path)
 {
 	const static char fname[] = "Utility::readFile() ";
@@ -1308,7 +1326,19 @@ static nlohmann::json plainScalarToJson(const std::string &scalar)
 		}
 	}
 	if (Utility::isDouble(scalar))
-		return std::stod(scalar);
+	{
+		try
+		{
+			return std::stod(scalar);
+		}
+		catch (const std::exception &)
+		{
+			// Out-of-range magnitude (long digit runs) or a form isDouble accepts
+			// but stod rejects (a lone ".") throws; keep the exact text as a
+			// string instead of aborting daemon startup.
+			return Utility::stdStringTrim(scalar);
+		}
+	}
 	return Utility::stdStringTrim(scalar);
 }
 

@@ -1,4 +1,4 @@
-import { AppMeshClient } from '../src/appmesh.js'
+import { AppMeshClient, AppMeshError } from '../src/appmesh.js'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { writeFileSync, readFileSync, unlinkSync } from 'fs'
@@ -93,9 +93,18 @@ async function test() {
     await client.delete_app('js_test_ed')
   })
 
-  await assert('check_app_health (nonexistent → false)', async () => {
-    const h = await client.check_app_health('nonexistent_xyz')
-    if (h !== false) throw new Error('expected false for nonexistent app')
+  await assert('check_app_health (nonexistent → throws)', async () => {
+    // A missing app is a 404 server verdict, not a health verdict: it must surface
+    // as an error instead of reading as "unhealthy"
+    let thrown = null
+    try {
+      await client.check_app_health('nonexistent_xyz')
+    } catch (error) {
+      thrown = error
+    }
+    if (!(thrown instanceof AppMeshError)) {
+      throw new Error(`expected AppMeshError for missing app, got ${thrown === null ? 'no error' : thrown.name}`)
+    }
   })
 
   // ---- Sync / Async Run ----

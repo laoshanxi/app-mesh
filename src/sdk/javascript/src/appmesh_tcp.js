@@ -419,6 +419,10 @@ class AppMeshClientTCP extends AppMeshClient {
     // Set body
     if (body !== null) {
       if (typeof body === 'object' && !Buffer.isBuffer(body)) {
+        // JSON body: declare the content type (options.headers already merged, caller wins)
+        if (!request.headers['Content-Type'] && !request.headers['content-type']) {
+          request.headers['Content-Type'] = 'application/json'
+        }
         request.body = Buffer.from(JSON.stringify(body, null, 2), ENCODING_UTF8)
       } else if (typeof body === 'string') {
         request.body = Buffer.from(body, ENCODING_UTF8)
@@ -474,9 +478,10 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Decode a raw msgpack body Buffer to the same shape axios produces over HTTP:
-   * parsed JSON object for JSON payloads, string for text, Buffer only for binary
-   * responses (responseType 'arraybuffer'/'stream').
+   * Decode a raw msgpack body Buffer to the same shape the HTTP transport produces:
+   * parsed JSON for JSON payloads, string for text, Buffer only for binary responses
+   * (responseType 'arraybuffer'/'stream'). A non-empty JSON-typed body that fails to
+   * parse raises a typed error instead of silently degrading to a string.
    * @private
    */
   _decodeBody (response, options) {
@@ -492,19 +497,25 @@ class AppMeshClientTCP extends AppMeshClient {
 
     const headers = response.headers || {}
     const ctKey = Object.keys(headers).find(k => k.toLowerCase() === 'content-type')
-    const contentType = (ctKey ? String(headers[ctKey]) : '').toLowerCase()
-    if (!responseType && contentType.includes('application/octet-stream')) {
-      return data
-    }
+    // Daemon replies carry the MIME type in body_msg_type; forwarded responses expose
+    // it as the Content-Type header. Either source decides the body kind.
+    const mime = String(response.bodyMsgType || (ctKey ? headers[ctKey] : '')).toLowerCase()
 
     const text = data.toString(ENCODING_UTF8)
-    if (responseType === 'text' || contentType.startsWith('text/')) {
+    // Task replies are typed application/octet-stream but carry text output; binary
+    // callers pass responseType 'arraybuffer'/'stream' (handled above), so octet-stream
+    // here decodes as UTF-8 text like text/*.
+    if (responseType === 'text' || mime.startsWith('text/') || mime.includes('application/octet-stream')) {
       return text
+    }
+
+    if (text.length === 0) {
+      return text // empty body stays '' (same as the HTTP transport)
     }
     try {
       return JSON.parse(text)
-    } catch (_) {
-      return text // not JSON, keep raw text (axios does the same)
+    } catch (error) {
+      throw new AppMeshError(`Response body is not valid JSON: ${error.message}`, response.httpStatus, text, 'JSON_PARSE')
     }
   }
 

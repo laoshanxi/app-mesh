@@ -9,7 +9,7 @@ use crate::app::{
     WorkflowRmArgs, WorkflowRunArgs, WorkflowRunsArgs,
 };
 use crate::client::build_client_with_auth;
-use crate::output::format::{principal_display, truncate_with_marker};
+use crate::output::format::{pad_display, principal_display, truncate_with_marker};
 
 const WORKFLOW_TRIGGER_APP: &str = "workflow";
 
@@ -86,18 +86,19 @@ async fn list(cli: &Cli) -> Result<i32> {
     if wfs.is_empty() { eprintln!("No workflows registered."); return Ok(0); }
     // OWNER prefers a response-only display label and falls back to the stable
     // Principal ID when the issuer supplied no human-readable name.
-    println!("{:<25} {:<18} {:<12} {:<25}", "WORKFLOW", "OWNER", "LAST STATUS", "LAST RUN");
+    println!("{} {} {} {}",
+        pad_display("WORKFLOW", 25), pad_display("OWNER", 18), pad_display("LAST STATUS", 12), pad_display("LAST RUN", 25));
     println!("{}", "-".repeat(83));
     for w in &wfs {
         let owner = principal_display(
             w["owner"].as_str().unwrap_or("-"),
             w["owner_display_name"].as_str(),
         );
-        println!("{:<25} {:<18} {:<12} {:<25}",
-            w["name"].as_str().unwrap_or("-"),
-            truncate_with_marker(&owner, 18),
-            w["last_run_status"].as_str().unwrap_or("-"),
-            w["last_run_at"].as_str().unwrap_or("-"));
+        println!("{} {} {} {}",
+            pad_display(w["name"].as_str().unwrap_or("-"), 25),
+            pad_display(&truncate_with_marker(&owner, 18), 18),
+            pad_display(w["last_run_status"].as_str().unwrap_or("-"), 12),
+            pad_display(w["last_run_at"].as_str().unwrap_or("-"), 25));
     }
     Ok(0)
 }
@@ -203,15 +204,17 @@ async fn runs(cli: &Cli, args: &WorkflowRunsArgs) -> Result<i32> {
     let v = parse_resp(&resp)?;
     let entries = v["data"].as_array().cloned().unwrap_or_default();
     if entries.is_empty() { eprintln!("No runs."); return Ok(0); }
-    println!("{:<15} {:<10} {:<25} {:<10}", "RUN ID", "STATUS", "STARTED", "DURATION");
+    println!("{} {} {} {}",
+        pad_display("RUN ID", 15), pad_display("STATUS", 10), pad_display("STARTED", 25), pad_display("DURATION", 10));
     println!("{}", "-".repeat(65));
     for e in entries.iter().rev() {
         let dur = e["duration"].as_f64().unwrap_or(0.0);
-        println!("{:<15} {:<10} {:<25} {:<10}",
-            e["run_id"].as_str().unwrap_or("-"),
-            e["status"].as_str().unwrap_or("-"),
-            e["started_at"].as_str().unwrap_or("-"),
-            if dur > 0.0 { format!("{:.1}s", dur) } else { "-".into() });
+        let dur_text = if dur > 0.0 { format!("{:.1}s", dur) } else { "-".into() };
+        println!("{} {} {} {}",
+            pad_display(e["run_id"].as_str().unwrap_or("-"), 15),
+            pad_display(e["status"].as_str().unwrap_or("-"), 10),
+            pad_display(e["started_at"].as_str().unwrap_or("-"), 25),
+            pad_display(&dur_text, 10));
     }
     Ok(0)
 }
@@ -269,14 +272,17 @@ async fn inputs(cli: &Cli, args: &WorkflowInputsArgs) -> Result<i32> {
     let data = &v["data"];
     if let Some(obj) = data.as_object() {
         if obj.is_empty() { eprintln!("No inputs defined."); return Ok(0); }
-        println!("{:<20} {:<10} {:<10} {:<15} {}", "NAME", "TYPE", "REQUIRED", "DEFAULT", "DESCRIPTION");
+        println!("{} {} {} {} {}",
+            pad_display("NAME", 20), pad_display("TYPE", 10), pad_display("REQUIRED", 10), pad_display("DEFAULT", 15), "DESCRIPTION");
         println!("{}", "-".repeat(75));
         for (name, def) in obj {
-            println!("{:<20} {:<10} {:<10} {:<15} {}",
-                name,
-                def["type"].as_str().unwrap_or("-"),
-                def["required"].as_bool().unwrap_or(false),
-                def.get("default").map(|d| d.to_string()).unwrap_or_else(|| "-".into()),
+            let required = if def["required"].as_bool().unwrap_or(false) { "true" } else { "false" };
+            let default_text = def.get("default").map(|d| d.to_string()).unwrap_or_else(|| "-".into());
+            println!("{} {} {} {} {}",
+                pad_display(name, 20),
+                pad_display(def["type"].as_str().unwrap_or("-"), 10),
+                pad_display(required, 10),
+                pad_display(&default_text, 15),
                 def["description"].as_str().unwrap_or(""));
         }
     } else {

@@ -252,6 +252,7 @@ func (d *MessageDemuxer) readLoop() {
 
 		resp := &Response{}
 		if err := resp.Deserialize(data); err != nil {
+			logf("readLoop: drop undecodable message (%d bytes): %v", len(data), err)
 			continue
 		}
 
@@ -267,6 +268,7 @@ func (d *MessageDemuxer) readLoop() {
 func (d *MessageDemuxer) dispatchEvent(resp *Response) {
 	var event AppEvent
 	if err := json.Unmarshal(resp.Body, &event); err != nil {
+		logf("dispatchEvent: drop malformed event JSON (%d bytes): %v", len(resp.Body), err)
 		return
 	}
 
@@ -503,6 +505,7 @@ func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 				Position int64  `json:"position"`
 			}
 			if err := json.Unmarshal(event.Data, &data); err != nil {
+				logf("WaitForAsyncRun: drop malformed STDOUT payload for app %s: %v", event.AppName, err)
 				return
 			}
 			deliver(data.Output, data.Position)

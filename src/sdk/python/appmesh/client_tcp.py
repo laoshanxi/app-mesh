@@ -5,6 +5,7 @@
 import socket
 from pathlib import Path
 from typing import Optional, Tuple, Union
+from urllib import parse
 
 # Local imports
 from .client_http import AppMeshClient
@@ -128,7 +129,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             local_file = Path(remote_file).name
         self._ensure_no_active_demuxer()
         header = {
-            AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
+            AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
             self._HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: "true",
         }
 
@@ -169,7 +170,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
 
         # Prepare headers
         header = {
-            AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
+            AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
             "Content-Type": "application/octet-stream",
             self._HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: "true",
         }

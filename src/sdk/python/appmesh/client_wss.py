@@ -125,7 +125,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         """
         if not local_file:
             local_file = Path(remote_file).name
-        header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
+        header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)}
         # Control-channel precheck (permission/existence); raises on failure.
         self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
         token = self._get_bearer_token()
@@ -135,7 +135,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         # Use requests to GET file
         local_path = Path(local_file)
         header = {
-            AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
+            AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
             AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
         }
         path = "/appmesh/file/download/ws"
@@ -167,7 +167,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         """
         if not remote_file:
             remote_file = Path(local_file).name
-        header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
+        header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)}
         # Control-channel precheck (permission/existence); raises on failure.
         self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)
         token = self._get_bearer_token()
@@ -182,7 +182,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         path = "/appmesh/file/upload/ws"
         header = {
             AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
-            AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
+            AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
         }
         if preserve_permissions:
             header.update(AppMeshClient._get_file_attributes(local_path))

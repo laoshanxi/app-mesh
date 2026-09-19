@@ -29,6 +29,7 @@ jiff = "0.2"
 tempfile = "3"
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 zeroize = "1"
+unicode-width = "0.2"
 
 [profile.release]
 opt-level = "z"

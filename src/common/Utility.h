@@ -238,6 +238,9 @@ public:
 
 	static std::string encodeURIComponent(const std::string &str);
 	static std::string decodeURIComponent(const std::string &encoded);
+	// X-File-Path header contract: percent-decode once when '%' is present,
+	// keep values without '%' (legacy raw paths) unchanged.
+	static std::string decodeHeaderFilePath(const std::string &val);
 
 	// Read file to string
 	static std::string readFile(const std::string &path);
