@@ -144,7 +144,7 @@ HTTP, TCP, and WSS can forward normal request methods. HTTP supports one respons
 
 ## Internal proofs
 
-Some local operations use a narrow internal proof. Examples include a workflow capability, a managed-process key, Agent-to-daemon HMAC, and optional mTLS.
+Some local operations use a narrow internal proof. Examples include a workflow capability, a per-spawn pre-shared key with per-request HMAC for managed system processes (Agent and Workflow), a managed-process key for the task RPC, and optional mTLS.
 
 An internal proof does not create a principal. It does not replace a user bearer. Each proof has a limited operation and transport scope.
 

@@ -27,6 +27,7 @@ class CounterMetric;
 class GaugeMetric;
 class AppProcess;
 class DailyLimitation;
+class HMACVerifier;
 class ResourceLimitation;
 class TaskRequest;
 
@@ -91,11 +92,18 @@ public:
 	void fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	std::tuple<int, std::string> taskStatus();
-	/// Proves possession of the current managed process key and returns the
-	/// daemon-assigned process UUID.  The key itself is never promoted to an
-	/// authorization identity.
-	std::string currentProcessUuidForKey(const std::string &processKey);
+
+	// Current process identity and managed process proof
 	bool isCurrentProcessUuid(const std::string &processUuid);
+	/// Proves the caller holds the current process pre-shared key by verifying
+	/// its per-request HMAC signature, and returns the process UUID.
+	std::string currentProcessUuidForProof(const std::string &message, const std::string &hmacSignature);
+	/// Verifies a per-request HMAC signature against the current process pre-shared key.
+	bool verifyProcessProof(const std::string &message, const std::string &hmacSignature);
+	/// Signs a message with the current process pre-shared key; empty when no proof exists.
+	std::string signProcessProof(const std::string &message);
+	/// Blocks until the spawned process has read its pre-shared key (startup fail-fast).
+	bool waitProcessProofRead();
 
 	// Prometheus metrics
 	void initMetrics();
@@ -135,6 +143,12 @@ private:
 	void recordProcessExit(int code, bool naturalExit, AppProcess *reporter, long stdoutDispatchedBytes);
 	void completeRun(const std::string &runId);
 
+	// Managed process proof (Agent, Workflow): a per-spawn pre-shared key handed
+	// over through shared memory on every start.
+	bool usesProcessProof() const;
+	std::shared_ptr<HMACVerifier> issueProcessProof(const std::string &execUser, std::map<std::string, std::string> &envMap) const;
+	void activateProcessProof(const std::string &runId, const std::shared_ptr<HMACVerifier> &proof, bool startAccepted);
+
 	// Completion observers
 	RunCompletionSubscription subscribeRunCompletion(const std::string &processUuid, RunCompletionCallback callback);
 	void unsubscribeRunCompletion(RunCompletionSubscription subscription);
@@ -151,6 +165,9 @@ private:
 	const std::string getExecUser() const;
 	const std::string &getCmdLine() const;
 	std::map<std::string, std::string> getMergedEnvMap() const;
+	// Target user of the sudo login wrapper, empty when the spawn needs no
+	// environment passthrough (no session_login user switch or Docker app).
+	std::string sudoLoginUser() const;
 
 	// Error state
 	void setLastError(const std::string &error) noexcept(false);
@@ -216,6 +233,9 @@ private:
 
 	// Runtime state
 	AppMeshProcess m_process;
+	// Per-spawn pre-shared-key proof for managed system processes (Agent,
+	// Workflow); replaced on every spawn, accessed under the m_process lock.
+	std::shared_ptr<HMACVerifier> m_processProof;
 	std::atomic_bool m_health;
 	std::atomic<STATUS> m_status;
 	mutable std::mutex m_saveMutex; // Serialise concurrent save() on same app yaml.

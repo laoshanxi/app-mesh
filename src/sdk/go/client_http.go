@@ -47,6 +47,13 @@ type Option struct {
 
 	JwtToken string // Access token set directly without a network call.
 
+	// PSK is the managed-process pre-shared key read from Engine-provided shared
+	// memory (see ReadPSKFromSHM). Over the TCP and WSS transports, requests
+	// marked with HeaderProcessProof carry an X-Request-HMAC signature of their
+	// UUID to prove this process; marked requests that would be forwarded are
+	// rejected instead of signed.
+	PSK []byte
+
 	// HTTPTimeout is the overall timeout for http.Client requests; honored when non-zero.
 	HTTPTimeout time.Duration
 }

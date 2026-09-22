@@ -190,6 +190,7 @@ type TCPRequester struct {
 
 	forwardingHost atomic.String
 	token          atomic.String
+	psk            []byte
 	demuxerMu      sync.Mutex
 	demuxer        *MessageDemuxer
 }
@@ -296,6 +297,11 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 
 	data.Headers[userAgentHeaderName] = userAgentTCP
 
+	// Sign after the UUID and every header exist, and before the request is framed.
+	if err := applyProcessProof(data, t.psk); err != nil {
+		return nil, err
+	}
+
 	buf, err := data.Serialize()
 	if err != nil {
 		return nil, err
@@ -377,6 +383,7 @@ type WSSRequester struct {
 
 	forwardingHost atomic.String
 	token          atomic.String
+	psk            []byte
 	demuxerMu      sync.Mutex
 	demuxer        *MessageDemuxer
 	connectMu      sync.Mutex
@@ -511,6 +518,11 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 	}
 
 	data.Headers[userAgentHeaderName] = userAgentWSS
+
+	// Sign after the UUID and every header exist, and before the frame is sent.
+	if err := applyProcessProof(data, w.psk); err != nil {
+		return nil, err
+	}
 
 	buf, err := data.Serialize()
 	if err != nil {

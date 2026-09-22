@@ -625,8 +625,8 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 }
 
 // startCapabilityRenewal keeps long runs alive without a long-lived
-// credential. Every renewal repeats the local process-key proof at the Engine
-// issuance endpoint. Transient failures retry about once a second while the
+// credential. Every renewal repeats the pre-shared-key HMAC proof at the
+// Engine issuance endpoint. Transient failures retry about once a second while the
 // current capability is still usable; once the last good capability has
 // expired and renewal still cannot recover, onExpired is invoked (the run is
 // aborted with an explicit failure) and the loop stops. The returned stop

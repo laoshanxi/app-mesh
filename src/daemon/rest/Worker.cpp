@@ -6,6 +6,7 @@
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
+#include "../security/HMACVerifier.h"
 #include "../security/Security.h"
 #include "Data.h"
 #include "ForwardingManager.h"
@@ -272,7 +273,8 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 	if (request->m_headers.contains(HTTP_HEADER_KEY_Forwarding_Host))
 	{
 		if (request->isManagedWorkerTransport() ||
-			request->m_headers.contains(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY))
+			request->m_headers.contains(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY) ||
+			request->m_headers.contains(HMAC_HTTP_HEADER))
 		{
 			request->reply(web::http::status_codes::Forbidden,
 				Utility::text2json("managed process proof cannot be forwarded"));

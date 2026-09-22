@@ -19,11 +19,16 @@ struct ShellAppFileGen
 	const std::string &getShellStartCmd() const { return m_shellCmd; };
 	const std::string &getShellFileName() const { return m_fileName; };
 	const bool isUsingSudo() const { return m_usingSudo; };
+	// Target user of the sudo login wrapper, empty when sudo is not used. The
+	// caller composes the wrapper at spawn time so per-run environment values
+	// can be injected after the login shell's environment reset.
+	const std::string &sudoUser() const { return m_sudoUser; };
 
 private:
 	std::string m_cmd;
 	std::string m_shellCmd;
 	std::string m_fileName;
+	std::string m_sudoUser;
 	bool m_usingSudo;
 };
 

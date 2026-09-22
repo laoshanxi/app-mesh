@@ -8,8 +8,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -36,7 +38,16 @@ func main() {
 		logger.Error("SDK " + fmt.Sprintf(format, args...))
 	})
 
+	// Read the one-time pre-shared key the Engine prepared for this process;
+	// every request is signed with it to prove this managed process instance.
+	psk, err := appmesh.ReadPSKFromSHM()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Process proof pre-shared key error:", err)
+		os.Exit(1)
+	}
+
 	engineOption := newEngineOption(server, "")
+	engineOption.PSK = psk
 	tcpClient, err := appmesh.NewTCPClient(engineOption)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "TCP client error:", err)
@@ -142,13 +153,21 @@ func main() {
 }
 
 func requestCapability(ctx context.Context, client *appmesh.AppMeshClient, audience, workflowID, runID string, operations []string) (appmesh.WorkflowCapability, error) {
-	return client.RequestWorkflowCapabilityContext(ctx, appmesh.WorkflowCapabilityRequest{
+	capability, err := client.RequestWorkflowCapabilityContext(ctx, appmesh.WorkflowCapabilityRequest{
 		Audience:   audience,
 		Workflow:   workflowID,
 		RunID:      runID,
 		Operations: operations,
 		ExpiresIn:  int(trigger.CapabilityLifetime / time.Second),
 	})
+	// A 401 means the Engine rejected this process's proof (superseded or
+	// invalid key): stop and let the Engine restart this process with a new key.
+	var apiErr *appmesh.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized {
+		logger.Error("Engine rejected the workflow process proof, exiting for restart: " + err.Error())
+		os.Exit(1)
+	}
+	return capability, err
 }
 
 func newEngineOption(server, token string) appmesh.Option {
