@@ -612,6 +612,7 @@ bool Application::attach(int pid)
 		}
 		previous = std::move(*processLock);
 		(*processLock) = createProcess(m_dockerImage, m_name);
+		m_processProof.reset(); // an attached process never received a key hand-over
 		(*processLock)->attach(pid, m_stdoutFile);
 		(*processLock)->markRecovered(); // not our child: maintainRuntime(now) detects its exit
 		attached = (*processLock);
@@ -955,6 +956,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 			m_bufferProcess = previous;
 		}
 		*processLock = process;
+		m_processProof.reset(); // a new run proves itself with a fresh key
 		runId = process->getuuid();
 		m_runtime->update([&](Runtime::Run &run)
 						  {
@@ -998,10 +1000,34 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 			} });
 	}
 
-	const auto execUser = (!onDemand && m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : getExecUser();
+	const auto execUser = getExecUser();
+	// sudo performs the user switch itself, so the spawn must not setuid; the
+	// proof segment is still handed to the final exec user so the child can read it.
+	const auto spawnUser = (!onDemand && m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : execUser;
+
+	// Managed system processes (Agent, Workflow) prove themselves with a
+	// per-spawn pre-shared key handed over through shared memory.
+	std::shared_ptr<HMACVerifier> processProof;
+	auto envMap = getMergedEnvMap();
+	if (usesProcessProof())
+	{
+		processProof = issueProcessProof(execUser, envMap);
+		if (!processProof)
+		{
+			unsubscribeRunCompletion(completionSubscription);
+			recordStartFailure(runId, "failed to prepare the process proof shared memory", onDemand);
+			if (onDemand)
+				throw std::invalid_argument("Start process failed");
+			return {};
+		}
+	}
+
 	LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">";
-	auto result = process->start(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit,
+	auto result = process->start(getCmdLine(), spawnUser, m_workdir, envMap, m_resourceLimit,
 								 m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
+
+	if (processProof)
+		activateProcessProof(runId, processProof, result.accepted);
 
 	if (!result.accepted)
 	{
@@ -1145,18 +1171,32 @@ std::tuple<int, std::string> Application::taskStatus()
 	return m_task.taskStatus();
 }
 
-std::string Application::currentProcessUuidForKey(const std::string &processKey)
+bool Application::usesProcessProof() const
 {
-	if (processKey.empty())
-		return {};
-	auto processLock = m_process.synchronize();
-	if (!(*processLock) || !Utility::secureCompare((*processLock)->getkey(), processKey))
-		return {};
-	const auto run = m_runtime->load();
-	if (run.id != (*processLock)->getuuid() ||
-		(run.phase != Runtime::Run::Phase::Starting && run.phase != Runtime::Run::Phase::Running))
-		return {};
-	return (*processLock)->getuuid();
+	return m_kind == Kind::SystemAgent || (m_kind == Kind::System && m_name == WORKFLOW_APP_NAME);
+}
+
+std::shared_ptr<HMACVerifier> Application::issueProcessProof(const std::string &execUser, std::map<std::string, std::string> &envMap) const
+{
+	auto proof = std::make_shared<HMACVerifier>();
+	const auto shmPath = proof->writePSKToSHM(execUser);
+	if (shmPath.empty())
+		return nullptr;
+	envMap[ENV_PSK_SHM] = shmPath;
+	return proof;
+}
+
+void Application::activateProcessProof(const std::string &runId, const std::shared_ptr<HMACVerifier> &proof, bool startAccepted)
+{
+	if (startAccepted)
+	{
+		auto processLock = m_process.synchronize();
+		if (*processLock && (*processLock)->getuuid() == runId)
+			m_processProof = proof;
+	}
+	// Polled on the timer thread: the child reads the key and sets the flag,
+	// then the segment is removed; an unread segment is cleaned up after the timeout.
+	proof->waitPSKReadAsync();
 }
 
 bool Application::isCurrentProcessUuid(const std::string &processUuid)
@@ -1169,6 +1209,46 @@ bool Application::isCurrentProcessUuid(const std::string &processUuid)
 	const auto run = m_runtime->load();
 	return run.id == processUuid &&
 		(run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running);
+}
+
+std::string Application::currentProcessUuidForProof(const std::string &message, const std::string &hmacSignature)
+{
+	if (!verifyProcessProof(message, hmacSignature))
+		return {};
+	auto processLock = m_process.synchronize();
+	return (*processLock) ? (*processLock)->getuuid() : std::string();
+}
+
+bool Application::verifyProcessProof(const std::string &message, const std::string &hmacSignature)
+{
+	if (message.empty() || hmacSignature.empty())
+		return false;
+	auto processLock = m_process.synchronize();
+	if (!(*processLock) || !m_processProof || !m_processProof->verifyHMAC(message, hmacSignature))
+		return false;
+	const auto run = m_runtime->load();
+	return run.id == (*processLock)->getuuid() &&
+		(run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running);
+}
+
+std::string Application::signProcessProof(const std::string &message)
+{
+	auto processLock = m_process.synchronize();
+	if (!(*processLock) || !m_processProof)
+		return {};
+	return m_processProof->generateHMAC(message);
+}
+
+bool Application::waitProcessProofRead()
+{
+	std::shared_ptr<HMACVerifier> proof;
+	{
+		auto processLock = m_process.synchronize();
+		proof = m_processProof;
+	}
+	if (!proof)
+		return false;
+	return proof->waitPSKRead();
 }
 
 const std::string Application::getExecUser() const
@@ -1194,6 +1274,13 @@ const std::string Application::getExecUser() const
 	}
 	return executeUser;
 #endif
+}
+
+std::string Application::sudoLoginUser() const
+{
+	if (m_dockerImage.empty() && m_shellAppFile && m_shellAppFile->isUsingSudo())
+		return m_shellAppFile->sudoUser();
+	return "";
 }
 
 const std::string &Application::getCmdLine() const
@@ -1859,7 +1946,6 @@ void Application::terminate(std::shared_ptr<AppProcess> p)
 void Application::applyExitPolicy()
 {
 	const static char fname[] = "Application::applyExitPolicy() ";
-	bool psk = false;
 
 	switch (this->exitAction(m_runtime->load().returnCode))
 	{
@@ -1867,26 +1953,10 @@ void Application::applyExitPolicy()
 		// do nothing
 		break;
 	case AppBehavior::Action::RESTART:
-		if (m_kind == Kind::SystemAgent)
-		{
-			const auto shmName = HMACVerifierSingleton::instance()->writePSKToSHM();
-			if (!shmName.empty())
-			{
-				m_envMap[ENV_PSK_SHM] = shmName;
-				psk = true;
-			}
-		}
-
 		// Restart after the crash-loop backoff delay (0 for a healthy run).
+		// A managed system process gets a fresh pre-shared key from startRun.
 		this->scheduleNext(std::chrono::system_clock::now() + restartDelay());
 		LOG_DBG << fname << "Next action for <" << m_name << "> is RESTART";
-
-		if (psk)
-		{
-			// Async: we may BE the single timer-dispatch thread, which must stay free to fire
-			// the spawn armed above; a blocking wait here would deadlock the PSK handshake.
-			HMACVerifierSingleton::instance()->waitPSKReadAsync();
-		}
 		break;
 	case AppBehavior::Action::KEEPALIVE:
 		// Restart unconditionally (bypasses m_timer), still throttled by the crash-loop backoff.

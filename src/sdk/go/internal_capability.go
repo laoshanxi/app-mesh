@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 )
 
 const (
@@ -33,21 +32,18 @@ type WorkflowCapability struct {
 	ProcessUUID      string `json:"process_uuid"`
 }
 
-// RequestWorkflowCapabilityContext proves the current App Mesh-managed process
-// instance using APP_MESH_PROCESS_KEY. The Engine accepts this endpoint only on
-// an actual loopback TCP socket and derives all authority server-side.
+// RequestWorkflowCapabilityContext is issued to the managed Workflow process
+// only. The request is marked with HeaderProcessProof and the transport signs
+// it with the pre-shared key from Option.PSK; the Engine accepts this endpoint
+// only on a loopback TCP socket and derives all authority server-side.
 func (r *AppMeshClient) RequestWorkflowCapabilityContext(ctx context.Context, request WorkflowCapabilityRequest) (WorkflowCapability, error) {
-	processKey := os.Getenv("APP_MESH_PROCESS_KEY")
-	if processKey == "" {
-		return WorkflowCapability{}, fmt.Errorf("APP_MESH_PROCESS_KEY is required for internal workflow capability issuance")
-	}
 	body, err := json.Marshal(request)
 	if err != nil {
 		return WorkflowCapability{}, fmt.Errorf("marshal workflow capability request: %w", err)
 	}
 	headers := map[string]string{
-		"Content-Type":          "application/json",
-		"X-AppMesh-Process-Key": processKey,
+		"Content-Type":     "application/json",
+		HeaderProcessProof: "1",
 	}
 	status, raw, _, err := r.req.SendContext(ctx, http.MethodPost,
 		"/appmesh/internal/workflow/capability", nil, headers, bytes.NewReader(body))
@@ -68,16 +64,14 @@ func (r *AppMeshClient) RequestWorkflowCapabilityContext(ctx context.Context, re
 }
 
 // CleanupWorkflowOrphansContext removes only local command-step Apps tagged by
-// a prior Workflow process instance. The Engine derives the current process
-// identity from APP_MESH_PROCESS_KEY and accepts no caller-supplied app names.
+// a prior Workflow process instance. The request is marked with
+// HeaderProcessProof and the transport signs it with the pre-shared key from
+// Option.PSK; the Engine derives the current process identity from that proof
+// and accepts no caller-supplied app names.
 func (r *AppMeshClient) CleanupWorkflowOrphansContext(ctx context.Context) (int, error) {
-	processKey := os.Getenv("APP_MESH_PROCESS_KEY")
-	if processKey == "" {
-		return 0, fmt.Errorf("APP_MESH_PROCESS_KEY is required for internal workflow orphan cleanup")
-	}
-	headers := map[string]string{"X-AppMesh-Process-Key": processKey}
 	status, raw, _, err := r.req.SendContext(ctx, http.MethodPost,
-		"/appmesh/internal/workflow/cleanup-orphans", nil, headers, nil)
+		"/appmesh/internal/workflow/cleanup-orphans", nil,
+		map[string]string{HeaderProcessProof: "1"}, nil)
 	if err != nil {
 		return 0, fmt.Errorf("cleanup workflow orphans: %w", err)
 	}

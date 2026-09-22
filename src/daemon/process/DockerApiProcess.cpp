@@ -12,6 +12,7 @@
 #include "../../common/json.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
+#include "../application/Application.h"
 #include "../security/HMACVerifier.h"
 
 namespace
@@ -387,7 +388,9 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	auto wrapperPath = std::string("/appmesh/docker") + path;
 	auto uuid = Utility::shortID();
 	header[DOCKER_REQUEST_ID_HEADER] = uuid;
-	header[HMAC_HTTP_HEADER] = HMACVerifierSingleton::instance()->generateHMAC(uuid);
+	// Sign with the agent's current process proof; empty while the agent is down.
+	if (const auto agent = Configuration::instance()->getApp(SEPARATE_AGENT_APP_NAME, false))
+		header[HMAC_HTTP_HEADER] = agent->signProcessProof(uuid);
 
 	std::string bodyContent;
 	if (body)

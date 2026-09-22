@@ -147,7 +147,8 @@ The core service. Initialization flows through `main.cpp`: ACE framework init â†
 | `RESTHANDLER` | `RestHandler` | `rest/RestHandler.h` |
 | `WORKER` | `Worker` | `rest/Worker.h` |
 | `EVENT_DISPATCHER` | `EventDispatcher` | `rest/EventDispatcher.h` |
-| `HMACVerifierSingleton` | `HMACVerifier` | `security/HMACVerifier.h` |
+
+`HMACVerifier` (`security/HMACVerifier.h`) is not a singleton: each managed system process spawn (Agent, Workflow) gets its own instance holding a fresh pre-shared key.
 
 Other singletons use `static instance()`: `Configuration`, `Security`, `ResourceCollection`, `PersistManager`, and `HealthCheckTask`.
 

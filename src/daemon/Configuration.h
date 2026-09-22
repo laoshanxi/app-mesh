@@ -116,7 +116,7 @@ public:
 	std::string generateRunAppName(const std::string &provideAppName);
 	void disableApp(const std::string &appName);
 	void enableApp(const std::string &appName);
-	const nlohmann::json getAgentAppJson(const std::string &shmName) const;
+	const nlohmann::json getAgentAppJson() const;
 
 	std::shared_ptr<Label> getLabel() { return m_label; }
 

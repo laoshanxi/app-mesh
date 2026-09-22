@@ -13,6 +13,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 const (
@@ -148,7 +149,7 @@ func main() {
 	config.ResolveAbsolutePaths()
 
 	// Read PSK from shared memory
-	psk, err := readPSKFromSHM()
+	psk, err := appmesh.ReadPSKFromSHM()
 	if err != nil || len(psk) == 0 {
 		logger.Fatal("failed to read PSK from shared memory")
 	}

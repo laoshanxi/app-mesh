@@ -15,6 +15,7 @@
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
+#include "../security/HMACVerifier.h"
 #include "../security/InternalCapability.h"
 #include "../security/SecretProtector.h"
 #include "../security/Security.h"
@@ -905,10 +906,12 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 	const auto workflowProcess = Configuration::instance()->getApp(WORKFLOW_APP_NAME, false);
 	if (!workflowProcess || !workflowProcess->isSystemProtected())
 		throw AuthorizationException("managed Workflow system application is unavailable");
-	const auto processKey = message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY);
-	const auto processUuid = workflowProcess->currentProcessUuidForKey(processKey);
+	// A bad or superseded proof is an authentication failure (401), not an
+	// authorization denial (403).
+	const auto processUuid = workflowProcess->currentProcessUuidForProof(
+		message->m_uuid, message->m_headers.get(HMAC_HTTP_HEADER));
 	if (processUuid.empty())
-		throw AuthorizationException("workflow process proof is invalid or superseded");
+		throw std::domain_error("workflow process proof is invalid or superseded");
 
 	const auto request = message->extractJson();
 	if (!request.is_object())
@@ -1013,10 +1016,10 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 	const auto workflowProcess = Configuration::instance()->getApp(WORKFLOW_APP_NAME, false);
 	if (!workflowProcess || !workflowProcess->isSystemProtected())
 		throw AuthorizationException("managed Workflow system application is unavailable");
-	const auto processKey = message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY);
-	const auto processUuid = workflowProcess->currentProcessUuidForKey(processKey);
+	const auto processUuid = workflowProcess->currentProcessUuidForProof(
+		message->m_uuid, message->m_headers.get(HMAC_HTTP_HEADER));
 	if (processUuid.empty())
-		throw AuthorizationException("workflow process proof is invalid or superseded");
+		throw std::domain_error("workflow process proof is invalid or superseded");
 
 	constexpr const char *stepPrefix = WORKFLOW_STEP_PREFIX;
 	const auto prefixLength = std::char_traits<char>::length(stepPrefix);

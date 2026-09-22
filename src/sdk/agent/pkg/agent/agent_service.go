@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/grafana"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
@@ -57,6 +58,7 @@ func isSubscriptionRequest(r *http.Request) bool {
 
 func stripInternalClientProof(r *http.Request) {
 	r.Header.Del(HTTP_HEADER_KEY_APPMESH_PROCESS)
+	r.Header.Del(cloud.HTTP_HEADER_HMAC)
 	r.Header.Del(HTTP_HEADER_KEY_APPMESH_FORWARDED)
 	r.Header.Del(HTTP_HEADER_KEY_APPMESH_ROUTE)
 	query := r.URL.Query()

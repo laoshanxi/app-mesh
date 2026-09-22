@@ -37,6 +37,7 @@ func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	wssRequester := &WSSRequester{
 		WSSConnection: NewWSSConnection(),
 		baseURL:       *parsed,
+		psk:           options.PSK,
 	}
 
 	httpClient, err := newHTTPClientWithRequester(options, wssRequester)

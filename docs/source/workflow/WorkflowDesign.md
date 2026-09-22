@@ -295,12 +295,14 @@ Supported functions/operators are documented in [WorkflowSchema.md](WorkflowSche
 
 The workflow service is not an OAuth client. Manual runs keep the caller's validated
 bearer in memory. Automatic and recovered runs use an opaque authorization capability issued
-by the local Engine after the current managed Workflow process proves its process key.
+by the local Engine after the current managed Workflow process proves itself with a
+pre-shared key.
 
 ```
 daemon starts workflow App
-  → Engine injects APP_MESH_PROCESS_KEY
-  → workflow requests a capability over loopback TCP
+  → Engine writes a per-spawn pre-shared key to shared memory
+  → workflow reads the key once and requests a capability over loopback TCP,
+    signing each request with the key (X-Request-HMAC)
   → Engine derives owner from workflow-{name}, binds workflow/run/process/ops/expiry
   → each step operation is checked against the capability and current owner RBAC
 ```
@@ -314,7 +316,7 @@ returns only Engine-registered `workflow-*` definitions, never the general App l
 
 Capabilities expire within five minutes and are renewed before expiry using the same process
 proof. They are neither JWTs nor OAuth tokens, are never persisted/logged/forwarded, and are
-rejected on public HTTP/WSS or non-loopback TCP. The process key proves only the managed
+rejected on public HTTP/WSS or non-loopback TCP. The pre-shared key proves only the managed
 process instance; it is not itself an App Mesh identity or general authorization credential.
 
 **Remote nodes:** Manual runs may forward the caller's bearer. Node-local internal
@@ -370,7 +372,8 @@ Recovery constraints:
 - Before recovery, a private loopback-TCP Engine operation removes only local temporary
   Apps created by a prior Workflow process. Eligible Apps must have the exact `wf-cmd-`
   prefix plus `metadata.type=workflow-step`, valid workflow/run IDs, and a different
-  creator process UUID. The current process proves `APP_MESH_PROCESS_KEY`; the request
+  creator process UUID. The current process proves its pre-shared key with a per-request
+  HMAC signature; the request
   accepts no app name or owner and grants no general `app-delete` authority. Untagged
   legacy Apps are deliberately not deleted by prefix alone.
 - YAML changes between crash and recovery use the current definition — renamed or removed jobs may produce different behavior than the original run.
