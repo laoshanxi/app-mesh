@@ -26,6 +26,20 @@ web:
 telemetry:
   http: __APPMESH_AUTH_TELEMETRY_LISTEN__
 
+# Administrative gRPC API for user management ('appmesh-auth.sh add-user' and
+# 'delete-user').
+# The Dex gRPC API has no authentication of its own, so the mutual-TLS client
+# certificate is the only access control and the listener stays on loopback.
+# The launcher renders this block only when the TLS material exists: a tlsCert
+# that points to a missing file would stop Dex from starting.
+# __APPMESH_AUTH_GRPC_BEGIN__
+grpc:
+  addr: __APPMESH_AUTH_GRPC_LISTEN__
+  tlsCert: __APPMESH_AUTH_GRPC_TLS_CERT__
+  tlsKey: __APPMESH_AUTH_GRPC_TLS_KEY__
+  tlsClientCA: __APPMESH_AUTH_GRPC_TLS_CLIENT_CA__
+# __APPMESH_AUTH_GRPC_END__
+
 oauth2:
   responseTypes: ["code"]
   # Password login is deliberately bound to Dex's built-in local password DB.
