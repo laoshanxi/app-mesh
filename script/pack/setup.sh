@@ -946,29 +946,29 @@ print_startup_instructions() {
         echo "App Mesh installed to: $PROG_HOME"
         echo
         echo "Next steps:"
-        echo "  1. Start the service"
+        echo "1. Start the service"
         case "$init_system" in
         "systemd")
-            echo "       sudo systemctl enable --now appmesh"
+            echo "  sudo systemctl enable --now appmesh"
             ;;
         "launchd")
-            echo "       sudo launchctl load -w $LAUNCHD_FILE"
+            echo "  sudo launchctl load -w $LAUNCHD_FILE"
             ;;
         *)
-            echo "       sudo service appmesh start"
+            echo "  sudo service appmesh start"
             ;;
         esac
-        echo "  2. Sign in"
+        echo "2. Sign in"
         if [ "$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)" = "builtin" ]; then
             if grep -q '^password=' "${PROG_HOME}/work/auth/secrets/initial-admin-credentials" 2>/dev/null; then
-                echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh print-initial-password"
+                echo "  sudo ${PROG_HOME}/script/appmesh-auth.sh print-initial-password"
             else
-                echo "       The initial password was removed on this host. Set a new one:"
-                echo "       sudo ${PROG_HOME}/script/appmesh-auth.sh rotate-initial-password, then restart appmesh"
+                echo "  The initial password was removed on this host. Set a new one:"
+                echo "  sudo ${PROG_HOME}/script/appmesh-auth.sh rotate-initial-password, then restart appmesh"
             fi
-            echo "       appm logon --username admin@appmesh.local"
+            echo "  appm logon --username admin@appmesh.local"
         else
-            echo "       appm logon --browser"
+            echo "  appm logon --browser"
         fi
         echo
         echo "Logs: ${PROG_HOME}/work/server.log"
@@ -979,9 +979,9 @@ print_startup_instructions() {
             echo "Uninstall: sudo apt remove appmesh"
         elif [ "$init_system" = "launchd" ]; then
             echo "Uninstall:"
-            echo "       sudo launchctl unload -w $LAUNCHD_FILE"
-            echo "       sudo rm -rf $PROG_HOME $LAUNCHD_FILE /usr/local/bin/appm"
-            echo "       sudo pkgutil --forget com.laoshanxi.appmesh"
+            echo "  sudo launchctl unload -w $LAUNCHD_FILE"
+            echo "  sudo rm -rf $PROG_HOME $LAUNCHD_FILE /usr/local/bin/appm"
+            echo "  sudo pkgutil --forget com.laoshanxi.appmesh"
         else
             echo "Uninstall: sudo service appmesh stop; sudo rm -rf $PROG_HOME"
         fi
