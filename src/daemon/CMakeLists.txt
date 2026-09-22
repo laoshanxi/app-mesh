@@ -14,8 +14,8 @@ target_link_libraries(appmesh
   PRIVATE
     Threads::Threads
     rest
-    security
     application
+    security
     process
     prometheus
     common
