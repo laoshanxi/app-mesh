@@ -10,7 +10,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
-	"go.uber.org/zap"
 )
 
 // GrafanaHandler Is an opaque type that supports the required HTTP handlers for the
@@ -27,7 +26,7 @@ type contextKey string
 
 const requestHeadersKey contextKey = "requestHeaders"
 
-var logger *zap.SugaredLogger = utils.GetLogger()
+var logger *utils.Logger = utils.GetLogger()
 
 // New creates a new http.Handler that will answer to the required endpoint for
 // a SimpleJSON source. You should use WithQuerier, WithTableQuerier,

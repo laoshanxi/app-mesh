@@ -11,7 +11,7 @@ require (
 require (
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/kr/pretty v0.1.0 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect

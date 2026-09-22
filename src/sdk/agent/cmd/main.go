@@ -90,7 +90,6 @@ func initializeServices(ctx context.Context) <-chan struct{} {
 		logger.Infof("<Prometheus Exporter> listening at: %d", port)
 	}
 
-
 	return restDone
 }
 
