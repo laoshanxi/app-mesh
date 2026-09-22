@@ -340,11 +340,10 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 
 void HttpRequest::verifyHMAC() const
 {
-	if (this->m_headers.count(HMAC_HTTP_HEADER) &&
-		HMACVerifierSingleton::instance()->verifyHMAC(this->m_uuid, this->m_headers.find(HMAC_HTTP_HEADER)->second))
-	{
-	}
-	else
+	const auto agent = Configuration::instance()->getApp(SEPARATE_AGENT_APP_NAME, false);
+	const auto hmacHeader = this->m_headers.find(HMAC_HTTP_HEADER);
+	if (!agent || hmacHeader == this->m_headers.end() ||
+		!agent->verifyProcessProof(this->m_uuid, hmacHeader->second))
 	{
 		throw std::invalid_argument("Verify HMAC failed");
 	}

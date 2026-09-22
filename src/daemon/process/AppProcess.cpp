@@ -1,6 +1,8 @@
 // src/daemon/process/AppProcess.cpp
 #include "AppProcess.h"
 
+#include <algorithm>
+#include <cctype>
 #include <condition_variable>
 
 #if !defined(_WIN32)
@@ -81,6 +83,45 @@ namespace
 			LOG_WAR << fname << "pipe O_NONBLOCK setup failed, errno=" << ACE_OS::last_error();
 
 		return {pipeHandles[0], pipeHandles[1]};
+	}
+
+	// Wrap one command-line token so its value stays a single argv element.
+	// The daemon spawns without a shell: the ACE tokenizer drops one pair of
+	// surrounding quotes and keeps everything else verbatim, so the quotes must
+	// enclose the whole token. A quote that starts mid-token reaches the program
+	// as a literal character.
+	std::string quoteArgvToken(const std::string &value)
+	{
+		return "'" + value + "'";
+	}
+
+	bool isValidEnvName(const std::string &name)
+	{
+		if (name.empty() || !(std::isalpha(static_cast<unsigned char>(name[0])) || name[0] == '_'))
+			return false;
+		return std::all_of(name.begin(), name.end(), [](unsigned char c) {
+			return std::isalnum(c) || c == '_';
+		});
+	}
+
+	// sudo --login runs the command through a login shell and sudo's env_reset
+	// drops the daemon-provided environment; re-inject it via the env command so
+	// the protocol keys (APPMESH_PROCESS_KEY, PSK_SHM_NAME, ...) and the app
+	// environment survive the switch.
+	std::string wrapSudoLoginCommand(const std::string &sudoUser, const std::map<std::string, std::string> &envMap, const std::string &cmd)
+	{
+		const static char fname[] = "wrapSudoLoginCommand() ";
+		std::string envArgs;
+		for (const auto &pair : envMap)
+		{
+			if (!isValidEnvName(pair.first))
+			{
+				LOG_WAR << fname << "Skipping invalid environment variable name <" << pair.first << ">";
+				continue;
+			}
+			envArgs += quoteArgvToken(pair.first + "=" + pair.second) + " ";
+		}
+		return Utility::stringFormat("/usr/bin/sudo --login %s env %s%s", quoteArgvToken("--user=" + sudoUser).c_str(), envArgs.c_str(), cmd.c_str());
 	}
 #endif
 }
@@ -731,6 +772,17 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		return ACE_INVALID_PID;
 
 	prepareEnvironment(envMap);
+
+#if !defined(_WIN32)
+	// A sudo login spawn resets the environment: rebuild the command so the
+	// intended variables are re-injected after the reset.
+	if (auto owner = m_owner.lock())
+	{
+		const auto sudoUser = owner->sudoLoginUser();
+		if (!sudoUser.empty())
+			cmd = wrapSudoLoginCommand(sudoUser, envMap, cmd);
+	}
+#endif
 
 	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0, totalEnvArgs = 0;

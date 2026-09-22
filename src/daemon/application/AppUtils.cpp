@@ -112,6 +112,10 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 			LOG_ERR << fname << "Failed to change ownership of file <" << fileName << "> to user <" << execUser << ">: " << last_error_msg();
 			throw std::runtime_error("Failed to change file ownership.");
 		}
+		// The script cds into the working directory after the user switch: hand the
+		// configured directory to the exec user or the cd fails with permission denied.
+		if (!workingDir.empty() && Utility::isDirExist(workingDir) && !os::chown(workingDir, execUser, "", true))
+			LOG_WAR << fname << "Failed to change ownership of working directory <" << workingDir << "> to user <" << execUser << ">: " << last_error_msg();
 	}
 #endif
 
@@ -119,11 +123,12 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	m_fileName = Utility::escapeCommandLine(fileName);
 	m_shellCmd = Utility::stringFormat("bash '%s'", m_fileName.c_str());
 
-	// Check if we need to switch user and handle sudo with session login
+	// Record the sudo login target; the wrapper is composed at spawn time so
+	// per-run environment values survive the login shell's environment reset.
 	if (!execUser.empty() && execUser != osUser && sessionLogin)
 	{
 		m_usingSudo = true;
-		m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash '%s'", execUser.c_str(), m_fileName.c_str());
+		m_sudoUser = execUser;
 	}
 
 	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> and command <" << m_shellCmd << ">";

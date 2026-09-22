@@ -44,6 +44,7 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 	tcpRequester := &TCPRequester{
 		TCPConnection: NewTCPConnection(),
 		baseURL:       *parsed,
+		psk:           options.PSK,
 	}
 
 	// Create the AppMeshClientTCP.

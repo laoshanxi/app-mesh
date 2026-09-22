@@ -29,15 +29,22 @@ public:
     SharedMemory &operator=(SharedMemory &&) = delete;
 
     bool create();
+    // Gives the segment file to the process user so a child running under a
+    // different exec user can read it. No-op success for an empty user.
+    bool changeOwner(const std::string &user);
+    // Non-blocking check; true once the child process has read the key.
+    bool isFlagSet() const;
     bool waitForFlag(int timeoutSeconds = 10);
     bool writeData(const char *data);
     const char *readData() const;
     void writeFlag();
-    std::string shmName() const;
+    // Absolute path of the segment file, for environment export to the child.
+    const std::string &shmPath() const;
     void cleanup();
 
 private:
     std::string m_shmName;
+    std::string m_shmPath;
     std::shared_ptr<class ACE_Shared_Memory_MM> m_aceShm;
     psk_shared_memory_t *m_shmPtr;
 

@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "../../common/Utility.h"
+#include "../../common/os/chown.h"
 #include "SharedMemory.h"
 
 SharedMemory::SharedMemory()
@@ -36,6 +37,7 @@ bool SharedMemory::create()
 #elif defined(_WIN32)
     shmName = (boost::filesystem::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR / shmName).string();
 #endif
+    m_shmPath = shmName;
 
     m_aceShm = std::make_shared<ACE_Shared_Memory_MM>();
 
@@ -69,6 +71,12 @@ bool SharedMemory::create()
     // Ensure memory operations are visible across processes
     std::atomic_thread_fence(std::memory_order_seq_cst);
     return true;
+}
+
+// Non-blocking check for the flag set by the child process
+bool SharedMemory::isFlagSet() const
+{
+    return m_shmPtr && m_shmPtr->flag.load(std::memory_order_acquire) == 1;
 }
 
 // Wait for the flag to be set to 1 by child process
@@ -165,10 +173,33 @@ void SharedMemory::writeFlag()
     LOG_DBG << fname << "Flag set successfully";
 }
 
-// Get the shared memory name for environment export
-std::string SharedMemory::shmName() const
+const std::string &SharedMemory::shmPath() const
 {
-    return m_shmName;
+    return m_shmPath;
+}
+
+bool SharedMemory::changeOwner(const std::string &user)
+{
+    const static char fname[] = "SharedMemory::changeOwner() ";
+
+    if (user.empty())
+        return true;
+#if defined(_WIN32)
+    LOG_WAR << fname << "Changing shared memory owner is not supported on Windows";
+    return false;
+#else
+    if (m_shmPath.empty())
+    {
+        LOG_WAR << fname << "Shared memory is not created yet";
+        return false;
+    }
+    if (!os::chown(m_shmPath, user))
+    {
+        LOG_WAR << fname << "Failed to change owner of <" << m_shmPath << "> to <" << user << ">";
+        return false;
+    }
+    return true;
+#endif
 }
 
 void SharedMemory::cleanup()

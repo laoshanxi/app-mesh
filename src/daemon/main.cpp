@@ -59,7 +59,6 @@
 #include "rest/SocketServer.h"
 #include "rest/SocketStream.h"
 #include "rest/Worker.h"
-#include "security/HMACVerifier.h"
 #include "security/Security.h"
 #if !defined(NDEBUG) && !defined(_WIN32)
 #include "../common/Valgrind.h"
@@ -525,10 +524,11 @@ void AppMeshDaemon::startAgentApplication()
 	{
 		LOG_INF << fname << "Starting agent application";
 
-		const auto shmName = HMACVerifierSingleton::instance()->writePSKToSHM();
-		config->addApp(config->getAgentAppJson(shmName), false)->execute();
-
-		if (!shmName.empty() && !HMACVerifierSingleton::instance()->waitPSKRead())
+		// startRun hands the agent its pre-shared key through shared memory;
+		// block until the agent has read it so startup fails fast on a broken handshake.
+		const auto agent = config->addApp(config->getAgentAppJson(), false);
+		agent->execute();
+		if (!agent->waitProcessProofRead())
 		{
 			throw std::runtime_error("Failed to wait for PSK read from agent process");
 		}
