@@ -219,12 +219,15 @@ func GetAppMeshHomeDir() string {
 	return "/opt/appmesh"
 }
 
+// agentBinaryName is the production binary file name of the agent executable.
+const agentBinaryName = "agent"
+
 // IsAgentProdEnv checks if the current environment is production
 func IsAgentProdEnv() bool {
 	exePath, _ := os.Executable()
 	baseName := filepath.Base(exePath)
 	baseName = strings.TrimSuffix(baseName, ".exe") // Remove .exe postfix
-	return filepath.Base(baseName) == "agent"
+	return filepath.Base(baseName) == agentBinaryName
 }
 
 func ResolveAbsolutePath(path string) string {
