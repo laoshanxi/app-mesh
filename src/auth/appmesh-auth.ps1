@@ -9,8 +9,10 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap", "service", "service-health", "dex", "dex-health", "automation-token", "print-initial-password", "rotate-initial-password", "forget-initial-password")]
-    [string]$Action = ""
+    [ValidateSet("bootstrap", "service", "service-health", "dex", "dex-health", "automation-token", "user-token", "print-initial-password", "rotate-initial-password", "set-initial-password", "forget-initial-password")]
+    [string]$Action = "",
+    [Parameter(Position = 1)]
+    [string]$Username = ""
 )
 
 Set-StrictMode -Version Latest
@@ -449,6 +451,44 @@ function Request-AutomationToken {
     [Console]::Out.Write($token)
 }
 
+function Request-UserToken {
+    param([string]$User)
+    Assert-BuiltinOwner
+    if (-not $User) { $User = $AdminEmail }
+    # The password comes from standard input, never from arguments or
+    # environment; only the access token is printed.
+    $password = [Console]::In.ReadLine()
+    if ([string]::IsNullOrEmpty($password)) { throw "Provide the password on standard input" }
+    if ($null -ne [Console]::In.ReadLine()) { throw "The password must be a single line" }
+    $accessUrl = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ACCESS_URL" $OidcConfig "access_url" "http://127.0.0.1:6062/auth"
+    $tlsVerify = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_TLS_VERIFY" $OidcConfig "tls_verify" "true"
+    $caPath = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_CA_PATH" $OidcConfig "ca_path" ""
+    $curlArguments = @("--fail", "--silent", "--show-error", "--connect-timeout", "2", "--max-time", "8", "--request", "POST")
+    if ($tlsVerify -in @("false", "False", "FALSE", "0")) { $curlArguments += "--insecure" }
+    if ($caPath) {
+        if (Test-Path -LiteralPath $caPath -PathType Container) {
+            $curlArguments += @("--capath", $caPath)
+        } else {
+            $curlArguments += @("--cacert", $caPath)
+        }
+    }
+    $curlArguments += @(
+        "--user", "appmesh-cli:",
+        "--data-urlencode", "grant_type=password",
+        "--data-urlencode", "username=$User",
+        "--data-urlencode", "password=$password",
+        "--data-urlencode", "scope=openid audience:server:client_id:appmesh-api",
+        "--url", ($accessUrl.TrimEnd('/') + "/token")
+    )
+    $response = (& curl.exe @curlArguments) -join ""
+    $password = $null
+    if ($LASTEXITCODE -ne 0) { throw "The token request failed" }
+    $token = ($response | ConvertFrom-Json).access_token
+    $response = $null
+    if (-not $token) { throw "The token response has no access_token" }
+    [Console]::Out.Write($token)
+}
+
 function Print-InitialPassword {
     Assert-BuiltinOwner
     Assert-InitialCredential $AdminCredentials $AdminEmail $AdminUsername $AdminUserId "administrator"
@@ -470,6 +510,31 @@ function Rotate-InitialPassword {
         $password = $null
     }
     [Console]::Error.WriteLine("The initial administrator password was rotated. Run print-initial-password to read it, then restart App Mesh.")
+}
+
+function Set-InitialPassword {
+    Assert-BuiltinOwner
+    # Read from standard input (never arguments or environment, which leak into
+    # process listings and CI logs), the same rule as the shell port.
+    $password = [Console]::In.ReadLine()
+    if ([string]::IsNullOrEmpty($password)) {
+        throw "Provide the initial administrator password on standard input"
+    }
+    if ($null -ne [Console]::In.ReadLine()) {
+        throw "The initial administrator password must be a single line"
+    }
+    # bcrypt rejects inputs past 72 bytes; fail early with a clear message.
+    if ([System.Text.Encoding]::UTF8.GetByteCount($password) -gt 72) {
+        throw "The initial administrator password must be at most 72 bytes"
+    }
+    Ensure-PrivateDirectory $AuthSecretDir
+    try {
+        Write-InitialCredential $AdminCredentials $AdminEmail $AdminUsername $AdminUserId $password $true
+        if (-not (Test-Path -LiteralPath $AdminMarker)) { Write-PrivateText $AdminMarker "initialized`n" }
+    } finally {
+        $password = $null
+    }
+    [Console]::Error.WriteLine("The initial administrator password was updated. Restart App Mesh to apply it.")
 }
 
 function Forget-InitialPassword {
@@ -508,10 +573,12 @@ try {
             exit $LASTEXITCODE
         }
         "automation-token" { Request-AutomationToken }
+        "user-token" { Request-UserToken $Username }
         "print-initial-password" { Print-InitialPassword }
         "rotate-initial-password" { Rotate-InitialPassword }
+        "set-initial-password" { Set-InitialPassword }
         "forget-initial-password" { Forget-InitialPassword }
-        default { throw "usage: appmesh-auth.ps1 {bootstrap|service|service-health|automation-token|print-initial-password|rotate-initial-password|forget-initial-password}" }
+        default { throw "usage: appmesh-auth.ps1 {bootstrap|service|service-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password} [username]" }
     }
 } catch {
     Fail $_.Exception.Message

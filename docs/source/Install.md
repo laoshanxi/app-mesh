@@ -16,6 +16,18 @@ docker run -d -p 6060:6060 --restart=always --name appmesh \
 
 The image runs as UID and GID `482`. A bind-mounted work directory must be writable by this identity. A named volume needs no additional permission setup.
 
+To choose the administrator password at the first start, mount it as a file and point `APPMESH_ADMIN_PASSWORD_FILE` at the path. The variable carries a path, not the password, so the secret stays out of `docker inspect`:
+
+```shell
+docker run -d -p 6060:6060 --restart=always --name appmesh \
+  -v appmesh-work:/opt/appmesh/work \
+  -v /path/to/admin-password:/run/secrets/admin-password:ro \
+  -e APPMESH_ADMIN_PASSWORD_FILE=/run/secrets/admin-password \
+  laoshanxi/appmesh:latest
+```
+
+The file applies only on the first boot. See [Authentication](Authentication.md) for password and token operations.
+
 Persist `/opt/appmesh/work`. Back up this directory as one unit. It contains authentication state, authorization data, application definitions, and the master key for secured environment values.
 
 Mount `/var/run/docker.sock` only when App Mesh must manage Docker images. Grant the minimum required group access.
@@ -109,6 +121,15 @@ This action does not remove the password hash. Use this command to create a repl
 sudo /opt/appmesh/script/appmesh-auth.sh rotate-initial-password
 sudo systemctl restart appmesh
 ```
+
+To choose your own password instead of a generated one, pipe it to the helper and restart:
+
+```shell
+echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh set-initial-password
+sudo systemctl restart appmesh
+```
+
+See [Authentication](Authentication.md) for container examples, token procedures, and troubleshooting.
 
 ## Cluster authentication service
 

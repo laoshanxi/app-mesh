@@ -962,9 +962,11 @@ print_startup_instructions() {
         if [ "$(read_env_entry APPMESH_AUTH_MODE 2>/dev/null || true)" = "builtin" ]; then
             if grep -q '^password=' "${PROG_HOME}/work/auth/secrets/initial-admin-credentials" 2>/dev/null; then
                 echo "  sudo ${PROG_HOME}/script/appmesh-auth.sh print-initial-password"
+                echo "  Optional: echo 'your-password' | sudo ${PROG_HOME}/script/appmesh-auth.sh set-initial-password, then restart appmesh"
             else
                 echo "  The initial password was removed on this host. Set a new one:"
                 echo "  sudo ${PROG_HOME}/script/appmesh-auth.sh rotate-initial-password, then restart appmesh"
+                echo "  or: echo 'your-password' | sudo ${PROG_HOME}/script/appmesh-auth.sh set-initial-password, then restart appmesh"
             fi
             echo "  appm logon --username admin@appmesh.local"
         else

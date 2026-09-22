@@ -81,6 +81,26 @@ prepare_tls() {
     chmod 644 "$TLS_DIR/ca.pem" "$TLS_DIR/server.pem" "$TLS_DIR/client.pem"
 }
 
+seed_admin_password() {
+    # Declarative first-boot password: the operator mounts a secret file and
+    # points APPMESH_ADMIN_PASSWORD_FILE at it. The password never travels in
+    # an environment variable value, which would leak through docker inspect.
+    # Applied only before the first bootstrap creates the credential, so later
+    # set-initial-password/rotate changes survive container restarts.
+    local password_file="${APPMESH_ADMIN_PASSWORD_FILE:-}"
+    [ -n "$password_file" ] || return 0
+    local credentials="${WORK_DIR}/auth/secrets/initial-admin-credentials"
+    if [ -e "$credentials" ]; then
+        log "Administrator credential already exists; ignoring APPMESH_ADMIN_PASSWORD_FILE"
+        return 0
+    fi
+    [ ! -L "$password_file" ] && [ -f "$password_file" ] ||
+        die "APPMESH_ADMIN_PASSWORD_FILE is not a regular file: $password_file"
+    log "Seeding the initial administrator password from $password_file"
+    "$AUTH_LAUNCHER" set-initial-password <"$password_file" ||
+        die "Failed to seed the initial administrator password"
+}
+
 initialize_runtime() {
     case "${APPMESH_AUTH_MODE:-builtin}" in
         builtin|external) ;;
@@ -89,6 +109,9 @@ initialize_runtime() {
     export APPMESH_AUTH_MODE="${APPMESH_AUTH_MODE:-builtin}"
     ensure_private_directory "$WORK_DIR"
     [ -x "$AUTH_LAUNCHER" ] || die "Authentication bootstrap is unavailable"
+    if [ "${APPMESH_AUTH_MODE}" = "builtin" ]; then
+        seed_admin_password
+    fi
     "$AUTH_LAUNCHER" bootstrap || die "Authentication bootstrap failed"
     publish_default_workflow
     prepare_tls
