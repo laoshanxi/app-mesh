@@ -5,13 +5,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
-	"github.com/spf13/viper"
-	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 )
 
 type (
@@ -26,10 +27,10 @@ type (
 		SSL appmesh.SSLConfig `yaml:"SSL"`
 	}
 	OIDCConfig struct {
-		Issuer          string `yaml:"issuer" mapstructure:"issuer"`
-		AccessURL       string `yaml:"access_url" mapstructure:"access_url"`
-		TLSVerify       bool   `yaml:"tls_verify" mapstructure:"tls_verify"`
-		CAPath          string `yaml:"ca_path" mapstructure:"ca_path"`
+		Issuer    string `yaml:"issuer"`
+		AccessURL string `yaml:"access_url"`
+		TLSVerify bool   `yaml:"tls_verify"`
+		CAPath    string `yaml:"ca_path"`
 	}
 
 	Configuration struct {
@@ -37,7 +38,7 @@ type (
 	}
 )
 
-var logger *zap.SugaredLogger = utils.GetLogger()
+var logger *utils.Logger = utils.GetLogger()
 
 // default configuration
 var ConfigData = Configuration{
@@ -88,49 +89,128 @@ func ResolveAbsolutePaths() {
 // readConfig loads the application config.yaml from files and environment variables.
 // It returns an error if the configuration cannot be loaded or unmarshaled.
 func readConfig() error {
-	config := viper.New()
-	config.SetConfigName("config")
-	config.SetConfigType("yaml")
-
-	// Add config file paths
-	if !IsAgentProdEnv() {
-		config.AddConfigPath("../../../../daemon")
+	path, err := findConfigFile("config", "../../../../daemon")
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
 	}
-	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "work/config/"))
-	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "config"))
-
-	// Read YAML file
-	if err := config.ReadInConfig(); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Override config with environment variables
-	OverrideConfigWithEnv(config)
+	// Parse into a generic map first: it records which keys the file actually
+	// defines (environment overrides apply only to existing keys) and lets us
+	// canonicalize key casing to the struct yaml tags (viper/mapstructure used
+	// to match keys case-insensitively).
+	var fileConfig map[string]interface{}
+	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	canonicalizeKeys(fileConfig, reflect.TypeOf(Configuration{}))
 
-	// Unmarshal into struct
-	if err := config.Unmarshal(&ConfigData); err != nil {
+	content, err := yaml.Marshal(fileConfig)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	if err := yaml.Unmarshal(content, &ConfigData); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	return nil
+	// Override config with environment variables
+	return overrideConfigWithEnv(fileConfig)
+}
+
+// findConfigFile locates name.yaml in the search paths, in order: the dev
+// path (non-production only), <home>/work/config/, then <home>/config.
+// The first existing file wins.
+func findConfigFile(name, devPath string) (string, error) {
+	var paths []string
+	if !IsAgentProdEnv() {
+		paths = append(paths, devPath)
+	}
+	home := GetAppMeshHomeDir()
+	paths = append(paths, filepath.Join(home, "work/config/"), filepath.Join(home, "config"))
+	for _, dir := range paths {
+		candidate := filepath.Join(dir, name+".yaml")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("config file %q not found in %v", name+".yaml", paths)
+}
+
+// canonicalizeKeys rewrites map keys to the exact yaml tag casing of the
+// target struct fields, matching case-insensitively, recursively.
+func canonicalizeKeys(node map[string]interface{}, t reflect.Type) {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return
+	}
+	for key, value := range node {
+		field, tagName, ok := findFieldByYAMLTag(t, key)
+		if !ok {
+			continue
+		}
+		if tagName != key {
+			delete(node, key)
+			node[tagName] = value
+		}
+		if child, ok := value.(map[string]interface{}); ok {
+			canonicalizeKeys(child, field.Type)
+		}
+	}
+}
+
+// findFieldByYAMLTag returns the struct field whose yaml tag (or lowercased
+// field name) matches key case-insensitively.
+func findFieldByYAMLTag(t reflect.Type, key string) (reflect.StructField, string, bool) {
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.PkgPath != "" {
+			continue // unexported
+		}
+		tagName := field.Tag.Get("yaml")
+		if idx := strings.IndexByte(tagName, ','); idx >= 0 {
+			tagName = tagName[:idx]
+		}
+		if tagName == "-" {
+			continue
+		}
+		if tagName == "" {
+			tagName = strings.ToLower(field.Name)
+		}
+		if strings.EqualFold(tagName, key) {
+			return field, tagName, true
+		}
+	}
+	return reflect.StructField{}, "", false
 }
 
 func readOIDCConfig() error {
-	config := viper.New()
-	config.SetConfigName("oidc")
-	config.SetConfigType("yaml")
-	if !IsAgentProdEnv() {
-		config.AddConfigPath("../../../../daemon/security")
+	path, err := findConfigFile("oidc", "../../../../daemon/security")
+	if err != nil {
+		return fmt.Errorf("failed to read oidc config file: %w", err)
 	}
-	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "work/config/"))
-	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "config"))
-	if err := config.ReadInConfig(); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return fmt.Errorf("failed to read oidc config file: %w", err)
 	}
 	root := struct {
-		OIDC OIDCConfig `mapstructure:"OIDC"`
+		OIDC OIDCConfig `yaml:"OIDC"`
 	}{OIDC: OIDCConfig{TLSVerify: true}}
-	if err := config.Unmarshal(&root); err != nil {
+	var fileConfig map[string]interface{}
+	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
+	}
+	// Canonicalize key casing to the struct yaml tags, as in readConfig.
+	canonicalizeKeys(fileConfig, reflect.TypeOf(root))
+	content, err := yaml.Marshal(fileConfig)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
+	}
+	if err := yaml.Unmarshal(content, &root); err != nil {
 		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
 	}
 	if root.OIDC.Issuer == "" {
@@ -186,8 +266,10 @@ func validateAbsoluteHTTPURL(value string) error {
 	return nil
 }
 
-// OverrideConfigWithEnv overrides configuration with environment variables that have the APPMESH_ prefix.
-func OverrideConfigWithEnv(config *viper.Viper) {
+// overrideConfigWithEnv overrides configuration with environment variables that have the APPMESH_ prefix.
+// An override applies only when the key path already exists in the config file
+// (matched case-insensitively), replicating viper's IsSet semantics.
+func overrideConfigWithEnv(fileConfig map[string]interface{}) error {
 	const prefix = "APPMESH_"
 	for _, env := range os.Environ() {
 		if !strings.HasPrefix(env, prefix) {
@@ -196,16 +278,89 @@ func OverrideConfigWithEnv(config *viper.Viper) {
 
 		key, value, _ := strings.Cut(env, "=")
 		configKey := strings.ToLower(strings.NewReplacer(prefix, "", "_", ".").Replace(key))
+		path := strings.Split(configKey, ".")
 
 		// Check if the key already exists in config and set
-		if config.IsSet(configKey) {
-			existing := config.GetString(configKey)
-			config.Set(configKey, value)
-			logger.Infof("Overriding config: %s (previous: %s, new: %s)", configKey, utils.MaskSecret(existing, 2, "***"), utils.MaskSecret(value, 2, "***"))
+		if existing, ok := lookupConfigKey(fileConfig, path); ok {
+			previous := fmt.Sprintf("%v", existing)
+			if err := setConfigValue(&ConfigData, path, value); err != nil {
+				return fmt.Errorf("failed to override config %q: %w", configKey, err)
+			}
+			logger.Infof("Overriding config: %s (previous: %s, new: %s)", configKey, utils.MaskSecret(previous, 2, "***"), utils.MaskSecret(value, 2, "***"))
 		} else {
 			logger.Infof("Ignoring environment variable: '%s' (not found in config)", key)
 		}
 	}
+	return nil
+}
+
+// lookupConfigKey returns the value at the dot-separated key path in the
+// parsed config file map, matching keys case-insensitively.
+func lookupConfigKey(node map[string]interface{}, path []string) (interface{}, bool) {
+	for i, segment := range path {
+		var value interface{}
+		found := false
+		for key, v := range node {
+			if strings.EqualFold(key, segment) {
+				value, found = v, true
+				break
+			}
+		}
+		if !found {
+			return nil, false
+		}
+		if i == len(path)-1 {
+			return value, true
+		}
+		child, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		node = child
+	}
+	return nil, false
+}
+
+// setConfigValue walks the struct along the dot-separated key path (matching
+// yaml tags case-insensitively) and sets the leaf field, converting the string
+// value to the field type. Keys that exist in the file but not in the struct
+// are accepted and dropped, as viper's Unmarshal did; only conversion failures
+// on known fields are errors.
+func setConfigValue(target interface{}, path []string, value string) error {
+	v := reflect.ValueOf(target)
+	for _, segment := range path {
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			return fmt.Errorf("key %q is not a config section", segment)
+		}
+		field, _, ok := findFieldByYAMLTag(v.Type(), segment)
+		if !ok {
+			return nil
+		}
+		v = v.FieldByIndex(field.Index)
+	}
+
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString(value)
+	case reflect.Bool:
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		v.SetBool(parsed)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return err
+		}
+		v.SetInt(parsed)
+	default:
+		return fmt.Errorf("unsupported config field type %s", v.Kind())
+	}
+	return nil
 }
 
 // GetAppMeshHomeDir determines the app mesh home directory

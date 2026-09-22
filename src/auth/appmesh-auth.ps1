@@ -378,6 +378,10 @@ function Render-DexConfig {
     # Windows runs the CGO-free dex build: memory storage, no SQLite database.
     # A template change leaves the marker unresolved and fails the check below.
     $content = $content -replace "(?m)^  type: sqlite3\r?\n  config:\r?\n    file: __APPMESH_AUTH_STORAGE_PATH__\r?$", "  type: memory"
+    # The gRPC listener block is optional and Unix-only: dexuser, the helper that
+    # drives it, is not built for Windows. Drop the block with its control markers.
+    # A template change leaves a marker unresolved and fails the check below.
+    $content = $content -replace "(?ms)^# __APPMESH_AUTH_GRPC_BEGIN__\r?\n.*?^# __APPMESH_AUTH_GRPC_END__\r?\n", ""
     $replacements = [ordered]@{
         "__APPMESH_AUTH_ISSUER__" = $issuer
         "__APPMESH_AUTH_LISTEN__" = $listen

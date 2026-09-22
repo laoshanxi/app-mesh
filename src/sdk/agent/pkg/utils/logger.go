@@ -3,29 +3,38 @@ package utils
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 // Constants
 const (
 	defaultLevel       = "debug"
-	defaultEncoding    = "console"
 	defaultTimeFormat  = "2006-01-02 15:04:05.000"
 	goroutineIDLength  = 64
 	goroutineIDPadding = 3
 )
 
+// Log levels, ordered by severity
+const (
+	levelDebug int32 = iota
+	levelInfo
+	levelWarn
+	levelError
+	levelFatal
+)
+
+var levelNames = []string{"DEBUG", "INFO", "WARN", "ERROR", "FATAL"}
+
 // Global variables
 var (
-	logger     atomic.Pointer[zap.SugaredLogger]
+	logger     atomic.Pointer[Logger]
 	bufferPool = sync.Pool{
 		New: func() interface{} {
 			return new(bytes.Buffer)
@@ -44,6 +53,18 @@ type Config struct {
 	EnableCaller bool     `json:"enableCaller"`
 }
 
+// Logger is a leveled, goroutine-safe console logger. Its output format is
+// compatible with the previous zap console encoding:
+//
+//	2006-01-02 15:04:05.000 [001]\tINFO\tpkg/file.go:42\tmessage
+type Logger struct {
+	level      atomic.Int32
+	out        io.Writer
+	mu         sync.Mutex
+	timeFormat string
+	caller     bool
+}
+
 // Public functions
 
 // DefaultConfig returns the default logger configuration
@@ -51,7 +72,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Level:        defaultLevel,
 		Development:  false,
-		Encoding:     defaultEncoding,
+		Encoding:     "console",
 		OutputPaths:  []string{"stdout"},
 		TimeFormat:   defaultTimeFormat,
 		EnableCaller: true,
@@ -68,7 +89,7 @@ func InitLogger(cfg *Config) error {
 }
 
 // GetLogger returns the initialized logger instance
-func GetLogger() *zap.SugaredLogger {
+func GetLogger() *Logger {
 	if l := logger.Load(); l != nil {
 		return l
 	}
@@ -77,12 +98,9 @@ func GetLogger() *zap.SugaredLogger {
 	if err := InitLogger(DefaultConfig()); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to init logger: %v\n", err)
 
-		// Optional: fallback to console logger
-		l, fallbackErr := zap.NewProduction()
-		if fallbackErr != nil {
-			panic(fmt.Sprintf("Failed to create fallback logger: %v", fallbackErr))
-		}
-		logger.Store(l.Sugar())
+		// Fallback to a plain stdout logger at debug level
+		fallback := &Logger{out: os.Stdout, timeFormat: defaultTimeFormat, caller: true}
+		logger.Store(fallback)
 	}
 	return logger.Load()
 }
@@ -94,29 +112,48 @@ func SetLogLevel(level string) error {
 		return fmt.Errorf("logger not initialized")
 	}
 
-	parsedLevel, err := zapcore.ParseLevel(level)
+	parsedLevel, err := parseLevel(level)
 	if err != nil {
-		return fmt.Errorf("invalid log level %q: %w", level, err)
+		return err
 	}
-
-	l.Desugar().Core().Enabled(parsedLevel)
+	l.level.Store(parsedLevel)
 	return nil
 }
 
-// Sync flushes any buffered log entries
+// Sync flushes any buffered log entries (stdout is unbuffered; kept for API compatibility)
 func Sync() error {
-	if l := logger.Load(); l != nil {
-		err := l.Sync()
-		if err != nil && err != os.ErrInvalid {
-			return fmt.Errorf("failed to sync logger: %w", err)
-		}
-	}
 	return nil
 }
 
 // Shutdown performs cleanup and ensures all logs are written
 func Shutdown() error {
 	return Sync()
+}
+
+// Leveled logging methods, printf-style
+
+func (l *Logger) Debugf(format string, args ...interface{}) { l.logf(levelDebug, format, args) }
+func (l *Logger) Infof(format string, args ...interface{})  { l.logf(levelInfo, format, args) }
+func (l *Logger) Warnf(format string, args ...interface{})  { l.logf(levelWarn, format, args) }
+func (l *Logger) Errorf(format string, args ...interface{}) { l.logf(levelError, format, args) }
+
+// Fatalf logs at fatal level and exits the process with code 1.
+func (l *Logger) Fatalf(format string, args ...interface{}) {
+	l.logf(levelFatal, format, args)
+	os.Exit(1)
+}
+
+// Leveled logging methods, print-style (fmt.Sprint semantics)
+
+func (l *Logger) Debug(args ...interface{}) { l.log(levelDebug, fmt.Sprint(args...)) }
+func (l *Logger) Info(args ...interface{})  { l.log(levelInfo, fmt.Sprint(args...)) }
+func (l *Logger) Warn(args ...interface{})  { l.log(levelWarn, fmt.Sprint(args...)) }
+func (l *Logger) Error(args ...interface{}) { l.log(levelError, fmt.Sprint(args...)) }
+
+// Fatal logs at fatal level and exits the process with code 1.
+func (l *Logger) Fatal(args ...interface{}) {
+	l.log(levelFatal, fmt.Sprint(args...))
+	os.Exit(1)
 }
 
 // Private functions
@@ -127,42 +164,138 @@ func initLogger(cfg *Config) error {
 		cfg = DefaultConfig()
 	}
 
-	level, err := zapcore.ParseLevel(cfg.Level)
+	level, err := parseLevel(cfg.Level)
 	if err != nil {
-		return fmt.Errorf("invalid log level %q: %w", cfg.Level, err)
+		return err
 	}
 
-	encoderConfig := zapcore.EncoderConfig{
-		TimeKey:        "time",
-		LevelKey:       "level",
-		NameKey:        "logger",
-		CallerKey:      "caller",
-		FunctionKey:    zapcore.OmitKey,
-		MessageKey:     "msg",
-		StacktraceKey:  "stacktrace",
-		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.CapitalLevelEncoder,
-		EncodeTime:     makeTimeAndGoroutineEncoder(cfg.TimeFormat),
-		EncodeCaller:   zapcore.ShortCallerEncoder,
-		EncodeDuration: zapcore.StringDurationEncoder,
+	out := io.Writer(os.Stdout)
+	for _, path := range cfg.OutputPaths {
+		if path == "stderr" {
+			out = os.Stderr
+		}
 	}
 
-	zapConfig := zap.Config{
-		Level:            zap.NewAtomicLevelAt(level),
-		Development:      cfg.Development,
-		Encoding:         cfg.Encoding,
-		EncoderConfig:    encoderConfig,
-		OutputPaths:      cfg.OutputPaths,
-		ErrorOutputPaths: []string{"stderr"},
+	l := &Logger{
+		out:        out,
+		timeFormat: cfg.TimeFormat,
+		caller:     cfg.EnableCaller,
 	}
-
-	l, err := zapConfig.Build(getZapOptions(cfg)...)
-	if err != nil {
-		return fmt.Errorf("build logger error: %w", err)
-	}
-
-	logger.Store(l.Sugar())
+	l.level.Store(level)
+	logger.Store(l)
 	return nil
+}
+
+// parseLevel converts a level name (case-insensitive) to its numeric level
+func parseLevel(level string) (int32, error) {
+	switch strings.ToLower(level) {
+	case "debug":
+		return levelDebug, nil
+	case "info":
+		return levelInfo, nil
+	case "warn", "warning":
+		return levelWarn, nil
+	case "error", "dpanic", "panic":
+		return levelError, nil
+	case "fatal":
+		return levelFatal, nil
+	}
+	return 0, fmt.Errorf("invalid log level %q", level)
+}
+
+func (l *Logger) logf(level int32, format string, args []interface{}) {
+	if level < l.level.Load() {
+		return
+	}
+	l.write(level, fmt.Sprintf(format, args...))
+}
+
+func (l *Logger) log(level int32, msg string) {
+	if level < l.level.Load() {
+		return
+	}
+	l.write(level, msg)
+}
+
+// write emits one log line: "<time> [<gid>]\t<LEVEL>\t<caller>\t<msg>\n",
+// followed by a stacktrace at error level and above.
+func (l *Logger) write(level int32, msg string) {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+
+	buf.WriteString(time.Now().Format(l.timeFormat))
+	buf.WriteByte(' ')
+	buf.WriteString(getGoroutineID())
+	buf.WriteByte('\t')
+	buf.WriteString(levelNames[level])
+	buf.WriteByte('\t')
+	if l.caller {
+		buf.WriteString(callerLocation())
+		buf.WriteByte('\t')
+	}
+	buf.WriteString(msg)
+	buf.WriteByte('\n')
+	if level >= levelError {
+		buf.Write(stackTrace())
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.out.Write(buf.Bytes())
+}
+
+// callerLocation returns the logging call site as "dir/file.go:line" (last
+// two path segments, like zap's ShortCallerEncoder). Leading frames belonging
+// to the Logger methods are skipped, so the result is stable regardless of
+// compiler inlining.
+func callerLocation() string {
+	pcs := make([]uintptr, 16)
+	n := runtime.Callers(2, pcs) // skip runtime.Callers and callerLocation itself
+	frames := runtime.CallersFrames(pcs[:n])
+	for {
+		frame, more := frames.Next()
+		if !strings.Contains(frame.Function, "pkg/utils.(*Logger)") {
+			file := frame.File
+			if idx := strings.LastIndexByte(file, '/'); idx >= 0 {
+				if prev := strings.LastIndexByte(file[:idx], '/'); prev >= 0 {
+					file = file[prev+1:]
+				}
+			}
+			return file + ":" + strconv.Itoa(frame.Line)
+		}
+		if !more {
+			break
+		}
+	}
+	return "unknown:0"
+}
+
+// stackTrace returns the current goroutine stack with logger-internal frames
+// removed, formatted as "<func>\n\t<file>:<line>" per frame.
+func stackTrace() []byte {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+
+	pcs := make([]uintptr, 64)
+	n := runtime.Callers(2, pcs) // skip runtime.Callers and stackTrace itself
+	frames := runtime.CallersFrames(pcs[:n])
+	for {
+		frame, more := frames.Next()
+		// Like zap's stack formatter, the final frame (always runtime.main or
+		// runtime.goexit) is noise and is not printed.
+		if !more {
+			break
+		}
+		if !strings.Contains(frame.Function, "pkg/utils.(*Logger)") {
+			fmt.Fprintf(buf, "%s\n\t%s:%d\n", frame.Function, frame.File, frame.Line)
+		}
+	}
+
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+	return out
 }
 
 // getGoroutineID extracts and formats the current goroutine ID
@@ -176,28 +309,4 @@ func getGoroutineID() string {
 	idField := bytes.Fields(stack[:n])[1]
 	id, _ := strconv.Atoi(string(idField))
 	return fmt.Sprintf("[%0*d]", goroutineIDPadding, id)
-}
-
-// makeTimeAndGoroutineEncoder creates a custom time encoder that includes goroutine ID
-func makeTimeAndGoroutineEncoder(timeFormat string) zapcore.TimeEncoder {
-	return func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-		goroutineID := getGoroutineID()
-		enc.AppendString(fmt.Sprintf("%s %s", t.Format(timeFormat), goroutineID))
-	}
-}
-
-// getZapOptions returns zap options based on the configuration
-func getZapOptions(cfg *Config) []zap.Option {
-	options := make([]zap.Option, 0, 3)
-
-	if cfg.EnableCaller {
-		options = append(options, zap.AddCaller())
-	}
-
-	if cfg.Development {
-		options = append(options, zap.Development())
-	}
-
-	options = append(options, zap.AddStacktrace(zapcore.ErrorLevel))
-	return options
 }

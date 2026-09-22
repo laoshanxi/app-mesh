@@ -86,6 +86,25 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 add_compile_options(-Wall)
 
+# Size optimization. Each function and data item gets its own section, so the
+# linker can discard what nothing references. Symbols and unwind tables stay,
+# so crash backtraces still resolve.
+#
+# Not for MSVC, and not for the legacy GCC line (C++11 tier). That toolchain
+# also keeps a local copy of spdlog's inline default-logger accessor in the
+# daemon, which splits the logger registry: the daemon logs to a registry that
+# the logging setup never configured, so server.log stays empty.
+if(NOT MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0))
+    add_compile_options(-ffunction-sections -fdata-sections)
+    add_compile_options($<$<CONFIG:Release>:-Os>)
+    if(APPLE)
+        # ld64 does not accept --gc-sections.
+        add_link_options(-Wl,-dead_strip)
+    else()
+        add_link_options(-Wl,--gc-sections)
+    endif()
+endif()
+
 # AddressSanitizer (optional)
 # See: https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)

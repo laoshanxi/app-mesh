@@ -173,8 +173,9 @@ if [ true ]; then
     cp ace/config-linux.h ace/config.h
     cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
     cd ${ACE_ROOT}/ace
-    make ssl=1 -j"$(($(nproc) / 2))"
-    make install ssl=1 INSTALL_PREFIX=/usr/local
+    # ACE defaults to debug=1. debug=0 omits -ggdb from the release library.
+    make ssl=1 debug=0 -j"$(($(nproc) / 2))"
+    make install ssl=1 debug=0 INSTALL_PREFIX=/usr/local
     # cd ${ACE_ROOT}/protocols/ace
     # make ssl=1 -j"$(($(nproc) / 2))"
     # make install ssl=1 INSTALL_PREFIX=/usr/local
