@@ -384,6 +384,63 @@ request_automation_token() {
     printf '%s' "${token}"
 }
 
+# Password grant for a human identity (administrator permissions). The password
+# comes from standard input, never from argv/environment; only the access token
+# is printed, so the result can go straight into APPMESH_BEARER_TOKEN.
+request_user_token() {
+    is_builtin_auth && is_auth_owner || {
+        echo "the user token is available only from the built-in auth owner" >&2
+        return 1
+    }
+    local username=${1:-${DEX_INITIAL_ADMIN_EMAIL}}
+    local password extra
+    IFS= read -r password || [[ -n "${password}" ]] || {
+        echo "Provide the password on standard input" >&2
+        return 1
+    }
+    if IFS= read -r extra; then
+        echo "The password must be a single line" >&2
+        return 1
+    fi
+    [[ -n "${password}" ]] || {
+        echo "The password must not be empty" >&2
+        return 1
+    }
+
+    local access_url tls_verify ca_path response token
+    access_url=${APPMESH_AUTH_ACCESS_URL:-$(oidc_auth_value access_url http://127.0.0.1:6062/auth)}
+    tls_verify=${APPMESH_AUTH_TLS_VERIFY:-$(oidc_auth_value tls_verify true)}
+    ca_path=${APPMESH_AUTH_CA_PATH:-$(oidc_auth_value ca_path '')}
+
+    local curl_args=(--fail --silent --show-error --connect-timeout 2 --max-time 8 --request POST)
+    case "${tls_verify}" in false|FALSE|False|0) curl_args+=(--insecure) ;; esac
+    if [[ -n "${ca_path}" ]]; then
+        if [[ -f "${ca_path}" ]]; then
+            curl_args+=(--cacert "${ca_path}")
+        elif [[ -d "${ca_path}" ]]; then
+            curl_args+=(--capath "${ca_path}")
+        fi
+    fi
+
+    response=$(
+        curl "${curl_args[@]}" --user "appmesh-cli:" \
+            --data-urlencode "grant_type=password" \
+            --data-urlencode "username=${username}" \
+            --data-urlencode "password=${password}" \
+            --data-urlencode "scope=openid audience:server:client_id:appmesh-api" \
+            --url "${access_url%/}/token"
+    ) || return 1
+    password=""
+    token=$(printf '%s' "${response}" |
+        sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
+    response=""
+    [[ -n "${token}" ]] || {
+        echo "The token response has no access_token" >&2
+        return 1
+    }
+    printf '%s' "${token}"
+}
+
 valid_bcrypt_hash() {
     [[ "$1" =~ ^\$2[aby]\$10\$[./A-Za-z0-9]{53}$ ]]
 }
@@ -556,6 +613,38 @@ rotate_initial_credentials() {
     publish_initial_credential_marker "${DEX_INITIAL_CREDENTIAL_MARKER}" .dex-initialized
     password=""
     echo "The initial administrator password was rotated. Run print-initial-password to read it, then restart App Mesh." >&2
+}
+
+# Administrator-chosen password instead of a generated one. The password comes
+# from standard input (never argv/environment, which leak into ps, docker
+# inspect, and CI logs) and goes through the same write path as bootstrap and
+# rotate, so file metadata and hash validation stay identical.
+set_initial_password() {
+    local password extra
+    IFS= read -r password || [[ -n "${password}" ]] || {
+        echo "Provide the initial administrator password on standard input" >&2
+        return 1
+    }
+    if IFS= read -r extra; then
+        echo "The initial administrator password must be a single line" >&2
+        return 1
+    fi
+    [[ -n "${password}" ]] || {
+        echo "The initial administrator password must not be empty" >&2
+        return 1
+    }
+    # bcrypt rejects inputs past 72 bytes; fail early with a clear message.
+    if (( $(printf '%s' "${password}" | LC_ALL=C wc -c) > 72 )); then
+        echo "The initial administrator password must be at most 72 bytes" >&2
+        return 1
+    fi
+    prepare_owner_directories
+    write_initial_credentials "${DEX_INITIAL_CREDENTIALS}" \
+        "${DEX_INITIAL_ADMIN_EMAIL}" "${DEX_INITIAL_ADMIN_USERNAME}" \
+        "${DEX_INITIAL_ADMIN_USER_ID}" administrator "${password}" yes
+    publish_initial_credential_marker "${DEX_INITIAL_CREDENTIAL_MARKER}" .dex-initialized
+    password=""
+    echo "The initial administrator password was updated. Restart App Mesh to apply it." >&2
 }
 
 print_initial_password() {
@@ -813,6 +902,11 @@ case "${action}" in
     automation-token)
         request_automation_token
         ;;
+    user-token)
+        is_builtin_auth || { echo "The user token is unavailable in external authentication mode" >&2; exit 1; }
+        is_auth_owner || { echo "The user token is managed only on the authentication owner" >&2; exit 1; }
+        request_user_token "${2:-}"
+        ;;
     print-initial-password)
         is_builtin_auth || { echo "The initial password is unavailable in external authentication mode" >&2; exit 1; }
         is_auth_owner || { echo "The initial password is managed only on the authentication owner" >&2; exit 1; }
@@ -823,13 +917,18 @@ case "${action}" in
         is_auth_owner || { echo "The initial password is managed only on the authentication owner" >&2; exit 1; }
         rotate_initial_credentials
         ;;
+    set-initial-password)
+        is_builtin_auth || { echo "The initial password is unavailable in external authentication mode" >&2; exit 1; }
+        is_auth_owner || { echo "The initial password is managed only on the authentication owner" >&2; exit 1; }
+        set_initial_password
+        ;;
     forget-initial-password)
         is_builtin_auth || { echo "The initial password is unavailable in external authentication mode" >&2; exit 1; }
         is_auth_owner || { echo "The initial password is managed only on the authentication owner" >&2; exit 1; }
         forget_initial_password
         ;;
     *)
-        echo "usage: appmesh-auth.sh {bootstrap|service|service-health|automation-token|print-initial-password|rotate-initial-password|forget-initial-password}" >&2
+        echo "usage: appmesh-auth.sh {bootstrap|service|service-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password}" >&2
         exit 2
         ;;
 esac

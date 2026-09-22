@@ -2,7 +2,7 @@
 
 App Mesh is an OAuth 2.0 protected resource. It trusts one OpenID Connect issuer. It keeps authentication separate from App Mesh authorization.
 
-This document defines security behavior. Use [CLI](CLI.md) for sign-in commands. Use [Deployment](Install.md) for installation procedures. Use [ADR 0009](../adr/0009-authentication-service.md) for the authentication-service implementation decision.
+This document defines security behavior. Use [CLI](CLI.md) for sign-in commands. Use [Deployment](Install.md) for installation procedures. Use [Authentication](Authentication.md) for password and token operations in the built-in mode. Use [ADR 0009](../adr/0009-authentication-service.md) for the authentication-service implementation decision.
 
 ## Trust boundaries
 

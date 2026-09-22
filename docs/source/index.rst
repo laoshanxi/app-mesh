@@ -21,6 +21,7 @@ Welcome to AppMesh's documentation!
    Loki.md
    PROMETHEUS.md
    Security.md
+   Authentication.md
    Coverity.md
    GrafanaDataSource.md
    RemoteTask.md
