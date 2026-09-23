@@ -737,6 +737,355 @@ admin_ui_health() {
     exec curl --fail --silent --show-error --max-time 2 "http://${listen}/"
 }
 
+# The authorization policy a write must target: the runtime copy when it
+# exists, the packaged template otherwise.
+authorization_policy_source() {
+    if [[ -e "${AUTHORIZATION_RUNTIME}" ]]; then
+        [[ ! -L "${AUTHORIZATION_RUNTIME}" && -f "${AUTHORIZATION_RUNTIME}" ]] || {
+            echo "authorization runtime policy is not a regular file: ${AUTHORIZATION_RUNTIME}" >&2
+            return 1
+        }
+        printf '%s' "${AUTHORIZATION_RUNTIME}"
+        return 0
+    fi
+    [[ -f "${AUTHORIZATION_TEMPLATE}" ]] || {
+        echo "authorization template is unavailable: ${AUTHORIZATION_TEMPLATE}" >&2
+        return 1
+    }
+    printf '%s' "${AUTHORIZATION_TEMPLATE}"
+}
+
+# An undefined role makes the Engine reject the whole policy, so every caller
+# checks before it writes. Principal keys share the four-space indent of role
+# names, so the match is scoped to the roles section.
+policy_defines_role() {
+    local source
+    source=$(authorization_policy_source) || return 1
+    awk -v role="$1" '
+        $0 == "  roles:" { in_roles = 1; next }
+        /^  [^ ]/ { in_roles = 0 }
+        in_roles && $0 == "    " role ":" { found = 1 }
+        END { exit(found == 1 ? 0 : 1) }
+    ' "${source}"
+}
+
+# Bind one Principal to one role in the authorization policy. The Engine owns
+# this file and rewrites it on every administrative change, so a binding that
+# is written while the Engine runs can be lost.
+bind_principal() {
+    local principal_id=$1
+    local issuer=$2
+    local subject=$3
+    local role=$4
+    local source
+    source=$(authorization_policy_source) || return 1
+    policy_defines_role "${role}" || {
+        echo "The authorization policy does not define the role ${role}" >&2
+        return 1
+    }
+    if grep -Fqx "    ${principal_id}:" "${source}"; then
+        echo "The authorization policy already lists ${principal_id}" >&2
+        return 0
+    fi
+    install -d -m 700 "$(dirname "${AUTHORIZATION_RUNTIME}")"
+    local issuer_yaml temporary
+    issuer_yaml=$(yaml_quote "${issuer}") || return 1
+    temporary=$(mktemp "${AUTHORIZATION_RUNTIME}.XXXXXX") || return 1
+    chmod 600 "${temporary}"
+    if ! awk \
+        -v principal_id="${principal_id}" \
+        -v issuer="${issuer_yaml}" \
+        -v subject="${subject}" \
+        -v role="${role}" '
+            $0 == "  principals:" {
+                print
+                print "    " principal_id ":"
+                print "      kind: user"
+                print "      issuer: " issuer
+                print "      subject: " subject
+                print "      status: active"
+                print "      execution_user: \"\""
+                print "      roles: [" role "]"
+                added = 1
+                next
+            }
+            { print }
+            END { if (added != 1) exit 42 }
+        ' "${source}" >"${temporary}"; then
+        rm -f "${temporary}"
+        echo "authorization policy has no principals section; preserving it unchanged" >&2
+        return 1
+    fi
+    mv "${temporary}" "${AUTHORIZATION_RUNTIME}"
+    chmod 600 "${AUTHORIZATION_RUNTIME}"
+}
+
+# Remove one Principal from the authorization policy. It reports success when
+# the policy does not list the Principal, because the caller only needs the
+# entry to be absent.
+unbind_principal() {
+    local principal_id=$1
+    local source
+    source=$(authorization_policy_source) || return 1
+    if ! grep -Fqx "    ${principal_id}:" "${source}"; then
+        echo "The authorization policy does not list ${principal_id}" >&2
+        return 0
+    fi
+    install -d -m 700 "$(dirname "${AUTHORIZATION_RUNTIME}")"
+    local temporary
+    temporary=$(mktemp "${AUTHORIZATION_RUNTIME}.XXXXXX") || return 1
+    chmod 600 "${temporary}"
+    # A Principal is its own line plus the six-space fields below it. The next
+    # four-space key ends the block.
+    if ! awk -v principal_id="${principal_id}" '
+            $0 == "    " principal_id ":" { removing = 1; removed = 1; next }
+            removing && /^      / { next }
+            removing { removing = 0 }
+            { print }
+            END { exit(removed == 1 ? 0 : 42) }
+        ' "${source}" >"${temporary}"; then
+        rm -f "${temporary}"
+        echo "authorization policy does not contain the Principal ${principal_id}" >&2
+        return 1
+    fi
+    mv "${temporary}" "${AUTHORIZATION_RUNTIME}"
+    chmod 600 "${AUTHORIZATION_RUNTIME}"
+}
+
+# OIDC subject for a local password user: base64url_raw of the IDTokenSubject
+# protobuf (field 1 user_id, field 2 connector id "local"), mirroring Dex's
+# GenSubject. add-user generates a UUID, but delete-user recovers the identifier
+# from the administration UI, where the form takes free text. Encode the length
+# prefix instead of assuming it, or the subject of any other identifier is
+# wrong and the Principal it names is not the one Dex issues.
+oidc_subject_for_user_id() {
+    local user_id=$1 length remaining byte prefix=""
+    length=$(printf '%s' "${user_id}" | LC_ALL=C wc -c)
+    remaining=${length}
+    # A protobuf length is a varint: seven bits per byte, high bit set while
+    # more bytes follow.
+    while ((remaining > 127)); do
+        printf -v byte '\\x%02x' "$((remaining & 127 | 128))"
+        prefix+="${byte}"
+        remaining=$((remaining >> 7))
+    done
+    printf -v byte '\\x%02x' "${remaining}"
+    prefix+="${byte}"
+    printf "\x0a${prefix}%s\x12\x05local" "${user_id}" |
+        openssl base64 -A | tr '+/' '-_' | tr -d '='
+}
+
+# POST one form to the administration UI (the dexuser System App, loopback
+# only). The UI answers every administrative write with a redirect: ?notice=
+# on success and ?error= on failure, so the Location header carries the result.
+admin_ui_post() {
+    local path=$1
+    shift
+    local listen headers location detail
+    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
+    if ! headers=$(curl --silent --show-error --max-time 10 --request POST \
+        --output /dev/null --dump-header - \
+        "http://${listen}${path}" "$@"); then
+        echo "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)" >&2
+        return 1
+    fi
+    location=$(printf '%s\n' "${headers}" | sed -n 's/^[Ll]ocation:[[:space:]]*//p' | tr -d '\r' | tail -n 1)
+    case "${location}" in
+        *error=*)
+            detail=${location##*error=}
+            detail=${detail//+/ }
+            detail=$(printf '%b' "${detail//%/\\x}")
+            echo "The administration UI rejected the request: ${detail}" >&2
+            return 1
+            ;;
+    esac
+}
+
+# Create a Dex password user through the administration UI and bind its App
+# Mesh Principal. The password comes from standard input, like
+# set-initial-password: argv and the environment leak into ps, docker inspect,
+# and CI logs. The Principal ID is written to standard output; the report goes
+# to standard error.
+add_user() {
+    local email=$1
+    local role=${2:-appmesh-viewer}
+    [[ -n "${email}" ]] || {
+        echo "usage: appmesh-auth.sh add-user <email> [role]" >&2
+        return 1
+    }
+    # Dex compares static emails case-insensitively, so this guard does too.
+    # Otherwise a mixed-case address reaches Dex and fails with its own error.
+    local email_lower
+    email_lower=$(printf '%s' "${email}" | tr '[:upper:]' '[:lower:]')
+    case "${email_lower}" in
+        "${DEX_INITIAL_ADMIN_EMAIL}"|"${DEX_INITIAL_GUEST_EMAIL}")
+            # Dex serves these from its static list, which is read-only
+            # through the administrative API.
+            echo "The ${email} identity is a static entry in the authentication configuration. Dex cannot change it through the administrative API." >&2
+            return 1
+            ;;
+    esac
+    # A malformed address would create a stray identity, because Dex keys
+    # password users by email. Reject it before creation.
+    case "${email}" in
+        ?*@?*) ;;
+        *)
+            echo "The user address must be an email address: ${email}" >&2
+            return 1
+            ;;
+    esac
+    # Check the role before the user is created. A half-done operation would
+    # leave an identity in Dex that no policy authorizes.
+    policy_defines_role "${role}" || {
+        echo "The authorization policy does not define the role ${role}" >&2
+        return 1
+    }
+
+    local password
+    IFS= read -r password || [[ -n "${password}" ]] || {
+        echo "Provide the user password on standard input" >&2
+        return 1
+    }
+    if IFS= read -r _; then
+        echo "The user password must be a single line" >&2
+        return 1
+    fi
+    [[ -n "${password}" ]] || {
+        echo "The user password must not be empty" >&2
+        return 1
+    }
+    # bcrypt rejects inputs past 72 bytes; fail early with a clear message.
+    if (( $(printf '%s' "${password}" | LC_ALL=C wc -c) > 72 )); then
+        echo "The user password must be at most 72 bytes" >&2
+        return 1
+    fi
+
+    prepare_owner_directories
+    local random_hex user_id username
+    random_hex=$(openssl rand -hex 16) || return 1
+    user_id="${random_hex:0:8}-${random_hex:8:4}-${random_hex:12:4}-${random_hex:16:4}-${random_hex:20:12}"
+    username=${email%%@*}
+
+    # The UI hashes the password itself; hand it over through a private file so
+    # it never appears in a process argument list.
+    local password_file
+    password_file=$(mktemp "${AUTH_SECRET_DIR}/.add-user.XXXXXX") || return 1
+    chmod 600 "${password_file}"
+    printf '%s' "${password}" >"${password_file}"
+    password=""
+    if ! admin_ui_post "/admin/password/create" \
+        --data-urlencode "email=${email}" \
+        --data-urlencode "username=${username}" \
+        --data-urlencode "user_id=${user_id}" \
+        --data-urlencode "password@${password_file}"; then
+        rm -f "${password_file}"
+        return 1
+    fi
+    rm -f "${password_file}"
+
+    local issuer subject principal_id
+    issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
+    subject=$(oidc_subject_for_user_id "${user_id}")
+    principal_id=$(stable_principal_id "${issuer}" "${subject}") || {
+        echo "failed to derive the Principal ID" >&2
+        return 1
+    }
+    bind_principal "${principal_id}" "${issuer}" "${subject}" "${role}" || return 1
+
+    echo "Created the Dex password user ${email}" >&2
+    echo "  user_id:      ${user_id}" >&2
+    echo "  OIDC subject: ${subject}" >&2
+    echo "  Principal ID: ${principal_id}" >&2
+    echo "  role:         ${role}" >&2
+
+    local engine_state=unknown
+    if command -v pgrep >/dev/null 2>&1; then
+        if pgrep -x appmesh >/dev/null 2>&1; then
+            engine_state=running
+        else
+            engine_state=stopped
+        fi
+    fi
+    if [[ "${engine_state}" != "stopped" ]]; then
+        echo "Warning: the Engine owns the authorization policy and rewrites it from memory. Restart App Mesh before this user sends a request, or apply the role through the REST API when the Engine is ${engine_state}:" >&2
+        echo "  POST /appmesh/principal/${principal_id}  {\"roles\": [\"${role}\"]}" >&2
+    fi
+    echo "${principal_id}"
+}
+
+# Remove a Dex password user through the administration UI and unbind its App
+# Mesh Principal. The Principal ID is written to standard output when known;
+# the report goes to standard error.
+delete_user() {
+    local email=$1
+    [[ -n "${email}" ]] || {
+        echo "usage: appmesh-auth.sh delete-user <email>" >&2
+        return 1
+    }
+    # Dex compares static emails case-insensitively, so this guard does too.
+    local email_lower
+    email_lower=$(printf '%s' "${email}" | tr '[:upper:]' '[:lower:]')
+    case "${email_lower}" in
+        "${DEX_INITIAL_ADMIN_EMAIL}"|"${DEX_INITIAL_GUEST_EMAIL}")
+            echo "The ${email} identity is a static entry in the authentication configuration. Dex cannot delete it through the administrative API." >&2
+            return 1
+            ;;
+    esac
+
+    # The Principal binding keys on the OIDC subject, which embeds the user_id.
+    # Recover it from the UI password list before the entry disappears; the
+    # column layout mirrors the fork's admin.html passwords table.
+    local listen list_page user_id=""
+    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
+    if ! list_page=$(curl --fail --silent --show-error --max-time 10 \
+        "http://${listen}/admin?section=passwords"); then
+        echo "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)" >&2
+        return 1
+    fi
+    user_id=$(printf '%s\n' "${list_page}" |
+        { grep -F -A2 "<td class=\"mono\">${email}</td>" || true; } |
+        sed -n 's/.*<td class="mono small">\([^<]*\)<\/td>.*/\1/p' |
+        head -n 1)
+
+    local issuer subject principal_id=""
+    if [[ -n "${user_id}" ]]; then
+        issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
+        subject=$(oidc_subject_for_user_id "${user_id}")
+        principal_id=$(stable_principal_id "${issuer}" "${subject}") || principal_id=""
+    fi
+
+    admin_ui_post "/admin/password/delete" --data-urlencode "email=${email}" || return 1
+
+    if [[ -n "${principal_id}" ]]; then
+        unbind_principal "${principal_id}" || true
+    fi
+
+    echo "Removed the Dex password user ${email}" >&2
+    if [[ -n "${user_id}" ]]; then
+        echo "  user_id:      ${user_id}" >&2
+    fi
+    if [[ -n "${principal_id}" ]]; then
+        echo "  Principal ID: ${principal_id}" >&2
+    else
+        echo "  The user identifier is unknown, so no Principal record was removed." >&2
+    fi
+
+    local engine_state=unknown
+    if command -v pgrep >/dev/null 2>&1; then
+        if pgrep -x appmesh >/dev/null 2>&1; then
+            engine_state=running
+        else
+            engine_state=stopped
+        fi
+    fi
+    if [[ -n "${principal_id}" && "${engine_state}" != "stopped" ]]; then
+        echo "Warning: the Engine owns the authorization policy and rewrites it from memory. Remove the Principal through the REST API when the Engine is ${engine_state}:" >&2
+        echo "  DELETE /appmesh/principal/${principal_id}" >&2
+    fi
+    [[ -n "${principal_id}" ]] && echo "${principal_id}"
+    return 0
+}
+
 yaml_quote() {
     local value=$1
     case "${value}" in
@@ -1037,8 +1386,18 @@ case "${action}" in
         fi
         admin_ui_health
         ;;
+    add-user)
+        is_builtin_auth || { echo "The user management API is unavailable in external authentication mode" >&2; exit 1; }
+        is_auth_owner || { echo "Users are managed only on the authentication owner" >&2; exit 1; }
+        add_user "${2:-}" "${3:-}"
+        ;;
+    delete-user)
+        is_builtin_auth || { echo "The user management API is unavailable in external authentication mode" >&2; exit 1; }
+        is_auth_owner || { echo "Users are managed only on the authentication owner" >&2; exit 1; }
+        delete_user "${2:-}"
+        ;;
     *)
-        echo "usage: appmesh-auth.sh {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password}" >&2
+        echo "usage: appmesh-auth.sh {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password|add-user|delete-user}" >&2
         exit 2
         ;;
 esac

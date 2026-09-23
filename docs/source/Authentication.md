@@ -18,6 +18,8 @@ commands, and [Install](Install.md) for deployment procedures.
 | Replace a leaked or lost password | `rotate-initial-password`, then restart | [Rotating and forgetting](#rotating-recovering-and-forgetting) |
 | Get a token for CI or an SDK | `automation-token` (machine) or `user-token` (user) | [Getting a token](#getting-a-token-for-sdk-and-ci) |
 | Manage users, clients, and sessions | Open the administration UI on `http://127.0.0.1:6064` | [Administration UI](#administration-ui) |
+| Add another user | `add-user` with the password on standard input | [Adding a user](#adding-a-user) |
+| Delete a user | `delete-user` with the address | [Deleting a user](#deleting-a-user) |
 | Use a password from the Python SDK | Custom `TokenProvider`, or exchange the token first | [Python SDK password sign-in](#using-a-password-from-the-python-sdk) |
 
 All examples use the packaged helper `appmesh-auth.sh` (`appmesh-auth.ps1` on
@@ -151,76 +153,67 @@ Two points are easy to get backwards:
 
 ## Administration UI
 
-App Mesh has no user directory. The authentication service owns identities. App
-Mesh stores only the authorization record of a verified subject. User, client,
-connector, session, and MFA management happens in the bundled administration
-UI: the `dexuser` System App, served by `bin/dexuser` (built from the Dex
-fork's `examples/example-app`).
+App Mesh has no user directory. The authentication service owns identities; App
+Mesh stores only the authorization record of a verified subject. Both are
+managed in the bundled administration UI — the `dexuser` System App, served by
+`bin/dexuser` — which covers users, OAuth clients, connectors, sessions, and
+MFA.
 
-The UI listens on the loopback interface of the authentication owner host:
-
-```text
-http://127.0.0.1:6064
-```
-
-Open it from a browser on that host, for example over SSH port forwarding:
+The UI listens on loopback only (`http://127.0.0.1:6064`), because it has **no
+authentication of its own** — the same posture as the administrative gRPC API
+it drives. Open it through SSH port forwarding:
 
 ```shell
 ssh -L 6064:127.0.0.1:6064 <host>
 ```
 
-Create a password user under **Passwords → Create a password**. The identity can
-sign in immediately; the authentication service reads its storage on every
-login. The authorization role is separate, see below.
+Key facts:
 
-### Limits
+- Users are created under **Passwords → Create a password** and can sign in
+  immediately. The packaged `admin@appmesh.local` and `guest@appmesh.local`
+  identities are static and cannot be changed here.
+- A user created in the UI has no App Mesh role. Use
+  [`add-user`](#adding-a-user) to create and bind in one step, or set the role
+  through the REST API: `POST /appmesh/principal/<principal-id>` with
+  `{"roles": ["appmesh-viewer"]}`.
+- Set `APPMESH_AUTH_ADMIN_UI=off` to disable the UI. The App is a **system**
+  App, so once disabled it cannot be re-enabled through the application API.
+- On Windows the authentication service runs with memory storage: identities
+  created here do not survive a restart.
+- The UI's demonstration pages (Flows, Token tools) use an unregistered
+  `example-app` OAuth client; only the administration pages are supported.
+- `APPMESH_AUTH_ADMIN_LISTEN` changes the UI listener; the underlying gRPC API
+  listens on `127.0.0.1:5557` (`APPMESH_AUTH_GRPC_LISTEN`).
 
-- The UI has **no authentication of its own**. It listens on loopback only, the
-  same posture as the administrative gRPC listener it drives: anyone who can
-  read the client certificate in `ssl/` can already call that API directly.
-  Never expose the listener on another interface.
-- The UI is a bundled **system** App. Set `APPMESH_AUTH_ADMIN_UI=off` to disable
-  it: the container entrypoint rewrites the App definition to `enabled: false`,
-  and the daemon does not start it. Because it is a system App, the application
-  API refuses to re-enable or replace it, so no remote caller can turn it back
-  on. On a native install, add `APPMESH_AUTH_ADMIN_UI=off` to
-  `/opt/appmesh/appmesh.default` and restart; the launcher then holds the App
-  without serving the UI.
-- The packaged `admin@appmesh.local` and `guest@appmesh.local` identities are
-  static entries. The administrative API cannot change or delete them; change
-  those passwords with `set-initial-password` or `rotate-initial-password`.
-- On Windows the authentication service runs with memory storage, so an
-  identity created through the UI does not survive a restart.
-- The UI also shows the Dex demonstration pages (Flows, Token tools). They run
-  OAuth flows for an `example-app` client that App Mesh does not register; only
-  the administration pages are supported.
-- The Engine loads the authorization policy at startup and never re-reads it
-  while it runs. After creating a user, bind the role through the REST API with
-  an enrolled administrator:
-  `POST /appmesh/principal/<principal-id>` with `{"roles": ["appmesh-viewer"]}`.
-  The Principal ID is `oidc:` followed by the hex SHA-256 of the issuer URL, a
-  NUL byte, and the OIDC subject that the UI shows on the password entry:
+## Adding a user
 
-  ```shell
-  printf 'oidc:%s' "$(printf '%s\0%s' 'http://127.0.0.1:6062/auth' '<subject>' | shasum -a 256 | cut -d' ' -f1)"
-  ```
+`add-user` creates the identity (through the administration UI, which must be
+running) and binds its authorization role in one step:
 
-  A sign-in alone does not reach the Engine, so it is safe. The first request
-  that a new user sends to a running Engine provisions that Principal with no
-  roles.
+```shell
+printf '%s' 'Alice-Pw-2026' | sudo /opt/appmesh/script/appmesh-auth.sh add-user alice@corp.local appmesh-viewer
+```
 
-### The administrative listener
+The password comes from standard input so it never appears in `ps` or CI logs.
+The command prints the Principal ID to standard output; the role argument
+defaults to `appmesh-viewer` and must exist in the authorization policy.
 
-The UI uses the administrative gRPC listener of the authentication service. The
-launcher renders that listener only when the TLS material in `ssl/` is
-complete. A missing certificate would stop the authentication service, and a
-stopped authentication service blocks all sign-in.
+The command rejects the static `admin@appmesh.local` / `guest@appmesh.local`
+identities and requires built-in mode on the authentication owner. The Engine
+reads the authorization policy only at startup: restart App Mesh before the new
+user's first request, or apply the role through the REST API — the command
+prints the exact `POST /appmesh/principal/<principal-id>` request when the
+Engine is running.
 
-Mutual TLS is the only access control, because the Dex gRPC API has no
-authentication of its own. The listener stays on the loopback interface. The
-default address is `127.0.0.1:5557`. Set `APPMESH_AUTH_GRPC_LISTEN` to change
-it. Set `APPMESH_AUTH_ADMIN_LISTEN` to change the UI listener (default
-`127.0.0.1:6064`).
+## Deleting a user
+
+```shell
+sudo /opt/appmesh/script/appmesh-auth.sh delete-user alice@corp.local
+```
+
+Removes the identity and its role binding, and prints the Principal ID. The
+user can no longer sign in. The same Engine restart caveat as `add-user`
+applies.
 
 ## Getting a token for SDK and CI
 
