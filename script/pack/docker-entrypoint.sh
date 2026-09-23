@@ -113,8 +113,32 @@ initialize_runtime() {
         seed_admin_password
     fi
     "$AUTH_LAUNCHER" bootstrap || die "Authentication bootstrap failed"
+    configure_admin_ui
     publish_default_workflow
     prepare_tls
+}
+
+# The administration UI is a bundled System App. Switching its definition to
+# disabled is a hard gate: the daemon will not start it, and the application
+# API refuses to re-enable system Apps, so no remote caller can turn it back on.
+configure_admin_ui() {
+    local definition="${PROG_HOME}/apps/dexuser.yaml"
+    local flag="${APPMESH_AUTH_ADMIN_UI:-}"
+    [ -n "$flag" ] || return 0
+    [ -f "$definition" ] || return 0
+    case "$flag" in
+        on|ON|true|1|enabled)
+            sed -i 's/^enabled:.*/enabled: true/' "$definition" ||
+                die "Cannot enable the administration UI definition: $definition"
+            log "Administration UI enabled (APPMESH_AUTH_ADMIN_UI=$flag)"
+            ;;
+        off|OFF|false|0|disabled)
+            sed -i 's/^enabled:.*/enabled: false/' "$definition" ||
+                die "Cannot disable the administration UI definition: $definition"
+            log "Administration UI disabled (APPMESH_AUTH_ADMIN_UI=$flag)"
+            ;;
+        *) die "APPMESH_AUTH_ADMIN_UI must be on or off" ;;
+    esac
 }
 
 prepare_start_command() {

@@ -21,7 +21,9 @@ DEX_AUTOMATION_CLIENT_FILE="${AUTH_SECRET_DIR}/automation-client"
 AUTHORIZATION_TEMPLATE="${APPMESH_ROOT}/config/authorization.yaml"
 AUTHORIZATION_RUNTIME="${APPMESH_ROOT}/work/config/authorization.yaml"
 PASSHASH_HELPER="${APPMESH_ROOT}/bin/passhash"
-USER_HELPER="${APPMESH_ROOT}/bin/dexuser"
+# Dex administration web UI binary (the fork's examples/example-app), run by
+# the dexuser System App through the admin-ui action below.
+ADMIN_UI_BIN="${APPMESH_ROOT}/bin/dexuser"
 # Mutual-TLS material for the Dex administrative gRPC listener. The launcher
 # enables that listener only when the server certificate, its key, and the
 # client authority all exist.
@@ -690,350 +692,49 @@ forget_initial_password() {
     echo "Removed the initial administrator plaintext password. The existing password hash remains configured." >&2
 }
 
-# The authorization policy a write must target: the runtime copy when it
-# exists, the packaged template otherwise.
-authorization_policy_source() {
-    if [[ -e "${AUTHORIZATION_RUNTIME}" ]]; then
-        [[ ! -L "${AUTHORIZATION_RUNTIME}" && -f "${AUTHORIZATION_RUNTIME}" ]] || {
-            echo "authorization runtime policy is not a regular file: ${AUTHORIZATION_RUNTIME}" >&2
-            return 1
-        }
-        printf '%s' "${AUTHORIZATION_RUNTIME}"
-        return 0
-    fi
-    [[ -f "${AUTHORIZATION_TEMPLATE}" ]] || {
-        echo "authorization template is unavailable: ${AUTHORIZATION_TEMPLATE}" >&2
-        return 1
-    }
-    printf '%s' "${AUTHORIZATION_TEMPLATE}"
-}
-
-# An undefined role makes the Engine reject the whole policy, so every caller
-# checks before it writes. Principal keys share the four-space indent of role
-# names, so the match is scoped to the roles section.
-policy_defines_role() {
-    local source
-    source=$(authorization_policy_source) || return 1
-    awk -v role="$1" '
-        $0 == "  roles:" { in_roles = 1; next }
-        /^  [^ ]/ { in_roles = 0 }
-        in_roles && $0 == "    " role ":" { found = 1 }
-        END { exit(found == 1 ? 0 : 1) }
-    ' "${source}"
-}
-
-# Bind one Principal to one role in the authorization policy. The Engine owns
-# this file and rewrites it on every administrative change, so a binding that
-# is written while the Engine runs can be lost.
-bind_principal() {
-    local principal_id=$1
-    local issuer=$2
-    local subject=$3
-    local role=$4
-    local source
-    source=$(authorization_policy_source) || return 1
-    policy_defines_role "${role}" || {
-        echo "The authorization policy does not define the role ${role}" >&2
-        return 1
-    }
-    if grep -Fqx "    ${principal_id}:" "${source}"; then
-        echo "The authorization policy already lists ${principal_id}" >&2
-        return 0
-    fi
-    install -d -m 700 "$(dirname "${AUTHORIZATION_RUNTIME}")"
-    local issuer_yaml temporary
-    issuer_yaml=$(yaml_quote "${issuer}") || return 1
-    temporary=$(mktemp "${AUTHORIZATION_RUNTIME}.XXXXXX") || return 1
-    chmod 600 "${temporary}"
-    if ! awk \
-        -v principal_id="${principal_id}" \
-        -v issuer="${issuer_yaml}" \
-        -v subject="${subject}" \
-        -v role="${role}" '
-            $0 == "  principals:" {
-                print
-                print "    " principal_id ":"
-                print "      kind: user"
-                print "      issuer: " issuer
-                print "      subject: " subject
-                print "      status: active"
-                print "      execution_user: \"\""
-                print "      roles: [" role "]"
-                added = 1
-                next
-            }
-            { print }
-            END { if (added != 1) exit 42 }
-        ' "${source}" >"${temporary}"; then
-        rm -f "${temporary}"
-        echo "authorization policy has no principals section; preserving it unchanged" >&2
-        return 1
-    fi
-    mv "${temporary}" "${AUTHORIZATION_RUNTIME}"
-    chmod 600 "${AUTHORIZATION_RUNTIME}"
-}
-
-# Create a Dex password user and bind its App Mesh Principal. The password
-# comes from standard input, like set-initial-password: argv and the
-# environment leak into ps, docker inspect, and CI logs. The Principal ID is
-# written to standard output; the report goes to standard error.
-add_user() {
-    local email=$1
-    local role=${2:-appmesh-viewer}
-    [[ -n "${email}" ]] || {
-        echo "usage: appmesh-auth.sh add-user <email> [role]" >&2
-        return 1
-    }
-    # Dex compares static emails case-insensitively, so this guard does too.
-    # Otherwise a mixed-case address reaches Dex and fails with its own error.
-    local email_lower
-    email_lower=$(printf '%s' "${email}" | tr '[:upper:]' '[:lower:]')
-    case "${email_lower}" in
-        "${DEX_INITIAL_ADMIN_EMAIL}"|"${DEX_INITIAL_GUEST_EMAIL}")
-            # Dex serves these from its static list, which is read-only
-            # through the administrative API.
-            echo "The ${email} identity is a static entry in the authentication configuration. Dex cannot change it through the administrative API." >&2
-            return 1
-            ;;
-    esac
-    # A malformed address would create a stray identity, because Dex keys
-    # password users by email. Reject it before creation.
-    case "${email}" in
-        ?*@?*) ;;
-        *)
-            echo "The user address must be an email address: ${email}" >&2
-            return 1
-            ;;
-    esac
-    [[ ! -L "${USER_HELPER}" && -f "${USER_HELPER}" && -x "${USER_HELPER}" ]] || {
-        echo "The dexuser helper is unavailable" >&2
-        return 1
-    }
-    [[ ! -L "${PASSHASH_HELPER}" && -f "${PASSHASH_HELPER}" && -x "${PASSHASH_HELPER}" ]] || {
-        echo "The passhash helper is unavailable" >&2
+# Serve the Dex administration web UI (bin/dexuser, built from the fork's
+# examples/example-app). It talks to the Dex administrative gRPC API over
+# mutual TLS, so it requires the same TLS material that gates the gRPC listener
+# in render_dex_config. The UI has no authentication of its own and therefore
+# listens on loopback only.
+admin_ui() {
+    [[ ! -L "${ADMIN_UI_BIN}" && -f "${ADMIN_UI_BIN}" && -x "${ADMIN_UI_BIN}" ]] || {
+        echo "The administration UI is unavailable: ${ADMIN_UI_BIN}" >&2
         return 1
     }
     if [[ ! -f "${AUTH_GRPC_TLS_CERT}" || ! -f "${AUTH_GRPC_TLS_KEY}" || \
         ! -f "${AUTH_GRPC_TLS_CLIENT_CA}" || ! -f "${AUTH_GRPC_CLIENT_CERT}" || \
         ! -f "${AUTH_GRPC_CLIENT_KEY}" ]]; then
-        echo "The administrative API is unavailable because the TLS material is incomplete in ${AUTH_TLS_DIR}" >&2
+        echo "The administration UI is unavailable because the TLS material is incomplete in ${AUTH_TLS_DIR}" >&2
         return 1
     fi
-    # Check the role before the user is created. A half-done operation would
-    # leave an identity in Dex that no policy authorizes.
-    policy_defines_role "${role}" || {
-        echo "The authorization policy does not define the role ${role}" >&2
-        return 1
-    }
-
-    local password
-    IFS= read -r password || [[ -n "${password}" ]] || {
-        echo "Provide the user password on standard input" >&2
-        return 1
-    }
-    if IFS= read -r _; then
-        echo "The user password must be a single line" >&2
-        return 1
-    fi
-    [[ -n "${password}" ]] || {
-        echo "The user password must not be empty" >&2
-        return 1
-    }
-    # bcrypt rejects inputs past 72 bytes; fail early with a clear message.
-    if (( $(printf '%s' "${password}" | LC_ALL=C wc -c) > 72 )); then
-        echo "The user password must be at most 72 bytes" >&2
-        return 1
-    fi
-
-    prepare_owner_directories
-    local hash_file password_hash
-    hash_file=$(mktemp "${AUTH_SECRET_DIR}/.passhash.XXXXXX") || return 1
-    chmod 600 "${hash_file}"
-    if ! printf '%s\n' "${password}" | "${PASSHASH_HELPER}" >"${hash_file}"; then
-        rm -f "${hash_file}"
-        echo "failed to hash the user password" >&2
-        return 1
-    fi
-    password=""
-    IFS= read -r password_hash <"${hash_file}"
-    rm -f "${hash_file}"
-    valid_bcrypt_hash "${password_hash}" || {
-        echo "The passhash helper returned an invalid hash" >&2
-        return 1
-    }
-
-    local grpc_listen user_id username
-    grpc_listen=${APPMESH_AUTH_GRPC_LISTEN:-127.0.0.1:5557}
-    local random_hex
-    random_hex=$(openssl rand -hex 16) || return 1
-    user_id="${random_hex:0:8}-${random_hex:8:4}-${random_hex:12:4}-${random_hex:16:4}-${random_hex:20:12}"
-    username=${email%%@*}
-
-    local result_file status subject
-    result_file=$(mktemp "${AUTH_SECRET_DIR}/.add-user.XXXXXX") || return 1
-    chmod 600 "${result_file}"
-    if ! printf '%s\n' "${password_hash}" | "${USER_HELPER}" create-password \
-        --addr "${grpc_listen}" \
-        --ca "${AUTH_GRPC_TLS_CLIENT_CA}" \
-        --cert "${AUTH_GRPC_CLIENT_CERT}" \
-        --key "${AUTH_GRPC_CLIENT_KEY}" \
-        --email "${email}" \
-        --username "${username}" \
-        --user-id "${user_id}" >"${result_file}"; then
-        rm -f "${result_file}"
-        echo "The authentication service rejected the new user" >&2
-        return 1
-    fi
-    password_hash=""
-    status=$(credential_value "${result_file}" status)
-    subject=$(credential_value "${result_file}" subject || true)
-    rm -f "${result_file}"
-    if [[ "${status}" == "already_exists" ]]; then
-        echo "The user ${email} already exists. Remove it first, or choose another address." >&2
-        return 1
-    fi
-    [[ -n "${subject}" ]] || {
-        echo "The authentication service did not report the OIDC subject" >&2
-        return 1
-    }
-
-    local issuer principal_id
+    local listen issuer grpc_listen
+    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
     issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
-    principal_id=$(stable_principal_id "${issuer}" "${subject}") || {
-        echo "failed to derive the Principal ID" >&2
-        return 1
-    }
-    bind_principal "${principal_id}" "${issuer}" "${subject}" "${role}" || return 1
-
-    echo "Created the Dex password user ${email}" >&2
-    echo "  user_id:      ${user_id}" >&2
-    echo "  OIDC subject: ${subject}" >&2
-    echo "  Principal ID: ${principal_id}" >&2
-    echo "  role:         ${role}" >&2
-
-    local engine_state=unknown
-    if command -v pgrep >/dev/null 2>&1; then
-        if pgrep -x appmesh >/dev/null 2>&1; then
-            engine_state=running
-        else
-            engine_state=stopped
-        fi
-    fi
-    if [[ "${engine_state}" != "stopped" ]]; then
-        echo "Warning: the Engine owns the authorization policy and rewrites it from memory. Restart App Mesh before this user sends a request, or apply the role through the REST API when the Engine is ${engine_state}:" >&2
-        echo "  POST /appmesh/principal/${principal_id}  {\"roles\": [\"${role}\"]}" >&2
-    fi
-    echo "${principal_id}"
-}
-
-# Remove one Principal from the authorization policy. It reports success when
-# the policy does not list the Principal, because the caller only needs the
-# entry to be absent.
-unbind_principal() {
-    local principal_id=$1
-    local source
-    source=$(authorization_policy_source) || return 1
-    if ! grep -Fqx "    ${principal_id}:" "${source}"; then
-        echo "The authorization policy does not list ${principal_id}" >&2
-        return 0
-    fi
-    install -d -m 700 "$(dirname "${AUTHORIZATION_RUNTIME}")"
-    local temporary
-    temporary=$(mktemp "${AUTHORIZATION_RUNTIME}.XXXXXX") || return 1
-    chmod 600 "${temporary}"
-    # A Principal is its own line plus the six-space fields below it. The next
-    # four-space key ends the block.
-    if ! awk -v principal_id="${principal_id}" '
-            $0 == "    " principal_id ":" { removing = 1; removed = 1; next }
-            removing && /^      / { next }
-            removing { removing = 0 }
-            { print }
-            END { exit(removed == 1 ? 0 : 42) }
-        ' "${source}" >"${temporary}"; then
-        rm -f "${temporary}"
-        echo "authorization policy does not contain the Principal ${principal_id}" >&2
-        return 1
-    fi
-    mv "${temporary}" "${AUTHORIZATION_RUNTIME}"
-    chmod 600 "${AUTHORIZATION_RUNTIME}"
-}
-
-# Remove a Dex password user and its App Mesh Principal binding. The Principal
-# ID is written to standard output; the report goes to standard error.
-delete_user() {
-    local email=$1
-    [[ -n "${email}" ]] || {
-        echo "usage: appmesh-auth.sh delete-user <email>" >&2
-        return 1
-    }
-    # Dex compares static emails case-insensitively, so this guard does too.
-    local email_lower
-    email_lower=$(printf '%s' "${email}" | tr '[:upper:]' '[:lower:]')
-    case "${email_lower}" in
-        "${DEX_INITIAL_ADMIN_EMAIL}"|"${DEX_INITIAL_GUEST_EMAIL}")
-            echo "The ${email} identity is a static entry in the authentication configuration. Dex cannot delete it through the administrative API." >&2
-            return 1
-            ;;
-    esac
-    [[ ! -L "${USER_HELPER}" && -f "${USER_HELPER}" && -x "${USER_HELPER}" ]] || {
-        echo "The dexuser helper is unavailable" >&2
-        return 1
-    }
-    if [[ ! -f "${AUTH_GRPC_TLS_CERT}" || ! -f "${AUTH_GRPC_TLS_KEY}" || \
-        ! -f "${AUTH_GRPC_TLS_CLIENT_CA}" || ! -f "${AUTH_GRPC_CLIENT_CERT}" || \
-        ! -f "${AUTH_GRPC_CLIENT_KEY}" ]]; then
-        echo "The administrative API is unavailable because the TLS material is incomplete in ${AUTH_TLS_DIR}" >&2
-        return 1
-    fi
-
-    local grpc_listen output
     grpc_listen=${APPMESH_AUTH_GRPC_LISTEN:-127.0.0.1:5557}
-    if ! output=$("${USER_HELPER}" delete-password \
-        --addr "${grpc_listen}" \
-        --ca "${AUTH_GRPC_TLS_CLIENT_CA}" \
-        --cert "${AUTH_GRPC_CLIENT_CERT}" \
-        --key "${AUTH_GRPC_CLIENT_KEY}" \
-        --email "${email}" 2>&1); then
-        echo "${output}" >&2
-        return 1
-    fi
+    exec "${ADMIN_UI_BIN}" \
+        --listen "http://${listen}" \
+        --issuer "${issuer}" \
+        --grpc-addr "${grpc_listen}" \
+        --grpc-ca "${AUTH_GRPC_TLS_CLIENT_CA}" \
+        --grpc-client-cert "${AUTH_GRPC_CLIENT_CERT}" \
+        --grpc-client-key "${AUTH_GRPC_CLIENT_KEY}"
+}
 
-    local subject user_id principal_id=""
-    subject=$(printf '%s\n' "${output}" | sed -n 's/^subject=//p')
-    user_id=$(printf '%s\n' "${output}" | sed -n 's/^user_id=//p')
-    if [[ -n "${subject}" ]]; then
-        local issuer
-        issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
-        principal_id=$(stable_principal_id "${issuer}" "${subject}") || principal_id=""
-    fi
-    if [[ -n "${principal_id}" ]]; then
-        unbind_principal "${principal_id}" || true
-    fi
+# The container entrypoint and the service environment file disable the UI
+# with APPMESH_AUTH_ADMIN_UI=off; the dexuser App then stays up but serves
+# nothing, like the identity App does in external authentication mode.
+admin_ui_disabled() {
+    case "${APPMESH_AUTH_ADMIN_UI:-on}" in
+        off|OFF|false|0|disabled) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
-    echo "Removed the Dex password user ${email}" >&2
-    if [[ -n "${user_id}" ]]; then
-        echo "  user_id:      ${user_id}" >&2
-    fi
-    if [[ -n "${principal_id}" ]]; then
-        echo "  Principal ID: ${principal_id}" >&2
-    else
-        echo "  The authentication service did not report the user identifier, so the Principal record is unknown." >&2
-    fi
-
-    local engine_state=unknown
-    if command -v pgrep >/dev/null 2>&1; then
-        if pgrep -x appmesh >/dev/null 2>&1; then
-            engine_state=running
-        else
-            engine_state=stopped
-        fi
-    fi
-    if [[ -n "${principal_id}" && "${engine_state}" != "stopped" ]]; then
-        echo "Warning: the Engine owns the authorization policy and rewrites it from memory. Remove the Principal through the REST API when the Engine is ${engine_state}:" >&2
-        echo "  DELETE /appmesh/principal/${principal_id}" >&2
-    fi
-    [[ -n "${principal_id}" ]] && echo "${principal_id}"
-    return 0
+admin_ui_health() {
+    local listen
+    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
+    exec curl --fail --silent --show-error --max-time 2 "http://${listen}/"
 }
 
 yaml_quote() {
@@ -1324,18 +1025,20 @@ case "${action}" in
         is_auth_owner || { echo "The initial password is managed only on the authentication owner" >&2; exit 1; }
         forget_initial_password
         ;;
-    add-user)
-        is_builtin_auth || { echo "The user management API is unavailable in external authentication mode" >&2; exit 1; }
-        is_auth_owner || { echo "Users are managed only on the authentication owner" >&2; exit 1; }
-        add_user "${2:-}" "${3:-}"
+    admin-ui)
+        if ! is_builtin_auth || ! is_auth_owner || admin_ui_disabled; then
+            hold_system_app
+        fi
+        admin_ui
         ;;
-    delete-user)
-        is_builtin_auth || { echo "The user management API is unavailable in external authentication mode" >&2; exit 1; }
-        is_auth_owner || { echo "Users are managed only on the authentication owner" >&2; exit 1; }
-        delete_user "${2:-}"
+    admin-ui-health)
+        if ! is_builtin_auth || ! is_auth_owner || admin_ui_disabled; then
+            exit 0
+        fi
+        admin_ui_health
         ;;
     *)
-        echo "usage: appmesh-auth.sh {bootstrap|service|service-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password|add-user|delete-user}" >&2
+        echo "usage: appmesh-auth.sh {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password}" >&2
         exit 2
         ;;
 esac

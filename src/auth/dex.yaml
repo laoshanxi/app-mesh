@@ -26,8 +26,8 @@ web:
 telemetry:
   http: __APPMESH_AUTH_TELEMETRY_LISTEN__
 
-# Administrative gRPC API for user management ('appmesh-auth.sh add-user' and
-# 'delete-user').
+# Administrative gRPC API, consumed by the dexuser administration web UI (the
+# dexuser System App, bin/dexuser built from the fork's examples/example-app).
 # The Dex gRPC API has no authentication of its own, so the mutual-TLS client
 # certificate is the only access control and the listener stays on loopback.
 # The launcher renders this block only when the TLS material exists: a tlsCert

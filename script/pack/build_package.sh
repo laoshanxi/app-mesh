@@ -34,6 +34,18 @@ copy_dex() {
     [[ -n "$dex_bin" && -x "$dex_bin" ]] ||         die "Dex binary not found in PATH"
     install -m 755 "$dex_bin" "${PACKAGE_HOME}/bin/dex"
     info "Copied Dex server binary ${dex_bin} into the main package"
+
+    # Dex administration web UI (built from the fork's examples/example-app by
+    # install_build_deps*.sh), packaged under the same dexuser name the retired
+    # gRPC helper used.
+    local dexuser_bin
+    dexuser_bin="$(command -v dexuser || true)"
+    if [[ -z "$dexuser_bin" ]]; then
+        dexuser_bin="$(go env GOPATH 2>/dev/null)/bin/dexuser"
+    fi
+    [[ -n "$dexuser_bin" && -x "$dexuser_bin" ]] ||         die "dexuser (Dex admin UI) binary not found in PATH"
+    install -m 755 "$dexuser_bin" "${PACKAGE_HOME}/bin/dexuser"
+    info "Copied Dex admin UI binary ${dexuser_bin} into the main package"
 }
 
 ################################################################################

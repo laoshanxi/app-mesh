@@ -1,0 +1,12 @@
+---
+name: dexuser
+description: bundled Dex administration web UI (users, clients, sessions, MFA)
+command: ../../script/appmesh-auth.sh admin-ui
+health_check_cmd: ../../script/appmesh-auth.sh admin-ui-health
+owner_principal_id: system:appmesh
+permission: 10
+system: true
+enabled: true
+stdout_backup_count: 5
+behavior:
+  exit: restart

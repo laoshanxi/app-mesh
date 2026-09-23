@@ -34,7 +34,7 @@ readonly WORKFLOW_INIT_MARKER="${PROG_HOME}/work/.workflow_initialized"
 readonly WORKFLOW_BASELINE="${PROG_HOME}/work/.workflow_builtin_template.yaml"
 readonly WORKFLOW_DISABLED_APP="${WORKFLOW_APP}.builtin-disabled"
 readonly AUTH_LAUNCHER="${PROG_HOME}/script/appmesh-auth.sh"
-readonly AUTH_APP_NAMES=(identity)
+readonly AUTH_APP_NAMES=(identity dexuser)
 
 AUTH_ACCESS_URL_EXPLICIT=0
 AUTH_ISSUER_EXPLICIT=0

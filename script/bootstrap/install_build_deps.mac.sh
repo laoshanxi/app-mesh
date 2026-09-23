@@ -101,6 +101,9 @@ go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfp
 # refresh-token rotation SQLite deadlock fix until upstream merges it.
 git clone --quiet --depth 1 https://github.com/laoshanxi/dex.git
 (cd dex && CGO_ENABLED=1 go build -trimpath -buildvcs=false -ldflags "-s -w" -o /usr/local/bin/dex ./cmd/dex)
+# Dex administration web UI (the fork's examples/example-app, a separate Go
+# module): packaged as dexuser and run as the dexuser System App.
+(cd dex/examples && CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags "netgo,osusergo" -ldflags "-s -w" -o /usr/local/bin/dexuser ./example-app)
 
 echo "Installing spdlog from source (pinned to v1.17.0)..."
 cd ${TMP_DIR}

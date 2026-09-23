@@ -2,14 +2,14 @@
 ################################################################################
 ## Native Windows launcher for the bundled authentication System App.
 ##
-## The Linux/macOS package uses appmesh-auth.sh. The installed identity.yaml is
-## patched on Windows to invoke this script, while retaining the same actions and
-## persisted work/auth layout.
+## The Linux/macOS package uses appmesh-auth.sh. The installed identity.yaml and
+## dexuser.yaml are patched on Windows to invoke this script, while retaining the
+## same actions and persisted work/auth layout.
 ################################################################################
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap", "service", "service-health", "dex", "dex-health", "automation-token", "user-token", "print-initial-password", "rotate-initial-password", "set-initial-password", "forget-initial-password")]
+    [ValidateSet("bootstrap", "service", "service-health", "dex", "dex-health", "admin-ui", "admin-ui-health", "automation-token", "user-token", "print-initial-password", "rotate-initial-password", "set-initial-password", "forget-initial-password")]
     [string]$Action = "",
     [Parameter(Position = 1)]
     [string]$Username = ""
@@ -45,6 +45,18 @@ $AuthorizationTemplate = Join-Path $AppMeshRoot "config\authorization.yaml"
 $AuthorizationRuntime = Join-Path $AppMeshRoot "work\config\authorization.yaml"
 $PasshashHelper = Join-Path $AppMeshRoot "bin\passhash.exe"
 $DexExecutable = Join-Path $AppMeshRoot "bin\dex.exe"
+# Dex administration web UI binary (the fork's examples/example-app), run by
+# the dexuser System App through the admin-ui action below.
+$AdminUiExecutable = Join-Path $AppMeshRoot "bin\dexuser.exe"
+# Mutual-TLS material for the Dex administrative gRPC listener. The launcher
+# enables that listener only when the server certificate, its key, and the
+# client authority all exist.
+$AuthTlsDir = Join-Path $AppMeshRoot "ssl"
+$GrpcTlsCert = Join-Path $AuthTlsDir "server.pem"
+$GrpcTlsKey = Join-Path $AuthTlsDir "server-key.pem"
+$GrpcTlsClientCA = Join-Path $AuthTlsDir "ca.pem"
+$GrpcClientCert = Join-Path $AuthTlsDir "client.pem"
+$GrpcClientKey = Join-Path $AuthTlsDir "client-key.pem"
 
 $AdminEmail = "admin@appmesh.local"
 $AdminUsername = "admin"
@@ -378,10 +390,23 @@ function Render-DexConfig {
     # Windows runs the CGO-free dex build: memory storage, no SQLite database.
     # A template change leaves the marker unresolved and fails the check below.
     $content = $content -replace "(?m)^  type: sqlite3\r?\n  config:\r?\n    file: __APPMESH_AUTH_STORAGE_PATH__\r?$", "  type: memory"
-    # The gRPC listener block is optional and Unix-only: dexuser, the helper that
-    # drives it, is not built for Windows. Drop the block with its control markers.
-    # A template change leaves a marker unresolved and fails the check below.
-    $content = $content -replace "(?ms)^# __APPMESH_AUTH_GRPC_BEGIN__\r?\n.*?^# __APPMESH_AUTH_GRPC_END__\r?\n", ""
+    # The administrative gRPC listener serves the dexuser administration UI and
+    # is optional: it is rendered only when the mutual-TLS material is present,
+    # because Dex refuses to start when a configured certificate file is missing
+    # and the authentication service gates every sign-in. A template change
+    # leaves a marker unresolved and fails the check below.
+    $grpcEnabled = (Test-Path -LiteralPath $GrpcTlsCert -PathType Leaf) -and
+        (Test-Path -LiteralPath $GrpcTlsKey -PathType Leaf) -and
+        (Test-Path -LiteralPath $GrpcTlsClientCA -PathType Leaf)
+    if ($grpcEnabled) {
+        # Control markers, not configuration: never emit them, because the
+        # final check rejects any unresolved marker text.
+        $content = $content -replace "(?m)^# __APPMESH_AUTH_GRPC_BEGIN__\r?\n", ""
+        $content = $content -replace "(?m)^# __APPMESH_AUTH_GRPC_END__\r?\n", ""
+    } else {
+        $content = $content -replace "(?ms)^# __APPMESH_AUTH_GRPC_BEGIN__\r?\n.*?^# __APPMESH_AUTH_GRPC_END__\r?\n", ""
+    }
+    $grpcListen = if ($env:APPMESH_AUTH_GRPC_LISTEN) { $env:APPMESH_AUTH_GRPC_LISTEN } else { "127.0.0.1:5557" }
     $replacements = [ordered]@{
         "__APPMESH_AUTH_ISSUER__" = $issuer
         "__APPMESH_AUTH_LISTEN__" = $listen
@@ -396,6 +421,12 @@ function Render-DexConfig {
         "__APPMESH_AUTH_INITIAL_GUEST_USERNAME__" = $GuestUsername
         "__APPMESH_AUTH_INITIAL_GUEST_USER_ID__" = $GuestUserId
         "__APPMESH_AUTH_AUTOMATION_SECRET__" = $automation.secret
+    }
+    if ($grpcEnabled) {
+        $replacements["__APPMESH_AUTH_GRPC_LISTEN__"] = $grpcListen
+        $replacements["__APPMESH_AUTH_GRPC_TLS_CERT__"] = $GrpcTlsCert
+        $replacements["__APPMESH_AUTH_GRPC_TLS_KEY__"] = $GrpcTlsKey
+        $replacements["__APPMESH_AUTH_GRPC_TLS_CLIENT_CA__"] = $GrpcTlsClientCA
     }
     foreach ($marker in $replacements.Keys) {
         $content = $content.Replace($marker, (ConvertTo-YamlSingleQuotedScalar ([string]$replacements[$marker])))
@@ -550,6 +581,39 @@ function Forget-InitialPassword {
     [Console]::Error.WriteLine("Removed the initial administrator plaintext password. The existing password hash remains configured.")
 }
 
+# Serve the Dex administration web UI (bin\dexuser.exe, built from the fork's
+# examples/example-app). It talks to the Dex administrative gRPC API over
+# mutual TLS, so it requires the same TLS material that gates the gRPC listener
+# in Render-DexConfig. The UI has no authentication of its own and therefore
+# listens on loopback only.
+# The container entrypoint and the service environment file disable the UI with
+# APPMESH_AUTH_ADMIN_UI=off; the dexuser App then stays up but serves nothing,
+# like the identity App in external mode.
+function Test-AdminUiDisabled {
+    $flag = if ($env:APPMESH_AUTH_ADMIN_UI) { $env:APPMESH_AUTH_ADMIN_UI.ToLowerInvariant() } else { "on" }
+    return $flag -in @("off", "false", "0", "disabled")
+}
+
+function Start-AdminUi {
+    Assert-PlainFile $AdminUiExecutable "administration UI executable"
+    foreach ($file in @($GrpcTlsCert, $GrpcTlsKey, $GrpcTlsClientCA, $GrpcClientCert, $GrpcClientKey)) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            throw "The administration UI is unavailable because the TLS material is incomplete in $AuthTlsDir"
+        }
+    }
+    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
+    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
+    $grpcListen = if ($env:APPMESH_AUTH_GRPC_LISTEN) { $env:APPMESH_AUTH_GRPC_LISTEN } else { "127.0.0.1:5557" }
+    & $AdminUiExecutable --listen "http://$listen" --issuer $issuer --grpc-addr $grpcListen --grpc-ca $GrpcTlsClientCA --grpc-client-cert $GrpcClientCert --grpc-client-key $GrpcClientKey
+    exit $LASTEXITCODE
+}
+
+function Test-AdminUiHealth {
+    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
+    & curl.exe --fail --silent --show-error --max-time 2 "http://$listen/" | Out-Null
+    exit $LASTEXITCODE
+}
+
 try {
     switch ($Action) {
         "bootstrap" {
@@ -576,13 +640,23 @@ try {
             & curl.exe --fail --silent --show-error --max-time 2 "http://$listen/healthz" | Out-Null
             exit $LASTEXITCODE
         }
+        "admin-ui" {
+            if ((Get-AuthMode) -ne "builtin" -or -not (Test-AuthOwner) -or (Test-AdminUiDisabled)) {
+                while ($true) { Start-Sleep -Seconds 3600 }
+            }
+            Start-AdminUi
+        }
+        "admin-ui-health" {
+            if ((Get-AuthMode) -ne "builtin" -or -not (Test-AuthOwner) -or (Test-AdminUiDisabled)) { exit 0 }
+            Test-AdminUiHealth
+        }
         "automation-token" { Request-AutomationToken }
         "user-token" { Request-UserToken $Username }
         "print-initial-password" { Print-InitialPassword }
         "rotate-initial-password" { Rotate-InitialPassword }
         "set-initial-password" { Set-InitialPassword }
         "forget-initial-password" { Forget-InitialPassword }
-        default { throw "usage: appmesh-auth.ps1 {bootstrap|service|service-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password} [username]" }
+        default { throw "usage: appmesh-auth.ps1 {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password} [username]" }
     }
 } catch {
     Fail $_.Exception.Message

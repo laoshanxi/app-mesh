@@ -533,6 +533,15 @@ function Install-Dex {
         if ($LASTEXITCODE -ne 0) {
             throw "go build failed for Dex"
         }
+        Pop-Location
+        # Dex administration web UI (the fork's examples/example-app, a
+        # separate Go module): packaged as dexuser and run as the dexuser
+        # System App.
+        Push-Location dex\examples
+        go build @buildFlags -tags "netgo,osusergo" -ldflags="$ldflags" -o "$env:GOBIN\dexuser.exe" ./example-app
+        if ($LASTEXITCODE -ne 0) {
+            throw "go build failed for Dex example-app"
+        }
     }
     finally {
         Pop-Location
