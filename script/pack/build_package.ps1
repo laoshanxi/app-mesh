@@ -38,6 +38,13 @@ $DexDestination = Join-Path $ProjectRoot "build\package_root\bin\dex.exe"
 Test-RequiredPath $DexSource "Dex server binary" -Required
 Copy-Item $DexSource $DexDestination -Force
 
+# Dex administration web UI (built from the fork's examples/example-app by
+# install_build_deps.ps1), packaged under the dexuser name.
+$DexuserSource = "C:\local\bin\dexuser.exe"
+$DexuserDestination = Join-Path $ProjectRoot "build\package_root\bin\dexuser.exe"
+Test-RequiredPath $DexuserSource "Dex admin UI binary" -Required
+Copy-Item $DexuserSource $DexuserDestination -Force
+
 Write-Host "Building NSIS installer..."
 & $NSISExe $NSISScript
 if ($LASTEXITCODE -ne 0) { throw "NSIS build failed with exit code $LASTEXITCODE" }

@@ -74,7 +74,7 @@ The `REST` section of `src/daemon/config.yaml` defines three port keys (env over
 | 6059 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
 | 6058 | `WebSocketPort` | daemon | Single uWS listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`) and event subscribe |
 
-All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs. The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
+All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs; the Dex administration web UI (the `dexuser` System App, `bin/dexuser` built from the Dex fork's `examples/example-app`) listens on **6064**, loopback only, driven by the Dex administrative gRPC API on 5557 (mutual TLS, loopback). The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
 
 ## Binary Inspection Tools
 

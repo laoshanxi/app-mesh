@@ -86,7 +86,10 @@ $AppMeshHome = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $PackagedOidc = Join-Path $AppMeshHome "config\oidc.yaml"
 $OverrideDir = Join-Path $AppMeshHome "work\config"
 $OverrideOidc = Join-Path $OverrideDir "oidc.yaml"
-$AuthServiceDefinition = Join-Path $AppMeshHome "apps\identity.yaml"
+$AuthServiceDefinitions = @(
+    (Join-Path $AppMeshHome "apps\identity.yaml"),
+    (Join-Path $AppMeshHome "apps\dexuser.yaml")
+)
 $NssmExe = Join-Path $AppMeshHome "bin\nssm.exe"
 
 if (-not (Test-Path $PackagedOidc)) {
@@ -120,19 +123,25 @@ function Update-OidcField {
 
 function Set-AuthServiceStatus {
     param([int]$Status)
-    if (-not (Test-Path -LiteralPath $AuthServiceDefinition -PathType Leaf)) {
-        Write-Fatal "Bundled authentication App definition not found: $AuthServiceDefinition"
-    }
-    $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.AddRange([System.IO.File]::ReadAllLines($AuthServiceDefinition))
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match '^enabled\s*:') {
-            $lines[$i] = "enabled: $Status"
-            [System.IO.File]::WriteAllLines($AuthServiceDefinition, $lines, [System.Text.UTF8Encoding]::new($false))
-            return
+    foreach ($definition in $AuthServiceDefinitions) {
+        if (-not (Test-Path -LiteralPath $definition -PathType Leaf)) {
+            Write-Fatal "Bundled authentication App definition not found: $definition"
+        }
+        $lines = [System.Collections.Generic.List[string]]::new()
+        $lines.AddRange([System.IO.File]::ReadAllLines($definition))
+        $updated = $false
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^enabled\s*:') {
+                $lines[$i] = "enabled: $Status"
+                [System.IO.File]::WriteAllLines($definition, $lines, [System.Text.UTF8Encoding]::new($false))
+                $updated = $true
+                break
+            }
+        }
+        if (-not $updated) {
+            Write-Fatal "Bundled authentication App definition has no enabled field: $definition"
         }
     }
-    Write-Fatal "Bundled authentication App definition has no enabled field: $AuthServiceDefinition"
 }
 
 Update-OidcField -Path $OverrideOidc -Field "issuer" -Value $Issuer
