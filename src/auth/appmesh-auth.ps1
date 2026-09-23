@@ -9,10 +9,12 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap", "service", "service-health", "dex", "dex-health", "admin-ui", "admin-ui-health", "automation-token", "user-token", "print-initial-password", "rotate-initial-password", "set-initial-password", "forget-initial-password")]
+    [ValidateSet("bootstrap", "service", "service-health", "dex", "dex-health", "admin-ui", "admin-ui-health", "automation-token", "user-token", "print-initial-password", "rotate-initial-password", "set-initial-password", "forget-initial-password", "add-user", "delete-user")]
     [string]$Action = "",
     [Parameter(Position = 1)]
-    [string]$Username = ""
+    [string]$Username = "",
+    [Parameter(Position = 2)]
+    [string]$Role = ""
 )
 
 Set-StrictMode -Version Latest
@@ -614,6 +616,235 @@ function Test-AdminUiHealth {
     exit $LASTEXITCODE
 }
 
+# The authorization policy a write must target: the runtime copy when it
+# exists, the packaged template otherwise.
+function Get-AuthorizationPolicySource {
+    if (Test-Path -LiteralPath $AuthorizationRuntime) {
+        Assert-PlainFile $AuthorizationRuntime "authorization runtime policy"
+        return $AuthorizationRuntime
+    }
+    Assert-PlainFile $AuthorizationTemplate "authorization template"
+    return $AuthorizationTemplate
+}
+
+# An undefined role makes the Engine reject the whole policy, so every caller
+# checks before it writes. Principal keys share the four-space indent of role
+# names, so the match is scoped to the roles section.
+function Test-PolicyDefinesRole {
+    param([string]$RoleName)
+    $source = Get-AuthorizationPolicySource
+    $inRoles = $false
+    foreach ($line in [System.IO.File]::ReadAllLines($source)) {
+        if ($line -eq "  roles:") { $inRoles = $true; continue }
+        if ($line -match '^  [^ ]') { $inRoles = $false }
+        if ($inRoles -and $line -eq "    ${RoleName}:") { return $true }
+    }
+    return $false
+}
+
+# Bind one Principal to one role in the authorization policy. The Engine owns
+# this file and rewrites it on every administrative change, so a binding that
+# is written while the Engine runs can be lost.
+function Add-PrincipalBinding {
+    param([string]$PrincipalId, [string]$Issuer, [string]$Subject, [string]$RoleName)
+    $source = Get-AuthorizationPolicySource
+    if (-not (Test-PolicyDefinesRole $RoleName)) {
+        throw "The authorization policy does not define the role $RoleName"
+    }
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.AddRange([System.IO.File]::ReadAllLines($source))
+    if (($lines -join "`n") -match ('(?m)^\s{4}' + [regex]::Escape($PrincipalId) + ':\s*$')) {
+        [Console]::Error.WriteLine("The authorization policy already lists $PrincipalId")
+        return
+    }
+    $index = $lines.IndexOf("  principals:")
+    if ($index -lt 0) { throw "authorization policy has no principals section" }
+    $issuerYaml = ConvertTo-YamlSingleQuotedScalar $Issuer
+    $block = [string[]]@(
+        "    ${PrincipalId}:", "      kind: user", "      issuer: $issuerYaml",
+        "      subject: $Subject", "      status: active", "      execution_user: `"`"",
+        "      roles: [$RoleName]", ""
+    )
+    $lines.InsertRange($index + 1, $block)
+    Write-PrivateText $AuthorizationRuntime (($lines -join "`n") + "`n")
+}
+
+# Remove one Principal from the authorization policy. It reports success when
+# the policy does not list the Principal, because the caller only needs the
+# entry to be absent. A Principal is its own line plus the six-space fields
+# below it; the next four-space key ends the block.
+function Remove-PrincipalBinding {
+    param([string]$PrincipalId)
+    $source = Get-AuthorizationPolicySource
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.AddRange([System.IO.File]::ReadAllLines($source))
+    if (($lines -join "`n") -notmatch ('(?m)^\s{4}' + [regex]::Escape($PrincipalId) + ':\s*$')) {
+        [Console]::Error.WriteLine("The authorization policy does not list $PrincipalId")
+        return
+    }
+    $out = [System.Collections.Generic.List[string]]::new()
+    $removing = $false
+    foreach ($line in $lines) {
+        if ($line -eq "    ${PrincipalId}:") { $removing = $true; continue }
+        if ($removing -and $line -match '^      ') { continue }
+        if ($removing) { $removing = $false }
+        $out.Add($line)
+    }
+    Write-PrivateText $AuthorizationRuntime (($out -join "`n") + "`n")
+}
+
+# OIDC subject for a local password user: base64url_raw of the IDTokenSubject
+# protobuf (field 1 user_id, field 2 connector id "local"), mirroring Dex's
+# GenSubject.
+function Get-OidcSubjectForUserId {
+    param([string]$UserId)
+    $userBytes = [System.Text.Encoding]::UTF8.GetBytes($UserId)
+    $connBytes = [System.Text.Encoding]::UTF8.GetBytes("local")
+    $bytes = [byte[]]@(0x0A, $userBytes.Length) + $userBytes + [byte[]]@(0x12, $connBytes.Length) + $connBytes
+    return [Convert]::ToBase64String($bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=')
+}
+
+# POST one form to the administration UI (the dexuser System App, loopback
+# only). The UI answers every administrative write with a redirect: ?notice=
+# on success and ?error= on failure, so the Location header carries the result.
+# $PasswordFile carries the password field through a private file so the value
+# never appears in a process argument list.
+function Invoke-AdminUiPost {
+    param([string]$Path, [string]$Body, [string]$PasswordFile = "")
+    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
+    $curlArguments = @("--silent", "--show-error", "--max-time", "10", "--request", "POST",
+        "--output", "NUL", "--dump-header", "-", "--data-raw", $Body)
+    if ($PasswordFile) { $curlArguments += @("--data-urlencode", "password@$PasswordFile") }
+    $headers = & curl.exe @curlArguments "http://$listen$Path"
+    if ($LASTEXITCODE -ne 0) {
+        throw "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)"
+    }
+    $location = ""
+    foreach ($line in ($headers -split "`r?`n")) {
+        if ($line -match '^[Ll]ocation:\s*(.+?)\s*$') { $location = $Matches[1] }
+    }
+    if ($location -match '[?&]error=([^&]*)') {
+        $detail = [System.Net.WebUtility]::UrlDecode($Matches[1])
+        throw "The administration UI rejected the request: $detail"
+    }
+}
+
+function Add-User {
+    param([string]$Email, [string]$RoleName)
+    Assert-BuiltinOwner
+    if (-not $Email) { throw "usage: appmesh-auth.ps1 add-user <email> [role]" }
+    if (-not $RoleName) { $RoleName = "appmesh-viewer" }
+    # Dex compares static emails case-insensitively, so this guard does too.
+    if ($Email.ToLowerInvariant() -in @($AdminEmail, $GuestEmail)) {
+        # Dex serves these from its static list, which is read-only through the
+        # administrative API.
+        throw "The $Email identity is a static entry in the authentication configuration. Dex cannot change it through the administrative API."
+    }
+    # A malformed address would create a stray identity, because Dex keys
+    # password users by email. Reject it before creation.
+    if ($Email -notmatch '.+@.+') { throw "The user address must be an email address: $Email" }
+    # Check the role before the user is created. A half-done operation would
+    # leave an identity in Dex that no policy authorizes.
+    if (-not (Test-PolicyDefinesRole $RoleName)) {
+        throw "The authorization policy does not define the role $RoleName"
+    }
+
+    # The password comes from standard input, never from arguments or
+    # environment; the same rule as set-initial-password.
+    $password = [Console]::In.ReadLine()
+    if ([string]::IsNullOrEmpty($password)) { throw "Provide the user password on standard input" }
+    if ($null -ne [Console]::In.ReadLine()) { throw "The user password must be a single line" }
+    # bcrypt rejects inputs past 72 bytes; fail early with a clear message.
+    if ([System.Text.Encoding]::UTF8.GetByteCount($password) -gt 72) {
+        throw "The user password must be at most 72 bytes"
+    }
+
+    Ensure-PrivateDirectory $AuthSecretDir
+    $hex = New-SecureHex 16
+    $userId = $hex.Substring(0, 8) + "-" + $hex.Substring(8, 4) + "-" + $hex.Substring(12, 4) + "-" + $hex.Substring(16, 4) + "-" + $hex.Substring(20, 12)
+    $username = $Email.Split('@')[0]
+
+    # The UI hashes the password itself; hand it over through a private file so
+    # it never appears in a process argument list.
+    $passwordFile = Join-Path $AuthSecretDir (".add-user-" + [Guid]::NewGuid().ToString("N"))
+    try {
+        Write-PrivateText -Path $passwordFile -Content $password
+        $password = $null
+        $body = "email=" + [System.Net.WebUtility]::UrlEncode($Email) +
+            "&username=" + [System.Net.WebUtility]::UrlEncode($username) +
+            "&user_id=" + [System.Net.WebUtility]::UrlEncode($userId)
+        Invoke-AdminUiPost "/admin/password/create" $body $passwordFile
+    } finally {
+        $password = $null
+        if (Test-Path -LiteralPath $passwordFile) { Remove-Item -LiteralPath $passwordFile -Force }
+    }
+
+    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
+    $subject = Get-OidcSubjectForUserId $userId
+    $principalId = Get-StablePrincipalId $issuer $subject
+    Add-PrincipalBinding $principalId $issuer $subject $RoleName
+
+    [Console]::Error.WriteLine("Created the Dex password user $Email")
+    [Console]::Error.WriteLine("  user_id:      $userId")
+    [Console]::Error.WriteLine("  OIDC subject: $subject")
+    [Console]::Error.WriteLine("  Principal ID: $principalId")
+    [Console]::Error.WriteLine("  role:         $RoleName")
+
+    $engineRunning = $null -ne (Get-Process -Name "appmesh" -ErrorAction SilentlyContinue)
+    if ($engineRunning) {
+        [Console]::Error.WriteLine("Warning: the Engine owns the authorization policy and rewrites it from memory. Restart App Mesh before this user sends a request, or apply the role through the REST API when the Engine is running:")
+        [Console]::Error.WriteLine("  POST /appmesh/principal/${principalId}  {`"roles`": [`"$RoleName`"]}")
+    }
+    [Console]::Out.WriteLine($principalId)
+}
+
+function Remove-User {
+    param([string]$Email)
+    Assert-BuiltinOwner
+    if (-not $Email) { throw "usage: appmesh-auth.ps1 delete-user <email>" }
+    if ($Email.ToLowerInvariant() -in @($AdminEmail, $GuestEmail)) {
+        throw "The $Email identity is a static entry in the authentication configuration. Dex cannot delete it through the administrative API."
+    }
+
+    # The Principal binding keys on the OIDC subject, which embeds the user_id.
+    # Recover it from the UI password list before the entry disappears; the
+    # column layout mirrors the fork's admin.html passwords table.
+    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
+    $page = (& curl.exe --fail --silent --show-error --max-time 10 "http://$listen/admin?section=passwords") -join "`n"
+    if ($LASTEXITCODE -ne 0) {
+        throw "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)"
+    }
+    $userId = ""
+    $rowPattern = [regex]('(?s)<td class="mono">' + [regex]::Escape($Email) + '</td>\s*<td[^>]*>[^<]*</td>\s*<td class="mono small">([^<]+)</td>')
+    $rowMatch = $rowPattern.Match($page)
+    if ($rowMatch.Success) { $userId = $rowMatch.Groups[1].Value }
+
+    $principalId = ""
+    if ($userId) {
+        $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
+        $principalId = Get-StablePrincipalId $issuer (Get-OidcSubjectForUserId $userId)
+    }
+
+    Invoke-AdminUiPost "/admin/password/delete" ("email=" + [System.Net.WebUtility]::UrlEncode($Email))
+
+    if ($principalId) { Remove-PrincipalBinding $principalId }
+
+    [Console]::Error.WriteLine("Removed the Dex password user $Email")
+    if ($userId) { [Console]::Error.WriteLine("  user_id:      $userId") }
+    if ($principalId) {
+        [Console]::Error.WriteLine("  Principal ID: $principalId")
+    } else {
+        [Console]::Error.WriteLine("  The user identifier is unknown, so no Principal record was removed.")
+    }
+
+    $engineRunning = $null -ne (Get-Process -Name "appmesh" -ErrorAction SilentlyContinue)
+    if ($principalId -and $engineRunning) {
+        [Console]::Error.WriteLine("Warning: the Engine owns the authorization policy and rewrites it from memory. Remove the Principal through the REST API when the Engine is running:")
+        [Console]::Error.WriteLine("  DELETE /appmesh/principal/${principalId}")
+    }
+    if ($principalId) { [Console]::Out.WriteLine($principalId) }
+}
+
 try {
     switch ($Action) {
         "bootstrap" {
@@ -656,7 +887,9 @@ try {
         "rotate-initial-password" { Rotate-InitialPassword }
         "set-initial-password" { Set-InitialPassword }
         "forget-initial-password" { Forget-InitialPassword }
-        default { throw "usage: appmesh-auth.ps1 {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password} [username]" }
+        "add-user" { Add-User $Username $Role }
+        "delete-user" { Remove-User $Username }
+        default { throw "usage: appmesh-auth.ps1 {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password|add-user|delete-user} [username] [role]" }
     }
 } catch {
     Fail $_.Exception.Message

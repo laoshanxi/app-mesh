@@ -117,6 +117,8 @@ jobs:
             export APPMESH_BEARER_TOKEN="$TOKEN"
             export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
             appm ls && appm resource
+            # verify the bundled administration UI and the add-user/delete-user actions
+            bash /work/src/auth/test_admin_ui.sh
             appm log -L DEBUG || true
 
             python3 -m pip install --upgrade appmesh pyotp
@@ -205,6 +207,8 @@ jobs:
             export APPMESH_BEARER_TOKEN="$TOKEN"
             export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
             appm ls && appm resource
+            # verify the bundled administration UI and the add-user/delete-user actions
+            bash /work/src/auth/test_admin_ui.sh
             appm log -L DEBUG || true
 
             # test appmesh python sdk FIRST — Python wrapper captures full daemon
@@ -295,6 +299,8 @@ jobs:
             export APPMESH_BEARER_TOKEN="$TOKEN"
             export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
             appm ls && appm resource
+            # verify the bundled administration UI and the add-user/delete-user actions
+            bash /work/src/auth/test_admin_ui.sh
             appm log -L DEBUG || true
 
             python3 -m pip install --upgrade appmesh pyotp
@@ -388,6 +394,8 @@ jobs:
             export APPMESH_BEARER_TOKEN="$TOKEN"
             export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
             appm ls && appm resource
+            # verify the bundled administration UI and the add-user/delete-user actions
+            bash /work/src/auth/test_admin_ui.sh
             appm log -L DEBUG || true
 
             # test appmesh python sdk FIRST — Python wrapper captures full daemon
