@@ -6,7 +6,7 @@ An MCP (Model Context Protocol) server for querying and managing AppMesh applica
 
 - 📊 Application monitoring and management
 - 📋 Application listing and filtering
-- 📈 Detailed statistics and metrics collection
+- 📈 Application lifecycle and health summary
 - 🔍 Application status filtering
 
 ## Quick Start
@@ -22,9 +22,17 @@ pip install -r requirements.txt
 # Configure MCP endpoint
 export MCP_ENDPOINT="wss://xxxxxxx/mcp/?token=eyJxxxxxxx"
 
+# Supply the App Mesh access token. The stdio server reads it from the
+# environment and refuses to start a client without it.
+export APPMESH_BEARER_TOKEN="eyJxxxxxxx"
+
 # Start MCP Server
 python3 mcp_pipe.py
 ```
+
+The stdio server targets `https://127.0.0.1:6060` by default. Set `APPMESH_URL`
+when the Engine listens elsewhere. See [Authentication](../../../docs/source/Authentication.md)
+for token acquisition.
 
 ## LLM Client Prompt Demo
 

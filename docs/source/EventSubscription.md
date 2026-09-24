@@ -13,6 +13,9 @@ App Mesh supports real-time event subscription over persistent connections (TCP 
 | `STATUS` | App enabled/disabled | `enabled`, `previous_enabled` |
 | `REMOVED` | App deleted | (empty) |
 
+The `events` value accepts the event names above and `ALL`. An empty `events`
+value also selects all events.
+
 ## REST API
 
 ### Subscribe (per-app)
@@ -60,7 +63,7 @@ The response includes `subscription_id` alongside the normal app JSON when subsc
 
 ## Event Push Message Format
 
-Events are delivered as standard `Response` messages with `request_uri = "/appmesh/event"`. Clients identify pushes by this sentinel URI and the absence of a matching pending request UUID.
+Events are delivered as standard `Response` messages with `request_uri = "/appmesh/event"`. Clients route a push by this sentinel URI alone.
 
 ```
 Response {
@@ -86,16 +89,16 @@ Response {
 ## Architecture
 
 ```
-                        ┌──────────────────┐
-                        │  EventDispatcher │  (singleton)
-                        │                  │
-  Application hooks ──▶ │  dispatch()      │──▶ DeliveryCallback(TCP)
-  - onTimerSpawn        │                  │──▶ DeliveryCallback(WSS)
-  - onExitUpdate        │  subscribe()     │
-  - health(bool)        │  unsubscribe()   │
-  - enable/disable      │  removeByConn()  │
-  - Configuration::     │  removeByApp()   │
-    removeApp           └──────────────────┘
+                        ┌───────────────────────┐
+                        │  EventDispatcher      │  (singleton)
+                        │                       │
+  Application hooks ──▶ │  dispatch()           │──▶ DeliveryCallback(TCP)
+  - onStartAccepted     │                       │──▶ DeliveryCallback(WSS)
+  - recordProcessExit   │  subscribe()          │
+  - health(bool)        │  unsubscribe()        │
+  - enable/disable      │  removeByConnection() │
+  - Configuration::     │  removeByApp()        │
+    removeApp           └───────────────────────┘
                                │
                     ┌──────────┼──────────┐
                     │ StdoutStrategy      │

@@ -8,15 +8,19 @@ The agent provides access to Docker daemon through two methods:
 
 The agent proxies Docker daemon REST API requests under the `/appmesh/docker` prefix. The daemon is the only caller. Each request must carry the PSK headers `X-Request-ID` and `X-Request-HMAC`. The agent rejects a request without valid PSK headers with status 407.
 
-| Endpoint                       | Method   | Description                |
-| ------------------------------ | -------- | -------------------------- |
-| `/appmesh/docker/containers/*` | GET/POST | Container operations       |
-| `/appmesh/docker/images/*`     | GET/POST | Image operations           |
-| `/appmesh/docker/volumes/*`    | GET/POST | Volume operations          |
-| `/appmesh/docker/networks/*`   | GET/POST | Network operations         |
-| `/appmesh/docker/system/*`     | GET      | System operations          |
-| `/appmesh/docker/version`      | GET      | Docker version info        |
-| `/appmesh/docker/_ping`        | GET      | Docker daemon health check |
+| Endpoint                       | Method | Description                |
+| ------------------------------ | ------ | -------------------------- |
+| `/appmesh/docker/containers/*` | any    | Container operations       |
+| `/appmesh/docker/images/*`     | any    | Image operations           |
+| `/appmesh/docker/volumes/*`    | any    | Volume operations          |
+| `/appmesh/docker/networks/*`   | any    | Network operations         |
+| `/appmesh/docker/system/*`     | any    | System operations          |
+| `/appmesh/docker/version`      | any    | Docker version info        |
+| `/appmesh/docker/_ping`        | any    | Docker daemon health check |
+
+The agent registers one unrestricted path prefix and forwards every method. The
+table above therefore lists no allow-list. The daemon itself uses GET and POST,
+and DELETE for `/containers/{id}`.
 
 Implementation Details:
 

@@ -40,8 +40,13 @@ Think serverless, on your own machines.
 Start the daemon in Docker:
 
 ```shell
-docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
+docker run -d --restart=always --name=appmesh --net=host -v appmesh-work:/opt/appmesh/work -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
 ```
+
+The `appmesh-work` volume persists authentication state and application
+definitions; without it, a recreated container loses the administrator
+password and every registered app. The container runs as UID 482 — grant that
+identity access to the Docker socket to manage Docker apps.
 
 Host your first app with the `appm` CLI — open a shell in the daemon container:
 
@@ -137,7 +142,7 @@ The Computing pillar makes App Mesh a natural runtime for AI workloads:
 | Interface | Details                                                                                                                                                                                                                                                                                                  |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CLI       | [`appm` command reference](https://app-mesh.readthedocs.io/en/latest/CLI.html)                                                                                                                                                                                                                           |
-| REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)                                                                              |
+| REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/Development.html) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)                                                                              |
 | Web GUI   | [app-mesh-ui](https://github.com/laoshanxi/app-mesh-ui)                                                                                                                                                                                                                                                  |
 | SDKs      | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) · [Golang](src/sdk/go/client_http.go) · [Rust](src/sdk/rust) · [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) · [JavaScript](https://www.npmjs.com/package/appmesh) · [C++](src/sdk/cpp) |
 
@@ -219,13 +224,13 @@ Questions and discussions are welcome on [Gitter](https://gitter.im/app-mesh/com
 [language.url]: https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg
 [standard.url]: https://en.wikipedia.org/wiki/C%2B%2B#Standardization
-[standard.badge]: https://img.shields.io/badge/C%2B%2B-14%2F17%2F20-blue.svg
+[standard.badge]: https://img.shields.io/badge/C%2B%2B-11%2F14%2F17%2F20-blue.svg
 [release.url]: https://github.com/laoshanxi/app-mesh/releases
 [release.badge]: https://img.shields.io/github/v/release/laoshanxi/app-mesh?label=Github%20package
 [docker.url]: https://hub.docker.com/repository/docker/laoshanxi/appmesh
 [docker.badge]: https://img.shields.io/docker/pulls/laoshanxi/appmesh.svg
 [cockpit.url]: https://github.com/laoshanxi/app-mesh-ui
-[cockpit.badge]: https://img.shields.io/badge/Cockpit-app--mesh--ui-blue?logo=appveyor
+[cockpit.badge]: https://img.shields.io/badge/Web%20GUI-app--mesh--ui-blue
 [unittest.url]: https://github.com/catchorg/Catch2
 [unittest.badge]: https://img.shields.io/badge/UnitTest-Catch2-blue?logo=appveyor
 [pypi.badge]: https://img.shields.io/pypi/v/appmesh?label=PyPI%3Aappmesh

@@ -148,19 +148,22 @@ sudo /opt/appmesh/script/setup.sh \
 ```
 
 Join a follower node. The issuer must be the same string on every node;
-`--oidc-access-url` defaults to the issuer:
+`--oidc-access-url` defaults to the issuer. A follower also needs
+`--oidc-browser-entry`, because the owner issuer is an internal route that a
+browser cannot reach:
 
 ```shell
 sudo /opt/appmesh/script/setup.sh \
   --auth-mode builtin \
   --auth-role follower \
-  --oidc-issuer https://owner.example.com:6060/auth
+  --oidc-issuer https://owner.example.com:6060/auth \
+  --oidc-browser-entry https://owner.example.com
 ```
 
 `--auth-role` accepts `standalone` (packaged default), `owner`, and
-`follower`. A follower without an issuer is a setup error. A role selection
-from a previous builtin installation is removed automatically when you switch
-to external mode.
+`follower`. A follower without an issuer or a browser entry is a setup error. A
+role selection from a previous builtin installation is removed automatically
+when you switch to external mode.
 
 Package installation runs the same setup with the administrator environment.
 A node can therefore join during `dpkg`/`rpm` installation:
@@ -168,6 +171,7 @@ A node can therefore join during `dpkg`/`rpm` installation:
 ```shell
 sudo APPMESH_AUTH_ROLE=follower \
      APPMESH_AUTH_ISSUER=https://owner.example.com:6060/auth \
+     APPMESH_AUTH_BROWSER_ENTRY=https://owner.example.com \
      dpkg -i appmesh_*.deb
 ```
 
@@ -208,7 +212,7 @@ powershell -ExecutionPolicy Bypass -File C:\local\appmesh\script\setup.ps1 `
   -Issuer https://auth.example.com/oidc
 ```
 
-The Windows script also accepts `-AccessUrl`, `-TlsVerify`, `-CaPath`, `-ClearCa`, and `-NoRestart`.
+The Windows script also accepts `-AccessUrl`, `-BrowserEntry`, `-TlsVerify`, `-CaPath`, `-ClearCa`, and `-NoRestart`.
 
 ## Configuration
 
@@ -228,6 +232,7 @@ APPMESH_AUTH_MODE
 APPMESH_AUTH_ROLE
 APPMESH_AUTH_ISSUER
 APPMESH_AUTH_ACCESS_URL
+APPMESH_AUTH_BROWSER_ENTRY
 APPMESH_AUTH_TLS_VERIFY
 APPMESH_AUTH_CA_PATH
 ```
@@ -238,7 +243,10 @@ The setup interface does not accept a user password or client secret.
 
 An ordinary upgrade preserves `work/auth`. Existing sessions remain usable while their tokens and issuer state remain valid.
 
-Set `APPMESH_FRESH_INSTALL=Y` only when you want new runtime state. This action removes existing authentication state. Back up the work directory before you use it. Users must sign in again after the reset.
+Set `APPMESH_FRESH_INSTALL=Y` only when you want new runtime state. This action
+removes the application definitions and the operator configuration. It keeps
+`work/auth`, so the existing sessions stay valid. Back up the work directory
+before you use it.
 
 ## Uninstall
 

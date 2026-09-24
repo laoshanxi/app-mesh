@@ -89,8 +89,11 @@ services:
     volumes:
       - ./data/:/data/
       - /etc/ssl/ca.pem:/opt/appmesh/ssl/ca.pem
-      - ./server-key.pem:/opt/appmesh/ssl/server-key.pem
+      - ./ca-key.pem:/opt/appmesh/ssl/ca-key.pem
       - ./server.pem:/opt/appmesh/ssl/server.pem
+      - ./server-key.pem:/opt/appmesh/ssl/server-key.pem
+      - ./client.pem:/opt/appmesh/ssl/client.pem
+      - ./client-key.pem:/opt/appmesh/ssl/client-key.pem
     ports:
       - "6060:6060"
     environment:
@@ -111,5 +114,10 @@ services:
 
 Before startup, make `./data` writable by UID/GID `482:482` and ensure every
 file mounted into `/opt/appmesh/ssl` is readable by UID 482.
+
+Supply the TLS state as a complete set. The container requires all six files or
+none of them. With an empty `/opt/appmesh/ssl`, it generates a self-signed set
+on the first start. A partial mount makes the container refuse to start with
+`TLS state is incomplete`.
 
 View file server from URL `https://127.0.0.1:8443/`

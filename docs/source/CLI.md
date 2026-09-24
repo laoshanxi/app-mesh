@@ -31,7 +31,7 @@ Use `--auth-access-url` only when the client needs a different network route to 
 appm logon --auth-access-url https://auth-route.example.com/auth
 ```
 
-Use `--auth-allow-http` to allow a plain-HTTP authentication service on a non-loopback host. Use it on trusted networks only. `--login-timeout` sets the maximum wait for the browser callback. The default is 300 seconds.
+Use `--auth-allow-http` to allow a plain-HTTP authentication service on a non-loopback host. Use it on trusted networks only. You can also set `APPMESH_AUTH_ALLOW_HTTP`; the value `0`, `false`, or `no` disables it. `--login-timeout` sets the maximum wait for the browser callback. The default is 300 seconds.
 
 The CLI gets the issuer, audience, client ID, scopes, and supported flows from the selected Engine. The CLI sends only the access token to the Engine. It does not send the password or refresh token to the Engine.
 

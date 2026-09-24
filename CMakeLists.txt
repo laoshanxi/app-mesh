@@ -173,7 +173,7 @@ add_subdirectory(script/sbom)
 # =============================================================================
 # Usage:
 #   cmake -DAPPMESH_NO_TESTS=1 ..   # Disable tests
-#   make && make test ARGS="-V"     # Run tests with verbose output
+#   make python_tests go_tests workflow_tests rust_tests
 # =============================================================================
 option(APPMESH_NO_TESTS "Disable test targets" OFF)
 

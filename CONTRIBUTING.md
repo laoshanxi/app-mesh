@@ -7,7 +7,7 @@ Thank you for your interest in contributing to App Mesh! This document provides 
 ### Prerequisites
 
 - Linux (Ubuntu 22.04+ recommended), macOS, or Windows
-- C++17 compatible compiler (GCC 8+, Clang 10+, MSVC 2019+)
+- C++17 compatible compiler (GCC 8+, Clang 10+, MSVC 2019+). The build lowers the standard automatically on older GCC, down to C++11 for GCC below 5.
 - CMake 3.21+
 - Git
 
@@ -96,7 +96,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-The hooks run: cpplint, pylint, golangci-lint, shellcheck, eslint, Checkstyle, and gitleaks (secret detection).
+The hooks run: cpplint, pylint, golangci-lint, shellcheck, eslint, Checkstyle, gitleaks (secret detection), trailing-whitespace, and end-of-file-fixer.
 
 ## Commit Messages
 
@@ -117,10 +117,15 @@ Examples:
 
 ## Testing
 
-- **C++ Tests**: Catch2 framework via CTest (`make test ARGS="-V"`)
-- **Python SDK**: `python3 -m unittest --verbose` (from `src/sdk/python/test/`)
-- **Go SDK**: `go test ./src/sdk/go/ -test.v`
+- **Python SDK**: `APPMESH_TEST_ACCESS_TOKEN=<dex-token> python3 -m unittest --verbose` (from `src/sdk/python/test/`). It needs a live daemon and fails without the token.
+- **Go SDK**: `go test ./src/sdk/go/ -test.v` (live-daemon cases skip without `APPMESH_BEARER_TOKEN`)
+- **Workflow engine**: `cd src/workflow && go test ./... -v -count=1 -tags=e2e`
+- **Rust CLI**: `cd src/cli && cargo test`
 - **Static Analysis**: `make cppcheck`
+
+The CMake targets `python_tests`, `go_tests`, `workflow_tests`, and `rust_tests`
+run the same suites from a build directory. The C++ Catch2 suites in `test/` are
+not wired into the build, so `make test ARGS="-V"` collects no C++ case.
 
 ## License
 

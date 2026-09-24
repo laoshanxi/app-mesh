@@ -43,10 +43,12 @@ for i in range(10):
 The worker is the application process managed by App Mesh. It receives the payload, processes it, and returns the result.
 
 ```python
-from appmesh import AppMeshWorker
+from appmesh import AppMeshWorkerTCP
+from py_task import exec_with_output   # local helper; see src/sdk/python/py_task.py
+
 if __name__ == "__main__":
     # Minimal server loop: fetch a payload, execute it, return the output.
-    context = AppMeshWorker()
+    context = AppMeshWorkerTCP()
     while True:
         # Block fetch invocation payload.
         payload = context.fetch_task()
@@ -61,12 +63,14 @@ if __name__ == "__main__":
 
 ```shell
 $ appm ls
-ID  NAME    OWNER  STATUS    HEALTH  PID    USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
-1   py-task  system  enabled  OK      16412        32.7 MiB  0     1       8h             2       "python.exe ../../bi*"
-2   py-exec  system  disabled  -       -      -     -         -     -       8h   -         0       "python.exe ../../bi*"
-3   ping    system  enabled   OK      -      -     -         -     0       8h   -         1       "ping github.com"
+ID  NAME    OWNER  ENABLED   HEALTH  PID    USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
+1   py-task  system  Yes      OK      16412        32.7Mi    0     1       8h             2       "python.exe ../../bi*"
+2   py-exec  system  -         -       -      -     -         -     -       8h   -         0       "python.exe ../../bi*"
+3   ping    system  Yes       OK      -      -     -         -     0       8h   -         1       "ping github.com"
 
 $ python3 sample.py
+Start sample...
+... (application add, view, enable, output, and delete output)
 0
 1
 3
@@ -77,18 +81,26 @@ $ python3 sample.py
 28
 36
 45
+Completed sample
 
 $ appm ls -a py-task | grep task_
 task_id: 23
-task_status: busy
+task_status: idle
 ```
+
+`sample.py` also runs the application-management demo, which needs `app-reg`,
+`app-view`, `app-control`, `app-output-view`, and `app-delete` in addition to
+`app-run-task`.
 
 ### Task status
 
 The task status is represented by application runtime attributes. Possible values include:
 
 - `idle`: the service is ready and waiting for a task
-- `busy`: a task has been dispatched and is currently processing
+- `busy`: a task has been dispatched or queued and is currently processing
+- empty string: the application has no task service
+
+A worker that has returned the last result and blocked in `fetch_task()` reports `idle`.
 
 ### API
 

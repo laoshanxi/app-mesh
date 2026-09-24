@@ -47,3 +47,7 @@ Receive and process messages (forward to backend application) with App Mesh:
 ```bash
 python3 mqtt_subscriber.py
 ```
+
+The subscriber forwards each message to an App named `py-task` with
+`run_task()`. Register that App with a task handler before you start the
+subscriber, or change the `app_name` in `mqtt_subscriber.py`.

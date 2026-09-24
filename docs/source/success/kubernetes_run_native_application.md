@@ -10,7 +10,7 @@ This solution provides a simple way to forward container start cmd to AppMesh an
 ## Install AppMesh on host OS
 
 AppMesh is a native app manager, provide REST API which can used to manage application remotely. AppMesh is running on host OS, and container can register process to AppMesh by API, each container will register 2 AppMesh applications, one is used to start container command, the other is used to clean AppMesh application when container exits.
-[Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html#native-installation)
+[Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html#linux-installation)
 
 ## Build Kubernetes Docker image for native command
 

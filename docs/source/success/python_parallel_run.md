@@ -8,7 +8,7 @@ Use SDK AppMeshClient.run_app_async() to run process or Python code segment by A
 
 ### 1. Install App Mesh
 
-[Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html#native-installation)
+[Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html#linux-installation)
 
 ### 2. Python sample
 

@@ -181,13 +181,14 @@ new AppMeshWorker(baseURL, sslConfig, options);
 **Parameters:**
 
 - `baseURL` (string, optional) - App Mesh service URL. Default: `'https://127.0.0.1:6060'`
-- `sslConfig` (object, optional) - SSL configuration
+- `sslConfig` (object, optional) - SSL configuration. `false` disables verification; `null`/`undefined` verifies against the bundled App Mesh CA or system roots
   - `ca` - CA certificate (Buffer or string path)
   - `cert` - Client certificate (Buffer or string path)
   - `key` - Client private key (Buffer or string path)
   - `rejectUnauthorized` (boolean) - Verify SSL certificate. Default: `true`
 - `options` (object, optional)
   - `logger` - Custom logger instance. Default: `console`
+  - `client` - Pre-built `AppMeshClient` instance to reuse. When supplied, `baseURL` and `sslConfig` are ignored, and the worker shares the caller's bearer.
 
 ##### Methods
 

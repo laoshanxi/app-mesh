@@ -325,7 +325,7 @@ Expressions use `${{ }}` syntax for variable substitution:
 | `job.status` | `${{ job.status }}` | Status of the **current** job — useful in `finally` steps |
 | `jobs.<name>.status` | `${{ jobs.test.status }}` | Status of another job (success/failure/skipped) |
 | `jobs.<name>.steps.<step>.stdout` | `${{ jobs.build.steps.compile.stdout }}` | Cross-job step output |
-| `env.<key>` | `${{ env.VERSION }}` | Environment variable |
+| `env.<key>` | `${{ env.VERSION }}` | Workflow-level environment variable. Job-level and step-level `env` are not in the expression context, so they resolve to an empty string. |
 | `workflow.name` | `${{ workflow.name }}` | Workflow name |
 | `workflow.run_id` | `${{ workflow.run_id }}` | Current run ID |
 
@@ -605,7 +605,7 @@ Cron scheduling is **not** built into the workflow engine. Use App Mesh's native
 
 ```bash
 # Run hello-world every day at 02:00
-appm add -a cron-hello -c "appm workflow run hello-world" -Y -i "0 2 * * *"
+appm add -a cron-hello -c "appm workflow run hello-world" -Y "0 2 * * *"
 
 # Or, drive on an interval (ISO 8601 duration)
 appm add -a tick-hello -c "appm workflow run hello-world" -i PT5M
@@ -637,7 +637,7 @@ RBAC to App runs, messages, and temporary command Apps:
 
 | Run source | Effective identity | Actor stored in the Run |
 |------------|--------------------|-------------------------|
-| Manual (`appm workflow run`) | caller's Engine-validated bearer | caller's immutable Principal ID |
+| Manual (`appm workflow run`) | Engine-issued run capability bound to the workflow owner; the caller bearer only authenticates the trigger | caller's immutable Principal ID |
 | Automatic (`on.app_event`) | Engine-local run capability, re-checked against current owner RBAC | `internal:workflow-trigger` marker |
 | Recovery after engine restart | newly issued Engine-local run capability, re-checked against current owner RBAC | original Run actor is preserved |
 
