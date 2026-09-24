@@ -43,8 +43,9 @@ sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password \
 ```
 
 Bootstrap state lives in `work/auth/secrets/`. Every file is mode `600`, owned
-by the directory owner, and single-linked; the daemon validates all three
-properties at startup.
+by the directory owner, and single-linked. The `appmesh-auth.sh` launcher
+validates all three properties on each use. The daemon applies its own
+owner-only regular-file check to the `secret-master-key` file at startup.
 
 | File | Content |
 | --- | --- |
@@ -154,10 +155,11 @@ Two points are easy to get backwards:
 ## Administration UI
 
 App Mesh has no user directory. The authentication service owns identities; App
-Mesh stores only the authorization record of a verified subject. Both are
-managed in the bundled administration UI — the `dexuser` System App, served by
-`bin/dexuser` — which covers users, OAuth clients, connectors, sessions, and
-MFA.
+Mesh stores only the authorization record of a verified subject. The bundled
+administration UI — the `dexuser` System App, served by `bin/dexuser` — manages
+the authentication-service objects: users, OAuth clients, sessions, and MFA.
+It does not manage App Mesh authorization records. Set those through
+`add-user` or the REST API.
 
 The UI listens on loopback only (`http://127.0.0.1:6064`), because it has **no
 authentication of its own** — the same posture as the administrative gRPC API
@@ -211,14 +213,17 @@ Engine is running.
 sudo /opt/appmesh/script/appmesh-auth.sh delete-user alice@corp.local
 ```
 
-Removes the identity and its role binding, and prints the Principal ID. The
-user can no longer sign in. The same Engine restart caveat as `add-user`
-applies.
+Removes the identity and its role binding. The command prints the `user_id` and
+the Principal ID when it can recover them from the administration UI. When it
+cannot, it reports that no Principal record was removed. The user can no longer
+sign in. The same Engine restart caveat as `add-user` applies.
 
 ## Getting a token for SDK and CI
 
-Every client accepts the access token through `APPMESH_BEARER_TOKEN`. Pick one
-of two sources depending on the identity you need.
+The `appm` CLI reads the access token from `APPMESH_BEARER_TOKEN` itself. The
+SDK libraries do not: pass the token to the client, for example
+`AppMeshClient(bearer_token=...)`. Pick one of two sources depending on the
+identity you need.
 
 ### Password grant — user identity (administrator permissions)
 
@@ -280,12 +285,13 @@ export APPMESH_BEARER_TOKEN=$(sudo /opt/appmesh/script/appmesh-auth.sh automatio
 | CLI `appm logon` | ✅ | — | ✅ `--device` / `--browser` | ✅ (session file) |
 | Rust SDK `OAuthClient` | ✅ `password_login()` | — | ✅ | ✅ |
 | Python SDK `OAuthClient` | — | — | ✅ | ✅ |
-| Go / Java / JS / C++ SDK | — | — | — | — (`SetToken` only) |
+| Go / Java / JS / C++ SDK | — | — | — | — (bearer setter only: Go `SetToken`, Java `setBearerToken`, JS `set_bearer_token`, C++ `setBearerToken`) |
 
 The CLI never prints tokens: `appm loginfo` shows the principal and the expiry
-only. Use the grant or `automation-token` when you need the raw token. With
-`APPMESH_BEARER_TOKEN` set, the CLI uses the token as-is until it expires — no
-session file, no refresh.
+only, and it needs a stored session. Use the grant or `automation-token` when
+you need the raw token. With `APPMESH_BEARER_TOKEN` set, the CLI uses the token
+as-is until it expires — no session file, no refresh. A bearer token alone is
+not enough for `appm loginfo`; it exits nonzero without a session file.
 
 ## Using a password from the Python SDK
 
@@ -337,7 +343,7 @@ the result as `bearer_token`. Both approaches are verified.
 
 Other SDKs take the token directly: Go `client.SetToken(...)`, Rust
 `client.set_token(...)`, Java `setBearerToken(...)`, JavaScript
-`client.set_bearer_token(...)`.
+`client.set_bearer_token(...)`, C++ `setBearerToken(...)`.
 
 ## Reference
 
@@ -376,6 +382,7 @@ long-running processes.
 | --- | --- |
 | `appmesh-admin` | All 27 permissions, including `app-reg`, `app-run-task`, `principal-set`, `role-set`, `workflow-admin` |
 | `appmesh-maintenance` | `app-control`, `app-manage-all`, `app-view-all`, `host-resource-view` |
+| `appmesh-viewer` | `app-view-all`, `app-view`, `app-output-view`, `config-view`, `host-resource-view`, `label-view`, `role-view` |
 
 The full permission list lives in `src/daemon/security/authorization.yaml`.
 

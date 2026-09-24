@@ -95,11 +95,15 @@ cmake .. -DAPPMESH_NO_TESTS=1 && make -j$(nproc)
 # Package (.deb/.rpm via nfpm)
 make pack
 
-# C++ tests (Catch2/CTest)
-make test ARGS="-V"
-
-# Run a single C++ test by name
-cd build && ctest -R <test_name> -V
+# Test targets. CTest itself has no registered case: add_subdirectory(test) is
+# disabled in CMakeLists.txt, so `make test ARGS="-V"` runs nothing.
+# python_tests needs a live daemon plus APPMESH_TEST_ACCESS_TOKEN, and fails
+# (not skips) without them. go_tests and rust_tests skip their live-daemon
+# cases when APPMESH_BEARER_TOKEN is absent.
+make python_tests
+make go_tests
+make workflow_tests   # workflow engine, unit + E2E (-tags=e2e)
+make rust_tests
 
 # Static analysis
 make cppcheck
@@ -117,13 +121,13 @@ cd src/cli && cargo test
 # CLI integration tests (requires running daemon)
 cd src/cli && cargo test --test remote_test -- --ignored --test-threads=1
 
-# SDK tests
-cd src/sdk/python/test && python3 -m unittest --verbose
+# SDK tests (the Python suite needs APPMESH_TEST_ACCESS_TOKEN and a live daemon)
+cd src/sdk/python/test && APPMESH_TEST_ACCESS_TOKEN=<dex-token> python3 -m unittest --verbose
 go test ./src/sdk/go/ -test.v
 cd src/sdk/rust && cargo test
 ```
 
-CMake targets `python_tests`, `go_tests`, and `rust_tests` also exist.
+CMake targets `python_tests`, `go_tests`, `workflow_tests`, and `rust_tests` also exist.
 
 ## Architecture
 

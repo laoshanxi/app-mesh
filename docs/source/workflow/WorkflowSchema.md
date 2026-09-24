@@ -315,7 +315,7 @@ Each Step has a `name` and exactly one of four type keys: `command`, `app`, `mes
 | `if` | string | no | — | Expression. Step runs only if true. Default: runs if all prior steps in the job succeeded. |
 | `timeout` | integer | no | 172800 (2 days) for command/app/workflow steps; 300 (5 minutes) for message steps | Maximum execution time in seconds. Step is killed and marked failed if exceeded. `0` falls back to the default — there is no "unlimited" mode. |
 | `retry` | object | no | — | Retry policy on failure. |
-| `continue-on-error` | bool | no | `false` | `true`: mark step as failed but continue to next step. Default: stop the job on failure. |
+| `continue-on-error` | bool | no | `false` | `true`: mark step as failed but continue to next step. Default: stop the job on failure. A step under `finally` is always `true`: the parser forces it, and the YAML value cannot turn it off. |
 | `env` | object | no | — | Step-level environment variables. Merged with job and global `env` (step wins). |
 | `secret_env` | object | no | — | Step-level encrypted environment variables. |
 
@@ -479,7 +479,7 @@ Expressions are enclosed in `${{ }}` and evaluated at runtime by the workflow en
 | `workflow.name` | Workflow name | `${{ workflow.name }}` |
 | `workflow.run_id` | Unique ID (xid) of this run | `${{ workflow.run_id }}` |
 | `inputs.<name>` | Manual trigger or workflow_call input | `${{ inputs.environment }}` |
-| `env.<name>` | Resolved environment variable | `${{ env.PIPELINE_VERSION }}` |
+| `env.<name>` | Workflow-level environment variable. Job-level and step-level `env` are not in the expression context, so they resolve to an empty string. | `${{ env.PIPELINE_VERSION }}` |
 
 ### Functions
 

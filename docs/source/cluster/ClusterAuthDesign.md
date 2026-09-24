@@ -6,6 +6,8 @@
 
 ## Problem
 
+This section describes the state before this design was implemented.
+
 ADR 0009 defines one logical issuer per cluster. It defines the node roles
 `standalone`, `owner`, and `follower`. The runtime already contains the
 required pieces: role resolution, the inert `identity` App on followers,
@@ -104,7 +106,8 @@ sudo /opt/appmesh/script/setup.sh --auth-mode builtin --auth-role owner \
 ```shell
 sudo /opt/appmesh/script/setup.sh --auth-mode builtin --auth-role follower \
      --oidc-issuer   https://owner.example.com:6060/auth \
-     --oidc-access-url https://owner.example.com:6060/auth
+     --oidc-access-url https://owner.example.com:6060/auth \
+     --oidc-browser-entry https://owner.example.com
 ```
 
 Effects:
@@ -175,7 +178,7 @@ gateway and the target share no secret. They only agree on the issuer.
 ## Authorization data consistency
 
 `authorization.yaml` is node-local. The principal and role APIs write the
-node that serves the request. A forwarded `PUT /appmesh/principal/<id>`
+node that serves the request. A forwarded `POST /appmesh/principal/<id>`
 changes only the target node. Apply this rule:
 
 - Mutate authorization data on one node. The owner is the natural

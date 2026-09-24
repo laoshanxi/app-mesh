@@ -10,7 +10,7 @@ How to run and use the AI agent on App Mesh. Two modes:
 References: [README.md](README.md) (design, wire protocol, providers) ·
 [examples/user_scenarios.py](examples/user_scenarios.py) (runnable code for both modes) ·
 [config/llm-agent-worker.yaml](config/llm-agent-worker.yaml) (worker template) ·
-[docs/source/CLI.md](../../docs/source/CLI.md) (appm CLI)
+[docs/source/CLI.md](../../../docs/source/CLI.md) (appm CLI)
 
 ## 1. Start the daemon
 
@@ -36,6 +36,7 @@ appm add -D @/opt/appmesh/apps/llm-agent.yaml --force \
   -e 'ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.3[1m]' \
   -e ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-5-turbo \
   -e CLAUDE_CODE_SUBAGENT_MODEL=glm-5-turbo \
+  -e CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000 \
   -e LLMAGENT_SYSTEM_PROMPT='You are an AI agent served by GLM (trained by Z.ai) through the Claude Agent SDK. When asked which model you are, answer: GLM, trained by Z.ai.'
 
 # Anthropic API:

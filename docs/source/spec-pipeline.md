@@ -63,8 +63,9 @@ checkout
 
 The engine is driven through the `run_task` Task API (the `appm` CLI and SDKs wrap this).
 Every call carries the caller's **OAuth access token**. The Engine validates it and resolves
-an immutable Principal ID; the workflow engine enforces ownership and runs manual steps as
-that Principal. The Principal ID, not a username, is recorded as `actor`.
+an immutable Principal ID; the workflow engine enforces ownership and executes each run
+under a run-scoped capability bound to the workflow owner. The Principal ID, not a
+username, is recorded as `actor`.
 
 ### Via the CLI
 
@@ -118,11 +119,13 @@ FINAL: failure
    command bodies.)
 2. **Secrets**: put `ANTHROPIC_API_KEY` etc. on the workflow App's `secret_env` (encrypted at
    rest; surfaced to steps as env vars). Never inline keys in the YAML.
-3. **Tenant permissions**: a manual workflow runs steps as the triggering Principal, so it needs
-   the permissions the engine uses per step:
-   `app-run-task, app-run-async, app-run-sync, app-subscribe, app-output-view, app-delete`
-   (plus `label-view` if you use node selectors). Missing `app-subscribe` is the classic
-   "every command step fails to start" symptom.
+3. **Tenant permissions**: every run — manual included — executes under a run-scoped Engine
+   capability bound to the workflow **owner**. The owner therefore needs the permissions the
+   engine uses per step:
+   `app-run-task, app-run-async, app-view, app-output-view, app-subscribe, app-delete, label-view`.
+   Steps use async run plus output view; the set holds no sync run. The caller only needs the
+   permission to trigger the run. Missing `app-subscribe` is the classic "every command step
+   fails to start" symptom.
 4. **Ownership/roles**: the registrant's immutable Principal ID owns the workflow; only the
    owner or a Principal with `workflow-admin` may run/manage it. Registering an automatic
    trigger also requires `workflow-admin`. Each run is isolated and audited (`actor`).
@@ -132,9 +135,11 @@ FINAL: failure
 - **Acyclic DAG** — there is no literal review↔fix loop. Bounded iteration is `retry`
   (single step) or **re-trigger** the workflow (`rerun`); a true multi-round loop must run
   *inside* a step's agent.
-- **Long manual runs vs token validity** — manual steps use the caller's current bearer;
-  a run that outlives it fails closed. Use the standard refresh or sign-in flow before
-  starting a run; the workflow engine never persists a human refresh token.
+- **Long manual runs vs token validity** — the caller bearer authenticates the trigger and
+  carries the `forward_token` payload identity. It is not the execution credential, so a manual
+  run does not fail when it expires: the run holds a renewable, run-scoped capability for its
+  whole lifetime. One exception remains — a manual *cross-node* job forwards the caller bearer
+  to the target node. The workflow engine never persists a human refresh token.
 - **Automatic and recovered runs** use a short-lived, local Engine capability bound to the
   workflow owner and current run. Engine re-checks that owner's active RBAC on every step
   operation; the workflow service stores no OAuth client secret or refresh token.

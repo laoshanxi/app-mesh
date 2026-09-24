@@ -89,7 +89,7 @@ Commands:
 
 **`do_sync(client)`**:
 
-1. `tar czf` local git repo root (excludes `.git`, `build`, `node_modules`, `__pycache__`, `.agents`, `.claude`, `.codex`, `*.o`, `*.pyc`)
+1. `tar czf` local git repo root (excludes `.git`, `build`, `node_modules`, `__pycache__`, `.agents`, `.claude`, `.codex`, `*.o`, `*.pyc`, and credential material: `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`)
 2. SHA-256 hash check — skip upload if unchanged since last sync (override with `--force`)
 3. `client.upload_file()` tar to remote `/tmp/`
 4. `client.run_app_sync("mkdir -p $WORKSPACE && tar xzf ... -C $WORKSPACE")` extract
@@ -98,7 +98,7 @@ Commands:
 **`do_exec(client, cmd, timeout, working_dir)`**:
 
 1. `client.run_app_async(App({"command": cmd, "shell": True, "working_dir": workspace}))`
-2. `run.wait(stdout_print=True, timeout=timeout)` — real-time stdout streaming
+2. `run.wait(stdout_handler=print_output_handler, timeout=timeout)` — real-time stdout streaming
 3. `KeyboardInterrupt` → disable + delete app, exit 130
 
 ### Key Design Decisions

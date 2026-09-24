@@ -138,7 +138,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 - `evaluateNeeds` checks dependency statuses following GitHub Actions semantics: `success` = all deps succeeded; `failure` = at least one dep failed; `skipped` is neutral (blocks success but doesn't trigger failure).
 - `runJob` evaluates the `if` condition with `EvalConditionForJobWithStatus`, which supports `always()`, `success()`, `failure()`, and comparison operators.
 - `runStep` handles retry with configurable backoff (fixed or exponential, capped at 3600s). Retry sleep is cancel-aware via `time.NewTimer` + `select` on context.
-- Cancel propagation: the cancel context is checked at layer boundaries and inside `waitWithContext`. `KillAll` runs remote kills in parallel goroutines to avoid one unreachable node blocking the rest.
+- Cancel propagation: the cancel context is checked at layer boundaries and inside the cancel-aware `WaitForAsyncRun` step wait. `KillAll` runs remote kills in parallel goroutines to avoid one unreachable node blocking the rest.
 - Sub-workflows: `RunSubWorkflow` receives a derived context with timeout (`context.WithTimeout`). The sub-workflow shares the parent's `ActiveSteps` tracker (so cancel propagates to its step Apps) and runs its own cloned workflow. Outputs are evaluated from the sub-workflow's expression context.
 
 **Interfaces exposed:**
@@ -182,7 +182,7 @@ The engine is organized into 6 layers. Each layer has a clear responsibility bou
 **Behavior:**
 
 - `TaskHandler.Run()` is a blocking `FetchTask`/`SendTaskResult` loop. Each request is parsed as JSON, validated (safe ID regex on workflow/run_id/job/step fields), dispatched to one of 12 action handlers, and the response is marshaled back. Marshal errors produce a fixed error JSON to avoid silent drops.
-- **CRUD actions** (`workflow_add/get/list/rm/inputs`): Operate on YAML files and daemon Apps. `workflow_add` validates YAML via temp file + parser, preserves old YAML for rollback on `AddApp` failure, and updates the registry immediately. `workflow_rm` removes from registry, drains concurrency queues, cancels active runs, removes daemon App, then removes directory. `workflow_inputs` returns `on.manual.inputs` with fallback to `on.workflow_call.inputs`.
+- **CRUD actions** (`workflow_add/get/list/rm/inputs`): Operate on YAML files and daemon Apps. `workflow_add` parses the YAML first, registers the daemon App, and then writes the YAML with a temp file plus rename. It rolls back the App registration when the YAML write fails, and updates the registry immediately. `workflow_rm` removes from registry, drains concurrency queues, cancels active runs, removes daemon App, then removes directory. `workflow_inputs` returns `on.manual.inputs` with fallback to `on.workflow_call.inputs`.
 - **Run actions** (`run/cancel/rerun`): Delegate to Layer 2's `TriggerManual`, `CancelByRunID`, etc. `rerun` reads original inputs from `runs.json` with fallback to checkpoint.
 - **Observability actions** (`runs/run_detail/log/step_log`): Read from `runs.json` index, checkpoint files, and log files. `runs` returns `[]` (not `null`) when no runs exist. `log` returns distinct errors for not-found vs. read failure.
 
@@ -348,7 +348,7 @@ All runs (manual, event-triggered) go through the same `RunManager`, so concurre
 
 Cancel is triggered via the Task API `cancel` action, which calls `CancelByRunID`:
 
-1. Cancel the run's context first — prevents new step registrations via `OnAppStart` and unblocks all waiting goroutines (`waitWithContext`, retry sleep).
+1. Cancel the run's context first — prevents new step registrations via `OnAppStart` and unblocks all waiting goroutines (the `WaitForAsyncRun` step wait, retry sleep).
 2. `ActiveSteps.KillAll()` — snapshots tracked Apps under lock, then deletes them from the daemon. Remote kills run in parallel goroutines to avoid one unreachable node blocking the rest.
 3. The goroutine defer fires: writes `MarkComplete("cancelled")` to checkpoint, updates `runs.json`, cleans up maps, and dequeues the next run if applicable.
 

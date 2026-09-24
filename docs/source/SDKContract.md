@@ -7,8 +7,9 @@ in the same change. Per-SDK code comments describe implementation detail —
 **this document defines the behavior**.
 
 Applies to the TCP and WSS transports (`AppMeshClientTCP` / `AppMeshClientWSS`
-and equivalents). The HTTP transport has no demuxer; its per-request semantics
-come from the HTTP library.
+and equivalents). The JavaScript SDK implements the TCP transport only. The
+HTTP transport has no demuxer; its per-request semantics come from the HTTP
+library.
 
 ## TCP Wire Framing
 
@@ -16,11 +17,16 @@ come from the HTTP library.
 |---|---|
 | Frame header | 8 bytes: 4-byte magic + 4-byte body length, both big-endian |
 | Magic number | `0x07C707F8` |
-| Max body length | 1 GiB (`1024 * 1024 * 1024`) — reject larger frames |
+| Max body length | 1 GiB (`1024 * 1024 * 1024`) in the SDKs that bound it |
+
+The 1 GiB value is an SDK-side receive bound (Rust also enforces it on send).
+The daemon accepts a smaller body: it rejects an inbound frame above 256 MiB
+(`256 * 1024 * 1024`) and logs the rejection. The JavaScript SDK does not bound
+the length field.
 
 The length field excludes the 8-byte header. Bodies are msgpack-encoded
-`Request`/`Response` messages. These constants are part of the daemon wire
-protocol and must never change.
+`Request`/`Response` messages. The header layout and the magic number are part
+of the daemon wire protocol and must never change.
 
 ## Message Demuxer
 
@@ -67,19 +73,24 @@ On that signal the client closes the transport and raises/returns a
 | Rust | one worker task per subscription | no |
 
 A slow callback may delay later events of its subscription but MUST never block
-the socket reader.
+the socket reader. The JavaScript SDK is the exception: it dispatches inline on
+the read loop, so a slow callback stops reads for every subscription.
 
 ### Synthetic `__disconnected__` event
 
 When the demuxer stops (transport error, `close()`), it pushes a synthetic
 event with `event_type = "__disconnected__"` to **every** registered callback,
-carrying only `subscription_id` and `event_type`. This is client-local — the
-daemon never sends it — and exists so long-running waits (e.g.
-`wait_for_async_run`) unblock instead of hanging (S2). Pending request waiters
-are woken with the empty/disconnect result at the same time.
+carrying only `subscription_id` and `event_type`. It exists so long-running
+waits (e.g. `wait_for_async_run`) unblock instead of hanging (S2). Pending
+request waiters are woken with the empty/disconnect result at the same time.
 
-Constant name per SDK: `EVENT_TYPE_DISCONNECTED` (Python/Rust/JS/Go as
-`EventTypeDisconnected`, Java `MessageDemuxer.EVENT_TYPE_DISCONNECTED`).
+The daemon uses the same `event_type` value when a forwarded connection fails
+(`ForwardingManager` sends it, with a `data.message`, to the subscriptions of
+the failed route), so a client must not read it as proof that the local
+transport is down.
+
+Constant name per SDK: `EVENT_TYPE_DISCONNECTED` (Go:
+`EventTypeDisconnected`; Java: `MessageDemuxer.EVENT_TYPE_DISCONNECTED`).
 
 ### Pre-registration event buffering (atomic-subscribe race)
 
@@ -141,14 +152,14 @@ The Python and Rust SDKs implement this token-provider contract:
 - `StaticAccessTokenProvider` keeps one caller-supplied token in memory. It does not refresh.
 - `OAuthClient` supports authorization code with PKCE, device authorization, refresh, and best-effort revocation.
 - The Rust `OAuthClient` also supports the built-in password exchange that the CLI uses.
-- `OAuthClient.from_appmesh(..., access_url=...)` selects a separate route to the same authentication service.
+- `OAuthClient.from_appmesh(..., access_url=...)` selects a separate route to the same authentication service. The Python SDK provides this constructor; Rust configures the route through `OAuthConfig::new(access_url)`.
 - Discovery must publish the configured issuer. Route changes do not change issuer validation.
 - `complete_authorization_callback` validates a single-use state before it exchanges a code.
 - A nonce-bearing request requires a standards-compliant ID-token validator.
 - A refresh token stays in the token provider. The SDK does not send it to the Engine.
 - The SDK does not persist a token unless the application supplies persistence.
 
-Python exports `OAuthClient` and `OAuthError`. Rust exports `OAuthConfig`, `OAuthClient`, `TokenSet`, `TokenProvider`, and `StaticAccessTokenProvider`. Provider-specific names from SDK 3.0 remain compatibility aliases. New code must use the provider-neutral names.
+Python exports `OAuthClient` and `OAuthError`. Rust exports `OAuthConfig`, `OAuthClient`, `TokenSet`, `TokenProvider`, and `StaticAccessTokenProvider`. Both SDKs use provider-neutral names only; the SDK 3.0 provider-specific names are removed, not aliased.
 
 Rust validates authorization-flow ID tokens with discovered RS256 signing keys. It checks `alg`, `kid`, signature, issuer, audience, authorized party, expiry, not-before, and nonce. An application can register a callback to persist a rotated token set.
 
@@ -304,7 +315,7 @@ race/edge the scenario names; **MISSING** = no test at all.
 | S1 | MISSING | MISSING | MISSING | MISSING | MISSING |
 | S2 | `test/unit/test_subscribe_conformance.py` `test_s2_disconnect_unblocks_wait` | `subscribe_test.go` `TestWaitForAsyncRunDisconnectUnblocks` | partial: `src/subscribe.rs` `conformance_s2_disconnect_broadcast_unblocks` + `src/wait_subscribe.rs` `conformance_s2_disconnected_event_classified` (wait path not driven) | `AsyncRunWaiterTest` `testDisconnectUnblocksWait` | `test/subscribe_test.js` `wait_for_async_run disconnect unblocks with typed error` |
 | S3 | MISSING | MISSING | MISSING | MISSING | MISSING |
-| S4 | partial: `test/integration/test_client.py` `test_66_add_app_with_subscribe_events` | MISSING | MISSING | MISSING | MISSING |
+| S4 | partial: `test/_support/client_mixins.py` `test_66_add_app_with_subscribe_events` | MISSING | MISSING | MISSING | MISSING |
 | S5 | MISSING | MISSING | MISSING | MISSING | MISSING |
 | S6 | `test/unit/test_subscribe_conformance.py` `test_s6_negative_exit_code` | `subscribe_test.go` `TestWaitForAsyncRunNegativeExitCode` | partial: `src/wait_subscribe.rs` `conformance_s6_negative_exit_code_is_exit` (callback classification only) | `AsyncRunWaiterTest` `testNegativeExitCodeReturnedAsExitCode` | `test/subscribe_test.js` `wait_for_async_run returns negative exit code as-is` |
 | S7 | `test/unit/test_subscribe_conformance.py` `test_s7_response_races_send` | partial: `subscribe_test.go` `TestMessageDemuxerRequestResponse` | partial: `src/subscribe.rs` `conformance_s7_response_routed_to_pre_registered_waiter` | partial: `SubscribeTest` `testDemuxerRoutesResponseToPreRegisteredWaiter` | partial: `test/subscribe_test.js` `MessageDemuxer routes responses by UUID` |

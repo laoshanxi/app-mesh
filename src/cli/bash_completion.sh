@@ -19,11 +19,12 @@ _appm() {
     fi
 
     local commands="logon logoff logout loginfo ls list view add reg rm remove unreg enable disable restart run exec shell get put label log config resource metric workflow wf"
+    local workflow_commands="add get list ls rm remove run runs logs output cancel rerun detail inputs help"
 
-    local flags_logon="-u --username --device --browser --auth-access-url --login-timeout"
+    local flags_logon="-u --username --password-stdin --device --browser --auth-access-url --auth-allow-http --login-timeout"
     local flags_logoff="--local-only"
     local flags_loginfo=""
-    local flags_add="--app --cmd --description --working-dir --enabled --shell --session-login --health-check --docker-image --pid --begin-time --end-time --daily-begin --daily-end --interval --cron-schedule --memory-limit --virtual-memory --cpu-shares --stdout-backup-count --permission --metadata --env --secret-env --stop-grace-period --exit --exit-code-actions --stdin --force"
+    local flags_add="--app --cmd --description --working-dir --enabled --shell --session-login --health-check --docker-image --pid --begin-time --end-time --daily-begin --daily-end --interval --cron-schedule --memory-limit --virtual-memory --cpu-shares --stdout-backup-count --permission --metadata --env --secret-env --stop-grace-period --exit --exit-code-actions --stdin --force --depends-on"
     local flags_rm="--app --force"
     local flags_view="--long --show-output --pstree --app --log-index --follow --json"
     local flags_enable="--app --all"
@@ -53,7 +54,7 @@ _appm() {
         -Q|--exit)
             COMPREPLY=( $(compgen -W "restart standby keepalive remove" -- "${cur}") )
             return ;;
-        -r|--remote|-l|--local|--stdin|-m|--metadata|-j|--json)
+        -r|--remote|-l|--local|--stdin|--file|-m|--metadata|-j|--json)
             if declare -f _filedir >/dev/null 2>&1; then _filedir; else COMPREPLY=( $(compgen -f -- "${cur}") ); fi
             return ;;
         -H|--host-url|-F|--forward-to|-t|--timeout|-T|--lifetime|--auth-access-url|--login-timeout)
@@ -62,6 +63,11 @@ _appm() {
 
     if [[ ${cword} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
+        return
+    fi
+
+    if [[ "${words[1]}" == "workflow" || "${words[1]}" == "wf" ]] && [[ ${cword} -eq 2 ]] && [[ "${cur}" != -* ]]; then
+        COMPREPLY=( $(compgen -W "${workflow_commands}" -- "${cur}") )
         return
     fi
 
@@ -85,6 +91,15 @@ _appm() {
             put)                        cmd_flags="${flags_put}" ;;
             label)                      cmd_flags="${flags_label}" ;;
             log)                        cmd_flags="${flags_log}" ;;
+            workflow|wf)
+                case "${words[2]}" in
+                    add)                cmd_flags="-f --file" ;;
+                    run)                cmd_flags="-e --input -f --follow" ;;
+                    logs|cancel|rerun|detail)
+                                        cmd_flags="-w --workflow" ;;
+                    output)             cmd_flags="-w --workflow -j --job -s --step" ;;
+                esac
+                ;;
         esac
         COMPREPLY=( $(compgen -W "${cmd_flags} ${_appm_global_flags}" -- "${cur}") )
         return

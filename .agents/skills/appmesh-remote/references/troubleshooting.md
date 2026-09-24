@@ -9,7 +9,7 @@ deployment, output, or cleanup failure.
   `sync`, `sync-exec`, or `deploy`.
 - `APPMESH_ACCESS_TOKEN is not set`: supply a valid access token in the
   environment before you run the tool.
-- `Failed to connect`: verify `APPMESH_ENGINE_URL`, `APPMESH_ACCESS_TOKEN`,
+- `HTTP request failed`: verify `APPMESH_ENGINE_URL`, `APPMESH_ACCESS_TOKEN`,
   network reachability, and daemon status.
 - TLS verification failure: provide the correct CA file through
   `APPMESH_SSL_VERIFY`. Use `false` only for an explicitly trusted development
