@@ -53,11 +53,12 @@ $ /opt/appmesh/script/appmesh-auth.sh print-initial-password | appm logon -u adm
 
 # List registered applications
 $ appm ls
-ID  NAME      OWNER   STATUS    HEALTH  PID  USER     MEMORY  %CPU  RETURN
-0   py-task   system  enabled   OK      557  appmesh  34.4Mi  0     -
-1   py-exec   system  disabled  -       -    -        -       -     -
-2   identity  system  enabled   OK      344  appmesh  42.3Mi  0     -
-3   workflow  system  enabled   OK      558  appmesh  13.5Mi  0     -
+ID  NAME      OWNER   ENABLED  HEALTH  PID  USER     MEMORY  %CPU  RETURN
+0   py-task   system  Yes      OK      574  appmesh  32.5Mi  0     -
+1   py-exec   system  -        -       -    -        -       -     -
+2   identity  system  Yes      OK      344  appmesh  40.5Mi  0     -
+3   dexuser   system  Yes      OK      573  appmesh  17.5Mi  0     -
+4   workflow  system  Yes      OK      575  appmesh  13.7Mi  0     -
 
 # Register a new application
 $ appm add -a myapp -c "python3 -u -c 'import time; [print(i, time.ctime()) or time.sleep(1) for i in range(10)]'"
@@ -71,15 +72,11 @@ $ appm ls -a myapp -o
 # appm -h for more usage
 ```
 
-Send a task message to a running app through the SDK. Mint an admin token first — the same password grant that `appm logon` uses:
+Send a task message to a running app through the SDK. Mint an admin token first (see the [authentication guide](https://app-mesh.readthedocs.io/en/latest/Authentication.html)):
 
 ```shell
-$ export APPMESH_BEARER_TOKEN=$(curl -s -u "appmesh-cli:" -X POST http://127.0.0.1:6062/auth/token \
-    --data-urlencode grant_type=password \
-    --data-urlencode "username=admin@appmesh.local" \
-    --data-urlencode "password=$(/opt/appmesh/script/appmesh-auth.sh print-initial-password)" \
-    --data-urlencode "scope=openid audience:server:client_id:appmesh-api" \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+$ export APPMESH_BEARER_TOKEN=$(/opt/appmesh/script/appmesh-auth.sh print-initial-password \
+    | /opt/appmesh/script/appmesh-auth.sh user-token)
 ```
 
 ```python
