@@ -15,7 +15,6 @@ pub const HTTP_HEADER_KEY_X_FILE_USER: &str = "X-File-User";
 #[cfg(unix)]
 pub const HTTP_HEADER_KEY_X_FILE_GROUP: &str = "X-File-Group";
 pub const HTTP_HEADER_CONTENT_TYPE: &str = "Content-Type";
-pub const HTTP_HEADER_CONTENT_LENGTH: &str = "Content-Length";
 pub const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: &str = "X-Send-File-Socket";
 pub const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: &str = "X-Recv-File-Socket";
 
@@ -59,21 +58,14 @@ pub const TCP_BLOCK_SIZE: usize = 16 * 1024 - 128;
 // Auto-refresh pacing: poll every TOKEN_REFRESH_INTERVAL_SECS, but renew only once the
 // token has burned TOKEN_REFRESH_LIFETIME_RATIO of its lifetime.
 /// Poll cap, NOT a renew interval.
-#[allow(dead_code)]
 pub const TOKEN_REFRESH_INTERVAL_SECS: u64 = 300;
 /// Floor for the pre-expiry margin.
-#[allow(dead_code)]
 pub const TOKEN_REFRESH_MARGIN_SECS: u64 = 30;
 /// Lifetime fraction to consume before renewing; the rest is retry budget.
-#[allow(dead_code)]
 pub const TOKEN_REFRESH_LIFETIME_RATIO: f64 = 0.6;
 /// Jitter, as a fraction of the margin, so clients don't renew in lockstep.
-#[allow(dead_code)]
 pub const TOKEN_REFRESH_JITTER_RATIO: f64 = 0.1;
-#[allow(dead_code)]
 pub const TOKEN_REFRESH_RETRY_BASE_SECS: u64 = 5;
-#[allow(dead_code)]
 pub const TOKEN_REFRESH_RETRY_MAX_SECS: u64 = 60;
 /// Log the 1st renewal failure, then every Nth.
-#[allow(dead_code)]
 pub const TOKEN_REFRESH_LOG_EVERY: u32 = 10;

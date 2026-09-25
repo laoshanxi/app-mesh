@@ -113,23 +113,6 @@ public class MessageDemuxer {
     }
 
     /**
-     * Contains the server's response to a subscribe request.
-     */
-    public static class SubscriptionResult {
-        public String subscriptionId;
-        public String appName;
-        public List<String> events;
-
-        @Override
-        public String toString() {
-            return "SubscriptionResult{subscriptionId='" + subscriptionId + "'"
-                    + ", appName='" + appName + "'"
-                    + ", events=" + events
-                    + "}";
-        }
-    }
-
-    /**
      * Internal holder for a pending request-response pair.
      */
     private static class PendingRequest {

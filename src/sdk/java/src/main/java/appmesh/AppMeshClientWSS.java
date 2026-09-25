@@ -276,7 +276,10 @@ public class AppMeshClientWSS extends AppMeshClient {
         // Step 1: Request download via WSS to get Auth token
         Map<String, String> header = new HashMap<>();
         header.put(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
-        request("GET", "/appmesh/file/download", null, header, null);
+        HttpURLConnection initResp = request("GET", "/appmesh/file/download", null, header, null);
+        if (initResp.getResponseCode() != HttpURLConnection.HTTP_OK) {
+            throw new IOException("Download init failed: " + initResp.getResponseCode());
+        }
 
         String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
         if (authToken == null || authToken.isEmpty()) {
@@ -339,7 +342,10 @@ public class AppMeshClientWSS extends AppMeshClient {
         // Step 1: Request upload via WSS to get Auth token
         Map<String, String> wssHeader = new HashMap<>();
         wssHeader.put(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
-        request("POST", "/appmesh/file/upload", null, wssHeader, null);
+        HttpURLConnection initResp = request("POST", "/appmesh/file/upload", null, wssHeader, null);
+        if (initResp.getResponseCode() != HttpURLConnection.HTTP_OK) {
+            throw new IOException("Upload init failed: " + initResp.getResponseCode());
+        }
 
         String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
         if (authToken == null || authToken.isEmpty()) {

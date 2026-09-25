@@ -235,6 +235,10 @@ impl Requester for HTTPRequester {
         *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) = url;
     }
 
+    fn get_forward_to(&self) -> Option<String> {
+        self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     fn handle_token_update(&self, token: Option<String>) {
         *self.access_token.write().unwrap_or_else(|e| e.into_inner()) = token;
     }
@@ -688,7 +692,7 @@ impl AppMeshClient {
         let body_bytes = serde_json::to_vec(&permissions)?;
         self.send(
             Method::POST,
-            &format!("/appmesh/role/{}", role),
+            &format!("/appmesh/role/{}", encode_path_segment(role)),
             Some(&body_bytes),
             Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
             None,
@@ -699,7 +703,7 @@ impl AppMeshClient {
     }
 
     pub async fn delete_role(&self, role: &str) -> Result<()> {
-        self.send(Method::DELETE, &format!("/appmesh/role/{}", role), None, None, None, true).await?;
+        self.send(Method::DELETE, &format!("/appmesh/role/{}", encode_path_segment(role)), None, None, None, true).await?;
         Ok(())
     }
 }
@@ -795,7 +799,7 @@ impl AppMeshClient {
             query.insert(HTTP_QUERY_KEY_STDOUT_TIMEOUT.into(), t.to_string());
         }
 
-        let resp = self.send(Method::GET, &format!("/appmesh/app/{}/output", name), None, None, Some(query), false)
+        let resp = self.send(Method::GET, &format!("/appmesh/app/{}/output", encode_path_segment(name)), None, None, Some(query), false)
             .await?;
 
         // Now we can read headers *and* body without cloning, thanks to &self on ResponseExt
@@ -819,7 +823,7 @@ impl AppMeshClient {
     /// Check application health (returns `true` if healthy).
     pub async fn check_app_health(&self, name: &str) -> Result<bool> {
         let resp =
-            self.send(Method::GET, &format!("/appmesh/app/{}/health", name), None, None, None, true).await?;
+            self.send(Method::GET, &format!("/appmesh/app/{}/health", encode_path_segment(name)), None, None, None, true).await?;
         let text = resp.text()?;
         Ok(text.trim() == "0")
     }
@@ -836,9 +840,13 @@ impl AppMeshClient {
             .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
         let body_bytes = serde_json::to_vec(app)?;
         if subscribe_events.is_some() {
-            // START may arrive before the add-app response on a persistent
-            // connection, so the demuxer must own the read side first.
-            self.req.enable_demuxer().await?;
+            if self.req.supports_demuxer() {
+                // START may arrive before the add-app response on a persistent
+                // connection, so the demuxer must own the read side first.
+                self.req.enable_demuxer().await?;
+            } else {
+                warn!("subscribe_events has no effect over HTTP; use the TCP or WSS client to receive events");
+            }
         }
         let query = subscribe_events.map(|events| {
             let mut q = HashMap::new();
@@ -848,7 +856,7 @@ impl AppMeshClient {
         let resp = self
             .send(
                 Method::PUT,
-                &format!("/appmesh/app/{}", name),
+                &format!("/appmesh/app/{}", encode_path_segment(name)),
                 Some(&body_bytes),
                 Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
                 query,
@@ -867,7 +875,7 @@ impl AppMeshClient {
         let resp = self
             .send(
                 Method::PUT,
-                &format!("/appmesh/app/{}", name),
+                &format!("/appmesh/app/{}", encode_path_segment(name)),
                 Some(&body_bytes),
                 Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
                 None,
@@ -883,14 +891,23 @@ impl AppMeshClient {
     /// enabled (TCP/WSS only) and the callback is registered for the returned
     /// subscription ID.  Events will be dispatched asynchronously until
     /// [`Self::unsubscribe`] is called.
+    ///
+    /// Fails with [`AppMeshError::UnsupportedFeature`] on the HTTP transport: it has no
+    /// demuxer, so a subscription ID would be returned without any event ever arriving.
     pub async fn subscribe(
         &self,
         app_name: &str,
         events: Option<&[&str]>,
         callback: Option<EventCallback>,
     ) -> Result<SubscriptionResult> {
+        if !self.req.supports_demuxer() {
+            return Err(AppMeshError::UnsupportedFeature {
+                feature: "subscribe".to_string(),
+                transport: "HTTP".to_string(),
+            });
+        }
         let path = if !app_name.is_empty() && app_name != "*" {
-            format!("/appmesh/app/{}/subscribe", app_name)
+            format!("/appmesh/app/{}/subscribe", encode_path_segment(app_name))
         } else {
             "/appmesh/subscribe".to_string()
         };
@@ -945,7 +962,7 @@ impl AppMeshClient {
 
     pub async fn delete_app(&self, name: &str) -> Result<bool> {
         let resp =
-            self.send(Method::DELETE, &format!("/appmesh/app/{}", name), None, None, None, false).await?;
+            self.send(Method::DELETE, &format!("/appmesh/app/{}", encode_path_segment(name)), None, None, None, false).await?;
         match resp.status() {
             StatusCode::OK => Ok(true),
             StatusCode::NOT_FOUND => Ok(false),
@@ -957,12 +974,12 @@ impl AppMeshClient {
     }
 
     pub async fn enable_app(&self, name: &str) -> Result<()> {
-        self.send(Method::POST, &format!("/appmesh/app/{}/enable", name), None, None, None, true).await?;
+        self.send(Method::POST, &format!("/appmesh/app/{}/enable", encode_path_segment(name)), None, None, None, true).await?;
         Ok(())
     }
 
     pub async fn disable_app(&self, name: &str) -> Result<()> {
-        self.send(Method::POST, &format!("/appmesh/app/{}/disable", name), None, None, None, true).await?;
+        self.send(Method::POST, &format!("/appmesh/app/{}/disable", encode_path_segment(name)), None, None, None, true).await?;
         Ok(())
     }
 }
@@ -1059,6 +1076,7 @@ impl AppMeshClient {
                 .as_str()
                 .ok_or_else(|| AppMeshError::Other("Missing process UUID".into()))?
                 .to_string(),
+            forward_to: self.req.get_forward_to(),
         })
     }
 
@@ -1082,6 +1100,10 @@ impl AppMeshClient {
     /// Wait for an async run to complete, optionally invoking a callback with incremental stdout.
     /// Uses the subscribe-based wait on TCP/WSS; HTTP falls back to polling.
     ///
+    /// While waiting, the client's forwarding target is temporarily set to the snapshot
+    /// captured by [`AppMeshClient::run_app_async`] (and restored afterwards), so polling
+    /// keeps talking to the cluster node that runs the process.
+    ///
     /// Returns:
     /// - `Ok(Some(code))` — process exited (code may be negative for signal kills)
     /// - `Ok(None)` — caller-side timeout
@@ -1090,6 +1112,19 @@ impl AppMeshClient {
     ///
     /// On success, this method makes a best-effort attempt to delete the temporary run app.
     pub async fn wait_for_async_run(
+        &self,
+        run: &AppRun,
+        stdout_handler: OutputHandler,
+        timeout: i32,
+    ) -> Result<Option<i32>> {
+        let original_forward_to = self.req.get_forward_to();
+        self.req.set_forward_to(run.forward_to.clone());
+        let result = self.wait_for_async_run_inner(run, stdout_handler, timeout).await;
+        self.req.set_forward_to(original_forward_to);
+        result
+    }
+
+    async fn wait_for_async_run_inner(
         &self,
         run: &AppRun,
         stdout_handler: OutputHandler,
@@ -1146,7 +1181,7 @@ impl AppMeshClient {
         let resp = self
             .send(
                 Method::POST,
-                &format!("/appmesh/app/{}/task", name),
+                &format!("/appmesh/app/{}/task", encode_path_segment(name)),
                 Some(&body_bytes),
                 // openapi types the task body as application/octet-stream; the
                 // payload is JSON bytes sent unlabeled, matching the other SDKs.
@@ -1161,7 +1196,7 @@ impl AppMeshClient {
     /// Cancel a running task.
     pub async fn cancel_task(&self, name: &str) -> Result<bool> {
         let resp =
-            self.send(Method::DELETE, &format!("/appmesh/app/{}/task", name), None, None, None, false).await?;
+            self.send(Method::DELETE, &format!("/appmesh/app/{}/task", encode_path_segment(name)), None, None, None, false).await?;
         Ok(resp.status() == StatusCode::OK)
     }
 }
@@ -1234,13 +1269,13 @@ impl AppMeshClient {
 
     pub async fn add_label(&self, label: &str, value: &str) -> Result<()> {
         let query = hmap! { HTTP_QUERY_KEY_VALUE => value };
-        self.send(Method::PUT, &format!("/appmesh/label/{}", label), None, None, Some(query), true).await?;
+        self.send(Method::PUT, &format!("/appmesh/label/{}", encode_path_segment(label)), None, None, Some(query), true).await?;
         Ok(())
     }
 
 
     pub async fn delete_label(&self, label: &str) -> Result<()> {
-        self.send(Method::DELETE, &format!("/appmesh/label/{}", label), None, None, None, true).await?;
+        self.send(Method::DELETE, &format!("/appmesh/label/{}", encode_path_segment(label)), None, None, None, true).await?;
         Ok(())
     }
 
@@ -1323,28 +1358,40 @@ impl AppMeshClient {
             return Err(AppMeshError::NotFound(format!("Local file not found: {}", local_file)));
         }
 
+        // Wire format matches the Python/Go/JS SDKs: multipart/form-data with a text field
+        // "filename" (remote basename) and the content in a part named "file"; the remote
+        // path travels in the X-File-Path header.
+        let remote_name = Path::new(remote_file).file_name().and_then(|n| n.to_str()).unwrap_or(remote_file);
+        let local_name = Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file);
         let remote_path = encode_file_path(remote_file);
         let mut headers = hmap! {
             HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str(),
-            HTTP_HEADER_CONTENT_TYPE => "application/octet-stream",
         };
         if preserve_permissions {
             Self::get_file_attributes(local_path, &mut headers);
         }
 
-        // Stream the file as the request body (bounded memory) when the transport supports it.
-        // Explicit Content-Length keeps the wire format identical to the buffered upload.
+        // Stream the multipart body (bounded memory) when the transport supports it.
         self.prepare_bearer().await?;
         let file = tokio::fs::File::open(local_path).await?;
         let file_len = file.metadata().await?.len();
+        let file_part = reqwest::multipart::Part::stream_with_length(reqwest::Body::from(file), file_len)
+            .file_name(local_name.to_string())
+            .mime_str("application/octet-stream")?;
+        let form = reqwest::multipart::Form::new()
+            .text("filename", remote_name.to_string())
+            .part("file", file_part);
         let mut streaming_headers = headers.clone();
-        streaming_headers.insert(HTTP_HEADER_CONTENT_LENGTH.to_string(), file_len.to_string());
+        streaming_headers.insert(
+            HTTP_HEADER_CONTENT_TYPE.to_string(),
+            format!("multipart/form-data; boundary={}", form.boundary()),
+        );
         if self
             .req
             .send_streaming(
                 Method::POST,
                 "/appmesh/file/upload",
-                Some(reqwest::Body::from(file)),
+                Some(reqwest::Body::wrap_stream(form.into_stream())),
                 Some(streaming_headers),
                 None,
                 true,
@@ -1355,9 +1402,25 @@ impl AppMeshClient {
             return Ok(());
         }
 
-        // Buffered fallback for transports without HTTP streaming.
+        // Buffered fallback for transports without HTTP streaming: same multipart body,
+        // serialized in memory.
         let file_content = fs::read(local_file)?;
-        self.send(Method::POST, "/appmesh/file/upload", Some(&file_content), Some(headers), None, true)
+        let file_part = reqwest::multipart::Part::bytes(file_content)
+            .file_name(local_name.to_string())
+            .mime_str("application/octet-stream")?;
+        let form = reqwest::multipart::Form::new()
+            .text("filename", remote_name.to_string())
+            .part("file", file_part);
+        headers.insert(
+            HTTP_HEADER_CONTENT_TYPE.to_string(),
+            format!("multipart/form-data; boundary={}", form.boundary()),
+        );
+        let mut body_bytes = Vec::new();
+        let mut stream = std::pin::pin!(form.into_stream());
+        while let Some(chunk) = futures_util::TryStreamExt::try_next(&mut stream).await? {
+            body_bytes.extend_from_slice(&chunk);
+        }
+        self.send(Method::POST, "/appmesh/file/upload", Some(&body_bytes), Some(headers), None, true)
             .await?;
         Ok(())
     }

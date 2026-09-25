@@ -47,6 +47,11 @@ pub trait Requester: Send + Sync {
     /// Set the forward_to URL
     fn set_forward_to(&self, _url: Option<String>) {}
 
+    /// Retrieve the current forward_to URL (if the transport tracks one).
+    fn get_forward_to(&self) -> Option<String> {
+        None
+    }
+
     /// Close the requester (if applicable)
     fn close(&self) {}
 

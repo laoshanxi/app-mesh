@@ -52,16 +52,11 @@ func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, ssl
 	}
 
 	dialer := websocket.Dialer{
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
+		TLSClientConfig:  tlsConf,
 		HandshakeTimeout: 30 * time.Second,
+		// Request sub-protocol used by the server
+		Subprotocols: []string{"appmesh-ws"},
 	}
-
-	// copy the tlsConf into dialer.TLSClientConfig
-	dialer.TLSClientConfig = tlsConf
-	// Request sub-protocol used by the server
-	dialer.Subprotocols = []string{"appmesh-ws"}
 
 	// Ensure scheme is wss:// or ws:// depending on tls config
 	switch u.Scheme {

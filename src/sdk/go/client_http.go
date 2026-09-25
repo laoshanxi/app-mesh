@@ -384,7 +384,8 @@ func (r *AppMeshClient) deleteApp(ctx context.Context, appName string, extraHead
 // AddApp registers a new application or updates an existing one.
 // Optional subscribeEvents specifies event types to subscribe atomically with registration,
 // ensuring no events are missed. Pass event names like "START", "EXIT", "STDOUT",
-// or "ALL" for all events. Requires TCP or WSS connection; ignored over HTTP.
+// or "ALL" for all events. Requires a TCP or WSS connection; on HTTP (which has no
+// event demuxer) passing subscribeEvents fails with ErrSubscriptionNotSupported.
 // When subscribeEvents is set, the returned Application.SubscriptionID will be non-empty.
 func (r *AppMeshClient) AddApp(app Application, subscribeEvents ...string) (*Application, error) {
 	if app.Name == "" {
@@ -400,9 +401,11 @@ func (r *AppMeshClient) AddApp(app Application, subscribeEvents ...string) (*App
 	if len(subscribeEvents) > 0 {
 		// START may be pushed before the add-app response. Give the demuxer
 		// ownership of the persistent connection before sending the atomic request.
-		if sub, ok := r.req.(subscribableRequester); ok {
-			sub.enableDemuxer()
+		sub, ok := r.req.(subscribableRequester)
+		if !ok {
+			return nil, fmt.Errorf("add app with subscribe events: %w", ErrSubscriptionNotSupported)
 		}
+		sub.enableDemuxer()
 		params = url.Values{}
 		params.Set("subscribe_events", strings.Join(subscribeEvents, ","))
 	}
@@ -449,6 +452,10 @@ func (r *AppMeshClient) RunTaskContext(ctx context.Context, appName string, payl
 }
 
 // CancelTask cancels a running task for the specified application.
+// It returns (true, nil) when a task existed and was cancelled (200). It returns
+// (false, nil) when no task was pending (208 Already Reported) or the application
+// does not exist (404) — neither is an error, matching the Python SDK. Any other
+// non-200 status is reported as an APIError.
 func (r *AppMeshClient) CancelTask(appName string) (bool, error) {
 	if appName == "" {
 		return false, fmt.Errorf("application name is required")
@@ -458,10 +465,14 @@ func (r *AppMeshClient) CancelTask(appName string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("cancel task request failed: %w", err)
 	}
-	if code != http.StatusOK {
+	switch code {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusAlreadyReported, http.StatusNotFound:
+		return false, nil
+	default:
 		return false, newAPIError("cancel task", code, string(raw))
 	}
-	return true, nil
 }
 
 // RunAppAsync starts an application asynchronously and returns a handle for monitoring.
@@ -555,30 +566,39 @@ func (r *AppMeshClient) WaitContext(ctx context.Context, asyncRun *AppRun, stdou
 }
 
 // RunAppSync runs an application synchronously and returns the exit code plus collected stdout.
-// The exit code is derived from the X-Exit-Code response header when present.
+// The exit code is derived from the X-Exit-Code response header when present; when the
+// server omits the header, 0 is returned and is indistinguishable from a real exit code 0.
+// Use RunAppSyncChecked to tell the two cases apart.
 func (r *AppMeshClient) RunAppSync(app Application, maxTime int, lifecycle int) (int, string, error) {
+	exit, out, _, err := r.RunAppSyncChecked(app, maxTime, lifecycle)
+	return exit, out, err
+}
+
+// RunAppSyncChecked runs an application synchronously like RunAppSync, but reports
+// whether the exit code is authoritative: ok is true when the server returned an
+// X-Exit-Code header (matching the Python SDK, where a missing header yields None).
+func (r *AppMeshClient) RunAppSyncChecked(app Application, maxTime int, lifecycle int) (exitCode int, stdout string, ok bool, err error) {
 	appJson, err := json.Marshal(app)
 	if err != nil {
-		return 0, "", fmt.Errorf("failed to marshal application: %w", err)
+		return 0, "", false, fmt.Errorf("failed to marshal application: %w", err)
 	}
 	q := url.Values{}
 	q.Set("timeout", fmt.Sprintf("%d", maxTime))
 	q.Set("lifecycle", fmt.Sprintf("%d", lifecycle))
 	code, raw, hdr, err := r.post("/appmesh/app/syncrun", q, nil, appJson)
 	if err != nil {
-		return 0, "", fmt.Errorf("run app sync request failed: %w", err)
+		return 0, "", false, fmt.Errorf("run app sync request failed: %w", err)
 	}
-	exit := 0
 	if ec := hdr.Get("X-Exit-Code"); ec != "" {
 		if v, err2 := strconv.Atoi(ec); err2 == nil {
-			exit = v
+			exitCode, ok = v, true
 		}
 	}
-	out := string(raw)
+	stdout = string(raw)
 	if code == http.StatusOK {
-		return exit, out, nil
+		return exitCode, stdout, ok, nil
 	}
-	return exit, out, newAPIError("sync run", code, out)
+	return exitCode, stdout, ok, newAPIError("sync run", code, stdout)
 }
 
 // UploadFile uploads a local file to the remote server.

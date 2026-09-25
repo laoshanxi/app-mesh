@@ -43,6 +43,7 @@ func TestBearerTokenIsInMemoryOnly(t *testing.T) {
 type fakeRequester struct {
 	status int
 	body   string
+	header http.Header
 	sent   []fakeSentRequest
 }
 
@@ -66,7 +67,10 @@ func (f *fakeRequester) Send(method string, apiPath string, queries url.Values, 
 
 func (f *fakeRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
 	f.capture(method, apiPath, headers)
-	return f.status, []byte(f.body), http.Header{}, nil
+	if f.header == nil {
+		return f.status, []byte(f.body), http.Header{}, nil
+	}
+	return f.status, []byte(f.body), f.header, nil
 }
 
 func (f *fakeRequester) Close()                   {}
@@ -125,6 +129,61 @@ func TestSetLogLevelSuccessIsNotAnError(t *testing.T) {
 	var apiErr *APIError
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+}
+
+// CancelTask treats "nothing to cancel" as a non-error false, matching the Python
+// SDK: 200 = cancelled, 208 = no task pending, 404 = app not found. Only other
+// non-200 statuses surface an APIError.
+func TestCancelTaskStatusSemantics(t *testing.T) {
+	client, _ := newFakeClient(http.StatusOK, "")
+	cancelled, err := client.CancelTask("app1")
+	require.NoError(t, err)
+	assert.True(t, cancelled)
+
+	for _, status := range []int{http.StatusAlreadyReported, http.StatusNotFound} {
+		client, _ := newFakeClient(status, "")
+		cancelled, err := client.CancelTask("app1")
+		require.NoError(t, err, "status %d must not be an error", status)
+		assert.False(t, cancelled)
+	}
+
+	client, _ = newFakeClient(http.StatusInternalServerError, "boom")
+	cancelled, err = client.CancelTask("app1")
+	require.Error(t, err)
+	assert.False(t, cancelled)
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
+}
+
+// RunAppSync cannot distinguish a missing X-Exit-Code header from exit code 0;
+// RunAppSyncChecked exposes the distinction (Python returns None for a missing header).
+func TestRunAppSyncExitCodePresence(t *testing.T) {
+	client, fake := newFakeClient(http.StatusOK, "out")
+	fake.header = http.Header{"X-Exit-Code": []string{"3"}}
+	exit, out, err := client.RunAppSync(Application{Name: "app1"}, 10, 20)
+	require.NoError(t, err)
+	assert.Equal(t, 3, exit)
+	assert.Equal(t, "out", out)
+
+	client, fake = newFakeClient(http.StatusOK, "out")
+	fake.header = http.Header{"X-Exit-Code": []string{"0"}}
+	exit, _, ok, err := client.RunAppSyncChecked(Application{Name: "app1"}, 10, 20)
+	require.NoError(t, err)
+	assert.True(t, ok, "an explicit 0 exit code must be reported as present")
+	assert.Equal(t, 0, exit)
+
+	client, _ = newFakeClient(http.StatusOK, "out")
+	exit, out, ok, err = client.RunAppSyncChecked(Application{Name: "app1"}, 10, 20)
+	require.NoError(t, err)
+	assert.False(t, ok, "a missing X-Exit-Code header must not be conflated with exit code 0")
+	assert.Equal(t, 0, exit)
+	assert.Equal(t, "out", out)
+
+	client, _ = newFakeClient(http.StatusOK, "out")
+	exit, _, err = client.RunAppSync(Application{Name: "app1"}, 10, 20)
+	require.NoError(t, err)
+	assert.Equal(t, 0, exit, "RunAppSync keeps its legacy zero-default behavior")
 }
 
 // JSON request bodies carry Content-Type: application/json so the daemon does

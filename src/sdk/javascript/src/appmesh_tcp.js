@@ -4,9 +4,10 @@
 import tls from 'tls'
 import fs from 'fs'
 import os from 'os'
+import { once } from 'events'
 import { v1 as uuidv1 } from 'uuid'
 import msgpack from 'msgpack-lite'
-import AppMeshClient, { AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE } from './appmesh.js'
+import AppMeshClient, { AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE, _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName } from './appmesh.js'
 
 // Constants
 const TCP_BLOCK_SIZE = 16 * 1024 - 128 // TLS-optimized chunk size
@@ -577,7 +578,10 @@ class AppMeshClientTCP extends AppMeshClient {
         if (!chunk || chunk.length === 0) {
           break
         }
-        writeStream.write(chunk)
+        // Honor stream backpressure so large downloads do not buffer in memory
+        if (!writeStream.write(chunk)) {
+          await once(writeStream, 'drain')
+        }
       }
     } finally {
       // Await the flush so the file is complete on disk before this resolves.
@@ -595,16 +599,18 @@ class AppMeshClientTCP extends AppMeshClient {
         fs.chmodSync(localFile, parseInt(response.headers['X-File-Mode'], 10))
       }
       if (response.headers['X-File-User'] && response.headers['X-File-Group']) {
-        try {
-          fs.chownSync(
-            localFile,
-            parseInt(response.headers['X-File-User']),
-            parseInt(response.headers['X-File-Group'])
-          )
-        } catch (err) {
-          console.warn(
-            `Warning: Unable to change owner/group of ${localFile}. Operation requires elevated privileges.`
-          )
+        // The daemon sends user/group *names* (os::fileStat); resolve them to
+        // numeric uid/gid locally before chown, same as the HTTP transport.
+        const uid = await _resolveUid(response.headers['X-File-User'])
+        const gid = await _resolveGid(response.headers['X-File-Group'])
+        if (uid !== null && gid !== null) {
+          try {
+            fs.chownSync(localFile, uid, gid)
+          } catch (err) {
+            console.warn(
+              `Warning: Unable to change owner/group of ${localFile}. Operation requires elevated privileges.`
+            )
+          }
         }
       }
     }
@@ -615,8 +621,8 @@ class AppMeshClientTCP extends AppMeshClient {
    *
    * @param {string} localFile - Local file path
    * @param {string} [filePath=null] - Remote destination path; defaults to the basename of localFile
-   * @param {boolean} [applyAttrs=false] - Send local mode/uid/gid metadata so the server can
-   * recreate permissions and ownership when supported
+   * @param {boolean} [applyAttrs=false] - Send local mode and best-effort user/group name
+   * metadata so the server can recreate permissions and ownership when supported
    * @override
    */
   async upload_file (localFile, filePath = null, applyAttrs = false) {
@@ -635,8 +641,15 @@ class AppMeshClientTCP extends AppMeshClient {
     if (applyAttrs) {
       const stats = fs.statSync(localFile)
       headers['X-File-Mode'] = (stats.mode & 0o777).toString()
-      headers['X-File-User'] = stats.uid.toString()
-      headers['X-File-Group'] = stats.gid.toString()
+      // The daemon resolves owner/group by name (Utility::applyFilePermission ->
+      // os::chown -> getUidByName), so send user/group names when resolvable and
+      // omit the headers otherwise instead of sending raw numeric ids.
+      const username = await _resolveUserName(stats.uid)
+      const groupName = await _resolveGroupName(stats.gid)
+      if (username && groupName) {
+        headers['X-File-User'] = username
+        headers['X-File-Group'] = groupName
+      }
     }
 
     const response = await this._request('post', '/appmesh/file/upload', null, {

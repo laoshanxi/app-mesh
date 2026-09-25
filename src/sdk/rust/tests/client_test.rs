@@ -347,6 +347,99 @@ mod tests {
         let secs = AppMeshClient::parse_duration("PT5M30S").unwrap();
         assert_eq!(secs, 330);
     }
+
+    // -----------------------------------------------------------------------
+    // Wire-format checks (mocked HTTP server, no daemon needed)
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_upload_file_multipart_wire_format() {
+        use std::io::Write;
+
+        let mut server = Server::new_async().await;
+
+        let content = b"AppMesh multipart upload unit test\n";
+        let mut upload_src = tempfile::NamedTempFile::new().expect("failed to create temp upload file");
+        upload_src.write_all(content).expect("write to temp file failed");
+        upload_src.flush().unwrap();
+
+        let mock = server
+            .mock("POST", "/appmesh/file/upload")
+            .match_header("x-file-path", "/tmp/upload_wire.txt")
+            .match_header("content-type", Matcher::Regex(r"^multipart/form-data; boundary=.+".to_string()))
+            .match_body(Matcher::AllOf(vec![
+                Matcher::Regex(r#"name="filename""#.to_string()),
+                Matcher::Regex(r#"name="file"; filename="#.to_string()),
+                Matcher::Regex("application/octet-stream".to_string()),
+                Matcher::Regex("AppMesh multipart upload unit test".to_string()),
+            ]))
+            .with_status(200)
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        client
+            .upload_file(upload_src.path().to_str().unwrap(), "/tmp/upload_wire.txt", false)
+            .await
+            .expect("upload_file failed");
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_unsupported_over_http() {
+        let server = Server::new_async().await;
+        let client = create_test_client(&server);
+
+        let err = client.subscribe("some-app", None, None).await.expect_err("HTTP subscribe must fail");
+        assert!(
+            matches!(err, appmesh::AppMeshError::UnsupportedFeature { .. }),
+            "expected UnsupportedFeature, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_async_run_wait_uses_captured_forward_to() {
+        let mut server = Server::new_async().await;
+        let client = create_test_client(&server);
+
+        // forward_to without a port is expanded with the client's own port.
+        let port = server.url().rsplit(':').next().unwrap().to_string();
+        let expected_host = format!("127.0.0.1:{}", port);
+
+        let run_mock = server
+            .mock("POST", "/appmesh/app/run")
+            .match_query(Matcher::Any)
+            .match_header("x-target-host", expected_host.as_str())
+            .with_status(200)
+            .with_body(r#"{"name":"fwd-app","process_uuid":"fwd-uuid"}"#)
+            .create_async()
+            .await;
+        // The wait's poll must still carry the snapshot even after the client
+        // clears forward_to.
+        let output_mock = server
+            .mock("GET", "/appmesh/app/fwd-app/output")
+            .match_query(Matcher::Any)
+            .match_header("x-target-host", expected_host.as_str())
+            .with_status(200)
+            .with_header("x-exit-code", "0")
+            .with_body("")
+            .create_async()
+            .await;
+        let delete_mock = server.mock("DELETE", "/appmesh/app/fwd-app").with_status(200).create_async().await;
+
+        client.set_forward_to(Some("127.0.0.1".to_string()));
+        let app = Application::builder("fwd-app").command("true").build();
+        let run = client.run_app_async(&app, 10, 10).await.expect("run_app_async failed");
+        client.set_forward_to(None);
+
+        let exit_code = run.wait(None, 5).await.expect("wait failed");
+        assert_eq!(exit_code, Some(0));
+
+        run_mock.assert_async().await;
+        output_mock.assert_async().await;
+        delete_mock.assert_async().await;
+    }
 }
 
 // ---------------------------------------------------------------------------

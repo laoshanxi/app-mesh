@@ -226,16 +226,72 @@ async function _resolveUid(user) {
 async function _resolveGid(group) {
   const num = parseInt(group, 10);
   if (!isNaN(num) && String(num) === group.trim()) return num;
+  const record = await _lookupGroup('name', group);
+  return record ? record.gid : null;
+}
+
+/**
+ * Read one group record from the OS directory service (Node.js/Unix only).
+ * Linux answers through getent; macOS ships no getent and is queried through its
+ * directory service instead, so both lookups need the fallback to work there.
+ * @param {'name'|'gid'} key - Field to look the group up by
+ * @param {string} value - Group name or numeric GID
+ * @returns {Promise<{name: string, gid: number}|null>} Parsed record, or null when unresolved
+ * @private
+ */
+async function _lookupGroup(key, value) {
   try {
     const { spawnSync } = await import('child_process');
-    // getent group <name> returns "name:x:gid:members"
-    const result = spawnSync('getent', ['group', group], { encoding: 'utf8', timeout: 3000 });
-    if (result.status !== 0 || !result.stdout) return null;
-    const parts = result.stdout.trim().split(':');
-    return parts.length >= 3 ? parseInt(parts[2], 10) : null;
+    // Linux: "name:x:gid:members", accepting either a name or a numeric gid
+    const result = spawnSync('getent', ['group', String(value)], { encoding: 'utf8', timeout: 3000 });
+    if (result.status === 0 && result.stdout) {
+      const parts = result.stdout.trim().split(':');
+      const gid = parts.length >= 3 ? parseInt(parts[2], 10) : NaN;
+      return parts[0] && !isNaN(gid) ? { name: parts[0], gid } : null;
+    }
+    // macOS: "name: staff" / "gid: 20" lines, and empty output when unknown
+    const macResult = spawnSync('dscacheutil', ['-q', 'group', '-a', key, String(value)], { encoding: 'utf8', timeout: 3000 });
+    if (macResult.status !== 0 || !macResult.stdout) return null;
+    const lines = macResult.stdout.split('\n');
+    const nameLine = lines.find(entry => entry.startsWith('name:'));
+    const gidLine = lines.find(entry => entry.startsWith('gid:'));
+    if (!nameLine || !gidLine) return null;
+    const name = nameLine.slice('name:'.length).trim();
+    const gid = parseInt(gidLine.slice('gid:'.length).trim(), 10);
+    return name && !isNaN(gid) ? { name, gid } : null;
   } catch (_) {
     return null;
   }
+}
+
+/**
+ * Resolve a numeric UID to a user name (Node.js/Unix only).
+ * @param {number|string} uid - Numeric UID
+ * @returns {Promise<string|null>} User name or null if unresolvable
+ * @private
+ */
+async function _resolveUserName(uid) {
+  try {
+    const { spawnSync } = await import('child_process');
+    // `id -un` accepts a numeric UID on Linux and macOS; getent is Linux-only.
+    const result = spawnSync('id', ['-un', String(uid)], { encoding: 'utf8', timeout: 3000 });
+    if (result.status !== 0 || !result.stdout) return null;
+    const name = result.stdout.trim();
+    return name || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Resolve a numeric GID to a group name (Node.js/Unix only).
+ * @param {number|string} gid - Numeric GID
+ * @returns {Promise<string|null>} Group name or null if unresolvable
+ * @private
+ */
+async function _resolveGroupName(gid) {
+  const record = await _lookupGroup('gid', gid);
+  return record ? record.name : null;
 }
 
 // Default App Mesh CA bundle, preferred when no sslConfig is given and the file exists
@@ -712,8 +768,8 @@ class AppMeshClient {
    * Upload a file to the remote server.
    * @param {string|File} localFile - Local file path/object
    * @param {string} [filePath=null] - Remote target path; defaults to the basename of localFile
-   * @param {boolean} [applyAttrs=false] - In Node.js, send local permission bits; user/group metadata is
-   * not currently populated by this SDK
+   * @param {boolean} [applyAttrs=false] - In Node.js, send local permission bits plus
+   * user/group names when they can be resolved locally
    */
   async upload_file(localFile, filePath = null, applyAttrs = false) {
     if (!filePath) {
@@ -749,9 +805,14 @@ class AppMeshClient {
       // Add file attributes
       if (applyAttrs) {
         headers["X-File-Mode"] = (stat.mode & 0o777).toString(); // Only permission bits
-        // TODO: no user/group name in JS
-        // headers["X-File-User"] = stat.uid.toString();
-        // headers["X-File-Group"] = stat.gid.toString();
+        // The daemon resolves owner/group by name (os::chown -> getUidByName),
+        // so send user/group names when resolvable and omit the headers otherwise.
+        const username = await _resolveUserName(stat.uid);
+        const groupName = await _resolveGroupName(stat.gid);
+        if (username && groupName) {
+          headers["X-File-User"] = username;
+          headers["X-File-Group"] = groupName;
+        }
       }
 
       // Add form-data headers
@@ -1093,13 +1154,14 @@ class AppMeshClient {
   }
 
   /**
-   * Comprehensive error handler for all client errors
+   * Comprehensive error handler for all client errors.
+   * The default implementation only normalizes the error type; override this
+   * method to add logging or user-facing reporting.
    * @protected
    * @param {Error} error - The caught error
    * @returns {AppMeshError} Standardized AppMeshError
    */
   onError(error) {
-    console.log("AppMeshClient error:", error);
     return error instanceof AppMeshError ? error : new AppMeshError(error.message || 'Unknown error');
   }
 }
@@ -1181,4 +1243,6 @@ class AppRun {
 
 // Export the main classes
 export { AppMeshClient, AppOutput, AppRun, AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE };
+// Exported for the TCP client (Node.js only); not part of the browser-facing API
+export { _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName };
 export default AppMeshClient;

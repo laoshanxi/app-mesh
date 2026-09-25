@@ -342,6 +342,29 @@ func TestEventRequestsEnableDemuxerBeforeSend(t *testing.T) {
 	assert.Equal(t, []string{"demuxer", "request"}, subscribeRequester.actions)
 }
 
+// Subscribe/Unsubscribe and add-app-with-subscribe-events require a transport
+// with an event demuxer (TCP/WSS). Over plain HTTP the subscription POST would
+// succeed but no callback could ever fire, so the calls fail fast instead.
+func TestSubscribeRequiresEventCapableTransport(t *testing.T) {
+	client, fake := newFakeClient(http.StatusOK, `{"subscription_id":"sub-1"}`)
+
+	_, err := client.Subscribe(SubscribeOption{AppName: "app1", Events: []string{"START"}}, func(AppEvent) {})
+	require.ErrorIs(t, err, ErrSubscriptionNotSupported)
+
+	err = client.Unsubscribe("sub-1")
+	require.ErrorIs(t, err, ErrSubscriptionNotSupported)
+
+	_, err = client.AddApp(Application{Name: "app1"}, "START")
+	require.ErrorIs(t, err, ErrSubscriptionNotSupported)
+
+	assert.Empty(t, fake.sent, "no request may be sent when the transport cannot deliver events")
+
+	// AddApp without subscribe events stays transport-agnostic.
+	_, err = client.AddApp(Application{Name: "app1"})
+	require.NoError(t, err)
+	assert.Len(t, fake.sent, 1)
+}
+
 func TestResponseDeserialize(t *testing.T) {
 	resp := &Response{
 		UUID:        "test-uuid",

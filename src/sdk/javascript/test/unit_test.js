@@ -16,7 +16,10 @@
 
 import http from 'http'
 import msgpack from 'msgpack-lite'
-import { AppMeshClient, AppMeshError } from '../src/appmesh.js'
+import fs, { writeFileSync, unlinkSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { AppMeshClient, AppMeshError, _resolveUserName, _resolveGroupName } from '../src/appmesh.js'
 import { AppMeshClientTCP } from '../src/appmesh_tcp.js'
 
 let passed = 0
@@ -53,9 +56,21 @@ async function expectAppMeshError (promise, { errorCode, statusCode } = {}) {
   return thrown
 }
 
+// Headers the mock server last received on the upload route, so a test can assert
+// what the SDK put on the wire.
+let uploadHeaders = null
+
 function startMockServer () {
   const server = http.createServer((req, res) => {
-    if (req.url === '/bad-json') {
+    if (req.url === '/appmesh/file/upload') {
+      uploadHeaders = req.headers
+      // Drain the multipart body before answering, or the client sees a reset.
+      req.resume()
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' })
+        res.end('ok')
+      })
+    } else if (req.url === '/bad-json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end('{"name": "x"')
     } else if (req.url === '/good-json') {
@@ -216,6 +231,125 @@ await assert('TCP caller-supplied Content-Type header wins over the JSON default
 await assert('TCP malformed JSON response raises typed error through _request', async () => {
   const { client } = makeScriptedTcpClient({ body: Buffer.from('{"broken"') })
   await expectAppMeshError(client._request('get', '/appmesh/app/t'), { errorCode: 'JSON_PARSE', statusCode: 200 })
+})
+
+// ---- File attributes: owner/group travel as names, never as raw numbers ----
+//
+// The daemon resolves X-File-User/X-File-Group by name (os::chown -> getUidByName),
+// and its download side reports names, so a client that parseInt()s them hands
+// NaN to chown. Both transports therefore resolve to names on upload and from
+// names on download, and skip the ownership step when a name does not resolve.
+
+await assert('uid/gid resolve to names, and unknown ids resolve to null', async () => {
+  const userName = await _resolveUserName(process.getuid())
+  if (typeof userName !== 'string' || userName.length === 0) {
+    throw new Error(`uid ${process.getuid()} must resolve to a user name, got ${JSON.stringify(userName)}`)
+  }
+  const groupName = await _resolveGroupName(process.getgid())
+  if (typeof groupName !== 'string' || groupName.length === 0) {
+    throw new Error(`gid ${process.getgid()} must resolve to a group name, got ${JSON.stringify(groupName)}`)
+  }
+  if ((await _resolveUserName(123456)) !== null) throw new Error('an unknown uid must resolve to null')
+  if ((await _resolveGroupName(123456)) !== null) throw new Error('an unknown gid must resolve to null')
+})
+
+await assert('HTTP upload sends owner/group names, not numeric ids', async () => {
+  const client = new AppMeshClient(baseURL)
+  const localFile = join(tmpdir(), 'appmesh_unit_upload_attrs.txt')
+  writeFileSync(localFile, 'attrs', 'utf8')
+  try {
+    uploadHeaders = null
+    await client.upload_file(localFile, '/tmp/appmesh_unit_target.txt', true)
+    if (!uploadHeaders) throw new Error('the upload never reached the mock server')
+    const userName = await _resolveUserName(process.getuid())
+    const groupName = await _resolveGroupName(process.getgid())
+    if (uploadHeaders['x-file-user'] !== userName) {
+      throw new Error(`expected X-File-User ${JSON.stringify(userName)}, got ${JSON.stringify(uploadHeaders['x-file-user'])}`)
+    }
+    if (uploadHeaders['x-file-group'] !== groupName) {
+      throw new Error(`expected X-File-Group ${JSON.stringify(groupName)}, got ${JSON.stringify(uploadHeaders['x-file-group'])}`)
+    }
+    if (!/^[0-7]+$/.test(uploadHeaders['x-file-mode'] || '')) {
+      throw new Error(`expected numeric X-File-Mode, got ${JSON.stringify(uploadHeaders['x-file-mode'])}`)
+    }
+  } finally {
+    try { unlinkSync(localFile) } catch (_) {}
+  }
+})
+
+await assert('TCP upload sends owner/group names, not numeric ids', async () => {
+  const client = new AppMeshClientTCP(false)
+  const localFile = join(tmpdir(), 'appmesh_unit_tcp_upload_attrs.txt')
+  writeFileSync(localFile, 'attrs', 'utf8')
+  let sentHeaders = null
+  client._request = async (method, path, body, options) => {
+    sentHeaders = options.headers
+    return { headers: { 'X-Send-File-Socket': 'true' }, httpStatus: 200 }
+  }
+  client.tcpTransport.sendMessage = () => {}
+  try {
+    await client.upload_file(localFile, '/tmp/appmesh_unit_tcp_target.txt', true)
+    const userName = await _resolveUserName(process.getuid())
+    const groupName = await _resolveGroupName(process.getgid())
+    if (sentHeaders['X-File-User'] !== userName) {
+      throw new Error(`expected X-File-User ${JSON.stringify(userName)}, got ${JSON.stringify(sentHeaders['X-File-User'])}`)
+    }
+    if (sentHeaders['X-File-Group'] !== groupName) {
+      throw new Error(`expected X-File-Group ${JSON.stringify(groupName)}, got ${JSON.stringify(sentHeaders['X-File-Group'])}`)
+    }
+    if (sentHeaders['X-File-User'] === String(process.getuid())) {
+      throw new Error('a numeric uid must not be sent as the owner')
+    }
+  } finally {
+    try { unlinkSync(localFile) } catch (_) {}
+  }
+})
+
+await assert('TCP download resolves names before chown and skips unknown ones', async () => {
+  const client = new AppMeshClientTCP(false)
+  const localFile = join(tmpdir(), 'appmesh_unit_tcp_download_attrs.txt')
+  const chowns = []
+  const originalChownSync = fs.chownSync
+  fs.chownSync = (path, uid, gid) => { chowns.push([uid, gid]) }
+  const chunks = []
+  client.tcpTransport.receiveMessage = async () => (chunks.length > 0 ? chunks.shift() : Buffer.alloc(0))
+  try {
+    client._request = async () => ({
+      headers: {
+        'X-Recv-File-Socket': 'true',
+        'X-File-User': await _resolveUserName(process.getuid()),
+        'X-File-Group': await _resolveGroupName(process.getgid())
+      },
+      httpStatus: 200
+    })
+    chunks.push(Buffer.from('download body'))
+    await client.download_file('/remote/file.txt', localFile, true)
+    if (chowns.length !== 1) {
+      throw new Error(`expected exactly one chown, got ${JSON.stringify(chowns)}`)
+    }
+    if (chowns[0][0] !== process.getuid() || chowns[0][1] !== process.getgid()) {
+      throw new Error(`expected chown to ${process.getuid()}:${process.getgid()}, got ${chowns[0].join(':')}`)
+    }
+
+    // A name the local host cannot resolve must skip ownership, not chown NaN.
+    chowns.length = 0
+    client._request = async () => ({
+      headers: {
+        'X-Recv-File-Socket': 'true',
+        'X-File-User': 'appmesh-no-such-user',
+        'X-File-Group': 'appmesh-no-such-group'
+      },
+      httpStatus: 200
+    })
+    chunks.push(Buffer.from('download body'))
+    await client.download_file('/remote/file.txt', localFile, true)
+    if (chowns.length !== 0) {
+      throw new Error(`unresolvable names must not reach chown, got ${JSON.stringify(chowns)}`)
+    }
+  } finally {
+    fs.chownSync = originalChownSync
+    try { unlinkSync(localFile) } catch (_) {}
+  }
 })
 
 // ---- Summary ----
