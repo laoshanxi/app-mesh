@@ -208,6 +208,10 @@ impl Requester for TCPRequester {
         *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) = url;
     }
 
+    fn get_forward_to(&self) -> Option<String> {
+        self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     fn get_access_token(&self) -> Option<String> {
         self.token.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
@@ -432,7 +436,7 @@ impl AppMeshClientTCP {
         stdout_handler: OutputHandler,
         timeout: i32,
     ) -> Result<Option<i32>> {
-        crate::wait_subscribe::wait_for_async_run_subscribe(&self.client, run, stdout_handler, timeout).await
+        self.client.wait_for_async_run(run, stdout_handler, timeout).await
     }
 }
 

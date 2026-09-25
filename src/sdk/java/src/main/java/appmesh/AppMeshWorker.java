@@ -71,8 +71,8 @@ public class AppMeshWorker {
      *         {@code null} when the fetch loop was cancelled
      * @throws ProcessSupersededException when the service reports (HTTP 412) that
      *         this process key is no longer valid and the task loop must stop
-     * @throws IllegalStateException when the service permanently rejects the worker
-     *         request with HTTP 400
+     * @throws AppMeshWorkerRejectedException when the service permanently rejects the
+     *         worker request with HTTP 400
      */
     public byte[] fetchTask() {
         String[] env = getRuntimeEnv();
@@ -105,7 +105,7 @@ public class AppMeshWorker {
                     String error = Utils.readErrorResponse(conn);
                     String message = "fetchTask permanently rejected with status 400: " + error;
                     LOGGER.log(Level.SEVERE, message);
-                    throw new IllegalStateException(message);
+                    throw new AppMeshWorkerRejectedException(message);
                 }
                 LOGGER.log(Level.WARNING, "fetchTask failed with status {0}: retrying...", status);
             } catch (IOException e) {

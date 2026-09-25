@@ -22,6 +22,8 @@ constexpr int LWS_RX_BUFFER_SIZE = 8192;
 struct HttpSessionData
 {
     std::unique_ptr<std::ofstream> upload_stream;
+    std::string upload_file_path;
+    HttpHeaderMap upload_attr_headers;
     std::unique_ptr<Request> http_request;
     std::unique_ptr<msgpack::sbuffer> http_response_data; // consumed in HTTP_WRITEABLE phase 1
     uint64_t req_id = 0;
@@ -40,6 +42,8 @@ struct HttpSessionData
         if (upload_stream && upload_stream->is_open())
             upload_stream->close();
         upload_stream.reset();
+        upload_file_path.clear();
+        upload_attr_headers.clear();
         http_request.reset();
         http_pending = false;
         headers_sent = false;
@@ -217,6 +221,11 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
 
     // ---- Custom headers ----
     ssnInfo->ext_x_file_path = Utility::decodeHeaderFilePath(grabCustom("X-File-Path"));
+    // POSIX attribute headers must be captured now: lws headers are not
+    // available in the later HTTP_BODY_COMPLETION callback.
+    ssnInfo->ext_x_file_mode = grabCustom("X-File-Mode");
+    ssnInfo->ext_x_file_user = grabCustom("X-File-User");
+    ssnInfo->ext_x_file_group = grabCustom("X-File-Group");
 
     return ssnInfo;
 }
@@ -553,6 +562,14 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
                     pss->cleanup();
                     return lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Cannot open file");
                 }
+                // Stash POSIX attributes for application once the body completes
+                pss->upload_file_path = ssnInfo->ext_x_file_path;
+                if (!ssnInfo->ext_x_file_mode.empty())
+                    pss->upload_attr_headers.emplace(HTTP_HEADER_KEY_file_mode, ssnInfo->ext_x_file_mode);
+                if (!ssnInfo->ext_x_file_user.empty())
+                    pss->upload_attr_headers.emplace(HTTP_HEADER_KEY_file_user, ssnInfo->ext_x_file_user);
+                if (!ssnInfo->ext_x_file_group.empty())
+                    pss->upload_attr_headers.emplace(HTTP_HEADER_KEY_file_group, ssnInfo->ext_x_file_group);
                 return 0; // Proceed to LWS_CALLBACK_HTTP_BODY to receive body
             }
         }
@@ -614,7 +631,13 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
     {
         if (pss && pss->upload_stream)
         {
+            // Apply caller-supplied POSIX attributes after the file commits,
+            // mirroring the uWS and TCP-channel upload paths.
+            const auto uploadedFile = pss->upload_file_path;
+            const auto attrHeaders = pss->upload_attr_headers;
             pss->cleanup();
+            if (!uploadedFile.empty() && !attrHeaders.empty())
+                Utility::applyFilePermission(uploadedFile, attrHeaders);
             lws_return_http_status(wsi, HTTP_STATUS_OK, "Upload OK");
             return lws_http_transaction_completed(wsi);
         }

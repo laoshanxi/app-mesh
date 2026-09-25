@@ -27,6 +27,9 @@ struct WSSessionInfo
     std::string authorization;
     std::string auth_scheme;
     std::string ext_x_file_path;
+    std::string ext_x_file_mode;
+    std::string ext_x_file_user;
+    std::string ext_x_file_group;
 };
 
 // -----------------------------------------------------------------------------

@@ -146,7 +146,12 @@ public class AppMeshClientTCP extends AppMeshClient {
             req.uuid = java.util.UUID.randomUUID().toString();
             req.http_method = method;
             req.request_uri = path;
-            req.client_addr = java.net.InetAddress.getLocalHost().getHostName();
+            try {
+                req.client_addr = java.net.InetAddress.getLocalHost().getHostName();
+            } catch (Exception e) {
+                // No DNS / container environments may fail or block here; fall back to loopback
+                req.client_addr = java.net.InetAddress.getLoopbackAddress().getHostAddress();
+            }
             // Merge common headers from parent
             req.headers = new java.util.HashMap<>();
             req.headers.putAll(super.getCommonHeaders());

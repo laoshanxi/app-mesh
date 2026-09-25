@@ -30,7 +30,8 @@ func IsFileExist(path string) bool {
 
 // escapeRemoteFilePath percent-encodes a remote file path (RFC 3986, UTF-8 bytes)
 // for the X-File-Path header: '/' separators stay literal and a space becomes
-// %20 (never '+'), so the daemon's single percent-decode restores the exact path.
+// %20 (never '+'), so the single percent-decode in the daemon and the agent
+// restores the exact path.
 func escapeRemoteFilePath(path string) string {
 	segments := strings.Split(path, "/")
 	for i, segment := range segments {

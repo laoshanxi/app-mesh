@@ -162,7 +162,16 @@ bool AppMeshClient::checkAppHealth(const std::string &app) const
 {
     const std::string restPath = "/appmesh/app/" + app + "/health";
     auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::GET, restPath);
-    return std::stoi(response->text) == 0;
+    try
+    {
+        return std::stoi(response->text) == 0;
+    }
+    catch (const std::exception &)
+    {
+        // Non-numeric health body: report it as an HTTP-level SDK error
+        // instead of a raw stoi exception.
+        throw AppMeshHttpError(response->status_code, response->text);
+    }
 }
 
 // Application Manage
@@ -237,11 +246,15 @@ std::shared_ptr<int> AppMeshClient::waitForAsyncRun(AppRun *run, OutputHandler s
 
     int64_t lastOutputPosition = 0;
     const time_t startTime = ACE_OS::time();
+    // Server-side long-poll cadence per request, as in the Python SDK's
+    // _POLL_INTERVAL: each request waits server-side instead of returning
+    // at once and flooding the daemon.
+    constexpr int pollIntervalSeconds = 1;
 
     while (true)
     {
         auto response = this->getAppOutput(run->appName(), lastOutputPosition, 0, 10240,
-                                           run->procUid(), timeout);
+                                           run->procUid(), pollIntervalSeconds);
 
         if (stdoutHandler && !response.output.empty())
             stdoutHandler(response.output, lastOutputPosition);
@@ -266,7 +279,7 @@ std::string AppMeshClient::runTask(const std::string &app, const nlohmann::json 
     if (timeout <= 0)
         timeout = 300;
     const std::string restPath = "/appmesh/app/" + app + "/task";
-    std::map<std::string, std::string> query = {{"timeout", std::to_string(timeout)}};
+    std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(timeout)}};
 
     auto response = requestHttp(ErrorPolicy::Throw, web::http::methods::POST, restPath, &data, {}, query);
     return response->text;
@@ -385,7 +398,7 @@ nlohmann::json AppMeshClient::listLabels() const
 void AppMeshClient::addLabel(const std::string &label, const std::string &value)
 {
     const std::string restPath = "/appmesh/label/" + label;
-    std::map<std::string, std::string> query = {{"value", value}};
+    std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_label_value, value}};
     requestHttp(ErrorPolicy::Throw, web::http::methods::PUT, restPath, nullptr, {}, query);
 }
 

@@ -20,6 +20,10 @@ var (
 	// ErrWaitTimeout is wrapped by Wait/WaitContext errors when the wait deadline
 	// expires or the context is cancelled before the process exits.
 	ErrWaitTimeout = errors.New("wait timed out before process exit")
+	// ErrSubscriptionNotSupported is returned by Subscribe/Unsubscribe and by
+	// AddApp with subscribe events when the underlying transport has no event
+	// demuxer (plain HTTP): the subscription would never deliver any callback.
+	ErrSubscriptionNotSupported = errors.New("event subscriptions require a TCP or WSS transport")
 )
 
 const (
@@ -342,6 +346,8 @@ type SubscriptionResult struct {
 
 // Subscribe registers for events on a named app (or all apps if AppName is empty/"*").
 // Callbacks are dispatched serially, preserving per-subscription event order.
+// Requires a subscription-capable transport (TCP/WSS); over plain HTTP it fails
+// with ErrSubscriptionNotSupported.
 func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
 	return c.SubscribeContext(context.Background(), opt, callback)
 }
@@ -349,13 +355,13 @@ func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (
 // SubscribeContext is Subscribe bounded by ctx. ctx bounds only the subscribe call,
 // not the lifetime of the subscription.
 func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
+	subscriber, ok := c.req.(subscribableRequester)
+	if !ok {
+		return nil, fmt.Errorf("subscribe: %w", ErrSubscriptionNotSupported)
+	}
 	// Once the server installs a subscription, a matching event can precede the
 	// subscribe response. Start the sole reader before issuing the request.
-	var subscriber subscribableRequester
-	if sub, ok := c.req.(subscribableRequester); ok {
-		subscriber = sub
-		subscriber.enableDemuxer()
-	}
+	subscriber.enableDemuxer()
 
 	apiPath := "/appmesh/subscribe"
 	if opt.AppName != "" && opt.AppName != "*" {
@@ -385,7 +391,7 @@ func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOptio
 
 	// Register after parsing the server-issued ID; events received in the race
 	// window are held by the demuxer's bounded pre-registration buffer.
-	if subscriber != nil && callback != nil {
+	if callback != nil {
 		if d := subscriber.getDemuxer(); d != nil {
 			d.registerEventCallback(result.SubscriptionID, callback)
 		}
@@ -394,13 +400,19 @@ func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOptio
 	return &result, nil
 }
 
-// Unsubscribe removes a subscription by ID.
+// Unsubscribe removes a subscription by ID. Requires a subscription-capable
+// transport (TCP/WSS); over plain HTTP it fails with ErrSubscriptionNotSupported.
 func (c *AppMeshClient) Unsubscribe(subscriptionID string) error {
 	return c.UnsubscribeContext(context.Background(), subscriptionID)
 }
 
 // UnsubscribeContext is Unsubscribe bounded by ctx.
 func (c *AppMeshClient) UnsubscribeContext(ctx context.Context, subscriptionID string) error {
+	subscriber, ok := c.req.(subscribableRequester)
+	if !ok {
+		return fmt.Errorf("unsubscribe: %w", ErrSubscriptionNotSupported)
+	}
+
 	queries := url.Values{}
 	queries.Set("subscription_id", subscriptionID)
 
@@ -413,10 +425,8 @@ func (c *AppMeshClient) UnsubscribeContext(ctx context.Context, subscriptionID s
 	}
 
 	// Unregister from demuxer (no-op if transport is closed or demuxer not enabled).
-	if sub, ok := c.req.(subscribableRequester); ok {
-		if d := sub.getDemuxer(); d != nil {
-			d.unregisterEventCallback(subscriptionID)
-		}
+	if d := subscriber.getDemuxer(); d != nil {
+		d.unregisterEventCallback(subscriptionID)
 	}
 
 	return nil

@@ -543,11 +543,28 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	}
 }
 
+// decodeFilePathHeader decodes the percent-encoded X-File-Path header into the local
+// path. The daemon decodes the same header for its own checks; the agent reads and
+// writes the file itself, so a client that percent-encodes the separators ("%2F")
+// must reach the same file here. Path semantics apply: a '+' stays literal, and an
+// invalid escape keeps the raw value so an unencoded path still works.
+func decodeFilePathHeader(value string) string {
+	if !strings.Contains(value, "%") {
+		return value
+	}
+	decoded, err := url.PathUnescape(value)
+	if err != nil {
+		logger.Warnf("Invalid X-File-Path escape in %q, using the raw value: %v", value, err)
+		return value
+	}
+	return decoded
+}
+
 // HandleRESTFile processes file upload and download requests
 func HandleRESTFile(w http.ResponseWriter, r *http.Request, data *Response) error {
 	logger.Debugf("Requesting path: %s", r.URL.Path)
 
-	filePath := r.Header.Get(HTTP_HEADER_KEY_File_Path)
+	filePath := decodeFilePathHeader(r.Header.Get(HTTP_HEADER_KEY_File_Path))
 
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == REST_PATH_DOWNLOAD && data.HttpStatus == http.StatusOK:

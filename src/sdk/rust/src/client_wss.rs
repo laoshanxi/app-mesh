@@ -193,6 +193,10 @@ impl Requester for WSSRequester {
         *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) = url;
     }
 
+    fn get_forward_to(&self) -> Option<String> {
+        self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     fn handle_token_update(&self, token: Option<String>) {
         *self.token.write().unwrap_or_else(|e| e.into_inner()) = token;
     }
@@ -639,7 +643,7 @@ impl AppMeshClientWSS {
         stdout_handler: OutputHandler,
         timeout: i32,
     ) -> Result<Option<i32>, AppMeshError> {
-        crate::wait_subscribe::wait_for_async_run_subscribe(&self.client, run, stdout_handler, timeout).await
+        self.client.wait_for_async_run(run, stdout_handler, timeout).await
     }
 }
 

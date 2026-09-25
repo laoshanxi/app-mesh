@@ -185,6 +185,34 @@ async fn backfill_and_wait(
     }
 }
 
+fn deliver(chunk: &[u8], pos: i64, delivered_until: &AtomicI64, stdout_handler: &OutputHandler) {
+    if chunk.is_empty() {
+        return;
+    }
+    let end = pos + chunk.len() as i64;
+
+    // Live STDOUT events are serialized per subscription by the demuxer, so the
+    // CAS loop only arbitrates the backfill (position 0) racing a live event.
+    loop {
+        let current = delivered_until.load(Ordering::Acquire);
+        if end <= current {
+            return;
+        }
+        if delivered_until
+            .compare_exchange(current, end, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            if let Some(ref handler) = stdout_handler {
+                let start = if pos < current { (current - pos) as usize } else { 0 };
+                let start_pos = if pos < current { current } else { pos };
+                let text = String::from_utf8_lossy(&chunk[start..]);
+                handler(&text, start_pos);
+            }
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,33 +251,5 @@ mod tests {
     #[test]
     fn conformance_s2_disconnected_event_classified() {
         assert!(matches!(fire(EVENT_TYPE_DISCONNECTED, serde_json::Value::Null), Some(WaitDone::Disconnected)));
-    }
-}
-
-fn deliver(chunk: &[u8], pos: i64, delivered_until: &AtomicI64, stdout_handler: &OutputHandler) {
-    if chunk.is_empty() {
-        return;
-    }
-    let end = pos + chunk.len() as i64;
-
-    // Live STDOUT events are serialized per subscription by the demuxer, so the
-    // CAS loop only arbitrates the backfill (position 0) racing a live event.
-    loop {
-        let current = delivered_until.load(Ordering::Acquire);
-        if end <= current {
-            return;
-        }
-        if delivered_until
-            .compare_exchange(current, end, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-        {
-            if let Some(ref handler) = stdout_handler {
-                let start = if pos < current { (current - pos) as usize } else { 0 };
-                let start_pos = if pos < current { current } else { pos };
-                let text = String::from_utf8_lossy(&chunk[start..]);
-                handler(&text, start_pos);
-            }
-            return;
-        }
     }
 }

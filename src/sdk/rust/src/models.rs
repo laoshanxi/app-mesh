@@ -84,6 +84,9 @@ pub struct AppRun {
     pub(crate) client: Arc<AppMeshClient>,
     pub app_name: String,
     pub proc_uid: String,
+    /// Forwarding target captured when the run was started; [`AppMeshClient::wait_for_async_run`]
+    /// temporarily pins the client to it so polling keeps talking to the same cluster node.
+    pub(crate) forward_to: Option<String>,
 }
 
 impl AppRun {
