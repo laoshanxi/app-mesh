@@ -716,7 +716,14 @@ class AppMeshClient {
    * not currently populated by this SDK
    */
   async upload_file(localFile, filePath = null, applyAttrs = false) {
-    if (!filePath) filePath = localFile.split(/[\\/]/).pop();
+    if (!filePath) {
+      // Node.js passes a path string; browser passes a File (use its name)
+      const sourceName = typeof localFile === 'string' ? localFile : localFile && localFile.name;
+      if (!sourceName) {
+        throw new AppMeshError('filePath is required when localFile is a Blob without a name');
+      }
+      filePath = sourceName.split(/[\\/]/).pop();
+    }
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
     let formData;
 
