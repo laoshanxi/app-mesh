@@ -769,7 +769,7 @@ class AppMeshClient {
    * @param {string|File} localFile - Local file path/object
    * @param {string} [filePath=null] - Remote target path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs=false] - In Node.js, send local permission bits plus
-   * user/group names when they can be resolved locally
+   * user/group (names when resolvable locally, numeric ids otherwise)
    */
   async upload_file(localFile, filePath = null, applyAttrs = false) {
     if (!filePath) {
@@ -805,14 +805,13 @@ class AppMeshClient {
       // Add file attributes
       if (applyAttrs) {
         headers["X-File-Mode"] = (stat.mode & 0o777).toString(); // Only permission bits
-        // The daemon resolves owner/group by name (os::chown -> getUidByName),
-        // so send user/group names when resolvable and omit the headers otherwise.
+        // Send user/group names when resolvable; the daemon also accepts
+        // all-digit values (os::chown -> getUidByName numeric fallback, and
+        // the Go agent's ApplyFileAttributes), so fall back to numeric ids.
         const username = await _resolveUserName(stat.uid);
         const groupName = await _resolveGroupName(stat.gid);
-        if (username && groupName) {
-          headers["X-File-User"] = username;
-          headers["X-File-Group"] = groupName;
-        }
+        headers["X-File-User"] = username || String(stat.uid);
+        headers["X-File-Group"] = groupName || String(stat.gid);
       }
 
       // Add form-data headers

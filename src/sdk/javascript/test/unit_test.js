@@ -233,12 +233,14 @@ await assert('TCP malformed JSON response raises typed error through _request', 
   await expectAppMeshError(client._request('get', '/appmesh/app/t'), { errorCode: 'JSON_PARSE', statusCode: 200 })
 })
 
-// ---- File attributes: owner/group travel as names, never as raw numbers ----
+// ---- File attributes: owner/group as names, numeric ids as fallback ----
 //
-// The daemon resolves X-File-User/X-File-Group by name (os::chown -> getUidByName),
-// and its download side reports names, so a client that parseInt()s them hands
-// NaN to chown. Both transports therefore resolve to names on upload and from
-// names on download, and skip the ownership step when a name does not resolve.
+// The daemon resolves X-File-User/X-File-Group by name (os::chown -> getUidByName)
+// and accepts all-digit values as a numeric fallback, and its download side
+// reports names (falling back to numeric strings for unknown ids), so a client
+// that parseInt()s them hands NaN to chown. Both transports therefore resolve
+// to names on upload (numeric ids when unresolvable) and from names on
+// download, and skip the ownership step when a name does not resolve.
 
 await assert('uid/gid resolve to names, and unknown ids resolve to null', async () => {
   const userName = await _resolveUserName(process.getuid())

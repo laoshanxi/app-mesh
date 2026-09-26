@@ -641,15 +641,13 @@ class AppMeshClientTCP extends AppMeshClient {
     if (applyAttrs) {
       const stats = fs.statSync(localFile)
       headers['X-File-Mode'] = (stats.mode & 0o777).toString()
-      // The daemon resolves owner/group by name (Utility::applyFilePermission ->
-      // os::chown -> getUidByName), so send user/group names when resolvable and
-      // omit the headers otherwise instead of sending raw numeric ids.
+      // Send user/group names when resolvable; the daemon also accepts
+      // all-digit values (Utility::applyFilePermission -> os::chown ->
+      // getUidByName numeric fallback), so fall back to numeric ids.
       const username = await _resolveUserName(stats.uid)
       const groupName = await _resolveGroupName(stats.gid)
-      if (username && groupName) {
-        headers['X-File-User'] = username
-        headers['X-File-Group'] = groupName
-      }
+      headers['X-File-User'] = username || String(stats.uid)
+      headers['X-File-Group'] = groupName || String(stats.gid)
     }
 
     const response = await this._request('post', '/appmesh/file/upload', null, {
