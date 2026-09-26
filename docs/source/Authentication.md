@@ -360,10 +360,15 @@ export APPMESH_BEARER_TOKEN=$(sudo /opt/appmesh/script/appmesh-auth.sh automatio
 | --- | --- | --- | --- | --- |
 | `appmesh-auth.sh user-token` | ✅ | — | — | — |
 | `appmesh-auth.sh automation-token` | — | ✅ | — | — |
-| CLI `appm logon` | ✅ | — | ✅ `--device` / `--browser` | ✅ (session file) |
+| CLI `appm logon` | ✅ `--password` / `--password-stdin` / `--username` (only when advertised) | — | ✅ automatic, or `--device` / `--browser` | ✅ (session file) |
 | Rust SDK `OAuthClient` | ✅ `password_login()` | — | ✅ | ✅ |
 | Python SDK `OAuthClient` | — | — | ✅ | ✅ |
 | Go / Java / JS / C++ SDK | — | — | — | — (bearer setter only: Go `SetToken`, Java `setBearerToken`, JS `set_bearer_token`, C++ `setBearerToken`) |
+
+Without flags, the CLI selects the method from the advertised flows and the
+local display: browser authorization on a desktop computer, and device
+authorization on a headless computer. It uses the password grant only when the
+caller selects it and the Engine advertises the flow.
 
 The CLI never prints tokens: `appm loginfo` shows the principal and the expiry
 only, and it needs a stored session. Use the grant or `automation-token` when

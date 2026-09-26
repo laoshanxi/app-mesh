@@ -124,7 +124,7 @@ A follower does not create built-in credentials. It does not run a second authen
 
 Set the owner with `setup.sh --auth-mode builtin --auth-role owner`. Join a follower with `setup.sh --auth-mode builtin --auth-role follower --oidc-issuer <owner issuer>`. The role also applies at package installation time through `APPMESH_AUTH_ROLE`. The packaged `identity` App stays enabled on a follower. It runs inert: it stays healthy, it starts no Dex process, and it writes no authentication state.
 
-Authorization data is node-local. The principal and role APIs write the node that serves the request. A forwarded change therefore affects only the target node. Keep nodes consistent in one of two ways: apply the same changes on every node, or copy the owner's `work/config/authorization.yaml` to the followers and restart their daemons. A follower without a principal entry authenticates a user. It grants nothing beyond the configured provisioning policy.
+Authorization data is node-local. The principal and role APIs write the node that serves the request. A forwarded change therefore affects only the target node. Keep nodes consistent in one of two ways: apply the same changes on every node, or copy the owner's `work/config/authorization.yaml` to the followers. A copied file needs no restart: a follower adopts an entry from disk when it first resolves that principal, and a later save keeps the entry. A follower without a principal entry authenticates a user. It grants nothing beyond the configured provisioning policy.
 
 The built-in database supports one active authentication owner. Use this failover sequence:
 
