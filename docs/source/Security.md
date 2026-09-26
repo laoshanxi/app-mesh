@@ -98,6 +98,18 @@ The launcher does not put a password in a command argument or environment variab
 
 Use an external authentication deployment when you need user lifecycle management, MFA, password reset, or directory policy.
 
+## Administration interfaces
+
+The `dexuser` administration UI listens on `127.0.0.1:6064` and has no authentication of its own. The loopback binding is the only access control. This is an accepted risk, and it matches the exposure model of the administrative gRPC API the UI drives:
+
+- The gRPC listener (`127.0.0.1:5557`) is protected only by mutual TLS. A caller who can read `ssl/client.pem` and `ssl/client-key.pem` can invoke the gRPC administration API directly, without the UI.
+- A local process that can reach the UI can reach the same administrative operations. The UI therefore grants no privilege beyond what local access to the node already provides.
+
+Two rules follow from this model:
+
+1. Never bind the UI to a non-loopback interface (`APPMESH_AUTH_ADMIN_LISTEN`) and never place it behind a reverse proxy. Doing so exposes unauthenticated user and client management to the network.
+2. When no operator needs the UI, disable it with `APPMESH_AUTH_ADMIN_UI=off`. The `dexuser` App is a system App, so a disabled UI cannot be re-enabled through the application API. See [Authentication](Authentication.md#disabling-the-administration-ui).
+
 ## Secret protection
 
 The package creates a 256-bit master key for application `secret_env` values. The Engine uses AES-256-GCM. The key file must be a regular owner-only file.

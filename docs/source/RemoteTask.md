@@ -12,7 +12,7 @@ With request forwarding, you can achieve cluster-level task execution.
 
 The client sends a payload (task data) to App Mesh and waits for the response.
 
-The client needs a bearer token. Run `appm logon` once first — it enrolls the first administrator — then mint a token with the built-in password grant (`sudo` is needed on a native install):
+The client needs a bearer token. Run `appm logon --password` once first — it enrolls the first administrator — then mint a token with the built-in password grant (`sudo` is needed on a native install):
 
 ```shell
 export APPMESH_BEARER_TOKEN=$(curl -s -u "appmesh-cli:" -X POST http://127.0.0.1:6062/auth/token \

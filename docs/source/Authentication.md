@@ -21,6 +21,8 @@ commands, and [Install](Install.md) for deployment procedures.
 | Add another user | `add-user` with the password on standard input | [Adding a user](#adding-a-user) |
 | Delete a user | `delete-user` with the address | [Deleting a user](#deleting-a-user) |
 | Use a password from the Python SDK | Custom `TokenProvider`, or exchange the token first | [Python SDK password sign-in](#using-a-password-from-the-python-sdk) |
+| Turn off the password grant (pure PKCE) | `password_flow: false` in `oidc.yaml` | [Disabling the password grant](#disabling-the-password-grant) |
+| Manage users on Windows | Static admin/guest only; dynamic users need an external IdP | [Windows user management](#windows-user-management) |
 
 All examples use the packaged helper `appmesh-auth.sh` (`appmesh-auth.ps1` on
 Windows, same actions) and the Linux install root `/opt/appmesh`.
@@ -178,14 +180,30 @@ Key facts:
   [`add-user`](#adding-a-user) to create and bind in one step, or set the role
   through the REST API: `POST /appmesh/principal/<principal-id>` with
   `{"roles": ["appmesh-viewer"]}`.
-- Set `APPMESH_AUTH_ADMIN_UI=off` to disable the UI. The App is a **system**
-  App, so once disabled it cannot be re-enabled through the application API.
 - On Windows the authentication service runs with memory storage: identities
-  created here do not survive a restart.
+  created here do not survive a restart. See
+  [Windows user management](#windows-user-management).
 - The UI's demonstration pages (Flows, Token tools) use an unregistered
   `example-app` OAuth client; only the administration pages are supported.
 - `APPMESH_AUTH_ADMIN_LISTEN` changes the UI listener; the underlying gRPC API
-  listens on `127.0.0.1:5557` (`APPMESH_AUTH_GRPC_LISTEN`).
+  listens on `127.0.0.1:5557` (`APPMESH_AUTH_GRPC_LISTEN`). Keep both on
+  loopback: the UI has no authentication (see
+  [Security](Security.md#administration-interfaces)).
+
+### Disabling the administration UI
+
+Set `APPMESH_AUTH_ADMIN_UI=off` to disable the UI. In the container image the
+entrypoint rewrites the bundled `apps/dexuser.yaml` definition to
+`enabled: false` before the first start, so the daemon never starts the App.
+On a package installation the same variable makes the launcher's `admin-ui`
+action idle: the `dexuser` App stays up for health checks but serves nothing.
+
+The `dexuser` App is a **system** App: once disabled it cannot be re-enabled
+through the application REST API, so no remote caller can turn it back on.
+Re-enabling requires local access — set `APPMESH_AUTH_ADMIN_UI=on` (or remove
+the variable) and restart.
+
+`add-user` and `delete-user` go through this UI, so they need it running.
 
 ## Adding a user
 
@@ -196,16 +214,27 @@ running) and binds its authorization role in one step:
 printf '%s' 'Alice-Pw-2026' | sudo /opt/appmesh/script/appmesh-auth.sh add-user alice@corp.local appmesh-viewer
 ```
 
+The administration UI is the only management transport; there is no direct
+gRPC path. When the UI is disabled (`APPMESH_AUTH_ADMIN_UI=off`, see
+[Disabling the administration UI](#disabling-the-administration-ui)) the
+command fails with a reachability error — that coupling is deliberate, so
+disabling the UI disables user management with it.
+
 The password comes from standard input so it never appears in `ps` or CI logs.
 The command prints the Principal ID to standard output; the role argument
 defaults to `appmesh-viewer` and must exist in the authorization policy.
 
 The command rejects the static `admin@appmesh.local` / `guest@appmesh.local`
-identities and requires built-in mode on the authentication owner. The Engine
-reads the authorization policy only at startup: restart App Mesh before the new
-user's first request, or apply the role through the REST API — the command
-prints the exact `POST /appmesh/principal/<principal-id>` request when the
-Engine is running.
+identities and requires built-in mode on the authentication owner. A running
+Engine adopts the new binding on the user's first request — no restart is
+needed. If the user has already authenticated before the binding was written,
+the Engine holds a role-less record for that Principal; apply the role through
+the REST API in that case — the command prints the exact
+`POST /appmesh/principal/<principal-id>` request when the Engine is running.
+
+On Windows the authentication service runs with memory storage: identities
+created by `add-user` do not survive a restart (see
+[Windows user management](#windows-user-management)).
 
 ## Deleting a user
 
@@ -216,7 +245,56 @@ sudo /opt/appmesh/script/appmesh-auth.sh delete-user alice@corp.local
 Removes the identity and its role binding. The command prints the `user_id` and
 the Principal ID when it can recover them from the administration UI. When it
 cannot, it reports that no Principal record was removed. The user can no longer
-sign in. The same Engine restart caveat as `add-user` applies.
+sign in. A running Engine keeps its in-memory copy of the Principal: remove it
+through the REST API (`DELETE /appmesh/principal/<principal-id>`) or restart,
+otherwise the next Engine policy save writes the binding back.
+
+Unlike the REST API's DELETE, which keeps an auditable tombstone
+(`status: tombstoned`), this launcher hard-deletes the Principal block from the
+on-disk policy — the right tool for a full cleanup.
+
+## Windows user management
+
+On Windows only the packaged static identities (`admin@appmesh.local` and
+`guest@appmesh.local`) are durable. The Windows authentication-service build is
+CGO-free, so Dex runs with memory storage instead of SQLite.
+
+`add-user` and `delete-user` are available and work, but an identity created
+this way lives only in memory: it is lost when the authentication service
+restarts. Its App Mesh role binding in `authorization.yaml` persists and then
+refers to a subject that no longer exists, and a re-created user receives a new
+`user_id` — so after a restart, remove the stale binding
+(`DELETE /appmesh/principal/<principal-id>`) and run `add-user` again.
+
+For durable dynamic user management on Windows, use `APPMESH_AUTH_MODE=external`
+with an external identity provider.
+
+## Disabling the password grant
+
+Pure PKCE deployments can turn off the OAuth resource-owner password grant in
+built-in mode:
+
+```yaml
+# config/oidc.yaml
+OIDC:
+  password_flow: false
+```
+
+or with `APPMESH_AUTH_PASSWORD_FLOW=false`. The setting takes effect in two
+places:
+
+- The Engine stops advertising `password` in the `flows` list of
+  `/appmesh/auth/config`, so the CLI automatically picks PKCE or device
+  sign-in instead.
+- `appmesh-auth.sh` / `appmesh-auth.ps1` render the Dex `grantTypes` without
+  `"password"`, so the token endpoint rejects `grant_type=password`:
+  `user-token` and direct password grants (including the
+  [Python SDK example](#using-a-password-from-the-python-sdk)) stop working.
+
+Browser sign-in of local password users still works — the Dex password
+database and `passwordConnector: local` stay enabled — and `automation-token`
+(`client_credentials`) is unaffected. In `external` mode the Engine never
+advertises the password flow and this setting has no effect.
 
 ## Getting a token for SDK and CI
 

@@ -392,6 +392,21 @@ function Render-DexConfig {
     # Windows runs the CGO-free dex build: memory storage, no SQLite database.
     # A template change leaves the marker unresolved and fails the check below.
     $content = $content -replace "(?m)^  type: sqlite3\r?\n  config:\r?\n    file: __APPMESH_AUTH_STORAGE_PATH__\r?$", "  type: memory"
+    # Pure PKCE deployments drop the resource-owner password grant from the Dex
+    # grant types; the Engine reads the same setting to advertise the flows.
+    # The password database stays enabled, so browser sign-in keeps working.
+    # Keep this in sync with the grantTypes rewrite in appmesh-auth.sh.
+    $passwordFlow = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_PASSWORD_FLOW" $OidcConfig "password_flow" "true"
+    if ($passwordFlow -match '^(?i)(0|false|off|disabled)$') {
+        $updated = $content -replace '(?m)^  grantTypes: \["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"\]\r?$', '  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "client_credentials"]'
+        # A template drift must never silently keep a grant the operator disabled.
+        if ($updated -eq $content) { throw "The authentication configuration template grantTypes line does not match; cannot drop the password grant" }
+        $content = $updated
+    }
+    elseif ($passwordFlow -notmatch '^(?i)(1|true)$') {
+        # Keep this accepted set identical to the Engine's (OidcTokenVerifier.cpp).
+        throw "APPMESH_AUTH_PASSWORD_FLOW must be true or false"
+    }
     # The administrative gRPC listener serves the dexuser administration UI and
     # is optional: it is rendered only when the mutual-TLS material is present,
     # because Dex refuses to start when a configured certificate file is missing
@@ -790,9 +805,10 @@ function Add-User {
     [Console]::Error.WriteLine("  Principal ID: $principalId")
     [Console]::Error.WriteLine("  role:         $RoleName")
 
+    [Console]::Error.WriteLine("Note: the authentication service on Windows uses memory storage; this user does not survive a restart. For durable user management, use an external identity provider.")
     $engineRunning = $null -ne (Get-Process -Name "appmesh" -ErrorAction SilentlyContinue)
     if ($engineRunning) {
-        [Console]::Error.WriteLine("Warning: the Engine owns the authorization policy and rewrites it from memory. Restart App Mesh before this user sends a request, or apply the role through the REST API when the Engine is running:")
+        [Console]::Error.WriteLine("Note: a running Engine adopts this binding on the user's first request. If the user already authenticated before, the Engine holds a role-less record; apply the role through the REST API instead:")
         [Console]::Error.WriteLine("  POST /appmesh/principal/${principalId}  {`"roles`": [`"$RoleName`"]}")
     }
     [Console]::Out.WriteLine($principalId)

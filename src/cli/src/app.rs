@@ -26,7 +26,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Sign in (built-in password login by default)
+    /// Sign in (browser, device, or password login, chosen automatically)
     Logon(LogonArgs),
 
     /// Revoke tokens when supported and clear the local session
@@ -100,15 +100,19 @@ pub struct LogonArgs {
     #[arg(short = 'u', long = "username", conflicts_with_all = ["device", "browser"])]
     pub username: Option<String>,
 
-    /// Read the password from standard input instead of the TTY prompt (for non-interactive pipelines)
+    /// Use built-in password login and read the password from the TTY prompt
+    #[arg(long = "password", conflicts_with_all = ["device", "browser", "password_stdin"])]
+    pub password: bool,
+
+    /// Read the password from standard input instead of the TTY prompt (implies built-in password login)
     #[arg(long = "password-stdin", conflicts_with_all = ["device", "browser"])]
     pub password_stdin: bool,
 
-    /// Use RFC 8628 Device Authorization instead of built-in password login
+    /// Use RFC 8628 Device Authorization
     #[arg(long = "device", conflicts_with = "browser")]
     pub device: bool,
 
-    /// Open the system browser and use loopback PKCE instead of Device Authorization
+    /// Open the system browser and use loopback PKCE
     #[arg(long = "browser", conflicts_with = "device")]
     pub browser: bool,
 

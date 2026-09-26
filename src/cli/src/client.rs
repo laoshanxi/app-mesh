@@ -69,10 +69,24 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     // Discovery must use the HTTPS side channel, never the WSS transport: the
     // daemon authenticates the WebSocket only at upgrade time, and a transport
     // connected here without a token would stay anonymous for every later call.
-    let advertised = client
-        .get_auth_config_https(cli.forward_to.as_deref())
-        .await
-        .context("Engine OAuth discovery failed")?;
+    let advertised = match client.get_auth_config_https(cli.forward_to.as_deref()).await {
+        Ok(advertised) => advertised,
+        Err(error) => {
+            // A brief authentication-service outage must not take the CLI down
+            // while the stored access token is still valid. Degraded mode uses
+            // the token as-is: the issuer check and token refresh need the
+            // discovery document, so both wait until discovery recovers.
+            if !stored_token_usable(&session) {
+                return Err(error).context("Engine OAuth discovery failed");
+            }
+            eprintln!(
+                "Warning: Engine OAuth discovery failed ({}). Using the stored access token until it expires.",
+                error
+            );
+            client.client().set_token(&session.tokens.access_token);
+            return Ok(client);
+        }
+    };
     let advertised_issuer = advertised.get("issuer").and_then(serde_json::Value::as_str);
     let advertised_client = advertised.get("public_client_id").and_then(serde_json::Value::as_str);
     let advertised_audience = advertised.get("audience").and_then(serde_json::Value::as_str);
@@ -216,5 +230,42 @@ fn canonical_endpoint(host: &str, port: u16) -> String {
         format!("wss://[{}]:{}", host, port)
     } else {
         format!("wss://{}:{}", host, port)
+    }
+}
+
+/// A stored token may ride out a discovery outage only while it is still valid.
+fn stored_token_usable(session: &config::StoredSession) -> bool {
+    !session.tokens.is_expired()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use appmesh::{OAuthConfig, TokenSet};
+
+    fn session_with_expiry(expires_at: Option<u64>) -> config::StoredSession {
+        config::StoredSession::new(
+            "wss://engine:6058".to_string(),
+            OAuthConfig::new("https://auth.example", "https://auth.example", "appmesh-cli"),
+            TokenSet {
+                access_token: "access-token".into(),
+                refresh_token: Some("refresh-token".into()),
+                expires_at,
+                token_type: "Bearer".into(),
+                scope: None,
+            },
+        )
+    }
+
+    #[test]
+    fn stored_token_rides_out_discovery_outage_until_expiry() {
+        // 4102444800 is 2100-01-01; the far-future token survives an outage.
+        assert!(stored_token_usable(&session_with_expiry(Some(4_102_444_800))));
+        assert!(!stored_token_usable(&session_with_expiry(Some(1_000_000_000))));
+    }
+
+    #[test]
+    fn stored_token_without_expiry_is_usable() {
+        assert!(stored_token_usable(&session_with_expiry(None)));
     }
 }

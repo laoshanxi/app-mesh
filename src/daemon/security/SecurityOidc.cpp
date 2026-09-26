@@ -55,7 +55,7 @@ std::set<std::string> SecurityOidc::allPermissions() const
 nlohmann::json SecurityOidc::authConfig() const
 {
 	auto config = m_verifier.publicConfig();
-	if (m_authorization.builtinAuthentication())
+	if (m_authorization.builtinAuthentication() && m_verifier.config().passwordFlow)
 		config["flows"].push_back("password");
 	config["first_admin_enrollment"] = m_authorization.firstAdminEnrollment();
 	return config;

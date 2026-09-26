@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -106,9 +107,15 @@ fn test_alias_content_matches_primary() {
 fn test_help_logon_all_flags() {
     let s = stdout_of(&["logon", "--help"]);
     for flag in [
-        "--device", "--browser", "--auth-access-url", "--login-timeout", "--password-stdin",
+        "--device", "--browser", "--auth-access-url", "--login-timeout", "--password", "--password-stdin",
     ] {
-        assert!(s.contains(flag), "logon missing {}", flag);
+        // Match the option name itself: a plain `contains` lets "--password"
+        // pass on the "--password-stdin" line.
+        assert!(
+            s.lines().any(|line| line.trim().split_whitespace().next() == Some(flag)),
+            "logon missing {}",
+            flag
+        );
     }
 }
 
@@ -123,6 +130,29 @@ fn test_logon_password_stdin_conflicts_with_other_flows() {
             .output()
             .unwrap();
         assert!(!out.status.success(), "logon accepted {:?}", conflict);
+    }
+}
+
+#[test]
+fn test_logon_password_conflicts_with_other_flows() {
+    // --password is the explicit built-in password selector; it must not
+    // combine with the other flows or with --password-stdin.
+    for conflict in [
+        ["--password", "--device"],
+        ["--password", "--browser"],
+        ["--password", "--password-stdin"],
+    ] {
+        let out = appm().args(["-H", "localhost:6058", "logon"]).args(conflict).output().unwrap();
+        // Assert the usage error, not just a failed command: an unreachable
+        // Engine also exits non-zero, which would pass without the conflict.
+        assert_eq!(out.status.code(), Some(2), "logon accepted {:?}", conflict);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("cannot be used with"),
+            "logon reported no conflict for {:?}: {}",
+            conflict,
+            stderr
+        );
     }
 }
 
@@ -686,4 +716,93 @@ fn test_workflow_cancel_requires_run_id() {
 fn test_workflow_list_alias_ls() {
     let out = appm().args(["workflow", "ls", "--help"]).output().unwrap();
     assert!(out.status.success());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// discovery degradation — a stored session rides out an authentication outage
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Mirror the product's session directory for a redirected HOME: it lives under
+/// the platform data directory, which differs per operating system.
+#[cfg(unix)]
+fn session_dir(home: &Path) -> PathBuf {
+    let (base, app) = if cfg!(target_os = "macos") {
+        ("Library/Application Support", "AppMesh")
+    } else {
+        (".local/share", "appmesh")
+    };
+    home.join(base).join(app).join("oauth")
+}
+
+/// Store a session the spawned CLI resolves for `engine_endpoint`. Discovery
+/// matches sessions by endpoint, so the file name is free.
+#[cfg(unix)]
+fn write_stored_session(home: &Path, engine_endpoint: &str, expires_at: u64) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = session_dir(home);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("stored-session.json");
+    std::fs::write(
+        &path,
+        format!(
+            r#"{{"version":1,"engine_endpoint":"{engine_endpoint}",
+                 "oauth":{{"issuer":"https://auth.example","access_url":"https://auth.example","client_id":"appmesh-cli"}},
+                 "tokens":{{"access_token":"stored-access-token","expires_at":{expires_at}}}}}"#
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// These cases assert on the stored session, so the spawned CLI must read the
+/// same HOME the test writes to; `appm()` owns a private one.
+#[cfg(unix)]
+fn appm_with_home(home: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_appm"));
+    command.env("HOME", home);
+    command.env("XDG_CONFIG_HOME", home.join(".config"));
+    command.env("XDG_DATA_HOME", home.join(".local/share"));
+    // An ambient token would bypass the stored session entirely.
+    command.env_remove("APPMESH_BEARER_TOKEN");
+    command
+}
+
+#[test]
+#[cfg(unix)]
+fn test_stored_session_rides_out_a_discovery_outage() {
+    let home = TempDir::new().expect("create isolated HOME");
+    // 4102444800 is 2100-01-01, so the token outlives the outage.
+    write_stored_session(home.path(), "wss://127.0.0.1:1", 4_102_444_800);
+
+    let out = appm_with_home(home.path())
+        .args(["-H", "127.0.0.1:1", "loginfo"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Using the stored access token"),
+        "expected the degraded-mode warning, got: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_expired_stored_session_reports_the_discovery_failure() {
+    let home = TempDir::new().expect("create isolated HOME");
+    write_stored_session(home.path(), "wss://127.0.0.1:1", 1_000_000_000);
+
+    let out = appm_with_home(home.path())
+        .args(["-H", "127.0.0.1:1", "loginfo"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "an expired token must not be reused");
+    assert!(
+        stderr.contains("Engine OAuth discovery failed"),
+        "expected the discovery error, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("Using the stored access token"),
+        "an expired token must not enter degraded mode, got: {stderr}"
+    );
 }

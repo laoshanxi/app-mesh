@@ -4,15 +4,15 @@ Use `appm` to manage an App Mesh Engine. Run `appm logon` before you use a prote
 
 ## Sign-in methods
 
-The CLI supports three interactive methods.
+The CLI supports three sign-in methods. Without flags, `appm logon` picks one from the flows the Engine advertises and the local display: browser authorization on a desktop computer, device authorization on a headless computer, and the built-in password method when no other flow is available.
 
 | Method | Command | Use |
 | --- | --- | --- |
-| Built-in password | `appm logon` | Use this method for the packaged administrator or viewer. The CLI reads the password from the terminal, or from standard input with `--password-stdin`. |
-| Device authorization | `appm logon --device` | Use this method on a headless computer. Complete the approval on a second device. |
-| Browser authorization | `appm logon --browser` | Use this method when the authentication service requires a browser. |
+| Browser authorization | `appm logon` or `appm logon --browser` | Default on a desktop computer. The CLI opens the system browser. |
+| Device authorization | `appm logon` or `appm logon --device` | Default on a headless computer. Complete the approval on a second device. |
+| Built-in password | `appm logon --password` | Use this method for the packaged administrator or viewer. The CLI reads the password from the terminal, or from standard input with `--password-stdin`. |
 
-The default installation supports the built-in password method. This method does not open a browser. You can supply the non-secret username with `--username`. The CLI reads the password from the terminal prompt. Add `--password-stdin` to read the password from standard input instead. Use this option in a pipeline that has no terminal.
+Built-in password login is an explicit choice: pass `--password`, `--username`, or `--password-stdin` to select it. You can supply the non-secret username with `--username`. The CLI reads the password from the terminal prompt without echoing it. Add `--password-stdin` to read the password from standard input instead. Use this option in a pipeline that has no terminal.
 
 ```bash
 appm logon --username admin@appmesh.local
@@ -77,7 +77,9 @@ The local session belongs to the gateway endpoint. You can use that session with
 
 The CLI stores the token set in an owner-only local file. The session key includes the Engine endpoint, issuer, client ID, and audience. The CLI removes a session when the selected Engine advertises an incompatible authentication configuration.
 
-`appm logoff` tries to revoke the tokens when the authentication service supports revocation. It always removes the local session. Use `--local-only` to skip the network request.
+If authentication discovery fails while the stored access token is still valid, the CLI prints a warning and uses the stored token as-is until it expires, without refreshing. An expired token still requires `appm logon`.
+
+`appm logoff` tries to revoke the tokens when the authentication service supports revocation. It always removes the local session. A failed revocation request exits with a non-zero status. Use `--local-only` to skip the network request.
 
 `appm loginfo` shows the Engine endpoint, principal, display name, and token expiry. It does not show provider details or tokens.
 
@@ -91,7 +93,7 @@ App Mesh CLI
 Usage: appm [OPTIONS] <COMMAND>
 
 Commands:
-  logon     Sign in (built-in password login by default)
+  logon     Sign in (browser, device, or password login, chosen automatically)
   logoff    Revoke tokens when supported and clear the local session
   loginfo   Show the current sign-in session and Engine principal
   add       Register a new application

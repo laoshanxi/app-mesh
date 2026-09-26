@@ -973,12 +973,22 @@ add_user() {
     chmod 600 "${password_file}"
     printf '%s' "${password}" >"${password_file}"
     password=""
-    if ! admin_ui_post "/admin/password/create" \
+    local ui_result
+    if ! ui_result=$(admin_ui_post "/admin/password/create" \
         --data-urlencode "email=${email}" \
         --data-urlencode "username=${username}" \
         --data-urlencode "user_id=${user_id}" \
-        --data-urlencode "password@${password_file}"; then
+        --data-urlencode "password@${password_file}" 2>&1); then
         rm -f "${password_file}"
+        printf '%s\n' "${ui_result}" >&2
+        # An existing identity keeps its original user ID, so the Principal ID
+        # cannot be derived here; report the case instead of printing a wrong one.
+        case "${ui_result}" in
+            *"already exists"*)
+                echo "Bind the role to the Principal that identity already uses:" >&2
+                echo "  POST /appmesh/principal/<principal-id>  {\"roles\": [\"${role}\"]}" >&2
+                ;;
+        esac
         return 1
     fi
     rm -f "${password_file}"
@@ -1007,7 +1017,7 @@ add_user() {
         fi
     fi
     if [[ "${engine_state}" != "stopped" ]]; then
-        echo "Warning: the Engine owns the authorization policy and rewrites it from memory. Restart App Mesh before this user sends a request, or apply the role through the REST API when the Engine is ${engine_state}:" >&2
+        echo "Note: a running Engine adopts this binding on the user's first request. If the user has already authenticated before, the Engine holds a role-less record; apply the role through the REST API while the Engine is ${engine_state}:" >&2
         echo "  POST /appmesh/principal/${principal_id}  {\"roles\": [\"${role}\"]}" >&2
     fi
     echo "${principal_id}"
@@ -1146,6 +1156,23 @@ render_dex_config() {
         -f "${AUTH_GRPC_TLS_CLIENT_CA}" ]]; then
         grpc_enabled=1
     fi
+    # Pure PKCE deployments drop the resource-owner password grant from the Dex
+    # grant types; the Engine reads the same setting to advertise the flows.
+    # The password database stays enabled, so browser sign-in keeps working.
+    local password_flow_disabled=0 grant_types_rendered=0 password_flow_value
+    password_flow_value="${APPMESH_AUTH_PASSWORD_FLOW:-$(oidc_value password_flow true)}"
+    # Lowercase first: the Engine compares case-insensitively, so a mixed-case
+    # value would otherwise disable the advertised flow on one side only.
+    password_flow_value="$(printf '%s' "${password_flow_value}" | tr '[:upper:]' '[:lower:]')"
+    case "${password_flow_value}" in
+        0|false|off|disabled) password_flow_disabled=1 ;;
+        1|true) ;;
+        # Accept the same value set as the Engine (OidcTokenVerifier.cpp).
+        *)
+            echo "APPMESH_AUTH_PASSWORD_FLOW must be true or false" >&2
+            return 1
+            ;;
+    esac
     local public_value
     for public_value in \
         "${issuer}" "${listen}" "${telemetry_listen}" "${web_redirect_uri}" \
@@ -1237,6 +1264,14 @@ render_dex_config() {
             "  tlsClientCA: __APPMESH_AUTH_GRPC_TLS_CLIENT_CA__")
                 printf '  tlsClientCA: %s\n' "$(yaml_quote "${AUTH_GRPC_TLS_CLIENT_CA}")"
                 ;;
+            '  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"]')
+                grant_types_rendered=1
+                if [[ ${password_flow_disabled} -eq 1 ]]; then
+                    printf '  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "client_credentials"]\n'
+                else
+                    printf '%s\n' "${line}"
+                fi
+                ;;
             *)
                 printf '%s\n' "${line}"
                 ;;
@@ -1246,6 +1281,12 @@ render_dex_config() {
     if grep -q '__APPMESH_' "${temporary}"; then
         rm -f "${temporary}"
         echo "The authentication configuration template contains an unresolved marker" >&2
+        return 1
+    fi
+    # A template drift must never silently keep a grant the operator disabled.
+    if [[ ${password_flow_disabled} -eq 1 && ${grant_types_rendered} -eq 0 ]]; then
+        rm -f "${temporary}"
+        echo "The authentication configuration template grantTypes line does not match; cannot drop the password grant" >&2
         return 1
     fi
     mv -f "${temporary}" "${DEX_RUNTIME_CONFIG}"

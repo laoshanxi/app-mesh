@@ -21,7 +21,7 @@ _appm() {
     local commands="logon logoff logout loginfo ls list view add reg rm remove unreg enable disable restart run exec shell get put label log config resource metric workflow wf"
     local workflow_commands="add get list ls rm remove run runs logs output cancel rerun detail inputs help"
 
-    local flags_logon="-u --username --password-stdin --device --browser --auth-access-url --auth-allow-http --login-timeout"
+    local flags_logon="-u --username --password --password-stdin --device --browser --auth-access-url --auth-allow-http --login-timeout"
     local flags_logoff="--local-only"
     local flags_loginfo=""
     local flags_add="--app --cmd --description --working-dir --enabled --shell --session-login --health-check --docker-image --pid --begin-time --end-time --daily-begin --daily-end --interval --cron-schedule --memory-limit --virtual-memory --cpu-shares --stdout-backup-count --permission --metadata --env --secret-env --stop-grace-period --exit --exit-code-actions --stdin --force --depends-on"

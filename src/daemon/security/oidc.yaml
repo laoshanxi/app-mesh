@@ -19,6 +19,12 @@ OIDC:
   tls_verify: true
   ca_path: ""
 
+  # Whether the deployment allows the OAuth resource-owner password grant
+  # (built-in mode only). When false, /appmesh/auth/config stops advertising
+  # "password" and the launchers drop it from the Dex grant types; browser
+  # sign-in of local users still works. Env override: APPMESH_AUTH_PASSWORD_FLOW.
+  password_flow: true
+
   # RFC 9728 protected-resource identifier and dynamic audience target.
   resource_url: https://127.0.0.1:6060/appmesh
   resource_audience: appmesh-api
