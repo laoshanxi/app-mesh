@@ -10,6 +10,7 @@ use crate::app::{Cli, LoginfoArgs, LogoffArgs, LogonArgs};
 use crate::client::{build_client, build_client_with_auth, get_current_endpoint};
 use crate::output::format::short_principal;
 use crate::util::config::{self, StoredSession};
+use crate::util::display_env::has_display;
 use crate::util::password::{prompt_password, prompt_username, read_password_stdin};
 
 #[derive(Debug, Deserialize)]
@@ -42,6 +43,72 @@ fn builtin_email(username: &str) -> Option<String> {
     (!username.contains('@')).then(|| format!("{username}@{BUILTIN_EMAIL_DOMAIN}"))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoginMethod {
+    Browser,
+    Device,
+    Password,
+}
+
+// Pick the sign-in flow from the advertised capabilities and the local display:
+// a desktop browser round-trip beats a device-code hop, and the built-in
+// password source is the last resort.
+fn select_login_method(flows: &[String], display: bool) -> Option<LoginMethod> {
+    let supports = |flow: &str| flows.iter().any(|candidate| candidate == flow);
+    if supports("authorization_code_pkce") && display {
+        Some(LoginMethod::Browser)
+    } else if supports("device_code") {
+        Some(LoginMethod::Device)
+    } else if supports("password") {
+        Some(LoginMethod::Password)
+    } else {
+        None
+    }
+}
+
+async fn password_login(oauth: &OAuthClient, args: &LogonArgs, builtin: bool) -> Result<appmesh::TokenSet> {
+    let username = match args.username.as_deref() {
+        Some(value) if !value.trim().is_empty() => value.trim().to_string(),
+        Some(_) => bail!("Username cannot be empty"),
+        None => prompt_username("Username: ")?,
+    };
+    if username.is_empty() {
+        bail!("Username cannot be empty");
+    }
+    let password = Zeroizing::new(if args.password_stdin {
+        read_password_stdin()?
+    } else {
+        prompt_password("Password: ")?
+    });
+    if password.is_empty() {
+        bail!("Password cannot be empty");
+    }
+    match oauth.password_login(&username, password.as_str()).await {
+        Ok(tokens) => Ok(tokens),
+        Err(error) => {
+            // Retry a rejected packaged short name once as <name>@<domain>,
+            // only for the built-in source; a full email or a non-auth failure
+            // surfaces the original error.
+            let retry = builtin
+                .then(|| builtin_email(&username))
+                .flatten()
+                .filter(|_| {
+                    matches!(&error, AppMeshError::RequestFailed { status, .. } if status.as_u16() == 401)
+                });
+            match retry {
+                Some(email) => {
+                    eprintln!("Built-in password login rejected {}; trying {}", username, email);
+                    oauth
+                        .password_login(&email, password.as_str())
+                        .await
+                        .context("Built-in password login failed")
+                }
+                None => Err(error).context("Built-in password login failed"),
+            }
+        }
+    }
+}
+
 // Cluster issuers are plain HTTP on a protected network; the opt-in keeps the
 // default fail-closed for every other deployment.
 fn env_allows_plain_http() -> bool {
@@ -62,7 +129,7 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
             .context("Engine OAuth discovery failed")?,
     )
     .context("Engine returned invalid OAuth configuration")?;
-    let password_login = advertised.flows.iter().any(|flow| flow == "password");
+    let builtin_password = advertised.flows.iter().any(|flow| flow == "password");
     let first_admin_enrollment = advertised.first_admin_enrollment;
     let issuer = advertised.issuer;
     let access_url = args
@@ -96,41 +163,22 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
     } else if args.device {
         device_login(&oauth).await?
     } else {
-        if !password_login {
-            bail!("The selected Engine does not enable built-in password login. Use --device or --browser.");
-        }
-        let username = match args.username.as_deref() {
-            Some(value) if !value.trim().is_empty() => value.trim().to_string(),
-            Some(_) => bail!("Username cannot be empty"),
-            None => prompt_username("Username: ")?,
-        };
-        if username.is_empty() {
-            bail!("Username cannot be empty");
-        }
-        let password = Zeroizing::new(if args.password_stdin {
-            read_password_stdin()?
-        } else {
-            prompt_password("Password: ")?
-        });
-        if password.is_empty() {
-            bail!("Password cannot be empty");
-        }
-        match oauth.password_login(&username, password.as_str()).await {
-            Ok(tokens) => tokens,
-            Err(error) => {
-                // Retry a rejected short name once as <name>@<domain>; a full
-                // email or a non-auth failure surfaces the original error.
-                let retry = builtin_email(&username).filter(|_| {
-                    matches!(&error, AppMeshError::RequestFailed { status, .. } if status.as_u16() == 401)
-                });
-                match retry {
-                    Some(email) => oauth
-                        .password_login(&email, password.as_str())
-                        .await
-                        .context("Built-in password login failed")?,
-                    None => return Err(error).context("Built-in password login failed"),
-                }
+        let explicit_password = args.password || args.password_stdin || args.username.is_some();
+        let method = if explicit_password {
+            if !builtin_password {
+                bail!("The selected Engine does not enable built-in password login. Use --device or --browser.");
             }
+            LoginMethod::Password
+        } else {
+            match select_login_method(&advertised.flows, has_display()) {
+                Some(method) => method,
+                None => bail!("The selected Engine does not advertise a supported sign-in flow"),
+            }
+        };
+        match method {
+            LoginMethod::Browser => browser_login(&oauth, args.login_timeout).await?,
+            LoginMethod::Device => device_login(&oauth).await?,
+            LoginMethod::Password => password_login(&oauth, args, builtin_password).await?,
         }
     };
 
@@ -200,6 +248,7 @@ pub async fn logoff(cli: &Cli, args: &LogoffArgs) -> Result<i32> {
     };
 
     let mut revocation_message = "Token revocation was skipped by request.".to_string();
+    let mut revocation_failed = false;
     if !args.local_only {
         match OAuthClient::discover(session.oauth.clone()).await {
             Ok(oauth) => {
@@ -212,6 +261,7 @@ pub async fn logoff(cli: &Cli, args: &LogoffArgs) -> Result<i32> {
                                 .into()
                     }
                     Err(error) => {
+                        revocation_failed = true;
                         revocation_message = format!(
                             "Token revocation failed ({}). The access token may remain valid until expiry.",
                             error
@@ -220,6 +270,7 @@ pub async fn logoff(cli: &Cli, args: &LogoffArgs) -> Result<i32> {
                 }
             }
             Err(error) => {
+                revocation_failed = true;
                 revocation_message = format!(
                     "The authentication service was unavailable for revocation ({}). The access token may remain valid until expiry.",
                     error
@@ -230,7 +281,7 @@ pub async fn logoff(cli: &Cli, args: &LogoffArgs) -> Result<i32> {
 
     config::delete_session(&session)?;
     eprintln!("Local sign-in session cleared for <{}>. {}", engine_endpoint, revocation_message);
-    Ok(0)
+    Ok(if revocation_failed { 1 } else { 0 })
 }
 
 pub async fn loginfo(cli: &Cli, _args: &LoginfoArgs) -> Result<i32> {
@@ -477,9 +528,45 @@ async fn respond(stream: &mut TcpStream, status: &str, body: &str) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_email, format_token_expiry, should_enroll_first_admin, CallbackHead,
-        FirstAdminEnrollment, HeadProgress, CALLBACK_HEAD_LIMIT,
+        builtin_email, format_token_expiry, select_login_method, should_enroll_first_admin,
+        CallbackHead, FirstAdminEnrollment, HeadProgress, LoginMethod, CALLBACK_HEAD_LIMIT,
     };
+
+    fn flows(entries: &[&str]) -> Vec<String> {
+        entries.iter().map(|entry| entry.to_string()).collect()
+    }
+
+    #[test]
+    fn login_method_prefers_browser_on_desktop() {
+        let advertised = flows(&["authorization_code_pkce", "device_code", "password"]);
+        assert_eq!(select_login_method(&advertised, true), Some(LoginMethod::Browser));
+        assert_eq!(select_login_method(&advertised, false), Some(LoginMethod::Device));
+    }
+
+    #[test]
+    fn login_method_skips_browser_without_display() {
+        let advertised = flows(&["authorization_code_pkce", "device_code"]);
+        assert_eq!(select_login_method(&advertised, false), Some(LoginMethod::Device));
+    }
+
+    #[test]
+    fn login_method_uses_device_flow_without_pkce() {
+        let advertised = flows(&["device_code", "password"]);
+        assert_eq!(select_login_method(&advertised, true), Some(LoginMethod::Device));
+    }
+
+    #[test]
+    fn login_method_falls_back_to_password_as_last_resort() {
+        let advertised = flows(&["password"]);
+        assert_eq!(select_login_method(&advertised, true), Some(LoginMethod::Password));
+        assert_eq!(select_login_method(&advertised, false), Some(LoginMethod::Password));
+    }
+
+    #[test]
+    fn login_method_rejects_unknown_flows() {
+        assert_eq!(select_login_method(&[], true), None);
+        assert_eq!(select_login_method(&flows(&["client_credentials"]), false), None);
+    }
 
     #[test]
     fn builtin_email_maps_short_names() {

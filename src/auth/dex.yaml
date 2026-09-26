@@ -46,6 +46,10 @@ oauth2:
   # External connectors continue to use browser or device authorization.
   # The identity System App enables Dex's current client-credentials feature flag.
   passwordConnector: local
+  # The launchers (appmesh-auth.sh and appmesh-auth.ps1) rewrite this exact
+  # line when the password flow is disabled (oidc.yaml password_flow: false or
+  # APPMESH_AUTH_PASSWORD_FLOW), dropping the "password" grant; browser sign-in
+  # of local password users keeps working either way.
   grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"]
 
 expiry:

@@ -111,6 +111,12 @@ void OidcTokenVerifier::loadConfig()
 			throw std::invalid_argument("OIDC tls_verify must be true or false");
 		m_config.dexTlsVerify = oidc.at("tls_verify").get<bool>();
 	}
+	if (oidc.contains("password_flow"))
+	{
+		if (!oidc.at("password_flow").is_boolean())
+			throw std::invalid_argument("OIDC password_flow must be true or false");
+		m_config.passwordFlow = oidc.at("password_flow").get<bool>();
+	}
 	m_config.dexCaPath = Utility::stdStringTrim(GET_JSON_STR_VALUE(oidc, "ca_path"));
 	auto environment = [](const char *name) {
 		const char *value = std::getenv(name);
@@ -140,6 +146,21 @@ void OidcTokenVerifier::loadConfig()
 			m_config.dexTlsVerify = false;
 		else
 			throw std::invalid_argument("APPMESH_AUTH_TLS_VERIFY must be true or false");
+	}
+	const char *passwordFlow = environment("APPMESH_AUTH_PASSWORD_FLOW");
+	if (passwordFlow != nullptr && passwordFlow[0] != '\0')
+	{
+		std::string value(passwordFlow);
+		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		// Keep this value set identical to the launchers (appmesh-auth.sh and
+		// appmesh-auth.ps1): they render the Dex grant types from the same
+		// setting, and a value one side rejects would leave the two out of step.
+		if (value == "1" || value == "true")
+			m_config.passwordFlow = true;
+		else if (value == "0" || value == "false" || value == "off" || value == "disabled")
+			m_config.passwordFlow = false;
+		else
+			throw std::invalid_argument("APPMESH_AUTH_PASSWORD_FLOW must be true or false");
 	}
 	m_config.resourceUrl = normalizeIssuer(GET_JSON_STR_VALUE(oidc, "resource_url"));
 	m_config.resourceAudience = GET_JSON_STR_VALUE(oidc, "resource_audience");

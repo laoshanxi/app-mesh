@@ -211,6 +211,15 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::resolve(const Princi
 	{
 		if (m_provisioningMode == "explicit")
 			throw AuthorizationException("OIDC principal is not provisioned in App Mesh");
+		// An external writer (appmesh-auth.sh add-user) may have bound this
+		// subject on disk after the policy was loaded; adopt those bindings
+		// before auto-provisioning a role-less record whose save would
+		// overwrite them.
+		mergeDiskPolicyLocked();
+		found = m_principals.find(principal.id());
+	}
+	if (found == m_principals.end())
+	{
 		auto record = std::make_shared<AuthorizationPrincipal>(
 			principal.id(), principal.kind(), principal.issuer(), principal.subject());
 		record->updateClaims(principal);
@@ -247,6 +256,7 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::enrollFirstAdmin(con
 	if (principal.subject() != m_firstAdminSubject)
 		throw AuthorizationException("verified principal is not the packaged bootstrap administrator");
 
+	mergeDiskPolicyLocked();
 	auto found = m_principals.find(principal.id());
 	if (found != m_principals.end() && !found->second->active())
 		throw AuthorizationException("App Mesh principal is not active");
@@ -372,9 +382,11 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const n
 			"use the Principal DELETE operation to create a tombstone after ownership checks");
 	}
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	auto found = m_principals.find(principalId);
 	if (principalId == SYSTEM_PRINCIPAL_ID)
 		throw AuthorizationException("the App Mesh system principal cannot be changed through the authorization API");
+
+	mergeDiskPolicyLocked();
+	auto found = m_principals.find(principalId);
 
 	std::shared_ptr<AuthorizationPrincipal> candidate;
 	if (found == m_principals.end())
@@ -437,6 +449,7 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (principalId == SYSTEM_PRINCIPAL_ID)
 		throw AuthorizationException("the App Mesh system principal cannot be deleted");
+	mergeDiskPolicyLocked();
 	auto found = m_principals.find(principalId);
 	if (found == m_principals.end())
 		throw NotFoundException("principal not found");
@@ -486,6 +499,7 @@ void AuthorizationStore::updateRole(const std::string &role, const nlohmann::jso
 		throw std::invalid_argument("role name cannot be empty");
 	const auto parsed = readStringSet(permissions, "role permissions");
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	mergeDiskPolicyLocked();
 	auto found = m_roles.find(role);
 	const bool existed = found != m_roles.end();
 	const auto previous = existed ? found->second : std::set<std::string>();
@@ -512,6 +526,7 @@ void AuthorizationStore::deleteRole(const std::string &role)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (role == m_firstAdminRole)
 		throw AuthorizationException("the first-administrator role cannot be deleted");
+	mergeDiskPolicyLocked();
 	if (m_roles.count(role) == 0)
 		throw NotFoundException("role not found");
 	for (const auto &principal : m_principals)
@@ -535,6 +550,62 @@ void AuthorizationStore::save() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	saveLocked();
+}
+
+void AuthorizationStore::mergeDiskPolicyLocked()
+{
+	const static char fname[] = "AuthorizationStore::mergeDiskPolicyLocked() ";
+	try
+	{
+		const auto file = Utility::getConfigFilePath(APPMESH_AUTHORIZATION_CONFIG_FILE);
+		if (!Utility::isFileExist(file))
+			return;
+		const auto root = Utility::yamlToJson(YAML::LoadFile(file));
+		if (!root.contains("Authorization") || !root.at("Authorization").is_object())
+			return;
+		const auto &authorization = root.at("Authorization");
+
+		// Roles and principals this process deleted were removed from disk by the
+		// saveLocked() of the deleting call, so entries present only on disk are
+		// external additions and are adopted; entries present in memory keep the
+		// in-memory state (deliberate API updates and tombstones win).
+		if (authorization.contains("roles") && authorization.at("roles").is_object())
+		{
+			for (const auto &entry : authorization.at("roles").items())
+			{
+				if (m_roles.count(entry.key()) == 0)
+				{
+					m_roles[entry.key()] = readStringSet(entry.value(), "role permissions");
+					LOG_INF << fname << "adopted on-disk role <" << entry.key() << ">";
+				}
+			}
+		}
+		if (authorization.contains("principals") && authorization.at("principals").is_object())
+		{
+			for (const auto &entry : authorization.at("principals").items())
+			{
+				if (m_principals.count(entry.key()) != 0)
+					continue;
+				const auto &definition = entry.value();
+				const auto kind = parseKind(GET_JSON_STR_VALUE(definition, "kind"));
+				const auto issuer = GET_JSON_STR_VALUE(definition, "issuer");
+				const auto subject = GET_JSON_STR_VALUE(definition, "subject");
+				if (kind != Principal::Kind::System && entry.key() != Principal::stableId(issuer, subject))
+					throw std::invalid_argument("OIDC principal key must equal the stable (issuer, subject) identifier");
+				auto principal = std::make_shared<AuthorizationPrincipal>(entry.key(), kind, issuer, subject);
+				principal->updatePolicy(definition);
+				validateRoles(principal->roles());
+				m_principals[entry.key()] = std::move(principal);
+				LOG_INF << fname << "adopted on-disk principal binding <" << entry.key() << ">";
+			}
+		}
+	}
+	catch (const std::exception &e)
+	{
+		// The policy file may be concurrently replaced by an external writer;
+		// never break authentication or a policy update over a transient read.
+		LOG_WAR << fname << "could not merge the on-disk authorization policy: " << e.what();
+	}
 }
 
 void AuthorizationStore::saveLocked() const
@@ -581,6 +652,7 @@ void AuthorizationStore::initializeFirstAdminEnrollment()
 	m_firstAdminEnrollmentEnabled = authMode == BUILTIN_AUTH_MODE &&
 		(authRole == "standalone" || authRole == "owner");
 
+	mergeDiskPolicyLocked();
 	const bool inferredEnrollment = hasFirstAdminLocked();
 	if (inferredEnrollment && !m_firstAdminEnrolled)
 	{

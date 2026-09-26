@@ -201,6 +201,12 @@ fn ensure_private_file(path: &Path) -> Result<()> {
             anyhow::bail!("OAuth session {} is accessible by another user", path.display());
         }
     }
+    #[cfg(windows)]
+    {
+        if !crate::util::winacl::is_restricted(path)? {
+            anyhow::bail!("OAuth session {} is accessible by another user", path.display());
+        }
+    }
     Ok(())
 }
 
@@ -352,7 +358,13 @@ fn set_mode(path: &Path, mode: u32) {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        if mode & 0o077 == 0 {
+            let _ = crate::util::winacl::restrict_to_current_user(path);
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     { let _ = (path, mode); }
 }
 
@@ -363,7 +375,13 @@ fn set_mode_result(path: &Path, mode: u32) -> Result<()> {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
             .with_context(|| format!("secure permissions on {}", path.display()))?;
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        if mode & 0o077 == 0 {
+            crate::util::winacl::restrict_to_current_user(path)?;
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (path, mode);
     }

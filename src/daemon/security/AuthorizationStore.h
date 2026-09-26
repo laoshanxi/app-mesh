@@ -75,6 +75,11 @@ private:
 	void initializeFirstAdminEnrollment();
 	bool hasFirstAdminLocked() const;
 	void validateRoles(const std::set<std::string> &roles) const;
+	/// Adopt role and principal bindings written directly to the on-disk policy
+	/// (e.g. by appmesh-auth.sh add-user) after this process loaded it, so the
+	/// next saveLocked() upserts them instead of overwriting from stale memory.
+	/// Caller must hold m_mutex; an unreadable or invalid file only logs.
+	void mergeDiskPolicyLocked();
 	void saveLocked() const;
 	static Principal::Kind parseKind(const std::string &kind);
 

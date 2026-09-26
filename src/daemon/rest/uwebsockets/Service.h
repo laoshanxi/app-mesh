@@ -287,6 +287,7 @@ namespace WSS
             m_listenSockets.resize(m_numThreads, nullptr);
             m_loopGuards.resize(m_numThreads);
             m_broadcasters.resize(m_numThreads);
+            m_apps.resize(m_numThreads, nullptr);
         }
 
         ~Server()
@@ -483,6 +484,21 @@ namespace WSS
                 }
             }
 
+            // 2b. Close every remaining socket of each loop: an upgraded session is
+            // tracked above, but a connection that never upgraded (an idle HTTPS
+            // keep-alive, a half-open TLS handshake) is known only to uWS. Leaving
+            // it open keeps the loop alive until its idle timeout expires, which
+            // turns a stop into a multi-second wait and invites a SIGKILL.
+            for (size_t i = 0; i < m_loopGuards.size(); ++i)
+            {
+                if (m_loopGuards[i] && m_apps[i])
+                {
+                    AppType *app = m_apps[i];
+                    m_loopGuards[i]->deferIfValid([app]()
+                                                  { std::move(*app).close(); });
+                }
+            }
+
             // 3. Invalidate all loop guards (prevents external callers from deferring to destroyed loops)
             for (auto &guard : m_loopGuards)
             {
@@ -506,6 +522,7 @@ namespace WSS
             // Cleanup
             m_loopGuards.assign(m_numThreads, nullptr);
             m_listenSockets.assign(m_numThreads, nullptr);
+            m_apps.assign(m_numThreads, nullptr);
 
             // Clear broadcasters
             for (auto &b : m_broadcasters)
@@ -694,15 +711,18 @@ namespace WSS
                 {
                     app.publish("broadcast", data, opcode);
                 });
+            // The listen callback runs inside app.listen(), so the app outlives it.
+            AppType *appPtr = &app;
 
             setupRoutes(app, threadId);
 
-            app.listen(m_port, [this, threadId, &broadcaster](auto *socket)
+            app.listen(m_port, [this, threadId, &broadcaster, appPtr](auto *socket)
             {
                 {
                     // Synchronize with broadcast()/stop() which read these under m_stateMutex
                     std::unique_lock<std::shared_mutex> lock(m_stateMutex);
                     m_broadcasters[threadId] = broadcaster;
+                    m_apps[threadId] = appPtr;
                     m_loopGuards[threadId] = std::make_shared<LoopGuard>(uWS::Loop::get(), std::this_thread::get_id());
                     if (socket)
                     {
@@ -728,6 +748,7 @@ namespace WSS
                 std::unique_lock<std::shared_mutex> lock(m_stateMutex);
                 if (m_broadcasters[threadId])
                     *m_broadcasters[threadId] = nullptr;
+                m_apps[threadId] = nullptr;
             }
         }
 
@@ -964,6 +985,9 @@ namespace WSS
         std::vector<std::shared_ptr<LoopGuard>> m_loopGuards;
         std::vector<us_listen_socket_t *> m_listenSockets;
         std::vector<std::shared_ptr<std::function<void(std::string_view, uWS::OpCode)>>> m_broadcasters;
+        // Per-thread app handles, used by stopInternal to close every socket the
+        // loop still owns.
+        std::vector<AppType *> m_apps;
 
         std::mutex m_startMutex;
         std::condition_variable m_startCv;

@@ -112,10 +112,30 @@ read_pid() {
     printf '%s' "$pid"
 }
 
+# kill -0 also succeeds for a zombie: the process has exited, but a parent that
+# never reaps it (PID 1 in a container) leaves the entry alive. Counting that as
+# running makes a finished stop look like a failure, and the next start report
+# "already running" without starting anything.
+is_alive() {
+    local pid=$1 stat_line rest
+    kill -0 "$pid" 2>/dev/null || return 1
+
+    # /proc is Linux-only; elsewhere keep the kill -0 answer.
+    [ -r "/proc/$pid/stat" ] || return 0
+    read -r stat_line <"/proc/$pid/stat" 2>/dev/null || return 0
+    # Field 3 is the state, after "pid (comm)". The command name can contain
+    # spaces and parentheses, so the last ") " ends it.
+    rest=${stat_line##*') '}
+    case ${rest:0:1} in
+    Z | X) return 1 ;; # zombie / dead: exited, just not reaped yet
+    esac
+    return 0
+}
+
 is_running() {
     local pid
     pid=$(read_pid) || return 1
-    kill -0 "$pid" 2>/dev/null || return 1
+    is_alive "$pid" || return 1
 
     # Guard against PID reuse: if /proc is available, verify the process is appmesh
     if [ -r "/proc/$pid/comm" ]; then
@@ -169,7 +189,7 @@ stop_service() {
 
     local pid
     pid=$(read_pid) || pid=""
-    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    if [ -z "$pid" ] || ! is_alive "$pid"; then
         log "info" "App Mesh is not running"
         rm -f "$PIDFile"
         return $LSB_OK
@@ -179,23 +199,23 @@ stop_service() {
 
     # Wait up to STOP_TIMEOUT_SECONDS for graceful shutdown
     local attempt=0
-    while kill -0 "$pid" 2>/dev/null && [ $attempt -lt $STOP_MAX_ATTEMPTS ]; do
+    while is_alive "$pid" && [ $attempt -lt $STOP_MAX_ATTEMPTS ]; do
         sleep $SLEEP_INTERVAL
         attempt=$((attempt + 1))
     done
 
-    if kill -0 "$pid" 2>/dev/null; then
+    if is_alive "$pid"; then
         log "warn" "Graceful stop timed out after ${STOP_TIMEOUT_SECONDS}s; sending SIGKILL to PID $pid"
         kill -KILL "$pid" 2>/dev/null || true
-        # Brief wait for the kernel to reap (~1s)
+        # Brief wait for exit; an unreaped zombie is caught by is_alive
         attempt=0
-        while kill -0 "$pid" 2>/dev/null && [ $attempt -lt 5 ]; do
+        while is_alive "$pid" && [ $attempt -lt 5 ]; do
             sleep $SLEEP_INTERVAL
             attempt=$((attempt + 1))
         done
     fi
 
-    if kill -0 "$pid" 2>/dev/null; then
+    if is_alive "$pid"; then
         log "error" "Failed to stop App Mesh (PID: $pid)"
         return $LSB_NOT_RUNNING
     fi

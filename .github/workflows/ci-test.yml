@@ -145,6 +145,9 @@ jobs:
             # `appm logon` session, which a client_credentials token cannot provide)
             bash /work/script/bootstrap/install_rust.sh
             cd /work/src/cli
+            # The unit tests and the offline integration tests only run here;
+            # remote_test does not include them.
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu22 cargo test
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu22 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '
 
@@ -237,6 +240,7 @@ jobs:
             # `appm logon` session, which a client_credentials token cannot provide)
             bash /work/script/bootstrap/install_rust.sh
             cd /work/src/cli
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '
 
@@ -327,6 +331,7 @@ jobs:
             # `appm logon` session, which a client_credentials token cannot provide)
             bash /work/script/bootstrap/install_rust.sh
             cd /work/src/cli
+            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu18 cargo test
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu18 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '
 
@@ -425,5 +430,6 @@ jobs:
             # `appm logon` session, which a client_credentials token cannot provide)
             bash /work/script/bootstrap/install_rust.sh
             cd /work/src/cli
+            CARGO_TARGET_DIR=/tmp/cargo-target-centos7 cargo test
             CARGO_TARGET_DIR=/tmp/cargo-target-centos7 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '

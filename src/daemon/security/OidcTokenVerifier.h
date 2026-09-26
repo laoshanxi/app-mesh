@@ -26,6 +26,10 @@ public:
 		std::string browserEntry;
 		bool dexTlsVerify{true};
 		std::string dexCaPath;
+		/// Whether the deployment allows the OAuth resource-owner password grant.
+		/// When false the auth config stops advertising "password" and the
+		/// launchers drop it from the Dex grant types.
+		bool passwordFlow{true};
 		std::string resourceUrl;
 		std::string resourceAudience;
 		std::string publicClientId;

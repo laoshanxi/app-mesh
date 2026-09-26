@@ -97,7 +97,7 @@ The first start creates two built-in identities.
 | Packaged administrator | `admin@appmesh.local` | `work/auth/secrets/initial-admin-credentials` |
 | Read-only viewer | `guest@appmesh.local` | `work/auth/secrets/initial-viewer-credentials` |
 
-The credential file is owner-only. Read its `password=` value on the authentication owner host, or print it with `sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password`. Enter the value at the masked terminal prompt.
+The credential file is owner-only. Read its `password=` value on the authentication owner host, or print it with `sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password`. Enter the value at the terminal prompt. The CLI does not echo the password.
 
 Run this command on the authentication owner host:
 

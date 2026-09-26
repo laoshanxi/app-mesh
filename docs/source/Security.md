@@ -98,6 +98,18 @@ The launcher does not put a password in a command argument or environment variab
 
 Use an external authentication deployment when you need user lifecycle management, MFA, password reset, or directory policy.
 
+## Administration interfaces
+
+The `dexuser` administration UI listens on `127.0.0.1:6064` and has no authentication of its own. The loopback binding is the only access control. This is an accepted risk, and it matches the exposure model of the administrative gRPC API the UI drives:
+
+- The gRPC listener (`127.0.0.1:5557`) is protected only by mutual TLS. A caller who can read `ssl/client.pem` and `ssl/client-key.pem` can invoke the gRPC administration API directly, without the UI.
+- A local process that can reach the UI can reach the same administrative operations. The UI therefore grants no privilege beyond what local access to the node already provides.
+
+Two rules follow from this model:
+
+1. Never bind the UI to a non-loopback interface (`APPMESH_AUTH_ADMIN_LISTEN`) and never place it behind a reverse proxy. Doing so exposes unauthenticated user and client management to the network.
+2. When no operator needs the UI, disable it with `APPMESH_AUTH_ADMIN_UI=off`. The `dexuser` App is a system App, so a disabled UI cannot be re-enabled through the application API. See [Authentication](Authentication.md#disabling-the-administration-ui).
+
 ## Secret protection
 
 The package creates a 256-bit master key for application `secret_env` values. The Engine uses AES-256-GCM. The key file must be a regular owner-only file.
@@ -112,7 +124,7 @@ A follower does not create built-in credentials. It does not run a second authen
 
 Set the owner with `setup.sh --auth-mode builtin --auth-role owner`. Join a follower with `setup.sh --auth-mode builtin --auth-role follower --oidc-issuer <owner issuer>`. The role also applies at package installation time through `APPMESH_AUTH_ROLE`. The packaged `identity` App stays enabled on a follower. It runs inert: it stays healthy, it starts no Dex process, and it writes no authentication state.
 
-Authorization data is node-local. The principal and role APIs write the node that serves the request. A forwarded change therefore affects only the target node. Keep nodes consistent in one of two ways: apply the same changes on every node, or copy the owner's `work/config/authorization.yaml` to the followers and restart their daemons. A follower without a principal entry authenticates a user. It grants nothing beyond the configured provisioning policy.
+Authorization data is node-local. The principal and role APIs write the node that serves the request. A forwarded change therefore affects only the target node. Keep nodes consistent in one of two ways: apply the same changes on every node, or copy the owner's `work/config/authorization.yaml` to the followers. A copied file needs no restart: a follower adopts an entry from disk when it first resolves that principal, and a later save keeps the entry. A follower without a principal entry authenticates a user. It grants nothing beyond the configured provisioning policy.
 
 The built-in database supports one active authentication owner. Use this failover sequence:
 

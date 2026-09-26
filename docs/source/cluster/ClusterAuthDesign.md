@@ -257,7 +257,8 @@ port ranges separate the instances.
    instances come from the same package root.
 2. Check the follower process list for a Dex process. Check the
    authentication state directory. It must stay empty of identity files.
-3. Run first-admin `appm logon` on the owner. Use a loopback connection.
+3. Run the first-admin sign-in on the owner with the built-in password method:
+   `appm logon --username admin@appmesh.local`. Use a loopback connection.
 4. Send a forwarded request from the owner Engine to the follower. Use
    `X-Target-Host: 127.0.0.1:<follower-tcp-port>`. Expect a successful
    response. Check the follower log for its own validation of the same
