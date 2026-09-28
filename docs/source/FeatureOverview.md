@@ -5,6 +5,8 @@ It describes what users can accomplish, independent of SDK method names,
 programming languages, transports, command-line behavior, operating systems, and
 internal implementation details.
 
+![mind-diagram](https://github.com/laoshanxi/picture/raw/master/appmesh/mind.png)
+
 ## Feature Map
 
 ```text

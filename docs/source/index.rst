@@ -12,9 +12,10 @@ Welcome to AppMesh's documentation!
    :numbered:
 
    README.md
+   FeatureOverview.md
    Build.md
    CLI.md
-   Development.md
+   RESTAPI.md
    SDKContract.md
    Install.md
    cluster/ClusterAuthDesign.md

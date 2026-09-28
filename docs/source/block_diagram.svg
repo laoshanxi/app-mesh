@@ -1,0 +1,421 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1190" height="1320" viewBox="0 0 1190 1320" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="black"/>
+    </marker>
+    <marker id="arrowSmall" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="black"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1190" height="1320" fill="white"/>
+
+  <!-- ======================= Regions ======================= -->
+  <!-- Users -->
+  <rect x="20" y="10" width="820" height="150" fill="#fbfbe8" stroke="#9aa15e" stroke-width="1.5"/>
+  <text x="35" y="34" font-size="15" font-weight="bold" fill="#222">Users</text>
+
+  <!-- Third party / Observability -->
+  <rect x="20" y="170" width="280" height="1130" fill="#e9f3f7" stroke="#7a9aab" stroke-width="1.5"/>
+  <text x="35" y="194" font-size="15" font-weight="bold" fill="#222">Third party / Observability</text>
+
+  <!-- App Mesh Client -->
+  <rect x="330" y="170" width="610" height="260" fill="#f4f9ec" stroke="#8a9a5b" stroke-width="1.5"/>
+  <text x="345" y="194" font-size="15" font-weight="bold" fill="#222">App Mesh Client</text>
+
+  <!-- App Mesh Node -->
+  <rect x="330" y="460" width="820" height="650" fill="#f0f7ec" stroke="#6a8f5a" stroke-width="2"/>
+  <text x="352" y="486" font-size="15" font-weight="bold" fill="#222">App Mesh Node</text>
+
+  <!-- Linux managed -->
+  <rect x="330" y="1150" width="820" height="150" fill="#e9f3f7" stroke="#7a9aab" stroke-width="1.5"/>
+  <text x="348" y="1174" font-size="15" font-weight="bold" fill="#222">Linux managed</text>
+
+  <!-- ======================= Users ======================= -->
+  <text x="60" y="52" font-size="12" font-weight="bold" fill="#222">Administrator</text>
+  <g stroke="black" stroke-width="1.8" fill="white">
+    <rect x="60" y="58" width="45" height="70"/>
+    <rect x="115" y="58" width="45" height="70"/>
+    <rect x="210" y="58" width="45" height="70"/>
+  </g>
+  <g stroke="black" stroke-width="2" fill="none">
+    <circle cx="82" cy="72" r="6" fill="white"/>
+    <path d="M82,78 L82,98 M71,85 L93,85 M82,98 L72,118 M82,98 L92,118"/>
+    <circle cx="137" cy="72" r="6" fill="white"/>
+    <path d="M137,78 L137,98 M126,85 L148,85 M137,98 L127,118 M137,98 L147,118"/>
+    <circle cx="232" cy="72" r="6" fill="white"/>
+    <path d="M232,78 L232,98 M221,85 L243,85 M232,98 L222,118 M232,98 L242,118"/>
+  </g>
+  <text x="168" y="100" font-size="20" fill="#222">...</text>
+
+  <text x="560" y="52" font-size="12" font-weight="bold" fill="#222">Tenant users</text>
+  <g stroke="black" stroke-width="1.8" fill="white">
+    <rect x="560" y="58" width="45" height="70"/>
+    <rect x="615" y="58" width="45" height="70"/>
+    <rect x="710" y="58" width="45" height="70"/>
+  </g>
+  <g stroke="black" stroke-width="2" fill="none">
+    <circle cx="582" cy="72" r="6" fill="white"/>
+    <path d="M582,78 L582,98 M571,85 L593,85 M582,98 L572,118 M582,98 L592,118"/>
+    <circle cx="637" cy="72" r="6" fill="white"/>
+    <path d="M637,78 L637,98 M626,85 L648,85 M637,98 L627,118 M637,98 L647,118"/>
+    <circle cx="732" cy="72" r="6" fill="white"/>
+    <path d="M732,78 L732,98 M721,85 L743,85 M732,98 L722,118 M732,98 L742,118"/>
+  </g>
+  <text x="672" y="100" font-size="20" fill="#222">...</text>
+
+  <!-- ======================= App Mesh Client ======================= -->
+  <!-- Remote App Mesh Nodes (stacked, outside client region) -->
+  <rect x="958" y="240" width="190" height="70" fill="#e4eee0" stroke="black" stroke-width="1.2"/>
+  <rect x="954" y="236" width="190" height="70" fill="#f0f0f0" stroke="black" stroke-width="1.2"/>
+  <rect x="950" y="232" width="190" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="1045" y="262" font-size="12" text-anchor="middle" fill="#111">Remote App Mesh</text>
+  <text x="1045" y="279" font-size="12" text-anchor="middle" fill="#111">Nodes</text>
+
+  <!-- JSON config storage -->
+  <rect x="350" y="240" width="140" height="50" rx="25" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="420" y="262" font-size="12" text-anchor="middle" fill="#111">JSON</text>
+  <text x="420" y="278" font-size="12" text-anchor="middle" fill="#111">config</text>
+
+  <!-- Command line -->
+  <rect x="530" y="230" width="190" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="625" y="258" font-size="13" text-anchor="middle" fill="#111">Command line</text>
+  <text x="625" y="276" font-size="13" text-anchor="middle" fill="#111">(appm, Rust)</text>
+
+  <!-- App Mesh UI -->
+  <rect x="740" y="230" width="190" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="835" y="258" font-size="13" text-anchor="middle" fill="#111">App Mesh UI</text>
+  <text x="835" y="276" font-size="12" text-anchor="middle" fill="#111">(browser, nginx :443)</text>
+
+  <!-- SDK -->
+  <rect x="350" y="330" width="200" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="450" y="352" font-size="13" text-anchor="middle" fill="#111">SDK</text>
+  <text x="450" y="369" font-size="12" text-anchor="middle" fill="#111">C++/Go/Python/Rust</text>
+  <text x="450" y="386" font-size="12" text-anchor="middle" fill="#111">Java/JS</text>
+
+  <!-- MCP Server -->
+  <rect x="570" y="330" width="160" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="650" y="358" font-size="13" text-anchor="middle" fill="#111">MCP Server</text>
+  <text x="650" y="376" font-size="12" text-anchor="middle" fill="#111">/ LLM agent</text>
+
+  <!-- ======================= Third party ======================= -->
+  <!-- Grafana -->
+  <rect x="40" y="200" width="240" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <g transform="translate(58,221) scale(1.2)" fill="none" stroke="#333" stroke-width="1.8" stroke-linecap="round">
+    <path d="M12 2.5a9.5 9.5 0 1 1-9.5 9.5"/>
+    <path d="M12 6.5a5.5 5.5 0 1 1-5.5 5.5"/>
+    <circle cx="12" cy="12" r="1.4" fill="#333" stroke="none"/>
+  </g>
+  <text x="160" y="240" font-size="13" text-anchor="middle" fill="#111">Grafana</text>
+
+  <!-- Prometheus -->
+  <rect x="40" y="330" width="240" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <g transform="translate(58,351) scale(1.2)">
+    <circle cx="12" cy="12" r="11" fill="none" stroke="#333" stroke-width="1.8"/>
+    <path d="M12 7v8.5" stroke="#333" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M7.5 19.5h9" stroke="#333" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+  <text x="160" y="370" font-size="13" text-anchor="middle" fill="#111">Prometheus</text>
+
+  <!-- External IdP -->
+  <rect x="40" y="650" width="240" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <g transform="translate(58,673)" fill="none" stroke="#333" stroke-width="2">
+    <circle cx="12" cy="5.5" r="4"/>
+    <path d="M3.5 22c0-5.2 3.8-8.5 8.5-8.5s8.5 3.3 8.5 8.5"/>
+  </g>
+  <text x="168" y="678" font-size="13" text-anchor="middle" fill="#111">External IdP</text>
+  <text x="168" y="696" font-size="12" text-anchor="middle" fill="#111">(optional Dex connector)</text>
+
+  <!-- Loki -->
+  <rect x="40" y="880" width="240" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <g stroke="#333" stroke-width="1.8" stroke-linecap="round">
+    <path d="M90 896 h16 M90 903 h22 M90 910 h14 M90 917 h20"/>
+  </g>
+  <text x="160" y="920" font-size="13" text-anchor="middle" fill="#111">Loki</text>
+
+  <!-- Promtail -->
+  <rect x="40" y="1010" width="240" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <g stroke="#333" stroke-width="1.8" stroke-linecap="round" fill="none">
+    <path d="M58 1028 h16 M58 1035 h22 M58 1042 h14"/>
+    <path d="M58 1049 h12 M66 1045 l5 4 -5 4"/>
+  </g>
+  <text x="160" y="1050" font-size="13" text-anchor="middle" fill="#111">Promtail</text>
+
+  <!-- ======================= App Mesh Node ======================= -->
+  <!-- Agent -->
+  <rect x="640" y="500" width="240" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="760" y="532" font-size="13" text-anchor="middle" fill="#111">Agent</text>
+  <text x="760" y="550" font-size="12" text-anchor="middle" fill="#111">(Go HTTPS gateway)</text>
+
+  <!-- System Apps sub-region -->
+  <rect x="350" y="600" width="210" height="480" fill="#e9f2e4" stroke="#6a8f5a" stroke-width="1.2"/>
+  <text x="362" y="622" font-size="13" font-weight="bold" fill="#222">System Apps</text>
+
+  <rect x="365" y="650" width="180" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="455" y="682" font-size="13" text-anchor="middle" fill="#111">Identity (Dex)</text>
+  <text x="455" y="700" font-size="12" text-anchor="middle" fill="#111">OIDC issuer</text>
+
+  <rect x="365" y="740" width="180" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="455" y="772" font-size="13" text-anchor="middle" fill="#111">dexuser UI</text>
+  <text x="455" y="790" font-size="12" text-anchor="middle" fill="#111">(127.0.0.1:6064)</text>
+
+  <rect x="365" y="830" width="180" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="455" y="862" font-size="13" text-anchor="middle" fill="#111">Workflow Engine</text>
+  <text x="455" y="880" font-size="12" text-anchor="middle" fill="#111">(Go)</text>
+
+  <rect x="375" y="930" width="160" height="46" rx="23" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="455" y="958" font-size="12" text-anchor="middle" fill="#111">workflow data</text>
+
+  <!-- App Mesh daemon sub-region -->
+  <rect x="590" y="600" width="540" height="480" fill="#e9f2e4" stroke="#6a8f5a" stroke-width="1.2"/>
+  <text x="602" y="622" font-size="13" font-weight="bold" fill="#222">App Mesh daemon (C++)</text>
+
+  <rect x="605" y="650" width="220" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="715" y="682" font-size="13" text-anchor="middle" fill="#111">Security</text>
+  <text x="715" y="700" font-size="12" text-anchor="middle" fill="#111">(OIDC + HMAC)</text>
+
+  <rect x="855" y="650" width="250" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="980" y="672" font-size="13" text-anchor="middle" fill="#111">REST Service</text>
+  <text x="980" y="689" font-size="11" text-anchor="middle" fill="#111">HTTP:6060 / TCP:6059</text>
+  <text x="980" y="706" font-size="11" text-anchor="middle" fill="#111">WSS:6058</text>
+
+  <rect x="615" y="745" width="200" height="46" rx="23" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="715" y="773" font-size="12" text-anchor="middle" fill="#111">authorization.yaml</text>
+
+  <rect x="605" y="825" width="220" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="715" y="857" font-size="13" text-anchor="middle" fill="#111">Application</text>
+  <text x="715" y="875" font-size="13" text-anchor="middle" fill="#111">Management</text>
+
+  <rect x="855" y="825" width="250" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="980" y="857" font-size="13" text-anchor="middle" fill="#111">Process</text>
+  <text x="980" y="875" font-size="13" text-anchor="middle" fill="#111">Management</text>
+
+  <rect x="605" y="925" width="220" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="715" y="957" font-size="13" text-anchor="middle" fill="#111">Prometheus Exporter</text>
+  <text x="715" y="975" font-size="12" text-anchor="middle" fill="#111">(:6061)</text>
+
+  <rect x="855" y="925" width="250" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="980" y="965" font-size="13" text-anchor="middle" fill="#111">Configuration</text>
+
+  <rect x="865" y="1020" width="230" height="46" rx="23" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="980" y="1048" font-size="12" text-anchor="middle" fill="#111">config.yaml + .snapshot</text>
+
+  <!-- ======================= Linux managed ======================= -->
+  <rect x="380" y="1195" width="220" height="46" rx="23" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="490" y="1223" font-size="12" text-anchor="middle" fill="#111">app log files</text>
+
+  <rect x="640" y="1210" width="220" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <g transform="translate(656,1231) scale(1.15)" stroke="#333" stroke-width="1.6" fill="none">
+    <rect x="6" y="9" width="4" height="4"/>
+    <rect x="11" y="9" width="4" height="4"/>
+    <rect x="8.5" y="4.5" width="4" height="4"/>
+    <path d="M2 16.5c2 1.5 4 1.5 6 0 2 1.5 4 1.5 6 0 2 1.5 4 1.5 6 0"/>
+  </g>
+  <text x="762" y="1250" font-size="13" text-anchor="middle" fill="#111">Docker Daemon</text>
+
+  <rect x="900" y="1210" width="220" height="70" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="1010" y="1250" font-size="13" text-anchor="middle" fill="#111">Linux Process</text>
+
+  <!-- ======================= Channels & accesses ======================= -->
+  <g stroke="black" stroke-width="1.5" fill="none">
+    <!-- Admin -> CLI : manage -->
+    <path d="M170,128 L170,140 L620,140 L620,230" marker-end="url(#arrow)"/>
+    <!-- Tenant -> UI : view/manage app -->
+    <path d="M685,128 L685,150 L835,150 L835,230" marker-end="url(#arrow)"/>
+    <!-- CLI -> JSON config : modifying -->
+    <path d="M530,265 L497,265" marker-end="url(#arrow)"/>
+
+    <!-- Grafana -> Prometheus query -->
+    <path d="M160,270 L160,330" marker-end="url(#arrow)"/>
+    <!-- Grafana -> Loki query -->
+    <path d="M40,240 L28,240 L28,915 L40,915" marker-end="url(#arrow)"/>
+    <!-- Promtail -> Loki push -->
+    <path d="M160,1010 L160,950" marker-end="url(#arrow)"/>
+    <!-- Grafana -> Agent simple-json -->
+    <path d="M280,235 L295,235 L295,535 L640,535" marker-end="url(#arrow)"/>
+    <!-- IdP -> Dex -->
+    <path d="M280,685 L372,685" marker-end="url(#arrow)"/>
+    <!-- Prometheus scrape -> Exporter -->
+    <path d="M280,365 L305,365 L305,455 L340,455 L340,990 L700,990 L700,995" marker-end="url(#arrow)"/>
+    <!-- Promtail -> app log files : read-only -->
+    <path d="M120,1080 L120,1218 L373,1218"/>
+
+    <!-- SDK -> Agent : https request -->
+    <path d="M450,400 L450,438 L760,438 L760,500" marker-end="url(#arrow)"/>
+    <!-- MCP -> REST direct -->
+    <path d="M690,400 L690,447 L1030,447 L1030,650" marker-end="url(#arrow)"/>
+    <!-- UI -> Remote nodes -->
+    <path d="M835,230 L835,214 L1045,214 L1045,232" marker-end="url(#arrow)"/>
+    <!-- Agent -> Remote nodes -->
+    <path d="M880,520 L1120,520 L1120,302" marker-end="url(#arrow)"/>
+    <!-- Agent -> REST : forward -->
+    <path d="M700,570 L700,632 L950,632 L950,650" marker-end="url(#arrow)"/>
+    <!-- Agent -> Dex : reverse-proxy auth path -->
+    <path d="M640,552 L455,552 L455,650" marker-end="url(#arrow)"/>
+
+    <!-- Security -> Dex : OIDC discovery / JWKS -->
+    <path d="M605,685 L559,685" marker-end="url(#arrow)"/>
+    <!-- Workflow -> REST : task RPC -->
+    <path d="M545,865 L568,865 L568,733 L950,733 L950,727" marker-end="url(#arrow)"/>
+    <!-- Workflow -> workflow data : modifying -->
+    <path d="M455,900 L455,930" marker-end="url(#arrow)"/>
+
+    <!-- REST -> Security : authz -->
+    <path d="M855,685 L839,685" marker-end="url(#arrow)"/>
+    <!-- REST -> App Mgmt -->
+    <path d="M1010,720 L1010,810 L715,810 L715,825" marker-end="url(#arrow)"/>
+    <!-- App Mgmt -> Proc Mgmt -->
+    <path d="M825,860 L848,860" marker-end="url(#arrow)"/>
+    <!-- App Mgmt -> Configuration -->
+    <path d="M790,895 L790,912 L980,912 L980,925" marker-end="url(#arrow)"/>
+    <!-- REST -> Configuration -->
+    <path d="M1105,700 L1112,700 L1112,960 L1105,960" marker-end="url(#arrow)"/>
+    <!-- Security -> authorization.yaml : modifying -->
+    <path d="M715,720 L715,745" marker-end="url(#arrow)"/>
+    <!-- Configuration -> config.yaml : modifying -->
+    <path d="M980,995 L980,1020" marker-end="url(#arrow)"/>
+
+    <!-- Proc Mgmt -> Docker Daemon -->
+    <path d="M1105,880 L1124,880 L1124,1125 L810,1125 L810,1210" marker-end="url(#arrow)"/>
+    <!-- Proc Mgmt -> Linux Process -->
+    <path d="M1105,845 L1140,845 L1140,1145 L1000,1145 L1000,1210" marker-end="url(#arrow)"/>
+    <!-- Linux Process -> app log files : write log -->
+    <path d="M900,1230 L870,1230 L870,1170 L620,1170 L620,1218 L600,1218" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- lollipop circles (interface / response side) -->
+  <g fill="white" stroke="black" stroke-width="1.5">
+    <circle cx="620" cy="222" r="7"/>
+    <circle cx="835" cy="222" r="7"/>
+    <circle cx="160" cy="322" r="7"/>
+    <circle cx="47" cy="915" r="7"/>
+    <circle cx="160" cy="957" r="7"/>
+    <circle cx="372" cy="685" r="7"/>
+    <circle cx="700" cy="988" r="7"/>
+    <circle cx="373" cy="1218" r="7"/>
+    <circle cx="760" cy="493" r="7"/>
+    <circle cx="1030" cy="643" r="7"/>
+    <circle cx="1045" cy="225" r="7"/>
+    <circle cx="1120" cy="309" r="7"/>
+    <circle cx="950" cy="641" r="7"/>
+    <circle cx="455" cy="643" r="7"/>
+    <circle cx="552" cy="685" r="7"/>
+    <circle cx="950" cy="727" r="7"/>
+    <circle cx="832" cy="685" r="7"/>
+    <circle cx="715" cy="818" r="7"/>
+    <circle cx="848" cy="860" r="7"/>
+    <circle cx="980" cy="918" r="7"/>
+    <circle cx="1112" cy="960" r="7"/>
+    <circle cx="810" cy="1203" r="7"/>
+    <circle cx="1000" cy="1203" r="7"/>
+  </g>
+
+  <!-- R response markers (small reversed arrows) -->
+  <g stroke="black" stroke-width="1.2" fill="none">
+    <path d="M632,216 L632,206" marker-end="url(#arrowSmall)"/>
+    <path d="M847,216 L847,206" marker-end="url(#arrowSmall)"/>
+    <path d="M172,318 L172,308" marker-end="url(#arrowSmall)"/>
+    <path d="M60,903 L50,903" marker-end="url(#arrowSmall)"/>
+    <path d="M300,673 L312,673" marker-end="url(#arrowSmall)"/>
+    <path d="M712,982 L712,992" marker-end="url(#arrowSmall)"/>
+    <path d="M772,487 L772,477" marker-end="url(#arrowSmall)"/>
+    <path d="M1042,637 L1042,627" marker-end="url(#arrowSmall)"/>
+    <path d="M1057,219 L1057,209" marker-end="url(#arrowSmall)"/>
+    <path d="M1106,316 L1106,326" marker-end="url(#arrowSmall)"/>
+    <path d="M962,633 L962,623" marker-end="url(#arrowSmall)"/>
+    <path d="M467,637 L467,627" marker-end="url(#arrowSmall)"/>
+    <path d="M572,673 L584,673" marker-end="url(#arrowSmall)"/>
+    <path d="M962,712 L962,722" marker-end="url(#arrowSmall)"/>
+    <path d="M848,671 L858,671" marker-end="url(#arrowSmall)"/>
+    <path d="M727,812 L727,802" marker-end="url(#arrowSmall)"/>
+    <path d="M840,848 L830,848" marker-end="url(#arrowSmall)"/>
+    <path d="M992,912 L992,902" marker-end="url(#arrowSmall)"/>
+    <path d="M822,1197 L822,1187" marker-end="url(#arrowSmall)"/>
+    <path d="M1012,1197 L1012,1187" marker-end="url(#arrowSmall)"/>
+  </g>
+  <g font-size="10" font-style="italic" fill="#333">
+    <text x="636" y="212">R</text>
+    <text x="851" y="212">R</text>
+    <text x="176" y="314">R</text>
+    <text x="64" y="907">R</text>
+    <text x="288" y="668">R</text>
+    <text x="717" y="988">R</text>
+    <text x="776" y="483">R</text>
+    <text x="1046" y="633">R</text>
+    <text x="1061" y="215">R</text>
+    <text x="1111" y="324">R</text>
+    <text x="966" y="629">R</text>
+    <text x="471" y="633">R</text>
+    <text x="588" y="677">R</text>
+    <text x="967" y="718">R</text>
+    <text x="844" y="664">R</text>
+    <text x="731" y="808">R</text>
+    <text x="844" y="852">R</text>
+    <text x="996" y="908">R</text>
+    <text x="826" y="1193">R</text>
+    <text x="1016" y="1193">R</text>
+  </g>
+
+  <!-- ======================= Labels ======================= -->
+  <g font-size="11" font-style="italic" fill="#333">
+    <text x="300" y="132">manage</text>
+    <text x="692" y="190">view app /</text>
+    <text x="692" y="205">manage app</text>
+    <text x="48" y="300">simple-json (Agent)</text>
+    <text x="168" y="983">push</text>
+    <text x="350" y="470">scrap /metrics (bearer)</text>
+    <text x="200" y="1210">read log</text>
+    <text x="700" y="1162">write log</text>
+    <text x="560" y="468">https request</text>
+    <text x="820" y="439">direct TCP:6059 / WSS:6058</text>
+    <text x="900" y="207">via Agent reverse proxy</text>
+    <text x="905" y="500">X-Target-Host forward,</text>
+    <text x="905" y="514">verify bearer</text>
+    <text x="708" y="594">forward TCP:6059</text>
+    <text x="465" y="575">reverse-proxy</text>
+    <text x="465" y="590">auth path</text>
+    <text x="368" y="733">OIDC discovery / JWKS verify</text>
+    <text x="860" y="752">task RPC (HMAC PSK)</text>
+    <text x="850" y="1140">container start/stop</text>
+    <text x="860" y="1098">(via Agent docker.sock proxy, PSK HMAC)</text>
+    <text x="1005" y="1137">proc start/stop</text>
+  </g>
+  <text x="826" y="672" font-size="10" font-style="italic" fill="#333">authz</text>
+
+  <!-- ======================= Legend ======================= -->
+  <rect x="860" y="10" width="290" height="150" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="874" y="38" font-size="13" font-weight="bold" fill="#111">Legend</text>
+
+  <rect x="874" y="51" width="30" height="16" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="914" y="63" font-size="11" fill="#111">Agent</text>
+
+  <rect x="874" y="73" width="30" height="20" fill="white" stroke="black" stroke-width="1.5"/>
+  <g stroke="black" stroke-width="1.5" fill="none">
+    <circle cx="889" cy="78" r="3.2" fill="white"/>
+    <path d="M889,81 L889,89 M884,83.5 L894,83.5 M889,89 L884.5,94.5 M889,89 L893.5,94.5"/>
+  </g>
+  <text x="914" y="87" font-size="11" fill="#111">Human Agent</text>
+
+  <rect x="874" y="99" width="30" height="16" rx="8" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="914" y="111" font-size="11" fill="#111">Storage</text>
+
+  <g stroke="black" stroke-width="1.5" fill="none">
+    <path d="M874,128 L894,128" marker-end="url(#arrowSmall)"/>
+  </g>
+  <circle cx="898" cy="128" r="4" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="904" y="124" font-size="9" font-style="italic" fill="#333">R</text>
+  <text x="914" y="132" font-size="11" fill="#111">Channel (R: response)</text>
+
+  <rect x="1000" y="54" width="30" height="16" fill="#e4eee0" stroke="black" stroke-width="1"/>
+  <rect x="997" y="51" width="30" height="16" fill="white" stroke="black" stroke-width="1.2"/>
+  <text x="1040" y="63" font-size="11" fill="#111">multi-instance</text>
+
+  <path d="M997,84 L1021,84" stroke="black" stroke-width="1.5" fill="none"/>
+  <circle cx="1024" cy="84" r="4" fill="white" stroke="black" stroke-width="1.5"/>
+  <text x="1040" y="88" font-size="11" fill="#111">Read-only access</text>
+
+  <g stroke="black" stroke-width="1.5" fill="none">
+    <path d="M997,108 L1021,108" marker-end="url(#arrowSmall)"/>
+  </g>
+  <text x="1040" y="112" font-size="11" fill="#111">Modifying access</text>
+</svg>

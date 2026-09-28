@@ -35,6 +35,13 @@ Think serverless, on your own machines.
 
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" alt="App Mesh architecture" align=center /></div>
 
+<details>
+<summary>Internal component view</summary>
+
+![block-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/block_diagram.svg)
+
+</details>
+
 ## ⚡ Quick Start
 
 Start the daemon in Docker:
@@ -135,14 +142,14 @@ The Computing pillar makes App Mesh a natural runtime for AI workloads:
 - **[Remote sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)** — give agents an isolated build-and-run environment instead of your local shell.
 - **[MCP server](src/sdk/mcp_server)** — manage App Mesh from AI clients over Model Context Protocol (Streamable HTTP with OAuth 2.1, RBAC enforced by the daemon).
 - **[LLM agent runtime](src/sdk/llm-agent)** — host Claude-Agent-SDK-based agents as managed App Mesh applications; see the [architecture design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/sdk/llm-agent/SOP.md)).
-- **[Remote execution skill](.agents/skills/appmesh-remote)** for Codex and Claude Code, and **[MQTT bridge](src/sdk/mqtt)** for IoT scenarios.
+- **[Remote execution skill](.agents/skills/appmesh-remote)** for Codex and Claude Code, **[MCP bridge](src/sdk/mcp_bridge)** for relaying stdio MCP servers over WebSocket, and **[MQTT bridge](src/sdk/mqtt)** for IoT scenarios.
 
 ## 🧰 Interfaces & SDKs
 
 | Interface | Details                                                                                                                                                                                                                                                                                                  |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CLI       | [`appm` command reference](https://app-mesh.readthedocs.io/en/latest/CLI.html)                                                                                                                                                                                                                           |
-| REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/Development.html) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)                                                                              |
+| REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/RESTAPI.html) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)                                                                              |
 | Web GUI   | [app-mesh-ui](https://github.com/laoshanxi/app-mesh-ui)                                                                                                                                                                                                                                                  |
 | SDKs      | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) · [Golang](src/sdk/go/client_http.go) · [Rust](src/sdk/rust) · [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) · [JavaScript](https://www.npmjs.com/package/appmesh) · [C++](src/sdk/cpp) |
 
