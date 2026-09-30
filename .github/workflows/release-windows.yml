@@ -213,7 +213,7 @@ jobs:
           if (-not (Select-String -Path "C:\local\appmesh\apps\identity.yaml" -Pattern "^enabled:\s*0\s*$" -Quiet)) { throw "the bundled auth app was not disabled" }
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v4.1.1
+        uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: "appmesh_*.exe"
 
