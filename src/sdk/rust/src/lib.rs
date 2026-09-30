@@ -29,7 +29,7 @@ pub use error::{AppMeshError, TransportError};
 pub use oauth::{
     AuthorizationRequest, DEFAULT_OAUTH_SCOPE, DEFAULT_OAUTH_SCOPES, DeviceAuthorization,
     DevicePoll, OAuthClient, OAuthConfig, OidcMetadata,
-    StaticAccessTokenProvider, TokenProvider, TokenSet,
+    StaticAccessTokenProvider, TokenProvider, TokenSet, TokenSetProviderOptions,
 };
 pub use models::{
     AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,

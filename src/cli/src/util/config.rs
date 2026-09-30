@@ -400,6 +400,7 @@ mod tests {
                 access_token: "access-token".into(),
                 refresh_token: Some("refresh-token".into()),
                 expires_at: Some(4_102_444_800),
+                refresh_at: None,
                 token_type: "Bearer".into(),
                 scope: None,
             },

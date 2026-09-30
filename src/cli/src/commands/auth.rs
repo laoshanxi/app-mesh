@@ -24,8 +24,16 @@ struct EngineAuthConfig {
     scopes: Vec<String>,
     #[serde(default)]
     flows: Vec<String>,
+    // Daemons older than the refresh-token toggle omit the field; they issue
+    // refresh tokens, so absence means enabled.
+    #[serde(default = "default_true")]
+    refresh_token: bool,
     #[serde(default)]
     first_admin_enrollment: FirstAdminEnrollment,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -63,6 +71,30 @@ fn select_login_method(flows: &[String], display: bool) -> Option<LoginMethod> {
         Some(LoginMethod::Password)
     } else {
         None
+    }
+}
+
+// Refresh tokens are issued through the offline_access scope; when the Engine
+// disables refresh tokens the login must not request a grant it never receives.
+fn login_scopes(scopes: &[String], refresh_token: bool) -> Vec<String> {
+    if refresh_token {
+        return scopes.to_vec();
+    }
+    let filtered: Vec<String> = scopes
+        .iter()
+        .filter(|scope| scope.as_str() != "offline_access")
+        .cloned()
+        .collect();
+    if filtered.is_empty() {
+        // An empty list would make the SDK apply its defaults, which include
+        // offline_access; substitute the same defaults without it.
+        appmesh::DEFAULT_OAUTH_SCOPES
+            .iter()
+            .filter(|scope| **scope != "offline_access")
+            .map(|scope| (*scope).to_string())
+            .collect()
+    } else {
+        filtered
     }
 }
 
@@ -144,7 +176,7 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
 
     let oauth_config = OAuthConfig::new(issuer, access_url, advertised.public_client_id)
         .audience(advertised.audience)
-        .scopes(advertised.scopes)
+        .scopes(login_scopes(&advertised.scopes, advertised.refresh_token))
         .allow_plain_http(args.auth_allow_http || env_allows_plain_http());
     // The advertised browser entry is a front-channel origin only: the SDK maps
     // login and device verification URLs onto it so the browser gets the entry
@@ -528,8 +560,9 @@ async fn respond(stream: &mut TcpStream, status: &str, body: &str) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_email, format_token_expiry, select_login_method, should_enroll_first_admin,
-        CallbackHead, FirstAdminEnrollment, HeadProgress, LoginMethod, CALLBACK_HEAD_LIMIT,
+        builtin_email, format_token_expiry, login_scopes, select_login_method,
+        should_enroll_first_admin, CallbackHead, EngineAuthConfig, FirstAdminEnrollment,
+        HeadProgress, LoginMethod, CALLBACK_HEAD_LIMIT,
     };
 
     fn flows(entries: &[&str]) -> Vec<String> {
@@ -566,6 +599,49 @@ mod tests {
     fn login_method_rejects_unknown_flows() {
         assert_eq!(select_login_method(&[], true), None);
         assert_eq!(select_login_method(&flows(&["client_credentials"]), false), None);
+    }
+
+    #[test]
+    fn auth_config_defaults_refresh_token_for_old_daemons() {
+        // Daemons predating the toggle omit refresh_token; they issue refresh
+        // tokens, so the CLI must treat absence as enabled.
+        let config: EngineAuthConfig = serde_json::from_value(serde_json::json!({
+            "issuer": "https://auth.example",
+            "audience": "appmesh",
+            "public_client_id": "appmesh-cli"
+        }))
+        .expect("old daemon config must parse");
+        assert!(config.refresh_token);
+
+        let config: EngineAuthConfig = serde_json::from_value(serde_json::json!({
+            "issuer": "https://auth.example",
+            "audience": "appmesh",
+            "public_client_id": "appmesh-cli",
+            "refresh_token": false
+        }))
+        .expect("new daemon config must parse");
+        assert!(!config.refresh_token);
+    }
+
+    #[test]
+    fn login_scopes_drop_offline_access_when_refresh_disabled() {
+        // offline_access is what makes the issuer hand out a refresh token; a
+        // daemon with refresh_token=false must never see it requested.
+        let advertised = flows(&["openid", "profile", "offline_access"]);
+        let filtered = login_scopes(&advertised, false);
+        assert_eq!(filtered, flows(&["openid", "profile"]));
+        assert_eq!(login_scopes(&advertised, true), advertised);
+    }
+
+    #[test]
+    fn login_scopes_never_passes_an_empty_set() {
+        // An empty scope list would make the SDK re-apply its defaults, which
+        // include offline_access; the fallback must supply defaults without it.
+        let filtered = login_scopes(&[], false);
+        assert!(!filtered.is_empty());
+        assert!(filtered.iter().any(|scope| scope == "openid"));
+        assert!(!filtered.iter().any(|scope| scope == "offline_access"));
+        assert_eq!(login_scopes(&flows(&["offline_access"]), false), filtered);
     }
 
     #[test]

@@ -47,6 +47,11 @@ type Option struct {
 
 	JwtToken string // Access token set directly without a network call.
 
+	// TokenProvider supplies and refreshes access tokens (see token_provider.go).
+	// An explicitly set provider wins over JwtToken; refresh credentials stay
+	// private to the provider and only access tokens cross into the client.
+	TokenProvider TokenProvider
+
 	// PSK is the managed-process pre-shared key read from Engine-provided shared
 	// memory (see ReadPSKFromSHM). Over the TCP and WSS transports, requests
 	// marked with HeaderProcessProof carry an X-Request-HMAC signature of their
@@ -59,7 +64,8 @@ type Option struct {
 }
 
 // NewHTTPClient builds an HTTP-backed client for App Mesh REST APIs.
-// It does not authenticate. Obtain an access token separately and call SetToken.
+// It does not authenticate. Obtain an access token separately and call SetToken,
+// or attach a refresh-capable provider via Option.TokenProvider / SetTokenProvider.
 func NewHTTPClient(options Option) (*AppMeshClient, error) {
 	return newHTTPClientWithRequester(options, nil)
 }
@@ -114,20 +120,34 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 		sslCAFile:        caFile,
 	}
 
-	if options.JwtToken != "" {
+	if options.TokenProvider != nil {
+		// An explicitly configured provider wins over a static JwtToken.
+		c.SetTokenProvider(options.TokenProvider)
+	} else if options.JwtToken != "" {
 		c.SetToken(options.JwtToken)
 	}
 
 	return c, nil
 }
 
-// SetToken attaches a caller-owned access token in memory. Engine validates it
+// SetTokenProvider attaches a provider that supplies and refreshes access
+// tokens. The provider wins over any token set with SetToken; a later SetToken
+// replaces it with a static, non-refreshing token (mirroring the Python SDK's
+// set_bearer_token). On the HTTP transport a 401 then triggers exactly one
+// RefreshAccessToken call and request replay.
+func (r *AppMeshClient) SetTokenProvider(provider TokenProvider) {
+	r.req.setTokenProvider(provider)
+}
+
+// SetToken attaches a caller-owned access token in memory, replacing any
+// attached TokenProvider with this static token. Engine validates it
 // when an API request is made; the SDK never sends credentials or refresh tokens.
 func (r *AppMeshClient) SetToken(token string) {
 	r.req.setToken(strings.TrimSpace(token))
 }
 
-// ClearToken removes the locally attached bearer without contacting Engine or the authentication service.
+// ClearToken removes the locally attached bearer (and any attached provider)
+// without contacting Engine or the authentication service.
 func (r *AppMeshClient) ClearToken() {
 	r.req.setToken("")
 }

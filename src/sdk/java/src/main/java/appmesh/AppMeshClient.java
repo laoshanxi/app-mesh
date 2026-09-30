@@ -55,7 +55,7 @@ public class AppMeshClient implements Closeable {
     private static final String DEFAULT_SSL_CA_CERT = DEFAULT_SSL_DIR + "/ca.pem";
 
     private final String baseURL;
-    private final AtomicReference<String> jwtToken = new AtomicReference<>(null);
+    private final AtomicReference<TokenProvider> tokenProvider = new AtomicReference<>(null);
     private volatile String forwardTo;
 
     // Per-instance SSL (avoids modifying JVM global defaults)
@@ -75,8 +75,10 @@ public class AppMeshClient implements Closeable {
         this.readTimeoutMs = builder.readTimeoutMs;
         this.disableHostnameVerification = builder.disableSSLVerification;
 
-        if (builder.jwtToken != null) {
-            this.jwtToken.set(builder.jwtToken);
+        if (builder.tokenProvider != null) {
+            this.tokenProvider.set(builder.tokenProvider);
+        } else if (builder.jwtToken != null && !builder.jwtToken.trim().isEmpty()) {
+            this.tokenProvider.set(new StaticAccessTokenProvider(builder.jwtToken));
         }
 
         // Explicit non-empty CA path must be readable; auto-detected defaults fall back to system trust
@@ -109,6 +111,7 @@ public class AppMeshClient implements Closeable {
         private String clientCertKeyFilePath;
         private char[] keyPassword;
         private String jwtToken;
+        private TokenProvider tokenProvider;
         private boolean disableSSLVerification = false;
         private int connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private int readTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
@@ -167,6 +170,15 @@ public class AppMeshClient implements Closeable {
         /** Initialize with an existing JWT token (no server verification). */
         public Builder jwtToken(String jwtToken) {
             this.jwtToken = jwtToken;
+            return this;
+        }
+
+        /**
+         * Attach a provider that supplies and refreshes access tokens. Takes precedence
+         * over {@link #jwtToken(String)}. Refresh credentials remain provider-private.
+         */
+        public Builder tokenProvider(TokenProvider tokenProvider) {
+            this.tokenProvider = tokenProvider;
             return this;
         }
 
@@ -273,15 +285,29 @@ public class AppMeshClient implements Closeable {
 
     @Override
     public void close() {
-        this.jwtToken.set(null);
+        this.tokenProvider.set(null);
     }
 
     // -------- Bearer authentication --------
 
-    /** Attach a caller-owned access token in memory. */
+    /** Attach a refresh-capable provider to this bearer-only Engine client. */
+    public void setTokenProvider(TokenProvider provider) {
+        this.tokenProvider.set(Objects.requireNonNull(provider, "tokenProvider cannot be null"));
+    }
+
+    /** Return the provider currently attached to this Engine client, or null. */
+    public TokenProvider getTokenProvider() {
+        return this.tokenProvider.get();
+    }
+
+    /** Attach a caller-owned, non-refreshing access token. */
     public void setBearerToken(String token) {
         String value = token == null ? null : token.trim();
-        this.jwtToken.set(value == null || value.isEmpty() ? null : value);
+        if (value == null || value.isEmpty()) {
+            this.tokenProvider.set(null);
+        } else {
+            this.tokenProvider.set(new StaticAccessTokenProvider(value));
+        }
     }
 
     /** Source-compatible alias for {@link #setBearerToken(String)}. */
@@ -291,12 +317,13 @@ public class AppMeshClient implements Closeable {
 
     /** Remove the locally attached bearer without contacting Engine or the authentication service. */
     public void clearBearerToken() {
-        this.jwtToken.set(null);
+        this.tokenProvider.set(null);
     }
 
     /** Return the current in-memory access token, or null. */
     public String getToken() {
-        return this.jwtToken.get();
+        TokenProvider provider = this.tokenProvider.get();
+        return provider == null ? null : provider.getAccessToken();
     }
 
     /** Return Engine's public OAuth/OIDC configuration. */
@@ -943,9 +970,13 @@ public class AppMeshClient implements Closeable {
     }
 
     private Map<String, String> commonHeaders() {
+        TokenProvider provider = this.tokenProvider.get();
+        return commonHeaders(provider == null ? null : provider.getAccessToken());
+    }
+
+    private Map<String, String> commonHeaders(String token) {
         Map<String, String> headers = new HashMap<>();
         headers.put(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT);
-        String token = this.jwtToken.get();
         if (token != null && !token.isEmpty()) {
             headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         }
@@ -1036,9 +1067,58 @@ public class AppMeshClient implements Closeable {
     /**
      * Core HTTP request helper. Builds URL, attaches headers and body, applies SSL
      * and timeout settings, and returns the {@link HttpURLConnection}.
+     *
+     * <p>When the attached {@link TokenProvider} can refresh and the request body is
+     * replayable (null, {@link String}, {@code byte[]}, or {@link JSONObject}), a single
+     * HTTP 401 triggers one {@link TokenProvider#refreshAccessToken(String)} and one retry
+     * with the new token. A second 401 throws an {@link IOException}.
      */
     public HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
             Map<String, String> params) throws IOException {
+        TokenProvider provider = callerManagesAuth(headers) ? null : this.tokenProvider.get();
+        String sentToken = provider == null ? null : provider.getAccessToken();
+
+        HttpURLConnection connection = openRequest(method, path, body, headers, params, sentToken);
+        if (provider == null || !provider.canRefresh() || !isReplayable(body)
+                || connection.getResponseCode() != HttpURLConnection.HTTP_UNAUTHORIZED) {
+            return connection;
+        }
+
+        String newToken = provider.refreshAccessToken(sentToken);
+        if (newToken != null && newToken.trim().isEmpty()) {
+            connection.disconnect();
+            throw new IOException("TokenProvider returned an invalid access token");
+        }
+        connection.disconnect();
+        connection = openRequest(method, path, body, headers, params, newToken);
+        if (connection.getResponseCode() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            throw new IOException("TokenProvider failed to replace a rejected access token: HTTP 401 - "
+                    + Utils.readErrorResponse(connection));
+        }
+        return connection;
+    }
+
+    /** Whether the caller supplied its own Authorization header, disabling provider-managed auth. */
+    private static boolean callerManagesAuth(Map<String, String> headers) {
+        if (headers == null) {
+            return false;
+        }
+        for (String key : headers.keySet()) {
+            if (key != null && AUTHORIZATION_HEADER.equalsIgnoreCase(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Streaming bodies cannot be assumed replayable after a 401 response. */
+    private static boolean isReplayable(Object body) {
+        return body == null || body instanceof String || body instanceof byte[] || body instanceof JSONObject;
+    }
+
+    /** Open and send one HTTP request attempt with the given bearer token (null for none). */
+    private HttpURLConnection openRequest(String method, String path, Object body, Map<String, String> headers,
+            Map<String, String> params, String token) throws IOException {
         StringBuilder urlBuilder = new StringBuilder(baseURL).append(path);
 
         if (params != null && !params.isEmpty()) {
@@ -1065,7 +1145,7 @@ public class AppMeshClient implements Closeable {
         // Apply per-instance SSL
         applySSL(connection);
 
-        Map<String, String> allHeaders = new HashMap<>(commonHeaders());
+        Map<String, String> allHeaders = new HashMap<>(commonHeaders(token));
         if (headers != null) {
             allHeaders.putAll(headers);
         }

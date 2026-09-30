@@ -1,7 +1,10 @@
 // src/sdk/cpp/ClientHttp.cpp
 #include "ClientHttp.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <ctime>
 #include <map>
 #include <string>
 
@@ -13,6 +16,143 @@
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
 #include "../../common/os/filesystem.h"
+
+// === RefreshTokenProvider implementation ===
+
+namespace
+{
+bool isLoopbackHost(std::string host)
+{
+    // uriparser strips IPv6 brackets; tolerate either form
+    if (host.size() >= 2 && host.front() == '[' && host.back() == ']')
+        host = host.substr(1, host.size() - 2);
+    for (auto &ch : host)
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    return host == "127.0.0.1" || host == "localhost" || host == "::1";
+}
+} // namespace
+
+RefreshTokenProvider::RefreshTokenProvider(const RefreshTokenConfig &config)
+    : m_clientId(config.clientId.empty() ? "appmesh-cli" : config.clientId),
+      m_accessToken(config.accessToken),
+      m_refreshToken(config.refreshToken),
+      m_lifetime(config.expiresIn > 0 ? config.expiresIn : 0),
+      m_expiresAt(0)
+{
+    const auto uri = Uri::parse(config.tokenUrl);
+    std::string scheme = uri.scheme;
+    for (auto &ch : scheme)
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    if (uri.host.empty() ||
+        !(scheme == "https" || (scheme == "http" && isLoopbackHost(uri.host))))
+    {
+        throw std::invalid_argument("refresh token URL must be HTTPS, or HTTP only for a loopback host (127.0.0.1, localhost, ::1)");
+    }
+    m_tokenUrl = config.tokenUrl;
+    if (m_lifetime > 0)
+        m_expiresAt = static_cast<int64_t>(std::time(nullptr)) + m_lifetime;
+}
+
+std::string RefreshTokenProvider::getAccessToken()
+{
+    std::lock_guard<std::mutex> guard(m_mutex);
+    // Proactive refresh shortly before expiry: margin = max(30s, 10% of lifetime).
+    if (m_expiresAt > 0 && !m_refreshToken.empty())
+    {
+        const int64_t now = static_cast<int64_t>(std::time(nullptr));
+        if (now >= m_expiresAt - std::max(30L, m_lifetime / 10))
+            refreshLocked();
+    }
+    return m_accessToken;
+}
+
+bool RefreshTokenProvider::canRefresh() const
+{
+    std::lock_guard<std::mutex> guard(m_mutex);
+    return !m_refreshToken.empty();
+}
+
+std::string RefreshTokenProvider::refreshAccessToken(const std::string &rejectedToken)
+{
+    std::lock_guard<std::mutex> guard(m_mutex);
+    // A racing caller already refreshed: the rejected token is no longer current.
+    if (!rejectedToken.empty() && rejectedToken != m_accessToken)
+        return m_accessToken;
+    refreshLocked();
+    return m_accessToken;
+}
+
+void RefreshTokenProvider::clear()
+{
+    std::lock_guard<std::mutex> guard(m_mutex);
+    m_accessToken.clear();
+    m_refreshToken.clear();
+    m_lifetime = 0;
+    m_expiresAt = 0;
+}
+
+void RefreshTokenProvider::refreshLocked()
+{
+    if (m_refreshToken.empty())
+        throw std::runtime_error("no refresh token is available");
+
+    // Split the endpoint into a RestClient host base and request path.
+    const auto uri = Uri::parse(m_tokenUrl);
+    std::string host = uri.host.find(':') != std::string::npos
+                           ? uri.scheme + "://[" + uri.host + "]" // IPv6 literal
+                           : uri.scheme + "://" + uri.host;
+    if (uri.port > 0)
+        host += ":" + std::to_string(uri.port);
+
+    const std::map<std::string, std::string> form = {
+        {"grant_type", "refresh_token"},
+        {"refresh_token", m_refreshToken},
+        {"client_id", m_clientId}};
+    // TLS verification follows the process-global RestClient SSL configuration
+    // installed by AppMeshClient (ClientHttpConfig::verifyServer / caCertPath).
+    const auto response = RestClient::request(host, web::http::methods::POST, uri.path, std::string(), {}, {}, form);
+
+    // Transport failure (status 0): keep token state; the credentials may still be valid.
+    if (response->status_code == 0)
+        throw std::runtime_error("token refresh request failed: " + response->text);
+
+    if (response->status_code != web::http::status_codes::OK)
+    {
+        // invalid_grant means the refresh credential is dead: drop both tokens so
+        // canRefresh() turns false and the client stops retrying on 401.
+        std::string error;
+        try
+        {
+            error = nlohmann::json::parse(response->text).value("error", std::string());
+        }
+        catch (const nlohmann::json::exception &)
+        {
+        }
+        if (error == "invalid_grant")
+        {
+            m_accessToken.clear();
+            m_refreshToken.clear();
+            m_expiresAt = 0;
+        }
+        throw std::runtime_error("token refresh rejected with HTTP " + std::to_string(response->status_code));
+    }
+
+    const auto body = nlohmann::json::parse(response->text); // non-JSON throws; state kept
+    const auto accessToken = body.value("access_token", std::string());
+    if (accessToken.empty())
+        throw std::runtime_error("token response did not include an access token");
+    m_accessToken = accessToken;
+    // Dex may omit refresh_token when the old one stays valid (reuseInterval):
+    // replace the stored credential only when the response carries a new one.
+    const auto newRefreshToken = body.value("refresh_token", std::string());
+    if (!newRefreshToken.empty())
+        m_refreshToken = newRefreshToken;
+    long expiresIn = 0;
+    if (body.contains("expires_in") && body["expires_in"].is_number())
+        expiresIn = body["expires_in"].get<long>();
+    m_lifetime = expiresIn;
+    m_expiresAt = expiresIn > 0 ? static_cast<int64_t>(std::time(nullptr)) + expiresIn : 0;
+}
 
 // === AppRun implementation ===
 
@@ -55,6 +195,8 @@ void AppMeshClient::applyConfig(const ClientHttpConfig &config)
     // a proxy or legacy server cannot create an implicit authentication session.
     RestClient::setSessionConfiguration(SessionConfig());
     setBearerToken(config.bearerToken);
+    if (config.tokenProvider)
+        setTokenProvider(config.tokenProvider); // explicit provider wins over bearerToken
 
     // Missing/unreadable CA path: absent default falls back to the system trust store
     // (verification stays on); an explicit path is a hard error (RestClient would silently skip CAINFO/CAPATH).
@@ -91,7 +233,18 @@ const std::string &AppMeshClient::getForwardTo() const
 void AppMeshClient::setBearerToken(const std::string &token)
 {
     std::lock_guard<std::mutex> guard(m_authMutex);
-    m_bearerToken = token;
+    if (token.empty())
+        m_tokenProvider.reset();
+    else
+        m_tokenProvider = std::make_shared<StaticAccessTokenProvider>(token);
+}
+
+void AppMeshClient::setTokenProvider(std::shared_ptr<TokenProvider> provider)
+{
+    if (!provider)
+        throw std::invalid_argument("token provider must not be null");
+    std::lock_guard<std::mutex> guard(m_authMutex);
+    m_tokenProvider = std::move(provider);
 }
 
 void AppMeshClient::clearBearerToken()
@@ -101,8 +254,30 @@ void AppMeshClient::clearBearerToken()
 
 std::string AppMeshClient::getAuthToken() const
 {
+    const auto provider = getTokenProvider();
+    return provider ? provider->getAccessToken() : std::string();
+}
+
+std::shared_ptr<TokenProvider> AppMeshClient::getTokenProvider() const
+{
     std::lock_guard<std::mutex> guard(m_authMutex);
-    return m_bearerToken;
+    return m_tokenProvider;
+}
+
+std::string AppMeshClient::getBearerToken(bool forceRefresh, const std::string &rejectedToken) const
+{
+    const auto provider = getTokenProvider();
+    if (!provider)
+        return std::string();
+    const std::string token = forceRefresh ? provider->refreshAccessToken(rejectedToken) : provider->getAccessToken();
+    const auto begin = token.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos)
+    {
+        if (token.empty())
+            return std::string();
+        throw std::invalid_argument("TokenProvider returned an invalid access token");
+    }
+    return token.substr(begin, token.find_last_not_of(" \t\r\n") - begin + 1);
 }
 
 nlohmann::json AppMeshClient::getAuthConfig() const
@@ -514,8 +689,35 @@ std::shared_ptr<CurlResponse> AppMeshClient::requestHttp(ErrorPolicy errorPolicy
     // body
     const std::string bodyContent = body ? body->dump() : std::string();
 
-    // request
+    // request (the body is an in-memory string here, so every request through
+    // requestHttp is replayable; streaming file transfer does not use this path)
     auto resp = RestClient::request(m_url, method, path, bodyContent, header, query);
+
+    // One-shot token refresh on HTTP 401 (mirrors the Python SDK): ask the
+    // provider to replace the rejected token and retry exactly once; a second
+    // 401 falls through to the error policy below.
+    if (resp->status_code == web::http::status_codes::Unauthorized)
+    {
+        const auto provider = getTokenProvider();
+        if (provider && provider->canRefresh())
+        {
+            // The rejected token is the one just sent, not a fresh read: a racing
+            // thread (or the proactive refresh) may already have replaced the
+            // stored token, and re-reading here would defeat the coalescing in
+            // refreshAccessToken() and issue a duplicate grant.
+            std::string rejectedToken;
+            const std::string bearerPrefix = HTTP_HEADER_JWT_BearerSpace;
+            const auto sentAuth = header.find(HTTP_HEADER_JWT_Authorization);
+            if (sentAuth != header.end() && sentAuth->second.compare(0, bearerPrefix.size(), bearerPrefix) == 0)
+                rejectedToken = sentAuth->second.substr(bearerPrefix.size());
+            const std::string newToken = getBearerToken(true, rejectedToken);
+            if (newToken.empty())
+                header.erase(HTTP_HEADER_JWT_Authorization);
+            else
+                header[HTTP_HEADER_JWT_Authorization] = JwtHelper::buildBearerAuthorization(newToken);
+            resp = RestClient::request(m_url, method, path, bodyContent, header, query);
+        }
+    }
 
     // check return
     if (errorPolicy == ErrorPolicy::Throw && resp->status_code != web::http::status_codes::OK)
@@ -528,7 +730,7 @@ std::shared_ptr<CurlResponse> AppMeshClient::requestHttp(ErrorPolicy errorPolicy
 
 void AppMeshClient::addCommonHeaders(std::map<std::string, std::string> &header) const
 {
-    const auto token = getAuthToken();
+    const auto token = getBearerToken(false, "");
     if (!token.empty() && header.count(HTTP_HEADER_JWT_Authorization) == 0)
         header[HTTP_HEADER_JWT_Authorization] = JwtHelper::buildBearerAuthorization(token);
 

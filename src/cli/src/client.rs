@@ -101,6 +101,20 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
         );
     }
 
+    // A session without a usable refresh grant (the Engine disabled refresh
+    // tokens at logon, or now advertises refresh_token=false) cannot renew: a
+    // still-valid access token is used as-is, an expired one ends the session.
+    if !refresh_grant_usable(&advertised, &session) {
+        if session.tokens.is_expired() {
+            anyhow::bail!(
+                "The sign-in session for {} expired and cannot be renewed. Run 'appm logon' again.",
+                endpoint
+            );
+        }
+        client.client().set_token(&session.tokens.access_token);
+        return Ok(client);
+    }
+
     // The OAuth client owns expiry/401 refresh for the full client lifetime. The CLI
     // owns persistence and durably records every rotated token set. Refresh tokens
     // remain inside this OAuth/session callback and are never sent to the Engine.
@@ -238,6 +252,17 @@ fn stored_token_usable(session: &config::StoredSession) -> bool {
     !session.tokens.is_expired()
 }
 
+/// The refresh grant is usable only when the session holds a refresh token and
+/// the Engine still advertises refresh-token support (older daemons omit the
+/// field, which means supported).
+fn refresh_grant_usable(advertised: &serde_json::Value, session: &config::StoredSession) -> bool {
+    advertised
+        .get("refresh_token")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true)
+        && session.tokens.refresh_token.is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +276,7 @@ mod tests {
                 access_token: "access-token".into(),
                 refresh_token: Some("refresh-token".into()),
                 expires_at,
+                refresh_at: None,
                 token_type: "Bearer".into(),
                 scope: None,
             },
@@ -267,5 +293,22 @@ mod tests {
     #[test]
     fn stored_token_without_expiry_is_usable() {
         assert!(stored_token_usable(&session_with_expiry(None)));
+    }
+
+    #[test]
+    fn refresh_grant_requires_stored_token_and_engine_support() {
+        // Older daemons omit refresh_token entirely; a stored grant keeps working.
+        let advertised = serde_json::json!({"issuer": "https://auth.example"});
+        let session = session_with_expiry(Some(4_102_444_800));
+        assert!(refresh_grant_usable(&advertised, &session));
+
+        // A session that never received a refresh token has nothing to renew with.
+        let mut without_grant = session_with_expiry(Some(4_102_444_800));
+        without_grant.tokens.refresh_token = None;
+        assert!(!refresh_grant_usable(&advertised, &without_grant));
+
+        // An Engine that disabled refresh tokens must not be sent a refresh grant.
+        let disabled = serde_json::json!({"refresh_token": false});
+        assert!(!refresh_grant_usable(&disabled, &session));
     }
 }

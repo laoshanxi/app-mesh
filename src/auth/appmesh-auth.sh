@@ -356,6 +356,28 @@ seed_builtin_principals() {
     echo "Seeded missing built-in authorization bindings for issuer ${issuer}" >&2
 }
 
+# Deployments without refresh tokens drop the refresh_token grant from the
+# Dex grant types (render_dex_config) and reject user-token --with-refresh;
+# sessions then end at access-token expiry. The Engine reads the same setting
+# to advertise "refresh_token" in the auth config. Exit status: 0 when refresh
+# tokens are disabled, 1 when enabled, 2 when the setting is invalid.
+refresh_tokens_disabled() {
+    local refresh_token_value
+    refresh_token_value="${APPMESH_AUTH_REFRESH_TOKEN:-$(oidc_value refresh_token true)}"
+    # Lowercase first: the Engine compares case-insensitively, so a mixed-case
+    # value would otherwise disable the advertised flow on one side only.
+    refresh_token_value="$(printf '%s' "${refresh_token_value}" | tr '[:upper:]' '[:lower:]')"
+    case "${refresh_token_value}" in
+        0|false|off|disabled) return 0 ;;
+        1|true) return 1 ;;
+        # Accept the same value set as the Engine (OidcTokenVerifier.cpp).
+        *)
+            echo "APPMESH_AUTH_REFRESH_TOKEN must be true or false" >&2
+            return 2
+            ;;
+    esac
+}
+
 request_automation_token() {
     is_builtin_auth && is_auth_owner || {
         echo "the automation token is available only from the built-in auth owner" >&2
@@ -398,13 +420,33 @@ request_automation_token() {
 
 # Password grant for a human identity (administrator permissions). The password
 # comes from standard input, never from argv/environment; only the access token
-# is printed, so the result can go straight into APPMESH_BEARER_TOKEN.
+# is printed, so the result can go straight into APPMESH_BEARER_TOKEN. With
+# with_refresh=1 (the --with-refresh flag) the grant also requests
+# offline_access and the full token set is printed as JSON for SDK use; the
+# refresh token reaches stdout only under that explicit flag.
 request_user_token() {
     is_builtin_auth && is_auth_owner || {
         echo "the user token is available only from the built-in auth owner" >&2
         return 1
     }
     local username=${1:-${DEX_INITIAL_ADMIN_EMAIL}}
+    local with_refresh=${2:-0}
+    local scope="openid audience:server:client_id:appmesh-api"
+    if [[ "${with_refresh}" == 1 ]]; then
+        # Fail fast (before the password read) when the deployment issues no
+        # refresh tokens, instead of silently returning a set without one.
+        local refresh_status=0
+        refresh_tokens_disabled || refresh_status=$?
+        case ${refresh_status} in
+            0)
+                echo "Refresh tokens are disabled for this deployment (APPMESH_AUTH_REFRESH_TOKEN / oidc.yaml refresh_token); user-token --with-refresh is unavailable" >&2
+                return 1
+                ;;
+            1) ;;
+            *) return 1 ;;
+        esac
+        scope="${scope} offline_access"
+    fi
     local password
     IFS= read -r password || [[ -n "${password}" ]] || {
         echo "Provide the password on standard input" >&2
@@ -439,17 +481,33 @@ request_user_token() {
             --data-urlencode "grant_type=password" \
             --data-urlencode "username=${username}" \
             --data-urlencode "password=${password}" \
-            --data-urlencode "scope=openid audience:server:client_id:appmesh-api" \
+            --data-urlencode "scope=${scope}" \
             --url "${access_url%/}/token"
     ) || return 1
     password=""
     token=$(printf '%s' "${response}" |
         sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
-    response=""
     [[ -n "${token}" ]] || {
+        response=""
         echo "The token response has no access_token" >&2
         return 1
     }
+    if [[ "${with_refresh}" == 1 ]]; then
+        local refresh_token expires_in
+        refresh_token=$(printf '%s' "${response}" |
+            sed -n 's/.*"refresh_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
+        expires_in=$(printf '%s' "${response}" |
+            sed -n 's/.*"expires_in"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+        response=""
+        [[ -n "${refresh_token}" ]] || {
+            echo "The token response has no refresh_token" >&2
+            return 1
+        }
+        printf '{"access_token":"%s","refresh_token":"%s","expires_in":%s,"token_type":"Bearer"}' \
+            "${token}" "${refresh_token}" "${expires_in:-0}"
+        return
+    fi
+    response=""
     printf '%s' "${token}"
 }
 
@@ -1173,6 +1231,24 @@ render_dex_config() {
             return 1
             ;;
     esac
+    # Deployments without refresh tokens drop the refresh_token grant from the
+    # Dex grant types; refresh_tokens_disabled reads the deployment setting.
+    local refresh_token_disabled=0 refresh_token_status=0
+    refresh_tokens_disabled || refresh_token_status=$?
+    case ${refresh_token_status} in
+        0) refresh_token_disabled=1 ;;
+        1) ;;
+        *) return 1 ;;
+    esac
+    # Absolute cap of a refresh-token chain (Dex expiry.refreshTokens
+    # absoluteLifetime); rotation does not extend it. Dex enforces it alone.
+    local refresh_max_lifetime absolute_lifetime_rendered=0
+    refresh_max_lifetime="${APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME:-$(oidc_value refresh_token_max_lifetime 168h)}"
+    if [[ ! "${refresh_max_lifetime}" =~ ^[0-9]+(s|m|h)$ ]]; then
+        echo "APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME must be a duration like 30m or 168h" >&2
+        return 1
+    fi
+    yaml_quote "${refresh_max_lifetime}" >/dev/null
     local public_value
     for public_value in \
         "${issuer}" "${listen}" "${telemetry_listen}" "${web_redirect_uri}" \
@@ -1266,11 +1342,19 @@ render_dex_config() {
                 ;;
             '  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"]')
                 grant_types_rendered=1
-                if [[ ${password_flow_disabled} -eq 1 ]]; then
+                if [[ ${password_flow_disabled} -eq 1 && ${refresh_token_disabled} -eq 1 ]]; then
+                    printf '  grantTypes: ["authorization_code", "urn:ietf:params:oauth:grant-type:device_code", "client_credentials"]\n'
+                elif [[ ${password_flow_disabled} -eq 1 ]]; then
                     printf '  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "client_credentials"]\n'
+                elif [[ ${refresh_token_disabled} -eq 1 ]]; then
+                    printf '  grantTypes: ["authorization_code", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"]\n'
                 else
                     printf '%s\n' "${line}"
                 fi
+                ;;
+            "    absoluteLifetime: 168h")
+                absolute_lifetime_rendered=1
+                printf '    absoluteLifetime: %s\n' "$(yaml_quote "${refresh_max_lifetime}")"
                 ;;
             *)
                 printf '%s\n' "${line}"
@@ -1287,6 +1371,16 @@ render_dex_config() {
     if [[ ${password_flow_disabled} -eq 1 && ${grant_types_rendered} -eq 0 ]]; then
         rm -f "${temporary}"
         echo "The authentication configuration template grantTypes line does not match; cannot drop the password grant" >&2
+        return 1
+    fi
+    if [[ ${refresh_token_disabled} -eq 1 && ${grant_types_rendered} -eq 0 ]]; then
+        rm -f "${temporary}"
+        echo "The authentication configuration template grantTypes line does not match; cannot drop the refresh_token grant" >&2
+        return 1
+    fi
+    if [[ "${refresh_max_lifetime}" != "168h" && ${absolute_lifetime_rendered} -eq 0 ]]; then
+        rm -f "${temporary}"
+        echo "The authentication configuration template absoluteLifetime line does not match; cannot set the refresh-token maximum lifetime" >&2
         return 1
     fi
     mv -f "${temporary}" "${DEX_RUNTIME_CONFIG}"
@@ -1393,7 +1487,25 @@ case "${action}" in
     user-token)
         is_builtin_auth || { echo "The user token is unavailable in external authentication mode" >&2; exit 1; }
         is_auth_owner || { echo "The user token is managed only on the authentication owner" >&2; exit 1; }
-        request_user_token "${2:-}"
+        user_token_name=
+        user_token_with_refresh=0
+        for user_token_arg in "${@:2}"; do
+            case "${user_token_arg}" in
+                --with-refresh) user_token_with_refresh=1 ;;
+                -*)
+                    echo "usage: appmesh-auth.sh user-token [--with-refresh] [username]" >&2
+                    exit 2
+                    ;;
+                *)
+                    [[ -z "${user_token_name}" ]] || {
+                        echo "usage: appmesh-auth.sh user-token [--with-refresh] [username]" >&2
+                        exit 2
+                    }
+                    user_token_name=${user_token_arg}
+                    ;;
+            esac
+        done
+        request_user_token "${user_token_name}" "${user_token_with_refresh}"
         ;;
     print-initial-password)
         is_builtin_auth || { echo "The initial password is unavailable in external authentication mode" >&2; exit 1; }
@@ -1439,6 +1551,7 @@ case "${action}" in
         ;;
     *)
         echo "usage: appmesh-auth.sh {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password|add-user|delete-user}" >&2
+        echo "  user-token [--with-refresh] [username]  print the password-grant access token; --with-refresh adds offline_access and prints the full JSON token set for SDK use" >&2
         exit 2
         ;;
 esac

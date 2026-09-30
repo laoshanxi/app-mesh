@@ -25,6 +25,18 @@ OIDC:
   # sign-in of local users still works. Env override: APPMESH_AUTH_PASSWORD_FLOW.
   password_flow: true
 
+  # Whether the deployment issues refresh tokens (offline_access). When false,
+  # /appmesh/auth/config advertises "refresh_token": false and the launchers
+  # drop the refresh_token grant from Dex; sessions end at access-token expiry.
+  # Env override: APPMESH_AUTH_REFRESH_TOKEN.
+  refresh_token: true
+
+  # Maximum absolute lifetime of a refresh-token chain (Dex expiry.refreshTokens
+  # absoluteLifetime). Rotation does not extend it: after this span the user
+  # must sign in again. Idle expiry stays validIfNotUsedFor (168h in dex.yaml).
+  # Env override: APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME.
+  refresh_token_max_lifetime: 168h
+
   # RFC 9728 protected-resource identifier and dynamic audience target.
   resource_url: https://127.0.0.1:6060/appmesh
   resource_audience: appmesh-api

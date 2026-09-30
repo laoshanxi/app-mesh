@@ -364,16 +364,18 @@ impl AppMeshClient {
         *self.token_provider.lock().unwrap_or_else(|error| error.into_inner()) = provider;
     }
 
-    async fn prepare_bearer(&self) -> Result<Option<Arc<dyn TokenProvider>>> {
+    async fn prepare_bearer(&self) -> Result<Option<(Arc<dyn TokenProvider>, String)>> {
         let provider = self
             .token_provider
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone();
-        if let Some(provider) = provider.as_ref() {
-            self.req.handle_token_update(Some(provider.access_token().await?));
+        if let Some(provider) = provider {
+            let token = provider.access_token().await?;
+            self.req.handle_token_update(Some(token.clone()));
+            return Ok(Some((provider, token)));
         }
-        Ok(provider)
+        Ok(None)
     }
 
     async fn send(
@@ -385,20 +387,22 @@ impl AppMeshClient {
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>> {
-        let provider = self.prepare_bearer().await?;
-        let Some(provider) = provider else {
+        let Some((provider, sent_token)) = self.prepare_bearer().await? else {
             return self.req.send(method, path, body, headers, query, fail_on_error).await;
         };
 
         // Keep the first response available so a static/non-refreshable provider still
-        // reports the Engine's 401. Retry only safe, replayable methods.
+        // reports the Engine's 401. The body is a borrowed byte slice that the requester
+        // copies per send, so every request here is replayable; the retry gate is the
+        // provider's refresh grant (Python SDK parity: refresh once after a 401 when
+        // the request body can be re-sent). The rejected token is passed along so the
+        // provider can coalesce racing refreshes instead of issuing a second grant.
         let response = self
             .req
             .send(method.clone(), path, body, headers.clone(), query.clone(), false)
             .await?;
-        let replayable = method == Method::GET || method == Method::HEAD || method == Method::OPTIONS;
-        if response.status() == StatusCode::UNAUTHORIZED && replayable {
-            if let Ok(tokens) = provider.force_refresh().await {
+        if response.status() == StatusCode::UNAUTHORIZED && provider.can_refresh() {
+            if let Ok(tokens) = provider.refresh_access_token(&sent_token).await {
                 self.req.handle_token_update(Some(tokens.access_token));
                 return self.req.send(method, path, body, headers, query, fail_on_error).await;
             }

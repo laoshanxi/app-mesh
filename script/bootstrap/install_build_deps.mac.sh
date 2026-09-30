@@ -76,6 +76,19 @@ done
 # Install curl and ace from custom formulas
 TAP_PATH="$(brew --repo)/Library/Taps/laoshanxi/homebrew-custom-core/Formula"
 mkdir -p "$TAP_PATH"
+# GitHub runner images leave a bin/openssl link into an openssl@1.1 keg that
+# brew no longer tracks: `brew unlink openssl@1.1` reports "0 symlinks removed"
+# and leaves the link in place. The openssl@3 upgrade pulled in by the curl
+# formula below then fails its link step on that conflict, brew exits non-zero,
+# and set -e would abort this script before ace/boost are installed (CMake then
+# fails to find Boost). Unlink the keg, then remove the links that survive.
+brew unlink openssl@1.1 2>/dev/null || true
+BREW_BIN="$(brew --prefix)/bin"
+for link in "${BREW_BIN}"/*; do
+    case "$(readlink "${link}" 2>/dev/null)" in
+        *openssl@1.1*) echo "Removing stale link ${link}"; rm -f "${link}" ;;
+    esac
+done
 # Newer Homebrew refuses to load formulae from a tap it doesn't trust. This tap
 # is created by writing files directly (never `brew tap`-ed), so mark it trusted
 # before building from it. `brew trust` is a no-op on Homebrew versions without

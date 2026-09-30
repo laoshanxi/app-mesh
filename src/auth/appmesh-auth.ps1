@@ -14,7 +14,8 @@ param(
     [Parameter(Position = 1)]
     [string]$Username = "",
     [Parameter(Position = 2)]
-    [string]$Role = ""
+    [string]$Role = "",
+    [switch]$WithRefresh
 )
 
 Set-StrictMode -Version Latest
@@ -397,15 +398,48 @@ function Render-DexConfig {
     # The password database stays enabled, so browser sign-in keeps working.
     # Keep this in sync with the grantTypes rewrite in appmesh-auth.sh.
     $passwordFlow = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_PASSWORD_FLOW" $OidcConfig "password_flow" "true"
+    $passwordFlowDisabled = $false
     if ($passwordFlow -match '^(?i)(0|false|off|disabled)$') {
-        $updated = $content -replace '(?m)^  grantTypes: \["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"\]\r?$', '  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "client_credentials"]'
-        # A template drift must never silently keep a grant the operator disabled.
-        if ($updated -eq $content) { throw "The authentication configuration template grantTypes line does not match; cannot drop the password grant" }
-        $content = $updated
+        $passwordFlowDisabled = $true
     }
     elseif ($passwordFlow -notmatch '^(?i)(1|true)$') {
         # Keep this accepted set identical to the Engine's (OidcTokenVerifier.cpp).
         throw "APPMESH_AUTH_PASSWORD_FLOW must be true or false"
+    }
+    # Deployments without refresh tokens drop the refresh_token grant from the
+    # Dex grant types; sessions then end at access-token expiry. The Engine
+    # reads the same setting to advertise "refresh_token" in the auth config.
+    $refreshToken = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_REFRESH_TOKEN" $OidcConfig "refresh_token" "true"
+    $refreshTokenDisabled = $false
+    if ($refreshToken -match '^(?i)(0|false|off|disabled)$') {
+        $refreshTokenDisabled = $true
+    }
+    elseif ($refreshToken -notmatch '^(?i)(1|true)$') {
+        # Keep this accepted set identical to the Engine's (OidcTokenVerifier.cpp).
+        throw "APPMESH_AUTH_REFRESH_TOKEN must be true or false"
+    }
+    if ($passwordFlowDisabled -or $refreshTokenDisabled) {
+        $grants = '"authorization_code"'
+        if (-not $refreshTokenDisabled) { $grants += ', "refresh_token"' }
+        $grants += ', "urn:ietf:params:oauth:grant-type:device_code"'
+        if (-not $passwordFlowDisabled) { $grants += ', "password"' }
+        $grants += ', "client_credentials"'
+        $updated = $content -replace '(?m)^  grantTypes: \["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"\]\r?$', "  grantTypes: [$grants]"
+        # A template drift must never silently keep a grant the operator disabled.
+        if ($updated -eq $content) { throw "The authentication configuration template grantTypes line does not match; cannot drop the disabled grant" }
+        $content = $updated
+    }
+    # Absolute cap of a refresh-token chain (Dex expiry.refreshTokens
+    # absoluteLifetime); rotation does not extend it. Dex enforces it alone.
+    $refreshMaxLifetime = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME" $OidcConfig "refresh_token_max_lifetime" "168h"
+    if ($refreshMaxLifetime -notmatch '^[0-9]+(s|m|h)$') {
+        throw "APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME must be a duration like 30m or 168h"
+    }
+    if ($refreshMaxLifetime -ne "168h") {
+        $renderedLifetime = ConvertTo-YamlSingleQuotedScalar $refreshMaxLifetime
+        $updated = $content -replace '(?m)^    absoluteLifetime: 168h\r?$', "    absoluteLifetime: $renderedLifetime"
+        if ($updated -eq $content) { throw "The authentication configuration template absoluteLifetime line does not match; cannot set the refresh-token maximum lifetime" }
+        $content = $updated
     }
     # The administrative gRPC listener serves the dexuser administration UI and
     # is optional: it is rendered only when the mutual-TLS material is present,
@@ -504,11 +538,26 @@ function Request-AutomationToken {
 }
 
 function Request-UserToken {
-    param([string]$User)
+    param([string]$User, [switch]$WithRefresh)
     Assert-BuiltinOwner
     if (-not $User) { $User = $AdminEmail }
+    $scope = "openid audience:server:client_id:appmesh-api"
+    if ($WithRefresh) {
+        # Fail fast (before the password read) when the deployment issues no
+        # refresh tokens, instead of silently returning a set without one.
+        # Same setting and value set as the Render-DexConfig grant rewrite.
+        $refreshSetting = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_REFRESH_TOKEN" $OidcConfig "refresh_token" "true"
+        if ($refreshSetting -match '^(?i)(0|false|off|disabled)$') {
+            throw "Refresh tokens are disabled for this deployment (APPMESH_AUTH_REFRESH_TOKEN / oidc.yaml refresh_token); user-token -WithRefresh is unavailable"
+        }
+        elseif ($refreshSetting -notmatch '^(?i)(1|true)$') {
+            throw "APPMESH_AUTH_REFRESH_TOKEN must be true or false"
+        }
+        $scope = "$scope offline_access"
+    }
     # The password comes from standard input, never from arguments or
-    # environment; only the access token is printed.
+    # environment; only the access token is printed, unless -WithRefresh asks
+    # for the full token set.
     $password = [Console]::In.ReadLine()
     if ([string]::IsNullOrEmpty($password)) { throw "Provide the password on standard input" }
     if ($null -ne [Console]::In.ReadLine()) { throw "The password must be a single line" }
@@ -529,15 +578,35 @@ function Request-UserToken {
         "--data-urlencode", "grant_type=password",
         "--data-urlencode", "username=$User",
         "--data-urlencode", "password=$password",
-        "--data-urlencode", "scope=openid audience:server:client_id:appmesh-api",
+        "--data-urlencode", "scope=$scope",
         "--url", ($accessUrl.TrimEnd('/') + "/token")
     )
     $response = (& curl.exe @curlArguments) -join ""
     $password = $null
     if ($LASTEXITCODE -ne 0) { throw "The token request failed" }
-    $token = ($response | ConvertFrom-Json).access_token
+    $grant = $response | ConvertFrom-Json
     $response = $null
+    # Strict mode makes a missing JSON property throw before the checks below;
+    # probe through PSObject so the messages stay the shell port's.
+    $grantFields = $grant.PSObject.Properties
+    $token = if ($grantFields["access_token"]) { $grant.access_token } else { $null }
     if (-not $token) { throw "The token response has no access_token" }
+    if ($WithRefresh) {
+        $refreshToken = if ($grantFields["refresh_token"]) { $grant.refresh_token } else { $null }
+        if (-not $refreshToken) { throw "The token response has no refresh_token" }
+        # The shell port prints expires_in:0 when the grant omits the field.
+        $expiresIn = if ($grantFields["expires_in"]) { $grant.expires_in } else { 0 }
+        $tokenSet = [ordered]@{
+            access_token  = $token
+            refresh_token = $refreshToken
+            expires_in    = $expiresIn
+            token_type    = "Bearer"
+        }
+        $grant = $null
+        [Console]::Out.Write(($tokenSet | ConvertTo-Json -Compress))
+        return
+    }
+    $grant = $null
     [Console]::Out.Write($token)
 }
 
@@ -898,14 +967,14 @@ try {
             Test-AdminUiHealth
         }
         "automation-token" { Request-AutomationToken }
-        "user-token" { Request-UserToken $Username }
+        "user-token" { Request-UserToken -User $Username -WithRefresh:$WithRefresh }
         "print-initial-password" { Print-InitialPassword }
         "rotate-initial-password" { Rotate-InitialPassword }
         "set-initial-password" { Set-InitialPassword }
         "forget-initial-password" { Forget-InitialPassword }
         "add-user" { Add-User $Username $Role }
         "delete-user" { Remove-User $Username }
-        default { throw "usage: appmesh-auth.ps1 {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password|add-user|delete-user} [username] [role]" }
+        default { throw "usage: appmesh-auth.ps1 {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password|add-user|delete-user} [username] [role] ; user-token accepts -WithRefresh to add offline_access and print the full JSON token set for SDK use" }
     }
 } catch {
     Fail $_.Exception.Message

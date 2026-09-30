@@ -1,6 +1,7 @@
 package appmesh
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -22,6 +23,8 @@ type Requester interface {
 	handleTokenUpdate(token string)
 	setToken(token string)
 	getAccessToken() string
+	setTokenProvider(provider TokenProvider)
+	getTokenProvider() TokenProvider
 	setForwardTo(forwardTo string)
 	getForwardTo() string
 }
@@ -33,6 +36,8 @@ type HTTPRequester struct {
 
 	forwardingHost *atomic.String
 	accessToken    atomic.String
+	tokenProviderHolder
+	refreshMu sync.Mutex // serializes 401-triggered refreshes across concurrent requests
 }
 
 // REST request
@@ -41,10 +46,68 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 }
 
 // SendContext performs the REST request with the provided context controlling cancellation.
+//
+// When a refresh-capable TokenProvider is attached and the caller did not set an
+// explicit Authorization header, a 401 triggers exactly one RefreshAccessToken
+// call and one request replay (mirroring the Python SDK); a second 401 is
+// returned like any other status and surfaced by the client as an *APIError.
 func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
-	resp, err := h.doContext(ctx, method, apiPath, queries, headers, body)
+	_, callerAuth := headers["Authorization"]
+	provider := h.getTokenProvider()
+	refreshable := provider != nil && provider.CanRefresh() && !callerAuth
+
+	token := ""
+	if !callerAuth {
+		var err error
+		token, err = h.resolveAccessToken()
+		if err != nil {
+			return 0, nil, nil, err
+		}
+	}
+
+	// Buffer the body only when a 401 refresh-retry may replay it. Streaming
+	// bodies (e.g. the file-upload pipe) are not replayable and keep the
+	// single-attempt path.
+	var bodyBytes []byte
+	replayable := false
+	if refreshable {
+		if body == nil {
+			replayable = true
+		} else {
+			switch body.(type) {
+			case *bytes.Buffer, *bytes.Reader, *strings.Reader:
+				var err error
+				bodyBytes, err = io.ReadAll(body)
+				if err != nil {
+					return 0, nil, nil, fmt.Errorf("failed to buffer request body: %w", err)
+				}
+				replayable = true
+			}
+		}
+	}
+
+	sendBody := body
+	if bodyBytes != nil {
+		sendBody = bytes.NewReader(bodyBytes)
+	}
+	resp, err := h.doContext(ctx, method, apiPath, queries, headers, sendBody, token)
 	if err != nil {
 		return 0, nil, nil, err
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized && replayable {
+		resp.Body.Close()
+		var retryBody io.Reader
+		if body != nil {
+			retryBody = bytes.NewReader(bodyBytes)
+		}
+		resp, err = h.retryWithRefreshedToken(ctx, provider, token, method, apiPath, queries, headers, retryBody)
+		if err != nil {
+			if resp == nil {
+				return 0, nil, nil, err
+			}
+			return resp.StatusCode, nil, resp.Header, err
+		}
 	}
 
 	// Ensure response body is always closed
@@ -59,10 +122,55 @@ func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath 
 	return resp.StatusCode, data, resp.Header, nil
 }
 
+// retryWithRefreshedToken performs the single 401 refresh-retry: the provider
+// replaces the rejected token and the request is replayed exactly once with it.
+// Concurrent 401s are serialized; when another request already rotated the
+// token while waiting, that token is reused instead of refreshing twice
+// (provider-side locking is still expected, as in the Python SDK).
+func (h *HTTPRequester) retryWithRefreshedToken(ctx context.Context, provider TokenProvider, rejectedToken string, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (*http.Response, error) {
+	h.refreshMu.Lock()
+	newToken, err := provider.AccessToken()
+	if err == nil && newToken != "" && strings.TrimSpace(newToken) != rejectedToken {
+		// A concurrent request already refreshed; reuse its token.
+	} else {
+		newToken, err = provider.RefreshAccessToken(rejectedToken)
+	}
+	h.refreshMu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("token provider failed to refresh a rejected access token: %w", err)
+	}
+	newToken = strings.TrimSpace(newToken)
+	if newToken == "" {
+		return nil, fmt.Errorf("token provider returned an empty access token on refresh")
+	}
+	return h.doContext(ctx, method, apiPath, queries, headers, body, newToken)
+}
+
+// resolveAccessToken returns the bearer for a request: an attached provider is
+// consulted first and wins over the static in-memory token.
+func (h *HTTPRequester) resolveAccessToken() (string, error) {
+	if provider := h.getTokenProvider(); provider != nil {
+		token, err := provider.AccessToken()
+		if err != nil {
+			return "", fmt.Errorf("token provider failed to supply an access token: %w", err)
+		}
+		return strings.TrimSpace(token), nil
+	}
+	return h.accessToken.Load(), nil
+}
+
 // getStream performs a GET request and returns the response body as a stream
 // without buffering it in memory. The caller must close the returned body.
 func (h *HTTPRequester) getStream(apiPath string, queries url.Values, headers map[string]string) (int, io.ReadCloser, http.Header, error) {
-	resp, err := h.doContext(context.Background(), http.MethodGet, apiPath, queries, headers, nil)
+	token := ""
+	if _, callerAuth := headers["Authorization"]; !callerAuth {
+		var err error
+		token, err = h.resolveAccessToken()
+		if err != nil {
+			return 0, nil, nil, err
+		}
+	}
+	resp, err := h.doContext(context.Background(), http.MethodGet, apiPath, queries, headers, nil, token)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -71,7 +179,7 @@ func (h *HTTPRequester) getStream(apiPath string, queries url.Values, headers ma
 
 // doContext builds and executes the HTTP request, returning the response with
 // its body unread. Callers own resp.Body and must close it.
-func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (*http.Response, error) {
+func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string) (*http.Response, error) {
 	// Validate inputs
 	if h.httpClient == nil {
 		return nil, fmt.Errorf("http client is nil")
@@ -91,8 +199,8 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 
 	// Apply implicit auth only when the caller did not provide an explicit Authorization header.
 	if _, hasAuth := headers["Authorization"]; !hasAuth {
-		if accessToken := h.accessToken.Load(); accessToken != "" {
-			req.Header.Set("Authorization", "Bearer "+accessToken)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
 		}
 	}
 
@@ -144,10 +252,24 @@ func (h *HTTPRequester) Close() {
 func (h *HTTPRequester) handleTokenUpdate(token string) {
 	h.accessToken.Store(token)
 }
+
+// setToken stores a static token and detaches any provider: SetToken replaces
+// an attached provider with a static one (mirroring Python set_bearer_token).
 func (h *HTTPRequester) setToken(token string) {
 	h.accessToken.Store(token)
+	h.setTokenProvider(nil)
 }
+
+// getAccessToken consults the attached provider first; it wins over the
+// static in-memory token. A provider error yields an empty token.
 func (h *HTTPRequester) getAccessToken() string {
+	if provider := h.getTokenProvider(); provider != nil {
+		token, err := provider.AccessToken()
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(token)
+	}
 	return h.accessToken.Load()
 }
 func (h *HTTPRequester) setForwardTo(forwardTo string) {
@@ -184,15 +306,18 @@ func waitDemuxResponse(ctx context.Context, ch chan *Response, demux *MessageDem
 }
 
 // TCPRequester handles TCP requests.
+// 401 refresh-retry is not supported here: auth failures surface only as an
+// HTTP status in the msgpack response, after the request was consumed.
 type TCPRequester struct {
 	*TCPConnection
 	baseURL url.URL
 
 	forwardingHost atomic.String
 	token          atomic.String
-	psk            []byte
-	demuxerMu      sync.Mutex
-	demuxer        *MessageDemuxer
+	tokenProviderHolder
+	psk       []byte
+	demuxerMu sync.Mutex
+	demuxer   *MessageDemuxer
 }
 
 // Send performs a REST-like request over TCP.
@@ -216,7 +341,7 @@ func (t *TCPRequester) SendContext(ctx context.Context, method, apiPath string, 
 		return 0, nil, nil, err
 	}
 
-	token := t.token.Load()
+	token := t.getAccessToken()
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -343,10 +468,24 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 func (t *TCPRequester) handleTokenUpdate(token string) {
 	t.token.Store(token)
 }
+
+// setToken stores a static token and detaches any provider (mirrors Python
+// set_bearer_token).
 func (t *TCPRequester) setToken(token string) {
 	t.token.Store(token)
+	t.setTokenProvider(nil)
 }
+
+// getAccessToken consults the attached provider first; it wins over the
+// static in-memory token. A provider error yields an empty token.
 func (t *TCPRequester) getAccessToken() string {
+	if provider := t.getTokenProvider(); provider != nil {
+		token, err := provider.AccessToken()
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(token)
+	}
 	return t.token.Load()
 }
 func (t *TCPRequester) setForwardTo(forwardTo string) {
@@ -383,6 +522,7 @@ type WSSRequester struct {
 
 	forwardingHost atomic.String
 	token          atomic.String
+	tokenProviderHolder
 	psk            []byte
 	demuxerMu      sync.Mutex
 	demuxer        *MessageDemuxer
@@ -581,10 +721,26 @@ func (w *WSSRequester) getDemuxer() *MessageDemuxer {
 func (w *WSSRequester) handleTokenUpdate(token string) {
 	w.token.Store(token)
 }
+
+// setToken stores a static token and detaches any provider (mirrors Python
+// set_bearer_token).
 func (w *WSSRequester) setToken(token string) {
 	w.token.Store(token)
+	w.setTokenProvider(nil)
 }
+
+// getAccessToken consults the attached provider first; it wins over the
+// static in-memory token. A provider error yields an empty token.
+// ensureConnected calls this before each request, so a provider that rotates
+// its token (e.g. proactive near-expiry refresh) triggers a reconnection.
 func (w *WSSRequester) getAccessToken() string {
+	if provider := w.getTokenProvider(); provider != nil {
+		token, err := provider.AccessToken()
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(token)
+	}
 	return w.token.Load()
 }
 func (w *WSSRequester) setForwardTo(forwardTo string) {

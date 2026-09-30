@@ -2,7 +2,10 @@
 
 #[cfg(test)]
 mod tests {
-    use appmesh::{AppMeshClient, Application, ClientBuilder};
+    use appmesh::{
+        AppMeshClient, Application, ClientBuilder, OAuthClient, StaticAccessTokenProvider,
+        TokenSetProviderOptions,
+    };
     use mockito::{Matcher, Server, ServerGuard};
     use serde_json::json;
     use std::sync::Arc;
@@ -29,6 +32,189 @@ mod tests {
         // Overwrite
         client.set_token("test-set-token-value-2");
         assert_eq!(client.get_access_token(), Some("test-set-token-value-2".to_string()));
+    }
+
+    // -- Token provider 401 retry -------------------------------------------
+
+    /// Provider stub that always holds a refresh grant; force_refresh mints "new-token".
+    struct RefreshingProvider;
+
+    #[async_trait::async_trait]
+    impl appmesh::TokenProvider for RefreshingProvider {
+        async fn access_token(&self) -> Result<String, appmesh::AppMeshError> {
+            Ok("old-token".into())
+        }
+
+        fn can_refresh(&self) -> bool {
+            true
+        }
+
+        async fn force_refresh(&self) -> Result<appmesh::TokenSet, appmesh::AppMeshError> {
+            Ok(appmesh::TokenSet {
+                access_token: "new-token".into(),
+                refresh_token: Some("refresh".into()),
+                expires_at: None,
+                refresh_at: None,
+                token_type: "Bearer".into(),
+                scope: None,
+            })
+        }
+
+        async fn revoke(&self) -> Result<bool, appmesh::AppMeshError> {
+            Ok(false)
+        }
+
+        fn snapshot(&self) -> Option<appmesh::TokenSet> {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn test_401_retry_replays_body_after_refresh() {
+        // Python SDK parity: a 401 on a request with a replayable body (here a
+        // POST with a JSON payload) triggers exactly one provider refresh, then
+        // the request is re-sent once with the fresh token.
+        let mut server = Server::new_async().await;
+        let rejected = server
+            .mock("POST", "/appmesh/config")
+            .match_header("authorization", "Bearer old-token")
+            .with_status(401)
+            .expect(1)
+            .create_async()
+            .await;
+        let accepted = server
+            .mock("POST", "/appmesh/config")
+            .match_header("authorization", "Bearer new-token")
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        client.set_token_provider(Some(Arc::new(RefreshingProvider)));
+        client.set_config(json!({ "k": "v" })).await.unwrap();
+
+        rejected.assert_async().await;
+        accepted.assert_async().await;
+        assert_eq!(client.get_access_token(), Some("new-token".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_401_static_provider_does_not_retry() {
+        // StaticAccessTokenProvider keeps can_refresh=false: the 401 surfaces
+        // unchanged and the request is not replayed.
+        let mut server = Server::new_async().await;
+        let rejected = server
+            .mock("POST", "/appmesh/config")
+            .with_status(401)
+            .with_body("unauthorized")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        client.set_token_provider(Some(Arc::new(StaticAccessTokenProvider::new("static-token").unwrap())));
+        let error = client.set_config(json!({ "k": "v" })).await.unwrap_err();
+        assert!(
+            matches!(error, appmesh::AppMeshError::RequestFailed { status, .. } if status.as_u16() == 401),
+            "got: {error}"
+        );
+        rejected.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_401_retry_refreshes_via_from_token_set_provider() {
+        // End-to-end: a from_token_set provider backs the Engine 401 retry.
+        // First call: old-token is rejected, the provider posts the refresh
+        // grant (grant_type=refresh_token + client_id), installs the rotated
+        // pair, and the replay succeeds. Second call: the rotated refresh
+        // token (refresh-2) must be the one sent to the token endpoint.
+        let mut server = Server::new_async().await;
+        let token_url = format!("{}/auth/token", server.url());
+
+        let first_refresh = server
+            .mock("POST", "/auth/token")
+            .match_body(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("grant_type".into(), "refresh_token".into()),
+                Matcher::UrlEncoded("refresh_token".into(), "refresh-1".into()),
+                Matcher::UrlEncoded("client_id".into(), "appmesh-cli".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"access_token":"new-token","refresh_token":"refresh-2","token_type":"Bearer","expires_in":3600}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let second_refresh = server
+            .mock("POST", "/auth/token")
+            .match_body(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("grant_type".into(), "refresh_token".into()),
+                Matcher::UrlEncoded("refresh_token".into(), "refresh-2".into()),
+                Matcher::UrlEncoded("client_id".into(), "appmesh-cli".into()),
+            ]))
+            .with_status(200)
+            // No refresh_token in the response: the grant stays refresh-2.
+            .with_body(r#"{"access_token":"newer-token","token_type":"Bearer","expires_in":3600}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let rejected_old = server
+            .mock("POST", "/appmesh/config")
+            .match_header("authorization", "Bearer old-token")
+            .with_status(401)
+            .expect(1)
+            .create_async()
+            .await;
+        let accepted_first = server
+            .mock("POST", "/appmesh/config")
+            .match_header("authorization", "Bearer new-token")
+            .match_body(Matcher::Json(json!({ "k": "v1" })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+        let rejected_rotated = server
+            .mock("POST", "/appmesh/config")
+            .match_header("authorization", "Bearer new-token")
+            .match_body(Matcher::Json(json!({ "k": "v2" })))
+            .with_status(401)
+            .expect(1)
+            .create_async()
+            .await;
+        let accepted_second = server
+            .mock("POST", "/appmesh/config")
+            .match_header("authorization", "Bearer newer-token")
+            .match_body(Matcher::Json(json!({ "k": "v2" })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let provider = OAuthClient::from_token_set(
+            token_url,
+            "old-token",
+            "refresh-1",
+            TokenSetProviderOptions::default(),
+        )
+        .unwrap();
+        let client = create_test_client(&server);
+        client.set_token_provider(Some(Arc::new(provider)));
+
+        client.set_config(json!({ "k": "v1" })).await.unwrap();
+        assert_eq!(client.get_access_token(), Some("new-token".to_string()));
+
+        client.set_config(json!({ "k": "v2" })).await.unwrap();
+        assert_eq!(client.get_access_token(), Some("newer-token".to_string()));
+
+        rejected_old.assert_async().await;
+        accepted_first.assert_async().await;
+        rejected_rotated.assert_async().await;
+        accepted_second.assert_async().await;
+        first_refresh.assert_async().await;
+        second_refresh.assert_async().await;
     }
 
     #[tokio::test]

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -73,12 +75,14 @@ func (f *fakeRequester) SendContext(ctx context.Context, method string, apiPath 
 	return f.status, []byte(f.body), f.header, nil
 }
 
-func (f *fakeRequester) Close()                   {}
-func (f *fakeRequester) handleTokenUpdate(string) {}
-func (f *fakeRequester) setToken(string)          {}
-func (f *fakeRequester) getAccessToken() string   { return "" }
-func (f *fakeRequester) setForwardTo(string)      {}
-func (f *fakeRequester) getForwardTo() string     { return "" }
+func (f *fakeRequester) Close()                          {}
+func (f *fakeRequester) handleTokenUpdate(string)        {}
+func (f *fakeRequester) setToken(string)                 {}
+func (f *fakeRequester) getAccessToken() string          { return "" }
+func (f *fakeRequester) setTokenProvider(TokenProvider)  {}
+func (f *fakeRequester) getTokenProvider() TokenProvider { return nil }
+func (f *fakeRequester) setForwardTo(string)             {}
+func (f *fakeRequester) getForwardTo() string            { return "" }
 
 func newFakeClient(status int, body string) (*AppMeshClient, *fakeRequester) {
 	fake := &fakeRequester{status: status, body: body}
@@ -217,4 +221,169 @@ func TestJSONBodyContentType(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.sent, 1)
 	assert.Equal(t, "", fake.sent[0].header["Content-Type"])
+}
+
+// fakeRefreshProvider is a refresh-capable TokenProvider that records every
+// RefreshAccessToken call (count and rejected token) and rotates its token.
+type fakeRefreshProvider struct {
+	mu           sync.Mutex
+	token        string
+	refreshCount int
+	rejected     []string
+}
+
+func (f *fakeRefreshProvider) AccessToken() (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.token, nil
+}
+
+func (f *fakeRefreshProvider) CanRefresh() bool { return true }
+
+func (f *fakeRefreshProvider) RefreshAccessToken(rejectedToken string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refreshCount++
+	f.rejected = append(f.rejected, rejectedToken)
+	f.token = "fresh-token"
+	return f.token, nil
+}
+
+func (f *fakeRefreshProvider) Clear() {}
+
+// A 401 against a refresh-capable provider triggers exactly one refresh and one
+// replay; the retried request carries the new bearer (mirroring the Python SDK).
+func TestTokenProviderRefreshesOn401(t *testing.T) {
+	var mu sync.Mutex
+	var authHeaders []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		authHeaders = append(authHeaders, r.Header.Get("Authorization"))
+		attempt := len(authHeaders)
+		mu.Unlock()
+		if attempt == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"BaseConfig":{"LogLevel":"DEBUG"}}`))
+	}))
+	defer server.Close()
+
+	provider := &fakeRefreshProvider{token: "stale-token"}
+	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: provider})
+	require.NoError(t, err)
+	defer client.Close()
+
+	// SetLogLevel POSTs a replayable bytes.Buffer JSON body.
+	level, err := client.SetLogLevel("DEBUG")
+	require.NoError(t, err)
+	assert.Equal(t, "DEBUG", level)
+
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	assert.Equal(t, 1, provider.refreshCount, "refresh must happen exactly once")
+	assert.Equal(t, []string{"stale-token"}, provider.rejected)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, authHeaders, 2)
+	assert.Equal(t, "Bearer stale-token", authHeaders[0])
+	assert.Equal(t, "Bearer fresh-token", authHeaders[1])
+}
+
+// A static provider cannot refresh, so a 401 is returned without any retry.
+func TestStaticTokenProviderDoesNotRetryOn401(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	provider, err := NewStaticTokenProvider("static-token")
+	require.NoError(t, err)
+	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: provider})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.ListLabels()
+	require.Error(t, err)
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusUnauthorized, apiErr.StatusCode)
+	assert.Equal(t, 1, requests, "a static provider must not trigger a retry")
+}
+
+// failingRefreshProvider rejects every refresh, e.g. after invalid_grant.
+type failingRefreshProvider struct{ token string }
+
+func (f *failingRefreshProvider) AccessToken() (string, error) { return f.token, nil }
+func (f *failingRefreshProvider) CanRefresh() bool             { return true }
+func (f *failingRefreshProvider) RefreshAccessToken(rejectedToken string) (string, error) {
+	return "", errors.New("refresh token rejected (invalid_grant)")
+}
+func (f *failingRefreshProvider) Clear() {}
+
+// A failed 401 refresh must surface as an error, not a nil-response panic.
+func TestTokenProviderRefreshFailureReturnsError(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: &failingRefreshProvider{token: "stale-token"}})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.ListLabels()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid_grant")
+	assert.Equal(t, 1, requests, "a failed refresh must not replay the request")
+}
+
+func TestNewStaticTokenProviderRejectsEmptyToken(t *testing.T) {
+	for _, token := range []string{"", "   "} {
+		provider, err := NewStaticTokenProvider(token)
+		require.Error(t, err, "token %q must be rejected", token)
+		assert.Nil(t, provider)
+	}
+
+	provider, err := NewStaticTokenProvider("  padded-token  ")
+	require.NoError(t, err)
+	token, err := provider.AccessToken()
+	require.NoError(t, err)
+	assert.Equal(t, "padded-token", token)
+	assert.False(t, provider.CanRefresh())
+
+	provider.Clear()
+	_, err = provider.AccessToken()
+	require.Error(t, err, "a cleared provider must not yield a token")
+}
+
+// SetToken replaces an attached provider with a static token, so a later 401
+// is not refreshed even if the previous provider could refresh.
+func TestSetTokenReplacesProvider(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	provider := &fakeRefreshProvider{token: "stale-token"}
+	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: provider})
+	require.NoError(t, err)
+	defer client.Close()
+
+	client.SetToken("static-token")
+	_, err = client.ListLabels()
+	require.Error(t, err)
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusUnauthorized, apiErr.StatusCode)
+	assert.Equal(t, 1, requests)
+	assert.Equal(t, 0, provider.refreshCount)
 }

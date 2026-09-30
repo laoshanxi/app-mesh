@@ -48,26 +48,62 @@ class OAuthClient(TokenProvider):
         ssl_verify: Union[bool, str] = True,
         timeout: Optional[Tuple[float, float]] = None,
         allow_plain_http: bool = False,
+        refresh_token: bool = True,
     ):
         if not client_id:
             raise ValueError("client_id is required")
         if not access_url:
             raise ValueError("access_url is required")
 
+        selected_scopes = self._DEFAULT_SCOPES if scopes is None else scopes
+        self._bootstrap(
+            appmesh_client=appmesh_client,
+            client_id=client_id,
+            ssl_verify=ssl_verify,
+            timeout=timeout,
+            issuer=self._normalize_base_url(issuer, "issuer", allow_plain_http),
+            access_url=self._normalize_base_url(access_url, "access_url", allow_plain_http),
+            audience=audience,
+            scopes=selected_scopes.split() if isinstance(selected_scopes, str) else selected_scopes,
+            refresh_token=refresh_token,
+        )
+        self.metadata = self._discover()
+
+    def _bootstrap(
+        self,
+        appmesh_client: Optional[AppMeshClient],
+        client_id: str,
+        ssl_verify: Union[bool, str],
+        timeout: Optional[Tuple[float, float]],
+        issuer: Optional[str] = None,
+        access_url: Optional[str] = None,
+        audience: Optional[str] = None,
+        scopes: Iterable[str] = (),
+        refresh_token: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self.appmesh_client = appmesh_client
-        self.issuer = self._normalize_base_url(issuer, "issuer", allow_plain_http)
-        self.access_url = self._normalize_base_url(access_url, "access_url", allow_plain_http)
+        self.issuer = issuer
+        self.access_url = access_url
         self.client_id = client_id
         self.audience = audience
-        selected_scopes = self._DEFAULT_SCOPES if scopes is None else scopes
-        self.scopes = tuple(selected_scopes.split() if isinstance(selected_scopes, str) else selected_scopes)
+        self.scopes = tuple(scopes)
+        # When the Engine advertises refresh_token=false, do not request the
+        # offline_access scope so the service issues no refresh token.
+        self.refresh_token = bool(refresh_token)
         # The authentication service and Engine are independent TLS peers.
         # Do not inherit the Engine CA. The caller selects trust roots here.
         self.ssl_verify = self._validate_ssl_verify(ssl_verify)
-        self.timeout = timeout or appmesh_client.request_timeout
+        if timeout is not None:
+            self.timeout = timeout
+        elif appmesh_client is not None:
+            self.timeout = appmesh_client.request_timeout
+        else:
+            self.timeout = None
         self._lock = threading.RLock()
         self.session = requests.Session()
-        self.metadata = self._discover()
+        self.metadata: Dict[str, Any] = metadata or {}
+        self._token_endpoint_override: Optional[str] = None
         self._tokens: Dict[str, Any] = {}
         self._refresh_at: Optional[float] = None
         self._grant_kind: Optional[str] = None
@@ -97,7 +133,56 @@ class OAuthClient(TokenProvider):
             audience=config.get("audience"),
             scopes=scopes or config.get("scopes"),
             ssl_verify=ssl_verify,
+            refresh_token=config.get("refresh_token", True),
         )
+
+    @classmethod
+    def from_token_set(
+        cls,
+        token_url: str,
+        client_id: str = "appmesh-cli",
+        access_token: Optional[str] = None,
+        refresh_token: Optional[str] = None,
+        expires_in: Optional[float] = None,
+        appmesh_client: Optional[AppMeshClient] = None,
+        ssl_verify: Union[bool, str] = True,
+        timeout: Optional[Tuple[float, float]] = None,
+    ) -> "OAuthClient":
+        """Construct a refresh-only provider from a caller-supplied token pair.
+
+        The token endpoint is explicit, so no issuer discovery is performed. The
+        endpoint must use HTTPS, or plain HTTP only on a loopback host. The provider
+        refreshes the access token proactively before expiry (when ``expires_in`` is
+        known) and on demand via :meth:`refresh_access_token` after an Engine 401.
+        When the token response carries a new refresh token it replaces the stored
+        one; otherwise the previous refresh token stays valid and is kept.
+        """
+        endpoint = cls._normalize_base_url(token_url, "token_url")
+        if not client_id:
+            raise ValueError("client_id is required")
+        if not isinstance(access_token, str) or not access_token:
+            raise ValueError("access_token is required")
+        if not isinstance(refresh_token, str) or not refresh_token:
+            raise ValueError("refresh_token is required")
+
+        instance = cls.__new__(cls)
+        instance._bootstrap(
+            appmesh_client=appmesh_client,
+            client_id=client_id,
+            ssl_verify=ssl_verify,
+            timeout=timeout,
+            metadata={"token_endpoint": endpoint},
+        )
+        instance._token_endpoint_override = endpoint
+        tokens: Dict[str, Any] = {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "refresh_token": refresh_token,
+        }
+        if expires_in is not None:
+            tokens["expires_in"] = expires_in
+        instance._install(tokens, grant_kind="refresh_token")
+        return instance
 
     @property
     def tokens(self) -> Dict[str, Any]:
@@ -205,6 +290,8 @@ class OAuthClient(TokenProvider):
     ) -> str:
         selected = self.scopes if scopes is None else scopes
         requested = selected.split() if isinstance(selected, str) else list(selected)
+        if not self.refresh_token:
+            requested = [scope for scope in requested if scope != "offline_access"]
         if require_openid and "openid" not in requested:
             requested.insert(0, "openid")
         if include_audience and self.audience:
@@ -264,7 +351,7 @@ class OAuthClient(TokenProvider):
                 raise OAuthError("The authentication service returned an invalid access-token lifetime") from exc
             if lifetime <= 0:
                 raise OAuthError("The authentication service returned an expired access token")
-            margin = min(lifetime / 2.0, max(5.0, min(60.0, lifetime * 0.1)))
+            margin = max(30.0, lifetime * 0.1)
             refresh_at = time.monotonic() + lifetime - margin
 
         with self._lock:
@@ -272,7 +359,8 @@ class OAuthClient(TokenProvider):
             self._refresh_at = refresh_at
             if grant_kind is not None:
                 self._grant_kind = grant_kind
-            self.appmesh_client.set_token_provider(self)
+            if self.appmesh_client is not None:
+                self.appmesh_client.set_token_provider(self)
             return dict(self._tokens)
 
     @property
@@ -432,9 +520,15 @@ class OAuthClient(TokenProvider):
             id_token_validator(id_token, expected_nonce, dict(self.metadata))
         return self._install(tokens, grant_kind="authorization_code")
 
+    def _token_request_endpoint(self) -> str:
+        """Resolve the token endpoint, explicit or discovered."""
+        if self._token_endpoint_override is not None:
+            return self._token_endpoint_override
+        return self._access_endpoint(self.metadata["token_endpoint"])
+
     def _exchange_authorization_code(self, code: str, redirect_uri: str, code_verifier: str) -> Dict[str, Any]:
         return self._post_form(
-            self._access_endpoint(self.metadata["token_endpoint"]),
+            self._token_request_endpoint(),
             {
                 "grant_type": "authorization_code",
                 "client_id": self.client_id,
@@ -483,7 +577,7 @@ class OAuthClient(TokenProvider):
             time.sleep(min(interval, max(deadline - time.monotonic(), 0)))
             try:
                 tokens = self._post_form(
-                    self._access_endpoint(self.metadata["token_endpoint"]),
+                    self._token_request_endpoint(),
                     {
                         "grant_type": self._DEVICE_GRANT,
                         "client_id": self.client_id,
@@ -511,14 +605,21 @@ class OAuthClient(TokenProvider):
         if not refresh_token:
             raise OAuthError("No refresh token is available")
         previous_refresh_token = refresh_token
-        tokens = self._post_form(
-            self._access_endpoint(self.metadata["token_endpoint"]),
-            {
-                "grant_type": "refresh_token",
-                "client_id": self.client_id,
-                "refresh_token": refresh_token,
-            },
-        )
+        try:
+            tokens = self._post_form(
+                self._token_request_endpoint(),
+                {
+                    "grant_type": "refresh_token",
+                    "client_id": self.client_id,
+                    "refresh_token": refresh_token,
+                },
+            )
+        except OAuthError as exc:
+            # invalid_grant means the refresh token is dead; drop all token
+            # state. Other errors are transient, so the state is kept.
+            if str(exc).split(":", 1)[0] == "invalid_grant":
+                self.clear()
+            raise
         if not tokens.get("refresh_token"):
             tokens["refresh_token"] = previous_refresh_token
         return self._install(tokens, grant_kind=self._grant_kind)
@@ -563,7 +664,7 @@ class OAuthClient(TokenProvider):
             self._refresh_at = None
             self._grant_kind = None
             self._pending_authorizations = {}
-            if self.appmesh_client.token_provider is self:
+            if self.appmesh_client is not None and self.appmesh_client.token_provider is self:
                 self.appmesh_client.clear_bearer_token()
 
     def close(self) -> None:
@@ -572,7 +673,7 @@ class OAuthClient(TokenProvider):
             if self.session:
                 self.session.close()
                 self.session = None
-            if self.appmesh_client.token_provider is self:
+            if self.appmesh_client is not None and self.appmesh_client.token_provider is self:
                 access_token = self._tokens.get("access_token")
                 if access_token:
                     self.appmesh_client.set_bearer_token(access_token)

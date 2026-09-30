@@ -16,12 +16,13 @@ commands, and [Install](Install.md) for deployment procedures.
 | Choose my own administrator password | Pipe it to `set-initial-password`, then restart | [Choosing your own password](#choosing-your-own-administrator-password) |
 | Set the password when a container starts | Mount a secret file and set `APPMESH_ADMIN_PASSWORD_FILE` | [Container first start](#container-first-start) |
 | Replace a leaked or lost password | `rotate-initial-password`, then restart | [Rotating and forgetting](#rotating-recovering-and-forgetting) |
-| Get a token for CI or an SDK | `automation-token` (machine) or `user-token` (user) | [Getting a token](#getting-a-token-for-sdk-and-ci) |
+| Get a token for CI or an SDK | `automation-token` (machine), `user-token` (user), or `user-token --with-refresh` (token set for a built-in SDK refresh provider) | [Getting a token](#getting-a-token-for-sdk-and-ci) |
 | Manage users, clients, and sessions | Open the administration UI on `http://127.0.0.1:6064` | [Administration UI](#administration-ui) |
 | Add another user | `add-user` with the password on standard input | [Adding a user](#adding-a-user) |
 | Delete a user | `delete-user` with the address | [Deleting a user](#deleting-a-user) |
 | Use a password from the Python SDK | Custom `TokenProvider`, or exchange the token first | [Python SDK password sign-in](#using-a-password-from-the-python-sdk) |
 | Turn off the password grant (pure PKCE) | `password_flow: false` in `oidc.yaml` | [Disabling the password grant](#disabling-the-password-grant) |
+| Turn off refresh tokens (short sessions) | `refresh_token: false` in `oidc.yaml` | [Disabling refresh tokens](#disabling-refresh-tokens) |
 | Manage users on Windows | Static admin/guest only; dynamic users need an external IdP | [Windows user management](#windows-user-management) |
 
 All examples use the packaged helper `appmesh-auth.sh` (`appmesh-auth.ps1` on
@@ -296,12 +297,53 @@ database and `passwordConnector: local` stay enabled — and `automation-token`
 (`client_credentials`) is unaffected. In `external` mode the Engine never
 advertises the password flow and this setting has no effect.
 
+## Disabling refresh tokens
+
+Deployments that want short-lived sessions can turn off refresh tokens in
+built-in mode:
+
+```yaml
+# config/oidc.yaml
+OIDC:
+  refresh_token: false
+```
+
+or with `APPMESH_AUTH_REFRESH_TOKEN=false`. The setting takes effect in two
+places:
+
+- The Engine advertises `"refresh_token": false` in `/appmesh/auth/config`, so
+  the CLI stops requesting `offline_access` and the Python/Rust `OAuthClient`
+  drop the scope as well. Older daemons omit the key; clients treat it as
+  enabled.
+- `appmesh-auth.sh` / `appmesh-auth.ps1` render the Dex `grantTypes` without
+  `"refresh_token"`, so no refresh tokens are issued or usable.
+
+Sessions then end at access-token expiry (15 minutes): the CLI reports
+"session expired, run 'appm logon' again" instead of attempting a refresh.
+Issuing a token set with `user-token --with-refresh` fails fast in this
+configuration, and a built-in SDK refresh-token provider pointed at this
+issuer gets its grant rejected (`invalid_grant`) and clears its state.
+Caller-owned `TokenProvider` implementations are unaffected — their refresh
+credentials never come from this issuer. In `external` mode the identity
+provider owns the token policy and this setting has no effect.
+
+The companion `refresh_token_max_lifetime` (env
+`APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME`, format `<number>s|m|h`, default
+`168h`) caps how long a refresh chain can live even while refresh tokens stay
+enabled: it renders as Dex `expiry.refreshTokens.absoluteLifetime`, and
+rotation does not extend it — after the cap the user must sign in again.
+
 ## Getting a token for SDK and CI
 
 The `appm` CLI reads the access token from `APPMESH_BEARER_TOKEN` itself. The
 SDK libraries do not: pass the token to the client, for example
-`AppMeshClient(bearer_token=...)`. Pick one of two sources depending on the
-identity you need.
+`AppMeshClient(bearer_token=...)`, or supply a `TokenProvider` — the provider
+contract (get access token / `can_refresh` / one refresh after a 401 /
+`clear`) exists in every SDK, Go, Java, JavaScript, and C++ included, so the
+Python patterns below apply analogously elsewhere. Every SDK also ships a
+built-in refresh-token provider fed from a
+[token set](#token-set--access--refresh-token-long-running-sdk-processes).
+Pick one of three sources depending on the identity you need.
 
 ### Password grant — user identity (administrator permissions)
 
@@ -354,16 +396,90 @@ export APPMESH_BEARER_TOKEN=$(sudo /opt/appmesh/script/appmesh-auth.sh automatio
 - Access tokens live 15 minutes, so refresh them periodically. The packaged
   Prometheus stack re-mints every 5 minutes.
 
+### Token set — access + refresh token (long-running SDK processes)
+
+Add `--with-refresh` (PowerShell: `-WithRefresh`) to `user-token` to mint a
+full token set: the password grant runs with `offline_access` added to the
+scope and the whole grant response is printed as JSON:
+
+```shell
+echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh user-token --with-refresh
+# {"access_token":"...","refresh_token":"...","expires_in":900,"token_type":"Bearer"}
+```
+
+Without the flag the output is unchanged (access token only). The command
+fails fast when the deployment disabled refresh tokens
+([Disabling refresh tokens](#disabling-refresh-tokens)) and fails when the
+grant response carries no `refresh_token`. The remote equivalent appends
+`offline_access` to the scope of the same password grant against
+`https://<host>:6060/auth/token` and takes `access_token`, `refresh_token`,
+and `expires_in` from the JSON response.
+
+Feed the set to the built-in refresh-token provider of your SDK. Each one
+implements the same `TokenProvider` contract, so the Engine client code path
+is unchanged:
+
+```python
+from appmesh import AppMeshClient, OAuthClient
+
+provider = OAuthClient.from_token_set(
+    token_url="https://host:6060/auth/token",  # no discovery; refresh-only instance
+    client_id="appmesh-cli",
+    access_token=tok["access_token"],
+    refresh_token=tok["refresh_token"],
+    expires_in=tok["expires_in"],
+    appmesh_client=client,
+    ssl_verify=False,  # for test environments only
+)
+c = AppMeshClient(base_url="https://host:6060", token_provider=provider)
+```
+
+| Language | Constructor |
+| --- | --- |
+| Python | `OAuthClient.from_token_set(token_url=..., client_id="appmesh-cli", access_token=..., refresh_token=..., expires_in=..., appmesh_client=..., ssl_verify=...)` |
+| Rust | `OAuthClient::from_token_set(token_url, access_token, refresh_token, TokenSetProviderOptions{ client_id, expires_in, allow_plain_http })` — `TokenSetProviderOptions` is exported from the `appmesh` crate root |
+| Go | `NewRefreshTokenProvider(RefreshTokenConfig{TokenURL, ClientID, AccessToken, RefreshToken, ExpiresIn, HTTPClient})` |
+| Java | `new appmesh.RefreshTokenProvider(tokenUrl, accessToken, refreshToken, expiresInSeconds)`; an overload adds `clientId` |
+| JavaScript | `new RefreshTokenProvider({ tokenUrl, clientId, accessToken, refreshToken, expiresIn, httpClient })`, exported from the package entry alongside `StaticAccessTokenProvider` |
+| C++ | `RefreshTokenProvider` with `RefreshTokenConfig{tokenUrl, clientId, accessToken, refreshToken, expiresIn}` in `ClientHttp.h`; attach via `ClientConfig.tokenProvider` / `setTokenProvider` |
+
+Shared provider behavior (identical across SDKs):
+
+- The token endpoint URL must be HTTPS; plain HTTP is accepted only on
+  loopback (`127.0.0.1` / `localhost` / `::1`). Rust additionally offers an
+  `allow_plain_http` opt-in.
+- The provider refreshes proactively within `max(30s, 10% of lifetime)` of
+  expiry; when `expires_in` is unknown (`0`/`None`), it refreshes only after
+  a 401.
+- The refresh grant posts `grant_type=refresh_token&refresh_token=...&client_id=...`
+  to the token endpoint; the stored refresh token is replaced only when the
+  response carries a new one — Dex rotation with `reuseInterval: 5m` means an
+  absent token keeps the old one valid.
+- Racing refreshes coalesce: `refresh_access_token(rejected_token)` returns
+  the current token without a grant when the rejected token is no longer the
+  stored one.
+- `invalid_grant` clears both tokens (`can_refresh` → false); transient or
+  network errors keep the state.
+- Tokens are held in memory only — the SDK never persists them (the CLI's
+  `0600` session file remains the persistence story); `clear()` wipes both.
+- The 168h `refresh_token_max_lifetime` absolute cap still applies: after it,
+  mint a new token set (run the grant again).
+
+Prefer a token set over `automation-token` when the SDK process should act
+under a user identity with that user's roles; `automation-token` is a
+maintenance machine identity, and its `client_credentials` grant has no
+refresh token, so automation callers keep re-minting.
+
 ### Sign-in capabilities by entry point
 
 | Entry point | Password grant | Client credentials | PKCE / device | Refresh |
 | --- | --- | --- | --- | --- |
-| `appmesh-auth.sh user-token` | ✅ | — | — | — |
+| `appmesh-auth.sh user-token` | ✅ | — | — | — by default; ✅ with `--with-refresh` (full token set) |
 | `appmesh-auth.sh automation-token` | — | ✅ | — | — |
 | CLI `appm logon` | ✅ `--password` / `--password-stdin` / `--username` (only when advertised) | — | ✅ automatic, or `--device` / `--browser` | ✅ (session file) |
-| Rust SDK `OAuthClient` | ✅ `password_login()` | — | ✅ | ✅ |
-| Python SDK `OAuthClient` | — | — | ✅ | ✅ |
-| Go / Java / JS / C++ SDK | — | — | — | — (bearer setter only: Go `SetToken`, Java `setBearerToken`, JS `set_bearer_token`, C++ `setBearerToken`) |
+| Rust SDK `OAuthClient` | ✅ `password_login()` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
+| Python SDK `OAuthClient` | — | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
+| Go / Java / JS / C++ SDK | — | — | — | ✅ built-in `RefreshTokenProvider` or custom `TokenProvider`; static bearer setters still available (Go `SetToken`, Java `setBearerToken`, JS `set_bearer_token`, C++ `setBearerToken`) |
 
 Without flags, the CLI selects the method from the advertised flows and the
 local display: browser authorization on a desktop computer, and device
@@ -424,9 +540,13 @@ print(c.get_current_principal()["roles"])  # ['appmesh-admin']
 The simpler equivalent is to run the password grant outside the SDK and pass
 the result as `bearer_token`. Both approaches are verified.
 
-Other SDKs take the token directly: Go `client.SetToken(...)`, Rust
+Other SDKs take the token directly — Go `client.SetToken(...)`, Rust
 `client.set_token(...)`, Java `setBearerToken(...)`, JavaScript
-`client.set_bearer_token(...)`, C++ `setBearerToken(...)`.
+`client.set_bearer_token(...)`, C++ `setBearerToken(...)` — or accept a
+caller-implemented `TokenProvider` (Go `Option.TokenProvider`, Java
+`Builder.tokenProvider(...)`, JavaScript `set_token_provider(...)`, C++
+`ClientConfig.tokenProvider`) following the same contract as the Python
+example above.
 
 ## Reference
 
@@ -454,10 +574,16 @@ OAuth clients defined in `src/auth/dex.yaml`:
 | --- | --- |
 | Access token | 15 minutes (JWT `exp - iat` = 900 seconds) |
 | Signing keys | 6 hours |
-| Refresh token | Rotates on every use; `reuseInterval: 5m`; idle expiry `validIfNotUsedFor: 168h` |
+| Refresh token | Rotates on every use; `reuseInterval: 5m`; idle expiry `validIfNotUsedFor: 168h`; absolute cap `absoluteLifetime: 168h` (configurable via `oidc.yaml` `refresh_token_max_lifetime`) — rotation does not extend it |
 
-SDKs without refresh support (Go, Java, JS, C++) must re-mint the token in
-long-running processes.
+Every SDK ships a built-in refresh-token provider fed from a
+[token set](#token-set--access--refresh-token-long-running-sdk-processes), and
+all SDKs also support refresh through a caller-implemented `TokenProvider`
+(see [Sign-in capabilities by entry point](#sign-in-capabilities-by-entry-point));
+only the full OAuth clients (PKCE / device grants) remain Python- and
+Rust-only. When refresh tokens are disabled
+([Disabling refresh tokens](#disabling-refresh-tokens)), long-running
+processes must re-authenticate after the access token expires.
 
 ### Roles
 

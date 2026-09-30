@@ -114,6 +114,12 @@ public class AppMeshClientTCP extends AppMeshClient {
             return this;
         }
 
+        /** Attach a provider that supplies and refreshes access tokens (takes precedence over jwtToken). */
+        public Builder tokenProvider(TokenProvider tokenProvider) {
+            base.tokenProvider(tokenProvider);
+            return this;
+        }
+
         /** Connection timeout in milliseconds for HTTPS side-channel requests. */
         public Builder connectTimeoutMs(int ms) {
             base.connectTimeoutMs(ms);

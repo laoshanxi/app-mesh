@@ -705,6 +705,11 @@ components:
           items:
             type: string
             enum: [authorization_code_pkce, device_code, password]
+        refresh_token:
+          type: boolean
+          default: true
+          description: Whether the deployment issues refresh tokens
+            (offline_access). False means sessions end at access-token expiry.
         first_admin_enrollment:
           $ref: "#/components/schemas/FirstAdminEnrollment"
     FirstAdminEnrollment:

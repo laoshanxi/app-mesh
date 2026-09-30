@@ -236,14 +236,16 @@ func (f *fakeWaitRequester) SendContext(ctx context.Context, method string, apiP
 	}
 }
 
-func (f *fakeWaitRequester) Close()                      {}
-func (f *fakeWaitRequester) handleTokenUpdate(string)    {}
-func (f *fakeWaitRequester) setToken(string)             {}
-func (f *fakeWaitRequester) getAccessToken() string      { return "" }
-func (f *fakeWaitRequester) setForwardTo(string)         {}
-func (f *fakeWaitRequester) getForwardTo() string        { return "" }
-func (f *fakeWaitRequester) enableDemuxer()              { f.actions = append(f.actions, "demuxer") }
-func (f *fakeWaitRequester) getDemuxer() *MessageDemuxer { return f.demuxer }
+func (f *fakeWaitRequester) Close()                          {}
+func (f *fakeWaitRequester) handleTokenUpdate(string)        {}
+func (f *fakeWaitRequester) setToken(string)                 {}
+func (f *fakeWaitRequester) getAccessToken() string          { return "" }
+func (f *fakeWaitRequester) setTokenProvider(TokenProvider)  {}
+func (f *fakeWaitRequester) getTokenProvider() TokenProvider { return nil }
+func (f *fakeWaitRequester) setForwardTo(string)             {}
+func (f *fakeWaitRequester) getForwardTo() string            { return "" }
+func (f *fakeWaitRequester) enableDemuxer()                  { f.actions = append(f.actions, "demuxer") }
+func (f *fakeWaitRequester) getDemuxer() *MessageDemuxer     { return f.demuxer }
 
 // newWaitHarness wires an AppMeshClient to a scripted requester and a live
 // demuxer whose transport is the returned channel (close = EOF).

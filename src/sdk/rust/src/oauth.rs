@@ -30,9 +30,12 @@ pub const DEFAULT_OAUTH_SCOPES: &[&str] =
 pub const DEFAULT_OAUTH_SCOPE: &str = "openid profile email groups offline_access";
 
 const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
+const OFFLINE_ACCESS_SCOPE: &str = "offline_access";
 const DEFAULT_DEVICE_EXPIRES_IN: u64 = 600;
 const DEFAULT_DEVICE_INTERVAL: u64 = 5;
 const DEFAULT_REFRESH_LEEWAY: u64 = 60;
+/// OAuth client_id used when a caller supplies a token pair without naming one.
+const DEFAULT_CLIENT_ID: &str = "appmesh-cli";
 
 fn now_epoch_seconds() -> u64 {
     SystemTime::now()
@@ -47,6 +50,10 @@ fn default_device_expires_in() -> u64 {
 
 fn default_device_interval() -> u64 {
     DEFAULT_DEVICE_INTERVAL
+}
+
+fn default_refresh_token_supported() -> bool {
+    true
 }
 
 /// Canonical issuer and the independently selected network route used by this
@@ -71,6 +78,12 @@ pub struct OAuthConfig {
     /// keeps using access_url. Empty: front-channel follows access_url.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_entry: Option<String>,
+    /// Whether the authentication service issues refresh tokens. Mirrors the
+    /// `refresh_token` field of `/appmesh/auth/config`; daemons that predate the
+    /// field omit it, which means true. When false, `offline_access` is dropped
+    /// from the scopes requested for authorization and device grants.
+    #[serde(default = "default_refresh_token_supported")]
+    pub refresh_token: bool,
 }
 
 impl OAuthConfig {
@@ -87,6 +100,7 @@ impl OAuthConfig {
             scopes: DEFAULT_OAUTH_SCOPES.iter().map(|scope| (*scope).to_string()).collect(),
             allow_plain_http: false,
             browser_entry: None,
+            refresh_token: true,
         }
     }
 
@@ -107,6 +121,14 @@ impl OAuthConfig {
 
     pub fn scopes(mut self, scopes: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.scopes = scopes.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Record the refresh-token support advertised by `/appmesh/auth/config`
+    /// (absent on older daemons means true). When false, `offline_access` is
+    /// dropped from the requested scopes.
+    pub fn refresh_token(mut self, supported: bool) -> Self {
+        self.refresh_token = supported;
         self
     }
 
@@ -175,6 +197,13 @@ pub struct TokenSet {
     pub refresh_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<u64>,
+    /// Epoch instant at which the access token is proactively refreshed:
+    /// install time + lifetime - max(30s, 10% of lifetime). Absent for
+    /// sessions persisted before this field existed and for unknown
+    /// lifetimes; the refresh check then falls back to a fixed leeway off
+    /// `expires_at`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_at: Option<u64>,
     #[serde(default = "default_bearer_token_type")]
     pub token_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -185,6 +214,17 @@ fn default_bearer_token_type() -> String {
     "Bearer".into()
 }
 
+/// Proactive-refresh instant for a token with the given lifetime in seconds:
+/// `now + lifetime - max(30s, 10% of lifetime)`. A zero lifetime means unknown
+/// and schedules no proactive refresh.
+fn proactive_refresh_at(expires_in: u64) -> Option<u64> {
+    if expires_in == 0 {
+        return None;
+    }
+    let margin = (expires_in / 10).max(30);
+    Some(now_epoch_seconds().saturating_add(expires_in.saturating_sub(margin)))
+}
+
 impl TokenSet {
     pub fn is_expired(&self) -> bool {
         self.expires_at.is_some_and(|expires_at| expires_at <= now_epoch_seconds())
@@ -193,6 +233,16 @@ impl TokenSet {
     pub fn needs_refresh(&self, leeway: Duration) -> bool {
         self.expires_at
             .is_some_and(|expires_at| expires_at <= now_epoch_seconds().saturating_add(leeway.as_secs()))
+    }
+
+    /// Whether the token is due for proactive refresh: at `refresh_at` when
+    /// the install-time margin was recorded, else within the default leeway
+    /// of expiry. Tokens with no expiry are only refreshed after a 401.
+    fn refresh_due(&self) -> bool {
+        match self.refresh_at {
+            Some(refresh_at) => refresh_at <= now_epoch_seconds(),
+            None => self.needs_refresh(Duration::from_secs(DEFAULT_REFRESH_LEEWAY)),
+        }
     }
 
     fn from_response(value: &Value, previous_refresh_token: Option<String>) -> Result<Self> {
@@ -223,12 +273,11 @@ impl TokenSet {
             .filter(|token| !token.is_empty())
             .map(str::to_string)
             .or(previous_refresh_token);
-        let expires_at = value
-            .get("expires_in")
-            .and_then(Value::as_u64)
-            .map(|seconds| now_epoch_seconds().saturating_add(seconds));
+        let expires_in = value.get("expires_in").and_then(Value::as_u64);
+        let expires_at = expires_in.map(|seconds| now_epoch_seconds().saturating_add(seconds));
+        let refresh_at = expires_in.and_then(proactive_refresh_at);
         let scope = value.get("scope").and_then(Value::as_str).map(str::to_string);
-        Ok(Self { access_token, refresh_token, expires_at, token_type, scope })
+        Ok(Self { access_token, refresh_token, expires_at, refresh_at, token_type, scope })
     }
 }
 
@@ -270,7 +319,22 @@ pub enum DevicePoll {
 #[async_trait]
 pub trait TokenProvider: Send + Sync {
     async fn access_token(&self) -> Result<String>;
+    /// Whether the provider holds a grant that can mint a fresh access token
+    /// after the Engine rejects the current one (Python SDK parity:
+    /// `TokenProvider.can_refresh`). Providers without a grant keep the
+    /// `false` default and a 401 is reported to the caller unchanged.
+    fn can_refresh(&self) -> bool {
+        false
+    }
     async fn force_refresh(&self) -> Result<TokenSet>;
+    /// Refresh after the Engine rejected `rejected_token` with a 401. Racing
+    /// refreshes coalesce: when the rejected token is no longer the stored
+    /// one, the current token set is returned without issuing a grant. The
+    /// default always runs `force_refresh`.
+    async fn refresh_access_token(&self, rejected_token: &str) -> Result<TokenSet> {
+        let _ = rejected_token;
+        self.force_refresh().await
+    }
     async fn revoke(&self) -> Result<bool>;
     fn snapshot(&self) -> Option<TokenSet>;
 }
@@ -313,10 +377,26 @@ impl TokenProvider for StaticAccessTokenProvider {
             access_token: self.token.clone(),
             refresh_token: None,
             expires_at: None,
+            refresh_at: None,
             token_type: default_bearer_token_type(),
             scope: None,
         })
     }
+}
+
+/// Options for [`OAuthClient::from_token_set`].
+#[derive(Debug, Clone, Default)]
+pub struct TokenSetProviderOptions {
+    /// OAuth client_id sent with the refresh grant. Defaults to `appmesh-cli`.
+    pub client_id: Option<String>,
+    /// Lifetime of the supplied access token in seconds from now. When unknown
+    /// (`None` or `0`), the stored token is used as-is and refresh only happens
+    /// through `force_refresh()` after the Engine rejects it with a 401.
+    pub expires_in: Option<u64>,
+    /// Allow a plain-HTTP token URL on non-loopback hosts. Same policy as
+    /// [`OAuthConfig::allow_plain_http`]: HTTPS is required by default and
+    /// plain HTTP is accepted only for loopback unless this is set.
+    pub allow_plain_http: bool,
 }
 
 /// Discovered OAuth client and refresh-capable token provider.
@@ -387,16 +467,90 @@ impl OAuthClient {
         {
             validate_published_endpoint(&config, endpoint)?;
         }
-        Ok(Self {
+        Ok(Self::from_parts(config, metadata, http, None))
+    }
+
+    fn from_parts(
+        config: OAuthConfig,
+        metadata: OidcMetadata,
+        http: reqwest::Client,
+        tokens: Option<TokenSet>,
+    ) -> Self {
+        Self {
             config,
             metadata,
             http,
-            tokens: Mutex::new(None),
+            tokens: Mutex::new(tokens),
             jwks: Mutex::new(JsonWebKeySet { keys: Vec::new() }),
             refresh_lock: AsyncMutex::new(()),
             token_update_callback: Mutex::new(None),
             token_update_pending: AtomicBool::new(false),
-        })
+        }
+    }
+
+    /// Build a refresh-capable provider directly from a caller-held
+    /// access/refresh token pair and an explicit token endpoint (for example
+    /// `https://host:6060/auth/token`). Construction performs no network I/O:
+    /// issuer discovery is skipped because the caller already holds the grant.
+    ///
+    /// `access_token()` proactively refreshes near expiry when `expires_in`
+    /// was supplied; `force_refresh()` posts the refresh grant on demand (the
+    /// Engine 401 retry path). The HTTPS policy matches discovery: plain HTTP
+    /// requires a loopback host or `options.allow_plain_http`. Grant-starting
+    /// flows (authorization request, device flow, password login) are not
+    /// available on a provider built this way; use `discover` for those.
+    pub fn from_token_set(
+        token_url: impl Into<String>,
+        access_token: impl Into<String>,
+        refresh_token: impl Into<String>,
+        options: TokenSetProviderOptions,
+    ) -> Result<Self> {
+        crate::tls_config::ensure_crypto_provider();
+        let access_token = access_token.into();
+        let refresh_token = refresh_token.into();
+        if access_token.trim().is_empty() {
+            return Err(AppMeshError::ConfigurationError("access token is empty".into()));
+        }
+        if refresh_token.trim().is_empty() {
+            return Err(AppMeshError::ConfigurationError("refresh token is empty".into()));
+        }
+        let token_url = normalize_base_url(&token_url.into(), "token_url", options.allow_plain_http)?;
+        let client_id = options
+            .client_id
+            .as_deref()
+            .unwrap_or(DEFAULT_CLIENT_ID)
+            .trim()
+            .to_string();
+        if client_id.is_empty() {
+            return Err(AppMeshError::ConfigurationError("OAuth client_id is required".into()));
+        }
+        // Only the origin of the token URL matters for endpoint validation:
+        // it stands in for issuer and access URL so `access_endpoint` resolves
+        // the token endpoint unchanged.
+        let origin = Url::parse(&token_url)?.origin().ascii_serialization();
+        let config = OAuthConfig::new(origin.clone(), origin, client_id)
+            .allow_plain_http(options.allow_plain_http)
+            .validate_and_normalize()?;
+        let metadata = OidcMetadata {
+            issuer: config.issuer.clone(),
+            authorization_endpoint: token_url.clone(),
+            token_endpoint: token_url.clone(),
+            jwks_uri: token_url,
+            device_authorization_endpoint: None,
+            revocation_endpoint: None,
+            userinfo_endpoint: None,
+        };
+        let expires_in = options.expires_in.filter(|seconds| *seconds > 0);
+        let tokens = TokenSet {
+            access_token,
+            refresh_token: Some(refresh_token),
+            expires_at: expires_in.map(|seconds| now_epoch_seconds().saturating_add(seconds)),
+            refresh_at: expires_in.and_then(proactive_refresh_at),
+            token_type: default_bearer_token_type(),
+            scope: None,
+        };
+        let http = reqwest::Client::builder().timeout(Duration::from_secs(60)).build()?;
+        Ok(Self::from_parts(config, metadata, http, Some(tokens)))
     }
 
     pub fn config(&self) -> &OAuthConfig {
@@ -622,23 +776,41 @@ impl OAuthClient {
 
     pub async fn refresh(&self) -> Result<TokenSet> {
         let _guard = self.refresh_lock.lock().await;
+        self.refresh_locked().await
+    }
+
+    async fn refresh_locked(&self) -> Result<TokenSet> {
         let previous = self.snapshot_tokens().ok_or_else(|| {
             AppMeshError::AuthenticationFailed("no token set is available".into())
         })?;
         let refresh_token = previous.refresh_token.clone().ok_or_else(|| {
             AppMeshError::AuthenticationFailed("no refresh token is available".into())
         })?;
+        let endpoint = self.access_endpoint(&self.metadata.token_endpoint)?;
         let response = self
-            .post_form(
-                &self.metadata.token_endpoint,
-                &[
-                    ("grant_type", "refresh_token"),
-                    ("refresh_token", refresh_token.as_str()),
-                    ("client_id", self.config.client_id.as_str()),
-                ],
-            )
+            .http
+            .post(endpoint)
+            .form(&[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh_token.as_str()),
+                ("client_id", self.config.client_id.as_str()),
+            ])
+            .send()
             .await?;
-        self.install_response(response, Some(refresh_token))
+        let status = response.status();
+        let body = response.bytes().await?;
+        if status.is_success() {
+            let value: Value = serde_json::from_slice(&body)?;
+            return self.install_response(value, Some(refresh_token));
+        }
+        let failure = classify_token_endpoint_error(status, &body);
+        if failure.grant_invalid {
+            // The grant itself is dead (revoked or expired refresh token): drop
+            // the stored pair so can_refresh() reports false instead of
+            // retrying a dead grant forever. Any other failure keeps state.
+            self.clear();
+        }
+        Err(failure.error)
     }
 
     /// Revoke refresh and access tokens directly at the authentication service. Returns `false` when it does
@@ -745,7 +917,7 @@ impl OAuthClient {
     }
 
     fn user_scope(&self) -> String {
-        let mut scopes = self.config.scopes.clone();
+        let mut scopes = grant_scopes(&self.config.scopes, self.config.refresh_token);
         if !scopes.iter().any(|scope| scope == "openid") {
             scopes.insert(0, "openid".into());
         }
@@ -889,7 +1061,7 @@ impl TokenProvider for OAuthClient {
         if self.token_update_pending.load(Ordering::Acquire) {
             self.persist_token_update(&tokens)?;
         }
-        if tokens.needs_refresh(Duration::from_secs(DEFAULT_REFRESH_LEEWAY)) {
+        if tokens.refresh_due() {
             if tokens.refresh_token.is_some() {
                 return Ok(self.refresh().await?.access_token);
             }
@@ -902,6 +1074,10 @@ impl TokenProvider for OAuthClient {
         Ok(tokens.access_token)
     }
 
+    fn can_refresh(&self) -> bool {
+        self.snapshot_tokens().is_some_and(|tokens| tokens.refresh_token.is_some())
+    }
+
     async fn force_refresh(&self) -> Result<TokenSet> {
         if self.snapshot_tokens().and_then(|tokens| tokens.refresh_token).is_some() {
             self.refresh().await
@@ -912,12 +1088,39 @@ impl TokenProvider for OAuthClient {
         }
     }
 
+    async fn refresh_access_token(&self, rejected_token: &str) -> Result<TokenSet> {
+        let _guard = self.refresh_lock.lock().await;
+        // A racing request already ran the grant when the rejected token is no
+        // longer the stored one: reuse the current token without a grant.
+        if let Some(tokens) = self.snapshot_tokens() {
+            if tokens.access_token != rejected_token {
+                return Ok(tokens);
+            }
+        }
+        self.refresh_locked().await
+    }
+
     async fn revoke(&self) -> Result<bool> {
         self.revoke_tokens().await
     }
 
     fn snapshot(&self) -> Option<TokenSet> {
         self.snapshot_tokens()
+    }
+}
+
+/// Scopes to request for user grants: the configured scopes, minus
+/// `offline_access` when the authentication service advertises no refresh-token
+/// support, so the grant does not ask for a scope the service cannot honor.
+fn grant_scopes(scopes: &[String], refresh_token_supported: bool) -> Vec<String> {
+    if refresh_token_supported {
+        scopes.to_vec()
+    } else {
+        scopes
+            .iter()
+            .filter(|scope| scope.as_str() != OFFLINE_ACCESS_SCOPE)
+            .cloned()
+            .collect()
     }
 }
 
@@ -982,6 +1185,25 @@ fn validate_published_endpoint(config: &OAuthConfig, endpoint: &str) -> Result<(
 
 fn random_urlsafe(uuid_count: usize) -> String {
     (0..uuid_count).map(|_| Uuid::new_v4().simple().to_string()).collect()
+}
+
+/// A failed token-endpoint response, classified. `invalid_grant` means the
+/// grant itself is dead (revoked or expired refresh token) and provider state
+/// must be cleared; any other failure is surfaced with the stored tokens kept.
+struct TokenEndpointFailure {
+    error: AppMeshError,
+    grant_invalid: bool,
+}
+
+fn classify_token_endpoint_error(status: StatusCode, body: &[u8]) -> TokenEndpointFailure {
+    let (code, description) = oauth_error(body);
+    TokenEndpointFailure {
+        grant_invalid: code == "invalid_grant",
+        error: AppMeshError::RequestFailed {
+            status,
+            message: format!("OAuth request failed: {}", oauth_error_message(&code, description.as_deref())),
+        },
+    }
 }
 
 fn oauth_error(body: &[u8]) -> (String, Option<String>) {
@@ -1087,4 +1309,356 @@ fn validate_id_token_claims(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_client(tokens: Option<TokenSet>) -> OAuthClient {
+        crate::tls_config::ensure_crypto_provider();
+        OAuthClient {
+            config: OAuthConfig::new("https://auth.example", "https://auth.example", "appmesh-cli"),
+            metadata: OidcMetadata {
+                issuer: "https://auth.example".into(),
+                authorization_endpoint: "https://auth.example/authorize".into(),
+                token_endpoint: "https://auth.example/token".into(),
+                jwks_uri: "https://auth.example/keys".into(),
+                device_authorization_endpoint: None,
+                revocation_endpoint: None,
+                userinfo_endpoint: None,
+            },
+            http: reqwest::Client::new(),
+            tokens: Mutex::new(tokens),
+            jwks: Mutex::new(JsonWebKeySet { keys: Vec::new() }),
+            refresh_lock: AsyncMutex::new(()),
+            token_update_callback: Mutex::new(None),
+            token_update_pending: AtomicBool::new(false),
+        }
+    }
+
+    fn token_set(refresh_token: Option<&str>) -> TokenSet {
+        TokenSet {
+            access_token: "access".into(),
+            refresh_token: refresh_token.map(str::to_string),
+            expires_at: None,
+            refresh_at: None,
+            token_type: "Bearer".into(),
+            scope: None,
+        }
+    }
+
+    #[test]
+    fn can_refresh_reflects_refresh_grant() {
+        // A provider can absorb a 401 only while it holds a refresh grant.
+        assert!(!test_client(None).can_refresh());
+        assert!(!test_client(Some(token_set(None))).can_refresh());
+        assert!(test_client(Some(token_set(Some("refresh")))).can_refresh());
+        // Static tokens carry no grant and keep the trait default.
+        assert!(!StaticAccessTokenProvider::new("token").unwrap().can_refresh());
+    }
+
+    #[test]
+    fn grant_scopes_drop_offline_access_without_refresh_support() {
+        let scopes: Vec<String> = DEFAULT_OAUTH_SCOPES.iter().map(|scope| scope.to_string()).collect();
+        assert_eq!(grant_scopes(&scopes, true), scopes);
+        let trimmed = grant_scopes(&scopes, false);
+        assert!(!trimmed.iter().any(|scope| scope == OFFLINE_ACCESS_SCOPE));
+        assert_eq!(trimmed.len(), scopes.len() - 1);
+    }
+
+    #[test]
+    fn user_scope_honors_advertised_refresh_support() {
+        // The finalized grant scope string drops offline_access when the daemon
+        // advertises no refresh-token support; otherwise it stays.
+        let mut client = test_client(None);
+        assert!(client.user_scope().split(' ').any(|scope| scope == OFFLINE_ACCESS_SCOPE));
+        client.config.refresh_token = false;
+        assert!(!client.user_scope().split(' ').any(|scope| scope == OFFLINE_ACCESS_SCOPE));
+    }
+
+    #[test]
+    fn refresh_token_support_defaults_true_when_unadvertised() {
+        // Daemons predating the field omit `refresh_token` in /appmesh/auth/config;
+        // absence must keep the historical default (refresh tokens supported).
+        let config: OAuthConfig = serde_json::from_str(
+            r#"{"issuer":"https://auth.example","access_url":"https://auth.example","client_id":"appmesh-cli"}"#,
+        )
+        .unwrap();
+        assert!(config.refresh_token);
+        let config: OAuthConfig = serde_json::from_str(
+            r#"{"issuer":"https://auth.example","access_url":"https://auth.example","client_id":"appmesh-cli","refresh_token":false}"#,
+        )
+        .unwrap();
+        assert!(!config.refresh_token);
+    }
+
+    #[tokio::test]
+    async fn refresh_access_token_coalesces_racing_refresh() {
+        // The rejected token is no longer the stored one (a racing request
+        // already refreshed): the current token comes back without a grant,
+        // so no HTTP call is needed to prove it.
+        let client = test_client(Some(token_set(Some("refresh"))));
+        let tokens = <OAuthClient as TokenProvider>::refresh_access_token(&client, "stale-token")
+            .await
+            .unwrap();
+        assert_eq!(tokens.access_token, "access");
+        assert_eq!(tokens.refresh_token.as_deref(), Some("refresh"));
+    }
+
+    #[tokio::test]
+    async fn from_token_set_constructs_offline() {
+        // No discovery, no network: the provider is built purely from the
+        // caller-held pair and defaults to the appmesh-cli client_id.
+        let client = OAuthClient::from_token_set(
+            "https://auth.example:6060/auth/token",
+            "access",
+            "refresh",
+            TokenSetProviderOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(client.config().client_id, "appmesh-cli");
+        assert_eq!(client.config().issuer, "https://auth.example:6060");
+        assert!(client.can_refresh());
+        let snapshot = client.snapshot().unwrap();
+        assert_eq!(snapshot.access_token, "access");
+        assert_eq!(snapshot.refresh_token.as_deref(), Some("refresh"));
+        assert_eq!(snapshot.expires_at, None);
+        assert_eq!(snapshot.refresh_at, None);
+        // Unknown expiry: the stored token is used as-is until a 401.
+        assert_eq!(client.access_token().await.unwrap(), "access");
+
+        // `Some(0)` is unknown expiry too, not "already expired".
+        let client = OAuthClient::from_token_set(
+            "https://auth.example:6060/auth/token",
+            "access",
+            "refresh",
+            TokenSetProviderOptions { expires_in: Some(0), ..Default::default() },
+        )
+        .unwrap();
+        assert_eq!(client.snapshot().unwrap().expires_at, None);
+        assert_eq!(client.snapshot().unwrap().refresh_at, None);
+        assert_eq!(client.access_token().await.unwrap(), "access");
+
+        let client = OAuthClient::from_token_set(
+            "https://auth.example:6060/auth/token",
+            "access",
+            "refresh",
+            TokenSetProviderOptions {
+                client_id: Some("custom-client".into()),
+                expires_in: Some(3600),
+                allow_plain_http: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(client.config().client_id, "custom-client");
+        let snapshot = client.snapshot().unwrap();
+        let expires_at = snapshot.expires_at.unwrap();
+        assert!(expires_at > now_epoch_seconds() + 3500);
+        // max(30s, 10% of 3600s) margin: refresh at T-360s.
+        assert_eq!(snapshot.refresh_at, Some(expires_at - 360));
+
+        // Empty tokens and empty client_id are rejected.
+        assert!(OAuthClient::from_token_set(
+            "https://auth.example/auth/token",
+            " ",
+            "refresh",
+            TokenSetProviderOptions::default(),
+        )
+        .is_err());
+        assert!(OAuthClient::from_token_set(
+            "https://auth.example/auth/token",
+            "access",
+            "",
+            TokenSetProviderOptions::default(),
+        )
+        .is_err());
+        assert!(OAuthClient::from_token_set(
+            "https://auth.example/auth/token",
+            "access",
+            "refresh",
+            TokenSetProviderOptions { client_id: Some(" ".into()), ..Default::default() },
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn from_token_set_enforces_https_policy() {
+        // Same fail-closed policy as discovery: plain HTTP off-loopback needs
+        // an explicit opt-in; loopback HTTP is accepted without one.
+        let error = OAuthClient::from_token_set(
+            "http://auth.example/auth/token",
+            "access",
+            "refresh",
+            TokenSetProviderOptions::default(),
+        )
+        .expect_err("plain-HTTP token URL must be rejected by default");
+        assert!(error.to_string().contains("must use HTTPS"), "got: {error}");
+
+        OAuthClient::from_token_set(
+            "http://auth.example/auth/token",
+            "access",
+            "refresh",
+            TokenSetProviderOptions { allow_plain_http: true, ..Default::default() },
+        )
+        .expect("explicit opt-in allows plain HTTP off-loopback");
+
+        OAuthClient::from_token_set(
+            "http://127.0.0.1:6060/auth/token",
+            "access",
+            "refresh",
+            TokenSetProviderOptions::default(),
+        )
+        .expect("loopback HTTP is allowed without opt-in");
+    }
+
+    #[test]
+    fn token_response_replaces_or_keeps_refresh_token() {
+        // Dex reuseInterval semantics: a rotated refresh token replaces the old
+        // one; a response without one keeps the previous grant.
+        let rotated = TokenSet::from_response(
+            &serde_json::json!({
+                "access_token": "new-access",
+                "refresh_token": "new-refresh",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }),
+            Some("old-refresh".into()),
+        )
+        .unwrap();
+        assert_eq!(rotated.access_token, "new-access");
+        assert_eq!(rotated.refresh_token.as_deref(), Some("new-refresh"));
+        assert!(rotated.expires_at.is_some());
+        // The proactive-refresh instant rides along with the lifetime.
+        assert_eq!(rotated.refresh_at, Some(rotated.expires_at.unwrap() - 360));
+
+        let kept = TokenSet::from_response(
+            &serde_json::json!({
+                "access_token": "new-access",
+                "token_type": "Bearer",
+            }),
+            Some("old-refresh".into()),
+        )
+        .unwrap();
+        assert_eq!(kept.refresh_token.as_deref(), Some("old-refresh"));
+
+        let dropped = TokenSet::from_response(
+            &serde_json::json!({
+                "access_token": "new-access",
+                "token_type": "Bearer",
+            }),
+            None,
+        )
+        .unwrap();
+        assert_eq!(dropped.refresh_token, None);
+    }
+
+    #[test]
+    fn refresh_margin_is_thirty_seconds_or_ten_percent() {
+        // Contract: proactive refresh within max(30s, 10% of lifetime) of expiry.
+        // 900s lifetime: 10% wins, refresh at T-90s, not the legacy 60s leeway.
+        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 900}), None)
+            .unwrap();
+        assert_eq!(tokens.refresh_at, Some(tokens.expires_at.unwrap() - 90));
+        assert!(!tokens.refresh_due());
+
+        // 60s lifetime: the 30s floor wins, refresh at T-30s, not immediately.
+        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 60}), None)
+            .unwrap();
+        assert_eq!(tokens.refresh_at, Some(tokens.expires_at.unwrap() - 30));
+        assert!(!tokens.refresh_due());
+
+        // expires_in 0: lifetime unknown, no proactive refresh is scheduled.
+        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 0}), None)
+            .unwrap();
+        assert_eq!(tokens.refresh_at, None);
+
+        // A token at or past its refresh instant is due.
+        let mut tokens = token_set(Some("refresh"));
+        tokens.refresh_at = Some(now_epoch_seconds());
+        assert!(tokens.refresh_due());
+    }
+
+    #[test]
+    fn missing_refresh_at_falls_back_to_fixed_leeway() {
+        // Sessions persisted before refresh_at existed deserialize without it
+        // and keep the 60s leeway off expires_at.
+        let mut tokens: TokenSet =
+            serde_json::from_str(r#"{"access_token":"access","refresh_token":"refresh","token_type":"Bearer"}"#)
+                .unwrap();
+        assert_eq!(tokens.refresh_at, None);
+        assert!(!tokens.refresh_due());
+        tokens.expires_at = Some(now_epoch_seconds() + 90);
+        assert!(!tokens.refresh_due());
+        tokens.expires_at = Some(now_epoch_seconds() + 30);
+        assert!(tokens.refresh_due());
+    }
+
+    #[test]
+    fn invalid_grant_classification_requires_exact_error_code() {
+        let failure = classify_token_endpoint_error(
+            StatusCode::BAD_REQUEST,
+            br#"{"error":"invalid_grant","error_description":"refresh token expired"}"#,
+        );
+        assert!(failure.grant_invalid);
+        assert!(failure.error.to_string().contains("invalid_grant"));
+
+        // Transient and unrelated failures must keep the stored grant.
+        for body in [
+            br#"{"error":"temporarily_unavailable"}"#.as_slice(),
+            br#"{"error":"invalid_client"}"#.as_slice(),
+            b"not json".as_slice(),
+        ] {
+            assert!(!classify_token_endpoint_error(StatusCode::BAD_REQUEST, body).grant_invalid);
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_grant_clears_stored_tokens() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/auth/token")
+            .with_status(400)
+            .with_body(r#"{"error":"invalid_grant","error_description":"refresh token expired"}"#)
+            .create_async()
+            .await;
+        let client = OAuthClient::from_token_set(
+            format!("{}/auth/token", server.url()),
+            "access",
+            "refresh",
+            TokenSetProviderOptions::default(),
+        )
+        .unwrap();
+        assert!(client.can_refresh());
+
+        client.force_refresh().await.expect_err("invalid_grant must surface");
+        assert!(!client.can_refresh(), "a dead grant must clear can_refresh");
+        assert!(client.snapshot().is_none(), "both tokens must be cleared");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn failed_refresh_keeps_stored_tokens() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/auth/token")
+            .with_status(500)
+            .with_body(r#"{"error":"temporarily_unavailable"}"#)
+            .create_async()
+            .await;
+        let client = OAuthClient::from_token_set(
+            format!("{}/auth/token", server.url()),
+            "access",
+            "refresh",
+            TokenSetProviderOptions::default(),
+        )
+        .unwrap();
+
+        client.force_refresh().await.expect_err("server errors must surface");
+        assert!(client.can_refresh(), "a transient failure must keep the grant");
+        let snapshot = client.snapshot().unwrap();
+        assert_eq!(snapshot.access_token, "access");
+        assert_eq!(snapshot.refresh_token.as_deref(), Some("refresh"));
+        mock.assert_async().await;
+    }
 }

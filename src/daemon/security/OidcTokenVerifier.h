@@ -30,6 +30,10 @@ public:
 		/// When false the auth config stops advertising "password" and the
 		/// launchers drop it from the Dex grant types.
 		bool passwordFlow{true};
+		/// Whether the deployment issues refresh tokens (offline_access). When
+		/// false the auth config advertises "refresh_token": false and the
+		/// launchers drop the refresh_token grant from the Dex grant types.
+		bool refreshToken{true};
 		std::string resourceUrl;
 		std::string resourceAudience;
 		std::string publicClientId;

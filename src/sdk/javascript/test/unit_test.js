@@ -19,7 +19,7 @@ import msgpack from 'msgpack-lite'
 import fs, { writeFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { AppMeshClient, AppMeshError, _resolveUserName, _resolveGroupName } from '../src/appmesh.js'
+import { AppMeshClient, AppMeshError, StaticAccessTokenProvider, RefreshTokenProvider, _resolveUserName, _resolveGroupName } from '../src/appmesh.js'
 import { AppMeshClientTCP } from '../src/appmesh_tcp.js'
 
 let passed = 0
@@ -60,6 +60,14 @@ async function expectAppMeshError (promise, { errorCode, statusCode } = {}) {
 // what the SDK put on the wire.
 let uploadHeaders = null
 
+// Authorization headers the mock server received on the refresh routes, in order,
+// so a test can assert the 401 retry sequence.
+let authRequests = []
+
+// Bodies and Content-Types the mock server received on the token endpoint, in
+// order, so a test can assert the refresh grant form fields.
+let tokenRequests = []
+
 function startMockServer () {
   const server = http.createServer((req, res) => {
     if (req.url === '/appmesh/file/upload') {
@@ -69,6 +77,27 @@ function startMockServer () {
       req.on('end', () => {
         res.writeHead(200, { 'Content-Type': 'text/plain' })
         res.end('ok')
+      })
+    } else if (req.url === '/appmesh/refreshable') {
+      authRequests.push(req.headers.authorization || null)
+      if (req.headers.authorization === 'Bearer new-token') {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end('{"ok": true}')
+      } else {
+        res.writeHead(401, { 'Content-Type': 'application/json' })
+        res.end('{"message": "Unauthorized"}')
+      }
+    } else if (req.url === '/appmesh/always-401') {
+      authRequests.push(req.headers.authorization || null)
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end('{"message": "Unauthorized"}')
+    } else if (req.url === '/oauth/token') {
+      let body = ''
+      req.on('data', chunk => { body += chunk })
+      req.on('end', () => {
+        tokenRequests.push({ contentType: req.headers['content-type'], body })
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ access_token: 'new-token', expires_in: 3600 }))
       })
     } else if (req.url === '/bad-json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -136,6 +165,290 @@ await assert('check_app_health returns false only on an unhealthy verdict', asyn
 await assert('check_app_health throws on 401 instead of reporting unhealthy', async () => {
   const client = new AppMeshClient(baseURL)
   await expectAppMeshError(client.check_app_health('denied'), { statusCode: 401 })
+})
+
+// ---- Token provider contract and 401 refresh retry ----
+
+await assert('StaticAccessTokenProvider validates the token and clear() nulls it', async () => {
+  const provider = new StaticAccessTokenProvider('  abc  ')
+  if ((await provider.getAccessToken()) !== 'abc') throw new Error('expected trimmed token')
+  if (provider.canRefresh() !== false) throw new Error('static provider must not refresh')
+  for (const bad of ['', '   ', 42, null]) {
+    let threw = false
+    try { new StaticAccessTokenProvider(bad) } catch (_) { threw = true }
+    if (!threw) throw new Error(`expected TypeError for ${JSON.stringify(bad)}`)
+  }
+  provider.clear()
+  if ((await provider.getAccessToken()) !== null) throw new Error('clear() must null the token')
+})
+
+await assert('set_token_provider rejects non-provider objects', async () => {
+  const client = new AppMeshClient(baseURL)
+  let threw = false
+  try { client.set_token_provider({}) } catch (error) { threw = error instanceof TypeError }
+  if (!threw) throw new Error('expected TypeError for a provider without getAccessToken')
+})
+
+// Fake refresh-capable provider: refreshAccessToken swaps old-token for new-token
+// and records every rejected token it was called with.
+function makeRefreshableProvider (calls) {
+  return {
+    token: 'old-token',
+    async getAccessToken () { return this.token },
+    canRefresh () { return true },
+    async refreshAccessToken (rejectedToken) {
+      calls.push(rejectedToken)
+      this.token = 'new-token'
+      return this.token
+    }
+  }
+}
+
+await assert('refreshable provider: 401 refreshes once and the retried request succeeds', async () => {
+  const calls = []
+  authRequests = []
+  const client = new AppMeshClient(baseURL, null, makeRefreshableProvider(calls))
+  const response = await client.request('get', '/appmesh/refreshable')
+  if (response.data.ok !== true) throw new Error(`expected retried request to succeed, got status ${response.status}`)
+  if (calls.length !== 1) throw new Error(`expected refreshAccessToken exactly once, got ${calls.length}`)
+  if (calls[0] !== 'old-token') throw new Error(`expected rejected token "old-token", got ${JSON.stringify(calls[0])}`)
+  const expected = 'Bearer old-token,Bearer new-token'
+  if (authRequests.join(',') !== expected) throw new Error(`expected auth sequence ${expected}, got ${authRequests.join(',')}`)
+})
+
+await assert('static provider: 401 raises typed error without a retry', async () => {
+  authRequests = []
+  const client = new AppMeshClient(baseURL)
+  client.set_bearer_token('old-token')
+  await expectAppMeshError(client.request('get', '/appmesh/refreshable'), { statusCode: 401 })
+  if (authRequests.length !== 1) throw new Error(`expected exactly one request (no retry), got ${authRequests.length}`)
+})
+
+await assert('second 401 after refresh rejects with typed error, refresh still called once', async () => {
+  const calls = []
+  authRequests = []
+  const client = new AppMeshClient(baseURL)
+  client.set_token_provider(makeRefreshableProvider(calls))
+  await expectAppMeshError(client.request('get', '/appmesh/always-401'), { statusCode: 401 })
+  if (calls.length !== 1) throw new Error(`expected refreshAccessToken exactly once, got ${calls.length}`)
+  if (authRequests.length !== 2) throw new Error(`expected original + one retry, got ${authRequests.length} requests`)
+})
+
+await assert('set_token/clear_bearer_token aliases still work through the provider', async () => {
+  const client = new AppMeshClient(baseURL)
+  client.set_token('alias-token')
+  if ((await client._getAccessToken()) !== 'alias-token') throw new Error('set_token must attach the token')
+  client.clear_bearer_token()
+  if ((await client._getAccessToken()) !== null) throw new Error('clear_bearer_token must detach the token')
+  client.set_bearer_token(null)
+  if ((await client._getAccessToken()) !== null) throw new Error('set_bearer_token(null) must clear')
+})
+
+await assert('TCP transport reads the token from the provider', async () => {
+  const { client, sent } = makeScriptedTcpClient()
+  client.set_token_provider(makeRefreshableProvider([]))
+  await client._request('get', '/appmesh/app/t')
+  const request = msgpack.decode(sent[0])
+  if (request.headers.Authorization !== 'Bearer old-token') {
+    throw new Error(`expected Bearer old-token, got ${JSON.stringify(request.headers.Authorization)}`)
+  }
+})
+
+// Scripted TCP transport answering 401 once, then 200: exercises the TCP
+// refresh-and-retry path end to end.
+function makeUnauthorizedThenOkTcpClient () {
+  const client = new AppMeshClientTCP(false)
+  const sent = []
+  const statuses = [401, 200]
+  client.tcpTransport = {
+    connected: () => true,
+    connect: async () => {},
+    sendMessage: data => { sent.push(data) },
+    receiveMessage: async () => msgpack.encode({
+      uuid: 'resp-1',
+      request_uri: '/appmesh/app/t',
+      http_status: statuses.shift() ?? 200,
+      body_msg_type: 'application/json',
+      headers: {},
+      body: Buffer.from('{}')
+    })
+  }
+  return { client, sent }
+}
+
+await assert('TCP 401 refreshes once and retries with the new token', async () => {
+  const calls = []
+  const { client, sent } = makeUnauthorizedThenOkTcpClient()
+  client.set_token_provider(makeRefreshableProvider(calls))
+  const response = await client._request('get', '/appmesh/app/t')
+  if (response.status !== 200) throw new Error(`expected retried request to succeed, got status ${response.status}`)
+  if (calls.length !== 1) throw new Error(`expected refreshAccessToken exactly once, got ${calls.length}`)
+  if (calls[0] !== 'old-token') throw new Error(`expected rejected token "old-token", got ${JSON.stringify(calls[0])}`)
+  if (sent.length !== 2) throw new Error(`expected original + one retry, got ${sent.length} requests`)
+  const retry = msgpack.decode(sent[1])
+  if (retry.headers.Authorization !== 'Bearer new-token') {
+    throw new Error(`expected Bearer new-token on retry, got ${JSON.stringify(retry.headers.Authorization)}`)
+  }
+})
+
+await assert('TCP static provider: 401 raises typed error without a retry', async () => {
+  const { client, sent } = makeScriptedTcpClient({ http_status: 401 })
+  client.set_bearer_token('old-token')
+  await expectAppMeshError(client._request('get', '/appmesh/app/t'), { statusCode: 401 })
+  if (sent.length !== 1) throw new Error(`expected exactly one request (no retry), got ${sent.length}`)
+})
+
+// ---- RefreshTokenProvider ----
+
+// Fake axios instance: records post(url, body, config) calls and delegates the
+// response to `handler`, so provider tests never dial the network.
+function makeFakeTokenHttp (handler, calls) {
+  return {
+    post: async (url, body, config) => {
+      calls.push({ url, body, config })
+      return handler({ url, body, config })
+    }
+  }
+}
+
+await assert('RefreshTokenProvider rejects non-loopback http and accepts https without dialing', async () => {
+  for (const bad of ['http://example.com/token', 'http://192.168.1.10/token', 'ftp://127.0.0.1/token', 'not-a-url']) {
+    let threw = false
+    try { new RefreshTokenProvider({ tokenUrl: bad, accessToken: 'a', refreshToken: 'r' }) } catch (error) { threw = error instanceof TypeError }
+    if (!threw) throw new Error(`expected TypeError for ${JSON.stringify(bad)}`)
+  }
+  // https and loopback http must construct without any network access
+  new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', refreshToken: 'r' })
+  new RefreshTokenProvider({ tokenUrl: 'http://127.0.0.1:1/token', refreshToken: 'r' })
+  new RefreshTokenProvider({ tokenUrl: 'http://localhost/token', refreshToken: 'r' })
+  new RefreshTokenProvider({ tokenUrl: 'http://[::1]:1/token', refreshToken: 'r' })
+})
+
+await assert('RefreshTokenProvider proactively refreshes near expiry and single-flights concurrent calls', async () => {
+  const calls = []
+  const http = makeFakeTokenHttp(async () => {
+    // Yield so concurrent getAccessToken callers overlap on the in-flight grant
+    await new Promise(resolve => setTimeout(resolve, 10))
+    return { status: 200, data: { access_token: 'fresh-token', expires_in: 3600 } }
+  }, calls)
+  const provider = new RefreshTokenProvider({
+    tokenUrl: 'https://idp.example.com/token',
+    accessToken: 'stale-token',
+    refreshToken: 'rt-1',
+    expiresIn: 20, // inside the 30s expiry margin -> expiring soon
+    httpClient: http
+  })
+  const tokens = await Promise.all([provider.getAccessToken(), provider.getAccessToken(), provider.getAccessToken()])
+  if (tokens.some(token => token !== 'fresh-token')) throw new Error(`expected all callers to get fresh-token, got ${JSON.stringify(tokens)}`)
+  if (calls.length !== 1) throw new Error(`expected exactly one token request, got ${calls.length}`)
+})
+
+await assert('RefreshTokenProvider with unknown expiry does not refresh proactively', async () => {
+  const calls = []
+  const http = makeFakeTokenHttp(() => ({ status: 200, data: { access_token: 'x' } }), calls)
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  if ((await provider.getAccessToken()) !== 'at-1') throw new Error('expected the current token without a refresh')
+  if (calls.length !== 0) throw new Error(`expiresIn 0 must refresh only on 401, got ${calls.length} token requests`)
+})
+
+await assert('refreshAccessToken with a stale rejected token returns the current token without HTTP', async () => {
+  const calls = []
+  const http = makeFakeTokenHttp(() => ({ status: 200, data: { access_token: 'x' } }), calls)
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'current-token', refreshToken: 'rt-1', httpClient: http })
+  const token = await provider.refreshAccessToken('stale-token')
+  if (token !== 'current-token') throw new Error(`expected current-token, got ${JSON.stringify(token)}`)
+  if (calls.length !== 0) throw new Error(`a racing caller already refreshed; expected no token request, got ${calls.length}`)
+})
+
+await assert('grant sends form fields, stores a rotated refresh token, keeps the old one when omitted', async () => {
+  const calls = []
+  const http = makeFakeTokenHttp(({ body }) => {
+    const refreshToken = new URLSearchParams(body).get('refresh_token')
+    if (refreshToken === 'rt-1') return { status: 200, data: { access_token: 'at-2', refresh_token: 'rt-2', expires_in: 3600 } }
+    return { status: 200, data: { access_token: 'at-3', expires_in: 3600 } } // no rotation
+  }, calls)
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+
+  await provider.refreshAccessToken('at-1')
+  if (calls.length !== 1) throw new Error(`expected one token request, got ${calls.length}`)
+  const params = new URLSearchParams(calls[0].body)
+  if (calls[0].config.headers['Content-Type'] !== 'application/x-www-form-urlencoded') {
+    throw new Error(`expected form Content-Type, got ${JSON.stringify(calls[0].config.headers['Content-Type'])}`)
+  }
+  if (params.get('grant_type') !== 'refresh_token') throw new Error(`expected grant_type=refresh_token, got ${JSON.stringify(params.get('grant_type'))}`)
+  if (params.get('client_id') !== 'appmesh-cli') throw new Error(`expected default client_id appmesh-cli, got ${JSON.stringify(params.get('client_id'))}`)
+  if (params.get('refresh_token') !== 'rt-1') throw new Error(`expected refresh_token rt-1, got ${JSON.stringify(params.get('refresh_token'))}`)
+  if ((await provider.getAccessToken()) !== 'at-2') throw new Error('expected the refreshed access token at-2')
+
+  // The rotated refresh token rt-2 must be used on the next grant
+  await provider.refreshAccessToken('at-2')
+  if (new URLSearchParams(calls[1].body).get('refresh_token') !== 'rt-2') throw new Error('expected the rotated refresh token rt-2 on the second grant')
+  if ((await provider.getAccessToken()) !== 'at-3') throw new Error('expected the refreshed access token at-3')
+
+  // The response carried no refresh_token: the old rt-2 must be kept
+  await provider.refreshAccessToken('at-3')
+  if (new URLSearchParams(calls[2].body).get('refresh_token') !== 'rt-2') throw new Error('a response without refresh_token must keep the old one')
+})
+
+await assert('invalid_grant clears both tokens, canRefresh() turns false, getAccessToken rejects', async () => {
+  const calls = []
+  const http = makeFakeTokenHttp(() => ({ status: 400, data: { error: 'invalid_grant' } }), calls)
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  let threw = false
+  try { await provider.refreshAccessToken('at-1') } catch (_) { threw = true }
+  if (!threw) throw new Error('expected invalid_grant to throw')
+  if (provider.canRefresh() !== false) throw new Error('invalid_grant must drop the refresh token')
+  threw = false
+  try { await provider.getAccessToken() } catch (_) { threw = true }
+  if (!threw) throw new Error('getAccessToken must reject once both tokens are cleared')
+})
+
+await assert('a transient grant failure throws but keeps the stored tokens', async () => {
+  const http = makeFakeTokenHttp(() => ({ status: 500, data: { error: 'server_error' } }), [])
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  let threw = false
+  try { await provider.refreshAccessToken('at-1') } catch (_) { threw = true }
+  if (!threw) throw new Error('expected a 500 grant response to throw')
+  if (provider.canRefresh() !== true) throw new Error('a transient failure must keep the refresh token')
+  if ((await provider.getAccessToken()) !== 'at-1') throw new Error('a transient failure must keep the access token')
+})
+
+await assert('a 400 without invalid_grant keeps the stored tokens', async () => {
+  const http = makeFakeTokenHttp(() => ({ status: 400, data: { error: 'invalid_request' } }), [])
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  let threw = false
+  try { await provider.refreshAccessToken('at-1') } catch (_) { threw = true }
+  if (!threw) throw new Error('expected a 400 grant response to throw')
+  if (provider.canRefresh() !== true) throw new Error('only invalid_grant may drop the refresh token')
+  if ((await provider.getAccessToken()) !== 'at-1') throw new Error('only invalid_grant may drop the access token')
+})
+
+await assert('RefreshTokenProvider without an access token fetches one on first getAccessToken', async () => {
+  const calls = []
+  const http = makeFakeTokenHttp(() => ({ status: 200, data: { access_token: 'minted-token', expires_in: 3600 } }), calls)
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', refreshToken: 'rt-1', httpClient: http })
+  if ((await provider.getAccessToken()) !== 'minted-token') throw new Error('expected a grant to mint the first access token')
+  if (calls.length !== 1) throw new Error(`expected exactly one token request, got ${calls.length}`)
+})
+
+await assert('RefreshTokenProvider end-to-end: 401 drives the grant and the retried request succeeds', async () => {
+  tokenRequests = []
+  authRequests = []
+  const provider = new RefreshTokenProvider({
+    tokenUrl: `${baseURL}/oauth/token`,
+    accessToken: 'old-token',
+    refreshToken: 'rt-1'
+  })
+  const client = new AppMeshClient(baseURL, null, provider)
+  const response = await client.request('get', '/appmesh/refreshable')
+  if (response.data.ok !== true) throw new Error(`expected retried request to succeed, got status ${response.status}`)
+  if (tokenRequests.length !== 1) throw new Error(`expected exactly one token grant, got ${tokenRequests.length}`)
+  const params = new URLSearchParams(tokenRequests[0].body)
+  if (params.get('grant_type') !== 'refresh_token' || params.get('client_id') !== 'appmesh-cli' || params.get('refresh_token') !== 'rt-1') {
+    throw new Error(`unexpected grant body ${JSON.stringify(tokenRequests[0].body)}`)
+  }
+  const expected = 'Bearer old-token,Bearer new-token'
+  if (authRequests.join(',') !== expected) throw new Error(`expected auth sequence ${expected}, got ${authRequests.join(',')}`)
 })
 
 // ---- TCP transport: _decodeBody strictness (A-7a) ----

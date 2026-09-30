@@ -1,5 +1,7 @@
 // appmesh.js
 import axios from 'axios';
+import { StaticAccessTokenProvider } from './token_provider.js';
+import { RefreshTokenProvider } from './refresh_token_provider.js';
 
 // Lazy-resolved Node.js https/fs modules (null in browser)
 let _https = null;
@@ -297,6 +299,22 @@ async function _resolveGroupName(gid) {
 // Default App Mesh CA bundle, preferred when no sslConfig is given and the file exists
 const DEFAULT_CA_FILE = '/opt/appmesh/ssl/ca.pem';
 
+// Only these body types can be safely replayed on a retry after a 401 response
+function _isReplayableBody(data) {
+  return data === undefined || data === null || typeof data === 'string' ||
+    (typeof Buffer !== 'undefined' && Buffer.isBuffer(data));
+}
+
+// Extract the bearer token a rejected request carried, so a provider's refresh
+// can dedup concurrent 401s against the token that was actually sent
+function _extractBearerToken(headers) {
+  if (!headers) return null;
+  const value = typeof headers.get === 'function'
+    ? headers.get(CONSTANTS.HTTP_HEADER_KEY_AUTH)
+    : (headers[CONSTANTS.HTTP_HEADER_KEY_AUTH] || headers.authorization);
+  return (typeof value === 'string' && value.startsWith('Bearer ')) ? value.slice('Bearer '.length) : null;
+}
+
 // PEM material: Buffers/inline PEM pass through; any other string is a file path —
 // a missing path is a hard error, never a silent no-verify fallback.
 function _loadPem(value) {
@@ -330,6 +348,10 @@ class AppMeshClient {
    *   against the App Mesh default CA (/opt/appmesh/ssl/ca.pem) if installed, else the system CAs;
    *   `false` disables verification; an object supplies custom `ca`/`cert`/`key` (Buffer, inline
    *   PEM, or file path — a missing path is a hard error).
+   * @param {Object} [tokenProvider] - Optional duck-typed token provider
+   *   (`{ async getAccessToken(), canRefresh(), async refreshAccessToken(rejectedToken), clear() }`,
+   *   see token_provider.js). When it can refresh, a request rejected with HTTP 401 is retried
+   *   once with the refreshed token.
    * @example
    * const sslConfig = {
    *   cert: fs.readFileSync("client.pem"),
@@ -338,16 +360,19 @@ class AppMeshClient {
    *   rejectUnauthorized: true
    * };
    */
-  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null) {
+  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, tokenProvider = null) {
     // Base URL for API requests
     this.baseURL = baseURL;
 
     // Host to forward requests to
     this.forwardingHost = null;
 
-    // Current JWT token known to this client (single token store; transports
-    // sync from it via _handleTokenUpdate/_getAccessToken)
-    this._token = null;
+    // Token provider: single source of truth for the access token; transports
+    // read from it via _getAccessToken()
+    this._tokenProvider = null;
+    if (tokenProvider) {
+      this.set_token_provider(tokenProvider);
+    }
 
     // Configure axios instance
     const axiosConfig = {
@@ -373,9 +398,9 @@ class AppMeshClient {
 
     // Request interceptor
     this._client.interceptors.request.use(
-      config => {
+      async config => {
         // Apply common headers
-        config.headers = { ...config.headers, ...this._commonHeaders() };
+        config.headers = { ...config.headers, ...(await this._commonHeaders()) };
         return config;
       },
       error => {
@@ -387,7 +412,7 @@ class AppMeshClient {
 
     // Response interceptor
     this._client.interceptors.response.use(
-      response => response,
+      response => this._handleUnauthorizedRetry(response),
       error => {
         // Typed SDK errors (e.g. JSON parse failures from transformResponse) pass through unchanged
         if (error instanceof AppMeshError) {
@@ -401,10 +426,26 @@ class AppMeshClient {
     );
   }
 
-  /** Attach a caller-owned access token in memory. */
+  /**
+   * Attach a refresh-capable token provider. The provider is duck-typed: it must
+   * implement `async getAccessToken()`; `canRefresh()`, `async refreshAccessToken(rejectedToken)`
+   * and `clear()` follow the contract in token_provider.js.
+   * @param {Object} provider - Token provider
+   */
+  set_token_provider(provider) {
+    if (!provider || typeof provider.getAccessToken !== 'function') {
+      throw new TypeError('tokenProvider must implement async getAccessToken()');
+    }
+    this._tokenProvider = provider;
+  }
+
+  /** Attach a caller-owned, non-refreshing access token in memory. */
   set_bearer_token(token) {
-    const value = typeof token === 'string' ? token.trim() : '';
-    this._handleTokenUpdate(value || null);
+    if (token === null || token === undefined) {
+      this.clear_bearer_token();
+      return;
+    }
+    this.set_token_provider(new StaticAccessTokenProvider(token));
   }
 
   /** Source-compatible alias for set_bearer_token(). */
@@ -414,17 +455,56 @@ class AppMeshClient {
 
   /** Remove the locally attached bearer without contacting Engine or the authentication service. */
   clear_bearer_token() {
-    this._handleTokenUpdate(null);
+    const provider = this._tokenProvider;
+    if (provider && typeof provider.clear === 'function') {
+      provider.clear();
+    }
+    this._tokenProvider = null;
   }
 
-  /** Return the current in-memory access token. */
-  _getAccessToken() {
-    return this._token || null;
+  /** Return the current in-memory access token from the attached provider. */
+  async _getAccessToken() {
+    return this._tokenProvider ? await this._tokenProvider.getAccessToken() : null;
   }
 
-  /** Store only the in-memory access token; never synthesize a Cookie header. */
-  _handleTokenUpdate(token) {
-    this._token = token || null;
+  /**
+   * Retry a request once after a 401 when the attached provider can refresh.
+   *
+   * Only replayable bodies (undefined/string/Buffer) are retried — streaming or
+   * multipart bodies fail with the original 401. The provider's
+   * `refreshAccessToken(rejectedToken)` is called at most once per request
+   * (guarded by `config.__appmeshRetried`); a second 401 surfaces unchanged so
+   * `_request` raises the standard typed error.
+   *
+   * @private
+   * @param {Object} response - Axios response (validateStatus passes every status here)
+   * @returns {Promise<Object>} The original response or the retried response
+   */
+  async _handleUnauthorizedRetry(response) {
+    const config = response.config || {};
+    const provider = this._tokenProvider;
+    if (response.status !== 401 || config.__appmeshRetried || !provider) {
+      return response;
+    }
+    const canRefresh = typeof provider.canRefresh === 'function' ? await provider.canRefresh() : !!provider.canRefresh;
+    if (!canRefresh || typeof provider.refreshAccessToken !== 'function' || !_isReplayableBody(config.data)) {
+      return response;
+    }
+
+    const rejectedToken = _extractBearerToken(config.headers) ?? (await this._getAccessToken());
+    const newToken = await provider.refreshAccessToken(rejectedToken);
+    if (typeof newToken !== 'string' || !newToken.trim()) {
+      return response;
+    }
+
+    config.__appmeshRetried = true;
+    const authorization = `Bearer ${newToken.trim()}`;
+    if (config.headers && typeof config.headers.set === 'function') {
+      config.headers.set(CONSTANTS.HTTP_HEADER_KEY_AUTH, authorization);
+    } else {
+      config.headers = { ...config.headers, [CONSTANTS.HTTP_HEADER_KEY_AUTH]: authorization };
+    }
+    return this._client(config);
   }
 
   /** Return Engine's public OAuth/OIDC configuration. */
@@ -1030,16 +1110,16 @@ class AppMeshClient {
   /**
    * Generate common request headers
    * @private
-   * @returns {Object} Headers object
+   * @returns {Promise<Object>} Headers object
    */
-  _commonHeaders() {
+  async _commonHeaders() {
     const headers = {};
     // Add user agent in Node.js
     if (ENV.isNode) {
       headers[CONSTANTS.HTTP_USER_AGENT_HEADER_NAME] = CONSTANTS.HTTP_USER_AGENT;
     }
 
-    const token = this._getAccessToken();
+    const token = await this._getAccessToken();
     if (token) {
       headers[CONSTANTS.HTTP_HEADER_KEY_AUTH] = `Bearer ${token}`;
     }
@@ -1241,7 +1321,7 @@ class AppRun {
 }
 
 // Export the main classes
-export { AppMeshClient, AppOutput, AppRun, AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE };
+export { AppMeshClient, AppOutput, AppRun, AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider };
 // Exported for the TCP client (Node.js only); not part of the browser-facing API
 export { _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName };
 export default AppMeshClient;

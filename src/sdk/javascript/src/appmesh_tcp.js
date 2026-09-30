@@ -335,9 +335,6 @@ class AppMeshClientTCP extends AppMeshClient {
     // Pass dummy baseURL to parent - not used for TCP communication
     super('https://127.0.0.1:6060', sslConfig)
     this.tcpTransport = new TCPTransport(tcpAddress, sslConfig)
-
-    // Store the caller-owned bearer explicitly for TCP requests.
-    this._token = ''
   }
 
   /**
@@ -352,28 +349,6 @@ class AppMeshClientTCP extends AppMeshClient {
       this.tcpTransport.close()
       this.tcpTransport = null
     }
-  }
-
-  /**
-   * Get the current access token.
-   * @returns {string} Current JWT token
-   * @private
-   * @override
-   */
-  _getAccessToken () {
-    return this._token
-  }
-
-  /**
-   * Handle caller-owned bearer updates for TCP.
-   *
-   * @param {string} token - New JWT token
-   * @private
-   * @override
-   */
-  _handleTokenUpdate (token) {
-    super._handleTokenUpdate(token)
-    this._token = token || ''
   }
 
   /**
@@ -397,7 +372,7 @@ class AppMeshClientTCP extends AppMeshClient {
     request.headers[HTTP_HEADER_KEY_USER_AGENT] = HTTP_USER_AGENT_TCP
 
     // Add authentication token if available
-    const token = this._getAccessToken()
+    const token = await this._getAccessToken()
     if (token) {
       request.headers[HTTP_HEADER_KEY_AUTH] = `Bearer ${token}`
     }
@@ -467,6 +442,21 @@ class AppMeshClientTCP extends AppMeshClient {
       headers: response.headers,
       data: this._decodeBody(response, options),
       config: options
+    }
+
+    // Mirror the HTTP transport: one refresh-and-retry after a 401 when the
+    // attached provider can refresh. TCP bodies are serialized Buffers built
+    // from the caller's body, so every request is replayable here.
+    if (result.status === 401 && !options.__appmeshRetried) {
+      const provider = this._tokenProvider
+      const canRefresh = provider &&
+        (typeof provider.canRefresh === 'function' ? await provider.canRefresh() : !!provider.canRefresh)
+      if (canRefresh && typeof provider.refreshAccessToken === 'function') {
+        const newToken = await provider.refreshAccessToken(token || null)
+        if (typeof newToken === 'string' && newToken.trim()) {
+          return this._request(method, path, body, { ...options, __appmeshRetried: true })
+        }
+      }
     }
 
     // Mirror the HTTP transport: never swallow a non-2xx into a success value.
