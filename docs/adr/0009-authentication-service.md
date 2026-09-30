@@ -24,7 +24,7 @@ The Engine does not manage an identity password, MFA method, or directory group.
 
 The default package includes Dex. The service runs as the protected `identity` System App. External mode disables this System App and uses an operator-managed issuer.
 
-The CLI and SDK use provider-neutral language. Their public names are `OAuthClient`, `OAuthConfig`, and `OAuthError`. SDK 3.0 provider-specific names remain compatibility aliases. New documentation and examples do not use those aliases.
+The CLI and SDK use provider-neutral language. Their public names are `OAuthClient`, `OAuthConfig`, and `OAuthError`. ~~SDK 3.0 provider-specific names remain compatibility aliases.~~ (Amended 2026-09-30: the provider-specific names were removed in the final implementation and are not aliased; see `docs/source/SDKContract.md`.) New documentation and examples do not use those names.
 
 The CLI supports three interactive flows:
 

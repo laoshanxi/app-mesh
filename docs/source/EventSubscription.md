@@ -22,7 +22,7 @@ value also selects all events.
 
 ```
 POST /appmesh/app/{app_name}/subscribe?events=START,EXIT,STDOUT
-Authorization: Bearer <JWT>
+Authorization: Bearer <token>
 ```
 
 **Response:**

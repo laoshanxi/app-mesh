@@ -157,6 +157,8 @@ The Python and Rust SDKs implement this token-provider contract:
 - `complete_authorization_callback` validates a single-use state before it exchanges a code.
 - A nonce-bearing request requires a standards-compliant ID-token validator.
 - A refresh token stays in the token provider. The SDK does not send it to the Engine.
+- The provider refreshes proactively near expiry, and coalesces one refresh after a 401. An `invalid_grant` response clears the stored token set.
+- The provider requires HTTPS for the authentication service, except on loopback.
 - The SDK does not persist a token unless the application supplies persistence.
 
 Python exports `OAuthClient` and `OAuthError`. Rust exports `OAuthConfig`, `OAuthClient`, `TokenSet`, `TokenProvider`, and `StaticAccessTokenProvider`. Both SDKs use provider-neutral names only; the SDK 3.0 provider-specific names are removed, not aliased.

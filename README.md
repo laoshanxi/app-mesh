@@ -33,7 +33,7 @@ Submit work to any node. Get the result back.
 
 Think serverless, on your own machines.
 
-<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" alt="App Mesh architecture" align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/diagram.svg" alt="App Mesh architecture" align=center /></div>
 
 <details>
 <summary>Internal component view</summary>

@@ -1,6 +1,6 @@
 ---
 name: dexuser
-description: bundled Dex administration web UI (users, clients, sessions, MFA)
+description: bundled Dex administration web UI (users, clients, sessions)
 command: ../../script/appmesh-auth.sh admin-ui
 health_check_cmd: ../../script/appmesh-auth.sh admin-ui-health
 owner_principal_id: system:appmesh

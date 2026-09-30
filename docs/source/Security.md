@@ -2,7 +2,7 @@
 
 App Mesh is an OAuth 2.0 protected resource. It trusts one OpenID Connect issuer. It keeps authentication separate from App Mesh authorization.
 
-This document defines security behavior. Use [CLI](CLI.md) for sign-in commands. Use [Deployment](Install.md) for installation procedures. Use [Authentication](Authentication.md) for password and token operations in the built-in mode. Use [ADR 0009](../adr/0009-authentication-service.md) for the authentication-service implementation decision.
+This document defines security behavior. Use [CLI](CLI.md) for sign-in commands. Use [Deployment](Install.md) for installation procedures. Use [Authentication](Authentication.md) for password and token operations in the built-in mode. Use [Cluster Authentication](cluster/ClusterAuthDesign.md) for the multi-node owner/follower design. Use [ADR 0009](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0009-authentication-service.md) for the authentication-service implementation decision.
 
 ## Trust boundaries
 
@@ -40,6 +40,8 @@ The Engine accepts an RFC 6750 `Authorization: Bearer` value. The Engine perform
 7. It loads the current App Mesh authorization data for that principal.
 
 Every token must contain the `appmesh-api` audience. A display name, email address, group, or token role does not grant an App Mesh permission.
+
+Refresh tokens stay between the client and the authentication service. The Engine never sees one. The built-in service issues refresh tokens only for flows that request `offline_access`, and only while `refresh_token` is enabled in `oidc.yaml` (`APPMESH_AUTH_REFRESH_TOKEN`). `refresh_token_max_lifetime` (`APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME`, default 168h) caps the whole refresh chain, not one rotation. `/appmesh/auth/config` advertises `"refresh_token": false` when the feature is disabled; an older daemon omits the key, which means enabled.
 
 The Engine caches discovery data and signing keys for a limited time. An unknown key ID can cause one controlled refresh. A bounded negative cache limits repeated refresh attempts. The Engine does not fall back to local token signing or a second issuer.
 
@@ -122,7 +124,7 @@ A cluster uses one logical issuer. Each Engine validates tokens locally. Each En
 
 A follower does not create built-in credentials. It does not run a second authentication-service writer. It trusts the same issuer as the owner.
 
-Set the owner with `setup.sh --auth-mode builtin --auth-role owner`. Join a follower with `setup.sh --auth-mode builtin --auth-role follower --oidc-issuer <owner issuer>`. The role also applies at package installation time through `APPMESH_AUTH_ROLE`. The packaged `identity` App stays enabled on a follower. It runs inert: it stays healthy, it starts no Dex process, and it writes no authentication state.
+Set up the owner and join followers with the `setup.sh --auth-role owner|follower` actions described in [Deployment](Install.md#cluster-authentication-service); the role also applies at package installation time through `APPMESH_AUTH_ROLE`. The packaged `identity` App stays enabled on a follower. It runs inert: it stays healthy, it starts no Dex process, and it writes no authentication state.
 
 Authorization data is node-local. The principal and role APIs write the node that serves the request. A forwarded change therefore affects only the target node. Keep nodes consistent in one of two ways: apply the same changes on every node, or copy the owner's `work/config/authorization.yaml` to the followers. A copied file needs no restart: a follower adopts an entry from disk when it first resolves that principal, and a later save keeps the entry. A follower without a principal entry authenticates a user. It grants nothing beyond the configured provisioning policy.
 

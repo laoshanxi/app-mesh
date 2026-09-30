@@ -2,7 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-08-29
-- Related: ADR 0009 (authentication service), `docs/source/Security.md`
+- Related: [ADR 0009](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0009-authentication-service.md)
+  (authentication service), [Security](../Security.md)
+  (trust model), [Authentication](../Authentication.md) (password and token
+  operations), [Install](../Install.md) (deployment procedures)
 
 ## Problem
 
@@ -83,6 +86,10 @@ The docker-compose cluster uses route B. The compose network is a protected
 cluster network.
 
 ## Install and configuration
+
+The authoritative operator procedure is in
+[Install](../Install.md#cluster-authentication-service). This section records
+the design behind it.
 
 ### Owner
 
@@ -185,8 +192,10 @@ changes only the target node. Apply this rule:
   administrative entry point.
 - Distribute the change in one of two ways: apply the same API calls on
   every node, or copy the owner's runtime
-  `work/config/authorization.yaml` to the followers and restart their
-  daemons. Keep the file mode at 0600. Keep the runtime user as owner.
+  `work/config/authorization.yaml` to the followers. A copied file needs
+  no restart: a follower adopts an entry from disk when it first resolves
+  that principal, and a later save keeps the entry. Keep the file mode at
+  0600. Keep the runtime user as owner.
   A follower bootstrap creates no `work/config` directory; create it
   first (`mkdir -p <home>/work/config`) before the first copy.
 - A follower without a principal entry authenticates a user. It grants

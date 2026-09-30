@@ -18,17 +18,24 @@ Welcome to AppMesh's documentation!
    RESTAPI.md
    SDKContract.md
    Install.md
-   cluster/ClusterAuthDesign.md
    Loki.md
    PROMETHEUS.md
-   Security.md
-   Authentication.md
    Coverity.md
    GrafanaDataSource.md
    RemoteTask.md
    EventSubscription.md
    Workflow.md
    spec-pipeline.md
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Security:
+   :numbered:
+
+   Security.md
+   Authentication.md
+   cluster/ClusterAuthDesign.md
 
 
 .. toctree::

@@ -1,6 +1,6 @@
 # Secure REST file server
 
-App Mesh provide file download/upload REST APIs, also those APIs can be authenticated by JWT.
+App Mesh provide file download/upload REST APIs, also those APIs are protected by OAuth 2.0 bearer-token authentication.
 
 ## Solution
 

@@ -604,10 +604,10 @@ All actions return errors in the same format:
 
 | ADR | Decision |
 |-----|----------|
-| [0001](../../adr/0001-workflow-engine-single-process-goroutines.md) | Single Go binary with goroutines |
-| [0002](../../adr/0002-workflow-stored-as-special-app.md) | Workflow stored as special App |
-| [0003](../../adr/0003-tcp-transport-for-workflow-engine.md) | TCP transport for daemon communication |
-| [0004](../../adr/0004-unified-run-management-model.md) | Unified Run management model target |
+| [0001](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0001-workflow-engine-single-process-goroutines.md) | Single Go binary with goroutines |
+| [0002](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0002-workflow-stored-as-special-app.md) | Workflow stored as special App |
+| [0003](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0003-tcp-transport-for-workflow-engine.md) | TCP transport for daemon communication |
+| [0004](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0004-unified-run-management-model.md) | Unified Run management model target |
 
 ## Test Coverage
 

@@ -13,7 +13,7 @@ endpoints, requests use an OAuth access token in the
 | Method | URI | Purpose |
 |---|---|---|
 | GET | `/.well-known/oauth-protected-resource` | RFC 9728 resource metadata |
-| GET | `/appmesh/auth/config` | Public issuer, audience, client, and flow hints |
+| GET | `/appmesh/auth/config` | Public issuer, audience, client, and flow hints; advertises `"refresh_token": false` when refresh tokens are disabled |
 | GET | `/oauth/callback` | Static OAuth callback relay page |
 | POST | `/appmesh/auth/enroll-first-admin` | Enroll the first built-in App Mesh administrator |
 | GET | `/appmesh/logo.svg` | Branding logo for the authentication-service login page |

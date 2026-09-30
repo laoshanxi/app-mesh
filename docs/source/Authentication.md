@@ -2,11 +2,13 @@
 
 This document answers common operational questions about passwords and tokens in
 the built-in authentication mode (`APPMESH_AUTH_MODE=builtin`, see
-[ADR 0009](../adr/0009-authentication-service.md)). In `external` mode passwords
+[ADR 0009](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0009-authentication-service.md)). In `external` mode passwords
 belong to the external identity provider and this document does not apply.
 
 See [Security](Security.md) for the trust model, [CLI](CLI.md) for sign-in
-commands, and [Install](Install.md) for deployment procedures.
+commands, [Install](Install.md) for deployment procedures, and
+[Cluster Authentication](cluster/ClusterAuthDesign.md) for the multi-node
+owner/follower design.
 
 ## Questions at a glance
 
@@ -160,7 +162,7 @@ Two points are easy to get backwards:
 App Mesh has no user directory. The authentication service owns identities; App
 Mesh stores only the authorization record of a verified subject. The bundled
 administration UI — the `dexuser` System App, served by `bin/dexuser` — manages
-the authentication-service objects: users, OAuth clients, sessions, and MFA.
+the authentication-service objects: users, OAuth clients, and sessions.
 It does not manage App Mesh authorization records. Set those through
 `add-user` or the REST API.
 

@@ -139,8 +139,8 @@ App Mesh lets programs access remote capabilities with an explicit identity and
 bounded authority.
 
 - Authenticate users and establish renewable sessions.
-- Use token-based or OAuth-based authentication.
-- Require multi-factor authentication at the identity provider.
+- Use OAuth 2.0 / OpenID Connect bearer tokens issued by one trusted issuer per cluster.
+- Delegate user lifecycle, MFA, and directory policy to an external identity provider.
 - Manage principals, roles, and permissions. Keep users and groups at the identity provider.
 - Associate applications with owners.
 - Apply application-level read and write permissions.
