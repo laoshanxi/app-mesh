@@ -129,7 +129,8 @@ async fn password_login(oauth: &OAuthClient, args: &LogonArgs, builtin: bool) ->
                 });
             match retry {
                 Some(email) => {
-                    eprintln!("Built-in password login rejected {}; trying {}", username, email);
+                    // The retried identity is user input; keep it out of the log.
+                    eprintln!("Built-in password login rejected the short name; retrying with its email form");
                     oauth
                         .password_login(&email, password.as_str())
                         .await

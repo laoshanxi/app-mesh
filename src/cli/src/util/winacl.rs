@@ -162,7 +162,9 @@ unsafe fn dacl_has_no_broad_grants(dacl: *mut windows_sys::Win32::Security::ACL)
     }
     for index in 0..info.AceCount {
         let mut ace = std::ptr::null_mut();
-        if GetAce(dacl, index, &mut ace) == 0 {
+        // A successful GetAce writes a pointer into the DACL, but guard the
+        // dereference anyway: a null out-pointer must never be read.
+        if GetAce(dacl, index, &mut ace) == 0 || ace.is_null() {
             return false;
         }
         if (*(ace as *const ACE_HEADER)).AceType != ACCESS_ALLOWED_ACE_TYPE {
