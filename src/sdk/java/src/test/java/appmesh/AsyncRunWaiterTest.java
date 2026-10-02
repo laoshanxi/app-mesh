@@ -24,6 +24,7 @@ public class AsyncRunWaiterTest {
     private static class StubClient extends AppMeshClient {
         final AtomicReference<MessageDemuxer.EventCallback> callback = new AtomicReference<>();
         volatile MessageDemuxer.AppEvent injectEvent;
+        volatile boolean unsubscribed = false;
         volatile boolean deleted = false;
 
         StubClient() {
@@ -52,6 +53,7 @@ public class AsyncRunWaiterTest {
 
         @Override
         boolean unsubscribe(String subscriptionId, Map<String, String> extraHeaders) {
+            unsubscribed = true;
             return true;
         }
 
@@ -95,5 +97,32 @@ public class AsyncRunWaiterTest {
         assertThrows(TransportDisconnectedException.class, () -> AsyncRunWaiter.waitViaEvents(client,
                 new AppMeshClient.AppRun(client, "waitapp", "proc-1"), null, 30));
         assertFalse(client.deleted, "must not delete the run app after a disconnect");
+    }
+
+    // Conformance: cleanup policy — after a disconnect the transport is dead, so cleanup
+    // must skip unsubscribe (sending it would silently reconnect and register a waiter that
+    // never gets a response) and must not delete the run app (docs/source/SDKContract.md)
+    @Test
+    public void testDisconnectSkipsUnsubscribeAndDelete() {
+        StubClient client = new StubClient();
+        client.injectEvent = event(MessageDemuxer.EVENT_TYPE_DISCONNECTED, null);
+
+        assertThrows(TransportDisconnectedException.class, () -> AsyncRunWaiter.waitViaEvents(client,
+                new AppMeshClient.AppRun(client, "waitapp", "proc-1"), null, 30));
+        assertFalse(client.unsubscribed, "must not unsubscribe after a disconnect");
+        assertFalse(client.deleted, "must not delete the run app after a disconnect");
+    }
+
+    // Cleanup policy counterpart: a normal exit still unsubscribes (docs/source/SDKContract.md)
+    @Test
+    public void testExitUnsubscribes() throws Exception {
+        StubClient client = new StubClient();
+        client.injectEvent = event("EXIT", new JSONObject().put("exit_code", 0));
+
+        Integer code = AsyncRunWaiter.waitViaEvents(client,
+                new AppMeshClient.AppRun(client, "waitapp", "proc-1"), null, 5);
+
+        assertEquals(Integer.valueOf(0), code);
+        assertTrue(client.unsubscribed, "must unsubscribe after a normal exit");
     }
 }

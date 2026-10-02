@@ -406,7 +406,9 @@ func (r *AppMeshClient) deleteApp(ctx context.Context, appName string, extraHead
 // ensuring no events are missed. Pass event names like "START", "EXIT", "STDOUT",
 // or "ALL" for all events. Requires a TCP or WSS connection; on HTTP (which has no
 // event demuxer) passing subscribeEvents fails with ErrSubscriptionNotSupported.
-// When subscribeEvents is set, the returned Application.SubscriptionID will be non-empty.
+// When subscribeEvents is set, the returned Application.SubscriptionID will be non-empty;
+// attach an EventCallback to it with RegisterEventCallback (events pushed before
+// registration are buffered and flushed in order on registration).
 func (r *AppMeshClient) AddApp(app Application, subscribeEvents ...string) (*Application, error) {
 	if app.Name == "" {
 		return nil, fmt.Errorf("application name is required")

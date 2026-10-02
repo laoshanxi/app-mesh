@@ -359,12 +359,67 @@ func TestSubscribeRequiresEventCapableTransport(t *testing.T) {
 	_, err = client.AddApp(Application{Name: "app1"}, "START")
 	require.ErrorIs(t, err, ErrSubscriptionNotSupported)
 
+	err = client.RegisterEventCallback("sub-1", func(AppEvent) {})
+	require.ErrorIs(t, err, ErrSubscriptionNotSupported)
+
 	assert.Empty(t, fake.sent, "no request may be sent when the transport cannot deliver events")
 
 	// AddApp without subscribe events stays transport-agnostic.
 	_, err = client.AddApp(Application{Name: "app1"})
 	require.NoError(t, err)
 	assert.Len(t, fake.sent, 1)
+}
+
+func TestRegisterEventCallbackValidatesArgs(t *testing.T) {
+	client, _ := newWaitHarness()
+	require.Error(t, client.RegisterEventCallback("", func(AppEvent) {}))
+	require.Error(t, client.RegisterEventCallback("sub-1", nil))
+}
+
+// Conformance: S4 — atomic AddApp(subscribe_events) on a fast app: events pushed
+// before the callback is attached via RegisterEventCallback are buffered per
+// subID and flushed in arrival order on registration, ahead of later live
+// events; none are lost. See docs/source/SDKContract.md.
+func TestAddAppCallbackFlushesBufferedEvents(t *testing.T) {
+	client, msgCh := newWaitHarness()
+	demux := client.req.(subscribableRequester).getDemuxer()
+
+	// A START pushed before the add-app response (fast app): dispatchEvent is
+	// synchronous, so the event is deterministically buffered under "sub-add"
+	// before any callback exists.
+	resp := &Response{
+		UUID:        "evt-buffered",
+		RequestUri:  EVENT_URI,
+		HttpStatus:  200,
+		BodyMsgType: "application/json",
+		Body:        []byte(`{"subscription_id":"sub-add","event_type":"START","app_name":"atomic-app","timestamp":0,"sequence":1,"data":{"pid":4242}}`),
+	}
+	demux.dispatchEvent(resp)
+
+	added, err := client.AddApp(Application{Name: "atomic-app"}, "START", "EXIT")
+	require.NoError(t, err)
+	require.Equal(t, "sub-add", added.SubscriptionID)
+
+	received := make(chan AppEvent, 2)
+	require.NoError(t, client.RegisterEventCallback(added.SubscriptionID, func(e AppEvent) {
+		received <- e
+	}))
+
+	// A live event after registration must be delivered after the buffered one.
+	pushEvent(t, msgCh, "sub-add", "EXIT", `{"exit_code":0}`)
+
+	select {
+	case first := <-received:
+		assert.Equal(t, "START", first.EventType, "buffered event must flush first")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for buffered START event")
+	}
+	select {
+	case second := <-received:
+		assert.Equal(t, "EXIT", second.EventType, "live event must follow the buffered flush")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for live EXIT event")
+	}
 }
 
 func TestResponseDeserialize(t *testing.T) {

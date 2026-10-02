@@ -432,6 +432,34 @@ func (c *AppMeshClient) UnsubscribeContext(ctx context.Context, subscriptionID s
 	return nil
 }
 
+// RegisterEventCallback attaches a callback to an existing subscription ID —
+// primarily the SubscriptionID returned by AddApp with subscribe events (atomic
+// add_app(subscribe_events), mirroring the Python SDK's add_app(callback=...)).
+// Events the daemon pushed before registration are held by the demuxer's bounded
+// pre-registration buffer and flushed to the callback in arrival order, ahead of
+// any later live event, so none are lost. Requires a subscription-capable
+// transport (TCP/WSS); over plain HTTP it fails with ErrSubscriptionNotSupported.
+func (c *AppMeshClient) RegisterEventCallback(subscriptionID string, callback EventCallback) error {
+	if subscriptionID == "" {
+		return fmt.Errorf("subscription ID is required")
+	}
+	if callback == nil {
+		return fmt.Errorf("event callback is required")
+	}
+	subscriber, ok := c.req.(subscribableRequester)
+	if !ok {
+		return fmt.Errorf("register event callback: %w", ErrSubscriptionNotSupported)
+	}
+	// The demuxer must own the read side; without it the synchronous request
+	// path could consume a pushed event frame as if it were a response.
+	subscriber.enableDemuxer()
+	if d := subscriber.getDemuxer(); d != nil {
+		d.registerEventCallback(subscriptionID, callback)
+		return nil
+	}
+	return fmt.Errorf("register event callback: event demuxer unavailable")
+}
+
 // WaitForAsyncRun waits for an asynchronous application run to complete using
 // subscribe-based streaming instead of polling. It subscribes to STDOUT, EXIT,
 // and REMOVED events, then backfills any output emitted before the subscription

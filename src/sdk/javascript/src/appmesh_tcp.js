@@ -763,6 +763,7 @@ class AppMeshClientTCP extends AppMeshClient {
 
     let exitCode = null
     let failure = null
+    let disconnected = false // transport died — skip unsubscribe cleanup (SDKContract cleanup policy)
     let deliveredUntil = 0 // next-byte offset already delivered
     let done = false
     let resolveWait
@@ -807,6 +808,7 @@ class AppMeshClientTCP extends AppMeshClient {
         done = true
         resolveWait()
       } else if (event.event_type === EVENT_TYPE_DISCONNECTED) {
+        disconnected = true
         if (exitCode === null && failure === null) {
           failure = new TransportDisconnectedError(`transport disconnected while waiting for '${run.appName}' to exit`)
         }
@@ -844,11 +846,15 @@ class AppMeshClientTCP extends AppMeshClient {
         }
       }
     } finally {
-      try {
-        if (sub && sub.subscription_id) {
-          await this.unsubscribe(sub.subscription_id)
-        }
-      } catch (_) { /* ignore */ }
+      // Cleanup policy: after a disconnect the transport is dead — an unsubscribe
+      // would silently reconnect and register a never-answered waiter.
+      if (!disconnected) {
+        try {
+          if (sub && sub.subscription_id) {
+            await this.unsubscribe(sub.subscription_id)
+          }
+        } catch (_) { /* ignore */ }
+      }
 
       // Best-effort delete on a real exit; on REMOVED/disconnect the app is already gone.
       if (exitCode !== null && failure === null) {

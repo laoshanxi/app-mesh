@@ -190,6 +190,15 @@ impl MessageDemuxer {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// Number of events currently buffered for a not-yet-registered subscription
+    /// (test-only: lets client-level tests deterministically observe the
+    /// pre-registration race window instead of relying on sleeps).
+    #[cfg(test)]
+    pub(crate) fn buffered_event_count(&self, sub_id: &str) -> usize {
+        let state = self.event_state.lock().unwrap_or_else(|e| e.into_inner());
+        state.buffers.get(sub_id).map(|b| b.len()).unwrap_or(0)
+    }
+
     // -- internal -------------------------------------------------------------
 
     /// Push a synthetic disconnect event to every registered event callback,
@@ -434,5 +443,68 @@ mod tests {
             .await
             .expect("pending waiter not woken on disconnect");
         assert!(result.is_err());
+    }
+
+    // Conformance: S4 — atomic add_app(subscribe_events) on a fast app: events
+    // pushed before the callback registers are buffered per sub_id and flushed
+    // in order by register_event_callback; none lost and later live events keep
+    // arriving after the buffered ones; see docs/source/SDKContract.md.
+    #[tokio::test]
+    async fn conformance_s4_events_buffered_before_registration_flush_in_order() {
+        let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let demuxer = MessageDemuxer::new();
+        demuxer.start(Arc::new(ScriptedReader { rx: Mutex::new(rx) }));
+
+        let event_bytes = |seq: u64| {
+            let event = AppEvent {
+                subscription_id: "sub-s4".to_string(),
+                event_type: "START".to_string(),
+                app_name: "fast-app".to_string(),
+                timestamp: 1,
+                sequence: seq,
+                data: serde_json::Value::Null,
+            };
+            response_bytes("evt-s4", EVENT_URI, &serde_json::to_vec(&event).unwrap())
+        };
+
+        // Two events race the add-app response: no callback registered yet.
+        tx.send(event_bytes(1)).unwrap();
+        tx.send(event_bytes(2)).unwrap();
+
+        // Wait until the read loop has buffered both events so the test really
+        // exercises the pre-registration buffer, not the direct dispatch path.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let buffered = {
+                let state = demuxer.event_state.lock().unwrap_or_else(|e| e.into_inner());
+                state.buffers.get("sub-s4").map(|b| b.len()).unwrap_or(0)
+            };
+            if buffered == 2 {
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "events were not buffered");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        demuxer.register_event_callback(
+            "sub-s4",
+            Arc::new(move |event: AppEvent| {
+                let _ = event_tx.send(event);
+            }),
+        );
+
+        // A live event sent after registration must land after the buffered ones.
+        tx.send(event_bytes(3)).unwrap();
+
+        for expected in 1..=3u64 {
+            let got = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+                .await
+                .expect("timed out waiting for event")
+                .expect("dispatch worker dropped");
+            assert_eq!(got.sequence, expected);
+            assert_eq!(got.subscription_id, "sub-s4");
+        }
+        demuxer.stop();
     }
 }

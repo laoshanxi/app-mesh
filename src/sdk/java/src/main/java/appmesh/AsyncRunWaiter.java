@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -53,6 +54,7 @@ final class AsyncRunWaiter {
         Map<String, String> forwardHeaders = client.forwardHeaders(run.getForwardingHost());
 
         final AtomicReference<Outcome> outcome = new AtomicReference<>();
+        final AtomicBoolean disconnected = new AtomicBoolean(false);
         final AtomicLong deliveredUntil = new AtomicLong(0);
         final CountDownLatch done = new CountDownLatch(1);
         final Object deliverLock = new Object();
@@ -90,6 +92,7 @@ final class AsyncRunWaiter {
                     done.countDown();
                     break;
                 case MessageDemuxer.EVENT_TYPE_DISCONNECTED:
+                    disconnected.set(true);
                     outcome.compareAndSet(null, new Outcome(null, new TransportDisconnectedException(
                             "transport disconnected while waiting for '" + run.getAppName() + "' to exit")));
                     done.countDown();
@@ -126,12 +129,15 @@ final class AsyncRunWaiter {
                 done.await();
             }
         } finally {
-            // Unsubscribe
-            try {
-                if (!subscriptionId.isEmpty()) {
-                    client.unsubscribe(subscriptionId, forwardHeaders);
+            // Cleanup policy: after a disconnect the transport is dead — an unsubscribe
+            // would silently reconnect and register a never-answered waiter.
+            if (!disconnected.get()) {
+                try {
+                    if (!subscriptionId.isEmpty()) {
+                        client.unsubscribe(subscriptionId, forwardHeaders);
+                    }
+                } catch (Exception ignored) {
                 }
-            } catch (Exception ignored) {
             }
             // Best-effort delete on a real exit only; on REMOVED/disconnect the app is already gone
             Outcome finalOutcome = outcome.get();

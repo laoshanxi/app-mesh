@@ -211,13 +211,14 @@ function makeStubWaitClient () {
   const stub = {
     injectEvent: null,
     deleted: false,
+    unsubscribed: false,
     _cb: null,
     async subscribe (name, events, cb) { stub._cb = cb; return { subscription_id: 'sub-1' } },
     async get_app_output () {
       if (stub._cb && stub.injectEvent) stub._cb(stub.injectEvent)
       return { output: '', exitCode: null }
     },
-    async unsubscribe () {},
+    async unsubscribe () { stub.unsubscribed = true },
     async delete_app () { stub.deleted = true }
   }
   return stub
@@ -231,11 +232,13 @@ await assertAsync('wait_for_async_run returns negative exit code as-is', async (
   const code = await AppMeshClientTCP.prototype.wait_for_async_run.call(
     stub, { appName: 'waitapp', procUid: 'proc-1' }, null, 5)
   if (code !== -2) throw new Error(`expected exit code -2, got ${code}`)
+  if (!stub.unsubscribed) throw new Error('live transport must be unsubscribed after the wait')
   if (!stub.deleted) throw new Error('run app must be deleted after a real observed exit')
 })
 
 // Conformance S2 (SDKContract.md): transport disconnect mid-wait throws
-// TransportDisconnectedError promptly instead of hanging.
+// TransportDisconnectedError promptly instead of hanging, and skips cleanup
+// requests on the dead transport (SDKContract cleanup policy).
 await assertAsync('wait_for_async_run disconnect unblocks with typed error', async () => {
   const stub = makeStubWaitClient()
   stub.injectEvent = { event_type: EVENT_TYPE_DISCONNECTED }
@@ -249,6 +252,7 @@ await assertAsync('wait_for_async_run disconnect unblocks with typed error', asy
   if (!(thrown instanceof TransportDisconnectedError)) {
     throw new Error(`expected TransportDisconnectedError, got ${thrown}`)
   }
+  if (stub.unsubscribed) throw new Error('must not send unsubscribe on a dead transport')
   if (stub.deleted) throw new Error('must not delete the run app after a disconnect')
 })
 

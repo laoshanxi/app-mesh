@@ -708,6 +708,13 @@ func (w *WSSRequester) enableDemuxer() {
 	if w.demuxer != nil && w.demuxer.isRunning() {
 		return
 	}
+	// Connect before starting the reader: request()'s ensureConnected re-authenticates
+	// on token change by closing and rebuilding the socket, which would kill a demuxer
+	// started against the old connection and strand callbacks on a dead reader.
+	if err := w.ensureConnected(); err != nil {
+		logf("enableDemuxer: connect failed: %v", err)
+		return
+	}
 	w.demuxer = newMessageDemuxer(w.WSSConnection.ReadMessage)
 	w.demuxer.start()
 }

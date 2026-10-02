@@ -837,7 +837,28 @@ impl AppMeshClient {
     /// When `subscribe_events` is `Some`, a subscription is created before the app starts,
     /// ensuring no events are missed. The returned `Application.subscription_id` will be set.
     /// Requires TCP or WebSocket transport.
+    ///
+    /// Events pushed before the response returns are buffered by the demuxer per
+    /// subscription ID; use [`Self::add_app_with_callback`] to register an event
+    /// callback and receive them.
     pub async fn add_app(&self, app: &Application, subscribe_events: Option<&[&str]>) -> Result<Application> {
+        self.add_app_with_callback(app, subscribe_events, None).await
+    }
+
+    /// Add or update an application, subscribing to events atomically and wiring a
+    /// local event callback (matching the Python SDK's `add_app(callback=...)`).
+    ///
+    /// The daemon creates the subscription before starting the app, so events (e.g.
+    /// START on a fast app) can be pushed before the add-app response returns; the
+    /// demuxer buffers them per subscription ID and this method registers `callback`
+    /// for the returned `Application.subscription_id`, flushing the buffer so no
+    /// events are lost. Requires TCP or WebSocket transport.
+    pub async fn add_app_with_callback(
+        &self,
+        app: &Application,
+        subscribe_events: Option<&[&str]>,
+        callback: Option<EventCallback>,
+    ) -> Result<Application> {
         let name = app
             .name
             .as_deref()
@@ -867,7 +888,14 @@ impl AppMeshClient {
                 true,
             )
             .await?;
-        resp.json()
+        let result: Application = resp.json()?;
+        if let (Some(cb), Some(sub_id)) = (callback, result.subscription_id.clone()) {
+            // Flush any events buffered for this subscription (they raced the response).
+            if let Some(demuxer) = self.req.get_demuxer() {
+                demuxer.register_event_callback(&sub_id, cb);
+            }
+        }
+        Ok(result)
     }
 
     /// Add or update an application from raw JSON (advanced).
@@ -924,25 +952,14 @@ impl AppMeshClient {
         // otherwise an event racing the response can be consumed by the direct reader.
         self.req.enable_demuxer().await?;
 
-        // Pre-register callback state before sending. Events use the actual server
-        // subscription ID and are buffered until that ID is registered below.
-        // (The "__pending_" prefix cannot collide with server-issued UUID sub ids.)
-        let pending_key = format!("__pending_{}", uuid::Uuid::new_v4());
-        if let Some(ref cb) = callback {
-            if let Some(demuxer) = self.req.get_demuxer() {
-                demuxer.register_event_callback(&pending_key, cb.clone());
-            }
-        }
-
         let resp = self.send(Method::POST, &path, None, None, query, true).await?;
         let result: SubscriptionResult = resp.json()?;
 
-        // Re-register callback with the actual subscription_id from server
+        // Events carry the server subscription ID, so any that raced the response
+        // are buffered per sub_id; registering here flushes them in order.
         if let Some(cb) = callback {
             if let Some(demuxer) = self.req.get_demuxer() {
-                // Register new key first, then remove pending — no gap where neither exists
                 demuxer.register_event_callback(&result.subscription_id, cb);
-                demuxer.unregister_event_callback(&pending_key);
             }
         }
 
@@ -1650,5 +1667,161 @@ mod tests {
     fn test_refresh_retry_delay_is_bounded() {
         let got: Vec<u64> = (1..=7).map(|n| AppMeshClient::refresh_retry_delay(n).as_secs()).collect();
         assert_eq!(got, vec![5, 10, 20, 40, 60, 60, 60]);
+    }
+
+    // -- S4: add_app_with_callback wiring ------------------------------------
+
+    use crate::constants::EVENT_URI;
+    use crate::subscribe::{MessageDemuxer, MessageReader};
+    use crate::wire_messages::ResponseMessage;
+    use tokio::sync::mpsc;
+
+    /// Scripted demuxer read side: messages are fed through a channel, matching
+    /// the mock-transport style of subscribe.rs tests.
+    struct ScriptedReader {
+        rx: tokio::sync::Mutex<mpsc::UnboundedReceiver<Vec<u8>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl MessageReader for ScriptedReader {
+        async fn read_message(&self) -> std::result::Result<Option<Vec<u8>>, AppMeshError> {
+            Ok(self.rx.lock().await.recv().await)
+        }
+    }
+
+    /// Shared state so the test can drive events and inspect the requester
+    /// after the client has taken ownership of it.
+    struct MockDemuxerState {
+        demuxer: Arc<MessageDemuxer>,
+        reader: Arc<ScriptedReader>,
+        event_tx: mpsc::UnboundedSender<Vec<u8>>,
+        calls: Mutex<Vec<&'static str>>,
+    }
+
+    /// Requester double with a real demuxer: behaves like the TCP/WSS
+    /// transports, and its `send` replays the daemon's atomic-subscribe race —
+    /// START events are pushed before the add-app response is returned.
+    struct MockDemuxerRequester {
+        state: Arc<MockDemuxerState>,
+    }
+
+    fn event_frame(sub_id: &str, seq: u64) -> Vec<u8> {
+        let event = AppEvent {
+            subscription_id: sub_id.to_string(),
+            event_type: "START".to_string(),
+            app_name: "atomic-app".to_string(),
+            timestamp: 1,
+            sequence: seq,
+            data: serde_json::Value::Null,
+        };
+        let resp = ResponseMessage {
+            uuid: format!("evt-{}", seq),
+            request_uri: EVENT_URI.to_string(),
+            http_status: 200,
+            body: serde_json::to_vec(&event).unwrap(),
+            ..Default::default()
+        };
+        // Struct-map encoding, matching the daemon wire format.
+        rmp_serde::to_vec_named(&resp).expect("serialize response")
+    }
+
+    #[async_trait::async_trait]
+    impl Requester for MockDemuxerRequester {
+        async fn send(
+            &self,
+            _method: Method,
+            path: &str,
+            _body: Option<&[u8]>,
+            _headers: Option<HashMap<String, String>>,
+            query: Option<HashMap<String, String>>,
+            _fail_on_error: bool,
+        ) -> Result<http::Response<Bytes>> {
+            self.state.calls.lock().unwrap_or_else(|e| e.into_inner()).push("send");
+            assert_eq!(path, "/appmesh/app/atomic-app");
+            assert_eq!(
+                query.as_ref().and_then(|q| q.get("subscribe_events")).map(String::as_str),
+                Some("START,EXIT")
+            );
+            // The daemon pushes START before the add-app response returns.
+            self.state.event_tx.send(event_frame("sub-atomic", 1)).unwrap();
+            self.state.event_tx.send(event_frame("sub-atomic", 2)).unwrap();
+            // Make the race deterministic: both events must sit in the
+            // pre-registration buffer before the response is returned, so the
+            // client can only deliver them via register_event_callback's flush.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+            while self.state.demuxer.buffered_event_count("sub-atomic") < 2 {
+                assert!(tokio::time::Instant::now() < deadline, "events were not buffered");
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            let body = serde_json::to_vec(&json!({"name": "atomic-app", "subscription_id": "sub-atomic"})).unwrap();
+            Ok(http::Response::builder().status(200).body(Bytes::from(body)).unwrap())
+        }
+
+        fn handle_token_update(&self, _token: Option<String>) {}
+
+        async fn enable_demuxer(&self) -> Result<()> {
+            self.state.calls.lock().unwrap_or_else(|e| e.into_inner()).push("enable_demuxer");
+            self.state.demuxer.start(self.state.reader.clone());
+            Ok(())
+        }
+
+        fn supports_demuxer(&self) -> bool {
+            true
+        }
+
+        fn get_demuxer(&self) -> Option<Arc<MessageDemuxer>> {
+            Some(self.state.demuxer.clone())
+        }
+    }
+
+    // Conformance: S4 — atomic add_app(subscribe_events, callback): the demuxer
+    // is enabled before the request, the callback is registered on the
+    // response's subscription_id, and events the daemon pushed ahead of the
+    // response are flushed in order before later live events;
+    // see docs/source/SDKContract.md.
+    #[tokio::test]
+    async fn conformance_s4_add_app_with_callback_flushes_buffered_events() {
+        let (event_tx, event_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let state = Arc::new(MockDemuxerState {
+            demuxer: Arc::new(MessageDemuxer::new()),
+            reader: Arc::new(ScriptedReader { rx: tokio::sync::Mutex::new(event_rx) }),
+            event_tx,
+            calls: Mutex::new(Vec::new()),
+        });
+        let client = AppMeshClient::with_requester(
+            Box::new(MockDemuxerRequester { state: state.clone() }),
+            "http://localhost".to_string(),
+        );
+
+        let (cb_tx, mut cb_rx) = mpsc::unbounded_channel::<AppEvent>();
+        let callback: EventCallback = Arc::new(move |event: AppEvent| {
+            let _ = cb_tx.send(event);
+        });
+
+        let app = Application::builder("atomic-app").command("true").build();
+        let result = client
+            .add_app_with_callback(&app, Some(&["START", "EXIT"]), Some(callback))
+            .await
+            .expect("add_app_with_callback failed");
+        assert_eq!(result.subscription_id.as_deref(), Some("sub-atomic"));
+
+        // The demuxer must own the read side before the request is sent.
+        assert_eq!(
+            *state.calls.lock().unwrap_or_else(|e| e.into_inner()),
+            vec!["enable_demuxer", "send"]
+        );
+
+        // A live event sent after registration must land after the flushed ones.
+        state.event_tx.send(event_frame("sub-atomic", 3)).unwrap();
+
+        for expected in 1..=3u64 {
+            let got = tokio::time::timeout(Duration::from_secs(2), cb_rx.recv())
+                .await
+                .expect("timed out waiting for event")
+                .expect("dispatch worker dropped");
+            assert_eq!(got.sequence, expected);
+            assert_eq!(got.subscription_id, "sub-atomic");
+        }
+        state.demuxer.stop();
     }
 }
