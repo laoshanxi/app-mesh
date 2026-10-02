@@ -63,9 +63,9 @@ STOPSIGNAL SIGTERM
 FROM runtime_base AS llm_agent
 # Build-time package installation; the published target resets to appmesh below.
 USER root
-COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/sdk/llm-agent/llm_agent/ /opt/appmesh/lib/llm-agent/llm_agent/
-COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/sdk/llm-agent/requirements.txt /opt/appmesh/lib/llm-agent/requirements.txt
-COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/sdk/llm-agent/config/llm-agent.yaml /opt/appmesh/apps/llm-agent.yaml
+COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/apps/llm-agent/llm_agent/ /opt/appmesh/lib/llm-agent/llm_agent/
+COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/apps/llm-agent/requirements.txt /opt/appmesh/lib/llm-agent/requirements.txt
+COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/apps/llm-agent/config/llm-agent.yaml /opt/appmesh/apps/llm-agent.yaml
 # Optional llm-agent deps; includes Claude Code.
 RUN pip3 install --break-system-packages --no-cache-dir -r /opt/appmesh/lib/llm-agent/requirements.txt && \
     # This image runs the agent: auto-start the App on boot.

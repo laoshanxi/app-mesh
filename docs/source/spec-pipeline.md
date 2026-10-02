@@ -8,8 +8,8 @@ Two files:
 
 | File | What it is | Status |
 |------|-----------|--------|
-| [`spec-pipeline-demo.yaml`](../../src/workflow/docs/spec-pipeline-demo.yaml) | **Runnable** demo — shell-only, no external tools; same DAG as production | ✅ runs green on a live daemon (verified, both paths) |
-| [`llm-spec-pipeline.yaml`](../../src/workflow/docs/llm-spec-pipeline.yaml) | **Production template** — same DAG, real `claude`/`openspec`/build/test commands | ✅ parses against the engine; commands are placeholders to fill in |
+| [`spec-pipeline-demo.yaml`](../../src/apps/workflow/docs/spec-pipeline-demo.yaml) | **Runnable** demo — shell-only, no external tools; same DAG as production | ✅ runs green on a live daemon (verified, both paths) |
+| [`llm-spec-pipeline.yaml`](../../src/apps/workflow/docs/llm-spec-pipeline.yaml) | **Production template** — same DAG, real `claude`/`openspec`/build/test commands | ✅ parses against the engine; commands are placeholders to fill in |
 
 ## The three layers
 
@@ -70,7 +70,7 @@ username, is recorded as `actor`.
 ### Via the CLI
 
 ```bash
-appm workflow add  -f src/workflow/docs/spec-pipeline-demo.yaml
+appm workflow add  -f src/apps/workflow/docs/spec-pipeline-demo.yaml
 appm workflow run  spec-pipeline-demo                       # green path
 appm workflow run  spec-pipeline-demo -e demo_reject=true   # exercise the rework path
 appm workflow runs spec-pipeline-demo                       # list runs
@@ -88,7 +88,7 @@ c = AppMeshClient(base_url="https://127.0.0.1:6060", bearer_token=tok, ssl_verif
 def call(action, **kw):
     return json.loads(c.run_task("workflow", json.dumps({"action": action, "token": tok, **kw}), 90))
 
-call("workflow_add", workflow="spec-pipeline-demo", content=open("src/workflow/docs/spec-pipeline-demo.yaml").read())
+call("workflow_add", workflow="spec-pipeline-demo", content=open("src/apps/workflow/docs/spec-pipeline-demo.yaml").read())
 rid = call("run", workflow="spec-pipeline-demo", inputs={})["data"]["run_id"]
 print(call("run_detail", workflow="spec-pipeline-demo", run_id=rid)["data"]["status"])
 ```

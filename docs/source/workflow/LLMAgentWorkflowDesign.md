@@ -2,7 +2,7 @@
 
 ## Status
 
-> **⚠️ Superseded — read [`src/sdk/llm-agent/README.md`](../../../src/sdk/llm-agent/README.md) for the shipped design.**
+> **⚠️ Superseded — read [`src/apps/llm-agent/README.md`](../../../src/apps/llm-agent/README.md) for the shipped design.**
 > The implementation was later simplified to a **thin wrapper around the official Claude
 > Agent SDK** (runs Claude by default; other models via Claude Code's provider env — see
 > the README's *Models & providers*). The agent loop, tools (Claude Code's built-in tools), and
@@ -41,7 +41,7 @@ Its backends were: `fake` (network-free,
 for tests/dev), `anthropic` (official SDK), `openai` (official SDK; also any
 OpenAI-compatible endpoint — vLLM / Ollama / TGI / DeepSeek — via `OPENAI_BASE_URL`), and
 `gemini` (official `google-genai` SDK). See
-[`src/sdk/llm-agent/README.md`](../../../src/sdk/llm-agent/README.md).
+[`src/apps/llm-agent/README.md`](../../../src/apps/llm-agent/README.md).
 
 The guiding constraint, inherited from the workflow engine, is **reuse App Mesh as the
 execution substrate with zero C++ daemon change**. The "hard" part of an agent — the
@@ -278,7 +278,7 @@ First cut reuses the engine's existing facilities; no new subsystem.
 
 | # | Decision |
 |---|---|
-| Implementation | Python package `llm_agent` in `src/sdk/llm-agent/`; LLM mechanics delegated to official SDKs; **no MCP** on the core path |
+| Implementation | Python package `llm_agent` in `src/apps/llm-agent/`; LLM mechanics delegated to official SDKs; **no MCP** on the core path |
 | Scenarios | Two: A (DAG, no streaming) and B (interactive, streaming), sharing one design |
 | Apps | Admin-provisioned; Scenario A = shared App per tenant (`llm-agent` default, `llm-agent-<tenant>` named); Scenario B = one worker App per session `<app>-sess-<id>` (`--session-worker`, `behavior: exit: remove`). `llm-agent` spawns nothing. |
 | Agent loop | Inside the App; DAG stays static; engine unchanged |
@@ -308,7 +308,7 @@ First cut reuses the engine's existing facilities; no new subsystem.
 
 ## References
 
-- [`src/sdk/llm-agent/README.md`](../../../src/sdk/llm-agent/README.md) — implementation: layout, env, wire protocol, install.
+- [`src/apps/llm-agent/README.md`](../../../src/apps/llm-agent/README.md) — implementation: layout, env, wire protocol, install.
 - [WorkflowDesign.md](WorkflowDesign.md) — workflow engine (DAG, steps, `message`/RunTask, Subscribe/STDOUT, registry scan).
 - [CONTEXT.md](CONTEXT.md) — domain glossary (App, Task, Event, message step).
 - ADR 0006 — workflow multi-tenant authorization (L1/L2/L3, invoker rights).

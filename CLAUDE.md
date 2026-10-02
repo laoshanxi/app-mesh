@@ -176,7 +176,7 @@ Shared C++ library used by the daemon. Notable:
 - `tests/integration_test.rs` — CLI argument parsing and subcommand tests (no daemon needed)
 - `tests/remote_test.rs` — integration tests against a running daemon (run with `--ignored`)
 
-### Agent (`src/sdk/agent/`)
+### Agent (`src/agent/`)
 
 REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP requests from clients and forwards them to the daemon via TCP, offloading traffic and reducing pressure on the C++ core. Also provides a Docker daemon reverse proxy (`/appmesh/docker/*`), and Prometheus metrics exporter.
 
@@ -193,15 +193,16 @@ REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP reque
 
 Each SDK provides client libraries for interacting with the daemon plus a server-side interface for receiving tasks.
 
-### MCP (`src/sdk/mcp_server/`, `src/sdk/mcp_bridge/`)
+### Integrations (`src/integrations/`)
 
-Model Context Protocol integration, enabling AI agents to manage applications via MCP. Two flavors:
-- `mcp_server/` — standalone MCP OAuth Resource Server over **Streamable HTTP**. It validates Dex access tokens against the canonical issuer, may reach Dex through a separately configured access address, and forwards the caller bearer unchanged to App Mesh. It does not mint a second token or expose an upstream IdP. Designed to run as an App Mesh App.
-- `mcp_bridge/` — a stdio MCP server plus `mcp_pipe.py`, a stdio↔WebSocket tunnel for relaying a local MCP server out to a remote LLM gateway.
+Ecosystem connectors that bridge App Mesh with external systems. MCP integration enables AI agents to manage applications via MCP. Two flavors:
+- `mcp-server/` — standalone MCP OAuth Resource Server over **Streamable HTTP**. It validates Dex access tokens against the canonical issuer, may reach Dex through a separately configured access address, and forwards the caller bearer unchanged to App Mesh. It does not mint a second token or expose an upstream IdP. Designed to run as an App Mesh App.
+- `mcp-bridge/` — a stdio MCP server plus `mcp_pipe.py`, a stdio↔WebSocket tunnel for relaying a local MCP server out to a remote LLM gateway.
+- `mqtt/` — MQTT bridge scripts and broker config for IoT scenarios (example-grade).
 
-### LLM Agent (`src/sdk/llm-agent/`)
+### LLM Agent (`src/apps/llm-agent/`)
 
-LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`). A thin wrapper around the official **Claude Agent SDK** (built on Claude Code — runs Claude by default, but can also target other models: Bedrock/Vertex, or DeepSeek/Qwen/GLM/MiniMax/OpenAI via an Anthropic-compatible endpoint). The SDK drives a Claude Code CLI as a subprocess; the `claude-agent-sdk` wheel bundles that CLI (no Node.js needed). The default Docker image keeps the llm-agent App package and `claude-agent-sdk` out of the base runtime; use the `llm_agent` Docker target / `laoshanxi/appmesh:llm` image when this optional App is needed. The agent loop, tools (Claude Code's built-in Read/Write/Edit/Bash/…), and conversation history are all the SDK's; llm-agent only routes `session_send`/`session_close` over the task RPC and gives each session a stable workdir (`<workspace>/<session_id>`) that keys the SDK's on-disk history (continuing a session = same `session_id`). Two roles: a shared App for batch/DAG (Scenario A) and an admin-provisioned per-session worker App for interactive streaming (Scenario B). No auth/quota/tenant in the agent itself — the daemon authorizes `run_task` (RBAC + the worker App's `permission`); the model credential is a secured env var (`ANTHROPIC_API_KEY` for the Anthropic API; the backend's equivalent otherwise). See `src/sdk/llm-agent/README.md`.
+LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`). A thin wrapper around the official **Claude Agent SDK** (built on Claude Code — runs Claude by default, but can also target other models: Bedrock/Vertex, or DeepSeek/Qwen/GLM/MiniMax/OpenAI via an Anthropic-compatible endpoint). The SDK drives a Claude Code CLI as a subprocess; the `claude-agent-sdk` wheel bundles that CLI (no Node.js needed). The default Docker image keeps the llm-agent App package and `claude-agent-sdk` out of the base runtime; use the `llm_agent` Docker target / `laoshanxi/appmesh:llm` image when this optional App is needed. The agent loop, tools (Claude Code's built-in Read/Write/Edit/Bash/…), and conversation history are all the SDK's; llm-agent only routes `session_send`/`session_close` over the task RPC and gives each session a stable workdir (`<workspace>/<session_id>`) that keys the SDK's on-disk history (continuing a session = same `session_id`). Two roles: a shared App for batch/DAG (Scenario A) and an admin-provisioned per-session worker App for interactive streaming (Scenario B). No auth/quota/tenant in the agent itself — the daemon authorizes `run_task` (RBAC + the worker App's `permission`); the model credential is a secured env var (`ANTHROPIC_API_KEY` for the Anthropic API; the backend's equivalent otherwise). See `src/apps/llm-agent/README.md`.
 
 ## Code Conventions
 

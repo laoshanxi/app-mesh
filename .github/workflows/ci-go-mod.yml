@@ -30,17 +30,17 @@ jobs:
 
       - name: Verify go.mod and go.sum are tidy
         run: |
-          # src/workflow is a separate module that replaces the root one, so a
+          # src/apps/workflow is a separate module that replaces the root one, so a
           # dependency bump in the root go.mod leaves its indirect pins stale
           # until it is tidied too. Both must be tidy, or a -mod=readonly build
           # refuses the module graph.
-          for dir in . src/workflow; do
+          for dir in . src/apps/workflow; do
             echo "::group::go mod tidy in $dir"
             (cd "$dir" && go mod tidy)
             echo "::endgroup::"
           done
 
-          PATHS="go.mod go.sum src/workflow/go.mod src/workflow/go.sum"
+          PATHS="go.mod go.sum src/apps/workflow/go.mod src/apps/workflow/go.sum"
           if [ -n "$(git status --porcelain -- $PATHS)" ]; then
             git --no-pager diff -- $PATHS
             echo "::error::go.mod/go.sum are not tidy. Run 'go mod tidy' in the module that changed and commit the result."

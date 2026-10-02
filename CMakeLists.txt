@@ -215,7 +215,7 @@ if(NOT APPMESH_NO_TESTS)
 
     add_custom_target(workflow_tests
         COMMAND go test ./... -v -count=1 -tags=e2e
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/src/workflow"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/src/apps/workflow"
         COMMENT "Running workflow engine Go tests (unit + E2E)..."
         VERBATIM
     )

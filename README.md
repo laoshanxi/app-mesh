@@ -140,9 +140,9 @@ appm workflow runs pipeline               # view history
 The Computing pillar makes App Mesh a natural runtime for AI workloads:
 
 - **[Remote sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)** — give agents an isolated build-and-run environment instead of your local shell.
-- **[MCP server](src/sdk/mcp_server)** — manage App Mesh from AI clients over Model Context Protocol (Streamable HTTP with OAuth 2.1, RBAC enforced by the daemon).
-- **[LLM agent runtime](src/sdk/llm-agent)** — host Claude-Agent-SDK-based agents as managed App Mesh applications; see the [architecture design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/sdk/llm-agent/SOP.md)).
-- **[Remote execution skill](.agents/skills/appmesh-remote)** for Codex and Claude Code, **[MCP bridge](src/sdk/mcp_bridge)** for relaying stdio MCP servers over WebSocket, and **[MQTT bridge](src/sdk/mqtt)** for IoT scenarios.
+- **[MCP server](src/integrations/mcp-server)** — manage App Mesh from AI clients over Model Context Protocol (Streamable HTTP with OAuth 2.1, RBAC enforced by the daemon).
+- **[LLM agent runtime](src/apps/llm-agent)** — host Claude-Agent-SDK-based agents as managed App Mesh applications; see the [architecture design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/apps/llm-agent/SOP.md)).
+- **[Remote execution skill](.agents/skills/appmesh-remote)** for Codex and Claude Code, **[MCP bridge](src/integrations/mcp-bridge)** for relaying stdio MCP servers over WebSocket, and **[MQTT bridge](src/integrations/mqtt)** for IoT scenarios.
 
 ## 🧰 Interfaces & SDKs
 
@@ -158,8 +158,8 @@ The Computing pillar makes App Mesh a natural runtime for AI workloads:
 **AI & automation**
 
 - [Remote build-and-run sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)
-- [LLM agent runtime hosted as an App Mesh app](src/sdk/llm-agent) · [architecture and workflow design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/sdk/llm-agent/SOP.md))
-- [Manage App Mesh from AI clients via MCP (HTTP + OAuth)](src/sdk/mcp_server)
+- [LLM agent runtime hosted as an App Mesh app](src/apps/llm-agent) · [architecture and workflow design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/apps/llm-agent/SOP.md))
+- [Manage App Mesh from AI clients via MCP (HTTP + OAuth)](src/integrations/mcp-server)
 
 **Computing**
 

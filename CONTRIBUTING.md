@@ -119,7 +119,7 @@ Examples:
 
 - **Python SDK**: `APPMESH_TEST_ACCESS_TOKEN=<dex-token> python3 -m unittest --verbose` (from `src/sdk/python/test/`). It needs a live daemon and fails without the token.
 - **Go SDK**: `go test ./src/sdk/go/ -test.v` (live-daemon cases skip without `APPMESH_BEARER_TOKEN`)
-- **Workflow engine**: `cd src/workflow && go test ./... -v -count=1 -tags=e2e`
+- **Workflow engine**: `cd src/apps/workflow && go test ./... -v -count=1 -tags=e2e`
 - **Rust CLI**: `cd src/cli && cargo test`
 - **Static Analysis**: `make cppcheck`
 
