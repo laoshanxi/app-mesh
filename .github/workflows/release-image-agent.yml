@@ -25,6 +25,9 @@ permissions: # added using https://github.com/step-security/secure-workflows
 jobs:
   build:
     name: Build Platform Image
+    # The image installs the SDK from PyPI, so a failed publish must not
+    # rebuild it against the previous release.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     timeout-minutes: 120
     strategy:
       fail-fast: false

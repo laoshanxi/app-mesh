@@ -22,7 +22,7 @@ owner/follower design.
 | Manage users, clients, and sessions | Open the administration UI on `http://127.0.0.1:6064` | [Administration UI](#administration-ui) |
 | Add another user | `add-user` with the password on standard input | [Adding a user](#adding-a-user) |
 | Delete a user | `delete-user` with the address | [Deleting a user](#deleting-a-user) |
-| Use a password from the Python SDK | Custom `TokenProvider`, or exchange the token first | [Python SDK password sign-in](#using-a-password-from-the-python-sdk) |
+| Use a password from the Python SDK | Built-in `PasswordGrantProvider`, a custom `TokenProvider`, or exchange the token first | [Python SDK password sign-in](#using-a-password-from-the-python-sdk) |
 | Turn off the password grant (pure PKCE) | `password_flow: false` in `oidc.yaml` | [Disabling the password grant](#disabling-the-password-grant) |
 | Turn off refresh tokens (short sessions) | `refresh_token: false` in `oidc.yaml` | [Disabling refresh tokens](#disabling-refresh-tokens) |
 | Manage users on Windows | Static admin/guest only; dynamic users need an external IdP | [Windows user management](#windows-user-management) |
@@ -480,7 +480,7 @@ refresh token, so automation callers keep re-minting.
 | `appmesh-auth.sh automation-token` | — | ✅ | — | — |
 | CLI `appm logon` | ✅ `--password` / `--password-stdin` / `--username` (only when advertised) | — | ✅ automatic, or `--device` / `--browser` | ✅ (session file) |
 | Rust SDK `OAuthClient` | ✅ `password_login()` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
-| Python SDK `OAuthClient` | — | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
+| Python SDK `OAuthClient` | ✅ `PasswordGrantProvider` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
 | Go / Java / JS / C++ SDK | — | — | — | ✅ built-in `RefreshTokenProvider` or custom `TokenProvider`; static bearer setters still available (Go `SetToken`, Java `setBearerToken`, JS `set_bearer_token`, C++ `setBearerToken`) |
 
 Without flags, the CLI selects the method from the advertised flows and the
@@ -496,51 +496,37 @@ not enough for `appm loginfo`; it exits nonzero without a session file.
 
 ## Using a password from the Python SDK
 
-The Python SDK has no password grant; `AppMeshClient` accepts a
-`bearer_token` or a `token_provider`. To sign in with a password, put the grant
-inside a `TokenProvider` subclass — the rest of the SDK code does not change:
+`AppMeshClient` accepts a `bearer_token` or a `token_provider`. The built-in
+`PasswordGrantProvider` runs the password grant inside the SDK: it mints an
+access token on first use, re-mints shortly before expiry (the access token
+lives only 15 minutes), and re-authenticates once after an Engine 401. With
+`password_file` the file is re-read on every grant, so a password rotation
+takes effect without a process restart:
 
 ```python
-import requests
-from appmesh import AppMeshClient
-from appmesh.token_provider import TokenProvider
+from appmesh import AppMeshClient, PasswordGrantProvider
 
-
-class PasswordProvider(TokenProvider):
-    """Exchange a password for an access token inside the SDK.
-
-    A production implementation should re-authenticate on 401 because the
-    access token lives only 15 minutes.
-    """
-
-    def __init__(self, token_url, username, password):
-        self.token_url, self.username, self.password, self._tok = token_url, username, password, None
-
-    def get_access_token(self):
-        if self._tok:
-            return self._tok
-        r = requests.post(
-            self.token_url,
-            auth=("appmesh-cli", ""),
-            data={"grant_type": "password", "username": self.username,
-                  "password": self.password,
-                  "scope": "openid audience:server:client_id:appmesh-api"},
-            verify=False, timeout=10,  # verify=False is for test environments only
-        )
-        r.raise_for_status()
-        self._tok = r.json()["access_token"]
-        return self._tok
-
-
+provider = PasswordGrantProvider(
+    token_url="https://host:6060/auth/token",  # HTTPS, or plain HTTP on loopback only
+    username="admin@appmesh.local",
+    password_file="/etc/appmesh/agent-password",  # or password="your-password"
+    ssl_verify=False,  # for test environments only
+)
 c = AppMeshClient(base_url="https://host:6060",
-                  token_provider=PasswordProvider("http://127.0.0.1:6062/auth/token",
-                                                  "admin@appmesh.local", "your-password"),
+                  token_provider=provider,
                   ssl_verify=False)
 print(c.get_current_principal()["roles"])  # ['appmesh-admin']
 ```
 
+A bad-credentials response from the issuer — `access_denied` on the bundled
+Dex, `invalid_grant` on RFC 6749 issuers — permanently disables the provider;
+network and transient errors keep the token state, so the next call retries.
+The password never crosses into the Engine client — only access tokens do.
+
 The simpler equivalent is to run the password grant outside the SDK and pass
-the result as `bearer_token`. Both approaches are verified.
+the result as `bearer_token`. A caller-written `TokenProvider` subclass
+following the same contract also works — the rest of the SDK code does not
+change.
 
 Other SDKs take the token directly — Go `client.SetToken(...)`, Rust
 `client.set_token(...)`, Java `setBearerToken(...)`, JavaScript

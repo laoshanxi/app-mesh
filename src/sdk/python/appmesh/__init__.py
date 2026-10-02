@@ -21,6 +21,7 @@ __all__ = [
     "AppMeshClientWSS",
     "OAuthClient",
     "OAuthError",
+    "PasswordGrantProvider",
     "TokenProvider",
     "StaticAccessTokenProvider",
     "AppMeshWorker",
@@ -50,6 +51,7 @@ _LAZY_IMPORTS = {
     "AppMeshClientWSS": ("client_wss", "AppMeshClientWSS"),  # from .client_wss import AppMeshClientWSS
     "OAuthClient": ("oauth", "OAuthClient"),  # from .oauth import OAuthClient
     "OAuthError": ("oauth", "OAuthError"),  # from .oauth import OAuthError
+    "PasswordGrantProvider": ("password_provider", "PasswordGrantProvider"),  # from .password_provider import PasswordGrantProvider
     "TokenProvider": ("token_provider", "TokenProvider"),  # from .token_provider import TokenProvider
     "StaticAccessTokenProvider": ("token_provider", "StaticAccessTokenProvider"),  # from .token_provider import StaticAccessTokenProvider
     "AppMeshWorker": ("worker_http", "AppMeshWorker"),  # from .worker_http import AppMeshWorker
@@ -78,6 +80,7 @@ if TYPE_CHECKING:
     from .client_tcp import AppMeshClientTCP  # noqa: F401
     from .client_wss import AppMeshClientWSS  # noqa: F401
     from .oauth import OAuthClient, OAuthError  # noqa: F401
+    from .password_provider import PasswordGrantProvider  # noqa: F401
     from .token_provider import StaticAccessTokenProvider, TokenProvider  # noqa: F401
     from .worker_http import AppMeshWorker  # noqa: F401
     from .worker_tcp import AppMeshWorkerTCP  # noqa: F401
