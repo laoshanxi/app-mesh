@@ -21,10 +21,67 @@ This Docker image `laoshanxi/appmesh:container_agent` is used to forward contain
 ```shell
 sudo python3 -m pip install appmesh docker --break-system-packages
 # Dex-only authentication: pass a bearer with app-run-async and app-delete
-# permissions, for example an administrator token.
+# permissions, for example an administrator token. The token expires after
+# 15 minutes; for unattended runs use node-local authentication (below).
 export APPMESH_BEARER_TOKEN="<access token>"
 docker run --net=host --cidfile=/tmp/container.id -v /tmp/container.id:/tmp/container.id -e APPMESH_BEARER_TOKEN laoshanxi/appmesh:container_agent docker ps
 ```
+
+## Unattended authentication (node-local credentials)
+
+Each host runs its own App Mesh with its own built-in authentication, so a
+Job submitter cannot know every node's password — and does not need to. The
+credential stays on the node: the agent container reads it through a
+`hostPath` mount and exchanges it for an access token at startup, and the
+host-side cleanup monitor re-authenticates the same way when the container
+exits. The flow re-authenticates on token expiry, so containers of any
+lifetime keep working.
+
+One-time setup on each node — create a dedicated user and store its password
+in a root-only file. `add-user` requires the role to exist in the
+authorization policy, so create a least-privilege role first (the agent runs
+applications through `POST /appmesh/app/run`, which needs `app-run-async`,
+not `app-reg`), then create the user bound to it — without the second
+argument `add-user` binds the read-only `appmesh-viewer` role and every run
+fails with 403:
+
+```shell
+# Requires an administrator token; see Authentication, "Password grant".
+export APPMESH_BEARER_TOKEN=$(echo 'admin-password' | sudo /opt/appmesh/script/appmesh-auth.sh user-token)
+curl -k -X POST https://127.0.0.1:6060/appmesh/role/appmesh-agent \
+  -H "Authorization: Bearer $APPMESH_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '["app-run-async", "app-output-view", "app-delete", "app-view"]'
+unset APPMESH_BEARER_TOKEN
+
+openssl rand -hex 24 | sudo tee /etc/appmesh/agent-password | \
+  sudo /opt/appmesh/script/appmesh-auth.sh add-user agent@appmesh.local appmesh-agent
+sudo chmod 600 /etc/appmesh/agent-password
+```
+
+See
+[Authentication](https://app-mesh.readthedocs.io/en/latest/Authentication.html#roles)
+for the role and permission model. The built-in `appmesh-maintenance` role
+cannot run applications and fails with 403 here.
+
+The agent container reads these environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `APPMESH_BEARER_TOKEN` | — | Static token; disables the password grant. Expires in 15 minutes — short jobs only |
+| `APPMESH_AGENT_USERNAME` | `admin@appmesh.local` | User for the password grant |
+| `APPMESH_AGENT_PASSWORD_FILE` | `/run/appmesh/agent-password` | Password file path inside the container |
+| `APPMESH_AGENT_TOKEN_URL` | `https://127.0.0.1:6060/auth/token` | Token endpoint of the node-local agent |
+| `APPMESH_AGENT_HOST_PASSWORD_FILE` | `/etc/appmesh/agent-password` | Password file path on the host, used by the cleanup monitor |
+
+Security notes:
+
+- The password never appears in the Job manifest, in a Kubernetes Secret, or
+  in an environment variable, so it cannot leak through
+  `kubectl describe pod`, `docker inspect`, or CI logs.
+- Restrict with RBAC and PodSecurity who can create pods with this
+  `hostPath` + `hostNetwork` combination: such a pod can run commands on the
+  node — that is the purpose of this image.
 
 ## Kubernetes job example to run cmd on host OS
 
@@ -46,13 +103,20 @@ spec:
         image: laoshanxi/appmesh:container_agent
         args: ["docker ps"]
         env:
-        - name: APPMESH_BEARER_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: appmesh-bearer
-              key: token
+        - name: APPMESH_AGENT_USERNAME
+          value: agent@appmesh.local
+        volumeMounts:
+        - name: agent-cred
+          mountPath: /run/appmesh/agent-password
+          subPath: agent-password
+          readOnly: true
+      volumes:
+      - name: agent-cred
+        hostPath:
+          path: /etc/appmesh/agent-password
+          type: File
       restartPolicy: Never
-    hostNetwork: true
+      hostNetwork: true
 EOF
 
 $ kubectl apply -f myjob.yml

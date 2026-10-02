@@ -311,7 +311,7 @@ class OAuthClient(TokenProvider):
         message = str(code) if not description else "{}: {}".format(code, description)
         return OAuthError(message, response.status_code)
 
-    def _post_form(self, endpoint: str, form: Dict[str, Any]) -> Dict[str, Any]:
+    def _post_form(self, endpoint: str, form: Dict[str, Any], auth: Optional[Tuple[str, str]] = None) -> Dict[str, Any]:
         try:
             with self._lock:
                 if self.session is None:
@@ -319,6 +319,7 @@ class OAuthClient(TokenProvider):
                 response = self.session.post(
                     endpoint,
                     data=form,
+                    auth=auth,
                     verify=self.ssl_verify,
                     timeout=self.timeout,
                 )

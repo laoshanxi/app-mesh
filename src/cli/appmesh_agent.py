@@ -18,6 +18,12 @@ import appmesh
 # Suppress SSL warnings for internal connections
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 
+DEFAULT_TOKEN_URL = "https://127.0.0.1:6060/auth/token"
+DEFAULT_USERNAME = "admin@appmesh.local"
+# Container-side default; mounted from a node-local file via hostPath.
+DEFAULT_PASSWORD_FILE = "/run/appmesh/agent-password"
+
+
 def get_shadow_app_name():
     """
     Get the shadow application name.
@@ -40,7 +46,59 @@ def get_shadow_app_name():
     return socket.gethostname()
 
 
-def create_monitor_app(shadow_app_name, monitor_app_name, bearer_token):
+def build_client_and_monitor_env():
+    """
+    Build an authenticated App Mesh client and the monitor environment.
+
+    Two authentication modes:
+
+    - APPMESH_BEARER_TOKEN is set: use the token as-is until it expires
+      (15 minutes). Suitable for short jobs only.
+    - Otherwise: password grant against the node-local authentication
+      service, with automatic re-authentication on expiry or 401. The
+      password is read from APPMESH_AGENT_PASSWORD_FILE (default
+      /run/appmesh/agent-password), never from an environment variable, so
+      it cannot leak into `docker inspect`, pod specs, or CI logs.
+
+    Returns (appmesh_client, monitor_env) where monitor_env maps names to
+    (value, secure) pairs. Only non-secret settings are passed to the
+    monitor in password mode: the monitor re-authenticates on the host from
+    its own node-local password file when the container exits.
+    """
+    bearer_token = os.environ.get("APPMESH_BEARER_TOKEN")
+    if bearer_token:
+        # The daemon spawns the monitor on the host; secret_env passes the
+        # bearer without storing the token in plaintext.
+        appmesh_client = appmesh.AppMeshClient(ssl_verify=False, bearer_token=bearer_token)
+        return appmesh_client, {"APPMESH_BEARER_TOKEN": (bearer_token, True)}
+
+    username = os.environ.get("APPMESH_AGENT_USERNAME", DEFAULT_USERNAME)
+    password_file = os.environ.get("APPMESH_AGENT_PASSWORD_FILE", DEFAULT_PASSWORD_FILE)
+    token_url = os.environ.get("APPMESH_AGENT_TOKEN_URL", DEFAULT_TOKEN_URL)
+    # The container image has no CA bundle and the node agent uses a
+    # self-signed cert; the token endpoint is node-local loopback.
+    provider = appmesh.PasswordGrantProvider(
+        token_url=token_url,
+        username=username,
+        password_file=password_file,
+        ssl_verify=False,
+    )
+    # Fail fast on unreadable password file or bad credentials before
+    # registering any application on the host.
+    provider.get_access_token()
+    appmesh_client = appmesh.AppMeshClient(ssl_verify=False, token_provider=provider)
+
+    monitor_env = {
+        "APPMESH_AGENT_USERNAME": (username, False),
+        "APPMESH_AGENT_TOKEN_URL": (token_url, False),
+    }
+    host_password_file = os.environ.get("APPMESH_AGENT_HOST_PASSWORD_FILE")
+    if host_password_file:
+        monitor_env["APPMESH_AGENT_PASSWORD_FILE"] = (host_password_file, False)
+    return appmesh_client, monitor_env
+
+
+def create_monitor_app(shadow_app_name, monitor_app_name, monitor_env):
     """Create the monitor application configuration."""
     monitor_app = appmesh.App(
         {
@@ -49,9 +107,8 @@ def create_monitor_app(shadow_app_name, monitor_app_name, bearer_token):
             "behavior": {"exit": "remove"},
         }
     )
-    # The daemon spawns the monitor on the host; secret_env passes the bearer
-    # without storing the token in plaintext.
-    monitor_app.set_env("APPMESH_BEARER_TOKEN", bearer_token, secure=True)
+    for key, (value, secure) in monitor_env.items():
+        monitor_app.set_env(key, value, secure=secure)
     return monitor_app
 
 
@@ -85,15 +142,10 @@ def main():
     command = " ".join(sys.argv[1:])
 
     try:
-        bearer_token = os.environ["APPMESH_BEARER_TOKEN"]
-        # Initialize appmesh (container image has no CA bundle; daemon uses a self-signed cert)
-        appmesh_client = appmesh.AppMeshClient(
-            ssl_verify=False,
-            bearer_token=bearer_token,
-        )
+        appmesh_client, monitor_env = build_client_and_monitor_env()
 
         # Start monitor application
-        monitor_app = create_monitor_app(native_app_name, monitor_app_name, bearer_token)
+        monitor_app = create_monitor_app(native_app_name, monitor_app_name, monitor_env)
         appmesh_client.run_app_async(app=monitor_app)
 
         # Start shadow application
