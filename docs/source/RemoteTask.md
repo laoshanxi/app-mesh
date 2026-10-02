@@ -44,7 +44,7 @@ The worker is the application process managed by App Mesh. It receives the paylo
 
 ```python
 from appmesh import AppMeshWorkerTCP
-from py_task import exec_with_output   # local helper; see src/sdk/python/py_task.py
+from py_task import exec_with_output   # local helper; see src/apps/py-task/py_task.py
 
 if __name__ == "__main__":
     # Minimal server loop: fetch a payload, execute it, return the output.

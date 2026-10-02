@@ -299,6 +299,6 @@ script/consul/data
 *.lock
 # Binary crates commit their lockfile; library crates (src/sdk/rust) do not.
 !src/cli/Cargo.lock
-!src/auth/passhash/Cargo.lock
+!src/apps/identity/passhash/Cargo.lock
 *.out
 .DS_Store

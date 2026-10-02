@@ -69,7 +69,7 @@ Each gap blocks a working multi-node deployment of the bundled stack.
 
 - Exactly one node is `standalone` or `owner` (`is_auth_owner`). Only that
   node runs Dex. Only that node bootstraps credentials
-  (`src/auth/appmesh-auth.sh`).
+  (`src/apps/identity/appmesh-auth.sh`).
 - Every node configures the same issuer string. Tokens carry `iss` equal to
   that string. Every Engine validates tokens locally against it.
 - `access_url` is per-node routing. It can differ from the issuer: the

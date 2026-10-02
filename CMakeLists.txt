@@ -168,6 +168,11 @@ endif()
 add_subdirectory(src)
 add_subdirectory(script/sbom)
 
+# App definitions (apps/) are installed by their owning directories under src/.
+# Install rules run in declaration order, so the Windows-only fixups for those
+# files must be declared after add_subdirectory(src).
+include(cmake/InstallAppsWindows.cmake)
+
 # =============================================================================
 # Testing Configuration
 # =============================================================================

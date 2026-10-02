@@ -560,7 +560,7 @@ example above.
 | Read-only viewer | `guest@appmesh.local` / username `guest` / user ID `93ad39b4-eb6f-4945-97a1-3366451867fb` |
 | Automation client | `appmesh-automation` (confidential; the principal is derived from the client ID and stays stable across secret regeneration) |
 
-OAuth clients defined in `src/auth/dex.yaml`:
+OAuth clients defined in `src/apps/identity/dex.yaml`:
 
 | Client ID | Type | Purpose |
 | --- | --- | --- |

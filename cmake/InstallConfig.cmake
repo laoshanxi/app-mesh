@@ -35,57 +35,20 @@ install(DIRECTORY "${SRC}/THIRD_PARTY_LICENSES/"
 if(APPMESH_INSTALL_AUTH_CONFIG)
     install(FILES
         "${SRC}/src/daemon/security/auth-stack.yaml"
-        "${SRC}/src/auth/dex.yaml"
         DESTINATION "${DST}/config"
         COMPONENT configs
     )
 endif()
 
-# Application Configs (apps/). The auth System Apps ship only where the
-# bundled auth stack is installed.
-set(APPS_EXCLUDE_AUTH PATTERN "identity.yaml" EXCLUDE PATTERN "dexuser.yaml" EXCLUDE)
-if(APPMESH_INSTALL_AUTH_CONFIG)
-    set(APPS_EXCLUDE_AUTH "")
-endif()
-install(
-    DIRECTORY "${SRC}/script/apps/"
-    DESTINATION "${DST}/apps"
-    COMPONENT configs
-    FILES_MATCHING PATTERN "*.yaml" ${APPS_EXCLUDE_AUTH}
-)
-
-if(WIN32)
-    install(CODE [[
-        set(_apps_dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/apps")
-        message(STATUS "Patching Windows app configs in: ${_apps_dir}")
-        file(GLOB _app_yamls "${_apps_dir}/*.yaml")
-        foreach(_yml IN LISTS _app_yamls)
-            file(READ "${_yml}" _content)
-            # Simple + reliable replacement
-            string(REPLACE "python3" "python.exe" _content "${_content}")
-            get_filename_component(_app_name "${_yml}" NAME)
-            if(_app_name STREQUAL "identity.yaml" OR _app_name STREQUAL "dexuser.yaml")
-                # Like the daemon-generated agent App, select the native launcher
-                # for Windows while keeping the same System App definition.
-                string(REPLACE
-                    "../../script/appmesh-auth.sh"
-                    "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ../../script/appmesh-auth.ps1"
-                    _content "${_content}")
-            endif()
-            file(WRITE "${_yml}" "${_content}")
-            message(STATUS "Patched (Windows): ${_yml}")
-        endforeach()
-    ]] COMPONENT configs)
-endif()
+# Application definitions (apps/) are installed by their owning directories
+# under src/apps/. The Windows-only fixups live in cmake/InstallAppsWindows.cmake,
+# included after add_subdirectory(src) so that it sees the installed files.
 
 # Scripts (script/)
 install(FILES
     "${SRC}/script/pack/grafana_infinity.html"
     "${SRC}/src/daemon/rest/openapi.yaml"
     "${SRC}/src/daemon/rest/index.html"
-    "${SRC}/src/auth/logo.svg"
-    "${SRC}/src/auth/logo-glyph.svg"
-    "${SRC}/src/auth/favicon.png"
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/bash_completion.sh>
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/container_monitor.py>
     $<$<BOOL:${UNIX}>:${SRC}/src/cli/appmesh_agent.py>
@@ -115,7 +78,6 @@ elseif(UNIX)
 else()
     install(PROGRAMS
         "${SRC}/script/pack/setup.ps1"
-        "${SRC}/src/auth/appmesh-auth.ps1"
         DESTINATION "${DST}/script"
         COMPONENT scripts)
 endif()
@@ -151,22 +113,6 @@ else()
             install(PROGRAMS "/usr/local/bin/${bin}" DESTINATION "${DST}/ssl" COMPONENT scripts)
         endforeach()
     endif()
-endif()
-
-# Python tool (bin/)
-install(PROGRAMS
-    "${SRC}/src/sdk/python/py_exec.py"
-    "${SRC}/src/sdk/python/py_task.py"
-    DESTINATION "${DST}/bin"
-    COMPONENT binaries
-)
-
-if(UNIX)
-    install(PROGRAMS
-        "${SRC}/src/auth/appmesh-auth.sh"
-        DESTINATION "${DST}/script"
-        COMPONENT scripts
-    )
 endif()
 
 # Windows: NSSM Service Manager
