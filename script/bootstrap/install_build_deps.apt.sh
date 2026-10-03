@@ -83,7 +83,7 @@ git clone --quiet --depth 1 https://github.com/laoshanxi/dex.git
 #messagepack Python pip
 apt install -y python3-pip
 if [ true ]; then
-    git clone -b cpp_master --depth 1 https://github.com/laoshanxi/msgpack-c.git
+    git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
     cd msgpack-c
     cmake .
     cmake --build . --target install

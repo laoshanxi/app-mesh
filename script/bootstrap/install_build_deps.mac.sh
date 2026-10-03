@@ -211,7 +211,7 @@ sudo make install
 
 echo "Building and installing msgpack-cxx..."
 cd $TMP_DIR
-git clone -b cpp_master --depth 1 https://github.com/laoshanxi/msgpack-c.git
+git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
 cd msgpack-c
 cmake .
 sudo cmake --build . --target install
