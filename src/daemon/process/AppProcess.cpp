@@ -712,7 +712,8 @@ bool AppProcess::onTimerCheckStdout()
 		{
 			if (stat.st_size > m_stdOutMaxSize)
 			{
-				ACE_File_Lock fileLock(m_stdoutHandler.get(), false);
+				// ACE_File_Lock closes the handle it is given, so lock a duplicate.
+				ACE_File_Lock fileLock(ACE_OS::dup(m_stdoutHandler.get()), false);
 				if (fileLock.acquire() == -1)
 				{
 					LOG_WAR << fname << "Failed to acquire exclusive lock on stdout file <" << m_stdoutFileName << ">: " << last_error_msg();
@@ -1043,8 +1044,14 @@ pid_t AppProcess::spawn(ACE_Process_Options &option, const std::shared_ptr<Resou
 
 const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool readLine)
 {
+	// m_stdoutFileName is guarded by m_processMutex, not m_outFileMutex.
+	std::string stdoutFileName;
+	{
+		std::lock_guard<std::mutex> guard(m_processMutex);
+		stdoutFileName = m_stdoutFileName;
+	}
 	std::lock_guard<std::mutex> guard(*m_outFileMutex);
-	return Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine);
+	return Utility::readFileCpp(stdoutFileName, position, maxSize, readLine);
 }
 
 const std::string AppProcess::startError() const

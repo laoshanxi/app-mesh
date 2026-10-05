@@ -37,12 +37,6 @@ namespace os
 			LOG_ERR << fname << "Path does not exist: " << path;
 			return false;
 		}
-		if (uid < 0 || gid < 0)
-		{
-			LOG_WAR << fname << "Invalid UID or GID provided";
-			return false;
-		}
-
 		// Prepare FTS path array
 		char *const path_arr[] = {const_cast<char *>(path.c_str()), nullptr};
 

@@ -594,7 +594,14 @@ void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 
 void RestClient::setSslConfig(CURL *curl, const ClientSSLConfig *sslConfig)
 {
-	const auto &config = sslConfig == nullptr ? m_sslConfig : *sslConfig;
+	// The shared default config is read under its mutex.
+	ClientSSLConfig defaultConfig;
+	if (sslConfig == nullptr)
+	{
+		std::lock_guard<std::mutex> lock(m_sessionMutex);
+		defaultConfig = m_sslConfig;
+	}
+	const auto &config = sslConfig == nullptr ? defaultConfig : *sslConfig;
 	// libcurl's verbose trace includes request headers and can expose bearer credentials.
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
 
