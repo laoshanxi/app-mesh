@@ -223,7 +223,7 @@ void AppMeshDaemon::initializeACE()
 	const static char fname[] = "AppMeshDaemon::initializeACE() ";
 
 	// Construct ACE_Null_Mutex singletons on the main thread before reactors or
-	// workers can race their first use. TimerManager starts its own queue thread.
+	// workers can race their first use. TimerManager starts its own io thread.
 	TIMER_MANAGER::instance();
 	EventDispatcher::instance();
 	QuitHandler::instance();

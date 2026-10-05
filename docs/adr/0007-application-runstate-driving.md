@@ -59,12 +59,11 @@ The original design had problems:
 - **Exit is claimed in the ProcessManager upcall and finalized once outside its mutex.** Finalization
   drains stdout, records the run result and dispatches callbacks; the tick later evaluates policy.
 - **Retained timer tokens are published by TimerManager before zero-delay dispatch.** The public
-  token is monotonic and is mapped to the exact `TimerEvent`; ACE's reusable heap index is never
-  exposed as cancellation identity. Replacement and cancellation of the same atomic slot share one
-  short ownership lock, and cancellation matches the event pointer, so an expired timer cannot
-  cancel a newer timer after ACE index reuse. Adapter and heap locks are never carried into
-  callbacks. `TimerEvent` clears only its own published token with CAS and releases the registry
-  entry on completion, cancellation, callback false/exception, or destruction.
+  token is monotonic and is mapped to the exact `TimerState`; cancellation matches the timer
+  object identity, so an expired timer can never cancel a newer timer. Replacement and
+  cancellation of the same atomic slot share one short ownership lock. No internal lock is
+  carried into callbacks. `TimerState` clears only its own published token with CAS and releases
+  the registry entry on completion, cancellation, callback false/exception, or destruction.
 - **`m_process` uses a non-recursive mutex.** Replacement moves the previous shared pointer out;
   terminate, backend calls, event dispatch and process start never execute while holding that gate.
 - **Docker CLI cleanup is non-blocking.** Termination launches a separate `AppProcess` with a short
@@ -78,7 +77,7 @@ The original design had problems:
 - Scheduled-spawn/restart timing is tick-granular: ≤ `ScheduleIntervalSeconds` (default 2s)
   jitter. Negligible for restart/periodic/cron (second/minute-grained); on-demand `run` is
   unaffected (forks immediately on the REST thread).
-- **No fork/exec runs on the shared ACE timer-dispatch thread**, so a fork backlog cannot stall
+- **No fork/exec runs on the shared timer-dispatch thread**, so a fork backlog cannot stall
   scheduled termination / removal / stdout-coalesce / health timers. Forks stay serialized by
   construction: on-demand on REST worker threads + scheduled on the single tick thread.
   (Multithreaded fork is acceptable here — glibc `pthread_atfork` covers the pre-existing

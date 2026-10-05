@@ -1,117 +1,154 @@
 // src/common/TimerHandler.cpp
-#include <ace/Guard_T.h>
-#include <ace/OS.h>
-#include <ace/Time_Value.h>
-
+#include <chrono>
 #include <limits>
 #include <stdexcept>
+
+#include <boost/asio/error.hpp>
+#include <boost/asio/post.hpp>
+#include <boost/asio/steady_timer.hpp>
 
 #include "../common/Utility.h"
 #include "TimerHandler.h"
 
 ////////////////////////////////////////////////////////////////
-/// TimerEvent
+/// TimerState
 ////////////////////////////////////////////////////////////////
-TimerEvent::TimerEvent(
-	TimerManager &manager, bool isOneShot, std::atomic_long *ownerTimerId,
-	std::shared_ptr<TimerHandler> timerObj, TimerCallback handler)
-	: m_manager(manager), m_timerObj(std::move(timerObj)), m_handler(std::move(handler)),
-	  m_ownerTimerId(ownerTimerId), m_isOneShot(isOneShot)
+/**
+ * @class TimerState
+ * @brief Internal per-timer state, owned by shared_ptr.
+ *
+ * steady_timer member calls happen only on the TimerManager io thread; arming
+ * and cancellation are posted to the event loop.
+ */
+class TimerState : public std::enable_shared_from_this<TimerState>
 {
-	reference_counting_policy().value(ACE_Event_Handler::Reference_Counting_Policy::ENABLED);
-	const static char fname[] = "TimerEvent::TimerEvent() ";
-	LOG_DBG << fname << "timer <" << this << "> oneShot <" << m_isOneShot << "> hasObject <" << (m_timerObj != nullptr) << ">";
-}
-
-TimerEvent::~TimerEvent()
-{
-	releaseTimerToken();
-}
-
-void TimerEvent::bindTimerToken(long timerToken) noexcept
-{
-	m_timerToken = timerToken;
-}
-
-void TimerEvent::releaseTimerToken() noexcept
-{
-	const long timerToken = m_timerToken;
-	m_timerToken = INVALID_TIMER_ID;
-	if (!isValidTimerId(timerToken))
-		return;
-
-	if (m_ownerTimerId != nullptr)
+public:
+	TimerState(TimerManager &manager, long timerToken, std::size_t intervalMilliseconds,
+			   std::atomic_long *ownerTimerId, std::shared_ptr<TimerHandler> timerObj, TimerCallback handler)
+		: m_manager(manager), m_timer(manager.m_ioContext), m_timerObj(std::move(timerObj)), m_handler(std::move(handler)),
+		  m_ownerTimerId(ownerTimerId), m_timerToken(timerToken), m_intervalMilliseconds(intervalMilliseconds)
 	{
-		// A replaced timer may finish after a new token was published in the same slot.
-		// Clear only our own token so the old callback cannot erase the replacement.
-		long expected = timerToken;
-		m_ownerTimerId->compare_exchange_strong(expected, INVALID_TIMER_ID, std::memory_order_acq_rel, std::memory_order_acquire);
+		const static char fname[] = "TimerState::TimerState() ";
+		LOG_DBG << fname << "timer <" << this << "> oneShot <" << isOneShot() << "> hasObject <" << (m_timerObj != nullptr) << ">";
 	}
-	m_manager.releaseTimerToken(timerToken, this);
-}
 
-int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *act)
-{
-	const static char fname[] = "TimerEvent::handle_timeout() ";
-
-	// Validate act 'magic cookie'
-	if (act != static_cast<const void *>(this))
+	~TimerState()
 	{
-		LOG_ERR << fname << "invalid timer triggered, act: <" << act << "> != this <" << this << ">";
 		releaseTimerToken();
-		return -1;
 	}
-	if (m_isOneShot)
-		releaseTimerToken();
 
-	bool shouldContinue = false;
-	try
+	bool isOneShot() const { return m_intervalMilliseconds == 0; }
+
+	/// @brief (Re-)arms the wait. Runs on the TimerManager io thread.
+	void arm(std::size_t delayMilliseconds)
 	{
-		if (!m_handler)
+		m_timer.expires_after(std::chrono::milliseconds(delayMilliseconds));
+		asyncWait();
+	}
+
+	/// @brief Cancels the pending wait. Runs on the TimerManager io thread.
+	void cancel()
+	{
+		const static char fname[] = "TimerState::cancel() ";
+		try
 		{
-			LOG_ERR << fname << "timer <" << this << "> has no valid handler";
+			m_timer.cancel();
+		}
+		catch (const std::exception &ex)
+		{
+			LOG_ERR << fname << "timer <" << this << "> cancel failed: " << ex.what();
+		}
+	}
+
+	void releaseTimerToken() noexcept
+	{
+		const long timerToken = m_timerToken;
+		m_timerToken = INVALID_TIMER_ID;
+		if (!isValidTimerId(timerToken))
+			return;
+
+		if (m_ownerTimerId != nullptr)
+		{
+			// A replaced timer may finish after a new token was published in the same slot.
+			// Clear only our own token so the old callback cannot erase the replacement.
+			long expected = timerToken;
+			m_ownerTimerId->compare_exchange_strong(expected, INVALID_TIMER_ID, std::memory_order_acq_rel, std::memory_order_acquire);
+		}
+		m_manager.releaseTimerToken(timerToken);
+	}
+
+private:
+	void asyncWait()
+	{
+		std::shared_ptr<TimerState> self = shared_from_this();
+		m_timer.async_wait([self](const boost::system::error_code &ec) { self->onFired(ec); });
+	}
+
+	void onFired(const boost::system::error_code &ec)
+	{
+		const static char fname[] = "TimerState::onFired() ";
+		if (ec)
+		{
+			if (ec != boost::asio::error::operation_aborted)
+				LOG_ERR << fname << "timer <" << this << "> wait failed: " << ec.message();
 			releaseTimerToken();
-			return -1; // Stop timer - will call handle_close()
+			return;
 		}
 
-		shouldContinue = m_handler();
-	}
-	catch (const std::exception &ex)
-	{
-		LOG_ERR << fname << "timer callback threw exception: " << ex.what();
-		releaseTimerToken();
-		return -1;
-	}
-	catch (...)
-	{
-		LOG_ERR << fname << "timer callback threw unknown exception";
-		releaseTimerToken();
-		return -1;
+		bool keepGoing = false;
+		try
+		{
+			// A one-shot releases its token before the callback runs, so the slot
+			// is already reset while the callback executes.
+			if (isOneShot())
+				releaseTimerToken();
+			keepGoing = m_handler() && !isOneShot();
+		}
+		catch (const std::exception &ex)
+		{
+			LOG_ERR << fname << "timer callback threw exception: " << ex.what();
+		}
+		catch (...)
+		{
+			LOG_ERR << fname << "timer callback threw unknown exception";
+		}
+
+		if (!keepGoing)
+		{
+			releaseTimerToken(); // No-op for a one-shot that already released above.
+			return;
+		}
+
+		// Recurring timers re-arm after the callback completes, so the interval
+		// absorbs the callback duration.
+		arm(m_intervalMilliseconds);
 	}
 
-	if (m_isOneShot)
-		return 0; // ACE releases a completed one-shot timer after this upcall.
-	if (!shouldContinue)
-	{
-		releaseTimerToken();
-		return -1; // Stop timer - will call handle_close()
-	}
-	return 0; // Continue till next interval
-}
+	TimerManager &m_manager;						///< Owns the token registry and event loop for this timer.
+	boost::asio::steady_timer m_timer;				///< Monotonic timer; member calls happen only on the io thread.
+	const std::shared_ptr<TimerHandler> m_timerObj; ///< Holds the target TimerHandler instance to prevent premature deallocation (can be nullptr).
+	const TimerCallback m_handler;					///< The callback function to be invoked on timer expiration.
+	std::atomic_long *const m_ownerTimerId;			///< Optional retained ID slot; kept alive by m_timerObj or m_handler.
+	long m_timerToken;								///< Stable TimerManager token; mutated only on the io thread or before publication.
+	const std::size_t m_intervalMilliseconds;		///< Recurring interval in milliseconds; 0 for one-shot.
+};
 
 ////////////////////////////////////////////////////////////////
 /// TimerManager
 ////////////////////////////////////////////////////////////////
 TimerManager::TimerManager()
-	: m_timerQueue(ACE_Thread_Manager::instance())
+	: m_workGuard(boost::asio::make_work_guard(m_ioContext))
 {
 	const static char fname[] = "TimerManager::TimerManager() ";
 	LOG_DBG << fname;
-	// The adapter owns the dedicated timer-dispatch thread. It is deliberately
-	// independent of both daemon reactors; TimerManager itself is not an ACE task.
-	if (m_timerQueue.activate() == -1)
+	// Dedicated timer-dispatch thread, independent of the daemon reactors.
+	try
 	{
-		LOG_CRT << fname << "FATAL: failed to start the timer-dispatch thread";
+		m_ioThread = std::thread([this]() { m_ioContext.run(); });
+	}
+	catch (const std::exception &ex)
+	{
+		LOG_CRT << fname << "FATAL: failed to start the timer-dispatch thread: " << ex.what();
 		throw std::runtime_error("failed to start timer-dispatch thread");
 	}
 }
@@ -120,9 +157,11 @@ TimerManager::~TimerManager()
 {
 	const static char fname[] = "TimerManager::~TimerManager() ";
 	LOG_DBG << fname;
-	m_timerQueue.deactivate();
-	m_timerQueue.wait();
-	std::map<long, ACE_Event_Handler_var> remainingTimers;
+	m_workGuard.reset();
+	m_ioContext.stop();
+	if (m_ioThread.joinable())
+		m_ioThread.join();
+	std::map<long, std::shared_ptr<TimerState>> remainingTimers;
 	{
 		std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
 		remainingTimers.swap(m_timerRegistry);
@@ -137,31 +176,29 @@ long TimerManager::allocateTimerToken() noexcept
 		return INVALID_TIMER_ID;
 
 	const long timerToken = m_nextTimerToken;
-	// Never reuse a public token. ACE may recycle its heap ID as soon as a
-	// one-shot is dequeued, so generation-safe cancellation cannot use that ID.
+	// Public tokens are never reused.
 	m_nextTimerToken = (m_nextTimerToken == std::numeric_limits<long>::max())
 						   ? INVALID_TIMER_ID
 						   : m_nextTimerToken + 1;
 	return timerToken;
 }
 
-void TimerManager::releaseTimerToken(long timerToken, const TimerEvent *timer) noexcept
+void TimerManager::releaseTimerToken(long timerToken) noexcept
 {
 	if (!isValidTimerId(timerToken))
 		return;
 
+	// Tokens are never reused, so a hit always names the releasing timer itself.
 	std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
-	const auto registered = m_timerRegistry.find(timerToken);
-	if (registered != m_timerRegistry.end() && registered->second.handler() == timer)
-		m_timerRegistry.erase(registered);
+	m_timerRegistry.erase(timerToken);
 }
 
-long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
+long TimerManager::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
 {
 	return registerTimerImpl(nullptr, delayMilliseconds, intervalMilliseconds, from, std::move(timerObj), handler);
 }
 
-long TimerManager::registerTimer(std::atomic_long &timerId, long delayMilliseconds, std::size_t intervalMilliseconds,
+long TimerManager::registerTimer(std::atomic_long &timerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
 								 const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
 {
 	std::lock_guard<std::mutex> idGuard(m_timerIdMutex);
@@ -171,7 +208,7 @@ long TimerManager::registerTimer(std::atomic_long &timerId, long delayMillisecon
 	return registerTimerImpl(&timerId, delayMilliseconds, intervalMilliseconds, from, std::move(timerObj), handler);
 }
 
-long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, long delayMilliseconds, std::size_t intervalMilliseconds,
+long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
 									 const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
 {
 	const static char fname[] = "TimerManager::registerTimer() ";
@@ -179,6 +216,11 @@ long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, long delayM
 	if (!handler)
 	{
 		LOG_CRT << fname << from << " failed to register timer: handler is null";
+		return INVALID_TIMER_ID;
+	}
+	if (m_ioContext.stopped())
+	{
+		LOG_CRT << fname << from << " failed to register timer: timer manager is stopped";
 		return INVALID_TIMER_ID;
 	}
 
@@ -189,57 +231,37 @@ long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, long delayM
 		return INVALID_TIMER_ID;
 	}
 
-	ACE_Event_Handler_var timer;
+	std::shared_ptr<TimerState> timer;
 	try
 	{
-		ACE_Time_Value future = (delayMilliseconds == 0) ? ACE_Time_Value::zero : ACE_OS::gettimeofday() + ACE_Time_Value(delayMilliseconds / 1000, (delayMilliseconds % 1000) * 1000);
-		ACE_Time_Value interval(intervalMilliseconds / 1000, (intervalMilliseconds % 1000) * 1000);
-		const bool isOneShot = (intervalMilliseconds == 0);
-		timer = ACE::make_event_handler<TimerEvent>(*this, isOneShot, ownerTimerId, std::move(timerObj), handler);
+		timer = std::make_shared<TimerState>(*this, timerToken, intervalMilliseconds, ownerTimerId, std::move(timerObj), handler);
 		{
 			std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
-			const auto inserted = m_timerRegistry.emplace(timerToken, timer);
-			if (!inserted.second)
-			{
-				LOG_CRT << fname << from << " failed to register timer: duplicate logical token <" << timerToken << ">";
-				return INVALID_TIMER_ID;
-			}
+			m_timerRegistry[timerToken] = timer;
 		}
-
-		// The adapter releases its mutex while Timer_Heap::expire() dispatches.
-		// Hold both locks in the adapter's normal order so a zero-delay callback
-		// cannot clear its logical token before that token has been published.
-		{
-			ACE_Guard<ACE_SYNCH_RECURSIVE_MUTEX> adapterGuard(m_timerQueue.mutex());
-			ACE_Guard<ACE_Recursive_Thread_Mutex> heapGuard(m_timerQueue.timer_queue()->mutex());
-			const long scheduledId = m_timerQueue.schedule(timer.handler(), timer.handler(), future, interval);
-			if (isValidTimerId(scheduledId))
-			{
-				static_cast<TimerEvent *>(timer.handler())->bindTimerToken(timerToken);
-				if (ownerTimerId != nullptr)
-					ownerTimerId->store(timerToken, std::memory_order_release);
-				return timerToken;
-			}
-		}
-		releaseTimerToken(timerToken, static_cast<TimerEvent *>(timer.handler()));
-		LOG_CRT << fname << from << " failed to register timer: " << last_error_msg();
+		// Publish the slot before the io thread can arm and fire the timer, so a
+		// zero-delay callback can never clear its token before publication.
+		if (ownerTimerId != nullptr)
+			ownerTimerId->store(timerToken, std::memory_order_release);
+		boost::asio::post(m_ioContext, [timer, delayMilliseconds]() { timer->arm(delayMilliseconds); });
+		return timerToken;
 	}
 	catch (const std::exception &ex)
 	{
-		if (timer.handler() != nullptr)
-			releaseTimerToken(timerToken, static_cast<TimerEvent *>(timer.handler()));
+		if (timer)
+			timer->releaseTimerToken();
 		LOG_CRT << fname << from << " failed to register timer: " << ex.what();
 	}
 	catch (...)
 	{
-		if (timer.handler() != nullptr)
-			releaseTimerToken(timerToken, static_cast<TimerEvent *>(timer.handler()));
+		if (timer)
+			timer->releaseTimerToken();
 		LOG_CRT << fname << from << " failed to register timer with unknown error";
 	}
 	return INVALID_TIMER_ID;
 }
 
-long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler)
+long TimerManager::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler)
 {
 	return this->registerTimer(delayMilliseconds, intervalMilliseconds, from, nullptr, handler);
 }
@@ -251,7 +273,7 @@ bool TimerManager::cancelTimer(long timerToken)
 	if (!isValidTimerId(timerToken))
 		return false;
 
-	ACE_Event_Handler_var timer;
+	std::shared_ptr<TimerState> timer;
 	{
 		std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
 		const auto registered = m_timerRegistry.find(timerToken);
@@ -260,27 +282,16 @@ bool TimerManager::cancelTimer(long timerToken)
 			LOG_DBG << fname << "timer token <" << timerToken << "> already released";
 			return false;
 		}
-		timer = registered->second; // Pins the exact event while it leaves the queue.
+		timer = registered->second; // Pins the exact timer until the cancel runs on the io thread.
 		m_timerRegistry.erase(registered);
 	}
 
-	int canceled = 0;
-	{
-		ACE_Guard<ACE_SYNCH_RECURSIVE_MUTEX> adapterGuard(m_timerQueue.mutex());
-		// Cancel by event identity, not ACE's reusable numeric heap ID. This is
-		// what prevents an expired timer from canceling a newer timer (ABA).
-		canceled = m_timerQueue.timer_queue()->cancel(timer.handler());
-		// Identity cancellation bypasses the adapter wrapper; wake its wait so it
-		// recomputes the next deadline just as numeric adapter cancellation does.
-		m_timerQueue.cancel(INVALID_TIMER_ID);
-	}
-	LOG_DBG << fname << "timer token <" << timerToken << "> cancel result <" << canceled << ">";
-
-	if (canceled > 0)
-		return true;
-
-	LOG_WAR << fname << "failed to cancel timer token <" << timerToken << ">, timer may already be dispatching";
-	return false;
+	// Cancel by timer identity on the io thread (posting into a stopped event
+	// loop is a no-op). A callback already dispatched runs to completion; a
+	// recurring timer canceled mid-dispatch stops when its re-arm is canceled.
+	boost::asio::post(m_ioContext, [timer]() { timer->cancel(); });
+	LOG_DBG << fname << "timer token <" << timerToken << "> canceled";
+	return true;
 }
 
 bool TimerManager::cancelTimer(std::atomic_long &timerId)
@@ -294,12 +305,12 @@ bool TimerManager::cancelTimer(std::atomic_long &timerId)
 /// TimerHandler
 ////////////////////////////////////////////////////////////////
 
-long TimerHandler::registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler)
+long TimerHandler::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler)
 {
 	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalMilliseconds, from, shared_from_this(), handler);
 }
 
-long TimerHandler::registerTimer(std::atomic_long &timerId, long delayMilliseconds, std::size_t intervalMilliseconds,
+long TimerHandler::registerTimer(std::atomic_long &timerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
 								 const std::string &from, const TimerCallback &handler)
 {
 	return TIMER_MANAGER::instance()->registerTimer(timerId, delayMilliseconds, intervalMilliseconds, from, shared_from_this(), handler);

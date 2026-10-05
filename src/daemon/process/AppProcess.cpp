@@ -344,9 +344,9 @@ void AppProcess::onExit(int exitCode)
 	if (!shouldFinalize)
 		return;
 
-	// Register only after releasing the lifecycle lock. ACE releases both
-	// timer-queue locks before invoking the callback, so cleanup may cancel this
-	// process's other timers without nesting those locks around finalization.
+	// Register only after releasing the lifecycle lock. Timer callbacks run on
+	// TimerManager's io thread without internal locks held, so cleanup may cancel
+	// this process's other timers without nesting those locks around finalization.
 	// Registration failure is already CRITICAL in TimerManager. Do not finalize
 	// inline or add retry/rollback here: the timer is the boundary that keeps
 	// cleanup and application callbacks outside the ProcessManager upcall.
@@ -661,7 +661,7 @@ void AppProcess::scheduleTermination(std::size_t timeout, const std::string &fro
 {
 	const static char fname[] = "AppProcess::scheduleTermination() ";
 	// Publish the timer ID before exit cleanup can cancel it. Timer callbacks run
-	// without the timer-queue lock, so this lock order has no reverse edge.
+	// without TimerManager's internal locks, so this lock order has no reverse edge.
 	std::lock_guard<std::mutex> guard(m_lifecycle->mutex);
 	if (m_lifecycle->exitPhase.load(std::memory_order_relaxed) != Lifecycle::ExitPhase::Active)
 		return;

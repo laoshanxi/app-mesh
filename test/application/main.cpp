@@ -63,8 +63,8 @@ namespace
 
 		Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE,
 										   ACE_Reactor::instance());
-		// TimerManager lazily spawns its own queue thread; touch it up front like
-		// the daemon does so worker races cannot hit an unconstructed singleton.
+		// TimerManager lazily spawns its own io thread; touch it up front like
+		// the daemon does.
 		TIMER_MANAGER::instance();
 
 		static std::thread reactorThread([]()

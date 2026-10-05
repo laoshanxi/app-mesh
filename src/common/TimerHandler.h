@@ -7,12 +7,10 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
-#include <ace/Event_Handler.h>
-#include <ace/Recursive_Thread_Mutex.h>
-#include <ace/Singleton.h>
-#include <ace/Timer_Heap.h>
-#include <ace/Timer_Queue_Adapters.h>
+#include <boost/asio/executor_work_guard.hpp>
+#include <boost/asio/io_context.hpp>
 
 /**
  * @brief Timer callback function type.
@@ -53,32 +51,27 @@ public:
 	 * @param intervalMilliseconds Interval in milliseconds. 0 for one-shot timer.
 	 * @param from Source identifier for logging.
 	 * @param handler Callback invoked on expiration.
-	 * @return Stable timer token, or INVALID_TIMER_ID on failure.
-	 *
-	 * @note The returned ID is a TimerManager token, not ACE's reusable heap index.
-	 *       Use the atomic-ID overload whenever an ID is retained.
+	 * @return Stable timer token (never reused), or INVALID_TIMER_ID on failure.
 	 */
-	long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler);
+	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler);
 
 	/**
-	 * @brief Registers a timer and publishes its token before the timer can fire.
+	 * @brief Registers a timer and publishes its token into the slot before the timer can fire.
 	 *
-	 * Use this overload when the ID is retained for cancellation. An existing
-	 * timer in the same slot is canceled before the replacement is published;
-	 * registration and cancellation are serialized by TimerManager.
-	 * The slot must be a member of the bound object or shared callback state so
-	 * it remains alive until the TimerEvent releases it.
+	 * An existing timer in the same slot is canceled before the replacement is
+	 * published. The slot must outlive the timer (member of the bound object or
+	 * shared callback state).
 	 */
-	long registerTimer(std::atomic_long &timerId, long delayMilliseconds, std::size_t intervalMilliseconds,
+	long registerTimer(std::atomic_long &timerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
 					   const std::string &from, const TimerCallback &handler);
 
 	/**
 	 * @brief Cancels a timer.
 	 *
 	 * @param timerId Timer token (atomically reset to INVALID_TIMER_ID).
-	 * @return true if canceled successfully.
-	 *
-	 * @warning Do not cancel the currently executing timer from its own callback.
+	 * @return true if the timer was still active. Cancellation takes effect on the
+	 *         io thread asynchronously; a callback already dispatching runs to completion.
+	 * @note Canceling the currently executing timer from its own callback is safe.
 	 */
 	bool cancelTimer(std::atomic_long &timerId);
 
@@ -91,45 +84,14 @@ private:
 	TimerHandler &operator=(const TimerHandler &) = delete;
 };
 
-class TimerManager;
-
-/**
- * @class TimerEvent
- * @brief Internal ACE event handler for timer expiration.
- */
-class TimerEvent final : public ACE_Event_Handler
-{
-public:
-	explicit TimerEvent(TimerManager &manager, bool isOneShot, std::atomic_long *ownerTimerId,
-						std::shared_ptr<TimerHandler> timerObj, TimerCallback handler);
-	~TimerEvent() override;
-
-	/// @brief Binds the stable TimerManager token before the queue can dispatch this event.
-	void bindTimerToken(long timerToken) noexcept;
-
-	/**
-	 * @brief Callback function invoked when the timer expires.
-	 *
-	 * @param current_time The time at which the timer expired.
-	 * @param act The 'magic cookie' argument passed in when the timer was registered.
-	 * @return int 0 on success (continue recurring timer), or -1 to stop the timer.
-	 */
-	int handle_timeout(const ACE_Time_Value &current_time, const void *act = nullptr) override;
-
-private:
-	void releaseTimerToken() noexcept;
-
-	TimerManager &m_manager;						///< Owns the token registry for this event.
-	const std::shared_ptr<TimerHandler> m_timerObj; ///< Holds the target TimerHandler instance to prevent premature deallocation (can be nullptr).
-	const TimerCallback m_handler;					///< The callback function to be invoked on timer expiration.
-	std::atomic_long *const m_ownerTimerId;			///< Optional retained ID slot; kept alive by m_timerObj or m_handler.
-	long m_timerToken{INVALID_TIMER_ID};			///< Immutable after bindTimerToken and before dispatch.
-	const bool m_isOneShot;							///< Indicates if the timer should be triggered only once.
-};
+class TimerState; // Internal per-timer state, defined in TimerHandler.cpp.
 
 /**
  * @class TimerManager
  * @brief Singleton for managing all timer events.
+ *
+ * A dedicated thread runs a boost::asio::io_context of steady_timer instances
+ * (monotonic clock). Callbacks execute on that thread without any lock held.
  */
 class TimerManager
 {
@@ -145,44 +107,50 @@ public:
 	 * @param from Source identifier for logging.
 	 * @param timerObj Optional shared_ptr to TimerHandler (nullptr for lambda-only), kept alive until the timer stops.
 	 * @param handler Callback invoked on expiration.
-	 * @return Stable timer token, or INVALID_TIMER_ID on failure.
-	 * @note Registration failures are logged here at CRITICAL level and return
-	 *       INVALID_TIMER_ID; callers do not need to duplicate the failure log.
+	 * @return Stable timer token, or INVALID_TIMER_ID on failure (logged at CRITICAL here).
 	 */
-	long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
+	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
+
+	/// @brief Atomic-slot overload: cancels any timer already published in the slot before registering the replacement.
+	long registerTimer(std::atomic_long &timerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
+					   const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
 
 	/// @brief Convenience overload for lambda-only timers.
-	long registerTimer(long delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler);
+	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler);
 
-	/// @brief Cancels a logical timer token already detached from its owner.
+	/// @brief Cancels a logical timer token. Cancellation takes effect on the io thread asynchronously.
 	bool cancelTimer(long timerToken);
 
-	/**
-	 * @brief Cancels timer (thread-safe).
-	 * @warning Do not cancel the currently executing timer from its own callback.
-	 */
+	/// @brief Cancels timer (thread-safe); safe from the timer's own callback.
 	bool cancelTimer(std::atomic_long &timerId);
 
 private:
-	friend class TimerEvent;
-	friend class TimerHandler;
+	friend class TimerState;
 
-	using Upcall = ACE_Event_Handler_Handle_Timeout_Upcall;
-	using Timer_Heap = ACE_Timer_Heap_T<ACE_Event_Handler *, Upcall, ACE_Recursive_Thread_Mutex>;
-	using Thread_Timer_Queue = ACE_Thread_Timer_Queue_Adapter<Timer_Heap>;
+	// Prevent copying and assignment
+	TimerManager(const TimerManager &) = delete;
+	TimerManager &operator=(const TimerManager &) = delete;
 
-	long registerTimer(std::atomic_long &timerId, long delayMilliseconds, std::size_t intervalMilliseconds,
-					   const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
-	long registerTimerImpl(std::atomic_long *timerId, long delayMilliseconds, std::size_t intervalMilliseconds,
+	long registerTimerImpl(std::atomic_long *ownerTimerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
 						   const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
 	long allocateTimerToken() noexcept;
-	void releaseTimerToken(long timerToken, const TimerEvent *timer) noexcept;
+	void releaseTimerToken(long timerToken) noexcept;
 
-	std::mutex m_timerIdMutex;							   ///< Serializes retained-token publication and cancellation.
-	std::mutex m_timerRegistryMutex;					   ///< Protects only token ownership; released before adapter operations/callbacks.
-	std::map<long, ACE_Event_Handler_var> m_timerRegistry; ///< Stable token to exact event identity.
+	boost::asio::io_context m_ioContext;												  ///< Timer event loop. All steady_timer member calls happen on m_ioThread.
+	boost::asio::executor_work_guard<boost::asio::io_context::executor_type> m_workGuard; ///< Keeps the event loop alive until shutdown.
+	std::thread m_ioThread;																  ///< Dedicated timer-dispatch thread.
+	std::mutex m_timerIdMutex;															  ///< Serializes retained-token publication and cancellation.
+	std::mutex m_timerRegistryMutex;													  ///< Protects only token ownership; released before posting to the event loop.
+	std::map<long, std::shared_ptr<TimerState>> m_timerRegistry;						  ///< Stable token to exact timer identity.
 	long m_nextTimerToken{1};
-	Thread_Timer_Queue m_timerQueue; ///< Queue for managing active timers. Destroyed before the registry locks.
 };
 
-using TIMER_MANAGER = ACE_Singleton<TimerManager, ACE_Null_Mutex>;
+/// @brief Process-wide TimerManager singleton (thread-safe function-local static).
+struct TIMER_MANAGER
+{
+	static TimerManager *instance()
+	{
+		static TimerManager manager;
+		return &manager;
+	}
+};

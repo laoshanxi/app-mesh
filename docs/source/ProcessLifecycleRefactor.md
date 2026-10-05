@@ -240,7 +240,7 @@ sequenceDiagram
 
 第 5 步早于 completion callback，避免 callback 自己间接等待同一个 run 时形成自等待。异常捕获只保留在必须继续推进状态机的最终收口边界；这些异常会记录 `FATAL`，不会被当作普通业务分支继续细分。
 
-正常路径复用 `TimerHandler::registerTimer` 和现有 `TimerManager` one-shot callback；`TimerEvent` 持有 `AppProcess` 的 shared owner，lambda 只调用对象方法，timer 完成后自动释放，不重复手写 `shared_from_this`，也不新增 handler 类或 detached thread。exit finalizer 不保留 timer token：timer 登记失败与异常统一在 TimerManager 内记录 CRITICAL 并返回 `INVALID_TIMER_ID`，退出调用方刻意不维护 inline fallback、rollback 或 scheduler retry 分支。inline fallback 会重新把 teardown、Application callback 和事件发送带回可能持有 ProcessManager mutex 的 upcall 栈，破坏这个必要锁边界；后续 review 不应在该调用点补偿登记失败。
+正常路径复用 `TimerHandler::registerTimer` 和现有 `TimerManager` one-shot callback；`TimerState` 持有 `AppProcess` 的 shared owner，lambda 只调用对象方法，timer 完成后自动释放，不重复手写 `shared_from_this`，也不新增 handler 类或 detached thread。exit finalizer 不保留 timer token：timer 登记失败与异常统一在 TimerManager 内记录 CRITICAL 并返回 `INVALID_TIMER_ID`，退出调用方刻意不维护 inline fallback、rollback 或 scheduler retry 分支。inline fallback 会重新把 teardown、Application callback 和事件发送带回可能持有 ProcessManager mutex 的 upcall 栈，破坏这个必要锁边界；后续 review 不应在该调用点补偿登记失败。
 
 ## 七、`wait` 的历史、语义与当前实现
 
@@ -501,11 +501,11 @@ AppProcess::m_processMutex
 - CV wait 只持有 process lifecycle mutex，并在等待时自动释放。
 - Docker CLI terminate 只启动一个带短 timeout、由 timer 持有生命周期的 cleanup `AppProcess`，不新增 thread，也不在 TimerManager 上等待 cleanup 完成。
 - exit finalizer 由现有 TimerManager 的 one-shot callback 托管；没有额外 handler、fallback 或 detached worker。
-- TimerManager 构造时只启动其专用 `ACE_Thread_Timer_Queue_Adapter`，并检查 `activate()` 失败；删除未实现 `svc()` 的 `ACE_Task_Base` 继承和 main 中重复的基类 `activate()`。timer callback 不与 main/process reactor 混用，也不再额外创建立即退出的无用线程。
-- exit-finalizer timer 注册发生在 lifecycle mutex 释放后；terminate/stdout timer 的注册则短暂持有 lifecycle mutex。所有需要取消的 timer 使用 TimerManager 的 atomic-ID overload，在一个 ownership 临界区中 cancel 旧 token，并按 adapter→heap 的既有锁顺序完成 schedule 与新 token 发布，避免并发 re-arm 遗留 timer、零延迟 callback 先 clear 或 cleanup 漏过尚未发布 token。
-- TimerManager 不再把 ACE 可复用的 heap ID 暴露为取消凭据。它分配不复用的逻辑 token，并由 registry 把 token 绑定到精确 `TimerEvent`；cancel 通过 event identity 删除底层 timer，因此旧 token 即使与 ACE 已复用的数字下标同时存在，也不能误取消 exit finalizer、HTTP timeout 或 replacement timer。registry 的 `ACE_Event_Handler_var` 在 cancel 与 queue removal 期间固定 callback 生命周期。
-- TimerEvent 在 one-shot callback 前、recurring callback 返回 false/抛异常后以及析构时，以“slot 仍等于自身 token”为条件做 CAS clear，并释放匹配 event identity 的 registry entry；调用方不再各自 blind clear，因此旧 callback 不会擦掉 replacement token。
-- ACE 在执行 callback 前释放 adapter 与 timer-heap 锁；TimerManager 不把内部锁带入 process callback，因此上述 timer 注册与 finalizer cleanup 之间没有反向锁边。
+- TimerManager 构造时启动专用 io 线程运行 `boost::asio::io_context`（steady_timer，单调时钟），线程启动失败时抛出异常。timer callback 不与 main/process reactor 混用，也不再额外创建立即退出的无用线程。
+- exit-finalizer timer 注册发生在 lifecycle mutex 释放后；terminate/stdout timer 的注册则短暂持有 lifecycle mutex。所有需要取消的 timer 使用 TimerManager 的 atomic-ID overload，在一个 ownership 临界区中 cancel 旧 token，并在 post 到 io 线程 arm 之前完成新 token 发布，避免并发 re-arm 遗留 timer、零延迟 callback 先 clear 或 cleanup 漏过尚未发布 token。
+- TimerManager 分配不复用的逻辑 token，并由 registry 把 token 绑定到精确 `TimerState`；cancel 按 timer 对象身份取消底层 steady_timer，因此旧 token 不能误取消 exit finalizer、HTTP timeout 或 replacement timer。registry 的 shared_ptr 在 cancel 投递到 io 线程期间固定 callback 生命周期。
+- `TimerState` 在 one-shot callback 前、recurring callback 返回 false/抛异常后以及析构时，以“slot 仍等于自身 token”为条件做 CAS clear，并释放匹配对象 identity 的 registry entry；调用方不再各自 blind clear，因此旧 callback 不会擦掉 replacement token。
+- timer callback 在 TimerManager 的 io 线程上执行，执行时不持有 registry 锁或队列内部锁，因此上述 timer 注册与 finalizer cleanup 之间没有反向锁边。
 - `AppProcess` 析构时已经没有 shared owner；若仍有 native child，只直接执行底层 kill/reap 和资源清理，不再进入需要 `shared_from_this()` 的 exit timer 路径。
 - recovery attach 在打开 AppProcess start gate 前先发布 task endpoint 与 Runtime snapshot；低频恢复路径不增加额外状态或并发机制。
 
@@ -823,7 +823,7 @@ code-simplifier skill 安装前经过安全扫描，结果为 CLEAN，安装到 
 - Docker API 与需要结果的 CLI inspect/log 是有界同步操作，不是完全异步控制面；耗时 pull 已独立为受管理 process，CLI cleanup 也只启动带 timeout 的 helper，不等待其完成。
 - TimerManager 统一捕获 timer 登记异常并对登记失败记录 CRITICAL；调用方不再重复日志，也不维护 exit-specific fallback、rollback 或 retry 代码。
 - 保留 timer token 的调用方统一使用 register-and-publish overload；零延迟 removal/stdout timer 不再存在 callback 先于 token store 的窗口。
-- TimerManager 以不复用的逻辑 token + `TimerEvent` identity 取消底层 timer，不依赖 ACE 可复用 heap ID；TimerEvent 统一按自身 token 做 CAS release，callback false/异常与析构路径使用同一所有权规则。
+- TimerManager 以不复用的逻辑 token + `TimerState` 对象 identity 取消底层 timer；`TimerState` 统一按自身 token 做 CAS release，callback false/异常与析构路径使用同一所有权规则。
 - stdout 文件检查的首次延迟和 recurring interval 均按毫秒传入，`30s` 配置不会误变为 `30ms` 周期。
 - EventDispatcher 用独立 delivery mutex 保证单订阅 sequence 顺序和 callback 非并发，同时不把订阅索引锁带入 transport。
 - runtime deadlock 与时序正确性仍需 integration workload/长期压力验证；当前静态 review 未发现锁环。
