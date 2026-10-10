@@ -46,6 +46,10 @@ BREW_PACKAGES=(
     yaml-cpp
     nlohmann-json
     jsoncpp
+    drogon
+    uriparser
+    ace
+    boost
 )
 
 # Ensure brew is available
@@ -73,35 +77,6 @@ for package in "${BREW_PACKAGES[@]}"; do
         brew install "$package"
     fi
 done
-
-# Install curl and boost from custom formulas
-TAP_PATH="$(brew --repo)/Library/Taps/laoshanxi/homebrew-custom-core/Formula"
-mkdir -p "$TAP_PATH"
-# GitHub runner images leave a bin/openssl link into an openssl@1.1 keg that
-# brew no longer tracks: `brew unlink openssl@1.1` reports "0 symlinks removed"
-# and leaves the link in place. The openssl@3 upgrade pulled in by the curl
-# formula below then fails its link step on that conflict, brew exits non-zero,
-# and set -e would abort this script before ace/boost are installed (CMake then
-# fails to find Boost). Unlink the keg, then remove the links that survive.
-brew unlink openssl@1.1 2>/dev/null || true
-BREW_BIN="$(brew --prefix)/bin"
-for link in "${BREW_BIN}"/*; do
-    case "$(readlink "${link}" 2>/dev/null)" in
-        *openssl@1.1*) echo "Removing stale link ${link}"; rm -f "${link}" ;;
-    esac
-done
-# Newer Homebrew refuses to load formulae from a tap it doesn't trust. This tap
-# is created by writing files directly (never `brew tap`-ed), so mark it trusted
-# before building from it. `brew trust` is a no-op on Homebrew versions without
-# the trust mechanism.
-brew trust laoshanxi/custom-core 2>/dev/null || true
-for formula in curl boost; do
-    wget -q -O "${TAP_PATH}/${formula}.rb" "https://github.com/laoshanxi/homebrew-core/raw/refs/heads/master/Formula/${formula:0:1}/${formula}.rb"
-    HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew reinstall --build-from-source --verbose "laoshanxi/homebrew-custom-core/${formula}"
-done
-
-# ACE (upstream formula, no SSL)
-brew install ace
 
 # Install Go tools
 echo "Installing Go tools..."
@@ -188,29 +163,6 @@ echo "Installing concurrentqueue..."
 cd ${TMP_DIR}
 git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
 sudo cp -rf concurrentqueue /usr/local/include/
-
-echo "Building and installing libwebsockets..."
-cd $TMP_DIR
-git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
-cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
-make
-sudo make install
-
-echo "Building and installing Drogon..."
-cd $TMP_DIR
-git clone --depth=1 -b v1.9.13 --recurse-submodules --shallow-submodules https://github.com/drogonframework/drogon.git
-cd drogon && mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DCMAKE_PREFIX_PATH="/opt/homebrew" ..
-make -j"$(sysctl -n hw.ncpu)"
-sudo make install
-
-echo "Building and installing uriparser..."
-cd $TMP_DIR
-git clone --depth=1 https://github.com/uriparser/uriparser.git
-cd uriparser && mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF ..
-make
-sudo make install
 
 echo "Building and installing msgpack-cxx..."
 cd $TMP_DIR

@@ -114,7 +114,7 @@ Response {
 - failed subscriptions are removed in a second short index critical section; unsubscribe may race an already-snapshotted delivery, whose copied callback remains valid for that one in-flight call
 - stdout strategies are activated only after `START` publication and are torn down outside the process resource lock, so final drain/delivery cannot re-enter a held process lock
 - timer-based stdout callbacks capture shared state and use `weak_ptr<Application>` rather than a raw application owner
-- Connection cleanup (`removeByConnection`) is called from `DrogonAdaptor` and `TcpAdaptor` close handlers and from `WebSocketService::destroySession` (libwebsockets builds) after releasing transport-specific locks
+- Connection cleanup (`removeByConnection`) is called from `DrogonAdaptor` and `TcpAdaptor` close handlers after releasing transport-specific locks
 
 ### Ownership Enforcement
 
@@ -124,7 +124,7 @@ Response {
 
 ## SDK Usage
 
-> **Note:** Event subscription requires a persistent connection (TCP or WebSocket). The C++ SDK (`AppMeshClient`) is HTTP-only and does not support subscriptions.
+> **Note:** Event subscription requires a persistent connection (TCP or WebSocket).
 >
 > Client-side delivery guarantees (event ordering, the synthetic `__disconnected__` event, pre-registration buffering, timeout and cleanup policy) are normatively defined in [SDKContract.md](SDKContract.md).
 

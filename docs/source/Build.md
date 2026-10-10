@@ -1,6 +1,6 @@
 ## Build
 
-App Mesh is implemented by modern C++, require g++ version higher than 4.8.5, there are 2 ways to setup App Mesh build environment.
+App Mesh is implemented by modern C++ (C++17), require g++ version 8 or later, there are 2 ways to setup App Mesh build environment.
 
 Build host support RHEL, Ubuntu, Debian and Fedora distributions with X86 or ARM architecture.
 
@@ -49,9 +49,7 @@ Build a Docker image to compile C++ application is a reliable and easy way to ha
 
 There are different Dockerfile(s) with different compiler version could be selected to generate the Docker image:
 
-- docker/Dockerfile.build_centos7
 - docker/Dockerfile.build_centos8
-- docker/Dockerfile.build_ubuntu18
 - docker/Dockerfile.build_ubuntu22
 - docker/Dockerfile.build_ubuntu24
 - docker/Dockerfile.build_ubuntu
@@ -74,9 +72,7 @@ docker push ${IMAGE_NAME}
 
 The public pre-build Docker images can be used to build binary directly:
 
-- laoshanxi/appmesh:build_centos7
 - laoshanxi/appmesh:build_centos8
-- laoshanxi/appmesh:build_ubuntu18
 - laoshanxi/appmesh:build_ubuntu22
 - laoshanxi/appmesh:build_ubuntu24
 - laoshanxi/appmesh:build_debian13

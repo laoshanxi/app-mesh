@@ -54,40 +54,6 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 		LOG_INF << fname << "Configuration value updated: " << #x; \
 	}
 
-// make_unique implementation for C++11, C++14 already support
-#if (__cplusplus <= 201103L) && !defined(_WIN32)
-namespace std
-{
-	template <typename T, typename... Args>
-	std::unique_ptr<T> make_unique(Args &&...args)
-	{
-		return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-	}
-} // namespace std
-#endif
-
-// GCC / Clang
-#if defined(__GNUC__)
-#if (__GNUC__ < 4) || (__GNUC__ == 4 && __GNUC_MINOR__ < 8) || (__GNUC__ == 4 && __GNUC_MINOR__ == 8 && __GNUC_PATCHLEVEL__ <= 5)
-#define COMPILER_LOWER_EQUAL_485
-#endif
-#endif
-
-// std::exchange is a C++14 library feature. Provide it for every non-Windows
-// C++11 build, including modern GCC/Clang invoked with -std=c++11.
-#if (__cplusplus <= 201103L) && !defined(_WIN32)
-namespace std
-{
-	template <typename T, typename U>
-	T exchange(T &obj, U &&new_value)
-	{
-		T old_value = std::move(obj);
-		obj = std::forward<U>(new_value);
-		return old_value;
-	}
-} // namespace std
-#endif
-
 template <typename T>
 std::shared_ptr<T> make_shared_array(size_t size)
 {
@@ -155,7 +121,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define MIN_TRANSPORT_IO_THREADS 2
 #define MAX_TRANSPORT_IO_THREADS 4
 // The main ACE reactor now only dispatches application stdout pipe reads; the
-// network transports run on drogon/trantor (libwebsockets on low platforms).
+// network transports run on drogon/trantor.
 #define MAIN_REACTOR_THREADS 1
 #define REST_REQUEST_TIMEOUT_SECONDS 60
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
@@ -433,8 +399,6 @@ public:
 #define HTTP_HEADER_KEY_APPMESH_FORWARDED "X-AppMesh-Forwarded"
 #define HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE "X-AppMesh-Forward-Route"
 #define HTTP_HEADER_KEY_X_Forwarded_Host "X-Forwarded-Host"
-#define HTTP_HEADER_KEY_X_LWS_Protocol "x-lws-protocol"
-#define HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP "HTTP"
 #define HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY "X-AppMesh-Process-Key"
 #define HTTP_HEADER_KEY_X_App_Name "X-App-Name"
 #define HTTP_HEADER_KEY_X_Event_Type "X-Event-Type"

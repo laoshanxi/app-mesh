@@ -31,8 +31,4 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Same transport libs as the daemon
-if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  target_link_libraries(${PROJECT_NAME} PUBLIC Drogon::Drogon)
-else()
-  target_link_libraries(${PROJECT_NAME} PUBLIC websockets_shared)
-endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC Drogon::Drogon)

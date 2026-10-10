@@ -19,7 +19,7 @@ This document is the top-level design contract for the current implementation. T
 Client (CLI / GUI / SDK)
   │
   │  run_task("workflow", json_payload, timeout)
-  │  (any App Mesh SDK: Rust/Python/Go/Java/JavaScript/C++)
+  │  (any App Mesh SDK: Rust/Python/Go/Java/JavaScript)
   ▼
 App Mesh daemon
   │
@@ -452,7 +452,7 @@ CLI, GUI, and any external system interact with the workflow engine through the 
 Client (CLI/GUI/SDK)
   │
   │  run_task("workflow", json_payload, timeout)
-  │  (any App Mesh SDK: Rust/Python/Go/Java/JavaScript/C++)
+  │  (any App Mesh SDK: Rust/Python/Go/Java/JavaScript)
   ▼
 App Mesh daemon
   │

@@ -103,8 +103,7 @@ var (
 )
 
 // getLocalConnection returns the pooled connection to the local daemon,
-// re-establishing it if a read error removed it from the pool. Platforms
-// without the TCP API port (libwebsockets builds) are reached over WSS.
+// re-establishing it if a read error removed it from the pool.
 // TCP is preferred: WSS is used only when the TCP dial fails, and is then reclaimed.
 func getLocalConnection() (*Connection, error) {
 	if localTCPAddr == nil {

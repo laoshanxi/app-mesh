@@ -21,10 +21,6 @@ target_link_libraries(appmesh
     common
 )
 
-if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  target_link_libraries(appmesh PUBLIC Drogon::Drogon)
-else()
-  target_link_libraries(appmesh PUBLIC websockets_shared)
-endif()
+target_link_libraries(appmesh PUBLIC Drogon::Drogon)
 
 install_runtime(TARGET appmesh)

@@ -160,8 +160,7 @@ func quiesceConnection(key string) {
 }
 
 // getOrCreateWSSConnection returns a pooled WSS connection to the daemon. It is
-// used on platforms where the daemon does not listen on the TCP API port
-// (libwebsockets builds serve the msgpack pipeline over WSS only).
+// used when the daemon is not reachable on the TCP API port.
 func getOrCreateWSSConnection(wssHostPort string, verifyServer bool) (*Connection, error) {
 	key := wssPoolKey(wssHostPort)
 

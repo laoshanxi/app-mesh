@@ -191,6 +191,7 @@ function Install-VcpkgPackages {
         'boost-regex:x64-windows',
         'boost-program-options:x64-windows',
         'boost-asio:x64-windows',
+        'boost-process:x64-windows',
         'boost-variant:x64-windows',
         'boost-serialization:x64-windows',
         'boost-lockfree:x64-windows',
@@ -198,7 +199,6 @@ function Install-VcpkgPackages {
         'drogon:x64-windows',
         # path so should_log() behaviour is identical across platforms.
         'cryptopp:x64-windows',
-        'curl:x64-windows',
         'yaml-cpp:x64-windows'
     )
 
@@ -292,20 +292,6 @@ function Install-HeaderOnlyLibraries {
     # concurrentqueue
     git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
     Copy-Item -Recurse "concurrentqueue" "C:\local\include\" -Force
-
-    # libwebsockets (pinned to v4.5.8; main has SMD regression since 58a366b 2026-04-10)
-    git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
-    Set-Location "libwebsockets"
-    (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int uid_t;', 'typedef long uid_t;' | Set-Content "include\libwebsockets.h"
-    (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int gid_t;', 'typedef long gid_t;' | Set-Content "include\libwebsockets.h"
-    (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef unsigned int useconds_t;', 'typedef unsigned long useconds_t;' | Set-Content "include\libwebsockets.h"
-    (Get-Content "include\libwebsockets.h" -Raw) -replace 'typedef int suseconds_t;', 'typedef long suseconds_t;' | Set-Content "include\libwebsockets.h"
-    New-Item -ItemType Directory -Force -Path "build" | Out-Null
-    Set-Location "build"
-    cmake .. -Wno-dev -G "Visual Studio 17 2022" -A x64 -DLWS_WITHOUT_TESTAPPS=ON -DCMAKE_C_FLAGS="/wd4819 /wd4267" -DCMAKE_CXX_FLAGS="/wd4819 /wd4267" -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_INSTALL_PREFIX="C:/local"
-    cmake --build . --config Release
-    cmake --install . --config Release
-    Set-Location $ROOTDIR
 
     # uriparser
     git clone --depth=1 https://github.com/uriparser/uriparser.git

@@ -48,12 +48,8 @@
 #include "../common/Valgrind.h"
 #endif
 
-#if defined(HAVE_DROGON)
 #include "rest/drogon/Adaptor.h"
 #include "rest/drogon/TcpAdaptor.h"
-#else
-#include "../common/lwsservice/WebSocketService.h"
-#endif
 
 // Global state management
 class AppMeshDaemon
@@ -460,7 +456,6 @@ void AppMeshDaemon::initializeRestService()
 	// Start REST thread pool
 	startWorkerThreadPool();
 
-#if defined(HAVE_DROGON)
 	// TLS TCP service (length-prefixed msgpack frames, same request pipeline
 	// as the WebSocket transport)
 	ACE_INET_Addr tcpAddr(config->getTcpApiPort(), config->getRestListenAddress().c_str());
@@ -468,24 +463,16 @@ void AppMeshDaemon::initializeRestService()
 	TcpAdaptor::instance()->initialize(tcpAddr, cert, key, ca, static_cast<int>(Configuration::instance()->getTransportIoThreads()));
 	TcpAdaptor::instance()->start();
 	LOG_INF << fname << "TCP service initialized on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
-#endif
 
 	// Websocket service
 	if (config->getWebSocketPort())
 	{
 		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
-#if defined(HAVE_DROGON)
 		verifyListenerAddress(addr, "WebSocket");
 		// <IO> threads per transport + shared <WORKER> threads
 		int ioThreadNumber = static_cast<int>(Configuration::instance()->getTransportIoThreads());
 		DrogonAdaptor::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
 		DrogonAdaptor::instance()->start();
-#else
-		// 1 <IO> thread + shared <WORKER> threads
-		constexpr int workerThreadNumber = 0; // Use shared thread pool
-		WebSocketService::instance()->initialize(addr, cert, key, ca);
-		WebSocketService::instance()->start(workerThreadNumber);
-#endif
 		LOG_INF << fname << "WebSocket service initialized on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
 	}
 
@@ -818,12 +805,8 @@ void AppMeshDaemon::performShutdown()
 	// connection whose event loop must stay alive until the reply is sent.
 	cleanWorkerThreads();
 
-#if defined(HAVE_DROGON)
 	TcpAdaptor::instance()->stop();
 	DrogonAdaptor::instance()->stop();
-#else
-	WebSocketService::instance()->stop();
-#endif
 
 	cleanupResources();
 

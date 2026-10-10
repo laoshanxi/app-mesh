@@ -6,7 +6,7 @@
 #    that the SDK fixes — auto_refresh_token, atomic add+subscribe, WSS PING/PONG — have
 #    eliminated; CI time halved).
 #  - Never aborts on its own diagnostic helpers (best-effort log/grep/stat are all guarded).
-#  - Pure POSIX-ish bash, works on Ubuntu 18/22/24 (bash 4.4–5.x), CentOS 7 (bash 4.2), macOS (bash 3.2).
+#  - Pure POSIX-ish bash, works on Ubuntu 22/24, CentOS 8, macOS (bash 3.2).
 #
 # Usage: run_python_test_with_debug.sh <python-test-script-path>
 # Env knobs:

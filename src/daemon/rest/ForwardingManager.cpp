@@ -14,11 +14,7 @@
 #include "ForwardingStream.h"
 #include "../Configuration.h"
 #include "../../common/RestClient.h"
-#if defined(HAVE_DROGON)
 #include "drogon/TcpClientStream.h"
-#else
-#include "lws/LwsForwardingStream.h"
-#endif
 
 namespace
 {
@@ -41,14 +37,10 @@ namespace
 		return value.at("subscription_id").get<std::string>();
 	}
 
-	/// Transport of this build: the TCP API with Drogon, WSS otherwise.
+	/// Transport of this build: the TCP API.
 	std::shared_ptr<ForwardingStream> createForwardingStream()
 	{
-#if defined(HAVE_DROGON)
 		return std::make_shared<TcpClientStream>();
-#else
-		return std::make_shared<LwsForwardingStream>();
-#endif
 	}
 
 	/// Fingerprint of the bearer a peer pins at the upgrade; the raw token never
@@ -75,22 +67,7 @@ namespace
 	int normalizeForwardPort(int port)
 	{
 		auto config = Configuration::instance();
-#if defined(HAVE_DROGON)
 		return port <= 1024 ? config->getTcpApiPort() : port;
-#else
-		static const char fname[] = "normalizeForwardPort() ";
-
-		// This build serves no TCP API: the documented TCP port means the
-		// WebSocket listener here, any other port is used as given.
-		if (port <= 1024)
-			return config->getWebSocketPort();
-		if (port == config->getTcpApiPort())
-		{
-			LOG_WAR << fname << "Forwarding target port " << port << " maps to the WebSocket port on this build";
-			return config->getWebSocketPort();
-		}
-		return port;
-#endif
 	}
 }
 

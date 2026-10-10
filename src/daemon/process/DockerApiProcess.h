@@ -9,7 +9,7 @@
 
 #define DOCKER_REQUEST_ID_HEADER "X-Request-ID"
 
-struct CurlResponse;
+struct HttpResponse;
 
 // Docker API Object using Docker REST API
 class DockerApiProcess : public DockerProcess
@@ -33,6 +33,6 @@ protected:
 
 private:
 	// Request Docker HTTP REST API
-	const std::shared_ptr<CurlResponse> requestDocker(const web::http::method &mtd, const std::string &path,
+	const std::shared_ptr<HttpResponse> requestDocker(const web::http::method &mtd, const std::string &path,
 													  std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body) const;
 };

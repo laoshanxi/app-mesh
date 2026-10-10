@@ -46,13 +46,6 @@ install_dependencies() {
   elif command -v yum >/dev/null 2>&1; then
     # CentOS/RHEL
     rhel_version=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
-    if [[ $rhel_version = "7" ]]; then
-      cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
-      rm -f /etc/yum.repos.d/*.repo
-      curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
-      yum clean all
-      yum makecache
-    fi
     if [[ $rhel_version = "8" ]]; then
       sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
       sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*

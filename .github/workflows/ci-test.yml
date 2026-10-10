@@ -18,7 +18,7 @@ on:
     branches: [main]
 
 env:
-  APPMESH_VERSION: "3.0.0"
+  APPMESH_VERSION: "3.0.1"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
@@ -75,7 +75,7 @@ jobs:
 
             apt update
             apt install -y wget iputils-ping gdb curl python3 python3-pip
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_11_glibc_2.35_x86_64.deb
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.1_gcc_11_glibc_2.35_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             ulimit -c unlimited
@@ -168,7 +168,7 @@ jobs:
 
             apt update
             apt install -y wget iputils-ping gdb curl python3 python3-pip
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_13_glibc_2.39_x86_64.deb
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.1_gcc_13_glibc_2.39_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             ulimit -c unlimited
@@ -242,194 +242,4 @@ jobs:
             cd /work/src/cli
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
-            '
-
-      - name: test ubuntu:18
-        env:
-          OS_TAG: ubuntu18
-        run: |
-          docker run --rm -e OS_TAG \
-            -v ${{ github.workspace }}:/work \
-            -v /tmp/host-cores:/cores \
-            --ulimit core=-1 \
-            --cap-add SYS_PTRACE \
-            --entrypoint=bash \
-            ubuntu:18.04 \
-            -c '
-            # Tail server.log only on non-zero exit, for failed-run diagnostics.
-            trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
-
-            apt update
-            apt install -y wget iputils-ping gdb curl python3 python3-pip
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_7_glibc_2.27_x86_64.deb
-            apt install -y ./appmesh_*.deb
-
-            ulimit -c unlimited
-
-            # Dex-only authentication bootstrap for CI:
-            # 1) precompute the machine-client Principal and seed authorization.yaml
-            #    before the first start (Dex derives the client_credentials subject
-            #    deterministically from the client id: base64url of protobuf
-            #    field 1 = the id, so no running Dex is needed here);
-            # 2) once the daemon is up, exchange the launcher-generated
-            #    appmesh-automation secret for a client_credentials token.
-            DEX_ISSUER="http://127.0.0.1:6062/auth"
-            AUTOMATION_SUB=$(python3 -c "import base64; cid=b\"appmesh-automation\"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip(\"=\"))")
-            PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c "import hashlib,os; print(hashlib.sha256(os.environ[\"DEX_ISSUER\"].encode()+b\"\x00\"+os.environ[\"AUTOMATION_SUB\"].encode()).hexdigest())")"
-            install -d -m 700 /opt/appmesh/work/config
-            SEED=/opt/appmesh/work/config/authorization.yaml
-            {
-                sed -n "1,/^  principals:$/p" /opt/appmesh/config/authorization.yaml
-                printf "    %s:\n" "$PRINCIPAL_ID"
-                printf "      kind: service\n      issuer: %s\n      subject: %s\n      status: active\n      execution_user: \"\"\n      roles: [appmesh-ci]\n" "$DEX_ISSUER" "$AUTOMATION_SUB"
-                sed -n "/^  principals:$/,/^  roles:$/p" /opt/appmesh/config/authorization.yaml | tail -n +2
-                printf "    appmesh-ci:\n"
-                sed -n "/^    appmesh-admin:$/,/^    appmesh-viewer:$/p" /opt/appmesh/config/authorization.yaml | sed "1d;\$d"
-                sed -n "/^  roles:$/,\$p" /opt/appmesh/config/authorization.yaml | tail -n +2
-            } > "$SEED"
-            chmod 600 "$SEED"
-            echo "seeded authorization principal $PRINCIPAL_ID"
-
-            # start appmesh
-            /opt/appmesh/script/appmesh.initd.sh start
-            sleep 5
-
-            TOKEN=""
-            for _ in $(seq 1 15); do
-                TOKEN=$(/opt/appmesh/script/appmesh-auth.sh automation-token) && break
-                sleep 2
-            done
-            [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
-            export APPMESH_BEARER_TOKEN="$TOKEN"
-            export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
-            appm ls && appm resource
-            # verify the bundled administration UI and the add-user/delete-user actions
-            bash /work/src/apps/identity/test_admin_ui.sh
-            appm log -L DEBUG || true
-
-            python3 -m pip install --upgrade appmesh pyotp
-            if ! bash /work/script/run_python_test_with_debug.sh \
-              /work/src/sdk/python/test/integration/test_client.py \
-              /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py; then
-                echo "===== python SDK tests failed once; retrying (stress/workflow tests have a known intermittent-race family) ====="
-                bash /work/script/run_python_test_with_debug.sh \
-                  /work/src/sdk/python/test/integration/test_client.py \
-                  /work/src/sdk/python/test/test_workflow_engine.py \
-                  /work/src/sdk/python/sample.py || exit 1
-            fi
-
-            # test appmesh golang sdk
-            bash /work/script/bootstrap/install_golang.sh
-            cd /work/src/sdk/go
-            /usr/local/go/bin/go test -v || {
-                bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
-                exit 1
-            }
-
-            # test appmesh rust cli + sdk (cli_* cases need an interactive
-            # `appm logon` session, which a client_credentials token cannot provide)
-            bash /work/script/bootstrap/install_rust.sh
-            cd /work/src/cli
-            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu18 cargo test
-            CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu18 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
-            '
-
-      - name: test centos:7
-        env:
-          OS_TAG: centos7
-        run: |
-          docker run --rm -e OS_TAG \
-            -v ${{ github.workspace }}:/work \
-            -v /tmp/host-cores:/cores \
-            --ulimit core=-1 \
-            --cap-add SYS_PTRACE \
-            --entrypoint=bash \
-            centos:7 \
-            -c '
-            # Tail server.log only on non-zero exit, for failed-run diagnostics.
-            trap '"'"'rc=$?; [ $rc -ne 0 ] && { echo "===== EXIT TRAP (rc=$rc): server.log tail ====="; tail -200 /opt/appmesh/work/server.log 2>&1 || true; echo "===== END server.log tail ====="; }'"'"' EXIT
-
-            # centos 7
-            cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
-            rm -f /etc/yum.repos.d/*.repo
-            curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
-            yum clean all
-            yum makecache
-
-            yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_4.8.5_glibc_2.17_x86_64.rpm
-            yum install -y gdb python3 python3-pip
-
-            ulimit -c unlimited
-
-            # Dex-only authentication bootstrap for CI:
-            # 1) precompute the machine-client Principal and seed authorization.yaml
-            #    before the first start (Dex derives the client_credentials subject
-            #    deterministically from the client id: base64url of protobuf
-            #    field 1 = the id, so no running Dex is needed here);
-            # 2) once the daemon is up, exchange the launcher-generated
-            #    appmesh-automation secret for a client_credentials token.
-            DEX_ISSUER="http://127.0.0.1:6062/auth"
-            AUTOMATION_SUB=$(python3 -c "import base64; cid=b\"appmesh-automation\"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip(\"=\"))")
-            PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c "import hashlib,os; print(hashlib.sha256(os.environ[\"DEX_ISSUER\"].encode()+b\"\x00\"+os.environ[\"AUTOMATION_SUB\"].encode()).hexdigest())")"
-            install -d -m 700 /opt/appmesh/work/config
-            SEED=/opt/appmesh/work/config/authorization.yaml
-            {
-                sed -n "1,/^  principals:$/p" /opt/appmesh/config/authorization.yaml
-                printf "    %s:\n" "$PRINCIPAL_ID"
-                printf "      kind: service\n      issuer: %s\n      subject: %s\n      status: active\n      execution_user: \"\"\n      roles: [appmesh-ci]\n" "$DEX_ISSUER" "$AUTOMATION_SUB"
-                sed -n "/^  principals:$/,/^  roles:$/p" /opt/appmesh/config/authorization.yaml | tail -n +2
-                printf "    appmesh-ci:\n"
-                sed -n "/^    appmesh-admin:$/,/^    appmesh-viewer:$/p" /opt/appmesh/config/authorization.yaml | sed "1d;\$d"
-                sed -n "/^  roles:$/,\$p" /opt/appmesh/config/authorization.yaml | tail -n +2
-            } > "$SEED"
-            chmod 600 "$SEED"
-            echo "seeded authorization principal $PRINCIPAL_ID"
-
-            # start appmesh
-            /opt/appmesh/script/appmesh.initd.sh start
-            sleep 5
-
-            TOKEN=""
-            for _ in $(seq 1 15); do
-                TOKEN=$(/opt/appmesh/script/appmesh-auth.sh automation-token) && break
-                sleep 2
-            done
-            [ -n "$TOKEN" ] || { echo "failed to obtain the client_credentials token"; exit 1; }
-            export APPMESH_BEARER_TOKEN="$TOKEN"
-            export APPMESH_TEST_ACCESS_TOKEN="$TOKEN"
-            appm ls && appm resource
-            # verify the bundled administration UI and the add-user/delete-user actions
-            bash /work/src/apps/identity/test_admin_ui.sh
-            appm log -L DEBUG || true
-
-            # test appmesh python sdk FIRST — Python wrapper captures full daemon
-            # diagnostics on crash (backtrace / dmesg / server.log).
-            python3 -m pip install --upgrade appmesh pyotp
-            if ! bash /work/script/run_python_test_with_debug.sh \
-              /work/src/sdk/python/test/integration/test_client.py \
-              /work/src/sdk/python/test/test_workflow_engine.py \
-              /work/src/sdk/python/sample.py; then
-                echo "===== python SDK tests failed once; retrying (stress/workflow tests have a known intermittent-race family) ====="
-                bash /work/script/run_python_test_with_debug.sh \
-                  /work/src/sdk/python/test/integration/test_client.py \
-                  /work/src/sdk/python/test/test_workflow_engine.py \
-                  /work/src/sdk/python/sample.py || exit 1
-            fi
-
-            # test appmesh golang sdk
-            yum install -y wget
-            bash /work/script/bootstrap/install_golang.sh
-            cd /work/src/sdk/go
-            /usr/local/go/bin/go test -v || {
-                bash /work/script/run_python_test_with_debug.sh --dump-only "go test failed"
-                exit 1
-            }
-
-            # test appmesh rust cli + sdk (cli_* cases need an interactive
-            # `appm logon` session, which a client_credentials token cannot provide)
-            bash /work/script/bootstrap/install_rust.sh
-            cd /work/src/cli
-            CARGO_TARGET_DIR=/tmp/cargo-target-centos7 cargo test
-            CARGO_TARGET_DIR=/tmp/cargo-target-centos7 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
             '

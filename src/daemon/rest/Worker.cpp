@@ -12,9 +12,7 @@
 #include "ForwardingManager.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
-#if defined(HAVE_DROGON)
 #include "ReplyContext.h"
-#endif
 
 #include <memory>
 #include <set>
@@ -41,7 +39,6 @@ namespace
 			request->m_query.count("subscribe_events") != 0;
 	}
 
-#if defined(HAVE_DROGON)
 	// An undecodable payload keeps its envelope: the correlation uuid is read
 	// straight from the map so the frame can still be answered.
 	std::string recoverRequestUuid(const std::string &data)
@@ -84,16 +81,13 @@ namespace
 		ctx->replyWebSocket(response.serialize(), true, true);
 		return true;
 	}
-#endif
 }
 
 struct HttpRequestContext
 {
 	std::string m_data;
 	LwsSessionRef m_lwsRef{};
-#if defined(HAVE_DROGON)
 	std::shared_ptr<WSS::ReplyContext> m_wsReplyContext;
-#endif
 	// Explicit shutdown marker (an empty m_data must never mean shutdown: a zero-length
 	// frame would then let any client kill a worker).
 	bool m_isShutdownSentinel = false;
@@ -128,15 +122,6 @@ bool Worker::enqueueRequest(std::shared_ptr<HttpRequestContext> ctx)
 	return true;
 }
 
-void Worker::queueLwsRequest(std::string &&data, LwsSessionRef lwsRef)
-{
-	auto ctx = std::make_shared<HttpRequestContext>();
-	ctx->m_data = std::move(data);
-	ctx->m_lwsRef = lwsRef;
-	enqueueRequest(std::move(ctx));
-}
-
-#if defined(HAVE_DROGON)
 void Worker::queueWsRequest(std::string &&data, std::shared_ptr<WSS::ReplyContext> wsContext)
 {
 	auto ctx = std::make_shared<HttpRequestContext>();
@@ -144,7 +129,6 @@ void Worker::queueWsRequest(std::string &&data, std::shared_ptr<WSS::ReplyContex
 	ctx->m_wsReplyContext = std::move(wsContext);
 	enqueueRequest(std::move(ctx));
 }
-#endif
 
 int Worker::svc()
 {
@@ -164,17 +148,12 @@ int Worker::svc()
 		}
 		m_pendingCount.fetch_sub(1, std::memory_order_relaxed); // matched to enqueueRequest reservation
 
-#if defined(HAVE_DROGON)
 		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_lwsRef, requestContext->m_wsReplyContext);
-#else
-		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_lwsRef, nullptr);
-#endif
 
 		if (!request || !process(request))
 		{
 			LOG_WAR << fname << "Failed to parse or process request";
 
-#if defined(HAVE_DROGON)
 			if (requestContext->m_wsReplyContext)
 			{
 				auto &wsCtx = requestContext->m_wsReplyContext;
@@ -185,12 +164,6 @@ int Worker::svc()
 					// TCP transport closes the connection through its abort hook).
 					wsCtx->markAborted();
 			}
-#else
-			if (requestContext->m_lwsRef)
-			{
-				// TODO: handle libwebsockets close to avoid leak
-			}
-#endif
 		}
 	}
 

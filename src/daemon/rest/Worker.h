@@ -37,10 +37,7 @@ public:
 
 	bool process(const std::shared_ptr<HttpRequest> &request);
 
-	void queueLwsRequest(std::string &&data, LwsSessionRef lwsRef);
-#if defined(HAVE_DROGON)
 	void queueWsRequest(std::string &&data, std::shared_ptr<WSS::ReplyContext> wsContext);
-#endif
 
 	void shutdown();
 

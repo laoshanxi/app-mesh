@@ -18,11 +18,7 @@
 #include "../security/InternalCapability.h"
 #include "../security/SecretProtector.h"
 #include "../security/Security.h"
-#if defined(HAVE_DROGON)
 #include "ReplyContext.h"
-#else
-#include "../../common/lwsservice/WebSocketService.h"
-#endif
 #include "EventDispatcher.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
@@ -1544,7 +1540,6 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 		message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
 		? message->m_headers.get(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
 		: std::string();
-#if defined(HAVE_DROGON)
 	if (message->wsReplyContext() && message->wsReplyContext()->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed)
 	{
 		auto wsCtx = message->wsReplyContext();
@@ -1578,45 +1573,6 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 		};
 		return true;
 	}
-#else
-	if (message->lwsRef())
-	{
-		auto lwsRef = message->lwsRef();
-		connKey = ConnectionKey::wss(lwsRef.sessionId);
-		deliveryCb = [lwsRef, forwardRoute](const EventEnvelope &envelope) -> bool
-		{
-			try
-			{
-				auto resp = std::make_unique<Response>();
-				resp->uuid = Utility::shortID();
-				resp->request_uri = "/appmesh/event";
-				resp->http_status = web::http::status_codes::OK;
-				resp->body_msg_type = web::http::mime_types::application_json;
-				auto bodyStr = envelope.toJson();
-				resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
-				resp->headers[HTTP_HEADER_KEY_X_Subscription_Id] = envelope.subscriptionId;
-				resp->headers[HTTP_HEADER_KEY_X_Event_Type] = envelope.eventType;
-				resp->headers[HTTP_HEADER_KEY_X_App_Name] = envelope.appName;
-				if (!forwardRoute.empty())
-					resp->headers[HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE] = forwardRoute;
-
-				auto wsResp = std::make_unique<WSResponse>();
-				wsResp->m_session_ref = const_cast<void *>(lwsRef.wsi);
-				wsResp->m_req_id = 0;
-				wsResp->m_session_id = lwsRef.sessionId;
-				wsResp->m_payload = resp->serialize();
-				wsResp->m_is_http = false;
-				WebSocketService::instance()->enqueueOutgoingResponse(std::move(wsResp));
-				return true;
-			}
-			catch (...)
-			{
-				return false;
-			}
-		};
-		return true;
-	}
-#endif
 	return false;
 }
 

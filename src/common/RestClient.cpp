@@ -1,6 +1,6 @@
 // src/common/RestClient.cpp
 // Backend-agnostic parts of the HTTP client facade. The request() transport
-// lives in RestClientDrogon.cpp (C++17 tier) or RestClientLws.cpp (lower tiers).
+// lives in RestClientDrogon.cpp.
 #include <mutex>
 
 #include "RestClient.h"

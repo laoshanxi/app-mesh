@@ -379,7 +379,7 @@ int DockerApiProcess::returnValue() const
 	}
 }
 
-const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path,
+const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path,
 																	std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body) const
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
@@ -404,12 +404,12 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 				<< logBody.dump(2);
 	}
 
-	auto response = std::make_shared<CurlResponse>();
+	auto response = std::make_shared<HttpResponse>();
 	std::string errorMsg = std::string("exception caught: ").append(path);
 
 	try
 	{
-		return RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, {}, DOCKER_REQUEST_TIMEOUT_SECONDS);
+		return RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, DOCKER_REQUEST_TIMEOUT_SECONDS);
 	}
 	catch (const std::exception &ex)
 	{

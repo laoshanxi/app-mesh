@@ -38,7 +38,19 @@ apt install -y alien gettext unzip
 apt install -y git
 
 # dependency libraries
-apt install -y libboost-all-dev
+# Boost: distro packages are older than the required 1.86 (Boost.Process V2);
+# build from source instead of libboost-all-dev.
+if [ true ]; then
+    BOOST_VER=86
+    wget --continue --quiet --backups=1 --tries=30 --no-check-certificate \
+        https://zenlayer.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
+    tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
+    cd ./boost_1_${BOOST_VER}_0
+    ./bootstrap.sh --without-libraries=context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
+    ./b2 -j"$(($(nproc) / 2))"
+    ./b2 install >/dev/null
+    cd "$ROOTDIR"
+fi
 apt install -y libcrypto++-dev
 
 # build ACE

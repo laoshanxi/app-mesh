@@ -35,13 +35,6 @@ if [ -f "/usr/bin/yum" ]; then
     #RHEL
     # yum update -q -y
     RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
-    if [[ $RHEL_VER = "7" ]]; then
-        cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
-        rm -f /etc/yum.repos.d/*.repo
-        curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
-        yum clean all
-        yum makecache
-    fi
     if [[ $RHEL_VER = "8" ]]; then
         sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
         sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*
@@ -50,25 +43,15 @@ if [ -f "/usr/bin/yum" ]; then
     yum install -y git make gcc-c++
     yum install -y wget which gettext unzip
     yum install -y python3-pip
-    yum install -y zlib-devel #for libcurl
     yum install -y libuuid-devel #for drogon
     yum install -y ninja-build 2>/dev/null || (yum install -y python3-pip && pip3 install ninja)
-    #yum install -y boost169-devel boost169-static
-    #export BOOST_LIBRARYDIR=/usr/lib64/boost169
-    #export BOOST_INCLUDEDIR=/usr/include/boost169
-    #ln -s /usr/include/boost169/boost /usr/local/include/boost
-    #ln -s /usr/lib64/boost169/ /usr/local/lib64/boost
 elif [ -f "/usr/bin/apt" ]; then
     #Ubuntu
-    # for old archived ubuntu version, the apt update may fail, run below command before update
-    # sed -i s/archive.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
-    # sed -i s/security.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
     export DEBIAN_FRONTEND=noninteractive
     apt update
     apt install -y g++ git make ninja-build
     apt install -y wget alien gettext unzip
     apt install -y python3-pip
-    apt install -y zlib1g-dev #for libcurl
     apt install -y uuid-dev #for drogon
 fi
 python3 -m pip install --upgrade pip || python3 -m pip install --break-system-packages --upgrade pip || true
@@ -107,19 +90,9 @@ if [ true ]; then
     sh cmake-$version.$build-$os-$platform.sh --prefix=/usr/local/ --skip-license
 fi
 
-# build static libcurl
-$WGET_A https://curl.se/download/curl-8.5.0.tar.gz
-tar zxvf curl-8.5.0.tar.gz >/dev/null; cd curl-8.5.0
-mkdir build; cd build; # http2: -DHTTP_ONLY=OFF -DCURL_USE_NGHTTP2=ON
-cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl || cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DCURL_USE_OPENSSL=ON
-make -j"$(nproc)" >/dev/null
-make install
-ldconfig
-cd $ROOTDIR
-
-# build boost
+# build boost (1.86+: Boost.Process V2)
 if [ true ]; then
-    BOOST_VER=76
+    BOOST_VER=86
     # https://www.boost.org/users/download/
     $WGET_A https://zenlayer.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
     tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
@@ -138,16 +111,8 @@ mv include/nlohmann /usr/local/include/
 
 # spdlog
 # spdlog - build from source
-GCC_MAJOR_VER=$(gcc -dumpversion 2>/dev/null | cut -d'.' -f1 | tr -dc '0-9')
-echo "Detected GCC major version: ${GCC_MAJOR_VER:-unknown}"
 cd "$ROOTDIR"
-if [ -n "$GCC_MAJOR_VER" ] && [ "$GCC_MAJOR_VER" -lt 8 ]; then
-    echo "GCC < 8: build spdlog from v1.9.2 branch"
-    git clone -b v1.9.2 --depth 1 https://github.com/gabime/spdlog.git
-else
-    echo "GCC >= 8: build spdlog from v1.17.0 tag"
-    git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git
-fi
+git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git
 cd spdlog || exit 1
 mkdir -p build && cd build || exit 1
 cmake .. -DSPDLOG_BUILD_SHARED=ON -DSPDLOG_BUILD_EXAMPLES=OFF -DSPDLOG_BUILD_TESTS=OFF
@@ -157,13 +122,8 @@ cd "$ROOTDIR"
 
 # ACE: CentOS ships no ACE package, build from source there; apt elsewhere
 if [ -f "/usr/bin/yum" ]; then
-    if [[ $RHEL_VER = "7" ]]; then
-        $WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_16/ACE-6.5.16.tar.gz
-        tar zxvf ACE-6.5.16.tar.gz >/dev/null
-    else
-        $WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
-        tar zxvf ACE-7.1.2.tar.gz >/dev/null
-    fi
+    $WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
+    tar zxvf ACE-7.1.2.tar.gz >/dev/null
     cd ACE_wrappers
     export ACE_ROOT=$(pwd)
     cp ace/config-linux.h ace/config.h
@@ -231,13 +191,8 @@ cp croncpp/include/croncpp.h /usr/local/include/
 git clone --depth=1 https://github.com/laoshanxi/wildcards.git
 cp -rf wildcards/single_include/ /usr/local/include/wildcards
 
-# prometheus-cpp master needs C++14/17 (transparent comparator, nested namespace);
-# CentOS 7 (GCC 4.8, C++11) pins the last C++11-capable release
-if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    git clone --depth=1 -b v1.3.0 https://github.com/jupp0r/prometheus-cpp.git
-else
-    git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
-fi
+# prometheus-cpp master needs C++17 (transparent comparator, nested namespace)
+git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
 cp -rf prometheus-cpp/core/src /usr/local/src/prometheus
 cp -rf prometheus-cpp/core/include/prometheus /usr/local/include/
 cat << EOF > /usr/local/include/prometheus/detail/core_export.h
@@ -252,18 +207,10 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 cd $ROOTDIR
 git clone https://github.com/jbeder/yaml-cpp.git
 cd yaml-cpp/ && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON ..
-if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    while ! make; do make clean && git reset --hard HEAD^ && cmake -DBUILD_SHARED_LIBS=ON ..; sleep 0.5; done
-fi
 make && make install
 
 cd $ROOTDIR
-# v2.x branch head dropped the C++11 `operator "" _x` space form; GCC 4.8 pins v2.13.10
-if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    git clone --depth=1 -b v2.13.10 https://github.com/catchorg/Catch2.git
-else
-    git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
-fi
+git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
 cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
 
 cd ${ROOTDIR}
@@ -271,30 +218,18 @@ git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
 cp -rf concurrentqueue /usr/local/include/
 
 cd $ROOTDIR
-git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
-if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
-else
-    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
-fi
+git clone --depth=1 -b 1.9.8 https://github.com/open-source-parsers/jsoncpp.git
+cd jsoncpp && mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DJSONCPP_WITH_TESTS=OFF -DJSONCPP_WITH_POST_BUILD_UNITTEST=OFF ..
 make -j"$(nproc)" && make install
 
-GCC_MAJOR=$(gcc -dumpversion | cut -d. -f1)
-if [[ "$GCC_MAJOR" -lt 8 ]]; then
-    echo "Drogon requires C++17 (GCC >= 8), skipping"
-else
-    cd $ROOTDIR
-    git clone --depth=1 -b 1.9.8 https://github.com/open-source-parsers/jsoncpp.git
-    cd jsoncpp && mkdir build && cd build
-    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DJSONCPP_WITH_TESTS=OFF -DJSONCPP_WITH_POST_BUILD_UNITTEST=OFF ..
-    make -j"$(nproc)" && make install
-
-    cd $ROOTDIR
-    git clone --depth=1 -b v1.9.13 --recurse-submodules --shallow-submodules https://github.com/drogonframework/drogon.git
-    cd drogon && mkdir build && cd build
-    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
-    make -j"$(nproc)" && make install
-fi
+cd $ROOTDIR
+git clone --depth=1 -b v1.9.13 --recurse-submodules --shallow-submodules https://github.com/drogonframework/drogon.git
+cd drogon && mkdir build && cd build
+# $ORIGIN keeps the packaged libraries self-contained; the OpenSSL prefix
+# makes the runtime dependency scan resolve one libcrypto, not the system copy.
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCMAKE_SKIP_INSTALL_RPATH=ON -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath,\$ORIGIN:/usr/local/ssl/lib" -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DBUILD_BROTLI=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
+make -j"$(nproc)" && make install
 
 cd $ROOTDIR
 git clone --depth=1 https://github.com/uriparser/uriparser.git
@@ -313,22 +248,3 @@ fi
 
 cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
 rm -rf ${ROOTDIR}
-# memory test tool
-# https://docs.microsoft.com/en-us/cpp/linux/linux-asan-configuration?view=msvc-170#install-the-asan-debug-symbols
-#asanversion="0"
-#case $(gcc -dumpversion) in
-#    5)   asanversion="2" ;;
-#    6)   asanversion="3" ;;
-#    7)   asanversion="4" ;;
-#    8)   asanversion="5" ;;
-#    9)   asanversion="6" ;;
-#    10)   asanversion="7" ;;
-#    11)   asanversion="8" ;;
-#    12)   asanversion="9" ;;
-#    *)   asanversion="0"
-#esac
-#if [ -f "/usr/bin/yum" ]; then
-#    yum install -y valgrind libasan
-#elif [ -f "/usr/bin/apt" ]; then
-#    apt install -y valgrind libasan$asanversion
-#fi

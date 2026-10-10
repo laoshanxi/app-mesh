@@ -9,17 +9,15 @@
 #include <memory>
 #include <string>
 
+class ForwardingStream;
 class HttpRequest;
 class Response;
-class TcpClientStream;
 
 /// Represents a single forwarding connection to a remote host, with a map
 /// of pending requests awaiting responses (correlated by UUID).
 struct ForwardingConnection
 {
-#if defined(HAVE_DROGON)
-	std::shared_ptr<TcpClientStream> stream;
-#endif
+	std::shared_ptr<ForwardingStream> stream;
 	// ACE_Map_Manager operations lock internally, so an external guard over the
 	// same map re-enters; the lock must be recursive or addRequest() deadlocks.
 	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
@@ -29,6 +27,11 @@ struct ForwardingConnection
 	std::atomic<bool> closed{false};
 	// Time of the last accepted connect or received response.
 	std::atomic<int64_t> lastResponseTime{0};
+
+	// Identity of the hop, so the pool key never has to be parsed apart.
+	std::string host;
+	int port = 0;
+	std::string bearerFingerprint; // empty when the transport pins no principal
 
 	/// Atomically checks closed flag and binds request under pending_requests lock.
 	/// Returns false if the connection is closed or bind fails.
@@ -44,6 +47,9 @@ struct ForwardingConnection
 
 	/// True when requests wait while the peer stayed silent past the stale bound.
 	bool hasStaleRequests();
+
+	/// True when the hop carries no work and stayed silent past the idle bound.
+	bool idleReapable();
 };
 
 /// Manages a pool of forwarding connections to remote hosts.
@@ -66,9 +72,7 @@ public:
 	bool forward(const std::string &host, int port, const std::shared_ptr<HttpRequest> &request);
 
 private:
-#if defined(HAVE_DROGON)
-	std::shared_ptr<ForwardingConnection> getOrCreateConnection(const std::string &host, int port);
-#endif
+	std::shared_ptr<ForwardingConnection> getOrCreateConnection(const std::string &host, int port, const std::string &bearer);
 
 	using ForwardingClientMap = ACE_Map_Manager<std::string, std::shared_ptr<ForwardingConnection>, ACE_Recursive_Thread_Mutex>;
 	ForwardingClientMap m_connections;

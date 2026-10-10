@@ -11,13 +11,15 @@ set(Boost_USE_STATIC_LIBS OFF)   # Use shared libraries
 if(APPLE)
     set(BOOST_ROOT /opt/homebrew)
 endif()
-find_package(Boost 1.76 REQUIRED COMPONENTS
+# 1.86 is the first release with the Boost.Process V2 asio engine the daemon uses.
+find_package(Boost 1.86 REQUIRED COMPONENTS
     system
     filesystem
     regex
     thread
     program_options
     date_time
+    process
 )
 if(NOT Boost_FOUND)
     message(FATAL_ERROR "Boost not found")
@@ -42,62 +44,13 @@ target_include_directories(msgpack-cxx INTERFACE ${MSGPACK_INCLUDE_DIR})
 find_package(spdlog REQUIRED)
 
 ##########################################################################
-# libwebsockets  https://libwebsockets.org/
-##########################################################################
-if(NOT CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  find_package(libwebsockets CONFIG REQUIRED)
-endif()
-
-##########################################################################
-# libcurl
-##########################################################################
-if (APPLE)
-    # Explicitly set paths for Homebrew curl
-    set(CURL_ROOT "/opt/homebrew/opt/curl")
-    set(CURL_INCLUDE_DIR "${CURL_ROOT}/include")
-    set(CURL_LIB "${CURL_ROOT}/lib/libcurl.dylib")
-
-    # Verify paths manually
-    find_path(CURL_INCLUDE_DIR curl/curl.h PATHS ${CURL_INCLUDE_DIR})
-    find_library(CURL_LIB NAMES curl PATHS ${CURL_ROOT}/lib)
-
-    if(NOT CURL_INCLUDE_DIR OR NOT CURL_LIB)
-        message(FATAL_ERROR "Could not find CURL. Ensure CURL is installed via Homebrew.")
-    endif()
-
-    message(STATUS "CURL include dir: ${CURL_INCLUDE_DIR}")
-    message(STATUS "CURL library dir: ${CURL_LIB}")
-
-    # Include directories and link libraries
-    include_directories(${CURL_INCLUDE_DIR})
-    link_directories(${CURL_LIBRARY})
-elseif (WIN32)
-    # For Windows, use vcpkg or other package manager to find libcurl
-    find_package(CURL REQUIRED)
-    if (CURL_FOUND)
-        message(STATUS "Found CURL: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
-        set(CURL_LIB ${CURL_LIBRARIES})
-    else()
-        message(FATAL_ERROR "libcurl not found")
-    endif()
-else()
-    find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
-    if (NOT CURL_LIB)
-        find_package(CURL REQUIRED)
-        message(STATUS "Found system libcurl: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
-        set(CURL_LIB ${CURL_LIBRARIES})
-    endif()
-endif()
-message(STATUS "Found CURL_LIB: ${CURL_LIB}")
-
-##########################################################################
 # openssl
 ##########################################################################
 find_package(OpenSSL REQUIRED)
 if (OPENSSL_FOUND)
     include_directories(${OPENSSL_INCLUDE_DIR})
     if(NOT WIN32)
-        # Ensure linker can resolve bare -lssl/-lcrypto from third-party libs (e.g. libwebsockets)
+        # Ensure linker can resolve bare -lssl/-lcrypto from third-party libs
         # when OpenSSL is installed in a non-standard path like /usr/local/ssl
         # Skip on Windows: vcpkg toolchain handles library paths, and OPENSSL_SSL_LIBRARY
         # contains optimized/debug generator expressions that break get_filename_component.
@@ -172,7 +125,6 @@ set(CRYPTOPP_TARGET cryptopp::cryptopp)
 # ACE
 ##########################################################################
 find_library(ACE_LIBRARY ACE REQUIRED)
-find_package(ZLIB REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 find_package(uriparser REQUIRED)
@@ -184,11 +136,8 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 ##########################################################################
-# Drogon (HTTPS/WSS transport for the C++17 tier; lower tiers keep libwebsockets)
+# Drogon (HTTPS/WSS/TCP transport)
 ##########################################################################
-if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-    find_package(Drogon CONFIG REQUIRED)
-    add_compile_definitions(HAVE_DROGON=1)
-    message(STATUS "HTTPS/WSS transport: Drogon ${Drogon_VERSION}")
-endif()
+find_package(Drogon CONFIG REQUIRED)
+message(STATUS "HTTPS/WSS transport: Drogon ${Drogon_VERSION}")
 

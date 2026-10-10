@@ -19,11 +19,7 @@
 #include "Data.h"
 #include "RestHandler.h"
 #include "Worker.h"
-#if defined(HAVE_DROGON)
 #include "ReplyContext.h"
-#else
-#include "../../common/lwsservice/WebSocketService.h"
-#endif
 
 #include "HttpRequest.h"
 
@@ -137,15 +133,6 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, 
 		auto request = std::make_shared<HttpRequest>(std::move(req));
 		request->m_lwsRef = lwsRef;
 		request->m_wsReplyContext = std::move(ctx);
-		if (!lwsRef.peerAddress.empty())
-		{
-			// libwebsockets transport: replace the self-declared client_addr with
-			// the accepted socket's peer before any loopback/permission check.
-			request->m_remote_address = lwsRef.peerAddress;
-			if (!lwsRef.principalId.empty())
-				request->bindTransportPrincipal(lwsRef.principalId);
-		}
-#if defined(HAVE_DROGON)
 		if (request->m_wsReplyContext &&
 			request->m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed)
 		{
@@ -155,7 +142,6 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, 
 			if (!request->m_wsReplyContext->getPrincipalId().empty())
 				request->bindTransportPrincipal(request->m_wsReplyContext->getPrincipalId());
 		}
-#endif
 		return request;
 	}
 	else
@@ -172,13 +158,8 @@ void HttpRequest::bindTransportPrincipal(std::string principalId)
 
 bool HttpRequest::isPersistentClientTransport() const
 {
-#if defined(HAVE_DROGON)
 	return m_wsReplyContext &&
 		m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed;
-#else
-	return static_cast<bool>(m_lwsRef) &&
-		m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) != HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
-#endif
 }
 
 bool HttpRequest::isLoopbackPeer(const std::string &addr)
@@ -262,7 +243,6 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	if (requestUri == REST_PATH_UPLOAD)
 		response->file_upload_request_headers = m_headers;
 
-#if defined(HAVE_DROGON)
 	if (m_wsReplyContext)
 	{
 		if (m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
@@ -288,21 +268,6 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 			return false;
 		}
 	}
-#else
-	if (m_lwsRef)
-	{
-		// WebSocket or HTTP-over-lws: the serialized response moves in, no body copy.
-		auto resp = std::make_unique<WSResponse>();
-		resp->m_session_ref = const_cast<void *>(m_lwsRef.wsi);
-		resp->m_req_id = m_lwsRef.reqId;
-		resp->m_session_id = m_lwsRef.sessionId;
-		resp->m_payload = response->serialize();
-		resp->m_is_http = m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) == HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
-		WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
-		notifyReply(status);
-		return true;
-	}
-#endif
 
 	return false;
 }

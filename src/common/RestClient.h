@@ -35,9 +35,7 @@ struct ClientSSLConfig
 
 /**
  * @brief Synchronous HTTP client facade.
- * @details The transport backend is selected at compile time by the C++ standard tier:
- *          C++17 and later use trantor (drogon's network library, RestClientDrogon.cpp),
- *          lower tiers use libwebsockets (RestClientLws.cpp).
+ * @details The transport backend is trantor (drogon's network library, RestClientDrogon.cpp).
  */
 class RestClient
 {

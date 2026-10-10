@@ -16,7 +16,7 @@ endif()
 
 project(appmesh
     LANGUAGES CXX C
-    VERSION 3.0.0
+    VERSION 3.0.1
     DESCRIPTION "Application Management Service"
 )
 
@@ -26,17 +26,13 @@ project(appmesh
 if(NOT DEFINED CMAKE_CXX_STANDARD)
     if(WIN32)
         set(CMAKE_CXX_STANDARD 20)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
-        set(CMAKE_CXX_STANDARD 11)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
-        set(CMAKE_CXX_STANDARD 14)
     else()
         set(CMAKE_CXX_STANDARD 17)
     endif()
 endif()
 
-if(CMAKE_CXX_STANDARD LESS 11)
-    message(FATAL_ERROR "App Mesh requires C++11 or newer")
+if(CMAKE_CXX_STANDARD LESS 17)
+    message(FATAL_ERROR "App Mesh requires C++17 or newer")
 endif()
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -90,11 +86,8 @@ add_compile_options(-Wall)
 # linker can discard what nothing references. Symbols and unwind tables stay,
 # so crash backtraces still resolve.
 #
-# Not for MSVC, and not for the legacy GCC line (C++11 tier). That toolchain
-# also keeps a local copy of spdlog's inline default-logger accessor in the
-# daemon, which splits the logger registry: the daemon logs to a registry that
-# the logging setup never configured, so server.log stays empty.
-if(NOT MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0))
+# Not for MSVC.
+if(NOT MSVC)
     add_compile_options(-ffunction-sections -fdata-sections)
     add_compile_options($<$<CONFIG:Release>:-Os>)
     if(APPLE)
@@ -313,7 +306,7 @@ add_custom_target(cppcheck
     COMMAND cppcheck
         --enable=all
         --quiet
-        --std=c++11
+        --std=c++17
         --platform=native
         "${CMAKE_SOURCE_DIR}"
 )

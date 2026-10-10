@@ -3,11 +3,6 @@
 # --- Subdirectories ---
 add_subdirectory(os)
 
-if(NOT CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 17)
-  message(STATUS "C++ standard less than 17: Adding lwsservice")
-  add_subdirectory(lwsservice)
-endif()
-
 # --- Define library ---
 aux_source_directory(. SRC_LIST)
 add_library(common STATIC ${SRC_LIST})
@@ -22,9 +17,6 @@ else()
 endif()
 target_link_libraries(common
   PRIVATE
-    ${CURL_LIB}
-    ${ZLIB_LIBRARIES} # static libcurl content_encoding needs zlib
-    ZLIB::ZLIB # nghttp2
     ${ACE_LIBRARY}
     yaml-cpp::yaml-cpp
     Boost::regex
@@ -35,9 +27,8 @@ target_link_libraries(common
     uriparser::uriparser
     os
 )
-if(NOT CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  target_link_libraries(common PRIVATE lwsservice)
-endif()
+# trantor (bundled with drogon) implements the RestClient transport
+target_link_libraries(common PRIVATE Drogon::Drogon)
 
 # macOS libiconv is not re-exported by libSystem; Utility.cpp uses iconv for
 # output encoding detection (glibc/musl provide it inside libc).

@@ -9,12 +9,8 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 
-#if __cplusplus >= 201703L
 #include <string_view>
-#endif
-
 #include <msgpack.hpp>
 
 // -------- Internal Helpers --------
@@ -69,7 +65,7 @@ struct CiEqual
     }
 };
 
-#elif __cplusplus >= 201703L
+#else
 // C++17: Custom hasher/equal but no transparent lookup support in unordered_map
 
 struct CiHash
@@ -111,14 +107,8 @@ struct CiEqual
 class HttpHeaderMap
 {
 public:
-    // Define MapType based on C++ version
-#if __cplusplus >= 201703L
-    // C++17+: Use custom hasher/equal for case-insensitive comparison
+    // Custom hasher/equal for case-insensitive comparison
     using MapType = std::unordered_map<std::string, std::string, CiHash, CiEqual>;
-#else
-    // C++11/14: Standard map, relies on normalizing keys before lookup
-    using MapType = std::unordered_map<std::string, std::string>;
-#endif
 
     // StringParam: use string_view for C++20+ heterogeneous lookup, otherwise const string&
 #if __cplusplus >= 202002L
@@ -177,7 +167,7 @@ public:
             return 1;
         }
         return 0;
-#elif __cplusplus >= 201703L
+#else
         // C++17: Custom hash/equal, but need to convert to string for find
         auto it = m_headers.find(std::string(key));
         if (it != m_headers.end())
@@ -186,8 +176,6 @@ public:
             return 1;
         }
         return 0;
-#else
-        return m_headers.erase(normalize(key));
 #endif
     }
 
@@ -204,11 +192,9 @@ public:
     {
 #if __cplusplus >= 202002L
         return m_headers.find(key);
-#elif __cplusplus >= 201703L
+#else
         // C++17: need to pass std::string, but custom hash/equal handles case-insensitivity
         return m_headers.find(std::string(key));
-#else
-        return m_headers.find(normalize(key));
 #endif
     }
 
@@ -216,24 +202,18 @@ public:
     {
 #if __cplusplus >= 202002L
         return m_headers.find(key);
-#elif __cplusplus >= 201703L
-        return m_headers.find(std::string(key));
 #else
-        return m_headers.find(normalize(key));
+        return m_headers.find(std::string(key));
 #endif
     }
 
-#if __cplusplus >= 201703L
     [[nodiscard]]
-#endif
     bool contains(StringParam key) const noexcept
     {
 #if __cplusplus >= 202002L
         return m_headers.contains(key);
-#elif __cplusplus >= 201703L
-        return m_headers.find(std::string(key)) != m_headers.end();
 #else
-        return m_headers.count(normalize(key)) != 0;
+        return m_headers.find(std::string(key)) != m_headers.end();
 #endif
     }
 
@@ -241,10 +221,8 @@ public:
     {
 #if __cplusplus >= 202002L
         return m_headers.count(key);
-#elif __cplusplus >= 201703L
-        return m_headers.count(std::string(key));
 #else
-        return m_headers.count(normalize(key));
+        return m_headers.count(std::string(key));
 #endif
     }
 

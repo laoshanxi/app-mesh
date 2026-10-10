@@ -21,7 +21,7 @@ struct ForwardingConnectOptions
 };
 
 /// Outbound transport of one daemon-to-daemon forwarding connection:
-/// TcpClientStream (TCP API) or LwsForwardingStream (WSS, tiers without Drogon).
+/// TcpClientStream (TCP API).
 /// Framing is transport specific; request/response correlation stays in ForwardingManager.
 class ForwardingStream
 {

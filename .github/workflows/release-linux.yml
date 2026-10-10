@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  APPMESH_VERSION: "3.0.0"
+  APPMESH_VERSION: "3.0.1"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
@@ -60,13 +60,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: build on centos7
-        run: |
-          BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
-          if [ "${BUILD_DIR}" == "amd64" ]; then
-            docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_centos7 /bin/bash --login -c "set -e; rustc --version; mkdir centos7_$BUILD_DIR; cd centos7_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
-          fi
-
       - name: Generate SBOM for ubuntu:latest amd64
         run: |
           BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
@@ -91,11 +84,6 @@ jobs:
           BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22 /bin/bash --login -c "set -e; rustc --version; mkdir ubuntu22_$BUILD_DIR; cd ubuntu22_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
 
-      - name: build on ubuntu18
-        run: |
-          BUILD_DIR=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
-          docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/bash --login -c "set -e; rustc --version; mkdir ubuntu18_$BUILD_DIR; cd ubuntu18_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
-
       - name: Upload packages
         uses: actions/upload-artifact@v7
         with:
@@ -105,8 +93,6 @@ jobs:
             ubuntu*/*.rpm
             *.sbom.spdx.json
             *.sbom.cdx.json
-            centos*/*.deb
-            centos*/*.rpm
 
   deploy:
     name: Sign and Release Packages
@@ -127,7 +113,14 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "Dex-only OIDC authentication (daemon, CLI, SDKs, web UI)" >> CHANGELOG.txt
+          cat > CHANGELOG.txt <<'CHANGELOG'
+          - Drogon and trantor replace the uWebSockets and ACE transports. The wire protocol does not change.
+          - REST.WorkerThreads and REST.TransportIoThreads replace the old thread pool settings, and derive from the CPUs the daemon may use.
+          - libcurl is removed; RestClient uses trantor. The C++ SDK is removed.
+          - Both listeners require TLS 1.2 or later, and forwarding verifies the peer certificate hostname.
+          - Linux packages bundle the libraries the distribution does not ship; the ACE SSL library is no longer a dependency.
+          - File uploads stream to disk, and the limit rises from 500 MB to 2 GB.
+          CHANGELOG
           ls -R
 
       - name: Install package signing dependencies
@@ -203,7 +196,7 @@ jobs:
         run: |
           set -e
           shopt -s nullglob
-          for f in ubuntu*/*.deb ubuntu*/*.rpm centos*/*.deb centos*/*.rpm; do
+          for f in ubuntu*/*.deb ubuntu*/*.rpm; do
             [ -f "$f" ] || continue
             cosign sign-blob --yes \
               --bundle "${f}.bundle" \
@@ -228,8 +221,8 @@ jobs:
       - name: Release Packages
         uses: softprops/action-gh-release@v3.0.3
         with:
+          name: Drogon
           body_path: CHANGELOG.txt
-          name: "OpenID Connect (OIDC)"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}
@@ -240,10 +233,6 @@ jobs:
             ubuntu*/*.rpm.bundle
             *.sbom.spdx.json
             *.sbom.cdx.json
-            centos*/*.deb
-            centos*/*.rpm
-            centos*/*.deb.bundle
-            centos*/*.rpm.bundle
             gpg_public.key
             SHA256SUMS
             SHA256SUMS.asc

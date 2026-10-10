@@ -1,11 +1,6 @@
 // src/daemon/Label.cpp
 #if defined(__linux__)
-#if defined(__GNUC__)
-#include <features.h>
-#if __GNUC_PREREQ(5, 4)
 #include <wildcards/wildcards.hpp>
-#endif
-#endif
 #endif
 #include <ace/OS_NS_sys_utsname.h>
 #include <fstream>
@@ -111,12 +106,8 @@ bool Label::match(const std::shared_ptr<Label> &condition) const
 		const auto &val = la.second;
 
 #if defined(__linux__)
-#if __GNUC_PREREQ(5, 4)
-		// support wildcards for gcc version upper than 5.4
+		// wildcard match in label values
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second))))
-#else
-		if (!(m_labels.count(key) && (m_labels.find(key)->second == val)))
-#endif
 #else
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val)))
 #endif

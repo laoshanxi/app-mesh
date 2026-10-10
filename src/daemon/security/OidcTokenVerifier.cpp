@@ -495,7 +495,7 @@ std::string OidcTokenVerifier::requestJson(const std::string &absoluteUrl) const
 	if (uri.port >= 0)
 		host += ":" + std::to_string(uri.port);
 	const std::string path = uri.path.empty() ? "/" : uri.path;
-	auto response = RestClient::request(host, web::http::methods::GET, path, "", {}, uri.queryParams(), {}, 5, &m_dexSslConfig);
+	auto response = RestClient::request(host, web::http::methods::GET, path, "", {}, uri.queryParams(), 5, &m_dexSslConfig);
 	response->raise_for_status();
 	return response->text;
 }

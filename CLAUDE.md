@@ -71,8 +71,8 @@ The `REST` section of `src/daemon/config.yaml` defines three port keys (env over
 | Port | Config key | Bound by | Transport / purpose |
 |------|------------|----------|---------------------|
 | 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6059. Clients treat this as the primary management surface. The daemon never binds this port; it only uses the value to build URLs (OIDC, Docker API). |
-| 6059 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path. Not bound on pre-C++17 builds (no Drogon), which forward over WSS instead |
-| 6058 | `WebSocketPort` | daemon | Single listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`), event subscribe, and daemon-to-daemon forwarding on the pre-C++17 builds |
+| 6059 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
+| 6058 | `WebSocketPort` | daemon | Single listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`), event subscribe, and daemon-to-daemon forwarding |
 
 All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs; the Dex administration web UI (the `dexuser` System App, `bin/dexuser` built from the Dex fork's `examples/example-app`) listens on **6064**, loopback only, driven by the Dex administrative gRPC API on 5557 (mutual TLS, loopback). The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
 
@@ -166,7 +166,6 @@ Shared C++ library used by the daemon. Notable:
 - `DateTime.h` / `DurationParse.h` — time and duration parsing
 - `JwtHelper.h` — bearer normalization and unverified token parsing used only alongside OIDC verification
 - `RestClient.h` — HTTP client for inter-service calls
-- `lwsservice/` — libwebsockets server/client wrappers
 
 ### CLI (`src/cli/`)
 
@@ -205,7 +204,7 @@ LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`).
 
 ## Code Conventions
 
-- C++ standard tiers: C++11 (GCC < 5), C++14 (GCC 5–7), C++17 (GCC 8+), C++20 (Windows). `-Wall` enabled. Code must compile under C++11 for CentOS 7 (GCC 4.8.5); polyfills for `std::make_unique` and `std::exchange` are in `src/common/Utility.h`.
+- C++ standard: C++17 (GCC 8+/Clang), C++20 on Windows. `-Wall` enabled.
 - CamelCase for classes, `m_` prefix for member variables.
 - Logging: `LOG_DBG << "msg";` — never `std::cout` or `printf`.
 - Comments: keep them short. One line when one line is enough. No metrics, no restating the code, no history.
@@ -216,7 +215,7 @@ LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`).
 
 ## Key Dependencies
 
-C++ (daemon): ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (C++17+ HTTP/WSS/TCP transport; pulls jsoncpp, c-ares, brotli), libwebsockets as fallback for older GCC, uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
+C++ (daemon): ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (HTTP/WSS/TCP transport; pulls jsoncpp, c-ares, brotli), uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
 
 Rust (CLI): clap, tokio, rustls, serde/serde_json/serde_yaml, anyhow. The CLI depends on the Rust SDK crate (`src/sdk/rust`).
 
