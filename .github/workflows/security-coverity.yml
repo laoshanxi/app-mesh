@@ -2,24 +2,18 @@ name: "security-coverity"
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "!src/sdk/**"
-      - .github/workflows/security-coverity.yml
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
 env:
-  APPMESH_VERSION: "3.0.0"
+  APPMESH_VERSION: "3.0.1"
   COVERITY_PROJECT: "laoshanxi/app-mesh"
 
 jobs:
   coverity-cpp-code-scan:
     runs-on: ubuntu-latest
-    container: laoshanxi/appmesh:build_ubuntu22
+    container: laoshanxi/appmesh:build_ubuntu18
 
     steps:
       - name: Harden Runner

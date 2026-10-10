@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 ################################################################################
-# RPM/DEB/PKG Pre-Uninstallation Script
+# RPM/DEB Pre-Uninstallation Script
 # Purpose: Stop non-system applications without changing their persisted state,
 # then stop the App Mesh service (and its protected System Apps) last.
 ################################################################################
@@ -15,7 +15,6 @@ error() { log "ERROR" "$@"; }
 
 detect_os() {
     case "$(uname -s)" in
-    Darwin*) echo "macos" ;;
     Linux*) echo "linux" ;;
     *) echo "unknown" ;;
     esac
@@ -24,9 +23,7 @@ detect_os() {
 find_install_dir() {
     local install_path=""
     local requested_path=""
-    if [ "$(detect_os)" = "macos" ] && [ -n "${2:-}" ]; then
-        requested_path="$2"
-    elif [ -n "${RPM_INSTALL_PREFIX:-}" ]; then
+    if [ -n "${RPM_INSTALL_PREFIX:-}" ]; then
         requested_path="$RPM_INSTALL_PREFIX"
     elif [ -n "${PROMPT_INSTALL_PATH:-}" ] && [ "$PROMPT_INSTALL_PATH" != "1" ]; then
         requested_path="$PROMPT_INSTALL_PATH"
@@ -42,12 +39,7 @@ find_install_dir() {
         fi
     fi
 
-    if [ "$(detect_os)" = "macos" ]; then
-        local launchd_file="/Library/LaunchDaemons/com.laoshanxi.appmesh.plist"
-        if [ -f "$launchd_file" ]; then
-            install_path=$(plutil -extract WorkingDirectory raw "$launchd_file" 2>/dev/null || true)
-        fi
-    elif [ -f /etc/systemd/system/appmesh.service ]; then
+    if [ -f /etc/systemd/system/appmesh.service ]; then
         install_path=$(sed -n 's/^WorkingDirectory=//p' /etc/systemd/system/appmesh.service | tail -n 1)
     elif [ -e /etc/init.d/appmesh ]; then
         local initd_script=""
@@ -156,14 +148,6 @@ stop_initd_service() {
     fi
 }
 
-stop_launchd_service() {
-    local launchd_file="/Library/LaunchDaemons/com.laoshanxi.appmesh.plist"
-    if [ -f "$launchd_file" ]; then
-        info "Stopping launchd service"
-        launchctl unload "$launchd_file" 2>/dev/null || error "Failed to unload com.laoshanxi.appmesh service"
-    fi
-}
-
 main() {
     INSTALL_DIR=$(find_install_dir "$@")
     APPM_BIN="${INSTALL_DIR}/bin/appm"
@@ -175,7 +159,6 @@ main() {
     # The daemon shuts down protected System Apps in reverse startup order, so
     # the bundled issuer remains available through the token/disable phase.
     case "$(detect_os)" in
-    macos) stop_launchd_service ;;
     linux)
         stop_systemd_service
         stop_initd_service

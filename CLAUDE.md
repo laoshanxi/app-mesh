@@ -62,7 +62,7 @@ Default to surfacing uncertainty, not hiding it.
 
 ## Project Overview
 
-App Mesh is a C++17 cross-platform (Linux/macOS/Windows) application management platform — one secure daemon to run, schedule, and remote-control apps across machines, with Dex/OIDC bearer authentication, Principal-based RBAC, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, JavaScript, and C++.
+App Mesh is a C++11/14 Linux application management platform — one secure daemon to run, schedule, and remote-control apps across machines, with Dex/OIDC bearer authentication, Principal-based RBAC, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, JavaScript, and C++. This `legacy` branch is the low-platform maintenance line: CentOS 7 (GCC 4.8) and Ubuntu 18 (GCC 7) only, with libwebsockets as the single HTTPS/WSS transport. The `drogon` branch is the high-platform line.
 
 ## Ports
 
@@ -72,7 +72,7 @@ The `REST` section of `src/daemon/config.yaml` defines three port keys (env over
 |------|------------|----------|---------------------|
 | 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6059. Clients treat this as the primary management surface. The daemon never binds this port; it only uses the value to build URLs (OIDC, Docker API). |
 | 6059 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
-| 6058 | `WebSocketPort` | daemon | Single uWS listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`) and event subscribe |
+| 6058 | `WebSocketPort` | daemon | Single libwebsockets listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`) and event subscribe |
 
 All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs; the Dex administration web UI (the `dexuser` System App, `bin/dexuser` built from the Dex fork's `examples/example-app`) listens on **6064**, loopback only, driven by the Dex administrative gRPC API on 5557 (mutual TLS, loopback). The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
 
@@ -109,7 +109,7 @@ make rust_tests
 make cppcheck
 
 # Docker build (no local deps needed)
-docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_ubuntu22 \
+docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_ubuntu18 \
   sh -c "mkdir build && cd build && cmake .. && make && make pack"
 
 # CLI build (Rust)
@@ -166,7 +166,7 @@ Shared C++ library used by the daemon. Notable:
 - `DateTime.h` / `DurationParse.h` — time and duration parsing
 - `JwtHelper.h` — bearer normalization and unverified token parsing used only alongside OIDC verification
 - `RestClient.h` — HTTP client for inter-service calls
-- `lwsservice/` — libwebsockets server/client wrappers
+- `lwsservice/` — libwebsockets listener (HTTPS REST + WSS on one port)
 
 ### CLI (`src/cli/`)
 
@@ -206,7 +206,7 @@ LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`).
 
 ## Code Conventions
 
-- C++ standard tiers: C++11 (GCC < 5), C++14 (GCC 5–7), C++17 (GCC 8+), C++20 (Windows). `-Wall` enabled. Code must compile under C++11 for CentOS 7 (GCC 4.8.5); polyfills for `std::make_unique` and `std::exchange` are in `src/common/Utility.h`.
+- C++ standard: C++11 (GCC < 5, CentOS 7) or C++14 (everything else, Ubuntu 18); the branch is Linux-only. `-Wall` enabled. Code must compile under C++11; polyfills for `std::make_unique` and `std::exchange` are in `src/common/Utility.h`.
 - CamelCase for classes, `m_` prefix for member variables.
 - Logging: `LOG_DBG << "msg";` — never `std::cout` or `printf`.
 - Config env overrides: `APPMESH_<Section>_<Key>` (e.g. `APPMESH_REST_RestListenPort=6060`).
@@ -216,7 +216,7 @@ LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`).
 
 ## Key Dependencies
 
-C++ (daemon): ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, uWebSockets (C++17+, libwebsockets as fallback for older GCC), libcurl, uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
+C++ (daemon): ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, libwebsockets (the HTTPS/WSS transport), libcurl, uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
 
 Rust (CLI): clap, tokio, rustls, serde/serde_json/serde_yaml, anyhow. The CLI depends on the Rust SDK crate (`src/sdk/rust`).
 

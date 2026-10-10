@@ -2,7 +2,7 @@
 
 ################################################################################
 # Setup script for App Mesh
-# Supports: Linux (systemd, sysvinit) and macOS (launchd)
+# Supports: Linux (systemd, sysvinit)
 # Purpose: Register and set up system files for initialization after installation
 ################################################################################
 
@@ -11,21 +11,16 @@ set -e # Exit on error
 
 # Constants and paths
 readonly PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
-if [[ "$(uname)" == "Darwin" ]]; then
-    readonly BASH_COMPLETION_DIR="$(brew --prefix 2>/dev/null || echo /opt/homebrew)/etc/bash_completion.d"
+# Prefer modern path, fallback to legacy
+if [[ -d /usr/share/bash-completion/completions ]]; then
+    readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
 else
-    # Prefer modern path, fallback to legacy
-    if [[ -d /usr/share/bash-completion/completions ]]; then
-        readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
-    else
-        readonly BASH_COMPLETION_DIR="/etc/bash_completion.d"
-    fi
+    readonly BASH_COMPLETION_DIR="/etc/bash_completion.d"
 fi
 readonly BASH_COMPLETION_PATH="$BASH_COMPLETION_DIR/appm"
 readonly APPM_SOFTLINK=/usr/local/bin/appm
 readonly INITD_SOFTLINK=/etc/init.d/appmesh
 readonly SYSTEMD_FILE=/etc/systemd/system/appmesh.service
-readonly LAUNCHD_FILE=/Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 readonly ENV_FILE="$PROG_HOME/appmesh.default"
 readonly SECRET_MASTER_KEY_FILE="${PROG_HOME}/work/auth/secrets/secret-master-key"
 readonly WORKFLOW_TEMPLATE="${PROG_HOME}/config/templates/workflow.yaml"
@@ -76,7 +71,7 @@ usage() {
     cat <<'EOF'
 Usage: setup.sh [authentication options]
 
-Authentication options (Linux/macOS):
+Authentication options:
   --auth-mode builtin|external  Select the bundled or external authentication service
   --auth-role standalone|owner|follower
                                 Cluster role of the bundled authentication service.
@@ -173,7 +168,6 @@ parse_arguments() {
 
 get_os_type() {
     case "$(uname)" in
-    "Darwin") echo "macos" ;;
     "Linux")
         if [ -f /etc/os-release ]; then
             # shellcheck source=/dev/null
@@ -193,7 +187,6 @@ get_os_type() {
 
 detect_init_system() {
     case "$(uname)" in
-    "Darwin") echo "launchd" ;;
     "Linux")
         if command -v systemctl >/dev/null 2>&1 && systemctl list-units >/dev/null 2>&1; then
             echo "systemd"
@@ -252,9 +245,6 @@ clean_environment() {
         systemctl kill --kill-whom=all --signal=KILL appmesh 2>/dev/null || true
     elif [ -f "$INITD_SOFTLINK" ]; then
         service appmesh stop 2>/dev/null || true
-        sleep 2
-    elif [ -f "$LAUNCHD_FILE" ]; then
-        launchctl unload -w "$LAUNCHD_FILE" 2>/dev/null || true
         sleep 2
     fi
 
@@ -434,13 +424,6 @@ set_auth_app_status() {
 }
 
 configure_authentication() {
-    # The bundled auth runtime and System Apps ship on Linux and macOS. Other
-    # platforms retain their existing externally managed issuer setup.
-    case "$(uname)" in
-    Linux | Darwin) ;;
-    *) return 0 ;;
-    esac
-
     local mode=""
     local issuer=""
     local access_url=""
@@ -745,7 +728,6 @@ setup_service() {
 
     case "$init_system" in
     "systemd") install_systemd_service ;;
-    "launchd") install_launchd_service ;;
     *) install_initd_service ;;
     esac
 
@@ -787,71 +769,6 @@ install_systemd_service() {
 
     rm -f "${SYSTEMD_FILE}.bak"
     systemctl daemon-reload
-}
-
-install_launchd_service() {
-    info "Installing launchd service at $LAUNCHD_FILE"
-    local service_template="${PROG_HOME}/script/appmesh.launchd.plist"
-
-    [ ! -f "$service_template" ] && die "Service template not found: $service_template"
-
-    update_appmesh_paths "${PROG_HOME}/script/appmesh.launchd.plist"
-
-    # Keep the LaunchDaemon definition root-owned.
-    rm -f "$LAUNCHD_FILE" && cp "$service_template" "$LAUNCHD_FILE"
-
-    # Render the env file into launchd's native dictionary without eval.
-    local assignment=""
-    local name=""
-    local value=""
-    while IFS= read -r assignment || [ -n "$assignment" ]; do
-        case "$assignment" in
-        "" | \#*) continue ;;
-        *=*)
-            name="${assignment%%=*}"
-            value="${assignment#*=}"
-            case "$name" in
-            "" | [0-9]* | *[!a-zA-Z0-9_]*) die "Invalid environment entry in $ENV_FILE" ;;
-            esac
-            if plutil -extract "EnvironmentVariables.${name}" raw "$LAUNCHD_FILE" >/dev/null 2>&1; then
-                plutil -replace "EnvironmentVariables.${name}" -string "$value" "$LAUNCHD_FILE"
-            else
-                plutil -insert "EnvironmentVariables.${name}" -string "$value" "$LAUNCHD_FILE"
-            fi
-            ;;
-        *) die "Invalid environment entry in $ENV_FILE" ;;
-        esac
-    done <"$ENV_FILE"
-
-    if [ -n "${APPMESH_DAEMON_EXEC_USER:-}" ]; then
-        if plutil -extract UserName raw "$LAUNCHD_FILE" >/dev/null 2>&1; then
-            plutil -replace UserName -string "$APPMESH_DAEMON_EXEC_USER" "$LAUNCHD_FILE"
-        else
-            plutil -insert UserName -string "$APPMESH_DAEMON_EXEC_USER" "$LAUNCHD_FILE"
-        fi
-        info "Service user set to: ${APPMESH_DAEMON_EXEC_USER}"
-    fi
-
-    if [ -n "${APPMESH_DAEMON_EXEC_USER_GROUP:-}" ]; then
-        if plutil -extract GroupName raw "$LAUNCHD_FILE" >/dev/null 2>&1; then
-            plutil -replace GroupName -string "$APPMESH_DAEMON_EXEC_USER_GROUP" "$LAUNCHD_FILE"
-        else
-            plutil -insert GroupName -string "$APPMESH_DAEMON_EXEC_USER_GROUP" "$LAUNCHD_FILE"
-        fi
-        info "Service group set to: ${APPMESH_DAEMON_EXEC_USER_GROUP}"
-    fi
-
-    chown root:wheel "$LAUNCHD_FILE"
-    chmod 600 "$LAUNCHD_FILE"
-
-    rm -f "${LAUNCHD_FILE}.bak"
-
-    # Remove macOS quarantine attributes
-    for binary in appmesh appm agent; do
-        xattr -d com.apple.quarantine "${PROG_HOME}/bin/${binary}" 2>/dev/null || true
-    done
-
-    # launchctl load -w "$LAUNCHD_FILE"
 }
 
 install_initd_service() {
@@ -935,8 +852,7 @@ setup_ssl_certificates() {
 # User-facing introduction. Plain echo on purpose: this block is an
 # introduction, not a log entry, so it carries no timestamp prefix. Each
 # platform prints only its own service commands. tee also copies the text to
-# NEXT_STEPS.txt without a timestamp prefix: macOS package installs swallow
-# postinstall stdout, and the file keeps the steps readable there.
+# NEXT_STEPS.txt without a timestamp prefix.
 print_startup_instructions() {
     local init_system
     init_system=$(detect_init_system)
@@ -950,9 +866,6 @@ print_startup_instructions() {
         case "$init_system" in
         "systemd")
             echo "  sudo systemctl enable --now appmesh"
-            ;;
-        "launchd")
-            echo "  sudo launchctl load -w $LAUNCHD_FILE"
             ;;
         *)
             echo "  sudo service appmesh start"
@@ -979,11 +892,6 @@ print_startup_instructions() {
             echo "Uninstall: sudo yum remove appmesh"
         elif command -v dpkg >/dev/null 2>&1 && dpkg -s appmesh >/dev/null 2>&1; then
             echo "Uninstall: sudo apt remove appmesh"
-        elif [ "$init_system" = "launchd" ]; then
-            echo "Uninstall:"
-            echo "  sudo launchctl unload -w $LAUNCHD_FILE"
-            echo "  sudo rm -rf $PROG_HOME $LAUNCHD_FILE /usr/local/bin/appm"
-            echo "  sudo pkgutil --forget com.laoshanxi.appmesh"
         else
             echo "Uninstall: sudo service appmesh stop; sudo rm -rf $PROG_HOME"
         fi

@@ -1,7 +1,9 @@
 // src/common/os/proc.cpp
 #include "proc.h"
 
+#include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <fstream>
 #include <list>
 #include <memory>
@@ -9,33 +11,13 @@
 #include <ostream>
 #include <sstream>
 #include <string>
-
-// Platform-specific headers
-#if defined(_WIN32)
-#include <windows.h>
-
-#include <io.h>
-#include <process.h>
-#include <psapi.h>
-#include <tlhelp32.h>
-#else
-#include <cerrno>
-#include <cstring>
 #include <sys/stat.h>
 #include <unistd.h>
-#endif
-
-// macOS-specific headers
-#if defined(__APPLE__)
-#include <libproc.h>
-#endif
 
 #include <ace/OS.h>
 #include <boost/filesystem.hpp> // directory_iterator
 
 #include "../Utility.h"
-#include "handler.hpp"
-#include "malloc.hpp"
 #include "models.h"
 
 namespace os
@@ -54,58 +36,6 @@ namespace os
 			return result;
 		}
 
-#if defined(_WIN32)
-		// Windows implementation using RAII
-		HandleRAII hProcess(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
-		if (!hProcess.valid())
-		{
-			LOG_WAR << fname << "Failed to open process " << pid << ", error: " << GetLastError();
-			return result;
-		}
-
-		// Get handle count (approximate file descriptors)
-		DWORD handleCount = 0;
-		if (GetProcessHandleCount(hProcess.get(), &handleCount))
-		{
-			result = handleCount;
-			LOG_DBG << fname << "Found " << result << " handles for process " << pid;
-		}
-		else
-		{
-			LOG_WAR << fname << "Failed to get handle count for process " << pid << ", error: " << GetLastError();
-		}
-
-#elif defined(__APPLE__)
-		// Two-call pattern: query exact size first to avoid truncation when a
-		// process has more fds than any fixed buffer would hold.
-		const int needed = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nullptr, 0);
-		if (needed <= 0)
-		{
-			if (errno == ESRCH)
-				LOG_WAR << fname << "Process " << pid << " does not exist";
-			else
-				LOG_WAR << fname << "Failed to size fd list for pid " << pid << ", error: " << last_error_msg();
-		}
-		else
-		{
-			std::vector<proc_fdinfo> fdinfo(static_cast<size_t>(needed) / sizeof(proc_fdinfo));
-			const int got = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fdinfo.data(),
-										 static_cast<int>(fdinfo.size() * sizeof(proc_fdinfo)));
-			if (got <= 0)
-			{
-				LOG_WAR << fname << "Failed to read fd list for pid " << pid << ", error: " << last_error_msg();
-			}
-			else
-			{
-				// PROC_PIDLISTFDS enumerates every open fd. Do NOT also add
-				// pbi_nfiles from PROC_PIDTASKALLINFO — it is the SAME count
-				// (open files), not a distinct memory-mapped-file metric.
-				result = static_cast<size_t>(got) / sizeof(proc_fdinfo);
-				LOG_DBG << fname << "Found " << result << " file descriptors for process " << pid;
-			}
-		}
-
-#else
 		// Linux: only count entries in /proc/pid/fd/. /proc/pid/maps lines are
 		// virtual memory regions (libc, .so segments, anon mappings) — NOT file
 		// descriptors. Mixing them in here would inflate the metric by hundreds
@@ -129,7 +59,6 @@ namespace os
 		{
 			LOG_WAR << fname << "Error accessing " << procFdPath << ": " << e.what();
 		}
-#endif
 
 		return result;
 	}
@@ -144,69 +73,6 @@ namespace os
 			return std::numeric_limits<uid_t>::max();
 		}
 
-#if defined(_WIN32)
-		// Windows implementation using RAII
-		HandleRAII hProcess(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
-		if (!hProcess.valid())
-		{
-			DWORD error = GetLastError();
-			if (error == ERROR_INVALID_PARAMETER)
-			{
-				LOG_WAR << fname << "Process " << pid << " does not exist";
-			}
-			else
-			{
-				LOG_WAR << fname << "Failed to open process " << pid << ", error: " << error;
-			}
-			return std::numeric_limits<uid_t>::max();
-		}
-
-		HandleRAII hToken;
-		HANDLE tempToken = NULL;
-		if (!OpenProcessToken(hProcess.get(), TOKEN_QUERY, &tempToken))
-		{
-			LOG_WAR << fname << "Failed to open process token for PID " << pid << ", error: " << GetLastError();
-			return std::numeric_limits<uid_t>::max();
-		}
-		hToken.reset(tempToken);
-
-		DWORD tokenLength = 0;
-		// First call to get required buffer size
-		GetTokenInformation(hToken.get(), TokenUser, NULL, 0, &tokenLength);
-		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-		{
-			LOG_WAR << fname << "Failed to get token information size for PID " << pid << ", error: " << GetLastError();
-			return std::numeric_limits<uid_t>::max();
-		}
-
-		MallocRAII<TOKEN_USER> tokenUser(static_cast<TOKEN_USER *>(malloc(tokenLength)));
-		if (!tokenUser.valid())
-		{
-			LOG_WAR << fname << "Failed to allocate memory for token user";
-			return std::numeric_limits<uid_t>::max();
-		}
-
-		if (!GetTokenInformation(hToken.get(), TokenUser, tokenUser.get(), tokenLength, &tokenLength))
-		{
-			LOG_WAR << fname << "Failed to get token information for PID " << pid << ", error: " << GetLastError();
-			return std::numeric_limits<uid_t>::max();
-		}
-
-		// Convert SID to a simple numeric representation
-		// In Windows, we'll use the relative identifier (RID) as the UID equivalent
-		PSID_IDENTIFIER_AUTHORITY pIdentifierAuthority = GetSidIdentifierAuthority(tokenUser->User.Sid);
-		DWORD subAuthorityCount = *GetSidSubAuthorityCount(tokenUser->User.Sid);
-		uid_t uid = 0;
-
-		if (subAuthorityCount > 0)
-		{
-			uid = *GetSidSubAuthority(tokenUser->User.Sid, subAuthorityCount - 1);
-		}
-
-		LOG_DBG << fname << "UID equivalent for process " << pid << " is " << uid;
-		return uid;
-
-#elif defined(__linux__)
 		// Linux implementation using /proc
 		std::string procPath = std::string("/proc/") + std::to_string(pid);
 		struct stat statBuf;
@@ -236,30 +102,6 @@ namespace os
 
 		LOG_DBG << fname << "UID for process " << pid << " is " << statBuf.st_uid;
 		return statBuf.st_uid;
-
-#elif defined(__APPLE__)
-		// macOS implementation using proc_pidinfo
-		struct proc_bsdinfo procInfo;
-		if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &procInfo, sizeof(procInfo)) <= 0)
-		{
-			if (errno == ESRCH)
-			{
-				LOG_WAR << fname << "Process " << pid << " does not exist";
-			}
-			else
-			{
-				LOG_WAR << fname << "Failed to get process info for PID " << pid << ": " << last_error_msg();
-			}
-			return std::numeric_limits<uid_t>::max();
-		}
-
-		LOG_DBG << fname << "UID for process " << pid << " is " << procInfo.pbi_uid;
-		return procInfo.pbi_uid;
-
-#else
-		LOG_WAR << fname << "Unsupported platform";
-		return std::numeric_limits<uid_t>::max();
-#endif
 	}
 
 } // namespace os

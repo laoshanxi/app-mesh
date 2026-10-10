@@ -183,10 +183,6 @@ ClientSSLConfig::ClientSSLConfig()
 		m_ssl_version = CURL_SSLVERSION_TLSv1_3;
 	}
 
-#if defined(_WIN32)
-	// Force TLS 1.2 on Windows to avoid compatibility issues
-	m_ssl_version = CURL_SSLVERSION_TLSv1_2;
-#endif
 }
 
 void ClientSSLConfig::ResolveAbsolutePaths(std::string workingHome)
@@ -609,11 +605,6 @@ void RestClient::setSslConfig(CURL *curl, const ClientSSLConfig *sslConfig)
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify);
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, config.m_verify_server ? 2L : 0L);
 	curl_easy_setopt(curl, CURLOPT_SSLVERSION, config.m_ssl_version);
-
-#if defined(_WIN32)
-	// CURLOPT_SSL_OPTIONS is a bitmask replaced on each call: both flags must be OR'd in one setopt.
-	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA | CURLSSLOPT_NO_REVOKE);
-#endif
 
 	// Client certificate configuration
 	if (config.m_verify_client &&

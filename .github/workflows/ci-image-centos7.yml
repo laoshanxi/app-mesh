@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - legacy
     paths:
       - ".github/workflows/ci-image-centos7.yml"
       - "docker/Dockerfile.build_centos7"

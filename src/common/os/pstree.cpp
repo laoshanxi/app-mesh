@@ -64,12 +64,8 @@ namespace os
 
 	uint64_t ProcessTree::totalCpuTime() const
 	{
-		// Linux also exposes waited-child time; macOS and Windows expose own user/system time.
-#if defined(__APPLE__) || defined(_WIN32)
-		const auto ownCpuTime = static_cast<uint64_t>(process.utime + process.stime);
-#else
+		// Linux also exposes waited-child time.
 		const auto ownCpuTime = static_cast<uint64_t>(process.utime + process.stime + process.cutime + process.cstime);
-#endif
 		return std::accumulate(
 			children.begin(), children.end(), ownCpuTime,
 			[](const uint64_t &time, const ProcessTree &child)

@@ -25,7 +25,7 @@ struct HttpSessionData
     std::string upload_file_path;
     HttpHeaderMap upload_attr_headers;
     std::unique_ptr<Request> http_request;
-    std::unique_ptr<msgpack::sbuffer> http_response_data; // consumed in HTTP_WRITEABLE phase 1
+    std::string http_response_data; // consumed in HTTP_WRITEABLE phase 1
     uint64_t req_id = 0;
     bool http_pending = false;
     bool headers_sent = false;
@@ -48,7 +48,7 @@ struct HttpSessionData
         http_pending = false;
         headers_sent = false;
         response_body.clear();
-        http_response_data.reset();
+        http_response_data.clear();
     }
 };
 
@@ -589,7 +589,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             WSRequest ws_req;
             ws_req.m_type = WSRequest::Type::HttpMessage;
             ws_req.m_session_ref = wsi;
-            ws_req.m_payload.assign(serialized->data(), serialized->data() + serialized->size());
+            ws_req.m_payload.assign(serialized.begin(), serialized.end());
             ws_req.m_req_id = m_next_request_id.fetch_add(1);
             ws_req.m_session_id = ws_req.m_req_id;
             pss->req_id = ws_req.m_req_id;
@@ -649,7 +649,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             WSRequest ws_req;
             ws_req.m_type = WSRequest::Type::HttpMessage;
             ws_req.m_session_ref = wsi;
-            ws_req.m_payload.assign(serialized->data(), serialized->data() + serialized->size());
+            ws_req.m_payload.assign(serialized.begin(), serialized.end());
             ws_req.m_req_id = m_next_request_id.fetch_add(1);
             ws_req.m_session_id = ws_req.m_req_id;
             pss->req_id = ws_req.m_req_id;
@@ -673,13 +673,13 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         if (!pss->headers_sent)
         {
             // Phase 1: Write HTTP headers
-            if (!pss->http_response_data || pss->http_response_data->size() == 0)
+            if (pss->http_response_data.empty())
                 return 0;
 
             Response http_resp;
-            if (!http_resp.deserialize(reinterpret_cast<const std::uint8_t *>(pss->http_response_data->data()), pss->http_response_data->size()))
+            if (!http_resp.deserialize(reinterpret_cast<const std::uint8_t *>(pss->http_response_data.data()), pss->http_response_data.size()))
             {
-                pss->http_response_data.reset();
+                pss->http_response_data.clear();
                 pss->http_pending = false;
                 return lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, nullptr);
             }
@@ -731,7 +731,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             {
                 pss->response_body.insert(pss->response_body.begin(), LWS_PRE, 0);
             }
-            pss->http_response_data.reset();
+            pss->http_response_data.clear();
             pss->headers_sent = true;
 
             // Request another WRITEABLE callback for body
@@ -968,6 +968,7 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
     else
     {
         LwsSessionRef ref{req.m_session_ref, req.m_req_id, req.m_session_id};
+        ref.httpFrame = req.m_type == WSRequest::Type::HttpMessage;
         // A WebSocket frame can self-declare Request.client_addr. Carry the accepted
         // socket's identity so the worker overrides it, matching the uWS transport
         // and WebSocketSession::handleRequest().
@@ -1105,9 +1106,13 @@ void WebSocketService::runWorkerLoop(int worker_id)
             else if (req.m_type == WSRequest::Type::HttpMessage)
             {
                 // HTTP messages do not require session
-                auto request = HttpRequest::deserialize(std::move(req.m_payload), -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, nullptr);
+                LwsSessionRef ref{req.m_session_ref, req.m_req_id, req.m_session_id};
+                ref.httpFrame = true;
+                auto request = HttpRequest::deserialize(req.m_payload, -1, ref);
                 if (request)
                     WORKER::instance()->process(request);
+                else
+                    Worker::replyUndecodableLws(ref, req.m_payload);
             }
         }
         catch (const std::exception &e)

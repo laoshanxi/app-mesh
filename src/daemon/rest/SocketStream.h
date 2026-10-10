@@ -9,7 +9,6 @@
 #include <ace/Svc_Handler.h>
 #include <ace/TP_Reactor.h>
 #include <ace/os_include/netinet/os_tcp.h>
-#include <msgpack.hpp>
 
 #ifdef __has_include
 #if __has_include(<ace/SSL/SSL_SOCK_Connector.h>)
@@ -193,18 +192,20 @@ private:
 class SendBuffer
 {
 public:
-	explicit SendBuffer(std::unique_ptr<msgpack::sbuffer> &&data);
+	explicit SendBuffer(std::string &&data);
 	explicit SendBuffer(const char *data, size_t len);
 	explicit SendBuffer(const std::string &data) : SendBuffer(data.data(), data.size()) {}
 
 	SendBuffer(SendBuffer &&) noexcept = default;
-	SendBuffer &operator=(SendBuffer &&) noexcept = default;
+	// No noexcept: GCC 4.8's COW std::string move-assignment is not noexcept,
+	// so a defaulted noexcept specification would not match the implicit one.
+	SendBuffer &operator=(SendBuffer &&) = default;
 	SendBuffer(const SendBuffer &) = delete;
 	SendBuffer &operator=(const SendBuffer &) = delete;
 
 	bool complete() const { return (m_header_sent >= TCP_HEADER_SIZE) && (m_body_sent >= body_size()); }
-	size_t body_size() const { return m_body ? m_body->size() : 0; }
-	const std::unique_ptr<msgpack::sbuffer> &body() const { return m_body; }
+	size_t body_size() const { return m_body.size(); }
+	const std::string &body() const { return m_body; }
 
 	SendResult do_send(SSL_Stream_Ex &stream, int &ssl_error);
 
@@ -215,7 +216,7 @@ private:
 private:
 	char m_header[TCP_HEADER_SIZE]{}; // 8-byte header: 4 bytes magic, 4 bytes length
 	size_t m_header_sent{0};
-	std::unique_ptr<msgpack::sbuffer> m_body;
+	std::string m_body;
 	size_t m_body_sent{0};
 };
 
@@ -293,7 +294,7 @@ class SocketStream : public ACE_Svc_Handler<SSL_Stream_Ex, ACE_MT_SYNCH>
 public:
 	using Super = ACE_Svc_Handler<SSL_Stream_Ex, ACE_MT_SYNCH>;
 	using DataCallback = std::function<void(std::vector<std::uint8_t> &&data)>;
-	using SendCallback = std::function<void(const std::unique_ptr<msgpack::sbuffer> &data)>;
+	using SendCallback = std::function<void(const std::string &data)>;
 	using EventCallback = std::function<void()>;
 	using ErrorCallback = std::function<void(const std::string &err)>;
 
@@ -330,16 +331,18 @@ public:
 	// ========== Client-side: Connect to remote server ==========
 	/// Failure releases the construction reference — caller must hold a SocketStreamPtr
 	/// (prefer createConnection()).
-	bool connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
+	/// expectedHostname: when non-empty, the peer certificate must match this DNS
+	/// name (the chain check alone accepts any trusted cert regardless of name).
+	bool connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr, const std::string &expectedHostname = std::string());
 
 	/// Create a new client SocketStream and connect to the remote address.
 	/// Always returns a valid SocketStreamPtr; caller must check connected() for success.
-	static SocketStreamPtr createConnection(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr);
+	static SocketStreamPtr createConnection(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout = nullptr, const std::string &expectedHostname = std::string());
 
 	// --- Public API ---
 	bool send(const std::string &data);
 	bool send(const char *data, size_t len);
-	bool send(std::unique_ptr<msgpack::sbuffer> &&data);
+	bool send(std::string &&data);
 
 	// Close from user side (close function is already used for interface)
 	void shutdown();
@@ -363,6 +366,8 @@ protected:
 private:
 	bool send_impl(SendBuffer &&buf);
 	void handle_ssl_want_write(int ssl_err);
+	// DNS-name match against the peer certificate; IP literals skip the check.
+	bool verifyPeerHostname(const std::string &host);
 
 	int enable_mask(ACE_Reactor_Mask bit);
 	int disable_mask(ACE_Reactor_Mask bit);
@@ -378,7 +383,7 @@ private:
 	void fire_connect();
 	void fire_close();
 	void deliver_message(std::vector<std::uint8_t> &&msg);
-	void notify_sent(const std::unique_ptr<msgpack::sbuffer> &data);
+	void notify_sent(const std::string &data);
 	void report_error(const std::string &msg);
 
 private:

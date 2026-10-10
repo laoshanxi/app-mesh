@@ -12,19 +12,15 @@
 #include "RestHandler.h"
 #include "SocketServer.h"
 #include "Worker.h"
-#if defined(HAVE_UWEBSOCKETS)
-#include "uwebsockets/ReplyContext.h"
-#else
 #include "../../common/lwsservice/WebSocketService.h"
-#endif
 
 #include "HttpRequest.h"
 
 namespace
 {
-	// uWS renders IPv6 without '::' compression and a dual-stack 127.0.0.1 peer
-	// as v4-mapped "0000:...:ffff:7fxx:xxxx", so parse the 8-group form explicitly.
-	bool isUwsLoopbackGroups(const std::string &peer)
+	// Some transports render IPv6 without '::' compression and a dual-stack 127.0.0.1
+	// peer as v4-mapped "0000:...:ffff:7fxx:xxxx", so parse the 8-group form explicitly.
+	bool isUncompressedIpv6Loopback(const std::string &peer)
 	{
 		if (peer.empty() || peer.size() >= 64 || peer.find("::") != std::string::npos)
 			return false;
@@ -57,7 +53,7 @@ namespace
 		}
 		return peer == "::1" || peer == "0:0:0:0:0:0:0:1" ||
 			peer.rfind("127.", 0) == 0 || peer.rfind("::ffff:127.", 0) == 0 ||
-			isUwsLoopbackGroups(peer);
+			isUncompressedIpv6Loopback(peer);
 	}
 }
 
@@ -93,7 +89,7 @@ HttpRequest::HttpRequest(Request &&request, int tcpClientId)
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
-	  m_tcpClientId(tcpClientId), m_lwsRef{}, m_uwsReplyContext(nullptr)
+	  m_tcpClientId(tcpClientId), m_lwsRef{}
 {
 }
 
@@ -161,7 +157,7 @@ bool HttpRequest::reply(web::http::status_code status, const std::string &body_d
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
@@ -170,7 +166,6 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, i
 	{
 		auto request = std::make_shared<HttpRequest>(std::move(req), tcpClientId);
 		request->m_lwsRef = lwsRef;
-		request->m_uwsReplyContext = std::move(ctx);
 		if (!lwsRef.peerAddress.empty())
 		{
 			// libwebsockets transport: replace the self-declared client_addr with
@@ -181,19 +176,6 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, i
 			else if (lwsRef.managedWorker)
 				request->markManagedWorkerTransport();
 		}
-#if defined(HAVE_UWEBSOCKETS)
-		if (request->m_uwsReplyContext &&
-			request->m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
-		{
-			// A WebSocket frame can self-declare Request.client_addr. Replace it with
-			// connection metadata captured from the actual server-side socket.
-			request->m_remote_address = request->m_uwsReplyContext->getPeerAddress();
-			if (!request->m_uwsReplyContext->getPrincipalId().empty())
-				request->bindTransportPrincipal(request->m_uwsReplyContext->getPrincipalId());
-			else if (request->m_uwsReplyContext->isManagedWorkerTransport())
-				request->markManagedWorkerTransport();
-		}
-#endif
 		return request;
 	}
 	else
@@ -213,13 +195,8 @@ bool HttpRequest::isPersistentClientTransport() const
 {
 	if (m_tcpClientId > 0)
 		return true;
-#if defined(HAVE_UWEBSOCKETS)
-	return m_uwsReplyContext &&
-		m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket;
-#else
 	return static_cast<bool>(m_lwsRef) &&
 		m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) != HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
-#endif
 }
 
 bool HttpRequest::isManagedPrivateTransport() const
@@ -231,7 +208,7 @@ bool HttpRequest::isManagedPrivateTransport() const
 	return isLoopbackPeer(m_remote_address);
 }
 
-std::unique_ptr<msgpack::sbuffer> HttpRequest::serialize() const
+std::string HttpRequest::serialize() const
 {
 	Request req;
 	req.body = *m_body;
@@ -293,36 +270,9 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 			notifyReply(status);
 		return success;
 	}
-#if defined(HAVE_UWEBSOCKETS)
-	else if (m_uwsReplyContext)
-	{
-		if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
-		{
-			// HTTP protocol
-			response->applyCorsHeaders();
-			response->applySecurityHeaders();
-			m_uwsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
-			notifyReply(status);
-			return true;
-		}
-		else if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
-		{
-			// WebSocket protocol
-			auto data = response->serialize();
-			m_uwsReplyContext->replyWebSocket(std::string(data->data(), data->size()), false, true);
-			notifyReply(status);
-			return true;
-		}
-		else
-		{
-			LOG_ERR << fname << "Unknown reply context protocol type";
-			return false;
-		}
-	}
-#else
 	else if (m_lwsRef)
 	{
-		// WebSocket or HTTP-over-lws: move serialized sbuffer in, no body copy.
+		// WebSocket or HTTP-over-lws: move the serialized payload in, no body copy.
 		auto resp = std::make_unique<WSResponse>();
 		resp->m_session_ref = const_cast<void *>(m_lwsRef.wsi);
 		resp->m_req_id = m_lwsRef.reqId;
@@ -333,7 +283,6 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		notifyReply(status);
 		return true;
 	}
-#endif
 
 	return false;
 }

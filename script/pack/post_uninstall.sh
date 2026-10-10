@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
 ################################################################################
-# RPM/DEB/PKG Post-Uninstallation Script
+# RPM/DEB Post-Uninstallation Script
 # Purpose: Remove App Mesh service files and clean up related files after
 # package uninstallation.
 # Usage: Automatically executed after package uninstallation.
-# Supports: Linux (systemd/init.d) and macOS (launchd)
+# Supports: Linux (systemd/init.d)
 ################################################################################
 
 set +e # Allow script to continue on errors
@@ -16,45 +16,17 @@ info() { log "INFO" "$@"; }
 error() { log "ERROR" "$@"; }
 die() { error "$@" && exit 1; }
 
-detect_os() {
-    case "$(uname -s)" in
-    Darwin*) echo "macos" ;;
-    Linux*) echo "linux" ;;
-    *) echo "unknown" ;;
-    esac
-}
-
 setup_platform_vars() {
-    local os_type
-    os_type=$(detect_os)
-
-    if [[ "$os_type" == "macos" ]]; then
-        readonly BASH_COMPLETION_DIR="/opt/homebrew/etc/bash_completion.d"
-        readonly LAUNCHD_FILE="/Library/LaunchDaemons/com.laoshanxi.appmesh.plist"
-        readonly SERVICE_NAME="com.laoshanxi.appmesh"
-        readonly SYSTEMD_FILE=""
-        readonly INITD_FILE=""
-        # This hook is embedded in the package and runs from a package-manager
-        # temp directory, so the script location cannot reveal the install
-        # directory (unlike setup.sh, which lives in <install>/script/).
-        # macOS package hooks receive the install location as their first
-        # argument; keep the default prefix as fallback.
-        readonly PROG_HOME="${1:-/opt/appmesh}"
-    else
-        readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
-        readonly SYSTEMD_FILE="/etc/systemd/system/appmesh.service"
-        readonly INITD_FILE="/etc/init.d/appmesh"
-        readonly SERVICE_NAME="appmesh"
-        readonly LAUNCHD_FILE=""
-    fi
+    readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
+    readonly SYSTEMD_FILE="/etc/systemd/system/appmesh.service"
+    readonly INITD_FILE="/etc/init.d/appmesh"
+    readonly SERVICE_NAME="appmesh"
 
     readonly BASH_COMPLETION_PATH="${BASH_COMPLETION_DIR}/appm"
     readonly APPM_SOFTLINK="/usr/local/bin/appm"
 }
 
-cleanup_linux_systemd_service() {
-    [[ -z "$SYSTEMD_FILE" ]] && return 0
-
+cleanup_systemd_service() {
     if [[ -f "$SYSTEMD_FILE" ]]; then
         info "Removing systemd service"
         if ! systemctl stop "$SERVICE_NAME" 2>/dev/null; then
@@ -68,9 +40,7 @@ cleanup_linux_systemd_service() {
     fi
 }
 
-cleanup_linux_initd_service() {
-    [[ -z "$INITD_FILE" ]] && return 0
-
+cleanup_initd_service() {
     if [[ -f "$INITD_FILE" ]]; then
         info "Removing init.d service"
         if ! service "$SERVICE_NAME" stop 2>/dev/null; then
@@ -80,40 +50,9 @@ cleanup_linux_initd_service() {
     fi
 }
 
-cleanup_macos_launchd_service() {
-    [[ -z "$LAUNCHD_FILE" ]] && return 0
-
-    if [[ -f "$LAUNCHD_FILE" ]]; then
-        info "Removing launchd service"
-        if ! launchctl unload "$LAUNCHD_FILE" 2>/dev/null; then
-            error "Failed to unload $SERVICE_NAME service"
-        fi
-        rm -f "$LAUNCHD_FILE"
-    fi
-
-    local user_launchd_dir="/Users/${SUDO_USER:-$USER}/Library/LaunchAgents"
-    local user_launchd_file="${user_launchd_dir}/${SERVICE_NAME}.plist"
-    if [[ -f "$user_launchd_file" ]]; then
-        info "Removing user-specific launchd service"
-        if [[ -n "${SUDO_USER:-}" ]]; then
-            sudo -u "$SUDO_USER" launchctl unload "$user_launchd_file" 2>/dev/null || true
-        else
-            launchctl unload "$user_launchd_file" 2>/dev/null || true
-        fi
-        rm -f "$user_launchd_file"
-    fi
-}
-
 cleanup_service() {
-    local os_type
-    os_type=$(detect_os)
-
-    if [[ "$os_type" == "macos" ]]; then
-        cleanup_macos_launchd_service
-    else
-        cleanup_linux_systemd_service
-        cleanup_linux_initd_service
-    fi
+    cleanup_systemd_service
+    cleanup_initd_service
 }
 
 cleanup_bash_completion() {
@@ -126,15 +65,9 @@ cleanup_bash_completion() {
 cleanup_temp_files() {
     info "Cleaning up temporary files"
     local user_home
-    local os_type
-    os_type=$(detect_os)
 
     if [[ -n "${SUDO_USER:-}" ]]; then
-        if [[ "$os_type" == "macos" ]]; then
-            user_home="/Users/$SUDO_USER"
-        else
-            user_home="/home/$SUDO_USER"
-        fi
+        user_home="/home/$SUDO_USER"
         sudo -u "$SUDO_USER" rm -f "${user_home}"/.appmesh.* 2>/dev/null || true
     else
         user_home="$HOME"
@@ -149,17 +82,6 @@ cleanup_binary() {
     fi
 }
 
-cleanup_macos_specific() {
-    local os_type
-    os_type=$(detect_os)
-
-    if [[ "$os_type" == "macos" ]]; then
-        info "Performing macOS-specific cleanup"
-        find "$PROG_HOME" -name ".DS_Store" -delete 2>/dev/null || true
-        xattr -rc "$PROG_HOME" 2>/dev/null || true
-    fi
-}
-
 ################################################################################
 # Main Function
 ################################################################################
@@ -171,7 +93,6 @@ main() {
     cleanup_bash_completion
     # cleanup_temp_files
     cleanup_binary
-    cleanup_macos_specific
 
     info "Post-uninstallation cleanup completed successfully"
 }

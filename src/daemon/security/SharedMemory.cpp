@@ -27,27 +27,13 @@ bool SharedMemory::create()
     const static char fname[] = "SharedMemory::create() ";
 
     auto shmName = m_shmName;
-#if defined(__APPLE__)
-    // macOS: Use POSIX shared memory with /tmp prefix for memory-mapped files
-    // Note: This creates a file-backed shared memory, not true POSIX shm
-    shmName = (boost::filesystem::path("/tmp/") / shmName).string();
-#elif defined(__linux__)
-    // Linux: Use tmpfs-based shared memory for fast in-memory access
+    // Use tmpfs-based shared memory for fast in-memory access
     shmName = (boost::filesystem::path("/dev/shm/") / shmName).string();
-#elif defined(_WIN32)
-    shmName = (boost::filesystem::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR / shmName).string();
-#endif
     m_shmPath = shmName;
 
     m_aceShm = std::make_shared<ACE_Shared_Memory_MM>();
 
-#if defined(_WIN32)
-    // Windows: ACE_Shared_Memory_MM uses CreateFileMapping internally
-    if (m_aceShm->open(shmName.c_str(), PSK_SHM_TOTAL_SIZE, O_CREAT | O_RDWR) == -1)
-#else
-    // Unix-like: Use appropriate file permissions for shared memory
     if (m_aceShm->open(shmName.c_str(), PSK_SHM_TOTAL_SIZE, O_CREAT | O_RDWR, 0600) == -1)
-#endif
     {
         LOG_WAR << fname << "Failed to create shared memory <" << shmName << ">: " << last_error_msg();
         m_aceShm = nullptr;
@@ -184,10 +170,6 @@ bool SharedMemory::changeOwner(const std::string &user)
 
     if (user.empty())
         return true;
-#if defined(_WIN32)
-    LOG_WAR << fname << "Changing shared memory owner is not supported on Windows";
-    return false;
-#else
     if (m_shmPath.empty())
     {
         LOG_WAR << fname << "Shared memory is not created yet";
@@ -199,7 +181,6 @@ bool SharedMemory::changeOwner(const std::string &user)
         return false;
     }
     return true;
-#endif
 }
 
 void SharedMemory::cleanup()

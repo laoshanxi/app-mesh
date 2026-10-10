@@ -22,13 +22,7 @@ namespace os
 	};
 
 	/// Get filesystem usage statistics.
-	std::shared_ptr<FilesystemUsage> df(const std::string &path =
-#if defined(_WIN32)
-											"C:\\"
-#else
-											"/"
-#endif
-	);
+	std::shared_ptr<FilesystemUsage> df(const std::string &path = "/");
 
 	/// Get mounted local logical disks and their device identifiers.
 	std::map<std::string, std::string> getMountPoints();

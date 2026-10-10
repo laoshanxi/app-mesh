@@ -276,26 +276,15 @@ git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
 cp -rf concurrentqueue /usr/local/include/
 
 cd $ROOTDIR
-git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
+git clone --depth=1 -b v5.0.0 https://github.com/warmcat/libwebsockets.git
+# v5 defaults HTTP/3 and QUIC on, and QUIC needs GnuTLS; this stack serves h1/h2/ws only.
 if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
+    # GCC 4.8 rejects lws' own initializers under -Werror.
+    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DLWS_WITH_HTTP3=OFF -DLWS_ROLE_QUIC=OFF -DDISABLE_WERROR=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl -DLWS_HAVE_LINUX_IPV6_H=0 -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON ..
 else
-    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
+    cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITH_SHARED=ON -DLWS_WITH_STATIC=OFF -DLWS_WITHOUT_TESTAPPS=ON -DLWS_WITH_HTTP3=OFF -DLWS_ROLE_QUIC=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
 fi
 make -j"$(nproc)" && make install
-
-if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    echo "uWebSockets not support C++11"
-else
-    cd $ROOTDIR
-    git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
-    cd uWebSockets
-    export OPENSSL_ROOT_DIR=/usr/local/ssl
-    make default WITH_OPENSSL=1 CFLAGS="-I${OPENSSL_ROOT_DIR}/include" LDFLAGS="-L${OPENSSL_ROOT_DIR}/lib"
-    make install
-    cp uSockets/src/libusockets.h /usr/local/include/
-    cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
-fi
 
 cd $ROOTDIR
 git clone --depth=1 https://github.com/uriparser/uriparser.git

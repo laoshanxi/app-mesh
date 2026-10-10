@@ -64,7 +64,7 @@ int SocketServer::open(void *acceptor_or_connector)
         });
 
     this->onSent(
-        [this](const std::unique_ptr<msgpack::sbuffer> &data)
+        [this](const std::string &data)
         {
             std::lock_guard<std::mutex> flock(m_fileTransfer.transfer_mutex());
             m_fileTransfer.onDataSent(*this, getId());

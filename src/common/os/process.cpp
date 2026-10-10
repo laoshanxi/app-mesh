@@ -52,9 +52,6 @@ namespace os
 	{
 		if (rootPids.empty())
 			return {};
-#if defined(__APPLE__)
-		return processSnapshot(rootPids);
-#else
 		auto snapshot = processSnapshot(0);
 		std::unordered_map<pid_t, std::vector<pid_t>> children;
 		for (const auto &process : snapshot)
@@ -70,7 +67,6 @@ namespace os
 		}
 		snapshot.remove_if([&selected](const Process &process) { return selected.count(process.pid) == 0; });
 		return snapshot;
-#endif
 	}
 
 } // namespace os

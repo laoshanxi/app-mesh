@@ -94,11 +94,13 @@ void FileTransferHandler::sendNextDownloadChunk(SocketStream &stream, int client
 	if (!m_pendingDownload)
 		return;
 
-	std::unique_ptr<msgpack::sbuffer> buffer = std::make_unique<msgpack::sbuffer>(TCP_CHUNK_BLOCK_SIZE);
-	const auto readSize = buffer->read_from(*m_pendingDownload, TCP_CHUNK_BLOCK_SIZE);
+	std::string buffer(TCP_CHUNK_BLOCK_SIZE, '\0');
+	m_pendingDownload->read(&buffer[0], static_cast<std::streamsize>(TCP_CHUNK_BLOCK_SIZE));
+	const auto readSize = static_cast<size_t>(m_pendingDownload->gcount());
 
 	if (readSize > 0)
 	{
+		buffer.resize(readSize);
 		stream.send(std::move(buffer));
 	}
 	else

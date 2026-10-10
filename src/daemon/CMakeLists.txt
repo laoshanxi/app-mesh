@@ -21,15 +21,6 @@ target_link_libraries(appmesh
     common
 )
 
-if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  if(WIN32)
-    target_link_libraries(appmesh PUBLIC unofficial::uwebsockets::uwebsockets)
-  else()
-    find_library(USOCKETS_LIB NAMES uSockets REQUIRED)
-    target_link_libraries(appmesh PUBLIC ${USOCKETS_LIB} ZLIB::ZLIB)
-  endif()
-else()
-  target_link_libraries(appmesh PUBLIC websockets_shared)
-endif()
+target_link_libraries(appmesh PUBLIC websockets_shared)
 
 install_runtime(TARGET appmesh)

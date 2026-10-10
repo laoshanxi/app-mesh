@@ -12,18 +12,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#if !defined(_WIN32)
 #include <iconv.h>
 #include <sys/file.h>
-#endif
 #include <thread>
-#if defined(__APPLE__)
-#include <crt_externs.h> // For getprogname
-#include <mach-o/dyld.h> // For _NSGetExecutablePath
-#elif defined(_WIN32)
-#include <codecvt>
-#include <windows.h>
-#endif
 
 #include <ace/OS.h>
 #include <ace/UUID.h>
@@ -132,18 +123,6 @@ std::string Utility::stdStringTrim(const std::string &str, const std::string &tr
 const std::string Utility::getExecutablePath()
 {
 	const static char fname[] = "Utility::getExecutablePath() ";
-#if defined(_WIN32)
-	char buf[MAX_PATH] = {0};
-	DWORD len = ::GetModuleFileNameA(NULL, buf, MAX_PATH);
-	if (len == 0 || len >= MAX_PATH)
-	{
-		LOG_ERR << fname << "Failed to retrieve executable path: " << ::GetLastError();
-		return "";
-	}
-
-	return boost::filesystem::path(buf).string();
-
-#elif defined(__linux__)
 	char buf[PATH_MAX] = {0};
 	auto count = ACE_OS::readlink("/proc/self/exe", buf, PATH_MAX);
 	if (count < 0 || count >= PATH_MAX)
@@ -153,31 +132,7 @@ const std::string Utility::getExecutablePath()
 	}
 	buf[count] = '\0';
 	return buf;
-
-#elif defined(__APPLE__)
-	std::vector<char> buf(PATH_MAX);
-	uint32_t size = buf.size();
-	if (_NSGetExecutablePath(buf.data(), &size) != 0)
-	{
-		LOG_ERR << fname << "Failed to retrieve executable path";
-		return "";
-	}
-
-	// Resolve symlinks to get the real path
-	char realPath[PATH_MAX] = {0};
-	if (realpath(buf.data(), realPath) == nullptr)
-	{
-		LOG_ERR << fname << "Failed to resolve real path: " << last_error_msg();
-		return "";
-	}
-	return realPath;
-
-#else
-	LOG_ERR << fname << "Platform not supported";
-	return "";
-#endif
 }
-
 const std::string &Utility::getBinDir()
 {
 	static const std::string selfBinDir = fs::path(getExecutablePath()).parent_path().string();
@@ -204,25 +159,8 @@ const std::string Utility::getConfigFilePath(const std::string &configFile, bool
 // program_name from errno.h
 const std::string Utility::getBinaryName()
 {
-#if defined(__APPLE__)
-	return getprogname(); // macOS-specific function
-#elif defined(_WIN32)
-	// Windows implementation without filesystem
-	char buffer[MAX_PATH];
-	DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
-	if (length == 0)
-	{
-		return "";
-	}
-
-	std::string fullPath(buffer);
-	size_t pos = fullPath.find_last_of("\\/");
-	return pos != std::string::npos ? fullPath.substr(pos + 1) : fullPath;
-#else
-	// Linux implementation
 	extern char *program_invocation_short_name;
 	return program_invocation_short_name;
-#endif
 }
 
 bool Utility::isDirExist(const std::string &path)
@@ -366,42 +304,6 @@ bool Utility::runningInContainer()
 	}();
 
 	return isInContainer;
-}
-
-bool Utility::ensureSystemRoot()
-{
-	// https://github.com/pypa/hatch/issues/1598
-	// https://stackoverflow.com/questions/1554878/why-does-windows-not-allow-winsock-to-be-started-while-impersonating-another-use
-	// https://github.com/golang/go/issues/61452
-	// https://github.com/golang/go/issues/26457
-	// https://go-review.googlesource.com/c/go/+/124858
-#if defined(_WIN32)
-	std::string systemRoot = Utility::getenv("SYSTEMROOT");
-	if (systemRoot.empty())
-	{
-		char sysDir[MAX_PATH] = {0};
-		UINT sysLen = GetSystemWindowsDirectoryA(sysDir, MAX_PATH);
-		if (sysLen == 0 || sysLen >= MAX_PATH)
-		{
-			strcpy_s(sysDir, MAX_PATH, "C:\\Windows"); // fallback
-			std::cerr << "[Warning] GetSystemWindowsDirectoryA failed; using fallback: " << sysDir << std::endl;
-		}
-		systemRoot = sysDir;
-
-		if (ACE_OS::setenv("SYSTEMROOT", systemRoot.c_str(), 0) == -1)
-		{
-			std::cerr << "[Error] Failed to set SYSTEMROOT to: " << systemRoot << " (Error " << last_error_msg() << ")" << std::endl;
-			return false;
-		}
-		std::cout << "[Info] SYSTEMROOT set to: " << systemRoot << std::endl;
-	}
-	else
-	{
-		std::cout << "[Info] SYSTEMROOT already set to: " << systemRoot << std::endl;
-	}
-
-#endif
-	return true;
 }
 
 void Utility::initLogging(const std::string &name)
@@ -642,87 +544,14 @@ std::string Utility::readFileCpp(const std::string &path)
 
 std::string Utility::localEncodingToUtf8(const std::string &ansi)
 {
-#if defined(_WIN32)
-	// Windows: ANSI → UTF-8
-	if (ansi.empty())
-		return {};
-
-	int wideLen = MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), nullptr, 0);
-	if (wideLen <= 0)
-		return {};
-
-	std::wstring wideStr(wideLen, L'\0');
-	MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), wideStr.data(), wideLen);
-
-	int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, nullptr, 0, nullptr, nullptr);
-	if (utf8Len <= 0)
-		return {};
-
-	std::string utf8Str(utf8Len, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, utf8Str.data(), utf8Len, nullptr, nullptr);
-
-	return utf8Str;
-#else
 	// POSIX: already UTF-8
 	return ansi;
-#endif
 }
 
 std::string Utility::utf8ToLocalEncoding(const std::string &input)
 {
-#if defined(_WIN32)
-	if (input.empty())
-	{
-		return input;
-	}
-
-	try
-	{
-		// Get the current system locale
-		std::locale loc("");
-
-		// Create UTF-8 to wchar_t converter
-		std::wstring_convert<std::codecvt_utf8<wchar_t>> utf8_conv;
-
-		// Convert UTF-8 to wide string
-		std::wstring wide_str = utf8_conv.from_bytes(input);
-
-		// Use locale's codecvt facet to convert to local encoding
-		const std::codecvt<wchar_t, char, std::mbstate_t> &codecvt_facet =
-			std::use_facet<std::codecvt<wchar_t, char, std::mbstate_t>>(loc);
-
-		std::mbstate_t state = std::mbstate_t();
-		std::string result(wide_str.length() * codecvt_facet.max_length(), '\0');
-
-		const wchar_t *from_next;
-		char *to_next;
-
-		std::codecvt_base::result conv_result = codecvt_facet.out(
-			state,
-			wide_str.data(), wide_str.data() + wide_str.length(), from_next,
-			&result[0], &result[0] + result.length(), to_next);
-
-		if (conv_result == std::codecvt_base::ok ||
-			conv_result == std::codecvt_base::noconv)
-		{
-			result.resize(to_next - &result[0]);
-			return result;
-		}
-
-		// If conversion failed, return original string
-		return input;
-	}
-	catch (...)
-	{
-		// If any exception occurs (locale not available, etc.),
-		// return original string
-		return input;
-	}
-
-#else
 	// POSIX: assume UTF-8 environment
 	return input;
-#endif
 }
 
 // TODO: use ICU for detectAndConvertToUTF8
@@ -967,7 +796,6 @@ bool Utility::createPidFile()
 	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
 	const auto pidFile = (fs::path(Utility::getHomeDir()) / PID_FILE).string();
 
-#if !defined(_WIN32)
 	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (fd < 0)
 	{
@@ -1000,40 +828,6 @@ bool Utility::createPidFile()
 		close(fd);
 		return false;
 	}
-
-#else
-	// Windows implementation using file locking
-	HANDLE hFile = CreateFileA(pidFile.c_str(), GENERIC_READ | GENERIC_WRITE,
-							   0, // not shared, self-owned
-							   NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		DWORD error = GetLastError();
-		if (error == ERROR_SHARING_VIOLATION)
-		{
-			std::cerr << fname << "Process already running. PID file locked: " << pidFile << std::endl;
-		}
-		else
-		{
-			std::cerr << fname << "Failed to create PID file <" << pidFile << "> with error " << error << std::endl;
-		}
-		return false;
-	}
-
-	std::string pid = std::to_string(ACE_OS::getpid());
-	DWORD bytesWritten;
-	if (!WriteFile(hFile, pid.c_str(), static_cast<DWORD>(pid.length()), &bytesWritten, NULL))
-	{
-		std::cerr << fname << "Failed to write PID to file <" << pidFile << "> with error " << GetLastError() << std::endl;
-		CloseHandle(hFile);
-		return false;
-	}
-
-	std::cout << fname << "New process running. PID file locked: " << pidFile << std::endl;
-	// Keep handle open to maintain lock
-	return true;
-#endif
 }
 
 void Utility::addExtraAppTimeReferStr(nlohmann::json &appJson)
@@ -1154,7 +948,6 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 		return;
 	}
 
-#if !defined(_WIN32)
 	auto userIt = headers.find(HTTP_HEADER_KEY_file_user);
 	auto groupIt = headers.find(HTTP_HEADER_KEY_file_group);
 	if (userIt != headers.end() && groupIt != headers.end() &&
@@ -1179,7 +972,6 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 			}
 		}
 	}
-#endif
 
 	auto modeIt = headers.find(HTTP_HEADER_KEY_file_mode);
 	if (modeIt != headers.end() && !modeIt->second.empty())
@@ -1213,23 +1005,6 @@ std::map<std::string, std::string> Utility::getenvs()
 {
 	std::map<std::string, std::string> env;
 
-#if defined(_WIN32)
-	LPCH envStrings = GetEnvironmentStringsA();
-	if (!envStrings)
-		return env;
-
-	for (LPCH var = envStrings; *var; var += std::strlen(var) + 1)
-	{
-		std::string entry(var);
-		auto pos = entry.find('=');
-		if (pos != std::string::npos)
-		{
-			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
-		}
-	}
-	FreeEnvironmentStringsA(envStrings);
-
-#else
 	extern char **environ;
 	for (char **current = environ; *current; ++current)
 	{
@@ -1240,7 +1015,6 @@ std::map<std::string, std::string> Utility::getenvs()
 			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
 		}
 	}
-#endif
 
 	return env;
 }
@@ -1286,11 +1060,7 @@ std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 {
 	// https://stackoverflow.com/questions/1511797/convert-string-to-argv-in-c
 	// backup: https://stackoverflow.com/questions/1706551/parse-string-into-argv-argc
-#if defined(_WIN32)
-	return boost::program_options::split_winmain(commandLine);
-#else
 	return boost::program_options::split_unix(commandLine);
-#endif
 }
 
 nlohmann::json Utility::text2json(const std::string &str)
@@ -1544,13 +1314,11 @@ namespace web
 #undef DAT
 
 // This is necessary for Linux because of a bug in GCC 4.7
-#if !defined(_WIN32)
 #define _PHRASES
 #define DAT(a, b, c) const status_code status_codes::a;
 #include "http_constants.dat"
 #undef _PHRASES
 #undef DAT
-#endif
 	}
 }
 
@@ -1712,7 +1480,6 @@ namespace
 		{0, nullptr}		 // CP_ACP: system default ANSI code page (Windows only)
 	};
 
-#if !defined(_WIN32)
 	// Outcome of one strict iconv conversion attempt.
 	enum IconvOutcome
 	{
@@ -1737,10 +1504,9 @@ namespace
 
 		// Every candidate maps one input byte to at most three UTF-8 bytes.
 		std::string out(input.size() * 3 + 4, '\0');
-// iconv's inbuf parameter is `char **` on glibc and Apple's SDK, but
-// `const char **` on standalone GNU libiconv. Apple defines _LIBICONV_VERSION
-// for compatibility while keeping the POSIX signature, so exclude it.
-#if defined(_LIBICONV_VERSION) && !defined(__APPLE__) && !defined(__GLIBC__)
+// iconv's inbuf parameter is `char **` on glibc, but `const char **` on
+// standalone GNU libiconv.
+#if defined(_LIBICONV_VERSION) && !defined(__GLIBC__)
 		const char *inPtr = input.data();
 #else
 		char *inPtr = const_cast<char *>(input.data());
@@ -1783,84 +1549,10 @@ namespace
 		output.swap(out);
 		return outcome;
 	}
-#endif // !defined(_WIN32)
 } // namespace
 
 std::string Utility::fileBytesToUtf8(const std::string &input)
 {
-#ifdef _WIN32
-	if (input.empty())
-		return input;
-
-	// Check for UTF-8 BOM
-	if (input.size() >= 3 &&
-		static_cast<unsigned char>(input[0]) == 0xEF &&
-		static_cast<unsigned char>(input[1]) == 0xBB &&
-		static_cast<unsigned char>(input[2]) == 0xBF)
-	{
-		return input.substr(3);
-	}
-
-	// Check for UTF-16 LE BOM
-	if (input.size() >= 2 &&
-		static_cast<unsigned char>(input[0]) == 0xFF &&
-		static_cast<unsigned char>(input[1]) == 0xFE)
-	{
-		const wchar_t *wstr = reinterpret_cast<const wchar_t *>(input.data() + 2);
-		int len = (input.size() - 2) / 2;
-
-		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, len, nullptr, 0, nullptr, nullptr);
-		if (utf8Len == 0)
-			return input;
-
-		std::string result(utf8Len, 0);
-		WideCharToMultiByte(CP_UTF8, 0, wstr, len, &result[0], utf8Len, nullptr, nullptr);
-		return result;
-	}
-
-	// Check for UTF-16 BE BOM
-	if (input.size() >= 2 &&
-		static_cast<unsigned char>(input[0]) == 0xFE &&
-		static_cast<unsigned char>(input[1]) == 0xFF)
-	{
-		std::wstring wstr;
-		wstr.resize((input.size() - 2) / 2);
-		for (size_t i = 0; i < wstr.size(); ++i)
-		{
-			wstr[i] = static_cast<wchar_t>(
-				(static_cast<unsigned char>(input[2 + i * 2]) << 8) |
-				static_cast<unsigned char>(input[2 + i * 2 + 1]));
-		}
-
-		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), nullptr, 0, nullptr, nullptr);
-		if (utf8Len == 0)
-			return input;
-
-		std::string result(utf8Len, 0);
-		WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), &result[0], utf8Len, nullptr, nullptr);
-		return result;
-	}
-
-	// Try to detect and convert from various encodings
-	// First, try to validate if it's already valid UTF-8
-	if (isValidUTF8(input))
-	{
-		return input;
-	}
-
-	// Try the shared encoding candidates in order of likelihood
-	for (const EncodingCandidate &candidate : ENCODING_CANDIDATES)
-	{
-		std::string result = convertToUTF8(input, candidate.codepage);
-		if (!result.empty())
-		{
-			return result;
-		}
-	}
-
-	// If all else fails, return original
-	return input;
-#else
 	if (input.empty())
 		return input;
 
@@ -1874,8 +1566,7 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 	}
 
 	// Check for UTF-16 BOM: convert complete 16-bit units (a trailing odd byte
-	// is dropped, mirroring the Windows path); keep the original bytes when the
-	// payload is not decodable.
+	// is dropped); keep the original bytes when the payload is not decodable.
 	if (input.size() >= 2)
 	{
 		const bool utf16Le = static_cast<unsigned char>(input[0]) == 0xFF && static_cast<unsigned char>(input[1]) == 0xFE;
@@ -1934,10 +1625,7 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 	// No candidate matched: keep the original bytes, JSON serialization replaces
 	// invalid UTF-8 with U+FFFD.
 	return input;
-#endif
 }
-
-
 void Utility::appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key)
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
@@ -2054,36 +1742,3 @@ size_t Utility::utf8IncompleteTailBytes(const std::string &str)
 }
 
 
-std::string Utility::convertToUTF8(const std::string &input, unsigned int codepage)
-{
-#ifdef _WIN32
-	if (input.empty())
-		return "";
-
-	// Convert from codepage to wide string
-	int wideLen = MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), nullptr, 0);
-	if (wideLen == 0)
-		return "";
-
-	std::wstring wideStr(wideLen, 0);
-	if (MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), &wideStr[0], wideLen) == 0)
-	{
-		return "";
-	}
-
-	// Convert from wide string to UTF-8
-	int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), nullptr, 0, nullptr, nullptr);
-	if (utf8Len == 0)
-		return "";
-
-	std::string result(utf8Len, 0);
-	if (WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), &result[0], utf8Len, nullptr, nullptr) == 0)
-	{
-		return "";
-	}
-
-	return result;
-#else
-	return "";
-#endif
-}

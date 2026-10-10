@@ -13,15 +13,13 @@
 #include "HttpRequest.h"
 #include "RestHandler.h"
 #include "SocketServer.h"
-#if defined(HAVE_UWEBSOCKETS)
-#include "uwebsockets/ReplyContext.h"
-#endif
+#include "../../common/lwsservice/WebSocketService.h"
 
 #include <memory>
 #include <set>
 #include <utility>
 
-// Global backpressure cap on the shared inbound queue (TCP + lws + uWS). Bounds a
+// Global backpressure cap on the shared inbound queue (TCP + lws). Bounds a
 // request-flood DoS: a client sending faster than workers drain is shed, not buffered.
 static constexpr size_t MAX_PENDING_REQUESTS = 10000;
 
@@ -41,6 +39,42 @@ namespace
 			(path.size() > 10 && path.compare(path.size() - 10, 10, "/subscribe") == 0) ||
 			request->m_query.count("subscribe_events") != 0;
 	}
+
+	// Extract the request uuid without decoding the full message, so an
+	// undecodable request can still be answered with a correlated error.
+	std::string recoverRequestUuid(const ByteBuffer &data)
+	{
+		try
+		{
+			msgpack::unpacked result;
+			msgpack::unpack(result, reinterpret_cast<const char *>(data.data()), data.size());
+			const auto obj = result.get();
+			if (obj.type != msgpack::type::MAP)
+				return {};
+			for (std::uint32_t i = 0; i < obj.via.map.size; ++i)
+			{
+				const auto &entry = obj.via.map.ptr[i];
+				if (entry.key.type == msgpack::type::STR && entry.key.as<std::string>() == "uuid" &&
+					entry.val.type == msgpack::type::STR)
+					return entry.val.as<std::string>();
+			}
+		}
+		catch (...)
+		{
+		}
+		return {};
+	}
+
+	std::unique_ptr<Response> undecodableResponse(const std::string &uuid)
+	{
+		auto response = std::make_unique<Response>();
+		response->uuid = uuid;
+		response->http_status = web::http::status_codes::BadRequest;
+		response->body_msg_type = web::http::mime_types::application_json;
+		const auto text = Utility::text2json("Unable to decode the request").dump();
+		response->body.assign(text.begin(), text.end());
+		return response;
+	}
 }
 
 struct HttpRequestContext
@@ -48,9 +82,6 @@ struct HttpRequestContext
 	ByteBuffer m_data;
 	int m_tcpClientId = -1;
 	LwsSessionRef m_lwsRef{};
-#if defined(HAVE_UWEBSOCKETS)
-	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;
-#endif
 	// Explicit shutdown marker (an empty m_data must never mean shutdown: a zero-length
 	// frame would then let any client kill a worker).
 	bool m_isShutdownSentinel = false;
@@ -85,6 +116,22 @@ bool Worker::enqueueRequest(std::shared_ptr<HttpRequestContext> ctx)
 	return true;
 }
 
+bool Worker::replyUndecodableLws(const LwsSessionRef &lwsRef, const ByteBuffer &data)
+{
+	const auto uuid = recoverRequestUuid(data);
+	if (uuid.empty() || !lwsRef)
+		return false;
+
+	auto resp = std::make_unique<WSResponse>();
+	resp->m_session_ref = const_cast<void *>(lwsRef.wsi);
+	resp->m_req_id = lwsRef.reqId;
+	resp->m_session_id = lwsRef.sessionId;
+	resp->m_payload = undecodableResponse(uuid)->serialize();
+	resp->m_is_http = lwsRef.httpFrame;
+	WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
+	return true;
+}
+
 void Worker::queueTcpRequest(ByteBuffer &&data, int tcpClientId)
 {
 	auto ctx = std::make_shared<HttpRequestContext>();
@@ -100,16 +147,6 @@ void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
 	ctx->m_lwsRef = lwsRef;
 	enqueueRequest(std::move(ctx));
 }
-
-#if defined(HAVE_UWEBSOCKETS)
-void Worker::queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext)
-{
-	auto ctx = std::make_shared<HttpRequestContext>();
-	ctx->m_data = std::move(data);
-	ctx->m_uwsReplyContext = std::move(uwsContext);
-	enqueueRequest(std::move(ctx));
-}
-#endif
 
 int Worker::svc()
 {
@@ -129,37 +166,27 @@ int Worker::svc()
 		}
 		m_pendingCount.fetch_sub(1, std::memory_order_relaxed); // matched to enqueueRequest reservation
 
-#if defined(HAVE_UWEBSOCKETS)
-		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef, requestContext->m_uwsReplyContext);
-#else
-		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef, nullptr);
-#endif
+		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef);
 
 		if (!request || !process(request))
 		{
 			LOG_WAR << fname << "Failed to parse or process request, closing connection | ClientID=" << requestContext->m_tcpClientId;
 
+			// Answer with a correlated 400 so the client fails at once instead of
+			// waiting for its own timeout; without a uuid there is nothing to
+			// correlate, so fall back to closing (TCP) or dropping (WS).
 			if (requestContext->m_tcpClientId > 0)
 			{
-				SocketServer::closeClient(requestContext->m_tcpClientId);
-			}
-#if defined(HAVE_UWEBSOCKETS)
-			else if (requestContext->m_uwsReplyContext)
-			{
-				auto &uwsCtx = requestContext->m_uwsReplyContext;
-				if (uwsCtx->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
-					uwsCtx->replyHTTP("500 Internal Server Error", "Internal Server Error", {}, "text/plain");
+				const auto uuid = recoverRequestUuid(requestContext->m_data);
+				if (!uuid.empty())
+					SocketServer::replyTcp(requestContext->m_tcpClientId, undecodableResponse(uuid));
 				else
-					// WS: no uuid to correlate a framed error, so drop the message (no desync)
-					// rather than send an unframed body the SDK can't parse.
-					uwsCtx->markAborted();
+					SocketServer::closeClient(requestContext->m_tcpClientId);
 			}
-#else
 			else if (requestContext->m_lwsRef)
 			{
-				// TODO: handle libwebsockets close to avoid leak
+				replyUndecodableLws(requestContext->m_lwsRef, requestContext->m_data);
 			}
-#endif
 		}
 	}
 

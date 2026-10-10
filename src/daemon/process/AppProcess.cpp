@@ -5,12 +5,10 @@
 #include <cctype>
 #include <condition_variable>
 
-#if !defined(_WIN32)
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#endif
 
 #include <ace/File_Lock.h>
 #include <ace/OS.h>
@@ -23,9 +21,6 @@
 #include "../../common/Utility.h"
 #include "../../common/json.h"
 #include "../../common/os/filesystem.h"
-#if defined(_WIN32)
-#include "../../common/os/jobobject.hpp"
-#endif
 #include "../../common/os/process.h"
 #include "../../common/os/pstree.h"
 #include "../../common/os/user.h"
@@ -43,7 +38,6 @@ namespace
 {
 	constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 
-#if !defined(_WIN32)
 	// Create a pipe for child stdout redirection. Returns {readEnd, writeEnd}
 	// or {INVALID, INVALID} on failure. Attempts to size the pipe buffer to 1 MB.
 	std::pair<ACE_HANDLE, ACE_HANDLE> createStdoutPipe()
@@ -123,7 +117,6 @@ namespace
 		}
 		return Utility::stringFormat("/usr/bin/sudo --login %s env %s%s", quoteArgvToken("--user=" + sudoUser).c_str(), envArgs.c_str(), cmd.c_str());
 	}
-#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +138,6 @@ public:
 		const static char fname[] = "ExitAdapter::handle_exit() ";
 		const pid_t pid = process->getpid();
 		int code = process->return_value();
-#if !defined(_WIN32)
 		// return_value() is WEXITSTATUS() of the raw status: 0 when a signal
 		// terminated the child. Report the signal number so exit-code policies
 		// and return_code cannot mistake a killed run for a clean exit. Matches
@@ -153,7 +145,6 @@ public:
 		const ACE_exitcode rawStatus = process->exit_code();
 		if (WIFSIGNALED(rawStatus))
 			code = WTERMSIG(rawStatus);
-#endif
 		LOG_INF << fname << "Process <" << pid << "> exited with code <" << code << ">";
 
 		auto target = m_target.lock();
@@ -210,9 +201,6 @@ AppProcess::AppProcess(std::weak_ptr<Application> owner)
 	  m_timerCheckStdoutId(INVALID_TIMER_ID),
 	  m_stdOutMaxSize(0),
 	  m_outFileMutex(std::make_shared<std::mutex>()),
-#if defined(_WIN32)
-	  m_job(nullptr, ::CloseHandle),
-#endif
 	  m_lastProcCpuTime(0),
 	  m_lastCpuSampleTime(),
 	  m_lastMetricProcCpuTime(0),
@@ -262,7 +250,6 @@ void AppProcess::attach(int pid, const std::string &stdoutFile)
 		m_processStartToken = 0;
 	m_stdoutFileName = stdoutFile;
 
-#if !defined(_WIN32)
 	if (pid != ACE_INVALID_PID)
 	{
 		const std::string stdOut = Utility::stringFormat("/proc/%d/fd/1", pid);
@@ -272,7 +259,6 @@ void AppProcess::attach(int pid, const std::string &stdoutFile)
 			m_stdOutMaxSize = APP_STD_OUT_MAX_FILE_SIZE;
 		}
 	}
-#endif
 }
 
 void AppProcess::detach()
@@ -595,12 +581,8 @@ void AppProcess::terminateImpl()
 			bool needWaitpid = false;
 			{
 				ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
-#if defined(_WIN32)
-				const bool killSuccess = os::kill_job(m_job);
-#else
 				// Kill the entire process group to include children.
 				const bool killSuccess = (ACE_OS::kill(-pid, SIGKILL) == 0);
-#endif
 
 				if (killSuccess)
 				{
@@ -730,10 +712,8 @@ bool AppProcess::onTimerCheckStdout()
 		else
 		{
 			LOG_WAR << fname << "fstat on stdout file <" << m_stdoutFileName << "> failed, reopening handle: " << last_error_msg();
-#if !defined(_WIN32)
 			const auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
 			m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
-#endif
 		}
 	}
 
@@ -774,7 +754,6 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 
 	prepareEnvironment(envMap);
 
-#if !defined(_WIN32)
 	// A sudo login spawn resets the environment: rebuild the command so the
 	// intended variables are re-injected after the reset.
 	if (auto owner = m_owner.lock())
@@ -783,7 +762,6 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		if (!sudoUser.empty())
 			cmd = wrapSudoLoginCommand(sudoUser, envMap, cmd);
 	}
-#endif
 
 	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0, totalEnvArgs = 0;
@@ -792,7 +770,6 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	ACE_Process_Options option(true, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 
-#if !defined(_WIN32)
 	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;
@@ -817,10 +794,6 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	option.setgroup(0);
 	// ACE preserves redirected stdio and marks every other child fd close-on-exec.
 	option.handle_inheritance(0);
-#else
-	// ACE requires inheritance for redirected standard handles on Windows.
-	option.handle_inheritance(1);
-#endif
 
 	if (workDir.empty())
 		workDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
@@ -854,11 +827,9 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 			if (!m_stdoutHandler.valid())
 				LOG_ERR << fname << "Failed to open stdout file <" << m_stdoutFileName << ">: " << last_error_msg();
 
-#if !defined(_WIN32)
 			auto pipeFds = createStdoutPipe();
 			pipeReadForDaemon = pipeFds.first;
 			pipeWriteForChild = pipeFds.second;
-#endif
 		}
 		else
 		{
@@ -1032,10 +1003,6 @@ pid_t AppProcess::spawn(ACE_Process_Options &option, const std::shared_ptr<Resou
 	}
 #endif
 
-#if defined(_WIN32)
-	m_job = os::create_job(os::name_job(pid));
-	os::assign_job(m_job, pid);
-#endif
 	if (const auto status = os::status(pid))
 		m_processStartToken = status->starttime;
 
@@ -1093,14 +1060,6 @@ int AppProcess::validateCommand(const std::string &cmd)
 
 void AppProcess::prepareEnvironment(std::map<std::string, std::string> &envMap)
 {
-#if defined(_WIN32)
-	const auto currentEnv = Utility::getenvs();
-	for (const auto &kv : currentEnv)
-	{
-		if (!envMap.count(kv.first))
-			envMap[kv.first] = kv.second;
-	}
-#endif
 
 	envMap[ENV_APPMESH_PROCESS_KEY] = m_key;
 	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
@@ -1142,13 +1101,8 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 
 		const auto curSampleTime = std::chrono::steady_clock::now();
 		const auto curProcCpuTime = tree->totalCpuTime();
-		double cpuTimeUnitsPerSecond = 1000.0; // Windows process times are stored as milliseconds.
-#if defined(__APPLE__)
-		cpuTimeUnitsPerSecond = 1000000000.0; // proc_taskinfo total times are nanoseconds.
-#elif defined(__linux__)
 		const auto clockTicks = ACE_OS::sysconf(_SC_CLK_TCK);
-		cpuTimeUnitsPerSecond = clockTicks > 0 ? static_cast<double>(clockTicks) : 100.0;
-#endif
+		double cpuTimeUnitsPerSecond = clockTicks > 0 ? static_cast<double>(clockTicks) : 100.0;
 
 		// Prometheus and runtime reads use independent deltas so API traffic cannot distort metrics.
 		auto &lastProcCpuTime = metricsSample ? m_lastMetricProcCpuTime : m_lastProcCpuTime;

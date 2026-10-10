@@ -44,10 +44,8 @@ void PrometheusRest::initMetrics()
 		PROM_METRIC_HELP_appmesh_process_id,
 		{});
 	m_appmeshPid->metric().Set(ResourceCollection::instance()->getPid());
-	m_buildInfo = createPromGauge(
-		"appmesh_build_info", "App Mesh build information",
-		{{"version", __MICRO_VAR__(BUILD_TAG)}});
-	m_buildInfo->metric().Set(1);
+	// No appmesh_build_info: the metrics port is unauthenticated and must not
+	// disclose the exact build version.
 }
 
 std::shared_ptr<CounterMetric> PrometheusRest::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)

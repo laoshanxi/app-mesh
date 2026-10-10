@@ -54,11 +54,7 @@ std::string MachineTimeZone::getStdZoneAbbrev()
         std::time_t now = 0;
         std::tm local_tm{};
 
-#if defined(_WIN32) || defined(_WIN64)
-        localtime_s(&local_tm, &now);
-#else
         localtime_r(&now, &local_tm);
-#endif
         
         char buff[64] = {0};
         std::strftime(buff, sizeof(buff), "%Z", &local_tm);
@@ -268,11 +264,7 @@ std::string DateTime::formatLocalTime(const TimePoint &time, const char *fmt)
 		const auto timeT = std::chrono::system_clock::to_time_t(time);
 		std::tm local_tm{};
 
-#if defined(_WIN32) || defined(_WIN64)
-		localtime_s(&local_tm, &timeT);
-#else
 		localtime_r(&timeT, &local_tm);
-#endif
 
 		const boost::gregorian::date target_date(
 			static_cast<unsigned short>(local_tm.tm_year + 1900),

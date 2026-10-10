@@ -33,9 +33,6 @@ namespace os
 	/// Single bulk-query snapshot of rootPid and its descendants. Passing zero
 	/// returns every process visible to the current process.
 	std::list<Process> processSnapshot(pid_t rootPid);
-#if defined(__APPLE__)
-	std::list<Process> processSnapshot(const std::vector<pid_t> &rootPids);
-#endif
 
 	/// Build a Process from a status snapshot (command falls back to comm when cmdline is empty).
 	Process makeProcess(const ProcessStatus &status, const std::string &cmdline);

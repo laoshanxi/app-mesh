@@ -9,11 +9,6 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
-# Platform-specific pre-project configuration
-if(WIN32)
-    include(cmake/WindowsConfig.cmake)
-endif()
-
 project(appmesh
     LANGUAGES CXX C
     VERSION 3.0.0
@@ -24,14 +19,12 @@ project(appmesh
 # C++ Standard Configuration
 # =============================================================================
 if(NOT DEFINED CMAKE_CXX_STANDARD)
-    if(WIN32)
-        set(CMAKE_CXX_STANDARD 20)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
         set(CMAKE_CXX_STANDARD 11)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
         set(CMAKE_CXX_STANDARD 14)
     else()
-        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD 14)
     endif()
 endif()
 
@@ -60,11 +53,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/package_root"
         CACHE PATH "Package staging root" FORCE)
 endif()
-if(WIN32)
-    set(CMAKE_INSTALL_LIBDIR bin) # Use <bin> for Windows <lib>
-else()
-    set(CMAKE_INSTALL_LIBDIR lib) # Use <lib> for <lib64>
-endif()
+set(CMAKE_INSTALL_LIBDIR lib)
 include(GNUInstallDirs)
 message(STATUS "Install Prefix: ${CMAKE_INSTALL_PREFIX}")
 
@@ -90,19 +79,14 @@ add_compile_options(-Wall)
 # linker can discard what nothing references. Symbols and unwind tables stay,
 # so crash backtraces still resolve.
 #
-# Not for MSVC, and not for the legacy GCC line (C++11 tier). That toolchain
+# Not for the legacy GCC line (C++11 tier). That toolchain
 # also keeps a local copy of spdlog's inline default-logger accessor in the
 # daemon, which splits the logger registry: the daemon logs to a registry that
 # the logging setup never configured, so server.log stays empty.
-if(NOT MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0))
+if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0))
     add_compile_options(-ffunction-sections -fdata-sections)
     add_compile_options($<$<CONFIG:Release>:-Os>)
-    if(APPLE)
-        # ld64 does not accept --gc-sections.
-        add_link_options(-Wl,-dead_strip)
-    else()
-        add_link_options(-Wl,--gc-sections)
-    endif()
+    add_link_options(-Wl,--gc-sections)
 endif()
 
 # AddressSanitizer (optional)
@@ -115,63 +99,22 @@ if(ENABLE_ASAN)
 endif()
 
 # =============================================================================
-# Platform-Specific RPATH Configuration
+# RPATH Configuration
 # =============================================================================
-if(APPLE)
-    # --------------------------------------------------------------------------
-    # macOS RPATH Configuration
-    # --------------------------------------------------------------------------
-    # Detect Homebrew prefix based on architecture
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-        set(HOMEBREW_PREFIX "/opt/homebrew")
-    else()
-        set(HOMEBREW_PREFIX "/usr/local")
-    endif()
+set(CMAKE_SKIP_BUILD_RPATH FALSE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 
-    list(PREPEND CMAKE_PREFIX_PATH "${HOMEBREW_PREFIX}")
-    include_directories("${HOMEBREW_PREFIX}/include")
-    link_directories("${HOMEBREW_PREFIX}/lib")
-    set(ENV{PKG_CONFIG_PATH} "${HOMEBREW_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+# $ORIGIN allows the binary to find libraries relative to itself
+set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 
-    # RPATH settings for macOS
-    set(CMAKE_MACOSX_RPATH ON)
-    set(CMAKE_SKIP_BUILD_RPATH FALSE)
-    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
-
-    # Use @executable_path for relocatable binaries
-    set(CMAKE_INSTALL_RPATH "@executable_path/../${CMAKE_INSTALL_LIBDIR}")
-
-    # During build, use the Homebrew library paths
-    set(CMAKE_BUILD_RPATH "${HOMEBREW_PREFIX}/lib")
-
-    message(STATUS "Homebrew Prefix: ${HOMEBREW_PREFIX}")
-    message(STATUS "macOS Install RPATH: ${CMAKE_INSTALL_RPATH}")
-
-elseif(UNIX)
-    # --------------------------------------------------------------------------
-    # Linux RPATH Configuration
-    # --------------------------------------------------------------------------
-    set(CMAKE_SKIP_BUILD_RPATH FALSE)
-    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
-
-    # $ORIGIN allows the binary to find libraries relative to itself
-    set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
-
-    message(STATUS "Linux Install RPATH: ${CMAKE_INSTALL_RPATH}")
-endif()
+message(STATUS "Linux Install RPATH: ${CMAKE_INSTALL_RPATH}")
 
 # =============================================================================
 # Subdirectories
 # =============================================================================
 add_subdirectory(src)
 add_subdirectory(script/sbom)
-
-# App definitions (apps/) are installed by their owning directories under src/.
-# Install rules run in declaration order, so the Windows-only fixups for those
-# files must be declared after add_subdirectory(src).
-include(cmake/InstallAppsWindows.cmake)
 
 # =============================================================================
 # Testing Configuration
@@ -190,14 +133,8 @@ macro(add_catch_test name)
         add_test(NAME ${name} COMMAND ${name})
     endif()
 
-    if(APPLE)
-        set(LIB_PATH_VAR "DYLD_LIBRARY_PATH")
-    else()
-        set(LIB_PATH_VAR "LD_LIBRARY_PATH")
-    endif()
-
     set_tests_properties(${name} PROPERTIES
-        ENVIRONMENT "${LIB_PATH_VAR}=/usr/local/lib64:/usr/local/lib:$ENV{${LIB_PATH_VAR}}"
+        ENVIRONMENT "LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:$ENV{LD_LIBRARY_PATH}"
     )
 endmacro()
 if(NOT APPMESH_NO_TESTS)
@@ -257,14 +194,8 @@ endif()
 # =============================================================================
 # Packaging. Usage: make pack
 # =============================================================================
-if(WIN32)
-    set(PACKAGING_COMMAND
-        powershell -ExecutionPolicy Bypass -NoProfile -File "${CMAKE_SOURCE_DIR}/script/pack/build_package.ps1")
-    set(BUILD_TYPE_ENV "$<CONFIG>")
-else()
-    set(PACKAGING_COMMAND bash "${CMAKE_SOURCE_DIR}/script/pack/build_package.sh")
-    set(BUILD_TYPE_ENV "${CMAKE_BUILD_TYPE}")
-endif()
+set(PACKAGING_COMMAND bash "${CMAKE_SOURCE_DIR}/script/pack/build_package.sh")
+set(BUILD_TYPE_ENV "${CMAKE_BUILD_TYPE}")
 
 # Clean only the default packaging stage before incremental packs.
 set(PACK_STAGING_CLEAN_COMMAND ${CMAKE_COMMAND} -E true)

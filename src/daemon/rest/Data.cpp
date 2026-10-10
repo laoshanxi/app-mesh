@@ -18,12 +18,22 @@ Response::~Response()
 {
 }
 
-std::unique_ptr<msgpack::sbuffer> Response::serialize() const
+namespace
 {
-	// pack
-	auto sbuf = std::make_unique<msgpack::sbuffer>();
-	msgpack::pack(*sbuf, *this);
-	return sbuf;
+	// msgpack packs into any stream with write(const char *, size_t).
+	struct StringWriteStream
+	{
+		std::string &out;
+		void write(const char *data, std::size_t len) { out.append(data, len); }
+	};
+}
+
+std::string Response::serialize() const
+{
+	std::string out;
+	StringWriteStream stream{out};
+	msgpack::pack(stream, *this);
+	return out;
 }
 
 bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
@@ -61,11 +71,12 @@ void Response::applySecurityHeaders()
 	headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
 }
 
-std::unique_ptr<msgpack::sbuffer> Request::serialize() const
+std::string Request::serialize() const
 {
-	auto sbuf = std::make_unique<msgpack::sbuffer>();
-	msgpack::pack(*sbuf, *this);
-	return sbuf;
+	std::string out;
+	StringWriteStream stream{out};
+	msgpack::pack(stream, *this);
+	return out;
 }
 
 bool Request::deserialize(const ByteBuffer &data)

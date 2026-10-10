@@ -119,11 +119,7 @@ int StdoutPump::handle_input(ACE_HANDLE)
 		}
 
 		const int err = ACE_OS::last_error();
-#if defined(_WIN32)
-		if (err == EAGAIN || err == EWOULDBLOCK || err == WSAEWOULDBLOCK)
-#else
 		if (err == EAGAIN || err == EWOULDBLOCK)
-#endif
 		{
 			returnCode = 0;
 			break;

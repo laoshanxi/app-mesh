@@ -1,6 +1,8 @@
 // src/daemon/rest/SocketStream.cpp
 #include "SocketStream.h"
 
+#include <openssl/x509v3.h> // X509_check_host
+
 #include <climits>
 
 // SSL_Stream_Ex methods
@@ -156,19 +158,13 @@ RecvResult RecvState::do_recv(SSL_Stream_Ex &stream, std::uint8_t *buf, size_t l
 SendBuffer::SendBuffer(const char *data, size_t len)
 {
 	init_header(len);
-	auto sb = std::make_unique<msgpack::sbuffer>(len);
-	if (len > 0)
-	{
-		sb->write(data, len);
-	}
-	m_body = std::move(sb);
+	m_body.assign(data, len);
 }
 
-SendBuffer::SendBuffer(std::unique_ptr<msgpack::sbuffer> &&data)
+SendBuffer::SendBuffer(std::string &&data)
 {
-	const size_t len = data ? data->size() : 0;
-	init_header(len);
-	m_body = data ? std::move(data) : std::make_unique<msgpack::sbuffer>(0);
+	init_header(data.size());
+	m_body = std::move(data);
 }
 
 SendResult SendBuffer::do_send(SSL_Stream_Ex &stream, int &ssl_error)
@@ -188,7 +184,7 @@ SendResult SendBuffer::do_send(SSL_Stream_Ex &stream, int &ssl_error)
 	// Send body
 	if (body_size() > 0)
 	{
-		res = send_chunk(stream, m_body->data(), m_body->size(), m_body_sent, body_size(), ssl_err_body);
+		res = send_chunk(stream, m_body.data(), m_body.size(), m_body_sent, body_size(), ssl_err_body);
 		ssl_error = ssl_err_body;
 	}
 	return res;
@@ -442,7 +438,7 @@ int SocketStream::close(u_long flags)
 	return 0;
 }
 
-bool SocketStream::connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout)
+bool SocketStream::connect(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout, const std::string &expectedHostname)
 {
 	const static char fname[] = "SocketStream::connect() ";
 
@@ -467,7 +463,36 @@ bool SocketStream::connect(const ACE_INET_Addr &remote, const ACE_Time_Value *ti
 		this->close();
 		return false;
 	}
+
+	if (!expectedHostname.empty() && !verifyPeerHostname(expectedHostname))
+	{
+		this->close();
+		return false;
+	}
 	return true;
+}
+
+bool SocketStream::verifyPeerHostname(const std::string &host)
+{
+	const static char fname[] = "SocketStream::verifyPeerHostname() ";
+
+	// Skip IP literals: existing clusters address peers by IP and their certificates
+	// carry no IP SANs, so the check would break them.
+	if (host.find_first_not_of("0123456789.") == std::string::npos || host.find(':') != std::string::npos)
+		return true;
+
+	SSL *ssl = this->peer().ssl();
+	X509 *cert = ssl ? SSL_get1_peer_certificate(ssl) : nullptr;
+	if (!cert)
+	{
+		LOG_ERR << fname << "No peer certificate to verify for host <" << host << ">";
+		return false;
+	}
+	const bool matched = X509_check_host(cert, host.c_str(), host.size(), 0, nullptr) == 1;
+	X509_free(cert);
+	if (!matched)
+		LOG_ERR << fname << "Peer certificate does not match host <" << host << ">";
+	return matched;
 }
 
 bool SocketStream::send(const std::string &data) { return send(data.data(), data.size()); }
@@ -482,11 +507,11 @@ bool SocketStream::send(const char *data, size_t len)
 	}
 	return send_impl(SendBuffer(data, len));
 }
-bool SocketStream::send(std::unique_ptr<msgpack::sbuffer> &&data)
+bool SocketStream::send(std::string &&data)
 {
 	const static char fname[] = "SocketStream::send() ";
 
-	const size_t len = data ? data->size() : 0;
+	const size_t len = data.size();
 	if (len > TCP_MAX_RECV_BODY_SIZE)
 	{
 		LOG_ERR << fname << "Message too large: " << len << " bytes, limit: " << TCP_MAX_RECV_BODY_SIZE;
@@ -948,7 +973,7 @@ void SocketStream::deliver_message(std::vector<std::uint8_t> &&msg)
 	}
 }
 
-void SocketStream::notify_sent(const std::unique_ptr<msgpack::sbuffer> &data)
+void SocketStream::notify_sent(const std::string &data)
 {
 	const static char fname[] = "SocketStream::notify_sent() ";
 
@@ -983,12 +1008,12 @@ void SocketStream::report_error(const std::string &msg)
 	}
 }
 
-SocketStreamPtr SocketStream::createConnection(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout)
+SocketStreamPtr SocketStream::createConnection(const ACE_INET_Addr &remote, const ACE_Time_Value *timeout, const std::string &expectedHostname)
 {
 	const static char fname[] = "SocketStream::createConnection() ";
 
 	SocketStreamPtr stream(new SocketStream(Global::getClientSSL()));
-	if (stream->connect(remote, timeout))
+	if (stream->connect(remote, timeout, expectedHostname))
 		LOG_DBG << fname << "Connected to " << remote.get_host_addr() << ":" << remote.get_port_number();
 	else
 		LOG_WAR << fname << "Failed to connect to " << remote.get_host_addr() << ":" << remote.get_port_number();

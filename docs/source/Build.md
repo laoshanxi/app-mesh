@@ -1,8 +1,8 @@
 ## Build
 
-App Mesh is implemented by modern C++, require g++ version higher than 4.8.5, there are 2 ways to setup App Mesh build environment.
+App Mesh is implemented by C++, require g++ version higher than 4.8.5, there are 2 ways to setup App Mesh build environment.
 
-Build host support RHEL, Ubuntu, Debian and Fedora distributions with X86 or ARM architecture.
+This branch supports CentOS 7 (GCC 4.8, C++11) and Ubuntu 18.04 (GCC 7, C++14) on X86 or ARM architecture only.
 
 ### Option 1: Setup build environment on local host
 
@@ -38,11 +38,11 @@ therefore runs nothing.
 
 ### Option 2: Build by docker image
 
-The simple way is use docker image `laoshanxi/appmesh:build_centos8` to build App Mesh directly which already have compiler and dependencies installed.
+The simple way is use docker image `laoshanxi/appmesh:build_ubuntu18` to build App Mesh directly which already have compiler and dependencies installed.
 
 ```shell
 cd app-mesh
-docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_centos8 sh -c "mkdir build;cd build;cmake ..;make;make pack"
+docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_ubuntu18 sh -c "mkdir build;cd build;cmake ..;make;make pack"
 ```
 
 Build a Docker image to compile C++ application is a reliable and easy way to handle third party dependencies, anyone could use this docker image to build package without prepare a C++ environment.
@@ -50,24 +50,19 @@ Build a Docker image to compile C++ application is a reliable and easy way to ha
 There are different Dockerfile(s) with different compiler version could be selected to generate the Docker image:
 
 - docker/Dockerfile.build_centos7
-- docker/Dockerfile.build_centos8
 - docker/Dockerfile.build_ubuntu18
-- docker/Dockerfile.build_ubuntu22
-- docker/Dockerfile.build_ubuntu24
-- docker/Dockerfile.build_ubuntu
-- docker/Dockerfile.build_debian13
 
 The Docker image build process is simple with this:
 
 ```shell
-TAG_NAME=build_ubuntu24
+TAG_NAME=build_ubuntu18
 IMAGE_NAME=laoshanxi/appmesh:${TAG_NAME}
 
 git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
 cd app-mesh
 
 ! docker rmi -f ${IMAGE_NAME}
-! docker rmi ubuntu:24.04
+! docker rmi ubuntu:18.04
 docker build --no-cache -f docker/Dockerfile.${TAG_NAME} -t ${IMAGE_NAME} .
 docker push ${IMAGE_NAME}
 ```
@@ -75,27 +70,4 @@ docker push ${IMAGE_NAME}
 The public pre-build Docker images can be used to build binary directly:
 
 - laoshanxi/appmesh:build_centos7
-- laoshanxi/appmesh:build_centos8
 - laoshanxi/appmesh:build_ubuntu18
-- laoshanxi/appmesh:build_ubuntu22
-- laoshanxi/appmesh:build_ubuntu24
-- laoshanxi/appmesh:build_debian13
-
-### Windows
-
-Run the bootstrap once as Administrator (installs the MSVC/vcpkg dependencies,
-Go tools including the Dex server for local debugging, Rust, NSIS, and the
-EnVar NSIS plugin), then build:
-
-```powershell
-.\script\bootstrap\install_build_deps.ps1
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
-  -DVCPKG_TARGET_TRIPLET=x64-windows
-cmake --build build --config Release --parallel
-cmake --build build --config Release --target pack   # NSIS installer in build\
-```
-
-Windows packages include `dex.exe`, `passhash.exe`, the protected
-`identity` App, and the native `appmesh-auth.ps1` launcher; see [Install](Install.md)
-for the deployment flow and the real-machine verification checklist.

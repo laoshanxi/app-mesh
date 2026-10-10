@@ -21,9 +21,7 @@ target_link_libraries(security
     ${CRYPTOPP_TARGET}
 )
 
-if(NOT APPLE AND NOT WIN32)
-  target_link_libraries(security
-    PRIVATE
-      rt
-  )
-endif()
+target_link_libraries(security
+  PRIVATE
+    rt
+)

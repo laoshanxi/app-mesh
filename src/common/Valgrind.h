@@ -9,9 +9,6 @@
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
-#if defined(__APPLE__)
-#include <crt_externs.h> // For getprogname
-#endif
 
 /*
  * How to enable valgrind test :
@@ -47,12 +44,8 @@ static bool RUN_ONE_TIME = false;
 /// <returns></returns>
 std::string binaryName()
 {
-#if defined(__APPLE__)
-    return getprogname(); // macOS-specific function
-#else
     extern char *program_invocation_short_name;
     return program_invocation_short_name; // Linux-specific variable
-#endif
 }
 
 /// <summary>

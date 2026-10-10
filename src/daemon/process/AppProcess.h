@@ -16,9 +16,6 @@
 #include "../../common/Utility.h"
 #include "AttachProcess.h"
 #include "ProcessManager.h"
-#if defined(_WIN32)
-#include "../../common/os/jobobject.hpp"
-#endif
 
 class LinuxCgroup;
 class ResourceLimitation;
@@ -131,9 +128,6 @@ private:
 	std::string m_stdoutFileName;
 	// shared_ptr so the mutex outlives whichever (AppProcess or StdoutPump) destructs first.
 	mutable std::shared_ptr<std::mutex> m_outFileMutex;
-#if defined(_WIN32)
-	SharedHandle m_job;
-#endif
 
 	// Metrics sampling
 	mutable std::mutex m_cpuMutex;

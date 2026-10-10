@@ -1,9 +1,0 @@
-FROM centos:8@sha256:a27fd8080b517143cbbbab9dfb7c8571c40d67d534bbdee55bd6c473f432b177
-
-WORKDIR /workspace
-
-COPY . /workspace/
-
-USER root
-
-RUN bash script/bootstrap/install_openssl.sh && bash script/bootstrap/install_build_deps.sh && rm -rf /workspace/*

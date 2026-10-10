@@ -7,10 +7,6 @@
 ##########################################################################
 # Minimal Boost options
 set(Boost_USE_STATIC_LIBS OFF)   # Use shared libraries
-# Optional: set BOOST_ROOT if installed in non-standard path (macOS Homebrew)
-if(APPLE)
-    set(BOOST_ROOT /opt/homebrew)
-endif()
 find_package(Boost 1.76 REQUIRED COMPONENTS
     system
     filesystem
@@ -44,49 +40,16 @@ find_package(spdlog REQUIRED)
 ##########################################################################
 # libwebsockets  https://libwebsockets.org/
 ##########################################################################
-if(NOT CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  find_package(libwebsockets CONFIG REQUIRED)
-endif()
+find_package(libwebsockets CONFIG REQUIRED)
 
 ##########################################################################
 # libcurl
 ##########################################################################
-if (APPLE)
-    # Explicitly set paths for Homebrew curl
-    set(CURL_ROOT "/opt/homebrew/opt/curl")
-    set(CURL_INCLUDE_DIR "${CURL_ROOT}/include")
-    set(CURL_LIB "${CURL_ROOT}/lib/libcurl.dylib")
-
-    # Verify paths manually
-    find_path(CURL_INCLUDE_DIR curl/curl.h PATHS ${CURL_INCLUDE_DIR})
-    find_library(CURL_LIB NAMES curl PATHS ${CURL_ROOT}/lib)
-
-    if(NOT CURL_INCLUDE_DIR OR NOT CURL_LIB)
-        message(FATAL_ERROR "Could not find CURL. Ensure CURL is installed via Homebrew.")
-    endif()
-
-    message(STATUS "CURL include dir: ${CURL_INCLUDE_DIR}")
-    message(STATUS "CURL library dir: ${CURL_LIB}")
-
-    # Include directories and link libraries
-    include_directories(${CURL_INCLUDE_DIR})
-    link_directories(${CURL_LIBRARY})
-elseif (WIN32)
-    # For Windows, use vcpkg or other package manager to find libcurl
+find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
+if (NOT CURL_LIB)
     find_package(CURL REQUIRED)
-    if (CURL_FOUND)
-        message(STATUS "Found CURL: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
-        set(CURL_LIB ${CURL_LIBRARIES})
-    else()
-        message(FATAL_ERROR "libcurl not found")
-    endif()
-else()
-    find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
-    if (NOT CURL_LIB)
-        find_package(CURL REQUIRED)
-        message(STATUS "Found system libcurl: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
-        set(CURL_LIB ${CURL_LIBRARIES})
-    endif()
+    message(STATUS "Found system libcurl: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
+    set(CURL_LIB ${CURL_LIBRARIES})
 endif()
 message(STATUS "Found CURL_LIB: ${CURL_LIB}")
 
@@ -96,15 +59,11 @@ message(STATUS "Found CURL_LIB: ${CURL_LIB}")
 find_package(OpenSSL REQUIRED)
 if (OPENSSL_FOUND)
     include_directories(${OPENSSL_INCLUDE_DIR})
-    if(NOT WIN32)
-        # Ensure linker can resolve bare -lssl/-lcrypto from third-party libs (e.g. libwebsockets)
-        # when OpenSSL is installed in a non-standard path like /usr/local/ssl
-        # Skip on Windows: vcpkg toolchain handles library paths, and OPENSSL_SSL_LIBRARY
-        # contains optimized/debug generator expressions that break get_filename_component.
-        get_filename_component(_openssl_lib_dir "${OPENSSL_SSL_LIBRARY}" DIRECTORY)
-        link_directories("${_openssl_lib_dir}")
-        message(STATUS "openssl library dir: ${_openssl_lib_dir}")
-    endif()
+    # Ensure linker can resolve bare -lssl/-lcrypto from third-party libs (e.g. libwebsockets)
+    # when OpenSSL is installed in a non-standard path like /usr/local/ssl
+    get_filename_component(_openssl_lib_dir "${OPENSSL_SSL_LIBRARY}" DIRECTORY)
+    link_directories("${_openssl_lib_dir}")
+    message(STATUS "openssl library dir: ${_openssl_lib_dir}")
     message(STATUS "openssl include dir: ${OPENSSL_INCLUDE_DIR}")
     message(STATUS "openssl library ver: ${OPENSSL_VERSION}.")
 else()
@@ -112,44 +71,25 @@ else()
 endif()
 
 ##########################################################################
-# cryptopp (unified: vcpkg, apt, brew, and source install)
+# cryptopp (unified: apt and source install)
 ##########################################################################
-# 1. First, try finding a modern CMake config (works for vcpkg/Conan)
+# 1. First, try finding a modern CMake config
 find_package(cryptopp CONFIG QUIET)
 
-# 2. Fallback for Manual Search (Source install, Apt, Brew)
+# 2. Fallback for Manual Search (Source install, Apt)
 if(NOT TARGET cryptopp::cryptopp)
-    # macOS: Auto-detect Homebrew prefix for Apple Silicon/Intel
-    if(APPLE)
-        execute_process(
-            COMMAND brew --prefix
-            OUTPUT_VARIABLE BREW_PREFIX
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-    endif()
-
-    # Search paths covering:
-    # - /usr/local (Source install default)
-    # - /usr/ (Apt/System default)
-    # - /opt/homebrew (Apple Silicon)
-    # - BREW_PREFIX (Dynamic brew)
     find_path(CRYPTOPP_INCLUDE_DIR cryptopp/cryptlib.h
-        PATHS 
-            ${BREW_PREFIX}/include 
-            /usr/include 
-            /usr/local/include 
-            /opt/homebrew/include
+        PATHS
+            /usr/include
+            /usr/local/include
     )
 
     find_library(CRYPTOPP_LIBRARY
         NAMES cryptopp libcryptopp
-        PATHS 
-            ${BREW_PREFIX}/lib 
-            /usr/lib 
-            /usr/local/lib 
+        PATHS
+            /usr/lib
+            /usr/local/lib
             /usr/lib/x86_64-linux-gnu  # Common for multi-arch apt
-            /opt/homebrew/lib
     )
 
     if(CRYPTOPP_INCLUDE_DIR AND CRYPTOPP_LIBRARY)
@@ -161,7 +101,6 @@ if(NOT TARGET cryptopp::cryptopp)
     else()
         message(FATAL_ERROR "Crypto++ not found! \n"
                 "  Linux: sudo apt install libcrypto++-dev\n"
-                "  macOS: brew install cryptopp\n"
                 "  Source: ensure 'make install' was run.")
     endif()
 endif()
@@ -183,8 +122,4 @@ find_package(uriparser REQUIRED)
 ##########################################################################
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-
-if(WIN32)
-    find_package(unofficial-uwebsockets CONFIG REQUIRED)
-endif()
 

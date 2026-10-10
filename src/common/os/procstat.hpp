@@ -9,12 +9,8 @@
 #include <mutex>   // std::once_flag, std::call_once
 #include <string>  // std::string
 
-#if defined(_WIN32)
-#include <windows.h> // Windows types and API
-#elif defined(__linux__) || defined(__APPLE__)
 #include <sys/types.h>
 #include <unistd.h> // pid_t, sysconf
-#endif
 
 namespace os
 {
@@ -52,14 +48,9 @@ namespace os
         {
         }
 
-        // Get process start time (platform-specific)
+        // Get process start time
         std::chrono::system_clock::time_point get_starttime() const
         {
-#if defined(_WIN32)
-            // Windows: starttime already represents time_t
-            return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
-
-#elif defined(__linux__)
             static const long ticks_per_second = []
             {
                 long tps = sysconf(_SC_CLK_TCK);
@@ -82,11 +73,6 @@ namespace os
                                               (static_cast<double>(starttime) / ticks_per_second);
 
             return std::chrono::system_clock::from_time_t(static_cast<time_t>(start_time_seconds));
-
-#elif defined(__APPLE__)
-            // macOS: interpret starttime as epoch time (approximation)
-            return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
-#endif
         }
 
         // Process information fields

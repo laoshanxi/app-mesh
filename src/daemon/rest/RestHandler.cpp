@@ -19,11 +19,7 @@
 #include "../security/InternalCapability.h"
 #include "../security/SecretProtector.h"
 #include "../security/Security.h"
-#if defined(HAVE_UWEBSOCKETS)
-#include "uwebsockets/ReplyContext.h"
-#else
 #include "../../common/lwsservice/WebSocketService.h"
-#endif
 #include "EventDispatcher.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
@@ -39,9 +35,9 @@ constexpr auto CONTENT_TYPE_PNG = "image/png";
 namespace
 {
 
-	// uWS renders IPv6 without '::' compression and a dual-stack 127.0.0.1 peer
-	// as v4-mapped "0000:...:ffff:7fxx:xxxx", so parse the 8-group form explicitly.
-	bool isUwsLoopbackGroups(const std::string &peer)
+	// Some transports render IPv6 without '::' compression and a dual-stack 127.0.0.1
+	// peer as v4-mapped "0000:...:ffff:7fxx:xxxx", so parse the 8-group form explicitly.
+	bool isUncompressedIpv6Loopback(const std::string &peer)
 	{
 		if (peer.empty() || peer.size() >= 64 || peer.find("::") != std::string::npos)
 			return false;
@@ -77,7 +73,7 @@ namespace
 			peer = "127.0.0.1";
 		}
 
-		return peer == "127.0.0.1" || peer == "::1" || isUwsLoopbackGroups(peer);
+		return peer == "127.0.0.1" || peer == "::1" || isUncompressedIpv6Loopback(peer);
 	}
 
 	// Keep immutable ownership and mutable presentation separate. This field is
@@ -1236,7 +1232,8 @@ void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiRestMetrics() ";
 	LOG_DBG << fname << "Entered";
-	permissionCheck(message, PERMISSION_KEY_view_host_resource);
+	// No authentication, like a standard exporter endpoint: the port relies on
+	// network isolation instead, and the payload carries no version string.
 
 	auto body = m_metrics->collectData();
 	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
@@ -1627,42 +1624,6 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 		};
 		return true;
 	}
-#if defined(HAVE_UWEBSOCKETS)
-	else if (message->uwsReplyContext() && message->uwsReplyContext()->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
-	{
-		auto uwsCtx = message->uwsReplyContext();
-		connKey = ConnectionKey::wss(uwsCtx->getNumericId());
-		deliveryCb = [uwsCtx, forwardRoute](const EventEnvelope &envelope) -> bool
-		{
-			if (uwsCtx->isAborted())
-				return false;
-			try
-			{
-				auto resp = std::make_unique<Response>();
-				resp->uuid = Utility::shortID();
-				resp->request_uri = "/appmesh/event";
-				resp->http_status = web::http::status_codes::OK;
-				resp->body_msg_type = web::http::mime_types::application_json;
-				auto bodyStr = envelope.toJson();
-				resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
-				resp->headers["X-Subscription-Id"] = envelope.subscriptionId;
-				resp->headers["X-Event-Type"] = envelope.eventType;
-				resp->headers["X-App-Name"] = envelope.appName;
-				if (!forwardRoute.empty())
-					resp->headers[HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE] = forwardRoute;
-
-				auto data = resp->serialize();
-				uwsCtx->replyWebSocket(std::string(data->data(), data->size()), false, true);
-				return true;
-			}
-			catch (...)
-			{
-				return false;
-			}
-		};
-		return true;
-	}
-#else
 	else if (message->lwsRef())
 	{
 		auto lwsRef = message->lwsRef();
@@ -1700,7 +1661,6 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 		};
 		return true;
 	}
-#endif
 	return false;
 }
 

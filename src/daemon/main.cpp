@@ -21,11 +21,7 @@
 #include <ace/TP_Reactor.h>
 #include <spdlog/spdlog.h>
 
-#if defined(_WIN32)
-#include <ace/WFMO_Reactor.h>
-#else
 #include <ace/Select_Reactor.h>
-#endif
 
 #ifdef __has_include
 #if __has_include(<ace/SSL/SSL_Context.h>)
@@ -60,15 +56,11 @@
 #include "rest/SocketStream.h"
 #include "rest/Worker.h"
 #include "security/Security.h"
-#if !defined(NDEBUG) && !defined(_WIN32)
+#if !defined(NDEBUG)
 #include "../common/Valgrind.h"
 #endif
 
-#if defined(HAVE_UWEBSOCKETS)
-#include "rest/uwebsockets/Adaptor.hpp"
-#else
 #include "../common/lwsservice/WebSocketService.h"
-#endif
 
 using TcpAcceptor = ACE_Acceptor<SocketServer, ACE_SSL_SOCK_Acceptor>;
 
@@ -145,7 +137,7 @@ int main(int argc, char *argv[])
 
 	PRINT_VERSION();
 	std::cout << fname << "App Mesh server starting." << std::endl;
-#if !defined(NDEBUG) && !defined(_WIN32)
+#if !defined(NDEBUG)
 	VALGRIND_ENTRYPOINT_ONE_TIME(argv); // enable valgrind in debug mode
 #endif
 
@@ -215,7 +207,6 @@ void AppMeshDaemon::initializeEnvironment()
 	ACE::init();
 	fs::current_path(Utility::getHomeDir());
 	Utility::createPidFile();
-	Utility::ensureSystemRoot();
 }
 
 void AppMeshDaemon::initializeACE()
@@ -309,13 +300,11 @@ void AppMeshDaemon::initializeDirectories()
 	// Set ownership only when execution-user switching is active.
 	if (!config->getDisableExecUser() && !config->getDefaultExecUser().empty())
 	{
-#if !defined(_WIN32)
 		LOG_INF << fname << "Setting directory ownership to user <" << config->getDefaultExecUser() << ">";
 		for (const auto &dir : dirs)
 		{
 			os::chown(dir, config->getDefaultExecUser());
 		}
-#endif
 	}
 
 	LOG_INF << fname << "Directories initialized";
@@ -329,12 +318,8 @@ void AppMeshDaemon::setupSignalHandlers()
 
 	// Dedicated reactor for Process_Manager: sharing the main TP_Reactor causes
 	// SIGCHLD deadlock on the notification queue mutex during Token contention.
-#if defined(_WIN32)
-	m_processReactor = new ACE_Reactor(new ACE_WFMO_Reactor(), 1);
-#else
 	m_processReactor = new ACE_Reactor(new ACE_Select_Reactor(), 1);
 	m_processReactor->restart(1);
-#endif
 	m_threadPool.emplace_back(std::make_unique<std::thread>(
 		[this]()
 		{ runProcessReactorLoop(); }));
@@ -465,11 +450,9 @@ void AppMeshDaemon::initializeRestService()
 		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getTcpApiPort()) + " with error: " + last_error_msg());
 	}
 
-#if !defined(_WIN32)
 	// Avoid bash children inheriting the listen fd via fork().
 	if (m_acceptor->acceptor().enable(ACE_CLOEXEC) == -1)
 		LOG_WAR << fname << "Failed to set ACE_CLOEXEC on listen socket: " << last_error_msg();
-#endif
 
 	// Setup client connection
 	m_client = std::make_shared<SocketStreamPtr>(SocketStream::createConnection(tcpAddr));
@@ -482,17 +465,10 @@ void AppMeshDaemon::initializeRestService()
 	if (config->getWebSocketPort())
 	{
 		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
-#if defined(HAVE_UWEBSOCKETS)
-		// 3 <IO> threads + shared <WORKER> threads
-		int ioThreadNumber = Configuration::instance()->getIOThreadPoolSize();
-		WebSocketAdaptor::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
-		WebSocketAdaptor::instance()->start();
-#else
 		// 1 <IO> thread + shared <WORKER> threads
 		constexpr int workerThreadNumber = 0; // Use shared thread pool
 		WebSocketService::instance()->initialize(addr, cert, key, ca);
 		WebSocketService::instance()->start(workerThreadNumber);
-#endif
 		LOG_INF << fname << "WebSocket service initialized on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
 	}
 
@@ -829,11 +805,7 @@ void AppMeshDaemon::performShutdown()
 	if (m_processReactor)
 		m_processReactor->end_reactor_event_loop();
 
-#if defined(HAVE_UWEBSOCKETS)
-	WebSocketAdaptor::instance()->stop();
-#else
 	WebSocketService::instance()->stop();
-#endif
 
 	cleanWorkerThreads();
 	cleanupResources();

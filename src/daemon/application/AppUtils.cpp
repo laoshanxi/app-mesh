@@ -28,53 +28,10 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	: m_usingSudo(false)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
-#if defined(_WIN32)
-	// Windows Implementation
-	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
-
-	// The script file name carries a per-instance suffix: a re-registered app of the
-	// same name must not collide with the previous instance's script. The old script
-	// stays mode 0500 until the previous Application object is destroyed (pending
-	// request references can delay that past the new registration), so reusing the
-	// name made every new run fail to open the file for writing. Stale scripts left
-	// by an unclean shutdown block the name the same way.
-	// Create a batch file name: workdir/shell/appmesh.<app_name>.<instance>.bat
-	const auto fileName = Utility::stringFormat("%s\\appmesh.%s.%s.bat", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
-
-	// Open batch file for writing
-	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
-	if (!shellFile.is_open())
-	{
-		LOG_ERR << fname << "Failed to open batch file <" << fileName << "> for writing for app <" << name << ">: " << last_error_msg();
-		throw std::runtime_error("Failed to create shell script file.");
-	}
-
-	// Write the batch script content
-	shellFile << "@echo off" << std::endl;
-
-	// 1. Handle Working Directory
-	// Use /d to ensure drive changes are handled (e.g., C: to D:)
-	if (!workingDir.empty())
-	{
-		shellFile << "cd /d \"" << workingDir << "\"" << std::endl;
-	}
-
-	// 2. Write the user command
-	shellFile << cmd << std::endl;
-
-	shellFile.close();
-
-	// 3. Prepare the command line for ACE_Process
-	// cmd.exe /C executes the command (file) and then terminates
-	m_fileName = fileName;
-	m_shellCmd = Utility::stringFormat("cmd.exe /C \"%s\"", m_fileName.c_str());
-
-	LOG_DBG << fname << "Generated batch file <" << fileName << "> for app <" << name << "> with command <" << m_shellCmd << ">";
-
-#else
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
 	const static std::string defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
-	// Per-instance suffix: see the Windows branch for why same-name script reuse is unsafe.
+	// Per-instance suffix: a re-registered app of the same name must not collide
+	// with the previous instance's still-open script.
 	const auto fileName = Utility::stringFormat("%s/appmesh.%s.%s.sh", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
 
 	// Open shell file for writing
@@ -100,7 +57,6 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		throw std::runtime_error("Failed to set file permissions.");
 	}
 
-#if !defined(_WIN32)
 	// Get current user
 	static const auto osUser = os::getUsernameByUid();
 
@@ -117,7 +73,6 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		if (!workingDir.empty() && Utility::isDirExist(workingDir) && !os::chown(workingDir, execUser, "", true))
 			LOG_WAR << fname << "Failed to change ownership of working directory <" << workingDir << "> to user <" << execUser << ">: " << last_error_msg();
 	}
-#endif
 
 	// Prepare the shell command
 	m_fileName = Utility::escapeCommandLine(fileName);
@@ -132,7 +87,6 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	}
 
 	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> and command <" << m_shellCmd << ">";
-#endif
 }
 
 ShellAppFileGen::~ShellAppFileGen()

@@ -1,7 +1,6 @@
 // src/common/os/chown.cpp
 #include "chown.h"
 
-#if !defined(_WIN32)
 #include <algorithm>
 #include <cstring>
 #include <fts.h>
@@ -11,7 +10,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
-#endif
 
 #include "../Utility.h"
 #include "linux.h"
@@ -30,7 +28,6 @@ namespace os
 	bool chown(const std::string &path, uid_t uid, gid_t gid, bool recursive)
 	{
 		constexpr char fname[] = "os::chown() ";
-#if !defined(_WIN32)
 		// Input validation
 		if (path.empty() || !fs::exists(path))
 		{
@@ -89,7 +86,6 @@ namespace os
 		}
 
 		LOG_DBG << fname << "Successfully changed ownership" << (recursive ? " recursively" : "") << " for " << path;
-#endif
 		return true;
 	}
 
@@ -104,7 +100,6 @@ namespace os
 	bool chown(const std::string &path, std::string user, std::string group, bool recursive)
 	{
 		constexpr char fname[] = "os::chown() ";
-#if !defined(_WIN32)
 		// Input validation
 		if (path.empty())
 		{
@@ -208,10 +203,6 @@ namespace os
 
 		// Attempt to change ownership
 		return chown(path, uid, gid, recursive);
-#else
-		LOG_DBG << fname << "Skipping ownership change on Windows for path: " << path;
-		return true; // No-op on Windows
-#endif
 	}
 
 } // namespace os

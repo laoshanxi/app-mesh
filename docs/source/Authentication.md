@@ -25,10 +25,9 @@ owner/follower design.
 | Use a password from the Python SDK | Built-in `PasswordGrantProvider`, a custom `TokenProvider`, or exchange the token first | [Python SDK password sign-in](#using-a-password-from-the-python-sdk) |
 | Turn off the password grant (pure PKCE) | `password_flow: false` in `oidc.yaml` | [Disabling the password grant](#disabling-the-password-grant) |
 | Turn off refresh tokens (short sessions) | `refresh_token: false` in `oidc.yaml` | [Disabling refresh tokens](#disabling-refresh-tokens) |
-| Manage users on Windows | Static admin/guest only; dynamic users need an external IdP | [Windows user management](#windows-user-management) |
 
-All examples use the packaged helper `appmesh-auth.sh` (`appmesh-auth.ps1` on
-Windows, same actions) and the Linux install root `/opt/appmesh`.
+All examples use the packaged helper `appmesh-auth.sh` and the install root
+`/opt/appmesh`.
 
 ## First sign-in
 
@@ -75,10 +74,6 @@ bootstrap and rotation.
 # Linux package
 echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh set-initial-password
 sudo systemctl restart appmesh
-
-# Windows package (elevated PowerShell)
-'your-password' | & 'C:\local\appmesh\script\appmesh-auth.ps1' set-initial-password
-Restart-Service AppMeshService
 
 # Container already running (docker exec uses the container user, so file
 # ownership is correct)
@@ -183,9 +178,6 @@ Key facts:
   [`add-user`](#adding-a-user) to create and bind in one step, or set the role
   through the REST API: `POST /appmesh/principal/<principal-id>` with
   `{"roles": ["appmesh-viewer"]}`.
-- On Windows the authentication service runs with memory storage: identities
-  created here do not survive a restart. See
-  [Windows user management](#windows-user-management).
 - The UI's demonstration pages (Flows, Token tools) use an unregistered
   `example-app` OAuth client; only the administration pages are supported.
 - `APPMESH_AUTH_ADMIN_LISTEN` changes the UI listener; the underlying gRPC API
@@ -235,10 +227,6 @@ the Engine holds a role-less record for that Principal; apply the role through
 the REST API in that case — the command prints the exact
 `POST /appmesh/principal/<principal-id>` request when the Engine is running.
 
-On Windows the authentication service runs with memory storage: identities
-created by `add-user` do not survive a restart (see
-[Windows user management](#windows-user-management)).
-
 ## Deleting a user
 
 ```shell
@@ -255,22 +243,6 @@ otherwise the next Engine policy save writes the binding back.
 Unlike the REST API's DELETE, which keeps an auditable tombstone
 (`status: tombstoned`), this launcher hard-deletes the Principal block from the
 on-disk policy — the right tool for a full cleanup.
-
-## Windows user management
-
-On Windows only the packaged static identities (`admin@appmesh.local` and
-`guest@appmesh.local`) are durable. The Windows authentication-service build is
-CGO-free, so Dex runs with memory storage instead of SQLite.
-
-`add-user` and `delete-user` are available and work, but an identity created
-this way lives only in memory: it is lost when the authentication service
-restarts. Its App Mesh role binding in `authorization.yaml` persists and then
-refers to a subject that no longer exists, and a re-created user receives a new
-`user_id` — so after a restart, remove the stale binding
-(`DELETE /appmesh/principal/<principal-id>`) and run `add-user` again.
-
-For durable dynamic user management on Windows, use `APPMESH_AUTH_MODE=external`
-with an external identity provider.
 
 ## Disabling the password grant
 
@@ -289,7 +261,7 @@ places:
 - The Engine stops advertising `password` in the `flows` list of
   `/appmesh/auth/config`, so the CLI automatically picks PKCE or device
   sign-in instead.
-- `appmesh-auth.sh` / `appmesh-auth.ps1` render the Dex `grantTypes` without
+- `appmesh-auth.sh` renders the Dex `grantTypes` without
   `"password"`, so the token endpoint rejects `grant_type=password`:
   `user-token` and direct password grants (including the
   [Python SDK example](#using-a-password-from-the-python-sdk)) stop working.
@@ -317,7 +289,7 @@ places:
   the CLI stops requesting `offline_access` and the Python/Rust `OAuthClient`
   drop the scope as well. Older daemons omit the key; clients treat it as
   enabled.
-- `appmesh-auth.sh` / `appmesh-auth.ps1` render the Dex `grantTypes` without
+- `appmesh-auth.sh` renders the Dex `grantTypes` without
   `"refresh_token"`, so no refresh tokens are issued or usable.
 
 Sessions then end at access-token expiry (15 minutes): the CLI reports

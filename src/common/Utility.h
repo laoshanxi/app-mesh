@@ -55,7 +55,7 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	}
 
 // make_unique implementation for C++11, C++14 already support
-#if (__cplusplus <= 201103L) && !defined(_WIN32)
+#if (__cplusplus <= 201103L)
 namespace std
 {
 	template <typename T, typename... Args>
@@ -73,9 +73,9 @@ namespace std
 #endif
 #endif
 
-// std::exchange is a C++14 library feature. Provide it for every non-Windows
-// C++11 build, including modern GCC/Clang invoked with -std=c++11.
-#if (__cplusplus <= 201103L) && !defined(_WIN32)
+// std::exchange is a C++14 library feature. Provide it for C++11 builds,
+// including modern GCC/Clang invoked with -std=c++11.
+#if (__cplusplus <= 201103L)
 namespace std
 {
 	template <typename T, typename U>
@@ -86,10 +86,6 @@ namespace std
 		return old_value;
 	}
 } // namespace std
-#endif
-
-#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
-#define HAVE_UWEBSOCKETS 1
 #endif
 
 template <typename T>
@@ -132,11 +128,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 		}                                                 \
 	} while (false)
 
-#if defined(_WIN32)
-#define DEV_NULL "NUL"
-#else
 #define DEV_NULL "/dev/null"
-#endif
 
 #define GET_HTTP_HEADER(message, headerName) \
 	message->m_headers.count(headerName) > 0 ? message->m_headers.find(headerName)->second : std::string()
@@ -199,7 +191,6 @@ public:
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
 	static bool runningInContainer();
-	static bool ensureSystemRoot();
 
 	// String functions
 	static bool isNumber(const std::string &str);
@@ -255,7 +246,6 @@ public:
 	// Length (0-4) of a trailing run that may be an incomplete multi-byte UTF-8
 	// character (a lead byte plus too few continuation bytes).
 	static size_t utf8IncompleteTailBytes(const std::string &str);
-	static std::string convertToUTF8(const std::string &input, unsigned int codepage);
 	static bool createPidFile();
 	static void appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key);
 	static void appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key);

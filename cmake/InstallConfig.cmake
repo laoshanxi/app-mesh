@@ -40,10 +40,6 @@ if(APPMESH_INSTALL_AUTH_CONFIG)
     )
 endif()
 
-# Application definitions (apps/) are installed by their owning directories
-# under src/apps/. The Windows-only fixups live in cmake/InstallAppsWindows.cmake,
-# included after add_subdirectory(src) so that it sees the installed files.
-
 # Scripts (script/)
 install(FILES
     "${SRC}/script/pack/grafana_infinity.html"
@@ -57,30 +53,13 @@ install(FILES
     COMPONENT scripts
 )
 
-# OS-Specific Service Files
-if(APPLE)
-    install(PROGRAMS
-        "${SRC}/script/pack/appmesh.launchd.plist"
-        "${SRC}/script/pack/appmesh.initd.sh"
-        "${SRC}/script/pack/setup.sh"
-        DESTINATION "${DST}/script"
-        COMPONENT scripts)
-    install(PROGRAMS "${SRC}/script/pack/post_install.sh" DESTINATION "${CMAKE_BINARY_DIR}/pkg_scripts" RENAME postinstall COMPONENT scripts)
-    install(PROGRAMS "${SRC}/script/pack/pre_uninstall.sh" DESTINATION "${CMAKE_BINARY_DIR}/pkg_scripts" RENAME preuninstall COMPONENT scripts)
-    install(PROGRAMS "${SRC}/script/pack/post_uninstall.sh" DESTINATION "${CMAKE_BINARY_DIR}/pkg_scripts" RENAME postuninstall COMPONENT scripts)
-elseif(UNIX)
-    install(PROGRAMS
-        "${SRC}/script/pack/appmesh.systemd.service"
-        "${SRC}/script/pack/appmesh.initd.sh"
-        "${SRC}/script/pack/setup.sh"
-        DESTINATION "${DST}/script"
-        COMPONENT scripts)
-else()
-    install(PROGRAMS
-        "${SRC}/script/pack/setup.ps1"
-        DESTINATION "${DST}/script"
-        COMPONENT scripts)
-endif()
+# Service Files
+install(PROGRAMS
+    "${SRC}/script/pack/appmesh.systemd.service"
+    "${SRC}/script/pack/appmesh.initd.sh"
+    "${SRC}/script/pack/setup.sh"
+    DESTINATION "${DST}/script"
+    COMPONENT scripts)
 
 # Docker/Prometheus configs
 if(UNIX)
@@ -91,32 +70,6 @@ if(UNIX)
     )
 endif()
 
-# SSL Scripts and Binaries (ssl/)
-if(WIN32)
-    install(FILES "${SRC}/script/ssl/generate_ssl_cert.ps1" DESTINATION "${DST}/ssl" COMPONENT scripts)
-    # openssl.exe and runtime DLLs (or copy cfssl is also fine)
-    find_program(OPENSSL_EXECUTABLE NAMES openssl REQUIRED)
-    get_filename_component(OPENSSL_BIN_DIR "${OPENSSL_EXECUTABLE}" DIRECTORY)
-    install(PROGRAMS "${OPENSSL_BIN_DIR}/openssl.exe" DESTINATION "${DST}/bin" COMPONENT runtime)
-    file(GLOB OPENSSL_RUNTIME_DLLS
-        "${OPENSSL_BIN_DIR}/libssl*.dll"
-        "${OPENSSL_BIN_DIR}/libcrypto*.dll"
-    )
-    install(FILES ${OPENSSL_RUNTIME_DLLS} DESTINATION "${DST}/bin" COMPONENT runtime)
-else()
-    # PROGRAMS, not FILES: docker-entrypoint.sh requires the executable bit.
-    install(PROGRAMS "${SRC}/script/ssl/generate_ssl_cert.sh" DESTINATION "${DST}/ssl" COMPONENT scripts)
-    # TODO: macOS ssl can not work with pure openssl 
-    if(APPLE)
-        foreach(bin cfssl cfssljson)
-            # cfssl lives at /usr/local/bin by bootstrap contract (install_build_deps*.sh pin GOBIN)
-            install(PROGRAMS "/usr/local/bin/${bin}" DESTINATION "${DST}/ssl" COMPONENT scripts)
-        endforeach()
-    endif()
-endif()
-
-# Windows: NSSM Service Manager
-if(WIN32)
-    file(TO_CMAKE_PATH "$ENV{ChocolateyInstall}/lib/nssm/tools/nssm.exe" NSSM_EXE)
-    install(PROGRAMS "${NSSM_EXE}" DESTINATION "${DST}/bin" COMPONENT binaries)
-endif()
+# SSL Scripts (ssl/)
+# PROGRAMS, not FILES: docker-entrypoint.sh requires the executable bit.
+install(PROGRAMS "${SRC}/script/ssl/generate_ssl_cert.sh" DESTINATION "${DST}/ssl" COMPONENT scripts)

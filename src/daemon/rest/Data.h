@@ -31,6 +31,8 @@ struct LwsSessionRef
 	const void *wsi = nullptr;
 	uint64_t reqId = 0;		// ABA protection for HTTP responses
 	uint64_t sessionId = 0; // ABA protection for WS sessions
+	// True when the frame arrived on the lws HTTP protocol rather than a WebSocket.
+	bool httpFrame = false;
 	// Server-side transport identity, captured from the accepted socket. Empty
 	// when the transport cannot vouch for it; never client-supplied.
 	std::string peerAddress;
@@ -44,7 +46,7 @@ class Response
 public:
 	Response();
 	virtual ~Response();
-	std::unique_ptr<msgpack::sbuffer> serialize() const;
+	std::string serialize() const;
 	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
 	void applyCorsHeaders();
@@ -68,7 +70,7 @@ public:
 	Request() = default;
 	~Request() = default;
 
-	std::unique_ptr<msgpack::sbuffer> serialize() const;
+	std::string serialize() const;
 	bool deserialize(const ByteBuffer &data);
 
 	bool contain_body() const;

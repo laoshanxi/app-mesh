@@ -13,11 +13,6 @@
 #include <memory>
 #include <string>
 
-namespace WSS
-{
-	class ReplyContext;
-}
-
 class HttpRequest;
 struct HttpRequestContext;
 
@@ -37,11 +32,12 @@ public:
 
 	bool process(const std::shared_ptr<HttpRequest> &request);
 
+	// Answer an undecodable lws request with a correlated 400 frame; false when
+	// no uuid could be recovered from the payload.
+	static bool replyUndecodableLws(const LwsSessionRef &lwsRef, const ByteBuffer &data);
+
 	void queueTcpRequest(ByteBuffer &&data, int tcpClientId);
 	void queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef);
-#if defined(HAVE_UWEBSOCKETS)
-	void queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext);
-#endif
 
 	void shutdown();
 

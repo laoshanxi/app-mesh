@@ -20,10 +20,8 @@
 #include "../DailyLimitation.h"
 #include "../ResourceLimitation.h"
 #include "../process/AppProcess.h"
-#if !defined(_WIN32)
 #include "../process/DockerApiProcess.h"
 #include "../process/DockerProcess.h"
-#endif
 #include "../rest/EventDispatcher.h"
 #include "../rest/RestHandler.h"
 #include "../security/HMACVerifier.h"
@@ -619,18 +617,16 @@ bool Application::attach(int pid)
 	}
 	terminate(std::move(previous));
 
-	// 2. Probe liveness (Windows: no probe -> treated as dead)
+	// 2. Probe liveness
 	const pid_t attachedPid = attached->getpid();
 	auto procStartTime = std::chrono::system_clock::now();
 	bool live = false;
-#if !defined(_WIN32)
 	if (auto stat = os::status(attachedPid))
 	{
 		live = attached->running();
 		if (live)
 			procStartTime = stat->get_starttime();
 	}
-#endif
 	if (live)
 	{
 		TaskRequest::SupersededRequests supersededRequests;
@@ -1258,9 +1254,6 @@ const std::string Application::getExecUser() const
 		return "";
 	}
 
-#if defined(_WIN32)
-	return "";
-#else
 	std::string executeUser = m_executionUser;
 	if (executeUser.empty() && !Configuration::instance()->getDisableExecUser())
 	{
@@ -1273,7 +1266,6 @@ const std::string Application::getExecUser() const
 		executeUser = osUser;
 	}
 	return executeUser;
-#endif
 }
 
 std::string Application::sudoLoginUser() const
@@ -1687,14 +1679,12 @@ void Application::save()
 	std::lock_guard<std::mutex> guard(m_saveMutex);
 	const auto appPath = getYamlPath();
 	uint16_t mode = 0644;
-#if !defined(_WIN32)
 	if (Utility::isFileExist(appPath))
 	{
 		const int existingMode = std::get<0>(os::fileStat(appPath));
 		if (existingMode >= 0)
 			mode = static_cast<uint16_t>(existingMode);
 	}
-#endif
 	const auto content = Utility::jsonToYaml(AsJson(false)) + "\n";
 	const auto tempPath = os::createTmpFile(appPath, content, mode);
 	if (tempPath.empty())
@@ -1787,7 +1777,6 @@ std::shared_ptr<AppProcess> Application::createProcess(const std::string &docker
 
 	if (!dockerImage.empty())
 	{
-#if !defined(_WIN32)
 		if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
 		{
 			process = std::make_shared<DockerApiProcess>(weakSelf, appName, dockerImage);
@@ -1796,9 +1785,6 @@ std::shared_ptr<AppProcess> Application::createProcess(const std::string &docker
 		{
 			process = std::make_shared<DockerProcess>(weakSelf, appName, dockerImage);
 		}
-#else
-		throw std::invalid_argument("Docker application does not support on Windows");
-#endif
 	}
 	else
 	{

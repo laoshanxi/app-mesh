@@ -16,13 +16,9 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
-#if defined(_WIN32)
-#include <windows.h>
-#else
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#endif
 
 namespace
 {
@@ -101,18 +97,6 @@ std::string SecretProtector::masterKeyFile()
 
 std::string SecretProtector::readSecureKeyFile(const std::string &path)
 {
-#if defined(_WIN32)
-	boost::system::error_code ec;
-	const auto status = fs::symlink_status(path, ec);
-	if (ec || !fs::exists(status))
-		throw NotFoundException("SecretProtector master key file does not exist");
-	if (fs::is_symlink(status) || !fs::is_regular_file(status))
-		throw std::runtime_error("SecretProtector master key path must be a regular non-link file");
-	const auto value = Utility::readFileCpp(path);
-	if (value.size() > MAX_ENCODED_KEY_FILE_SIZE)
-		throw std::runtime_error("SecretProtector master key file is unexpectedly large");
-	return Utility::stdStringTrim(value);
-#else
 	const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 	if (fd < 0)
 	{
@@ -154,7 +138,6 @@ std::string SecretProtector::readSecureKeyFile(const std::string &path)
 	}
 	::close(fd);
 	return Utility::stdStringTrim(value);
-#endif
 }
 
 void SecretProtector::publishKeyFile(const std::string &path, const std::string &encoded)
@@ -162,23 +145,12 @@ void SecretProtector::publishKeyFile(const std::string &path, const std::string 
 	const auto directory = fs::path(path).parent_path();
 	if (!Utility::createDirectory(directory.string(), fs::perms::owner_all))
 		throw std::runtime_error("failed to create SecretProtector key directory");
-#if !defined(_WIN32)
 	if (!os::fileChmod(directory.string(), 0700))
 		throw std::runtime_error("failed to secure SecretProtector key directory");
-#endif
 	const auto temporary = os::createTmpFile(path, encoded + "\n", 0600);
 	if (temporary.empty())
 		throw std::runtime_error("failed to create temporary SecretProtector master key");
 
-#if defined(_WIN32)
-	if (!::MoveFileExA(temporary.c_str(), path.c_str(), MOVEFILE_WRITE_THROUGH))
-	{
-		const auto error = ::GetLastError();
-		Utility::removeFile(temporary);
-		if (error != ERROR_ALREADY_EXISTS && error != ERROR_FILE_EXISTS)
-			throw std::runtime_error("failed to atomically publish SecretProtector master key");
-	}
-#else
 	// link(2) publishes the completely written temporary inode only when the
 	// destination does not exist. A concurrent daemon therefore cannot replace a
 	// key another process has already committed.
@@ -195,7 +167,6 @@ void SecretProtector::publishKeyFile(const std::string &path, const std::string 
 		::fsync(directoryFd);
 		::close(directoryFd);
 	}
-#endif
 }
 
 std::string SecretProtector::protect(const std::string &plaintext, const std::string &context)

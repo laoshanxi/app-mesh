@@ -6,11 +6,6 @@
 #include <iostream>
 #include <signal.h>
 
-#if defined(_WIN32)
-// For BOOL and DWORD (Windows data types)
-#include <windows.h>
-#endif
-
 QuitHandler *QuitHandler::instance()
 {
     static QuitHandler instance;
@@ -62,28 +57,6 @@ int QuitHandler::handle_signal(int signum, siginfo_t *, ucontext_t *)
 
 QuitHandler::QuitHandler() : m_exit_flag(false) {}
 
-// --- Windows Console Handler Wrapper (Windows-specific logic) ---
-
-#if defined(_WIN32)
-// This must be defined in the .cpp file as it is a helper function
-BOOL WINAPI ConsoleCtrlHandlerRoutine(DWORD dwCtrlType)
-{
-    switch (dwCtrlType)
-    {
-    case CTRL_C_EVENT:
-    case CTRL_BREAK_EVENT:
-    case CTRL_CLOSE_EVENT:
-    case CTRL_LOGOFF_EVENT:
-    case CTRL_SHUTDOWN_EVENT:
-        // Forward the control event to the Singleton
-        QuitHandler::instance()->requestExit();
-        return TRUE; // Signal handled
-    default:
-        return FALSE;
-    }
-}
-#endif
-
 // --- setupQuitHandler Implementation ---
 
 bool setupQuitHandler(ACE_Reactor *reactor)
@@ -93,18 +66,6 @@ bool setupQuitHandler(ACE_Reactor *reactor)
     QuitHandler::instance()->reactor(reactor);
 
     // Registration Logic
-#if defined(_WIN32)
-    // Windows: Register native console handler
-    if (SetConsoleCtrlHandler(ConsoleCtrlHandlerRoutine, TRUE)) // Success is TRUE
-    {
-        LOG_DBG << fname << "Windows Console Handler registered.";
-    }
-    else
-    {
-        LOG_ERR << fname << "Failed to register Windows Console Handler. Error: " << GetLastError();
-        return false;
-    }
-#else
     // POSIX: Register signals with ACE_Reactor
     // Note: We pass the address (&) because instance() returns a reference
     if (reactor->register_handler(SIGINT, QuitHandler::instance()) == -1)
@@ -119,7 +80,6 @@ bool setupQuitHandler(ACE_Reactor *reactor)
     }
 
     LOG_DBG << fname << "POSIX Signal Handlers registered.";
-#endif
 
     return true;
 }

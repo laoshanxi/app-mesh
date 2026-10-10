@@ -38,7 +38,7 @@ Mount `/var/run/docker.sock` only when App Mesh must manage Docker images. Grant
 
 ```shell
 sudo rpm --import gpg_public.key
-sudo yum install appmesh_3.0.0_gcc_11_glibc_2.35_x86_64.rpm
+sudo yum install appmesh_3.0.1_gcc_4.8.5_glibc_2.17_x86_64.rpm
 sudo systemctl enable --now appmesh
 ```
 
@@ -47,7 +47,7 @@ The RPM is signed. Use `zypper` instead of `yum` on SUSE.
 ### DEB
 
 ```shell
-sudo -E apt install ./appmesh_3.0.0_gcc_7_glibc_2.27_x86_64.deb
+sudo -E apt install ./appmesh_3.0.1_gcc_7_glibc_2.27_x86_64.deb
 sudo systemctl enable --now appmesh
 ```
 
@@ -58,23 +58,6 @@ gpg --import gpg_public.key
 gpg --verify SHA256SUMS.asc SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
 ```
-
-## macOS installation
-
-```shell
-sudo installer -pkg appmesh_3.0.0_clang_17_macos_15_arm64.pkg -target /
-sudo launchctl load -w /Library/LaunchDaemons/com.laoshanxi.appmesh.plist
-```
-
-Next steps: `/opt/appmesh/NEXT_STEPS.txt`.
-
-## Windows installation
-
-Run `appmesh_<version>_windows_x64.exe`. The default directory is `C:\local\appmesh`. The installer registers `AppMeshService`.
-
-Next steps: `C:\local\appmesh\NEXT_STEPS.txt`.
-
-Use `/S` for a silent installation. Use Add or Remove Programs to uninstall App Mesh. Use `Uninstall.exe /PURGE` only when you also want to remove local CLI session data.
 
 ## Verify the installation
 
@@ -205,15 +188,6 @@ Use these options when required:
 
 External mode does not create built-in identities. Provision the first principal and role binding in `work/config/authorization.yaml` before you use protected operations.
 
-On Windows, use:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File C:\local\appmesh\script\setup.ps1 `
-  -Issuer https://auth.example.com/oidc
-```
-
-The Windows script also accepts `-AccessUrl`, `-BrowserEntry`, `-TlsVerify`, `-CaPath`, `-ClearCa`, and `-NoRestart`.
-
 ## Configuration
 
 The package installs read-only defaults in `/opt/appmesh/config`. Put operator overrides in `/opt/appmesh/work/config`.
@@ -258,13 +232,6 @@ sudo yum remove appmesh
 ```
 
 Use `apt remove appmesh` on a DEB system. Use `apt purge appmesh` only when you also want to remove package configuration.
-
-### macOS
-
-```shell
-sudo launchctl unload -w /Library/LaunchDaemons/com.laoshanxi.appmesh.plist
-sudo pkgutil --forget com.laoshanxi.appmesh
-```
 
 Remove `/opt/appmesh` only when you do not need its persisted state.
 

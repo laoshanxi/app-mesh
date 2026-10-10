@@ -1,5 +1,6 @@
 // src/daemon/rest/ForwardingManager.cpp
 #include "ForwardingManager.h"
+#include "../Configuration.h"
 #include "Data.h"
 #include "HttpRequest.h"
 
@@ -254,9 +255,12 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 				m_connections.unbind(key);
 		});
 
-	// Now connect (this calls open() which registers with reactor)
+	// Now connect (this calls open() which registers with reactor). Verify the peer
+	// certificate name only when chain verification is on — without it a name check
+	// would be inconsistent theater.
+	const std::string expectedHostname = Configuration::instance()->getSslVerifyServer() ? host : std::string();
 	ACE_Time_Value connectTimeout(FORWARD_CONNECT_TIMEOUT_SECONDS);
-	if (!stream->connect(ACE_INET_Addr(port, host.c_str()), &connectTimeout))
+	if (!stream->connect(ACE_INET_Addr(port, host.c_str()), &connectTimeout, expectedHostname))
 	{
 		LOG_ERR << fname << "Failed to connect to forwarding host: " << key;
 		return nullptr;

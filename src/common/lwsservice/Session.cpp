@@ -19,9 +19,14 @@ WebSocketSession::WebSocketSession(lws *lws, uint64_t id, std::string principalI
 
 void WebSocketSession::handleRequest(const WSRequest &req)
 {
-    auto request = HttpRequest::deserialize(req.m_payload, -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, nullptr);
+    auto request = HttpRequest::deserialize(req.m_payload, -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id});
     if (!request)
+    {
+        // Frame was reassembled completely; only msgpack decode failed, so a
+        // correlated 400 keeps the client from waiting on its own timeout.
+        Worker::replyUndecodableLws(LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, req.m_payload);
         return;
+    }
 
     request->m_remote_address = m_peer_address;
     if (!m_principal_id.empty())
@@ -31,13 +36,13 @@ void WebSocketSession::handleRequest(const WSRequest &req)
     WORKER::instance()->process(request);
 }
 
-bool WebSocketSession::enqueueOutgoingMessage(std::unique_ptr<msgpack::sbuffer> payload)
+bool WebSocketSession::enqueueOutgoingMessage(std::string payload)
 {
-    // lws_write needs an LWS_PRE prefix, so copy the sbuffer body into a prefixed vector.
-    const size_t body_sz = payload ? payload->size() : 0;
+    // lws_write needs an LWS_PRE prefix, so copy the payload into a prefixed vector.
+    const size_t body_sz = payload.size();
     std::vector<std::uint8_t> buffer(LWS_PRE + body_sz);
     if (body_sz)
-        std::memcpy(buffer.data() + LWS_PRE, payload->data(), body_sz);
+        std::memcpy(buffer.data() + LWS_PRE, payload.data(), body_sz);
 
     std::lock_guard<std::mutex> lock(m_outgoing_mutex);
     if (m_outgoing_messages.size() >= MAX_OUTGOING_QUEUE_DEPTH)

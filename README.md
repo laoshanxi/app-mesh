@@ -103,7 +103,7 @@ for i in range(10):
     print(result_from_server)
 ```
 
-For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, see the [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html) and the [Dockerfile](Dockerfile).
+For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, see the [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html).
 
 ## 🚀 Core Capabilities
 
@@ -117,7 +117,7 @@ For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, 
 | Platform  | Observability          | Built-in [Prometheus exporter](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html), [Grafana datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html), [Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) integration, host/app resource metrics |
 | Platform  | Extras                 | File upload/download API, remote shell execution, hot config reload, bash completion                                                                                                                                                                                                  |
 
-Runs on Linux, macOS, and Windows (x86 and ARM).
+Runs on CentOS 7 and Ubuntu 18.04 (x86 and ARM). This branch is the low-platform maintenance line; newer distributions are served by the `main` line.
 
 ## 🔄 Workflow Pipeline
 
@@ -184,7 +184,7 @@ The Computing pillar makes App Mesh a natural runtime for AI workloads:
 | Feature                  | App Mesh | [systemd](https://systemd.io/) | [crontab](https://crontab.guru/) |
 | ------------------------ | -------- | ------------------------------ | -------------------------------- |
 | Schedule accuracy        | Seconds  | Seconds                        | Minutes                          |
-| Language                 | C++17    | C                              | C                                |
+| Language                 | C++11/14 | C                              | C                                |
 | Web GUI                  | √        |                                |                                  |
 | Command lines            | √        | √                              | √                                |
 | SDK                      | √        |                                |                                  |

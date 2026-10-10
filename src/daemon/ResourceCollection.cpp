@@ -230,10 +230,6 @@ nlohmann::json ResourceCollection::AsJson()
 	result["appmesh_version"] = std::string(__MICRO_VAR__(BUILD_TAG));
 #if defined(__linux__)
 	result["os"] = "linux";
-#elif defined(__APPLE__)
-	result["os"] = "macos";
-#elif defined(_WIN32)
-	result["os"] = "windows";
 #else
 	result["os"] = "unknown";
 #endif
@@ -331,9 +327,7 @@ nlohmann::json ResourceCollection::AsJson()
 	}
 	else
 	{
-#if !defined(_WIN32)
 		collectorErrors.push_back("load_average_unavailable");
-#endif
 	}
 	// FS
 	auto mountPoints = os::getMountPoints();

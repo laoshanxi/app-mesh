@@ -46,7 +46,7 @@ oauth2:
   # External connectors continue to use browser or device authorization.
   # The identity System App enables Dex's current client-credentials feature flag.
   passwordConnector: local
-  # The launchers (appmesh-auth.sh and appmesh-auth.ps1) rewrite this exact
+  # The launcher (appmesh-auth.sh) rewrites this exact
   # line when the password flow is disabled (oidc.yaml password_flow: false or
   # APPMESH_AUTH_PASSWORD_FLOW), dropping the "password" grant; browser sign-in
   # of local password users keeps working either way.
@@ -61,8 +61,8 @@ expiry:
   # reuseInterval so a CLI killed between refresh and session persist (or
   # concurrent CLI processes) does not break the login chain. Idle logins
   # survive validIfNotUsedFor; absoluteLifetime caps the whole refresh-token
-  # chain (default 168h), and rotation does not extend it. The launchers
-  # (appmesh-auth.sh and appmesh-auth.ps1) rewrite the absoluteLifetime line
+  # chain (default 168h), and rotation does not extend it. The launcher
+  # (appmesh-auth.sh) rewrites the absoluteLifetime line
   # from oidc.yaml refresh_token_max_lifetime / APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME.
   refreshTokens:
     reuseInterval: 5m

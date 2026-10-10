@@ -2,13 +2,10 @@
 #pragma once
 
 #include <ctime>
-#include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
 #include <vector>
-
-#include <msgpack.hpp>
 
 struct lws;
 class WebSocketSession;
@@ -40,8 +37,8 @@ struct WSResponse
 {
     void *m_session_ref = nullptr;
     uint64_t m_session_id = 0; // ABA protection: monotonic session/request ID
-    // sbuffer-owning: Response::serialize() result is move-transferred, no body copy.
-    std::unique_ptr<msgpack::sbuffer> m_payload;
+    // Owns the serialized response; moved in, no body copy.
+    std::string m_payload;
     uint64_t m_req_id = 0;
     bool m_is_http = false;
 };
@@ -74,7 +71,7 @@ public:
     // Processes incoming request and generates response
     void handleRequest(const WSRequest &req);
     // Enqueue outbound message; false if queue full. Copies into LWS_PRE-prefixed buffer.
-    bool enqueueOutgoingMessage(std::unique_ptr<msgpack::sbuffer> payload);
+    bool enqueueOutgoingMessage(std::string payload);
 
     // Pop and return the front outgoing message (includes LWS_PRE prefix)
     std::vector<std::uint8_t> popOutgoingMessage();

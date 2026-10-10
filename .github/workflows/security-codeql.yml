@@ -3,12 +3,12 @@ name: "security-codeql"
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [legacy]
     paths:
       - "src/**"
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: [main]
+    branches: [legacy]
   schedule:
     - cron: "21 11 * * 6"
 

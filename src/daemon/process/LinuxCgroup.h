@@ -37,6 +37,11 @@ public:
 	/// Detect which cgroup version is available on the system
 	/// @return CgroupVersion enum indicating available version
 	static CgroupVersion detectCgroupVersion();
+	/// Effective CPU count for this process from the cgroup cpuset
+	/// and quota limits, which hardware_concurrency() reports as the host count
+	/// inside a container.
+	/// @return CPU count, or 0 when it cannot be determined
+	static int hostCpuCount();
 	/// Prepare a delegated cgroup v2 domain before application processes start.
 	static void initializeApplicationCgroups();
 

@@ -329,6 +329,19 @@ std::unique_ptr<LinuxCgroup> LinuxCgroup::create(long long memoryLimitBytes, lon
 #endif
 }
 
+int LinuxCgroup::hostCpuCount()
+{
+	// Resolved once: the limits cannot change while the daemon runs. cpuShares is
+	// non-zero so create() returns a real handler instead of the null one.
+	static const int count = []()
+	{
+		static auto cgroup = LinuxCgroup::create(0, 0, 100);
+		const auto effective = cgroup ? cgroup->readHostCpuCount() : boost::optional<int>();
+		return effective && *effective > 0 ? *effective : 0;
+	}();
+	return count;
+}
+
 bool LinuxCgroup::writeValueToFile(const std::string &filePath, long long value)
 {
 	const static char fname[] = "LinuxCgroup::writeValueToFile() ";

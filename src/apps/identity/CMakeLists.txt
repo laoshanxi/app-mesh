@@ -38,18 +38,11 @@ if(APPMESH_INSTALL_AUTH_CONFIG)
     )
 endif()
 
-# Auth-stack launcher: install the platform-native variant.
-if(WIN32)
-    install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/appmesh-auth.ps1"
-        DESTINATION "script"
-        COMPONENT scripts
-    )
-else()
-    install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/appmesh-auth.sh"
-        DESTINATION "script"
-        COMPONENT scripts
-    )
-endif()
+# Auth-stack launcher.
+install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/appmesh-auth.sh"
+    DESTINATION "script"
+    COMPONENT scripts
+)
 
 # UI assets served by the daemon and agent.
 install(FILES

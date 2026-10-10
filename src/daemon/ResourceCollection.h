@@ -6,9 +6,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#if !defined(_WIN32)
 #include <unistd.h>
-#endif
 
 #include <nlohmann/json.hpp>
 

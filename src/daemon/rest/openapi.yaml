@@ -606,28 +606,27 @@ paths:
     get:
       tags: [Observability]
       summary: Get Prometheus metrics
+      description: No authentication, like a standard exporter endpoint. Keep the port on a trusted network.
+      security: []
       responses:
         "200":
           description: Prometheus text exposition.
           content:
             text/plain:
               schema: { type: string }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
 
   /metrics:
     get:
       tags: [Observability]
       summary: Get Prometheus metrics
-      description: Compatibility alias for /appmesh/metrics. Requires host-resource-view permission.
+      description: Compatibility alias for /appmesh/metrics. No authentication either.
+      security: []
       responses:
         "200":
           description: Prometheus text exposition.
           content:
             text/plain:
               schema: { type: string }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
 
 components:
   securitySchemes:
