@@ -1150,22 +1150,6 @@ std::string Utility::stringReplace(const std::string &strBase, const std::string
 	return str;
 }
 
-void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs)
-{
-	totalEnvSize = 0;
-	totalEnvArgs = 0;
-
-	for (const auto &kv : envMap)
-	{
-		// length of "KEY=VALUE\0"
-		totalEnvSize += static_cast<int>(kv.first.length() + kv.second.length() + 2); // add 2 for = and terminator
-		totalEnvArgs++;
-	}
-
-	// Add safety margin: 20% more, min 256 entries and 4KB
-	totalEnvArgs += std::max(256, totalEnvArgs / 5);
-	totalEnvSize += std::max(4096, totalEnvSize / 5);
-}
 
 void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers)
 {

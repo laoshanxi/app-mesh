@@ -4,6 +4,7 @@
 #include <boost/optional.hpp>
 #include <memory>
 #include <string>
+#include <vector>
 
 /// Linux Cgroup version enumeration
 enum class CgroupVersion
@@ -46,11 +47,18 @@ public:
 	/// Prepare a delegated cgroup v2 domain before application processes start.
 	static void initializeApplicationCgroups();
 
-	/// Apply cgroup limits to a process
+	/// Create the cgroup leaves and write the limits, before the child is
+	/// forked (the forked child inherits the daemon leaf and joins the
+	/// application leaf itself while exec'ing).
 	/// @param appName Application name for cgroup naming
-	/// @param pid Process ID to add to cgroup
 	/// @param index Instance index for unique cgroup path
-	virtual void applyLimits(const std::string &appName, int pid, int index) = 0;
+	virtual void prepareGroup(const std::string &appName, int index) = 0;
+
+	/// Absolute procs/tasks file paths the child writes "0" into at exec time.
+	virtual std::vector<std::string> procsFilePaths() const = 0;
+
+	/// Parent-side fallback attach, best effort.
+	virtual bool attachPid(int pid) = 0;
 
 	/// Read memory value from host cgroup
 	/// @param cgroupFileName Name of the cgroup file to read
@@ -107,7 +115,9 @@ public:
 	LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares, bool swapLimitSpecified = false);
 	~LinuxCgroupV1() override;
 
-	void applyLimits(const std::string &appName, int pid, int index) override;
+	void prepareGroup(const std::string &appName, int index) override;
+	std::vector<std::string> procsFilePaths() const override;
+	bool attachPid(int pid) override;
 	boost::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
 	boost::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
 	boost::optional<CgroupSwapStats> readHostSwapStats() override;
@@ -141,7 +151,7 @@ private:
 	bool m_swapLimitSpecified;
 	long long m_cpuShares;
 
-	int m_pid;
+	std::vector<std::string> m_procsPaths;
 	std::string m_cgroupMemoryPath;
 	std::string m_cgroupCpuPath;
 	bool m_enabled;
@@ -163,7 +173,9 @@ public:
 	LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares, bool swapLimitSpecified = false);
 	~LinuxCgroupV2() override;
 
-	void applyLimits(const std::string &appName, int pid, int index) override;
+	void prepareGroup(const std::string &appName, int index) override;
+	std::vector<std::string> procsFilePaths() const override;
+	bool attachPid(int pid) override;
 	boost::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
 	boost::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
 	boost::optional<CgroupSwapStats> readHostSwapStats() override;
@@ -206,7 +218,7 @@ private:
 	bool m_swapLimitSpecified;
 	long long m_cpuShares;
 
-	int m_pid;
+	std::vector<std::string> m_procsPaths;
 	std::string m_cgroupPath;
 	bool m_enabled;
 	bool m_swapLimitSupported;
@@ -224,7 +236,9 @@ public:
 	explicit LinuxCgroupNull(bool limitsRequested = false) : m_limitsRequested(limitsRequested) {}
 	~LinuxCgroupNull() override = default;
 
-	void applyLimits(const std::string &appName, int pid, int index) override;
+	void prepareGroup(const std::string &appName, int index) override;
+	std::vector<std::string> procsFilePaths() const override;
+	bool attachPid(int pid) override;
 	boost::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
 	boost::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
 	boost::optional<CgroupSwapStats> readHostSwapStats() override;

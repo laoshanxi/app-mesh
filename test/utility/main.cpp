@@ -207,24 +207,6 @@ TEST_CASE("boost_regex", "[boost_regex]")
 	}
 }
 
-TEST_CASE("ACE_Map_Manager", "[ACE]")
-{
-	ACE_Map_Manager<std::string, int, ACE_Recursive_Thread_Mutex> aceMap;
-	aceMap.bind("123", 123);
-	REQUIRE(aceMap.current_size() == 1);
-	REQUIRE(aceMap.unbind("321") != 0);
-	REQUIRE(aceMap.unbind("123") == 0);
-	REQUIRE(aceMap.current_size() == 0);
-
-	auto start = std::chrono::system_clock::now();
-	ACE_Time_Value waitTimeout = ACE_Time_Value(0, 1000L * 30);
-	ACE_OS::sleep(waitTimeout);
-	auto end = std::chrono::system_clock::now();
-	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-	// Wall-clock sleep is "at least" the requested 30ms; scheduler jitter adds more under load.
-	REQUIRE(duration.count() >= 30);
-}
-
 TEST_CASE("JSON", "[nlohmann json]")
 {
 	nlohmann::json j("");

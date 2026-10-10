@@ -14,6 +14,9 @@
 #include "models.h"
 #include "procstat.hpp"
 
+/// Sentinel pid for "no process", shared across the process layer.
+constexpr pid_t INVALID_PID = -1;
+
 namespace os
 {
 	/// Get the status of a process.

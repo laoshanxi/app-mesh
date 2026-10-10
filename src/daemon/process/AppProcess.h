@@ -10,12 +10,12 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "../../common/AtomicHandleGuard.hpp"
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
-#include "AttachProcess.h"
-#include "ProcessManager.h"
+#include "../../common/os/process.h"
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
@@ -28,7 +28,7 @@ class StdoutStrategy;
 struct ProcessStartResult
 {
 	bool accepted = false;
-	pid_t pid = ACE_INVALID_PID;
+	pid_t pid = INVALID_PID;
 	std::string error;
 };
 
@@ -53,8 +53,9 @@ public:
 	bool running() const;
 	// Wait for AppMesh finalization (stdout drained and Application exit state committed),
 	// not for OS reaping. Returns the run's native PID, 0 on timeout, or
-	// ACE_INVALID_PID when a finalized backend run never exposed a native PID.
-	pid_t wait(const ACE_Time_Value &tv, ACE_exitcode *status = nullptr);
+	// INVALID_PID when a finalized backend run never exposed a native PID.
+	// A zero timeout polls.
+	pid_t wait(std::chrono::milliseconds timeout, int *status = nullptr);
 
 	// Identity and result
 	virtual pid_t getpid() const;
@@ -101,21 +102,18 @@ private:
 	void resolveStart(bool accepted, pid_t pid);
 	bool isStartAccepted() const;
 	void onExit(int exitCode);
-	void onTimerExit() noexcept;
+	// Runs on the ProcessService thread: stdout teardown and application
+	// callbacks may block safely outside the exit-observation context.
+	void finalizeExit() noexcept;
 
 	// Native process and resource helpers
-	int validateCommand(const std::string &cmd);
+	int validateCommand(const std::vector<std::string> &argv);
 	void prepareEnvironment(std::map<std::string, std::string> &envMap);
-	pid_t spawn(ACE_Process_Options &options, const std::shared_ptr<ResourceLimitation> &limit = nullptr);
-	void setCgroup(const std::shared_ptr<ResourceLimitation> &limit);
 	long cleanupResources();
 	bool onTimerTerminate();
 	bool onTimerCheckStdout();
 	static bool running(pid_t pid);
 	static bool sameProcessRunning(pid_t pid, std::uint64_t expectedStart);
-
-	// Per-process bridge registered with ACE_Process_Manager.
-	class ExitAdapter;
 
 	// Ownership and timers
 	const std::weak_ptr<Application> m_owner;

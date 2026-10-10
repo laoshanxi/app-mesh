@@ -56,11 +56,11 @@ namespace
 			if (result.started)
 			{
 				process->scheduleTermination(timeoutSeconds, "runDockerCli");
-				result.completed = process->wait(ACE_Time_Value(timeoutSeconds + 1)) > 0;
+				result.completed = process->wait(std::chrono::seconds(timeoutSeconds + 1)) > 0;
 				if (!result.completed)
 				{
 					process->terminate();
-					process->wait(ACE_Time_Value(1));
+					process->wait(std::chrono::seconds(1));
 					result.error = "docker command timed out";
 				}
 				else
@@ -155,12 +155,12 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 		if (!imageInspect.started)
 		{
 			setStartError(imageInspect.error.empty() ? "failed to launch docker image inspect" : imageInspect.error);
-			return ACE_INVALID_PID;
+			return INVALID_PID;
 		}
 		if (!imageInspect.completed)
 		{
 			setStartError(imageInspect.error);
-			return ACE_INVALID_PID;
+			return INVALID_PID;
 		}
 		auto imageSizeStr = Utility::stdStringTrim(imageInspect.output);
 		int64_t imageSize = 0;
@@ -267,14 +267,14 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 			setStartError(inspect.error.empty() ? "failed to launch docker inspect command" : inspect.error);
 			setContainerId(containerId);
 			terminate();
-			return ACE_INVALID_PID;
+			return INVALID_PID;
 		}
 		if (!inspect.completed)
 		{
 			setStartError(inspect.error);
 			setContainerId(containerId);
 			terminate();
-			return ACE_INVALID_PID;
+			return INVALID_PID;
 		}
 
 		if (inspect.exitCode == 0)
@@ -292,7 +292,7 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 					LOG_INF << fname << "container <" << containerId
 							<< "> completed before host PID inspection, exit code <" << exitCode << ">";
 					reportEarlyExit(exitCode);
-					return ACE_INVALID_PID;
+					return INVALID_PID;
 				}
 				if (runningText == "true" && hostPid > 1)
 				{
@@ -358,7 +358,7 @@ pid_t DockerProcess::getpid() const
 	// Return invalid PID if process ID is 1 (init/systemd)
 	if (AppProcess::getpid() == 1)
 	{
-		return ACE_INVALID_PID;
+		return INVALID_PID;
 	}
 	return AppProcess::getpid();
 }

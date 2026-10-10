@@ -421,7 +421,6 @@ LinuxCgroupV1::LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapByt
 	  m_memorySwapBytes(memorySwapBytes),
 	  m_swapLimitSpecified(swapLimitSpecified),
 	  m_cpuShares(cpuShares),
-	  m_pid(0),
 	  m_enabled(false),
 	  m_swapLimitSupported(true)
 {
@@ -562,16 +561,15 @@ void LinuxCgroupV1::discoverMountPoints()
 #endif
 }
 
-void LinuxCgroupV1::applyLimits(const std::string &appName, int pid, int index)
+void LinuxCgroupV1::prepareGroup(const std::string &appName, int index)
 {
-	const static char fname[] = "LinuxCgroupV1::applyLimits() ";
+	const static char fname[] = "LinuxCgroupV1::prepareGroup() ";
 
 	if (!m_enabled)
 		return;
 	if (!isSafeCgroupComponent(appName) || index < 0)
 		throw std::invalid_argument("unsafe cgroup application component");
 
-	m_pid = pid;
 	bool applied = true;
 
 	// Build cgroup paths
@@ -583,6 +581,8 @@ void LinuxCgroupV1::applyLimits(const std::string &appName, int pid, int index)
 
 	const auto perm = fs::perms::owner_all | fs::perms::group_exe | fs::perms::others_exe;
 
+	m_procsPaths.clear();
+
 	// Apply memory limits
 	if (m_memoryLimitBytes > 0)
 	{
@@ -593,6 +593,7 @@ void LinuxCgroupV1::applyLimits(const std::string &appName, int pid, int index)
 			applied = applyMemoryLimit(m_cgroupMemoryPath) && applied;
 			if (m_swapLimitSpecified)
 				applied = m_swapLimitSupported && applySwapLimit(m_cgroupMemoryPath) && applied;
+			m_procsPaths.push_back(m_cgroupMemoryPath + "/tasks");
 		}
 		else
 		{
@@ -609,6 +610,7 @@ void LinuxCgroupV1::applyLimits(const std::string &appName, int pid, int index)
 		else if (Utility::createRecursiveDirectory(m_cgroupCpuPath, perm))
 		{
 			applied = applyCpuShares(m_cgroupCpuPath) && applied;
+			m_procsPaths.push_back(m_cgroupCpuPath + "/tasks");
 		}
 		else
 		{
@@ -619,14 +621,26 @@ void LinuxCgroupV1::applyLimits(const std::string &appName, int pid, int index)
 	if (!applied)
 		throw std::runtime_error("failed to apply cgroup v1 limits");
 
-	LOG_DBG << fname << "Applied cgroup v1 limits for app <" << appName << "> pid <" << pid << ">";
+	LOG_DBG << fname << "Prepared cgroup v1 group for app <" << appName << "> index <" << index << ">";
+}
+
+std::vector<std::string> LinuxCgroupV1::procsFilePaths() const
+{
+	return m_procsPaths;
+}
+
+bool LinuxCgroupV1::attachPid(int pid)
+{
+	bool attached = !m_procsPaths.empty();
+	for (const auto &path : m_procsPaths)
+		attached = writeValueToFile(path, pid) && attached;
+	return attached;
 }
 
 bool LinuxCgroupV1::applyMemoryLimit(const std::string &cgroupPath)
 {
 	std::string limitFile = cgroupPath + "/memory.limit_in_bytes";
-	return writeValueToFile(limitFile, m_memoryLimitBytes) &&
-		addProcessToCgroup(cgroupPath, m_pid, "tasks");
+	return writeValueToFile(limitFile, m_memoryLimitBytes);
 }
 
 bool LinuxCgroupV1::applySwapLimit(const std::string &cgroupPath)
@@ -639,8 +653,7 @@ bool LinuxCgroupV1::applySwapLimit(const std::string &cgroupPath)
 bool LinuxCgroupV1::applyCpuShares(const std::string &cgroupPath)
 {
 	std::string sharesFile = cgroupPath + "/cpu.shares";
-	return writeValueToFile(sharesFile, m_cpuShares) &&
-		addProcessToCgroup(cgroupPath, m_pid, "tasks");
+	return writeValueToFile(sharesFile, m_cpuShares);
 }
 
 boost::optional<long long> LinuxCgroupV1::readHostMemoryValue(const std::string &cgroupFileName)
@@ -791,7 +804,6 @@ LinuxCgroupV2::LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapByt
 	  m_memorySwapBytes(memorySwapBytes),
 	  m_swapLimitSpecified(swapLimitSpecified),
 	  m_cpuShares(cpuShares),
-	  m_pid(0),
 	  m_enabled(false),
 	  m_swapLimitSupported(true)
 {
@@ -996,17 +1008,18 @@ void LinuxCgroupV2::initializeManagement(int additionalPid)
 	s_cgroupManagementRootDir = applicationsRoot;
 }
 
-void LinuxCgroupV2::applyLimits(const std::string &appName, int pid, int index)
+void LinuxCgroupV2::prepareGroup(const std::string &appName, int index)
 {
-	const static char fname[] = "LinuxCgroupV2::applyLimits() ";
+	const static char fname[] = "LinuxCgroupV2::prepareGroup() ";
 
 	if (!m_enabled)
 		return;
 	if (!isSafeCgroupComponent(appName) || index < 0)
 		throw std::invalid_argument("unsafe cgroup application component");
 
-	m_pid = pid;
-	initializeManagement(pid);
+	// Move the daemon into its leaf BEFORE the fork: the forked child then
+	// inherits the leaf and joins the application leaf itself at exec time.
+	initializeManagement(0);
 	std::lock_guard<std::mutex> managementGuard(cgroupV2ManagementMutex);
 	const auto perm = fs::perms::owner_all | fs::perms::group_exe | fs::perms::others_exe;
 
@@ -1027,10 +1040,23 @@ void LinuxCgroupV2::applyLimits(const std::string &appName, int pid, int index)
 		throw std::runtime_error("failed to apply cgroup v2 memory limits");
 	if (m_cpuShares > 0 && !applyCpuWeight(m_cgroupPath))
 		throw std::runtime_error("failed to apply cgroup v2 CPU weight");
-	if (!addProcessToCgroup(m_cgroupPath, m_pid, "cgroup.procs"))
-		throw std::runtime_error("failed to attach process to cgroup v2");
 
-	LOG_DBG << fname << "Applied cgroup v2 limits for app <" << appName << "> pid <" << pid << ">";
+	m_procsPaths.assign({m_cgroupPath + "/cgroup.procs"});
+
+	LOG_DBG << fname << "Prepared cgroup v2 group for app <" << appName << "> index <" << index << ">";
+}
+
+std::vector<std::string> LinuxCgroupV2::procsFilePaths() const
+{
+	return m_procsPaths;
+}
+
+bool LinuxCgroupV2::attachPid(int pid)
+{
+	bool attached = !m_procsPaths.empty();
+	for (const auto &path : m_procsPaths)
+		attached = writeValueToFile(path, pid) && attached;
+	return attached;
 }
 
 bool LinuxCgroupV2::applyMemoryLimit(const std::string &cgroupPath)
@@ -1246,13 +1272,23 @@ bool LinuxCgroupV2::isEnabled() const
 // LinuxCgroupNull - Null implementation
 //=============================================================================
 
-void LinuxCgroupNull::applyLimits(const std::string &appName, int pid, int index)
+void LinuxCgroupNull::prepareGroup(const std::string &appName, int index)
 {
 	(void)appName;
-	(void)pid;
 	(void)index;
 	if (m_limitsRequested)
 		throw std::runtime_error("resource limits requested but cgroup is unavailable");
+}
+
+std::vector<std::string> LinuxCgroupNull::procsFilePaths() const
+{
+	return {};
+}
+
+bool LinuxCgroupNull::attachPid(int pid)
+{
+	(void)pid;
+	return false;
 }
 
 boost::optional<long long> LinuxCgroupNull::readHostMemoryValue(const std::string &cgroupFileName)

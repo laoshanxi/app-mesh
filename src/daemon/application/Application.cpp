@@ -71,7 +71,7 @@ struct Application::Runtime
 
 		std::string id;
 		Phase phase = Phase::Completed;
-		pid_t pid = ACE_INVALID_PID;
+		pid_t pid = INVALID_PID;
 		int returnCode = INVALID_RETURN_CODE;
 		boost::optional<std::chrono::system_clock::time_point> startTime;
 		boost::optional<std::chrono::system_clock::time_point> exitTime;
@@ -579,7 +579,7 @@ void Application::collectMetrics(void *ptree, bool refreshMetrics)
 	const auto run = m_runtime->load();
 	if (metrics->appPid)
 	{
-		metrics->appPid->metric().Set(processRunning && run.pid != ACE_INVALID_PID ? run.pid : 0);
+		metrics->appPid->metric().Set(processRunning && run.pid != INVALID_PID ? run.pid : 0);
 	}
 	if (metrics->enabled)
 		metrics->enabled->metric().Set(getStatus() == STATUS::ENABLED ? 1 : 0);
@@ -660,7 +660,7 @@ bool Application::attach(int pid)
 						  {
 			r.id = attached->getuuid();
 			r.phase = live ? Runtime::Run::Phase::Running : Runtime::Run::Phase::Completed;
-			r.pid = live ? attachedPid : ACE_INVALID_PID;
+			r.pid = live ? attachedPid : INVALID_PID;
 			r.startTime = procStartTime;
 			r.returnCode = INVALID_RETURN_CODE;
 			r.exitTime.reset();
@@ -672,7 +672,7 @@ bool Application::attach(int pid)
 
 	// A dead/reused recovery pid must not leave a pending process that blocks the
 	// scheduler forever. Resolve the start only after identity and state publication.
-	attached->resolveStart(live, live ? attachedPid : ACE_INVALID_PID);
+	attached->resolveStart(live, live ? attachedPid : INVALID_PID);
 	if (!live)
 		attached->detach();
 
@@ -962,7 +962,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 						  {
 			run.id = runId;
 			run.phase = Runtime::Run::Phase::Starting;
-			run.pid = ACE_INVALID_PID;
+			run.pid = INVALID_PID;
 			run.startTime = std::chrono::system_clock::now();
 			run.returnCode = INVALID_RETURN_CODE;
 			run.exitTime.reset();
@@ -1114,7 +1114,7 @@ void Application::recordStartFailure(const std::string &runId, const std::string
 		if (run.id != runId ||
 			(run.phase != Runtime::Run::Phase::Starting && run.phase != Runtime::Run::Phase::StopRequested))
 			return;
-		run.pid = ACE_INVALID_PID;
+		run.pid = INVALID_PID;
 		run.phase = Runtime::Run::Phase::Completed;
 		run.exitTime = now;
 		run.restartEvaluationPending = false;
@@ -1308,7 +1308,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 	const bool matchesRun = process && (processUuid.empty() || process->getuuid() == processUuid);
 	if (matchesRun && index == 0 && !process->isFinalized() && timeout > 0)
 	{
-		process->wait(ACE_Time_Value(static_cast<long>(timeout)));
+		process->wait(std::chrono::seconds(timeout));
 	}
 
 	bool finished = false;
@@ -1611,8 +1611,8 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 			result[JSON_KEY_APP_task_id] = std::get<0>(status);
 			result[JSON_KEY_APP_task_status] = std::get<1>(status);
 			// Spawn races the run-state store: the process can be running before r.pid is
-			// published (still ACE_INVALID_PID from the previous exit). Omit pid until valid.
-			if (run.pid != ACE_INVALID_PID)
+			// published (still INVALID_PID from the previous exit). Omit pid until valid.
+			if (run.pid != INVALID_PID)
 			{
 				result[JSON_KEY_APP_pid] = run.pid;
 				result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(run.pid));
@@ -1740,7 +1740,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << (int)m_status.load();
 	const auto dumpPid = m_runtime->load().pid;
-	if (dumpPid != ACE_INVALID_PID)
+	if (dumpPid != INVALID_PID)
 	{
 		LOG_DBG << fname << "m_pid:" << dumpPid;
 	}
@@ -1867,7 +1867,7 @@ void Application::recordProcessExit(int code, bool naturalExit, AppProcess *repo
 			// A successful Docker pull is an intermediate run: accepted containers always
 			// publish their container ID before exit, while the pull process has none.
 			const bool imagePullCompleted = naturalExit && enabled && currentGeneration && code == 0 && dockerImagePull;
-			state.pid = ACE_INVALID_PID;
+			state.pid = INVALID_PID;
 			state.phase = Runtime::Run::Phase::Finalizing;
 			state.exitTime = now;
 			state.returnCode = code;

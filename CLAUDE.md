@@ -133,7 +133,7 @@ CMake targets `python_tests`, `go_tests`, `workflow_tests`, and `rust_tests` als
 
 ### Daemon (`src/daemon/`)
 
-The core service. Initialization flows through `main.cpp`: ACE framework init → config → SSL → security → app recovery → REST server → worker pool → ACE reactor event loop.
+The core service. Initialization flows through `main.cpp`: framework init → config → SSL → security → app recovery → REST server → worker pool → main monitoring loop. Child processes run on Boost.Process V2 over `ProcessService` (single-threaded asio loop: exit waits, stdout pumps, exit finalization); `TimerManager` is a separate asio timer thread.
 
 **Key subsystems:**
 
@@ -215,7 +215,7 @@ LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`).
 
 ## Key Dependencies
 
-C++ (daemon): ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (HTTP/WSS/TCP transport; pulls jsoncpp, c-ares, brotli), uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
+C++ (daemon): ACE (remaining utilities), Boost (incl. Boost.Process V2 ≥1.86), OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (HTTP/WSS/TCP transport; pulls jsoncpp, c-ares, brotli), uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
 
 Rust (CLI): clap, tokio, rustls, serde/serde_json/serde_yaml, anyhow. The CLI depends on the Rust SDK crate (`src/sdk/rust`).
 

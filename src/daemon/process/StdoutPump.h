@@ -1,73 +1,66 @@
 // src/daemon/process/StdoutPump.h
 #pragma once
 
-#include <atomic>
+#if !defined(_WIN32)
+
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
-#include <ace/Event_Handler.h>
-#include <ace/OS_NS_unistd.h>
+#include <boost/asio/posix/stream_descriptor.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/system/error_code.hpp>
 
-// Reactor-driven pump: reads child stdout from a pipe, tees to disk, dispatches
-// STDOUT_OUTPUT events. Lifecycle managed by ACE Reference_Counting_Policy.
-class StdoutPump : public ACE_Event_Handler
+// asio-driven pump on the ProcessService thread: reads child stdout from a
+// pipe, tees to disk, dispatches STDOUT_OUTPUT events. All state lives on the
+// io thread; the only lock is the shared disk mutex.
+class StdoutPump : public std::enable_shared_from_this<StdoutPump>
 {
 public:
-	StdoutPump(std::string appName, ACE_HANDLE pipeRead, ACE_HANDLE diskWrite,
-			   std::shared_ptr<std::mutex> diskMutex);
-	~StdoutPump() override;
+	StdoutPump(std::string appName, int pipeReadFd, int diskWriteFd, std::shared_ptr<std::mutex> diskMutex);
+	~StdoutPump() = default; // stream_descriptor dtor closes the read fd
 
 	StdoutPump(const StdoutPump &) = delete;
 	StdoutPump &operator=(const StdoutPump &) = delete;
 
-	ACE_HANDLE get_handle() const override { return m_pipeRead; }
-	int handle_input(ACE_HANDLE) override;
-	int handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask) override;
-	int handle_timeout(const ACE_Time_Value &tv, const void *act) override;
+	// io thread only; starts the read chain. No-op when stopped or at EOF.
+	void activate();
 
-	// Flush leftover coalesce-buffer to subscribers.
-	void cancelCoalesceTimerAndFlush();
+	// io thread only, idempotent. Cancels the async chain, synchronously drains
+	// the pipe, and final-flushes the batch (mirrors the old
+	// deregister-before-drain ordering).
+	void stop();
 
-	// Bytes already streamed (disk + buffer); after a flush it is the disk tail.
-	long acceptedBytes() const { return m_acceptedBytes.load(std::memory_order_relaxed); }
-
-	// Idempotent — short-circuits future handle_input.
-	void stop() { m_stopped.store(true, std::memory_order_release); }
-
-	// Synchronously drain remaining pipe bytes when the reactor never woke up
-	// (fast-exit child). Call after stop() + remove_handler; waits out any
-	// in-flight handle_input.
-	void finalSyncDrain();
+	// io thread only; the strategy snapshots it after stop().
+	long acceptedBytes() const { return m_acceptedBytes; }
 
 private:
-	// Caller must hold m_coalesceMu; releases timer + swaps buffer out.
-	void extractBatchLocked(std::string &out, long &start);
-	void scheduleCoalesceTimerLocked();
-	// Extract + dispatch under m_dispatchMu: keeps events in position order.
+	void readSome();
+	void onRead(const boost::system::error_code &ec, std::size_t bytesTransferred);
+	void teeToDisk(const char *data, size_t length);
 	// flushAll also emits a trailing incomplete character instead of carrying it
 	// into a next batch that never comes (teardown path).
 	void flushBatch(bool flushAll);
+	void armCoalesceTimer();
+	void onCoalesceTimer(const boost::system::error_code &ec);
 	void dispatchPayload(long start, std::string &&payload);
 
 	const std::string m_appName;
-	ACE_HANDLE m_pipeRead; // written only in the ctor; closed only by the dtor
-	ACE_HANDLE m_diskWrite;
+	boost::asio::posix::stream_descriptor m_pipeRead; // owns the fd, closes in dtor
+	const int m_diskWrite; // AppProcess owns this handle
 	// shared_ptr so the mutex outlives whichever (pump or AppProcess) destructs first.
-	std::shared_ptr<std::mutex> m_diskMutex;
-	std::atomic<long> m_acceptedBytes;
-	std::atomic<bool> m_stopped;
-
-	// Serializes pipe readers (handle_input vs finalSyncDrain).
-	// Lock order: m_pipeMu -> m_dispatchMu -> m_coalesceMu.
-	std::mutex m_pipeMu;
-	// Held across extract+dispatch so flushes cannot reorder.
-	std::mutex m_dispatchMu;
-
+	const std::shared_ptr<std::mutex> m_diskMutex;
+	boost::asio::steady_timer m_coalesceTimer;
+	bool m_timerArmed{false};
+	bool m_stopped{false};
+	bool m_eof{false};
 	// Coalesce window — collects reads into a single STDOUT_OUTPUT event,
 	// flushed on byte threshold, timer, or teardown.
-	std::mutex m_coalesceMu;
 	std::string m_batch;
 	long m_batchStart{0};
-	bool m_timerArmed{false};
+	long m_acceptedBytes{0};
+	std::vector<char> m_readBuf; // 64 KB, resized in ctor
 };
+
+#endif // !_WIN32

@@ -64,7 +64,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 
 	shellFile.close();
 
-	// 3. Prepare the command line for ACE_Process
+	// 3. Prepare the command line for the child process
 	// cmd.exe /C executes the command (file) and then terminates
 	m_fileName = fileName;
 	m_shellCmd = Utility::stringFormat("cmd.exe /C \"%s\"", m_fileName.c_str());
@@ -159,9 +159,11 @@ void AppLogFile::increaseIndex()
 	auto newFile = getFileName();
 	if (Utility::isFileExist(newFile))
 		Utility::removeFile(newFile);
-	if (Utility::isFileExist(oldFile) && 0 != ACE_OS::rename(oldFile.c_str(), newFile.c_str()))
+	std::error_code renameError;
+	fs::rename(oldFile, newFile, renameError);
+	if (Utility::isFileExist(oldFile) && renameError)
 	{
-		LOG_ERR << fname << "Failed to rename file <" << oldFile << "> to <" << newFile << ">: " << last_error_msg();
+		LOG_ERR << fname << "Failed to rename file <" << oldFile << "> to <" << newFile << ">: " << renameError.message();
 	}
 	else
 	{
@@ -202,7 +204,7 @@ LogFileQueue::~LogFileQueue()
 
 void LogFileQueue::enqueue()
 {
-	std::lock_guard<std::mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	// pop last
 	if (static_cast<int>(m_fileQueue.size()) >= m_queueSize)
 	{
@@ -220,13 +222,13 @@ void LogFileQueue::enqueue()
 
 int LogFileQueue::size()
 {
-	std::lock_guard<std::mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	return static_cast<int>(m_fileQueue.size());
 }
 
 const std::string LogFileQueue::getFileName(int index)
 {
-	std::lock_guard<std::mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (index >= 0 && index < static_cast<int>(m_fileQueue.size()))
 	{
 		return m_fileQueue[index]->getFileName();

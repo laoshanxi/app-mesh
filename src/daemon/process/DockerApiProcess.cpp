@@ -117,7 +117,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	{
 		LOG_WAR << fname << "Docker REST request failed with status <" << resp->status_code << ">: " << resp->text;
 		setStartError(resp->text.empty() ? "Docker REST service is unavailable" : resp->text);
-		return ACE_INVALID_PID;
+		return INVALID_PID;
 	}
 
 	// DELETE /containers/{id}?force=true - Clean existing container
@@ -137,7 +137,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + JSON::dump(stdinFileContent);
 		LOG_WAR << fname << msg;
 		setStartError(msg);
-		return ACE_INVALID_PID;
+		return INVALID_PID;
 	}
 
 	// Build container creation body
@@ -182,7 +182,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	if (HAS_JSON_FIELD(createBody, "HostConfig") && !createBody.at("HostConfig").is_object())
 	{
 		setStartError("Docker HostConfig must be a JSON object");
-		return ACE_INVALID_PID;
+		return INVALID_PID;
 	}
 	auto hostConfig = HAS_JSON_FIELD(createBody, "HostConfig")
 						  ? createBody.at("HostConfig")
@@ -265,7 +265,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 							LOG_INF << fname << "container <" << m_containerName
 									<< "> completed before host PID inspection, exit code <" << exitCode << ">";
 							reportEarlyExit(exitCode);
-							return ACE_INVALID_PID;
+							return INVALID_PID;
 						}
 						const auto pid = GET_JSON_INT64_VALUE(state, "Pid");
 						if (pid > 1 && pid <= std::numeric_limits<pid_t>::max())

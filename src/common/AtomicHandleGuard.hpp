@@ -1,13 +1,22 @@
 // src/common/AtomicHandleGuard.hpp
 #pragma once
 
-#include <ace/OS_NS_unistd.h>
 #include <atomic>
+
+#if defined(_WIN32)
+#include <windows.h>
+using native_fd = void *;
+constexpr native_fd INVALID_FD = nullptr;
+#else
+#include <unistd.h>
+using native_fd = int;
+constexpr native_fd INVALID_FD = -1;
+#endif
 
 class AtomicHandleGuard final
 {
 public:
-    explicit AtomicHandleGuard(ACE_HANDLE handle = ACE_INVALID_HANDLE) noexcept
+    explicit AtomicHandleGuard(native_fd handle = INVALID_FD) noexcept
         : m_handle(handle) {}
 
     ~AtomicHandleGuard() noexcept
@@ -21,25 +30,29 @@ public:
     AtomicHandleGuard(AtomicHandleGuard &&) = delete;
     AtomicHandleGuard &operator=(AtomicHandleGuard &&) = delete;
 
-    void reset(ACE_HANDLE newHandle = ACE_INVALID_HANDLE) noexcept
+    void reset(native_fd newHandle = INVALID_FD) noexcept
     {
-        ACE_HANDLE old = m_handle.exchange(newHandle, std::memory_order_acq_rel);
-        if (old != ACE_INVALID_HANDLE)
+        native_fd old = m_handle.exchange(newHandle, std::memory_order_acq_rel);
+        if (old != INVALID_FD)
         {
-            ACE_OS::close(old);
+#if defined(_WIN32)
+            ::CloseHandle(reinterpret_cast<HANDLE>(old));
+#else
+            ::close(old);
+#endif
         }
     }
 
-    ACE_HANDLE get() const noexcept
+    native_fd get() const noexcept
     {
         return m_handle.load(std::memory_order_relaxed);
     }
 
     bool valid() const noexcept
     {
-        return get() != ACE_INVALID_HANDLE;
+        return get() != INVALID_FD;
     }
 
 private:
-    std::atomic<ACE_HANDLE> m_handle;
+    std::atomic<native_fd> m_handle;
 };

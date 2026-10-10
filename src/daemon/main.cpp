@@ -13,19 +13,9 @@
 #include <thread>
 #include <vector>
 
-#include <ace/Acceptor.h>
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
-#include <ace/Process_Manager.h>
-#include <ace/Reactor.h>
-#include <ace/TP_Reactor.h>
 #include <spdlog/spdlog.h>
-
-#if defined(_WIN32)
-#include <ace/WFMO_Reactor.h>
-#else
-#include <ace/Select_Reactor.h>
-#endif
 
 #include "../common/QuitHandler.h"
 #include "../common/RestClient.h"
@@ -40,6 +30,7 @@
 #include "application/Application.h"
 #include "process/AppProcess.h"
 #include "process/LinuxCgroup.h"
+#include "process/ProcessService.h"
 #include "rest/EventDispatcher.h"
 #include "rest/RestHandler.h"
 #include "rest/Worker.h"
@@ -78,11 +69,6 @@ public:
 	void setupSignalHandlers();
 	void recoverApplications();
 
-	// Reactor management
-	void startReactorThreads(ACE_Reactor *reactor, size_t threadCount);
-	void runReactorEvent(ACE_Reactor *reactor);
-	void runProcessReactorLoop();
-
 	// REST service management
 	void initializeRestService();
 	void startWorkerThreadPool();
@@ -112,7 +98,6 @@ private:
 	bool m_ptreeReady = false;
 	bool m_ptreeRefreshPending = false;
 	uint64_t m_lastPrometheusScrape = 0;
-	ACE_Reactor *m_processReactor = nullptr;
 };
 
 // Global daemon instance
@@ -210,25 +195,15 @@ void AppMeshDaemon::initializeACE()
 {
 	const static char fname[] = "AppMeshDaemon::initializeACE() ";
 
-	// Construct ACE_Null_Mutex singletons on the main thread before reactors or
-	// workers can race their first use. TimerManager starts its own io thread.
+	// Construct singletons on the main thread before workers can race their
+	// first use. TimerManager and ProcessService start their own io threads.
 	TIMER_MANAGER::instance();
+	PROCESS_SERVICE::instance();
 	EventDispatcher::instance();
 	QuitHandler::instance();
 	WORKER::instance();
 
-	LOG_INF << fname << "Initializing ACE TP_Reactor";
-	ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
-	if (ACE_Reactor::instance()->open(ACE::max_handles()) == -1)
-	{
-		LOG_WAR << fname << "Failed to open ACE TP_Reactor, using default max handles";
-	}
-
-	// Deliberately independent of TransportIoThreads: the only remaining clients of
-	// this reactor are the application stdout pipe pumps.
-	startReactorThreads(ACE_Reactor::instance(), MAIN_REACTOR_THREADS);
-
-	LOG_INF << fname << "ACE Reactor initialized";
+	LOG_INF << fname << "Service singletons initialized";
 }
 
 void AppMeshDaemon::initializeLogging()
@@ -316,19 +291,6 @@ void AppMeshDaemon::setupSignalHandlers()
 
 	setupQuitHandler();
 
-	// Dedicated reactor for Process_Manager: sharing the main TP_Reactor causes
-	// SIGCHLD deadlock on the notification queue mutex during Token contention.
-#if defined(_WIN32)
-	m_processReactor = new ACE_Reactor(new ACE_WFMO_Reactor(), 1);
-#else
-	m_processReactor = new ACE_Reactor(new ACE_Select_Reactor(), 1);
-	m_processReactor->restart(1);
-#endif
-	m_threadPool.emplace_back(std::make_unique<std::thread>(
-		[this]()
-		{ runProcessReactorLoop(); }));
-	Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, m_processReactor);
-
 	LOG_INF << fname << "Signal handlers configured";
 }
 
@@ -347,67 +309,6 @@ void AppMeshDaemon::recoverApplications()
 	config->validateRecoveredDependencies();
 
 	LOG_INF << fname << "Applications recovered";
-}
-
-void AppMeshDaemon::startReactorThreads(ACE_Reactor *reactor, size_t threadCount)
-{
-	const static char fname[] = "AppMeshDaemon::startReactorThreads() ";
-
-	if (!reactor)
-	{
-		throw std::invalid_argument("Null reactor provided");
-	}
-
-	for (size_t i = 0; i < threadCount; ++i)
-	{
-		m_threadPool.emplace_back(std::make_unique<std::thread>(
-			[this, reactor]()
-			{ runReactorEvent(reactor); }));
-	}
-
-	LOG_INF << fname << "Started " << threadCount << " reactor threads";
-}
-
-void AppMeshDaemon::runReactorEvent(ACE_Reactor *reactor)
-{
-	const static char fname[] = "AppMeshDaemon::runReactorEvent() ";
-
-	LOG_INF << fname << "Reactor event thread started";
-
-	while (!QuitHandler::instance()->shouldExit() && !reactor->reactor_event_loop_done())
-	{
-		reactor->run_reactor_event_loop();
-	}
-
-	LOG_INF << fname << "Reactor event thread exiting";
-}
-
-void AppMeshDaemon::runProcessReactorLoop()
-{
-	const static char fname[] = "AppMeshDaemon::runProcessReactorLoop() ";
-	LOG_INF << fname << "Process reactor thread started";
-	m_processReactor->owner(ACE_OS::thr_self());
-
-	// handle_events() instead of run_reactor_event_loop(): the latter exits on
-	// handle_events returning -1 (SIGCHLD), causing a busy loop.
-	// On error, fall back to timeout-based polling to prevent busy-looping.
-	ACE_Time_Value fallbackTimeout(1);
-	ACE_Time_Value *timeout = nullptr;
-	while (!QuitHandler::instance()->shouldExit() && !m_processReactor->reactor_event_loop_done())
-	{
-		if (m_processReactor->handle_events(timeout) >= 0)
-		{
-			timeout = nullptr;
-		}
-		else if (timeout == nullptr)
-		{
-			LOG_WAR << fname << "handle_events returned -1, switching to timeout mode";
-			fallbackTimeout = ACE_Time_Value(1);
-			timeout = &fallbackTimeout;
-		}
-	}
-
-	LOG_INF << fname << "Process reactor thread exiting";
 }
 
 void AppMeshDaemon::verifyListenerAddress(const ACE_INET_Addr &addr, const std::string &service)
@@ -796,10 +697,9 @@ void AppMeshDaemon::performShutdown()
 		stopManagedApplications();
 	else
 		LOG_WAR << fname << "Configuration is not initialized, skipping application shutdown";
-	// The reactor threads block in run_reactor_event_loop(); end both loops.
-	ACE_Reactor::instance()->end_reactor_event_loop();
-	if (m_processReactor)
-		m_processReactor->end_reactor_event_loop();
+	// Exit finalization ran on the ProcessService thread while the apps
+	// stopped; it can be shut down before the workers drain.
+	PROCESS_SERVICE::instance()->shutdown();
 
 	// Drain the workers before the transports: a queued reply still holds a
 	// connection whose event loop must stay alive until the reply is sent.

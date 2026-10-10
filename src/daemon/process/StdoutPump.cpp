@@ -1,19 +1,23 @@
 // src/daemon/process/StdoutPump.cpp
 #include "StdoutPump.h"
 
+#if !defined(_WIN32)
+
+#include <unistd.h>
+
 #include <cerrno>
+#include <chrono>
 #include <utility>
 
-#include <ace/OS_NS_Thread.h>
-#include <ace/OS_NS_errno.h>
-#include <ace/OS_NS_unistd.h>
-#include <ace/Reactor.h>
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/error.hpp>
 
 #include <nlohmann/json.hpp>
 
 #include "../../common/StreamLogger.h"
 #include "../../common/Utility.h"
 #include "../rest/EventDispatcher.h"
+#include "ProcessService.h"
 
 namespace
 {
@@ -22,194 +26,158 @@ namespace
 	constexpr int COALESCE_WINDOW_MS = 200;				   // otherwise flush every 200 ms
 }
 
-StdoutPump::StdoutPump(std::string appName, ACE_HANDLE pipeRead, ACE_HANDLE diskWrite, std::shared_ptr<std::mutex> diskMutex)
+StdoutPump::StdoutPump(std::string appName, int pipeReadFd, int diskWriteFd, std::shared_ptr<std::mutex> diskMutex)
 	: m_appName(std::move(appName)),
-	  m_pipeRead(pipeRead),
-	  m_diskWrite(diskWrite),
+	  m_pipeRead(PROCESS_SERVICE::instance()->io()),
+	  m_diskWrite(diskWriteFd),
 	  m_diskMutex(std::move(diskMutex)),
-	  m_acceptedBytes(0),
-	  m_stopped(false)
+	  m_coalesceTimer(PROCESS_SERVICE::instance()->io())
 {
-	this->reference_counting_policy().value(ACE_Event_Handler::Reference_Counting_Policy::ENABLED);
+	m_readBuf.resize(PUMP_READ_BUF);
+	// The pump owns the read fd from construction; the dtor closes it.
+	m_pipeRead.assign(pipeReadFd);
 }
 
-StdoutPump::~StdoutPump()
+void StdoutPump::activate()
 {
-	if (m_pipeRead != ACE_INVALID_HANDLE)
-		ACE_OS::close(m_pipeRead);
+	if (m_stopped || m_eof)
+		return;
+	readSome();
 }
 
-int StdoutPump::handle_input(ACE_HANDLE)
+void StdoutPump::stop()
 {
-	const static char fname[] = "StdoutPump::handle_input() ";
-
-	// ACE Reference_Counting_Policy already pinned us before this call; no
-	// custom inflight guard is needed.
-	if (m_stopped.load(std::memory_order_acquire))
-		return -1;
-
-	// Serialize pipe reads with finalSyncDrain() on the teardown thread.
-	std::lock_guard<std::mutex> pipeGuard(m_pipeMu);
-
-	char buf[PUMP_READ_BUF];
-	int returnCode = 0;
-	bool needFlushRemaining = false;
+	m_stopped = true;
+	// Cancel first so no new completion runs, then drain synchronously.
+	m_pipeRead.cancel();
+	m_coalesceTimer.cancel();
 
 	while (true)
 	{
-		if (m_stopped.load(std::memory_order_acquire))
-		{
-			// teardown() drains and flushes after us.
-			returnCode = -1;
-			break;
-		}
-		if (m_pipeRead == ACE_INVALID_HANDLE)
-		{
-			returnCode = -1;
-			needFlushRemaining = true;
-			break;
-		}
-
-		ssize_t n = ACE_OS::read(m_pipeRead, buf, sizeof(buf));
-		if (n > 0)
-		{
-			// Tee to disk per-read so the on-disk log keeps streaming.
-			{
-				std::lock_guard<std::mutex> dg(*m_diskMutex);
-				const size_t total = static_cast<size_t>(n);
-				size_t written = 0;
-				while (written < total)
-				{
-					ssize_t w = ACE_OS::write(m_diskWrite, buf + written, total - written);
-					if (w <= 0)
-					{
-						LOG_WAR << fname << "disk write failed for app=" << m_appName << " errno=" << ACE_OS::last_error();
-						break;
-					}
-					written += static_cast<size_t>(w);
-				}
-			}
-
-			// Append to coalesce buffer; flush immediately on byte threshold,
-			// otherwise arm the timer. Dispatch happens OUTSIDE m_coalesceMu so a
-			// slow ws fanout cannot stall reactor threads competing for it.
-			bool needDispatch = false;
-			{
-				std::lock_guard<std::mutex> cg(m_coalesceMu);
-				if (m_batch.empty())
-					m_batchStart = m_acceptedBytes.load(std::memory_order_relaxed);
-				m_batch.append(buf, static_cast<size_t>(n));
-				m_acceptedBytes.fetch_add(n, std::memory_order_release);
-				if (m_batch.size() >= COALESCE_BYTE_THRESHOLD)
-					needDispatch = true;
-				else
-					scheduleCoalesceTimerLocked();
-			}
-			if (needDispatch)
-				flushBatch(false);
-			continue;
-		}
-
-		if (n == 0)
-		{
-			LOG_DBG << fname << "EOF on pipe for app=" << m_appName;
-			returnCode = -1;
-			needFlushRemaining = true;
-			break;
-		}
-
-		const int err = ACE_OS::last_error();
-#if defined(_WIN32)
-		if (err == EAGAIN || err == EWOULDBLOCK || err == WSAEWOULDBLOCK)
-#else
-		if (err == EAGAIN || err == EWOULDBLOCK)
-#endif
-		{
-			returnCode = 0;
-			break;
-		}
-		if (err == EINTR)
-			continue;
-		LOG_WAR << fname << "read failed for app=" << m_appName << " errno=" << err;
-		returnCode = -1;
-		needFlushRemaining = true;
-		break;
+		const ssize_t n = ::read(m_pipeRead.native_handle(), m_readBuf.data(), m_readBuf.size());
+		if (n <= 0)
+			break; // EOF, EAGAIN, or unrecoverable error
+		teeToDisk(m_readBuf.data(), static_cast<size_t>(n));
+		if (m_batch.empty())
+			m_batchStart = m_acceptedBytes;
+		m_batch.append(m_readBuf.data(), static_cast<size_t>(n));
+		m_acceptedBytes += static_cast<long>(n);
 	}
-
-	if (needFlushRemaining)
-		flushBatch(false);
-	return returnCode;
+	// Final flush emits a carried incomplete UTF-8 tail; no more batches follow.
+	flushBatch(true);
 }
 
-int StdoutPump::handle_timeout(const ACE_Time_Value &, const void *)
+void StdoutPump::readSome()
 {
-	// ACE pins us via add_reference before this call.
-	if (m_stopped.load(std::memory_order_acquire))
-		return 0;
+	// self keeps the pump alive through the in-flight read.
+	auto self = shared_from_this();
+	m_pipeRead.async_read_some(boost::asio::buffer(m_readBuf),
+							   [self](const boost::system::error_code &ec, std::size_t n)
+							   { self->onRead(ec, n); });
+}
 
+void StdoutPump::onRead(const boost::system::error_code &ec, std::size_t bytesTransferred)
+{
+	const static char fname[] = "StdoutPump::onRead() ";
+	if (m_stopped)
+		return;
+
+	if (bytesTransferred > 0)
 	{
-		std::lock_guard<std::mutex> cg(m_coalesceMu);
-		m_timerArmed = false; // ACE has already removed the one-shot timer
+		// Tee to disk per-read so the on-disk log keeps streaming.
+		teeToDisk(m_readBuf.data(), bytesTransferred);
+		if (m_batch.empty())
+			m_batchStart = m_acceptedBytes;
+		m_batch.append(m_readBuf.data(), bytesTransferred);
+		m_acceptedBytes += static_cast<long>(bytesTransferred);
+		if (m_batch.size() >= COALESCE_BYTE_THRESHOLD)
+			flushBatch(false);
+		else
+			armCoalesceTimer();
 	}
+
+	if (!ec)
+	{
+		readSome();
+		return;
+	}
+
+	if (ec == boost::asio::error::operation_aborted)
+		return; // stop() canceled the chain
+
+	if (ec == boost::asio::error::eof)
+		LOG_DBG << fname << "EOF on pipe for app=" << m_appName;
+	else
+		LOG_WAR << fname << "read failed for app=" << m_appName << " ec=" << ec.message();
 	flushBatch(false);
-	return 0;
+	m_eof = true;
 }
 
-void StdoutPump::scheduleCoalesceTimerLocked()
+void StdoutPump::teeToDisk(const char *data, size_t length)
 {
-	if (m_timerArmed)
-		return; // timer already armed
-	auto *reactor = ACE_Reactor::instance();
-	if (!reactor)
-		return;
-	ACE_Time_Value delay(0, COALESCE_WINDOW_MS * 1000);
-	if (reactor->schedule_timer(this, nullptr, delay) >= 0)
-		m_timerArmed = true;
-}
-
-void StdoutPump::extractBatchLocked(std::string &out, long &start)
-{
-	if (m_timerArmed)
+	const static char fname[] = "StdoutPump::teeToDisk() ";
+	// REST reader threads share this mutex, so hold it only across the write.
+	std::lock_guard<std::mutex> guard(*m_diskMutex);
+	size_t written = 0;
+	while (written < length)
 	{
-		// Cancel by handler, not id: an expired one-shot id may already be
-		// recycled by ACE for an unrelated timer.
-		if (auto *reactor = ACE_Reactor::instance())
-			reactor->cancel_timer(this);
-		m_timerArmed = false;
+		const ssize_t w = ::write(m_diskWrite, data + written, length - written);
+		if (w <= 0)
+		{
+			LOG_WAR << fname << "disk write failed for app=" << m_appName << " errno=" << errno;
+			break;
+		}
+		written += static_cast<size_t>(w);
 	}
-	out.clear();
-	if (m_batch.empty())
-		return;
-	out.swap(m_batch);
-	start = m_batchStart;
-	m_batchStart = 0;
 }
 
 void StdoutPump::flushBatch(bool flushAll)
 {
-	// m_dispatchMu spans extract+dispatch so concurrent flushes keep position order.
-	std::lock_guard<std::mutex> dispatchGuard(m_dispatchMu);
-	std::string out;
-	long start = 0;
+	if (m_timerArmed)
 	{
-		std::lock_guard<std::mutex> cg(m_coalesceMu);
-		extractBatchLocked(out, start);
-		if (!flushAll)
+		m_coalesceTimer.cancel();
+		m_timerArmed = false;
+	}
+	if (m_batch.empty())
+		return;
+
+	std::string out;
+	out.swap(m_batch);
+	const long start = m_batchStart;
+	m_batchStart = 0;
+	if (!flushAll)
+	{
+		// A multi-byte character split at the batch boundary would render as one
+		// U+FFFD per flush; keep a possible incomplete UTF-8 tail in the batch so
+		// the next flush dispatches the whole character.
+		const size_t tail = Utility::utf8IncompleteTailBytes(out);
+		if (tail > 0)
 		{
-			// A multi-byte character split at the batch boundary would render as
-			// one U+FFFD per flush; keep a possible incomplete UTF-8 tail in the
-			// batch so the next flush dispatches the whole character. The teardown
-			// flush passes flushAll and emits every remaining byte.
-			const size_t tail = Utility::utf8IncompleteTailBytes(out);
-			if (tail > 0)
-			{
-				m_batch.assign(out, out.size() - tail, tail);
-				m_batchStart = start + static_cast<long>(out.size() - tail);
-				out.resize(out.size() - tail);
-			}
+			m_batch.assign(out, out.size() - tail, tail);
+			m_batchStart = start + static_cast<long>(out.size() - tail);
+			out.resize(out.size() - tail);
 		}
 	}
 	dispatchPayload(start, std::move(out));
+}
+
+void StdoutPump::armCoalesceTimer()
+{
+	if (m_timerArmed)
+		return; // timer already armed
+	m_timerArmed = true;
+	auto self = shared_from_this();
+	m_coalesceTimer.expires_after(std::chrono::milliseconds(COALESCE_WINDOW_MS));
+	m_coalesceTimer.async_wait([self](const boost::system::error_code &ec)
+							   { self->onCoalesceTimer(ec); });
+}
+
+void StdoutPump::onCoalesceTimer(const boost::system::error_code &ec)
+{
+	m_timerArmed = false;
+	if (ec == boost::asio::error::operation_aborted || m_stopped)
+		return;
+	flushBatch(false);
 }
 
 void StdoutPump::dispatchPayload(long start, std::string &&payload)
@@ -237,59 +205,4 @@ void StdoutPump::dispatchPayload(long start, std::string &&payload)
 	}
 }
 
-void StdoutPump::finalSyncDrain()
-{
-	const static char fname[] = "StdoutPump::finalSyncDrain() ";
-
-	// Waits out any in-flight handle_input; caller already stopped + deregistered us.
-	std::lock_guard<std::mutex> pipeGuard(m_pipeMu);
-	if (m_pipeRead == ACE_INVALID_HANDLE)
-		return;
-
-	char buf[PUMP_READ_BUF];
-	while (true)
-	{
-		ssize_t n = ACE_OS::read(m_pipeRead, buf, sizeof(buf));
-		if (n <= 0)
-			break; // EOF, EAGAIN, or unrecoverable error
-
-		{
-			std::lock_guard<std::mutex> dg(*m_diskMutex);
-			const size_t total = static_cast<size_t>(n);
-			size_t written = 0;
-			while (written < total)
-			{
-				ssize_t w = ACE_OS::write(m_diskWrite, buf + written, total - written);
-				if (w <= 0)
-				{
-					LOG_WAR << fname << "disk write failed for app=" << m_appName << " errno=" << ACE_OS::last_error();
-					break;
-				}
-				written += static_cast<size_t>(w);
-			}
-		}
-
-		std::lock_guard<std::mutex> cg(m_coalesceMu);
-		if (m_batch.empty())
-			m_batchStart = m_acceptedBytes.load(std::memory_order_relaxed);
-		m_batch.append(buf, static_cast<size_t>(n));
-		m_acceptedBytes.fetch_add(n, std::memory_order_release);
-	}
-}
-
-void StdoutPump::cancelCoalesceTimerAndFlush()
-{
-	// Final flush: emit any carried incomplete-character tail, no more batches follow.
-	flushBatch(true);
-}
-
-int StdoutPump::handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask)
-{
-	const static char fname[] = "StdoutPump::handle_close() ";
-	LOG_DBG << fname << "app=" << m_appName << " mask=" << close_mask;
-
-	// Don't close m_pipeRead here: it would race finalSyncDrain() on the teardown
-	// thread (fd could be recycled). The destructor is the single closer.
-	(void)handle;
-	return 0;
-}
+#endif // !_WIN32

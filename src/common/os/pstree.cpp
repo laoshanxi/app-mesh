@@ -212,7 +212,10 @@ namespace os
 
 		auto result = build(pid);
 		if (!result)
-			LOG_ERR << fname << "No process <" << pid << "> found in process list";
+		{
+			// Sampling race: the process exited since the snapshot; callers take the empty tree.
+			LOG_DBG << fname << "No process <" << pid << "> found in process list";
+		}
 		return result;
 	}
 

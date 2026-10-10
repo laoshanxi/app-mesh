@@ -5,7 +5,7 @@
 #include <mutex>
 #include <string>
 
-#include <ace/OS_NS_unistd.h>
+#include "../../common/AtomicHandleGuard.hpp"
 
 class Application;
 class TimerHandler;
@@ -23,7 +23,7 @@ public:
 	virtual void teardown() = 0;
 
 	static std::unique_ptr<StdoutStrategy> create(
-		std::string appName, ACE_HANDLE pipeRead, ACE_HANDLE diskWrite,
+		std::string appName, native_fd pipeRead, native_fd diskWrite,
 		std::shared_ptr<std::mutex> diskMutex,
 		std::weak_ptr<Application> owner);
 

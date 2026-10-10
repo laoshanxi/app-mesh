@@ -120,9 +120,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define MIN_WORKER_THREADS 2
 #define MIN_TRANSPORT_IO_THREADS 2
 #define MAX_TRANSPORT_IO_THREADS 4
-// The main ACE reactor now only dispatches application stdout pipe reads; the
-// network transports run on drogon/trantor.
-#define MAIN_REACTOR_THREADS 1
 #define REST_REQUEST_TIMEOUT_SECONDS 60
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
 #define WEBSOCKET_FILE_OPERATION_TIMEOUT 30
@@ -201,7 +198,6 @@ public:
 
 	// OS related
 	static unsigned long long getThreadId();
-	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 	static void applyFilePermission(const std::string &file, HttpHeaderMap headers);
 	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
 	static std::map<std::string, std::string> getenvs();
