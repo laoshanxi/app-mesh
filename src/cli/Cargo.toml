@@ -1,6 +1,6 @@
 [package]
 name = "appm"
-version = "3.0.0"
+version = "3.0.1"
 edition = "2021"
 description = "App Mesh CLI - Rust implementation using WSS transport"
 

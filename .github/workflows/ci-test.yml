@@ -18,7 +18,7 @@ on:
     branches: [legacy]
 
 env:
-  APPMESH_VERSION: "3.0.0"
+  APPMESH_VERSION: "3.0.1"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
@@ -75,7 +75,7 @@ jobs:
 
             apt update
             apt install -y wget iputils-ping gdb curl python3 python3-pip
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_7_glibc_2.27_x86_64.deb
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.1_gcc_7_glibc_2.27_x86_64.deb
             apt install -y ./appmesh_*.deb
 
             ulimit -c unlimited
@@ -171,7 +171,7 @@ jobs:
             yum clean all
             yum makecache
 
-            yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.0_gcc_4.8.5_glibc_2.17_x86_64.rpm
+            yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_3.0.1_gcc_4.8.5_glibc_2.17_x86_64.rpm
             yum install -y gdb python3 python3-pip
 
             ulimit -c unlimited

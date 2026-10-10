@@ -11,7 +11,7 @@ endif()
 
 project(appmesh
     LANGUAGES CXX C
-    VERSION 3.0.0
+    VERSION 3.0.1
     DESCRIPTION "Application Management Service"
 )
 

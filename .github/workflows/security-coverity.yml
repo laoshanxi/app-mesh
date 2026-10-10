@@ -6,14 +6,17 @@ on:
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
+# One Coverity project shared with main; the submitted ref tells the branches apart
 env:
   APPMESH_VERSION: "3.0.1"
   COVERITY_PROJECT: "laoshanxi/app-mesh"
 
 jobs:
   coverity-cpp-code-scan:
+    # No job-level container: workflow actions run node24, which needs
+    # glibc >= 2.28 and cannot execute inside the ubuntu18 build image.
+    # Build inside the image via docker run, like release-linux does.
     runs-on: ubuntu-latest
-    container: laoshanxi/appmesh:build_ubuntu18
 
     steps:
       - name: Harden Runner
@@ -23,13 +26,6 @@ jobs:
 
       - name: Checkout Github code
         uses: actions/checkout@v6
-
-      - name: Cmake init with Debug mode
-        run: |
-          mkdir build
-          cd build
-          export OPENSSL_ROOT_DIR=/usr/local/ssl
-          cmake -DCMAKE_BUILD_TYPE=Debug ..
 
       - name: URL encode Coverity project name
         id: coverity-project
@@ -65,35 +61,30 @@ jobs:
         id: cov-build-cache
         uses: actions/cache@v6.1.0
         with:
-          path: build/cov-analysis
+          path: cov-analysis
           key: cov-build-cxx-linux64-${{ steps.coverity-cache-lookup.outputs.hash }}
 
       - name: Download Coverity Build Tool
         if: steps.cov-build-cache.outputs.cache-hit != 'true'
-        working-directory: build
         env:
           TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
         run: |
+          mkdir cov-analysis
           curl --fail --silent --show-error --location \
             --output cov-analysis.tar.gz \
             https://scan.coverity.com/download/cxx/linux64 \
             --data "token=${TOKEN}&project=${{ steps.coverity-project.outputs.project }}"
-          mkdir cov-analysis
           tar -xzf cov-analysis.tar.gz --strip 1 -C cov-analysis
           test -x cov-analysis/bin/cov-build
 
+      # Coverity scans C/C++ only, so build the daemon target instead of the
+      # default target with its Rust and Go helpers.
       - name: Build with cov-build
-        working-directory: build
         run: |
-          export PATH="${PWD}/cov-analysis/bin:${PATH}"
-          # Coverity scans C/C++ only. The default target also builds the Rust
-          # (passhash) and Go (workflow) helpers, whose toolchains are not
-          # configured in this container; build the daemon target instead.
-          cov-build --dir cov-int make appmesh
-
-      - name: Archive Coverity results
-        working-directory: build
-        run: tar -czf cov-int.tgz cov-int
+          docker run --rm \
+            --volume "${{ github.workspace }}:/workspace" \
+            --workdir /workspace laoshanxi/appmesh:build_ubuntu18 \
+            /bin/bash --login -c 'set -e; mkdir build; cd build; cmake -DCMAKE_BUILD_TYPE=Debug -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; export PATH=/workspace/cov-analysis/bin:$PATH; cov-build --dir cov-int make appmesh; tar -czf cov-int.tgz cov-int'
 
       - name: Submit Coverity results
         working-directory: build
@@ -104,6 +95,6 @@ jobs:
             --form token="${TOKEN}" \
             --form email="${{ secrets.COVERITY_SCAN_EMAIL }}" \
             --form file=@cov-int.tgz \
-            --form version="${{ env.APPMESH_VERSION }}" \
+            --form version="${{ env.APPMESH_VERSION }}-legacy" \
             --form description="coverity-scan-action ${{ github.repository }} / ${{ github.ref }}" \
             "https://scan.coverity.com/builds?project=${{ steps.coverity-project.outputs.project }}"
