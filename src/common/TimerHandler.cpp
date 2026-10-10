@@ -163,7 +163,7 @@ TimerManager::~TimerManager()
 		m_ioThread.join();
 	std::map<long, std::shared_ptr<TimerState>> remainingTimers;
 	{
-		std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
+		std::lock_guard registryGuard(m_timerRegistryMutex);
 		remainingTimers.swap(m_timerRegistry);
 	}
 	remainingTimers.clear();
@@ -171,7 +171,7 @@ TimerManager::~TimerManager()
 
 long TimerManager::allocateTimerToken() noexcept
 {
-	std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
+	std::lock_guard registryGuard(m_timerRegistryMutex);
 	if (!isValidTimerId(m_nextTimerToken))
 		return INVALID_TIMER_ID;
 
@@ -189,7 +189,7 @@ void TimerManager::releaseTimerToken(long timerToken) noexcept
 		return;
 
 	// Tokens are never reused, so a hit always names the releasing timer itself.
-	std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
+	std::lock_guard registryGuard(m_timerRegistryMutex);
 	m_timerRegistry.erase(timerToken);
 }
 
@@ -201,7 +201,7 @@ long TimerManager::registerTimer(std::size_t delayMilliseconds, std::size_t inte
 long TimerManager::registerTimer(std::atomic_long &timerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
 								 const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
 {
-	std::lock_guard<std::mutex> idGuard(m_timerIdMutex);
+	std::lock_guard idGuard(m_timerIdMutex);
 	const long previousId = timerId.exchange(INVALID_TIMER_ID, std::memory_order_acq_rel);
 	if (isValidTimerId(previousId))
 		cancelTimer(previousId);
@@ -236,7 +236,7 @@ long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, std::size_t
 	{
 		timer = std::make_shared<TimerState>(*this, timerToken, intervalMilliseconds, ownerTimerId, std::move(timerObj), handler);
 		{
-			std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
+			std::lock_guard registryGuard(m_timerRegistryMutex);
 			m_timerRegistry[timerToken] = timer;
 		}
 		// Publish the slot before the io thread can arm and fire the timer, so a
@@ -275,7 +275,7 @@ bool TimerManager::cancelTimer(long timerToken)
 
 	std::shared_ptr<TimerState> timer;
 	{
-		std::lock_guard<std::mutex> registryGuard(m_timerRegistryMutex);
+		std::lock_guard registryGuard(m_timerRegistryMutex);
 		const auto registered = m_timerRegistry.find(timerToken);
 		if (registered == m_timerRegistry.end())
 		{
@@ -296,7 +296,7 @@ bool TimerManager::cancelTimer(long timerToken)
 
 bool TimerManager::cancelTimer(std::atomic_long &timerId)
 {
-	std::lock_guard<std::mutex> idGuard(m_timerIdMutex);
+	std::lock_guard idGuard(m_timerIdMutex);
 	long thisId = timerId.exchange(INVALID_TIMER_ID);
 	return isValidTimerId(thisId) && cancelTimer(thisId);
 }

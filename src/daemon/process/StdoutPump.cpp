@@ -117,7 +117,7 @@ void StdoutPump::teeToDisk(const char *data, size_t length)
 {
 	const static char fname[] = "StdoutPump::teeToDisk() ";
 	// REST reader threads share this mutex, so hold it only across the write.
-	std::lock_guard<std::mutex> guard(*m_diskMutex);
+	std::lock_guard guard(*m_diskMutex);
 	size_t written = 0;
 	while (written < length)
 	{

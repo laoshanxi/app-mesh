@@ -171,9 +171,9 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	if (envMap.size())
 	{
 		auto array = nlohmann::json::array();
-		for (const auto &env : envMap)
+		for (const auto &[key, value] : envMap)
 		{
-			array.push_back(env.first + "=" + env.second);
+			array.push_back(key + "=" + value);
 		}
 		createBody["Env"] = array;
 	}

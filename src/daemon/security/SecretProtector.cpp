@@ -48,7 +48,7 @@ void SecretProtector::initialize()
 
 void SecretProtector::ensureKey()
 {
-	std::lock_guard<std::mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (!m_key.empty())
 		return;
 
@@ -102,7 +102,7 @@ std::string SecretProtector::masterKeyFile()
 std::string SecretProtector::readSecureKeyFile(const std::string &path)
 {
 #if defined(_WIN32)
-	boost::system::error_code ec;
+	std::error_code ec;
 	const auto status = fs::symlink_status(path, ec);
 	if (ec || !fs::exists(status))
 		throw NotFoundException("SecretProtector master key file does not exist");

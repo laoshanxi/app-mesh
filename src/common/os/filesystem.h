@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -33,8 +34,8 @@ namespace os
 	/// Get mounted local logical disks and their device identifiers.
 	std::map<std::string, std::string> getMountPoints();
 
-	/// Get file status including mode, username, and groupname.
-	std::tuple<int, std::string, std::string> fileStat(const std::string &path);
+	/// Get file status including mode, username, and groupname; no value when stat fails.
+	std::optional<std::tuple<int, std::string, std::string>> fileStat(const std::string &path);
 
 	/// Change file permissions using a numeric mode value.
 	bool fileChmod(const std::string &path, uint16_t mode);

@@ -16,14 +16,14 @@
 namespace os
 {
 
-	bool getUidByName(const std::string &userName, unsigned int &uid, unsigned int &groupid)
+	std::optional<std::pair<unsigned int, unsigned int>> getUidByName(const std::string &userName)
 	{
 		const static char fname[] = "os::getUidByName() ";
 
 		if (userName.empty())
 		{
 			LOG_ERR << fname << "Empty username provided";
-			return false;
+			return std::nullopt;
 		}
 
 		struct passwd pwd;
@@ -35,9 +35,7 @@ namespace os
 		ACE_OS::getpwnam_r(userName.c_str(), &pwd, buff.get(), bufsize, &result);
 		if (result)
 		{
-			uid = pwd.pw_uid;
-			groupid = pwd.pw_gid;
-			return true;
+			return std::make_pair(static_cast<unsigned int>(pwd.pw_uid), static_cast<unsigned int>(pwd.pw_gid));
 		}
 
 		// Fallback: treat all-digits userName as a numeric UID. The Python SDK's
@@ -58,7 +56,7 @@ namespace os
 				if (numeric > std::numeric_limits<uid_t>::max())
 				{
 					LOG_ERR << fname << "Numeric UID out of range: " << userName;
-					return false;
+					return std::nullopt;
 				}
 				// Try getpwuid first to also resolve the matching primary group;
 				// if that fails too, accept the UID and reuse it as the GID
@@ -67,14 +65,11 @@ namespace os
 				::getpwuid_r(static_cast<uid_t>(numeric), &pwd, buff.get(), bufsize, &result);
 				if (result)
 				{
-					uid = pwd.pw_uid;
-					groupid = pwd.pw_gid;
-					return true;
+					return std::make_pair(static_cast<unsigned int>(pwd.pw_uid), static_cast<unsigned int>(pwd.pw_gid));
 				}
-				uid = static_cast<unsigned int>(numeric);
-				groupid = uid;
+				const auto numericUid = static_cast<unsigned int>(numeric);
 				LOG_DBG << fname << "User name not in passwd db, accepting numeric UID: " << userName;
-				return true;
+				return std::make_pair(numericUid, numericUid);
 			}
 			catch (const std::exception &)
 			{
@@ -83,7 +78,7 @@ namespace os
 		}
 
 		LOG_ERR << fname << "User does not exist: " << userName;
-		return false;
+		return std::nullopt;
 	}
 
 	uid_t get_uid()

@@ -1,8 +1,8 @@
 // src/daemon/process/LinuxCgroup.h
 #pragma once
 
-#include <boost/optional.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,9 +16,9 @@ enum class CgroupVersion
 
 struct CgroupSwapStats
 {
-	boost::optional<long long> limitBytes; // none means unlimited
+	std::optional<long long> limitBytes; // none means unlimited
 	long long currentBytes = 0;
-	boost::optional<long long> headroomBytes; // none means unlimited
+	std::optional<long long> headroomBytes; // none means unlimited
 };
 
 /// Abstract base class for Linux Cgroup operations
@@ -63,20 +63,20 @@ public:
 	/// Read memory value from host cgroup
 	/// @param cgroupFileName Name of the cgroup file to read
 	/// @return Value read from the file
-	virtual boost::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) = 0;
+	virtual std::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) = 0;
 	/// Effective headroom across the current cgroup and all of its ancestors.
-	virtual boost::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName,
+	virtual std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName,
 		const std::string &currentFileName) = 0;
-	virtual boost::optional<CgroupSwapStats> readHostSwapStats() = 0;
+	virtual std::optional<CgroupSwapStats> readHostSwapStats() = 0;
 
 	/// Get the number of CPUs available in the cpuset
 	/// and CPU quota. An unlimited quota is ignored.
 	/// @return Effective number of logical CPUs available
-	virtual boost::optional<int> readHostCpuCount() = 0;
+	virtual std::optional<int> readHostCpuCount() = 0;
 
 	/// Read the CPU quota as a fractional number of cores.
 	/// @return Quota in cores, 0 when unlimited, or no value on failure.
-	virtual boost::optional<double> readHostCpuQuotaCores() = 0;
+	virtual std::optional<double> readHostCpuQuotaCores() = 0;
 
 	/// Check if swap limit is supported
 	/// @return true if swap limiting is supported
@@ -98,7 +98,7 @@ protected:
 	/// Read a value from a cgroup file
 	/// @param filePath Full path to the cgroup file
 	/// @return Value read from the file, or no value on I/O/parse failure.
-	static boost::optional<long long> readValueFromFile(const std::string &filePath);
+	static std::optional<long long> readValueFromFile(const std::string &filePath);
 
 	/// Add a process to a cgroup
 	/// @param cgroupPath Path to the cgroup directory
@@ -118,11 +118,11 @@ public:
 	void prepareGroup(const std::string &appName, int index) override;
 	std::vector<std::string> procsFilePaths() const override;
 	bool attachPid(int pid) override;
-	boost::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
-	boost::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
-	boost::optional<CgroupSwapStats> readHostSwapStats() override;
-	boost::optional<int> readHostCpuCount() override;
-	boost::optional<double> readHostCpuQuotaCores() override;
+	std::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
+	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
+	std::optional<CgroupSwapStats> readHostSwapStats() override;
+	std::optional<int> readHostCpuCount() override;
+	std::optional<double> readHostCpuQuotaCores() override;
 	bool isSwapLimitSupported() const override;
 	bool isEnabled() const override;
 
@@ -176,11 +176,11 @@ public:
 	void prepareGroup(const std::string &appName, int index) override;
 	std::vector<std::string> procsFilePaths() const override;
 	bool attachPid(int pid) override;
-	boost::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
-	boost::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
-	boost::optional<CgroupSwapStats> readHostSwapStats() override;
-	boost::optional<int> readHostCpuCount() override;
-	boost::optional<double> readHostCpuQuotaCores() override;
+	std::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
+	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
+	std::optional<CgroupSwapStats> readHostSwapStats() override;
+	std::optional<int> readHostCpuCount() override;
+	std::optional<double> readHostCpuQuotaCores() override;
 	bool isSwapLimitSupported() const override;
 	bool isEnabled() const override;
 	void initializeManagement(int additionalPid = 0);
@@ -239,11 +239,11 @@ public:
 	void prepareGroup(const std::string &appName, int index) override;
 	std::vector<std::string> procsFilePaths() const override;
 	bool attachPid(int pid) override;
-	boost::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
-	boost::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
-	boost::optional<CgroupSwapStats> readHostSwapStats() override;
-	boost::optional<int> readHostCpuCount() override;
-	boost::optional<double> readHostCpuQuotaCores() override;
+	std::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
+	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
+	std::optional<CgroupSwapStats> readHostSwapStats() override;
+	std::optional<int> readHostCpuCount() override;
+	std::optional<double> readHostCpuQuotaCores() override;
 	bool isSwapLimitSupported() const override;
 	bool isEnabled() const override;
 

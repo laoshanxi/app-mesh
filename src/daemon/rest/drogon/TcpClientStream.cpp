@@ -73,7 +73,7 @@ bool TcpClientStream::connect(const ForwardingConnectOptions &options)
                 {
                     if (self)
                     {
-                        std::lock_guard<std::mutex> lock(self->m_connMutex);
+                        std::lock_guard lock(self->m_connMutex);
                         self->m_conn = conn;
                         self->m_connected.store(true, std::memory_order_release);
                     }
@@ -140,7 +140,7 @@ bool TcpClientStream::connect(const ForwardingConnectOptions &options)
 void TcpClientStream::onClosed(const std::shared_ptr<TcpClientStream> &self)
 {
     {
-        std::lock_guard<std::mutex> lock(m_connMutex);
+        std::lock_guard lock(m_connMutex);
         m_conn.reset();
     }
     m_connected.store(false, std::memory_order_release);
@@ -189,7 +189,7 @@ bool TcpClientStream::send(const char *data, std::size_t len)
 {
     trantor::TcpConnectionPtr conn;
     {
-        std::lock_guard<std::mutex> lock(m_connMutex);
+        std::lock_guard lock(m_connMutex);
         conn = m_conn;
     }
     if (!conn || !conn->connected())

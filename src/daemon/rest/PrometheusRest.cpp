@@ -44,15 +44,11 @@ void PrometheusRest::initMetrics()
 		PROM_METRIC_HELP_appmesh_process_id,
 		{});
 	m_appmeshPid->metric().Set(ResourceCollection::instance()->getPid());
-	m_buildInfo = createPromGauge(
-		"appmesh_build_info", "App Mesh build information",
-		{{"version", __MICRO_VAR__(BUILD_TAG)}});
-	m_buildInfo->metric().Set(1);
 }
 
 std::shared_ptr<CounterMetric> PrometheusRest::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
 {
-	std::lock_guard<std::mutex> guard(m_familyMutex);
+	std::lock_guard guard(m_familyMutex);
 	auto familyIt = m_counterFamilies.find(metricName);
 	if (familyIt == m_counterFamilies.end())
 	{
@@ -64,7 +60,7 @@ std::shared_ptr<CounterMetric> PrometheusRest::createPromCounter(const std::stri
 
 std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
 {
-	std::lock_guard<std::mutex> guard(m_familyMutex);
+	std::lock_guard guard(m_familyMutex);
 	auto familyIt = m_gaugeFamilies.find(metricName);
 	if (familyIt == m_gaugeFamilies.end())
 	{
@@ -77,7 +73,7 @@ std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &
 std::shared_ptr<HistogramMetric> PrometheusRest::createPromHistogram(const std::string &metricName, const std::string &metricHelp,
 	const std::map<std::string, std::string> &labels, const std::vector<double> &buckets)
 {
-	std::lock_guard<std::mutex> guard(m_familyMutex);
+	std::lock_guard guard(m_familyMutex);
 	auto familyIt = m_histogramFamilies.find(metricName);
 	if (familyIt == m_histogramFamilies.end())
 	{
@@ -109,7 +105,7 @@ void PrometheusRest::httpRequestStarted(const std::string &method, const std::st
 {
 	std::shared_ptr<GaugeMetric> inFlight;
 	{
-		std::lock_guard<std::mutex> guard(m_httpMetricMutex);
+		std::lock_guard guard(m_httpMetricMutex);
 		auto &slot = m_httpInflightGauges[httpMetricKey(method, route)];
 		if (!slot)
 			slot = createPromGauge(PROM_METRIC_NAME_appmesh_http_requests_in_flight,
@@ -128,7 +124,7 @@ void PrometheusRest::httpRequestFinished(const std::string &method, const std::s
 	std::shared_ptr<GaugeMetric> inFlight;
 	std::shared_ptr<HistogramMetric> duration;
 	{
-		std::lock_guard<std::mutex> guard(m_httpMetricMutex);
+		std::lock_guard guard(m_httpMetricMutex);
 		auto &counterSlot = m_httpRequestCounters[httpMetricKey(method, route, status)];
 		if (!counterSlot)
 			counterSlot = createPromCounter(PROM_METRIC_NAME_appmesh_http_requests_total,

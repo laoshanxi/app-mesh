@@ -19,14 +19,14 @@
 namespace os
 {
 
-	bool getUidByName(const std::string &userName, unsigned int &uid, unsigned int &groupid)
+	std::optional<std::pair<unsigned int, unsigned int>> getUidByName(const std::string &userName)
 	{
 		const static char fname[] = "os::getUidByName() ";
 
 		if (userName.empty())
 		{
 			LOG_ERR << fname << "Empty username provided";
-			return false;
+			return std::nullopt;
 		}
 
 		PSID userSid = nullptr;
@@ -40,7 +40,7 @@ namespace os
 			if (error != ERROR_INSUFFICIENT_BUFFER)
 			{
 				LOG_ERR << fname << "User does not exist: " << userName << " Error: " << error;
-				return false;
+				return std::nullopt;
 			}
 		}
 
@@ -51,23 +51,23 @@ namespace os
 		if (!LookupAccountNameA(nullptr, userName.c_str(), userSid, &sidSize, domainBuffer.data(), &domainSize, &sidType))
 		{
 			LOG_ERR << fname << "Failed to lookup account: " << userName << " Error: " << GetLastError();
-			return false;
+			return std::nullopt;
 		}
 
 		LPSTR sidString = nullptr;
 		if (!ConvertSidToStringSidA(userSid, &sidString))
 		{
 			LOG_ERR << fname << "Failed to convert SID to string for user: " << userName;
-			return false;
+			return std::nullopt;
 		}
 
 		std::unique_ptr<void, decltype(&LocalFree)> sidStringPtr(sidString, LocalFree);
 
-		uid = hashSidToUid(std::string(sidString));
-		groupid = 1000;
+		const auto uid = hashSidToUid(std::string(sidString));
+		constexpr unsigned int groupid = 1000;
 
 		LOG_DBG << fname << "Windows user " << userName << " mapped to UID: " << uid << " GID: " << groupid;
-		return true;
+		return std::make_pair(uid, groupid);
 	}
 
 	uid_t get_uid()
@@ -128,8 +128,7 @@ namespace os
 			{
 				std::string result(username.data());
 
-				unsigned int verifyUid, verifyGid;
-				if (getUidByName(result, verifyUid, verifyGid) && verifyUid == uid)
+				if (auto ids = getUidByName(result); ids && ids->first == uid)
 				{
 					return result;
 				}

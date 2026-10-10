@@ -33,7 +33,7 @@ std::string EventDispatcher::subscribe(const std::string &appName, uint32_t even
 	sub.connKey = connKey;
 
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::lock_guard lock(m_mutex);
 		m_subscriptions.emplace(subId, std::move(sub));
 		m_appIndex.emplace(appName, subId);
 		m_connectionIndex.emplace(connKey, subId);
@@ -47,7 +47,7 @@ bool EventDispatcher::unsubscribe(const std::string &subId, const std::string &u
 {
 	const static char fname[] = "EventDispatcher::unsubscribe() ";
 
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::lock_guard lock(m_mutex);
 	auto it = m_subscriptions.find(subId);
 	if (it == m_subscriptions.end())
 		return false;
@@ -68,7 +68,7 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 	// Delivery callbacks terminate at the transport layer and do not re-enter
 	// EventDispatcher. Serialize the pass so each subscription observes ordered, non-concurrent
 	// delivery, without holding the subscription-index mutex in a callback.
-	std::lock_guard<std::mutex> deliveryGuard(m_deliveryMutex);
+	std::lock_guard deliveryGuard(m_deliveryMutex);
 	auto seq = m_sequence++;
 	auto now = std::chrono::duration_cast<std::chrono::seconds>(
 				   std::chrono::system_clock::now().time_since_epoch())
@@ -97,22 +97,21 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 	};
 	std::vector<PendingDelivery> pending;
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::lock_guard lock(m_mutex);
 
 		auto collectMatching = [&](const std::string &indexKey)
 		{
-			auto range = m_appIndex.equal_range(indexKey);
-			for (auto it = range.first; it != range.second; ++it)
+			auto [first, last] = m_appIndex.equal_range(indexKey);
+			for (auto it = first; it != last; ++it)
 			{
-				auto subIt = m_subscriptions.find(it->second);
-				if (subIt == m_subscriptions.end())
-					continue;
+				if (auto subIt = m_subscriptions.find(it->second); subIt != m_subscriptions.end())
+				{
+					const auto &sub = subIt->second;
+					if (!(sub.eventMask & typeBit))
+						continue;
 
-				const auto &sub = subIt->second;
-				if (!(sub.eventMask & typeBit))
-					continue;
-
-				pending.push_back({sub.subId, sub.deliveryCb});
+					pending.push_back({sub.subId, sub.deliveryCb});
+				}
 			}
 		};
 
@@ -139,7 +138,7 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 
 	if (!deadSubscriptions.empty())
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::lock_guard lock(m_mutex);
 		for (const auto &subId : deadSubscriptions)
 		{
 			LOG_WAR << fname << "Removing dead subscription: " << subId;
@@ -152,26 +151,25 @@ void EventDispatcher::removeByConnection(const ConnectionKey &connKey)
 {
 	const static char fname[] = "EventDispatcher::removeByConnection() ";
 
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::lock_guard lock(m_mutex);
 
-	auto range = m_connectionIndex.equal_range(connKey);
+	auto [first, last] = m_connectionIndex.equal_range(connKey);
 	std::vector<std::string> subIds;
-	for (auto it = range.first; it != range.second; ++it)
+	for (auto it = first; it != last; ++it)
 	{
 		subIds.push_back(it->second);
 	}
-	m_connectionIndex.erase(range.first, range.second);
+	m_connectionIndex.erase(first, last);
 
 	for (const auto &subId : subIds)
 	{
-		auto subIt = m_subscriptions.find(subId);
-		if (subIt != m_subscriptions.end())
+		if (auto subIt = m_subscriptions.find(subId); subIt != m_subscriptions.end())
 		{
 			auto appName = subIt->second.appName;
 
 			// Remove from app index
-			auto appRange = m_appIndex.equal_range(appName);
-			for (auto ait = appRange.first; ait != appRange.second;)
+			auto [appFirst, appLast] = m_appIndex.equal_range(appName);
+			for (auto ait = appFirst; ait != appLast;)
 			{
 				if (ait->second == subId)
 					ait = m_appIndex.erase(ait);
@@ -192,24 +190,23 @@ void EventDispatcher::removeByApp(const std::string &appName)
 {
 	const static char fname[] = "EventDispatcher::removeByApp() ";
 
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::lock_guard lock(m_mutex);
 
-	auto range = m_appIndex.equal_range(appName);
+	auto [first, last] = m_appIndex.equal_range(appName);
 	std::vector<std::string> subIds;
-	for (auto it = range.first; it != range.second; ++it)
+	for (auto it = first; it != last; ++it)
 	{
 		subIds.push_back(it->second);
 	}
-	m_appIndex.erase(range.first, range.second);
+	m_appIndex.erase(first, last);
 
 	for (const auto &subId : subIds)
 	{
-		auto subIt = m_subscriptions.find(subId);
-		if (subIt != m_subscriptions.end())
+		if (auto subIt = m_subscriptions.find(subId); subIt != m_subscriptions.end())
 		{
 			// Remove from connection index
-			auto connRange = m_connectionIndex.equal_range(subIt->second.connKey);
-			for (auto cit = connRange.first; cit != connRange.second;)
+			auto [connFirst, connLast] = m_connectionIndex.equal_range(subIt->second.connKey);
+			for (auto cit = connFirst; cit != connLast;)
 			{
 				if (cit->second == subId)
 					cit = m_connectionIndex.erase(cit);
@@ -228,14 +225,13 @@ void EventDispatcher::removeByApp(const std::string &appName)
 
 bool EventDispatcher::hasStdoutSubscriber(const std::string &appName) const
 {
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::lock_guard lock(m_mutex);
 	const auto hasMatching = [&](const std::string &key)
 	{
-		auto range = m_appIndex.equal_range(key);
-		for (auto it = range.first; it != range.second; ++it)
+		auto [first, last] = m_appIndex.equal_range(key);
+		for (auto it = first; it != last; ++it)
 		{
-			auto subIt = m_subscriptions.find(it->second);
-			if (subIt != m_subscriptions.end() &&
+			if (auto subIt = m_subscriptions.find(it->second); subIt != m_subscriptions.end() &&
 				(subIt->second.eventMask & static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT)))
 				return true;
 		}
@@ -252,8 +248,8 @@ void EventDispatcher::removeSubscriptionLocked(const std::string &subId)
 
 	const auto &sub = it->second;
 
-	auto appRange = m_appIndex.equal_range(sub.appName);
-	for (auto ait = appRange.first; ait != appRange.second;)
+	auto [appFirst, appLast] = m_appIndex.equal_range(sub.appName);
+	for (auto ait = appFirst; ait != appLast;)
 	{
 		if (ait->second == subId)
 			ait = m_appIndex.erase(ait);
@@ -261,8 +257,8 @@ void EventDispatcher::removeSubscriptionLocked(const std::string &subId)
 			++ait;
 	}
 
-	auto connRange = m_connectionIndex.equal_range(sub.connKey);
-	for (auto cit = connRange.first; cit != connRange.second;)
+	auto [connFirst, connLast] = m_connectionIndex.equal_range(sub.connKey);
+	for (auto cit = connFirst; cit != connLast;)
 	{
 		if (cit->second == subId)
 			cit = m_connectionIndex.erase(cit);

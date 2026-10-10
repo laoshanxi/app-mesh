@@ -148,7 +148,7 @@ void AuthorizationStore::init()
 
 void AuthorizationStore::load(const nlohmann::json &root)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (!root.contains("Authorization") || !root.at("Authorization").is_object())
 		throw std::invalid_argument("authorization.yaml must contain an Authorization object");
 	const auto &authorization = root.at("Authorization");
@@ -205,7 +205,7 @@ void AuthorizationStore::load(const nlohmann::json &root)
 
 std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::resolve(const Principal &principal)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	auto found = m_principals.find(principal.id());
 	if (found == m_principals.end())
 	{
@@ -248,7 +248,7 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::resolve(const Princi
 std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::enrollFirstAdmin(const Principal &principal)
 {
 	const static char fname[] = "AuthorizationStore::enrollFirstAdmin() ";
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (!m_firstAdminEnrollmentEnabled)
 		throw AuthorizationException("first-admin enrollment is not available");
 	if (principal.kind() != Principal::Kind::User)
@@ -302,7 +302,7 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::enrollFirstAdmin(con
 
 std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::get(const std::string &principalId) const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	auto found = m_principals.find(principalId);
 	if (found == m_principals.end())
 		throw NotFoundException("principal not found");
@@ -311,15 +311,14 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::get(const std::strin
 
 std::set<std::string> AuthorizationStore::permissions(const std::string &principalId) const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	const auto principal = get(principalId);
 	if (!principal->active())
 		throw AuthorizationException("App Mesh principal is not active");
 	std::set<std::string> result;
 	for (const auto &role : principal->roles())
 	{
-		auto found = m_roles.find(role);
-		if (found != m_roles.end())
+		if (auto found = m_roles.find(role); found != m_roles.end())
 			result.insert(found->second.begin(), found->second.end());
 	}
 	return result;
@@ -327,7 +326,7 @@ std::set<std::string> AuthorizationStore::permissions(const std::string &princip
 
 std::set<std::string> AuthorizationStore::allPermissions() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	std::set<std::string> result;
 	for (const auto &role : m_roles)
 		result.insert(role.second.begin(), role.second.end());
@@ -336,13 +335,13 @@ std::set<std::string> AuthorizationStore::allPermissions() const
 
 bool AuthorizationStore::builtinAuthentication() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	return m_builtinAuthentication;
 }
 
 nlohmann::json AuthorizationStore::firstAdminEnrollment() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	const bool available = m_firstAdminEnrollmentEnabled && !m_firstAdminEnrolled &&
 		!hasFirstAdminLocked();
 	nlohmann::json result{{"available", available}};
@@ -353,19 +352,19 @@ nlohmann::json AuthorizationStore::firstAdminEnrollment() const
 
 nlohmann::json AuthorizationStore::principalsJson() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	nlohmann::json result = nlohmann::json::object();
-	for (const auto &entry : m_principals)
-		result[entry.first] = entry.second->asJson();
+	for (const auto &[id, principal] : m_principals)
+		result[id] = principal->asJson();
 	return result;
 }
 
 nlohmann::json AuthorizationStore::rolesJson() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	nlohmann::json result = nlohmann::json::object();
-	for (const auto &entry : m_roles)
-		result[entry.first] = entry.second;
+	for (const auto &[name, role] : m_roles)
+		result[name] = role;
 	return result;
 }
 
@@ -381,7 +380,7 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const n
 		throw AuthorizationException(
 			"use the Principal DELETE operation to create a tombstone after ownership checks");
 	}
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (principalId == SYSTEM_PRINCIPAL_ID)
 		throw AuthorizationException("the App Mesh system principal cannot be changed through the authorization API");
 
@@ -446,7 +445,7 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 	if (config)
 		applicationMutation = config->lockAppMutation();
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (principalId == SYSTEM_PRINCIPAL_ID)
 		throw AuthorizationException("the App Mesh system principal cannot be deleted");
 	mergeDiskPolicyLocked();
@@ -498,7 +497,7 @@ void AuthorizationStore::updateRole(const std::string &role, const nlohmann::jso
 	if (role.empty())
 		throw std::invalid_argument("role name cannot be empty");
 	const auto parsed = readStringSet(permissions, "role permissions");
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	mergeDiskPolicyLocked();
 	auto found = m_roles.find(role);
 	const bool existed = found != m_roles.end();
@@ -523,7 +522,7 @@ void AuthorizationStore::updateRole(const std::string &role, const nlohmann::jso
 void AuthorizationStore::deleteRole(const std::string &role)
 {
 	const static char fname[] = "AuthorizationStore::deleteRole() ";
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (role == m_firstAdminRole)
 		throw AuthorizationException("the first-administrator role cannot be deleted");
 	mergeDiskPolicyLocked();
@@ -548,7 +547,7 @@ void AuthorizationStore::deleteRole(const std::string &role)
 
 void AuthorizationStore::save() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	saveLocked();
 }
 
@@ -624,17 +623,19 @@ void AuthorizationStore::saveLocked() const
 	const auto tmp = os::createTmpFile(path, Utility::jsonToYaml(root), 0600);
 	if (tmp.empty())
 		throw std::runtime_error("could not create temporary authorization configuration");
-	if (ACE_OS::rename(tmp.c_str(), path.c_str()) != 0)
+	std::error_code renameError;
+	fs::rename(tmp, path, renameError);
+	if (renameError)
 	{
 		Utility::removeFile(tmp);
-		throw std::runtime_error(std::string("failed to replace authorization configuration: ") + last_error_msg());
+		throw std::runtime_error(std::string("failed to replace authorization configuration: ") + renameError.message());
 	}
 }
 
 void AuthorizationStore::initializeFirstAdminEnrollment()
 {
 	const static char fname[] = "AuthorizationStore::initializeFirstAdminEnrollment() ";
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	const auto authMode = Utility::getenv(AUTH_MODE_ENV, BUILTIN_AUTH_MODE);
 	if (authMode != BUILTIN_AUTH_MODE && authMode != EXTERNAL_AUTH_MODE)
 		throw std::invalid_argument("APPMESH_AUTH_MODE must be builtin or external");
@@ -670,9 +671,9 @@ void AuthorizationStore::initializeFirstAdminEnrollment()
 
 bool AuthorizationStore::hasFirstAdminLocked() const
 {
-	for (const auto &entry : m_principals)
+	for (const auto &[id, principal] : m_principals)
 	{
-		if (entry.first != SYSTEM_PRINCIPAL_ID && entry.second->roles().count(m_firstAdminRole) != 0)
+		if (id != SYSTEM_PRINCIPAL_ID && principal->roles().count(m_firstAdminRole) != 0)
 			return true;
 	}
 	return false;

@@ -219,9 +219,9 @@ void HttpRequest::dump() const
 	LOG_DBG << fname << "m_relative_uri:" << m_relative_uri;
 	LOG_DBG << fname << "m_remote_address:" << m_remote_address;
 	// LOG_DBG << fname << "m_body:" << *m_body;
-	for (const auto &q : m_query)
-		LOG_DBG << fname << "m_query:" << q.first << "="
-			<< (q.first == "process_key" ? "<redacted>" : q.second);
+	for (const auto &[key, value] : m_query)
+		LOG_DBG << fname << "m_query:" << key << "="
+			<< (key == "process_key" ? "<redacted>" : value);
 	// for (const auto &h : m_headers)
 	//	LOG_DBG << fname << "m_headers:" << h.first << "=" << h.second;
 }
@@ -527,7 +527,7 @@ void HttpRequestOutputView::unsubscribeRunCompletion()
 
 TaskRequest::SupersededRequests TaskRequest::activate(const std::string &processKey)
 {
-	std::lock_guard<std::mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (!processKey.empty() && Utility::secureCompare(processKey, m_processKey))
 		return {};
 	m_processKey = processKey;
@@ -541,7 +541,7 @@ void TaskRequest::terminate()
 	std::shared_ptr<HttpRequestWithTimeout> replyTask;
 	std::shared_ptr<HttpRequestWithTimeout> activeTask;
 	{
-		std::lock_guard<std::mutex> guard(m_mutex);
+		std::lock_guard guard(m_mutex);
 		m_processKey.clear();
 		fetchTask = std::move(m_fetchTask);
 		replyTask = std::move(m_replyTask);
@@ -568,7 +568,7 @@ void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 	std::shared_ptr<HttpRequestWithTimeout> previousReply;
 	bool queueFull = false;
 	{
-		std::lock_guard<std::mutex> guard(m_mutex);
+		std::lock_guard guard(m_mutex);
 		if (m_processKey.empty())
 			throw std::invalid_argument("No process running");
 		taskRequest->id(++m_taskId);
@@ -612,7 +612,7 @@ bool TaskRequest::deleteTask()
 	// Full teardown of the queue happens in terminate() on app stop/remove.
 	std::shared_ptr<HttpRequestWithTimeout> activeTask;
 	{
-		std::lock_guard<std::mutex> guard(m_mutex);
+		std::lock_guard guard(m_mutex);
 		activeTask = std::move(m_activeTask);
 	}
 	return activeTask && activeTask->interrupt();
@@ -627,7 +627,7 @@ void TaskRequest::fetchTask(const std::string &processKey, std::shared_ptr<void>
 	std::shared_ptr<HttpRequestWithTimeout> previousReply;
 	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
 	{
-		std::lock_guard<std::mutex> guard(m_mutex);
+		std::lock_guard guard(m_mutex);
 		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
 			throw std::runtime_error("Process key mismatch");
 		previousFetch = std::move(m_fetchTask);
@@ -665,7 +665,7 @@ void TaskRequest::replyTask(const std::string &processKey, std::shared_ptr<void>
 	std::shared_ptr<HttpRequestWithTimeout> previousReply;
 	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
 	{
-		std::lock_guard<std::mutex> guard(m_mutex);
+		std::lock_guard guard(m_mutex);
 		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
 			throw std::runtime_error("Process key mismatch");
 		previousReply = std::move(m_replyTask);
@@ -708,7 +708,7 @@ std::tuple<int, std::string> TaskRequest::taskStatus()
 	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
 	std::tuple<int, std::string> result;
 	{
-		std::lock_guard<std::mutex> guard(m_mutex);
+		std::lock_guard guard(m_mutex);
 		repliedActive = releaseRepliedRequestLocked(m_activeTask);
 
 		if (m_fetchTask)

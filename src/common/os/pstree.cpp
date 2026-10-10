@@ -196,8 +196,7 @@ namespace os
 				return std::shared_ptr<ProcessTree>();
 
 			std::list<ProcessTree> children;
-			const auto childPids = childrenByPid.find(currentPid);
-			if (childPids != childrenByPid.end())
+			if (auto childPids = childrenByPid.find(currentPid); childPids != childrenByPid.end())
 			{
 				for (const auto childPid : childPids->second)
 				{

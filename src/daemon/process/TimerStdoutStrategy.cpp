@@ -21,7 +21,7 @@ void TimerStdoutStrategy::activate(TimerHandler &owner, const std::string &proce
 {
 	const static char fname[] = "TimerStdoutStrategy::activate() ";
 	auto state = m_state;
-	std::lock_guard<std::mutex> registrationGuard(state->registrationMutex);
+	std::lock_guard registrationGuard(state->registrationMutex);
 	state->processUuid = processUuid;
 	state->stopped.store(false, std::memory_order_release);
 	owner.registerTimer(state->timerId, 0, 1000, fname, [state]()
@@ -39,11 +39,11 @@ void TimerStdoutStrategy::teardown()
 {
 	auto state = m_state;
 	{
-		std::lock_guard<std::mutex> registrationGuard(state->registrationMutex);
+		std::lock_guard registrationGuard(state->registrationMutex);
 		state->stopped.store(true, std::memory_order_release);
 		TIMER_MANAGER::instance()->cancelTimer(state->timerId);
 	}
-	std::lock_guard<std::mutex> guard(state->dispatchMutex);
+	std::lock_guard guard(state->dispatchMutex);
 }
 
 bool TimerStdoutStrategy::onTimerDispatch(const std::shared_ptr<State> &state)
@@ -51,7 +51,7 @@ bool TimerStdoutStrategy::onTimerDispatch(const std::shared_ptr<State> &state)
 	const static char fname[] = "TimerStdoutStrategy::onTimerDispatch() ";
 
 	{
-		std::lock_guard<std::mutex> registrationGuard(state->registrationMutex);
+		std::lock_guard registrationGuard(state->registrationMutex);
 		if (state->stopped.load(std::memory_order_acquire))
 			return false;
 	}
@@ -66,7 +66,7 @@ bool TimerStdoutStrategy::onTimerDispatch(const std::shared_ptr<State> &state)
 		const long startPos = pos;
 		auto result = owner->getOutput(pos, 64 * 1024, state->processUuid, 0, 0);
 		auto &output = std::get<0>(result);
-		std::lock_guard<std::mutex> guard(state->dispatchMutex);
+		std::lock_guard guard(state->dispatchMutex);
 		if (state->stopped.load(std::memory_order_acquire))
 			return false;
 		if (!output.empty())

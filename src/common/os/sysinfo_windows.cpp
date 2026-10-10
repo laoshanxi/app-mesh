@@ -73,7 +73,7 @@ namespace os
 
 		if (!initialized.load(std::memory_order_acquire))
 		{
-			std::lock_guard<std::mutex> lock(mutex);
+			std::lock_guard lock(mutex);
 			if (!initialized.load(std::memory_order_relaxed))
 			{
 				DWORD bufferSize = 0;

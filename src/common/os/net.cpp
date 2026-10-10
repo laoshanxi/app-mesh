@@ -120,7 +120,7 @@ namespace net
 
 		bool dispatch = false;
 		{
-			std::lock_guard<std::mutex> lock(cache->mutex);
+			std::lock_guard lock(cache->mutex);
 			if (!cache->dispatched)
 			{
 				cache->dispatched = true;
@@ -159,7 +159,7 @@ namespace net
 						error = "unknown exception";
 					}
 
-					std::lock_guard<std::mutex> lock(cache->mutex);
+					std::lock_guard lock(cache->mutex);
 					if (fqdn.empty())
 						LOG_WAR << fname << "FQDN resolution failed for host <" << shortHostname << ">: " << error;
 					else
@@ -173,14 +173,14 @@ namespace net
 				.detach();
 
 			// Give the first caller the FQDN when the resolver answers quickly.
-			std::unique_lock<std::mutex> lock(cache->mutex);
+			std::unique_lock lock(cache->mutex);
 			if (!cache->settled.wait_for(lock, std::chrono::seconds(1), [] { return cache->finished; }))
 			{
 				LOG_WAR << fname << "FQDN resolution for host <" << shortHostname << "> did not complete within 1 second, using the short hostname until the lookup completes";
 			}
 		}
 
-		std::lock_guard<std::mutex> lock(cache->mutex);
+		std::lock_guard lock(cache->mutex);
 		return cache->value;
 	}
 

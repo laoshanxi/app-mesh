@@ -339,7 +339,7 @@ int LinuxCgroup::hostCpuCount()
 	static const int count = []()
 	{
 		static auto cgroup = LinuxCgroup::create(0, 0, 100);
-		const auto effective = cgroup ? cgroup->readHostCpuCount() : boost::optional<int>();
+		const auto effective = cgroup ? cgroup->readHostCpuCount() : std::optional<int>();
 		return effective && *effective > 0 ? *effective : 0;
 	}();
 	return count;
@@ -368,14 +368,14 @@ bool LinuxCgroup::writeValueToFile(const std::string &filePath, long long value)
 	return true;
 }
 
-boost::optional<long long> LinuxCgroup::readValueFromFile(const std::string &filePath)
+std::optional<long long> LinuxCgroup::readValueFromFile(const std::string &filePath)
 {
 	const static char fname[] = "LinuxCgroup::readValueFromFile() ";
 	std::ifstream input(filePath);
 	if (!input.is_open())
 	{
 		LOG_ERR << fname << "Failed to open file <" << filePath << ">: " << std::strerror(errno);
-		return boost::none;
+		return std::nullopt;
 	}
 
 	std::string rawValue;
@@ -393,7 +393,7 @@ boost::optional<long long> LinuxCgroup::readValueFromFile(const std::string &fil
 	catch (const std::exception &)
 	{
 		LOG_ERR << fname << "Invalid integer <" << rawValue << "> in file <" << filePath << ">";
-		return boost::none;
+		return std::nullopt;
 	}
 	LOG_DBG << fname << "Read <" << value << "> from file <" << filePath << ">";
 	return value;
@@ -486,14 +486,14 @@ void LinuxCgroupV1::cleanup()
 	{
 		std::string forceEmptyFile = m_cgroupMemoryPath + "/memory.force_empty";
 		writeValueToFile(forceEmptyFile, 0);
-		boost::system::error_code ec;
+		std::error_code ec;
 		if (!fs::remove(m_cgroupMemoryPath, ec) && ec)
 			LOG_WAR << fname << "Failed to remove memory cgroup <" << m_cgroupMemoryPath << ">: " << ec.message();
 	}
 
 	if (!m_cgroupCpuPath.empty() && Utility::isDirExist(m_cgroupCpuPath))
 	{
-		boost::system::error_code ec;
+		std::error_code ec;
 		if (!fs::remove(m_cgroupCpuPath, ec) && ec)
 			LOG_WAR << fname << "Failed to remove CPU cgroup <" << m_cgroupCpuPath << ">: " << ec.message();
 	}
@@ -579,7 +579,7 @@ void LinuxCgroupV1::prepareGroup(const std::string &appName, int index)
 	m_cgroupCpuPath = s_cpuRootDir.empty() ? std::string() :
 		(fs::path(s_cpuRootDir) / CGROUP_APPMESH_DIR / leafName).string();
 
-	const auto perm = fs::perms::owner_all | fs::perms::group_exe | fs::perms::others_exe;
+	const auto perm = fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec;
 
 	m_procsPaths.clear();
 
@@ -656,46 +656,46 @@ bool LinuxCgroupV1::applyCpuShares(const std::string &cgroupPath)
 	return writeValueToFile(sharesFile, m_cpuShares);
 }
 
-boost::optional<long long> LinuxCgroupV1::readHostMemoryValue(const std::string &cgroupFileName)
+std::optional<long long> LinuxCgroupV1::readHostMemoryValue(const std::string &cgroupFileName)
 {
 	if (s_memoryRootDir.empty())
-		return boost::none;
+		return std::nullopt;
 
 	const bool isLimit = cgroupFileName == "memory.limit_in_bytes" || cgroupFileName == "memory.memsw.limit_in_bytes";
 	if (!isLimit)
 		return readValueFromFile(s_memoryRootDir + "/" + cgroupFileName);
 
-	boost::optional<long long> effective;
+	std::optional<long long> effective;
 	for (const auto &path : cgroupHierarchy(s_memoryRootDir, s_memoryMountRootDir))
 	{
 		const auto value = readValueFromFile(path + "/" + cgroupFileName);
 		if (!value)
-			return boost::none;
+			return std::nullopt;
 		if (!effective || *value < *effective)
 			effective = *value;
 	}
 	return effective;
 }
 
-boost::optional<long long> LinuxCgroupV1::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
+std::optional<long long> LinuxCgroupV1::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
 {
-	boost::optional<long long> available;
+	std::optional<long long> available;
 	for (const auto &path : cgroupHierarchy(s_memoryRootDir, s_memoryMountRootDir))
 	{
 		const auto limit = readValueFromFile(path + "/" + limitFileName);
 		const auto current = readValueFromFile(path + "/" + currentFileName);
 		if (!limit || !current)
-			return boost::none;
+			return std::nullopt;
 		if (!isFiniteV1Limit(*limit))
 			continue;
 		const auto headroom = std::max(0LL, *limit - std::max(0LL, *current));
 		if (!available || headroom < *available)
 			available = headroom;
 	}
-	return available ? available : boost::optional<long long>(std::numeric_limits<long long>::max());
+	return available ? available : std::optional<long long>(std::numeric_limits<long long>::max());
 }
 
-boost::optional<CgroupSwapStats> LinuxCgroupV1::readHostSwapStats()
+std::optional<CgroupSwapStats> LinuxCgroupV1::readHostSwapStats()
 {
 	CgroupSwapStats stats;
 	bool leaf = true;
@@ -706,7 +706,7 @@ boost::optional<CgroupSwapStats> LinuxCgroupV1::readHostSwapStats()
 		const auto memswLimit = readValueFromFile(path + "/memory.memsw.limit_in_bytes");
 		const auto memswCurrent = readValueFromFile(path + "/memory.memsw.usage_in_bytes");
 		if (!memoryLimit || !memoryCurrent || !memswLimit || !memswCurrent)
-			return boost::none;
+			return std::nullopt;
 
 		if (leaf)
 		{
@@ -724,10 +724,10 @@ boost::optional<CgroupSwapStats> LinuxCgroupV1::readHostSwapStats()
 			stats.headroomBytes = stats.headroomBytes ? std::min(*stats.headroomBytes, levelHeadroom) : levelHeadroom;
 		}
 	}
-	return leaf ? boost::none : boost::optional<CgroupSwapStats>(stats);
+	return leaf ? std::nullopt : std::optional<CgroupSwapStats>(stats);
 }
 
-boost::optional<int> LinuxCgroupV1::readHostCpuCount()
+std::optional<int> LinuxCgroupV1::readHostCpuCount()
 {
 	const static char fname[] = "LinuxCgroupV1::readHostCpuCount() ";
 
@@ -756,29 +756,29 @@ boost::optional<int> LinuxCgroupV1::readHostCpuCount()
 	}
 	LOG_DBG << fname << "CPU count: " << cpuCount;
 	if (cpuCount == 0 && !quotaCores)
-		return boost::none;
+		return std::nullopt;
 	return cpuCount;
 }
 
-boost::optional<double> LinuxCgroupV1::readHostCpuQuotaCores()
+std::optional<double> LinuxCgroupV1::readHostCpuQuotaCores()
 {
 	if (s_cpuRootDir.empty() || s_cpuMountRootDir.empty())
-		return boost::none;
+		return std::nullopt;
 
-	boost::optional<double> effective;
+	std::optional<double> effective;
 	for (const auto &path : cgroupHierarchy(s_cpuRootDir, s_cpuMountRootDir))
 	{
 		const auto quota = readValueFromFile(path + "/cpu.cfs_quota_us");
 		const auto period = readValueFromFile(path + "/cpu.cfs_period_us");
 		if (!quota || !period || *period <= 0)
-			return boost::none;
+			return std::nullopt;
 		if (*quota <= 0)
 			continue;
 		const double cores = static_cast<double>(*quota) / static_cast<double>(*period);
 		if (!effective || cores < *effective)
 			effective = cores;
 	}
-	return effective ? effective : boost::optional<double>(0.0);
+	return effective ? effective : std::optional<double>(0.0);
 }
 
 bool LinuxCgroupV1::isSwapLimitSupported() const
@@ -855,10 +855,10 @@ void LinuxCgroupV2::cleanup()
 		return;
 
 	const static char fname[] = "LinuxCgroupV2::cleanup() ";
-	std::lock_guard<std::mutex> managementGuard(cgroupV2ManagementMutex);
+	std::lock_guard managementGuard(cgroupV2ManagementMutex);
 	if (Utility::isDirExist(m_cgroupPath))
 	{
-		boost::system::error_code ec;
+		std::error_code ec;
 		if (!fs::remove(m_cgroupPath, ec) && ec)
 			LOG_WAR << fname << "Failed to remove cgroup <" << m_cgroupPath << ">: " << ec.message();
 	}
@@ -987,8 +987,8 @@ bool LinuxCgroupV2::enableControllers(const std::string &cgroupPath)
 
 void LinuxCgroupV2::initializeManagement(int additionalPid)
 {
-	const auto perm = fs::perms::owner_all | fs::perms::group_exe | fs::perms::others_exe;
-	std::lock_guard<std::mutex> managementGuard(cgroupV2ManagementMutex);
+	const auto perm = fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec;
+	std::lock_guard managementGuard(cgroupV2ManagementMutex);
 	if (!s_cgroupManagementRootDir.empty())
 		return;
 	if (s_cgroupRootDir.empty())
@@ -1020,8 +1020,8 @@ void LinuxCgroupV2::prepareGroup(const std::string &appName, int index)
 	// Move the daemon into its leaf BEFORE the fork: the forked child then
 	// inherits the leaf and joins the application leaf itself at exec time.
 	initializeManagement(0);
-	std::lock_guard<std::mutex> managementGuard(cgroupV2ManagementMutex);
-	const auto perm = fs::perms::owner_all | fs::perms::group_exe | fs::perms::others_exe;
+	std::lock_guard managementGuard(cgroupV2ManagementMutex);
+	const auto perm = fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec;
 
 	m_cgroupPath = (fs::path(s_cgroupManagementRootDir) /
 		(appName + "-" + std::to_string(index))).string();
@@ -1099,10 +1099,10 @@ bool LinuxCgroupV2::applyCpuWeight(const std::string &cgroupPath)
 	return writeValueToFile(weightFile, weight);
 }
 
-boost::optional<long long> LinuxCgroupV2::readHostMemoryValue(const std::string &cgroupFileName)
+std::optional<long long> LinuxCgroupV2::readHostMemoryValue(const std::string &cgroupFileName)
 {
 	if (s_cgroupRootDir.empty())
-		return boost::none;
+		return std::nullopt;
 
 	// Map v1 file names to v2 equivalents
 	std::string v2FileName = cgroupFileName;
@@ -1127,19 +1127,19 @@ boost::optional<long long> LinuxCgroupV2::readHostMemoryValue(const std::string 
 	if (!isLimit)
 		return readValueFromFile(s_cgroupRootDir + "/" + v2FileName);
 
-	boost::optional<long long> effective;
+	std::optional<long long> effective;
 	for (const auto &path : cgroupHierarchy(s_cgroupRootDir, s_cgroupMountRootDir))
 	{
 		const auto value = readValueFromFile(path + "/" + v2FileName);
 		if (!value)
-			return boost::none;
+			return std::nullopt;
 		if (!effective || *value < *effective)
 			effective = *value;
 	}
 	return effective;
 }
 
-boost::optional<long long> LinuxCgroupV2::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
+std::optional<long long> LinuxCgroupV2::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
 {
 	const auto mapName = [](const std::string &name) {
 		if (name == "memory.limit_in_bytes") return std::string("memory.max");
@@ -1150,23 +1150,23 @@ boost::optional<long long> LinuxCgroupV2::readHostMemoryAvailableValue(const std
 	};
 	const auto limitName = mapName(limitFileName);
 	const auto currentName = mapName(currentFileName);
-	boost::optional<long long> available;
+	std::optional<long long> available;
 	for (const auto &path : cgroupHierarchy(s_cgroupRootDir, s_cgroupMountRootDir))
 	{
 		const auto limit = readValueFromFile(path + "/" + limitName);
 		const auto current = readValueFromFile(path + "/" + currentName);
 		if (!limit || !current)
-			return boost::none;
+			return std::nullopt;
 		if (*limit == std::numeric_limits<long long>::max())
 			continue;
 		const auto headroom = std::max(0LL, *limit - std::max(0LL, *current));
 		if (!available || headroom < *available)
 			available = headroom;
 	}
-	return available ? available : boost::optional<long long>(std::numeric_limits<long long>::max());
+	return available ? available : std::optional<long long>(std::numeric_limits<long long>::max());
 }
 
-boost::optional<CgroupSwapStats> LinuxCgroupV2::readHostSwapStats()
+std::optional<CgroupSwapStats> LinuxCgroupV2::readHostSwapStats()
 {
 	CgroupSwapStats stats;
 	bool leaf = true;
@@ -1175,7 +1175,7 @@ boost::optional<CgroupSwapStats> LinuxCgroupV2::readHostSwapStats()
 		const auto limit = readValueFromFile(path + "/memory.swap.max");
 		const auto current = readValueFromFile(path + "/memory.swap.current");
 		if (!limit || !current)
-			return boost::none;
+			return std::nullopt;
 		if (leaf)
 		{
 			stats.currentBytes = std::max(0LL, *current);
@@ -1188,17 +1188,17 @@ boost::optional<CgroupSwapStats> LinuxCgroupV2::readHostSwapStats()
 			stats.headroomBytes = stats.headroomBytes ? std::min(*stats.headroomBytes, headroom) : headroom;
 		}
 	}
-	return leaf ? boost::none : boost::optional<CgroupSwapStats>(stats);
+	return leaf ? std::nullopt : std::optional<CgroupSwapStats>(stats);
 }
 
-boost::optional<int> LinuxCgroupV2::readHostCpuCount()
+std::optional<int> LinuxCgroupV2::readHostCpuCount()
 {
 	const static char fname[] = "LinuxCgroupV2::readHostCpuCount() ";
 
 	if (s_cgroupRootDir.empty())
 	{
 		LOG_WAR << fname << "Cgroup root directory not discovered";
-		return boost::none;
+		return std::nullopt;
 	}
 
 	// In cgroup v2, cpuset is unified
@@ -1221,16 +1221,16 @@ boost::optional<int> LinuxCgroupV2::readHostCpuCount()
 
 	LOG_DBG << fname << "CPU count: " << cpuCount;
 	if (cpuCount == 0 && !quotaCores)
-		return boost::none;
+		return std::nullopt;
 	return cpuCount;
 }
 
-boost::optional<double> LinuxCgroupV2::readHostCpuQuotaCores()
+std::optional<double> LinuxCgroupV2::readHostCpuQuotaCores()
 {
 	if (s_cgroupRootDir.empty())
-		return boost::none;
+		return std::nullopt;
 
-	boost::optional<double> effective;
+	std::optional<double> effective;
 	for (const auto &path : cgroupHierarchy(s_cgroupRootDir, s_cgroupMountRootDir))
 	{
 		std::istringstream cpuMax(Utility::readFile(path + "/cpu.max"));
@@ -1238,24 +1238,24 @@ boost::optional<double> LinuxCgroupV2::readHostCpuQuotaCores()
 		long long period = 0;
 		cpuMax >> quotaValue >> period;
 		if (quotaValue.empty() || period <= 0)
-			return boost::none;
+			return std::nullopt;
 		if (quotaValue == "max")
 			continue;
 		try
 		{
 			const auto quota = std::stoll(quotaValue);
 			if (quota <= 0)
-				return boost::none;
+				return std::nullopt;
 			const double cores = static_cast<double>(quota) / static_cast<double>(period);
 			if (!effective || cores < *effective)
 				effective = cores;
 		}
 		catch (const std::exception &)
 		{
-			return boost::none;
+			return std::nullopt;
 		}
 	}
-	return effective ? effective : boost::optional<double>(0.0);
+	return effective ? effective : std::optional<double>(0.0);
 }
 
 bool LinuxCgroupV2::isSwapLimitSupported() const
@@ -1291,32 +1291,32 @@ bool LinuxCgroupNull::attachPid(int pid)
 	return false;
 }
 
-boost::optional<long long> LinuxCgroupNull::readHostMemoryValue(const std::string &cgroupFileName)
+std::optional<long long> LinuxCgroupNull::readHostMemoryValue(const std::string &cgroupFileName)
 {
 	(void)cgroupFileName;
-	return boost::none;
+	return std::nullopt;
 }
 
-boost::optional<long long> LinuxCgroupNull::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
+std::optional<long long> LinuxCgroupNull::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
 {
 	(void)limitFileName;
 	(void)currentFileName;
-	return boost::none;
+	return std::nullopt;
 }
 
-boost::optional<CgroupSwapStats> LinuxCgroupNull::readHostSwapStats()
+std::optional<CgroupSwapStats> LinuxCgroupNull::readHostSwapStats()
 {
-	return boost::none;
+	return std::nullopt;
 }
 
-boost::optional<int> LinuxCgroupNull::readHostCpuCount()
+std::optional<int> LinuxCgroupNull::readHostCpuCount()
 {
-	return boost::none;
+	return std::nullopt;
 }
 
-boost::optional<double> LinuxCgroupNull::readHostCpuQuotaCores()
+std::optional<double> LinuxCgroupNull::readHostCpuQuotaCores()
 {
-	return boost::none;
+	return std::nullopt;
 }
 
 bool LinuxCgroupNull::isSwapLimitSupported() const

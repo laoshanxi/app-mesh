@@ -33,8 +33,8 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			continue;
 
 		auto pid = app->getpid();
-		auto snapAppIter = m_persistedSnapshot->m_apps.find(app->getName());
-		if (snapAppIter != m_persistedSnapshot->m_apps.end() && snapAppIter->second.m_pid == pid)
+		if (auto snapAppIter = m_persistedSnapshot->m_apps.find(app->getName());
+			snapAppIter != m_persistedSnapshot->m_apps.end() && snapAppIter->second.m_pid == pid)
 		{
 			// if application does not changed pid, do not need call stat
 			snap->m_apps.insert(std::pair<std::string, AppSnap>(
@@ -100,11 +100,11 @@ bool Snapshot::operator==(const Snapshot &snap) const
 {
 	if (snap.m_apps.size() != m_apps.size())
 		return false;
-	for (const auto &app : m_apps)
+	for (const auto &[name, appSnap] : m_apps)
 	{
-		if (0 == snap.m_apps.count(app.first))
+		if (0 == snap.m_apps.count(name))
 			return false;
-		if (app.second == snap.m_apps.find(app.first)->second)
+		if (appSnap == snap.m_apps.find(name)->second)
 		{
 			// continue;
 		}
@@ -122,12 +122,12 @@ nlohmann::json Snapshot::AsJson() const
 
 	// Applications
 	nlohmann::json apps = nlohmann::json::object();
-	for (const auto &app : m_apps)
+	for (const auto &[name, appSnap] : m_apps)
 	{
 		auto json = nlohmann::json::object();
-		json[SNAPSHOT_JSON_KEY_pid] = (app.second.m_pid);
-		json[SNAPSHOT_JSON_KEY_starttime] = (app.second.m_startTime);
-		apps[app.first] = std::move(json);
+		json[SNAPSHOT_JSON_KEY_pid] = (appSnap.m_pid);
+		json[SNAPSHOT_JSON_KEY_starttime] = (appSnap.m_startTime);
+		apps[name] = std::move(json);
 	}
 	result["Applications"] = std::move(apps);
 
@@ -166,13 +166,15 @@ void Snapshot::persist()
 	{
 		ofs << this->AsJson().dump();
 		ofs.close();
-		if (ACE_OS::rename(tmpFile.c_str(), SNAPSHOT_FILE_NAME) == 0)
+		std::error_code renameError;
+		std::filesystem::rename(tmpFile, SNAPSHOT_FILE_NAME, renameError);
+		if (!renameError)
 		{
 			LOG_DBG << fname << "Snapshot written to <" << SNAPSHOT_FILE_NAME << ">";
 		}
 		else
 		{
-			LOG_ERR << fname << "Failed to rename temporary snapshot file <" << tmpFile << "> to <" << SNAPSHOT_FILE_NAME << ">, error: " << last_error_msg();
+			LOG_ERR << fname << "Failed to rename temporary snapshot file <" << tmpFile << "> to <" << SNAPSHOT_FILE_NAME << ">, error: " << renameError.message();
 		}
 	}
 	else

@@ -32,12 +32,12 @@ namespace os
 		{
 			const pid_t p = q.front();
 			q.pop();
-			const auto it = children.find(p);
-			if (it == children.end())
-				continue;
-			for (const pid_t c : it->second)
-				if (result.insert(c).second)
-					q.push(c);
+			if (auto it = children.find(p); it != children.end())
+			{
+				for (const pid_t c : it->second)
+					if (result.insert(c).second)
+						q.push(c);
+			}
 		}
 		return result;
 	}

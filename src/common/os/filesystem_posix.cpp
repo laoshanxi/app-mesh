@@ -5,7 +5,6 @@
 
 #include <cerrno>
 #include <cstring>
-#include <dirent.h>
 #include <grp.h>
 #include <memory>
 #include <pwd.h>
@@ -23,37 +22,22 @@ namespace os
 		const static char fname[] = "os::ls() ";
 		std::vector<std::string> result;
 
-		std::unique_ptr<DIR, void (*)(DIR *)> dir(opendir(directory.c_str()), [](DIR *d)
-												  { if(d) closedir(d); });
-		if (!dir)
+		std::error_code dirError;
+		for (fs::directory_iterator it(directory, dirError), end; !dirError && it != end; it.increment(dirError))
 		{
-			LOG_WAR << fname << "Failed to open directory: " << directory << " with error: " << last_error_msg();
-			return result;
+			result.push_back(it->path().filename().string());
 		}
 
-		struct dirent *entry;
-		errno = 0;
-
-		while ((entry = readdir(dir.get())) != nullptr)
+		if (dirError)
 		{
-			const std::string name = entry->d_name;
-			if (name == "." || name == "..")
-			{
-				continue;
-			}
-			result.push_back(name);
-		}
-
-		if (errno != 0)
-		{
-			LOG_WAR << fname << "Failed to read directory: " << directory << " with error: " << last_error_msg();
+			LOG_WAR << fname << "Failed to read directory: " << directory << " with error: " << dirError.message();
 			return {};
 		}
 
 		return result;
 	}
 
-	std::tuple<int, std::string, std::string> fileStat(const std::string &path)
+	std::optional<std::tuple<int, std::string, std::string>> fileStat(const std::string &path)
 	{
 		const static char fname[] = "fileStat() ";
 
@@ -61,7 +45,7 @@ namespace os
 		if (stat(path.c_str(), &st) != 0)
 		{
 			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << last_error_msg();
-			return std::make_tuple(-1, "", "");
+			return std::nullopt;
 		}
 
 		int mode = st.st_mode & 0777;

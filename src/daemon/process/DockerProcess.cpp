@@ -1,8 +1,9 @@
 // src/daemon/process/DockerProcess.cpp
 #include "DockerProcess.h"
 
+#include <charconv>
 #include <chrono>
-#include <sstream>
+#include <optional>
 #include <utility>
 
 #include "../../common/Utility.h"
@@ -26,19 +27,17 @@ namespace
 	};
 
 	template <typename Integer>
-	bool parseInteger(const std::string &text, Integer &value)
+	std::optional<Integer> parseInteger(const std::string &text)
 	{
 		if (text.empty())
-			return false;
+			return std::nullopt;
 
 		Integer parsed{};
-		std::istringstream input(text);
-		input >> std::noskipws >> parsed;
-		if (input.fail() || !input.eof())
-			return false;
+		const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed);
+		if (result.ec != std::errc{} || result.ptr != text.data() + text.size())
+			return std::nullopt;
 
-		value = parsed;
-		return true;
+		return parsed;
 	}
 
 	DockerCommandResult runDockerCli(const std::string &command, int timeoutSeconds = DOCKER_CLI_TIMEOUT_SEC,
@@ -112,7 +111,7 @@ void DockerProcess::terminateImpl()
 	std::string containerId;
 	std::string containerEngine;
 	{
-		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		std::lock_guard guard(m_dockerMutex);
 		containerId = std::move(m_containerId);
 		m_containerId.clear();
 		containerEngine = m_containerEngine;
@@ -140,7 +139,7 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 
 	std::string containerEngine;
 	{
-		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		std::lock_guard guard(m_dockerMutex);
 		containerEngine = m_containerEngine;
 	}
 
@@ -162,9 +161,9 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 			setStartError(imageInspect.error);
 			return INVALID_PID;
 		}
-		auto imageSizeStr = Utility::stdStringTrim(imageInspect.output);
-		int64_t imageSize = 0;
-		if (imageInspect.exitCode != 0 || !parseInteger(imageSizeStr, imageSize) || imageSize < 1)
+		const auto imageSizeStr = Utility::stdStringTrim(imageInspect.output);
+		const auto imageSize = parseInteger<int64_t>(imageSizeStr);
+		if (imageInspect.exitCode != 0 || !imageSize || *imageSize < 1)
 		{
 			LOG_WAR << fname << "docker image <" << m_dockerImage << "> does not exist, trying to pull";
 			return startImagePull(envMap, m_dockerImage, workDir, stdoutFile);
@@ -174,20 +173,20 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 	// Step 2: Build docker start command line
 	dockerCommand = Utility::stringFormat("%s run -d --name %s ", containerEngine.c_str(), m_containerName.c_str());
 
-	for (const auto &env : envMap)
+	for (const auto &[key, value] : envMap)
 	{
-		if (env.first == ENV_APPMESH_DOCKER_PARAMS)
+		if (key == ENV_APPMESH_DOCKER_PARAMS)
 		{
 			// Used for -p -v parameters
-			dockerCommand.append(" ").append(env.second);
+			dockerCommand.append(" ").append(value);
 		}
 		else
 		{
-			const bool containSpace = (env.second.find(' ') != env.second.npos);
-			dockerCommand.append(" -e ").append(env.first).append("=");
+			const bool containSpace = (value.find(' ') != value.npos);
+			dockerCommand.append(" -e ").append(key).append("=");
 			if (containSpace)
 				dockerCommand.append("'");
-			dockerCommand.append(env.second);
+			dockerCommand.append(value);
 			if (containSpace)
 				dockerCommand.append("'");
 		}
@@ -329,20 +328,17 @@ pid_t DockerProcess::startImagePull(const std::map<std::string, std::string> &en
 	const static char fname[] = "DockerProcess::startImagePull() ";
 
 	int pullTimeout = 5 * 60; // Default image pull timeout: 5 minutes
-	const auto timeoutSetting = envMap.find(ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT);
-	int configuredTimeout = 0;
-	if (timeoutSetting != envMap.end() && parseInteger(timeoutSetting->second, configuredTimeout) && configuredTimeout > 0)
-	{
-		pullTimeout = configuredTimeout;
-	}
+	auto parsedTimeout = std::optional<int>{};
+	if (auto timeoutSetting = envMap.find(ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT); timeoutSetting != envMap.end())
+		parsedTimeout = parseInteger<int>(timeoutSetting->second);
+	if (parsedTimeout && *parsedTimeout > 0)
+		pullTimeout = *parsedTimeout;
 	else
-	{
 		LOG_DBG << fname << "image pull timeout not configured, using default <" << pullTimeout << "> seconds";
-	}
 
 	std::string containerEngine;
 	{
-		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		std::lock_guard guard(m_dockerMutex);
 		containerEngine = m_containerEngine;
 	}
 	const pid_t pid = AppProcess::startImpl(
@@ -365,19 +361,19 @@ pid_t DockerProcess::getpid() const
 
 std::string DockerProcess::containerId() const
 {
-	std::lock_guard<std::mutex> guard(m_dockerMutex);
+	std::lock_guard guard(m_dockerMutex);
 	return m_containerId;
 }
 
 void DockerProcess::setContainerId(const std::string &containerId)
 {
-	std::lock_guard<std::mutex> guard(m_dockerMutex);
+	std::lock_guard guard(m_dockerMutex);
 	m_containerId = containerId;
 }
 
 std::string DockerProcess::takeContainerId()
 {
-	std::lock_guard<std::mutex> guard(m_dockerMutex);
+	std::lock_guard guard(m_dockerMutex);
 	auto containerId = std::move(m_containerId);
 	m_containerId.clear();
 	return containerId;
@@ -390,7 +386,7 @@ int DockerProcess::returnValue() const
 	std::string containerId;
 	std::string containerEngine;
 	{
-		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		std::lock_guard guard(m_dockerMutex);
 		containerId = m_containerId;
 		containerEngine = m_containerEngine;
 	}
@@ -411,9 +407,8 @@ int DockerProcess::returnValue() const
 
 	if (inspect.exitCode == 0)
 	{
-		int exitCode = 0;
-		if (parseInteger(Utility::stdStringTrim(inspect.output), exitCode))
-			return exitCode;
+		if (auto exitCode = parseInteger<int>(Utility::stdStringTrim(inspect.output)))
+			return *exitCode;
 		LOG_WAR << fname << "docker inspect exit code from container <" << containerId << "> failed with output: " << inspect.output;
 	}
 	else
@@ -434,7 +429,7 @@ pid_t DockerProcess::startImpl(std::string cmd, std::string execUser, std::strin
 	// Check for podman engine
 	if (CONTAINER_PODMAN == GET_JSON_STR_VALUE(stdinFileContent, "engine"))
 	{
-		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		std::lock_guard guard(m_dockerMutex);
 		m_containerEngine = CONTAINER_PODMAN;
 	}
 
@@ -447,7 +442,7 @@ const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool 
 	std::string containerId;
 	std::string containerEngine;
 	{
-		std::lock_guard<std::mutex> guard(m_dockerMutex);
+		std::lock_guard guard(m_dockerMutex);
 		containerId = m_containerId;
 		containerEngine = m_containerEngine;
 	}

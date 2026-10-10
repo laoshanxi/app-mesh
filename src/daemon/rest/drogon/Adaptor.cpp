@@ -243,7 +243,7 @@ void DrogonAdaptor::stop()
     LOG_INF << fname << "Initiating server shutdown...";
 
     {
-        std::lock_guard<std::mutex> lock(m_connMutex);
+        std::lock_guard lock(m_connMutex);
         for (const auto &[id, conn] : m_connections)
         {
             if (conn && conn->connected())
@@ -432,13 +432,7 @@ std::shared_ptr<WSS::ReplyContext> DrogonAdaptor::createHttpReplyContext(drogon:
             // client already disconnected the response is discarded.
             auto resp = drogon::HttpResponse::newHttpResponse();
             int code = 200;
-            try
-            {
-                code = std::stoi(status);
-            }
-            catch (...)
-            {
-            }
+            std::from_chars(status.data(), status.data() + status.size(), code);
             resp->setStatusCode(static_cast<drogon::HttpStatusCode>(code));
             for (const auto &[k, v] : headers)
                 resp->addHeader(k, v);
@@ -796,7 +790,7 @@ void DrogonAdaptor::onWsOpen(const drogon::HttpRequestPtr &req, const drogon::We
         session->principalId = attrs->get<std::string>("principalId");
 
     {
-        std::lock_guard<std::mutex> lock(m_connMutex);
+        std::lock_guard lock(m_connMutex);
         if (m_connections.size() >= MAX_WS_CONNECTIONS)
         {
             LOG_WAR << fname << "connection limit reached (" << MAX_WS_CONNECTIONS << "), rejecting connection";
@@ -847,7 +841,7 @@ void DrogonAdaptor::onWsClose(const drogon::WebSocketConnectionPtr &conn)
         return;
 
     {
-        std::lock_guard<std::mutex> lock(m_connMutex);
+        std::lock_guard lock(m_connMutex);
         m_connections.erase(connId);
     }
     if (numericId > 0)

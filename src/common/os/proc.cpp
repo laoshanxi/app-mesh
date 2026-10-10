@@ -31,7 +31,7 @@
 #endif
 
 #include <ace/OS.h>
-#include <boost/filesystem.hpp> // directory_iterator
+#include <filesystem> // directory_iterator
 
 #include "../Utility.h"
 #include "handler.hpp"
@@ -113,11 +113,11 @@ namespace os
 		const auto procFdPath = std::string("/proc/") + std::to_string(pid) + "/fd";
 		try
 		{
-			if (boost::filesystem::exists(procFdPath) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
+			if (fs::exists(procFdPath) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
 			{
 				result = static_cast<size_t>(std::distance(
-					boost::filesystem::directory_iterator(procFdPath),
-					boost::filesystem::directory_iterator()));
+					fs::directory_iterator(procFdPath),
+					fs::directory_iterator()));
 				LOG_DBG << fname << "Found " << result << " file descriptors for process " << pid;
 			}
 			else
@@ -134,14 +134,14 @@ namespace os
 		return result;
 	}
 
-	uid_t getProcessUid(pid_t pid)
+	std::optional<uid_t> getProcessUid(pid_t pid)
 	{
 		const static char fname[] = "os::getProcessUid() ";
 
 		if (pid <= 0)
 		{
 			LOG_WAR << fname << "Invalid PID: " << pid;
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 
 #if defined(_WIN32)
@@ -158,7 +158,7 @@ namespace os
 			{
 				LOG_WAR << fname << "Failed to open process " << pid << ", error: " << error;
 			}
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 
 		HandleRAII hToken;
@@ -166,7 +166,7 @@ namespace os
 		if (!OpenProcessToken(hProcess.get(), TOKEN_QUERY, &tempToken))
 		{
 			LOG_WAR << fname << "Failed to open process token for PID " << pid << ", error: " << GetLastError();
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 		hToken.reset(tempToken);
 
@@ -176,20 +176,20 @@ namespace os
 		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
 		{
 			LOG_WAR << fname << "Failed to get token information size for PID " << pid << ", error: " << GetLastError();
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 
 		MallocRAII<TOKEN_USER> tokenUser(static_cast<TOKEN_USER *>(malloc(tokenLength)));
 		if (!tokenUser.valid())
 		{
 			LOG_WAR << fname << "Failed to allocate memory for token user";
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 
 		if (!GetTokenInformation(hToken.get(), TokenUser, tokenUser.get(), tokenLength, &tokenLength))
 		{
 			LOG_WAR << fname << "Failed to get token information for PID " << pid << ", error: " << GetLastError();
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 
 		// Convert SID to a simple numeric representation
@@ -224,14 +224,14 @@ namespace os
 			{
 				LOG_WAR << fname << "Failed to stat " << procPath << ": " << last_error_msg();
 			}
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 
 		// Check if it's a symbolic link
 		if (S_ISLNK(statBuf.st_mode))
 		{
 			LOG_WAR << fname << "Path is a symbolic link: " << procPath;
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 
 		LOG_DBG << fname << "UID for process " << pid << " is " << statBuf.st_uid;
@@ -250,7 +250,7 @@ namespace os
 			{
 				LOG_WAR << fname << "Failed to get process info for PID " << pid << ": " << last_error_msg();
 			}
-			return std::numeric_limits<uid_t>::max();
+			return std::nullopt;
 		}
 
 		LOG_DBG << fname << "UID for process " << pid << " is " << procInfo.pbi_uid;
@@ -258,7 +258,7 @@ namespace os
 
 #else
 		LOG_WAR << fname << "Unsupported platform";
-		return std::numeric_limits<uid_t>::max();
+		return std::nullopt;
 #endif
 	}
 

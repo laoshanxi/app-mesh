@@ -9,7 +9,7 @@
 
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 #include "Configuration.h"
@@ -69,7 +69,7 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 {
 	if (config)
 	{
-		std::lock_guard<std::recursive_mutex> guard(config->m_hotupdateMutex);
+		std::lock_guard guard(config->m_hotupdateMutex);
 		config->m_runtimePrometheusEnabled = config->m_rest->m_restEnabled && config->m_rest->m_promListenPort > 1024;
 	}
 	m_instance = config;
@@ -170,7 +170,7 @@ nlohmann::json Configuration::AsJson()
 {
 	nlohmann::json result = nlohmann::json::object();
 
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 
 	// base config
 	result[JSON_KEY_BaseConfig] = m_baseConfig->AsJson();
@@ -203,7 +203,7 @@ std::vector<std::shared_ptr<Application>> Configuration::getApps() const
 void Configuration::registerRecoveredApp(const std::shared_ptr<Application> &app)
 {
 	const static char fname[] = "Configuration::registerRecoveredApp() ";
-	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
+	std::lock_guard mutationGuard(m_appMutationMutex);
 	if (m_apps.bind(app->getName(), app) == 1)
 	{
 		LOG_WAR << fname << "Application <" << app->getName() << "> already exists, keep the loaded definition";
@@ -212,37 +212,37 @@ void Configuration::registerRecoveredApp(const std::shared_ptr<Application> &app
 
 int Configuration::getScheduleInterval()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_baseConfig->m_scheduleInterval;
 }
 
 int Configuration::getRestListenPort()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_restListenPort;
 }
 
 int Configuration::getPromListenPort() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_promListenPort;
 }
 
 std::string Configuration::getRestListenAddress()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_restListenAddress;
 }
 
 int Configuration::getTcpApiPort()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_tcpApiPort;
 }
 
 int Configuration::getWebSocketPort()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_webSocketPort;
 }
 
@@ -288,7 +288,7 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 	return result;
 }
 
-void Configuration::loadApps(const boost::filesystem::path &appDir)
+void Configuration::loadApps(const std::filesystem::path &appDir)
 {
 	const static char fname[] = "Configuration::loadApps() ";
 	std::vector<std::string> failedDefinitions;
@@ -389,7 +389,7 @@ void Configuration::validateRecoveredDependencies() const
 
 void Configuration::disableApp(const std::string &appName)
 {
-	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
+	std::lock_guard mutationGuard(m_appMutationMutex);
 	auto app = getApp(appName);
 	if (app->isSystemProtected())
 		throw AuthorizationException("system applications cannot be disabled through the application API");
@@ -398,7 +398,7 @@ void Configuration::disableApp(const std::string &appName)
 }
 void Configuration::enableApp(const std::string &appName)
 {
-	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
+	std::lock_guard mutationGuard(m_appMutationMutex);
 	auto app = getApp(appName);
 	if (app->isSystemProtected())
 		throw AuthorizationException("system applications cannot be changed through the application API");
@@ -418,19 +418,19 @@ bool Configuration::isCurrentApp(const std::string &appName, const std::shared_p
 
 const std::string Configuration::getLogLevel() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_baseConfig->m_logLevel;
 }
 
 const std::string Configuration::getDefaultExecUser() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_baseConfig->m_defaultExecUser;
 }
 
 bool Configuration::getDisableExecUser() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 #if !defined(_WIN32)
 	return m_baseConfig->m_disableExecUser || os::get_uid() != 0;
 #else
@@ -440,7 +440,7 @@ bool Configuration::getDisableExecUser() const
 
 const std::string Configuration::getWorkDir() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	if (m_baseConfig->m_defaultWorkDir.length())
 		return m_baseConfig->m_defaultWorkDir;
 	else
@@ -449,73 +449,73 @@ const std::string Configuration::getWorkDir() const
 
 bool Configuration::getSslVerifyClient() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_sslVerifyClient;
 }
 
 bool Configuration::getSslVerifyServer() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_sslVerifyServer;
 }
 
 std::string Configuration::getSSLCertificateFile() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_certFile;
 }
 
 std::string Configuration::getSSLCertificateKeyFile() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_certKeyFile;
 }
 
 std::string Configuration::getSSLCaPath() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_sslCaPath;
 }
 
 std::string Configuration::getSSLClientCertificateFile() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_clientCertFile;
 }
 
 std::string Configuration::getSSLClientCertificateKeyFile() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_clientCertKeyFile;
 }
 
 bool Configuration::getRestEnabled() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_restEnabled;
 }
 
 bool Configuration::getCorsDisabled() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_corsDisabled;
 }
 
 std::set<std::string> Configuration::getCsrfAllowedOrigins() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_csrfAllowedOrigins;
 }
 
 std::string Configuration::getFileAllowedBaseDir() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_rest->m_fileAllowedBaseDir;
 }
 
 std::size_t Configuration::getWorkerThreads() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	if (m_rest->m_workerThreads > 0)
 		return static_cast<std::size_t>(m_rest->m_workerThreads);
 	return std::max<std::size_t>(static_cast<std::size_t>(MIN_WORKER_THREADS), availableCpuCount());
@@ -523,7 +523,7 @@ std::size_t Configuration::getWorkerThreads() const
 
 std::size_t Configuration::getTransportIoThreads() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	if (m_rest->m_transportIoThreads > 0)
 		return static_cast<std::size_t>(m_rest->m_transportIoThreads);
 	// Each transport multiplexes with epoll and only wakes on readiness, so a small
@@ -535,7 +535,7 @@ std::size_t Configuration::getTransportIoThreads() const
 
 const std::string Configuration::getPosixTimezone() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	return m_baseConfig->m_posixTimezone;
 }
 
@@ -634,7 +634,7 @@ bool Configuration::dependencyCycleExists(const std::vector<std::string> &seedDe
 
 std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp, bool persistable)
 {
-	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
+	std::lock_guard mutationGuard(m_appMutationMutex);
 	auto app = parseApp(jsonApp);
 	// Re-check the immutable owner binding while holding the same mutation lock
 	// used by Principal deletion. A request authenticated just before an
@@ -687,7 +687,7 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 void Configuration::removeApp(const std::string &appName, const Application *expected)
 {
 	const static char fname[] = "Configuration::removeApp() ";
-	std::lock_guard<std::recursive_mutex> mutationGuard(m_appMutationMutex);
+	std::lock_guard mutationGuard(m_appMutationMutex);
 	if (expected != nullptr && getApp(appName, false).get() != expected)
 	{
 		LOG_DBG << fname << "Ignoring stale remove for application <" << appName << ">";
@@ -726,7 +726,7 @@ void Configuration::saveConfigToDisk()
 
 	// Hold the lock around AsJson() too, so concurrent hotUpdate() can't
 	// snapshot a torn config mid-write.
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	auto content = this->AsJson();
 	// Atomic replacement also supports readable root-owned files in a writable directory.
 	const auto yamlContent = Utility::jsonToYaml(content);
@@ -735,9 +735,8 @@ void Configuration::saveConfigToDisk()
 #if !defined(_WIN32)
 	if (Utility::isFileExist(configFilePath))
 	{
-		const int existingMode = std::get<0>(os::fileStat(configFilePath));
-		if (existingMode >= 0)
-			mode = static_cast<uint16_t>(existingMode);
+		if (auto fileInfo = os::fileStat(configFilePath); fileInfo && std::get<0>(*fileInfo) >= 0)
+			mode = static_cast<uint16_t>(std::get<0>(*fileInfo));
 	}
 #endif
 	const auto tmpFile = os::createTmpFile(configFilePath, yamlContent, mode);
@@ -750,11 +749,13 @@ void Configuration::saveConfigToDisk()
 		throw std::runtime_error(error);
 	}
 
-	if (ACE_OS::rename(tmpFile.c_str(), configFilePath.c_str()) != 0)
+	std::error_code renameError;
+	fs::rename(tmpFile, configFilePath, renameError);
+	if (renameError)
 	{
 		const auto error = Utility::stringFormat(
 			"Failed to replace configuration file <%s>: %s",
-			configFilePath.c_str(), last_error_msg());
+			configFilePath.c_str(), renameError.message().c_str());
 		Utility::removeFile(tmpFile);
 		LOG_ERR << fname << error;
 		throw std::runtime_error(error);
@@ -766,7 +767,7 @@ void Configuration::saveConfigToDisk()
 void Configuration::hotUpdateAndSave(nlohmann::json &jsonValue)
 {
 	const static char fname[] = "Configuration::hotUpdateAndSave() ";
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	std::lock_guard guard(m_hotupdateMutex);
 	const auto previousConfig = this->AsJson();
 
 	this->hotUpdate(jsonValue);
@@ -801,7 +802,7 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 
 	LOG_DBG << fname << "Applying configuration hot-update";
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+		std::lock_guard guard(m_hotupdateMutex);
 
 		// Reapply environment overrides after merging the patch.
 		auto effectiveJson = this->AsJson();
@@ -1156,8 +1157,7 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 #if !defined(_WIN32)
 	if (!config->m_disableExecUser && os::get_uid() == 0 && !config->m_defaultExecUser.empty())
 	{
-		unsigned int gid, uid;
-		if (!os::getUidByName(config->m_defaultExecUser, uid, gid))
+		if (!os::getUidByName(config->m_defaultExecUser))
 		{
 			LOG_ERR << "No such OS user <" << config->m_defaultExecUser << ">";
 			throw std::invalid_argument("No such OS user for default execution");

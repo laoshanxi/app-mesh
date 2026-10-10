@@ -134,7 +134,12 @@ namespace os
 		// Update uid if user is specified
 		if (!user.empty())
 		{
-			if (!os::getUidByName(user, uid, gid))
+			if (auto ids = os::getUidByName(user))
+			{
+				uid = ids->first;
+				gid = ids->second;
+			}
+			else
 			{
 				LOG_ERR << fname << "Failed to get user information for '" << user << "'";
 				return false;

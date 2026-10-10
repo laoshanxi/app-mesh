@@ -44,7 +44,7 @@ namespace WSS
 
         bool isCompleted() const
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            std::lock_guard lock(m_mutex);
             return m_completed;
         }
 
@@ -54,7 +54,7 @@ namespace WSS
         {
             std::function<void()> hook;
             {
-                std::lock_guard<std::mutex> lock(m_mutex);
+                std::lock_guard lock(m_mutex);
                 m_aborted.store(true, std::memory_order_release);
                 m_completed = true;
                 m_callback = nullptr;
@@ -96,7 +96,7 @@ namespace WSS
         {
             ReplyCallback cb = nullptr;
             {
-                std::lock_guard<std::mutex> lock(m_mutex);
+                std::lock_guard lock(m_mutex);
                 if (!m_completed && m_callback)
                 {
                     if (isLast)

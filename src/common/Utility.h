@@ -12,14 +12,14 @@
 #include <vector>
 
 #include <ace/OS.h>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include "HttpHeaderMap.h"
 #include "StreamLogger.h"
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
 template <typename TargetType, typename SourceType>
@@ -40,11 +40,11 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 #define __MICRO_KEY__(str) #str				  // No expand micro
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
 
-#define PRINT_VERSION()                                                  \
-	if (argc >= 2 && std::string("-V") == argv[1])                       \
-	{                                                                    \
-		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl; \
-		return 0;                                                        \
+#define PRINT_VERSION()                                                                  \
+	if (argc >= 2 && (std::string("-V") == argv[1] || std::string("--version") == argv[1])) \
+	{                                                                                    \
+		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                 \
+		return 0;                                                                        \
 	}
 
 #define SET_COMPARE(x, y)                                           \
@@ -140,7 +140,7 @@ constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 #define APPMESH_LOCAL_HOST_URL "https://127.0.0.1:6060"
 
 const char *GET_STATUS_STR(unsigned int status);
-const nlohmann::json EMPTY_STR_JSON(nullptr);
+inline const nlohmann::json EMPTY_STR_JSON(nullptr);
 
 /// <summary>
 /// All common functions
@@ -161,8 +161,8 @@ public:
 	static bool isFileExist(const std::string &path);
 	static bool isPathTraversalSafe(const std::string &baseDir, const std::string &filePath);
 	static bool validateFilePath(const std::string &filePath, const std::string &allowedBaseDir);
-	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
-	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
+	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exec);
+	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exec);
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
 	static bool runningInContainer();

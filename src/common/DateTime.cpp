@@ -75,7 +75,7 @@ DateTime::TimeZonePtr DateTime::getLocalPosixZone()
 
 DateTime::TimeZonePtr DateTime::getOutputPosixZone()
 {
-	std::lock_guard<std::mutex> lock(s_outputZoneMutex);
+	std::lock_guard lock(s_outputZoneMutex);
 	if (!s_outputPosixZone)
 	{
 		s_outputPosixZone = getLocalPosixZone();
@@ -112,7 +112,7 @@ DateTime::TimeZonePtr DateTime::initOutputFormatPosixZone(const std::string &pos
 {
 	const static char fname[] = "DateTime::initOutputFormatPosixZone() ";
 
-	std::lock_guard<std::mutex> lock(s_outputZoneMutex);
+	std::lock_guard lock(s_outputZoneMutex);
 
 	if (!posixZone.empty())
 	{

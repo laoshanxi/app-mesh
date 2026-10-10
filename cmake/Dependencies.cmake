@@ -14,7 +14,6 @@ endif()
 # 1.86 is the first release with the Boost.Process V2 asio engine the daemon uses.
 find_package(Boost 1.86 REQUIRED COMPONENTS
     system
-    filesystem
     regex
     thread
     program_options

@@ -6,7 +6,7 @@
 #include <list>
 #include <utility>
 
-#include <boost/optional.hpp>
+#include <optional>
 #include <prometheus/counter.h>
 #include <prometheus/gauge.h>
 
@@ -73,9 +73,9 @@ struct Application::Runtime
 		Phase phase = Phase::Completed;
 		pid_t pid = INVALID_PID;
 		int returnCode = INVALID_RETURN_CODE;
-		boost::optional<std::chrono::system_clock::time_point> startTime;
-		boost::optional<std::chrono::system_clock::time_point> exitTime;
-		boost::optional<std::chrono::system_clock::time_point> nextLaunch;
+		std::optional<std::chrono::system_clock::time_point> startTime;
+		std::optional<std::chrono::system_clock::time_point> exitTime;
+		std::optional<std::chrono::system_clock::time_point> nextLaunch;
 		bool restartEvaluationPending = false;
 		std::uint64_t lifecycleGeneration = 0;
 		ScheduleIntent scheduleIntent = ScheduleIntent::NeedsPlan;
@@ -84,13 +84,13 @@ struct Application::Runtime
 	template <typename Fn>
 	void update(Fn &&fn)
 	{
-		std::lock_guard<std::mutex> guard(runMutex);
+		std::lock_guard guard(runMutex);
 		std::forward<Fn>(fn)(run);
 	}
 
 	Run load() const
 	{
-		std::lock_guard<std::mutex> guard(runMutex);
+		std::lock_guard guard(runMutex);
 		return run;
 	}
 
@@ -535,7 +535,7 @@ void Application::collectMetrics(void *ptree, bool refreshMetrics)
 
 	const auto process = m_process.get();
 	const auto metrics = m_metrics;
-	std::lock_guard<std::mutex> metricsGuard(metrics->mutex);
+	std::lock_guard metricsGuard(metrics->mutex);
 	if (metrics->owner != this)
 		return;
 
@@ -655,7 +655,7 @@ bool Application::attach(int pid)
 	// AppProcess start gate. A concurrent exit remains Observed until this state
 	// and the task endpoint are ready, then finalizes against the correct run.
 	{
-		std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
+		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 		m_runtime->update([&](Runtime::Run &r)
 						  {
 			r.id = attached->getuuid();
@@ -841,7 +841,7 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 	std::uint64_t lifecycleGeneration = 0;
 	{
 		// Serialize only schedule/restart decisions.
-		std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
+		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 		if (m_runtime->needsSchedulePlan())
 		{
 			if (!this->available(now))
@@ -867,7 +867,7 @@ void Application::disable()
 		// Status and schedule intent form one lifecycle decision. Keeping them under
 		// the same lock prevents a concurrent enable from being overwritten by a
 		// late suspendSchedule(). Process termination remains outside this lock.
-		std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
+		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 		auto enabled = STATUS::ENABLED;
 		if (!m_status.compare_exchange_strong(enabled, STATUS::DISABLED))
 			return;
@@ -884,7 +884,7 @@ void Application::disable()
 void Application::enable()
 {
 	{
-		std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
+		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 		auto disabled = STATUS::DISABLED;
 		if (!m_status.compare_exchange_strong(disabled, STATUS::ENABLED))
 			return;
@@ -1054,7 +1054,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 
 	if (!onDemand && isRecurring())
 	{
-		std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
+		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 		if (isEnabled() && lifecycleGeneration == m_runtime->lifecycleGeneration)
 			scheduleNext(std::chrono::system_clock::now() + PERIODIC_RESPAWN_GAP);
 	}
@@ -1093,7 +1093,7 @@ void Application::onStartAccepted(const std::string &runId, pid_t pid)
 	setLastError({});
 	{
 		const auto metrics = m_metrics;
-		std::lock_guard<std::mutex> guard(metrics->mutex);
+		std::lock_guard guard(metrics->mutex);
 		++metrics->starts;
 		if (metrics->owner == this && metrics->startCount)
 			metrics->startCount->metric().Increment();
@@ -1135,7 +1135,7 @@ void Application::recordStartFailure(const std::string &runId, const std::string
 		return;
 	}
 
-	std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
+	std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 	const auto run = m_runtime->load();
 	if (!isEnabled() || run.lifecycleGeneration != m_runtime->lifecycleGeneration)
 		return;
@@ -1349,7 +1349,7 @@ Application::RunCompletionSubscription Application::subscribeRunCompletion(
 	if (!callback)
 		return INVALID_RUN_COMPLETION_SUBSCRIPTION;
 
-	std::lock_guard<std::mutex> guard(m_runtime->runMutex);
+	std::lock_guard guard(m_runtime->runMutex);
 	const auto &run = m_runtime->run;
 	if (run.id.empty() || (!processUuid.empty() && processUuid != run.id) ||
 		run.phase == Runtime::Run::Phase::Completed)
@@ -1368,7 +1368,7 @@ void Application::unsubscribeRunCompletion(RunCompletionSubscription subscriptio
 		return;
 	RunCompletionCallback removedCallback;
 	{
-		std::lock_guard<std::mutex> guard(m_runtime->runMutex);
+		std::lock_guard guard(m_runtime->runMutex);
 		for (auto it = m_runtime->completionCallbacks.begin(); it != m_runtime->completionCallbacks.end(); ++it)
 		{
 			if (it->id == subscription)
@@ -1385,7 +1385,7 @@ void Application::unsubscribeRunCompletion(RunCompletionSubscription subscriptio
 void Application::initMetrics()
 {
 	const auto metrics = m_metrics;
-	std::lock_guard<std::mutex> guard(metrics->mutex);
+	std::lock_guard guard(metrics->mutex);
 	if (metrics->startCount)
 		return;
 	resetMetricHandles(*metrics);
@@ -1438,7 +1438,7 @@ void Application::initMetrics(std::shared_ptr<Application> fromApp)
 	}
 
 	const auto inherited = fromApp->m_metrics;
-	std::lock_guard<std::mutex> guard(inherited->mutex);
+	std::lock_guard guard(inherited->mutex);
 	inherited->owner = this;
 	m_metrics = inherited;
 }
@@ -1446,7 +1446,7 @@ void Application::initMetrics(std::shared_ptr<Application> fromApp)
 void Application::clearMetrics()
 {
 	const auto metrics = m_metrics;
-	std::lock_guard<std::mutex> guard(metrics->mutex);
+	std::lock_guard guard(metrics->mutex);
 	if (metrics->owner != this)
 		return;
 	metrics->owner = nullptr;
@@ -1487,8 +1487,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	static const std::map<int, std::string> phaseNames = {
 		{20, "auth-issuer"},
 		{30, "ingress"}, {DEFAULT_STARTUP_PHASE, "normal"}};
-	auto phaseName = phaseNames.find(m_startupPhase);
-	if (phaseName != phaseNames.end() && m_startupPhase != DEFAULT_STARTUP_PHASE)
+	if (auto phaseName = phaseNames.find(m_startupPhase); phaseName != phaseNames.end() && m_startupPhase != DEFAULT_STARTUP_PHASE)
 		result[JSON_KEY_APP_startup_phase] = phaseName->second;
 	if (m_ownerPermission)
 	{
@@ -1538,9 +1537,9 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (m_envMap.size())
 	{
 		nlohmann::json envs = nlohmann::json::object();
-		for (const auto &pair : m_envMap)
+		for (const auto &[name, value] : m_envMap)
 		{
-			envs[pair.first] = std::string(pair.second);
+			envs[name] = std::string(value);
 		}
 		result[JSON_KEY_APP_env] = std::move(envs);
 	}
@@ -1548,10 +1547,10 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	{
 		// Only include secret_env when saving to disk (not in API responses).
 		nlohmann::json envs = nlohmann::json::object();
-		for (const auto &pair : m_secEnvMap)
+		for (const auto &[name, value] : m_secEnvMap)
 		{
-			const std::string context = m_name + '\0' + pair.first;
-			envs[pair.first] = SecretProtector::instance().protect(pair.second, context);
+			const std::string context = m_name + '\0' + name;
+			envs[name] = SecretProtector::instance().protect(value, context);
 		}
 		result[JSON_KEY_APP_secret_env] = std::move(envs);
 	}
@@ -1596,7 +1595,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		unsigned long long starts = 0;
 		{
 			const auto metrics = m_metrics;
-			std::lock_guard<std::mutex> guard(metrics->mutex);
+			std::lock_guard guard(metrics->mutex);
 			starts = metrics->starts;
 		}
 		auto run = m_runtime->load();
@@ -1615,7 +1614,8 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 			if (run.pid != INVALID_PID)
 			{
 				result[JSON_KEY_APP_pid] = run.pid;
-				result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(run.pid));
+				// lookup failure keeps the empty-user field, as before
+				result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(run.pid).value_or(static_cast<uid_t>(-1)));
 			}
 
 			auto usage = process->getProcessDetails(ptree);
@@ -1627,7 +1627,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 				result[JSON_KEY_APP_pstree] = std::string(std::get<4>(usage));
 				if (m_shellAppFile)
 				{
-					auto leafProcessUser = os::getUsernameByUid(os::getProcessUid(std::get<5>(usage)));
+					auto leafProcessUser = os::getUsernameByUid(os::getProcessUid(std::get<5>(usage)).value_or(static_cast<uid_t>(-1)));
 					if (!leafProcessUser.empty())
 					{
 						result[JSON_KEY_APP_pid_user] = leafProcessUser;
@@ -1684,15 +1684,14 @@ void Application::save()
 	if (!this->isPersistAble())
 		return;
 
-	std::lock_guard<std::mutex> guard(m_saveMutex);
+	std::lock_guard guard(m_saveMutex);
 	const auto appPath = getYamlPath();
 	uint16_t mode = 0644;
 #if !defined(_WIN32)
 	if (Utility::isFileExist(appPath))
 	{
-		const int existingMode = std::get<0>(os::fileStat(appPath));
-		if (existingMode >= 0)
-			mode = static_cast<uint16_t>(existingMode);
+		if (auto fileInfo = os::fileStat(appPath); fileInfo && std::get<0>(*fileInfo) >= 0)
+			mode = static_cast<uint16_t>(std::get<0>(*fileInfo));
 	}
 #endif
 	const auto content = Utility::jsonToYaml(AsJson(false)) + "\n";
@@ -1702,9 +1701,11 @@ void Application::save()
 		LOG_ERR << fname << "Failed to create a temporary file for application <" << m_name << ">";
 		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
 	}
-	if (ACE_OS::rename(tempPath.c_str(), appPath.c_str()) != 0)
+	std::error_code renameError;
+	fs::rename(tempPath, appPath, renameError);
+	if (renameError)
 	{
-		const auto error = last_error_msg();
+		const auto error = renameError.message();
 		Utility::removeFile(tempPath);
 		LOG_ERR << fname << "Failed to save application <" << m_name << "> to file <" << appPath << ">, error: " << error;
 		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
@@ -1751,7 +1752,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
 	{
 		const auto metrics = m_metrics;
-		std::lock_guard<std::mutex> guard(metrics->mutex);
+		std::lock_guard guard(metrics->mutex);
 		LOG_DBG << fname << "m_starts:" << metrics->starts;
 	}
 	LOG_DBG << fname << "m_lastError:" << getLastError();
@@ -1814,7 +1815,7 @@ void Application::destroy()
 	LOG_DBG << fname << "suicide timer ID: " << m_timerRemoveId.load();
 	this->disable(); // clears nextLaunch + sets DISABLED, so the tick won't start it
 	{
-		std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
+		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 		this->m_status.store(STATUS::NOTAVAILABLE);
 		++m_runtime->lifecycleGeneration;
 		m_runtime->suspendSchedule();
@@ -1857,7 +1858,7 @@ void Application::recordProcessExit(int code, bool naturalExit, AppProcess *repo
 	const bool dockerImagePull = !m_dockerImage.empty() && reporter->containerId().empty();
 	bool currentRun = false;
 	{
-		std::lock_guard<std::mutex> lifecycleGuard(m_runtime->lifecycleMutex);
+		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 		const bool enabled = isEnabled();
 		m_runtime->update([&](Runtime::Run &state)
 						  {
@@ -1896,7 +1897,7 @@ void Application::completeRun(const std::string &runId)
 {
 	std::list<Runtime::CompletionSubscription> callbacks;
 	{
-		std::lock_guard<std::mutex> guard(m_runtime->runMutex);
+		std::lock_guard guard(m_runtime->runMutex);
 		auto &run = m_runtime->run;
 		if (run.id == runId && run.phase == Runtime::Run::Phase::Finalizing)
 			run.phase = Runtime::Run::Phase::Completed;
@@ -2096,9 +2097,9 @@ void Application::setUnavailableError()
 std::map<std::string, std::string> Application::getMergedEnvMap() const
 {
 	auto envMap = m_envMap;
-	for (const auto &pair : m_secEnvMap)
+	for (const auto &[key, value] : m_secEnvMap)
 	{
-		envMap[pair.first] = pair.second;
+		envMap[key] = value;
 	}
 	return envMap;
 }

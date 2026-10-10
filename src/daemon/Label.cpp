@@ -19,11 +19,11 @@ Label::~Label()
 
 nlohmann::json Label::AsJson() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	auto tags = nlohmann::json::object();
-	for (auto &tag : m_labels)
+	for (auto &[key, value] : m_labels)
 	{
-		tags[tag.first] = std::string(tag.second);
+		tags[key] = std::string(value);
 	}
 	return tags;
 }
@@ -53,13 +53,13 @@ bool Label::operator==(const std::shared_ptr<Label> &label)
 
 void Label::addLabel(const std::string &name, const std::string &value)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	m_labels[name] = value;
 }
 
 void Label::delLabel(const std::string &name)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (m_labels.count(name))
 		m_labels.erase(name);
 }
@@ -100,11 +100,8 @@ bool Label::match(const std::shared_ptr<Label> &condition) const
 {
 	if (!condition)
 		return false;
-	for (const auto &la : condition->m_labels)
+	for (const auto &[key, val] : condition->m_labels)
 	{
-		const auto &key = la.first;
-		const auto &val = la.second;
-
 #if defined(__linux__)
 		// wildcard match in label values
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second))))

@@ -134,7 +134,7 @@ public:
     }
 
     // Templated constructor for map-like containers
-    template <typename AssocContainer, typename = typename std::enable_if<std::is_convertible<typename AssocContainer::value_type, std::pair<std::string, std::string>>::value>::type>
+    template <typename AssocContainer, typename = std::enable_if_t<std::is_convertible_v<typename AssocContainer::value_type, std::pair<std::string, std::string>>>>
     explicit HttpHeaderMap(const AssocContainer &other)
     {
         for (const auto &kv : other)

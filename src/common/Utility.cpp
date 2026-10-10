@@ -39,7 +39,7 @@
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <boost/program_options/parsers.hpp>
 #include <hashidsxx/hashids.cpp>
 #include <hashidsxx/hashids.h>
@@ -138,7 +138,7 @@ const std::string Utility::getExecutablePath()
 		return "";
 	}
 
-	return boost::filesystem::path(buf).string();
+	return fs::path(buf).string();
 
 #elif defined(__linux__)
 	char buf[PATH_MAX] = {0};
@@ -224,13 +224,13 @@ const std::string Utility::getBinaryName()
 
 bool Utility::isDirExist(const std::string &path)
 {
-	boost::system::error_code ec;
+	std::error_code ec;
 	return fs::exists(path, ec) && fs::is_directory(path, ec);
 }
 
 bool Utility::isFileExist(const std::string &path)
 {
-	boost::system::error_code ec;
+	std::error_code ec;
 	return fs::exists(path, ec) && !fs::is_directory(path, ec);
 }
 
@@ -282,7 +282,7 @@ bool Utility::createRecursiveDirectory(const std::string &path, fs::perms perms)
 		if (fs::create_directories(path))
 		{
 			// Set permissions (ignoring errors if we don't own the file)
-			boost::system::error_code ec;
+			std::error_code ec;
 			fs::permissions(path, perms, ec);
 			return true;
 		}
@@ -299,7 +299,7 @@ bool Utility::removeDir(const std::string &path)
 {
 	const static char fname[] = "Utility::removeDir() ";
 
-	boost::system::error_code ec;
+	std::error_code ec;
 	if (fs::exists(path, ec))
 	{
 		auto removed = fs::remove_all(path, ec);
@@ -477,8 +477,7 @@ bool Utility::setLogLevel(const std::string &level)
 			{"FATAL", spdlog::level::critical},
 			{"EMERG", spdlog::level::critical}};
 
-	auto it = levelMap.find(level);
-	if (it != levelMap.end())
+	if (auto it = levelMap.find(level); it != levelMap.end())
 	{
 		spdlog::set_level(it->second);
 		LOG_INF << "Set log level to <" << level << ">";
@@ -1187,8 +1186,7 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 	}
 #endif
 
-	auto modeIt = headers.find(HTTP_HEADER_KEY_file_mode);
-	if (modeIt != headers.end() && !modeIt->second.empty())
+	if (auto modeIt = headers.find(HTTP_HEADER_KEY_file_mode); modeIt != headers.end() && !modeIt->second.empty())
 	{
 		try
 		{
@@ -1625,7 +1623,7 @@ bool Utility::isDouble(const std::string &str)
 
 bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string &filePath)
 {
-	boost::system::error_code ec;
+	std::error_code ec;
 
 	// Resolve the allowed base directory — must exist and be canonical.
 	fs::path canonicalBase = fs::canonical(fs::path(baseDir), ec);

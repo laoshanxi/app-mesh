@@ -46,9 +46,9 @@ nlohmann::json AppBehavior::behaviorAsJson()
     if (m_exitCodeEvent.size())
     {
         nlohmann::json controls;
-        for (const auto &control : m_exitCodeEvent)
+        for (const auto &[code, action] : m_exitCodeEvent)
         {
-            controls[std::to_string(control.first)] = std::string(action2str(control.second));
+            controls[std::to_string(code)] = std::string(action2str(action));
         }
         result[JSON_KEY_APP_behavior_exit_code_actions] = std::move(controls);
     }

@@ -25,14 +25,13 @@ DecodedJwt decode(const std::string &token)
 	return jwt::decode(normalizeBearerToken(token));
 }
 
-bool tryGetSubject(const std::string &token, std::string &subject)
+std::optional<std::string> tryGetSubject(const std::string &token)
 {
 	const auto decodedToken = decode(token);
 	if (!decodedToken.has_subject())
-		return false;
+		return std::nullopt;
 
-	subject = decodedToken.get_subject();
-	return true;
+	return decodedToken.get_subject();
 }
 
 } // namespace JwtHelper

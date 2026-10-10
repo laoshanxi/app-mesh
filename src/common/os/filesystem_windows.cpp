@@ -121,7 +121,7 @@ namespace os
 		return mountPointsMap;
 	}
 
-	std::tuple<int, std::string, std::string> fileStat(const std::string &path)
+	std::optional<std::tuple<int, std::string, std::string>> fileStat(const std::string &path)
 	{
 		const static char fname[] = "fileStat() ";
 
@@ -134,7 +134,7 @@ namespace os
 		else
 		{
 			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << last_error_msg();
-			return std::make_tuple(-1, "", "");
+			return std::nullopt;
 		}
 	}
 

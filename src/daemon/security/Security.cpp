@@ -14,14 +14,14 @@ void Security::init()
 	const static char fname[] = "Security::init() ";
 	auto instance = std::make_shared<SecurityOidc>();
 	instance->initialize();
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	m_instance = std::move(instance);
 	LOG_INF << fname << "OIDC authentication and App Mesh authorization initialized";
 }
 
 std::shared_ptr<Security> Security::instance()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	if (!m_instance)
 		throw std::logic_error("Security accessed before initialization");
 	return m_instance;

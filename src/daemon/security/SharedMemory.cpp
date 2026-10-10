@@ -4,7 +4,7 @@
 #include <ace/OS_NS_unistd.h>
 #include <ace/Shared_Memory_MM.h>
 #include <atomic>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <chrono>
 #include <thread>
 
@@ -30,12 +30,12 @@ bool SharedMemory::create()
 #if defined(__APPLE__)
     // macOS: Use POSIX shared memory with /tmp prefix for memory-mapped files
     // Note: This creates a file-backed shared memory, not true POSIX shm
-    shmName = (boost::filesystem::path("/tmp/") / shmName).string();
+    shmName = (fs::path("/tmp/") / shmName).string();
 #elif defined(__linux__)
     // Linux: Use tmpfs-based shared memory for fast in-memory access
-    shmName = (boost::filesystem::path("/dev/shm/") / shmName).string();
+    shmName = (fs::path("/dev/shm/") / shmName).string();
 #elif defined(_WIN32)
-    shmName = (boost::filesystem::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR / shmName).string();
+    shmName = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR / shmName).string();
 #endif
     m_shmPath = shmName;
 

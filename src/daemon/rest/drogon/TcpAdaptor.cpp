@@ -92,7 +92,7 @@ void TcpAdaptor::stop()
         m_acceptThread.reset();
 
         {
-            std::lock_guard<std::mutex> lock(m_connMutex);
+            std::lock_guard lock(m_connMutex);
             m_connections.clear();
         }
         LOG_INF << fname << "TCP service stopped.";
@@ -121,7 +121,7 @@ void TcpAdaptor::onConnection(const trantor::TcpConnectionPtr &conn)
             session->peerAddress = conn->peerAddr().toIp();
 
             {
-                std::lock_guard<std::mutex> lock(m_connMutex);
+                std::lock_guard lock(m_connMutex);
                 if (m_connections.size() >= MAX_TCP_CONNECTIONS)
                 {
                     LOG_WAR << fname << "connection limit reached (" << MAX_TCP_CONNECTIONS << "), rejecting connection";
@@ -157,7 +157,7 @@ void TcpAdaptor::onConnection(const trantor::TcpConnectionPtr &conn)
                 if (session)
                 {
                     {
-                        std::lock_guard<std::mutex> lock(m_connMutex);
+                        std::lock_guard lock(m_connMutex);
                         m_connections.erase(session->numericId);
                     }
                     EventDispatcher::instance()->removeByConnection(ConnectionKey::wss(session->numericId));
@@ -202,7 +202,7 @@ void TcpAdaptor::onMessage(const trantor::TcpConnectionPtr &conn, trantor::MsgBu
                                                   // Socket file transfer: while an upload is armed the payload is raw
                                                   // file data (an empty frame commits it), not a msgpack request.
                                                   {
-                                                      std::lock_guard<std::mutex> lock(session->fileTransfer.transfer_mutex());
+                                                      std::lock_guard lock(session->fileTransfer.transfer_mutex());
                                                       if (session->fileTransfer.onFrameReceived(data, static_cast<int>(session->numericId & ~TCP_CONNECTION_ID_FLAG)))
                                                           return;
                                                   }
@@ -251,7 +251,7 @@ void TcpAdaptor::dispatch(const trantor::TcpConnectionPtr &conn, const std::shar
                     tcpframe::appendFrame(frame, data.data(), data.size());
                     conn->send(std::move(frame));
                     // An armed socket download streams after this frame.
-                    std::lock_guard<std::mutex> lock(session->fileTransfer.transfer_mutex());
+                    std::lock_guard lock(session->fileTransfer.transfer_mutex());
                     session->fileTransfer.startDownload(conn, static_cast<int>(session->numericId & ~TCP_CONNECTION_ID_FLAG));
                 }
                 catch (const std::exception &e)
@@ -283,7 +283,7 @@ void TcpAdaptor::dispatch(const trantor::TcpConnectionPtr &conn, const std::shar
         replyCtx->setResponseObserver(
             [session](Response &resp)
             {
-                std::lock_guard<std::mutex> lock(session->fileTransfer.transfer_mutex());
+                std::lock_guard lock(session->fileTransfer.transfer_mutex());
                 session->fileTransfer.prepareTransfer(resp, static_cast<int>(session->numericId & ~TCP_CONNECTION_ID_FLAG));
             });
 

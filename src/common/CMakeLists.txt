@@ -21,12 +21,15 @@ target_link_libraries(common
     yaml-cpp::yaml-cpp
     Boost::regex
     Boost::system
-    Boost::filesystem
     Boost::program_options
     ${OPENSSL_LIBRARIES}
     uriparser::uriparser
     os
 )
+# std::filesystem needs libstdc++fs on GCC 8/9
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+    target_link_libraries(common PUBLIC stdc++fs)
+endif()
 # trantor (bundled with drogon) implements the RestClient transport
 target_link_libraries(common PRIVATE Drogon::Drogon)
 

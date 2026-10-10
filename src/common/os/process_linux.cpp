@@ -3,8 +3,8 @@
 
 #include "process.h"
 
+#include <charconv>
 #include <cstdio>
-#include <dirent.h>
 #include <fstream>
 #include <unordered_map>
 #include <unistd.h>
@@ -149,20 +149,16 @@ namespace os
 		std::unordered_map<pid_t, std::shared_ptr<ProcessStatus>> byPid;
 		std::unordered_map<pid_t, std::vector<pid_t>> children;
 
-		std::unique_ptr<DIR, void (*)(DIR *)> proc(opendir("/proc"), [](DIR *d)
-												   { if(d) closedir(d); });
-		if (!proc)
-			return {};
-
-		struct dirent *entry;
-		while ((entry = readdir(proc.get())) != nullptr)
+		std::error_code dirError;
+		for (fs::directory_iterator it("/proc", dirError), end; !dirError && it != end; it.increment(dirError))
 		{
-			char *endptr = nullptr;
-			long lpid = strtol(entry->d_name, &endptr, 10);
-			if (!endptr || *endptr != '\0' || lpid <= 0)
+			const auto entryName = it->path().filename().string();
+			pid_t lpid = 0;
+			const auto parsed = std::from_chars(entryName.data(), entryName.data() + entryName.size(), lpid);
+			if (parsed.ec != std::errc{} || parsed.ptr != entryName.data() + entryName.size() || lpid <= 0)
 				continue;
 
-			auto st = status(static_cast<pid_t>(lpid));
+			auto st = status(lpid);
 			if (!st)
 				continue;
 			children[st->ppid].push_back(st->pid);
@@ -184,8 +180,7 @@ namespace os
 		std::list<Process> result;
 		for (pid_t pid : selected)
 		{
-			auto it = byPid.find(pid);
-			if (it != byPid.end())
+			if (auto it = byPid.find(pid); it != byPid.end())
 				result.push_back(makeProcess(*it->second, rootPid == 0 ? std::string() : os::cmdline(pid)));
 		}
 		return result;

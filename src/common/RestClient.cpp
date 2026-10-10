@@ -68,11 +68,11 @@ bool RestClient::parseRequestTarget(const std::string &host, const std::string &
 	{
 		out.target += '?';
 		bool first = true;
-		for (const auto &q : query)
+		for (const auto &[key, value] : query)
 		{
 			if (!first)
 				out.target += '&';
-			out.target += Utility::encodeURIComponent(q.first) + "=" + Utility::encodeURIComponent(q.second);
+			out.target += Utility::encodeURIComponent(key) + "=" + Utility::encodeURIComponent(value);
 			first = false;
 		}
 	}
@@ -87,12 +87,12 @@ ClientSSLConfig RestClient::resolveSslConfig(const ClientSSLConfig *sslConfig)
 {
 	if (sslConfig != nullptr)
 		return *sslConfig;
-	std::lock_guard<std::mutex> lock(m_sslMutex);
+	std::lock_guard lock(m_sslMutex);
 	return m_sslConfig;
 }
 
 void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 {
-	std::lock_guard<std::mutex> lock(m_sslMutex);
+	std::lock_guard lock(m_sslMutex);
 	m_sslConfig = sslConfig;
 }

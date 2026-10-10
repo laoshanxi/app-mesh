@@ -222,11 +222,11 @@ std::string RestHandler::normalizedHttpRoute(const std::string &path,
 											 const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions) const
 {
 	typedef std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> RestFunctions;
-	auto findPattern = [&path](const RestFunctions &functions) -> std::string
+	auto findPattern = [&](const RestFunctions &functions) -> std::string
 	{
 		for (const auto &entry : functions)
 		{
-			if (path == entry.first || boost::regex_match(path, boost::regex(entry.first)))
+			if (path == entry.first || boost::regex_match(path, m_restRegexCache.at(entry.first)))
 				return entry.first;
 		}
 		return {};
@@ -497,12 +497,10 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 {
 	// const static char fname[] = "RestHandler::getHttpQueryValue() ";
 
-	auto querymap = message.m_query;
 	long rt = defaultValue;
-	if (querymap.find((key)) != querymap.end())
+	if (auto it = message.m_query.find(key); it != message.m_query.end())
 	{
-		const auto &value = querymap.find((key))->second;
-		rt = DurationParse::parse(value);
+		rt = DurationParse::parse(it->second);
 		// Negative is never valid for these params; fall back to default so it can't wrap
 		// into size_t or drive negative offsets/overflowing timers downstream.
 		if (rt < 0)
@@ -518,11 +516,10 @@ std::string RestHandler::getHttpQueryString(const HttpRequest &message, const st
 {
 	const static char fname[] = "RestHandler::getHttpQueryString() ";
 
-	auto querymap = message.m_query;
 	std::string rt;
-	if (querymap.find((key)) != querymap.end())
+	if (auto it = message.m_query.find(key); it != message.m_query.end())
 	{
-		rt = (querymap.find((key))->second);
+		rt = it->second;
 	}
 	LOG_DBG << fname << "Query parameter <" << key << "> = <" << rt << ">";
 	return rt;
@@ -699,10 +696,10 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
 	std::map<std::string, std::string> headers;
-	auto fileInfo = os::fileStat(file);
-	headers[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
-	headers[HTTP_HEADER_KEY_file_user] = std::get<1>(fileInfo);
-	headers[HTTP_HEADER_KEY_file_group] = std::get<2>(fileInfo);
+	const auto [fileMode, fileUser, fileGroup] = os::fileStat(file).value_or(std::make_tuple(-1, "", ""));
+	headers[HTTP_HEADER_KEY_file_mode] = std::to_string(fileMode);
+	headers[HTTP_HEADER_KEY_file_user] = fileUser;
+	headers[HTTP_HEADER_KEY_file_group] = fileGroup;
 	auto body = HttpRequest::emptyJsonMessage();
 	if (message->m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) && message->m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
 	{
@@ -764,10 +761,9 @@ void RestHandler::apiLabelAdd(const std::shared_ptr<HttpRequest> &message)
 	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto labelKey = regexSearch(path, REST_PATH_LABEL_ADD);
 
-	auto querymap = message->m_query;
-	if (querymap.find((HTTP_QUERY_KEY_label_value)) != querymap.end())
+	if (auto it = message->m_query.find(HTTP_QUERY_KEY_label_value); it != message->m_query.end())
 	{
-		const auto &value = (querymap.find((HTTP_QUERY_KEY_label_value))->second);
+		const auto &value = it->second;
 
 		Configuration::instance()->getLabel()->addLabel(labelKey, value);
 		Configuration::instance()->saveConfigToDisk();

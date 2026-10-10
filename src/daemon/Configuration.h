@@ -9,7 +9,7 @@
 
 #include <ace/Map_Manager.h>
 #include <ace/Recursive_Thread_Mutex.h>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 class RestHandler;
@@ -80,7 +80,7 @@ public:
 
 	static std::shared_ptr<Configuration> FromJson(nlohmann::json &jsonValue, bool applyEnv = false) noexcept(false);
 	nlohmann::json AsJson();
-	void loadApps(const boost::filesystem::path &appDir);
+	void loadApps(const std::filesystem::path &appDir);
 	void saveConfigToDisk();
 	void hotUpdateAndSave(nlohmann::json &config);
 	void hotUpdate(nlohmann::json &config);

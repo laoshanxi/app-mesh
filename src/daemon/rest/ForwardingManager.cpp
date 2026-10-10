@@ -171,15 +171,13 @@ void ForwardingConnection::handleResponse(Response &response)
 	if (response.request_uri == EVENT_URI)
 	{
 		std::string routeId;
-		auto route = response.headers.find(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE);
-		if (route != response.headers.end())
+		if (auto route = response.headers.find(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE); route != response.headers.end())
 		{
 			routeId = route->second;
 			response.headers.erase(route);
 		}
 		std::string subscriptionId;
-		auto subscription = response.headers.find(SUBSCRIPTION_HEADER);
-		if (subscription != response.headers.end())
+		if (auto subscription = response.headers.find(SUBSCRIPTION_HEADER); subscription != response.headers.end())
 			subscriptionId = subscription->second;
 
 		auto request = routeId.empty() ? nullptr : findRequest(routeId);
@@ -204,8 +202,7 @@ void ForwardingConnection::handleResponse(Response &response)
 		response.headers, response.http_status, response.body_msg_type);
 	if (request->m_method == web::http::methods::DEL)
 	{
-		auto subscription = request->m_query.find("subscription_id");
-		if (subscription != request->m_query.end())
+		if (auto subscription = request->m_query.find("subscription_id"); subscription != request->m_query.end())
 			removeSubscription(subscription->second);
 	}
 }
@@ -317,12 +314,12 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 		if (deadConn->stream)
 			deadConn->stream->shutdown();
 	}
-	for (auto &entry : idleConns)
+	for (auto &[extId, conn] : idleConns)
 	{
-		LOG_INF << fname << "Closing idle forwarding connection to " << entry.first;
-		entry.second->failAll("Forwarding connection idle");
-		if (entry.second->stream)
-			entry.second->stream->shutdown();
+		LOG_INF << fname << "Closing idle forwarding connection to " << extId;
+		conn->failAll("Forwarding connection idle");
+		if (conn->stream)
+			conn->stream->shutdown();
 	}
 
 	// Phase 2: create connection outside lock (avoids holding map lock during connect).

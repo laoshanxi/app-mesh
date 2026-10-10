@@ -90,7 +90,7 @@ void OidcTokenVerifier::init()
 
 void OidcTokenVerifier::prewarm()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	refreshKeysLocked();
 }
 
@@ -291,25 +291,10 @@ Principal OidcTokenVerifier::verify(const std::string &token)
 	if (m_config.allowedAlgorithms.count(algorithm) == 0)
 		throw std::domain_error("bearer token uses an unsupported signing algorithm");
 
-	const std::string key = resolveKey(keyId);
+	const auto verifier = resolveKey(keyId);
 	try
 	{
-		auto verifier = jwt::verify()
-			.with_issuer(m_config.issuer)
-			.leeway(JWT_CLOCK_LEEWAY_SECONDS);
-		if (algorithm == "RS256")
-			verifier.allow_algorithm(jwt::algorithm::rs256{key});
-		else if (algorithm == "RS384")
-			verifier.allow_algorithm(jwt::algorithm::rs384{key});
-		else if (algorithm == "RS512")
-			verifier.allow_algorithm(jwt::algorithm::rs512{key});
-		else if (algorithm == "PS256")
-			verifier.allow_algorithm(jwt::algorithm::ps256{key});
-		else if (algorithm == "PS384")
-			verifier.allow_algorithm(jwt::algorithm::ps384{key});
-		else if (algorithm == "PS512")
-			verifier.allow_algorithm(jwt::algorithm::ps512{key});
-		verifier.verify(decoded);
+		verifier->verify(decoded);
 	}
 	catch (const std::exception &e)
 	{
@@ -391,7 +376,7 @@ void OidcTokenVerifier::refreshKeysLocked()
 			continue;
 		try
 		{
-			refreshed[jwk.at("kid").get<std::string>()] = CachedKey{jwkToPem(jwk), now};
+			refreshed[jwk.at("kid").get<std::string>()] = CachedKey{buildVerifier(jwkToPem(jwk)), now};
 		}
 		catch (const std::exception &e)
 		{
@@ -405,7 +390,29 @@ void OidcTokenVerifier::refreshKeysLocked()
 	m_keysFetchedAt = now;
 }
 
-std::string OidcTokenVerifier::resolveKey(const std::string &kid)
+std::shared_ptr<const OidcTokenVerifier::Verifier> OidcTokenVerifier::buildVerifier(const std::string &pem) const
+{
+	auto verifier = std::make_shared<Verifier>(jwt::default_clock{});
+	verifier->with_issuer(m_config.issuer).leeway(JWT_CLOCK_LEEWAY_SECONDS);
+	for (const auto &algorithm : m_config.allowedAlgorithms)
+	{
+		if (algorithm == "RS256")
+			verifier->allow_algorithm(jwt::algorithm::rs256{pem});
+		else if (algorithm == "RS384")
+			verifier->allow_algorithm(jwt::algorithm::rs384{pem});
+		else if (algorithm == "RS512")
+			verifier->allow_algorithm(jwt::algorithm::rs512{pem});
+		else if (algorithm == "PS256")
+			verifier->allow_algorithm(jwt::algorithm::ps256{pem});
+		else if (algorithm == "PS384")
+			verifier->allow_algorithm(jwt::algorithm::ps384{pem});
+		else if (algorithm == "PS512")
+			verifier->allow_algorithm(jwt::algorithm::ps512{pem});
+	}
+	return verifier;
+}
+
+std::shared_ptr<const OidcTokenVerifier::Verifier> OidcTokenVerifier::resolveKey(const std::string &kid)
 {
 	const static char fname[] = "OidcTokenVerifier::resolveKey() ";
 	if (kid.empty())
@@ -413,7 +420,7 @@ std::string OidcTokenVerifier::resolveKey(const std::string &kid)
 	if (kid.size() > MAX_KEY_ID_LENGTH)
 		throw std::domain_error("bearer token key identifier is too long");
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard guard(m_mutex);
 	const auto now = std::chrono::steady_clock::now();
 	for (auto entry = m_negativeKeys.begin(); entry != m_negativeKeys.end();)
 	{
@@ -422,13 +429,12 @@ std::string OidcTokenVerifier::resolveKey(const std::string &kid)
 		else
 			++entry;
 	}
-	auto negative = m_negativeKeys.find(kid);
-	if (negative != m_negativeKeys.end() && now - negative->second < NEGATIVE_KEY_TTL)
+	if (auto negative = m_negativeKeys.find(kid); negative != m_negativeKeys.end() && now - negative->second < NEGATIVE_KEY_TTL)
 		throw std::domain_error("bearer token references an unknown signing key");
 
 	auto existing = m_keys.find(kid);
 	if (existing != m_keys.end() && now - m_keysFetchedAt < JWKS_TTL)
-		return existing->second.pem;
+		return existing->second.verifier;
 
 	if (m_keyRefreshAttemptedAt.time_since_epoch().count() != 0 &&
 		now - m_keyRefreshAttemptedAt < KEY_REFRESH_MIN_INTERVAL)
@@ -437,7 +443,7 @@ std::string OidcTokenVerifier::resolveKey(const std::string &kid)
 		// Without any cached key, preserve the distinction between an unavailable
 		// verifier and a token that is known to reference an absent key.
 		if (existing != m_keys.end())
-			return existing->second.pem;
+			return existing->second.verifier;
 		if (m_keys.empty())
 			throw AuthenticationUnavailableException("signing-key refresh is temporarily rate-limited");
 		throw std::domain_error("bearer token references an unknown signing key");
@@ -459,7 +465,7 @@ std::string OidcTokenVerifier::resolveKey(const std::string &kid)
 		if (existing != m_keys.end())
 		{
 			LOG_WAR << fname << "using a cached signing key after refresh failure: " << e.what();
-			return existing->second.pem;
+			return existing->second.verifier;
 		}
 		throw AuthenticationUnavailableException(
 			Utility::stringFormat("authentication discovery or signing keys are unavailable: %s", e.what()));
@@ -483,7 +489,7 @@ std::string OidcTokenVerifier::resolveKey(const std::string &kid)
 		m_negativeKeys[kid] = now;
 		throw std::domain_error("bearer token references an unknown signing key");
 	}
-	return existing->second.pem;
+	return existing->second.verifier;
 }
 
 std::string OidcTokenVerifier::requestJson(const std::string &absoluteUrl) const

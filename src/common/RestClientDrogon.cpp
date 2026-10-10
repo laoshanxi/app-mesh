@@ -8,6 +8,7 @@
 // the full ClientSSLConfig surface (CA path, mTLS cert/key, peer validation).
 #include <atomic>
 #include <cctype>
+#include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -88,9 +89,9 @@ namespace
 				return false; // need more data
 			// chunk extensions (";...") are ignored
 			const auto sizeText = data.substr(pos, eol - pos);
-			const char *endPtr = nullptr;
-			const unsigned long chunkSize = std::strtoul(sizeText.c_str(), const_cast<char **>(&endPtr), 16);
-			if (endPtr == sizeText.c_str())
+			unsigned long chunkSize = 0;
+			const auto result = std::from_chars(sizeText.data(), sizeText.data() + sizeText.size(), chunkSize);
+			if (result.ec != std::errc{} || result.ptr == sizeText.data())
 				return false;
 			pos = eol + 2;
 			if (chunkSize == 0)
@@ -130,7 +131,9 @@ namespace
 				state.finish("malformed HTTP response status line");
 				return true;
 			}
-			state.response->status_code = std::atol(state.raw.c_str() + space + 1);
+			long statusCode = 0;
+			std::from_chars(state.raw.data() + space + 1, state.raw.data() + state.raw.size(), statusCode);
+			state.response->status_code = statusCode;
 
 			size_t pos = lineEnd + 2;
 			while (pos < headerEnd)
@@ -163,7 +166,11 @@ namespace
 			}
 			else if (state.response->header.count("content-length") > 0)
 			{
-				state.contentLength = std::atol(state.response->header.get("content-length").c_str());
+				// 0 (empty body) on a malformed value; -1 stays reserved for connection-close framing
+				const auto value = state.response->header.get("content-length");
+				long len = 0;
+				std::from_chars(value.data(), value.data() + value.size(), len);
+				state.contentLength = len;
 			}
 		}
 
@@ -201,14 +208,14 @@ namespace
 		os << "Host: " << hostHeader << "\r\n";
 		os << HTTP_USER_AGENT_HEADER << ": " << HTTP_USER_AGENT << "\r\n";
 		bool hasContentType = false;
-		for (const auto &h : header)
+		for (const auto &[key, value] : header)
 		{
-			os << h.first << ": " << h.second << "\r\n";
-			if (h.first.size() == std::strlen("Content-Type"))
+			os << key << ": " << value << "\r\n";
+			if (key.size() == std::strlen("Content-Type"))
 			{
 				std::string lower;
-				lower.reserve(h.first.size());
-				for (char c : h.first)
+				lower.reserve(key.size());
+				for (char c : key)
 					lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
 				hasContentType = hasContentType || lower == "content-type";
 			}
