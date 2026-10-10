@@ -148,7 +148,6 @@ private:
 	std::shared_ptr<CounterMetric> m_scrapeCounter;
 	std::shared_ptr<CounterMetric> m_collectionErrorCounter;
 	std::shared_ptr<GaugeMetric> m_appmeshPid;
-	std::shared_ptr<GaugeMetric> m_buildInfo;
 
 	std::shared_ptr<GaugeMetric> m_appmeshFileDesc;
 };

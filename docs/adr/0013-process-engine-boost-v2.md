@@ -31,3 +31,13 @@ Move spawn, exit detection, stdout pumping, and termination onto Boost.Process V
 - Exit-code semantics match the ACE adapter: `evaluate_exit_code` reports a signal as its number, so a kill reports 9.
 - Boost is pinned at 1.86 for BPv2, shared with the C++17 floor decision in ADR 0012.
 - On macOS (no pidfd) each running child may cost one waiter thread; confirmed acceptable in verification.
+
+## Amendment (2026-10-11)
+
+Finalization is now two stages: engine cleanup (pump teardown, resources) on
+the `ProcessService` io thread; application callbacks (`recordProcessExit`,
+`completeRun`) on a callback thread in `ProcessService`, since they may block
+on docker backends and must not stall the engine. Ownerless helpers (docker
+CLI, cleanup, health checks) have no callbacks and finalize on the io thread —
+their waiters may be the callback thread itself. `dispatchSync` returns false
+instead of blocking forever when shutdown drops its task.

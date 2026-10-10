@@ -70,6 +70,7 @@ namespace
 
 		return {pipeFds[0], pipeFds[1]};
 	}
+#endif
 
 	// Resolve argv[0] the way the spawn API would: paths pass through, bare
 	// names search the daemon's PATH. Returns "" when no candidate exists.
@@ -138,6 +139,20 @@ namespace
 #endif
 	}
 
+// The handle guards store HANDLEs on Windows: open must return one there,
+// not a CRT descriptor that CloseHandle would corrupt.
+native_fd openStdioFile(const char *path, bool readOnly) {
+#if defined(_WIN32)
+    const DWORD access = readOnly ? GENERIC_READ : GENERIC_WRITE;
+    const DWORD disposition = readOnly ? OPEN_EXISTING : CREATE_ALWAYS;
+    const HANDLE handle = ::CreateFileW(fs::path(path).wstring().c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, disposition, FILE_ATTRIBUTE_NORMAL, nullptr);
+    return (handle == INVALID_HANDLE_VALUE) ? INVALID_FD : handle;
+#else
+    return readOnly ? ::open(path, O_RDONLY) : ::open(path, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+#endif
+}
+
+#if !defined(_WIN32)
 	// Wrap one command-line token so its value stays a single argv element.
 	// The daemon spawns without a shell: str2argv strips quotes wherever they
 	// appear and only quote-protected text survives tokenization, so the quotes
@@ -415,10 +430,10 @@ void AppProcess::reportEarlyExit(int exitCode)
 void AppProcess::finalizeExit() noexcept
 {
 	const static char fname[] = "AppProcess::finalizeExit() ";
-	// Runs on the ProcessService thread so cleanup and application callbacks may block safely.
+	// Engine part on the ProcessService io thread: drain the stdout pump and
+	// release owned resources.
 	const int exitCode = m_returnValue.load(std::memory_order_acquire);
 	long stdoutDispatchedBytes = 0;
-	std::shared_ptr<Application> owner;
 	try
 	{
 		LOG_DBG << fname << "uuid=" << m_uuid << " exitCode=" << exitCode;
@@ -430,46 +445,75 @@ void AppProcess::finalizeExit() noexcept
 		{
 			LOG_CRT << fname << "FATAL: exit cleanup failed for <" << m_uuid << ">";
 		}
-		owner = m_owner.lock();
-		if (owner)
-		{
-			try
-			{
-				owner->recordProcessExit(exitCode, !m_lifecycle->terminating.load(), this, stdoutDispatchedBytes);
-			}
-			catch (...)
-			{
-				LOG_CRT << fname << "FATAL: exit update failed for <" << m_uuid << ">";
-			}
-		}
 	}
 	catch (...)
 	{
 		// Swallow so finalization below still runs.
 	}
+	if (m_owner.expired())
 	{
-		const std::lock_guard guard(m_lifecycle->mutex);
-		m_lifecycle->exitPhase.store(Lifecycle::ExitPhase::Finalized, std::memory_order_release);
+		// Helper runs (docker CLI, cleanup, health checks) have no application
+		// callbacks. Finalize on the engine thread: their callers wait for
+		// Finalized and may themselves run on the callback thread.
+		{
+			const std::lock_guard guard(m_lifecycle->mutex);
+			m_lifecycle->exitPhase.store(Lifecycle::ExitPhase::Finalized, std::memory_order_release);
+		}
+		m_lifecycle->completionCv.notify_all();
+		return;
 	}
-	m_lifecycle->completionCv.notify_all();
-	if (owner)
+	// Application callbacks may block on docker backends: run them on the
+	// callback thread so they cannot stall the engine.
+	auto self = std::dynamic_pointer_cast<AppProcess>(shared_from_this());
+	const bool naturalExit = !m_lifecycle->terminating.load();
+	auto finalizeAppSide = [self, exitCode, naturalExit, stdoutDispatchedBytes]()
 	{
+		std::shared_ptr<Application> owner;
 		try
 		{
-			owner->completeRun(m_uuid);
+			owner = self->m_owner.lock();
+			if (owner)
+				owner->recordProcessExit(exitCode, naturalExit, self.get(), stdoutDispatchedBytes);
 		}
 		catch (...)
 		{
-			LOG_CRT << fname << "FATAL: completion notification failed for <" << m_uuid << ">";
+			LOG_CRT << "AppProcess::finalizeExit() FATAL: exit update failed for <" << self->getuuid() << ">";
 		}
+		{
+			const std::lock_guard guard(self->m_lifecycle->mutex);
+			self->m_lifecycle->exitPhase.store(Lifecycle::ExitPhase::Finalized, std::memory_order_release);
+		}
+		self->m_lifecycle->completionCv.notify_all();
+		if (owner)
+		{
+			try
+			{
+				owner->completeRun(self->getuuid());
+			}
+			catch (...)
+			{
+				LOG_CRT << "AppProcess::finalizeExit() FATAL: completion notification failed for <" << self->getuuid() << ">";
+			}
+		}
+	};
+	try
+	{
+		PROCESS_SERVICE::instance()->postCallback(finalizeAppSide);
+	}
+	catch (...)
+	{
+		// The callback queue is unavailable; finalize inline so waiters are released.
+		LOG_CRT << fname << "FATAL: callback queue unavailable for <" << m_uuid << ">, finalizing inline";
+		finalizeAppSide();
 	}
 }
 
 bool AppProcess::running() const
 {
-	// Writers publish PID and start token while holding this mutex. Natural exit
-	// invalidates only PID, so a concurrent reader never pairs a live PID with a
-	// cleared token and falls back to an unsafe PID-only identity check.
+	// attach()/startImpl()/terminateImpl() publish PID and start token while
+	// holding this mutex. onExit() invalidates only the PID without it, which
+	// just makes these checks fail sooner: a reader never pairs a live PID with
+	// a token from another run.
 	std::lock_guard guard(m_processMutex);
 	return sameProcessRunning(m_pid.load(std::memory_order_relaxed), m_processStartToken);
 }
@@ -840,7 +884,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	{
 		if (!m_stdoutFileName.empty())
 		{
-			m_stdoutHandler.reset(::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0666));
+			m_stdoutHandler.reset(openStdioFile(m_stdoutFileName.c_str(), false));
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
 
 			if (!m_stdoutHandler.valid())
@@ -852,7 +896,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		}
 		else
 		{
-			m_stdoutHandler.reset(::open(DEV_NULL, O_RDWR));
+			m_stdoutHandler.reset(openStdioFile(DEV_NULL, false));
 		}
 
 		if (stdinFileContent != EMPTY_STR_JSON)
@@ -862,7 +906,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 											? stdinFileContent.get<std::string>()
 											: JSON::dump(stdinFileContent);
 			m_stdinFileName = os::createTmpFile(m_stdinFileName, content, 0600);
-			m_stdinHandler.reset(::open(m_stdinFileName.c_str(), O_RDONLY));
+			m_stdinHandler.reset(openStdioFile(m_stdinFileName.c_str(), true));
 
 			if (!m_stdinHandler.valid())
 				setStartError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
@@ -870,7 +914,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		}
 		else
 		{
-			m_stdinHandler.reset(::open(DEV_NULL, O_RDONLY));
+			m_stdinHandler.reset(openStdioFile(DEV_NULL, true));
 		}
 	}
 

@@ -877,6 +877,21 @@ install_initd_service() {
 # Additional Setup Functions
 ################################################################################
 
+# Linux packages bundle the libraries the distribution does not ship. RUNPATH
+# covers only direct dependencies, so the bundle must also enter the loader
+# cache for dependencies-of-dependencies to resolve.
+register_runtime_libraries() {
+    [ "$(uname)" = "Linux" ] || return 0
+    [ -d "${PROG_HOME}/lib" ] || return 0
+    if [ -d /etc/ld.so.conf.d ] && command -v ldconfig >/dev/null 2>&1; then
+        echo "${PROG_HOME}/lib" >/etc/ld.so.conf.d/appmesh.conf
+        ldconfig
+        info "Registered ${PROG_HOME}/lib with the dynamic loader"
+    else
+        warn "ldconfig is unavailable; the loader may miss ${PROG_HOME}/lib"
+    fi
+}
+
 setup_permissions() {
     info "Setting up permissions"
     local root_group=""
@@ -1015,6 +1030,7 @@ main() {
     provision_secret_master_key
     configure_authentication
     setup_service
+    register_runtime_libraries
     prepare_workflow_app
     setup_permissions
     setup_ssl_certificates

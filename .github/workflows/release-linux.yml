@@ -115,11 +115,10 @@ jobs:
         run: |
           cat > CHANGELOG.txt <<'CHANGELOG'
           - Drogon and trantor replace the uWebSockets and ACE transports. The wire protocol does not change.
-          - REST.WorkerThreads and REST.TransportIoThreads replace the old thread pool settings, and derive from the CPUs the daemon may use.
-          - libcurl is removed; RestClient uses trantor. The C++ SDK is removed.
-          - Both listeners require TLS 1.2 or later, and forwarding verifies the peer certificate hostname.
-          - Linux packages bundle the libraries the distribution does not ship; the ACE SSL library is no longer a dependency.
-          - File uploads stream to disk, and the limit rises from 500 MB to 2 GB.
+          - The process engine runs on Boost.Process V2. The daemon requires C++17 (C++20 on Windows).
+          - libcurl and the C++ SDK are removed; RestClient uses trantor.
+          - REST.WorkerThreads and REST.TransportIoThreads replace the old thread pool settings, and derive from the CPU count.
+          - Requests are faster on the hot paths, /metrics answers without authentication, and a restart recovers attached apps.
           CHANGELOG
           ls -R
 

@@ -42,10 +42,10 @@ void PipeStdoutStrategy::teardown()
 	if (!pump)
 		return;
 
-	// stop() runs on the io thread: cancel the async chain, drain the pipe,
-	// final-flush. The sync wait makes the snapshot below race-free.
-	PROCESS_SERVICE::instance()->dispatchSync([pump]() { pump->stop(); });
-	m_snapshotBytes.store(pump->acceptedBytes(), std::memory_order_release);
+	// stop() runs on the io thread: cancel the chain, drain, final-flush. The
+	// sync wait makes the snapshot race-free; shutdown abandons the drain.
+	if (PROCESS_SERVICE::instance()->dispatchSync([pump]() { pump->stop(); }))
+		m_snapshotBytes.store(pump->acceptedBytes(), std::memory_order_release);
 	LOG_DBG << fname << "bytes=" << m_snapshotBytes.load();
 }
 

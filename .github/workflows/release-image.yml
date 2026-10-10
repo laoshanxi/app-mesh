@@ -20,7 +20,7 @@ on:
 env:
   DOCKER_REGISTRY: docker.io
   DOCKER_IMAGE: laoshanxi/appmesh
-  APPMESH_VERSION: "3.0.0"
+  APPMESH_VERSION: "3.0.1"
 
 permissions:
   contents: read

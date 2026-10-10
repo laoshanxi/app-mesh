@@ -116,6 +116,16 @@ cleanup_service() {
     fi
 }
 
+cleanup_loader_registration() {
+    [[ "$(detect_os)" != "linux" ]] && return 0
+
+    if [ -f /etc/ld.so.conf.d/appmesh.conf ]; then
+        info "Removing dynamic loader registration"
+        rm -f /etc/ld.so.conf.d/appmesh.conf
+        command -v ldconfig >/dev/null 2>&1 && ldconfig
+    fi
+}
+
 cleanup_bash_completion() {
     if [[ -f "$BASH_COMPLETION_PATH" ]]; then
         info "Removing bash completion file"
@@ -168,6 +178,7 @@ main() {
 
     setup_platform_vars
     cleanup_service
+    cleanup_loader_registration
     cleanup_bash_completion
     # cleanup_temp_files
     cleanup_binary

@@ -70,15 +70,15 @@ The `REST` section of `src/daemon/config.yaml` defines three port keys (env over
 
 | Port | Config key | Bound by | Transport / purpose |
 |------|------------|----------|---------------------|
-| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6059. Clients treat this as the primary management surface. The daemon never binds this port; it only uses the value to build URLs (OIDC, Docker API). |
+| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6059; primary client surface, never bound by the daemon |
 | 6059 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
 | 6058 | `WebSocketPort` | daemon | Single listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`), event subscribe, and daemon-to-daemon forwarding |
 
-All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs; the Dex administration web UI (the `dexuser` System App, `bin/dexuser` built from the Dex fork's `examples/example-app`) listens on **6064**, loopback only, driven by the Dex administrative gRPC API on 5557 (mutual TLS, loopback). The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
+All ports authenticate the same Dex bearer. Additional ports: Dex 6062 (issuer) / 6063 (healthz), the `dexuser` admin UI 6064 (loopback, gRPC 5557), and the agent's Prometheus exporter 6061 (`APPMESH_REST_PrometheusExporterListenPort`, default off).
 
 ## Binary Inspection Tools
 
-When analyzing built binaries or debugging native issues, binary-inspection tooling is allowed and encouraged: `otool`/`nm`/`strings`/`dSYMutil` on macOS (Linux: `objdump`/`readelf`/`ldd`), and language servers (LSP/clangd via the IDE) for code navigation. Prefer these over guesswork when verifying symbol presence, linked libraries, stripped symbols, or crash backtraces.
+Binary-inspection tooling (`otool`/`nm`/`strings` on macOS, `objdump`/`readelf`/`ldd` on Linux, LSP/clangd) is allowed and encouraged — prefer it over guesswork for symbols, linked libraries, or backtraces.
 
 ## Build & Test
 
@@ -127,8 +127,6 @@ go test ./src/sdk/go/ -test.v
 cd src/sdk/rust && cargo test
 ```
 
-CMake targets `python_tests`, `go_tests`, `workflow_tests`, and `rust_tests` also exist.
-
 ## Architecture
 
 ### Daemon (`src/daemon/`)
@@ -152,28 +150,21 @@ The core service. Initialization flows through `main.cpp`: framework init → co
 | `WORKER` | `Worker` | `rest/Worker.h` |
 | `EVENT_DISPATCHER` | `EventDispatcher` | `rest/EventDispatcher.h` |
 
-`HMACVerifier` (`security/HMACVerifier.h`) is not a singleton: each managed system process spawn (Agent, Workflow) gets its own instance holding a fresh pre-shared key.
-
-Other singletons use `static instance()`: `Configuration`, `Security`, `ResourceCollection`, `PersistManager`, and `HealthCheckTask`.
+`HMACVerifier` is not a singleton — each managed system spawn (Agent, Workflow) gets a fresh instance; `Configuration`, `Security`, `ResourceCollection`, `PersistManager`, and `HealthCheckTask` use `static instance()`.
 
 **Request flow:** Client → `DrogonAdaptor` (HTTPS/WSS) or `TcpAdaptor` (TCP 6059) in `rest/drogon/` → `WORKER` queue (lock-free `moodycamel::BlockingConcurrentQueue`) → `RestHandler` (regex-based route dispatch) → handler method → response.
 
 ### Common Library (`src/common/`)
 
 Shared C++ library used by the daemon. Notable:
-- `StreamLogger.h` — logging macros (`LOG_DBG`, `LOG_INF`, `LOG_WAR`, `LOG_ERR`) wrapping spdlog
+- `StreamLogger.h` — logging macros (`LOG_DBG`, `LOG_INF`, `LOG_WAR`, `LOG_ERR`)
 - `Utility.h` — string ops, file helpers, ID generation
-- `DateTime.h` / `DurationParse.h` — time and duration parsing
-- `JwtHelper.h` — bearer normalization and unverified token parsing used only alongside OIDC verification
+- `JwtHelper.h` — unverified token parsing, used only alongside OIDC verification
 - `RestClient.h` — HTTP client for inter-service calls
 
 ### CLI (`src/cli/`)
 
-`appm` command-line tool, written in Rust. Uses clap for argument parsing and the Rust SDK (`src/sdk/rust`) for WSS communication with the daemon. Key structure:
-- `src/main.rs` — entry point, clap command definitions
-- `src/commands/` — subcommand handlers (Dex bearer import, app management, config, file, run)
-- `tests/integration_test.rs` — CLI argument parsing and subcommand tests (no daemon needed)
-- `tests/remote_test.rs` — integration tests against a running daemon (run with `--ignored`)
+`appm` command-line tool in Rust (clap + the Rust SDK over WSS). `src/commands/` holds the subcommand handlers; `tests/integration_test.rs` runs without a daemon, `tests/remote_test.rs` needs one (`--ignored`).
 
 ### Agent (`src/agent/`)
 
@@ -189,18 +180,18 @@ REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP reque
 | `java/` | Java | HTTP, TCP, WSS |
 | `javascript/` | JavaScript | HTTP, TCP |
 
-Each SDK provides client libraries for interacting with the daemon plus a server-side interface for receiving tasks.
+Each SDK also provides a server-side interface for receiving tasks.
 
 ### Integrations (`src/integrations/`)
 
-Ecosystem connectors that bridge App Mesh with external systems. MCP integration enables AI agents to manage applications via MCP. Two flavors:
-- `mcp-server/` — standalone MCP OAuth Resource Server over **Streamable HTTP**. It validates Dex access tokens against the canonical issuer, may reach Dex through a separately configured access address, and forwards the caller bearer unchanged to App Mesh. It does not mint a second token or expose an upstream IdP. Designed to run as an App Mesh App.
-- `mcp-bridge/` — a stdio MCP server plus `mcp_pipe.py`, a stdio↔WebSocket tunnel for relaying a local MCP server out to a remote LLM gateway.
-- `mqtt/` — MQTT bridge scripts and broker config for IoT scenarios (example-grade).
+Ecosystem connectors bridging App Mesh with external systems:
+- `mcp-server/` — standalone MCP OAuth Resource Server (Streamable HTTP); validates Dex tokens and forwards the caller bearer to App Mesh. Runs as an App Mesh App.
+- `mcp-bridge/` — stdio MCP server plus `mcp_pipe.py`, a stdio↔WebSocket tunnel to a remote LLM gateway.
+- `mqtt/` — MQTT bridge scripts for IoT scenarios (example-grade).
 
 ### LLM Agent (`src/apps/llm-agent/`)
 
-LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`). A thin wrapper around the official **Claude Agent SDK** (built on Claude Code — runs Claude by default, but can also target other models: Bedrock/Vertex, or DeepSeek/Qwen/GLM/MiniMax/OpenAI via an Anthropic-compatible endpoint). The SDK drives a Claude Code CLI as a subprocess; the `claude-agent-sdk` wheel bundles that CLI (no Node.js needed). The default Docker image keeps the llm-agent App package and `claude-agent-sdk` out of the base runtime; use the `llm_agent` Docker target / `laoshanxi/appmesh:llm` image when this optional App is needed. The agent loop, tools (Claude Code's built-in Read/Write/Edit/Bash/…), and conversation history are all the SDK's; llm-agent only routes `session_send`/`session_close` over the task RPC and gives each session a stable workdir (`<workspace>/<session_id>`) that keys the SDK's on-disk history (continuing a session = same `session_id`). Two roles: a shared App for batch/DAG (Scenario A) and an admin-provisioned per-session worker App for interactive streaming (Scenario B). No auth/quota/tenant in the agent itself — the daemon authorizes `run_task` (RBAC + the worker App's `permission`); the model credential is a secured env var (`ANTHROPIC_API_KEY` for the Anthropic API; the backend's equivalent otherwise). See `src/apps/llm-agent/README.md`.
+Optional LLM agent runtime, run as an App Mesh App (Python package `llm_agent`). A thin wrapper around the Claude Agent SDK: the SDK owns the agent loop, tools, and history; llm-agent only routes `session_send`/`session_close` over the task RPC and keys each session to a stable workdir. The daemon does the authorization (RBAC on `run_task`); the model credential is a secured env var. Not in the base Docker image — use the `llm_agent` target / `laoshanxi/appmesh:llm`. See `src/apps/llm-agent/README.md`.
 
 ## Code Conventions
 

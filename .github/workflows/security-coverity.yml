@@ -13,7 +13,7 @@ permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
 env:
-  APPMESH_VERSION: "3.0.0"
+  APPMESH_VERSION: "3.0.1"
   COVERITY_PROJECT: "laoshanxi/app-mesh"
 
 jobs:
@@ -29,6 +29,10 @@ jobs:
 
       - name: Checkout Github code
         uses: actions/checkout@v6
+
+      # The build image dropped the curl CLI together with libcurl
+      - name: Install curl
+        run: apt-get update -qq && apt-get install -y -qq curl
 
       - name: Cmake init with Debug mode
         run: |

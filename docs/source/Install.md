@@ -38,7 +38,7 @@ Mount `/var/run/docker.sock` only when App Mesh must manage Docker images. Grant
 
 ```shell
 sudo rpm --import gpg_public.key
-sudo yum install appmesh_3.0.0_gcc_11_glibc_2.35_x86_64.rpm
+sudo yum install appmesh_3.0.1_gcc_11_glibc_2.35_x86_64.rpm
 sudo systemctl enable --now appmesh
 ```
 
@@ -47,7 +47,7 @@ The RPM is signed. Use `zypper` instead of `yum` on SUSE.
 ### DEB
 
 ```shell
-sudo -E apt install ./appmesh_3.0.0_gcc_7_glibc_2.27_x86_64.deb
+sudo -E apt install ./appmesh_3.0.1_gcc_7_glibc_2.27_x86_64.deb
 sudo systemctl enable --now appmesh
 ```
 
@@ -62,7 +62,7 @@ sha256sum -c --ignore-missing SHA256SUMS
 ## macOS installation
 
 ```shell
-sudo installer -pkg appmesh_3.0.0_clang_17_macos_15_arm64.pkg -target /
+sudo installer -pkg appmesh_3.0.1_clang_17_macos_15_arm64.pkg -target /
 sudo launchctl load -w /Library/LaunchDaemons/com.laoshanxi.appmesh.plist
 ```
 
