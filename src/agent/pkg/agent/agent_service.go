@@ -96,18 +96,34 @@ func writeForwardValidationResponse(w http.ResponseWriter, response *Response) {
 var (
 	logger       = utils.GetLogger()
 	localTCPAddr net.Addr // local daemon TCP address, set by ListenAndServeREST
+	localWSSAddr string   // local daemon WSS address, set by ListenAndServeREST
 
 	delegateClient     *http.Client
 	delegateClientOnce sync.Once
 )
 
-// getLocalConnection returns the pooled TCP connection to the local daemon,
-// re-establishing it if a read error removed it from the pool.
+// getLocalConnection returns the pooled connection to the local daemon,
+// re-establishing it if a read error removed it from the pool. Platforms
+// without the TCP API port (libwebsockets builds) are reached over WSS.
+// TCP is preferred: WSS is used only when the TCP dial fails, and is then reclaimed.
 func getLocalConnection() (*Connection, error) {
 	if localTCPAddr == nil {
 		return nil, fmt.Errorf("local daemon address not initialized")
 	}
-	return getOrCreateConnection(localTCPAddr, config.ConfigData.REST.SSL.VerifyServer, false)
+	conn, err := getOrCreateConnection(localTCPAddr, config.ConfigData.REST.SSL.VerifyServer, false)
+	if err == nil {
+		reclaimWSSFallback(localWSSAddr)
+		return conn, nil
+	}
+	// A daemon without the TCP port fails every dial: warn once per minute,
+	// keep the repeated failures at debug level.
+	if last := lastTCPDialWarnNs.Load(); last == 0 || time.Since(time.Unix(0, last)) > time.Minute {
+		lastTCPDialWarnNs.Store(time.Now().UnixNano())
+		logger.Warnf("TCP connect to local daemon <%s> failed (%v), trying WSS <%s>", localTCPAddr, err, localWSSAddr)
+	} else {
+		logger.Debugf("TCP connect to local daemon <%s> failed (%v), using WSS <%s>", localTCPAddr, err, localWSSAddr)
+	}
+	return getOrCreateWSSConnection(localWSSAddr, config.ConfigData.REST.SSL.VerifyServer)
 }
 
 // getDelegateClient lazily builds the shared HTTP client for forwarding requests
@@ -161,19 +177,23 @@ func MonitorConnectionResponse(conn *Connection, allowError bool) {
 func ListenAndServeREST(ctx context.Context) error {
 	var listenAddr = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
 	var hostPort = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.TcpApiPort)
+	var wssHostPort = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.WebSocketPort)
 
 	hostPort = strings.Replace(hostPort, "0.0.0.0", "127.0.0.1", 1)
+	wssHostPort = strings.Replace(wssHostPort, "0.0.0.0", "127.0.0.1", 1)
 	connectAddr, err := net.ResolveTCPAddr("tcp", hostPort)
 	if err != nil {
 		return fmt.Errorf("failed to resolve address %s: %w", hostPort, err)
 	}
 	localTCPAddr = connectAddr
+	localWSSAddr = wssHostPort
 
 	// Eager connect so a misconfigured/unreachable daemon fails at startup.
-	if _, err := getLocalConnection(); err != nil {
-		return fmt.Errorf("failed to connect to TCP server <%s>: %w", connectAddr, err)
+	localConn, err := getLocalConnection()
+	if err != nil {
+		return fmt.Errorf("failed to connect to daemon (TCP <%s>, WSS <%s>): %w", connectAddr, wssHostPort, err)
 	}
-	logger.Infof("Established REST connection to TCP server <%s>", connectAddr)
+	logger.Infof("Established REST connection to daemon via <%s>", localConn)
 
 	corsDisabled := config.ConfigData.REST.CorsDisabled
 	utils.EnableGlobalCORS(!corsDisabled)

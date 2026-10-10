@@ -1,42 +1,45 @@
 // src/common/QuitHandler.h
 #pragma once
 
-#include <ace/Event_Handler.h>
-#include <ace/Reactor.h>
 #include <atomic>
+#include <chrono>
 
 /**
  * @class QuitHandler
- * @brief Singleton handler for application exit events (Signals/Console Events).
- * * Uses ACE_Event_Handler for POSIX signal integration and a separate
- * Windows console handler for Windows. The exit flag is atomic and lock-free.
- * Similar with <ace/Test_and_Set.h> but better performance
+ * @brief Process exit flag with the platform exit-signal plumbing.
+ *
+ * POSIX: sigaction handlers set the flag and wake a self-pipe (async-signal-safe,
+ * no ACE reactor involved). Windows: a console control handler. Waiters use
+ * waitForExit() instead of polling sleep, so a shutdown request is acted on
+ * immediately rather than on the next schedule tick. A second signal forces an
+ * immediate process exit.
  */
-class QuitHandler : public ACE_Event_Handler
+class QuitHandler
 {
 public:
     static QuitHandler *instance();
-    bool shouldExit() const; // Check if an exit has been requested (lock-free)
-    void requestExit();      // Request to exit (sets flag and wakes up Reactor)
 
-    /// Called when object is signaled by OS (either via UNIX signals or
-    /// when a Win32 object becomes signaled).
-    virtual int handle_signal(int signum, siginfo_t * = 0, ucontext_t * = 0) override;
+    /// Check if an exit has been requested (lock-free).
+    bool shouldExit() const;
+    /// Request an exit from thread context: sets the flag, wakes waiters, logs.
+    void requestExit();
+    /// Async-signal-safe: sets the flag and wakes waiters, nothing else.
+    void markExit();
+    /// Blocks until an exit is requested or the timeout elapses; true if exiting.
+    bool waitForExit(std::chrono::milliseconds timeout);
 
 private:
-    QuitHandler(); // Private constructor/destructor for Singleton
-    virtual ~QuitHandler() = default;
+    QuitHandler() = default;
+    ~QuitHandler() = default;
 
-    // Delete copy/move
     QuitHandler(const QuitHandler &) = delete;
     QuitHandler &operator=(const QuitHandler &) = delete;
 
-    std::atomic<bool> m_exit_flag;
+    std::atomic<bool> m_exit_flag{false};
 };
 
 /**
- * @brief Registers the necessary signal/console handlers for graceful exit.
- * @param reactor The ACE_Reactor instance to use for POSIX signals.
+ * @brief Registers the platform exit handlers (POSIX signals / Windows console).
  * @return true on successful registration, false otherwise.
  */
-bool setupQuitHandler(ACE_Reactor *reactor = ACE_Reactor::instance());
+bool setupQuitHandler();

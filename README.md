@@ -221,6 +221,9 @@ The Computing pillar makes App Mesh a natural runtime for AI workloads:
 - [Crypto++](https://www.cryptopp.com)
 - [concurrentqueue](https://github.com/cameron314/concurrentqueue)
 - [libwebsockets](https://libwebsockets.org/)
+- [drogon](https://github.com/drogonframework/drogon)
+- [trantor](https://github.com/an-tao/trantor)
+- [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
 
 </details>
 

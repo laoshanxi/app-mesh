@@ -8,7 +8,6 @@
 #include <boost/algorithm/string_regex.hpp>
 
 #include "../../common/DurationParse.h"
-#include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../../common/os/linux.h"
 #include "../Configuration.h"
@@ -19,8 +18,8 @@
 #include "../security/InternalCapability.h"
 #include "../security/SecretProtector.h"
 #include "../security/Security.h"
-#if defined(HAVE_UWEBSOCKETS)
-#include "uwebsockets/ReplyContext.h"
+#if defined(HAVE_DROGON)
+#include "ReplyContext.h"
 #else
 #include "../../common/lwsservice/WebSocketService.h"
 #endif
@@ -28,7 +27,6 @@
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
 #include "RestHandler.h"
-#include "SocketServer.h"
 
 // Content-type constants
 constexpr auto CONTENT_TYPE_HTML = "text/html; charset=utf-8";
@@ -38,47 +36,6 @@ constexpr auto CONTENT_TYPE_PNG = "image/png";
 
 namespace
 {
-
-	// uWS renders IPv6 without '::' compression and a dual-stack 127.0.0.1 peer
-	// as v4-mapped "0000:...:ffff:7fxx:xxxx", so parse the 8-group form explicitly.
-	bool isUwsLoopbackGroups(const std::string &peer)
-	{
-		if (peer.empty() || peer.size() >= 64 || peer.find("::") != std::string::npos)
-			return false;
-		unsigned int g[8];
-		if (sscanf(peer.c_str(), "%x:%x:%x:%x:%x:%x:%x:%x",
-				&g[0], &g[1], &g[2], &g[3], &g[4], &g[5], &g[6], &g[7]) != 8)
-			return false;
-		const bool leadingZero = !g[0] && !g[1] && !g[2] && !g[3] && !g[4];
-		return (leadingZero && !g[5] && !g[6] && g[7] == 1) ||			 // ::1
-			   (leadingZero && g[5] == 0xffff && (g[6] >> 8) == 0x7f); // ::ffff:127.x.x.x
-	}
-
-	bool isLoopbackPeer(std::string peer)
-	{
-		peer = Utility::stdStringTrim(peer);
-		if (peer.empty())
-			return false;
-
-		// Agent uses net/http RemoteAddr (host:port); direct listeners record only the
-		// socket address. Never consult Forwarded or X-Forwarded-* for this decision.
-		if (peer.front() == '[')
-		{
-			const auto end = peer.find(']');
-			if (end == std::string::npos)
-				return false;
-			const auto suffix = peer.substr(end + 1);
-			if (!suffix.empty() && suffix.front() != ':')
-				return false;
-			peer = peer.substr(1, end - 1);
-		}
-		else if (peer.rfind("127.0.0.1:", 0) == 0)
-		{
-			peer = "127.0.0.1";
-		}
-
-		return peer == "127.0.0.1" || peer == "::1" || isUwsLoopbackGroups(peer);
-	}
 
 	// Keep immutable ownership and mutable presentation separate. This field is
 	// added only to API responses; persistence and authorization continue to use
@@ -505,13 +462,13 @@ void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
 	const static char fname[] = "RestHandler::apiSwagger() ";
 	LOG_DBG << fname << "Redirecting to Swagger UI";
 
-	auto host = message->m_headers.get("host");
+	auto host = message->m_headers.get(web::http::header_names::host);
 	if (host.empty())
-		host = message->m_headers.get("Host");
+		host = message->m_headers.get(web::http::header_names::host);
 
 	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
 	std::map<std::string, std::string> headers;
-	headers["Location"] = swaggerUrl;
+	headers[web::http::header_names::location] = swaggerUrl;
 
 	std::string emptyBody;
 	message->reply(web::http::status_codes::TemporaryRedirect, emptyBody, headers, CONTENT_TYPE_HTML);
@@ -636,7 +593,7 @@ std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string
 void RestHandler::apiAppEnable(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_ENABLE);
 	auto config = Configuration::instance();
 	const auto app = config->getApp(appName);
@@ -660,7 +617,7 @@ void RestHandler::apiAppEnable(const std::shared_ptr<HttpRequest> &message)
 void RestHandler::apiAppDisable(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DISABLE);
 	auto config = Configuration::instance();
 	const auto app = config->getApp(appName);
@@ -683,7 +640,7 @@ void RestHandler::apiAppDisable(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 {
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DELETE);
 
 	auto config = Configuration::instance();
@@ -757,10 +714,6 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = Utility::encode64(file);
 		body = Utility::text2json("Please recieve file from socket");
 	}
-	else
-	{
-		// WebSocket clients reuse their original Dex bearer; never echo it in a response.
-	}
 	message->reply(web::http::status_codes::OK, body, headers);
 }
 
@@ -796,10 +749,6 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		headers[HTTP_HEADER_KEY_X_Send_File_Socket] = Utility::encode64(file);
 		body = Utility::text2json("Please send file from socket");
 	}
-	else
-	{
-		// WebSocket clients reuse their original Dex bearer; never echo it in a response.
-	}
 	message->reply(web::http::status_codes::OK, body, headers);
 	// set permission
 	Utility::applyFilePermission(file, message->m_headers);
@@ -816,7 +765,7 @@ void RestHandler::apiLabelAdd(const std::shared_ptr<HttpRequest> &message)
 	const static char fname[] = "RestHandler::apiLabelAdd() ";
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_label_set);
 
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto labelKey = regexSearch(path, REST_PATH_LABEL_ADD);
 
 	auto querymap = message->m_query;
@@ -842,7 +791,7 @@ void RestHandler::apiLabelDel(const std::shared_ptr<HttpRequest> &message)
 	const static char fname[] = "RestHandler::apiLabelDel() ";
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_label_delete);
 
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto labelKey = regexSearch(path, REST_PATH_LABEL_DELETE);
 
 	Configuration::instance()->getLabel()->delLabel(labelKey);
@@ -898,10 +847,10 @@ void RestHandler::apiProtectedResourceMetadata(const std::shared_ptr<HttpRequest
 
 void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &message)
 {
-	// This route is intentionally absent from OpenAPI.  tcpClientId and the peer
-	// address come from the accepted socket, not from request headers/body.
-	if (message->tcpClientId() <= 0 || !SocketServer::isLoopbackClient(message->tcpClientId()))
-		throw AuthorizationException("workflow capabilities are available only over local TCP");
+	// This route is intentionally absent from OpenAPI. The peer address comes
+	// from the accepted socket, not from request headers/body.
+	if (!message->isManagedPrivateTransport())
+		throw AuthorizationException("workflow capabilities are available only over local loopback transports");
 
 	const auto workflowProcess = Configuration::instance()->getApp(WORKFLOW_APP_NAME, false);
 	if (!workflowProcess || !workflowProcess->isSystemProtected())
@@ -1009,9 +958,9 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &message)
 {
 	// This is a private startup reconciliation operation, not an app-delete
-	// permission. HTTP, WSS, forwarded, and non-loopback TCP requests are denied.
-	if (message->tcpClientId() <= 0 || !SocketServer::isLoopbackClient(message->tcpClientId()))
-		throw AuthorizationException("workflow orphan cleanup is available only over local TCP");
+	// permission. Forwarded and non-loopback requests are denied.
+	if (!message->isManagedPrivateTransport())
+		throw AuthorizationException("workflow orphan cleanup is available only over local loopback transports");
 
 	const auto workflowProcess = Configuration::instance()->getApp(WORKFLOW_APP_NAME, false);
 	if (!workflowProcess || !workflowProcess->isSystemProtected())
@@ -1106,23 +1055,12 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 
 void RestHandler::apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &message)
 {
+	// The Agent proxies remote clients as loopback peers, so its requests carry
+	// x-forwarded-host; enrollment must not be reachable through that hop.
 	if (message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARDED) ||
-		!isLoopbackPeer(message->m_remote_address))
+		message->m_headers.contains(HTTP_HEADER_KEY_X_Forwarded_Host) ||
+		!HttpRequest::isLoopbackPeer(message->m_remote_address))
 		throw AuthorizationException("first-admin enrollment requires a direct loopback client");
-
-	// TCP requests can self-declare client_addr. Trust the Agent-captured socket peer
-	// only after verifying the private Agent-to-Engine envelope.
-	if (message->tcpClientId() > 0)
-	{
-		try
-		{
-			message->verifyHMAC();
-		}
-		catch (const std::exception &)
-		{
-			throw AuthorizationException("first-admin enrollment requires a trusted local transport");
-		}
-	}
 
 	// A WebSocket client presents its bearer only during the upgrade, which pins
 	// the verified principal on the session (same dual path as permissionCheck).
@@ -1156,7 +1094,7 @@ void RestHandler::apiPrincipalsView(const std::shared_ptr<HttpRequest> &message)
 void RestHandler::apiPrincipalUpdate(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_principal_update);
-	const auto path = curlpp::unescape(message->m_relative_uri);
+	const auto path = Utility::decodeURIComponent(message->m_relative_uri);
 	const auto principalId = regexSearch(path, REST_PATH_PRINCIPAL);
 	Security::instance()->updatePrincipal(principalId, message->extractJson());
 	message->reply(web::http::status_codes::OK, Security::instance()->principal(principalId)->asJson());
@@ -1165,7 +1103,7 @@ void RestHandler::apiPrincipalUpdate(const std::shared_ptr<HttpRequest> &message
 void RestHandler::apiPrincipalDelete(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_principal_delete);
-	const auto path = curlpp::unescape(message->m_relative_uri);
+	const auto path = Utility::decodeURIComponent(message->m_relative_uri);
 	const auto principalId = regexSearch(path, REST_PATH_PRINCIPAL);
 	Security::instance()->deletePrincipal(principalId);
 	message->reply(web::http::status_codes::NoContent);
@@ -1182,7 +1120,7 @@ void RestHandler::apiRoleUpdate(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiRoleUpdate() ";
 
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_role_update);
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_UPDATE);
 
@@ -1196,7 +1134,7 @@ void RestHandler::apiRoleDelete(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiRoleDelete() ";
 
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_role_delete);
 
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_DELETE);
@@ -1223,7 +1161,7 @@ void RestHandler::apiPermissionsView(const std::shared_ptr<HttpRequest> &message
 void RestHandler::apiHealth(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_HEALTH);
 	const auto app = Configuration::instance()->getApp(appName);
 	checkAppAccessPermission(message, app, false);
@@ -1236,7 +1174,8 @@ void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiRestMetrics() ";
 	LOG_DBG << fname << "Entered";
-	permissionCheck(message, PERMISSION_KEY_view_host_resource);
+	// No authentication, like a standard exporter endpoint: the port relies on
+	// network isolation instead, and the payload carries no version string.
 
 	auto body = m_metrics->collectData();
 	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
@@ -1245,7 +1184,7 @@ void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 void RestHandler::apiAppView(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_VIEW);
 	const auto app = Configuration::instance()->getApp(appName);
 	checkAppAccessPermission(message, app, false);
@@ -1403,7 +1342,7 @@ void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)
 
 	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
 	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
 	auto app = Configuration::instance()->getApp(appName);
@@ -1417,7 +1356,7 @@ void RestHandler::apiRemoveMessage(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_task);
 
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
 	auto app = Configuration::instance()->getApp(appName);
@@ -1436,7 +1375,7 @@ void RestHandler::apiGetMessage(const std::shared_ptr<HttpRequest> &message)
 		message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
 	if (processKey.empty())
 		throw AuthorizationException("managed process proof is required");
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 	auto app = Configuration::instance()->getApp(appName);
 
@@ -1455,7 +1394,7 @@ void RestHandler::apiSendMessageResponse(const std::shared_ptr<HttpRequest> &mes
 		message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
 	if (processKey.empty())
 		throw AuthorizationException("managed process proof is required");
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
 	auto app = Configuration::instance()->getApp(appName);
@@ -1467,7 +1406,7 @@ void RestHandler::apiSendMessageResponse(const std::shared_ptr<HttpRequest> &mes
 void RestHandler::apiAppOutputView(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app_output);
-	const auto path = (curlpp::unescape(message->m_relative_uri));
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_OUT_VIEW);
 
 	const auto app = Configuration::instance()->getApp(appName);
@@ -1605,36 +1544,14 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 		message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
 		? message->m_headers.get(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
 		: std::string();
-	if (message->tcpClientId() > 0)
+#if defined(HAVE_DROGON)
+	if (message->wsReplyContext() && message->wsReplyContext()->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed)
 	{
-		int clientId = message->tcpClientId();
-		connKey = ConnectionKey::tcp(clientId);
-		deliveryCb = [clientId, forwardRoute](const EventEnvelope &envelope) -> bool
+		auto wsCtx = message->wsReplyContext();
+		connKey = ConnectionKey::wss(wsCtx->getNumericId());
+		deliveryCb = [wsCtx, forwardRoute](const EventEnvelope &envelope) -> bool
 		{
-			auto resp = std::make_unique<Response>();
-			resp->uuid = Utility::shortID();
-			resp->request_uri = "/appmesh/event";
-			resp->http_status = web::http::status_codes::OK;
-			resp->body_msg_type = web::http::mime_types::application_json;
-			auto bodyStr = envelope.toJson();
-			resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
-			resp->headers["X-Subscription-Id"] = envelope.subscriptionId;
-			resp->headers["X-Event-Type"] = envelope.eventType;
-			resp->headers["X-App-Name"] = envelope.appName;
-			if (!forwardRoute.empty())
-				resp->headers[HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE] = forwardRoute;
-			return SocketServer::replyTcp(clientId, std::move(resp));
-		};
-		return true;
-	}
-#if defined(HAVE_UWEBSOCKETS)
-	else if (message->uwsReplyContext() && message->uwsReplyContext()->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
-	{
-		auto uwsCtx = message->uwsReplyContext();
-		connKey = ConnectionKey::wss(uwsCtx->getNumericId());
-		deliveryCb = [uwsCtx, forwardRoute](const EventEnvelope &envelope) -> bool
-		{
-			if (uwsCtx->isAborted())
+			if (wsCtx->isAborted())
 				return false;
 			try
 			{
@@ -1645,14 +1562,13 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 				resp->body_msg_type = web::http::mime_types::application_json;
 				auto bodyStr = envelope.toJson();
 				resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
-				resp->headers["X-Subscription-Id"] = envelope.subscriptionId;
-				resp->headers["X-Event-Type"] = envelope.eventType;
-				resp->headers["X-App-Name"] = envelope.appName;
+				resp->headers[HTTP_HEADER_KEY_X_Subscription_Id] = envelope.subscriptionId;
+				resp->headers[HTTP_HEADER_KEY_X_Event_Type] = envelope.eventType;
+				resp->headers[HTTP_HEADER_KEY_X_App_Name] = envelope.appName;
 				if (!forwardRoute.empty())
 					resp->headers[HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE] = forwardRoute;
 
-				auto data = resp->serialize();
-				uwsCtx->replyWebSocket(std::string(data->data(), data->size()), false, true);
+				wsCtx->replyWebSocket(resp->serialize(), false, true);
 				return true;
 			}
 			catch (...)
@@ -1663,7 +1579,7 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 		return true;
 	}
 #else
-	else if (message->lwsRef())
+	if (message->lwsRef())
 	{
 		auto lwsRef = message->lwsRef();
 		connKey = ConnectionKey::wss(lwsRef.sessionId);
@@ -1678,9 +1594,9 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 				resp->body_msg_type = web::http::mime_types::application_json;
 				auto bodyStr = envelope.toJson();
 				resp->body = std::vector<std::uint8_t>(bodyStr.begin(), bodyStr.end());
-				resp->headers["X-Subscription-Id"] = envelope.subscriptionId;
-				resp->headers["X-Event-Type"] = envelope.eventType;
-				resp->headers["X-App-Name"] = envelope.appName;
+				resp->headers[HTTP_HEADER_KEY_X_Subscription_Id] = envelope.subscriptionId;
+				resp->headers[HTTP_HEADER_KEY_X_Event_Type] = envelope.eventType;
+				resp->headers[HTTP_HEADER_KEY_X_App_Name] = envelope.appName;
 				if (!forwardRoute.empty())
 					resp->headers[HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE] = forwardRoute;
 
@@ -1708,7 +1624,7 @@ void RestHandler::apiAppSubscribe(const std::shared_ptr<HttpRequest> &message)
 {
 	REST_INFO_PRINT;
 	const auto userName = permissionCheck(message, PERMISSION_KEY_app_subscribe);
-	const auto path = curlpp::unescape(message->m_relative_uri);
+	const auto path = Utility::decodeURIComponent(message->m_relative_uri);
 
 	std::string appName = "*";
 	auto config = Configuration::instance();

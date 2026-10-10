@@ -41,10 +41,16 @@ REST:
   # To enable metrics collection, set to a specific port (e.g., 9091).
   PrometheusExporterListenPort: 0
 
-  # Number of threads to handle HTTP requests.
-  WorkerThreadPoolSize: 2
-  # Number of threads to handle I/O operations.
-  IOThreadPoolSize: 2
+  # Threads that process requests for every transport. This is the main
+  # concurrency control: all HTTP, WebSocket and TCP requests share this pool.
+  # 0 derives one thread per CPU the daemon may use, honoring cgroup limits.
+  WorkerThreads: 0
+  # Event-loop threads per transport: each listener (the HTTPS/WSS listener and
+  # the TCP listener) gets this many, and the outbound forwarding client spreads
+  # its peer connections over this many. Requests are dispatched to
+  # WorkerThreads, so these threads only multiplex.
+  # 0 derives half the available CPUs, clamped to 2..4.
+  TransportIoThreads: 0
 
   # When true, CORS headers will not be added to responses.
   CorsDisabled: false

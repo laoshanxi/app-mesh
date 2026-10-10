@@ -172,7 +172,6 @@ set(CRYPTOPP_TARGET cryptopp::cryptopp)
 # ACE
 ##########################################################################
 find_library(ACE_LIBRARY ACE REQUIRED)
-find_library(ACE_SSL_LIBRARY ACE_SSL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
@@ -184,7 +183,12 @@ find_package(uriparser REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-if(WIN32)
-    find_package(unofficial-uwebsockets CONFIG REQUIRED)
+##########################################################################
+# Drogon (HTTPS/WSS transport for the C++17 tier; lower tiers keep libwebsockets)
+##########################################################################
+if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
+    find_package(Drogon CONFIG REQUIRED)
+    add_compile_definitions(HAVE_DROGON=1)
+    message(STATUS "HTTPS/WSS transport: Drogon ${Drogon_VERSION}")
 endif()
 

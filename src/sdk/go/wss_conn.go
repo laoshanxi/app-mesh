@@ -15,8 +15,17 @@ import (
 // WSSConnection wraps a websocket connection for binary message exchange.
 type WSSConnection struct {
 	conn   *websocket.Conn
+	muConn sync.Mutex
 	muSend sync.Mutex
 	muRead sync.Mutex
+}
+
+// currentConn returns the live connection, or nil when it was never established
+// or already closed. Callers must not hold muConn while using the result.
+func (w *WSSConnection) currentConn() *websocket.Conn {
+	w.muConn.Lock()
+	defer w.muConn.Unlock()
+	return w.conn
 }
 
 // NewWSSConnection returns an empty connection wrapper.
@@ -75,7 +84,9 @@ func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, ssl
 		return fmt.Errorf("failed to dial wss %s: %w", u.String(), err)
 	}
 
+	w.muConn.Lock()
 	w.conn = conn
+	w.muConn.Unlock()
 	return nil
 }
 
@@ -84,12 +95,13 @@ func (w *WSSConnection) ReadMessage() ([]byte, error) {
 	w.muRead.Lock()
 	defer w.muRead.Unlock()
 
-	if w.conn == nil {
+	conn := w.currentConn()
+	if conn == nil {
 		return nil, fmt.Errorf("not connected")
 	}
 
 	// ReadMessage returns messageType and payload
-	mt, data, err := w.conn.ReadMessage()
+	mt, data, err := conn.ReadMessage()
 	if err != nil {
 		return nil, err
 	}
@@ -108,14 +120,15 @@ func (w *WSSConnection) SendMessage(ctx context.Context, buffer []byte) error {
 	w.muSend.Lock()
 	defer w.muSend.Unlock()
 
-	if w.conn == nil {
+	conn := w.currentConn()
+	if conn == nil {
 		return fmt.Errorf("not connected")
 	}
 
 	// Respect context deadline if set
 	if dl, ok := ctx.Deadline(); ok {
-		_ = w.conn.SetWriteDeadline(dl)
-		defer w.conn.SetWriteDeadline(time.Time{})
+		_ = conn.SetWriteDeadline(dl)
+		defer conn.SetWriteDeadline(time.Time{})
 	}
 
 	// Use BinaryMessage for bytes
@@ -126,14 +139,29 @@ func (w *WSSConnection) SendMessage(ctx context.Context, buffer []byte) error {
 		dataToSend = []byte{}
 	}
 
-	if err := w.conn.WriteMessage(websocket.BinaryMessage, dataToSend); err != nil {
+	if err := conn.WriteMessage(websocket.BinaryMessage, dataToSend); err != nil {
 		return err
 	}
 	return nil
 }
 
+// Ping sends a WebSocket ping to keep the connection alive through the
+// server's idle timeout (a long-poll request carries no data for minutes).
+func (w *WSSConnection) Ping() error {
+	w.muSend.Lock()
+	defer w.muSend.Unlock()
+
+	conn := w.currentConn()
+	if conn == nil {
+		return fmt.Errorf("not connected")
+	}
+	return conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second))
+}
+
 // Close closes the websocket connection.
 func (w *WSSConnection) Close() {
+	w.muConn.Lock()
+	defer w.muConn.Unlock()
 	if w.conn != nil {
 		_ = w.conn.Close()
 		w.conn = nil
@@ -142,13 +170,14 @@ func (w *WSSConnection) Close() {
 
 // Connected returns whether the websocket is present.
 func (w *WSSConnection) Connected() bool {
-	return w.conn != nil
+	return w.currentConn() != nil
 }
 
 // ClientAddress returns local address string if available.
 func (w *WSSConnection) ClientAddress() string {
-	if w.conn != nil && w.conn.LocalAddr() != nil {
-		return w.conn.LocalAddr().String()
+	conn := w.currentConn()
+	if conn != nil && conn.LocalAddr() != nil {
+		return conn.LocalAddr().String()
 	}
 	return ""
 }

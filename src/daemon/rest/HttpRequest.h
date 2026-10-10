@@ -35,8 +35,7 @@ class HttpRequest
 {
 public:
 	// Constructor for deserialization
-	// TCP REST Server receives and decodes this
-	explicit HttpRequest(Request &&request, int tcpClientId);
+	explicit HttpRequest(Request &&request);
 
 	virtual ~HttpRequest();
 
@@ -68,7 +67,7 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
-	static std::shared_ptr<HttpRequest> deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx);
+	static std::shared_ptr<HttpRequest> deserialize(const std::string &input, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx);
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
@@ -84,14 +83,13 @@ public:
 	std::map<std::string, std::string> m_query;
 	HttpHeaderMap m_headers;
 
-	// Sends REST response to client through TCP handler
+	// Sends REST response to client through the transport captured at enqueue time
 	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
 					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
 					   const std::string &bodyType) const;
 
-	int tcpClientId() const { return m_tcpClientId; }
 	const LwsSessionRef &lwsRef() const { return m_lwsRef; }
-	const std::shared_ptr<WSS::ReplyContext> &uwsReplyContext() const { return m_uwsReplyContext; }
+	const std::shared_ptr<WSS::ReplyContext> &wsReplyContext() const { return m_wsReplyContext; }
 	/// Return true when the frontend transport can receive later event frames.
 	bool isPersistentClientTransport() const;
 	/// Bind the immutable principal established by a WebSocket upgrade. Framed
@@ -99,18 +97,16 @@ public:
 	void bindTransportPrincipal(std::string principalId);
 	const std::string &transportPrincipalId() const { return m_transportPrincipalId; }
 	/// Mark a loopback-only WebSocket session that is restricted to managed worker RPC.
-	void markManagedWorkerTransport() { m_managedWorkerTransport = true; }
-	bool isManagedWorkerTransport() const { return m_managedWorkerTransport; }
 	bool isManagedPrivateTransport() const;
+	/// True for the loopback peer addresses 127.0.0.1, ::1 and ::ffff:127.0.0.1.
+	static bool isLoopbackPeer(const std::string &addr);
 
 private:
 	void notifyReply(int status) const;
 	std::shared_ptr<HttpReplyMetricState> m_replyMetric;
-	const int m_tcpClientId;
 	LwsSessionRef m_lwsRef;
-	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;
+	std::shared_ptr<WSS::ReplyContext> m_wsReplyContext;
 	std::string m_transportPrincipalId;
-	bool m_managedWorkerTransport{false};
 };
 
 class Application;

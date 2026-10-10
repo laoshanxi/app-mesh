@@ -60,8 +60,8 @@ public:
 		bool m_corsDisabled;
 		std::set<std::string> m_csrfAllowedOrigins; // CSRF: Origins allowed for cookie-auth state-changing requests
 		std::string m_fileAllowedBaseDir;
-		int m_workerThreadPoolSize;
-		int m_IOThreadPoolSize;
+		int m_workerThreads;	   // 0 = derive from the CPUs the daemon may use
+		int m_transportIoThreads;  // 0 = derive from the CPUs the daemon may use
 		int m_restListenPort;
 		int m_promListenPort;
 		std::string m_restListenAddress;
@@ -129,12 +129,17 @@ public:
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	std::string getSSLCaPath() const;
+	std::string getSSLClientCertificateFile() const;
+	std::string getSSLClientCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getCorsDisabled() const;
 	std::set<std::string> getCsrfAllowedOrigins() const;
 	std::string getFileAllowedBaseDir() const;
-	std::size_t getWorkerThreadPoolSize() const;
-	std::size_t getIOThreadPoolSize() const;
+	/// Effective worker threads: the configured value, or the CPU-derived default
+	/// when the configuration leaves it at 0.
+	std::size_t getWorkerThreads() const;
+	/// Effective IO threads per transport listener, CPU-derived when configured as 0.
+	std::size_t getTransportIoThreads() const;
 	const std::string getPosixTimezone() const;
 
 	bool checkOwnerPermission(const std::string &principalId, const std::string &ownerPrincipalId,

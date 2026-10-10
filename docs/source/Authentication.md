@@ -341,7 +341,7 @@ The `appm` CLI reads the access token from `APPMESH_BEARER_TOKEN` itself. The
 SDK libraries do not: pass the token to the client, for example
 `AppMeshClient(bearer_token=...)`, or supply a `TokenProvider` — the provider
 contract (get access token / `can_refresh` / one refresh after a 401 /
-`clear`) exists in every SDK, Go, Java, JavaScript, and C++ included, so the
+`clear`) exists in every SDK, Go, Java, and JavaScript included, so the
 Python patterns below apply analogously elsewhere. Every SDK also ships a
 built-in refresh-token provider fed from a
 [token set](#token-set--access--refresh-token-long-running-sdk-processes).
@@ -443,7 +443,6 @@ c = AppMeshClient(base_url="https://host:6060", token_provider=provider)
 | Go | `NewRefreshTokenProvider(RefreshTokenConfig{TokenURL, ClientID, AccessToken, RefreshToken, ExpiresIn, HTTPClient})` |
 | Java | `new appmesh.RefreshTokenProvider(tokenUrl, accessToken, refreshToken, expiresInSeconds)`; an overload adds `clientId` |
 | JavaScript | `new RefreshTokenProvider({ tokenUrl, clientId, accessToken, refreshToken, expiresIn, httpClient })`, exported from the package entry alongside `StaticAccessTokenProvider` |
-| C++ | `RefreshTokenProvider` with `RefreshTokenConfig{tokenUrl, clientId, accessToken, refreshToken, expiresIn}` in `ClientHttp.h`; attach via `ClientConfig.tokenProvider` / `setTokenProvider` |
 
 Shared provider behavior (identical across SDKs):
 
@@ -481,7 +480,7 @@ refresh token, so automation callers keep re-minting.
 | CLI `appm logon` | ✅ `--password` / `--password-stdin` / `--username` (only when advertised) | — | ✅ automatic, or `--device` / `--browser` | ✅ (session file) |
 | Rust SDK `OAuthClient` | ✅ `password_login()` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
 | Python SDK `OAuthClient` | ✅ `PasswordGrantProvider` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
-| Go / Java / JS / C++ SDK | — | — | — | ✅ built-in `RefreshTokenProvider` or custom `TokenProvider`; static bearer setters still available (Go `SetToken`, Java `setBearerToken`, JS `set_bearer_token`, C++ `setBearerToken`) |
+| Go / Java / JS SDK | — | — | — | ✅ built-in `RefreshTokenProvider` or custom `TokenProvider`; static bearer setters still available (Go `SetToken`, Java `setBearerToken`, JS `set_bearer_token`) |
 
 Without flags, the CLI selects the method from the advertised flows and the
 local display: browser authorization on a desktop computer, and device
@@ -589,9 +588,9 @@ The full permission list lives in `src/daemon/security/authorization.yaml`.
 | --- | --- | --- |
 | 6060 | agent | HTTPS entry; proxies REST/WSS and the issuer path (main client endpoint) |
 | 6059 | daemon | TCP API (msgpack) |
-| 6058 | daemon | uWS: HTTPS REST + WSS |
+| 6058 | daemon | HTTPS REST + WSS |
 | 5557 | authentication service | Administrative gRPC API, mutual TLS, loopback only (drives the administration UI) |
 | 6062 | authentication service | Issuer and token endpoint |
 | 6063 | authentication service | Telemetry (`/healthz`) |
 | 6064 | administration UI | `dexuser` System App web UI, loopback only |
-| 6061 | agent | Prometheus exporter (off by default) |
+| 6061 | agent | Prometheus exporter, unauthenticated like a standard exporter (off by default) |

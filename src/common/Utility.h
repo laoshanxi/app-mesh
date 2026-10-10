@@ -88,10 +88,6 @@ namespace std
 } // namespace std
 #endif
 
-#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
-#define HAVE_UWEBSOCKETS 1
-#endif
-
 template <typename T>
 std::shared_ptr<T> make_shared_array(size_t size)
 {
@@ -151,21 +147,29 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
+#define DEFAULT_WEB_SOCKET_PORT 6058
 #define DEFAULT_SCHEDULE_INTERVAL 2
-#define DEFAULT_WORKER_THREAD_POOL_SIZE 2
-#define DEFAULT_IO_THREAD_POOL_SIZE 2
+#define DEFAULT_WORKER_THREADS 0		 // 0 = derive from the CPUs the daemon may use
+#define DEFAULT_TRANSPORT_IO_THREADS 0	 // 0 = derive from the CPUs the daemon may use
+#define MIN_WORKER_THREADS 2
+#define MIN_TRANSPORT_IO_THREADS 2
+#define MAX_TRANSPORT_IO_THREADS 4
+// The main ACE reactor now only dispatches application stdout pipe reads; the
+// network transports run on drogon/trantor (libwebsockets on low platforms).
+#define MAIN_REACTOR_THREADS 1
 #define REST_REQUEST_TIMEOUT_SECONDS 60
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
 #define WEBSOCKET_FILE_OPERATION_TIMEOUT 30
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 
-constexpr size_t TCP_MESSAGE_HEADER_LENGTH = 8;			 // TCP header protocol: 4 bytes magic number + 4 bytes body length
-constexpr uint32_t TCP_MESSAGE_MAGIC = 0x07C707F8;		 // Magic number for message validation (host byte order)
-constexpr size_t TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256; // Chunk block size 16KB (target with 256 bytes reserved for overhead)
+constexpr size_t TCP_MESSAGE_HEADER_LENGTH = 8;			        // TCP header protocol: 4 bytes magic number + 4 bytes body length
+constexpr uint32_t TCP_MESSAGE_MAGIC = 0x07C707F8;		        // Magic number for message validation (host byte order)
+constexpr size_t TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256;        // Chunk block size 16KB (target with 256 bytes reserved for overhead)
 constexpr size_t TCP_MAX_BLOCK_SIZE = 2UL * 1024 * 1024 * 1024; // Maximum allowed block size: 2 GB (file transfer)
-constexpr size_t TCP_MAX_RECV_MSG_SIZE = 200 * 1024 * 1024;    // Maximum single non-file TCP message: 200 MB (DoS protection)
-constexpr size_t MAX_HTTP_BODY_SIZE = 128 * 1024 * 1024;       // Maximum HTTP body size: 128 MB
+constexpr size_t TCP_MAX_RECV_MSG_SIZE = 200 * 1024 * 1024;     // Maximum single non-file TCP message: 200 MB (DoS protection)
+constexpr size_t MAX_HTTP_BODY_SIZE = 128 * 1024 * 1024;        // Maximum HTTP body size: 128 MB
+constexpr size_t MAX_UPLOAD_SIZE = 2ULL * 1024 * 1024 * 1024;   // Largest file transfer (HTTPS streaming and TCP socket upload)
 constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
@@ -200,6 +204,10 @@ public:
 	static void removeFile(const std::string &path);
 	static bool runningInContainer();
 	static bool ensureSystemRoot();
+
+	// Network functions
+	/// Resolve a host name or an address literal to a numeric address. Empty result on failure.
+	static std::string resolveHostAddress(const std::string &host, std::string &errorText);
 
 	// String functions
 	static bool isNumber(const std::string &str);
@@ -329,8 +337,12 @@ public:
 #define JSON_KEY_SSLClientCertificateKeyFile "SSLClientCertificateKeyFile"
 #define JSON_KEY_SSLCaPath "SSLCaPath"
 
-#define JSON_KEY_WorkerThreadPoolSize "WorkerThreadPoolSize"
-#define JSON_KEY_IOThreadPoolSize "IOThreadPoolSize"
+#define JSON_KEY_WorkerThreads "WorkerThreads"
+#define JSON_KEY_TransportIoThreads "TransportIoThreads"
+// Renamed keys; still reported so an upgraded config fails loudly instead of
+// silently dropping the value the operator had tuned.
+#define JSON_KEY_LEGACY_WorkerThreadPoolSize "WorkerThreadPoolSize"
+#define JSON_KEY_LEGACY_IOThreadPoolSize "IOThreadPoolSize"
 #define JSON_KEY_Labels "Labels"
 #define JSON_KEY_VERSION "Version"
 #define JSON_KEY_APP_name "name"
@@ -420,9 +432,13 @@ public:
 #define HTTP_HEADER_KEY_Forwarding_Host "X-Target-Host"
 #define HTTP_HEADER_KEY_APPMESH_FORWARDED "X-AppMesh-Forwarded"
 #define HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE "X-AppMesh-Forward-Route"
+#define HTTP_HEADER_KEY_X_Forwarded_Host "X-Forwarded-Host"
 #define HTTP_HEADER_KEY_X_LWS_Protocol "x-lws-protocol"
 #define HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP "HTTP"
 #define HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY "X-AppMesh-Process-Key"
+#define HTTP_HEADER_KEY_X_App_Name "X-App-Name"
+#define HTTP_HEADER_KEY_X_Event_Type "X-Event-Type"
+#define HTTP_HEADER_KEY_X_Subscription_Id "X-Subscription-Id"
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"
@@ -543,9 +559,3 @@ public:
 
 // cross-platform and safe last error
 const char *last_error_msg();
-
-class ACE_SSL_Context;
-namespace Global
-{
-	ACE_SSL_Context *getClientSSL();
-}

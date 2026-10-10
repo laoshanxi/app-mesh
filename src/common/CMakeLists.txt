@@ -26,7 +26,6 @@ target_link_libraries(common
     ${ZLIB_LIBRARIES} # static libcurl content_encoding needs zlib
     ZLIB::ZLIB # nghttp2
     ${ACE_LIBRARY}
-    ${ACE_SSL_LIBRARY}
     yaml-cpp::yaml-cpp
     Boost::regex
     Boost::system

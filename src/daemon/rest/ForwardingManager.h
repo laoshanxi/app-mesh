@@ -1,8 +1,6 @@
 // src/daemon/rest/ForwardingManager.h
 #pragma once
 
-#include "SocketStream.h"
-
 #include <ace/Map_Manager.h>
 #include <ace/Recursive_Thread_Mutex.h>
 #include <ace/Thread_Mutex.h>
@@ -13,12 +11,15 @@
 
 class HttpRequest;
 class Response;
+class TcpClientStream;
 
 /// Represents a single forwarding connection to a remote host, with a map
 /// of pending requests awaiting responses (correlated by UUID).
 struct ForwardingConnection
 {
-	SocketStreamPtr stream;
+#if defined(HAVE_DROGON)
+	std::shared_ptr<TcpClientStream> stream;
+#endif
 	// ACE_Map_Manager operations lock internally, so an external guard over the
 	// same map re-enters; the lock must be recursive or addRequest() deadlocks.
 	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
@@ -26,6 +27,8 @@ struct ForwardingConnection
 	using SubscriptionMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
 	SubscriptionMap subscriptions;
 	std::atomic<bool> closed{false};
+	// Time of the last accepted connect or received response.
+	std::atomic<int64_t> lastResponseTime{0};
 
 	/// Atomically checks closed flag and binds request under pending_requests lock.
 	/// Returns false if the connection is closed or bind fails.
@@ -38,12 +41,15 @@ struct ForwardingConnection
 	void removeSubscription(const std::string &subscriptionId);
 	void handleResponse(Response &response);
 	void failAll(const std::string &msg);
+
+	/// True when requests wait while the peer stayed silent past the stale bound.
+	bool hasStaleRequests();
 };
 
 /// Manages a pool of forwarding connections to remote hosts.
 ///
-/// Key rule: getOrCreateConnection() MUST NOT hold m_connections lock while calling
-/// createConnection() — that would block the reactor's onClose unbind path → deadlock.
+/// Key rule: getOrCreateConnection() MUST NOT hold the m_connections lock while
+/// connecting — that would block the event loop's close/unbind path → deadlock.
 class ForwardingManager
 {
 public:
@@ -60,7 +66,9 @@ public:
 	bool forward(const std::string &host, int port, const std::shared_ptr<HttpRequest> &request);
 
 private:
+#if defined(HAVE_DROGON)
 	std::shared_ptr<ForwardingConnection> getOrCreateConnection(const std::string &host, int port);
+#endif
 
 	using ForwardingClientMap = ACE_Map_Manager<std::string, std::shared_ptr<ForwardingConnection>, ACE_Recursive_Thread_Mutex>;
 	ForwardingClientMap m_connections;

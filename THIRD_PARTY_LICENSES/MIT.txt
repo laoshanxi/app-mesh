@@ -23,7 +23,6 @@ SOFTWARE.
 Used by the following dependencies:
   - spdlog (Copyright (c) Gabi Melman)
   - libwebsockets (Copyright (c) Andy Green, v4.0+)
-  - libcurl (Copyright (c) Daniel Stenberg)
   - yaml-cpp (Copyright (c) Jesse Beder)
   - nlohmann/json (Copyright (c) Niels Lohmann)
   - jwt-cpp (Copyright (c) Dominik Thalhammer)

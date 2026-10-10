@@ -535,8 +535,8 @@ type WSSRequester struct {
 
 // ensureConnected (re)establishes the WebSocket before a request is sent. The
 // daemon authenticates the upgrade only: a session established without a
-// bearer is classified as a managed-worker session restricted to the task
-// RPC, so a token attached after NewWSSClient must reconnect with it.
+// bearer pins no principal, so a token attached after NewWSSClient must
+// reconnect with it.
 func (w *WSSRequester) ensureConnected() error {
 	token := w.getAccessToken()
 	w.connectMu.Lock()

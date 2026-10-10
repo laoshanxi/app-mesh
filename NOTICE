@@ -31,11 +31,6 @@ bcrypt Rust crate (used by the App Mesh passhash helper)
   URL: https://crates.io/crates/bcrypt
   Copyright: Copyright (c) Vincent Prouillet
 
-libcurl
-  License: MIT/X (curl license)
-  URL: https://curl.se/
-  Copyright: Copyright (c) Daniel Stenberg
-
 spdlog
   License: MIT
   URL: https://github.com/gabime/spdlog
@@ -110,6 +105,31 @@ concurrentqueue
   License: Simplified BSD License
   URL: https://github.com/cameron314/concurrentqueue
   Copyright: Copyright (c) Cameron Desrochers
+
+Drogon
+  License: MIT
+  URL: https://github.com/drogonframework/drogon
+  Copyright: Copyright (c) 2019-2023 An Tao
+
+Trantor
+  License: BSD 3-Clause
+  URL: https://github.com/an-tao/trantor
+  Copyright: Copyright (c) 2016-2021, Tao An; Copyright (c) 2010, Shuo Chen (Muduo-derived code)
+
+JsonCpp
+  License: Public Domain / MIT (dual-licensed)
+  URL: https://github.com/open-source-parsers/jsoncpp
+  Copyright: Copyright (c) 2007-2010 Baptiste Lepilleur and The JsonCpp Authors
+
+c-ares
+  License: MIT
+  URL: https://c-ares.org/
+  Copyright: Copyright (c) 1998 Massachusetts Institute of Technology; Copyright (c) 2007-2023 Daniel Stenberg with many contributors
+
+Brotli
+  License: MIT
+  URL: https://github.com/google/brotli
+  Copyright: Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors
 
 ================================================================================
 

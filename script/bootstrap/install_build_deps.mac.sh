@@ -45,6 +45,7 @@ BREW_PACKAGES=(
     cryptopp
     yaml-cpp
     nlohmann-json
+    jsoncpp
 )
 
 # Ensure brew is available
@@ -73,7 +74,7 @@ for package in "${BREW_PACKAGES[@]}"; do
     fi
 done
 
-# Install curl and ace from custom formulas
+# Install curl and boost from custom formulas
 TAP_PATH="$(brew --repo)/Library/Taps/laoshanxi/homebrew-custom-core/Formula"
 mkdir -p "$TAP_PATH"
 # GitHub runner images leave a bin/openssl link into an openssl@1.1 keg that
@@ -94,10 +95,13 @@ done
 # before building from it. `brew trust` is a no-op on Homebrew versions without
 # the trust mechanism.
 brew trust laoshanxi/custom-core 2>/dev/null || true
-for formula in curl ace boost; do
+for formula in curl boost; do
     wget -q -O "${TAP_PATH}/${formula}.rb" "https://github.com/laoshanxi/homebrew-core/raw/refs/heads/master/Formula/${formula:0:1}/${formula}.rb"
     HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew reinstall --build-from-source --verbose "laoshanxi/homebrew-custom-core/${formula}"
 done
+
+# ACE (upstream formula, no SSL)
+brew install ace
 
 # Install Go tools
 echo "Installing Go tools..."
@@ -192,14 +196,13 @@ cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON 
 make
 sudo make install
 
-echo "Installing uWebSockets..."
+echo "Building and installing Drogon..."
 cd $TMP_DIR
-git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
-cd uWebSockets
-make default WITH_OPENSSL=1 CFLAGS="-I/opt/homebrew/include" LDFLAGS="-L/opt/homebrew/lib"
+git clone --depth=1 -b v1.9.13 --recurse-submodules --shallow-submodules https://github.com/drogonframework/drogon.git
+cd drogon && mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DCMAKE_PREFIX_PATH="/opt/homebrew" ..
+make -j"$(sysctl -n hw.ncpu)"
 sudo make install
-sudo cp uSockets/src/libusockets.h /usr/local/include/
-sudo cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
 
 echo "Building and installing uriparser..."
 cd $TMP_DIR

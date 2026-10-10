@@ -51,6 +51,7 @@ if [ -f "/usr/bin/yum" ]; then
     yum install -y wget which gettext unzip
     yum install -y python3-pip
     yum install -y zlib-devel #for libcurl
+    yum install -y libuuid-devel #for drogon
     yum install -y ninja-build 2>/dev/null || (yum install -y python3-pip && pip3 install ninja)
     #yum install -y boost169-devel boost169-static
     #export BOOST_LIBRARYDIR=/usr/lib64/boost169
@@ -68,7 +69,7 @@ elif [ -f "/usr/bin/apt" ]; then
     apt install -y wget alien gettext unzip
     apt install -y python3-pip
     apt install -y zlib1g-dev #for libcurl
-    #apt install -y libboost-all-dev libace-dev libace
+    apt install -y uuid-dev #for drogon
 fi
 python3 -m pip install --upgrade pip || python3 -m pip install --break-system-packages --upgrade pip || true
 
@@ -84,8 +85,6 @@ if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then
     echo 'openssl was already installed'
     # set for appmesh cmake
     export OPENSSL_ROOT_DIR=/usr/local/ssl
-    # set for ACE SSL: https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#sslinstall
-    export SSL_ROOT=/usr/local/ssl
 else
     if [ -f "/usr/bin/yum" ]; then
         yum install -y openssl-devel
@@ -156,12 +155,9 @@ cmake --build . --parallel
 cmake --install .
 cd "$ROOTDIR"
 
-# build ACE
-if [ true ]; then
-    # https://www.cnblogs.com/tanzi-888/p/5342431.html
-    # http://download.dre.vanderbilt.edu/
-    # https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#aceinstall
-    if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+# ACE: CentOS ships no ACE package, build from source there; apt elsewhere
+if [ -f "/usr/bin/yum" ]; then
+    if [[ $RHEL_VER = "7" ]]; then
         $WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_16/ACE-6.5.16.tar.gz
         tar zxvf ACE-6.5.16.tar.gz >/dev/null
     else
@@ -174,14 +170,13 @@ if [ true ]; then
     cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
     cd ${ACE_ROOT}/ace
     # ACE defaults to debug=1. debug=0 omits -ggdb from the release library.
-    make ssl=1 debug=0 -j"$(($(nproc) / 2))"
-    make install ssl=1 debug=0 INSTALL_PREFIX=/usr/local
-    # cd ${ACE_ROOT}/protocols/ace
-    # make ssl=1 -j"$(($(nproc) / 2))"
-    # make install ssl=1 INSTALL_PREFIX=/usr/local
+    make debug=0 -j"$(($(nproc) / 2))"
+    make install debug=0 INSTALL_PREFIX=/usr/local
     ls -al /usr/local/lib*/libACE.so
+    cd $ROOTDIR
+else
+    apt install -y libace-dev
 fi
-cd $ROOTDIR
 
 # cryptopp: AES encrypt https://www.cryptopp.com/
 mkdir -p cryptopp
@@ -284,17 +279,21 @@ else
 fi
 make -j"$(nproc)" && make install
 
-if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-    echo "uWebSockets not support C++11"
+GCC_MAJOR=$(gcc -dumpversion | cut -d. -f1)
+if [[ "$GCC_MAJOR" -lt 8 ]]; then
+    echo "Drogon requires C++17 (GCC >= 8), skipping"
 else
     cd $ROOTDIR
-    git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
-    cd uWebSockets
-    export OPENSSL_ROOT_DIR=/usr/local/ssl
-    make default WITH_OPENSSL=1 CFLAGS="-I${OPENSSL_ROOT_DIR}/include" LDFLAGS="-L${OPENSSL_ROOT_DIR}/lib"
-    make install
-    cp uSockets/src/libusockets.h /usr/local/include/
-    cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
+    git clone --depth=1 -b 1.9.8 https://github.com/open-source-parsers/jsoncpp.git
+    cd jsoncpp && mkdir build && cd build
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DJSONCPP_WITH_TESTS=OFF -DJSONCPP_WITH_POST_BUILD_UNITTEST=OFF ..
+    make -j"$(nproc)" && make install
+
+    cd $ROOTDIR
+    git clone --depth=1 -b v1.9.13 --recurse-submodules --shallow-submodules https://github.com/drogonframework/drogon.git
+    cd drogon && mkdir build && cd build
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
+    make -j"$(nproc)" && make install
 fi
 
 cd $ROOTDIR

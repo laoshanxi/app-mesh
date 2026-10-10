@@ -7,19 +7,7 @@
 
 #include <msgpack.hpp>
 
-#ifdef __has_include
-#if __has_include(<ace/SSL/SSL_SOCK_Stream.h>)
-#include <ace/SSL/SSL_SOCK_Stream.h>
-#else
-#include <ace/SSL_SOCK_Stream.h>
-#endif
-#else
-#include <ace/SSL/SSL_SOCK_Stream.h>
-#endif
-
 #include "../../common/HttpHeaderMap.h"
-
-using ByteBuffer = std::vector<std::uint8_t>;
 
 // Bundles all lws-related fields into a single per-protocol reference.
 // Used by HttpRequest and HttpRequestContext to maintain "one reference per protocol".
@@ -35,7 +23,6 @@ struct LwsSessionRef
 	// when the transport cannot vouch for it; never client-supplied.
 	std::string peerAddress;
 	std::string principalId;
-	bool managedWorker = false;
 	explicit operator bool() const { return wsi != nullptr; }
 };
 
@@ -45,6 +32,7 @@ public:
 	Response();
 	virtual ~Response();
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
+	std::string serializeToString() const;
 	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
 	void applyCorsHeaders();
@@ -69,7 +57,7 @@ public:
 	~Request() = default;
 
 	std::unique_ptr<msgpack::sbuffer> serialize() const;
-	bool deserialize(const ByteBuffer &data);
+	bool deserialize(const std::string &data);
 
 	bool contain_body() const;
 public:

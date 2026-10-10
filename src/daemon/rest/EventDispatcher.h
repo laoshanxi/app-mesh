@@ -17,39 +17,17 @@ class AppProcess;
 
 struct ConnectionKey
 {
-	enum class Transport
-	{
-		TCP,
-		WSS
-	};
+	uint64_t wssSessionId{0};
 
-	Transport transport;
-	int tcpClientId;
-	uint64_t wssSessionId;
-
-	static ConnectionKey tcp(int clientId)
-	{
-		ConnectionKey k;
-		k.transport = Transport::TCP;
-		k.tcpClientId = clientId;
-		k.wssSessionId = 0;
-		return k;
-	}
 	static ConnectionKey wss(uint64_t sessionId)
 	{
 		ConnectionKey k;
-		k.transport = Transport::WSS;
-		k.tcpClientId = 0;
 		k.wssSessionId = sessionId;
 		return k;
 	}
 
 	bool operator<(const ConnectionKey &rhs) const
 	{
-		if (transport != rhs.transport)
-			return transport < rhs.transport;
-		if (transport == Transport::TCP)
-			return tcpClientId < rhs.tcpClientId;
 		return wssSessionId < rhs.wssSessionId;
 	}
 };

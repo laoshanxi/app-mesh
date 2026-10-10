@@ -27,19 +27,6 @@
 #include <ace/Select_Reactor.h>
 #endif
 
-#ifdef __has_include
-#if __has_include(<ace/SSL/SSL_Context.h>)
-#include <ace/SSL/SSL_Context.h>
-#include <ace/SSL/SSL_SOCK_Acceptor.h>
-#else
-#include <ace/SSL_Context.h>
-#include <ace/SSL_SOCK_Acceptor.h>
-#endif
-#else
-#include <ace/SSL/SSL_Context.h>
-#include <ace/SSL/SSL_SOCK_Acceptor.h>
-#endif
-
 #include "../common/QuitHandler.h"
 #include "../common/RestClient.h"
 #include "../common/TimerHandler.h"
@@ -55,22 +42,18 @@
 #include "process/LinuxCgroup.h"
 #include "rest/EventDispatcher.h"
 #include "rest/RestHandler.h"
-#include "rest/SSLHelper.h"
-#include "rest/SocketServer.h"
-#include "rest/SocketStream.h"
 #include "rest/Worker.h"
 #include "security/Security.h"
 #if !defined(NDEBUG) && !defined(_WIN32)
 #include "../common/Valgrind.h"
 #endif
 
-#if defined(HAVE_UWEBSOCKETS)
-#include "rest/uwebsockets/Adaptor.hpp"
+#if defined(HAVE_DROGON)
+#include "rest/drogon/Adaptor.h"
+#include "rest/drogon/TcpAdaptor.h"
 #else
 #include "../common/lwsservice/WebSocketService.h"
 #endif
-
-using TcpAcceptor = ACE_Acceptor<SocketServer, ACE_SSL_SOCK_Acceptor>;
 
 // Global state management
 class AppMeshDaemon
@@ -116,7 +99,6 @@ public:
 
 	// Main loop
 	void runMainLoop();
-	bool checkTcpConnection(int &errorCounter);
 	void executeApplications();
 
 	// Shutdown
@@ -126,9 +108,10 @@ public:
 	void cleanupResources();
 
 private:
+	// trantor and drogon call exit(1) on bind failure, which skips performShutdown().
+	static void verifyListenerAddress(const ACE_INET_Addr &addr, const std::string &service);
+
 	std::vector<std::unique_ptr<std::thread>> m_threadPool;
-	std::shared_ptr<SocketStreamPtr> m_client;
-	std::unique_ptr<TcpAcceptor> m_acceptor;
 	std::list<os::Process> m_ptree;
 	bool m_ptreeReady = false;
 	bool m_ptreeRefreshPending = false;
@@ -142,6 +125,10 @@ static std::unique_ptr<AppMeshDaemon> g_daemon;
 int main(int argc, char *argv[])
 {
 	const static char fname[] = "main() ";
+
+	// First use on the main thread: a signal arriving before setup would
+	// otherwise run this static initialization inside the signal handler.
+	QuitHandler::instance();
 
 	PRINT_VERSION();
 	std::cout << fname << "App Mesh server starting." << std::endl;
@@ -204,6 +191,11 @@ int AppMeshDaemon::run(int argc, char *argv[])
 		LOG_ERR << fname << "Fatal exception during daemon startup or execution: " << e.what();
 		result = 1;
 	}
+	catch (...)
+	{
+		LOG_ERR << fname << "Fatal unknown exception during daemon startup or execution";
+		result = 1;
+	}
 
 	performShutdown();
 	return result;
@@ -236,8 +228,9 @@ void AppMeshDaemon::initializeACE()
 		LOG_WAR << fname << "Failed to open ACE TP_Reactor, using default max handles";
 	}
 
-	// Reactor thread for (process exit event) / (acceptor handling)
-	startReactorThreads(ACE_Reactor::instance(), Configuration::instance()->getIOThreadPoolSize());
+	// Deliberately independent of TransportIoThreads: the only remaining clients of
+	// this reactor are the application stdout pipe pumps.
+	startReactorThreads(ACE_Reactor::instance(), MAIN_REACTOR_THREADS);
 
 	LOG_INF << fname << "ACE Reactor initialized";
 }
@@ -325,7 +318,7 @@ void AppMeshDaemon::setupSignalHandlers()
 {
 	const static char fname[] = "AppMeshDaemon::setupSignalHandlers() ";
 
-	setupQuitHandler(ACE_Reactor::instance());
+	setupQuitHandler();
 
 	// Dedicated reactor for Process_Manager: sharing the main TP_Reactor causes
 	// SIGCHLD deadlock on the notification queue mutex during Token contention.
@@ -421,6 +414,32 @@ void AppMeshDaemon::runProcessReactorLoop()
 	LOG_INF << fname << "Process reactor thread exiting";
 }
 
+void AppMeshDaemon::verifyListenerAddress(const ACE_INET_Addr &addr, const std::string &service)
+{
+	const static char fname[] = "AppMeshDaemon::verifyListenerAddress() ";
+
+	const ACE_HANDLE probe = ACE_OS::socket(addr.get_type(), SOCK_STREAM, 0);
+	if (probe == ACE_INVALID_HANDLE)
+	{
+		LOG_WAR << fname << "Cannot create a socket to verify the " << service << " address: " << last_error_msg();
+		return;
+	}
+
+	// Same option as the listeners before bind, so a TIME_WAIT socket is not a conflict.
+	const int reuse = 1;
+	ACE_OS::setsockopt(probe, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof(reuse));
+	const int bindResult = ACE_OS::bind(probe, static_cast<struct sockaddr *>(addr.get_addr()), addr.get_size());
+	const std::string bindError = last_error_msg();
+	ACE_OS::closesocket(probe);
+
+	if (bindResult != 0)
+	{
+		const std::string endpoint = std::string(addr.get_host_addr()) + ":" + std::to_string(addr.get_port_number());
+		LOG_ERR << fname << "Cannot bind the " << service << " address <" << endpoint << ">: " << bindError;
+		throw std::runtime_error("Cannot listen on " + endpoint + " for the " + service + " service: " + bindError);
+	}
+}
+
 void AppMeshDaemon::initializeRestService()
 {
 	const static char fname[] = "AppMeshDaemon::initializeRestService() ";
@@ -432,61 +451,35 @@ void AppMeshDaemon::initializeRestService()
 		LOG_INF << fname << "REST service is disabled, skipping initialization";
 		return;
 	}
-	ACE_INET_Addr tcpAddr(config->getTcpApiPort(), config->getRestListenAddress().c_str());
 	const std::string homeDir = Utility::getHomeDir();
 	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
 	const auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());					 // Server certificate (PEM, include intermediates)
 	const auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile());					 // Private key
 	const auto ca = verifyClient ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath()) : std::string(); // CA file or directory
 
-	LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
-
-	// Initialize SSL for TCP server and client
-	SSLHelper::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
-
-	// Client SSL context for forwarding requests to other App Mesh nodes.
-	const bool verifyServer = Configuration::instance()->getSslVerifyServer();
-	const auto clientCA = verifyServer ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath()) : std::string();
-	if (!SSLHelper::initClientSSL(Global::getClientSSL(), "", "", clientCA, verifyServer))
-	{
-		LOG_WAR << fname << "Client SSL initialization failed";
-	}
-
 	// Start REST thread pool
 	startWorkerThreadPool();
 
-	// Setup acceptor
-	m_acceptor = std::make_unique<TcpAcceptor>();
-
-	constexpr int FLAG_ACE_NONBLOCK = 1; // None-blocking mode
-	constexpr int FLAG_SO_REUSEADDR = 1;
-	if (m_acceptor->open(tcpAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
-	{
-		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getTcpApiPort()) + " with error: " + last_error_msg());
-	}
-
-#if !defined(_WIN32)
-	// Avoid bash children inheriting the listen fd via fork().
-	if (m_acceptor->acceptor().enable(ACE_CLOEXEC) == -1)
-		LOG_WAR << fname << "Failed to set ACE_CLOEXEC on listen socket: " << last_error_msg();
+#if defined(HAVE_DROGON)
+	// TLS TCP service (length-prefixed msgpack frames, same request pipeline
+	// as the WebSocket transport)
+	ACE_INET_Addr tcpAddr(config->getTcpApiPort(), config->getRestListenAddress().c_str());
+	verifyListenerAddress(tcpAddr, "TCP");
+	TcpAdaptor::instance()->initialize(tcpAddr, cert, key, ca, static_cast<int>(Configuration::instance()->getTransportIoThreads()));
+	TcpAdaptor::instance()->start();
+	LOG_INF << fname << "TCP service initialized on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
 #endif
-
-	// Setup client connection
-	m_client = std::make_shared<SocketStreamPtr>(SocketStream::createConnection(tcpAddr));
-	if (m_client->stream() && m_client->stream()->connected())
-		LOG_INF << fname << "Test local TCP client connected successfully";
-	else
-		LOG_WAR << fname << "Test local TCP client connection to <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << "> failed";
 
 	// Websocket service
 	if (config->getWebSocketPort())
 	{
 		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
-#if defined(HAVE_UWEBSOCKETS)
-		// 3 <IO> threads + shared <WORKER> threads
-		int ioThreadNumber = Configuration::instance()->getIOThreadPoolSize();
-		WebSocketAdaptor::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
-		WebSocketAdaptor::instance()->start();
+#if defined(HAVE_DROGON)
+		verifyListenerAddress(addr, "WebSocket");
+		// <IO> threads per transport + shared <WORKER> threads
+		int ioThreadNumber = static_cast<int>(Configuration::instance()->getTransportIoThreads());
+		DrogonAdaptor::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
+		DrogonAdaptor::instance()->start();
 #else
 		// 1 <IO> thread + shared <WORKER> threads
 		constexpr int workerThreadNumber = 0; // Use shared thread pool
@@ -507,7 +500,7 @@ void AppMeshDaemon::startWorkerThreadPool()
 	const static char fname[] = "AppMeshDaemon::startWorkerThreadPool() ";
 
 	auto config = Configuration::instance();
-	auto workerNum = config->getWorkerThreadPoolSize();
+	auto workerNum = config->getWorkerThreads();
 
 	WORKER::instance()->activate(THR_NEW_LWP | THR_JOINABLE, workerNum);
 
@@ -597,7 +590,6 @@ void AppMeshDaemon::runMainLoop()
 	fs::current_path(tmpDir);
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
-	int tcpErrorCounter = 0;
 	// Health checks every 30 schedule ticks: each check spawns a process.
 	int healthCheckTick = 0;
 	LOG_INF << fname << "Entering main application monitoring loop";
@@ -608,10 +600,9 @@ void AppMeshDaemon::runMainLoop()
 		{
 			executeApplications();
 
-			std::this_thread::sleep_for(std::chrono::seconds(config->getScheduleInterval()));
-
-			// Exit if TCP connection fails too many times
-			if (config->getRestEnabled() && !checkTcpConnection(tcpErrorCounter))
+			// Interruptible: an exit request wakes this immediately instead of
+			// waiting out the schedule interval.
+			if (QuitHandler::instance()->waitForExit(std::chrono::seconds(config->getScheduleInterval())))
 				break;
 
 			PersistManager::instance()->persistSnapshot();
@@ -767,18 +758,6 @@ void AppMeshDaemon::prewarmAuthentication()
 	throw std::runtime_error("OIDC discovery/JWKS readiness failed: " + lastError);
 }
 
-bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
-{
-	const static char fname[] = "AppMeshDaemon::checkTcpConnection() ";
-
-	if (m_client && m_client->stream() && !m_client->stream()->connected())
-	{
-		LOG_WAR << fname << "Self-loopback TCP client reports disconnected (passive)";
-	}
-	(void)errorCounter;
-	return true;
-}
-
 void AppMeshDaemon::executeApplications()
 {
 	const static char fname[] = "AppMeshDaemon::executeApplications() ";
@@ -825,17 +804,27 @@ void AppMeshDaemon::performShutdown()
 	LOG_INF << fname << "Beginning shutdown sequence";
 
 	QuitHandler::instance()->requestExit();
-	stopManagedApplications();
+	// A startup failure before Configuration::instance() is set has no application list.
+	if (Configuration::instance())
+		stopManagedApplications();
+	else
+		LOG_WAR << fname << "Configuration is not initialized, skipping application shutdown";
+	// The reactor threads block in run_reactor_event_loop(); end both loops.
+	ACE_Reactor::instance()->end_reactor_event_loop();
 	if (m_processReactor)
 		m_processReactor->end_reactor_event_loop();
 
-#if defined(HAVE_UWEBSOCKETS)
-	WebSocketAdaptor::instance()->stop();
+	// Drain the workers before the transports: a queued reply still holds a
+	// connection whose event loop must stay alive until the reply is sent.
+	cleanWorkerThreads();
+
+#if defined(HAVE_DROGON)
+	TcpAdaptor::instance()->stop();
+	DrogonAdaptor::instance()->stop();
 #else
 	WebSocketService::instance()->stop();
 #endif
 
-	cleanWorkerThreads();
 	cleanupResources();
 
 	LOG_INF << fname << "AppMesh daemon exited";

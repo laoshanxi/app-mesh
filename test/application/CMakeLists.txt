@@ -30,14 +30,9 @@ target_link_libraries(${PROJECT_NAME}
     common
 )
 
-# Same platform-specific libs as daemon
+# Same transport libs as the daemon
 if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PUBLIC unofficial::uwebsockets::uwebsockets)
-  else()
-    find_library(USOCKETS_LIB NAMES uSockets REQUIRED)
-    target_link_libraries(${PROJECT_NAME} PUBLIC ${USOCKETS_LIB} ZLIB::ZLIB)
-  endif()
+  target_link_libraries(${PROJECT_NAME} PUBLIC Drogon::Drogon)
 else()
   target_link_libraries(${PROJECT_NAME} PUBLIC websockets_shared)
 endif()

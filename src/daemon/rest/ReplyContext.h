@@ -1,12 +1,14 @@
-// src/daemon/rest/uwebsockets/ReplyContext.h
+// src/daemon/rest/ReplyContext.h
 #ifndef REPLY_CONTEXT_H
 #define REPLY_CONTEXT_H
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
-#include <map>
+
+class Response;
 
 namespace WSS
 {
@@ -16,13 +18,13 @@ namespace WSS
     public:
         using Headers = std::map<std::string, std::string>;
         using ReplyCallback = std::function<void(std::string &&data, const std::string &status, const Headers &headers, const std::string &contentType, bool isLast, bool isBinary)>;
-        enum class ProtocolType { Http, WebSocket };
+        // Framed covers every binary message-session transport: WSS and the TCP API.
+        enum class ProtocolType { Http, Framed };
 
         explicit ReplyContext(ProtocolType protocolType, ReplyCallback callback, std::string connectionId = "", uint64_t numericId = 0,
-                              std::string peerAddress = "", std::string principalId = "", bool managedWorkerTransport = false)
+                              std::string peerAddress = "", std::string principalId = "")
             : m_protocolType(protocolType), m_callback(std::move(callback)), m_connectionId(std::move(connectionId)),
-              m_numericId(numericId), m_peerAddress(std::move(peerAddress)), m_principalId(std::move(principalId)),
-              m_managedWorkerTransport(managedWorkerTransport) {}
+              m_numericId(numericId), m_peerAddress(std::move(peerAddress)), m_principalId(std::move(principalId)) {}
 
         ReplyContext(const ReplyContext &) = delete;
         ReplyContext &operator=(const ReplyContext &) = delete;
@@ -33,7 +35,7 @@ namespace WSS
             invokeCallback(std::move(body), httpStatus, headers, contentType, true, false);
         }
 
-        // Send WebSocket response
+        // Send WebSocket response: the transport takes ownership of the payload.
         void replyWebSocket(std::string &&data, bool isLast = false, bool isBinary = true)
         {
             static const Headers emptyHeaders;
@@ -50,10 +52,17 @@ namespace WSS
         // Prevents further callbacks and releases captured resources.
         void markAborted()
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_aborted.store(true, std::memory_order_release);
-            m_completed = true;
-            m_callback = nullptr;
+            std::function<void()> hook;
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_aborted.store(true, std::memory_order_release);
+                m_completed = true;
+                m_callback = nullptr;
+                hook = std::move(m_abortHook);
+            }
+            // Outside the lock: the hook tears down the transport session.
+            if (hook)
+                hook();
         }
 
         bool isAborted() const
@@ -66,7 +75,21 @@ namespace WSS
         uint64_t getNumericId() const { return m_numericId; }
         const std::string &getPeerAddress() const { return m_peerAddress; }
         const std::string &getPrincipalId() const { return m_principalId; }
-        bool isManagedWorkerTransport() const { return m_managedWorkerTransport; }
+
+        // Optional hook invoked with the Response just before it is serialized
+        // for a WebSocket reply. A transport that must inspect or amend the
+        // response headers (e.g. to arm a socket file transfer) sets this when
+        // the context is created; it runs on the replying worker thread.
+        void setResponseObserver(std::function<void(Response &)> observer) { m_responseObserver = std::move(observer); }
+
+        // Optional hook invoked when a request is abandoned without a reply
+        // (e.g. an undecodable payload): the TCP transport closes the connection.
+        void setAbortHook(std::function<void()> hook) { m_abortHook = std::move(hook); }
+        void notifyResponse(Response &resp)
+        {
+            if (m_responseObserver)
+                m_responseObserver(resp);
+        }
 
     private:
         void invokeCallback(std::string &&data, const std::string &status, const Headers &headers, const std::string &contentType, bool isLast, bool isBinary)
@@ -96,7 +119,8 @@ namespace WSS
         uint64_t m_numericId{0};
         std::string m_peerAddress;
         std::string m_principalId;
-        bool m_managedWorkerTransport{false};
+        std::function<void(Response &)> m_responseObserver;
+        std::function<void()> m_abortHook;
         bool m_completed{false};
         std::atomic<bool> m_aborted{false};
         mutable std::mutex m_mutex;

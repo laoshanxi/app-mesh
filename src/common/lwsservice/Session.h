@@ -54,7 +54,7 @@ struct WSRequest
         HttpMessage,
         Closing
     } m_type = Type::WebSocketMessage;
-    std::vector<std::uint8_t> m_payload;
+    std::string m_payload;
     uint64_t m_req_id = 0;
     uint64_t m_session_id = 0; // ABA protection
     void *m_session_ref = 0;
@@ -62,13 +62,13 @@ struct WSRequest
 
 struct Buffer
 {
-    std::vector<std::uint8_t> data;
+    std::string data;
 };
 
 class WebSocketSession
 {
 public:
-    explicit WebSocketSession(lws *lws, uint64_t id, std::string principalId = "", bool managedWorkerTransport = false);
+    explicit WebSocketSession(lws *lws, uint64_t id, std::string principalId = "");
     ~WebSocketSession() = default;
 
     // Processes incoming request and generates response
@@ -86,9 +86,8 @@ public:
     std::time_t getConnectionAt() const;
     const std::string &getPeerAddress() const { return m_peer_address; }
     const std::string &getPrincipalId() const { return m_principal_id; }
-    bool isManagedWorkerTransport() const { return m_managed_worker_transport; }
 
-    std::vector<std::uint8_t> onReceive(const void *in, size_t len, bool is_first, bool is_final);
+    std::string onReceive(const void *in, size_t len, bool is_first, bool is_final);
 
 private:
     lws *m_lws;
@@ -96,7 +95,6 @@ private:
     const std::time_t m_connected_at;
     const std::string m_peer_address;
     const std::string m_principal_id;
-    const bool m_managed_worker_transport;
     Buffer m_buffer;
 
     mutable std::mutex m_outgoing_mutex;

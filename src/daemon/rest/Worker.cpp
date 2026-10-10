@@ -12,16 +12,15 @@
 #include "ForwardingManager.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
-#include "SocketServer.h"
-#if defined(HAVE_UWEBSOCKETS)
-#include "uwebsockets/ReplyContext.h"
+#if defined(HAVE_DROGON)
+#include "ReplyContext.h"
 #endif
 
 #include <memory>
 #include <set>
 #include <utility>
 
-// Global backpressure cap on the shared inbound queue (TCP + lws + uWS). Bounds a
+// Global backpressure cap on the shared inbound queue. Bounds a
 // request-flood DoS: a client sending faster than workers drain is shed, not buffered.
 static constexpr size_t MAX_PENDING_REQUESTS = 10000;
 
@@ -41,15 +40,59 @@ namespace
 			(path.size() > 10 && path.compare(path.size() - 10, 10, "/subscribe") == 0) ||
 			request->m_query.count("subscribe_events") != 0;
 	}
+
+#if defined(HAVE_DROGON)
+	// An undecodable payload keeps its envelope: the correlation uuid is read
+	// straight from the map so the frame can still be answered.
+	std::string recoverRequestUuid(const std::string &data)
+	{
+		try
+		{
+			msgpack::unpacked result;
+			msgpack::unpack(result, data.data(), data.size());
+			const auto obj = result.get();
+			if (obj.type != msgpack::type::MAP)
+				return {};
+			for (std::uint32_t i = 0; i < obj.via.map.size; ++i)
+			{
+				const auto &entry = obj.via.map.ptr[i];
+				if (entry.key.type == msgpack::type::STR && entry.key.as<std::string>() == "uuid" &&
+					entry.val.type == msgpack::type::STR)
+					return entry.val.as<std::string>();
+			}
+		}
+		catch (...)
+		{
+		}
+		return {};
+	}
+
+	// Answer an undecodable request so the client fails at once instead of
+	// waiting for its own timeout. False when there is no uuid to reply with.
+	bool replyUndecodableRequest(const std::shared_ptr<WSS::ReplyContext> &ctx, const std::string &data)
+	{
+		const auto uuid = recoverRequestUuid(data);
+		if (uuid.empty())
+			return false;
+
+		Response response;
+		response.uuid = uuid;
+		response.http_status = web::http::status_codes::BadRequest;
+		response.body_msg_type = web::http::mime_types::application_json;
+		const auto text = Utility::text2json("Unable to decode the request").dump();
+		response.body.assign(text.begin(), text.end());
+		ctx->replyWebSocket(response.serialize(), true, true);
+		return true;
+	}
+#endif
 }
 
 struct HttpRequestContext
 {
-	ByteBuffer m_data;
-	int m_tcpClientId = -1;
+	std::string m_data;
 	LwsSessionRef m_lwsRef{};
-#if defined(HAVE_UWEBSOCKETS)
-	std::shared_ptr<WSS::ReplyContext> m_uwsReplyContext;
+#if defined(HAVE_DROGON)
+	std::shared_ptr<WSS::ReplyContext> m_wsReplyContext;
 #endif
 	// Explicit shutdown marker (an empty m_data must never mean shutdown: a zero-length
 	// frame would then let any client kill a worker).
@@ -85,15 +128,7 @@ bool Worker::enqueueRequest(std::shared_ptr<HttpRequestContext> ctx)
 	return true;
 }
 
-void Worker::queueTcpRequest(ByteBuffer &&data, int tcpClientId)
-{
-	auto ctx = std::make_shared<HttpRequestContext>();
-	ctx->m_data = std::move(data);
-	ctx->m_tcpClientId = tcpClientId;
-	enqueueRequest(std::move(ctx));
-}
-
-void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
+void Worker::queueLwsRequest(std::string &&data, LwsSessionRef lwsRef)
 {
 	auto ctx = std::make_shared<HttpRequestContext>();
 	ctx->m_data = std::move(data);
@@ -101,12 +136,12 @@ void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
 	enqueueRequest(std::move(ctx));
 }
 
-#if defined(HAVE_UWEBSOCKETS)
-void Worker::queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext)
+#if defined(HAVE_DROGON)
+void Worker::queueWsRequest(std::string &&data, std::shared_ptr<WSS::ReplyContext> wsContext)
 {
 	auto ctx = std::make_shared<HttpRequestContext>();
 	ctx->m_data = std::move(data);
-	ctx->m_uwsReplyContext = std::move(uwsContext);
+	ctx->m_wsReplyContext = std::move(wsContext);
 	enqueueRequest(std::move(ctx));
 }
 #endif
@@ -129,33 +164,29 @@ int Worker::svc()
 		}
 		m_pendingCount.fetch_sub(1, std::memory_order_relaxed); // matched to enqueueRequest reservation
 
-#if defined(HAVE_UWEBSOCKETS)
-		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef, requestContext->m_uwsReplyContext);
+#if defined(HAVE_DROGON)
+		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_lwsRef, requestContext->m_wsReplyContext);
 #else
-		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_tcpClientId, requestContext->m_lwsRef, nullptr);
+		auto request = HttpRequest::deserialize(requestContext->m_data, requestContext->m_lwsRef, nullptr);
 #endif
 
 		if (!request || !process(request))
 		{
-			LOG_WAR << fname << "Failed to parse or process request, closing connection | ClientID=" << requestContext->m_tcpClientId;
+			LOG_WAR << fname << "Failed to parse or process request";
 
-			if (requestContext->m_tcpClientId > 0)
+#if defined(HAVE_DROGON)
+			if (requestContext->m_wsReplyContext)
 			{
-				SocketServer::closeClient(requestContext->m_tcpClientId);
-			}
-#if defined(HAVE_UWEBSOCKETS)
-			else if (requestContext->m_uwsReplyContext)
-			{
-				auto &uwsCtx = requestContext->m_uwsReplyContext;
-				if (uwsCtx->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
-					uwsCtx->replyHTTP("500 Internal Server Error", "Internal Server Error", {}, "text/plain");
-				else
-					// WS: no uuid to correlate a framed error, so drop the message (no desync)
-					// rather than send an unframed body the SDK can't parse.
-					uwsCtx->markAborted();
+				auto &wsCtx = requestContext->m_wsReplyContext;
+				if (wsCtx->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
+					wsCtx->replyHTTP("500 Internal Server Error", "Internal Server Error", {}, "text/plain");
+				else if (!replyUndecodableRequest(wsCtx, requestContext->m_data))
+					// Nothing to correlate a framed error with: drop the message (the
+					// TCP transport closes the connection through its abort hook).
+					wsCtx->markAborted();
 			}
 #else
-			else if (requestContext->m_lwsRef)
+			if (requestContext->m_lwsRef)
 			{
 				// TODO: handle libwebsockets close to avoid leak
 			}
@@ -184,14 +215,14 @@ void Worker::shutdown()
 static bool isCsrfViolation(const std::shared_ptr<HttpRequest> &request)
 {
 	const auto &headers = request->m_headers;
-	if (!headers.contains("cookie"))
+	if (!headers.contains(web::http::header_names::cookie))
 		return false;
 
 	const auto &m = request->m_method;
 	if (!(m == web::http::methods::POST || m == web::http::methods::PUT || m == web::http::methods::DEL))
 		return false;
 
-	const auto origin = Utility::stdStringTrim(headers.get("origin"));
+	const auto origin = Utility::stdStringTrim(headers.get(web::http::header_names::origin));
 	if (origin.empty())
 		return false; // same-origin / non-browser
 	if (Configuration::instance()->getCsrfAllowedOrigins().count(origin) > 0)
@@ -201,9 +232,9 @@ static bool isCsrfViolation(const std::shared_ptr<HttpRequest> &request)
 	// X-Forwarded-Host (set by the proxy) since behind nginx/agent the daemon's Host is upstream.
 	// Safe on the direct path only because x-forwarded-host is non-safelisted — never add it to
 	// the CORS Access-Control-Allow-Headers list, or a cross-site request could forge same-origin.
-	auto host = Utility::stdStringTrim(headers.get("x-forwarded-host"));
+	auto host = Utility::stdStringTrim(headers.get(HTTP_HEADER_KEY_X_Forwarded_Host));
 	if (host.empty())
-		host = Utility::stdStringTrim(headers.get("host"));
+		host = Utility::stdStringTrim(headers.get(web::http::header_names::host));
 	if (!host.empty())
 	{
 		auto originHostPort = origin;
@@ -265,19 +296,27 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 	if (isCsrfViolation(request))
 	{
 		LOG_WAR << fname << "CSRF: rejected cross-origin cookie request, path <" << request->m_relative_uri
-				<< "> origin <" << request->m_headers.get("origin") << ">";
+				<< "> origin <" << request->m_headers.get(web::http::header_names::origin) << ">";
 		request->reply(web::http::status_codes::Forbidden, Utility::text2json("CSRF validation failed: origin not allowed"));
 		return true;
 	}
 
 	if (request->m_headers.contains(HTTP_HEADER_KEY_Forwarding_Host))
 	{
-		if (request->isManagedWorkerTransport() ||
-			request->m_headers.contains(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY) ||
+		if (request->m_headers.contains(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY) ||
 			request->m_headers.contains(HMAC_HTTP_HEADER))
 		{
 			request->reply(web::http::status_codes::Forbidden,
 				Utility::text2json("managed process proof cannot be forwarded"));
+			return true;
+		}
+
+		// Socket file transfer is per-connection: forwarding it would use this node.
+		if (request->m_headers.contains(HTTP_HEADER_KEY_X_Send_File_Socket) ||
+			request->m_headers.contains(HTTP_HEADER_KEY_X_Recv_File_Socket))
+		{
+			request->reply(web::http::status_codes::BadRequest,
+				Utility::text2json("File transfer is not supported through forwarding"));
 			return true;
 		}
 
@@ -369,9 +408,8 @@ bool Worker::forward(std::string forwardTo, const std::shared_ptr<HttpRequest> &
 	LOG_DBG << fname << "Forwarding Host: " << forwardTo;
 
 	Uri parser;
-	auto uri = parser.parse(forwardTo);
-	const std::string host = uri.host;
-	uri.port = (uri.port <= 1024) ? Configuration::instance()->getTcpApiPort() : uri.port;
+	const auto uri = parser.parse(forwardTo);
 
-	return ForwardingManager::instance().forward(host, uri.port, request);
+	// Which API port a bare host means depends on the transport; see ForwardingManager.
+	return ForwardingManager::instance().forward(uri.host, uri.port, request);
 }

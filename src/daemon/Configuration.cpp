@@ -1,6 +1,8 @@
 // src/daemon/Configuration.cpp
+#include <algorithm>
 #include <exception>
 #include <set>
+#include <thread>
 #if !defined(_WIN32)
 #include <unistd.h> //environ
 #endif
@@ -14,6 +16,7 @@
 #include "Label.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
+#include "process/LinuxCgroup.h"
 #include "rest/EventDispatcher.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
@@ -26,6 +29,24 @@
 #include "../common/os/pstree.h"
 
 extern char **environ; // unistd.h
+
+namespace
+{
+	// CPUs the daemon may actually use. Cgroup cpuset and quota limits apply inside
+	// containers, where hardware_concurrency() reports the host count instead.
+	std::size_t availableCpuCount()
+	{
+		static const std::size_t count = []()
+		{
+			const int cgroupCount = LinuxCgroup::hostCpuCount();
+			if (cgroupCount > 0)
+				return static_cast<std::size_t>(cgroupCount);
+			const auto hardware = std::thread::hardware_concurrency();
+			return hardware > 0 ? static_cast<std::size_t>(hardware) : static_cast<std::size_t>(MIN_WORKER_THREADS);
+		}();
+		return count;
+	}
+}
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
@@ -456,6 +477,18 @@ std::string Configuration::getSSLCaPath() const
 	return m_rest->m_ssl->m_sslCaPath;
 }
 
+std::string Configuration::getSSLClientCertificateFile() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_ssl->m_clientCertFile;
+}
+
+std::string Configuration::getSSLClientCertificateKeyFile() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_ssl->m_clientCertKeyFile;
+}
+
 bool Configuration::getRestEnabled() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -480,16 +513,24 @@ std::string Configuration::getFileAllowedBaseDir() const
 	return m_rest->m_fileAllowedBaseDir;
 }
 
-std::size_t Configuration::getWorkerThreadPoolSize() const
+std::size_t Configuration::getWorkerThreads() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_workerThreadPoolSize;
+	if (m_rest->m_workerThreads > 0)
+		return static_cast<std::size_t>(m_rest->m_workerThreads);
+	return std::max<std::size_t>(static_cast<std::size_t>(MIN_WORKER_THREADS), availableCpuCount());
 }
 
-std::size_t Configuration::getIOThreadPoolSize() const
+std::size_t Configuration::getTransportIoThreads() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_IOThreadPoolSize;
+	if (m_rest->m_transportIoThreads > 0)
+		return static_cast<std::size_t>(m_rest->m_transportIoThreads);
+	// Each transport multiplexes with epoll and only wakes on readiness, so a small
+	// pool is enough; it scales with the machine rather than following it.
+	const std::size_t derived = availableCpuCount() / 2;
+	return std::max<std::size_t>(static_cast<std::size_t>(MIN_TRANSPORT_IO_THREADS),
+								 std::min<std::size_t>(static_cast<std::size_t>(MAX_TRANSPORT_IO_THREADS), derived));
 }
 
 const std::string Configuration::getPosixTimezone() const
@@ -811,10 +852,10 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_webSocketPort, newConfig->m_rest->m_webSocketPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
 				SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_WorkerThreadPoolSize))
-				SET_COMPARE(this->m_rest->m_workerThreadPoolSize, newConfig->m_rest->m_workerThreadPoolSize);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_IOThreadPoolSize))
-				SET_COMPARE(this->m_rest->m_IOThreadPoolSize, newConfig->m_rest->m_IOThreadPoolSize);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_WorkerThreads))
+				SET_COMPARE(this->m_rest->m_workerThreads, newConfig->m_rest->m_workerThreads);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_TransportIoThreads))
+				SET_COMPARE(this->m_rest->m_transportIoThreads, newConfig->m_rest->m_transportIoThreads);
 			// SSL
 			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
 			{
@@ -1060,15 +1101,25 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	}
 	rest->m_fileAllowedBaseDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_FileAllowedBaseDir);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
-	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WorkerThreadPoolSize);
-	if (threadpool > 0 && threadpool < 100)
+	// Rejecting a value keeps the previous one instead of failing the whole load.
+	auto workerThreads = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WorkerThreads);
+	if (workerThreads >= 0 && workerThreads < 100)
 	{
-		rest->m_workerThreadPoolSize = threadpool;
+		rest->m_workerThreads = workerThreads;
 	}
-	auto iotThreadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_IOThreadPoolSize);
-	if (iotThreadpool > 0 && iotThreadpool < 100)
+	auto transportIoThreads = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_TransportIoThreads);
+	if (transportIoThreads >= 0 && transportIoThreads < 100)
 	{
-		rest->m_IOThreadPoolSize = iotThreadpool;
+		rest->m_transportIoThreads = transportIoThreads;
+	}
+	// Renamed keys: an operator who tuned the old names must not lose the setting
+	// to a silent fallback to the automatic default.
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_LEGACY_WorkerThreadPoolSize) ||
+		HAS_JSON_FIELD(jsonValue, JSON_KEY_LEGACY_IOThreadPoolSize))
+	{
+		LOG_WAR << fname << "REST." << JSON_KEY_LEGACY_WorkerThreadPoolSize << " and REST."
+				<< JSON_KEY_LEGACY_IOThreadPoolSize << " were renamed to REST." << JSON_KEY_WorkerThreads
+				<< " and REST." << JSON_KEY_TransportIoThreads << "; the old keys are ignored";
 	}
 	if (rest->m_restListenPort < 1000 || rest->m_restListenPort > 65534)
 	{
@@ -1142,8 +1193,8 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 {
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_RestEnabled] = (m_restEnabled);
-	result[JSON_KEY_WorkerThreadPoolSize] = ((uint32_t)m_workerThreadPoolSize);
-	result[JSON_KEY_IOThreadPoolSize] = ((uint32_t)m_IOThreadPoolSize);
+	result[JSON_KEY_WorkerThreads] = ((uint32_t)m_workerThreads);
+	result[JSON_KEY_TransportIoThreads] = ((uint32_t)m_transportIoThreads);
 	result[JSON_KEY_RestListenPort] = (m_restListenPort);
 	result[JSON_KEY_PrometheusExporterListenPort] = (m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
@@ -1159,10 +1210,10 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 }
 
 Configuration::JsonRest::JsonRest()
-	: m_restEnabled(false), m_corsDisabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
-	  m_IOThreadPoolSize(DEFAULT_IO_THREAD_POOL_SIZE),
+	: m_restEnabled(false), m_corsDisabled(false), m_workerThreads(DEFAULT_WORKER_THREADS),
+	  m_transportIoThreads(DEFAULT_TRANSPORT_IO_THREADS),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
-	  m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(0)
+	  m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(DEFAULT_WEB_SOCKET_PORT)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 }

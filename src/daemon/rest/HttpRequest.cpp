@@ -1,7 +1,15 @@
 // src/daemon/rest/HttpRequest.cpp
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <string>
+
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h> // inet_pton
+#endif
 
 #include "../../common/Utility.h"
 #include "../../common/json.h"
@@ -10,56 +18,14 @@
 #include "../security/HMACVerifier.h"
 #include "Data.h"
 #include "RestHandler.h"
-#include "SocketServer.h"
 #include "Worker.h"
-#if defined(HAVE_UWEBSOCKETS)
-#include "uwebsockets/ReplyContext.h"
+#if defined(HAVE_DROGON)
+#include "ReplyContext.h"
 #else
 #include "../../common/lwsservice/WebSocketService.h"
 #endif
 
 #include "HttpRequest.h"
-
-namespace
-{
-	// uWS renders IPv6 without '::' compression and a dual-stack 127.0.0.1 peer
-	// as v4-mapped "0000:...:ffff:7fxx:xxxx", so parse the 8-group form explicitly.
-	bool isUwsLoopbackGroups(const std::string &peer)
-	{
-		if (peer.empty() || peer.size() >= 64 || peer.find("::") != std::string::npos)
-			return false;
-		unsigned int g[8];
-		if (sscanf(peer.c_str(), "%x:%x:%x:%x:%x:%x:%x:%x",
-				&g[0], &g[1], &g[2], &g[3], &g[4], &g[5], &g[6], &g[7]) != 8)
-			return false;
-		const bool leadingZero = !g[0] && !g[1] && !g[2] && !g[3] && !g[4];
-		return (leadingZero && !g[5] && !g[6] && g[7] == 1) ||			 // ::1
-			   (leadingZero && g[5] == 0xffff && (g[6] >> 8) == 0x7f); // ::ffff:127.x.x.x
-	}
-
-	bool isLoopbackPeer(std::string peer)
-	{
-		peer = Utility::stdStringTrim(peer);
-		if (peer.empty())
-			return false;
-		if (peer.front() == '[')
-		{
-			const auto end = peer.find(']');
-			if (end == std::string::npos)
-				return false;
-			peer = peer.substr(1, end - 1);
-		}
-		else if (peer.rfind("127.", 0) == 0)
-		{
-			const auto colon = peer.find(':');
-			if (colon != std::string::npos)
-				peer.resize(colon);
-		}
-		return peer == "::1" || peer == "0:0:0:0:0:0:0:1" ||
-			peer.rfind("127.", 0) == 0 || peer.rfind("::ffff:127.", 0) == 0 ||
-			isUwsLoopbackGroups(peer);
-	}
-}
 
 struct HttpReplyMetricState
 {
@@ -85,7 +51,7 @@ struct HttpReplyMetricState
 	std::function<void(int)> callback;
 };
 
-HttpRequest::HttpRequest(Request &&request, int tcpClientId)
+HttpRequest::HttpRequest(Request &&request)
 	: m_uuid(std::move(request.uuid)),
 	  m_method(std::move(request.http_method)),
 	  m_relative_uri(std::move(request.request_uri)),
@@ -93,7 +59,7 @@ HttpRequest::HttpRequest(Request &&request, int tcpClientId)
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
-	  m_tcpClientId(tcpClientId), m_lwsRef{}, m_uwsReplyContext(nullptr)
+	  m_lwsRef{}, m_wsReplyContext(nullptr)
 {
 }
 
@@ -161,16 +127,16 @@ bool HttpRequest::reply(web::http::status_code status, const std::string &body_d
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, int tcpClientId, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
 	Request req;
 	if (req.deserialize(input))
 	{
-		auto request = std::make_shared<HttpRequest>(std::move(req), tcpClientId);
+		auto request = std::make_shared<HttpRequest>(std::move(req));
 		request->m_lwsRef = lwsRef;
-		request->m_uwsReplyContext = std::move(ctx);
+		request->m_wsReplyContext = std::move(ctx);
 		if (!lwsRef.peerAddress.empty())
 		{
 			// libwebsockets transport: replace the self-declared client_addr with
@@ -178,27 +144,23 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, i
 			request->m_remote_address = lwsRef.peerAddress;
 			if (!lwsRef.principalId.empty())
 				request->bindTransportPrincipal(lwsRef.principalId);
-			else if (lwsRef.managedWorker)
-				request->markManagedWorkerTransport();
 		}
-#if defined(HAVE_UWEBSOCKETS)
-		if (request->m_uwsReplyContext &&
-			request->m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
+#if defined(HAVE_DROGON)
+		if (request->m_wsReplyContext &&
+			request->m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed)
 		{
 			// A WebSocket frame can self-declare Request.client_addr. Replace it with
 			// connection metadata captured from the actual server-side socket.
-			request->m_remote_address = request->m_uwsReplyContext->getPeerAddress();
-			if (!request->m_uwsReplyContext->getPrincipalId().empty())
-				request->bindTransportPrincipal(request->m_uwsReplyContext->getPrincipalId());
-			else if (request->m_uwsReplyContext->isManagedWorkerTransport())
-				request->markManagedWorkerTransport();
+			request->m_remote_address = request->m_wsReplyContext->getPeerAddress();
+			if (!request->m_wsReplyContext->getPrincipalId().empty())
+				request->bindTransportPrincipal(request->m_wsReplyContext->getPrincipalId());
 		}
 #endif
 		return request;
 	}
 	else
 	{
-		LOG_ERR << fname << "Failed to decode TCP request data from client <" << tcpClientId << ">";
+		LOG_ERR << fname << "Failed to decode request data";
 	}
 	return nullptr;
 }
@@ -206,32 +168,47 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const ByteBuffer &input, i
 void HttpRequest::bindTransportPrincipal(std::string principalId)
 {
 	m_transportPrincipalId = std::move(principalId);
-	m_managedWorkerTransport = false;
 }
 
 bool HttpRequest::isPersistentClientTransport() const
 {
-	if (m_tcpClientId > 0)
-		return true;
-#if defined(HAVE_UWEBSOCKETS)
-	return m_uwsReplyContext &&
-		m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket;
+#if defined(HAVE_DROGON)
+	return m_wsReplyContext &&
+		m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed;
 #else
 	return static_cast<bool>(m_lwsRef) &&
 		m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) != HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
 #endif
 }
 
+bool HttpRequest::isLoopbackPeer(const std::string &addr)
+{
+	// The whole 127.0.0.0/8 block is loopback (RFC 1122), plus ::1 and the
+	// v4-mapped ::ffff:127.x.x.x a dual-stack listener reports.
+	unsigned char bytes[16] = {};
+	if (addr.find(':') != std::string::npos)
+	{
+		if (::inet_pton(AF_INET6, addr.c_str(), bytes) != 1)
+			return false;
+		static const unsigned char ipv6Loopback[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+		static const unsigned char v4Mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff};
+		if (std::memcmp(bytes, ipv6Loopback, sizeof(ipv6Loopback)) == 0)
+			return true;
+		return std::memcmp(bytes, v4Mapped, sizeof(v4Mapped)) == 0 && bytes[12] == 127;
+	}
+
+	in_addr v4 = {};
+	if (::inet_pton(AF_INET, addr.c_str(), &v4) != 1)
+		return false;
+	return (ntohl(v4.s_addr) & 0xff000000U) == 0x7f000000U;
+}
+
 bool HttpRequest::isManagedPrivateTransport() const
 {
-	if (m_managedWorkerTransport)
-		return true;
-	if (m_tcpClientId > 0)
-		return SocketServer::isLoopbackClient(m_tcpClientId);
 	return isLoopbackPeer(m_remote_address);
 }
 
-std::unique_ptr<msgpack::sbuffer> HttpRequest::serialize() const
+std::string HttpRequest::serialize() const
 {
 	Request req;
 	req.body = *m_body;
@@ -285,31 +262,23 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	if (requestUri == REST_PATH_UPLOAD)
 		response->file_upload_request_headers = m_headers;
 
-	if (m_tcpClientId > 0)
+#if defined(HAVE_DROGON)
+	if (m_wsReplyContext)
 	{
-		// TCP protocol
-		const bool success = SocketServer::replyTcp(m_tcpClientId, std::move(response));
-		if (success)
-			notifyReply(status);
-		return success;
-	}
-#if defined(HAVE_UWEBSOCKETS)
-	else if (m_uwsReplyContext)
-	{
-		if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
+		if (m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
 		{
 			// HTTP protocol
 			response->applyCorsHeaders();
 			response->applySecurityHeaders();
-			m_uwsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
+			m_wsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
 			notifyReply(status);
 			return true;
 		}
-		else if (m_uwsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::WebSocket)
+		else if (m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed)
 		{
 			// WebSocket protocol
-			auto data = response->serialize();
-			m_uwsReplyContext->replyWebSocket(std::string(data->data(), data->size()), false, true);
+			m_wsReplyContext->notifyResponse(*response);
+			m_wsReplyContext->replyWebSocket(response->serialize(), false, true);
 			notifyReply(status);
 			return true;
 		}
@@ -320,9 +289,9 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		}
 	}
 #else
-	else if (m_lwsRef)
+	if (m_lwsRef)
 	{
-		// WebSocket or HTTP-over-lws: move serialized sbuffer in, no body copy.
+		// WebSocket or HTTP-over-lws: the serialized response moves in, no body copy.
 		auto resp = std::make_unique<WSResponse>();
 		resp->m_session_ref = const_cast<void *>(m_lwsRef.wsi);
 		resp->m_req_id = m_lwsRef.reqId;

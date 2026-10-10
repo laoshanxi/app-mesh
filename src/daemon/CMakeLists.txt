@@ -22,12 +22,7 @@ target_link_libraries(appmesh
 )
 
 if(CMAKE_CXX_STANDARD GREATER_EQUAL 17)
-  if(WIN32)
-    target_link_libraries(appmesh PUBLIC unofficial::uwebsockets::uwebsockets)
-  else()
-    find_library(USOCKETS_LIB NAMES uSockets REQUIRED)
-    target_link_libraries(appmesh PUBLIC ${USOCKETS_LIB} ZLIB::ZLIB)
-  endif()
+  target_link_libraries(appmesh PUBLIC Drogon::Drogon)
 else()
   target_link_libraries(appmesh PUBLIC websockets_shared)
 endif()

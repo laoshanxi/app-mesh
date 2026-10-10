@@ -37,10 +37,9 @@ public:
 
 	bool process(const std::shared_ptr<HttpRequest> &request);
 
-	void queueTcpRequest(ByteBuffer &&data, int tcpClientId);
-	void queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef);
-#if defined(HAVE_UWEBSOCKETS)
-	void queueUwsRequest(ByteBuffer &&data, std::shared_ptr<WSS::ReplyContext> uwsContext);
+	void queueLwsRequest(std::string &&data, LwsSessionRef lwsRef);
+#if defined(HAVE_DROGON)
+	void queueWsRequest(std::string &&data, std::shared_ptr<WSS::ReplyContext> wsContext);
 #endif
 
 	void shutdown();

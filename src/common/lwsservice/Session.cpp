@@ -7,27 +7,25 @@
 #include <libwebsockets.h>
 #include <utility>
 
-WebSocketSession::WebSocketSession(lws *lws, uint64_t id, std::string principalId, bool managedWorkerTransport)
+WebSocketSession::WebSocketSession(lws *lws, uint64_t id, std::string principalId)
     : m_lws(lws), m_id(id), m_connected_at(std::time(nullptr)), m_peer_address([lws]()
       {
           char address[64] = {};
           lws_get_peer_simple(lws, address, sizeof(address));
           return std::string(address);
-      }()), m_principal_id(std::move(principalId)), m_managed_worker_transport(managedWorkerTransport)
+      }()), m_principal_id(std::move(principalId))
 {
 }
 
 void WebSocketSession::handleRequest(const WSRequest &req)
 {
-    auto request = HttpRequest::deserialize(req.m_payload, -1, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, nullptr);
+    auto request = HttpRequest::deserialize(req.m_payload, LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, nullptr);
     if (!request)
         return;
 
     request->m_remote_address = m_peer_address;
     if (!m_principal_id.empty())
         request->bindTransportPrincipal(m_principal_id);
-    else if (m_managed_worker_transport)
-        request->markManagedWorkerTransport();
     WORKER::instance()->process(request);
 }
 
@@ -79,7 +77,7 @@ std::time_t WebSocketSession::getConnectionAt() const
     return m_connected_at;
 }
 
-std::vector<std::uint8_t> WebSocketSession::onReceive(const void *in, size_t len, bool is_first, bool is_final)
+std::string WebSocketSession::onReceive(const void *in, size_t len, bool is_first, bool is_final)
 {
     if (is_first)
     {
@@ -93,13 +91,13 @@ std::vector<std::uint8_t> WebSocketSession::onReceive(const void *in, size_t len
     }
 
     const char *p = static_cast<const char *>(in);
-    m_buffer.data.insert(m_buffer.data.end(), p, p + len);
+    m_buffer.data.append(p, len);
 
     if (is_final)
     {
         // Pre-reserve same size to skip grow-from-zero on the next similar frame.
         const size_t last_size = m_buffer.data.size();
-        std::vector<std::uint8_t> out = std::move(m_buffer.data);
+        std::string out = std::move(m_buffer.data);
         m_buffer.data.reserve(last_size);
         return out;
     }

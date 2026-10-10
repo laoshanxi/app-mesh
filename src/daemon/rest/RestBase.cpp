@@ -14,7 +14,6 @@
 #include "../security/Security.h"
 #include "HttpRequest.h"
 #include "RestBase.h"
-#include "SocketServer.h"
 
 namespace
 {
@@ -161,10 +160,10 @@ namespace
 	std::string validateInternalCapability(const std::shared_ptr<HttpRequest> &message,
 		const std::string &token, const std::string &permission)
 	{
-		// tcpClientId is assigned by the accepted socket.  WSS/HTTP have no TCP
-		// client ID and a remote TCP peer fails the socket-level loopback check.
-		if (message->tcpClientId() <= 0 || !SocketServer::isLoopbackClient(message->tcpClientId()))
-			throw std::domain_error("internal capabilities are accepted only over local TCP");
+		// The peer address is captured from the accepted socket, never from
+		// request headers/body, so only a local loopback transport qualifies.
+		if (!message->isManagedPrivateTransport())
+			throw std::domain_error("internal capabilities are accepted only over local loopback transports");
 
 		const auto routeOperations = capabilityOperationsForRequest(*message);
 		if (routeOperations.empty() ||
@@ -250,31 +249,6 @@ void RestBase::handleRest(const std::shared_ptr<HttpRequest> &message, const std
     REST_INFO_PRINT;
 
     const auto path = Utility::stringReplace(message->m_relative_uri, "//", "/");
-
-	if (message->isManagedWorkerTransport())
-	{
-		constexpr const char *taskPrefix = "/appmesh/app/";
-		constexpr const char *taskSuffix = "/task";
-		const bool methodAllowed = message->m_method == web::http::methods::GET ||
-			message->m_method == web::http::methods::PUT;
-		const bool pathAllowed = path.rfind(taskPrefix, 0) == 0 &&
-			path.size() > std::char_traits<char>::length(taskPrefix) + std::char_traits<char>::length(taskSuffix) &&
-			path.compare(path.size() - std::char_traits<char>::length(taskSuffix),
-				std::char_traits<char>::length(taskSuffix), taskSuffix) == 0 &&
-			path.substr(std::char_traits<char>::length(taskPrefix),
-				path.size() - std::char_traits<char>::length(taskPrefix) - std::char_traits<char>::length(taskSuffix)).find('/') == std::string::npos;
-		// The two discovery endpoints are anonymous on every transport (OpenAPI:
-		// security []). A loopback client that connected without a bearer holds a
-		// managed-worker session and still needs them for login discovery.
-		const bool publicDiscovery = message->m_method == web::http::methods::GET &&
-			(path == "/appmesh/auth/config" || path == "/.well-known/oauth-protected-resource");
-		if ((!methodAllowed || !pathAllowed) && !publicDiscovery)
-		{
-			message->reply(web::http::status_codes::Forbidden,
-				Utility::text2json("Managed worker WebSocket sessions are restricted to their task RPC"));
-			return;
-		}
-	}
 
     // Find matching REST function
     auto it = std::find_if(

@@ -194,8 +194,8 @@ function Install-VcpkgPackages {
         'boost-variant:x64-windows',
         'boost-serialization:x64-windows',
         'boost-lockfree:x64-windows',
-        'ace[ssl]:x64-windows',
-        'uwebsockets[core,ssl]:x64-windows',
+        'ace:x64-windows',
+        'drogon:x64-windows',
         # path so should_log() behaviour is identical across platforms.
         'cryptopp:x64-windows',
         'curl:x64-windows',

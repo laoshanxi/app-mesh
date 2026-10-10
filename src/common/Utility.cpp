@@ -17,6 +17,12 @@
 #include <sys/file.h>
 #endif
 #include <thread>
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
 #if defined(__APPLE__)
 #include <crt_externs.h> // For getprogname
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
@@ -25,6 +31,7 @@
 #include <windows.h>
 #endif
 
+#include <ace/INET_Addr.h>
 #include <ace/OS.h>
 #include <ace/UUID.h>
 #include <openssl/crypto.h>
@@ -39,16 +46,6 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
-
-#ifdef __has_include
-#if __has_include(<ace/SSL/SSL_Context.h>)
-#include <ace/SSL/SSL_Context.h>
-#else
-#include <ace/SSL_Context.h>
-#endif
-#else
-#include <ace/SSL/SSL_Context.h>
-#endif
 
 #include "DateTime.h"
 #include "Utility.h"
@@ -366,6 +363,31 @@ bool Utility::runningInContainer()
 	}();
 
 	return isInContainer;
+}
+
+std::string Utility::resolveHostAddress(const std::string &host, std::string &errorText)
+{
+	// An address literal passes through; ACE resolves a host name, IPv4 only.
+	struct in_addr v4;
+	struct in6_addr v6;
+	if (host.find(':') != std::string::npos)
+	{
+		if (inet_pton(AF_INET6, host.c_str(), &v6) == 1)
+			return host;
+	}
+	else if (inet_pton(AF_INET, host.c_str(), &v4) == 1)
+	{
+		return host;
+	}
+
+	ACE_INET_Addr addr;
+	const char *resolved = addr.set(static_cast<u_short>(0), host.c_str(), 1, AF_INET) == 0 ? addr.get_host_addr() : nullptr;
+	if (resolved == nullptr)
+	{
+		errorText = "cannot resolve " + host;
+		return std::string();
+	}
+	return resolved;
 }
 
 bool Utility::ensureSystemRoot()
@@ -1584,15 +1606,6 @@ const char *last_error_msg()
 
 	// Return a pointer to the internal buffer of the thread-local string
 	return g_errorMessage.c_str();
-}
-
-namespace Global
-{
-	ACE_SSL_Context *getClientSSL()
-	{
-		static ACE_SSL_Context sslContext;
-		return &sslContext;
-	}
 }
 
 // Restored functions used internally by other Utility methods

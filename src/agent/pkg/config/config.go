@@ -21,6 +21,7 @@ type (
 		RestListenAddress            string `yaml:"RestListenAddress"`
 		RestListenPort               int    `yaml:"RestListenPort"`
 		TcpApiPort                   int    `yaml:"TcpApiPort"`
+		WebSocketPort                int    `yaml:"WebSocketPort"`
 		PrometheusExporterListenPort int    `yaml:"PrometheusExporterListenPort"`
 		CorsDisabled                 bool   `yaml:"CorsDisabled"`
 
@@ -47,6 +48,7 @@ var ConfigData = Configuration{
 		RestListenAddress:            "127.0.0.1",
 		RestListenPort:               6060,
 		TcpApiPort:                   6059,
+		WebSocketPort:                6058,
 		PrometheusExporterListenPort: 0,
 		CorsDisabled:                 false,
 

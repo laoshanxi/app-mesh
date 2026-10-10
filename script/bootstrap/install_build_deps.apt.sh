@@ -4,7 +4,6 @@
 ################################################################################
 set -x
 set -e
-WGET_A="wget --continue --quiet --backups=1 --tries=30 --no-check-certificate"
 architecture="arm64" # TODO: can not get arm64, set to default
 case $(uname -m) in
     i386)   architecture="386" ;;
@@ -24,7 +23,7 @@ cd "${ROOTDIR}"
 apt update
 # apt full-upgrade -q -y
 # apt install -y build-essential
-apt install -y wget curl libcurl4-openssl-dev libssl-dev
+apt install -y wget curl libssl-dev
 apt install -y g++ cmake make ninja-build
 
 # memory tool for debug
@@ -43,16 +42,16 @@ apt install -y libboost-all-dev
 apt install -y libcrypto++-dev
 
 # build ACE
-apt install -y libace-dev libace-ssl-dev
+apt install -y libace-dev
 
 # yaml-cpp
 apt install -y libyaml-cpp-dev
 
+# drogon requires libuuid, jsoncpp and uriparser
+apt install -y uuid-dev libjsoncpp-dev liburiparser-dev
+
 # json
-$WGET_A https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
-unzip -o include.zip
-rm -rf /usr/local/include/nlohmann
-mv include/nlohmann /usr/local/include/
+apt install -y nlohmann-json3-dev
 
 # syft for SBOM
 curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
@@ -126,23 +125,18 @@ cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
 git clone --depth=1 https://github.com/cameron314/concurrentqueue.git
 cp -rf concurrentqueue /usr/local/include/
 
-git clone --depth=1 https://github.com/uriparser/uriparser.git
-cd uriparser && mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DURIPARSER_BUILD_TESTS=OFF -DURIPARSER_BUILD_DOCS=OFF ..
-make && make install
-cd ${ROOTDIR}
-
-git clone --depth=1 -b v4.5.8 https://github.com/warmcat/libwebsockets.git
-cd libwebsockets/ && mkdir build && cd build && cmake -DLWS_WITHOUT_TESTAPPS=ON ..
-make -j"$(nproc)" && make install
-cd ${ROOTDIR}
-
-git clone --recurse-submodules --shallow-submodules --depth=1 https://github.com/uNetworking/uWebSockets.git
-cd uWebSockets
-make default WITH_OPENSSL=1 && make install
-cp uSockets/src/libusockets.h /usr/local/include/
-cp uSockets/uSockets.a /usr/local/lib/libuSockets.a
-cd $ROOTDIR
+GCC_MAJOR=$(gcc -dumpversion | cut -d. -f1)
+if [[ "$GCC_MAJOR" -lt 8 ]]; then
+    echo "Drogon requires C++17 (GCC >= 8), skipping"
+else
+    git clone --depth=1 -b v1.9.13 --recurse-submodules --shallow-submodules https://github.com/drogonframework/drogon.git
+    cd drogon && mkdir build && cd build
+    # $ORIGIN keeps the packaged libraries self-contained; the OpenSSL prefix
+    # makes the runtime dependency scan resolve one libcrypto, not the system copy.
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCMAKE_SKIP_INSTALL_RPATH=ON -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath,\$ORIGIN" -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DBUILD_BROTLI=OFF ..
+    make -j"$(nproc)" && make install
+    cd $ROOTDIR
+fi
 
 # clean
 go clean -cache -fuzzcache -modcache

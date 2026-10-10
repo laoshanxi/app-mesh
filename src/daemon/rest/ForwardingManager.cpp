@@ -1,12 +1,29 @@
 // src/daemon/rest/ForwardingManager.cpp
+#include "../../common/Utility.h"
 #include "ForwardingManager.h"
+
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <vector>
+
+#include <openssl/evp.h>
+
 #include "Data.h"
 #include "HttpRequest.h"
+#include "ForwardingStream.h"
+#include "../Configuration.h"
+#include "../../common/RestClient.h"
+#if defined(HAVE_DROGON)
+#include "drogon/TcpClientStream.h"
+#else
+#include "lws/LwsForwardingStream.h"
+#endif
 
 namespace
 {
 	constexpr auto EVENT_URI = "/appmesh/event";
-	constexpr auto SUBSCRIPTION_HEADER = "X-Subscription-Id";
+	constexpr auto SUBSCRIPTION_HEADER = HTTP_HEADER_KEY_X_Subscription_Id;
 
 	bool isPersistentClient(const std::shared_ptr<HttpRequest> &request)
 	{
@@ -23,11 +40,76 @@ namespace
 			return {};
 		return value.at("subscription_id").get<std::string>();
 	}
+
+	/// Transport of this build: the TCP API with Drogon, WSS otherwise.
+	std::shared_ptr<ForwardingStream> createForwardingStream()
+	{
+#if defined(HAVE_DROGON)
+		return std::make_shared<TcpClientStream>();
+#else
+		return std::make_shared<LwsForwardingStream>();
+#endif
+	}
+
+	/// Fingerprint of the bearer a peer pins at the upgrade; the raw token never
+	/// becomes a pool key.
+	std::string bearerFingerprint(const std::string &bearer)
+	{
+		if (bearer.empty())
+			return {};
+
+		unsigned char digest[EVP_MAX_MD_SIZE];
+		unsigned int length = 0;
+		if (EVP_Digest(bearer.data(), bearer.size(), digest, &length, EVP_sha256(), nullptr) != 1)
+			throw std::runtime_error("cannot fingerprint the forwarding bearer");
+
+		std::ostringstream encoded;
+		encoded << std::hex << std::setfill('0');
+		for (unsigned int i = 0; i < length; ++i)
+			encoded << std::setw(2) << static_cast<unsigned int>(digest[i]);
+		return encoded.str();
+	}
+
+	/// Resolves the port a forwarding target is reached on; the API port is
+	/// transport specific.
+	int normalizeForwardPort(int port)
+	{
+		auto config = Configuration::instance();
+#if defined(HAVE_DROGON)
+		return port <= 1024 ? config->getTcpApiPort() : port;
+#else
+		static const char fname[] = "normalizeForwardPort() ";
+
+		// This build serves no TCP API: the documented TCP port means the
+		// WebSocket listener here, any other port is used as given.
+		if (port <= 1024)
+			return config->getWebSocketPort();
+		if (port == config->getTcpApiPort())
+		{
+			LOG_WAR << fname << "Forwarding target port " << port << " maps to the WebSocket port on this build";
+			return config->getWebSocketPort();
+		}
+		return port;
+#endif
+	}
 }
 
-// Bounds the blocking TCP connect + TLS handshake to a forwarding peer, so an
-// unreachable host cannot pin a worker thread for the OS connect timeout (minutes).
+// Bounds the blocking connect + TLS handshake to a forwarding peer.
 constexpr int FORWARD_CONNECT_TIMEOUT_SECONDS = 10;
+
+// A silent peer keeps its pooled connection open forever; drop it on reuse once
+// a request waited this long without a single inbound byte.
+constexpr int64_t FORWARD_STALE_RESPONSE_MS = 30 * 1000;
+
+// A rotated-away bearer leaves its connection behind, so drop silent, unused ones.
+constexpr int64_t FORWARD_IDLE_REAP_MS = 600 * 1000;
+
+int64_t steadyNowMs()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+			   std::chrono::steady_clock::now().time_since_epoch())
+		.count();
+}
 
 bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<HttpRequest> request)
 {
@@ -36,6 +118,32 @@ bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<H
 	if (closed.load(std::memory_order_acquire))
 		return false;
 	return pending_requests.bind(uuid, std::move(request)) == 0;
+}
+
+bool ForwardingConnection::hasStaleRequests()
+{
+	const auto lastResponse = lastResponseTime.load(std::memory_order_relaxed);
+	if (lastResponse == 0 || steadyNowMs() - lastResponse <= FORWARD_STALE_RESPONSE_MS)
+		return false;
+	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex(), false);
+	return pending_requests.current_size() > 0;
+}
+
+bool ForwardingConnection::idleReapable()
+{
+	if (closed.load(std::memory_order_acquire))
+		return false;
+	const auto lastResponse = lastResponseTime.load(std::memory_order_relaxed);
+	if (lastResponse == 0 || steadyNowMs() - lastResponse <= FORWARD_IDLE_REAP_MS)
+		return false;
+
+	{
+		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex(), false);
+		if (pending_requests.current_size() > 0)
+			return false;
+	}
+	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, subscriptions.mutex(), false);
+	return subscriptions.current_size() == 0;
 }
 
 std::shared_ptr<HttpRequest> ForwardingConnection::findRequest(const std::string &uuid)
@@ -82,6 +190,7 @@ void ForwardingConnection::removeSubscription(const std::string &subscriptionId)
 
 void ForwardingConnection::handleResponse(Response &response)
 {
+	lastResponseTime.store(steadyNowMs(), std::memory_order_relaxed);
 	if (response.request_uri == EVENT_URI)
 	{
 		std::string routeId;
@@ -174,51 +283,79 @@ ForwardingManager &ForwardingManager::instance()
 	return mgr;
 }
 
-std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(const std::string &host, int port)
+std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
+	const std::string &host, int port, const std::string &bearer)
 {
 	static const char fname[] = "ForwardingManager::getOrCreateConnection() ";
 
-	std::shared_ptr<ForwardingConnection> conn;
-	const std::string key = host + ":" + std::to_string(port); // same host may serve different ports
+	auto stream = createForwardingStream();
+	// An upgrade-authenticated peer pins the identity, so the bearer is part of
+	// the connection identity.
+	const bool pinsPrincipal = stream->pinsHandshakePrincipal();
+	std::string fingerprint = pinsPrincipal ? bearerFingerprint(bearer) : std::string();
+	std::string key = host + ":" + std::to_string(port); // same host may serve different ports
+	if (pinsPrincipal)
+		key += "|" + fingerprint;
 
+	std::shared_ptr<ForwardingConnection> conn;
 	// Phase 1: check under lock, remove stale
 	std::shared_ptr<ForwardingConnection> deadConn;
+	std::vector<std::pair<std::string, std::shared_ptr<ForwardingConnection>>> idleConns;
 	{
 		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, m_connections.mutex(), nullptr);
 
 		if (m_connections.find(key, conn) == 0)
 		{
-			// A pooled entry can outlive its socket: if the peer closed while this
-			// stream's reactor registration was lost, the close callback never fired
-			// and the entry still looks open. Reusing it would silently queue every
-			// request on a dead stream — validate the connection's own state first.
+			// A pooled entry can outlive its socket: validate the stream's own
+			// state first or every request would be queued on a dead connection.
 			if (!conn->closed.load(std::memory_order_acquire))
 			{
-				if (conn->stream && conn->stream->socketAlive())
+				if (conn->stream && conn->stream->connected() && !conn->hasStaleRequests())
 					return conn;
-				LOG_WAR << fname << "Pooled connection to " << key << " is dead; evicting and reconnecting";
+				LOG_WAR << fname << "Pooled connection to " << key << " is dead or not answering; evicting and reconnecting";
 				deadConn = conn;
 			}
 			m_connections.unbind(key);
 			conn.reset();
 		}
+
+		// Only a transport that pins the upgrade identity accumulates per-bearer
+		// connections.
+		if (pinsPrincipal)
+		{
+			for (auto iter = m_connections.begin(); iter != m_connections.end(); ++iter)
+			{
+				if ((*iter).int_id_->idleReapable())
+					idleConns.push_back(std::make_pair((*iter).ext_id_, (*iter).int_id_));
+			}
+			for (auto &entry : idleConns)
+				m_connections.unbind(entry.first);
+		}
 	}
-	// Outside m_connections: failAll touches client replies, shutdown() can take
-	// m_io_mutex — keep the lock order m_io_mutex → m_connections (reactor path).
+	// Outside m_connections: failAll touches client replies — keep the lock
+	// order stream-internal locks → m_connections.
 	if (deadConn)
 	{
 		deadConn->failAll("Forwarding host connection lost");
 		if (deadConn->stream)
 			deadConn->stream->shutdown();
 	}
+	for (auto &entry : idleConns)
+	{
+		LOG_INF << fname << "Closing idle forwarding connection to " << entry.first;
+		entry.second->failAll("Forwarding connection idle");
+		if (entry.second->stream)
+			entry.second->stream->shutdown();
+	}
 
-	// Phase 2: create connection outside lock (avoids holding map lock during connect)
-	// IMPORTANT: set callbacks BEFORE connect(), because connect() calls open() which
-	// registers with the reactor — after that, handle_input/handle_close can fire immediately.
+	// Phase 2: create connection outside lock (avoids holding map lock during connect).
+	// IMPORTANT: set callbacks BEFORE connect() — the connection/message callbacks
+	// can fire as soon as the event loop starts dialing.
 	conn = std::make_shared<ForwardingConnection>();
+	conn->host = host;
+	conn->port = port;
+	conn->bearerFingerprint = std::move(fingerprint);
 	std::weak_ptr<ForwardingConnection> weakConn = conn;
-
-	SocketStreamPtr stream(new SocketStream(Global::getClientSSL()));
 
 	stream->onData(
 		[weakConn](std::vector<std::uint8_t> &&data)
@@ -229,7 +366,7 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 			Response r;
 			if (r.deserialize(data.data(), data.size()))
 			{
-					c->handleResponse(r);
+				c->handleResponse(r);
 			}
 			else
 			{
@@ -254,14 +391,34 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 				m_connections.unbind(key);
 		});
 
-	// Now connect (this calls open() which registers with reactor)
-	ACE_Time_Value connectTimeout(FORWARD_CONNECT_TIMEOUT_SECONDS);
-	if (!stream->connect(ACE_INET_Addr(port, host.c_str()), &connectTimeout))
+	const bool verifyServer = Configuration::instance()->getSslVerifyServer();
+	ForwardingConnectOptions options;
+	options.host = host;
+	options.port = port;
+	options.ca = verifyServer ? ClientSSLConfig::ResolveAbsolutePath(Utility::getHomeDir(), Configuration::instance()->getSSLCaPath()) : std::string();
+	options.verifyPeer = verifyServer;
+	options.bearer = bearer;
+	// A peer that requires client certificates cannot be reached without them.
+	auto config = Configuration::instance();
+	const auto clientCert = config->getSSLClientCertificateFile();
+	if (!clientCert.empty())
+	{
+		options.clientCert = ClientSSLConfig::ResolveAbsolutePath(Utility::getHomeDir(), clientCert);
+		options.clientKey = ClientSSLConfig::ResolveAbsolutePath(Utility::getHomeDir(), config->getSSLClientCertificateKeyFile());
+	}
+	options.timeoutSeconds = FORWARD_CONNECT_TIMEOUT_SECONDS;
+	if (bearer.empty() && pinsPrincipal)
+	{
+		// A bearer-less hop only works against a loopback peer.
+		LOG_WAR << fname << "Forwarding to " << key << " without a bearer; only a loopback peer accepts that upgrade";
+	}
+	if (!stream->connect(options))
 	{
 		LOG_ERR << fname << "Failed to connect to forwarding host: " << key;
 		return nullptr;
 	}
 	conn->stream = std::move(stream);
+	conn->lastResponseTime.store(steadyNowMs(), std::memory_order_relaxed);
 
 	// Phase 3: bind under lock, handle race where another thread created the same connection
 	{
@@ -285,30 +442,50 @@ bool ForwardingManager::forward(const std::string &host, int port, const std::sh
 	static const char fname[] = "ForwardingManager::forward() ";
 	LOG_DBG << fname << "Forwarding to host: " << host;
 
-	auto conn = getOrCreateConnection(host, port);
-	if (!conn)
+	const int targetPort = normalizeForwardPort(port);
+	if (targetPort <= 0)
 	{
-		request->reply(web::http::status_codes::BadGateway, "Failed to connect to forwarding host");
+		request->reply(web::http::status_codes::BadGateway,
+			"Forwarding to other hosts is not available: the target port is not configured");
 		return true;
 	}
 
-	// Register request before sending so the response callback can find it
-	if (!conn->addRequest(request->m_uuid, request))
+	// Any outbound failure must end as a 502, not as an uncaught exception.
+	try
 	{
-		request->reply(web::http::status_codes::BadGateway, "Forwarding connection closed");
-		return true;
-	}
-
-	auto data = request->serialize();
-	if (!conn->stream->send(std::move(data)))
-	{
-		// Send failed — remove pending request and notify caller
-		auto req = conn->takeRequest(request->m_uuid);
-		if (req)
+		const auto bearer = request->m_headers.get(HTTP_HEADER_JWT_Authorization);
+		auto conn = getOrCreateConnection(host, targetPort, bearer);
+		if (!conn)
 		{
-			req->reply(web::http::status_codes::BadGateway, "Failed to send to forwarding host");
+			request->reply(web::http::status_codes::BadGateway, "Failed to connect to forwarding host");
+			return true;
 		}
-	}
 
+		// Register request before sending so the response callback can find it
+		if (!conn->addRequest(request->m_uuid, request))
+		{
+			request->reply(web::http::status_codes::BadGateway, "Forwarding connection closed");
+			return true;
+		}
+
+		auto data = request->serialize();
+		if (data.empty() || !conn->stream->send(data.data(), data.size()))
+		{
+			// Refused send: drop the connection and fail its pending requests now.
+			conn->stream->shutdown();
+			conn->failAll("Failed to send to forwarding host");
+		}
+
+		return true;
+	}
+	catch (const std::exception &ex)
+	{
+		LOG_ERR << fname << "Forwarding to <" << host << ":" << targetPort << "> failed: " << ex.what();
+	}
+	catch (...)
+	{
+		LOG_ERR << fname << "Forwarding to <" << host << ":" << targetPort << "> failed";
+	}
+	request->reply(web::http::status_codes::BadGateway, "Forwarding to host failed");
 	return true;
 }
