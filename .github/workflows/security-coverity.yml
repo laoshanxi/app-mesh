@@ -13,7 +13,7 @@ permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
 env:
-  APPMESH_VERSION: "3.0.0"
+  APPMESH_VERSION: "3.0.1"
   COVERITY_PROJECT: "laoshanxi/app-mesh"
 
 jobs:

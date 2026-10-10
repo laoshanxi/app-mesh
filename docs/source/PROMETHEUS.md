@@ -38,28 +38,14 @@ The daemon owns the in-memory registry. The Go agent listens on
 REST must be enabled. Port `0` disables the listener; `6061` is a typical value. Use
 node-exporter separately when full host metrics are required.
 The dedicated listener accepts only `GET`/`HEAD` and always targets the local daemon;
-the agent forwarding header is rejected on this endpoint. The daemon requires a bearer
-token with the `host-resource-view` permission for `/metrics`. A scrape without a valid
-token gets status 401.
+the agent forwarding header is rejected on this endpoint.
 
-### Scrape authentication
+### Scrape exposure
 
-An automation token lives for 15 minutes. Do not write a token into the scrape job.
-Renew it instead. The all-in-one compose file runs the full chain:
-
-1. The `appmesh_metrics_auth` service runs inside the App Mesh container network.
-   It calls `appmesh-auth.sh automation-token` every 5 minutes. The command uses the
-   bundled `appmesh-automation` client and the local Dex token endpoint.
-2. The service writes the token to the shared `metrics_token` volume. The file mode
-   is 0644 because the Prometheus container runs as user `nobody`. The volume is a
-   tmpfs volume, so the token never reaches the host disk.
-3. The `appmesh` scrape job reads the file on every scrape with
-   `authorization.credentials_file`.
-4. The `appmesh-automation` client holds the `appmesh-maintenance` role. The role
-   includes `host-resource-view`.
-
-For a scrape job outside the compose file, run a renewal loop with the same command.
-Grant the principal a role that includes `host-resource-view`.
+`/metrics` needs no token, like a standard exporter endpoint: the listener relies on
+network isolation. Restrict the port with a firewall or a reverse proxy when the host
+is reachable from an untrusted network. The text exposes the application inventory and
+its resource use.
 
 ### Defined Metrics
 
@@ -70,7 +56,6 @@ Grant the principal a role that includes `host-resource-view`.
 | `appmesh_metrics_scrapes_total` | counter | Metrics scrapes served by App Mesh |
 | `appmesh_metrics_collection_errors_total` | counter | Collector failures |
 | `appmesh_process_id` | gauge | Daemon PID |
-| `appmesh_build_info{version}` | gauge | Build metadata |
 | `appmesh_process_open_fds` | gauge | Open FDs in the daemon process tree |
 | `appmesh_http_requests_total{method,route,status_code,status_class}` | counter | Completed HTTP requests; dynamic path segments are normalized and metrics endpoints are excluded |
 | `appmesh_http_request_duration_seconds{method,route}` | histogram | End-to-end HTTP response latency with eight fixed buckets from 10 ms to 30 s |

@@ -156,25 +156,32 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const nlohmann::json &obj)
 	return snap;
 }
 
+const std::string &Snapshot::filePath()
+{
+	static const std::string path = (std::filesystem::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR / SNAPSHOT_FILE_NAME).string();
+	return path;
+}
+
 void Snapshot::persist()
 {
 	const static char fname[] = "Snapshot::persist() ";
 
-	static auto tmpFile = std::string(SNAPSHOT_FILE_NAME) + "." + std::to_string(Utility::getThreadId());
+	static auto tmpFile = filePath() + "." + std::to_string(Utility::getThreadId());
+	const auto &target = filePath();
 	std::ofstream ofs(tmpFile, std::ios::trunc);
 	if (ofs.is_open())
 	{
 		ofs << this->AsJson().dump();
 		ofs.close();
 		std::error_code renameError;
-		std::filesystem::rename(tmpFile, SNAPSHOT_FILE_NAME, renameError);
+		std::filesystem::rename(tmpFile, target, renameError);
 		if (!renameError)
 		{
-			LOG_DBG << fname << "Snapshot written to <" << SNAPSHOT_FILE_NAME << ">";
+			LOG_DBG << fname << "Snapshot written to <" << target << ">";
 		}
 		else
 		{
-			LOG_ERR << fname << "Failed to rename temporary snapshot file <" << tmpFile << "> to <" << SNAPSHOT_FILE_NAME << ">, error: " << renameError.message();
+			LOG_ERR << fname << "Failed to rename temporary snapshot file <" << tmpFile << "> to <" << target << ">, error: " << renameError.message();
 		}
 	}
 	else
