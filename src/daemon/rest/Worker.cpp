@@ -133,6 +133,7 @@ void Worker::queueWsRequest(std::string &&data, std::shared_ptr<WSS::ReplyContex
 int Worker::svc()
 {
 	static const char fname[] = "Worker::svc() ";
+	Utility::setThreadName("appmesh-worker");
 	LOG_INF << fname << "Worker thread started";
 
 	while (!QuitHandler::instance()->shouldExit())

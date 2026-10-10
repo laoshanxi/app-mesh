@@ -31,8 +31,7 @@ class Response
 public:
 	Response();
 	virtual ~Response();
-	std::unique_ptr<msgpack::sbuffer> serialize() const;
-	std::string serializeToString() const;
+	std::string serialize() const;
 	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
 	void applyCorsHeaders();
@@ -56,7 +55,7 @@ public:
 	Request() = default;
 	~Request() = default;
 
-	std::unique_ptr<msgpack::sbuffer> serialize() const;
+	std::string serialize() const;
 	bool deserialize(const std::string &data);
 
 	bool contain_body() const;

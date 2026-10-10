@@ -198,6 +198,7 @@ public:
 
 	// OS related
 	static unsigned long long getThreadId();
+	static void setThreadName(const std::string &name);
 	static void applyFilePermission(const std::string &file, HttpHeaderMap headers);
 	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
 	static std::map<std::string, std::string> getenvs();

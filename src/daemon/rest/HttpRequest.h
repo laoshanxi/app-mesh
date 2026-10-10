@@ -68,7 +68,7 @@ public:
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
 	static std::shared_ptr<HttpRequest> deserialize(const std::string &input, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx);
-	std::unique_ptr<msgpack::sbuffer> serialize() const;
+	std::string serialize() const;
 	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;

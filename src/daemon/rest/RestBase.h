@@ -4,6 +4,8 @@
 #include <map>
 #include <memory>
 
+#include <boost/regex.hpp>
+
 #include "../../common/JwtHelper.h"
 #include "../../common/Utility.h"
 
@@ -41,6 +43,8 @@ protected:
     std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restPutFunctions;
     std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restPostFunctions;
     std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> m_restDelFunctions;
+    // Route patterns compiled once at registration; the route tables are immutable after startup
+    std::map<std::string, boost::regex> m_restRegexCache;
 };
 
 #define REST_INFO_PRINT                        \

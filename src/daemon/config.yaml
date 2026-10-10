@@ -49,7 +49,7 @@ REST:
   # the TCP listener) gets this many, and the outbound forwarding client spreads
   # its peer connections over this many. Requests are dispatched to
   # WorkerThreads, so these threads only multiplex.
-  # 0 derives half the available CPUs, clamped to 2..4.
+  # 0 derives a quarter of the available CPUs, clamped to 2..4.
   TransportIoThreads: 0
 
   # When true, CORS headers will not be added to responses.

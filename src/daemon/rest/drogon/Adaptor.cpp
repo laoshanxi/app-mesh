@@ -208,7 +208,7 @@ void DrogonAdaptor::start()
     setupRoutes();
 
     m_appThread = std::thread([]()
-                              { drogon::app().run(); });
+                              { Utility::setThreadName("appmesh-wss"); drogon::app().run(); });
 
     // quit() is a no-op before the loop runs; joining then would block forever.
     if (!waitForLoopState(true, APP_LOOP_WAIT_MS))

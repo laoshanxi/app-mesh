@@ -1,4 +1,5 @@
 // src/daemon/rest/Data.cpp
+#include <charconv>
 #include <chrono>
 #include <tuple>
 
@@ -28,15 +29,7 @@ namespace
 	};
 }
 
-std::unique_ptr<msgpack::sbuffer> Response::serialize() const
-{
-	// pack
-	auto sbuf = std::make_unique<msgpack::sbuffer>();
-	msgpack::pack(*sbuf, *this);
-	return sbuf;
-}
-
-std::string Response::serializeToString() const
+std::string Response::serialize() const
 {
 	std::string out;
 	StringWriteStream stream{out};
@@ -79,11 +72,12 @@ void Response::applySecurityHeaders()
 	headers[web::http::header_names::strict_transport_security] = "max-age=31536000; includeSubDomains";
 }
 
-std::unique_ptr<msgpack::sbuffer> Request::serialize() const
+std::string Request::serialize() const
 {
-	auto sbuf = std::make_unique<msgpack::sbuffer>();
-	msgpack::pack(*sbuf, *this);
-	return sbuf;
+	std::string out;
+	StringWriteStream stream{out};
+	msgpack::pack(stream, *this);
+	return out;
 }
 
 bool Request::deserialize(const std::string &data)
@@ -106,21 +100,16 @@ bool Request::deserialize(const std::string &data)
 
 bool Request::contain_body() const
 {
-	auto it = headers.find(web::http::header_names::content_length);
-	if (it != headers.end())
+	if (auto it = headers.find(web::http::header_names::content_length); it != headers.end())
 	{
-		char *end;
-		errno = 0;
-		long long len = std::strtoll(it->second.c_str(), &end, 10);
-		if (errno == 0 && end != it->second.c_str())
-		{
+		long long len = 0;
+		const auto result = std::from_chars(it->second.data(), it->second.data() + it->second.size(), len);
+		if (result.ec == std::errc{} && result.ptr != it->second.data())
 			return len > 0;
-		}
 		return false;
 	}
 
-	it = headers.find(web::http::header_names::transfer_encoding);
-	if (it != headers.end())
+	if (auto it = headers.find(web::http::header_names::transfer_encoding); it != headers.end())
 	{
 		return it->second.find("chunked") != std::string::npos;
 	}

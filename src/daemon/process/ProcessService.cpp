@@ -9,6 +9,7 @@
 #include <boost/asio/post.hpp>
 
 #include "../../common/StreamLogger.h"
+#include "../../common/Utility.h"
 
 ProcessService::ProcessService()
 	: m_workGuard(boost::asio::make_work_guard(m_ioContext))
@@ -17,7 +18,7 @@ ProcessService::ProcessService()
 	LOG_DBG << fname;
 	try
 	{
-		m_ioThread = std::thread([this]() { m_ioContext.run(); });
+		m_ioThread = std::thread([this]() { Utility::setThreadName("appmesh-proc"); m_ioContext.run(); });
 		m_ioThreadId = m_ioThread.get_id();
 	}
 	catch (const std::exception &ex)

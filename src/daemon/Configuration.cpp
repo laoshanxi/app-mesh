@@ -528,7 +528,7 @@ std::size_t Configuration::getTransportIoThreads() const
 		return static_cast<std::size_t>(m_rest->m_transportIoThreads);
 	// Each transport multiplexes with epoll and only wakes on readiness, so a small
 	// pool is enough; it scales with the machine rather than following it.
-	const std::size_t derived = availableCpuCount() / 2;
+	const std::size_t derived = availableCpuCount() / 4;
 	return std::max<std::size_t>(static_cast<std::size_t>(MIN_TRANSPORT_IO_THREADS),
 								 std::min<std::size_t>(static_cast<std::size_t>(MAX_TRANSPORT_IO_THREADS), derived));
 }
