@@ -265,11 +265,11 @@ std::string RestHandler::normalizedHttpRoute(const std::string &path,
 											 const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions) const
 {
 	typedef std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> RestFunctions;
-	auto findPattern = [&path](const RestFunctions &functions) -> std::string
+	auto findPattern = [&](const RestFunctions &functions) -> std::string
 	{
 		for (const auto &entry : functions)
 		{
-			if (path == entry.first || boost::regex_match(path, boost::regex(entry.first)))
+			if (path == entry.first || boost::regex_match(path, m_restRegexCache.at(entry.first)))
 				return entry.first;
 		}
 		return {};

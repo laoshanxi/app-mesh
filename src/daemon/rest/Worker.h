@@ -32,9 +32,10 @@ public:
 
 	bool process(const std::shared_ptr<HttpRequest> &request);
 
-	// Answer an undecodable lws request with a correlated 400 frame; false when
-	// no uuid could be recovered from the payload.
-	static bool replyUndecodableLws(const LwsSessionRef &lwsRef, const ByteBuffer &data);
+	// Answer an lws request with a correlated error frame; false when no uuid
+	// could be recovered from the payload.
+	static bool replyErrorLws(const LwsSessionRef &lwsRef, const ByteBuffer &data,
+							  web::http::status_code status, const std::string &message);
 
 	void queueTcpRequest(ByteBuffer &&data, int tcpClientId);
 	void queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef);
@@ -46,8 +47,9 @@ protected:
 	bool forward(std::string forwardTo, const std::shared_ptr<HttpRequest> &request);
 
 private:
-	// Drops and returns false when the shared queue is saturated. Not for the sentinel.
-	bool enqueueRequest(std::shared_ptr<HttpRequestContext> ctx);
+	// Returns false when the shared queue is saturated or allocation fails; the
+	// caller must then answer the request itself. Not for the sentinel.
+	bool enqueueRequest(const std::shared_ptr<HttpRequestContext> &ctx);
 
 	RequestQueue m_messages;
 	std::atomic<size_t> m_pendingCount{0}; // in-flight requests queued but not yet processed

@@ -1046,6 +1046,7 @@ void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
 void WebSocketService::runIOEventLoop()
 {
     const static char fname[] = "WebSocketService::runIOEventLoop() ";
+    Utility::setThreadName("appmesh-lws");
     LOG_INF << fname << "Thread started";
 
     while (m_is_running.load())
@@ -1081,6 +1082,7 @@ void WebSocketService::runIOEventLoop()
 void WebSocketService::runWorkerLoop(int worker_id)
 {
     const static char fname[] = "WebSocketService::runWorkerLoop() ";
+    Utility::setThreadName("appmesh-wswork");
     LOG_INF << fname << "Thread started: ID=" << worker_id;
 
     while (m_is_running)
@@ -1112,7 +1114,8 @@ void WebSocketService::runWorkerLoop(int worker_id)
                 if (request)
                     WORKER::instance()->process(request);
                 else
-                    Worker::replyUndecodableLws(ref, req.m_payload);
+                    Worker::replyErrorLws(ref, req.m_payload,
+                                          web::http::status_codes::BadRequest, "Unable to decode the request");
             }
         }
         catch (const std::exception &e)

@@ -60,8 +60,8 @@ public:
 		bool m_corsDisabled;
 		std::set<std::string> m_csrfAllowedOrigins; // CSRF: Origins allowed for cookie-auth state-changing requests
 		std::string m_fileAllowedBaseDir;
-		int m_workerThreadPoolSize;
-		int m_IOThreadPoolSize;
+		int m_workerThreads;
+		int m_transportIoThreads;
 		int m_restListenPort;
 		int m_promListenPort;
 		std::string m_restListenAddress;
@@ -133,8 +133,8 @@ public:
 	bool getCorsDisabled() const;
 	std::set<std::string> getCsrfAllowedOrigins() const;
 	std::string getFileAllowedBaseDir() const;
-	std::size_t getWorkerThreadPoolSize() const;
-	std::size_t getIOThreadPoolSize() const;
+	std::size_t getWorkerThreads() const;
+	std::size_t getTransportIoThreads() const;
 	const std::string getPosixTimezone() const;
 
 	bool checkOwnerPermission(const std::string &principalId, const std::string &ownerPrincipalId,

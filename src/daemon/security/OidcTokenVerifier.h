@@ -2,9 +2,12 @@
 
 #include <chrono>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
+
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
 #include "../../common/RestClient.h"
 #include "Principal.h"
@@ -51,16 +54,21 @@ public:
 	nlohmann::json protectedResourceMetadata() const;
 
 private:
+	using Verifier = jwt::verifier<jwt::default_clock, jwt::traits::nlohmann_json>;
+
 	struct CachedKey
 	{
-		std::string pem;
+		/// Built once per key refresh; verifying a request must not re-parse the
+		/// JWKS public key. Shared read-only across worker threads.
+		std::shared_ptr<const Verifier> verifier;
 		std::chrono::steady_clock::time_point fetchedAt;
 	};
 
 	void loadConfig();
 	void refreshDiscoveryLocked();
 	void refreshKeysLocked();
-	std::string resolveKey(const std::string &kid);
+	std::shared_ptr<const Verifier> buildVerifier(const std::string &pem) const;
+	std::shared_ptr<const Verifier> resolveKey(const std::string &kid);
 	std::string requestJson(const std::string &absoluteUrl) const;
 	std::string transportUrl(const std::string &publishedUrl) const;
 	static std::string normalizeIssuer(std::string issuer);

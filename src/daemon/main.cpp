@@ -13,6 +13,8 @@
 #include <thread>
 #include <vector>
 
+#include <fcntl.h>
+
 #include <ace/Acceptor.h>
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
@@ -228,7 +230,7 @@ void AppMeshDaemon::initializeACE()
 	}
 
 	// Reactor thread for (process exit event) / (acceptor handling)
-	startReactorThreads(ACE_Reactor::instance(), Configuration::instance()->getIOThreadPoolSize());
+	startReactorThreads(ACE_Reactor::instance(), Configuration::instance()->getTransportIoThreads());
 
 	LOG_INF << fname << "ACE Reactor initialized";
 }
@@ -368,6 +370,7 @@ void AppMeshDaemon::runReactorEvent(ACE_Reactor *reactor)
 {
 	const static char fname[] = "AppMeshDaemon::runReactorEvent() ";
 
+	Utility::setThreadName("appmesh-reactor");
 	LOG_INF << fname << "Reactor event thread started";
 
 	while (!QuitHandler::instance()->shouldExit() && !reactor->reactor_event_loop_done())
@@ -381,6 +384,7 @@ void AppMeshDaemon::runReactorEvent(ACE_Reactor *reactor)
 void AppMeshDaemon::runProcessReactorLoop()
 {
 	const static char fname[] = "AppMeshDaemon::runProcessReactorLoop() ";
+	Utility::setThreadName("appmesh-procmgr");
 	LOG_INF << fname << "Process reactor thread started";
 	m_processReactor->owner(ACE_OS::thr_self());
 
@@ -450,9 +454,11 @@ void AppMeshDaemon::initializeRestService()
 		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getTcpApiPort()) + " with error: " + last_error_msg());
 	}
 
-	// Avoid bash children inheriting the listen fd via fork().
-	if (m_acceptor->acceptor().enable(ACE_CLOEXEC) == -1)
-		LOG_WAR << fname << "Failed to set ACE_CLOEXEC on listen socket: " << last_error_msg();
+	// Avoid bash children inheriting the listen fd via fork(). Not every platform
+	// implements the ACE flag path, so fall back to a plain fcntl before giving up.
+	if (m_acceptor->acceptor().enable(ACE_CLOEXEC) == -1 &&
+		::fcntl(m_acceptor->acceptor().get_handle(), F_SETFD, FD_CLOEXEC) == -1)
+		LOG_WAR << fname << "Failed to set FD_CLOEXEC on listen socket: " << last_error_msg();
 
 	// Setup client connection
 	m_client = std::make_shared<SocketStreamPtr>(SocketStream::createConnection(tcpAddr));
@@ -483,7 +489,7 @@ void AppMeshDaemon::startWorkerThreadPool()
 	const static char fname[] = "AppMeshDaemon::startWorkerThreadPool() ";
 
 	auto config = Configuration::instance();
-	auto workerNum = config->getWorkerThreadPoolSize();
+	const auto workerNum = config->getWorkerThreads();
 
 	WORKER::instance()->activate(THR_NEW_LWP | THR_JOINABLE, workerNum);
 
@@ -523,13 +529,13 @@ void AppMeshDaemon::performHighAvailabilityRecovery()
 	// Load snapshot
 	try
 	{
-		if (!Utility::isFileExist(SNAPSHOT_FILE_NAME))
+		if (!Utility::isFileExist(Snapshot::filePath()))
 		{
 			LOG_INF << fname << "No snapshot file, starting with an empty snapshot";
 		}
 		else
 		{
-			auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
+			auto snapfile = Utility::readFileCpp(Snapshot::filePath());
 			auto jsonData = snapfile.empty() ? std::string("{}") : std::move(snapfile);
 			snap = Snapshot::FromJson(nlohmann::json::parse(jsonData));
 			LOG_INF << fname << "Successfully loaded snapshot file";
@@ -805,9 +811,12 @@ void AppMeshDaemon::performShutdown()
 	if (m_processReactor)
 		m_processReactor->end_reactor_event_loop();
 
+	// Drain the workers before the transports: a queued reply still holds a
+	// session whose transport must stay alive until the reply is sent.
+	cleanWorkerThreads();
+
 	WebSocketService::instance()->stop();
 
-	cleanWorkerThreads();
 	cleanupResources();
 
 	LOG_INF << fname << "AppMesh daemon exited";

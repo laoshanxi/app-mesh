@@ -144,7 +144,7 @@ TimerManager::TimerManager()
 	// Dedicated timer-dispatch thread, independent of the daemon reactors.
 	try
 	{
-		m_ioThread = std::thread([this]() { m_ioContext.run(); });
+		m_ioThread = std::thread([this]() { Utility::setThreadName("appmesh-timer"); m_ioContext.run(); });
 	}
 	catch (const std::exception &ex)
 	{

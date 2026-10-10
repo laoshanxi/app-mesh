@@ -24,7 +24,8 @@ void WebSocketSession::handleRequest(const WSRequest &req)
     {
         // Frame was reassembled completely; only msgpack decode failed, so a
         // correlated 400 keeps the client from waiting on its own timeout.
-        Worker::replyUndecodableLws(LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, req.m_payload);
+        Worker::replyErrorLws(LwsSessionRef{req.m_session_ref, req.m_req_id, req.m_session_id}, req.m_payload,
+                              web::http::status_codes::BadRequest, "Unable to decode the request");
         return;
     }
 

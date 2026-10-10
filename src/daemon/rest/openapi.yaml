@@ -1,7 +1,8 @@
 openapi: 3.1.0
 info:
   title: App Mesh API
-  version: 3.0.0
+  # Document version, not the product version: served without authentication.
+  version: "1.0"
   description: |
     App Mesh is an OAuth 2.0 protected resource. It trusts one configured issuer.
     This API never accepts usernames, passwords, MFA codes, upstream IdP tokens,

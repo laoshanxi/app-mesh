@@ -5,6 +5,8 @@
 
 #include <climits>
 
+#include <fcntl.h>
+
 // SSL_Stream_Ex methods
 void SSL_Stream_Ex::set_ssl_context(ACE_SSL_Context *ctx)
 {
@@ -389,6 +391,11 @@ int SocketStream::open(void *acceptor_or_connector)
 	if (this->peer().set_option(ACE_IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay)) == -1)
 	{
 		LOG_WAR << fname << "Failed to disable Nagle's algorithm (TCP_NODELAY): " << last_error_msg();
+	}
+	// Children spawned by this daemon must not inherit the connection fd.
+	if (::fcntl(this->peer().get_handle(), F_SETFD, FD_CLOEXEC) == -1)
+	{
+		LOG_WAR << fname << "Failed to set FD_CLOEXEC: " << last_error_msg();
 	}
 	// Enable non-blocking mode. A blocking socket would pin a reactor thread —
 	// fail the open instead of continuing.

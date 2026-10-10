@@ -26,6 +26,20 @@ void FileTransferHandler::prepareTransfer(std::unique_ptr<Response> &resp, int c
 {
 	const static char fname[] = "FileTransferHandler::prepareTransfer() ";
 
+	// One transfer per connection: the wire protocol consumes raw frames after
+	// an arm, so a second arm while one is pending would cross-wire the state.
+	// Refuse it; the existing transfer continues undisturbed.
+	if (m_pendingUpload || m_pendingDownload)
+	{
+		auto msg = Utility::text2json("A file transfer is already active on this connection").dump();
+		resp->http_status = web::http::status_codes::Conflict;
+		resp->body = std::vector<std::uint8_t>(msg.begin(), msg.end());
+		resp->headers.erase(HTTP_HEADER_KEY_X_Send_File_Socket);
+		resp->headers.erase(HTTP_HEADER_KEY_X_Recv_File_Socket);
+		LOG_ERR << fname << "Refused a second concurrent transfer | ClientID=" << clientId;
+		return;
+	}
+
 	// Check for upload request
 	if (resp->http_status == web::http::status_codes::OK &&
 		resp->request_uri == REST_PATH_UPLOAD && !resp->body.empty() &&

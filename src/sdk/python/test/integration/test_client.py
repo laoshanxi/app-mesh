@@ -14,8 +14,13 @@ Usage:
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest import TestCase
+
+import requests
+from urllib.parse import urlsplit
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..")))        # test/  -> _support package
@@ -116,6 +121,97 @@ class TestWSS(
 
     def _create_client(self):
         return AppMeshClientWSS()
+
+    def test_17_forward_to(self):
+        """A forwarded request reaches the peer over the daemon's own transport.
+
+        The client speaks WSS to this daemon; the daemon's forwarding hop to
+        the peer is TCP (msgpack over TLS), and a bare host resolves to the
+        peer's TCP API port.
+        """
+        config.attach_test_bearer(self.client)
+        try:
+            self.client.forward_to = "127.0.0.1"
+            apps = self.client.list_apps()
+            self.assertGreater(len(apps), 0)
+        finally:
+            self.client.forward_to = None
+
+    def test_19_forwarded_subscription(self):
+        """A subscription registered through a forwarded hop receives its events.
+
+        The peer pushes events back on the same connection the request arrived
+        on, so this pins the reverse route, not just request/response.
+        """
+        config.attach_test_bearer(self.client)
+        self.assertIn("app-subscribe", self.client.get_principal_permissions())
+        app_name = "SDK_FWD_19"
+        sub_result = None
+        try:
+            self.client.add_app(App({"command": "sleep 30", "name": app_name, "enabled": 0}))
+            received = []
+            barrier = threading.Event()
+
+            def on_event(event):
+                received.append(event)
+                barrier.set()
+
+            self.client.forward_to = "127.0.0.1"
+            sub_result = self.client.subscribe(app_name, ["START"], callback=on_event)
+            self.assertTrue(sub_result.subscription_id)
+            self.client.enable_app(app_name)
+            self.assertTrue(barrier.wait(timeout=15), "forwarded START event not received")
+            self.assertEqual(received[0].app_name, app_name)
+        finally:
+            if sub_result:
+                try:
+                    self.client.unsubscribe(sub_result.subscription_id)
+                except Exception:
+                    pass
+            # The app and the subscription live behind the hop: keep the target
+            # set until both are cleaned up.
+            self.client.delete_app(app_name)
+            self.client.forward_to = None
+
+    def test_20_forwarded_hop_survives_idle(self):
+        """An idle forwarded hop stays pooled long enough to deliver an event.
+
+        The forwarding hop is a pooled TCP connection that carries no traffic
+        while a subscription waits; if an idle hop were dropped or left
+        unusable, a forwarded subscription would be silently lost.
+        """
+        config.attach_test_bearer(self.client)
+        self.assertIn("app-subscribe", self.client.get_principal_permissions())
+        app_name = "SDK_FWD_20"
+        sub_result = None
+        idle_seconds = 90
+        try:
+            self.client.add_app(App({"command": "sleep 30", "name": app_name, "enabled": 0}))
+            received = []
+            barrier = threading.Event()
+
+            def on_event(event):
+                received.append(event)
+                barrier.set()
+
+            self.client.forward_to = "127.0.0.1"
+            sub_result = self.client.subscribe(app_name, ["START"], callback=on_event)
+            self.assertTrue(sub_result.subscription_id)
+
+            time.sleep(idle_seconds)
+
+            self.client.enable_app(app_name)
+            self.assertTrue(barrier.wait(timeout=15),
+                            "event lost after {}s of idle on the forwarded hop".format(idle_seconds))
+            self.assertEqual(received[0].app_name, app_name)
+        finally:
+            if sub_result:
+                try:
+                    self.client.unsubscribe(sub_result.subscription_id)
+                except Exception:
+                    pass
+            self.client.delete_app(app_name)
+            self.client.forward_to = None
 
 
 class TestWSSRest(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin, StressTestMixin, TestCase):
@@ -227,6 +323,94 @@ class TestProtocolFixes(TestCase):
         cfg = client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
         self.assertTrue(cfg["REST"]["SSL"]["VerifyServer"])
         client.set_config({"REST": {"SSL": {"VerifyServer": False}}})
+
+# ---------------------------------------------------------------------------
+# The unauthenticated surface must not disclose the running release
+# ---------------------------------------------------------------------------
+class TestUnauthenticatedSurface(TestCase):
+    """Public responses must not reveal version information.
+
+    A version string lets an unauthenticated client match a deployment against
+    known CVEs, so the routes served without a bearer (public pages, discovery,
+    the API document, the error paths and the metrics endpoints) must stay free
+    of the product version and of the HTTP framework banner, in both headers
+    and bodies.
+    """
+
+    _PUBLIC_REQUESTS = (
+        ("GET", "/"),
+        ("GET", "/index.html"),
+        ("GET", "/swagger/"),
+        ("GET", "/openapi.yaml"),
+        ("GET", "/appmesh/logo.svg"),
+        ("GET", "/appmesh/favicon.png"),
+        ("GET", "/oauth/callback"),
+        ("GET", "/appmesh/auth/config"),
+        ("GET", "/.well-known/oauth-protected-resource"),
+        ("GET", "/appmesh/metrics"),
+        ("GET", "/metrics"),
+        ("GET", "/no-such-route"),
+        ("GET", "/appmesh/applications"),
+        ("OPTIONS", "/appmesh/applications"),
+        ("FOO", "/appmesh/applications"),
+    )
+
+    def setUp(self):
+        self.client = AppMeshClient()
+        config.attach_test_bearer(self.client)
+
+    def tearDown(self):
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
+    def _product_version(self):
+        """Version part of the release build tag: <project>_<version>_<build date>."""
+        build_tag = self.client.get_config()["Version"]
+        self.assertTrue(build_tag.startswith("appmesh_"), build_tag)
+        return build_tag[len("appmesh_"):].rsplit("_", 1)[0]
+
+    def _entries(self):
+        """Client entry (agent) plus the daemon listener behind it."""
+        parsed = urlsplit(self.client.base_url)
+        direct = "{}://{}:{}".format(parsed.scheme, parsed.hostname, _WSS_REST_PORT)
+        return sorted({self.client.base_url, direct})
+
+    def _request(self, method, entry, path):
+        """Send one request with no Authorization header."""
+        return requests.request(
+            method, entry + path, timeout=10, allow_redirects=False,
+            verify=AppMeshClient._resolve_ssl_verify(None))
+
+    @staticmethod
+    def _surface(response):
+        """Everything the client sees: response headers plus body."""
+        headers = "\n".join("{}: {}".format(k, v) for k, v in response.headers.items())
+        return headers + "\n" + response.text
+
+    def test_public_surface_hides_versions(self):
+        version = self._product_version()
+        for entry in self._entries():
+            for method, path in self._PUBLIC_REQUESTS:
+                response = self._request(method, entry, path)
+                where = "{} {} -> {}".format(method, entry + path, response.status_code)
+                surface = self._surface(response)
+                self.assertNotIn("server", [name.lower() for name in response.headers],
+                                 "framework banner header on " + where)
+                for framework in ("drogon", "libwebsockets"):
+                    self.assertNotIn(framework, surface.lower(), framework + " name on " + where)
+                self.assertNotIn(version, surface, "product version on " + where)
+
+    def test_metrics_need_no_token(self):
+        """A standard exporter scrape: /metrics answers without a bearer."""
+        for entry in self._entries():
+            for path in ("/metrics", "/appmesh/metrics"):
+                response = self._request("GET", entry, path)
+                self.assertEqual(
+                    200, response.status_code,
+                    "{} without a token -> {}".format(entry + path, response.status_code))
+
 
 if __name__ == "__main__":
     unittest.main()

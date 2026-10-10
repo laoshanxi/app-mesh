@@ -54,7 +54,7 @@ oauth2:
 
 expiry:
   signingKeys: 6h
-  idTokens: 15m
+  idTokens: 30m
   authRequests: 5m
   deviceRequests: 5m
   # Refresh tokens rotate on every use; a superseded token stays valid inside

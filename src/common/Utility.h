@@ -40,11 +40,11 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 #define __MICRO_KEY__(str) #str				  // No expand micro
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
 
-#define PRINT_VERSION()                                                  \
-	if (argc >= 2 && std::string("-V") == argv[1])                       \
-	{                                                                    \
-		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl; \
-		return 0;                                                        \
+#define PRINT_VERSION()                                                                  \
+	if (argc >= 2 && (std::string("-V") == argv[1] || std::string("--version") == argv[1])) \
+	{                                                                                    \
+		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                 \
+		return 0;                                                                        \
 	}
 
 #define SET_COMPARE(x, y)                                           \
@@ -144,8 +144,12 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
 #define DEFAULT_SCHEDULE_INTERVAL 2
-#define DEFAULT_WORKER_THREAD_POOL_SIZE 2
-#define DEFAULT_IO_THREAD_POOL_SIZE 2
+#define DEFAULT_WORKER_THREADS 0		  // 0 = derive from the CPUs the daemon may use
+#define DEFAULT_TRANSPORT_IO_THREADS 0	  // 0 = derive from the CPUs the daemon may use
+#define MIN_WORKER_THREADS 2
+#define MAX_WORKER_THREADS 8
+#define MIN_TRANSPORT_IO_THREADS 2
+#define MAX_TRANSPORT_IO_THREADS 4
 #define REST_REQUEST_TIMEOUT_SECONDS 60
 #define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
 #define WEBSOCKET_FILE_OPERATION_TIMEOUT 30
@@ -218,6 +222,7 @@ public:
 
 	// OS related
 	static unsigned long long getThreadId();
+	static void setThreadName(const std::string &name);
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 	static void applyFilePermission(const std::string &file, HttpHeaderMap headers);
 	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
@@ -319,8 +324,8 @@ public:
 #define JSON_KEY_SSLClientCertificateKeyFile "SSLClientCertificateKeyFile"
 #define JSON_KEY_SSLCaPath "SSLCaPath"
 
-#define JSON_KEY_WorkerThreadPoolSize "WorkerThreadPoolSize"
-#define JSON_KEY_IOThreadPoolSize "IOThreadPoolSize"
+#define JSON_KEY_WorkerThreads "WorkerThreads"
+#define JSON_KEY_TransportIoThreads "TransportIoThreads"
 #define JSON_KEY_Labels "Labels"
 #define JSON_KEY_VERSION "Version"
 #define JSON_KEY_APP_name "name"

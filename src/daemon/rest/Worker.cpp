@@ -65,13 +65,13 @@ namespace
 		return {};
 	}
 
-	std::unique_ptr<Response> undecodableResponse(const std::string &uuid)
+	std::unique_ptr<Response> errorResponse(const std::string &uuid, web::http::status_code status, const std::string &message)
 	{
 		auto response = std::make_unique<Response>();
 		response->uuid = uuid;
-		response->http_status = web::http::status_codes::BadRequest;
+		response->http_status = status;
 		response->body_msg_type = web::http::mime_types::application_json;
-		const auto text = Utility::text2json("Unable to decode the request").dump();
+		const auto text = Utility::text2json(message).dump();
 		response->body.assign(text.begin(), text.end());
 		return response;
 	}
@@ -87,13 +87,13 @@ struct HttpRequestContext
 	bool m_isShutdownSentinel = false;
 };
 
-bool Worker::enqueueRequest(std::shared_ptr<HttpRequestContext> ctx)
+bool Worker::enqueueRequest(const std::shared_ptr<HttpRequestContext> &ctx)
 {
 	static const char fname[] = "Worker::enqueueRequest() ";
 	if (m_pendingCount.fetch_add(1, std::memory_order_relaxed) + 1 > MAX_PENDING_REQUESTS)
 	{
 		m_pendingCount.fetch_sub(1, std::memory_order_relaxed);
-		LOG_WAR << fname << "Inbound queue saturated (" << MAX_PENDING_REQUESTS << "), dropping request";
+		LOG_WAR << fname << "Inbound queue saturated (" << MAX_PENDING_REQUESTS << "), rejecting request";
 		return false;
 	}
 	// enqueue only fails/throws on allocation failure; roll back the reserved slot so
@@ -101,7 +101,7 @@ bool Worker::enqueueRequest(std::shared_ptr<HttpRequestContext> ctx)
 	bool enqueued = false;
 	try
 	{
-		enqueued = m_messages.enqueue(std::move(ctx));
+		enqueued = m_messages.enqueue(ctx);
 	}
 	catch (...)
 	{
@@ -116,7 +116,8 @@ bool Worker::enqueueRequest(std::shared_ptr<HttpRequestContext> ctx)
 	return true;
 }
 
-bool Worker::replyUndecodableLws(const LwsSessionRef &lwsRef, const ByteBuffer &data)
+bool Worker::replyErrorLws(const LwsSessionRef &lwsRef, const ByteBuffer &data,
+						   web::http::status_code status, const std::string &message)
 {
 	const auto uuid = recoverRequestUuid(data);
 	if (uuid.empty() || !lwsRef)
@@ -126,7 +127,7 @@ bool Worker::replyUndecodableLws(const LwsSessionRef &lwsRef, const ByteBuffer &
 	resp->m_session_ref = const_cast<void *>(lwsRef.wsi);
 	resp->m_req_id = lwsRef.reqId;
 	resp->m_session_id = lwsRef.sessionId;
-	resp->m_payload = undecodableResponse(uuid)->serialize();
+	resp->m_payload = errorResponse(uuid, status, message)->serialize();
 	resp->m_is_http = lwsRef.httpFrame;
 	WebSocketService::instance()->enqueueOutgoingResponse(std::move(resp));
 	return true;
@@ -137,7 +138,18 @@ void Worker::queueTcpRequest(ByteBuffer &&data, int tcpClientId)
 	auto ctx = std::make_shared<HttpRequestContext>();
 	ctx->m_data = std::move(data);
 	ctx->m_tcpClientId = tcpClientId;
-	enqueueRequest(std::move(ctx));
+	if (!enqueueRequest(ctx))
+	{
+		// Shed with an immediate error instead of letting the client wait for its own timeout.
+		const auto uuid = recoverRequestUuid(ctx->m_data);
+		if (uuid.empty())
+			SocketServer::closeClient(tcpClientId);
+		else
+		{
+			auto resp = errorResponse(uuid, web::http::status_codes::ServiceUnavailable, "Request queue is saturated");
+			SocketServer::replyTcp(tcpClientId, std::move(resp));
+		}
+	}
 }
 
 void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
@@ -145,12 +157,14 @@ void Worker::queueLwsRequest(ByteBuffer &&data, LwsSessionRef lwsRef)
 	auto ctx = std::make_shared<HttpRequestContext>();
 	ctx->m_data = std::move(data);
 	ctx->m_lwsRef = lwsRef;
-	enqueueRequest(std::move(ctx));
+	if (!enqueueRequest(ctx))
+		replyErrorLws(lwsRef, ctx->m_data, web::http::status_codes::ServiceUnavailable, "Request queue is saturated");
 }
 
 int Worker::svc()
 {
 	static const char fname[] = "Worker::svc() ";
+	Utility::setThreadName("appmesh-worker");
 	LOG_INF << fname << "Worker thread started";
 
 	while (!QuitHandler::instance()->shouldExit())
@@ -179,13 +193,15 @@ int Worker::svc()
 			{
 				const auto uuid = recoverRequestUuid(requestContext->m_data);
 				if (!uuid.empty())
-					SocketServer::replyTcp(requestContext->m_tcpClientId, undecodableResponse(uuid));
+					SocketServer::replyTcp(requestContext->m_tcpClientId,
+										   errorResponse(uuid, web::http::status_codes::BadRequest, "Unable to decode the request"));
 				else
 					SocketServer::closeClient(requestContext->m_tcpClientId);
 			}
 			else if (requestContext->m_lwsRef)
 			{
-				replyUndecodableLws(requestContext->m_lwsRef, requestContext->m_data);
+				replyErrorLws(requestContext->m_lwsRef, requestContext->m_data,
+							  web::http::status_codes::BadRequest, "Unable to decode the request");
 			}
 		}
 	}

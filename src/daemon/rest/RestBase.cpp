@@ -281,7 +281,7 @@ void RestBase::handleRest(const std::shared_ptr<HttpRequest> &message, const std
         restFunctions.begin(), restFunctions.end(),
         [&](const std::pair<const std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &kvp)
         {
-            return path == kvp.first || boost::regex_match(path, boost::regex(kvp.first));
+            return path == kvp.first || boost::regex_match(path, m_restRegexCache.at(kvp.first));
         });
 
     if (it == restFunctions.end())
@@ -360,6 +360,9 @@ void RestBase::bindRestMethod(const web::http::method &method, const std::string
     const static char fname[] = "RestBase::bindRest() ";
 
     LOG_DBG << fname << "bind " << method << " for " << path;
+
+    // compile the route pattern once; request paths only match against it
+    m_restRegexCache[path] = boost::regex(path);
 
     // bind to map
     if (method == web::http::methods::GET)

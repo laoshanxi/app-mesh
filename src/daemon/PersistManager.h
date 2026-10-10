@@ -27,6 +27,9 @@ struct Snapshot
 	bool operator==(const Snapshot &snapshort) const;
 	nlohmann::json AsJson() const;
 	static std::shared_ptr<Snapshot> FromJson(const nlohmann::json &obj);
+	/// Absolute snapshot path shared by the writer and the startup recovery
+	/// reader, which runs before the daemon changes its working directory.
+	static const std::string &filePath();
 	void persist();
 
 	std::map<std::string, AppSnap> m_apps;

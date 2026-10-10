@@ -3,8 +3,16 @@
 
 #include "Utility.h"
 
+#include <unistd.h>
+
 #include <iostream>
 #include <signal.h>
+
+namespace
+{
+    // A second exit signal means the graceful shutdown is stuck: force the exit.
+    std::atomic<int> g_exitSignalCount{0};
+}
 
 QuitHandler *QuitHandler::instance()
 {
@@ -47,6 +55,15 @@ int QuitHandler::handle_signal(int signum, siginfo_t *, ucontext_t *)
         break;
     default:
         return 0;
+    }
+
+    if (g_exitSignalCount.fetch_add(1, std::memory_order_acq_rel) > 0)
+    {
+        // Async-signal-safe only: no allocation, no locks, no logging.
+        static const char message[] = "AppMesh: second exit signal received, forcing exit.\n";
+        const ssize_t written = ::write(STDERR_FILENO, message, sizeof(message) - 1);
+        (void)written;
+        ::_exit(128 + signum);
     }
 
     m_exit_flag.store(true, std::memory_order_release);

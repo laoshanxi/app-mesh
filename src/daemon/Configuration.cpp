@@ -1,9 +1,8 @@
 // src/daemon/Configuration.cpp
 #include <exception>
 #include <set>
-#if !defined(_WIN32)
+#include <thread>
 #include <unistd.h> //environ
-#endif
 
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
@@ -19,6 +18,8 @@
 #include "rest/RestHandler.h"
 #include "security/Security.h"
 
+#include "process/LinuxCgroup.h"
+
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Utility.h"
@@ -26,6 +27,24 @@
 #include "../common/os/pstree.h"
 
 extern char **environ; // unistd.h
+
+namespace
+{
+	// CPUs the daemon may actually use. Cgroup cpuset and quota limits apply inside
+	// containers, where hardware_concurrency() reports the host count instead.
+	std::size_t availableCpuCount()
+	{
+		static const std::size_t count = []()
+		{
+			const int cgroupCount = LinuxCgroup::hostCpuCount();
+			if (cgroupCount > 0)
+				return static_cast<std::size_t>(cgroupCount);
+			const auto hardware = std::thread::hardware_concurrency();
+			return hardware > 0 ? static_cast<std::size_t>(hardware) : static_cast<std::size_t>(MIN_WORKER_THREADS);
+		}();
+		return count;
+	}
+}
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
@@ -410,11 +429,7 @@ const std::string Configuration::getDefaultExecUser() const
 bool Configuration::getDisableExecUser() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-#if !defined(_WIN32)
 	return m_baseConfig->m_disableExecUser || os::get_uid() != 0;
-#else
-	return m_baseConfig->m_disableExecUser;
-#endif
 }
 
 const std::string Configuration::getWorkDir() const
@@ -480,16 +495,30 @@ std::string Configuration::getFileAllowedBaseDir() const
 	return m_rest->m_fileAllowedBaseDir;
 }
 
-std::size_t Configuration::getWorkerThreadPoolSize() const
+std::size_t Configuration::getWorkerThreads() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_workerThreadPoolSize;
+	if (m_rest->m_workerThreads > 0)
+		return static_cast<std::size_t>(m_rest->m_workerThreads);
+	// The transport event loops bound throughput; workers only add headroom for slow
+	// operations (file transfer, forwarding). Derive within a fixed band so large
+	// machines don't spawn mostly idle threads.
+	const std::size_t derived = availableCpuCount();
+	return std::max<std::size_t>(static_cast<std::size_t>(MIN_WORKER_THREADS),
+								 std::min<std::size_t>(static_cast<std::size_t>(MAX_WORKER_THREADS), derived));
 }
 
-std::size_t Configuration::getIOThreadPoolSize() const
+std::size_t Configuration::getTransportIoThreads() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_IOThreadPoolSize;
+	if (m_rest->m_transportIoThreads > 0)
+		return static_cast<std::size_t>(m_rest->m_transportIoThreads);
+	// The shared reactor multiplexes every listener plus the stdout pumps and only
+	// wakes on readiness, so a small pool is enough; it scales with the machine
+	// rather than following it.
+	const std::size_t derived = availableCpuCount() / 2;
+	return std::max<std::size_t>(static_cast<std::size_t>(MIN_TRANSPORT_IO_THREADS),
+								 std::min<std::size_t>(static_cast<std::size_t>(MAX_TRANSPORT_IO_THREADS), derived));
 }
 
 const std::string Configuration::getPosixTimezone() const
@@ -691,14 +720,12 @@ void Configuration::saveConfigToDisk()
 	const auto yamlContent = Utility::jsonToYaml(content);
 	const auto configFilePath = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE, true);
 	uint16_t mode = 0644;
-#if !defined(_WIN32)
 	if (Utility::isFileExist(configFilePath))
 	{
 		const int existingMode = std::get<0>(os::fileStat(configFilePath));
 		if (existingMode >= 0)
 			mode = static_cast<uint16_t>(existingMode);
 	}
-#endif
 	const auto tmpFile = os::createTmpFile(configFilePath, yamlContent, mode);
 	if (tmpFile.empty())
 	{
@@ -811,10 +838,22 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_webSocketPort, newConfig->m_rest->m_webSocketPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
 				SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_WorkerThreadPoolSize))
-				SET_COMPARE(this->m_rest->m_workerThreadPoolSize, newConfig->m_rest->m_workerThreadPoolSize);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_IOThreadPoolSize))
-				SET_COMPARE(this->m_rest->m_IOThreadPoolSize, newConfig->m_rest->m_IOThreadPoolSize);
+			// Pool sizes are read once at startup; warn so an operator does not assume
+			// the new value is live without a restart.
+			if (HAS_JSON_FIELD(rest, JSON_KEY_WorkerThreads))
+			{
+				const auto previousWorkerThreads = this->m_rest->m_workerThreads;
+				SET_COMPARE(this->m_rest->m_workerThreads, newConfig->m_rest->m_workerThreads);
+				if (this->m_rest->m_workerThreads != previousWorkerThreads)
+					LOG_WAR << fname << "WorkerThreads applies only after a daemon restart";
+			}
+			if (HAS_JSON_FIELD(rest, JSON_KEY_TransportIoThreads))
+			{
+				const auto previousIoThreads = this->m_rest->m_transportIoThreads;
+				SET_COMPARE(this->m_rest->m_transportIoThreads, newConfig->m_rest->m_transportIoThreads);
+				if (this->m_rest->m_transportIoThreads != previousIoThreads)
+					LOG_WAR << fname << "TransportIoThreads applies only after a daemon restart";
+			}
 			// SSL
 			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
 			{
@@ -1016,11 +1055,7 @@ const nlohmann::json Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
-#if defined(_WIN32)
-	auto cmd = (fs::path(Utility::getBinDir()) / SEPARATE_AGENT_APP_NAME ".exe").string();
-#else
 	auto cmd = (fs::path(Utility::getBinDir()) / SEPARATE_AGENT_APP_NAME).string();
-#endif
 
 	LOG_INF << fname << "Agent start command <" << cmd << ">";
 
@@ -1060,15 +1095,16 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	}
 	rest->m_fileAllowedBaseDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_FileAllowedBaseDir);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
-	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WorkerThreadPoolSize);
-	if (threadpool > 0 && threadpool < 100)
+	// Rejecting a value keeps the previous one instead of failing the whole load.
+	auto workerThreads = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WorkerThreads);
+	if (workerThreads >= 0 && workerThreads < 100)
 	{
-		rest->m_workerThreadPoolSize = threadpool;
+		rest->m_workerThreads = workerThreads;
 	}
-	auto iotThreadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_IOThreadPoolSize);
-	if (iotThreadpool > 0 && iotThreadpool < 100)
+	auto transportIoThreads = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_TransportIoThreads);
+	if (transportIoThreads >= 0 && transportIoThreads < 100)
 	{
-		rest->m_IOThreadPoolSize = iotThreadpool;
+		rest->m_transportIoThreads = transportIoThreads;
 	}
 	if (rest->m_restListenPort < 1000 || rest->m_restListenPort > 65534)
 	{
@@ -1102,7 +1138,6 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
 	config->m_posixTimezone = GET_JSON_STR_INT_TEXT(jsonValue, JSON_KEY_PosixTimezone);
 
-#if !defined(_WIN32)
 	if (!config->m_disableExecUser && os::get_uid() == 0 && !config->m_defaultExecUser.empty())
 	{
 		unsigned int gid, uid;
@@ -1116,7 +1151,6 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	{
 		LOG_WAR << "Daemon is not running as root, user switching (exec_user/DefaultExecUser) is disabled at runtime";
 	}
-#endif
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
 	{
 		// Use default value instead
@@ -1142,8 +1176,8 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 {
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_RestEnabled] = (m_restEnabled);
-	result[JSON_KEY_WorkerThreadPoolSize] = ((uint32_t)m_workerThreadPoolSize);
-	result[JSON_KEY_IOThreadPoolSize] = ((uint32_t)m_IOThreadPoolSize);
+	result[JSON_KEY_WorkerThreads] = ((uint32_t)m_workerThreads);
+	result[JSON_KEY_TransportIoThreads] = ((uint32_t)m_transportIoThreads);
 	result[JSON_KEY_RestListenPort] = (m_restListenPort);
 	result[JSON_KEY_PrometheusExporterListenPort] = (m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
@@ -1159,8 +1193,8 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 }
 
 Configuration::JsonRest::JsonRest()
-	: m_restEnabled(false), m_corsDisabled(false), m_workerThreadPoolSize(DEFAULT_WORKER_THREAD_POOL_SIZE),
-	  m_IOThreadPoolSize(DEFAULT_IO_THREAD_POOL_SIZE),
+	: m_restEnabled(false), m_corsDisabled(false), m_workerThreads(DEFAULT_WORKER_THREADS),
+	  m_transportIoThreads(DEFAULT_TRANSPORT_IO_THREADS),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
 	  m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(0)
 {

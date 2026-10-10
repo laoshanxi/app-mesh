@@ -15,6 +15,9 @@
 #include <iconv.h>
 #include <sys/file.h>
 #include <thread>
+#if !defined(_WIN32)
+#include <pthread.h>
+#endif
 
 #include <ace/OS.h>
 #include <ace/UUID.h>
@@ -328,8 +331,9 @@ void Utility::initLogging(const std::string &name)
 	// Create logger
 	auto logger = std::make_shared<spdlog::logger>("appmesh", sinks.begin(), sinks.end());
 	spdlog::set_default_logger(logger);
+	// warn and above flush at once; lower levels reach the file as the stream
+	// buffer fills, trading a small crash-tail loss for one thread less.
 	logger->flush_on(spdlog::level::warn);
-	spdlog::flush_every(std::chrono::seconds(3));
 
 	// Pattern
 	// %l = full level name (info/warning/error/debug). %L would print single chars E/D.
@@ -376,6 +380,22 @@ unsigned long long Utility::getThreadId()
 	std::ostringstream oss;
 	oss << std::this_thread::get_id();
 	return std::stoull(oss.str());
+}
+
+void Utility::setThreadName(const std::string &name)
+{
+#if defined(_WIN32)
+	std::wstring wide(name.begin(), name.end());
+	SetThreadDescription(GetCurrentThread(), wide.c_str());
+#else
+	// pthread names are capped at 15 characters plus the terminator.
+	const auto capped = name.substr(0, 15);
+#if defined(__APPLE__)
+	pthread_setname_np(capped.c_str());
+#else
+	pthread_setname_np(pthread_self(), capped.c_str());
+#endif
+#endif
 }
 
 std::string Utility::encode64(const std::string &val)
