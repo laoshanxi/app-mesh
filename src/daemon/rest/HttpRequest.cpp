@@ -308,10 +308,17 @@ HttpRequestAutoCleanup::HttpRequestAutoCleanup(const std::shared_ptr<HttpRequest
 
 HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 {
-	// Trigger suicide timer to remove app (avoid using Application lock to access Configuration)
-	if (auto app = m_app.lock())
+	// Destructors must not throw: shutdown may already have torn down the timer service.
+	try
 	{
-		app->scheduleRemoval(0);
+		// Trigger suicide timer to remove app (avoid using Application lock to access Configuration)
+		if (auto app = m_app.lock())
+		{
+			app->scheduleRemoval(0);
+		}
+	}
+	catch (...)
+	{
 	}
 }
 

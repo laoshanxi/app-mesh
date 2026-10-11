@@ -103,8 +103,15 @@ DockerProcess::~DockerProcess()
 	const static char fname[] = "DockerProcess::~DockerProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	// Destruction has no shared owner; skip lifecycle callbacks.
-	DockerProcess::terminateImpl();
+	// Destructors must not throw: cleanup is best-effort during teardown.
+	try
+	{
+		// Destruction has no shared owner; skip lifecycle callbacks.
+		DockerProcess::terminateImpl();
+	}
+	catch (...)
+	{
+	}
 }
 
 void DockerProcess::terminateImpl()

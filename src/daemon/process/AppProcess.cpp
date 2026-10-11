@@ -226,17 +226,24 @@ AppProcess::~AppProcess()
 	const static char fname[] = "AppProcess::~AppProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	// No shared owner remains, so kill/reap directly instead of queuing an exit
-	// callback that would require shared_from_this().
-	if (running())
+	// Destructors must not throw: shutdown may already have torn down the asio services.
+	try
 	{
-		m_lifecycle->terminating.store(true, std::memory_order_release);
-		terminateImpl();
-	}
+		// No shared owner remains, so kill/reap directly instead of queuing an exit
+		// callback that would require shared_from_this().
+		if (running())
+		{
+			m_lifecycle->terminating.store(true, std::memory_order_release);
+			terminateImpl();
+		}
 
-	// Idempotent — exit finalization may have cleaned resources already.
-	cleanupResources();
-	Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+		// Idempotent — exit finalization may have cleaned resources already.
+		cleanupResources();
+		Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+	}
+	catch (...)
+	{
+	}
 }
 
 void AppProcess::attach(int pid, const std::string &stdoutFile)
@@ -542,12 +549,14 @@ long AppProcess::cleanupResources()
 		dispatchedBytes = stdoutStrategy->dispatchedBytes();
 	}
 
+	std::string stdinFileName;
 	{
 		std::lock_guard<std::mutex> guard(m_processMutex);
 		m_stdoutHandler.reset();
 		m_stdinHandler.reset();
+		stdinFileName = m_stdinFileName;
 	}
-	Utility::removeFile(m_stdinFileName);
+	Utility::removeFile(stdinFileName);
 	return dispatchedBytes;
 }
 
