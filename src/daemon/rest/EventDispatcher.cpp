@@ -1,6 +1,7 @@
 // src/daemon/rest/EventDispatcher.cpp
 #include "EventDispatcher.h"
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #include "../Configuration.h"
 #include "../process/AppProcess.h"
 
@@ -61,7 +62,7 @@ bool EventDispatcher::unsubscribe(const std::string &subId, const std::string &u
 	return true;
 }
 
-void EventDispatcher::dispatch(const std::string &appName, AppEventType type, const nlohmann::json &data)
+void EventDispatcher::dispatch(const std::string &appName, AppEventType type, const Json::Value &data)
 {
 	const static char fname[] = "EventDispatcher::dispatch() ";
 
@@ -75,7 +76,7 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 				   .count();
 
 	std::string eventTypeStr = eventTypeToString(type);
-	nlohmann::json eventPayload;
+	Json::Value eventPayload;
 	eventPayload["event_type"] = eventTypeStr;
 	eventPayload["app_name"] = appName;
 	eventPayload["timestamp"] = now;
@@ -83,10 +84,10 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 	eventPayload["data"] = data;
 
 	// Pre-serialize ONCE; per-subscriber toJson() splices subscription_id in by
-	// string concat instead of cloning the JSON DOM N times.  error_handler::replace
-	// substitutes U+FFFD for invalid UTF-8 bytes (binary stdout) instead of throwing
-	// a type_error.316 that would mark every STDOUT subscriber dead.
-	auto basePayloadDump = std::make_shared<std::string>(eventPayload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
+	// string concat instead of cloning the JSON DOM N times.  JSON::dump replaces
+	// invalid UTF-8 bytes (binary stdout) with U+FFFD instead of throwing and
+	// marking every STDOUT subscriber dead.
+	auto basePayloadDump = std::make_shared<std::string>(JSON::dump(eventPayload));
 
 	uint32_t typeBit = static_cast<uint32_t>(type);
 
@@ -284,9 +285,9 @@ void EventDispatcher::flushStdout(const std::string &appName, AppProcess *proces
 		auto output = process->getOutputMsg(&pos, 1024 * 1024);
 		if (!output.empty())
 		{
-			nlohmann::json data;
+			Json::Value data;
 			data["output"] = output;
-			data["position"] = startPos;
+			data["position"] = (Json::Int64)startPos;
 			data["finished"] = true;
 			dispatch(appName, AppEventType::STDOUT_OUTPUT, data);
 		}

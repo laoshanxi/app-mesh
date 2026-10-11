@@ -13,6 +13,7 @@
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #include "../../common/os/filesystem.h"
 #include "../../common/os/linux.h"
 #include "../../common/os/proc.h"
@@ -175,7 +176,10 @@ void Application::health(bool newHealth)
 	bool oldHealth = m_health.exchange(newHealth);
 	if (oldHealth != newHealth)
 	{
-		EventDispatcher::instance()->dispatch(m_name, AppEventType::HEALTH_CHANGE, {{"health", newHealth ? 0 : 1}, {"previous_health", oldHealth ? 0 : 1}});
+		Json::Value payload;
+		payload["health"] = newHealth ? 0 : 1;
+		payload["previous_health"] = oldHealth ? 0 : 1;
+		EventDispatcher::instance()->dispatch(m_name, AppEventType::HEALTH_CHANGE, payload);
 	}
 }
 
@@ -267,7 +271,7 @@ bool Application::available(const std::chrono::system_clock::time_point &now)
 	return isEnabled();
 }
 
-void Application::FromJson(const std::shared_ptr<Application> &app, const nlohmann::json &jsonObj)
+void Application::FromJson(const std::shared_ptr<Application> &app, const Json::Value &jsonObj)
 {
 	const static char fname[] = "Application::FromJson() ";
 	app->m_name = normalizeAppName(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
@@ -301,15 +305,15 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell);
 	app->m_sessionLogin = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_session_login);
 
-	if (jsonObj.contains(JSON_KEY_APP_metadata))
+	if (jsonObj.isMember(JSON_KEY_APP_metadata))
 	{
-		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
-		if (jsonObj.at(JSON_KEY_APP_metadata).is_string())
+		app->m_metadata = jsonObj[JSON_KEY_APP_metadata];
+		if (jsonObj[JSON_KEY_APP_metadata].isString())
 		{
 			try
 			{
-				auto medataStr = jsonObj.at(JSON_KEY_APP_metadata).get<std::string>();
-				app->m_metadata = nlohmann::json::parse(medataStr);
+				auto medataStr = jsonObj[JSON_KEY_APP_metadata].asString();
+				app->m_metadata = JSON::parse(medataStr);
 			}
 			catch (...)
 			{
@@ -343,14 +347,14 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_depends_on))
 	{
-		const auto &dependsOn = jsonObj.at(JSON_KEY_APP_depends_on);
-		if (!dependsOn.is_array())
+		const auto &dependsOn = jsonObj[JSON_KEY_APP_depends_on];
+		if (!dependsOn.isArray())
 			throw std::invalid_argument("depends_on must be an array of application names");
 		for (const auto &dep : dependsOn)
 		{
-			if (!dep.is_string())
+			if (!dep.isString())
 				throw std::invalid_argument("depends_on must be an array of application names");
-			const auto depName = Utility::stdStringTrim(dep.get<std::string>());
+			const auto depName = Utility::stdStringTrim(dep.asString());
 			if (depName.empty())
 				continue;
 			if (depName == app->m_name)
@@ -364,52 +368,53 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	{
 		// Boolean is the documented wire form; numeric 1/0 stays accepted for
 		// persisted YAML files and internal registrations.
-		const auto &statusValue = jsonObj.at(JSON_KEY_APP_enabled);
-		const int status = statusValue.is_boolean() ? (statusValue.get<bool>() ? 1 : 0) : statusValue.get<int>();
+		const auto &statusValue = jsonObj[JSON_KEY_APP_enabled];
+		const int status = statusValue.isBool() ? (statusValue.asBool() ? 1 : 0) : statusValue.asInt();
 		app->m_status.store(static_cast<STATUS>(status));
 	}
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_resource_limit))
 	{
-		app->m_resourceLimit = ResourceLimitation::FromJson(jsonObj.at(JSON_KEY_APP_resource_limit), app->m_name);
+		app->m_resourceLimit = ResourceLimitation::FromJson(jsonObj[JSON_KEY_APP_resource_limit], app->m_name);
 	}
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_env))
 	{
-		auto envs = jsonObj.at(JSON_KEY_APP_env);
-		for (auto &env : envs.items())
+		auto envs = jsonObj[JSON_KEY_APP_env];
+		for (const auto &envName : envs.getMemberNames())
 		{
-			if (!env.value().is_string())
-				throw std::invalid_argument(Utility::stringFormat("env %s must be a string (quote bool/number-like values in YAML)", env.key().c_str()));
-			app->m_envMap[env.key()] = env.value().get<std::string>();
+			if (!envs[envName].isString())
+				throw std::invalid_argument(Utility::stringFormat("env %s must be a string (quote bool/number-like values in YAML)", envName.c_str()));
+			app->m_envMap[envName] = envs[envName].asString();
 		}
 	}
 
-	const nlohmann::json *secretEnvs = nullptr;
+	const Json::Value *secretEnvs = nullptr;
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_secret_env))
 	{
-		secretEnvs = &jsonObj.at(JSON_KEY_APP_secret_env);
+		secretEnvs = &jsonObj[JSON_KEY_APP_secret_env];
 	}
 	if (secretEnvs)
 	{
 		bool fromRecover = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover);
-		for (auto &env : secretEnvs->items())
+		for (const auto &envName : secretEnvs->getMemberNames())
 		{
+			const auto &envValue = (*secretEnvs)[envName];
 			if (fromRecover)
 			{
-				if (!env.value().is_string() ||
-					!Utility::startWith(env.value().get<std::string>(), "sp1:"))
+				if (!envValue.isString() ||
+					!Utility::startWith(envValue.asString(), "sp1:"))
 				{
 					throw std::invalid_argument(
 						"persisted secret_env uses legacy per-user encryption and cannot be migrated safely "
 						"without the former credential material; re-register the secured value through "
 						"an authenticated application update");
 				}
-				const std::string context = app->m_name + '\0' + env.key();
+				const std::string context = app->m_name + '\0' + envName;
 				try
 				{
-					app->m_secEnvMap[env.key()] = SecretProtector::instance().unprotect(
-						env.value().get<std::string>(), context);
+					app->m_secEnvMap[envName] = SecretProtector::instance().unprotect(
+						envValue.asString(), context);
 				}
 				catch (const std::exception &)
 				{
@@ -421,7 +426,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 			else
 			{
 				// Do not need decrypt when register from UI/REST
-				app->m_secEnvMap[env.key()] = env.value().get<std::string>();
+				app->m_secEnvMap[envName] = envValue.asString();
 			}
 		}
 	}
@@ -469,7 +474,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_daily_limitation))
 	{
-		app->m_dailyLimit = DailyLimitation::FromJson(jsonObj.at(JSON_KEY_APP_daily_limitation));
+		app->m_dailyLimit = DailyLimitation::FromJson(jsonObj[JSON_KEY_APP_daily_limitation]);
 	}
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_register_time))
@@ -480,7 +485,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	// Init error handling
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_behavior))
 	{
-		app->behaviorInit(jsonObj.at(JSON_KEY_APP_behavior));
+		app->behaviorInit(jsonObj[JSON_KEY_APP_behavior]);
 	}
 
 	// Init m_timer
@@ -876,7 +881,10 @@ void Application::disable()
 	}
 
 	LOG_INF << fname << "Application <" << m_name << "> disabled.";
-	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"enabled", false}, {"previous_enabled", true}});
+	Json::Value statusPayload;
+	statusPayload["enabled"] = false;
+	statusPayload["previous_enabled"] = true;
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, statusPayload);
 
 	stopAllProcesses();
 }
@@ -891,7 +899,10 @@ void Application::enable()
 		++m_runtime->lifecycleGeneration;
 		m_runtime->requireSchedulePlan();
 	}
-	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"enabled", true}, {"previous_enabled", false}});
+	Json::Value statusPayload;
+	statusPayload["enabled"] = true;
+	statusPayload["previous_enabled"] = false;
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, statusPayload);
 }
 
 std::string Application::runAsync(int timeoutSeconds)
@@ -1101,8 +1112,10 @@ void Application::onStartAccepted(const std::string &runId, pid_t pid)
 	// Starting a process establishes liveness, not readiness. Applications with
 	// a custom probe become healthy only after HealthCheckTask observes success.
 	health(m_healthCheckCmd.empty());
-	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START,
-										  {{"pid", pid}, {"process_uuid", runId}});
+	Json::Value startPayload;
+	startPayload["pid"] = (Json::Int64)pid;
+	startPayload["process_uuid"] = runId;
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START, startPayload);
 }
 
 void Application::recordStartFailure(const std::string &runId, const std::string &error, bool onDemand)
@@ -1466,11 +1479,11 @@ void Application::resetMetricHandles(MetricsState &metrics)
 	metrics.healthy.reset();
 }
 
-nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
+Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 {
 	const static char fname[] = "Application::AsJson() ";
 
-	nlohmann::json result = nlohmann::json::object();
+	Json::Value result = Json::Value(Json::objectValue);
 
 	LOG_DBG << fname << "Application: " << m_name;
 	result[JSON_KEY_APP_name] = std::string(m_name);
@@ -1527,7 +1540,10 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	}
 	if (!m_dependsOn.empty())
 	{
-		result[JSON_KEY_APP_depends_on] = m_dependsOn;
+		Json::Value dependencies(Json::arrayValue);
+		for (const auto &dependency : m_dependsOn)
+			dependencies.append(dependency);
+		result[JSON_KEY_APP_depends_on] = dependencies;
 	}
 	result[JSON_KEY_APP_enabled] = isEnabled();
 	if (m_resourceLimit)
@@ -1536,7 +1552,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	}
 	if (m_envMap.size())
 	{
-		nlohmann::json envs = nlohmann::json::object();
+		Json::Value envs = Json::Value(Json::objectValue);
 		for (const auto &[name, value] : m_envMap)
 		{
 			envs[name] = std::string(value);
@@ -1546,7 +1562,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (m_secEnvMap.size() && !returnRuntimeInfo)
 	{
 		// Only include secret_env when saving to disk (not in API responses).
-		nlohmann::json envs = nlohmann::json::object();
+		Json::Value envs = Json::Value(Json::objectValue);
 		for (const auto &[name, value] : m_secEnvMap)
 		{
 			const std::string context = m_name + '\0' + name;
@@ -1663,9 +1679,12 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		const auto waitingFor = this->waitingFor();
 		if (!waitingFor.empty())
 		{
-			result[JSON_KEY_APP_waiting_for] = waitingFor;
+			Json::Value waiting(Json::arrayValue);
+			for (const auto &dependency : waitingFor)
+				waiting.append(dependency);
+			result[JSON_KEY_APP_waiting_for] = waiting;
 		}
-		result[JSON_KEY_APP_starts] = static_cast<long long>(starts);
+		result[JSON_KEY_APP_starts] = static_cast<Json::Int64>(starts);
 		auto nextLaunch = run.nextLaunch;
 		if (nextLaunch)
 		{
@@ -1889,8 +1908,11 @@ void Application::recordProcessExit(int code, bool naturalExit, AppProcess *repo
 	}
 
 	EventDispatcher::instance()->flushStdout(m_name, reporter, stdoutDispatchedBytes);
-	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT,
-										  {{"exit_code", code}, {"pid", prevPid}, {"last_error", currentRun ? getLastError() : std::move(exitError)}});
+	Json::Value exitPayload;
+	exitPayload["exit_code"] = (Json::Int64)code;
+	exitPayload["pid"] = (Json::Int64)prevPid;
+	exitPayload["last_error"] = currentRun ? getLastError() : std::move(exitError);
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT, exitPayload);
 }
 
 void Application::completeRun(const std::string &runId)

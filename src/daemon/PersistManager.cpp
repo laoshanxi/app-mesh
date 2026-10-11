@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "../common/os/linux.h"
+#include "../common/json.h"
 #include "Configuration.h"
 #include "PersistManager.h"
 #include "application/Application.h"
@@ -116,15 +117,15 @@ bool Snapshot::operator==(const Snapshot &snap) const
 	return true;
 }
 
-nlohmann::json Snapshot::AsJson() const
+Json::Value Snapshot::AsJson() const
 {
-	nlohmann::json result = nlohmann::json::object();
+	Json::Value result = Json::Value(Json::objectValue);
 
 	// Applications
-	nlohmann::json apps = nlohmann::json::object();
+	Json::Value apps = Json::Value(Json::objectValue);
 	for (const auto &[name, appSnap] : m_apps)
 	{
-		auto json = nlohmann::json::object();
+		auto json = Json::Value(Json::objectValue);
 		json[SNAPSHOT_JSON_KEY_pid] = (appSnap.m_pid);
 		json[SNAPSHOT_JSON_KEY_starttime] = (appSnap.m_startTime);
 		apps[name] = std::move(json);
@@ -134,24 +135,24 @@ nlohmann::json Snapshot::AsJson() const
 	return result;
 }
 
-std::shared_ptr<Snapshot> Snapshot::FromJson(const nlohmann::json &obj)
+std::shared_ptr<Snapshot> Snapshot::FromJson(const Json::Value &obj)
 {
 	auto snap = std::make_shared<Snapshot>();
-	if (!obj.is_null() && obj.is_object())
+	if (!obj.isNull() && obj.isObject())
 	{
-		if (obj.contains("Applications"))
-			for (auto &app : obj.at("Applications").items())
+		const auto apps = obj["Applications"];
+		for (const auto &appName : apps.getMemberNames())
+		{
+			const auto &app = apps[appName];
+			if (HAS_JSON_FIELD(app, SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app, SNAPSHOT_JSON_KEY_starttime))
 			{
-				if (HAS_JSON_FIELD(app.value(), SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app.value(), SNAPSHOT_JSON_KEY_starttime) &&
-					app.value().contains(SNAPSHOT_JSON_KEY_pid) && app.value().contains(SNAPSHOT_JSON_KEY_starttime))
-				{
-					snap->m_apps.insert(std::pair<std::string, AppSnap>(
-						app.key(),
-						AppSnap(
-							GET_JSON_INT_VALUE(app.value(), SNAPSHOT_JSON_KEY_pid),
-							GET_JSON_INT64_VALUE(app.value(), SNAPSHOT_JSON_KEY_starttime))));
-				}
+				snap->m_apps.insert(std::pair<std::string, AppSnap>(
+					appName,
+					AppSnap(
+						GET_JSON_INT_VALUE(app, SNAPSHOT_JSON_KEY_pid),
+						GET_JSON_INT64_VALUE(app, SNAPSHOT_JSON_KEY_starttime))));
 			}
+		}
 	}
 	return snap;
 }
@@ -171,7 +172,7 @@ void Snapshot::persist()
 	std::ofstream ofs(tmpFile, std::ios::trunc);
 	if (ofs.is_open())
 	{
-		ofs << this->AsJson().dump();
+		ofs << JSON::dump(this->AsJson());
 		ofs.close();
 		std::error_code renameError;
 		std::filesystem::rename(tmpFile, target, renameError);

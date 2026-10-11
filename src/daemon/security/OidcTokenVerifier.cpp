@@ -4,6 +4,7 @@
 #include "../../common/RestClient.h"
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #include "../Configuration.h"
 #include "Security.h"
 
@@ -12,7 +13,7 @@
 #include <cstdlib>
 #include <vector>
 
-#include <jwt-cpp/traits/nlohmann-json/defaults.h>
+#include <jwt-cpp/traits/open-source-parsers-jsoncpp/defaults.h>
 #include <openssl/bio.h>
 #include <openssl/bn.h>
 #include <openssl/evp.h>
@@ -99,29 +100,29 @@ void OidcTokenVerifier::loadConfig()
 	const auto configFile = Utility::getConfigFilePath(APPMESH_OIDC_CONFIG_FILE);
 	auto root = Utility::yamlToJson(YAML::LoadFile(configFile));
 	Configuration::overrideConfigWithEnv(root);
-	if (!root.contains("OIDC") || !root.at("OIDC").is_object())
+	if (!root.isMember("OIDC") || !root["OIDC"].isObject())
 		throw std::invalid_argument("oidc.yaml must contain an OIDC object");
 
-	const auto &oidc = root.at("OIDC");
+	const auto &oidc = root["OIDC"];
 	m_config.issuer = normalizeIssuer(GET_JSON_STR_VALUE(oidc, "issuer"));
 	m_config.dexAccessUrl = normalizeIssuer(GET_JSON_STR_VALUE(oidc, "access_url"));
-	if (oidc.contains("tls_verify"))
+	if (oidc.isMember("tls_verify"))
 	{
-		if (!oidc.at("tls_verify").is_boolean())
+		if (!oidc["tls_verify"].isBool())
 			throw std::invalid_argument("OIDC tls_verify must be true or false");
-		m_config.dexTlsVerify = oidc.at("tls_verify").get<bool>();
+		m_config.dexTlsVerify = oidc["tls_verify"].asBool();
 	}
-	if (oidc.contains("password_flow"))
+	if (oidc.isMember("password_flow"))
 	{
-		if (!oidc.at("password_flow").is_boolean())
+		if (!oidc["password_flow"].isBool())
 			throw std::invalid_argument("OIDC password_flow must be true or false");
-		m_config.passwordFlow = oidc.at("password_flow").get<bool>();
+		m_config.passwordFlow = oidc["password_flow"].asBool();
 	}
-	if (oidc.contains("refresh_token"))
+	if (oidc.isMember("refresh_token"))
 	{
-		if (!oidc.at("refresh_token").is_boolean())
+		if (!oidc["refresh_token"].isBool())
 			throw std::invalid_argument("OIDC refresh_token must be true or false");
-		m_config.refreshToken = oidc.at("refresh_token").get<bool>();
+		m_config.refreshToken = oidc["refresh_token"].asBool();
 	}
 	// refresh_token_max_lifetime is enforced by Dex alone (expiry.refreshTokens
 	// absoluteLifetime); the launchers render it, the Engine never reads it.
@@ -188,30 +189,30 @@ void OidcTokenVerifier::loadConfig()
 	m_config.resourceUrl = normalizeIssuer(GET_JSON_STR_VALUE(oidc, "resource_url"));
 	m_config.resourceAudience = GET_JSON_STR_VALUE(oidc, "resource_audience");
 	m_config.publicClientId = GET_JSON_STR_VALUE(oidc, "public_client_id");
-	if (oidc.contains("service_client_ids"))
+	if (oidc.isMember("service_client_ids"))
 		throw std::invalid_argument(
 			"OIDC service_client_ids is unsupported; every bearer must use resource_audience");
 
-	if (oidc.contains("scopes"))
+	if (oidc.isMember("scopes"))
 	{
-		if (!oidc.at("scopes").is_array())
+		if (!oidc["scopes"].isArray())
 			throw std::invalid_argument("OIDC scopes must be an array");
-		for (const auto &scope : oidc.at("scopes"))
+		for (const auto &scope : oidc["scopes"])
 		{
-			if (!scope.is_string() || scope.get<std::string>().empty())
+			if (!scope.isString() || scope.asString().empty())
 				throw std::invalid_argument("OIDC scopes entries must be non-empty strings");
-			m_config.scopes.insert(scope.get<std::string>());
+			m_config.scopes.insert(scope.asString());
 		}
 	}
-	if (oidc.contains("allowed_algorithms"))
+	if (oidc.isMember("allowed_algorithms"))
 	{
-		if (!oidc.at("allowed_algorithms").is_array())
+		if (!oidc["allowed_algorithms"].isArray())
 			throw std::invalid_argument("OIDC allowed_algorithms must be an array");
-		for (const auto &algorithm : oidc.at("allowed_algorithms"))
+		for (const auto &algorithm : oidc["allowed_algorithms"])
 		{
-			if (!algorithm.is_string() || algorithm.get<std::string>().empty())
+			if (!algorithm.isString() || algorithm.asString().empty())
 				throw std::invalid_argument("OIDC allowed_algorithms entries must be non-empty strings");
-			m_config.allowedAlgorithms.insert(algorithm.get<std::string>());
+			m_config.allowedAlgorithms.insert(algorithm.asString());
 		}
 	}
 
@@ -305,7 +306,16 @@ Principal OidcTokenVerifier::verify(const std::string &token)
 	{
 		throw std::domain_error("bearer token is not intended for the App Mesh API");
 	}
-	Principal principal(m_config.issuer, decoded.get_subject());
+	std::string subject;
+	try
+	{
+		subject = decoded.get_subject();
+	}
+	catch (const std::exception &)
+	{
+		throw std::domain_error("bearer token contains malformed claims");
+	}
+	Principal principal(m_config.issuer, subject);
 	std::string displayName = claimString(decoded, "name");
 	if (displayName.empty())
 		displayName = claimString(decoded, "preferred_username");
@@ -317,42 +327,59 @@ Principal OidcTokenVerifier::verify(const std::string &token)
 
 const OidcTokenVerifier::Config &OidcTokenVerifier::config() const { return m_config; }
 
-nlohmann::json OidcTokenVerifier::publicConfig() const
+Json::Value OidcTokenVerifier::publicConfig() const
 {
-	nlohmann::json result;
+	Json::Value result;
 	result["issuer"] = m_config.issuer;
 	result["resource"] = m_config.resourceUrl;
 	result["audience"] = m_config.resourceAudience;
 	result["public_client_id"] = m_config.publicClientId;
-	result["scopes"] = m_config.scopes;
+	{
+		Json::Value scopes(Json::arrayValue);
+		for (const auto &scope : m_config.scopes)
+			scopes.append(scope);
+		result["scopes"] = scopes;
+	}
 	// An unconfigured entry defaults to this daemon's own HTTPS REST listener, so
 	// bare deployments and dev servers need no manual redirect registration.
 	result["browser_entry"] = !m_config.browserEntry.empty() ? m_config.browserEntry
 		: "https://" + Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
-	result["flows"] = nlohmann::json::array({"authorization_code_pkce", "device_code"});
+	Json::Value flows(Json::arrayValue);
+	flows.append("authorization_code_pkce");
+	flows.append("device_code");
+	result["flows"] = flows;
 	result["refresh_token"] = m_config.refreshToken;
 	return result;
 }
 
-nlohmann::json OidcTokenVerifier::protectedResourceMetadata() const
+Json::Value OidcTokenVerifier::protectedResourceMetadata() const
 {
-	nlohmann::json result;
+	Json::Value result;
 	result["resource"] = m_config.resourceUrl;
-	result["authorization_servers"] = nlohmann::json::array({m_config.issuer});
-	result["scopes_supported"] = m_config.scopes;
-	result["bearer_methods_supported"] = nlohmann::json::array({"header"});
+	Json::Value servers(Json::arrayValue);
+	servers.append(m_config.issuer);
+	result["authorization_servers"] = servers;
+	{
+		Json::Value scopes(Json::arrayValue);
+		for (const auto &scope : m_config.scopes)
+			scopes.append(scope);
+		result["scopes_supported"] = scopes;
+	}
+	Json::Value methods(Json::arrayValue);
+	methods.append("header");
+	result["bearer_methods_supported"] = methods;
 	return result;
 }
 
 void OidcTokenVerifier::refreshDiscoveryLocked()
 {
 	const std::string discoveryUrl = m_config.dexAccessUrl + "/.well-known/openid-configuration";
-	auto metadata = nlohmann::json::parse(requestJson(discoveryUrl));
-	if (!metadata.contains("issuer") || normalizeIssuer(metadata.at("issuer").get<std::string>()) != m_config.issuer)
+	auto metadata = JSON::parse(requestJson(discoveryUrl));
+	if (!metadata.isMember("issuer") || normalizeIssuer(metadata["issuer"].asString()) != m_config.issuer)
 		throw std::domain_error("OIDC discovery issuer does not match the configured issuer");
-	if (!metadata.contains("jwks_uri") || !metadata.at("jwks_uri").is_string())
+	if (!metadata.isMember("jwks_uri") || !metadata["jwks_uri"].isString())
 		throw std::runtime_error("OIDC discovery metadata does not publish jwks_uri");
-	m_jwksUri = metadata.at("jwks_uri").get<std::string>();
+	m_jwksUri = metadata["jwks_uri"].asString();
 	m_discoveryFetchedAt = std::chrono::steady_clock::now();
 }
 
@@ -363,20 +390,20 @@ void OidcTokenVerifier::refreshKeysLocked()
 	if (m_jwksUri.empty() || now - m_discoveryFetchedAt >= DISCOVERY_TTL)
 		refreshDiscoveryLocked();
 
-	auto jwks = nlohmann::json::parse(requestJson(transportUrl(m_jwksUri)));
-	if (!jwks.contains("keys") || !jwks.at("keys").is_array())
+	auto jwks = JSON::parse(requestJson(transportUrl(m_jwksUri)));
+	if (!jwks.isMember("keys") || !jwks["keys"].isArray())
 		throw std::runtime_error("OIDC JWKS response does not contain keys");
 
 	std::map<std::string, CachedKey> refreshed;
-	for (const auto &jwk : jwks.at("keys"))
+	for (const auto &jwk : jwks["keys"])
 	{
-		if (!jwk.contains("kid") || !jwk.at("kid").is_string())
+		if (!jwk.isMember("kid") || !jwk["kid"].isString())
 			continue;
-		if (jwk.contains("use") && jwk.at("use").is_string() && jwk.at("use").get<std::string>() != "sig")
+		if (jwk.isMember("use") && jwk["use"].isString() && jwk["use"].asString() != "sig")
 			continue;
 		try
 		{
-			refreshed[jwk.at("kid").get<std::string>()] = CachedKey{buildVerifier(jwkToPem(jwk)), now};
+			refreshed[jwk["kid"].asString()] = CachedKey{buildVerifier(jwkToPem(jwk)), now};
 		}
 		catch (const std::exception &e)
 		{
@@ -545,15 +572,15 @@ std::string OidcTokenVerifier::normalizeIssuer(std::string issuer)
 	return issuer;
 }
 
-std::string OidcTokenVerifier::jwkToPem(const nlohmann::json &jwk)
+std::string OidcTokenVerifier::jwkToPem(const Json::Value &jwk)
 {
-	if (jwk.contains("x5c") && jwk.at("x5c").is_array() && !jwk.at("x5c").empty())
-		return "-----BEGIN CERTIFICATE-----\n" + jwk.at("x5c").at(0).get<std::string>() + "\n-----END CERTIFICATE-----\n";
+	if (jwk.isMember("x5c") && jwk["x5c"].isArray() && !jwk["x5c"].empty())
+		return "-----BEGIN CERTIFICATE-----\n" + jwk["x5c"][0].asString() + "\n-----END CERTIFICATE-----\n";
 
-	if (!jwk.contains("kty") || jwk.at("kty") != "RSA" || !jwk.contains("n") || !jwk.contains("e"))
+	if (!jwk.isMember("kty") || jwk["kty"] != "RSA" || !jwk.isMember("n") || !jwk.isMember("e"))
 		throw std::invalid_argument("only RSA signing keys are supported in the configured signing-key set");
-	const auto modulus = decodeBase64Url(jwk.at("n").get<std::string>());
-	const auto exponent = decodeBase64Url(jwk.at("e").get<std::string>());
+	const auto modulus = decodeBase64Url(jwk["n"].asString());
+	const auto exponent = decodeBase64Url(jwk["e"].asString());
 
 	BIGNUM *n = BN_bin2bn(modulus.data(), static_cast<int>(modulus.size()), nullptr);
 	BIGNUM *e = BN_bin2bn(exponent.data(), static_cast<int>(exponent.size()), nullptr);

@@ -3,12 +3,12 @@
 #include <optional>
 #include <string>
 
-#include <jwt-cpp/traits/nlohmann-json/defaults.h>
-#include <nlohmann/json.hpp>
+#include <jwt-cpp/traits/open-source-parsers-jsoncpp/defaults.h>
 
 namespace JwtHelper
 {
-using DecodedJwt = jwt::decoded_jwt<jwt::traits::nlohmann_json>;
+using JwtTrait = jwt::traits::open_source_parsers_jsoncpp;
+using DecodedJwt = jwt::decoded_jwt<JwtTrait>;
 
 std::string normalizeBearerToken(const std::string &token);
 std::string buildBearerAuthorization(const std::string &token);

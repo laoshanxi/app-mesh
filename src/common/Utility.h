@@ -13,7 +13,7 @@
 
 #include <ace/OS.h>
 #include <filesystem>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 #include <yaml-cpp/yaml.h>
 
 #include "HttpHeaderMap.h"
@@ -64,25 +64,24 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object
-#define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<std::string>() : std::string(""))
-#define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<int>() : 0)
-#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<int64_t>() : 0L)
-#define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<double>() : 0.0L)
+#define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? Utility::jsonStringField(jsonObj, key) : std::string(""))
+#define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? (jsonObj)[key].asInt() : 0)
+#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? (jsonObj)[key].asInt64() : 0L)
 #define SET_JSON_INT_VALUE(jsonObj, key, value)       \
 	do                                                \
 	{                                                 \
 		if (HAS_JSON_FIELD(jsonObj, key))             \
 			value = GET_JSON_INT_VALUE(jsonObj, key); \
 	} while (0)
-#define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<bool>() : false)
+#define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? Utility::jsonBoolField(jsonObj, key) : false)
 #define SET_JSON_BOOL_VALUE(jsonObj, key, value)       \
 	do                                                 \
 	{                                                  \
 		if (HAS_JSON_FIELD(jsonObj, key))              \
 			value = GET_JSON_BOOL_VALUE(jsonObj, key); \
 	} while (0)
-#define HAS_JSON_FIELD(jsonObj, key) (jsonObj.contains(key) && !jsonObj.at(key).is_null())
-#define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? (jsonObj.at(key).is_string() ? jsonObj.at(key).template get<std::string>() : std::to_string(jsonObj.at(key).template get<int64_t>())) : std::string(""))
+#define HAS_JSON_FIELD(jsonObj, key) ((jsonObj).isMember(key) && !(jsonObj)[key].isNull())
+#define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? ((jsonObj)[key].isString() ? (jsonObj)[key].asString() : std::to_string((jsonObj)[key].asInt64())) : std::string(""))
 
 #define CLOSE_STREAM(streamPtr)                           \
 	do                                                    \
@@ -140,7 +139,7 @@ constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 #define APPMESH_LOCAL_HOST_URL "https://127.0.0.1:6060"
 
 const char *GET_STATUS_STR(unsigned int status);
-inline const nlohmann::json EMPTY_STR_JSON(nullptr);
+inline const Json::Value EMPTY_STR_JSON; // null value
 
 /// <summary>
 /// All common functions
@@ -185,14 +184,18 @@ public:
 	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos = 0);
 	static std::string shortID();
 	static std::string uuid();
+
+	// JSON field reads: wrong-typed fields throw (client fault -> 400)
+	static std::string jsonStringField(const Json::Value &value, const std::string &key);
+	static bool jsonBoolField(const Json::Value &value, const std::string &key);
 	static std::string stringFormat(const char *fmt_str, ...);
 	static std::string strToupper(std::string s);
 	static std::string strTolower(std::string s);
 	static bool containsSpecialCharacters(const std::string &str);
 	static std::vector<std::string> str2argv(const std::string &commandLine);
-	static nlohmann::json text2json(const std::string &str);
-	static std::string jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out = nullptr);
-	static nlohmann::json yamlToJson(const YAML::Node &node);
+	static Json::Value text2json(const std::string &str);
+	static std::string jsonToYaml(const Json::Value &j, std::shared_ptr<YAML::Emitter> out = nullptr);
+	static Json::Value yamlToJson(const YAML::Node &node);
 	static void initLogging(const std::string &name);
 	static bool setLogLevel(const std::string &level);
 
@@ -228,9 +231,9 @@ public:
 	static size_t utf8IncompleteTailBytes(const std::string &str);
 	static std::string convertToUTF8(const std::string &input, unsigned int codepage);
 	static bool createPidFile();
-	static void appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key);
-	static void appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key);
-	static void addExtraAppTimeReferStr(nlohmann::json &jsonObj);
+	static void appendStrTimeAttr(Json::Value &jsonObj, const std::string &key);
+	static void appendStrDayTimeAttr(Json::Value &jsonObj, const std::string &key);
+	static void addExtraAppTimeReferStr(Json::Value &jsonObj);
 	static void initDateTimeZone(const std::string &posixTimezone, bool writeLog);
 
 	static const std::string readStdin2End();

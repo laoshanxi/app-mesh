@@ -17,10 +17,11 @@
 #include <sys/socket.h>
 #endif
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "../../../common/StreamLogger.h"
 #include "../../../common/Utility.h"
+#include "../../../common/json.h"
 #include "../../Configuration.h"
 #include "../../security/Security.h"
 #include "../Data.h"
@@ -283,7 +284,7 @@ void DrogonAdaptor::setupRoutes()
             auto resp = drogon::HttpResponse::newHttpResponse();
             resp->setStatusCode(code);
             resp->setContentTypeString("application/json");
-            resp->setBody(Utility::text2json(std::string(drogon::statusCodeToString(static_cast<int>(code)))).dump());
+            resp->setBody(JSON::dump(Utility::text2json(std::string(drogon::statusCodeToString(static_cast<int>(code))))));
             return resp;
         });
     app.setThreadNum(static_cast<size_t>(m_ioThreads));
@@ -348,7 +349,7 @@ void DrogonAdaptor::setupRoutes()
         auto resp = drogon::HttpResponse::newHttpResponse();
         resp->setStatusCode(drogon::k404NotFound);
         resp->setContentTypeString("application/json");
-        resp->setBody(Utility::text2json("Route not found").dump());
+        resp->setBody(JSON::dump(Utility::text2json("Route not found")));
         addCors(resp);
         callback(resp);
     };
@@ -480,7 +481,7 @@ void DrogonAdaptor::handleHttpRequest(const drogon::HttpRequestPtr &req, drogon:
         auto resp = drogon::HttpResponse::newHttpResponse();
         resp->setStatusCode(drogon::k404NotFound);
         resp->setContentTypeString("application/json");
-        resp->setBody(Utility::text2json("Route not found").dump());
+        resp->setBody(JSON::dump(Utility::text2json("Route not found")));
         callback(resp);
         return;
     }
@@ -765,13 +766,16 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
             // mirroring the REST upload path.
             Utility::applyFilePermission(upload->m_filePath, upload->m_requestHeaders);
 
-            nlohmann::json respJson = {{"status", "success"}, {"file", fileName}, {"size", size}};
+            Json::Value respJson;
+            respJson["status"] = "success";
+            respJson["file"] = fileName;
+            respJson["size"] = (Json::UInt64)size;
             auto resp = drogon::HttpResponse::newHttpResponse();
             resp->setStatusCode(drogon::k201Created);
             resp->setContentTypeString("application/json");
             addCors(resp);
             // Invalid UTF-8 in the filename makes default dump() throw; 'replace' avoids it.
-            resp->setBody(respJson.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
+            resp->setBody(JSON::dump(respJson));
             callback(resp);
         }));
 }

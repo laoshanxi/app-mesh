@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include <string>
 
@@ -32,7 +32,7 @@ public:
 	const std::string &email() const;
 	const std::string &connectorId() const;
 
-	nlohmann::json asJson() const;
+	Json::Value asJson() const;
 
 	static std::string stableId(const std::string &issuer, const std::string &subject);
 	static const char *kindName(Kind kind);

@@ -32,6 +32,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_L
 endif()
 # trantor (bundled with drogon) implements the RestClient transport
 target_link_libraries(common PRIVATE Drogon::Drogon)
+# jsoncpp types appear in public headers (Utility.h, json.h)
+target_link_libraries(common PUBLIC jsoncpp_lib)
 
 # macOS libiconv is not re-exported by libSystem; Utility.cpp uses iconv for
 # output encoding detection (glibc/musl provide it inside libc).

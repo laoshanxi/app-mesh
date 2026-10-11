@@ -51,8 +51,6 @@ if [ true ]; then
     ./b2 install >/dev/null
     cd "$ROOTDIR"
 fi
-apt install -y libcrypto++-dev
-
 # build ACE
 apt install -y libace-dev
 
@@ -62,8 +60,6 @@ apt install -y libyaml-cpp-dev
 # drogon requires libuuid, jsoncpp and uriparser
 apt install -y uuid-dev libjsoncpp-dev liburiparser-dev
 
-# json
-apt install -y nlohmann-json3-dev
 
 # syft for SBOM
 curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin

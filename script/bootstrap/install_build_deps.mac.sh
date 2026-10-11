@@ -42,9 +42,7 @@ BREW_PACKAGES=(
     go
     rust
     openssl@3
-    cryptopp
     yaml-cpp
-    nlohmann-json
     jsoncpp
     drogon
     uriparser

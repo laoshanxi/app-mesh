@@ -428,7 +428,7 @@ int DockerProcess::returnValue() const
 
 pid_t DockerProcess::startImpl(std::string cmd, std::string execUser, std::string workDir,
 							   std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							   const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
+							   const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
 {
 	const static char fname[] = "DockerProcess::startImpl() ";
 	LOG_DBG << fname << "Entered";

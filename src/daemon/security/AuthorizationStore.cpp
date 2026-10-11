@@ -1,6 +1,7 @@
 #include "AuthorizationStore.h"
 
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #include "../../common/os/filesystem.h"
 #include "../Configuration.h"
 #include "../application/Application.h"
@@ -32,25 +33,34 @@ namespace
 		{
 			const auto file = Utility::getConfigFilePath(AUTH_STACK_CONFIG_FILE);
 			const auto root = Utility::yamlToJson(YAML::LoadFile(file));
-			if (!root.contains("AuthStack") || !root.at("AuthStack").is_object())
+			if (!root.isMember("AuthStack") || !root["AuthStack"].isObject())
 				throw std::invalid_argument("auth-stack.yaml must contain an AuthStack object");
-			role = GET_JSON_STR_VALUE(root.at("AuthStack"), "role");
+			role = GET_JSON_STR_VALUE(root["AuthStack"], "role");
 		}
 		if (role != "standalone" && role != "owner" && role != "follower")
 			throw std::invalid_argument("AuthStack.role must be standalone, owner, or follower");
 		return role;
 	}
 
-	std::set<std::string> readStringSet(const nlohmann::json &value, const char *field)
+	// Serialize a role/permission set as a JSON string array
+Json::Value toJsonArray(const std::set<std::string> &values)
+{
+	Json::Value array(Json::arrayValue);
+	for (const auto &value : values)
+		array.append(value);
+	return array;
+}
+
+std::set<std::string> readStringSet(const Json::Value &value, const char *field)
 	{
 		std::set<std::string> result;
-		if (!value.is_array())
+		if (!value.isArray())
 			throw std::invalid_argument(std::string(field) + " must be an array");
 		for (const auto &entry : value)
 		{
-			if (!entry.is_string() || entry.get<std::string>().empty())
+			if (!entry.isString() || entry.asString().empty())
 				throw std::invalid_argument(std::string(field) + " entries must be non-empty strings");
-			result.insert(entry.get<std::string>());
+			result.insert(entry.asString());
 		}
 		return result;
 	}
@@ -84,30 +94,30 @@ void AuthorizationPrincipal::updateClaims(const Principal &principal)
 	m_connectorId = principal.connectorId();
 }
 
-void AuthorizationPrincipal::updatePolicy(const nlohmann::json &json)
+void AuthorizationPrincipal::updatePolicy(const Json::Value &json)
 {
-	if (json.contains("status"))
+	if (json.isMember("status"))
 	{
-		const auto status = json.at("status").get<std::string>();
+		const auto status = json["status"].asString();
 		if (status != "active" && status != "disabled" && status != "tombstoned")
 			throw std::invalid_argument("principal status must be active, disabled, or tombstoned");
 		m_status = status;
 	}
-	if (json.contains("execution_user"))
-		m_executionUser = json.at("execution_user").get<std::string>();
-	if (json.contains("roles"))
-		m_roles = readStringSet(json.at("roles"), "roles");
-	if (json.contains("display_name"))
-		m_displayName = json.at("display_name").get<std::string>();
-	if (json.contains("email"))
-		m_email = json.at("email").get<std::string>();
-	if (json.contains("connector_id"))
-		m_connectorId = json.at("connector_id").get<std::string>();
+	if (json.isMember("execution_user"))
+		m_executionUser = json["execution_user"].asString();
+	if (json.isMember("roles"))
+		m_roles = readStringSet(json["roles"], "roles");
+	if (json.isMember("display_name"))
+		m_displayName = json["display_name"].asString();
+	if (json.isMember("email"))
+		m_email = json["email"].asString();
+	if (json.isMember("connector_id"))
+		m_connectorId = json["connector_id"].asString();
 }
 
-nlohmann::json AuthorizationPrincipal::asJson() const
+Json::Value AuthorizationPrincipal::asJson() const
 {
-	nlohmann::json result;
+	Json::Value result;
 	result["principal_id"] = m_id;
 	result["kind"] = Principal::kindName(m_kind);
 	result["issuer"] = m_issuer;
@@ -117,7 +127,7 @@ nlohmann::json AuthorizationPrincipal::asJson() const
 	result["connector_id"] = m_connectorId;
 	result["status"] = m_status;
 	result["execution_user"] = m_executionUser;
-	result["roles"] = m_roles;
+	result["roles"] = toJsonArray(m_roles);
 	return result;
 }
 
@@ -146,12 +156,12 @@ void AuthorizationStore::init()
 	initializeFirstAdminEnrollment();
 }
 
-void AuthorizationStore::load(const nlohmann::json &root)
+void AuthorizationStore::load(const Json::Value &root)
 {
 	std::lock_guard guard(m_mutex);
-	if (!root.contains("Authorization") || !root.at("Authorization").is_object())
+	if (!root.isMember("Authorization") || !root["Authorization"].isObject())
 		throw std::invalid_argument("authorization.yaml must contain an Authorization object");
-	const auto &authorization = root.at("Authorization");
+	const auto &authorization = root["Authorization"];
 	m_provisioningMode = GET_JSON_STR_VALUE(authorization, "provisioning");
 	if (m_provisioningMode.empty())
 		m_provisioningMode = "explicit-or-minimal";
@@ -169,33 +179,33 @@ void AuthorizationStore::load(const nlohmann::json &root)
 	m_firstAdminEnrolled = GET_JSON_BOOL_VALUE(authorization, "first_admin_enrolled");
 
 	m_roles.clear();
-	if (authorization.contains("roles"))
+	if (authorization.isMember("roles"))
 	{
-		if (!authorization.at("roles").is_object())
+		if (!authorization["roles"].isObject())
 			throw std::invalid_argument("Authorization.roles must be an object");
-		for (const auto &entry : authorization.at("roles").items())
-			m_roles[entry.key()] = readStringSet(entry.value(), "role permissions");
+		for (const auto &role : authorization["roles"].getMemberNames())
+			m_roles[role] = readStringSet(authorization["roles"][role], "role permissions");
 	}
 	if (m_roles.count(m_firstAdminRole) == 0)
 		throw std::invalid_argument("first_admin_role is not defined in Authorization.roles");
 
 	m_principals.clear();
-	if (authorization.contains("principals"))
+	if (authorization.isMember("principals"))
 	{
-		if (!authorization.at("principals").is_object())
+		if (!authorization["principals"].isObject())
 			throw std::invalid_argument("Authorization.principals must be an object");
-		for (const auto &entry : authorization.at("principals").items())
+		for (const auto &principalId : authorization["principals"].getMemberNames())
 		{
-			const auto &definition = entry.value();
+			const auto &definition = authorization["principals"][principalId];
 			const auto kind = parseKind(GET_JSON_STR_VALUE(definition, "kind"));
 			const auto issuer = GET_JSON_STR_VALUE(definition, "issuer");
 			const auto subject = GET_JSON_STR_VALUE(definition, "subject");
-			if (kind != Principal::Kind::System && entry.key() != Principal::stableId(issuer, subject))
+			if (kind != Principal::Kind::System && principalId != Principal::stableId(issuer, subject))
 				throw std::invalid_argument("OIDC principal key must equal the stable (issuer, subject) identifier");
-			auto principal = std::make_shared<AuthorizationPrincipal>(entry.key(), kind, issuer, subject);
+			auto principal = std::make_shared<AuthorizationPrincipal>(principalId, kind, issuer, subject);
 			principal->updatePolicy(definition);
 			validateRoles(principal->roles());
-			m_principals[entry.key()] = std::move(principal);
+			m_principals[principalId] = std::move(principal);
 		}
 	}
 	if (m_principals.count(SYSTEM_PRINCIPAL_ID) == 0)
@@ -223,7 +233,9 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::resolve(const Princi
 		auto record = std::make_shared<AuthorizationPrincipal>(
 			principal.id(), principal.kind(), principal.issuer(), principal.subject());
 		record->updateClaims(principal);
-		record->updatePolicy(nlohmann::json{{"roles", nlohmann::json::array()}});
+		Json::Value policy;
+		policy["roles"] = Json::Value(Json::arrayValue);
+		record->updatePolicy(policy);
 		m_principals[principal.id()] = std::move(record);
 		try
 		{
@@ -275,7 +287,11 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::enrollFirstAdmin(con
 	candidate->updateClaims(principal);
 	auto roles = candidate->roles();
 	roles.insert(m_firstAdminRole);
-	candidate->updatePolicy(nlohmann::json{{"roles", roles}});
+	Json::Value firstAdminPolicy;
+	firstAdminPolicy["roles"] = Json::Value(Json::arrayValue);
+	for (const auto &role : roles)
+		firstAdminPolicy["roles"].append(role);
+	candidate->updatePolicy(firstAdminPolicy);
 
 	const auto previous = found == m_principals.end() ? nullptr : found->second;
 	const bool previouslyEnrolled = m_firstAdminEnrolled;
@@ -339,43 +355,44 @@ bool AuthorizationStore::builtinAuthentication() const
 	return m_builtinAuthentication;
 }
 
-nlohmann::json AuthorizationStore::firstAdminEnrollment() const
+Json::Value AuthorizationStore::firstAdminEnrollment() const
 {
 	std::lock_guard guard(m_mutex);
 	const bool available = m_firstAdminEnrollmentEnabled && !m_firstAdminEnrolled &&
 		!hasFirstAdminLocked();
-	nlohmann::json result{{"available", available}};
+	Json::Value result;
+	result["available"] = available;
 	if (available)
 		result["subject"] = m_firstAdminSubject;
 	return result;
 }
 
-nlohmann::json AuthorizationStore::principalsJson() const
+Json::Value AuthorizationStore::principalsJson() const
 {
 	std::lock_guard guard(m_mutex);
-	nlohmann::json result = nlohmann::json::object();
+	Json::Value result = Json::Value(Json::objectValue);
 	for (const auto &[id, principal] : m_principals)
 		result[id] = principal->asJson();
 	return result;
 }
 
-nlohmann::json AuthorizationStore::rolesJson() const
+Json::Value AuthorizationStore::rolesJson() const
 {
 	std::lock_guard guard(m_mutex);
-	nlohmann::json result = nlohmann::json::object();
+	Json::Value result = Json::Value(Json::objectValue);
 	for (const auto &[name, role] : m_roles)
-		result[name] = role;
+		result[name] = toJsonArray(role);
 	return result;
 }
 
-void AuthorizationStore::updatePrincipal(const std::string &principalId, const nlohmann::json &definition)
+void AuthorizationStore::updatePrincipal(const std::string &principalId, const Json::Value &definition)
 {
 	const static char fname[] = "AuthorizationStore::updatePrincipal() ";
-	if (!definition.is_object())
+	if (!definition.isObject())
 		throw std::invalid_argument("principal definition must be an object");
-	if (definition.contains("status") &&
-		definition.at("status").is_string() &&
-		definition.at("status").get<std::string>() == "tombstoned")
+	if (definition.isMember("status") &&
+		definition["status"].isString() &&
+		definition["status"].asString() == "tombstoned")
 	{
 		throw AuthorizationException(
 			"use the Principal DELETE operation to create a tombstone after ownership checks");
@@ -402,13 +419,13 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const n
 	else
 	{
 		candidate = std::make_shared<AuthorizationPrincipal>(*found->second);
-		if (definition.contains("kind") &&
+		if (definition.isMember("kind") &&
 			parseKind(GET_JSON_STR_VALUE(definition, "kind")) != candidate->kind())
 			throw std::invalid_argument("principal kind is immutable");
-		if (definition.contains("issuer") &&
+		if (definition.isMember("issuer") &&
 			GET_JSON_STR_VALUE(definition, "issuer") != candidate->issuer())
 			throw std::invalid_argument("principal issuer is immutable");
-		if (definition.contains("subject") &&
+		if (definition.isMember("subject") &&
 			GET_JSON_STR_VALUE(definition, "subject") != candidate->subject())
 			throw std::invalid_argument("principal subject is immutable");
 	}
@@ -434,7 +451,7 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const n
 		throw;
 	}
 	LOG_INF << fname << (previous ? "updated" : "created")
-			<< " principal <" << principalId << "> roles: " << nlohmann::json(candidate->roles()).dump();
+			<< " principal <" << principalId << "> roles: " << JSON::dump(toJsonArray(candidate->roles()));
 }
 
 void AuthorizationStore::deletePrincipal(const std::string &principalId)
@@ -474,10 +491,11 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 	// a new Principal and would destroy the authorization audit boundary.
 	const auto previous = found->second;
 	auto tombstone = std::make_shared<AuthorizationPrincipal>(*previous);
-	tombstone->updatePolicy(nlohmann::json{
-		{"status", "tombstoned"},
-		{"execution_user", ""},
-		{"roles", nlohmann::json::array()}});
+	Json::Value tombstonePolicy;
+	tombstonePolicy["status"] = "tombstoned";
+	tombstonePolicy["execution_user"] = "";
+	tombstonePolicy["roles"] = Json::Value(Json::arrayValue);
+	tombstone->updatePolicy(tombstonePolicy);
 	m_principals[principalId] = std::move(tombstone);
 	try
 	{
@@ -491,7 +509,7 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 	LOG_INF << fname << "tombstoned principal <" << principalId << ">";
 }
 
-void AuthorizationStore::updateRole(const std::string &role, const nlohmann::json &permissions)
+void AuthorizationStore::updateRole(const std::string &role, const Json::Value &permissions)
 {
 	const static char fname[] = "AuthorizationStore::updateRole() ";
 	if (role.empty())
@@ -516,7 +534,7 @@ void AuthorizationStore::updateRole(const std::string &role, const nlohmann::jso
 		throw;
 	}
 	LOG_INF << fname << (existed ? "updated" : "created") << " role <"
-			<< role << "> permissions: " << nlohmann::json(parsed).dump();
+			<< role << "> permissions: " << JSON::dump(toJsonArray(parsed));
 }
 
 void AuthorizationStore::deleteRole(const std::string &role)
@@ -560,42 +578,42 @@ void AuthorizationStore::mergeDiskPolicyLocked()
 		if (!Utility::isFileExist(file))
 			return;
 		const auto root = Utility::yamlToJson(YAML::LoadFile(file));
-		if (!root.contains("Authorization") || !root.at("Authorization").is_object())
+		if (!root.isMember("Authorization") || !root["Authorization"].isObject())
 			return;
-		const auto &authorization = root.at("Authorization");
+		const auto &authorization = root["Authorization"];
 
 		// Roles and principals this process deleted were removed from disk by the
 		// saveLocked() of the deleting call, so entries present only on disk are
 		// external additions and are adopted; entries present in memory keep the
 		// in-memory state (deliberate API updates and tombstones win).
-		if (authorization.contains("roles") && authorization.at("roles").is_object())
+		if (authorization.isMember("roles") && authorization["roles"].isObject())
 		{
-			for (const auto &entry : authorization.at("roles").items())
+			for (const auto &role : authorization["roles"].getMemberNames())
 			{
-				if (m_roles.count(entry.key()) == 0)
+				if (m_roles.count(role) == 0)
 				{
-					m_roles[entry.key()] = readStringSet(entry.value(), "role permissions");
-					LOG_INF << fname << "adopted on-disk role <" << entry.key() << ">";
+					m_roles[role] = readStringSet(authorization["roles"][role], "role permissions");
+					LOG_INF << fname << "adopted on-disk role <" << role << ">";
 				}
 			}
 		}
-		if (authorization.contains("principals") && authorization.at("principals").is_object())
+		if (authorization.isMember("principals") && authorization["principals"].isObject())
 		{
-			for (const auto &entry : authorization.at("principals").items())
+			for (const auto &principalId : authorization["principals"].getMemberNames())
 			{
-				if (m_principals.count(entry.key()) != 0)
+				if (m_principals.count(principalId) != 0)
 					continue;
-				const auto &definition = entry.value();
+				const auto &definition = authorization["principals"][principalId];
 				const auto kind = parseKind(GET_JSON_STR_VALUE(definition, "kind"));
 				const auto issuer = GET_JSON_STR_VALUE(definition, "issuer");
 				const auto subject = GET_JSON_STR_VALUE(definition, "subject");
-				if (kind != Principal::Kind::System && entry.key() != Principal::stableId(issuer, subject))
+				if (kind != Principal::Kind::System && principalId != Principal::stableId(issuer, subject))
 					throw std::invalid_argument("OIDC principal key must equal the stable (issuer, subject) identifier");
-				auto principal = std::make_shared<AuthorizationPrincipal>(entry.key(), kind, issuer, subject);
+				auto principal = std::make_shared<AuthorizationPrincipal>(principalId, kind, issuer, subject);
 				principal->updatePolicy(definition);
 				validateRoles(principal->roles());
-				m_principals[entry.key()] = std::move(principal);
-				LOG_INF << fname << "adopted on-disk principal binding <" << entry.key() << ">";
+				m_principals[principalId] = std::move(principal);
+				LOG_INF << fname << "adopted on-disk principal binding <" << principalId << ">";
 			}
 		}
 	}
@@ -609,14 +627,14 @@ void AuthorizationStore::mergeDiskPolicyLocked()
 
 void AuthorizationStore::saveLocked() const
 {
-	nlohmann::json authorization;
+	Json::Value authorization;
 	authorization["provisioning"] = m_provisioningMode;
 	authorization["first_admin_role"] = m_firstAdminRole;
 	authorization["first_admin_subject"] = m_firstAdminSubject;
 	authorization["first_admin_enrolled"] = m_firstAdminEnrolled;
 	authorization["roles"] = rolesJson();
 	authorization["principals"] = principalsJson();
-	nlohmann::json root;
+	Json::Value root;
 	root["Authorization"] = std::move(authorization);
 
 	const auto path = Utility::getConfigFilePath(APPMESH_AUTHORIZATION_CONFIG_FILE, true);

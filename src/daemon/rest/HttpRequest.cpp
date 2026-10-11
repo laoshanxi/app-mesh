@@ -74,18 +74,11 @@ void HttpRequest::notifyReply(int status) const
 		m_replyMetric->notify(status);
 }
 
-nlohmann::json HttpRequest::extractJson() const
+Json::Value HttpRequest::extractJson() const
 {
-	// A malformed body is a client fault: rethrow as std::invalid_argument so
-	// RestBase::handleRest maps it to 400 instead of a parse_error -> 500.
-	try
-	{
-		return nlohmann::json::parse(*m_body);
-	}
-	catch (const nlohmann::json::parse_error &e)
-	{
-		throw std::invalid_argument(std::string("Invalid JSON request body: ") + e.what());
-	}
+	// A malformed body is a client fault: JSON::parse throws std::invalid_argument
+	// so RestBase::handleRest maps it to 400 instead of a 500.
+	return JSON::parse(std::string(m_body->begin(), m_body->end()));
 }
 
 bool HttpRequest::reply(web::http::status_code status) const
@@ -93,7 +86,7 @@ bool HttpRequest::reply(web::http::status_code status) const
 	return reply(m_relative_uri, m_uuid, {}, {}, status, "");
 }
 
-bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data) const
+bool HttpRequest::reply(web::http::status_code status, const Json::Value &body_data) const
 {
 	return reply(status, body_data, {});
 }
@@ -103,10 +96,10 @@ bool HttpRequest::reply(web::http::status_code status, const std::vector<std::ui
 	return reply(m_relative_uri, m_uuid, body_data, {}, status, web::http::mime_types::application_octetstream);
 }
 
-bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const
+bool HttpRequest::reply(web::http::status_code status, const Json::Value &body_data, const std::map<std::string, std::string> &headers) const
 {
-	// JSON::dump falls back to error_handler_t::replace: invalid UTF-8 (e.g. non-UTF-8
-	// argv in pstree) must not turn a 200 reply into a thrown type_error.316 -> 500.
+	// JSON::dump sanitizes invalid UTF-8 to U+FFFD: a reply must never fail on
+	// non-UTF-8 argv or stdout (the pstree scenario).
 	const auto body = JSON::dump(body_data);
 	const auto bodyBytes = std::vector<std::uint8_t>(body.begin(), body.end());
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, web::http::mime_types::application_json);
@@ -203,9 +196,9 @@ std::string HttpRequest::serialize() const
 	return req.serialize();
 }
 
-const nlohmann::json HttpRequest::emptyJsonMessage()
+const Json::Value HttpRequest::emptyJsonMessage()
 {
-	nlohmann::json emptyBody;
+	Json::Value emptyBody;
 	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = std::string("");
 	return emptyBody;
 }
@@ -500,10 +493,11 @@ bool HttpRequestOutputView::onTimerResponse()
 			{
 				// Convert output lines to JSON array format
 				auto lines = Utility::splitString(output, "\n");
-				auto jsonArray = nlohmann::json::array();
+				auto jsonArray = Json::Value(Json::arrayValue);
 				for (std::size_t i = 0; i < lines.size(); ++i)
 				{
-					jsonArray[i] = nlohmann::json{{"index", i + 1}, {"stdout", lines[i]}};
+					jsonArray[(Json::ArrayIndex)i]["index"] = (Json::Int64)i + 1;
+					jsonArray[(Json::ArrayIndex)i]["stdout"] = lines[i];
 				}
 				output = JSON::dump(jsonArray);
 			}

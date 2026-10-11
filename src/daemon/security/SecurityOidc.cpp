@@ -52,19 +52,19 @@ std::set<std::string> SecurityOidc::allPermissions() const
 	return m_authorization.allPermissions();
 }
 
-nlohmann::json SecurityOidc::authConfig() const
+Json::Value SecurityOidc::authConfig() const
 {
 	auto config = m_verifier.publicConfig();
 	if (m_authorization.builtinAuthentication() && m_verifier.config().passwordFlow)
-		config["flows"].push_back("password");
+		config["flows"].append("password");
 	config["first_admin_enrollment"] = m_authorization.firstAdminEnrollment();
 	return config;
 }
-nlohmann::json SecurityOidc::protectedResourceMetadata() const { return m_verifier.protectedResourceMetadata(); }
-nlohmann::json SecurityOidc::principalsJson() const { return m_authorization.principalsJson(); }
-nlohmann::json SecurityOidc::rolesJson() const { return m_authorization.rolesJson(); }
+Json::Value SecurityOidc::protectedResourceMetadata() const { return m_verifier.protectedResourceMetadata(); }
+Json::Value SecurityOidc::principalsJson() const { return m_authorization.principalsJson(); }
+Json::Value SecurityOidc::rolesJson() const { return m_authorization.rolesJson(); }
 
-void SecurityOidc::updatePrincipal(const std::string &principalId, const nlohmann::json &definition)
+void SecurityOidc::updatePrincipal(const std::string &principalId, const Json::Value &definition)
 {
 	m_authorization.updatePrincipal(principalId, definition);
 }
@@ -74,7 +74,7 @@ void SecurityOidc::deletePrincipal(const std::string &principalId)
 	m_authorization.deletePrincipal(principalId);
 }
 
-void SecurityOidc::updateRole(const std::string &role, const nlohmann::json &permissions)
+void SecurityOidc::updateRole(const std::string &role, const Json::Value &permissions)
 {
 	m_authorization.updateRole(role, permissions);
 }

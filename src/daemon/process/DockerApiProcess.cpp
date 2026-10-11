@@ -5,7 +5,7 @@
 #include <limits>
 #include <utility>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
@@ -109,7 +109,7 @@ void DockerApiProcess::terminateImpl()
 
 pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::string workDir,
 								  std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-								  const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
+								  const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
 {
 	const static char fname[] = "DockerApiProcess::startImpl() ";
 	LOG_DBG << fname << "Entered";
@@ -139,7 +139,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	}
 
 	// Validate input metadata format
-	if (!stdinFileContent.is_null() && !stdinFileContent.is_object())
+	if (!stdinFileContent.isNull() && !stdinFileContent.isObject())
 	{
 		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + JSON::dump(stdinFileContent);
 		LOG_WAR << fname << msg;
@@ -148,16 +148,16 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	}
 
 	// Build container creation body
-	auto createBody = stdinFileContent.is_object() ? stdinFileContent : nlohmann::json::object();
+	auto createBody = stdinFileContent.isObject() ? stdinFileContent : Json::Value(Json::objectValue);
 
 	// Set command
 	if (cmd.length())
 	{
 		auto argv = Utility::str2argv(cmd);
-		auto array = nlohmann::json::array();
+		auto array = Json::Value(Json::arrayValue);
 		for (size_t i = 0; i < argv.size(); i++)
 		{
-			array.push_back(std::string(argv[i]));
+			array.append(std::string(argv[i]));
 		}
 		createBody["Cmd"] = std::move(array);
 	}
@@ -177,23 +177,23 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	// Set environment variables
 	if (envMap.size())
 	{
-		auto array = nlohmann::json::array();
+		auto array = Json::Value(Json::arrayValue);
 		for (const auto &[key, value] : envMap)
 		{
-			array.push_back(key + "=" + value);
+			array.append(key + "=" + value);
 		}
 		createBody["Env"] = array;
 	}
 
 	// Configure host settings
-	if (HAS_JSON_FIELD(createBody, "HostConfig") && !createBody.at("HostConfig").is_object())
+	if (HAS_JSON_FIELD(createBody, "HostConfig") && !createBody["HostConfig"].isObject())
 	{
 		setStartError("Docker HostConfig must be a JSON object");
 		return INVALID_PID;
 	}
 	auto hostConfig = HAS_JSON_FIELD(createBody, "HostConfig")
-						  ? createBody.at("HostConfig")
-						  : nlohmann::json::object();
+						  ? createBody["HostConfig"]
+						  : Json::Value(Json::objectValue);
 
 	if (limit)
 	{
@@ -209,7 +209,9 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	// Keep the stopped container until App Mesh has inspected its final state/logs.
 	// The next start or an explicit terminate removes it deterministically.
 	hostConfig["AutoRemove"] = false;
-	hostConfig["RestartPolicy"] = {{"Name", "no"}};
+	Json::Value restartPolicy;
+	restartPolicy["Name"] = "no";
+	hostConfig["RestartPolicy"] = restartPolicy;
 	createBody["HostConfig"] = hostConfig;
 
 	// POST /containers/create
@@ -218,8 +220,8 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 
 	if (resp->status_code == web::http::status_codes::Created)
 	{
-		const auto createResponse = nlohmann::json::parse(resp->text, nullptr, false);
-		const auto containerId = HAS_JSON_FIELD(createResponse, "Id") && createResponse.at("Id").is_string()
+		const auto createResponse = JSON::parse(resp->text, nullptr);
+		const auto containerId = HAS_JSON_FIELD(createResponse, "Id") && createResponse["Id"].isString()
 									 ? GET_JSON_STR_VALUE(createResponse, "Id")
 									 : std::string();
 		if (containerId.empty())
@@ -247,17 +249,17 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 
 			if (resp->status_code == web::http::status_codes::OK)
 			{
-				const auto inspectResponse = nlohmann::json::parse(resp->text, nullptr, false);
-				if (!HAS_JSON_FIELD(inspectResponse, "State") || !inspectResponse.at("State").is_object())
+				const auto inspectResponse = JSON::parse(resp->text, nullptr);
+				if (!HAS_JSON_FIELD(inspectResponse, "State") || !inspectResponse["State"].isObject())
 				{
 					setStartError("Docker inspect response does not contain a valid process state");
 					LOG_WAR << fname << startError() << ": " << resp->text;
 				}
 				else
 				{
-					const auto &state = inspectResponse.at("State");
-					if (!HAS_JSON_FIELD(state, "Pid") || !state.at("Pid").is_number_integer() ||
-						!HAS_JSON_FIELD(state, "Running") || !state.at("Running").is_boolean())
+					const auto &state = inspectResponse["State"];
+					if (!HAS_JSON_FIELD(state, "Pid") || !state["Pid"].isIntegral() ||
+						!HAS_JSON_FIELD(state, "Running") || !state["Running"].isBool())
 					{
 						setStartError("Docker inspect response does not contain a valid process state");
 						LOG_WAR << fname << startError() << ": " << resp->text;
@@ -266,7 +268,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 					{
 						if (!GET_JSON_BOOL_VALUE(state, "Running"))
 						{
-							const int exitCode = HAS_JSON_FIELD(state, "ExitCode") && state.at("ExitCode").is_number_integer()
+							const int exitCode = HAS_JSON_FIELD(state, "ExitCode") && state["ExitCode"].isIntegral()
 													 ? GET_JSON_INT_VALUE(state, "ExitCode")
 													 : -200;
 							LOG_INF << fname << "container <" << m_containerName
@@ -367,11 +369,11 @@ int DockerApiProcess::returnValue() const
 
 		if (resp->status_code == web::http::status_codes::OK)
 		{
-			const auto inspectResponse = nlohmann::json::parse(resp->text, nullptr, false);
-			if (HAS_JSON_FIELD(inspectResponse, "State") && inspectResponse.at("State").is_object())
+			const auto inspectResponse = JSON::parse(resp->text, nullptr);
+			if (HAS_JSON_FIELD(inspectResponse, "State") && inspectResponse["State"].isObject())
 			{
-				const auto &state = inspectResponse.at("State");
-				if (HAS_JSON_FIELD(state, "ExitCode") && state.at("ExitCode").is_number_integer())
+				const auto &state = inspectResponse["State"];
+				if (HAS_JSON_FIELD(state, "ExitCode") && state["ExitCode"].isIntegral())
 					return GET_JSON_INT_VALUE(state, "ExitCode");
 			}
 			LOG_WAR << fname << "Failed to parse exit code from inspect response of container <" << containerId << ">";
@@ -387,7 +389,7 @@ int DockerApiProcess::returnValue() const
 }
 
 const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path,
-																	std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body) const
+																	std::map<std::string, std::string> query, std::map<std::string, std::string> header, Json::Value *body) const
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
@@ -402,13 +404,13 @@ const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::h
 	std::string bodyContent;
 	if (body)
 	{
-		bodyContent = body->dump();
+		bodyContent = JSON::dump(*body);
 		// Mask container Env in the logged copy — user env vars can hold secrets
 		auto logBody = *body;
-		if (logBody.contains("Env"))
+		if (logBody.isMember("Env"))
 			logBody["Env"] = "***";
 		LOG_DBG << fname << path << "\n"
-				<< logBody.dump(2);
+				<< JSON::dump(logBody, 2);
 	}
 
 	auto response = std::make_shared<HttpResponse>();

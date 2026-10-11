@@ -1,7 +1,7 @@
 // src/daemon/process/TimerStdoutStrategy.cpp
 #include "TimerStdoutStrategy.h"
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "../../common/StreamLogger.h"
 #include "../application/Application.h"
@@ -80,9 +80,9 @@ bool TimerStdoutStrategy::onTimerDispatch(const std::shared_ptr<State> &state)
 			return false;
 		if (!output.empty())
 		{
-			nlohmann::json data;
+			Json::Value data;
 			data["output"] = output;
-			data["position"] = startPos;
+			data["position"] = (Json::Int64)startPos;
 			data["finished"] = std::get<1>(result);
 			EventDispatcher::instance()->dispatch(state->appName, AppEventType::STDOUT_OUTPUT, data);
 			state->dispatchedBytes.store(pos, std::memory_order_release);

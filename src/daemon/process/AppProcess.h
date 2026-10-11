@@ -46,7 +46,7 @@ public:
 	// Lifecycle
 	ProcessStartResult start(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							 const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON,
+							 const std::string &stdoutFile = "", const Json::Value &stdinFileContent = EMPTY_STR_JSON,
 							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
 	void terminate();
 	void scheduleTermination(std::size_t timeoutSec, const std::string &from);
@@ -74,7 +74,7 @@ protected:
 	// Backend contract
 	virtual pid_t startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							const std::string &stdoutFile, const nlohmann::json &stdinFileContent,
+							const std::string &stdoutFile, const Json::Value &stdinFileContent,
 							int maxStdoutSize);
 	virtual void terminateImpl();
 

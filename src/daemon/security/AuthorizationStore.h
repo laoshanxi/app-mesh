@@ -6,7 +6,7 @@
 #include <set>
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "Principal.h"
 
@@ -26,8 +26,8 @@ public:
 	bool active() const;
 
 	void updateClaims(const Principal &principal);
-	void updatePolicy(const nlohmann::json &json);
-	nlohmann::json asJson() const;
+	void updatePolicy(const Json::Value &json);
+	Json::Value asJson() const;
 	/// Rebuild the verified identity view from this record, keeping the claims
 	/// captured when the token was last verified.
 	Principal asPrincipal() const;
@@ -58,20 +58,20 @@ public:
 	std::set<std::string> permissions(const std::string &principalId) const;
 	std::set<std::string> allPermissions() const;
 	bool builtinAuthentication() const;
-	nlohmann::json firstAdminEnrollment() const;
+	Json::Value firstAdminEnrollment() const;
 
-	nlohmann::json principalsJson() const;
-	nlohmann::json rolesJson() const;
-	void updatePrincipal(const std::string &principalId, const nlohmann::json &definition);
+	Json::Value principalsJson() const;
+	Json::Value rolesJson() const;
+	void updatePrincipal(const std::string &principalId, const Json::Value &definition);
 	void deletePrincipal(const std::string &principalId);
-	void updateRole(const std::string &role, const nlohmann::json &permissions);
+	void updateRole(const std::string &role, const Json::Value &permissions);
 	void deleteRole(const std::string &role);
 	void save() const;
 
 	static const std::string &systemPrincipalId();
 
 private:
-	void load(const nlohmann::json &root);
+	void load(const Json::Value &root);
 	void initializeFirstAdminEnrollment();
 	bool hasFirstAdminLocked() const;
 	void validateRoles(const std::set<std::string> &roles) const;

@@ -41,11 +41,6 @@ libwebsockets
   URL: https://libwebsockets.org/
   Copyright: Copyright (c) Andy Green
 
-Crypto++ (cryptopp)
-  License: Boost Software License 1.0
-  URL: https://www.cryptopp.com/
-  Copyright: Copyright (c) Wei Dai
-
 yaml-cpp
   License: MIT
   URL: https://github.com/jbeder/yaml-cpp
@@ -65,11 +60,6 @@ msgpack-c (C++ implementation)
   License: Boost Software License 1.0
   URL: https://github.com/msgpack/msgpack-c
   Copyright: Copyright (c) Sadayuki Furuhashi
-
-nlohmann/json
-  License: MIT
-  URL: https://github.com/nlohmann/json
-  Copyright: Copyright (c) Niels Lohmann
 
 jwt-cpp
   License: MIT

@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-19
 - Updated: 2026-09-26
+- Implementation note: the JSON library behind these decisions changed from nlohmann/json to jsoncpp. The decisions remain in force.
 
 ## Context
 

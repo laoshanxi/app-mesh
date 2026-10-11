@@ -44,7 +44,7 @@
 #include <boost/program_options/parsers.hpp>
 #include <hashidsxx/hashids.cpp>
 #include <hashidsxx/hashids.h>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -89,6 +89,23 @@ std::string Utility::stdStringTrim(const std::string &str)
 								 { return std::isspace(c); })
 					.base();
 	return (back <= front ? std::string() : std::string(front, back));
+}
+
+// jsoncpp coerces wrong-typed scalars (int -> "5"); these keep the reads strict
+std::string Utility::jsonStringField(const Json::Value &value, const std::string &key)
+{
+	const Json::Value &field = value[key];
+	if (!field.isString())
+		throw std::invalid_argument("JSON field '" + key + "' expects a string");
+	return field.asString();
+}
+
+bool Utility::jsonBoolField(const Json::Value &value, const std::string &key)
+{
+	const Json::Value &field = value[key];
+	if (!field.isBool())
+		throw std::invalid_argument("JSON field '" + key + "' expects a boolean");
+	return field.asBool();
 }
 
 std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool leftTrim, bool rightTrim)
@@ -1075,7 +1092,7 @@ bool Utility::createPidFile()
 #endif
 }
 
-void Utility::addExtraAppTimeReferStr(nlohmann::json &appJson)
+void Utility::addExtraAppTimeReferStr(Json::Value &appJson)
 {
 	// append extra string format for time values
 	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_register_time);
@@ -1086,8 +1103,8 @@ void Utility::addExtraAppTimeReferStr(nlohmann::json &appJson)
 	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_next_start_time);
 	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_daily_limitation))
 	{
-		Utility::appendStrDayTimeAttr(appJson.at(JSON_KEY_APP_daily_limitation), JSON_KEY_DAILY_LIMITATION_daily_start);
-		Utility::appendStrDayTimeAttr(appJson.at(JSON_KEY_APP_daily_limitation), JSON_KEY_DAILY_LIMITATION_daily_end);
+		Utility::appendStrDayTimeAttr(appJson[JSON_KEY_APP_daily_limitation], JSON_KEY_DAILY_LIMITATION_daily_start);
+		Utility::appendStrDayTimeAttr(appJson[JSON_KEY_APP_daily_limitation], JSON_KEY_DAILY_LIMITATION_daily_end);
 	}
 }
 
@@ -1315,9 +1332,9 @@ std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 #endif
 }
 
-nlohmann::json Utility::text2json(const std::string &str)
+Json::Value Utility::text2json(const std::string &str)
 {
-	nlohmann::json result;
+	Json::Value result;
 	result[REST_TEXT_MESSAGE_JSON_KEY] = std::string(str);
 	return result;
 }
@@ -1326,72 +1343,72 @@ nlohmann::json Utility::text2json(const std::string &str)
 // yamlToJson applies this to unquoted scalars only, and jsonToYaml quotes
 // strings whose text would land here as a non-string so a reload round-trip
 // keeps their type.
-static nlohmann::json plainScalarToJson(const std::string &scalar)
+static Json::Value plainScalarToJson(const std::string &scalar)
 {
 	if (scalar == "true")
-		return true;
+		return Json::Value(true);
 	if (scalar == "false")
-		return false;
+		return Json::Value(false);
 	if (scalar == "null")
-		return nullptr;
+		return Json::Value();
 	if (Utility::isNumber(scalar))
 	{
 		try
 		{
 			if (!scalar.empty() && scalar[0] == '-')
-				return std::stoll(scalar);
-			return std::stoull(scalar);
+				return Json::Value(static_cast<Json::Int64>(std::stoll(scalar)));
+			return Json::Value(static_cast<Json::UInt64>(std::stoull(scalar)));
 		}
 		catch (const std::out_of_range &)
 		{
 			// Preserve exact integer text instead of demoting to double.
-			return Utility::stdStringTrim(scalar);
+			return Json::Value(Utility::stdStringTrim(scalar));
 		}
 	}
 	if (Utility::isDouble(scalar))
 	{
 		try
 		{
-			return std::stod(scalar);
+			return Json::Value(std::stod(scalar));
 		}
 		catch (const std::exception &)
 		{
 			// Out-of-range magnitude (long digit runs) or a form isDouble accepts
 			// but stod rejects (a lone ".") throws; keep the exact text as a
 			// string instead of aborting daemon startup.
-			return Utility::stdStringTrim(scalar);
+			return Json::Value(Utility::stdStringTrim(scalar));
 		}
 	}
-	return Utility::stdStringTrim(scalar);
+	return Json::Value(Utility::stdStringTrim(scalar));
 }
 
 // Quoted scalars carry the non-specific tag "!": the author forced a string,
 // so bool/null/number inference applies to plain scalars only.
-static nlohmann::json scalarNodeToJson(const YAML::Node &node)
+static Json::Value scalarNodeToJson(const YAML::Node &node)
 {
 	if (node.Tag() == "!")
-		return Utility::stdStringTrim(node.Scalar());
+		return Json::Value(Utility::stdStringTrim(node.Scalar()));
 	return plainScalarToJson(node.Scalar());
 }
 
-std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out)
+std::string Utility::jsonToYaml(const Json::Value &j, std::shared_ptr<YAML::Emitter> out)
 {
 	if (out == nullptr)
 	{
 		out = std::make_shared<YAML::Emitter>();
 	}
 
-	if (j.is_object())
+	if (j.isObject())
 	{
 		*out << YAML::BeginMap;
-		for (auto it = j.begin(); it != j.end(); ++it)
+		for (const auto &key : j.getMemberNames())
 		{
-			*out << YAML::Key << it.key();
-			jsonToYaml(it.value(), out);
+			*out << YAML::Key << key;
+			jsonToYaml(j[key], out);
 		}
 		*out << YAML::EndMap;
 	}
-	else if (j.is_array())
+	else if (j.isArray())
 	{
 		*out << YAML::BeginSeq;
 		for (const auto &element : j)
@@ -1400,35 +1417,35 @@ std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::E
 		}
 		*out << YAML::EndSeq;
 	}
-	else if (j.is_boolean())
+	else if (j.isBool())
 	{
-		*out << j.get<bool>();
+		*out << j.asBool();
 	}
-	else if (j.is_number_integer())
+	else if (j.type() == Json::realValue)
 	{
-		*out << j.get<int64_t>();
+		*out << j.asDouble();
 	}
-	else if (j.is_number_unsigned())
+	else if (j.type() == Json::uintValue)
 	{
-		*out << j.get<uint64_t>();
+		*out << static_cast<Json::UInt64>(j.asUInt64());
 	}
-	else if (j.is_number_float())
+	else if (j.isIntegral())
 	{
-		*out << j.get<double>();
+		*out << static_cast<Json::Int64>(j.asInt64());
 	}
-	else if (j.is_null())
+	else if (j.isNull())
 	{
 		*out << YAML::Null;
 	}
 	else
 	{
 		// String
-		std::string str = j.get<std::string>();
+		std::string str = j.asString();
 		if (containsSpecialCharacters(str))
 		{
 			*out << YAML::Literal << str;
 		}
-		else if (!plainScalarToJson(str).is_string())
+		else if (!plainScalarToJson(str).isString())
 		{
 			// Quote text that would otherwise re-parse as bool/null/number on
 			// the next yamlToJson load, e.g. app env "true" (Application::save).
@@ -1443,23 +1460,23 @@ std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::E
 	return out->c_str(); // Return the YAML string
 }
 
-nlohmann::json Utility::yamlToJson(const YAML::Node &node)
+Json::Value Utility::yamlToJson(const YAML::Node &node)
 {
-	nlohmann::json result;
+	Json::Value result;
 
 	if (node.IsNull())
 	{
-		result = nullptr;
+		result = Json::Value();
 	}
 	else if (node.IsMap())
 	{
-		result = nlohmann::json::object();
+		result = Json::Value(Json::objectValue);
 		for (const auto &pair : node)
 		{
 			const std::string key = pair.first.as<std::string>();
 			if (pair.second.IsNull())
 			{
-				result[key] = nullptr;
+				result[key] = Json::Value();
 			}
 			else if (pair.second.IsScalar())
 			{
@@ -1473,10 +1490,10 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 	}
 	else if (node.IsSequence())
 	{
-		result = nlohmann::json::array();
+		result = Json::Value(Json::arrayValue);
 		for (const auto &element : node)
 		{
-			result.push_back(yamlToJson(element));
+			result.append(yamlToJson(element));
 		}
 	}
 	else if (node.IsScalar())
@@ -1951,7 +1968,7 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 }
 
 
-void Utility::appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key)
+void Utility::appendStrTimeAttr(Json::Value &jsonObj, const std::string &key)
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
 	{
@@ -1960,7 +1977,7 @@ void Utility::appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key)
 }
 
 
-void Utility::appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key)
+void Utility::appendStrDayTimeAttr(Json::Value &jsonObj, const std::string &key)
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
 	{

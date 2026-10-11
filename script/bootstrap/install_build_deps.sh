@@ -104,10 +104,6 @@ if [ true ]; then
 fi
 cd $ROOTDIR
 
-# json
-$WGET_A https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
-unzip -o include.zip
-mv include/nlohmann /usr/local/include/
 
 # spdlog
 # spdlog - build from source
@@ -138,16 +134,6 @@ else
     apt install -y libace-dev
 fi
 
-# cryptopp: AES encrypt https://www.cryptopp.com/
-mkdir -p cryptopp
-cd cryptopp/
-$WGET_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_9_0/cryptopp890.zip
-unzip -o cryptopp890.zip
-export CXXFLAGS="-DNDEBUG -Os -std=c++11"
-make -j"$(nproc)"
-make install
-
-cd $ROOTDIR
 # go binaries
 export GOBIN=/usr/local/bin
 export CGO_ENABLED=0

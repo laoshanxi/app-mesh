@@ -6,7 +6,7 @@
 #include <mutex>
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 //////////////////////////////////////////////////////////////////////////
 /// Label
@@ -17,8 +17,8 @@ public:
 	Label();
 	virtual ~Label();
 
-	nlohmann::json AsJson() const;
-	static const std::shared_ptr<Label> FromJson(const nlohmann::json &obj) noexcept(false);
+	Json::Value AsJson() const;
+	static const std::shared_ptr<Label> FromJson(const Json::Value &obj) noexcept(false);
 	bool operator==(const std::shared_ptr<Label> &label);
 
 	void addLabel(const std::string &name, const std::string &value);

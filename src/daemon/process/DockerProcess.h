@@ -28,7 +28,7 @@ public:
 protected:
 	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir,
 					std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-					const std::string &stdoutFile, const nlohmann::json &stdinFileContent,
+					const std::string &stdoutFile, const Json::Value &stdinFileContent,
 					int maxStdoutSize) override;
 	void terminateImpl() override;
 

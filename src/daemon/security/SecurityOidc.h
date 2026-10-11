@@ -18,13 +18,13 @@ public:
 	std::set<std::string> permissions(const std::string &principalId) const override;
 	std::set<std::string> allPermissions() const override;
 
-	nlohmann::json authConfig() const override;
-	nlohmann::json protectedResourceMetadata() const override;
-	nlohmann::json principalsJson() const override;
-	nlohmann::json rolesJson() const override;
-	void updatePrincipal(const std::string &principalId, const nlohmann::json &definition) override;
+	Json::Value authConfig() const override;
+	Json::Value protectedResourceMetadata() const override;
+	Json::Value principalsJson() const override;
+	Json::Value rolesJson() const override;
+	void updatePrincipal(const std::string &principalId, const Json::Value &definition) override;
 	void deletePrincipal(const std::string &principalId) override;
-	void updateRole(const std::string &role, const nlohmann::json &permissions) override;
+	void updateRole(const std::string &role, const Json::Value &permissions) override;
 	void deleteRole(const std::string &role) override;
 
 private:

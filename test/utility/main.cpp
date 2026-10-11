@@ -17,7 +17,6 @@
 #include <cstdio>
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
 #include <set>
 #include <string>
 #include <thread>
@@ -117,23 +116,22 @@ TEST_CASE("json", "[Utility]")
 	LOG_INF << "Utility::getExecutablePath():" << Utility::getExecutablePath();
 	LOG_INF << "Utility::getBinDir():" << Utility::getBinDir();
 
-	nlohmann::json a;
-	LOG_INF << "nlohmann::json: " << a;
+	Json::Value a;
+	LOG_INF << "jsoncpp: " << JSON::dump(a);
 
-	REQUIRE(a.is_null());
-	REQUIRE(a.dump() == "null");
+	REQUIRE(a.isNull());
+	REQUIRE(JSON::dump(a) == "null");
 
 	a = std::string("abc");
-	REQUIRE_FALSE(a.dump() == "abc");
-	REQUIRE(a.get<std::string>() == "abc");
+	REQUIRE_FALSE(JSON::dump(a) == "abc");
+	REQUIRE(a.asString() == "abc");
 	REQUIRE(a == std::string("abc"));
 
-	a = nlohmann::json::parse("{\"a\":2, \"b\":2}");
-	LOG_INF << "nlohmann::json: " << a;
-	LOG_INF << "nlohmann::json: " << a.dump();
+	a = JSON::parse("{\"a\":2, \"b\":2}");
+	LOG_INF << "jsoncpp: " << JSON::dump(a);
 
-	nlohmann::json nullBody;
-	REQUIRE(nullBody.is_null());
+	Json::Value nullBody;
+	REQUIRE(nullBody.isNull());
 }
 
 TEST_CASE("yaml-json conversion", "[Utility]")
@@ -149,10 +147,10 @@ TEST_CASE("yaml-json conversion", "[Utility]")
 		"  principals:\n"
 		"    system:appmesh:\n"
 		"      roles: []\n"));
-	REQUIRE(root.is_object());
-	REQUIRE(root.at("Authorization").is_object());
-	REQUIRE(root.at("Authorization").at("service_principal_roles").is_object());
-	REQUIRE(root.at("Authorization").at("principals").at("system:appmesh").at("roles").is_array());
+	REQUIRE(root.isObject());
+	REQUIRE(root["Authorization"].isObject());
+	REQUIRE(root["Authorization"]["service_principal_roles"].isObject());
+	REQUIRE(root["Authorization"]["principals"]["system:appmesh"]["roles"].isArray());
 
 	// AuthorizationStore::saveLocked() persists this shape via jsonToYaml and the next
 	// daemon start reloads it via yamlToJson; the round-trip must be lossless.
@@ -161,26 +159,26 @@ TEST_CASE("yaml-json conversion", "[Utility]")
 
 	// Null and scalar conversion behavior stays unchanged.
 	const auto scalars = Utility::yamlToJson(YAML::Load("a: null\nb: true\nc: 3\nd: 1.5\ne: text\n"));
-	REQUIRE(scalars.at("a").is_null());
-	REQUIRE(scalars.at("b") == true);
-	REQUIRE(scalars.at("c") == 3);
-	REQUIRE(scalars.at("d") == 1.5);
-	REQUIRE(scalars.at("e") == "text");
+	REQUIRE(scalars["a"].isNull());
+	REQUIRE(scalars["b"].asBool());
+	REQUIRE(scalars["c"].asInt() == 3);
+	REQUIRE(scalars["d"].asDouble() == 1.5);
+	REQUIRE(scalars["e"].asString() == "text");
 
 	// Quoted scalars stay strings even when the text looks like bool/number/null:
 	// app env values (e.g. auth-dex DEX_CLIENT_CREDENTIAL_GRANT_ENABLED_BY_DEFAULT)
 	// are read with get<std::string>() and a coerced boolean aborts daemon startup.
 	const auto quoted = Utility::yamlToJson(YAML::Load(
 		"a: \"true\"\nb: \"3\"\nc: \"null\"\nd: \"+08\"\n"));
-	REQUIRE(quoted.at("a") == "true");
-	REQUIRE(quoted.at("b") == "3");
-	REQUIRE(quoted.at("c") == "null");
-	REQUIRE(quoted.at("d") == "+08");
+	REQUIRE(quoted["a"].asString() == "true");
+	REQUIRE(quoted["b"].asString() == "3");
+	REQUIRE(quoted["c"].asString() == "null");
+	REQUIRE(quoted["d"].asString() == "+08");
 
 	// Application::save() persists app definitions via jsonToYaml and the next
 	// daemon start reloads them via yamlToJson; bool/number-looking strings must
 	// survive that round-trip or the app file becomes unloadable after an update.
-	nlohmann::json appEnv;
+	Json::Value appEnv;
 	appEnv["env"]["DEX_CLIENT_CREDENTIAL_GRANT_ENABLED_BY_DEFAULT"] = "true";
 	appEnv["env"]["PORT"] = "6062";
 	REQUIRE(Utility::yamlToJson(YAML::Load(Utility::jsonToYaml(appEnv))) == appEnv);
@@ -207,59 +205,45 @@ TEST_CASE("boost_regex", "[boost_regex]")
 	}
 }
 
-TEST_CASE("JSON", "[nlohmann json]")
+TEST_CASE("JSON", "[json]")
 {
-	nlohmann::json j("");
-	std::string s = j;
-	LOG_INF << "nlohmann::json empty json: " << j;
-	LOG_INF << "nlohmann::json empty str: " << s;
-
-	// nlohmann::json c = nlohmann::json::parse("");
-	// LOG_INF << c;
-
-	nlohmann::json b = nlohmann::json::parse("{\"abc\": {\"def\": 123}}");
-	s = b.dump();
+	Json::Value b = JSON::parse("{\"abc\": {\"def\": 123}}");
+	auto s = JSON::dump(b);
 	LOG_INF << s;
-	LOG_INF << b.type_name();
-	REQUIRE(b["abc"]["def"].get<int>() == 123);
-	// s = b["abc"].dump();
-	// LOG_INF << b.at("abc") << " and string is: " << s;
+	REQUIRE(b["abc"]["def"].asInt() == 123);
 
-	nlohmann::json test;
+	Json::Value test;
 	test["chinese"] = "新加卷";
 	test["english"] = "test";
 	test["mixed"] = "test新加卷test";
 
 	LOG_INF << "====== Unicode Debug ======";
-	LOG_INF << "Raw output: " << test;
-	LOG_INF << "Dumped: " << test.dump();
+	LOG_INF << "Dumped: " << JSON::dump(test);
 
-	// Check string lengths
 	std::string chinese = "新加卷";
 	LOG_INF << "Chinese string byte length: " << chinese.length();
 	LOG_INF << "Chinese string content: " << chinese;
 }
 
-TEST_CASE("JSON::dump replaces invalid UTF-8", "[nlohmann json]")
+TEST_CASE("JSON::dump replaces invalid UTF-8", "[json]")
 {
 	init();
 
 	// A payload with invalid UTF-8 (e.g. non-UTF-8 argv in pstree) must not
-	// fail the whole reply: strict dump() throws type_error.316 -> 500/417,
-	// JSON::dump replaces the bad bytes with U+FFFD instead.
+	// fail the whole reply: JSON::dump replaces the bad bytes with U+FFFD.
 	const std::string invalid("ab\xE6\x96\xFF");
-	nlohmann::json j = nlohmann::json{{"name", invalid}};
-	REQUIRE_THROWS_AS(j.dump(), nlohmann::json::type_error);
+	Json::Value j;
+	j["name"] = invalid;
 
 	std::string body;
 	REQUIRE_NOTHROW(body = JSON::dump(j));
 	REQUIRE(body.find("\xEF\xBF\xBD") != std::string::npos); // U+FFFD
 	REQUIRE(body.find("ab") != std::string::npos);
-	REQUIRE(JSON::dump(j, -1, true) == body); // explicit sanitize gives the same result
 
 	// Valid UTF-8 passes through unchanged
-	nlohmann::json ok = nlohmann::json{{"name", "新加卷"}};
-	REQUIRE(JSON::dump(ok) == ok.dump());
+	Json::Value ok;
+	ok["name"] = "新加卷";
+	REQUIRE(JSON::dump(ok).find("新加卷") != std::string::npos);
 }
 
 TEST_CASE("yamlToJson keeps overflow double text as string", "[Utility]")
@@ -270,13 +254,13 @@ TEST_CASE("yamlToJson keeps overflow double text as string", "[Utility]")
 	// std::out_of_range; uncaught it aborts daemon startup (config load).
 	const std::string overflow(std::string(400, '9') + ".5");
 	const auto j = Utility::yamlToJson(YAML::Load("overflow: " + overflow));
-	REQUIRE(j["overflow"].is_string());
-	REQUIRE(j["overflow"].get<std::string>() == overflow);
+	REQUIRE(j["overflow"].isString());
+	REQUIRE(j["overflow"].asString() == overflow);
 
 	// In-range doubles still become JSON numbers
 	const auto fine = Utility::yamlToJson(YAML::Load("value: 150.5"));
-	REQUIRE(fine["value"].is_number());
-	REQUIRE(fine["value"].get<double>() == 150.5);
+	REQUIRE(fine["value"].isNumeric());
+	REQUIRE(fine["value"].asDouble() == 150.5);
 }
 
 TEST_CASE("EventTypes - eventTypeToString", "[EventTypes]")
@@ -418,4 +402,241 @@ TEST_CASE("EventTypes - parseEventMask", "[EventTypes]")
 	// Bitmask correctness
 	REQUIRE((static_cast<uint32_t>(AppEventType::ALL_EVENTS) & static_cast<uint32_t>(AppEventType::PROCESS_START)) != 0);
 	REQUIRE((static_cast<uint32_t>(AppEventType::ALL_EVENTS) & static_cast<uint32_t>(AppEventType::APP_REMOVED)) != 0);
+}
+
+TEST_CASE("JSON dump golden baseline", "[json golden]")
+{
+	init();
+
+	// Byte-exact wire contract for the reply body: key order (alphabetical),
+	// separators, string escaping, and number formats. Any change to these
+	// literals is a wire-format change and must be recorded in the JSON ADR.
+	Json::Value j;
+	j["chinese"] = "新加卷";
+	j["int64"] = (Json::Int64)9223372036854775807LL;
+	j["uint"] = (Json::UInt64)18446744073709551615ULL;
+	j["dbl1"] = 0.1;
+	j["dbl2"] = 99.0;
+	j["dbl3"] = 12.34;
+	j["esc"] = std::string("a\"b\\c\nd\te\001f");
+
+	REQUIRE(JSON::dump(j) == R"({"chinese":"新加卷","dbl1":0.10000000000000001,"dbl2":99.0,"dbl3":12.34,"esc":"a\"b\\c\nd\te\u0001f","int64":9223372036854775807,"uint":18446744073709551615})");
+
+	// Pretty format is jsoncpp native (only used for debug logging)
+	REQUIRE(JSON::dump(j, 2) ==
+			"{\n"
+			"  \"chinese\" : \"新加卷\",\n"
+			"  \"dbl1\" : 0.10000000000000001,\n"
+			"  \"dbl2\" : 99.0,\n"
+			"  \"dbl3\" : 12.34,\n"
+			"  \"esc\" : \"a\\\"b\\\\c\\nd\\te\\u0001f\",\n"
+			"  \"int64\" : 9223372036854775807,\n"
+			"  \"uint\" : 18446744073709551615\n"
+			"}");
+
+	// EventDispatcher::dispatch splices ,"subscription_id":"..." before the
+	// final '}' by raw string concat: compact output must stay single-line,
+	// end with '}' and carry no trailing newline.
+	const auto compact = JSON::dump(j);
+	REQUIRE((!compact.empty() && compact.back() == '}'));
+	REQUIRE(compact.find('\n') == std::string::npos);
+
+	// Lossless round-trip: parse(dump(j)) renders identically again
+	REQUIRE(JSON::dump(JSON::parse(compact)) == compact);
+}
+
+TEST_CASE("JSON::dump invalid UTF-8 golden baseline", "[json golden]")
+{
+	init();
+
+	// A non-UTF-8 argv in pstree must not fail the whole reply. JSON::dump
+	// replaces each invalid run with U+FFFD and always produces valid UTF-8.
+	const std::string invalidInputs[] = {
+		"ab\xE6\x96\xFF",	  // truncated 3-byte sequence + bad byte
+		"\xC0\xAF",			  // overlong '/'
+		"\xED\xA0\x80",		  // surrogate D800
+		"\xF5\x80\x80\x80",	  // above U+10FFFF
+		"\x80",				  // lone continuation
+		"\xFF",				  // bad lead byte
+	};
+	for (const auto &input : invalidInputs)
+	{
+		Json::Value payload;
+		payload["v"] = input;
+		std::string body;
+		REQUIRE_NOTHROW(body = JSON::dump(payload));
+		REQUIRE(body.find("\xEF\xBF\xBD") != std::string::npos); // U+FFFD present
+		REQUIRE(Utility::isValidUTF8(body));						  // output is valid UTF-8
+	}
+
+	// Byte-exact run folding: one U+FFFD per invalid run (lead + continuations
+	// consumed together; a bad lead and lone continuations are separate runs)
+	Json::Value run;
+	run["v"] = std::string("\xED\xA0\x80");
+	REQUIRE(JSON::dump(run) == "{\"v\":\"\xEF\xBF\xBD\"}");
+	run["v"] = std::string("\xF5\x80\x80\x80");
+	REQUIRE(JSON::dump(run) == "{\"v\":\"\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD\"}");
+	run["v"] = std::string("ok\xE6\x96");
+	REQUIRE(JSON::dump(run) == "{\"v\":\"ok\xEF\xBF\xBD\"}");
+
+	// Valid multi-byte content around invalid bytes is preserved
+	Json::Value mixed;
+	mixed["v"] = std::string("ok\xE6\x96\x87 big\xFFtail");
+	const auto body = JSON::dump(mixed);
+	REQUIRE(body.find("ok\xE6\x96\x87 big") != std::string::npos);
+
+	// Valid UTF-8 passes through byte-identical
+	Json::Value ok;
+	ok["v"] = "ok\xE6\x96\x87 big";
+	REQUIRE(JSON::dump(ok) == "{\"v\":\"ok\xE6\x96\x87 big\"}");
+}
+
+TEST_CASE("JSON parse golden baseline", "[json golden]")
+{
+	init();
+
+	// The 400 contract: a malformed or non-UTF-8 request body must fail the
+	// parse (HttpRequest::extractJson maps the throw to HTTP 400).
+	const std::string rejected[] = {
+		"",
+		"{",
+		"{\"a\":1,}",						// trailing comma
+		"{\"a\":1} xx",						// trailing garbage
+		"// c\n{\"a\":1}",					// comment
+		"{\"a\":NaN}",						// not a JSON number
+		"{\"a\":-Infinity}",
+		std::string("{\"a\":\"\xE6\x96\xFF\"}"), // invalid UTF-8 raw
+	};
+	for (const auto &text : rejected)
+		REQUIRE_THROWS_AS(JSON::parse(text), std::invalid_argument);
+
+	// Non-throwing variant reports the error and returns null
+	std::string error;
+	REQUIRE(JSON::parse("{", &error).isNull());
+	REQUIRE(!error.empty());
+	REQUIRE(JSON::parse("{}", &error).isNull() == false);
+	REQUIRE(error.empty());
+
+	// Accepted shapes
+	REQUIRE(JSON::parse("123").isNumeric());
+	REQUIRE(JSON::parse("\"hi\"").isString());
+	REQUIRE(JSON::parse("\"\\u0000\"").isString());
+	REQUIRE(JSON::parse("{\"a\":1,\"a\":2}")["a"].asInt() == 2); // dup key: last wins
+
+	// Deep nesting beyond the reader stack limit throws out of CharReader; both
+	// overloads must honor their contract (throw invalid_argument / error path)
+	std::string deep(1500, '[');
+	deep.append(1500, ']');
+	REQUIRE_THROWS_AS(JSON::parse(deep), std::invalid_argument);
+	REQUIRE(JSON::parse(deep, &error).isNull());
+	REQUIRE(!error.empty());
+}
+
+TEST_CASE("JSON merge-patch golden baseline", "[json golden]")
+{
+	init();
+
+	// hotUpdate contract: nested objects merge, siblings survive, null deletes,
+	// scalars replace the whole section
+	Json::Value target;
+	target["Labels"] = Json::Value(Json::objectValue);
+	target["Labels"]["env"] = "dev";
+	target["Labels"]["team"] = "x";
+	target["name"] = "a";
+
+	JSON::mergePatch(target, JSON::parse(R"({"Labels":{"env":"prod"}})"));
+	REQUIRE(target["Labels"]["env"].asString() == "prod");
+	REQUIRE(target["Labels"]["team"].asString() == "x");
+	REQUIRE(target["name"].asString() == "a");
+
+	JSON::mergePatch(target, JSON::parse(R"({"name":null})"));
+	REQUIRE(!target.isMember("name"));
+
+	JSON::mergePatch(target, JSON::parse(R"({"Labels":"reset"})"));
+	REQUIRE(target["Labels"].asString() == "reset");
+
+	// A non-object target is replaced by the patched object
+	Json::Value scalar = Json::Value("str");
+	JSON::mergePatch(scalar, JSON::parse(R"({"a":1})"));
+	REQUIRE(scalar["a"].asInt() == 1);
+}
+
+TEST_CASE("yaml/json round-trip golden baseline", "[json golden]")
+{
+	init();
+
+	// The config/app persistence path: quoted scalars keep their string type,
+	// plain scalars infer bool/null/number, and jsonToYaml re-quotes strings
+	// that would otherwise change type on reload (app env "true").
+	const auto j = Utility::yamlToJson(YAML::Load(
+		"quoted: \"123\"\n"
+		"plain: 123\n"
+		"qtrue: \"true\"\n"
+		"plain_true: true\n"
+		"qnull: \"null\"\n"));
+	REQUIRE(j["quoted"].isString());
+	REQUIRE(j["quoted"].asString() == "123");
+	REQUIRE(j["plain"].isIntegral());
+	REQUIRE(j["qtrue"].isString());
+	REQUIRE(j["plain_true"].isBool());
+	REQUIRE(j["qnull"].isString());
+
+	const auto yamlBack = Utility::jsonToYaml(j);
+	const auto reloaded = Utility::yamlToJson(YAML::Load(yamlBack));
+	REQUIRE(reloaded["quoted"].isString());
+	REQUIRE(reloaded["quoted"].asString() == "123");
+	REQUIRE(reloaded["qtrue"].isString());
+	REQUIRE(reloaded["qtrue"].asString() == "true");
+	REQUIRE(reloaded["plain"].isIntegral());
+	REQUIRE(reloaded["plain_true"].isBool());
+
+	// int64/uint64 boundaries survive the round trip
+	Json::Value limits;
+	limits["i64max"] = (Json::Int64)9223372036854775807LL;
+	limits["u64max"] = (Json::UInt64)18446744073709551615ULL;
+	const auto reloadedLimits = Utility::yamlToJson(YAML::Load(Utility::jsonToYaml(limits)));
+	REQUIRE(reloadedLimits["i64max"].asInt64() == 9223372036854775807LL);
+	REQUIRE(reloadedLimits["u64max"].asUInt64() == 18446744073709551615ULL);
+}
+
+TEST_CASE("JSON helper macro golden baseline", "[json golden]")
+{
+	init();
+
+	// Reply/default contract of the macro layer: missing or null fields fall
+	// back to type defaults, wrong-typed fields throw (surfaced as 4xx/5xx by
+	// the request layer, never silently coerced beyond GET_JSON_STR_INT_TEXT).
+	Json::Value obj;
+	obj["str"] = "hi ";
+	obj["int"] = 7;
+	obj["int64"] = (Json::Int64)5000000000LL;
+	obj["b"] = true;
+	obj["nullv"] = Json::Value();
+
+	REQUIRE(!HAS_JSON_FIELD(obj, "missing"));
+	REQUIRE(!HAS_JSON_FIELD(obj, "nullv"));
+	REQUIRE(HAS_JSON_FIELD(obj, "str"));
+	REQUIRE(GET_JSON_STR_VALUE(obj, "str") == "hi"); // trimmed
+	REQUIRE(GET_JSON_STR_VALUE(obj, "missing") == "");
+	REQUIRE(GET_JSON_INT_VALUE(obj, "int") == 7);
+	REQUIRE(GET_JSON_INT_VALUE(obj, "missing") == 0);
+	REQUIRE(GET_JSON_INT64_VALUE(obj, "int64") == 5000000000LL);
+	REQUIRE(GET_JSON_BOOL_VALUE(obj, "b") == true);
+	REQUIRE(GET_JSON_BOOL_VALUE(obj, "missing") == false);
+	REQUIRE_THROWS_AS(GET_JSON_INT_VALUE(obj, "str"), Json::Exception);
+
+	// jsoncpp would coerce these ("7"/true); the strict getters keep the 400 contract
+	REQUIRE_THROWS_AS(GET_JSON_STR_VALUE(obj, "int"), std::invalid_argument);
+	REQUIRE_THROWS_AS(GET_JSON_BOOL_VALUE(obj, "int"), std::invalid_argument);
+	REQUIRE_THROWS_AS(GET_JSON_BOOL_VALUE(obj, "str"), std::invalid_argument);
+
+	// Text-or-integer fields accept both shapes
+	Json::Value mixed;
+	mixed["asText"] = "42";
+	mixed["asNum"] = 42;
+	REQUIRE(GET_JSON_STR_INT_TEXT(mixed, "asText") == "42");
+	REQUIRE(GET_JSON_STR_INT_TEXT(mixed, "asNum") == "42");
+
+	// text2json error body shape
+	REQUIRE(JSON::dump(Utility::text2json("boom")) == R"({"message":"boom"})");
 }

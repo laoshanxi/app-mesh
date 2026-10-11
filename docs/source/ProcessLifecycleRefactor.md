@@ -357,7 +357,7 @@ finalization 会先 teardown strategy，拿到已经 dispatch 的 byte position�
 
 - 直接依赖通用 `RestClient`，不再通过 `HttpRequest`/process callback 建立奇怪耦合。
 - `RestClient::request` 增加可选 request timeout override；Docker API 使用 15 秒，其他调用保留原默认值。
-- JSON 使用已有 `HAS_JSON_FIELD`、`GET_JSON_*` 宏，配合必要的 object/string/integer/boolean 类型检查；`nlohmann::json::parse(..., false)` 用 discarded value 表达解析失败，不新增通用 JSON helper，也不为普通 parse error 加 try/catch。
+- JSON 使用已有 `HAS_JSON_FIELD`、`GET_JSON_*` 宏，配合必要的 object/string/integer/boolean 类型检查；`JSON::parse(text, &error)` 用 null 值加错误串表达解析失败，不新增通用 JSON helper，也不为普通 parse error 加 try/catch。
 - metadata 必须是 object；`HostConfig` 若存在也必须是 object。
 - AppMesh 统一覆盖 `Image`、`Cmd`、`WorkingDir`、`Env` 和资源限制。
 - 强制 `AutoRemove=false`、`RestartPolicy.Name=no`。

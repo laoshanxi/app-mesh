@@ -9,7 +9,7 @@ from appmesh.transport_mixin import TransportClientMixin
 
 
 class TestStrictJsonBodies(unittest.TestCase):
-    """NaN/Infinity are not valid JSON. The daemon (nlohmann) rejects such a
+    """NaN/Infinity are not valid JSON. The daemon rejects such a
     body with an opaque 400, so every transport must fail at the sender with
     ValueError instead of emitting an invalid request."""
 

@@ -9,7 +9,7 @@
 
 #include <ace/Null_Mutex.h>
 #include <ace/Singleton.h>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "EventTypes.h"
 
@@ -87,7 +87,7 @@ public:
 	// Unsubscribe by ID; userName must match the subscription owner.
 	bool unsubscribe(const std::string &subId, const std::string &userName = "");
 
-	void dispatch(const std::string &appName, AppEventType type, const nlohmann::json &data);
+	void dispatch(const std::string &appName, AppEventType type, const Json::Value &data);
 
 	void removeByConnection(const ConnectionKey &connKey);
 	void removeByApp(const std::string &appName);

@@ -7,13 +7,13 @@ AppBehavior::AppBehavior()
 {
 }
 
-void AppBehavior::behaviorInit(nlohmann::json config)
+void AppBehavior::behaviorInit(Json::Value config)
 {
     const static char fname[] = "AppBehavior::behaviorInit() ";
 
     m_exitEvent = AppBehavior::Action::STANDBY;
     m_exitCodeEvent.clear();
-    if (!config.is_null())
+    if (!config.isNull())
     {
         auto exit = GET_JSON_STR_VALUE(config, JSON_KEY_APP_behavior_exit);
         if (exit.length())
@@ -23,15 +23,15 @@ void AppBehavior::behaviorInit(nlohmann::json config)
         if (HAS_JSON_FIELD(config, JSON_KEY_APP_behavior_exit_code_actions))
         {
             auto jsonObj = config[JSON_KEY_APP_behavior_exit_code_actions];
-            for (auto &event : jsonObj.items())
+            for (const auto &exitCode : jsonObj.getMemberNames())
             {
-                if (Utility::isNumber(event.key()))
+                if (Utility::isNumber(exitCode))
                 {
-                    m_exitCodeEvent[std::atoi(event.key().c_str())] = str2action(event.value().get<std::string>());
+                    m_exitCodeEvent[std::atoi(exitCode.c_str())] = str2action(jsonObj[exitCode].asString());
                 }
                 else
                 {
-                    LOG_WAR << fname << "Invalid behavior exit code <" << event.key() << ">, expected a numeric exit code";
+                    LOG_WAR << fname << "Invalid behavior exit code <" << exitCode << ">, expected a numeric exit code";
                     throw std::invalid_argument("invalid exit_code_actions code");
                 }
             }
@@ -39,13 +39,13 @@ void AppBehavior::behaviorInit(nlohmann::json config)
     }
 }
 
-nlohmann::json AppBehavior::behaviorAsJson()
+Json::Value AppBehavior::behaviorAsJson()
 {
-    nlohmann::json result;
+    Json::Value result;
     result[JSON_KEY_APP_behavior_exit] = std::string(action2str(m_exitEvent));
     if (m_exitCodeEvent.size())
     {
-        nlohmann::json controls;
+        Json::Value controls;
         for (const auto &[code, action] : m_exitCodeEvent)
         {
             controls[std::to_string(code)] = std::string(action2str(action));

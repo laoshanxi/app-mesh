@@ -26,6 +26,5 @@ DEALINGS IN THE SOFTWARE.
 
 Used by the following dependencies:
   - Boost C++ Libraries (Copyright (c) Boost contributors)
-  - Crypto++ / cryptopp (Copyright (c) Wei Dai)
   - msgpack-c (Copyright (c) Sadayuki Furuhashi)
   - Catch2 (Copyright (c) Catch2 Authors, test dependency only)

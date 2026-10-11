@@ -302,3 +302,6 @@ script/consul/data
 !src/apps/identity/passhash/Cargo.lock
 *.out
 .DS_Store
+
+# Local ctest state
+Testing/

@@ -27,9 +27,9 @@ const std::string &Principal::displayName() const { return m_displayName; }
 const std::string &Principal::email() const { return m_email; }
 const std::string &Principal::connectorId() const { return m_connectorId; }
 
-nlohmann::json Principal::asJson() const
+Json::Value Principal::asJson() const
 {
-	nlohmann::json result;
+	Json::Value result;
 	result["principal_id"] = m_id;
 	result["kind"] = kindName(m_kind);
 	result["issuer"] = m_issuer;

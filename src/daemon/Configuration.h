@@ -10,7 +10,7 @@
 #include <ace/Map_Manager.h>
 #include <ace/Recursive_Thread_Mutex.h>
 #include <filesystem>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 class RestHandler;
 class AuthorizationStore;
@@ -26,8 +26,8 @@ public:
 	struct BaseConfig
 	{
 		BaseConfig();
-		static std::shared_ptr<BaseConfig> FromJson(const nlohmann::json &jsonObj);
-		nlohmann::json AsJson() const;
+		static std::shared_ptr<BaseConfig> FromJson(const Json::Value &jsonObj);
+		Json::Value AsJson() const;
 
 		std::string m_defaultExecUser;
 		std::string m_defaultWorkDir;
@@ -38,8 +38,8 @@ public:
 	};
 	struct JsonSsl
 	{
-		static std::shared_ptr<JsonSsl> FromJson(const nlohmann::json &jsonObj);
-		nlohmann::json AsJson() const;
+		static std::shared_ptr<JsonSsl> FromJson(const Json::Value &jsonObj);
+		Json::Value AsJson() const;
 		bool m_sslVerifyServer;
 		bool m_sslVerifyClient;
 		std::string m_certFile;
@@ -53,8 +53,8 @@ public:
 	struct JsonRest
 	{
 		JsonRest();
-		static std::shared_ptr<JsonRest> FromJson(const nlohmann::json &jsonObj);
-		nlohmann::json AsJson() const;
+		static std::shared_ptr<JsonRest> FromJson(const Json::Value &jsonObj);
+		Json::Value AsJson() const;
 
 		bool m_restEnabled;
 		bool m_corsDisabled;
@@ -78,21 +78,21 @@ public:
 	static std::string readConfiguration();
 	static void handleSignal();
 
-	static std::shared_ptr<Configuration> FromJson(nlohmann::json &jsonValue, bool applyEnv = false) noexcept(false);
-	nlohmann::json AsJson();
+	static std::shared_ptr<Configuration> FromJson(Json::Value &jsonValue, bool applyEnv = false) noexcept(false);
+	Json::Value AsJson();
 	void loadApps(const std::filesystem::path &appDir);
 	void saveConfigToDisk();
-	void hotUpdateAndSave(nlohmann::json &config);
-	void hotUpdate(nlohmann::json &config);
-	static bool overrideConfigWithEnv(nlohmann::json &jsonConfig);
-	static bool applyEnvConfig(nlohmann::json &jsonValue, std::string envValue);
+	void hotUpdateAndSave(Json::Value &config);
+	void hotUpdate(Json::Value &config);
+	static bool overrideConfigWithEnv(Json::Value &jsonConfig);
+	static bool applyEnvConfig(Json::Value &jsonValue, std::string envValue);
 	void registerPrometheus();
 	bool prometheusEnabled() const;
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
-	std::shared_ptr<Application> addApp(const nlohmann::json &jsonApp, bool persistable = true);
+	std::shared_ptr<Application> addApp(const Json::Value &jsonApp, bool persistable = true);
 	void removeApp(const std::string &appName, const Application *expected = nullptr);
-	std::shared_ptr<Application> parseApp(const nlohmann::json &jsonApp);
+	std::shared_ptr<Application> parseApp(const Json::Value &jsonApp);
 	/// Registers a parsed application from app recovery without REST-path
 	/// validation (see validateRecoveredDependencies). Takes the app mutation lock.
 	void registerRecoveredApp(const std::shared_ptr<Application> &app);
@@ -109,14 +109,14 @@ public:
 	std::string getRestListenAddress();
 	int getTcpApiPort();
 	int getWebSocketPort();
-	nlohmann::json serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
+	Json::Value serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName, bool throwOnNotFound = true) const noexcept(false);
 	std::shared_ptr<Application> getApp(const void *app) const;
 	bool isAppExist(const std::string &appName);
 	std::string generateRunAppName(const std::string &provideAppName);
 	void disableApp(const std::string &appName);
 	void enableApp(const std::string &appName);
-	const nlohmann::json getAgentAppJson() const;
+	const Json::Value getAgentAppJson() const;
 
 	std::shared_ptr<Label> getLabel() { return m_label; }
 

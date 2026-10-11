@@ -788,7 +788,7 @@ bool AppProcess::onTimerCheckStdout()
 
 ProcessStartResult AppProcess::start(std::string cmd, std::string user, std::string workDir,
 									 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-									 const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
+									 const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
 {
 	const pid_t pid = startImpl(std::move(cmd), std::move(user), std::move(workDir), std::move(envMap),
 								std::move(limit), stdoutFile, stdinFileContent, maxStdoutSize);
@@ -809,7 +809,7 @@ ProcessStartResult AppProcess::start(std::string cmd, std::string user, std::str
 
 pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
+							const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
 {
 	const static char fname[] = "AppProcess::startImpl() ";
 
@@ -911,8 +911,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		if (stdinFileContent != EMPTY_STR_JSON)
 		{
 			// JSON::dump never throws: a throw here would leave the app never started.
-			const std::string content = stdinFileContent.is_string()
-											? stdinFileContent.get<std::string>()
+			const std::string content = stdinFileContent.isString()
+											? stdinFileContent.asString()
 											: JSON::dump(stdinFileContent);
 			m_stdinFileName = os::createTmpFile(m_stdinFileName, content, 0600);
 			m_stdinHandler.reset(openStdioFile(m_stdinFileName.c_str(), true));

@@ -4,7 +4,7 @@
 #include <map>
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 /// <summary>
 /// Application error handling
@@ -31,8 +31,8 @@ public:
     static AppBehavior::Action str2action(const std::string &action2str);
 
 protected:
-    void behaviorInit(nlohmann::json config);
-    nlohmann::json behaviorAsJson();
+    void behaviorInit(Json::Value config);
+    Json::Value behaviorAsJson();
 
     // behavior getting
     AppBehavior::Action exitAction(int code);

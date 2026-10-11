@@ -10,7 +10,7 @@
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
 #include <filesystem>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "Configuration.h"
 #include "Label.h"
@@ -25,6 +25,7 @@
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Utility.h"
+#include "../common/json.h"
 #include "../common/os/filesystem.h"
 #include "../common/os/pstree.h"
 
@@ -75,7 +76,7 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 	m_instance = std::move(config);
 }
 
-std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue, bool applyEnv)
+std::shared_ptr<Configuration> Configuration::FromJson(Json::Value &jsonValue, bool applyEnv)
 {
 	try
 	{
@@ -99,19 +100,19 @@ std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue
 	// Base config
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_BaseConfig))
 	{
-		config->m_baseConfig = BaseConfig::FromJson(jsonValue.at(JSON_KEY_BaseConfig));
+		config->m_baseConfig = BaseConfig::FromJson(jsonValue[JSON_KEY_BaseConfig]);
 	}
 
 	// REST
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 	{
-		config->m_rest = JsonRest::FromJson(jsonValue.at(JSON_KEY_REST));
+		config->m_rest = JsonRest::FromJson(jsonValue[JSON_KEY_REST]);
 	}
 
 	// Labels
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
 	{
-		config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
+		config->m_label = Label::FromJson(jsonValue[JSON_KEY_Labels]);
 		// add default label here
 		config->m_label->readDefaultLabel();
 	}
@@ -166,9 +167,9 @@ void Configuration::handleSignal()
 	}
 }
 
-nlohmann::json Configuration::AsJson()
+Json::Value Configuration::AsJson()
 {
-	nlohmann::json result = nlohmann::json::object();
+	Json::Value result = Json::Value(Json::objectValue);
 
 	std::lock_guard guard(m_hotupdateMutex);
 
@@ -246,7 +247,7 @@ int Configuration::getWebSocketPort()
 	return m_rest->m_webSocketPort;
 }
 
-nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
+Json::Value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
 {
 	auto allApp = getApps();
 	std::vector<std::shared_ptr<Application>> apps;
@@ -258,7 +259,7 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 							 (app->getName() != SEPARATE_AGENT_APP_NAME));									  // not expose rest process
 				 });
 
-	auto result = nlohmann::json::array();
+	auto result = Json::Value(Json::arrayValue);
 	// Build Json
 	if (returnRuntimeInfo)
 	{
@@ -274,14 +275,14 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 			ptree = os::processes(roots);
 		for (std::size_t i = 0; i < apps.size(); ++i)
 		{
-			result.push_back(apps[i]->AsJson(returnRuntimeInfo, (void *)(&ptree)));
+			result.append(apps[i]->AsJson(returnRuntimeInfo, (void *)(&ptree)));
 		}
 	}
 	else
 	{
 		for (std::size_t i = 0; i < apps.size(); ++i)
 		{
-			result[i] = apps[i]->AsJson(returnRuntimeInfo);
+			result[(Json::ArrayIndex)i] = apps[i]->AsJson(returnRuntimeInfo);
 		}
 	}
 
@@ -325,7 +326,7 @@ void Configuration::loadApps(const std::filesystem::path &appDir)
 				LOG_INF << fname << "Loading application file <" << path << ">";
 				try
 				{
-					auto jsonObj = nlohmann::json::parse(std::ifstream(path));
+					auto jsonObj = JSON::parse(Utility::readFile(path));
 					jsonObj[JSON_KEY_APP_from_recover] = true;
 					auto app = this->parseApp(jsonObj);
 					this->registerRecoveredApp(app);
@@ -581,7 +582,7 @@ void Configuration::dump()
 
 	auto configJson = this->AsJson();
 	LOG_DBG << fname << '\n'
-			<< configJson.dump(2);
+			<< JSON::dump(configJson, 2);
 
 	auto apps = getApps();
 	for (auto &app : apps)
@@ -632,7 +633,7 @@ bool Configuration::dependencyCycleExists(const std::vector<std::string> &seedDe
 	return false;
 }
 
-std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp, bool persistable)
+std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, bool persistable)
 {
 	std::lock_guard mutationGuard(m_appMutationMutex);
 	auto app = parseApp(jsonApp);
@@ -764,7 +765,7 @@ void Configuration::saveConfigToDisk()
 	LOG_INF << fname << "Saved configuration file to disk <" << configFilePath << ">";
 }
 
-void Configuration::hotUpdateAndSave(nlohmann::json &jsonValue)
+void Configuration::hotUpdateAndSave(Json::Value &jsonValue)
 {
 	const static char fname[] = "Configuration::hotUpdateAndSave() ";
 	std::lock_guard guard(m_hotupdateMutex);
@@ -796,7 +797,7 @@ void Configuration::hotUpdateAndSave(nlohmann::json &jsonValue)
 	}
 }
 
-void Configuration::hotUpdate(nlohmann::json &jsonValue)
+void Configuration::hotUpdate(Json::Value &jsonValue)
 {
 	const static char fname[] = "Configuration::hotUpdate() ";
 
@@ -806,12 +807,12 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 
 		// Reapply environment overrides after merging the patch.
 		auto effectiveJson = this->AsJson();
-		effectiveJson.merge_patch(jsonValue);
+		JSON::mergePatch(effectiveJson, jsonValue);
 		auto newConfig = Configuration::FromJson(effectiveJson, true);
 		// Base config
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_BaseConfig))
 		{
-			auto baseConfig = jsonValue.at(JSON_KEY_BaseConfig);
+			auto baseConfig = jsonValue[JSON_KEY_BaseConfig];
 			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_LogLevel))
 			{
 				if (this->m_baseConfig->m_logLevel != newConfig->m_baseConfig->m_logLevel)
@@ -834,7 +835,7 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 		// REST
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 		{
-			auto rest = jsonValue.at(JSON_KEY_REST);
+			auto rest = jsonValue[JSON_KEY_REST];
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestEnabled))
 				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsDisabled))
@@ -860,7 +861,7 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 			// SSL
 			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
 			{
-				auto ssl = rest.at(JSON_KEY_SSL);
+				auto ssl = rest[JSON_KEY_SSL];
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateFile))
 					SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile))
@@ -887,7 +888,7 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 	this->dump();
 }
 
-bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
+bool Configuration::overrideConfigWithEnv(Json::Value &jsonConfig)
 {
 	const static char fname[] = "Configuration::overrideConfigWithEnv() ";
 	LOG_INF << fname << "Applying environment variable overrides to configuration";
@@ -903,17 +904,17 @@ bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 			auto envKey = env.substr(0, pos);
 			auto envVal = env.substr(pos + 1);
 			auto keys = Utility::splitString(envKey, "_");
-			nlohmann::json *json = &jsonConfig;
+			Json::Value *json = &jsonConfig;
 			for (size_t i = 1; i < keys.size(); i++)
 			{
 				auto jsonKey = keys[i];
-				if (json->contains(jsonKey))
+				if (json->isMember(jsonKey))
 				{
 					// find the last level
 					if (i == (keys.size() - 1))
 					{
 						// override json value
-						if (applyEnvConfig(json->at(jsonKey), envVal))
+						if (applyEnvConfig((*json)[jsonKey], envVal))
 						{
 							applyConfig = true;
 							LOG_INF << fname << "Configuration <" << envKey << "> overridden with environment value <" << Utility::maskSecret(envVal) << ">";
@@ -926,7 +927,7 @@ bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 					else
 					{
 						// switch to next level
-						json = &(json->at(jsonKey));
+						json = &((*json)[jsonKey]);
 					}
 				}
 			}
@@ -934,21 +935,21 @@ bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 	}
 	return applyConfig;
 }
-bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envValue)
+bool Configuration::applyEnvConfig(Json::Value &jsonValue, std::string envValue)
 {
 	const static char fname[] = "Configuration::applyEnvConfig() ";
 
-	if (jsonValue.is_string())
+	if (jsonValue.isString())
 	{
 		jsonValue = std::move(envValue);
 		return true;
 	}
-	else if (jsonValue.is_number())
+	else if (jsonValue.isNumeric())
 	{
 		jsonValue = (std::stoi(envValue));
 		return true;
 	}
-	else if (jsonValue.is_boolean())
+	else if (jsonValue.isBool())
 	{
 		if (Utility::isNumber(envValue))
 		{
@@ -961,18 +962,18 @@ bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envVal
 			return true;
 		}
 	}
-	else if (jsonValue.is_array())
+	else if (jsonValue.isArray())
 	{
 		// Comma-separated env value maps to a string array (e.g. APPMESH_REST_CsrfAllowedOrigins="a,b").
-		auto arr = nlohmann::json::array();
+		auto arr = Json::Value(Json::arrayValue);
 		for (const auto &item : Utility::splitString(envValue, ","))
-			arr.push_back(item);
+			arr.append(item);
 		jsonValue = std::move(arr);
 		return true;
 	}
 	else
 	{
-		LOG_WAR << fname << "JSON value type not supported: " << jsonValue.type_name();
+		LOG_WAR << fname << "JSON value type not supported: " << jsonValue.type();
 	}
 	return false;
 }
@@ -989,7 +990,7 @@ bool Configuration::prometheusEnabled() const
 	return m_runtimePrometheusEnabled;
 }
 
-std::shared_ptr<Application> Configuration::parseApp(const nlohmann::json &jsonApp)
+std::shared_ptr<Application> Configuration::parseApp(const Json::Value &jsonApp)
 {
 	auto app = std::make_shared<Application>();
 	Application::FromJson(app, jsonApp);
@@ -1054,7 +1055,7 @@ std::string Configuration::generateRunAppName(const std::string &provideAppName)
 	}
 }
 
-const nlohmann::json Configuration::getAgentAppJson() const
+const Json::Value Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
@@ -1066,7 +1067,7 @@ const nlohmann::json Configuration::getAgentAppJson() const
 
 	LOG_INF << fname << "Agent start command <" << cmd << ">";
 
-	nlohmann::json restApp;
+	Json::Value restApp;
 	restApp[JSON_KEY_APP_name] = std::string(SEPARATE_AGENT_APP_NAME);
 	restApp[JSON_KEY_APP_command] = std::move(cmd);
 	restApp[JSON_KEY_APP_description] = std::string("REST agent for App Mesh");
@@ -1074,14 +1075,14 @@ const nlohmann::json Configuration::getAgentAppJson() const
 	restApp[JSON_KEY_APP_owner_principal_id] = AuthorizationStore::systemPrincipalId();
 	restApp[JSON_KEY_APP_stdout_backup_count] = (3);
 
-	auto objBehavior = nlohmann::json::object();
+	auto objBehavior = Json::Value(Json::objectValue);
 	objBehavior[JSON_KEY_APP_behavior_exit] = std::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
 	restApp[JSON_KEY_APP_behavior] = std::move(objBehavior);
 
 	return restApp;
 }
 
-std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const nlohmann::json &jsonValue)
+std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const Json::Value &jsonValue)
 {
 	const static char fname[] = "Configuration::JsonRest::FromJson() ";
 
@@ -1092,12 +1093,12 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_CorsDisabled, rest->m_corsDisabled);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CsrfAllowedOrigins) && jsonValue.at(JSON_KEY_CsrfAllowedOrigins).is_array())
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CsrfAllowedOrigins) && jsonValue[JSON_KEY_CsrfAllowedOrigins].isArray())
 	{
-		for (const auto &origin : jsonValue.at(JSON_KEY_CsrfAllowedOrigins))
+		for (const auto &origin : jsonValue[JSON_KEY_CsrfAllowedOrigins])
 		{
-			if (origin.is_string() && !origin.get<std::string>().empty())
-				rest->m_csrfAllowedOrigins.insert(origin.get<std::string>());
+			if (origin.isString() && !origin.asString().empty())
+				rest->m_csrfAllowedOrigins.insert(origin.asString());
 		}
 	}
 	rest->m_fileAllowedBaseDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_FileAllowedBaseDir);
@@ -1134,7 +1135,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	// SSL
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSL))
 	{
-		rest->m_ssl = JsonSsl::FromJson(jsonValue.at(JSON_KEY_SSL));
+		rest->m_ssl = JsonSsl::FromJson(jsonValue[JSON_KEY_SSL]);
 	}
 	return rest;
 }
@@ -1144,7 +1145,7 @@ Configuration::BaseConfig::BaseConfig()
 {
 }
 
-std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(const nlohmann::json &jsonValue)
+std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(const Json::Value &jsonValue)
 {
 	auto config = std::make_shared<BaseConfig>();
 	config->m_defaultExecUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
@@ -1177,9 +1178,9 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	return config;
 }
 
-nlohmann::json Configuration::BaseConfig::AsJson() const
+Json::Value Configuration::BaseConfig::AsJson() const
 {
-	auto result = nlohmann::json::object();
+	auto result = Json::Value(Json::objectValue);
 	result[JSON_KEY_DefaultExecUser] = std::string(m_defaultExecUser);
 	result[JSON_KEY_DisableExecUser] = (m_disableExecUser);
 	result[JSON_KEY_WorkingDirectory] = std::string(m_defaultWorkDir);
@@ -1189,9 +1190,9 @@ nlohmann::json Configuration::BaseConfig::AsJson() const
 	return result;
 }
 
-nlohmann::json Configuration::JsonRest::AsJson() const
+Json::Value Configuration::JsonRest::AsJson() const
 {
-	auto result = nlohmann::json::object();
+	auto result = Json::Value(Json::objectValue);
 	result[JSON_KEY_RestEnabled] = (m_restEnabled);
 	result[JSON_KEY_WorkerThreads] = ((uint32_t)m_workerThreads);
 	result[JSON_KEY_TransportIoThreads] = ((uint32_t)m_transportIoThreads);
@@ -1201,7 +1202,9 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_TcpApiPort] = (m_tcpApiPort);
 	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
 	result[JSON_KEY_CorsDisabled] = (m_corsDisabled);
-	result[JSON_KEY_CsrfAllowedOrigins] = m_csrfAllowedOrigins;
+	result[JSON_KEY_CsrfAllowedOrigins] = Json::Value(Json::arrayValue);
+	for (const auto &origin : m_csrfAllowedOrigins)
+		result[JSON_KEY_CsrfAllowedOrigins].append(origin);
 	result[JSON_KEY_FileAllowedBaseDir] = std::string(m_fileAllowedBaseDir);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
@@ -1218,7 +1221,7 @@ Configuration::JsonRest::JsonRest()
 	m_ssl = std::make_shared<JsonSsl>();
 }
 
-std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const nlohmann::json &jsonValue)
+std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const Json::Value &jsonValue)
 {
 	auto ssl = std::make_shared<JsonSsl>();
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServer, ssl->m_sslVerifyServer);
@@ -1231,9 +1234,9 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 	return ssl;
 }
 
-nlohmann::json Configuration::JsonSsl::AsJson() const
+Json::Value Configuration::JsonSsl::AsJson() const
 {
-	auto result = nlohmann::json::object();
+	auto result = Json::Value(Json::objectValue);
 	result[JSON_KEY_SSLVerifyServer] = (m_sslVerifyServer);
 	result[JSON_KEY_SSLVerifyClient] = (m_sslVerifyClient);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);

@@ -25,17 +25,17 @@ namespace
 			WORKFLOW_STEP_PREFIX) == 0;
 	}
 
-	void requireMatchingWorkflowStepMetadata(const nlohmann::json &definition,
+	void requireMatchingWorkflowStepMetadata(const Json::Value &definition,
 		const InternalCapability::Claims &claims)
 	{
-		if (!definition.contains(JSON_KEY_APP_metadata) ||
-			!definition.at(JSON_KEY_APP_metadata).is_object())
+		if (!definition.isMember(JSON_KEY_APP_metadata) ||
+			!definition[JSON_KEY_APP_metadata].isObject())
 			throw AuthorizationException("workflow temporary application metadata is missing");
-		const auto &metadata = definition.at(JSON_KEY_APP_metadata);
+		const auto &metadata = definition[JSON_KEY_APP_metadata];
 		auto matches = [&metadata](const char *field, const std::string &expected)
 		{
-			return metadata.contains(field) && metadata.at(field).is_string() &&
-				metadata.at(field).get<std::string>() == expected;
+			return metadata.isMember(field) && metadata[field].isString() &&
+				metadata[field].asString() == expected;
 		};
 		if (!matches("type", "workflow-step") ||
 			!matches("workflow_id", claims.workflowId) ||
@@ -79,7 +79,7 @@ namespace
 			message->m_relative_uri == "/appmesh/app/run")
 		{
 			const auto definition = message->extractJson();
-			if (!definition.is_object())
+			if (!definition.isObject())
 				throw std::invalid_argument("workflow application run request must be an object");
 			const auto suppliedName = Utility::stdStringTrim(
 				GET_JSON_STR_VALUE(definition, JSON_KEY_APP_name));
@@ -299,7 +299,7 @@ void RestBase::handleRest(const std::shared_ptr<HttpRequest> &message, const std
         message->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
             {{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
     }
-    catch (const nlohmann::json::exception &e)
+    catch (const Json::Exception &e)
     {
         // Client JSON fault: unparseable body or wrong-typed/missing fields
         LOG_WAR << fname << "400 JsonError " << message->m_method << ":" << path << " - " << e.what();

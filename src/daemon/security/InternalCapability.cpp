@@ -6,10 +6,11 @@
 
 #include <openssl/hmac.h>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 
 namespace
 {
@@ -83,18 +84,21 @@ std::string InternalCapability::issue(Audience audience, const std::string &work
 		throw std::invalid_argument("internal capability lifetime must be between 1 and 300 seconds");
 
 	const auto issuedAt = nowSeconds();
-	nlohmann::json payload;
+	Json::Value payload;
 	payload["v"] = 1;
 	payload["aud"] = audienceName(audience);
 	payload["workflow_id"] = workflowId;
 	payload["run_id"] = runId;
 	payload["owner_principal_id"] = ownerPrincipalId;
 	payload["process_uuid"] = processUuid;
-	payload["operations"] = operations;
+	Json::Value operationsArray(Json::arrayValue);
+	for (const auto &operation : operations)
+		operationsArray.append(operation);
+	payload["operations"] = operationsArray;
 	payload["iat"] = issuedAt;
 	payload["exp"] = issuedAt + ttlSeconds;
 
-	const auto encoded = base64UrlEncode(payload.dump());
+	const auto encoded = base64UrlEncode(JSON::dump(payload));
 	const std::string signingInput = std::string(CAPABILITY_PREFIX) + encoded;
 	return signingInput + "." + sign(signingInput);
 }
@@ -121,28 +125,28 @@ InternalCapability::Claims InternalCapability::verify(
 	try
 	{
 		const auto encodedPayload = signingInput.substr(std::char_traits<char>::length(CAPABILITY_PREFIX));
-		const auto payload = nlohmann::json::parse(base64UrlDecode(encodedPayload));
-		if (!payload.is_object() || payload.at("v").get<int>() != 1)
+		const auto payload = JSON::parse(base64UrlDecode(encodedPayload));
+		if (!payload.isObject() || payload["v"].asInt() != 1)
 			throw std::domain_error("internal capability version is invalid");
 
 		Claims claims{
-			parseAudience(payload.at("aud").get<std::string>()),
-			payload.at("workflow_id").get<std::string>(),
-			payload.at("run_id").get<std::string>(),
-			payload.at("owner_principal_id").get<std::string>(),
-			payload.at("process_uuid").get<std::string>(),
+			parseAudience(payload["aud"].asString()),
+			payload["workflow_id"].asString(),
+			payload["run_id"].asString(),
+			payload["owner_principal_id"].asString(),
+			payload["process_uuid"].asString(),
 			{},
-			payload.at("iat").get<std::int64_t>(),
-			payload.at("exp").get<std::int64_t>()};
+			payload["iat"].asInt64(),
+			payload["exp"].asInt64()};
 
-		const auto &operations = payload.at("operations");
-		if (!operations.is_array() || operations.empty() || operations.size() > MAX_OPERATIONS)
+		const auto &operations = payload["operations"];
+		if (!operations.isArray() || operations.empty() || operations.size() > MAX_OPERATIONS)
 			throw std::domain_error("internal capability operations are invalid");
 		for (const auto &operation : operations)
 		{
-			if (!operation.is_string() || operation.get<std::string>().empty())
+			if (!operation.isString() || operation.asString().empty())
 				throw std::domain_error("internal capability operation is invalid");
-			claims.operations.insert(operation.get<std::string>());
+			claims.operations.insert(operation.asString());
 		}
 
 		if (claims.workflowId.empty() || claims.runId.empty() ||

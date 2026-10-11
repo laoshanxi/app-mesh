@@ -33,12 +33,21 @@ constexpr auto CONTENT_TYPE_PNG = "image/png";
 namespace
 {
 
+	// Serialize a permission set as a JSON string array
+	Json::Value toJsonArray(const std::set<std::string> &values)
+	{
+		Json::Value array(Json::arrayValue);
+		for (const auto &value : values)
+			array.append(value);
+		return array;
+	}
+
 	// Keep immutable ownership and mutable presentation separate. This field is
 	// added only to API responses; persistence and authorization continue to use
 	// owner_principal_id exclusively.
-	void addOwnerDisplayName(nlohmann::json &application)
+	void addOwnerDisplayName(Json::Value &application)
 	{
-		if (!application.is_object())
+		if (!application.isObject())
 			return;
 		const auto ownerPrincipalId = GET_JSON_STR_VALUE(application, JSON_KEY_APP_owner_principal_id);
 		if (ownerPrincipalId.empty())
@@ -63,9 +72,9 @@ namespace
 		}
 	}
 
-	void addOwnerDisplayNames(nlohmann::json &applications)
+	void addOwnerDisplayNames(Json::Value &applications)
 	{
-		if (!applications.is_array())
+		if (!applications.isArray())
 			return;
 		for (auto &application : applications)
 			addOwnerDisplayName(application);
@@ -797,10 +806,10 @@ void RestHandler::apiPrincipalPermissionsView(const std::shared_ptr<HttpRequest>
 {
 	const auto principalId = permissionCheck(message, "");
 	const auto permissions = Security::instance()->permissions(principalId);
-	auto json = nlohmann::json::array();
+	auto json = Json::Value(Json::arrayValue);
 	for (auto &perm : permissions)
 	{
-		json.push_back(std::string(perm));
+		json.append(std::string(perm));
 	}
 	message->reply(web::http::status_codes::OK, json);
 }
@@ -855,21 +864,21 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		throw std::domain_error("workflow process proof is invalid or superseded");
 
 	const auto request = message->extractJson();
-	if (!request.is_object())
+	if (!request.isObject())
 		throw std::invalid_argument("workflow capability request must be an object");
 	const auto audience = GET_JSON_STR_VALUE(request, "audience");
-	const auto ttlSeconds = request.contains("expires_in") ? request.at("expires_in").get<std::int64_t>() : 300;
+	const auto ttlSeconds = request.isMember("expires_in") ? request["expires_in"].asInt64() : 300;
 	if (ttlSeconds < 60 || ttlSeconds > 300)
 		throw std::invalid_argument("workflow capability expires_in must be between 60 and 300 seconds");
-	if (!request.contains("operations") || !request.at("operations").is_array())
+	if (!request.isMember("operations") || !request["operations"].isArray())
 		throw std::invalid_argument("workflow capability operations must be an array");
 
 	std::set<std::string> operations;
-	for (const auto &entry : request.at("operations"))
+	for (const auto &entry : request["operations"])
 	{
-		if (!entry.is_string() || entry.get<std::string>().empty())
+		if (!entry.isString() || entry.asString().empty())
 			throw std::invalid_argument("workflow capability operation must be a non-empty string");
-		operations.insert(entry.get<std::string>());
+		operations.insert(entry.asString());
 	}
 	if (operations.empty())
 		throw std::invalid_argument("workflow capability requires at least one operation");
@@ -905,9 +914,9 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		if (!workflow)
 			throw NotFoundException("registered workflow was not found");
 		const auto definition = workflow->AsJson(false);
-		if (!definition.contains(JSON_KEY_APP_metadata) ||
-			!definition.at(JSON_KEY_APP_metadata).is_object() ||
-			GET_JSON_STR_VALUE(definition.at(JSON_KEY_APP_metadata), "type") != "workflow")
+		if (!definition.isMember(JSON_KEY_APP_metadata) ||
+			!definition[JSON_KEY_APP_metadata].isObject() ||
+			GET_JSON_STR_VALUE(definition[JSON_KEY_APP_metadata], "type") != "workflow")
 			throw AuthorizationException("capability target is not an Engine-managed workflow definition");
 		ownerPrincipalId = workflow->getOwnerPrincipalId();
 		if (ownerPrincipalId.empty())
@@ -939,7 +948,7 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		capabilityAudience, workflowId, runId, ownerPrincipalId, processUuid, operations, ttlSeconds);
 	const auto expiresAt = std::chrono::duration_cast<std::chrono::seconds>(
 		std::chrono::system_clock::now().time_since_epoch()).count() + ttlSeconds;
-	nlohmann::json response;
+	Json::Value response;
 	response["capability"] = capability;
 	response["expires_at"] = expiresAt;
 	response["owner_principal_id"] = ownerPrincipalId;
@@ -982,19 +991,19 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 			continue;
 
 		const auto definition = app->AsJson(false);
-		if (!definition.contains(JSON_KEY_APP_metadata) ||
-			!definition.at(JSON_KEY_APP_metadata).is_object())
+		if (!definition.isMember(JSON_KEY_APP_metadata) ||
+			!definition[JSON_KEY_APP_metadata].isObject())
 			continue;
-		const auto &metadata = definition.at(JSON_KEY_APP_metadata);
-		if (!metadata.contains("type") || !metadata.at("type").is_string() ||
-			metadata.at("type").get<std::string>() != "workflow-step" ||
-			!metadata.contains("workflow_id") || !metadata.at("workflow_id").is_string() ||
-			!metadata.contains("run_id") || !metadata.at("run_id").is_string() ||
-			!metadata.contains("process_uuid") || !metadata.at("process_uuid").is_string())
+		const auto &metadata = definition[JSON_KEY_APP_metadata];
+		if (!metadata.isMember("type") || !metadata["type"].isString() ||
+			metadata["type"].asString() != "workflow-step" ||
+			!metadata.isMember("workflow_id") || !metadata["workflow_id"].isString() ||
+			!metadata.isMember("run_id") || !metadata["run_id"].isString() ||
+			!metadata.isMember("process_uuid") || !metadata["process_uuid"].isString())
 			continue;
-		const auto workflowId = metadata.at("workflow_id").get<std::string>();
-		const auto runId = metadata.at("run_id").get<std::string>();
-		const auto creatorProcessUuid = metadata.at("process_uuid").get<std::string>();
+		const auto workflowId = metadata["workflow_id"].asString();
+		const auto runId = metadata["run_id"].asString();
+		const auto creatorProcessUuid = metadata["process_uuid"].asString();
 		if (!validIdentifier(workflowId) || !validIdentifier(runId) ||
 			creatorProcessUuid.empty() || creatorProcessUuid == processUuid)
 			continue;
@@ -1008,8 +1017,8 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 		++removed;
 	}
 
-	nlohmann::json response;
-	response["removed"] = removed;
+	Json::Value response;
+	response["removed"] = (Json::UInt64)removed;
 	message->reply(web::http::status_codes::OK, response);
 }
 
@@ -1025,22 +1034,22 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 		throw AuthorizationException("workflow registry is available only to the managed Workflow controller");
 	}
 
-	nlohmann::json result = nlohmann::json::array();
+	Json::Value result = Json::Value(Json::arrayValue);
 	for (const auto &app : Configuration::instance()->getApps())
 	{
 		if (!app || app->getName().compare(0, std::char_traits<char>::length(WORKFLOW_DEFINITION_PREFIX),
 				WORKFLOW_DEFINITION_PREFIX) != 0)
 			continue;
 		auto definition = app->AsJson(true);
-		if (!definition.contains(JSON_KEY_APP_metadata) ||
-			!definition.at(JSON_KEY_APP_metadata).is_object())
+		if (!definition.isMember(JSON_KEY_APP_metadata) ||
+			!definition[JSON_KEY_APP_metadata].isObject())
 			continue;
-		const auto &metadata = definition.at(JSON_KEY_APP_metadata);
-		if (!metadata.contains("type") || !metadata.at("type").is_string() ||
-			metadata.at("type").get<std::string>() != "workflow")
+		const auto &metadata = definition[JSON_KEY_APP_metadata];
+		if (!metadata.isMember("type") || !metadata["type"].isString() ||
+			metadata["type"].asString() != "workflow")
 			continue;
 		addOwnerDisplayName(definition);
-		result.push_back(definition);
+		result.append(definition);
 	}
 	message->reply(web::http::status_codes::OK, result);
 }
@@ -1065,7 +1074,7 @@ void RestHandler::apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &messag
 		enrolled = Security::instance()->enrollFirstAdmin(
 			getBearerToken(message));
 	auto response = enrolled->asJson();
-	response["permissions"] = Security::instance()->permissions(enrolled->id());
+	response["permissions"] = toJsonArray(Security::instance()->permissions(enrolled->id()));
 	message->reply(web::http::status_codes::OK, response);
 }
 
@@ -1073,7 +1082,7 @@ void RestHandler::apiPrincipalSelf(const std::shared_ptr<HttpRequest> &message)
 {
 	const auto principalId = permissionCheck(message, "");
 	auto response = Security::instance()->principal(principalId)->asJson();
-	response["permissions"] = Security::instance()->permissions(principalId);
+	response["permissions"] = toJsonArray(Security::instance()->permissions(principalId));
 	message->reply(web::http::status_codes::OK, response);
 }
 
@@ -1142,10 +1151,10 @@ void RestHandler::apiPermissionsView(const std::shared_ptr<HttpRequest> &message
 	permissionCheck(message, PERMISSION_KEY_permission_list);
 
 	auto permissions = Security::instance()->allPermissions();
-	auto json = nlohmann::json::array();
+	auto json = Json::Value(Json::arrayValue);
 	for (auto &perm : permissions)
 	{
-		json.push_back(std::string(perm));
+		json.append(std::string(perm));
 	}
 	message->reply(web::http::status_codes::OK, json);
 }
@@ -1192,7 +1201,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 	const auto callerPrincipalId = permissionCheck(message, "");
 	auto jsonApp = message->extractJson();
 	// from_recover is a server-internal flag; never trust it from REST input.
-	jsonApp.erase(JSON_KEY_APP_from_recover);
+	jsonApp.removeMember(JSON_KEY_APP_from_recover);
 	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_system))
 		throw AuthorizationException("system applications cannot be registered through the application API");
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
@@ -1232,19 +1241,20 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 			else if (HAS_JSON_FIELD(existApp, JSON_KEY_APP_secret_env))
 			{
 				// Inherited secret_env is protected with a context containing the source app name.
-				nlohmann::json decrypted = nlohmann::json::object();
-				for (auto &env : existApp[JSON_KEY_APP_secret_env].items())
+				Json::Value decrypted = Json::Value(Json::objectValue);
+				const auto &secretEnvs = existApp[JSON_KEY_APP_secret_env];
+				for (const auto &envName : secretEnvs.getMemberNames())
 				{
-					const std::string context = fromApp->getName() + '\0' + env.key();
-					decrypted[env.key()] = SecretProtector::instance().unprotect(
-						env.value().get<std::string>(), context);
+					const std::string context = fromApp->getName() + '\0' + envName;
+					decrypted[envName] = SecretProtector::instance().unprotect(
+						secretEnvs[envName].asString(), context);
 				}
 				existApp[JSON_KEY_APP_secret_env] = std::move(decrypted);
 			}
 			existApp[JSON_KEY_APP_name] = Configuration::instance()->generateRunAppName(clientProvideAppName);
 			existApp[JSON_KEY_APP_owner_principal_id] = callerPrincipalId;
 			// On-demand runs are explicit user actions and bypass the dependency gate.
-			existApp.erase(JSON_KEY_APP_depends_on);
+			existApp.removeMember(JSON_KEY_APP_depends_on);
 			jsonApp = std::move(existApp);
 		}
 		else
@@ -1274,7 +1284,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 
 	jsonApp[JSON_KEY_APP_enabled] = (static_cast<int>(STATUS::NOTAVAILABLE));
 	jsonApp[JSON_KEY_APP_owner_principal_id] = callerPrincipalId;
-	jsonApp.erase(JSON_KEY_APP_execution_user);
+	jsonApp.removeMember(JSON_KEY_APP_execution_user);
 	const auto executionUser = Security::instance()->principal(callerPrincipalId)->executionUser();
 	if (!executionUser.empty())
 		jsonApp[JSON_KEY_APP_execution_user] = executionUser;
@@ -1310,7 +1320,7 @@ void RestHandler::apiRunAsync(const std::shared_ptr<HttpRequest> &message)
 		Configuration::instance()->removeApp(appObj->getName(), appObj.get());
 		throw;
 	}
-	auto result = nlohmann::json::object();
+	auto result = Json::Value(Json::objectValue);
 	result[JSON_KEY_APP_name] = appObj->getName();
 	result[HTTP_QUERY_KEY_process_uuid] = std::move(processUuid);
 	message->reply(web::http::status_codes::OK, result);
@@ -1433,12 +1443,12 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_app_reg);
 	auto jsonApp = message->extractJson();
-	if (jsonApp.is_null())
+	if (jsonApp.isNull())
 	{
 		throw std::invalid_argument("Empty json input");
 	}
 	// from_recover is a server-internal flag; never trust it from REST input.
-	jsonApp.erase(JSON_KEY_APP_from_recover);
+	jsonApp.removeMember(JSON_KEY_APP_from_recover);
 
 	auto appName = normalizeAppName(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name));
 	jsonApp[JSON_KEY_APP_name] = appName;
@@ -1479,12 +1489,12 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 				<< "> by <" << tokenUser << ">";
 	}
 	jsonApp[JSON_KEY_APP_owner_principal_id] = ownerPrincipalId;
-	jsonApp.erase(JSON_KEY_APP_execution_user);
+	jsonApp.removeMember(JSON_KEY_APP_execution_user);
 	const auto executionUser = Security::instance()->principal(ownerPrincipalId)->executionUser();
 	if (!executionUser.empty())
 		jsonApp[JSON_KEY_APP_execution_user] = executionUser;
 	std::string subId;
-	nlohmann::json result;
+	Json::Value result;
 	bool stale = false;
 	try
 	{
@@ -1626,14 +1636,14 @@ void RestHandler::apiAppSubscribe(const std::shared_ptr<HttpRequest> &message)
 	if (mutation.owns_lock())
 		mutation.unlock();
 
-	nlohmann::json result;
+	Json::Value result;
 	result["subscription_id"] = subId;
 	result["app_name"] = appName;
-	nlohmann::json eventList = nlohmann::json::array();
+	Json::Value eventList = Json::Value(Json::arrayValue);
 	for (uint32_t bit = 0x01; bit <= static_cast<uint32_t>(AppEventType::APP_REMOVED); bit <<= 1)
 	{
 		if (eventMask & bit)
-			eventList.push_back(eventTypeToString(static_cast<AppEventType>(bit)));
+			eventList.append(eventTypeToString(static_cast<AppEventType>(bit)));
 	}
 	result["events"] = eventList;
 	message->reply(web::http::status_codes::OK, result);

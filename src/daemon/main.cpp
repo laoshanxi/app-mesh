@@ -21,6 +21,7 @@
 #include "../common/RestClient.h"
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
+#include "../common/json.h"
 #include "../common/os/chown.h"
 #include "../common/os/pstree.h"
 #include "Configuration.h"
@@ -436,7 +437,7 @@ void AppMeshDaemon::performHighAvailabilityRecovery()
 		{
 			auto snapfile = Utility::readFileCpp(Snapshot::filePath());
 			auto jsonData = snapfile.empty() ? std::string("{}") : std::move(snapfile);
-			snap = Snapshot::FromJson(nlohmann::json::parse(jsonData));
+			snap = Snapshot::FromJson(JSON::parse(jsonData));
 			LOG_INF << fname << "Successfully loaded snapshot file";
 		}
 	}

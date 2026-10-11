@@ -1,5 +1,6 @@
 // src/daemon/rest/ForwardingManager.cpp
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #include "ForwardingManager.h"
 
 #include <chrono>
@@ -30,11 +31,12 @@ namespace
 	{
 		if (response.http_status < 200 || response.http_status >= 300 || response.body.empty())
 			return {};
-		const auto value = nlohmann::json::parse(response.body.begin(), response.body.end(), nullptr, false);
-		if (!value.is_object() || !value.contains("subscription_id") ||
-			!value.at("subscription_id").is_string())
+		std::string parseError;
+		const auto value = JSON::parse(std::string(response.body.begin(), response.body.end()), &parseError);
+		if (!value.isObject() || !value.isMember("subscription_id") ||
+			!value["subscription_id"].isString())
 			return {};
-		return value.at("subscription_id").get<std::string>();
+		return value["subscription_id"].asString();
 	}
 
 	/// Transport of this build: the TCP API.
@@ -236,14 +238,16 @@ void ForwardingConnection::failAll(const std::string &msg)
 	}
 	for (const auto &entry : activeSubscriptions)
 	{
-		nlohmann::json event = {
-			{"subscription_id", entry.first},
-			{"event_type", "__disconnected__"},
-			{"app_name", ""},
-			{"timestamp", 0},
-			{"sequence", 0},
-			{"data", {{"message", msg}}}};
-		const auto text = event.dump();
+		Json::Value eventData;
+		eventData["message"] = msg;
+		Json::Value event;
+		event["subscription_id"] = entry.first;
+		event["event_type"] = "__disconnected__";
+		event["app_name"] = "";
+		event["timestamp"] = 0;
+		event["sequence"] = 0;
+		event["data"] = eventData;
+		const auto text = JSON::dump(event);
 		entry.second->reply(EVENT_URI, Utility::shortID(),
 			std::vector<std::uint8_t>(text.begin(), text.end()),
 			{{SUBSCRIPTION_HEADER, entry.first}}, web::http::status_codes::OK,

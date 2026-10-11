@@ -4,7 +4,7 @@
 #include <tuple>
 
 #include <msgpack.hpp>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"

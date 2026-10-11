@@ -3,6 +3,7 @@
 
 #include "../../../common/StreamLogger.h"
 #include "../../../common/Utility.h"
+#include "../../../common/json.h"
 #include "../../Configuration.h"
 #include "../Data.h"
 #include "FrameCodec.h"
@@ -64,7 +65,7 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 	// Refuse it; the existing transfer continues undisturbed.
 	if (m_pendingUpload || m_pendingDownload)
 	{
-		auto msg = Utility::text2json("A file transfer is already active on this connection").dump();
+		auto msg = JSON::dump(Utility::text2json("A file transfer is already active on this connection"));
 		resp.http_status = web::http::status_codes::Conflict;
 		resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 		resp.headers.erase(HTTP_HEADER_KEY_X_Send_File_Socket);
@@ -82,7 +83,7 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 		const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second);
 		if (!Utility::validateFilePath(fileName, Configuration::instance()->getFileAllowedBaseDir()))
 		{
-			auto msg = Utility::text2json("Invalid file path").dump();
+			auto msg = JSON::dump(Utility::text2json("Invalid file path"));
 			resp.http_status = web::http::status_codes::Forbidden;
 			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 			LOG_ERR << fname << "Path traversal detected in upload | ClientID=" << clientId << " | FilePath=" << fileName;
@@ -95,7 +96,7 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp.file_upload_request_headers);
 		if (!uploadInfo->m_file.is_open())
 		{
-			auto msg = Utility::text2json("Failed open file").dump();
+			auto msg = JSON::dump(Utility::text2json("Failed open file"));
 			resp.http_status = web::http::status_codes::InternalError;
 			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 			LOG_ERR << fname << "Upload file creation failed | ClientID=" << clientId << " | FilePath=" << fileName;
@@ -113,7 +114,7 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 		const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second);
 		if (!Utility::validateFilePath(fileName, Configuration::instance()->getFileAllowedBaseDir()))
 		{
-			auto msg = Utility::text2json("Invalid file path").dump();
+			auto msg = JSON::dump(Utility::text2json("Invalid file path"));
 			resp.http_status = web::http::status_codes::Forbidden;
 			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 			LOG_ERR << fname << "Path traversal detected in download | ClientID=" << clientId << " | FilePath=" << fileName;
@@ -123,7 +124,7 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 		auto fileStream = std::make_unique<std::ifstream>(fileName, std::ios::binary);
 		if (!fileStream->is_open())
 		{
-			auto msg = Utility::text2json("Failed to open file for reading").dump();
+			auto msg = JSON::dump(Utility::text2json("Failed to open file for reading"));
 			resp.http_status = web::http::status_codes::InternalError;
 			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 			LOG_ERR << fname << "Download file access failed | ClientID=" << clientId << " | FilePath=" << fileName;

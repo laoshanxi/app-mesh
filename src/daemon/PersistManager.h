@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 /// <summary>
 /// App Process Recover object
@@ -25,8 +25,8 @@ struct AppSnap
 struct Snapshot
 {
 	bool operator==(const Snapshot &snapshort) const;
-	nlohmann::json AsJson() const;
-	static std::shared_ptr<Snapshot> FromJson(const nlohmann::json &obj);
+	Json::Value AsJson() const;
+	static std::shared_ptr<Snapshot> FromJson(const Json::Value &obj);
 	/// Absolute snapshot path shared by the writer and the startup recovery
 	/// reader, which runs before the daemon changes its working directory.
 	static const std::string &filePath();

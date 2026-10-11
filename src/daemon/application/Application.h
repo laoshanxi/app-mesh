@@ -15,7 +15,7 @@
 #include <boost/smart_ptr/shared_ptr.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/synchronized_value.hpp>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "../../common/TimerHandler.h"
 #include "../rest/HttpRequest.h"
@@ -65,8 +65,8 @@ public:
 	void setUnPersistable();
 
 	// Persistence and representation
-	static void FromJson(const std::shared_ptr<Application> &app, const nlohmann::json &obj) noexcept(false);
-	virtual nlohmann::json AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
+	static void FromJson(const std::shared_ptr<Application> &app, const Json::Value &obj) noexcept(false);
+	virtual Json::Value AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
 	virtual void save();
 	virtual void remove();
 	virtual void dump();
@@ -196,7 +196,7 @@ private:
 	int m_ownerPermission;
 	std::string m_workdir;
 	std::string m_stdoutFile;
-	nlohmann::json m_metadata;
+	Json::Value m_metadata;
 	bool m_shellApp;
 	bool m_sessionLogin;
 	int m_stdoutCacheNum;

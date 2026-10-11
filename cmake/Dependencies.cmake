@@ -64,63 +64,6 @@ else()
 endif()
 
 ##########################################################################
-# cryptopp (unified: vcpkg, apt, brew, and source install)
-##########################################################################
-# 1. First, try finding a modern CMake config (works for vcpkg/Conan)
-find_package(cryptopp CONFIG QUIET)
-
-# 2. Fallback for Manual Search (Source install, Apt, Brew)
-if(NOT TARGET cryptopp::cryptopp)
-    # macOS: Auto-detect Homebrew prefix for Apple Silicon/Intel
-    if(APPLE)
-        execute_process(
-            COMMAND brew --prefix
-            OUTPUT_VARIABLE BREW_PREFIX
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-    endif()
-
-    # Search paths covering:
-    # - /usr/local (Source install default)
-    # - /usr/ (Apt/System default)
-    # - /opt/homebrew (Apple Silicon)
-    # - BREW_PREFIX (Dynamic brew)
-    find_path(CRYPTOPP_INCLUDE_DIR cryptopp/cryptlib.h
-        PATHS 
-            ${BREW_PREFIX}/include 
-            /usr/include 
-            /usr/local/include 
-            /opt/homebrew/include
-    )
-
-    find_library(CRYPTOPP_LIBRARY
-        NAMES cryptopp libcryptopp
-        PATHS 
-            ${BREW_PREFIX}/lib 
-            /usr/lib 
-            /usr/local/lib 
-            /usr/lib/x86_64-linux-gnu  # Common for multi-arch apt
-            /opt/homebrew/lib
-    )
-
-    if(CRYPTOPP_INCLUDE_DIR AND CRYPTOPP_LIBRARY)
-        add_library(cryptopp::cryptopp UNKNOWN IMPORTED)
-        set_target_properties(cryptopp::cryptopp PROPERTIES
-            IMPORTED_LOCATION "${CRYPTOPP_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${CRYPTOPP_INCLUDE_DIR}"
-        )
-    else()
-        message(FATAL_ERROR "Crypto++ not found! \n"
-                "  Linux: sudo apt install libcrypto++-dev\n"
-                "  macOS: brew install cryptopp\n"
-                "  Source: ensure 'make install' was run.")
-    endif()
-endif()
-
-set(CRYPTOPP_TARGET cryptopp::cryptopp)
-
-##########################################################################
 # ACE
 ##########################################################################
 find_library(ACE_LIBRARY ACE REQUIRED)
@@ -140,3 +83,9 @@ find_package(Threads REQUIRED)
 find_package(Drogon CONFIG REQUIRED)
 message(STATUS "HTTPS/WSS transport: Drogon ${Drogon_VERSION}")
 
+##########################################################################
+# jsoncpp (JSON DOM shared with Drogon)
+##########################################################################
+find_package(jsoncpp CONFIG REQUIRED)
+# json/json.h sits in a non-default prefix on apt; not all targets link common
+include_directories(${JSONCPP_INCLUDE_DIRS})

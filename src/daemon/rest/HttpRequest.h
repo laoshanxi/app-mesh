@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "../../common/HttpHeaderMap.h"
 #include "../../common/TimerHandler.h"
@@ -41,19 +41,19 @@ public:
 
 	// Extracts and parses HTTP body as JSON
 	// Always use this function to get HTTP body for consistent serialization
-	nlohmann::json extractJson() const;
+	Json::Value extractJson() const;
 
 	// Responds to this HTTP request with status only
 	bool reply(web::http::status_code status) const;
 
 	// Responds to this HTTP request with JSON body
-	bool reply(web::http::status_code status, const nlohmann::json &body_data) const;
+	bool reply(web::http::status_code status, const Json::Value &body_data) const;
 
 	// Responds to this HTTP request with raw bytes
 	bool reply(web::http::status_code status, const std::vector<std::uint8_t> &body_data) const;
 
 	// Responds to this HTTP request with JSON body and custom headers
-	bool reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const;
+	bool reply(web::http::status_code status, const Json::Value &body_data, const std::map<std::string, std::string> &headers) const;
 
 	// Responds to this HTTP request with a string body
 	// Callers do NOT need to block waiting for the response to be sent before the body data is destroyed or goes out of scope
@@ -69,7 +69,7 @@ public:
 
 	static std::shared_ptr<HttpRequest> deserialize(const std::string &input, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx);
 	std::string serialize() const;
-	static const nlohmann::json emptyJsonMessage();
+	static const Json::Value emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;
 	// Zero status means no response was sent.

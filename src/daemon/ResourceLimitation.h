@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 //////////////////////////////////////////////////////////////////////////
 /// Define the application resource usage limitation
@@ -16,8 +16,8 @@ public:
 	bool operator==(const std::shared_ptr<ResourceLimitation> &obj) const;
 	void dump();
 
-	virtual nlohmann::json AsJson();
-	static std::shared_ptr<ResourceLimitation> FromJson(const nlohmann::json &jsonObj, const std::string &appName) noexcept(false);
+	virtual Json::Value AsJson();
+	static std::shared_ptr<ResourceLimitation> FromJson(const Json::Value &jsonObj, const std::string &appName) noexcept(false);
 
 	int m_memoryMb;
 	int m_memoryVirtMb;

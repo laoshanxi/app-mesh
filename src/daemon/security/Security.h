@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <mutex>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -43,13 +43,13 @@ public:
 	virtual std::set<std::string> permissions(const std::string &principalId) const = 0;
 	virtual std::set<std::string> allPermissions() const = 0;
 
-	virtual nlohmann::json authConfig() const = 0;
-	virtual nlohmann::json protectedResourceMetadata() const = 0;
-	virtual nlohmann::json principalsJson() const = 0;
-	virtual nlohmann::json rolesJson() const = 0;
-	virtual void updatePrincipal(const std::string &principalId, const nlohmann::json &definition) = 0;
+	virtual Json::Value authConfig() const = 0;
+	virtual Json::Value protectedResourceMetadata() const = 0;
+	virtual Json::Value principalsJson() const = 0;
+	virtual Json::Value rolesJson() const = 0;
+	virtual void updatePrincipal(const std::string &principalId, const Json::Value &definition) = 0;
 	virtual void deletePrincipal(const std::string &principalId) = 0;
-	virtual void updateRole(const std::string &role, const nlohmann::json &permissions) = 0;
+	virtual void updateRole(const std::string &role, const Json::Value &permissions) = 0;
 	virtual void deleteRole(const std::string &role) = 0;
 
 	static void init();

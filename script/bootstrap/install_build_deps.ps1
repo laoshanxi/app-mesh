@@ -198,7 +198,6 @@ function Install-VcpkgPackages {
         'ace:x64-windows',
         'drogon:x64-windows',
         # path so should_log() behaviour is identical across platforms.
-        'cryptopp:x64-windows',
         'yaml-cpp:x64-windows'
     )
 
@@ -233,14 +232,6 @@ function Install-SpdlogFromSource {
 function Install-HeaderOnlyLibraries {
     Write-Host "Installing header-only libraries..." -ForegroundColor Cyan
 
-    # nlohmann/json
-    Write-Host "Installing nlohmann/json..." -ForegroundColor Yellow
-    $jsonUrl = "https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip"
-    Save-File $jsonUrl "json-include.zip"
-    Expand-File "json-include.zip" "json-temp"
-    New-Item -ItemType Directory -Force -Path "C:\local\include" | Out-Null
-    Copy-Item -Recurse "json-temp\include\nlohmann" "C:\local\include\" -Force
-    
     # Message Pack
     Write-Host "Installing MessagePack..." -ForegroundColor Yellow
     git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git

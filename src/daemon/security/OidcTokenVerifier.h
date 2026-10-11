@@ -7,7 +7,7 @@
 #include <set>
 #include <string>
 
-#include <jwt-cpp/traits/nlohmann-json/defaults.h>
+#include <jwt-cpp/traits/open-source-parsers-jsoncpp/defaults.h>
 
 #include "../../common/RestClient.h"
 #include "Principal.h"
@@ -50,11 +50,11 @@ public:
 	Principal verify(const std::string &token);
 
 	const Config &config() const;
-	nlohmann::json publicConfig() const;
-	nlohmann::json protectedResourceMetadata() const;
+	Json::Value publicConfig() const;
+	Json::Value protectedResourceMetadata() const;
 
 private:
-	using Verifier = jwt::verifier<jwt::default_clock, jwt::traits::nlohmann_json>;
+	using Verifier = jwt::verifier<jwt::default_clock, jwt::traits::open_source_parsers_jsoncpp>;
 
 	struct CachedKey
 	{
@@ -72,7 +72,7 @@ private:
 	std::string requestJson(const std::string &absoluteUrl) const;
 	std::string transportUrl(const std::string &publishedUrl) const;
 	static std::string normalizeIssuer(std::string issuer);
-	static std::string jwkToPem(const nlohmann::json &jwk);
+	static std::string jwkToPem(const Json::Value &jwk);
 
 	Config m_config;
 	std::string m_jwksUri;

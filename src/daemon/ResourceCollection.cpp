@@ -214,14 +214,14 @@ void ResourceCollection::dump(const HostResource &resources)
 	LOG_DBG << fname << "m_freeSwap_bytes:" << resources.m_freeSwap_bytes;
 }
 
-nlohmann::json ResourceCollection::AsJson()
+Json::Value ResourceCollection::AsJson()
 {
 	const static char fname[] = "ResourceCollection::AsJson() ";
 	LOG_DBG << fname << "Entered";
 
 	auto res = this->getHostResource();
 
-	nlohmann::json result = nlohmann::json::object();
+	Json::Value result = Json::Value(Json::objectValue);
 	result["schema_version"] = 3;
 	result["collected_at_unix_seconds"] = std::chrono::duration_cast<std::chrono::seconds>(
 										  std::chrono::system_clock::now().time_since_epoch())
@@ -249,16 +249,20 @@ nlohmann::json ResourceCollection::AsJson()
 	result[("host_name")] = std::string((getHostName()));
 	static const auto osUser = os::getUsernameByUid();
 	result[("os_user")] = osUser;
-	auto arr = nlohmann::json::array();
+	auto arr = Json::Value(Json::arrayValue);
 	for (const auto &network : res.m_ipaddress)
 	{
-		arr.push_back({{"name", network.name}, {"ipv6", network.ipv6}, {"address", network.address}});
+		Json::Value net;
+		net["name"] = network.name;
+		net["ipv6"] = network.ipv6;
+		net["address"] = network.address;
+		arr.append(net);
 	}
 	result[("net")] = std::move(arr);
-	result[("cpu_cores")] = (res.m_cores);
-	result[("cpu_sockets")] = (res.m_sockets);
-	result[("cpu_processors")] = (res.m_processors);
-	result["cpu_effective_processors"] = res.m_effectiveProcessors;
+	result[("cpu_cores")] = (Json::UInt64)res.m_cores;
+	result[("cpu_sockets")] = (Json::UInt64)res.m_sockets;
+	result[("cpu_processors")] = (Json::UInt64)res.m_processors;
+	result["cpu_effective_processors"] = (Json::UInt64)res.m_effectiveProcessors;
 	result["cpu_quota_cores"] = res.m_cpuQuotaCores;
 	result["cpu_source"] = res.m_cpuSource;
 	result["memory_source"] = res.m_memorySource;
@@ -270,9 +274,9 @@ nlohmann::json ResourceCollection::AsJson()
 	result["mem_swap_total_bytes"] = res.m_totalSwap_bytes;
 	result["mem_swap_free_bytes"] = res.m_freeSwap_bytes;
 	result["mem_swap_current_bytes"] = res.m_currentSwap_bytes;
-	auto collectorErrors = nlohmann::json::array();
+	auto collectorErrors = Json::Value(Json::arrayValue);
 	for (const auto &error : res.m_collectorErrors)
-		collectorErrors.push_back(error);
+		collectorErrors.append(error);
 	const auto applications = Configuration::instance()->getApps();
 	std::vector<pid_t> processRoots = {getPid()};
 	for (const auto &app : applications)
@@ -287,17 +291,17 @@ nlohmann::json ResourceCollection::AsJson()
 	if (daemonTree)
 	{
 		result["mem_daemon_process_tree_bytes"] = daemonTree->totalRssMemBytes();
-		result[("fd")] = daemonTree->totalFileDescriptors();
+		result[("fd")] = (Json::UInt64)daemonTree->totalFileDescriptors();
 	}
 	else
 	{
 		result["mem_daemon_process_tree_bytes"] = 0;
 		result[("fd")] = 0;
-		collectorErrors.push_back("daemon_process_tree_unavailable");
+		collectorErrors.append("daemon_process_tree_unavailable");
 	}
 	// Daemon process only. "fd" above sums the whole daemon tree (dex, agent,
 	// app children) whose churn is unrelated to daemon-side fd leaks.
-	result["fd_daemon"] = os::getOpenFileDescriptorCount(getPid());
+	result["fd_daemon"] = (Json::UInt64)os::getOpenFileDescriptorCount(getPid());
 
 	std::unordered_map<pid_t, std::vector<pid_t>> children;
 	for (const auto &process : processes)
@@ -323,7 +327,7 @@ nlohmann::json ResourceCollection::AsJson()
 	auto load = os::loadavg();
 	if (load != nullptr)
 	{
-		nlohmann::json sysLoad = nlohmann::json::object();
+		Json::Value sysLoad = Json::Value(Json::objectValue);
 		sysLoad["1min"] = (load->one);
 		sysLoad["5min"] = (load->five);
 		sysLoad["15min"] = (load->fifteen);
@@ -332,26 +336,26 @@ nlohmann::json ResourceCollection::AsJson()
 	else
 	{
 #if !defined(_WIN32)
-		collectorErrors.push_back("load_average_unavailable");
+		collectorErrors.append("load_average_unavailable");
 #endif
 	}
 	// FS
 	auto mountPoints = os::getMountPoints();
-	auto fsArr = nlohmann::json::array();
+	auto fsArr = Json::Value(Json::arrayValue);
 	bool filesystemError = mountPoints.empty();
 	for (const auto &mount : mountPoints)
 	{
 		auto usage = os::df(mount.first);
 		if (usage != nullptr)
 		{
-			nlohmann::json fs = nlohmann::json::object();
-			fs["size"] = (usage->totalSize);
-			fs["used"] = (usage->usedSize);
-			fs["available"] = usage->availableSize;
+			Json::Value fs = Json::Value(Json::objectValue);
+			fs["size"] = (Json::UInt64)usage->totalSize;
+			fs["used"] = (Json::UInt64)usage->usedSize;
+			fs["available"] = (Json::UInt64)usage->availableSize;
 			fs["usage"] = (usage->usagePercentage);
 			fs["device"] = Utility::localEncodingToUtf8(mount.second);
 			fs["mount_point"] = mount.first;
-			fsArr.push_back(fs);
+			fsArr.append(fs);
 		}
 		else
 		{
@@ -359,7 +363,7 @@ nlohmann::json ResourceCollection::AsJson()
 		}
 	}
 	if (filesystemError)
-		collectorErrors.push_back("filesystem_usage_unavailable");
+		collectorErrors.append("filesystem_usage_unavailable");
 	result[("fs")] = std::move(fsArr);
 	result[("systime")] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));
 	result[("appmesh_start_time")] = std::string(DateTime::formatLocalTime(m_appmeshStartTime));

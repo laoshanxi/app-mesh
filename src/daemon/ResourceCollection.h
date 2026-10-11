@@ -10,7 +10,7 @@
 #include <unistd.h>
 #endif
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 struct HostNetInterface
 {
@@ -64,7 +64,7 @@ public:
 
 	void dump(const HostResource &resources);
 
-	nlohmann::json AsJson();
+	Json::Value AsJson();
 
 private:
 	const std::chrono::system_clock::time_point m_appmeshStartTime;

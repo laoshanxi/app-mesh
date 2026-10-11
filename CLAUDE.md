@@ -95,8 +95,8 @@ cmake .. -DAPPMESH_NO_TESTS=1 && make -j$(nproc)
 # Package (.deb/.rpm via nfpm)
 make pack
 
-# Test targets. CTest itself has no registered case: add_subdirectory(test) is
-# disabled in CMakeLists.txt, so `make test ARGS="-V"` runs nothing.
+# Test targets. `make test` runs the registered C++ CTest cases (test_datetime,
+# test_timer, test_utility; Catch2 is a vendored single header, no network).
 # python_tests needs a live daemon plus APPMESH_TEST_ACCESS_TOKEN, and fails
 # (not skips) without them. go_tests and rust_tests skip their live-daemon
 # cases when APPMESH_BEARER_TOKEN is absent.
@@ -206,7 +206,7 @@ Optional LLM agent runtime, run as an App Mesh App (Python package `llm_agent`).
 
 ## Key Dependencies
 
-C++ (daemon): ACE (remaining utilities), Boost (incl. Boost.Process V2 ≥1.86), OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (HTTP/WSS/TCP transport; pulls jsoncpp, c-ares, brotli), uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
+C++ (daemon): ACE (remaining utilities), Boost (incl. Boost.Process V2 ≥1.86), OpenSSL, spdlog, jsoncpp (JSON DOM), yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (HTTP/WSS/TCP transport; pulls c-ares, brotli), uriparser, msgpack, croncpp, moodycamel concurrent queue.
 
 Rust (CLI): clap, tokio, rustls, serde/serde_json/serde_yaml, anyhow. The CLI depends on the Rust SDK crate (`src/sdk/rust`).
 

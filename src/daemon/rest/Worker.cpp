@@ -5,6 +5,7 @@
 #include "../../common/QuitHandler.h"
 #include "../../common/UriParser.hpp"
 #include "../../common/Utility.h"
+#include "../../common/json.h"
 #include "../Configuration.h"
 #include "../security/HMACVerifier.h"
 #include "../security/Security.h"
@@ -76,7 +77,7 @@ namespace
 		response.uuid = uuid;
 		response.http_status = web::http::status_codes::BadRequest;
 		response.body_msg_type = web::http::mime_types::application_json;
-		const auto text = Utility::text2json("Unable to decode the request").dump();
+		const auto text = JSON::dump(Utility::text2json("Unable to decode the request"));
 		response.body.assign(text.begin(), text.end());
 		ctx->replyWebSocket(response.serialize(), true, true);
 		return true;

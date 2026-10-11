@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "DockerProcess.h"
 
@@ -27,12 +27,12 @@ public:
 protected:
 	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir,
 						std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-						const std::string &stdoutFile, const nlohmann::json &stdinFileContent,
+						const std::string &stdoutFile, const Json::Value &stdinFileContent,
 						int maxStdoutSize) override;
 	void terminateImpl() override;
 
 private:
 	// Request Docker HTTP REST API
 	const std::shared_ptr<HttpResponse> requestDocker(const web::http::method &mtd, const std::string &path,
-													  std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body) const;
+													  std::map<std::string, std::string> query, std::map<std::string, std::string> header, Json::Value *body) const;
 };

@@ -12,7 +12,7 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/error.hpp>
 
-#include <nlohmann/json.hpp>
+#include <json/json.h>
 
 #include "../../common/StreamLogger.h"
 #include "../../common/Utility.h"
@@ -193,9 +193,9 @@ void StdoutPump::dispatchPayload(long start, std::string &&payload)
 		// Same UTF-8 conversion as the disk-backed output views, so event
 		// subscribers and REST clients see identical text.
 		payload = Utility::fileBytesToUtf8(payload);
-		nlohmann::json data;
+		Json::Value data;
 		data["output"] = std::move(payload);
-		data["position"] = start;
+		data["position"] = (Json::Int64)start;
 		data["finished"] = false;
 		dispatcher->dispatch(m_appName, AppEventType::STDOUT_OUTPUT, data);
 	}
