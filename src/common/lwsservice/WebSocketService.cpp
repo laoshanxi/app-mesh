@@ -633,8 +633,8 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         {
             // Apply caller-supplied POSIX attributes after the file commits,
             // mirroring the uWS and TCP-channel upload paths.
-            const auto uploadedFile = pss->upload_file_path;
-            const auto attrHeaders = pss->upload_attr_headers;
+            const auto uploadedFile = std::move(pss->upload_file_path);
+            const auto attrHeaders = std::move(pss->upload_attr_headers);
             pss->cleanup();
             if (!uploadedFile.empty() && !attrHeaders.empty())
                 Utility::applyFilePermission(uploadedFile, attrHeaders);

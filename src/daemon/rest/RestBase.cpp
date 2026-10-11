@@ -67,7 +67,9 @@ namespace
 				break;
 			}
 		}
-		return resource.find('/') == std::string::npos ? resource : std::string();
+				if (resource.find('/') != std::string::npos)
+			return std::string();
+		return resource;
 	}
 
 	void validateRunCapabilityTarget(const std::shared_ptr<HttpRequest> &message,
@@ -173,7 +175,7 @@ namespace
 		// Empty permission checks are owner/access checks performed after the route's
 		// primary RBAC check. Requiring one route operation again keeps such checks
 		// from turning into a capability bypass.
-		const auto operation = permission.empty() ? *routeOperations.begin() : permission;
+		const auto &operation = permission.empty() ? *routeOperations.begin() : permission;
 		const auto claims = InternalCapability::instance().verify(token, operation);
 
 		auto workflowProcess = Configuration::instance()->getApp(WORKFLOW_APP_NAME, false);

@@ -499,7 +499,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	{
 		// Short running on a cron expression
 		app->m_scheduleKind = ScheduleKind::Cron;
-		app->m_startIntervalValue = cronScheduleValue;
+		app->m_startIntervalValue = std::move(cronScheduleValue);
 		app->m_timer = std::make_shared<AppTimerCron>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startIntervalValue, app->m_startInterval);
 		app->m_timer->nextTime(); // Validate cron expression
 	}
@@ -507,7 +507,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	{
 		// Short running on a fixed interval
 		app->m_scheduleKind = ScheduleKind::Interval;
-		app->m_startIntervalValue = intervalValue;
+		app->m_startIntervalValue = std::move(intervalValue);
 		app->m_startInterval = duration.parse(app->m_startIntervalValue);
 		if (app->m_startInterval <= 0)
 		{
@@ -999,7 +999,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	const auto execUser = getExecUser();
 	// sudo performs the user switch itself, so the spawn must not setuid; the
 	// proof segment is still handed to the final exec user so the child can read it.
-	const auto spawnUser = (!onDemand && m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : execUser;
+	auto spawnUser = (!onDemand && m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : execUser;
 
 	// Managed system processes (Agent, Workflow) prove themselves with a
 	// per-spawn pre-shared key handed over through shared memory.
@@ -1019,7 +1019,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	}
 
 	LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">";
-	auto result = process->start(getCmdLine(), spawnUser, m_workdir, envMap, m_resourceLimit,
+	auto result = process->start(getCmdLine(), std::move(spawnUser), m_workdir, std::move(envMap), m_resourceLimit,
 								 m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
 
 	if (processProof)
@@ -1650,7 +1650,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		auto err = getLastError();
 		if (!err.empty())
 		{
-			result[JSON_KEY_APP_last_error] = std::string(err);
+			result[JSON_KEY_APP_last_error] = std::move(err);
 		}
 		const auto waitingFor = this->waitingFor();
 		if (!waitingFor.empty())
@@ -1827,7 +1827,7 @@ bool Application::onTimerRemoval()
 
 void Application::recordProcessExit(int code, bool naturalExit, AppProcess *reporter, long stdoutDispatchedBytes)
 {
-	const auto runId = reporter->getuuid();
+	const auto &runId = reporter->getuuid();
 	const pid_t prevPid = reporter->lastPid();
 	std::string exitError;
 	if (code != 0 && naturalExit)
@@ -1875,7 +1875,7 @@ void Application::recordProcessExit(int code, bool naturalExit, AppProcess *repo
 
 	EventDispatcher::instance()->flushStdout(m_name, reporter, stdoutDispatchedBytes);
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_EXIT,
-										  {{"exit_code", code}, {"pid", prevPid}, {"last_error", currentRun ? getLastError() : exitError}});
+										  {{"exit_code", code}, {"pid", prevPid}, {"last_error", currentRun ? getLastError() : std::move(exitError)}});
 }
 
 void Application::completeRun(const std::string &runId)
@@ -1918,7 +1918,7 @@ void Application::terminate(std::shared_ptr<AppProcess> p)
 {
 	if (p)
 	{
-		const auto runId = p->getuuid();
+		const auto &runId = p->getuuid();
 		m_runtime->update([&](Runtime::Run &run)
 						  {
 			if (run.id == runId && (run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running))

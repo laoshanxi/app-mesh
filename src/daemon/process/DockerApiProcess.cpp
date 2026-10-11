@@ -56,8 +56,15 @@ DockerApiProcess::~DockerApiProcess()
 	const static char fname[] = "DockerApiProcess::~DockerApiProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	// Destruction has no shared owner; skip lifecycle callbacks.
-	DockerApiProcess::terminateImpl();
+	// Destructors must not throw: cleanup is best-effort during teardown.
+	try
+	{
+		// Destruction has no shared owner; skip lifecycle callbacks.
+		DockerApiProcess::terminateImpl();
+	}
+	catch (...)
+	{
+	}
 }
 
 void DockerApiProcess::terminateImpl()
@@ -409,7 +416,7 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 
 	try
 	{
-		return RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, {}, DOCKER_REQUEST_TIMEOUT_SECONDS);
+		return RestClient::request(restURL, mtd, wrapperPath, bodyContent, std::move(header), std::move(query), {}, DOCKER_REQUEST_TIMEOUT_SECONDS);
 	}
 	catch (const std::exception &ex)
 	{
@@ -422,6 +429,6 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	}
 
 	response->status_code = web::http::status_codes::ServiceUnavailable;
-	response->text = errorMsg;
+	response->text = std::move(errorMsg);
 	return response;
 }

@@ -885,7 +885,7 @@ std::vector<std::string> Utility::splitString(const std::string &source, const s
 	{
 		std::string str = stdStringTrim(source.substr(pos1, pos2 - pos1));
 		if (str.length() > 0)
-			result.push_back(str);
+			result.push_back(std::move(str));
 
 		pos1 = pos2 + splitFlag.size();
 		pos2 = source.find(splitFlag, pos1);
@@ -1435,14 +1435,14 @@ bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string 
 		// existing ancestor, canonicalize it, then re-append the remaining components.
 		// This allows uploads to new subdirectories within the allowed base.
 		fs::path remaining;
-		fs::path ancestor = file;
+		fs::path ancestor = std::move(file);
 		while (!ancestor.empty())
 		{
 			fs::path parent = ancestor.parent_path();
 			if (parent == ancestor)
 				break; // reached root
 			remaining = ancestor.filename() / remaining;
-			ancestor = parent;
+			ancestor = std::move(parent);
 			fs::path canonicalAncestor = fs::canonical(ancestor, ec);
 			if (!ec)
 			{

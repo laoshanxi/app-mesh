@@ -81,7 +81,7 @@ private:
 	void asyncWait()
 	{
 		std::shared_ptr<TimerState> self = shared_from_this();
-		m_timer.async_wait([self](const boost::system::error_code &ec) { self->onFired(ec); });
+		m_timer.async_wait([self = std::move(self)](const boost::system::error_code &ec) { self->onFired(ec); });
 	}
 
 	void onFired(const boost::system::error_code &ec)
@@ -289,7 +289,7 @@ bool TimerManager::cancelTimer(long timerToken)
 	// Cancel by timer identity on the io thread (posting into a stopped event
 	// loop is a no-op). A callback already dispatched runs to completion; a
 	// recurring timer canceled mid-dispatch stops when its re-arm is canceled.
-	boost::asio::post(m_ioContext, [timer]() { timer->cancel(); });
+	boost::asio::post(m_ioContext, [timer = std::move(timer)]() { timer->cancel(); });
 	LOG_DBG << fname << "timer token <" << timerToken << "> canceled";
 	return true;
 }

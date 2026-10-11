@@ -37,7 +37,14 @@ PipeStdoutStrategy::~PipeStdoutStrategy()
 {
 	const static char fname[] = "PipeStdoutStrategy::~PipeStdoutStrategy() ";
 	LOG_DBG << fname << "Entered";
-	teardown();
+	// Destructors must not throw: shutdown may already have torn down the io service.
+	try
+	{
+		teardown();
+	}
+	catch (...)
+	{
+	}
 }
 
 long PipeStdoutStrategy::dispatchedBytes() const

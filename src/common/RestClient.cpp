@@ -165,7 +165,7 @@ size_t HeaderCallback(char *buffer, size_t size, size_t nitems, HttpHeaderMap *u
 		auto key = Utility::stdStringTrim(header.substr(0, colonPos));
 		auto value = Utility::stdStringTrim(header.substr(colonPos + 1));
 		if (!key.empty())
-			(*userHeader)[key] = value;
+			(*userHeader)[key] = std::move(value);
 	}
 	return size * nitems;
 }

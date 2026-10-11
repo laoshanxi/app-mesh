@@ -343,11 +343,11 @@ void RestHandler::observeHttpRequest(const std::shared_ptr<HttpRequest> &message
 		matchRoute = false;
 	}
 
-	const auto route = matchRoute ? normalizedHttpRoute(path, routes) : std::string("unmatched");
+	auto route = matchRoute ? normalizedHttpRoute(path, routes) : std::string("unmatched");
 	const auto started = std::chrono::steady_clock::now();
 	const auto metrics = m_metrics;
 	m_metrics->httpRequestStarted(method, route);
-	message->setReplyMetricCallback([metrics, method, route, started](int status)
+	message->setReplyMetricCallback([metrics, method = std::move(method), route = std::move(route), started](int status)
 									{
 		const auto duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
 		metrics->httpRequestFinished(method, route, status, duration); });
@@ -507,7 +507,7 @@ void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
 
 	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
 	std::map<std::string, std::string> headers;
-	headers["Location"] = swaggerUrl;
+	headers["Location"] = std::move(swaggerUrl);
 
 	std::string emptyBody;
 	message->reply(web::http::status_codes::TemporaryRedirect, emptyBody, headers, CONTENT_TYPE_HTML);
@@ -1598,7 +1598,7 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 
 bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &message, ConnectionKey &connKey, DeliveryCallback &deliveryCb)
 {
-	const auto forwardRoute = message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARDED) &&
+	auto forwardRoute = message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARDED) &&
 		message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
 		? message->m_headers.get(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
 		: std::string();
@@ -1628,7 +1628,7 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 	{
 		auto lwsRef = message->lwsRef();
 		connKey = ConnectionKey::wss(lwsRef.sessionId);
-		deliveryCb = [lwsRef, forwardRoute](const EventEnvelope &envelope) -> bool
+		deliveryCb = [lwsRef, forwardRoute = std::move(forwardRoute)](const EventEnvelope &envelope) -> bool
 		{
 			try
 			{

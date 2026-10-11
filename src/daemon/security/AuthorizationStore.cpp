@@ -224,7 +224,7 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::resolve(const Princi
 			principal.id(), principal.kind(), principal.issuer(), principal.subject());
 		record->updateClaims(principal);
 		record->updatePolicy(nlohmann::json{{"roles", nlohmann::json::array()}});
-		m_principals[principal.id()] = record;
+		m_principals[principal.id()] = std::move(record);
 		try
 		{
 			saveLocked();
@@ -479,7 +479,7 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 		{"status", "tombstoned"},
 		{"execution_user", ""},
 		{"roles", nlohmann::json::array()}});
-	m_principals[principalId] = tombstone;
+	m_principals[principalId] = std::move(tombstone);
 	try
 	{
 		saveLocked();
@@ -502,7 +502,7 @@ void AuthorizationStore::updateRole(const std::string &role, const nlohmann::jso
 	mergeDiskPolicyLocked();
 	auto found = m_roles.find(role);
 	const bool existed = found != m_roles.end();
-	const auto previous = existed ? found->second : std::set<std::string>();
+	const auto previous = existed ? std::move(found->second) : std::set<std::string>();
 	m_roles[role] = parsed;
 	try
 	{
