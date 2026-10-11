@@ -6,10 +6,10 @@ on:
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
-# One Coverity project shared with main; the submitted ref tells the branches apart
+# The legacy line reports to its own Coverity project; main keeps laoshanxi/app-mesh
 env:
   APPMESH_VERSION: "3.0.1"
-  COVERITY_PROJECT: "laoshanxi/app-mesh"
+  COVERITY_PROJECT: "app-mesh-legacy"
 
 jobs:
   coverity-cpp-code-scan:
@@ -39,7 +39,7 @@ jobs:
         id: coverity-cache-lookup
         shell: bash
         env:
-          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN_LEGACY }}
         run: |
           response_file="$(mktemp)"
           http_code=$(curl --silent --show-error --location \
@@ -50,7 +50,7 @@ jobs:
           hash="$(tr -d '\r\n' < "$response_file")"
 
           if [[ "$http_code" != "200" || ! "$hash" =~ ^[0-9a-fA-F]{32}$ ]]; then
-            echo "::error::Coverity build tool hash lookup failed (HTTP ${http_code}). Check COVERITY_SCAN_TOKEN and the Coverity project registration for ${COVERITY_PROJECT}."
+            echo "::error::Coverity build tool hash lookup failed (HTTP ${http_code}). Check COVERITY_SCAN_TOKEN_LEGACY and the Coverity project registration for ${COVERITY_PROJECT}."
             head -c 1000 "$response_file" | sed 's/^/Coverity response: /'
             exit 1
           fi
@@ -67,7 +67,7 @@ jobs:
       - name: Download Coverity Build Tool
         if: steps.cov-build-cache.outputs.cache-hit != 'true'
         env:
-          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN_LEGACY }}
         run: |
           mkdir cov-analysis
           curl --fail --silent --show-error --location \
@@ -89,12 +89,12 @@ jobs:
       - name: Submit Coverity results
         working-directory: build
         env:
-          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+          TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN_LEGACY }}
         run: |
           curl --fail --silent --show-error \
             --form token="${TOKEN}" \
             --form email="${{ secrets.COVERITY_SCAN_EMAIL }}" \
             --form file=@cov-int.tgz \
-            --form version="${{ env.APPMESH_VERSION }}-legacy" \
+            --form version="${{ env.APPMESH_VERSION }}" \
             --form description="coverity-scan-action ${{ github.repository }} / ${{ github.ref }}" \
             "https://scan.coverity.com/builds?project=${{ steps.coverity-project.outputs.project }}"
