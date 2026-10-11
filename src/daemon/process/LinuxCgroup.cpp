@@ -936,7 +936,7 @@ bool LinuxCgroupV2::enableControllers(const std::string &cgroupPath)
 
 	// Walk from root to our target, enabling controllers at each level
 	std::vector<std::string> pathComponents;
-	fs::path current = path;
+	fs::path current = std::move(path);
 	while (current != root && !current.empty())
 	{
 		pathComponents.push_back(current.string());

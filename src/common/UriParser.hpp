@@ -81,7 +81,7 @@ public:
         }
         else
         {
-            result.user = ui;
+            result.user = std::move(ui);
         }
 
         // Port

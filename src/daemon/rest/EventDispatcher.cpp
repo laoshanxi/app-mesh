@@ -165,7 +165,7 @@ void EventDispatcher::removeByConnection(const ConnectionKey &connKey)
 	{
 		if (auto subIt = m_subscriptions.find(subId); subIt != m_subscriptions.end())
 		{
-			auto appName = subIt->second.appName;
+			auto appName = std::move(subIt->second.appName);
 
 			// Remove from app index
 			auto [appFirst, appLast] = m_appIndex.equal_range(appName);

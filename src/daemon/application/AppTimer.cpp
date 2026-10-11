@@ -107,7 +107,7 @@ std::chrono::system_clock::time_point AppTimer::applyStartBoundary(const std::ch
 //////////////////////////////////////////////////////////////////////////
 AppTimerPeriod::AppTimerPeriod(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime,
                                std::shared_ptr<DailyLimitation> dailyLimit, int intervalSeconds)
-    : AppTimer(startTime, endTime, dailyLimit), m_intervalSeconds(intervalSeconds)
+    : AppTimer(startTime, endTime, std::move(dailyLimit)), m_intervalSeconds(intervalSeconds)
 {
 }
 
@@ -134,7 +134,7 @@ std::chrono::system_clock::time_point AppTimerPeriod::nextTime(const std::chrono
 //////////////////////////////////////////////////////////////////////////
 AppTimerCron::AppTimerCron(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime,
                            std::shared_ptr<DailyLimitation> dailyLimit, const std::string &cronExpr, int intervalSeconds)
-    : AppTimerPeriod(startTime, endTime, dailyLimit, intervalSeconds), m_cronExpr(cronExpr)
+    : AppTimerPeriod(startTime, endTime, std::move(dailyLimit), intervalSeconds), m_cronExpr(cronExpr)
 {
     m_cron = cron::make_cron(m_cronExpr);
 }

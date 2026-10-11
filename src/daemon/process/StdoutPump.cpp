@@ -72,7 +72,7 @@ void StdoutPump::readSome()
 	// self keeps the pump alive through the in-flight read.
 	auto self = shared_from_this();
 	m_pipeRead.async_read_some(boost::asio::buffer(m_readBuf),
-							   [self](const boost::system::error_code &ec, std::size_t n)
+							   [self = std::move(self)](const boost::system::error_code &ec, std::size_t n)
 							   { self->onRead(ec, n); });
 }
 
@@ -168,7 +168,7 @@ void StdoutPump::armCoalesceTimer()
 	m_timerArmed = true;
 	auto self = shared_from_this();
 	m_coalesceTimer.expires_after(std::chrono::milliseconds(COALESCE_WINDOW_MS));
-	m_coalesceTimer.async_wait([self](const boost::system::error_code &ec)
+	m_coalesceTimer.async_wait([self = std::move(self)](const boost::system::error_code &ec)
 							   { self->onCoalesceTimer(ec); });
 }
 

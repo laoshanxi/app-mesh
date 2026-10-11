@@ -147,7 +147,7 @@ namespace
 					auto key = Utility::stdStringTrim(state.raw.substr(pos, colon - pos));
 					auto value = Utility::stdStringTrim(state.raw.substr(colon + 1, eol - colon - 1));
 					if (!key.empty())
-						state.response->header[key] = value;
+						state.response->header[key] = std::move(value);
 				}
 				pos = eol + 2;
 			}
@@ -253,11 +253,11 @@ std::shared_ptr<HttpResponse> RestClient::request(
 	std::string targetError;
 	if (!parseRequestTarget(host, path, query, target, targetError))
 	{
-		state->response->text = targetError;
+		state->response->text = std::move(targetError);
 		LOG_ERR << fname << state->response->text;
 		return state->response;
 	}
-	const auto ssl = resolveSslConfig(sslConfig);
+	auto ssl = resolveSslConfig(sslConfig);
 	state->requestWire = buildRequestWire(mtd, target.target, target.hostHeader, header, body);
 
 	std::string resolveError;
@@ -272,7 +272,7 @@ std::shared_ptr<HttpResponse> RestClient::request(
 	auto future = state->donePromise.get_future();
 	auto *loop = httpClientLoop();
 
-	loop->runInLoop([state, loop, ip, port = target.port, useSSL = target.useSSL, hostName = target.host, ssl]() mutable
+	loop->runInLoop([state, loop, ip, port = target.port, useSSL = target.useSSL, hostName = target.host, ssl = std::move(ssl)]() mutable
 					{
 		try
 		{
@@ -332,7 +332,7 @@ std::shared_ptr<HttpResponse> RestClient::request(
 					if (!ssl.m_private_key_passwd.empty())
 						LOG_WAR << fname << "trantor does not support password-protected client keys; the password is ignored";
 				}
-				client->enableSSL(policy);
+				client->enableSSL(std::move(policy));
 			}
 
 			state->client = client;
@@ -373,7 +373,7 @@ std::shared_ptr<HttpResponse> RestClient::request(
 	auto timeoutResponse = std::make_shared<HttpResponse>();
 	timeoutResponse->status_code = 0;
 	timeoutResponse->text = "request timeout";
-	loop->runInLoop([state]() mutable
+	loop->runInLoop([state = std::move(state)]() mutable
 					{ state->client.reset(); });
 	return timeoutResponse;
 }

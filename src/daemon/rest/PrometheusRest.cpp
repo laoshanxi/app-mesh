@@ -198,7 +198,7 @@ uint64_t PrometheusRest::scrapeGeneration() const
 }
 
 CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, prometheus::Family<prometheus::Counter> &family, const std::string &name, std::map<std::string, std::string> label)
-	: m_metric(nullptr), m_family(&family), m_promRegistry(registry), m_name(name)
+	: m_metric(nullptr), m_family(&family), m_promRegistry(std::move(registry)), m_name(name)
 {
 	const static char fname[] = "CounterMetric::CounterMetric() ";
 	prometheus::Labels commonLabels = {{"host", MY_HOST_NAME}};

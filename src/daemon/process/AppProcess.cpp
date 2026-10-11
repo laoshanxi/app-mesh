@@ -258,17 +258,24 @@ AppProcess::~AppProcess()
 	const static char fname[] = "AppProcess::~AppProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	// No shared owner remains, so kill/reap directly instead of queuing an exit
-	// callback that would require shared_from_this().
-	if (running())
+	// Destructors must not throw: shutdown may already have torn down the asio services.
+	try
 	{
-		m_lifecycle->terminating.store(true, std::memory_order_release);
-		terminateImpl();
-	}
+		// No shared owner remains, so kill/reap directly instead of queuing an exit
+		// callback that would require shared_from_this().
+		if (running())
+		{
+			m_lifecycle->terminating.store(true, std::memory_order_release);
+			terminateImpl();
+		}
 
-	// Idempotent — exit finalization may have cleaned resources already.
-	cleanupResources();
-	Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+		// Idempotent — exit finalization may have cleaned resources already.
+		cleanupResources();
+		Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+	}
+	catch (...)
+	{
+	}
 }
 
 void AppProcess::attach(int pid, const std::string &stdoutFile)
@@ -369,7 +376,7 @@ void AppProcess::onExit(int exitCode)
 	// source (terminate, maintainRuntime), and may cancel this process's
 	// timers and block in application callbacks safely.
 	auto self = std::dynamic_pointer_cast<AppProcess>(shared_from_this());
-	PROCESS_SERVICE::instance()->post([self]()
+	PROCESS_SERVICE::instance()->post([self = std::move(self)]()
 									   { self->finalizeExit(); });
 }
 
@@ -466,7 +473,7 @@ void AppProcess::finalizeExit() noexcept
 	// callback thread so they cannot stall the engine.
 	auto self = std::dynamic_pointer_cast<AppProcess>(shared_from_this());
 	const bool naturalExit = !m_lifecycle->terminating.load();
-	auto finalizeAppSide = [self, exitCode, naturalExit, stdoutDispatchedBytes]()
+	auto finalizeAppSide = [self = std::move(self), exitCode, naturalExit, stdoutDispatchedBytes]()
 	{
 		std::shared_ptr<Application> owner;
 		try
@@ -601,12 +608,14 @@ long AppProcess::cleanupResources()
 		dispatchedBytes = stdoutStrategy->dispatchedBytes();
 	}
 
+	std::string stdinFileName;
 	{
 		std::lock_guard guard(m_processMutex);
 		m_stdoutHandler.reset();
 		m_stdinHandler.reset();
+		stdinFileName = m_stdinFileName;
 	}
-	Utility::removeFile(m_stdinFileName);
+	Utility::removeFile(stdinFileName);
 	return dispatchedBytes;
 }
 

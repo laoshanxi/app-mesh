@@ -66,7 +66,9 @@ namespace
 				break;
 			}
 		}
-		return resource.find('/') == std::string::npos ? resource : std::string();
+				if (resource.find('/') != std::string::npos)
+			return std::string();
+		return resource;
 	}
 
 	void validateRunCapabilityTarget(const std::shared_ptr<HttpRequest> &message,

@@ -300,11 +300,11 @@ void RestHandler::observeHttpRequest(const std::shared_ptr<HttpRequest> &message
 		matchRoute = false;
 	}
 
-	const auto route = matchRoute ? normalizedHttpRoute(path, routes) : std::string("unmatched");
+	auto route = matchRoute ? normalizedHttpRoute(path, routes) : std::string("unmatched");
 	const auto started = std::chrono::steady_clock::now();
 	const auto metrics = m_metrics;
 	m_metrics->httpRequestStarted(method, route);
-	message->setReplyMetricCallback([metrics, method, route, started](int status)
+	message->setReplyMetricCallback([metrics, method, route = std::move(route), started](int status)
 									{
 		const auto duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
 		metrics->httpRequestFinished(method, route, status, duration); });
@@ -464,7 +464,7 @@ void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
 
 	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
 	std::map<std::string, std::string> headers;
-	headers[web::http::header_names::location] = swaggerUrl;
+	headers[web::http::header_names::location] = std::move(swaggerUrl);
 
 	std::string emptyBody;
 	message->reply(web::http::status_codes::TemporaryRedirect, emptyBody, headers, CONTENT_TYPE_HTML);
@@ -698,8 +698,8 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	std::map<std::string, std::string> headers;
 	const auto [fileMode, fileUser, fileGroup] = os::fileStat(file).value_or(std::make_tuple(-1, "", ""));
 	headers[HTTP_HEADER_KEY_file_mode] = std::to_string(fileMode);
-	headers[HTTP_HEADER_KEY_file_user] = fileUser;
-	headers[HTTP_HEADER_KEY_file_group] = fileGroup;
+	headers[HTTP_HEADER_KEY_file_user] = std::move(fileUser);
+	headers[HTTP_HEADER_KEY_file_group] = std::move(fileGroup);
 	auto body = HttpRequest::emptyJsonMessage();
 	if (message->m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) && message->m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
 	{
@@ -1532,7 +1532,7 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 
 bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &message, ConnectionKey &connKey, DeliveryCallback &deliveryCb)
 {
-	const auto forwardRoute = message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARDED) &&
+	auto forwardRoute = message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARDED) &&
 		message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
 		? message->m_headers.get(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
 		: std::string();
@@ -1540,7 +1540,7 @@ bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &mess
 	{
 		auto wsCtx = message->wsReplyContext();
 		connKey = ConnectionKey::wss(wsCtx->getNumericId());
-		deliveryCb = [wsCtx, forwardRoute](const EventEnvelope &envelope) -> bool
+		deliveryCb = [wsCtx, forwardRoute = std::move(forwardRoute)](const EventEnvelope &envelope) -> bool
 		{
 			if (wsCtx->isAborted())
 				return false;

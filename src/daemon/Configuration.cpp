@@ -72,7 +72,7 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 		std::lock_guard guard(config->m_hotupdateMutex);
 		config->m_runtimePrometheusEnabled = config->m_rest->m_restEnabled && config->m_rest->m_promListenPort > 1024;
 	}
-	m_instance = config;
+	m_instance = std::move(config);
 }
 
 std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue, bool applyEnv)
@@ -616,7 +616,7 @@ bool Configuration::dependencyCycleExists(const std::vector<std::string> &seedDe
 	std::vector<std::string> pending(seedDeps.begin(), seedDeps.end());
 	while (!pending.empty())
 	{
-		const auto current = pending.back();
+		const auto current = std::move(pending.back());
 		pending.pop_back();
 		if (current == targetName)
 			return true;
@@ -940,7 +940,7 @@ bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envVal
 
 	if (jsonValue.is_string())
 	{
-		jsonValue = std::string(envValue);
+		jsonValue = std::move(envValue);
 		return true;
 	}
 	else if (jsonValue.is_number())

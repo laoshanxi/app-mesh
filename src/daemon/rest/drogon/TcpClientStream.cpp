@@ -107,7 +107,7 @@ bool TcpClientStream::connect(const ForwardingConnectOptions &options)
             policy->setCaPath(ca);
         if (!options.clientCert.empty() && !options.clientKey.empty())
             policy->setCertPath(options.clientCert).setKeyPath(options.clientKey);
-        m_client->enableSSL(policy);
+        m_client->enableSSL(std::move(policy));
         m_client->setSockOptCallback([](int fd) { tcpframe::enableKeepAlive(fd); });
     }
     catch (const std::exception &ex)

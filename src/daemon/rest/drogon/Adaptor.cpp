@@ -359,7 +359,7 @@ void DrogonAdaptor::setupRoutes()
     app.registerPreRoutingAdvice(
         [](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback, drogon::AdviceChainCallback &&chainCallback)
         {
-            const auto declaredLength = req->getHeader(web::http::header_names::content_length);
+            const auto &declaredLength = req->getHeader(web::http::header_names::content_length);
             std::uint64_t declaredBytes = 0;
             std::from_chars(declaredLength.data(), declaredLength.data() + declaredLength.size(), declaredBytes);
             // Only the upload POST streams to disk; every other route is capped.
@@ -425,7 +425,7 @@ std::shared_ptr<WSS::ReplyContext> DrogonAdaptor::createHttpReplyContext(drogon:
     auto cb = std::make_shared<drogon::AdviceCallback>(std::move(callback));
     return std::make_shared<WSS::ReplyContext>(
         WSS::ReplyContext::ProtocolType::Http,
-        [cb](std::string &&data, const std::string &status, const WSS::ReplyContext::Headers &headers, const std::string &contentType, bool /*isLast*/, bool /*isBinary*/)
+        [cb = std::move(cb)](std::string &&data, const std::string &status, const WSS::ReplyContext::Headers &headers, const std::string &contentType, bool /*isLast*/, bool /*isBinary*/)
         {
             // drogon response callbacks may be invoked from any thread; the
             // framework queues the write back to the owning IO loop. If the
@@ -689,7 +689,7 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
     {
         auto value = req->getHeader(headerName);
         if (!value.empty())
-            attrHeaders.emplace(canonicalName, std::string(value));
+            attrHeaders.emplace(canonicalName, std::move(value));
     };
     captureAttr("x-file-mode", HTTP_HEADER_KEY_file_mode);
     captureAttr("x-file-user", HTTP_HEADER_KEY_file_user);

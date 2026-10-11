@@ -45,7 +45,7 @@ namespace dgn
                                 drogon::FilterChainCallback &&fccb)
     {
         // Reject an upgrade whose offered sub-protocols are all unsupported.
-        const auto offered = req->getHeader(web::http::header_names::sec_websocket_protocol);
+        const auto &offered = req->getHeader(web::http::header_names::sec_websocket_protocol);
         if (!offered.empty() && negotiateWsSubprotocol(offered).empty())
         {
             auto resp = drogon::HttpResponse::newHttpResponse();

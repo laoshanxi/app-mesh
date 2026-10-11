@@ -65,7 +65,7 @@ void TcpAdaptor::start()
     // when a CA is configured. "require" also rejects a client without a cert.
     auto policy = trantor::TLSPolicy::defaultServerPolicy(m_certFile, m_keyFile);
     policy->setConfCmds(dgn::tlsHardeningConf(m_caFile));
-    m_server->enableSSL(policy);
+    m_server->enableSSL(std::move(policy));
 
     // A bind/listen failure aborts the process (trantor logs and exits),
     // keeping startup fail-fast.
