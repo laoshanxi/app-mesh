@@ -8,8 +8,8 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <lmcons.h>
-#include <sddl.h>
 #include <windows.h>
+#include <sddl.h> // ConvertSidToStringSidA, must follow windows.h
 
 #pragma comment(lib, "advapi32.lib")
 

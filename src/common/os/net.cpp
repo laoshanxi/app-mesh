@@ -35,6 +35,11 @@
 #ifndef NI_MAXHOST
 #define NI_MAXHOST 1025
 #endif
+// Winsock defines EAI_* without EAI_SYSTEM; the sentinel keeps the POSIX
+// "system error" check compiling, where getnameinfo never returns it.
+#ifndef EAI_SYSTEM
+#define EAI_SYSTEM -1
+#endif
 #else
 #error "Unsupported platform"
 #endif

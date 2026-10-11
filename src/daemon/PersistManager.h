@@ -8,6 +8,8 @@
 
 #include <json/json.h>
 
+#include "../common/os/models.h" // pid_t
+
 /// <summary>
 /// App Process Recover object
 /// </summary>

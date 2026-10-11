@@ -138,7 +138,8 @@ else
     cd drogon && mkdir build && cd build
     # $ORIGIN keeps the packaged libraries self-contained; the OpenSSL prefix
     # makes the runtime dependency scan resolve one libcrypto, not the system copy.
-    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCMAKE_SKIP_INSTALL_RPATH=ON -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath,\$ORIGIN" -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DBUILD_BROTLI=OFF ..
+    # v1.9.13 omits <iomanip> for std::put_time / std::setprecision on non-Windows.
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCMAKE_SKIP_INSTALL_RPATH=ON -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath,\$ORIGIN" -DCMAKE_CXX_FLAGS="-include iomanip" -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DBUILD_BROTLI=OFF ..
     make -j"$(nproc)" && make install
     cd $ROOTDIR
 fi

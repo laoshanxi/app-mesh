@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <condition_variable>
+#include <optional>
 
 #if !defined(_WIN32)
 #include <fcntl.h>
@@ -977,22 +978,33 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 #else
 	std::vector<std::string> args(argv.begin() + 1, argv.end());
 
-	// vfork_launcher forks without notifying the io_context in the child. The
-	// daemon creates services on this context from several threads, so a forked
-	// child can inherit a service mutex held and deadlock before execve.
+	// vfork_launcher still notifies the io_context in the parent: concurrent
+	// forks serialize on the scheduler mutex against the context's own thread,
+	// which deadlocks the workers. Run the launcher on the ProcessService
+	// thread, the only thread the daemon forks from.
 	bp2::posix::vfork_launcher launcher;
 	const auto launch = [&](auto &&...inits)
 	{
-		// On error the launcher itself returns an empty process; the forked
-		// child exited on the failed exec and must be reaped here.
-		bp2::process proc = launcher(PROCESS_SERVICE::instance()->io(), ec, exe, args,
-									 std::forward<decltype(inits)>(inits)...);
-		if (ec && launcher.pid > 0)
-		{
-			int childStatus = 0;
-			::waitpid(launcher.pid, &childStatus, 0);
-		}
-		return proc;
+		// The default constructor is unavailable on the signal-based handle,
+		// so carry the result in an optional. A stopped service leaves it
+		// empty and reads as a failed spawn.
+		std::optional<bp2::process> proc;
+		ec.clear();
+		if (!PROCESS_SERVICE::instance()->dispatchSync(
+				[&]
+				{
+					// On error the launcher itself returns an empty process; the
+					// forked child exited on the failed exec and must be reaped here.
+					proc = launcher(PROCESS_SERVICE::instance()->io(), ec, exe, args,
+									std::forward<decltype(inits)>(inits)...);
+					if (ec && launcher.pid > 0)
+					{
+						int childStatus = 0;
+						::waitpid(launcher.pid, &childStatus, 0);
+					}
+				}))
+			ec = boost::asio::error::operation_aborted;
+		return std::move(*proc);
 	};
 
 	// The default constructor is unavailable on the signal-based handle, so

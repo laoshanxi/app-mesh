@@ -18,6 +18,7 @@
 #include <json/json.h>
 
 #include "../../common/TimerHandler.h"
+#include "../../common/os/models.h" // pid_t
 #include "../rest/HttpRequest.h"
 #include "AppBehavior.h"
 #include "AppUtils.h"

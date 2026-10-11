@@ -196,7 +196,8 @@ git clone --depth=1 -b v1.9.13 --recurse-submodules --shallow-submodules https:/
 cd drogon && mkdir build && cd build
 # $ORIGIN keeps the packaged libraries self-contained; the OpenSSL prefix
 # makes the runtime dependency scan resolve one libcrypto, not the system copy.
-cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCMAKE_SKIP_INSTALL_RPATH=ON -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath,\$ORIGIN:/usr/local/ssl/lib" -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DBUILD_BROTLI=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
+# v1.9.13 omits <iomanip> for std::put_time / std::setprecision on non-Windows.
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCMAKE_SKIP_INSTALL_RPATH=ON -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath,\$ORIGIN:/usr/local/ssl/lib" -DCMAKE_CXX_FLAGS="-include iomanip" -DBUILD_CTL=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_ORM=OFF -DBUILD_BROTLI=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl ..
 make -j"$(nproc)" && make install
 
 cd $ROOTDIR

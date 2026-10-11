@@ -12,6 +12,8 @@
 
 #include <json/json.h>
 
+#include "../common/os/models.h" // pid_t
+
 struct HostNetInterface
 {
 	std::string name;
