@@ -14,7 +14,14 @@ TimerStdoutStrategy::TimerStdoutStrategy(std::string appName, std::weak_ptr<Appl
 
 TimerStdoutStrategy::~TimerStdoutStrategy()
 {
-	teardown();
+	// Destructors must not throw: shutdown may already have torn down the timer service.
+	try
+	{
+		teardown();
+	}
+	catch (...)
+	{
+	}
 }
 
 void TimerStdoutStrategy::activate(TimerHandler &owner, const std::string &processUuid)
@@ -50,10 +57,12 @@ bool TimerStdoutStrategy::onTimerDispatch(const std::shared_ptr<State> &state)
 {
 	const static char fname[] = "TimerStdoutStrategy::onTimerDispatch() ";
 
+	std::string processUuid;
 	{
 		std::lock_guard registrationGuard(state->registrationMutex);
 		if (state->stopped.load(std::memory_order_acquire))
 			return false;
+		processUuid = state->processUuid;
 	}
 	auto owner = state->owner.lock();
 	if (!owner)
@@ -64,7 +73,7 @@ bool TimerStdoutStrategy::onTimerDispatch(const std::shared_ptr<State> &state)
 	{
 		long pos = state->dispatchedBytes.load(std::memory_order_acquire);
 		const long startPos = pos;
-		auto result = owner->getOutput(pos, 64 * 1024, state->processUuid, 0, 0);
+		auto result = owner->getOutput(pos, 64 * 1024, processUuid, 0, 0);
 		auto &output = std::get<0>(result);
 		std::lock_guard guard(state->dispatchMutex);
 		if (state->stopped.load(std::memory_order_acquire))

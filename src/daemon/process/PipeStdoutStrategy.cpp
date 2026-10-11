@@ -15,7 +15,14 @@ PipeStdoutStrategy::PipeStdoutStrategy(std::string appName, int pipeReadFd, int 
 
 PipeStdoutStrategy::~PipeStdoutStrategy()
 {
-	teardown();
+	// Destructors must not throw: shutdown may already have torn down the io service.
+	try
+	{
+		teardown();
+	}
+	catch (...)
+	{
+	}
 }
 
 void PipeStdoutStrategy::activate(TimerHandler &, const std::string &)

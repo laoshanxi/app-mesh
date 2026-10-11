@@ -56,8 +56,15 @@ DockerApiProcess::~DockerApiProcess()
 	const static char fname[] = "DockerApiProcess::~DockerApiProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	// Destruction has no shared owner; skip lifecycle callbacks.
-	DockerApiProcess::terminateImpl();
+	// Destructors must not throw: cleanup is best-effort during teardown.
+	try
+	{
+		// Destruction has no shared owner; skip lifecycle callbacks.
+		DockerApiProcess::terminateImpl();
+	}
+	catch (...)
+	{
+	}
 }
 
 void DockerApiProcess::terminateImpl()
