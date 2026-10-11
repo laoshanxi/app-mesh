@@ -17,7 +17,6 @@ else()
 endif()
 target_link_libraries(common
   PRIVATE
-    ${ACE_LIBRARY}
     yaml-cpp::yaml-cpp
     Boost::regex
     Boost::system

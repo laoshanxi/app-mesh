@@ -4,14 +4,13 @@
 #include "Data.h"
 #include "../../common/Utility.h"
 
-#include <ace/Null_Mutex.h>
-#include <ace/Singleton.h>
-#include <ace/Task.h>
 #include <concurrentqueue/blockingconcurrentqueue.h>
 
 #include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace WSS
 {
@@ -23,11 +22,13 @@ struct HttpRequestContext;
 
 using RequestQueue = moodycamel::BlockingConcurrentQueue<std::shared_ptr<HttpRequestContext>>;
 
-class Worker : public ACE_Task_Base
+class Worker
 {
 public:
+	static Worker *instance();
+
 	Worker() = default;
-	~Worker() override = default;
+	~Worker() = default;
 
 	// Non-copyable and non-movable
 	Worker(const Worker &) = delete;
@@ -35,14 +36,20 @@ public:
 	Worker(Worker &&) = delete;
 	Worker &operator=(Worker &&) = delete;
 
+	/// Spawn `threadCount` worker threads draining the shared queue.
+	void start(size_t threadCount);
+
 	bool process(const std::shared_ptr<HttpRequest> &request);
 
 	void queueWsRequest(std::string &&data, std::shared_ptr<WSS::ReplyContext> wsContext);
 
 	void shutdown();
 
+	/// Join every worker thread.
+	void wait();
+
 protected:
-	int svc() override;
+	void svc();
 	bool forward(std::string forwardTo, const std::shared_ptr<HttpRequest> &request);
 
 private:
@@ -51,6 +58,8 @@ private:
 
 	RequestQueue m_messages;
 	std::atomic<size_t> m_pendingCount{0}; // in-flight requests queued but not yet processed
+	size_t m_threadCount{0};				 // matched by shutdown() sentinels and joined by wait()
+	std::vector<std::thread> m_threads;
 };
 
-using WORKER = ACE_Singleton<Worker, ACE_Null_Mutex>;
+using WORKER = Worker;

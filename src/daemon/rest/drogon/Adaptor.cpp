@@ -165,12 +165,12 @@ namespace dgn
     }
 }
 
-void DrogonAdaptor::initialize(const ACE_INET_Addr &addr, const std::string &cert, const std::string &key, const std::string &ca, int ioThreads)
+void DrogonAdaptor::initialize(const std::string &host, uint16_t port, const std::string &cert, const std::string &key, const std::string &ca, int ioThreads)
 {
     const static char fname[] = "DrogonAdaptor::initialize() ";
 
-    m_host = addr.get_host_addr();
-    m_port = addr.get_port_number();
+    m_host = host;
+    m_port = static_cast<int>(port);
     m_certFile = cert;
     m_keyFile = key;
     m_caFile = ca;

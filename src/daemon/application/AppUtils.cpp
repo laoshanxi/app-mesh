@@ -1,7 +1,6 @@
 // src/daemon/application/AppUtils.cpp
 #include "AppUtils.h"
 #include <algorithm>
-#include <ace/OS.h>
 #include <fstream>
 #include <memory>
 #include <stdexcept>

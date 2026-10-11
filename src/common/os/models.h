@@ -3,7 +3,14 @@
 
 #include <cstdint>
 #include <string>
+#if defined(_WIN32)
+// MSVC has no <sys/types.h>; these used to come from ACE.
+using pid_t = int;
+using uid_t = unsigned int;
+using gid_t = unsigned int;
+#else
 #include <sys/types.h> // For pid_t
+#endif
 
 namespace os
 {

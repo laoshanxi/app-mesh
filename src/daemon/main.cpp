@@ -13,9 +13,14 @@
 #include <thread>
 #include <vector>
 
-#include <ace/Init_ACE.h>
-#include <ace/OS.h>
 #include <spdlog/spdlog.h>
+#include <trantor/net/InetAddress.h>
+#if defined(_WIN32)
+#include <process.h> // for _exit()
+#include <winsock2.h>
+#else
+#include <unistd.h> // for _exit()
+#endif
 
 #include "../common/QuitHandler.h"
 #include "../common/RestClient.h"
@@ -23,6 +28,7 @@
 #include "../common/Utility.h"
 #include "../common/json.h"
 #include "../common/os/chown.h"
+#include "../common/os/proc.h"
 #include "../common/os/pstree.h"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
@@ -61,7 +67,7 @@ public:
 public:
 	// Initialization methods
 	void initializeEnvironment();
-	void initializeACE();
+	void initializeServices();
 	void initializeLogging();
 	void logStartupEnvironment();
 	void initializeConfiguration();
@@ -92,7 +98,7 @@ public:
 
 private:
 	// trantor and drogon call exit(1) on bind failure, which skips performShutdown().
-	static void verifyListenerAddress(const ACE_INET_Addr &addr, const std::string &service);
+	static void verifyListenerAddress(const trantor::InetAddress &addr, const std::string &service);
 
 	std::vector<std::unique_ptr<std::thread>> m_threadPool;
 	std::list<os::Process> m_ptree;
@@ -139,9 +145,9 @@ int main(int argc, char *argv[])
 void AppMeshDaemon::logStartupEnvironment()
 {
 	const static char fname[] = "AppMeshDaemon::logStartupEnvironment() ";
-	LOG_INF << fname << "LANG=<" << (ACE_OS::getenv("LANG") ? ACE_OS::getenv("LANG") : "") << "> LC_ALL=<"
-			<< (ACE_OS::getenv("LC_ALL") ? ACE_OS::getenv("LC_ALL") : "") << "> APPMESH_AUTH_MODE=<"
-			<< (ACE_OS::getenv("APPMESH_AUTH_MODE") ? ACE_OS::getenv("APPMESH_AUTH_MODE") : "") << ">";
+	LOG_INF << fname << "LANG=<" << (Utility::getenv("LANG")) << "> LC_ALL=<"
+			<< (Utility::getenv("LC_ALL")) << "> APPMESH_AUTH_MODE=<"
+			<< (Utility::getenv("APPMESH_AUTH_MODE")) << ">";
 }
 
 int AppMeshDaemon::run(int argc, char *argv[])
@@ -156,7 +162,7 @@ int AppMeshDaemon::run(int argc, char *argv[])
 		logStartupEnvironment();
 		initializeConfiguration();
 		LinuxCgroup::initializeApplicationCgroups();
-		initializeACE();
+		initializeServices();
 		initializeSecurity();
 		initializeDirectories();
 		setupSignalHandlers();
@@ -186,15 +192,22 @@ int AppMeshDaemon::run(int argc, char *argv[])
 void AppMeshDaemon::initializeEnvironment()
 {
 	// logging not available yet
-	ACE::init();
+#if defined(_WIN32)
+	// Winsock must be up before any socket call (logging, pid file, listeners).
+	WSADATA wsaData;
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+	{
+		std::cerr << "WSAStartup failed" << std::endl;
+	}
+#endif
 	fs::current_path(Utility::getHomeDir());
 	Utility::createPidFile();
 	Utility::ensureSystemRoot();
 }
 
-void AppMeshDaemon::initializeACE()
+void AppMeshDaemon::initializeServices()
 {
-	const static char fname[] = "AppMeshDaemon::initializeACE() ";
+	const static char fname[] = "AppMeshDaemon::initializeServices() ";
 
 	// Construct singletons on the main thread before workers can race their
 	// first use. TimerManager and ProcessService start their own io threads.
@@ -203,6 +216,7 @@ void AppMeshDaemon::initializeACE()
 	EventDispatcher::instance();
 	QuitHandler::instance();
 	WORKER::instance();
+	RESTHANDLER::instance();
 
 	LOG_INF << fname << "Service singletons initialized";
 }
@@ -312,12 +326,18 @@ void AppMeshDaemon::recoverApplications()
 	LOG_INF << fname << "Applications recovered";
 }
 
-void AppMeshDaemon::verifyListenerAddress(const ACE_INET_Addr &addr, const std::string &service)
+void AppMeshDaemon::verifyListenerAddress(const trantor::InetAddress &addr, const std::string &service)
 {
 	const static char fname[] = "AppMeshDaemon::verifyListenerAddress() ";
 
-	const ACE_HANDLE probe = ACE_OS::socket(addr.get_type(), SOCK_STREAM, 0);
-	if (probe == ACE_INVALID_HANDLE)
+#if defined(_WIN32)
+	const SOCKET probe = ::socket(addr.family(), SOCK_STREAM, 0);
+	const bool invalidProbe = probe == INVALID_SOCKET;
+#else
+	const int probe = ::socket(addr.family(), SOCK_STREAM, 0);
+	const bool invalidProbe = probe < 0;
+#endif
+	if (invalidProbe)
 	{
 		LOG_WAR << fname << "Cannot create a socket to verify the " << service << " address: " << last_error_msg();
 		return;
@@ -325,14 +345,20 @@ void AppMeshDaemon::verifyListenerAddress(const ACE_INET_Addr &addr, const std::
 
 	// Same option as the listeners before bind, so a TIME_WAIT socket is not a conflict.
 	const int reuse = 1;
-	ACE_OS::setsockopt(probe, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof(reuse));
-	const int bindResult = ACE_OS::bind(probe, static_cast<struct sockaddr *>(addr.get_addr()), addr.get_size());
+	::setsockopt(probe, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof(reuse));
+	// InetAddress stores a sockaddr_in6 internally; bind wants the exact family size.
+	const socklen_t addrLen = addr.isIpV6() ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in);
+	const int bindResult = ::bind(probe, addr.getSockAddr(), addrLen);
 	const std::string bindError = last_error_msg();
-	ACE_OS::closesocket(probe);
+#if defined(_WIN32)
+	::closesocket(probe);
+#else
+	::close(probe);
+#endif
 
 	if (bindResult != 0)
 	{
-		const std::string endpoint = std::string(addr.get_host_addr()) + ":" + std::to_string(addr.get_port_number());
+		const std::string endpoint = addr.toIp() + ":" + std::to_string(addr.toPort());
 		LOG_ERR << fname << "Cannot bind the " << service << " address <" << endpoint << ">: " << bindError;
 		throw std::runtime_error("Cannot listen on " + endpoint + " for the " + service + " service: " + bindError);
 	}
@@ -358,24 +384,34 @@ void AppMeshDaemon::initializeRestService()
 	// Start REST thread pool
 	startWorkerThreadPool();
 
+	// drogon and the TCP transport accept numeric addresses only, and the bind
+	// probe below must check the same address the listeners will use.
+	std::string resolveError;
+	const std::string listenIp = Utility::resolveHostAddress(config->getRestListenAddress(), resolveError);
+	if (listenIp.empty())
+	{
+		throw std::runtime_error("Cannot resolve listen address <" + config->getRestListenAddress() + ">: " + resolveError);
+	}
+	const bool listenV6 = listenIp.find(':') != std::string::npos;
+
 	// TLS TCP service (length-prefixed msgpack frames, same request pipeline
 	// as the WebSocket transport)
-	ACE_INET_Addr tcpAddr(config->getTcpApiPort(), config->getRestListenAddress().c_str());
+	const trantor::InetAddress tcpAddr(listenIp, static_cast<uint16_t>(config->getTcpApiPort()), listenV6);
 	verifyListenerAddress(tcpAddr, "TCP");
-	TcpAdaptor::instance()->initialize(tcpAddr, cert, key, ca, static_cast<int>(Configuration::instance()->getTransportIoThreads()));
+	TcpAdaptor::instance()->initialize(listenIp, config->getTcpApiPort(), cert, key, ca, static_cast<int>(Configuration::instance()->getTransportIoThreads()));
 	TcpAdaptor::instance()->start();
-	LOG_INF << fname << "TCP service initialized on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
+	LOG_INF << fname << "TCP service initialized on <" << tcpAddr.toIp() << ":" << tcpAddr.toPort() << ">";
 
 	// Websocket service
 	if (config->getWebSocketPort())
 	{
-		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
-		verifyListenerAddress(addr, "WebSocket");
+		const trantor::InetAddress wsAddr(listenIp, static_cast<uint16_t>(config->getWebSocketPort()), listenV6);
+		verifyListenerAddress(wsAddr, "WebSocket");
 		// <IO> threads per transport + shared <WORKER> threads
 		int ioThreadNumber = static_cast<int>(Configuration::instance()->getTransportIoThreads());
-		DrogonAdaptor::instance()->initialize(addr, cert, key, ca, ioThreadNumber);
+		DrogonAdaptor::instance()->initialize(listenIp, config->getWebSocketPort(), cert, key, ca, ioThreadNumber);
 		DrogonAdaptor::instance()->start();
-		LOG_INF << fname << "WebSocket service initialized on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
+		LOG_INF << fname << "WebSocket service initialized on <" << wsAddr.toIp() << ":" << wsAddr.toPort() << ">";
 	}
 
 	startAgentApplication();
@@ -391,7 +427,7 @@ void AppMeshDaemon::startWorkerThreadPool()
 	auto config = Configuration::instance();
 	auto workerNum = config->getWorkerThreads();
 
-	WORKER::instance()->activate(THR_NEW_LWP | THR_JOINABLE, workerNum);
+	WORKER::instance()->start(workerNum);
 
 	LOG_INF << fname << "Started " << workerNum << " threads for REST thread pool";
 }
@@ -504,7 +540,7 @@ void AppMeshDaemon::runMainLoop()
 				const auto scrapeGeneration = RESTHANDLER::instance()->prometheusScrapeGeneration();
 				if (scrapeGeneration != m_lastPrometheusScrape)
 				{
-					std::vector<pid_t> roots = {ACE_OS::getpid()};
+					std::vector<pid_t> roots = {os::getpid()};
 					for (const auto &app : Configuration::instance()->getApps())
 					{
 						const auto pid = app->getpid();
@@ -714,8 +750,8 @@ void AppMeshDaemon::performShutdown()
 	LOG_INF << fname << "AppMesh daemon exited";
 
 	spdlog::shutdown();
-	ACE_OS::_exit(0);
-	ACE::fini();
+	// Terminal exit: skip atexit and static destructors on purpose.
+	_exit(0);
 }
 
 void AppMeshDaemon::stopManagedApplications()

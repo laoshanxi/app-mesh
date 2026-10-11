@@ -2,7 +2,7 @@
 #pragma once
 
 #if !defined(_WIN32)
-#include <ace/OS_NS_unistd.h>
+#include <sys/types.h> // for uid_t, gid_t
 #include <string>
 
 namespace os

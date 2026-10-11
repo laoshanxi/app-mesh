@@ -46,7 +46,6 @@ BREW_PACKAGES=(
     jsoncpp
     drogon
     uriparser
-    ace
     boost
 )
 

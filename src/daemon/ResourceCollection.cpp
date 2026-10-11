@@ -5,7 +5,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <ace/OS.h>
 
 #include "../common/DateTime.h"
 #include "../common/Utility.h"
@@ -191,7 +190,7 @@ HostResource ResourceCollection::getHostResource()
 
 pid_t ResourceCollection::getPid()
 {
-	static auto pid = getpid();
+	static auto pid = os::getpid();
 	return pid;
 }
 

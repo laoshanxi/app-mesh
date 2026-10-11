@@ -51,9 +51,6 @@ if [ true ]; then
     ./b2 install >/dev/null
     cd "$ROOTDIR"
 fi
-# build ACE
-apt install -y libace-dev
-
 # yaml-cpp
 apt install -y libyaml-cpp-dev
 

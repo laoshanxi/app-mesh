@@ -8,9 +8,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <ace/OS.h>
-#include <ace/OS_NS_unistd.h>
-
 #include "models.h"
 #include "procstat.hpp"
 

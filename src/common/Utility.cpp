@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdarg>
 #include <cstdlib>
 #include <errno.h>
 #include <fstream>
@@ -23,6 +24,7 @@
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <netdb.h>
 #endif
 #if defined(__APPLE__)
 #include <crt_externs.h> // For getprogname
@@ -32,14 +34,12 @@
 #include <windows.h>
 #endif
 
-#include <ace/INET_Addr.h>
-#include <ace/OS.h>
-#include <ace/UUID.h>
 #include <openssl/crypto.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
+#include <drogon/utils/Utilities.h>
 #include <filesystem>
 #include <boost/program_options/parsers.hpp>
 #include <hashidsxx/hashids.cpp>
@@ -52,6 +52,7 @@
 #include "Utility.h"
 #include "os/chown.h"
 #include "os/linux.h"
+#include "os/proc.h"
 
 const char *GET_STATUS_STR(unsigned int status)
 {
@@ -160,7 +161,7 @@ const std::string Utility::getExecutablePath()
 
 #elif defined(__linux__)
 	char buf[PATH_MAX] = {0};
-	auto count = ACE_OS::readlink("/proc/self/exe", buf, PATH_MAX);
+	auto count = ::readlink("/proc/self/exe", buf, PATH_MAX);
 	if (count < 0 || count >= PATH_MAX)
 	{
 		LOG_ERR << fname << "Failed to read /proc/self/exe: " << last_error_msg();
@@ -341,14 +342,12 @@ void Utility::removeFile(const std::string &path)
 
 	if (path.length() && isFileExist(path))
 	{
-		if (ACE_OS::unlink(path.c_str()) == 0)
-		{
-			LOG_DBG << fname << "file <" << path << "> removed";
-		}
+		std::error_code ec;
+		fs::remove(path, ec);
+		if (ec)
+			LOG_WAR << fname << "Failed to remove file <" << path << "> with error: " << ec.message();
 		else
-		{
-			LOG_WAR << fname << "Failed to remove file <" << path << "> with error: " << last_error_msg();
-		}
+			LOG_DBG << fname << "file <" << path << "> removed";
 	}
 }
 
@@ -385,7 +384,7 @@ bool Utility::runningInContainer()
 
 std::string Utility::resolveHostAddress(const std::string &host, std::string &errorText)
 {
-	// An address literal passes through; ACE resolves a host name, IPv4 only.
+	// An address literal passes through; a host name resolves via getaddrinfo.
 	struct in_addr v4;
 	struct in6_addr v6;
 	if (host.find(':') != std::string::npos)
@@ -398,14 +397,47 @@ std::string Utility::resolveHostAddress(const std::string &host, std::string &er
 		return host;
 	}
 
-	ACE_INET_Addr addr;
-	const char *resolved = addr.set(static_cast<u_short>(0), host.c_str(), 1, AF_INET) == 0 ? addr.get_host_addr() : nullptr;
-	if (resolved == nullptr)
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC; // resolve both families
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_ADDRCONFIG; // skip AAAA on v4-only hosts and vice versa
+	struct addrinfo *result = nullptr;
+	const int rc = ::getaddrinfo(host.c_str(), nullptr, &hints, &result);
+	if (rc != 0 || result == nullptr)
 	{
-		errorText = "cannot resolve " + host;
+		errorText = "cannot resolve " + host + ": " + gai_strerror(rc);
 		return std::string();
 	}
-	return resolved;
+
+	// Prefer IPv4: a dual-stack target keeps its legacy reachability, a v6-only
+	// target still resolves through its AAAA record.
+	const addrinfo *chosen = result;
+	for (const addrinfo *ai = result; ai != nullptr; ai = ai->ai_next)
+	{
+		if (ai->ai_family == AF_INET)
+		{
+			chosen = ai;
+			break;
+		}
+	}
+
+	char numeric[INET6_ADDRSTRLEN] = {0};
+	if (::getnameinfo(chosen->ai_addr, chosen->ai_addrlen, numeric, sizeof(numeric), nullptr, 0, NI_NUMERICHOST) != 0)
+	{
+		::freeaddrinfo(result);
+		errorText = "cannot convert resolved address of " + host;
+		return std::string();
+	}
+	::freeaddrinfo(result);
+	// InetAddress parses with bare inet_pton, so a scope-qualified address
+	// would silently fall back to the wildcard address.
+	if (strchr(numeric, '%') != nullptr)
+	{
+		errorText = "scope-qualified address <" + std::string(numeric) + "> of " + host + " is not supported";
+		return std::string();
+	}
+	return numeric;
 }
 
 bool Utility::ensureSystemRoot()
@@ -428,7 +460,7 @@ bool Utility::ensureSystemRoot()
 		}
 		systemRoot = sysDir;
 
-		if (ACE_OS::setenv("SYSTEMROOT", systemRoot.c_str(), 0) == -1)
+		if (_putenv_s("SYSTEMROOT", systemRoot.c_str()) != 0)
 		{
 			std::cerr << "[Error] Failed to set SYSTEMROOT to: " << systemRoot << " (Error " << last_error_msg() << ")" << std::endl;
 			return false;
@@ -479,7 +511,7 @@ void Utility::initLogging(const std::string &name)
 	if (!levelEnv.empty())
 		setLogLevel(levelEnv);
 
-	LOG_DBG << "Logging process ID: " << getpid();
+	LOG_DBG << "Logging process ID: " << os::getpid();
 }
 
 bool Utility::setLogLevel(const std::string &level)
@@ -997,22 +1029,11 @@ std::string Utility::shortID()
 
 std::string Utility::uuid()
 {
-	// Generate UUID
-	ACE_Utils::UUID uuid;
-	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
-
-	// Convert to string
-	const auto *uuid_str = uuid.to_string();
-	if (uuid_str == nullptr)
-	{
-		return shortID();
-	}
-
-	// Remove hyphens
-	std::string result = uuid_str->c_str();
+	// Generate a UUID (RFC 4122 v4) and strip the hyphens for a 32-char id
+	std::string result = drogon::utils::getUuid();
 	result.erase(std::remove(result.begin(), result.end(), '-'), result.end());
 
-	return result;
+	return result.empty() ? shortID() : result;
 }
 
 bool Utility::createPidFile()
@@ -1045,7 +1066,7 @@ bool Utility::createPidFile()
 	}
 	else
 	{
-		if (ACE_OS::last_error() == EWOULDBLOCK)
+		if (errno == EWOULDBLOCK)
 		{
 			std::cerr << fname << "Process already running. PID file locked: " << pidFile << std::endl;
 		}
@@ -1077,7 +1098,7 @@ bool Utility::createPidFile()
 		return false;
 	}
 
-	std::string pid = std::to_string(ACE_OS::getpid());
+	std::string pid = std::to_string(os::getpid());
 	DWORD bytesWritten;
 	if (!WriteFile(hFile, pid.c_str(), static_cast<DWORD>(pid.length()), &bytesWritten, NULL))
 	{
@@ -1241,7 +1262,7 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 
 std::string Utility::getenv(const std::string &envName, const std::string &defaultValue)
 {
-	const char *val = ACE_OS::getenv(envName.data());
+	const char *val = std::getenv(envName.data());
 	if (val == nullptr || val[0] == '\0')
 		return defaultValue;
 
@@ -1605,23 +1626,47 @@ static thread_local std::string g_errorMessage;
 
 const char *last_error_msg()
 {
-	// Get the last error code
-	int err_code = ACE_OS::last_error();
+	// Same policy as the former ACE wrapper: CRT errno first, GetLastError() on
+	// Windows when errno is unset (Winsock failures land there).
+	const int err_code =
+#if defined(_WIN32)
+		errno != 0 ? errno : static_cast<int>(::GetLastError());
+#else
+		errno;
+#endif
 
-	// Retrieve the corresponding error message
-	const char *error_message = ACE_OS::strerror(err_code);
-
-	// Check if the error message is valid
-	if (error_message && *error_message)
+#if defined(_WIN32)
+	if (err_code == 0)
 	{
-		g_errorMessage.assign(error_message); // Use assign to minimize allocations
+		g_errorMessage.assign("Unknown error");
+		return g_errorMessage.c_str();
+	}
+	char buf[256] = {0};
+	if (errno != 0)
+	{
+		strerror_s(buf, sizeof(buf), err_code);
+		g_errorMessage.assign(buf);
 	}
 	else
 	{
-		g_errorMessage.assign("Unknown error"); // Assign a fallback error message
+		const DWORD len = ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
+											nullptr, static_cast<DWORD>(err_code), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+											buf, sizeof(buf), nullptr);
+		if (len > 0 && buf[0] != '\0')
+			g_errorMessage.assign(buf, len);
+		else
+			g_errorMessage.assign("Unknown error ").append(std::to_string(err_code));
 	}
-
-	// Return a pointer to the internal buffer of the thread-local string
+#else
+	char buf[256] = {0};
+#if defined(__GLIBC__)
+	// glibc returns char*; XSI (macOS, musl) fills buf and returns an int.
+	const char *error_message = ::strerror_r(err_code, buf, sizeof(buf));
+#else
+	const char *error_message = ::strerror_r(err_code, buf, sizeof(buf)) == 0 ? buf : nullptr;
+#endif
+	g_errorMessage.assign(error_message && *error_message ? error_message : "Unknown error");
+#endif
 	return g_errorMessage.c_str();
 }
 

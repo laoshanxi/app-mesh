@@ -92,11 +92,16 @@ int64_t steadyNowMs()
 
 bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<HttpRequest> request)
 {
-	// TOCTOU fix: check closed and bind atomically under the same lock
-	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex(), false);
 	if (closed.load(std::memory_order_acquire))
 		return false;
-	return pending_requests.bind(uuid, std::move(request)) == 0;
+	if (!pending_requests.emplace(uuid, std::move(request)))
+		return false;
+	// failAll() may have swept between insert and this check. Whoever erases
+	// the entry owns the reply: if failAll got it, it replies and we report
+	// success; if we erase it here, the caller answers with a 502.
+	if (closed.load(std::memory_order_acquire) && pending_requests.erase(uuid))
+		return false;
+	return true;
 }
 
 bool ForwardingConnection::hasStaleRequests()
@@ -104,8 +109,7 @@ bool ForwardingConnection::hasStaleRequests()
 	const auto lastResponse = lastResponseTime.load(std::memory_order_relaxed);
 	if (lastResponse == 0 || steadyNowMs() - lastResponse <= FORWARD_STALE_RESPONSE_MS)
 		return false;
-	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex(), false);
-	return pending_requests.current_size() > 0;
+	return !pending_requests.empty();
 }
 
 bool ForwardingConnection::idleReapable()
@@ -116,27 +120,25 @@ bool ForwardingConnection::idleReapable()
 	if (lastResponse == 0 || steadyNowMs() - lastResponse <= FORWARD_IDLE_REAP_MS)
 		return false;
 
-	{
-		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex(), false);
-		if (pending_requests.current_size() > 0)
-			return false;
-	}
-	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, subscriptions.mutex(), false);
-	return subscriptions.current_size() == 0;
+	return pending_requests.empty() && subscriptions.empty();
 }
 
 std::shared_ptr<HttpRequest> ForwardingConnection::findRequest(const std::string &uuid)
 {
-	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex(), nullptr);
 	std::shared_ptr<HttpRequest> request;
-	pending_requests.find(uuid, request);
+	pending_requests.visit(uuid, [&request](auto &entry)
+							{ request = entry.second; });
 	return request;
 }
 
 std::shared_ptr<HttpRequest> ForwardingConnection::takeRequest(const std::string &uuid)
 {
 	std::shared_ptr<HttpRequest> req;
-	pending_requests.unbind(uuid, req);
+	pending_requests.erase_if(uuid, [&req](auto &entry)
+							  {
+								  req = entry.second;
+								  return true;
+							  });
 	return req;
 }
 
@@ -145,17 +147,14 @@ void ForwardingConnection::rememberSubscription(const std::string &subscriptionI
 {
 	if (subscriptionId.empty() || !isPersistentClient(request))
 		return;
-	ACE_GUARD(ACE_Recursive_Thread_Mutex, guard, subscriptions.mutex());
-	std::shared_ptr<HttpRequest> previous;
-	subscriptions.unbind(subscriptionId, previous);
-	subscriptions.bind(subscriptionId, std::move(request));
+	subscriptions.insert_or_assign(subscriptionId, std::move(request));
 }
 
 std::shared_ptr<HttpRequest> ForwardingConnection::findSubscription(const std::string &subscriptionId)
 {
-	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, subscriptions.mutex(), nullptr);
 	std::shared_ptr<HttpRequest> request;
-	subscriptions.find(subscriptionId, request);
+	subscriptions.visit(subscriptionId, [&request](auto &entry)
+										{ request = entry.second; });
 	return request;
 }
 
@@ -163,8 +162,7 @@ void ForwardingConnection::removeSubscription(const std::string &subscriptionId)
 {
 	if (subscriptionId.empty())
 		return;
-	std::shared_ptr<HttpRequest> request;
-	subscriptions.unbind(subscriptionId, request);
+	subscriptions.erase(subscriptionId);
 }
 
 void ForwardingConnection::handleResponse(Response &response)
@@ -211,31 +209,30 @@ void ForwardingConnection::handleResponse(Response &response)
 
 void ForwardingConnection::failAll(const std::string &msg)
 {
+	// The store orders before the sweep, so a request that inserts afterwards
+	// either lands in the sweep or self-erases in addRequest().
+	closed.store(true, std::memory_order_release);
 	std::vector<std::string> keys;
-	{
-		ACE_GUARD(ACE_Recursive_Thread_Mutex, guard, pending_requests.mutex());
-		closed.store(true, std::memory_order_release);
-		for (auto iter = pending_requests.begin(); iter != pending_requests.end(); ++iter)
-		{
-			keys.push_back((*iter).ext_id_);
-		}
-	}
+	pending_requests.visit_all([&keys](auto &entry)
+							   { keys.push_back(entry.first); });
 	for (auto &uuid : keys)
 	{
 		std::shared_ptr<HttpRequest> req;
-		if (pending_requests.unbind(uuid, req) == 0 && req)
+		pending_requests.erase_if(uuid, [&req](auto &entry)
+								  {
+									  req = entry.second;
+									  return true;
+								  });
+		if (req)
 		{
 			req->reply(web::http::status_codes::BadGateway, msg);
 		}
 	}
 
 	std::vector<std::pair<std::string, std::shared_ptr<HttpRequest>>> activeSubscriptions;
-	{
-		ACE_GUARD(ACE_Recursive_Thread_Mutex, guard, subscriptions.mutex());
-		for (auto iter = subscriptions.begin(); iter != subscriptions.end(); ++iter)
-			activeSubscriptions.emplace_back((*iter).ext_id_, (*iter).int_id_);
-		subscriptions.unbind_all();
-	}
+	subscriptions.visit_all([&activeSubscriptions](auto &entry)
+							{ activeSubscriptions.emplace_back(entry.first, entry.second); });
+	subscriptions.clear();
 	for (const auto &entry : activeSubscriptions)
 	{
 		Json::Value eventData;
@@ -276,39 +273,40 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 		key += "|" + fingerprint;
 
 	std::shared_ptr<ForwardingConnection> conn;
-	// Phase 1: check under lock, remove stale
+	// Phase 1: check the pool, evict stale
 	std::shared_ptr<ForwardingConnection> deadConn;
 	std::vector<std::pair<std::string, std::shared_ptr<ForwardingConnection>>> idleConns;
+	m_connections.visit(key, [&conn](auto &entry)
+						{ conn = entry.second; });
+	if (conn)
 	{
-		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, m_connections.mutex(), nullptr);
-
-		if (m_connections.find(key, conn) == 0)
+		// A pooled entry can outlive its socket: validate the stream's own
+		// state first or every request would be queued on a dead connection.
+		if (!conn->closed.load(std::memory_order_acquire))
 		{
-			// A pooled entry can outlive its socket: validate the stream's own
-			// state first or every request would be queued on a dead connection.
-			if (!conn->closed.load(std::memory_order_acquire))
-			{
-				if (conn->stream && conn->stream->connected() && !conn->hasStaleRequests())
-					return conn;
-				LOG_WAR << fname << "Pooled connection to " << key << " is dead or not answering; evicting and reconnecting";
-				deadConn = conn;
-			}
-			m_connections.unbind(key);
-			conn.reset();
+			if (conn->stream && conn->stream->connected() && !conn->hasStaleRequests())
+				return conn;
+			LOG_WAR << fname << "Pooled connection to " << key << " is dead or not answering; evicting and reconnecting";
+			deadConn = conn;
 		}
+		// Erase only the visited entry; a racing thread may have published a new one.
+		m_connections.erase_if(key, [&conn](auto &entry)
+							   { return entry.second == conn; });
+		conn.reset();
+	}
 
-		// Only a transport that pins the upgrade identity accumulates per-bearer
-		// connections.
-		if (pinsPrincipal)
-		{
-			for (auto iter = m_connections.begin(); iter != m_connections.end(); ++iter)
-			{
-				if ((*iter).int_id_->idleReapable())
-					idleConns.push_back(std::make_pair((*iter).ext_id_, (*iter).int_id_));
-			}
-			for (auto &entry : idleConns)
-				m_connections.unbind(entry.first);
-		}
+	// Only a transport that pins the upgrade identity accumulates per-bearer
+	// connections.
+	if (pinsPrincipal)
+	{
+		m_connections.visit_all([&idleConns](auto &entry)
+								{
+									if (entry.second->idleReapable())
+										idleConns.emplace_back(entry.first, entry.second);
+								});
+		for (const auto &entry : idleConns)
+			m_connections.erase_if(entry.first, [&entry](auto &e)
+								   { return e.second == entry.second; });
 	}
 	// Outside m_connections: failAll touches client replies — keep the lock
 	// order stream-internal locks → m_connections.
@@ -363,10 +361,8 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 				c->failAll("Forwarding host connection closed");
 			}
 			// Only unbind if the mapped connection is this one (not a race winner)
-			ACE_GUARD(ACE_Recursive_Thread_Mutex, guard, m_connections.mutex());
-			std::shared_ptr<ForwardingConnection> current;
-			if (m_connections.find(key, current) == 0 && current == weakConn.lock())
-				m_connections.unbind(key);
+			m_connections.erase_if(key, [&weakConn](auto &entry)
+								   { return entry.second == weakConn.lock(); });
 		});
 
 	const bool verifyServer = Configuration::instance()->getSslVerifyServer();
@@ -398,18 +394,27 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 	conn->stream = std::move(stream);
 	conn->lastResponseTime.store(steadyNowMs(), std::memory_order_relaxed);
 
-	// Phase 3: bind under lock, handle race where another thread created the same connection
+	// Phase 3: publish, handling the race where another thread created the
+	// same connection. insert_or_visit runs atomically per key, so exactly one
+	// creator wins; a losing creator finds the winner's entry here.
+	while (true)
 	{
-		ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, guard, m_connections.mutex(), nullptr);
 		std::shared_ptr<ForwardingConnection> existing;
-		if (m_connections.find(key, existing) == 0 && !existing->closed.load(std::memory_order_acquire))
+		const bool inserted = m_connections.insert_or_visit(
+			std::make_pair(key, conn),
+			[&existing](auto &entry)
+			{ existing = entry.second; });
+		if (inserted)
+			return conn;
+		if (!existing->closed.load(std::memory_order_acquire))
 		{
 			// Another thread won the race — close our connection and use theirs
 			conn->stream->shutdown();
 			return existing;
 		}
-		m_connections.unbind(key); // Remove any stale entry
-		m_connections.bind(key, conn);
+		// Stale entry: remove only that exact entry and retry.
+		m_connections.erase_if(key, [&existing](auto &entry)
+							   { return entry.second == existing; });
 	}
 
 	return conn;

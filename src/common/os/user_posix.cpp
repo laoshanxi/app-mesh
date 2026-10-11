@@ -7,9 +7,8 @@
 #include <limits>
 #include <memory>
 #include <pwd.h>
+#include <unistd.h>
 #include <vector>
-
-#include <ace/OS.h>
 
 #include "../Utility.h"
 
@@ -28,11 +27,11 @@ namespace os
 
 		struct passwd pwd;
 		struct passwd *result = nullptr;
-		static auto bufsize = ACE_OS::sysconf(_SC_GETPW_R_SIZE_MAX);
+		static auto bufsize = ::sysconf(_SC_GETPW_R_SIZE_MAX);
 		if (bufsize == -1)
 			bufsize = 16384;
 		std::shared_ptr<char> buff(new char[bufsize], std::default_delete<char[]>());
-		ACE_OS::getpwnam_r(userName.c_str(), &pwd, buff.get(), bufsize, &result);
+		::getpwnam_r(userName.c_str(), &pwd, buff.get(), bufsize, &result);
 		if (result)
 		{
 			return std::make_pair(static_cast<unsigned int>(pwd.pw_uid), static_cast<unsigned int>(pwd.pw_gid));
@@ -83,7 +82,7 @@ namespace os
 
 	uid_t get_uid()
 	{
-		return ACE_OS::getuid();
+		return ::getuid();
 	}
 
 	std::string getUsernameByUid(uid_t uid /* = get_uid() */)

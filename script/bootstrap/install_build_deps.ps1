@@ -192,10 +192,11 @@ function Install-VcpkgPackages {
         'boost-program-options:x64-windows',
         'boost-asio:x64-windows',
         'boost-process:x64-windows',
+        'boost-interprocess:x64-windows',
+        'boost-unordered:x64-windows',
         'boost-variant:x64-windows',
         'boost-serialization:x64-windows',
         'boost-lockfree:x64-windows',
-        'ace:x64-windows',
         'drogon:x64-windows',
         # path so should_log() behaviour is identical across platforms.
         'yaml-cpp:x64-windows'
@@ -574,9 +575,6 @@ function Set-EnvironmentVariables {
         [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Machine)
         [Environment]::SetEnvironmentVariable("VCPKG_ROOT", "C:\vcpkg", [EnvironmentVariableTarget]::Machine)
         
-        if ($env:ACE_ROOT) {
-            [Environment]::SetEnvironmentVariable("ACE_ROOT", $env:ACE_ROOT, [EnvironmentVariableTarget]::Machine)
-        }
         
         Write-Host "Environment variables set successfully" -ForegroundColor Green
     }

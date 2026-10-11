@@ -1,13 +1,11 @@
 // src/daemon/rest/ForwardingManager.h
 #pragma once
 
-#include <ace/Map_Manager.h>
-#include <ace/Recursive_Thread_Mutex.h>
-#include <ace/Thread_Mutex.h>
-
 #include <atomic>
 #include <memory>
 #include <string>
+
+#include <boost/unordered/concurrent_flat_map.hpp>
 
 class ForwardingStream;
 class HttpRequest;
@@ -18,11 +16,11 @@ class Response;
 struct ForwardingConnection
 {
 	std::shared_ptr<ForwardingStream> stream;
-	// ACE_Map_Manager operations lock internally, so an external guard over the
-	// same map re-enters; the lock must be recursive or addRequest() deadlocks.
-	using PendingRequestMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
+	// Both maps lock internally per operation; whoever erases a request owns
+	// its reply (addRequest vs failAll race rule).
+	using PendingRequestMap = boost::concurrent_flat_map<std::string, std::shared_ptr<HttpRequest>>;
 	PendingRequestMap pending_requests;
-	using SubscriptionMap = ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex>;
+	using SubscriptionMap = boost::concurrent_flat_map<std::string, std::shared_ptr<HttpRequest>>;
 	SubscriptionMap subscriptions;
 	std::atomic<bool> closed{false};
 	// Time of the last accepted connect or received response.
@@ -54,8 +52,10 @@ struct ForwardingConnection
 
 /// Manages a pool of forwarding connections to remote hosts.
 ///
-/// Key rule: getOrCreateConnection() MUST NOT hold the m_connections lock while
-/// connecting — that would block the event loop's close/unbind path → deadlock.
+/// Key rule: getOrCreateConnection() must not touch the pool map while the
+/// blocking connect/TLS handshake runs — map operations are internally
+/// locked, so a connect inside a visitation would stall the event loop's
+/// close/unbind path.
 class ForwardingManager
 {
 public:
@@ -74,6 +74,6 @@ public:
 private:
 	std::shared_ptr<ForwardingConnection> getOrCreateConnection(const std::string &host, int port, const std::string &bearer);
 
-	using ForwardingClientMap = ACE_Map_Manager<std::string, std::shared_ptr<ForwardingConnection>, ACE_Recursive_Thread_Mutex>;
+	using ForwardingClientMap = boost::concurrent_flat_map<std::string, std::shared_ptr<ForwardingConnection>>;
 	ForwardingClientMap m_connections;
 };

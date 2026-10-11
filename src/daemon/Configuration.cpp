@@ -3,11 +3,11 @@
 #include <exception>
 #include <set>
 #include <thread>
+#include <signal.h>
 #if !defined(_WIN32)
 #include <unistd.h> //environ
 #endif
 
-#include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
 #include <filesystem>
 #include <json/json.h>
@@ -151,20 +151,23 @@ void SigHupHandler(int signo)
 
 void Configuration::handleSignal()
 {
-	static ACE_Sig_Action *sig_action = nullptr;
-	if (!sig_action)
-	{
-		sig_action = new ACE_Sig_Action();
-		sig_action->handler(SigHupHandler);
-		sig_action->register_action(SIGHUP);
-	}
+#if !defined(_WIN32)
+	// Reload the configuration on SIGHUP.
+	static struct sigaction hupAction;
+	sigemptyset(&hupAction.sa_mask);
+	hupAction.sa_handler = SigHupHandler;
+	hupAction.sa_flags = SA_RESTART;
+	sigaction(SIGHUP, &hupAction, nullptr);
 
-	static ACE_Sig_Action *sig_pipe = nullptr;
-	if (!sig_pipe)
-	{
-		sig_pipe = new ACE_Sig_Action((ACE_SignalHandler)SIG_IGN);
-		sig_pipe->register_action(SIGPIPE, 0);
-	}
+	// Ignore SIGPIPE so writes to closed sockets return EPIPE instead of killing the daemon.
+	static struct sigaction pipeAction;
+	sigemptyset(&pipeAction.sa_mask);
+	pipeAction.sa_handler = SIG_IGN;
+	sigaction(SIGPIPE, &pipeAction, nullptr);
+#elif defined(SIGHUP)
+	// Nothing delivers SIGHUP on Windows; keep the handler registered for parity.
+	signal(SIGHUP, SigHupHandler);
+#endif
 }
 
 Json::Value Configuration::AsJson()
@@ -191,13 +194,9 @@ Json::Value Configuration::AsJson()
 std::vector<std::shared_ptr<Application>> Configuration::getApps() const
 {
 	std::vector<std::shared_ptr<Application>> apps;
-	apps.reserve(m_apps.current_size());
-
-	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_apps.mutex());
-	for (const auto &entry : m_apps)
-	{
-		apps.push_back(entry.int_id_);
-	}
+	apps.reserve(m_apps.size());
+	m_apps.visit_all([&apps](auto &entry)
+					 { apps.push_back(entry.second); });
 	return apps;
 }
 
@@ -205,7 +204,7 @@ void Configuration::registerRecoveredApp(const std::shared_ptr<Application> &app
 {
 	const static char fname[] = "Configuration::registerRecoveredApp() ";
 	std::lock_guard mutationGuard(m_appMutationMutex);
-	if (m_apps.bind(app->getName(), app) == 1)
+	if (!m_apps.emplace(app->getName(), app))
 	{
 		LOG_WAR << fname << "Application <" << app->getName() << "> already exists, keep the loaded definition";
 	}
@@ -677,7 +676,7 @@ std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, b
 	{
 		app->initMetrics();
 	}
-	m_apps.rebind(app->getName(), app, oldApp);
+	m_apps.insert_or_assign(app->getName(), app);
 
 	// invoke immediately
 	app->execute();
@@ -701,14 +700,12 @@ void Configuration::removeApp(const std::string &appName, const Application *exp
 	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
 
 	LOG_DBG << fname << "Removing application <" << appName << ">";
-	std::shared_ptr<Application> app, empty;
-	{
-		// TODO: workaround to release memory immediately in case of
-		// ACE_Map_Manager manage shared_ptr (might be ACE_HAS_LAZY_MAP_MANAGER)
-		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_apps.mutex());
-		m_apps.rebind(appName, empty, app);
-		m_apps.unbind(appName);
-	}
+	std::shared_ptr<Application> app;
+	m_apps.erase_if(appName, [&app](auto &entry)
+					{
+						app = entry.second;
+						return true;
+					});
 	if (app)
 	{
 		// Write to disk
@@ -717,7 +714,7 @@ void Configuration::removeApp(const std::string &appName, const Application *exp
 		app->remove();
 		LOG_DBG << fname << "Removed application <" << appName << ">";
 	}
-	m_appNameIndexMap.unbind(appName);
+	m_appNameIndexMap.erase(appName);
 	EventDispatcher::instance()->removeByApp(appName);
 }
 
@@ -1001,7 +998,9 @@ std::shared_ptr<Application> Configuration::getApp(const std::string &appName, b
 {
 	const static char fname[] = "Configuration::getApp() ";
 	std::shared_ptr<Application> app;
-	if (m_apps.find(appName, app) == 0 && app)
+	m_apps.visit(appName, [&app](auto &entry)
+				 { app = entry.second; });
+	if (app)
 		return app;
 
 	if (throwOnNotFound)
@@ -1014,18 +1013,18 @@ std::shared_ptr<Application> Configuration::getApp(const std::string &appName, b
 
 std::shared_ptr<Application> Configuration::getApp(const void *app) const
 {
-	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_apps.mutex());
-	for (const auto &entry : m_apps)
-	{
-		if (app == entry.int_id_.get())
-			return entry.int_id_;
-	}
-	return nullptr;
+	std::shared_ptr<Application> found;
+	m_apps.visit_all([&](auto &entry)
+					 {
+						 if (app == entry.second.get())
+							 found = entry.second;
+					 });
+	return found;
 }
 
 bool Configuration::isAppExist(const std::string &appName)
 {
-	return (m_apps.find(appName) == 0);
+	return m_apps.contains(appName);
 }
 
 std::string Configuration::generateRunAppName(const std::string &provideAppName)
@@ -1036,12 +1035,12 @@ std::string Configuration::generateRunAppName(const std::string &provideAppName)
 	}
 	else
 	{
+		// The whole generation must be atomic so concurrent same-name runs
+		// get distinct suffixes (the map itself only locks single operations).
+		std::lock_guard guard(m_appIndexGenMutex);
 		int appIndex = 1;
-		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_appNameIndexMap.mutex());
-		if (m_appNameIndexMap.find(provideAppName, appIndex) == 0)
-		{
-			appIndex++;
-		}
+		m_appNameIndexMap.visit(provideAppName, [&appIndex](auto &entry)
+								 { appIndex = entry.second + 1; });
 		while (true)
 		{
 			auto newName = provideAppName + "_" + std::to_string(appIndex);
@@ -1050,7 +1049,7 @@ std::string Configuration::generateRunAppName(const std::string &provideAppName)
 			else
 				break;
 		}
-		m_appNameIndexMap.rebind(provideAppName, appIndex);
+		m_appNameIndexMap.insert_or_assign(provideAppName, appIndex);
 		return provideAppName + "_" + std::to_string(appIndex);
 	}
 }

@@ -7,8 +7,7 @@
 #include <string>
 #include <vector>
 
-#include <ace/Map_Manager.h>
-#include <ace/Recursive_Thread_Mutex.h>
+#include <boost/unordered/concurrent_flat_map.hpp>
 #include <filesystem>
 #include <json/json.h>
 
@@ -156,9 +155,13 @@ private:
 	bool dependencyCycleExists(const std::vector<std::string> &seedDeps, const std::string &targetName) const;
 
 private:
-	mutable ACE_Map_Manager<std::string, std::shared_ptr<Application>, ACE_Recursive_Thread_Mutex> m_apps;
-	mutable ACE_Map_Manager<std::string, int, ACE_Recursive_Thread_Mutex> m_appNameIndexMap;
-	// Serializes same-name replacement/removal across parse, metric transfer and map mutation.
+	// Registered applications keyed by name; the concurrent maps lock
+	// internally per operation. The mutex below still serializes same-name
+	// replacement across parse, metric transfer and map mutation.
+	mutable boost::concurrent_flat_map<std::string, std::shared_ptr<Application>> m_apps;
+	mutable boost::concurrent_flat_map<std::string, int> m_appNameIndexMap;
+	// Serializes the multi-step run-name generation (read index, probe, write).
+	mutable std::mutex m_appIndexGenMutex;
 	mutable std::recursive_mutex m_appMutationMutex;
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;

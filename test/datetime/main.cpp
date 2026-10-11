@@ -2,8 +2,7 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
-#include <ace/Init_ACE.h>
-#include <ace/OS.h>
+#include "../../src/common/os/proc.h"
 #include <catch.hpp>
 #include <chrono>
 #include <fstream>
@@ -19,11 +18,10 @@ void init()
     if (!initialized)
     {
         initialized = true;
-        ACE::init();
         // Log level
         Utility::setLogLevel("DEBUG");
 
-        LOG_INF << "Logging process ID:" << getpid();
+        LOG_INF << "Logging process ID:" << os::getpid();
     }
 }
 

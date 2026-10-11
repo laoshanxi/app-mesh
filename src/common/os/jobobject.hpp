@@ -1,14 +1,14 @@
 // src/common/os/jobobject.hpp
 #pragma once
 
-#include <ace/OS.h>
 #include <memory>
 #include <string>
 #include <windows.h>
 
+#include "models.h" // For pid_t
 #include "../Utility.h"
 
-const mode_t SIGKILL = 0x00000009; // Signal Kill.
+const unsigned int SIGKILL = 0x00000009; // Signal Kill.
 
 // An RAII `HANDLE`.
 class SharedHandle : public std::shared_ptr<void>

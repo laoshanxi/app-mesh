@@ -9,12 +9,8 @@ The following is a list of third-party dependencies and their licenses.
 Boost C++ Libraries
   License: Boost Software License 1.0
   URL: https://www.boost.org/
-  Components: system, filesystem, regex, thread, program_options, date_time
+  Components: system, regex, thread, program_options, date_time, process
 
-ACE (Adaptive Communication Environment)
-  License: BSD (DOC License)
-  URL: https://github.com/DOCGroup/ACE_TAO
-  Copyright: Copyright (c) Douglas C. Schmidt and his research group
 
 OpenSSL
   License: Apache License 2.0
@@ -35,11 +31,6 @@ spdlog
   License: MIT
   URL: https://github.com/gabime/spdlog
   Copyright: Copyright (c) Gabi Melman
-
-libwebsockets
-  License: MIT (v4.0+)
-  URL: https://libwebsockets.org/
-  Copyright: Copyright (c) Andy Green
 
 yaml-cpp
   License: MIT

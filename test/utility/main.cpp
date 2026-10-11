@@ -2,15 +2,9 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
+#include "../../src/common/os/proc.h"
 #include "../../src/common/json.h"
 #include "../../src/daemon/rest/EventTypes.h"
-#include <ace/Init_ACE.h>
-#include <ace/Map_Manager.h>
-#include <ace/Message_Block.h>
-#include <ace/OS.h>
-#include <ace/Recursive_Thread_Mutex.h>
-#include <ace/SOCK_Connector.h>
-#include <ace/SOCK_Stream.h>
 #include <boost/algorithm/string_regex.hpp>
 #include <catch.hpp>
 #include <chrono>
@@ -21,6 +15,11 @@
 #include <string>
 #include <thread>
 #include <time.h>
+#if defined(_WIN32)
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
 
 void init()
 {
@@ -28,11 +27,10 @@ void init()
 	if (!initialized)
 	{
 		initialized = true;
-		ACE::init();
 		// Log level
 		Utility::setLogLevel("DEBUG");
 
-		LOG_INF << "Logging process ID:" << getpid();
+		LOG_INF << "Logging process ID:" << os::getpid();
 	}
 }
 
@@ -107,6 +105,67 @@ TEST_CASE("Utility Test", "[Utility]")
 		LOG_INF << "stdStringTrim:" << Utility::stdStringTrim(env, "0.1");
 	}
 	// teardown
+}
+
+// The transports only accept numeric addresses (trantor::InetAddress never
+// resolves; drogon aborts on a hostname listener), so the resolver must hand
+// back a usable numeric IP and must never mangle address literals.
+TEST_CASE("resolveHostAddress", "[Utility]")
+{
+	init();
+
+	SECTION("address literals pass through unchanged")
+	{
+		std::string errorText;
+		REQUIRE(Utility::resolveHostAddress("127.0.0.1", errorText) == "127.0.0.1");
+		REQUIRE(errorText.empty());
+		REQUIRE(Utility::resolveHostAddress("::1", errorText) == "::1");
+		REQUIRE(errorText.empty());
+	}
+
+	SECTION("hostname resolves to a numeric address, IPv4 preferred")
+	{
+		std::string errorText;
+		const auto resolved = Utility::resolveHostAddress("localhost", errorText);
+		if (!errorText.empty())
+		{
+			// A resolver-less sandbox still proves the failure contract.
+			LOG_INF << "resolveHostAddress(localhost) error: " << errorText;
+			REQUIRE(resolved.empty());
+		}
+		else
+		{
+			REQUIRE_FALSE(resolved.empty());
+			struct in_addr v4;
+			struct in6_addr v6;
+			const bool numeric = resolved.find(':') != std::string::npos
+				? inet_pton(AF_INET6, resolved.c_str(), &v6) == 1
+				: inet_pton(AF_INET, resolved.c_str(), &v4) == 1;
+			REQUIRE(numeric);
+		}
+	}
+
+	SECTION("unknown name either resolves numerically or reports an error")
+	{
+		// Some sandboxes run a wildcard DNS (fake-IP proxies resolve anything),
+		// so a hard failure cannot be forced; the contract is: never throws,
+		// never returns a non-numeric non-empty string.
+		std::string errorText;
+		const auto resolved = Utility::resolveHostAddress("nonexistent.invalid.appmesh", errorText);
+		if (resolved.empty())
+		{
+			REQUIRE_FALSE(errorText.empty());
+		}
+		else
+		{
+			struct in_addr v4;
+			struct in6_addr v6;
+			const bool numeric = resolved.find(':') != std::string::npos
+				? inet_pton(AF_INET6, resolved.c_str(), &v6) == 1
+				: inet_pton(AF_INET, resolved.c_str(), &v4) == 1;
+			REQUIRE(numeric);
+		}
+	}
 }
 
 TEST_CASE("json", "[Utility]")
@@ -242,8 +301,8 @@ TEST_CASE("JSON::dump replaces invalid UTF-8", "[json]")
 
 	// Valid UTF-8 passes through unchanged
 	Json::Value ok;
-	ok["name"] = "新加卷";
-	REQUIRE(JSON::dump(ok).find("新加卷") != std::string::npos);
+	ok["name"] = "\xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7"; // 新加卷
+	REQUIRE(JSON::dump(ok).find("\xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7") != std::string::npos);
 }
 
 TEST_CASE("yamlToJson keeps overflow double text as string", "[Utility]")
@@ -412,7 +471,7 @@ TEST_CASE("JSON dump golden baseline", "[json golden]")
 	// separators, string escaping, and number formats. Any change to these
 	// literals is a wire-format change and must be recorded in the JSON ADR.
 	Json::Value j;
-	j["chinese"] = "新加卷";
+	j["chinese"] = "\xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7"; // 新加卷
 	j["int64"] = (Json::Int64)9223372036854775807LL;
 	j["uint"] = (Json::UInt64)18446744073709551615ULL;
 	j["dbl1"] = 0.1;
@@ -420,12 +479,13 @@ TEST_CASE("JSON dump golden baseline", "[json golden]")
 	j["dbl3"] = 12.34;
 	j["esc"] = std::string("a\"b\\c\nd\te\001f");
 
-	REQUIRE(JSON::dump(j) == R"({"chinese":"新加卷","dbl1":0.10000000000000001,"dbl2":99.0,"dbl3":12.34,"esc":"a\"b\\c\nd\te\u0001f","int64":9223372036854775807,"uint":18446744073709551615})");
+	const std::string cn = "\xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7"; // 新加卷
+	REQUIRE(JSON::dump(j) == R"({"chinese":")" + cn + R"(","dbl1":0.10000000000000001,"dbl2":99.0,"dbl3":12.34,"esc":"a\"b\\c\nd\te\u0001f","int64":9223372036854775807,"uint":18446744073709551615})"); // hex-escape: MSVC reads non-BOM sources as ACP and mis-lexes non-ASCII raw strings
 
 	// Pretty format is jsoncpp native (only used for debug logging)
 	REQUIRE(JSON::dump(j, 2) ==
 			"{\n"
-			"  \"chinese\" : \"新加卷\",\n"
+			"  \"chinese\" : \"\xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7\",\n"
 			"  \"dbl1\" : 0.10000000000000001,\n"
 			"  \"dbl2\" : 99.0,\n"
 			"  \"dbl3\" : 12.34,\n"

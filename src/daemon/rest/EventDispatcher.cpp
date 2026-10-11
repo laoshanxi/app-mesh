@@ -15,7 +15,8 @@ EventDispatcher::~EventDispatcher()
 
 EventDispatcher *EventDispatcher::instance()
 {
-	return EVENT_DISPATCHER::instance();
+	static EventDispatcher inst;
+	return &inst;
 }
 
 std::string EventDispatcher::subscribe(const std::string &appName, uint32_t eventMask,

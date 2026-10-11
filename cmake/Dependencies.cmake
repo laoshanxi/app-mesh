@@ -63,10 +63,6 @@ else()
     message(FATAL_ERROR "openssl library not found")
 endif()
 
-##########################################################################
-# ACE
-##########################################################################
-find_library(ACE_LIBRARY ACE REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 find_package(uriparser REQUIRED)

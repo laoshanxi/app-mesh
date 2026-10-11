@@ -9,7 +9,6 @@
 #include <string>
 #include <unordered_map>
 
-#include <ace/INET_Addr.h>
 #include <trantor/net/TcpServer.h>
 
 #include "../Data.h"
@@ -29,7 +28,7 @@ public:
         return &inst;
     }
 
-    void initialize(const ACE_INET_Addr &addr, const std::string &cert, const std::string &key, const std::string &ca, int ioThreads);
+    void initialize(const std::string &host, uint16_t port, const std::string &cert, const std::string &key, const std::string &ca, int ioThreads);
     void start();
     void stop();
 

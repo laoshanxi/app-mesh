@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include <ace/OS.h>
 #include <filesystem>
 #include <json/json.h>
 #include <yaml-cpp/yaml.h>
@@ -60,7 +59,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 	return std::shared_ptr<T>(new T[size], std::default_delete<T[]>());
 }
 
-#define PROCESS_MAP_TYPE ACE_Map_Manager<pid_t, AppProcess *, ACE_Recursive_Thread_Mutex>
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object

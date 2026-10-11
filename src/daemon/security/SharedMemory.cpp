@@ -1,19 +1,28 @@
 // src/daemon/security/SharedMemory.cpp
-#include <ace/OS_NS_stdlib.h>
-#include <ace/OS_NS_string.h>
-#include <ace/OS_NS_unistd.h>
-#include <ace/Shared_Memory_MM.h>
+#include <boost/interprocess/file_mapping.hpp>
+#include <boost/interprocess/mapped_region.hpp>
+
 #include <atomic>
+#include <cstring>
 #include <filesystem>
 #include <chrono>
+#include <fstream>
 #include <thread>
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include "../../common/Utility.h"
 #include "../../common/os/chown.h"
+#include "../../common/os/proc.h"
 #include "SharedMemory.h"
 
+namespace bip = boost::interprocess;
+
 SharedMemory::SharedMemory()
-    : m_shmName(GenerateSharedMemoryName()), m_aceShm(nullptr), m_shmPtr(nullptr)
+    : m_shmName(GenerateSharedMemoryName())
 {
 }
 
@@ -39,23 +48,50 @@ bool SharedMemory::create()
 #endif
     m_shmPath = shmName;
 
-    m_aceShm = std::make_shared<ACE_Shared_Memory_MM>();
-
-#if defined(_WIN32)
-    // Windows: ACE_Shared_Memory_MM uses CreateFileMapping internally
-    if (m_aceShm->open(shmName.c_str(), PSK_SHM_TOTAL_SIZE, O_CREAT | O_RDWR) == -1)
-#else
-    // Unix-like: Use appropriate file permissions for shared memory
-    if (m_aceShm->open(shmName.c_str(), PSK_SHM_TOTAL_SIZE, O_CREAT | O_RDWR, 0600) == -1)
-#endif
+    // The child opens the exported path and maps the file itself, so the
+    // segment must stay a plain file with the byte contract below.
+#if !defined(_WIN32)
+    // O_EXCL|O_NOFOLLOW: the segment name is weakly unpredictable and lives in
+    // a world-writable directory, so refuse to follow a planted link or clobber
+    // an existing file.
+    const int fd = ::open(shmName.c_str(), O_CREAT | O_EXCL | O_NOFOLLOW | O_RDWR, 0600);
+    if (fd < 0)
     {
         LOG_WAR << fname << "Failed to create shared memory <" << shmName << ">: " << last_error_msg();
-        m_aceShm = nullptr;
+        return false;
+    }
+    if (::ftruncate(fd, PSK_SHM_TOTAL_SIZE) != 0)
+    {
+        LOG_WAR << fname << "Failed to size shared memory <" << shmName << ">: " << last_error_msg();
+        ::close(fd);
+        return false;
+    }
+    ::close(fd);
+#else
+    // The mapping needs a file of full size on every platform.
+    std::ofstream file(shmName, std::ios::binary | std::ios::trunc);
+    const char zeros[PSK_SHM_TOTAL_SIZE] = {0};
+    if (!file.write(zeros, sizeof(zeros)))
+    {
+        LOG_WAR << fname << "Failed to create shared memory <" << shmName << ">: write error";
+        return false;
+    }
+#endif
+
+    try
+    {
+        m_mapping = std::make_unique<bip::file_mapping>(shmName.c_str(), bip::read_write);
+        m_region = std::make_unique<bip::mapped_region>(*m_mapping, bip::read_write, 0, PSK_SHM_TOTAL_SIZE);
+    }
+    catch (const std::exception &e)
+    {
+        LOG_WAR << fname << "Failed to map shared memory <" << shmName << ">: " << e.what();
+        cleanup();
         return false;
     }
     LOG_DBG << fname << "Shared memory created successfully: " << shmName;
 
-    m_shmPtr = static_cast<psk_shared_memory_t *>(m_aceShm->malloc());
+    m_shmPtr = static_cast<psk_shared_memory_t *>(m_region->get_address());
     if (!m_shmPtr)
     {
         LOG_WAR << fname << "Failed to get pointer for shared memory <" << shmName << ">";
@@ -64,7 +100,7 @@ bool SharedMemory::create()
     }
 
     // Initialize the struct properly
-    ACE_OS::memset(m_shmPtr->message, 0, PSK_FLAG_OFFSET);
+    memset(m_shmPtr->message, 0, PSK_FLAG_OFFSET);
     // Initialize atomic flag using placement new to ensure proper construction
     new (&m_shmPtr->flag) std::atomic<int32_t>(0);
 
@@ -127,7 +163,7 @@ bool SharedMemory::writeData(const char *data)
         return false;
     }
 
-    size_t len = ACE_OS::strlen(data);
+    size_t len = strlen(data);
     if (len > PSK_MSG_LENGTH)
     {
         LOG_WAR << fname << "Data too long: " << len << " > " << PSK_MSG_LENGTH;
@@ -135,9 +171,9 @@ bool SharedMemory::writeData(const char *data)
     }
 
     // Clear the message buffer first
-    ACE_OS::memset(m_shmPtr->message, 0, PSK_FLAG_OFFSET);
+    memset(m_shmPtr->message, 0, PSK_FLAG_OFFSET);
     // Copy data ensuring null termination
-    ACE_OS::strncpy(m_shmPtr->message, data, PSK_MSG_LENGTH);
+    strncpy(m_shmPtr->message, data, PSK_MSG_LENGTH);
     m_shmPtr->message[PSK_MSG_LENGTH] = '\0';
 
     // Ensure write is visible to other processes
@@ -204,22 +240,25 @@ bool SharedMemory::changeOwner(const std::string &user)
 
 void SharedMemory::cleanup()
 {
-    if (m_aceShm && m_shmPtr)
+    if (m_mapping && m_shmPtr)
     {
         // Explicitly destroy the atomic before cleanup
         m_shmPtr->flag.~atomic();
+        m_shmPtr = nullptr;
     }
 
-    if (m_aceShm)
+    // Unmap and close before removing the file: on Windows the deletion
+    // fails while our own handle is still open.
+    m_region.reset();
+    m_mapping.reset();
+    if (!m_shmPath.empty())
     {
-        m_aceShm->close();
-        m_aceShm->remove();
-        m_aceShm = nullptr;
-        m_shmPtr = nullptr;
+        std::error_code ec;
+        fs::remove(fs::path(m_shmPath), ec);
     }
 }
 
 std::string SharedMemory::GenerateSharedMemoryName()
 {
-    return "appmesh_shm_" + Utility::shortID() + "_" + std::to_string(ACE_OS::getpid());
+    return "appmesh_shm_" + Utility::shortID() + "_" + std::to_string(os::getpid());
 }

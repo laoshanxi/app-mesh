@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-#include <ace/OS_NS_unistd.h> // for uid_t
+#include "models.h" // for uid_t
 
 namespace os
 {

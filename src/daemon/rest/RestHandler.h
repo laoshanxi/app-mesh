@@ -4,9 +4,6 @@
 #include <cstdint>
 #include <functional>
 
-#include <ace/Null_Mutex.h>
-#include <ace/Singleton.h>
-
 #include "EventDispatcher.h"
 #include "PrometheusRest.h"
 #include "RestBase.h"
@@ -18,6 +15,8 @@ class Application;
 class RestHandler : public RestBase
 {
 public:
+	static RestHandler *instance();
+
 	explicit RestHandler();
 	virtual ~RestHandler();
 
@@ -116,4 +115,4 @@ private:
 	std::shared_ptr<PrometheusRest> m_metrics;
 };
 
-typedef ACE_Singleton<RestHandler, ACE_Null_Mutex> RESTHANDLER;
+using RESTHANDLER = RestHandler;

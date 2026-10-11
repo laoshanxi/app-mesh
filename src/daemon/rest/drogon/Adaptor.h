@@ -12,7 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include <ace/INET_Addr.h>
 #include <drogon/drogon.h>
 #include <drogon/RequestStream.h>
 #include <drogon/WebSocketConnection.h>
@@ -49,7 +48,7 @@ public:
         return &inst;
     }
 
-    void initialize(const ACE_INET_Addr &addr, const std::string &cert, const std::string &key, const std::string &ca, int ioThreads);
+    void initialize(const std::string &host, uint16_t port, const std::string &cert, const std::string &key, const std::string &ca, int ioThreads);
     void start();
     void stop();
 

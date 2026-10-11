@@ -5,7 +5,13 @@
 #include <memory>
 #include <string>
 
-#include <ace/Shared_Memory_MM.h>
+// File-backed mapping shared with the child processes (Go agent, workflow
+// engine); they open the exported path and mmap the same 128 bytes.
+namespace boost::interprocess
+{
+    class file_mapping;
+    class mapped_region;
+}
 
 #define PSK_MSG_LENGTH 32
 #define PSK_FLAG_OFFSET 64
@@ -45,8 +51,9 @@ public:
 private:
     std::string m_shmName;
     std::string m_shmPath;
-    std::shared_ptr<class ACE_Shared_Memory_MM> m_aceShm;
-    psk_shared_memory_t *m_shmPtr;
+    std::unique_ptr<boost::interprocess::file_mapping> m_mapping;
+    std::unique_ptr<boost::interprocess::mapped_region> m_region;
+    psk_shared_memory_t *m_shmPtr{nullptr};
 
     static std::string GenerateSharedMemoryName();
 };

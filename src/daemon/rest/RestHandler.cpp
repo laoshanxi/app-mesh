@@ -227,6 +227,12 @@ RestHandler::~RestHandler()
 	LOG_INF << fname << "RestHandler destroyed";
 }
 
+RestHandler *RestHandler::instance()
+{
+	static RestHandler inst;
+	return &inst;
+}
+
 std::string RestHandler::normalizedHttpRoute(const std::string &path,
 											 const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions) const
 {

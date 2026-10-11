@@ -94,6 +94,34 @@ struct HttpRequestContext
 	bool m_isShutdownSentinel = false;
 };
 
+Worker *Worker::instance()
+{
+	static Worker inst;
+	return &inst;
+}
+
+void Worker::start(size_t threadCount)
+{
+	static const char fname[] = "Worker::start() ";
+
+	m_threadCount = threadCount;
+	m_threads.reserve(threadCount);
+	for (size_t i = 0; i < threadCount; ++i)
+		m_threads.emplace_back([this]
+								{ svc(); });
+	LOG_INF << fname << "Worker pool started with " << threadCount << " threads";
+}
+
+void Worker::wait()
+{
+	for (auto &thread : m_threads)
+	{
+		if (thread.joinable())
+			thread.join();
+	}
+	m_threads.clear();
+}
+
 bool Worker::enqueueRequest(std::shared_ptr<HttpRequestContext> ctx)
 {
 	static const char fname[] = "Worker::enqueueRequest() ";
@@ -131,7 +159,7 @@ void Worker::queueWsRequest(std::string &&data, std::shared_ptr<WSS::ReplyContex
 	enqueueRequest(std::move(ctx));
 }
 
-int Worker::svc()
+void Worker::svc()
 {
 	static const char fname[] = "Worker::svc() ";
 	Utility::setThreadName("appmesh-worker");
@@ -170,12 +198,11 @@ int Worker::svc()
 	}
 
 	LOG_INF << fname << "Worker thread exiting";
-	return 0;
 }
 
 void Worker::shutdown()
 {
-	const size_t threadNum = this->thr_count();
+	const size_t threadNum = m_threadCount;
 	for (size_t i = 0; i < threadNum; ++i)
 	{
 		auto sentinel = std::make_shared<HttpRequestContext>();

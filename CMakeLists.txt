@@ -107,6 +107,14 @@ if(ENABLE_ASAN)
     message(STATUS "AddressSanitizer: ENABLED")
 endif()
 
+# ThreadSanitizer (optional)
+option(ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+if(ENABLE_TSAN)
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=thread)
+    message(STATUS "ThreadSanitizer: ENABLED")
+endif()
+
 # =============================================================================
 # Platform-Specific RPATH Configuration
 # =============================================================================

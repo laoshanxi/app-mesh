@@ -7,8 +7,6 @@
 #include <mutex>
 #include <string>
 
-#include <ace/Null_Mutex.h>
-#include <ace/Singleton.h>
 #include <json/json.h>
 
 #include "EventTypes.h"
@@ -111,4 +109,4 @@ private:
 	uint64_t m_sequence{0};
 };
 
-typedef ACE_Singleton<EventDispatcher, ACE_Null_Mutex> EVENT_DISPATCHER;
+using EVENT_DISPATCHER = EventDispatcher;

@@ -116,24 +116,6 @@ cmake --build . --parallel
 cmake --install .
 cd "$ROOTDIR"
 
-# ACE: CentOS ships no ACE package, build from source there; apt elsewhere
-if [ -f "/usr/bin/yum" ]; then
-    $WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
-    tar zxvf ACE-7.1.2.tar.gz >/dev/null
-    cd ACE_wrappers
-    export ACE_ROOT=$(pwd)
-    cp ace/config-linux.h ace/config.h
-    cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
-    cd ${ACE_ROOT}/ace
-    # ACE defaults to debug=1. debug=0 omits -ggdb from the release library.
-    make debug=0 -j"$(($(nproc) / 2))"
-    make install debug=0 INSTALL_PREFIX=/usr/local
-    ls -al /usr/local/lib*/libACE.so
-    cd $ROOTDIR
-else
-    apt install -y libace-dev
-fi
-
 # go binaries
 export GOBIN=/usr/local/bin
 export CGO_ENABLED=0

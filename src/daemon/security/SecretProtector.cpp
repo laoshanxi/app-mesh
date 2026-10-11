@@ -11,7 +11,6 @@
 #include <fstream>
 #include <stdexcept>
 
-#include <ace/OS.h>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>

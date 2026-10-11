@@ -223,7 +223,7 @@ namespace os
 	{
 		if (pid == 0)
 		{
-			pid = getpid();
+			pid = os::getpid();
 		}
 
 		if (ptree == nullptr)

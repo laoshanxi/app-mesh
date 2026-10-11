@@ -16,6 +16,7 @@
 #endif
 
 #include "../../common/Utility.h"
+#include "../../common/os/proc.h"
 #include "LinuxCgroup.h"
 
 namespace
@@ -993,7 +994,7 @@ void LinuxCgroupV2::initializeManagement(int additionalPid)
 		return;
 	if (s_cgroupRootDir.empty())
 		throw std::runtime_error("cgroup v2 resource root is unavailable");
-	const auto daemonPid = static_cast<int>(ACE_OS::getpid());
+	const auto daemonPid = static_cast<int>(os::getpid());
 	const auto daemonLeaf = (fs::path(s_cgroupRootDir) / "appmesh-daemon").string();
 	const auto applicationsRoot = (fs::path(s_cgroupRootDir) / CGROUP_APPMESH_DIR).string();
 	if (!Utility::createRecursiveDirectory(daemonLeaf, perm) ||

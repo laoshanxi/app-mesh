@@ -142,9 +142,9 @@ The core service. Initialization flows through `main.cpp`: framework init → co
 | `process/` | Process wrappers: native (`AppProcess`), Docker CLI (`DockerProcess`), Docker API (`DockerApiProcess`), cgroup resource limits (`LinuxCgroup`) |
 | `security/` | Dex-only OIDC verification, immutable Principal mapping, authorization roles, secret protection, and process HMAC PSK |
 
-**Singletons** (ACE_Singleton pattern, access via `::instance()`):
+**Singletons** (Meyers singletons, access via `::instance()`; the names below are plain aliases):
 
-| Macro | Class | Header |
+| Alias | Class | Header |
 |-------|-------|--------|
 | `RESTHANDLER` | `RestHandler` | `rest/RestHandler.h` |
 | `WORKER` | `Worker` | `rest/Worker.h` |
@@ -206,7 +206,7 @@ Optional LLM agent runtime, run as an App Mesh App (Python package `llm_agent`).
 
 ## Key Dependencies
 
-C++ (daemon): ACE (remaining utilities), Boost (incl. Boost.Process V2 ≥1.86), OpenSSL, spdlog, jsoncpp (JSON DOM), yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (HTTP/WSS/TCP transport; pulls c-ares, brotli), uriparser, msgpack, croncpp, moodycamel concurrent queue.
+C++ (daemon): Boost (incl. Boost.Process V2 ≥1.86, boost::interprocess), OpenSSL, spdlog, jsoncpp (JSON DOM), yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (HTTP/WSS/TCP transport; pulls c-ares, brotli), uriparser, msgpack, croncpp, moodycamel concurrent queue.
 
 Rust (CLI): clap, tokio, rustls, serde/serde_json/serde_yaml, anyhow. The CLI depends on the Rust SDK crate (`src/sdk/rust`).
 

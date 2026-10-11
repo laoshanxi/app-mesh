@@ -209,7 +209,6 @@ The Computing pillar makes App Mesh a natural runtime for AI workloads:
 
 - [MessagePack](https://github.com/msgpack/msgpack-c)
 - [boostorg/boost](https://github.com/boostorg/boost)
-- [ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
 - [Thalhammer/jwt-cpp](https://github.com/Thalhammer/jwt-cpp)
 - [yaml-cpp](https://github.com/jbeder/yaml-cpp)
 - [nfpm](https://github.com/goreleaser/nfpm)

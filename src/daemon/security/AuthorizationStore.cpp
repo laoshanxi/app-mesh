@@ -7,7 +7,6 @@
 #include "../application/Application.h"
 #include "Security.h"
 
-#include <ace/OS.h>
 
 #include <cstdlib>
 #include <stdexcept>

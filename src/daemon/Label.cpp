@@ -2,7 +2,9 @@
 #if defined(__linux__)
 #include <wildcards/wildcards.hpp>
 #endif
-#include <ace/OS_NS_sys_utsname.h>
+#if !defined(_WIN32)
+#include <sys/utsname.h>
+#endif
 #include <fstream>
 
 #include "../common/Utility.h"

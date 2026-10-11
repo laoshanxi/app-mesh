@@ -30,7 +30,6 @@
 #include <libproc.h>
 #endif
 
-#include <ace/OS.h>
 #include <filesystem> // directory_iterator
 
 #include "../Utility.h"
@@ -113,7 +112,7 @@ namespace os
 		const auto procFdPath = std::string("/proc/") + std::to_string(pid) + "/fd";
 		try
 		{
-			if (fs::exists(procFdPath) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
+			if (fs::exists(procFdPath) && ::access(procFdPath.c_str(), R_OK) == 0)
 			{
 				result = static_cast<size_t>(std::distance(
 					fs::directory_iterator(procFdPath),
