@@ -98,8 +98,8 @@ if [ true ]; then
     tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
     cd ./boost_1_${BOOST_VER}_0
     ./bootstrap.sh --without-libraries=context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
-    ./b2 -j"$(($(nproc) / 2))"
-    ./b2 install >/dev/null
+    ./b2 variant=release optimization=space -j"$(($(nproc) / 2))"
+    ./b2 install variant=release optimization=space >/dev/null
     ls -al /usr/local/lib/libboost_system.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp
 fi
 cd $ROOTDIR
@@ -111,7 +111,7 @@ cd "$ROOTDIR"
 git clone -b v1.17.0 --depth 1 https://github.com/gabime/spdlog.git
 cd spdlog || exit 1
 mkdir -p build && cd build || exit 1
-cmake .. -DSPDLOG_BUILD_SHARED=ON -DSPDLOG_BUILD_EXAMPLES=OFF -DSPDLOG_BUILD_TESTS=OFF
+cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DSPDLOG_BUILD_SHARED=ON -DSPDLOG_BUILD_EXAMPLES=OFF -DSPDLOG_BUILD_TESTS=OFF
 cmake --build . --parallel
 cmake --install .
 cd "$ROOTDIR"
@@ -174,7 +174,8 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 
 cd $ROOTDIR
 git clone https://github.com/jbeder/yaml-cpp.git
-cd yaml-cpp/ && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON ..
+# Config parsing only: build for size, the lib ships in the package
+cd yaml-cpp/ && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_SHARED_LIBS=ON ..
 make && make install
 
 cd $ROOTDIR

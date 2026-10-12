@@ -965,6 +965,9 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 
 	const auto childEnv = buildChildEnvironment(envMap);
 	boost::system::error_code ec;
+	// The signal-based handle has no default constructor, so the launcher result
+	// lands here. A stopped process service leaves it empty and sets ec.
+	std::optional<bp2::process> launched;
 
 #if defined(_WIN32)
 	std::vector<std::wstring> argsWide;
@@ -973,30 +976,26 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		argsWide.push_back(fs::path(argv[i]).wstring());
 
 	bp2::windows::default_launcher launcher;
-	bp2::process proc = launcher(PROCESS_SERVICE::instance()->io(), ec, exe, argsWide,
-								 bp2::process_start_dir(workDir), bp2::process_environment(childEnv));
+	launched = launcher(PROCESS_SERVICE::instance()->io(), ec, exe, argsWide,
+						bp2::process_start_dir(workDir), bp2::process_environment(childEnv));
 #else
 	std::vector<std::string> args(argv.begin() + 1, argv.end());
 
-	// vfork_launcher still notifies the io_context in the parent: concurrent
-	// forks serialize on the scheduler mutex against the context's own thread,
-	// which deadlocks the workers. Run the launcher on the ProcessService
-	// thread, the only thread the daemon forks from.
+	// vfork_launcher notifies the io_context in the parent, and concurrent forks
+	// from the workers race the context's own thread on the asio reactor locks.
+	// Run the launcher on the ProcessService thread, the only thread the daemon
+	// forks from.
 	bp2::posix::vfork_launcher launcher;
 	const auto launch = [&](auto &&...inits)
 	{
-		// The default constructor is unavailable on the signal-based handle,
-		// so carry the result in an optional. A stopped service leaves it
-		// empty and reads as a failed spawn.
-		std::optional<bp2::process> proc;
 		ec.clear();
 		if (!PROCESS_SERVICE::instance()->dispatchSync(
 				[&]
 				{
 					// On error the launcher itself returns an empty process; the
 					// forked child exited on the failed exec and must be reaped here.
-					proc = launcher(PROCESS_SERVICE::instance()->io(), ec, exe, args,
-									std::forward<decltype(inits)>(inits)...);
+					launched = launcher(PROCESS_SERVICE::instance()->io(), ec, exe, args,
+										std::forward<decltype(inits)>(inits)...);
 					if (ec && launcher.pid > 0)
 					{
 						int childStatus = 0;
@@ -1004,21 +1003,19 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 					}
 				}))
 			ec = boost::asio::error::operation_aborted;
-		return std::move(*proc);
 	};
 
-	// The default constructor is unavailable on the signal-based handle, so
-	// bind the result directly instead of declaring first.
-	bp2::process proc = redirectStdio
-		? launch(bp2::process_start_dir(workDir),
-				 bp2::posix::bind_fd(STDIN_FILENO, static_cast<int>(m_stdinHandler.get())),
-				 bp2::posix::bind_fd(STDOUT_FILENO, childOutFd),
-				 bp2::posix::bind_fd(STDERR_FILENO, childOutFd),
-				 bp2::process_environment(childEnv),
-				 PosixProcessIdentity(uid, gid, cgroupProcsPaths))
-		: launch(bp2::process_start_dir(workDir),
-				 bp2::process_environment(childEnv),
-				 PosixProcessIdentity(uid, gid, cgroupProcsPaths));
+	if (redirectStdio)
+		launch(bp2::process_start_dir(workDir),
+			   bp2::posix::bind_fd(STDIN_FILENO, static_cast<int>(m_stdinHandler.get())),
+			   bp2::posix::bind_fd(STDOUT_FILENO, childOutFd),
+			   bp2::posix::bind_fd(STDERR_FILENO, childOutFd),
+			   bp2::process_environment(childEnv),
+			   PosixProcessIdentity(uid, gid, cgroupProcsPaths));
+	else
+		launch(bp2::process_start_dir(workDir),
+			   bp2::process_environment(childEnv),
+			   PosixProcessIdentity(uid, gid, cgroupProcsPaths));
 #endif
 
 	if (pipeWriteForChild >= 0)
@@ -1027,17 +1024,17 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		pipeWriteForChild = -1;
 	}
 
-	if (ec)
+	if (ec || !launched)
 	{
 		if (startError().empty())
-			setStartError(Utility::stringFormat("start failed with error <%s>", ec.message().c_str()));
+			setStartError(Utility::stringFormat("start failed with error <%s>", ec ? ec.message().c_str() : "process service stopped"));
 		LOG_ERR << fname << "Process <" << cmd << "> " << startError();
 		if (pipeReadForDaemon >= 0)
 			::close(pipeReadForDaemon);
 		return INVALID_PID;
 	}
 
-	const pid_t startedPid = static_cast<pid_t>(proc.id());
+	const pid_t startedPid = static_cast<pid_t>(launched->id());
 	LOG_INF << fname << "Process <" << cmd << "> started with pid <" << startedPid << ">.";
 
 	m_pid.store(startedPid);
@@ -1078,7 +1075,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	// (WIFEXITED -> exit status, WIFSIGNALED -> signal number) and the
 	// already-reaped child makes the late destructor a no-op.
 	auto self = std::dynamic_pointer_cast<AppProcess>(shared_from_this());
-	const auto held = std::make_shared<bp2::process>(std::move(proc));
+	const auto held = std::make_shared<bp2::process>(std::move(*launched));
 	PROCESS_SERVICE::instance()->post([self, held]
 									  {
 		held->async_wait([self, held](const boost::system::error_code &waitEc, int exitCode)

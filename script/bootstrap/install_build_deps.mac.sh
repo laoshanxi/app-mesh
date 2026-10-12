@@ -105,6 +105,7 @@ mkdir -p build && cd build
 # CMAKE_SYSTEM_PREFIX_PATH on macOS includes /usr/local on every arch, so
 # find_package(spdlog) locates this build regardless of brew prefix.
 cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local \
+         -DCMAKE_BUILD_TYPE=MinSizeRel \
          -DSPDLOG_BUILD_SHARED=ON \
          -DSPDLOG_BUILD_EXAMPLES=OFF \
          -DSPDLOG_BUILD_TESTS=OFF

@@ -1080,8 +1080,11 @@ bool Utility::createPidFile()
 
 #else
 	// Windows implementation using file locking
+	// Read and write stay unshared, which is the single-instance lock itself;
+	// sharing only the delete lets the shutdown path remove the file while this
+	// handle is still open.
 	HANDLE hFile = CreateFileA(pidFile.c_str(), GENERIC_READ | GENERIC_WRITE,
-							   0, // not shared, self-owned
+							   FILE_SHARE_DELETE,
 							   NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
 	if (hFile == INVALID_HANDLE_VALUE)

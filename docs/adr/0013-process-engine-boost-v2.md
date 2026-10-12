@@ -41,3 +41,14 @@ on docker backends and must not stall the engine. Ownerless helpers (docker
 CLI, cleanup, health checks) have no callbacks and finalize on the io thread —
 their waiters may be the callback thread itself. `dispatchSync` returns false
 instead of blocking forever when shutdown drops its task.
+
+## Amendment (2026-10-12)
+
+Spawn now runs the launcher on the engine thread. `vfork_launcher` notifies the
+io_context in the parent, so concurrent forks from the REST workers raced the
+reactor locks against the context's own thread and wedged the worker pool. The
+engine is therefore the only thread that forks and the only thread that touches
+a process handle — each `bp2::process` owns a SIGCHLD `signal_set`. The stdout
+pipe's reactor registration moved from the pump constructor into `activate()`
+for the same reason. Engine tasks take only the locks of the process they work
+on: `dispatchSync` callers wait while holding application locks.

@@ -19,7 +19,9 @@ class StdoutPump : public std::enable_shared_from_this<StdoutPump>
 {
 public:
 	StdoutPump(std::string appName, int pipeReadFd, int diskWriteFd, std::shared_ptr<std::mutex> diskMutex);
-	~StdoutPump() = default; // stream_descriptor dtor closes the read fd
+	// The read fd is owned from construction: m_pipeRead closes it once
+	// activate() ran, this destructor covers a pump that never activated.
+	~StdoutPump();
 
 	StdoutPump(const StdoutPump &) = delete;
 	StdoutPump &operator=(const StdoutPump &) = delete;
@@ -47,6 +49,7 @@ private:
 	void dispatchPayload(long start, std::string &&payload);
 
 	const std::string m_appName;
+	int m_pipeReadFd; // owned until activate() assigns it
 	boost::asio::posix::stream_descriptor m_pipeRead; // owns the fd, closes in dtor
 	const int m_diskWrite; // AppProcess owns this handle
 	// shared_ptr so the mutex outlives whichever (pump or AppProcess) destructs first.

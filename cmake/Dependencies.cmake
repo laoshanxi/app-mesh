@@ -82,6 +82,13 @@ message(STATUS "HTTPS/WSS transport: Drogon ${Drogon_VERSION}")
 ##########################################################################
 # jsoncpp (JSON DOM shared with Drogon)
 ##########################################################################
-find_package(jsoncpp CONFIG REQUIRED)
+# Drogon's package config looks jsoncpp up itself, and the homebrew
+# jsoncppConfig.cmake defines its target without a guard, so a second lookup
+# fails with a duplicate target.
+if(TARGET jsoncpp_lib)
+    get_target_property(JSONCPP_INCLUDE_DIRS jsoncpp_lib INTERFACE_INCLUDE_DIRECTORIES)
+else()
+    find_package(jsoncpp CONFIG REQUIRED)
+endif()
 # json/json.h sits in a non-default prefix on apt; not all targets link common
 include_directories(${JSONCPP_INCLUDE_DIRS})

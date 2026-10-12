@@ -47,8 +47,8 @@ if [ true ]; then
     tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
     cd ./boost_1_${BOOST_VER}_0
     ./bootstrap.sh --without-libraries=context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
-    ./b2 -j"$(($(nproc) / 2))"
-    ./b2 install >/dev/null
+    ./b2 variant=release optimization=space -j"$(($(nproc) / 2))"
+    ./b2 install variant=release optimization=space >/dev/null
     cd "$ROOTDIR"
 fi
 # yaml-cpp

@@ -39,7 +39,9 @@ public:
 
 	/// Run a task on the io thread and wait for it. Direct call when already
 	/// there. A task exception propagates to the calling thread. Returns false
-	/// when the service stopped before the task could run.
+	/// when the service stopped before the task could run. Callers may hold
+	/// application locks while they wait, so a task must not take any: the
+	/// engine owns only the locks of the process it is working on.
 	bool dispatchSync(const std::function<void()> &task);
 
 	/// Stop the service and join both threads. Best effort, idempotent;

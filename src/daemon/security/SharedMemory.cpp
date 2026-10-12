@@ -68,13 +68,16 @@ bool SharedMemory::create()
     }
     ::close(fd);
 #else
-    // The mapping needs a file of full size on every platform.
-    std::ofstream file(shmName, std::ios::binary | std::ios::trunc);
-    const char zeros[PSK_SHM_TOTAL_SIZE] = {0};
-    if (!file.write(zeros, sizeof(zeros)))
+    // The mapping needs a file of full size, and the mapping takes the size the
+    // file has when it is created: keep the stream scoped so it is closed first.
     {
-        LOG_WAR << fname << "Failed to create shared memory <" << shmName << ">: write error";
-        return false;
+        std::ofstream file(shmName, std::ios::binary | std::ios::trunc);
+        const char zeros[PSK_SHM_TOTAL_SIZE] = {0};
+        if (!file.write(zeros, sizeof(zeros)))
+        {
+            LOG_WAR << fname << "Failed to create shared memory <" << shmName << ">: write error";
+            return false;
+        }
     }
 #endif
 

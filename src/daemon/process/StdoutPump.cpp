@@ -14,6 +14,7 @@
 
 #include <json/json.h>
 
+#include "../../common/AtomicHandleGuard.hpp"
 #include "../../common/StreamLogger.h"
 #include "../../common/Utility.h"
 #include "../rest/EventDispatcher.h"
@@ -28,26 +29,47 @@ namespace
 
 StdoutPump::StdoutPump(std::string appName, int pipeReadFd, int diskWriteFd, std::shared_ptr<std::mutex> diskMutex)
 	: m_appName(std::move(appName)),
+	  m_pipeReadFd(pipeReadFd),
 	  m_pipeRead(PROCESS_SERVICE::instance()->io()),
 	  m_diskWrite(diskWriteFd),
 	  m_diskMutex(std::move(diskMutex)),
 	  m_coalesceTimer(PROCESS_SERVICE::instance()->io())
 {
 	m_readBuf.resize(PUMP_READ_BUF);
-	// The pump owns the read fd from construction; the dtor closes it.
-	m_pipeRead.assign(pipeReadFd);
+	// The pump owns the read fd from construction; activate() hands it to
+	// m_pipeRead, whose dtor closes it, and the dtor here covers the rest.
+}
+
+StdoutPump::~StdoutPump()
+{
+	if (m_pipeReadFd != INVALID_FD)
+		::close(m_pipeReadFd);
 }
 
 void StdoutPump::activate()
 {
 	if (m_stopped || m_eof)
 		return;
+	if (m_pipeReadFd != INVALID_FD)
+	{
+		// Register with the reactor on the io thread: doing it in the ctor would
+		// touch the engine's reactor from the starting worker thread, while that
+		// engine may be forking.
+		m_pipeRead.assign(m_pipeReadFd);
+		m_pipeReadFd = INVALID_FD;
+	}
 	readSome();
 }
 
 void StdoutPump::stop()
 {
 	m_stopped = true;
+	if (m_pipeReadFd != INVALID_FD)
+	{
+		// activate() never ran: take the fd here, stop() is io-thread only.
+		m_pipeRead.assign(m_pipeReadFd);
+		m_pipeReadFd = INVALID_FD;
+	}
 	// Cancel first so no new completion runs, then drain synchronously.
 	m_pipeRead.cancel();
 	m_coalesceTimer.cancel();
