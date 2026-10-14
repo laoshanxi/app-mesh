@@ -135,7 +135,7 @@ public:
 	std::set<std::string> getCsrfAllowedOrigins() const;
 	std::string getFileAllowedBaseDir() const;
 	/// Effective worker threads: the configured value, or the CPU-derived default
-	/// when the configuration leaves it at 0.
+	/// (capped) when the configuration leaves it at 0.
 	std::size_t getWorkerThreads() const;
 	/// Effective IO threads per transport listener, CPU-derived when configured as 0.
 	std::size_t getTransportIoThreads() const;

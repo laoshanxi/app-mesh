@@ -115,6 +115,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_WORKER_THREADS 0		 // 0 = derive from the CPUs the daemon may use
 #define DEFAULT_TRANSPORT_IO_THREADS 0	 // 0 = derive from the CPUs the daemon may use
 #define MIN_WORKER_THREADS 2
+#define MAX_DEFAULT_WORKER_THREADS 8	 // cap for the CPU-derived default; an explicit WorkerThreads value is honored as-is
 #define MIN_TRANSPORT_IO_THREADS 2
 #define MAX_TRANSPORT_IO_THREADS 4
 #define REST_REQUEST_TIMEOUT_SECONDS 60

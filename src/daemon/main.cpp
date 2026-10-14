@@ -395,12 +395,15 @@ void AppMeshDaemon::initializeRestService()
 	const bool listenV6 = listenIp.find(':') != std::string::npos;
 
 	// TLS TCP service (length-prefixed msgpack frames, same request pipeline
-	// as the WebSocket transport)
-	const trantor::InetAddress tcpAddr(listenIp, static_cast<uint16_t>(config->getTcpApiPort()), listenV6);
-	verifyListenerAddress(tcpAddr, "TCP");
-	TcpAdaptor::instance()->initialize(listenIp, config->getTcpApiPort(), cert, key, ca, static_cast<int>(Configuration::instance()->getTransportIoThreads()));
-	TcpAdaptor::instance()->start();
-	LOG_INF << fname << "TCP service initialized on <" << tcpAddr.toIp() << ":" << tcpAddr.toPort() << ">";
+	// as the WebSocket transport); port 0 disables the listener
+	if (config->getTcpApiPort())
+	{
+		const trantor::InetAddress tcpAddr(listenIp, static_cast<uint16_t>(config->getTcpApiPort()), listenV6);
+		verifyListenerAddress(tcpAddr, "TCP");
+		TcpAdaptor::instance()->initialize(listenIp, config->getTcpApiPort(), cert, key, ca, static_cast<int>(Configuration::instance()->getTransportIoThreads()));
+		TcpAdaptor::instance()->start();
+		LOG_INF << fname << "TCP service initialized on <" << tcpAddr.toIp() << ":" << tcpAddr.toPort() << ">";
+	}
 
 	// Websocket service
 	if (config->getWebSocketPort())

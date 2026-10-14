@@ -32,8 +32,6 @@ ProcessService::ProcessService()
 	{
 		m_ioThread = std::thread([this]() { Utility::setThreadName("appmesh-proc"); m_ioContext.run(); });
 		m_ioThreadId = m_ioThread.get_id();
-		m_callbackThread = std::thread([this]() { Utility::setThreadName("appmesh-exit"); m_callbackContext.run(); });
-		m_callbackThreadId = m_callbackThread.get_id();
 	}
 	catch (const std::exception &ex)
 	{
@@ -41,8 +39,6 @@ ProcessService::ProcessService()
 		// A joinable thread left behind would terminate the process on destruction.
 		if (m_ioThread.joinable())
 			m_ioThread.join();
-		if (m_callbackThread.joinable())
-			m_callbackThread.join();
 		throw std::runtime_error("failed to start a process service thread");
 	}
 }
@@ -62,8 +58,32 @@ void ProcessService::post(std::function<void()> task)
 	boost::asio::post(m_ioContext, std::move(task));
 }
 
+void ProcessService::ensureCallbackThread()
+{
+	std::lock_guard lock(m_callbackMutex);
+	if (m_callbackThread.get_id() != std::thread::id())
+		return;
+	m_callbackThread = std::thread([this]() { Utility::setThreadName("appmesh-exit"); m_callbackContext.run(); });
+	m_callbackThreadId = m_callbackThread.get_id();
+}
+
 void ProcessService::postCallback(std::function<void()> task)
 {
+	if (!m_stopped.load(std::memory_order_acquire))
+	{
+		try
+		{
+			ensureCallbackThread();
+		}
+		catch (const std::exception &ex)
+		{
+			// Thread creation failed: run the callback inline so waiters still
+			// finalize (same fallback as AppProcess uses when posting fails).
+			LOG_CRT << "ProcessService::postCallback() FATAL: cannot start the exit-callback thread: " << ex.what();
+			task();
+			return;
+		}
+	}
 	boost::asio::post(m_callbackContext, std::move(task));
 }
 
@@ -74,6 +94,7 @@ bool ProcessService::onIoThread() const
 
 bool ProcessService::onCallbackThread() const
 {
+	std::lock_guard lock(m_callbackMutex);
 	return std::this_thread::get_id() == m_callbackThreadId;
 }
 
@@ -154,9 +175,12 @@ void ProcessService::shutdown()
 		waiter->cv.notify_all();
 	}
 	// Stop the callback thread after the engine: no callback can be posted anymore.
-	m_callbackGuard.reset();
-	m_callbackContext.stop();
-	if (m_callbackThread.joinable())
-		m_callbackThread.join();
+	{
+		std::lock_guard lock(m_callbackMutex);
+		m_callbackGuard.reset();
+		m_callbackContext.stop();
+		if (m_callbackThread.joinable())
+			m_callbackThread.join();
+	}
 	LOG_INF << fname << "process service threads stopped";
 }
