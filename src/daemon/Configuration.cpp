@@ -1,5 +1,6 @@
 // src/daemon/Configuration.cpp
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <set>
 #include <thread>
@@ -47,6 +48,30 @@ namespace
 		}();
 		return count;
 	}
+
+	// Logs when the app-mutation critical section is held long enough to stall
+	// concurrent application management (for example a Docker backend blocking
+	// inside a synchronous container call while destroy() runs under the lock).
+	class AppMutationLockSentinel
+	{
+	public:
+		explicit AppMutationLockSentinel(const char *fn) : m_fn(fn), m_waitStart(std::chrono::steady_clock::now()) {}
+		void acquired() { m_acquired = std::chrono::steady_clock::now(); }
+		~AppMutationLockSentinel()
+		{
+			const auto now = std::chrono::steady_clock::now();
+			const auto waitSeconds = std::chrono::duration<double>(m_acquired - m_waitStart).count();
+			const auto holdSeconds = std::chrono::duration<double>(now - m_acquired).count();
+			if (holdSeconds >= 0.5)
+				LOG_WAR << m_fn << " held m_appMutationMutex for <" << holdSeconds
+						<< "s> (waited <" << waitSeconds << "s>); concurrent app management was stalled";
+		}
+
+	private:
+		const char *m_fn;
+		std::chrono::steady_clock::time_point m_waitStart;
+		std::chrono::steady_clock::time_point m_acquired = m_waitStart;
+	};
 }
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
@@ -638,39 +663,50 @@ bool Configuration::dependencyCycleExists(const std::vector<std::string> &seedDe
 
 std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, bool persistable)
 {
-	std::lock_guard mutationGuard(m_appMutationMutex);
-	auto app = parseApp(jsonApp);
-	// Re-check the immutable owner binding while holding the same mutation lock
-	// used by Principal deletion. A request authenticated just before an
-	// administrator tombstones that Principal must not create a newly orphaned
-	// application after the deletion commits.
-	Security::instance()->principal(app->getOwnerPrincipalId());
-	// Reject unusable depends_on definitions before any state is replaced.
-	validateDependencies(app, persistable);
-	std::shared_ptr<Application> oldApp = getApp(app->getName(), false);
-	if (persistable && app->isSystemProtected())
-		throw AuthorizationException("system applications can only be loaded from the installed apps directory");
-	if (oldApp && oldApp->isSystemProtected())
-		throw AuthorizationException("system applications cannot be replaced through the application API");
-	if (oldApp)
+	std::shared_ptr<Application> oldApp;
+	std::shared_ptr<Application> app;
 	{
-		if (!persistable)
-			throw std::invalid_argument("on-demand application name is already in use");
-		if (app->getName() == SEPARATE_AGENT_APP_NAME)
+		AppMutationLockSentinel lockSentinel("Configuration::addApp()");
+		std::lock_guard mutationGuard(m_appMutationMutex);
+		lockSentinel.acquired();
+		app = parseApp(jsonApp);
+		// Re-check the immutable owner binding while holding the same mutation lock
+		// used by Principal deletion. A request authenticated just before an
+		// administrator tombstones that Principal must not create a newly orphaned
+		// application after the deletion commits.
+		Security::instance()->principal(app->getOwnerPrincipalId());
+		// Reject unusable depends_on definitions before any state is replaced.
+		validateDependencies(app, persistable);
+		oldApp = getApp(app->getName(), false);
+		if (persistable && app->isSystemProtected())
+			throw AuthorizationException("system applications can only be loaded from the installed apps directory");
+		if (oldApp && oldApp->isSystemProtected())
+			throw AuthorizationException("system applications cannot be replaced through the application API");
+		if (oldApp)
 		{
-			throw std::invalid_argument("not permited");
+			if (!persistable)
+				throw std::invalid_argument("on-demand application name is already in use");
+			if (app->getName() == SEPARATE_AGENT_APP_NAME)
+			{
+				throw std::invalid_argument("not permited");
+			}
 		}
+
+		if (!persistable)
+		{
+			app->setUnPersistable();
+		}
+		else
+		{
+			// Persist the candidate first so a write failure does not destroy the current app.
+			app->save();
+		}
+		m_apps.insert_or_assign(app->getName(), app);
 	}
 
-	if (!persistable)
-	{
-		app->setUnPersistable();
-	}
-	else
-	{
-		// Persist the candidate first so a write failure does not destroy the current app.
-		app->save();
-	}
+	// Replacement and start-up run outside the mutation lock: destroying the old
+	// application can block on a slow Docker backend for its full timeout, and
+	// one slow application must not stall every other application management.
 	if (oldApp)
 	{
 		oldApp->destroy();
@@ -680,7 +716,6 @@ std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, b
 	{
 		app->initMetrics();
 	}
-	m_apps.insert_or_assign(app->getName(), app);
 
 	// invoke immediately
 	app->execute();
@@ -688,28 +723,36 @@ std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, b
 	return app;
 }
 
-void Configuration::removeApp(const std::string &appName, const Application *expected)
+bool Configuration::removeApp(const std::string &appName, const Application *expected)
 {
 	const static char fname[] = "Configuration::removeApp() ";
-	std::lock_guard mutationGuard(m_appMutationMutex);
-	if (expected != nullptr && getApp(appName, false).get() != expected)
-	{
-		LOG_DBG << fname << "Ignoring stale remove for application <" << appName << ">";
-		return;
-	}
-	auto current = getApp(appName, false);
-	if (current && current->isSystemProtected())
-		throw AuthorizationException("system applications cannot be removed through the application API");
-
-	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
-
-	LOG_DBG << fname << "Removing application <" << appName << ">";
 	std::shared_ptr<Application> app;
-	m_apps.erase_if(appName, [&app](auto &entry)
-					{
-						app = entry.second;
-						return true;
-					});
+	{
+		// Scoped with the guard so the reported hold time is the real critical
+		// section, not the unlocked destroy() that follows.
+		AppMutationLockSentinel lockSentinel("Configuration::removeApp()");
+		std::lock_guard mutationGuard(m_appMutationMutex);
+		lockSentinel.acquired();
+		if (expected != nullptr && getApp(appName, false).get() != expected)
+		{
+			LOG_DBG << fname << "Ignoring stale remove for application <" << appName << ">";
+			return false;
+		}
+		auto current = getApp(appName, false);
+		if (current && current->isSystemProtected())
+			throw AuthorizationException("system applications cannot be removed through the application API");
+
+		LOG_DBG << fname << "Removing application <" << appName << ">";
+		m_apps.erase_if(appName, [&app](auto &entry)
+						{
+			app = entry.second;
+			return true;
+		});
+		m_appNameIndexMap.erase(appName);
+	}
+	// Side effects run outside the mutation lock: destroy() may block for a
+	// slow Docker backend, and no other application management may depend on it.
+	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
 	if (app)
 	{
 		// Write to disk
@@ -718,8 +761,8 @@ void Configuration::removeApp(const std::string &appName, const Application *exp
 		app->remove();
 		LOG_DBG << fname << "Removed application <" << appName << ">";
 	}
-	m_appNameIndexMap.erase(appName);
 	EventDispatcher::instance()->removeByApp(appName);
+	return true;
 }
 
 void Configuration::saveConfigToDisk()

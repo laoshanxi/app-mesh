@@ -90,7 +90,10 @@ public:
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
 	std::shared_ptr<Application> addApp(const Json::Value &jsonApp, bool persistable = true);
-	void removeApp(const std::string &appName, const Application *expected = nullptr);
+	/// Removes an application. Returns false when `expected` no longer matches
+	/// the registered application (stale remove). The map update is atomic;
+	/// process destruction and persistence run outside the mutation lock.
+	bool removeApp(const std::string &appName, const Application *expected = nullptr);
 	std::shared_ptr<Application> parseApp(const Json::Value &jsonApp);
 	/// Registers a parsed application from app recovery without REST-path
 	/// validation (see validateRecoveredDependencies). Takes the app mutation lock.

@@ -1,6 +1,7 @@
 // src/daemon/process/DockerApiProcess.cpp
 #include "DockerApiProcess.h"
 
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -226,25 +227,28 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 									 : std::string();
 		if (containerId.empty())
 		{
-			setStartError("Docker create response does not contain a valid container ID");
-			LOG_WAR << fname << startError() << ": " << resp->text;
-			setContainerId(m_containerName); // Docker endpoints also accept the container name.
-			this->detach();
-			terminate();
-			return this->getpid();
+			// A proxy can close before the last TLS data records arrive, leaving
+			// the Id unparseable even though Docker created the container. The
+			// create named it, so the name addresses it on every endpoint.
+			LOG_WAR << fname << "create response carried no Id, using the container name: " << resp->text.substr(0, 120);
+			setContainerId(m_containerName);
 		}
-		setContainerId(containerId);
+		else
+		{
+			setContainerId(containerId);
+		}
+		const auto containerRef = containerId.empty() ? m_containerName : containerId;
 
 		// POST /containers/{id}/start
 		resp = this->requestDocker(web::http::methods::POST,
-								   Utility::stringFormat("/containers/%s/start", containerId.c_str()),
+								   Utility::stringFormat("/containers/%s/start", containerRef.c_str()),
 								   {}, {}, nullptr);
 
 		if (resp->status_code < web::http::status_codes::BadRequest)
 		{
 			// GET /containers/{id}/json
 			resp = this->requestDocker(web::http::methods::GET,
-									   Utility::stringFormat("/containers/%s/json", containerId.c_str()),
+									   Utility::stringFormat("/containers/%s/json", containerRef.c_str()),
 									   {}, {}, nullptr);
 
 			if (resp->status_code == web::http::status_codes::OK)
@@ -416,21 +420,27 @@ const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::h
 	auto response = std::make_shared<HttpResponse>();
 	std::string errorMsg = std::string("exception caught: ").append(path);
 
+	const auto requestStart = std::chrono::steady_clock::now();
 	try
 	{
-		return RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, DOCKER_REQUEST_TIMEOUT_SECONDS);
+		response = RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, DOCKER_REQUEST_TIMEOUT_SECONDS);
 	}
 	catch (const std::exception &ex)
 	{
 		errorMsg = ex.what();
 		LOG_ERR << fname << path << " got exception: " << ex.what();
+		response->status_code = web::http::status_codes::ServiceUnavailable;
+		response->text = errorMsg;
 	}
 	catch (...)
 	{
 		LOG_ERR << fname << "Unknown exception on request <" << path << ">";
+		response->status_code = web::http::status_codes::ServiceUnavailable;
+		response->text = errorMsg;
 	}
-
-	response->status_code = web::http::status_codes::ServiceUnavailable;
-	response->text = errorMsg;
+	// A blocking docker call stalls the calling thread up to the full timeout;
+	// make the stall visible with its duration and where it ran from.
+	LOG_INF << fname << path << " status <" << response->status_code << "> took <"
+			<< std::chrono::duration<double>(std::chrono::steady_clock::now() - requestStart).count() << "s>";
 	return response;
 }

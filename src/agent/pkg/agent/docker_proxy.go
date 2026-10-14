@@ -1,11 +1,14 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"strconv"
 	"strings"
 	"time"
 
@@ -92,9 +95,34 @@ func (dp *DockerProxy) CreateReverseProxy() *httputil.ReverseProxy {
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del("Connection")
 			logger.Debugf("Response: %s %s %s %d", resp.Request.Method, resp.Request.RemoteAddr, resp.Request.RequestURI, resp.StatusCode)
+			// Control-plane endpoints reply with one small JSON document. Buffered
+			// and length-framed, the daemon never has to recover a chunked body
+			// from a connection the peer closed right after the last flush.
+			if !isStreamingDockerEndpoint(resp.Request.URL.Path) && resp.Body != nil {
+				body, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err != nil {
+					return err
+				}
+				resp.Body = io.NopCloser(bytes.NewReader(body))
+				resp.ContentLength = int64(len(body))
+				resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+				resp.Header.Del("Transfer-Encoding")
+			}
 			return nil
 		},
 	}
+}
+
+// isStreamingDockerEndpoint reports Docker endpoints whose response is a
+// live stream; those must pass through unbuffered.
+func isStreamingDockerEndpoint(path string) bool {
+	for _, suffix := range []string{"/logs", "/attach", "/events", "/stats", "/pull", "/push", "/get", "/load"} {
+		if strings.HasSuffix(path, suffix) {
+			return true
+		}
+	}
+	return strings.Contains(path, "/archive")
 }
 
 // RegisterDockerRoutes registers Docker routes with the provided router.

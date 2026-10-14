@@ -668,15 +668,11 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 		}
 
 		checkAppAccessPermission(message, app, true);
-		bool stale = false;
-		{
-			const auto mutation = config->lockAppMutation();
-			if (!config->isCurrentApp(appName, app))
-				stale = true;
-			else
-				config->removeApp(appName, app.get());
-		}
-		if (stale)
+		// The map update inside removeApp is atomic and the expected pointer
+		// makes the snapshot race-safe; a replacement with the same name is not
+		// removed. Destruction runs outside the mutation lock, so a slow Docker
+		// backend cannot stall other application management.
+		if (!config->removeApp(appName, app.get()))
 		{
 			message->reply(web::http::status_codes::Conflict);
 			return;
@@ -1015,12 +1011,11 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 			continue;
 
 		// removeApp's expected pointer makes the snapshot race-safe. A replacement
-		// with the same name is not removed.
-		const auto mutation = config->lockAppMutation();
-		if (!config->isCurrentApp(name, app))
-			continue;
-		config->removeApp(name, app.get());
-		++removed;
+		// with the same name is not removed. Destruction runs inside removeApp
+		// but outside the mutation lock, so a slow Docker backend cannot stall
+		// other application management.
+		if (config->removeApp(name, app.get()))
+			++removed;
 	}
 
 	Json::Value response;
@@ -1505,29 +1500,30 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	try
 	{
 		{
-			// Keep same-name validation, subscription and replacement atomic.
+			// Keep same-name validation and subscription atomic. addApp performs
+			// its own atomic map replacement and runs its slow replacement and
+			// start-up work outside the mutation lock.
 			const auto mutation = config->lockAppMutation();
 			if (!config->isCurrentApp(appName, observed))
 				stale = true;
-			else
+			else if (eventMask != 0)
 			{
-				if (eventMask != 0)
-				{
-					ConnectionKey connKey;
-					DeliveryCallback deliveryCb;
-					if (buildDeliveryCallback(message, connKey, deliveryCb))
-						subId = EventDispatcher::instance()->subscribe(appName, eventMask, tokenUser, std::move(deliveryCb), connKey);
-				}
-
-				auto app = config->addApp(jsonApp);
-				// Use returnRuntimeInfo=true so the response strips encrypted secret_env.
-				result = app->AsJson(true);
+				ConnectionKey connKey;
+				DeliveryCallback deliveryCb;
+				if (buildDeliveryCallback(message, connKey, deliveryCb))
+					subId = EventDispatcher::instance()->subscribe(appName, eventMask, tokenUser, std::move(deliveryCb), connKey);
 			}
 		}
 		if (stale)
 		{
 			message->reply(web::http::status_codes::Conflict);
 			return;
+		}
+		else
+		{
+			auto app = config->addApp(jsonApp);
+			// Use returnRuntimeInfo=true so the response strips encrypted secret_env.
+			result = app->AsJson(true);
 		}
 		if (!subId.empty())
 		{
