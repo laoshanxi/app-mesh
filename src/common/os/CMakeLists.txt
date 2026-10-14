@@ -45,3 +45,6 @@ endif()
 
 add_library(os STATIC ${OS_COMMON_SOURCES} ${OS_PLATFORM_SOURCES})
 add_library(${PROJECT_NAME}::os ALIAS os)
+
+# spdlog: keep the inline registry out of these objects (see rest/CMakeLists.txt).
+target_link_libraries(os PRIVATE spdlog::spdlog)

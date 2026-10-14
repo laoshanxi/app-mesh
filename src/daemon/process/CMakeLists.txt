@@ -12,4 +12,5 @@ add_library(process STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::process ALIAS process)
 
 # Boost.Process V2 compiled symbols (process_environment, close_all, error categories)
-target_link_libraries(process PRIVATE Boost::process)
+# spdlog: keep the inline registry out of these objects (see rest/CMakeLists.txt).
+target_link_libraries(process PRIVATE Boost::process spdlog::spdlog)

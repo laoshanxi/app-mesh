@@ -79,14 +79,17 @@ namespace
 		}
 	};
 
-	bool decodeChunkedBody(const std::string &data, std::string &out)
+	// Decode a chunked body. With atEof, a missing terminator (the final
+	// "0\r\n\r\n") is accepted: the peer may close without it, and the chunks
+	// that did arrive carry the whole payload (curl keeps them too).
+	bool decodeChunkedBody(const std::string &data, std::string &out, bool atEof = false)
 	{
 		size_t pos = 0;
 		while (true)
 		{
 			const auto eol = data.find("\r\n", pos);
 			if (eol == std::string::npos)
-				return false; // need more data
+				return atEof; // unterminated, but the connection is gone
 			// chunk extensions (";...") are ignored
 			const auto sizeText = data.substr(pos, eol - pos);
 			unsigned long chunkSize = 0;
@@ -101,14 +104,19 @@ namespace
 				{
 					const auto trailerEnd = data.find("\r\n", pos);
 					if (trailerEnd == std::string::npos)
-						return false; // need more data
+						return atEof; // missing trailer end, but the connection is gone
 					if (trailerEnd == pos)
 						return true; // empty line: message complete
 					pos = trailerEnd + 2;
 				}
 			}
 			if (data.size() < pos + chunkSize + 2)
-				return false; // need more data
+			{
+				// A truncated final chunk is dropped; complete chunks are kept.
+				if (atEof && data.size() > pos)
+					out.append(data, pos, data.size() - pos);
+				return atEof;
+			}
 			out.append(data, pos, chunkSize);
 			pos += chunkSize + 2; // skip trailing CRLF
 		}
@@ -290,17 +298,42 @@ std::shared_ptr<HttpResponse> RestClient::request(
 				else
 				{
 					// Connection closed: complete from whatever was received.
+					// A TLS close notification can race the final data records,
+					// leaving bytes in the input buffer with no message callback;
+					// drain them before declaring the body incomplete.
+					auto *input = conn->getRecvBuffer();
+					if (input && input->readableBytes() > 0)
+					{
+						state->raw.append(input->peek(), input->readableBytes());
+						input->retrieveAll();
+					}
 					if (tryCompleteResponse(*state))
 						state->finish(std::string());
 					else if (!state->headersParsed)
 						state->finish("connection closed before response headers received");
-					else if (!state->chunked && state->contentLength < 0)
+					else if (state->chunked)
+					{
+						std::string body;
+						if (decodeChunkedBody(state->raw.substr(state->bodyStart), body, /*atEof*/ true))
+						{
+							state->response->text.swap(body);
+							state->finish(std::string());
+						}
+						else
+							state->finish("connection closed before response body completed");
+					}
+					else if (state->contentLength < 0)
 					{
 						state->response->text = state->raw.substr(state->bodyStart);
 						state->finish(std::string());
 					}
 					else
+					{
+						LOG_WAR << "RestClient response body incomplete on close: raw <" << state->raw.size()
+								<< "> bytes, chunked <" << state->chunked
+								<< ">, content-length <" << state->contentLength << ">";
 						state->finish("connection closed before response body completed");
+					}
 				} });
 			client->setConnectionErrorCallback([state]()
 											   { state->finish("connection to peer failed"); });
