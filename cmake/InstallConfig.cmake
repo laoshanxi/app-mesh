@@ -109,7 +109,7 @@ else()
     # TODO: macOS ssl can not work with pure openssl 
     if(APPLE)
         foreach(bin cfssl cfssljson)
-            # cfssl lives at /usr/local/bin by bootstrap contract (install_build_deps*.sh pin GOBIN)
+            # cfssl lives at /usr/local/bin by bootstrap contract (install_build_deps.sh pins GOBIN)
             install(PROGRAMS "/usr/local/bin/${bin}" DESTINATION "${DST}/ssl" COMPONENT scripts)
         endforeach()
     endif()

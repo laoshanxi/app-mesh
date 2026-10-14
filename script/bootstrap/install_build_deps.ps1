@@ -24,7 +24,6 @@ $architecture = switch ($env:PROCESSOR_ARCHITECTURE) {
 
 $ROOTDIR = "$env:TEMP\appmesh-build-setup"
 $SRC_DIR = (Get-Location).Path
-$script:PerlPath = $null
 
 Write-Host "App-Mesh Build Environment Setup" -ForegroundColor Green
 Write-Host "Detected architecture: $architecture" -ForegroundColor Green
@@ -70,29 +69,6 @@ function Expand-File {
         Write-Error "Failed to extract $archive`: $_"
         throw
     }
-}
-
-function Find-Perl {
-    if ($script:PerlPath) { return $script:PerlPath }
-    
-    $possiblePaths = @(
-        "C:\vcpkg\downloads\tools\perl\*\perl\bin",
-        "C:\Perl*\bin",
-        "C:\Strawberry\perl\bin",
-        "$env:ProgramFiles\Perl\bin",
-        "${env:ProgramFiles(x86)}\Perl\bin"
-    )
-    
-    foreach ($pathPattern in $possiblePaths) {
-        $perlExe = Get-ChildItem -Path $pathPattern -Filter "perl.exe" -Recurse -ErrorAction SilentlyContinue | 
-        Select-Object -First 1
-        if ($perlExe) {
-            $script:PerlPath = $perlExe.Directory.FullName
-            Write-Host "Found Perl in: $script:PerlPath" -ForegroundColor Green
-            return $script:PerlPath
-        }
-    }
-    return $null
 }
 
 ################################################################################
@@ -198,7 +174,9 @@ function Install-VcpkgPackages {
         'boost-serialization:x64-windows',
         'boost-lockfree:x64-windows',
         'drogon:x64-windows',
-        # path so should_log() behaviour is identical across platforms.
+        # spdlog is intentionally NOT in this list: it is built from source
+        # (pinned to v1.17.0, see Install-SpdlogFromSource) so should_log()
+        # behaviour is identical across platforms.
         'yaml-cpp:x64-windows'
     )
 
@@ -296,96 +274,6 @@ function Install-HeaderOnlyLibraries {
     Set-Location $ROOTDIR
 
     Write-Host "Header-only libraries installed successfully" -ForegroundColor Green
-}
-
-function Install-Python {
-    param (
-        [string]$Version = "3.13.7",
-        [string]$InstallDir = "C:\Python313",
-        [ValidateSet("amd64", "arm64")]
-        [string]$Arch = $(if ($env:PROCESSOR_ARCHITECTURE -match "ARM") { "arm64" } else { "amd64" })
-    )
-
-    Write-Host "Installing Python programming language..." -ForegroundColor Cyan
-
-    # Auto-detect architecture if not specified
-    if (-not $Arch) {
-        $Arch = if ($env:PROCESSOR_ARCHITECTURE -match "ARM|arm") { "arm64" } else { "amd64" }
-    }
-
-    $pythonExe = Join-Path $InstallDir "python.exe"
-
-    # Check if Python is already installed
-    $existingVersion = $null
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        try {
-            $out = & python --version 2>&1
-            if ($null -ne $out) {
-                # join possible array output and trim safely
-                $existingVersion = ($out -join "`n").Trim()
-            }
-            else {
-                $existingVersion = $null
-            }
-        }
-        catch {
-            # If invoking python fails for any reason, treat as not installed
-            $existingVersion = $null
-        }
-    }
-    elseif (Test-Path $pythonExe) {
-        try {
-            $out = & $pythonExe --version 2>&1
-            if ($null -ne $out) {
-                $existingVersion = ($out -join "`n").Trim()
-            }
-            else {
-                $existingVersion = $null
-            }
-        }
-        catch {
-            $existingVersion = $null
-        }
-    }
-    if ($existingVersion -and $existingVersion -like "Python $Version*") {
-        Write-Host "Python $Version is already installed" -ForegroundColor Green
-        return
-    }
-    elseif ($existingVersion) {
-        Write-Host "Found $existingVersion, will install Python $Version..." -ForegroundColor Yellow
-    }
-
-    Write-Host "Preparing to install Python $Version ($Arch) to $InstallDir..." -ForegroundColor Cyan
-
-    $installerName = "python-$Version-$Arch.exe"
-    $installerUrl = "https://www.python.org/ftp/python/$Version/$installerName"
-
-    # Download installer
-    Save-File $installerUrl $installerName
-
-    Write-Host "Running installer (quiet mode)..." -ForegroundColor Yellow
-    $installerArgs = @(
-        "/quiet",
-        "InstallAllUsers=1",
-        "PrependPath=1",
-        "TargetDir=$InstallDir",
-        "Include_doc=0",
-        "Include_test=0"
-    )
-    $proc = Start-Process -FilePath $installerName -ArgumentList $installerArgs -Wait -NoNewWindow -PassThru
-    if ($proc.ExitCode -ne 0) {
-        throw "Python installer failed with exit code $($proc.ExitCode)"
-    }
-
-    # Verify installation
-    if (-not (Test-Path $pythonExe)) {
-        throw "Installation completed but python.exe not found at $pythonExe"
-    }
-
-    # Upgrade pip and essential packages
-    Install-PythonPackages -PythonExe $pythonExe
-
-    Write-Host "Python $Version installed successfully" -ForegroundColor Green
 }
 
 function Install-PythonPackages {
@@ -529,11 +417,6 @@ function Install-Dex {
     Write-Host "Dex installed successfully (minimal size)" -ForegroundColor Green
 }
 
-function Build-NativeLibraries {
-    Write-Host "Building native libraries..." -ForegroundColor Cyan
-    Write-Host "Native library compilation completed" -ForegroundColor Green
-}
-
 function Install-NsisPlugin {
     # https://nsis.sourceforge.io/EnVar_plug-in
     Write-Host "Installing NSIS EnVar plugin..." -ForegroundColor Cyan
@@ -621,7 +504,6 @@ try {
     Install-VcpkgPackages
     Install-SpdlogFromSource
     Install-HeaderOnlyLibraries
-    #Install-Python
     Install-PythonPackages
     Install-Go
     Install-GoTools
@@ -630,7 +512,6 @@ try {
 
     Install-Rust
     Install-NsisPlugin
-    Build-NativeLibraries
     Set-EnvironmentVariables
     # Remove-TempFiles
     Show-Summary
