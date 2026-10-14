@@ -518,7 +518,11 @@ std::size_t Configuration::getWorkerThreads() const
 	std::lock_guard guard(m_hotupdateMutex);
 	if (m_rest->m_workerThreads > 0)
 		return static_cast<std::size_t>(m_rest->m_workerThreads);
-	return std::max<std::size_t>(static_cast<std::size_t>(MIN_WORKER_THREADS), availableCpuCount());
+	// Request handling is mostly light process-control work; a large host does
+	// not need one worker per CPU, so the derived default is capped. Explicit
+	// WorkerThreads values pass through unchanged above.
+	return std::max<std::size_t>(static_cast<std::size_t>(MIN_WORKER_THREADS),
+								 std::min<std::size_t>(static_cast<std::size_t>(MAX_DEFAULT_WORKER_THREADS), availableCpuCount()));
 }
 
 std::size_t Configuration::getTransportIoThreads() const

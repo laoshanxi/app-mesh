@@ -53,6 +53,9 @@ private:
 	bool onIoThread() const;
 	/// True when called from the exit-callback thread.
 	bool onCallbackThread() const;
+	/// Start the exit-callback thread on first use; no process ever exited
+	/// before, so the thread stays down until the first postCallback().
+	void ensureCallbackThread();
 
 	/// One dispatchSync wait; released by shutdown after the io thread joins.
 	struct SyncWaiter;
@@ -66,6 +69,7 @@ private:
 	boost::asio::executor_work_guard<boost::asio::io_context::executor_type> m_callbackGuard;
 	std::thread m_callbackThread;
 	std::thread::id m_callbackThreadId;
+	mutable std::mutex m_callbackMutex; ///< Guards lazy start/join of m_callbackThread and its id.
 
 	std::atomic<bool> m_stopped{false};
 	std::mutex m_syncMutex;								   ///< Guards m_syncWaiters.
