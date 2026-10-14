@@ -22,7 +22,7 @@ GOARCH=$(go env GOARCH)
 
 ################################################################################
 # Copy the Dex server binary into the main package. Dex is installed like the
-# other Go tools (cfssl/nfpm) by script/bootstrap/install_build_deps*.sh; the
+# other Go tools (cfssl/nfpm) by script/bootstrap/install_build_deps.sh; the
 # passhash helper is repo-native (src/apps/identity) and already staged by cmake.
 ################################################################################
 copy_dex() {
@@ -36,7 +36,7 @@ copy_dex() {
     info "Copied Dex server binary ${dex_bin} into the main package"
 
     # Dex administration web UI (built from the fork's examples/example-app by
-    # install_build_deps*.sh), packaged under the same dexuser name the retired
+    # install_build_deps.sh), packaged under the same dexuser name the retired
     # gRPC helper used.
     local dexuser_bin
     dexuser_bin="$(command -v dexuser || true)"

@@ -11,11 +11,7 @@ export HOMEBREW_NO_AUTO_UPDATE=1
 
 
 # Define key directories
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
-
 TMP_DIR="$(mktemp -d "$(pwd)/appmesh.tmp.XXXXXX")"
-BUILD_THREADS=$(sysctl -n hw.ncpu || echo 4)
 
 cleanup() {
 	echo "Cleaning up temporary directory..."
@@ -31,14 +27,13 @@ cd "${TMP_DIR}"
 
 # brew dependencies
 # spdlog is intentionally NOT in this list — see the build-from-source block
-# below. brew tracks the latest spdlog (currently 1.17.x) which has subtly
-# different should_log() behaviour vs the pinned 1.15.3 that Linux uses; pinning
-# all platforms to the same source build makes runtime LOG_DBG behaviour match
-# regardless of where the daemon was built.
+# below. brew tracks the latest spdlog release, which drifts from the v1.17.0
+# that the Linux bootstrap scripts build; pinning all platforms to the same
+# source build makes runtime LOG_DBG behaviour match regardless of where the
+# daemon was built.
 BREW_PACKAGES=(
     wget
     cmake
-    ninja
     go
     rust
     openssl@3
@@ -52,8 +47,7 @@ BREW_PACKAGES=(
 # Ensure brew is available
 if ! command -v brew &>/dev/null; then
     echo "Installing Homebrew"
-    NONINTERACTIVE=1
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 fi
 

@@ -2,7 +2,7 @@
 # dexuser — bundled Dex administration web UI (System App). It runs the shared
 # auth-stack launcher (src/apps/identity/appmesh-auth.sh) with the admin-ui
 # command; this App has nothing to compile. The bin/dexuser binary is built from
-# the Dex fork's examples/example-app by script/bootstrap/install_build_deps*
+# the Dex fork's examples/example-app by script/bootstrap/install_build_deps.sh
 # and copied into bin/ by script/pack/build_package.*, like the dex server.
 
 if(APPMESH_INSTALL_AUTH_CONFIG)
