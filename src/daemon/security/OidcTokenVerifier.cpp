@@ -20,6 +20,10 @@
 #include <openssl/opensslv.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L && !defined(LIBRESSL_VERSION_NUMBER)
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
+#endif
 
 namespace
 {
@@ -584,8 +588,37 @@ std::string OidcTokenVerifier::jwkToPem(const Json::Value &jwk)
 
 	BIGNUM *n = BN_bin2bn(modulus.data(), static_cast<int>(modulus.size()), nullptr);
 	BIGNUM *e = BN_bin2bn(exponent.data(), static_cast<int>(exponent.size()), nullptr);
+	EVP_PKEY *pkey = nullptr;
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L && !defined(LIBRESSL_VERSION_NUMBER)
+	// OpenSSL 3 deprecates the low-level RSA constructors, so the public key
+	// is imported through the key-management parameter API instead.
+	OSSL_PARAM_BLD *bld = (n != nullptr && e != nullptr) ? OSSL_PARAM_BLD_new() : nullptr;
+	OSSL_PARAM *params = nullptr;
+	EVP_PKEY_CTX *ctx = (bld != nullptr) ? EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr) : nullptr;
+	if (ctx == nullptr ||
+		OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_N, n) != 1 ||
+		OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_E, e) != 1 ||
+		(params = OSSL_PARAM_BLD_to_param(bld)) == nullptr ||
+		EVP_PKEY_fromdata_init(ctx) != 1 ||
+		EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) != 1)
+	{
+		EVP_PKEY_free(pkey);
+		OSSL_PARAM_free(params);
+		OSSL_PARAM_BLD_free(bld);
+		EVP_PKEY_CTX_free(ctx);
+		BN_free(n);
+		BN_free(e);
+		throw std::runtime_error("Failed to construct RSA key from JWKS");
+	}
+	OSSL_PARAM_free(params);
+	OSSL_PARAM_BLD_free(bld);
+	EVP_PKEY_CTX_free(ctx);
+	BN_free(n); // fromdata copies the parameters, so the BIGNUMs are ours to free
+	BN_free(e);
+#else
 	RSA *rsa = RSA_new();
-	if (!n || !e || !rsa)
+	if (n == nullptr || e == nullptr || rsa == nullptr)
 	{
 		BN_free(n);
 		BN_free(e);
@@ -604,20 +637,25 @@ std::string OidcTokenVerifier::jwkToPem(const Json::Value &jwk)
 		throw std::runtime_error("Failed to attach RSA parameters from JWKS");
 	}
 #endif
-
-	EVP_PKEY *pkey = EVP_PKEY_new();
-	BIO *bio = BIO_new(BIO_s_mem());
-	if (!pkey || !bio || EVP_PKEY_assign_RSA(pkey, rsa) != 1 || PEM_write_bio_PUBKEY(bio, pkey) != 1)
+	pkey = EVP_PKEY_new();
+	if (pkey == nullptr || EVP_PKEY_assign_RSA(pkey, rsa) != 1)
 	{
-		if (pkey)
-			EVP_PKEY_free(pkey);
-		else
-			RSA_free(rsa);
+		// EVP_PKEY_assign_RSA only takes ownership of rsa on success
+		RSA_free(rsa);
+		EVP_PKEY_free(pkey);
+		throw std::runtime_error("Failed to encode RSA key from JWKS");
+	}
+#endif
+
+	BIO *bio = BIO_new(BIO_s_mem());
+	if (bio == nullptr || pkey == nullptr || PEM_write_bio_PUBKEY(bio, pkey) != 1)
+	{
 		BIO_free(bio);
+		EVP_PKEY_free(pkey);
 		throw std::runtime_error("Failed to encode RSA key from JWKS");
 	}
 	const std::string pem = bioToString(bio);
 	BIO_free(bio);
-	EVP_PKEY_free(pkey); // owns rsa after EVP_PKEY_assign_RSA
+	EVP_PKEY_free(pkey);
 	return pem;
 }

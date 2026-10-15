@@ -22,12 +22,16 @@
 namespace
 {
 	constexpr const char *CGROUP_APPMESH_DIR = "appmesh";
-	constexpr long long MIN_MEMORY_LIMIT_BYTES = 4 * 1024 * 1024; // 4 MB minimum
 	constexpr long long DEFAULT_CPU_WEIGHT = 100;
 	constexpr long long CGROUP_V1_UNLIMITED_THRESHOLD = 9223372036854771712LL;
+	std::mutex cgroupV2ManagementMutex;
+#if defined(__linux__)
+	// These helpers are only referenced from the __linux__ code paths below;
+	// without the guard the non-Linux builds warn about unused symbols.
+	constexpr long long MIN_MEMORY_LIMIT_BYTES = 4 * 1024 * 1024; // 4 MB minimum
 	std::once_flag cgroupV1MountOnce;
 	std::once_flag cgroupV2MountOnce;
-	std::mutex cgroupV2ManagementMutex;
+#endif // defined(__linux__)
 
 	/// Parse CPU set string like "0-3,5,7-9" and count CPUs
 	int parseCpuSetString(const std::string &cpuSetStr)
@@ -73,9 +77,9 @@ namespace
 		return cpuCount;
 	}
 
+#if defined(__linux__)
 	std::string currentCgroupPath(const std::string &controller)
 	{
-#if defined(__linux__)
 		std::ifstream input("/proc/self/cgroup");
 		std::string line;
 		while (std::getline(input, line))
@@ -101,9 +105,6 @@ namespace
 					return line.substr(secondColon + 1);
 			}
 		}
-#else
-		(void)controller;
-#endif
 		return {};
 	}
 
@@ -131,7 +132,6 @@ namespace
 
 	std::string cgroupMountRoot(const std::string &mountPoint, const std::string &filesystemType)
 	{
-#if defined(__linux__)
 		std::ifstream input("/proc/self/mountinfo");
 		std::string line;
 		while (std::getline(input, line))
@@ -149,10 +149,6 @@ namespace
 			if (type == filesystemType && decodeMountInfoPath(mountedAt) == mountPoint)
 				return decodeMountInfoPath(root);
 		}
-#else
-		(void)mountPoint;
-		(void)filesystemType;
-#endif
 		return "/";
 	}
 
@@ -172,6 +168,7 @@ namespace
 			return mountPoint;
 		return (fs::path(mountPoint) / relative.substr(relative.front() == '/' ? 1 : 0)).string();
 	}
+#endif // defined(__linux__)
 
 	std::vector<std::string> cgroupHierarchy(const std::string &leafPath, const std::string &mountRoot)
 	{

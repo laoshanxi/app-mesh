@@ -6,7 +6,17 @@
 #include <string>
 #include <tuple>
 
+// croncpp.h ships as a plain header on the default include path (e.g.
+// /usr/local/include), which Apple clang does not treat as a system
+// directory, so its file-local helpers would surface as warnings.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunneeded-internal-declaration"
+#endif
 #include <croncpp.h>
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 class DailyLimitation;
 //////////////////////////////////////////////////////////////////////////
