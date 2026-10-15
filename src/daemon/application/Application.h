@@ -77,9 +77,13 @@ public:
 	bool attach(int pid);
 	void execute(void *ptree = nullptr, bool refreshMetrics = false);
 	void enable();
+	/// Flips the status to DISABLED and suspends scheduling; callers stop the runs
+	/// (disableApp stops them outside the mutation lock, destroy() stops itself).
 	void disable();
 	void destroy();
 	void scheduleRemoval(int timeoutSeconds);
+	/// Stops the current and buffer runs; idempotent.
+	void stopAllProcesses();
 
 	// On-demand runs and output
 	std::string runAsync(int timeoutSeconds) noexcept(false);
@@ -126,7 +130,6 @@ private:
 	bool refreshDependencyGate();
 	void stopUnavailableRun(const std::chrono::system_clock::time_point &now);
 	bool stopCurrentRun();
-	void stopAllProcesses();
 	bool onTimerRemoval();
 	void collectMetrics(void *ptree, bool refreshMetrics); // Uses the scheduler's shared process snapshot.
 	void healthCheck();

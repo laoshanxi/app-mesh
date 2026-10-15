@@ -447,7 +447,10 @@ TEST_CASE("depends_03_dependency_stop_does_not_stop_dependent", "[application]")
 	const auto dependentPid = dependent->getpid();
 
 	dep->disable();
-	REQUIRE(waitFor(8000, [&]() { tick(*dependent); }, [&dep]() { return dep->getpid() <= 1; }));
+	// disable() only flips the status and suspends scheduling; the scheduler
+	// converges a disabled app to stopped on its next tick (disableApp stops
+	// the runs outside the mutation lock the same way).
+	REQUIRE(waitFor(8000, [&]() { tick(*dep); }, [&dep]() { return dep->getpid() <= 1; }));
 	tickAndRequireStablePid(*dependent, dependentPid, 20);
 	REQUIRE(dependent->waitingFor() == std::vector<std::string>{"depends_03_dep"});
 }

@@ -90,8 +90,16 @@ public:
 	bool prometheusEnabled() const;
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
-	std::shared_ptr<Application> addApp(const nlohmann::json &jsonApp, bool persistable = true);
-	void removeApp(const std::string &appName, const Application *expected = nullptr);
+	/// Registers an application. The map update is atomic under the mutation
+	/// lock; slow replacement (old app destruction) and start-up run outside
+	/// it. With enforceRegistration, a registration slot no longer holding
+	/// expectedRegistration is a lost race and yields nullptr (409 at REST).
+	std::shared_ptr<Application> addApp(const nlohmann::json &jsonApp, bool persistable = true,
+		const std::shared_ptr<Application> &expectedRegistration = nullptr, bool enforceRegistration = false);
+	/// Removes an application; the map update is atomic, destruction runs
+	/// outside the mutation lock. Returns false when an expected pointer no
+	/// longer matches (stale request).
+	bool removeApp(const std::string &appName, const Application *expected = nullptr);
 	std::shared_ptr<Application> parseApp(const nlohmann::json &jsonApp);
 	/// Registers a parsed application from app recovery without REST-path
 	/// validation (see validateRecoveredDependencies). Takes the app mutation lock.
@@ -114,7 +122,11 @@ public:
 	std::shared_ptr<Application> getApp(const void *app) const;
 	bool isAppExist(const std::string &appName);
 	std::string generateRunAppName(const std::string &provideAppName);
-	void disableApp(const std::string &appName);
+	/// Flips the status to DISABLED and persists it under the mutation lock;
+	/// stopping the runs happens outside the lock (a slow Docker backend must
+	/// not stall other application management). Returns false on a stale
+	/// expected pointer.
+	bool disableApp(const std::string &appName, const Application *expected = nullptr);
 	void enableApp(const std::string &appName);
 	const nlohmann::json getAgentAppJson() const;
 

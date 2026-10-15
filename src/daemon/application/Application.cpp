@@ -874,7 +874,8 @@ void Application::disable()
 	LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, {{"enabled", false}, {"previous_enabled", true}});
 
-	stopAllProcesses();
+	// Callers stop the runs: disableApp stops them outside the mutation lock,
+	// destroy() stops by itself (it calls stopAllProcesses after this returns).
 }
 
 void Application::enable()
