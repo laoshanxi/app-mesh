@@ -37,9 +37,6 @@ public:
     void waitPSKReadAsync(); // polls on the timer thread; for restart paths that must not block the caller
 
 private:
-    static std::string bytesToHex(const unsigned char *data, size_t len);
-
-private:
     const std::string m_psk;
 
     std::shared_ptr<SharedMemory> m_shmPtr;

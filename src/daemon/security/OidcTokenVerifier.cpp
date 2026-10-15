@@ -34,26 +34,18 @@ namespace
 	constexpr size_t MAX_NEGATIVE_KEYS = 256;
 	constexpr size_t MAX_KEY_ID_LENGTH = 256;
 
-	std::vector<unsigned char> decodeBase64Url(std::string value)
+	std::vector<unsigned char> decodeBase64Url(const std::string &value)
 	{
-		std::replace(value.begin(), value.end(), '-', '+');
-		std::replace(value.begin(), value.end(), '_', '/');
-		while (value.size() % 4 != 0)
-			value.push_back('=');
-
-		std::vector<unsigned char> decoded((value.size() / 4) * 3 + 1);
-		const int length = EVP_DecodeBlock(decoded.data(),
-			reinterpret_cast<const unsigned char *>(value.data()), static_cast<int>(value.size()));
-		if (length < 0)
+		try
+		{
+			const auto decoded = jwt::base::decode<jwt::alphabet::base64url>(
+				jwt::base::pad<jwt::alphabet::base64url>(value));
+			return std::vector<unsigned char>(decoded.begin(), decoded.end());
+		}
+		catch (const std::exception &)
+		{
 			throw std::domain_error("Invalid base64url value in JWKS");
-
-		size_t padding = 0;
-		if (!value.empty() && value[value.size() - 1] == '=')
-			++padding;
-		if (value.size() > 1 && value[value.size() - 2] == '=')
-			++padding;
-		decoded.resize(static_cast<size_t>(length) - padding);
-		return decoded;
+		}
 	}
 
 	std::string bioToString(BIO *bio)

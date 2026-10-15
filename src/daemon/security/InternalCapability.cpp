@@ -6,6 +6,7 @@
 
 #include <openssl/hmac.h>
 
+#include <drogon/utils/Utilities.h>
 #include <json/json.h>
 
 #include "../../common/Password.h"
@@ -33,18 +34,6 @@ namespace
 		if (value == InternalCapability::audienceName(InternalCapability::Audience::WorkflowRun))
 			return InternalCapability::Audience::WorkflowRun;
 		throw std::domain_error("internal capability audience is invalid");
-	}
-
-	std::string bytesToHex(const unsigned char *data, std::size_t size)
-	{
-		static const char hex[] = "0123456789abcdef";
-		std::string result(size * 2, '0');
-		for (std::size_t i = 0; i < size; ++i)
-		{
-			result[i * 2] = hex[(data[i] >> 4) & 0x0f];
-			result[i * 2 + 1] = hex[data[i] & 0x0f];
-		}
-		return result;
 	}
 }
 
@@ -179,17 +168,12 @@ std::string InternalCapability::sign(const std::string &message) const
 		reinterpret_cast<const unsigned char *>(message.data()), message.size(),
 		output, &outputLength) == nullptr)
 		throw std::runtime_error("could not sign internal capability");
-	return bytesToHex(output, outputLength);
+	return Utility::toHex(output, outputLength);
 }
 
 std::string InternalCapability::base64UrlEncode(const std::string &value)
 {
-	auto encoded = Utility::encode64(value);
-	std::replace(encoded.begin(), encoded.end(), '+', '-');
-	std::replace(encoded.begin(), encoded.end(), '/', '_');
-	while (!encoded.empty() && encoded.back() == '=')
-		encoded.pop_back();
-	return encoded;
+	return drogon::utils::base64EncodeUnpadded(value, /*urlSafe=*/true);
 }
 
 std::string InternalCapability::base64UrlDecode(const std::string &value)

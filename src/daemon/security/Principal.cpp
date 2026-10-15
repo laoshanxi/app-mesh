@@ -1,7 +1,7 @@
 #include "Principal.h"
 
-#include <iomanip>
-#include <sstream>
+#include "../../common/Utility.h"
+
 #include <stdexcept>
 #include <utility>
 
@@ -51,11 +51,7 @@ std::string Principal::stableId(const std::string &issuer, const std::string &su
 	if (EVP_Digest(identity.data(), identity.size(), digest, &digestLength, EVP_sha256(), nullptr) != 1)
 		throw std::runtime_error("Failed to derive OIDC principal identifier");
 
-	std::ostringstream encoded;
-	encoded << "oidc:" << std::hex << std::setfill('0');
-	for (unsigned int i = 0; i < digestLength; ++i)
-		encoded << std::setw(2) << static_cast<unsigned int>(digest[i]);
-	return encoded.str();
+	return "oidc:" + Utility::toHex(digest, digestLength);
 }
 
 const char *Principal::kindName(Kind kind)

@@ -2,6 +2,7 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
+#include "../../src/common/UriParser.hpp"
 #include "../../src/common/os/proc.h"
 #include "../../src/common/json.h"
 #include "../../src/daemon/rest/EventTypes.h"
@@ -105,6 +106,101 @@ TEST_CASE("Utility Test", "[Utility]")
 		LOG_INF << "stdStringTrim:" << Utility::stdStringTrim(env, "0.1");
 	}
 	// teardown
+}
+
+TEST_CASE("Dependency-backed helpers regression", "[Utility]")
+{
+	SECTION("stdStringTrim")
+	{
+		REQUIRE(Utility::stdStringTrim("  ab \t\n") == "ab");
+		REQUIRE(Utility::stdStringTrim("   ") == "");
+		REQUIRE(Utility::stdStringTrim(std::string()) == "");
+		// every occurrence on each side goes, not just one
+		REQUIRE(Utility::stdStringTrim("--ab--", '-') == "ab");
+		REQUIRE(Utility::stdStringTrim("---", '-') == "");
+		REQUIRE(Utility::stdStringTrim("--ab--", '-', true, false) == "ab--");
+		REQUIRE(Utility::stdStringTrim("--ab--", '-', false, true) == "--ab");
+		REQUIRE(Utility::stdStringTrim("--ab--", '-', false, false) == "--ab--");
+		// multi-character token, repeated
+		REQUIRE(Utility::stdStringTrim("APPAPPmeshAPP", "APP") == "mesh");
+		REQUIRE(Utility::stdStringTrim("ab/x/x", "/x") == "ab");
+		REQUIRE(Utility::stdStringTrim("/x/x", "/x") == "");
+		REQUIRE(Utility::stdStringTrim("abc", "ABC") == "abc");
+	}
+
+	SECTION("splitString keeps multi-character delimiters")
+	{
+		const auto parts = Utility::splitString("a:: b::::c", "::");
+		REQUIRE(parts == std::vector<std::string>{"a", "b", "c"});
+		// no delimiter: the whole (trimmed) string is one token
+		REQUIRE(Utility::splitString(" ab ", "::") == std::vector<std::string>{"ab"});
+		REQUIRE(Utility::splitString("", "::") == std::vector<std::string>{});
+	}
+
+	SECTION("startWith endWith")
+	{
+		REQUIRE(Utility::startWith("hello", ""));
+		REQUIRE(Utility::startWith("hello", "hello"));
+		REQUIRE_FALSE(Utility::startWith("hi", "hello"));
+		REQUIRE(Utility::endWith("hello", ""));
+		REQUIRE(Utility::endWith("hello", "hello"));
+		REQUIRE_FALSE(Utility::endWith("lo", "hello"));
+	}
+
+	SECTION("stringFormat")
+	{
+		REQUIRE(Utility::stringFormat("%s=%d", "a", 42) == "a=42");
+		// output far larger than the format string itself
+		const std::string longStr(4096, 'x');
+		REQUIRE(Utility::stringFormat("<%s>", longStr.c_str()) == "<" + longStr + ">");
+		REQUIRE(Utility::stringFormat("%f", 1.5) == "1.500000");
+	}
+
+	SECTION("base64 round-trips")
+	{
+		REQUIRE(Utility::encode64("") == "");
+		REQUIRE(Utility::decode64("") == "");
+		REQUIRE(Utility::encode64("123") == "MTIz");
+		REQUIRE(Utility::decode64("MTIz") == "123");
+		// trailing NUL bytes must survive (32-byte keys can end in 0x00)
+		const std::string nulTail = std::string("ab\0\0", 4);
+		REQUIRE(Utility::decode64(Utility::encode64(nulTail)) == nulTail);
+		REQUIRE(Utility::decode64(Utility::encode64(std::string("\0", 1))) == std::string("\0", 1));
+		// embedded NUL anywhere
+		const std::string nulMid = std::string("a\0b", 3);
+		REQUIRE(Utility::decode64(Utility::encode64(nulMid)) == nulMid);
+	}
+
+	SECTION("toHex")
+	{
+		const unsigned char bytes[] = {0x00, 0x0f, 0xa5, 0xff};
+		REQUIRE(Utility::toHex(bytes, 4) == "000fa5ff");
+		REQUIRE(Utility::toHex(bytes, 0) == "");
+	}
+
+	SECTION("utf8LeadByteLength")
+	{
+		REQUIRE(Utility::utf8LeadByteLength(0x41) == 0); // ASCII is not a lead
+		REQUIRE(Utility::utf8LeadByteLength(0x80) == 0); // continuation byte
+		REQUIRE(Utility::utf8LeadByteLength(0xC0) == 0); // overlong lead
+		REQUIRE(Utility::utf8LeadByteLength(0xC2) == 2);
+		REQUIRE(Utility::utf8LeadByteLength(0xDF) == 2);
+		REQUIRE(Utility::utf8LeadByteLength(0xE0) == 3);
+		REQUIRE(Utility::utf8LeadByteLength(0xEF) == 3);
+		REQUIRE(Utility::utf8LeadByteLength(0xF0) == 4);
+		REQUIRE(Utility::utf8LeadByteLength(0xF4) == 4);
+		REQUIRE(Utility::utf8LeadByteLength(0xF5) == 0); // above U+10FFFF
+	}
+
+	SECTION("Uri query decoding")
+	{
+		// '+' becomes space, %XX decodes
+		const auto plus = Uri::parse("http://h/p?a+b=1").queryParams();
+		REQUIRE(plus.begin()->first == "a b");
+		const auto params = Uri::parse("http://h/p?a=%41&b=%42").queryParams();
+		REQUIRE(params.at("a") == "A");
+		REQUIRE(params.at("b") == "B");
+	}
 }
 
 // The transports only accept numeric addresses (trantor::InetAddress never

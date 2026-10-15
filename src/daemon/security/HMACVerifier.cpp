@@ -1,7 +1,6 @@
 // src/daemon/security/HMACVerifier.cpp
 #include <openssl/hmac.h>
 #include <chrono>
-#include <sstream>
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
@@ -26,7 +25,7 @@ std::string HMACVerifier::generateHMAC(const std::string &message) const
          reinterpret_cast<const unsigned char *>(message.data()),
          message.length(), hmac, &hmac_len);
 
-    return bytesToHex(hmac, hmac_len);
+    return Utility::toHex(hmac, hmac_len);
 }
 
 bool HMACVerifier::verifyHMAC(const std::string &message, const std::string &receivedHmac) const
@@ -115,15 +114,4 @@ void HMACVerifier::waitPSKReadAsync()
         shm->cleanup();
         readResult->set_value(false);
     }
-}
-
-std::string HMACVerifier::bytesToHex(const unsigned char *data, size_t len)
-{
-    std::stringstream ss;
-    ss << std::hex << std::setfill('0');
-    for (size_t i = 0; i < len; ++i)
-    {
-        ss << std::setw(2) << static_cast<int>(data[i]);
-    }
-    return ss.str();
 }

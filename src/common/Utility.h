@@ -225,6 +225,9 @@ public:
 	static std::string localEncodingToUtf8(const std::string &input); // Used for read windows system attributes
 	static std::string utf8ToLocalEncoding(const std::string &input); // Used for CLI correct display
 	static bool isValidUTF8(const std::string &str);
+	// Length (2-4) of the UTF-8 sequence led by c, or 0 when c is not a valid
+	// lead byte (continuation byte alone, C0/C1 overlong lead, or above U+10FFFF).
+	static size_t utf8LeadByteLength(unsigned char c);
 	// Length (0-4) of a trailing run that may be an incomplete multi-byte UTF-8
 	// character (a lead byte plus too few continuation bytes).
 	static size_t utf8IncompleteTailBytes(const std::string &str);
@@ -241,6 +244,9 @@ public:
 
 	// Constant-time string comparison to prevent timing attacks
 	static bool secureCompare(const std::string &a, const std::string &b);
+
+	// Lowercase hex encoding of raw bytes (HMAC digests, principal IDs)
+	static std::string toHex(const unsigned char *data, size_t size);
 };
 
 #define PID_FILE "appmesh.pid"

@@ -274,16 +274,8 @@ std::vector<unsigned char> SecretProtector::decodeBase64(const std::string &valu
 {
 	if (value.empty() || value.size() % 4 != 0)
 		throw std::invalid_argument("invalid base64 SecretProtector value");
-	std::vector<unsigned char> decoded((value.size() / 4) * 3 + 1);
-	const int length = EVP_DecodeBlock(decoded.data(),
-		reinterpret_cast<const unsigned char *>(value.data()), static_cast<int>(value.size()));
-	if (length < 0)
+	const auto decoded = Utility::decode64(value);
+	if (decoded.empty())
 		throw std::invalid_argument("invalid base64 SecretProtector value");
-	size_t padding = 0;
-	if (value[value.size() - 1] == '=')
-		++padding;
-	if (value.size() > 1 && value[value.size() - 2] == '=')
-		++padding;
-	decoded.resize(static_cast<size_t>(length) - padding);
-	return decoded;
+	return std::vector<unsigned char>(decoded.begin(), decoded.end());
 }
