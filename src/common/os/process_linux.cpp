@@ -40,7 +40,17 @@ namespace os
 
 		std::string content;
 		content.reserve(512);
-		content.assign(std::istreambuf_iterator<char>(statFile), std::istreambuf_iterator<char>());
+		try
+		{
+			content.assign(std::istreambuf_iterator<char>(statFile), std::istreambuf_iterator<char>());
+		}
+		catch (const std::exception &e)
+		{
+			// The process can be reaped between open and read, which fails the read
+			// with ESRCH ("basic_filebuf::underflow"): same answer as an absent file.
+			LOG_DBG << fname << "Process gone while reading <" << path << ">: " << e.what();
+			return nullptr;
+		}
 		if (content.empty())
 		{
 			LOG_DBG << fname << "Process does not exist or file is empty: " << path;
@@ -119,7 +129,18 @@ namespace os
 		}
 
 		std::string raw;
-		raw.assign(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
+		try
+		{
+			raw.assign(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
+		}
+		catch (const std::exception &e)
+		{
+			// The process can be reaped between open and read, which fails the read
+			// with ESRCH ("basic_filebuf::underflow"): same answer as an absent file.
+			// The process-enumeration sweep reads every pid, so this races routinely.
+			LOG_DBG << fname << "Process gone while reading <" << path << ">: " << e.what();
+			return {};
+		}
 
 		if (raw.empty())
 			return {};
