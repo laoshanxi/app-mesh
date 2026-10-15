@@ -89,7 +89,11 @@ public:
 	bool prometheusEnabled() const;
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
-	std::shared_ptr<Application> addApp(const Json::Value &jsonApp, bool persistable = true);
+	/// Registers or replaces an application. With enforceRegistration, returns
+	/// nullptr on a stale add (registered app != expectedRegistration); slow
+	/// replacement and start-up run outside the mutation lock.
+	std::shared_ptr<Application> addApp(const Json::Value &jsonApp, bool persistable = true,
+		const std::shared_ptr<Application> &expectedRegistration = {}, bool enforceRegistration = false);
 	/// Removes an application. Returns false when `expected` no longer matches
 	/// the registered application (stale remove). The map update is atomic;
 	/// process destruction and persistence run outside the mutation lock.
@@ -116,7 +120,9 @@ public:
 	std::shared_ptr<Application> getApp(const void *app) const;
 	bool isAppExist(const std::string &appName);
 	std::string generateRunAppName(const std::string &provideAppName);
-	void disableApp(const std::string &appName);
+	/// Disables an application; false on a stale disable. Status flip and save
+	/// under the mutation lock, termination outside it.
+	bool disableApp(const std::string &appName, const Application *expected = nullptr);
 	void enableApp(const std::string &appName);
 	const Json::Value getAgentAppJson() const;
 
