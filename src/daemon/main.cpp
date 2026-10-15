@@ -421,14 +421,11 @@ void AppMeshDaemon::initializeRestService()
 		LOG_INF << fname << "REST service is disabled, skipping initialization";
 		return;
 	}
-	ACE_INET_Addr tcpAddr(config->getTcpApiPort(), config->getRestListenAddress().c_str());
 	const std::string homeDir = Utility::getHomeDir();
 	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
 	const auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());					 // Server certificate (PEM, include intermediates)
 	const auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile());					 // Private key
 	const auto ca = verifyClient ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath()) : std::string(); // CA file or directory
-
-	LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
 
 	// Initialize SSL for TCP server and client
 	SSLHelper::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
@@ -444,28 +441,39 @@ void AppMeshDaemon::initializeRestService()
 	// Start REST thread pool
 	startWorkerThreadPool();
 
-	// Setup acceptor
-	m_acceptor = std::make_unique<TcpAcceptor>();
-
-	constexpr int FLAG_ACE_NONBLOCK = 1; // None-blocking mode
-	constexpr int FLAG_SO_REUSEADDR = 1;
-	if (m_acceptor->open(tcpAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
+	// Setup acceptor. Port 0 means the TCP tier is disabled: an ephemeral
+	// port would be bound instead (a random port nobody asked for).
+	if (config->getTcpApiPort() > 0)
 	{
-		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getTcpApiPort()) + " with error: " + last_error_msg());
+		ACE_INET_Addr tcpAddr(config->getTcpApiPort(), config->getRestListenAddress().c_str());
+		LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
+
+		m_acceptor = std::make_unique<TcpAcceptor>();
+
+		constexpr int FLAG_ACE_NONBLOCK = 1; // None-blocking mode
+		constexpr int FLAG_SO_REUSEADDR = 1;
+		if (m_acceptor->open(tcpAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
+		{
+			throw std::runtime_error("Failed to listen on port " + std::to_string(config->getTcpApiPort()) + " with error: " + last_error_msg());
+		}
+
+		// Avoid bash children inheriting the listen fd via fork(). Not every platform
+		// implements the ACE flag path, so fall back to a plain fcntl before giving up.
+		if (m_acceptor->acceptor().enable(ACE_CLOEXEC) == -1 &&
+			::fcntl(m_acceptor->acceptor().get_handle(), F_SETFD, FD_CLOEXEC) == -1)
+			LOG_WAR << fname << "Failed to set FD_CLOEXEC on listen socket: " << last_error_msg();
+
+		// Setup client connection
+		m_client = std::make_shared<SocketStreamPtr>(SocketStream::createConnection(tcpAddr));
+		if (m_client->stream() && m_client->stream()->connected())
+			LOG_INF << fname << "Test local TCP client connected successfully";
+		else
+			LOG_WAR << fname << "Test local TCP client connection to <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << "> failed";
 	}
-
-	// Avoid bash children inheriting the listen fd via fork(). Not every platform
-	// implements the ACE flag path, so fall back to a plain fcntl before giving up.
-	if (m_acceptor->acceptor().enable(ACE_CLOEXEC) == -1 &&
-		::fcntl(m_acceptor->acceptor().get_handle(), F_SETFD, FD_CLOEXEC) == -1)
-		LOG_WAR << fname << "Failed to set FD_CLOEXEC on listen socket: " << last_error_msg();
-
-	// Setup client connection
-	m_client = std::make_shared<SocketStreamPtr>(SocketStream::createConnection(tcpAddr));
-	if (m_client->stream() && m_client->stream()->connected())
-		LOG_INF << fname << "Test local TCP client connected successfully";
 	else
-		LOG_WAR << fname << "Test local TCP client connection to <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << "> failed";
+	{
+		LOG_INF << fname << "TCP service is disabled (TcpApiPort is 0), skipping listener";
+	}
 
 	// Websocket service
 	if (config->getWebSocketPort())

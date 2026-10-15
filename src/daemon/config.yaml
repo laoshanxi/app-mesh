@@ -31,10 +31,10 @@ REST:
   # HTTP port for the REST API.
   RestListenPort: 6060
 
-  # TCP port for the TCP API.
+  # TCP port for the TCP API; 0 disables the TCP listener.
   TcpApiPort: 6059
 
-  # WebSocket port for the WSS API.
+  # WebSocket port for the WSS API; 0 disables the WebSocket listener.
   WebSocketPort: 6058
 
   # Port for Prometheus metrics export.
