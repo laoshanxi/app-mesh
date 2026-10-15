@@ -412,14 +412,31 @@ void Configuration::validateRecoveredDependencies() const
 	}
 }
 
-void Configuration::disableApp(const std::string &appName)
+bool Configuration::disableApp(const std::string &appName, const Application *expected)
 {
-	std::lock_guard mutationGuard(m_appMutationMutex);
-	auto app = getApp(appName);
-	if (app->isSystemProtected())
-		throw AuthorizationException("system applications cannot be disabled through the application API");
-	app->disable();
-	app->save();
+	std::shared_ptr<Application> app;
+	{
+		// Scoped with the guard so the reported hold time is the real critical section.
+		AppMutationLockSentinel lockSentinel("Configuration::disableApp()");
+		std::lock_guard mutationGuard(m_appMutationMutex);
+		lockSentinel.acquired();
+		app = getApp(appName, false);
+		if (expected != nullptr && app.get() != expected)
+		{
+			LOG_DBG << "Ignoring stale disable for application <" << appName << ">";
+			return false;
+		}
+		if (!app)
+			throw NotFoundException("No such application");
+		if (app->isSystemProtected())
+			throw AuthorizationException("system applications cannot be disabled through the application API");
+		// save() stays under the lock: it must not resurrect a file removeApp() is deleting.
+		app->disable();
+		app->save();
+	}
+	// Stopping may block on a slow Docker backend for its full timeout (same rule as removeApp).
+	app->stopAllProcesses();
+	return true;
 }
 void Configuration::enableApp(const std::string &appName)
 {
@@ -661,8 +678,10 @@ bool Configuration::dependencyCycleExists(const std::vector<std::string> &seedDe
 	return false;
 }
 
-std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, bool persistable)
+std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, bool persistable,
+	const std::shared_ptr<Application> &expectedRegistration, bool enforceRegistration)
 {
+	const static char fname[] = "Configuration::addApp() ";
 	std::shared_ptr<Application> oldApp;
 	std::shared_ptr<Application> app;
 	{
@@ -670,6 +689,15 @@ std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, b
 		std::lock_guard mutationGuard(m_appMutationMutex);
 		lockSentinel.acquired();
 		app = parseApp(jsonApp);
+		if (enforceRegistration)
+		{
+			// Atomic with registration: a racing same-name add/remove is stale, not a silent winner.
+			if (getApp(app->getName(), false) != expectedRegistration)
+			{
+				LOG_DBG << fname << "Ignoring stale add for application <" << app->getName() << ">";
+				return nullptr;
+			}
+		}
 		// Re-check the immutable owner binding while holding the same mutation lock
 		// used by Principal deletion. A request authenticated just before an
 		// administrator tombstones that Principal must not create a newly orphaned

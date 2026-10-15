@@ -630,15 +630,9 @@ void RestHandler::apiAppDisable(const std::shared_ptr<HttpRequest> &message)
 	auto config = Configuration::instance();
 	const auto app = config->getApp(appName);
 	checkAppAccessPermission(message, app, true);
-	bool stale = false;
-	{
-		const auto mutation = config->lockAppMutation();
-		if (!config->isCurrentApp(appName, app))
-			stale = true;
-		else
-			config->disableApp(appName);
-	}
-	if (stale)
+	// Termination runs outside the mutation lock; a slow Docker backend
+	// cannot stall other management.
+	if (!config->disableApp(appName, app.get()))
 	{
 		message->reply(web::http::status_codes::Conflict);
 		return;
@@ -1521,7 +1515,15 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 		}
 		else
 		{
-			auto app = config->addApp(jsonApp);
+			// addApp re-checks under its own lock; a racer past the check above still gets 409.
+			auto app = config->addApp(jsonApp, true, observed, true);
+			if (!app)
+			{
+				if (!subId.empty())
+					EventDispatcher::instance()->unsubscribe(subId);
+				message->reply(web::http::status_codes::Conflict);
+				return;
+			}
 			// Use returnRuntimeInfo=true so the response strips encrypted secret_env.
 			result = app->AsJson(true);
 		}

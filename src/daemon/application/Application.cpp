@@ -886,7 +886,7 @@ void Application::disable()
 	statusPayload["previous_enabled"] = true;
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, statusPayload);
 
-	stopAllProcesses();
+	// Callers stop the runs: disableApp stops outside the mutation lock, destroy() stops itself.
 }
 
 void Application::enable()
