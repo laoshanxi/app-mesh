@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <errno.h>
 #include <fstream>
+#include <iterator>
 #include <list>
 #include <locale>
 #include <random>
@@ -35,10 +36,8 @@
 #endif
 
 #include <openssl/crypto.h>
+#include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string.hpp>
-#include <boost/archive/iterators/base64_from_binary.hpp>
-#include <boost/archive/iterators/binary_from_base64.hpp>
-#include <boost/archive/iterators/transform_width.hpp>
 #include <drogon/utils/Utilities.h>
 #include <filesystem>
 #include <boost/program_options/parsers.hpp>
@@ -84,12 +83,7 @@ bool Utility::isNumber(const std::string &str)
 
 std::string Utility::stdStringTrim(const std::string &str)
 {
-	auto front = std::find_if_not(str.begin(), str.end(), [](int c)
-								  { return std::isspace(c); });
-	auto back = std::find_if_not(str.rbegin(), str.rend(), [](int c)
-								 { return std::isspace(c); })
-					.base();
-	return (back <= front ? std::string() : std::string(front, back));
+	return boost::trim_copy(str, std::locale::classic());
 }
 
 // jsoncpp coerces wrong-typed scalars (int -> "5"); these keep the reads strict
@@ -111,37 +105,28 @@ bool Utility::jsonBoolField(const Json::Value &value, const std::string &key)
 
 std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool leftTrim, bool rightTrim)
 {
-	char *line = const_cast<char *>(str.c_str());
-	// trim the line on the left and on the right
-	std::size_t len = str.length();
-	std::size_t start = 0;
-	while (leftTrim && trimChar == (*line))
-	{
-		++line;
-		--len;
-		++start;
-	}
-	while (rightTrim && len > 0 && trimChar == (line[len - 1]))
-	{
-		--len;
-	}
-	return len >= start ? str.substr(start, len) : str.substr(start);
+	const auto isTrim = [trimChar](char c)
+	{ return c == trimChar; };
+	if (leftTrim && rightTrim)
+		return boost::trim_copy_if(str, isTrim);
+	if (leftTrim)
+		return boost::trim_left_copy_if(str, isTrim);
+	if (rightTrim)
+		return boost::trim_right_copy_if(str, isTrim);
+	return str;
 }
 
 std::string Utility::stdStringTrim(const std::string &str, const std::string &trimChars, bool leftTrim, bool rightTrim)
 {
 	std::string result = str;
-	while (trimChars.length() && leftTrim && result.length() >= trimChars.length() && 0 == strncmp(result.c_str(), trimChars.c_str(), trimChars.length()))
+	while (trimChars.length() && leftTrim && result.length() >= trimChars.length() && result.compare(0, trimChars.length(), trimChars) == 0)
 	{
-		result = result.c_str() + trimChars.length();
+		result.erase(0, trimChars.length());
 	}
-
-	while (trimChars.length() && rightTrim && result.length() >= trimChars.length() && 0 == strncmp(result.c_str() + (result.length() - trimChars.length()), trimChars.c_str(), trimChars.length()))
+	while (trimChars.length() && rightTrim && result.length() >= trimChars.length() && result.compare(result.length() - trimChars.length(), trimChars.length(), trimChars) == 0)
 	{
-		result[result.length() - trimChars.length()] = '\0';
-		result = result.c_str();
+		result.erase(result.length() - trimChars.length(), trimChars.length());
 	}
-
 	return result;
 }
 
@@ -566,18 +551,12 @@ void Utility::setThreadName(const std::string &name)
 
 std::string Utility::encode64(const std::string &val)
 {
-	using namespace boost::archive::iterators;
-	using It = base64_from_binary<transform_width<std::string::const_iterator, 6, 8>>;
-	auto tmp = std::string(It(std::begin(val)), It(std::end(val)));
-	return tmp.append((3 - val.size() % 3) % 3, '=');
+	return drogon::utils::base64Encode(val);
 }
 
 std::string Utility::decode64(const std::string &val)
 {
-	using namespace boost::archive::iterators;
-	using It = transform_width<binary_from_base64<std::string::const_iterator>, 8, 6>;
-	return boost::algorithm::trim_right_copy_if(std::string(It(std::begin(val)), It(std::end(val))), [](char c)
-												{ return c == '\0'; });
+	return drogon::utils::base64Decode(val);
 }
 
 std::string Utility::encodeURIComponent(const std::string &str)
@@ -1143,22 +1122,15 @@ void Utility::initDateTimeZone(const std::string &posixTimezone, bool writeLog)
 
 std::vector<std::string> Utility::splitString(const std::string &source, const std::string &splitFlag)
 {
-	std::vector<std::string> result;
-	std::string::size_type pos1, pos2;
-	pos2 = source.find(splitFlag);
-	pos1 = 0;
-	while (std::string::npos != pos2)
-	{
-		std::string str = stdStringTrim(source.substr(pos1, pos2 - pos1));
-		if (str.length() > 0)
-			result.push_back(std::move(str));
+	// iter_split with first_finder keeps the multi-character delimiter
+	// contract (splitFlag is a token, not a character set like is_any_of).
+	std::vector<std::string> tokens;
+	boost::iter_split(tokens, source, boost::first_finder(splitFlag));
 
-		pos1 = pos2 + splitFlag.size();
-		pos2 = source.find(splitFlag, pos1);
-	}
-	if (pos1 != source.length())
+	std::vector<std::string> result;
+	for (auto &token : tokens)
 	{
-		std::string str = stdStringTrim(source.substr(pos1));
+		auto str = stdStringTrim(token);
 		if (!str.empty())
 			result.push_back(std::move(str));
 	}
@@ -1167,25 +1139,12 @@ std::vector<std::string> Utility::splitString(const std::string &source, const s
 
 bool Utility::startWith(const std::string &str, const std::string &prefix)
 {
-	// https://luodaoyi.com/p/cpp-std-startwith-endwith.html
-	if (&str == &prefix)
-		return true;
-	const std::string::size_type big_size = str.size();
-	const std::string::size_type small_size = prefix.size();
-	const bool valid_ = (big_size >= small_size);
-	const bool starts_with_ = (str.compare(0, small_size, prefix) == 0);
-	return valid_ && starts_with_;
+	return boost::starts_with(str, prefix);
 }
 
 bool Utility::endWith(const std::string &str, const std::string &postfix)
 {
-	if (&str == &postfix)
-		return true;
-	const std::string::size_type big_size = str.size();
-	const std::string::size_type small_size = postfix.size();
-	const bool valid_ = (big_size >= small_size);
-	const bool ends_with_ = (str.compare(big_size - small_size, small_size, postfix) == 0);
-	return valid_ && ends_with_;
+	return boost::ends_with(str, postfix);
 }
 
 size_t Utility::charCount(const std::string &str, char c)
@@ -1318,31 +1277,39 @@ bool Utility::secureCompare(const std::string &a, const std::string &b)
 	return CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
 }
 
+std::string Utility::toHex(const unsigned char *data, size_t size)
+{
+	// hex_lower matches the lowercase digests callers persist and compare
+	std::string result;
+	result.reserve(size * 2);
+	boost::algorithm::hex_lower(data, data + size, std::back_inserter(result));
+	return result;
+}
+
 std::string Utility::stringFormat(const char *fmt_str, ...)
 {
-	// https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
-	int final_n, n = ((int)strlen(fmt_str)) * 2 + 1; /* Reserve two times as much as the length of the fmt_str */
-	std::unique_ptr<char[]> formatted;
-	va_list ap;
-	while (true)
-	{
-		formatted.reset(new char[n]); /* Wrap the plain char array into the unique_ptr */
-		va_start(ap, fmt_str);
-		final_n = vsnprintf(&formatted[0], n, fmt_str, ap);
-		va_end(ap);
-		if (final_n < 0 || final_n >= n)
-			n += abs(final_n - n + 1);
-		else
-			break;
-	}
-	return std::string(formatted.get());
+	// Two-pass vsnprintf: measure with one va_list copy, render with the other.
+	// Each pass needs its own va_list, va_copy keeps both valid.
+	int final_n = -1;
+	va_list measure;
+	va_start(measure, fmt_str);
+	final_n = vsnprintf(nullptr, 0, fmt_str, measure);
+	va_end(measure);
+	if (final_n < 0)
+		return std::string();
+
+	va_list render;
+	va_start(render, fmt_str);
+	std::string formatted(static_cast<size_t>(final_n) + 1, '\0');
+	vsnprintf(&formatted[0], formatted.size(), fmt_str, render);
+	va_end(render);
+	formatted.resize(static_cast<size_t>(final_n));
+	return formatted;
 }
 
 std::string Utility::strTolower(std::string s)
 {
-	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
-				   { return std::tolower(c); });
-	return s;
+	return boost::to_lower_copy(s, std::locale::classic());
 }
 
 std::vector<std::string> Utility::str2argv(const std::string &commandLine)
@@ -2056,9 +2023,7 @@ bool Utility::containsSpecialCharacters(const std::string &str)
 
 std::string Utility::strToupper(std::string s)
 {
-	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
-				   { return std::toupper(c); });
-	return s;
+	return boost::to_upper_copy(s, std::locale::classic());
 }
 
 
@@ -2099,6 +2064,17 @@ bool Utility::isValidUTF8(const std::string &str)
 	return true;
 }
 
+size_t Utility::utf8LeadByteLength(unsigned char c)
+{
+	if (c >= 0xC2 && c <= 0xDF)
+		return 2;
+	if (c >= 0xE0 && c <= 0xEF)
+		return 3;
+	if (c >= 0xF0 && c <= 0xF4)
+		return 4;
+	return 0;
+}
+
 size_t Utility::utf8IncompleteTailBytes(const std::string &str)
 {
 	const size_t len = str.size();
@@ -2115,20 +2091,10 @@ size_t Utility::utf8IncompleteTailBytes(const std::string &str)
 	}
 
 	const unsigned char lead = static_cast<unsigned char>(str[len - 1 - run]);
-	size_t expected = 0;
-	if (lead >= 0xC2 && lead <= 0xDF)
-	{
-		expected = 1;
-	}
-	else if (lead >= 0xE0 && lead <= 0xEF)
-	{
-		expected = 2;
-	}
-	else if (lead >= 0xF0 && lead <= 0xF4)
-	{
-		expected = 3;
-	}
-	return (run < expected) ? run + 1 : 0;
+	// utf8LeadByteLength counts the lead byte too; the tail run needs len-1
+	// continuation bytes to complete the character
+	const size_t leadLength = utf8LeadByteLength(lead);
+	return leadLength > 0 && run < leadLength - 1 ? run + 1 : 0;
 }
 
 

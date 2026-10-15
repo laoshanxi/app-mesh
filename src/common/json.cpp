@@ -7,19 +7,6 @@
 
 namespace
 {
-	// Length of the UTF-8 sequence led by c, or 0 when c is not a valid lead
-	// byte (continuation byte alone, C0/C1 overlong lead, or above U+10FFFF).
-	size_t utf8LeadLength(unsigned char c)
-	{
-		if (c >= 0xC2 && c <= 0xDF)
-			return 2;
-		if (c >= 0xE0 && c <= 0xEF)
-			return 3;
-		if (c >= 0xF0 && c <= 0xF4)
-			return 4;
-		return 0;
-	}
-
 	// Strict UTF-8 validation for request bodies: C0/C1 leads, overlong forms,
 	// surrogates and values above U+10FFFF are rejected. This is deliberately
 	// stricter than Utility::isValidUTF8, which also feeds the stdout encoding
@@ -37,7 +24,7 @@ namespace
 				++i;
 				continue;
 			}
-			const size_t len = utf8LeadLength(c);
+			const size_t len = Utility::utf8LeadByteLength(c);
 			if (len == 0 || i + len > n)
 				return false;
 			uint32_t cp = c & 0x0F;
@@ -76,7 +63,7 @@ namespace
 				continue;
 			}
 			// Consume the lead byte plus any continuation bytes that follow
-			const size_t len = utf8LeadLength(c);
+			const size_t len = Utility::utf8LeadByteLength(c);
 			if (len == 0)
 			{
 				out.append(UFFFD);

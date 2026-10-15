@@ -28,9 +28,11 @@ int DurationParse::parse(const std::string &duration)
         return totalSeconds;
     }
 
-    // regex parse
+    // regex parse (static: compiled once, the expressions are constants)
+    static const boost::regex weekRegex(DURATION_WEEK);
+    static const boost::regex dateTimeRegex(DURATION_DATE_TIME);
     boost::cmatch what;
-    if (boost::regex_match(duration.c_str(), what, boost::regex(DURATION_WEEK)))
+    if (boost::regex_match(duration.c_str(), what, weekRegex))
     {
         if (what.size() > 1)
         {
@@ -39,7 +41,7 @@ int DurationParse::parse(const std::string &duration)
             return totalSeconds;
         }
     }
-    else if (boost::regex_match(duration.c_str(), what, boost::regex(DURATION_DATE_TIME)))
+    else if (boost::regex_match(duration.c_str(), what, dateTimeRegex))
     {
         /*
         // note that the index position is depend on reges expression

@@ -218,41 +218,13 @@ private:
 
     static std::string decode(const std::string &s)
     {
-        std::string out;
-        out.reserve(s.size());
-        for (size_t i = 0; i < s.size(); ++i)
-        {
-            if (s[i] == '%' && i + 2 < s.size())
-            {
-                auto fromHex = [](char c) -> int
-                {
-                    return (c >= '0' && c <= '9')   ? c - '0'
-                           : (c >= 'a' && c <= 'f') ? c - 'a' + 10
-                           : (c >= 'A' && c <= 'F') ? c - 'A' + 10
-                                                    : -1;
-                };
-                const int hi = fromHex(s[i + 1]);
-                const int lo = fromHex(s[i + 2]);
-                if (hi >= 0 && lo >= 0)
-                {
-                    out += static_cast<char>((hi << 4) + lo);
-                    i += 2;
-                }
-                else
-                {
-                    // Malformed escape (e.g. "%zz"): keep '%' literal, don't emit a NUL byte.
-                    out += s[i];
-                }
-            }
-            else if (s[i] == '+')
-            {
-                out += ' ';
-            }
-            else
-            {
-                out += s[i];
-            }
-        }
+        if (s.find('%') == std::string::npos && s.find('+') == std::string::npos)
+            return s;
+        // uriparser keeps malformed escapes (e.g. "%zz") literal, like the
+        // hand-rolled decoder this replaces did.
+        std::string out(s);
+        const char *end = uriUnescapeInPlaceExA(&out[0], URI_TRUE, URI_BR_DONT_TOUCH);
+        out.resize(static_cast<size_t>(end - out.data()));
         return out;
     }
 };

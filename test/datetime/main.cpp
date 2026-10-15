@@ -1,6 +1,7 @@
 // test/datetime/main.cpp
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
+#include "../../src/common/DurationParse.h"
 #include "../../src/common/Utility.h"
 #include "../../src/common/os/proc.h"
 #include <catch.hpp>
@@ -95,4 +96,20 @@ TEST_CASE("Boost Date Time Test", "[Boost]")
     REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("-20:01")) == "-20:01:00");
     REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("8")) == "08:00:00");
     REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("+8")) == "08:00:00");
+}
+
+TEST_CASE("DurationParse ISO8601", "[Duration]")
+{
+    init();
+
+    REQUIRE(DurationParse::parse("90") == 90);			   // plain seconds
+    REQUIRE(DurationParse::parse("P2W") == 2 * 7 * 86400); // week form
+    REQUIRE(DurationParse::parse("P1DT2H3M4S") == 86400 + 2 * 3600 + 3 * 60 + 4);
+    REQUIRE(DurationParse::parse("PT1H") == 3600);
+    REQUIRE_THROWS_AS(DurationParse::parse("P1M"), std::invalid_argument); // months unsupported
+    REQUIRE_THROWS_AS(DurationParse::parse("bogus"), std::invalid_argument);
+
+    REQUIRE(DurationParse::compose(90061) == "P1DT1H1M1S");
+    REQUIRE(DurationParse::compose(90061, true) == "P0W");
+    REQUIRE(DurationParse::parse(DurationParse::compose(3661)) == 3661);
 }
