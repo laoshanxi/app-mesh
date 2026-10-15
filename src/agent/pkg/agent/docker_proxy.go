@@ -117,6 +117,15 @@ func (dp *DockerProxy) CreateReverseProxy() *httputil.ReverseProxy {
 // isStreamingDockerEndpoint reports Docker endpoints whose response is a
 // live stream; those must pass through unbuffered.
 func isStreamingDockerEndpoint(path string) bool {
+	// Real streaming endpoints the suffix list misses: /images/create is the
+	// actual pull, /build streams progress, /exec/{id}/start is hijacked.
+	// Control-plane endpoints (e.g. /containers/create) must stay buffered.
+	if strings.HasPrefix(path, "/images/create") || strings.HasPrefix(path, "/build") {
+		return true
+	}
+	if strings.Contains(path, "/exec/") && strings.HasSuffix(path, "/start") {
+		return true
+	}
 	for _, suffix := range []string{"/logs", "/attach", "/events", "/stats", "/pull", "/push", "/get", "/load"} {
 		if strings.HasSuffix(path, suffix) {
 			return true
