@@ -331,9 +331,9 @@ void Utility::initLogging(const std::string &name)
 	// Create logger
 	auto logger = std::make_shared<spdlog::logger>("appmesh", sinks.begin(), sinks.end());
 	spdlog::set_default_logger(logger);
-	// warn and above flush at once; lower levels reach the file as the stream
-	// buffer fills, trading a small crash-tail loss for one thread less.
-	logger->flush_on(spdlog::level::warn);
+	// Flush everything at once: every enabled level reaches the file as it is
+	// emitted, so diagnosis during an incident never reads a stale tail.
+	logger->flush_on(spdlog::level::trace);
 
 	// Pattern
 	// %l = full level name (info/warning/error/debug). %L would print single chars E/D.
