@@ -61,7 +61,9 @@ void ProcessService::post(std::function<void()> task)
 void ProcessService::ensureCallbackThread()
 {
 	std::lock_guard lock(m_callbackMutex);
-	if (m_callbackThread.get_id() != std::thread::id())
+	// Re-check under the mutex: no thread may be created on the stopped
+	// context after shutdown() joined — it would never be joined.
+	if (m_stopped.load(std::memory_order_acquire) || m_callbackThread.get_id() != std::thread::id())
 		return;
 	m_callbackThread = std::thread([this]() { Utility::setThreadName("appmesh-exit"); m_callbackContext.run(); });
 	m_callbackThreadId = m_callbackThread.get_id();

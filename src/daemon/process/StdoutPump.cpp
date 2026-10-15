@@ -77,6 +77,8 @@ void StdoutPump::stop()
 	while (true)
 	{
 		const ssize_t n = ::read(m_pipeRead.native_handle(), m_readBuf.data(), m_readBuf.size());
+		if (n < 0 && errno == EINTR)
+			continue; // EINTR: retry
 		if (n <= 0)
 			break; // EOF, EAGAIN, or unrecoverable error
 		teeToDisk(m_readBuf.data(), static_cast<size_t>(n));
@@ -144,6 +146,8 @@ void StdoutPump::teeToDisk(const char *data, size_t length)
 	while (written < length)
 	{
 		const ssize_t w = ::write(m_diskWrite, data + written, length - written);
+		if (w < 0 && errno == EINTR)
+			continue; // EINTR: retry
 		if (w <= 0)
 		{
 			LOG_WAR << fname << "disk write failed for app=" << m_appName << " errno=" << errno;

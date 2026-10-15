@@ -167,8 +167,9 @@ public:
 	static bool ensureSystemRoot();
 
 	// Network functions
-	/// Resolve a host name or an address literal to a numeric address. Empty result on failure.
-	static std::string resolveHostAddress(const std::string &host, std::string &errorText);
+	/// Resolve a host or literal to a numeric address; empty on failure.
+	/// timeoutSeconds > 0 bounds the resolver; literals take a fast path.
+	static std::string resolveHostAddress(const std::string &host, std::string &errorText, long timeoutSeconds = 0);
 
 	// String functions
 	static bool isNumber(const std::string &str);

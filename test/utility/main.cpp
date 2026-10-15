@@ -796,3 +796,47 @@ TEST_CASE("JSON helper macro golden baseline", "[json golden]")
 	// text2json error body shape
 	REQUIRE(JSON::dump(Utility::text2json("boom")) == R"({"message":"boom"})");
 }
+
+// jsonStringField keeps wrong-typed client fields a 400 instead of jsoncpp coercion.
+TEST_CASE("jsonStringField rejects coerced scalars", "[json]")
+{
+	const auto json = JSON::parse(R"({"name":"ok","num":42,"flag":true})");
+
+	REQUIRE(Utility::jsonStringField(json, "name") == "ok");
+	REQUIRE_THROWS_AS(Utility::jsonStringField(json, "num"), std::invalid_argument);
+	REQUIRE_THROWS_AS(Utility::jsonStringField(json, "flag"), std::invalid_argument);
+	REQUIRE_THROWS_AS(Utility::jsonStringField(json, "missing"), std::invalid_argument);
+
+	// The coercion this guards against (jsoncpp silently stringifies scalars):
+	REQUIRE(json["num"].asString() == "42");
+}
+
+// resolveHostAddress(timeout): literal fast path and bounded failure.
+TEST_CASE("resolveHostAddress literal fast path and bounded failure", "[network]")
+{
+	std::string error;
+
+	SECTION("address literals never touch the resolver")
+	{
+		REQUIRE(Utility::resolveHostAddress("127.0.0.1", error, 5) == "127.0.0.1");
+		REQUIRE(error.empty());
+		REQUIRE(Utility::resolveHostAddress("::1", error, 5) == "::1");
+		REQUIRE(error.empty());
+	}
+
+	SECTION("a locally invalid name fails with a diagnostic")
+	{
+		// >63-char labels are rejected by getaddrinfo itself (RFC 1035):
+		// deterministic even behind a hijacking resolver.
+		const std::string invalidLabel(64, 'a');
+		const auto ip = Utility::resolveHostAddress(invalidLabel + ".example.com", error, 5);
+		REQUIRE(ip.empty());
+		REQUIRE_FALSE(error.empty());
+		REQUIRE(error.find("example.com") != std::string::npos);
+	}
+
+	SECTION("a zero timeout keeps the legacy blocking behavior")
+	{
+		REQUIRE(Utility::resolveHostAddress("127.0.0.1", error) == "127.0.0.1");
+	}
+}

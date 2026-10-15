@@ -95,23 +95,24 @@ void AuthorizationPrincipal::updateClaims(const Principal &principal)
 
 void AuthorizationPrincipal::updatePolicy(const Json::Value &json)
 {
+	// Strict reads: asString() would coerce wrong-typed scalars (42 -> "42").
 	if (json.isMember("status"))
 	{
-		const auto status = json["status"].asString();
+		const auto status = Utility::jsonStringField(json, "status");
 		if (status != "active" && status != "disabled" && status != "tombstoned")
 			throw std::invalid_argument("principal status must be active, disabled, or tombstoned");
 		m_status = status;
 	}
 	if (json.isMember("execution_user"))
-		m_executionUser = json["execution_user"].asString();
+		m_executionUser = Utility::jsonStringField(json, "execution_user");
 	if (json.isMember("roles"))
 		m_roles = readStringSet(json["roles"], "roles");
 	if (json.isMember("display_name"))
-		m_displayName = json["display_name"].asString();
+		m_displayName = Utility::jsonStringField(json, "display_name");
 	if (json.isMember("email"))
-		m_email = json["email"].asString();
+		m_email = Utility::jsonStringField(json, "email");
 	if (json.isMember("connector_id"))
-		m_connectorId = json["connector_id"].asString();
+		m_connectorId = Utility::jsonStringField(json, "connector_id");
 }
 
 Json::Value AuthorizationPrincipal::asJson() const

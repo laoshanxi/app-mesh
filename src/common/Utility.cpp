@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <errno.h>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <list>
 #include <locale>
@@ -367,9 +368,15 @@ bool Utility::runningInContainer()
 	return isInContainer;
 }
 
-std::string Utility::resolveHostAddress(const std::string &host, std::string &errorText)
+namespace
 {
-	// An address literal passes through; a host name resolves via getaddrinfo.
+	// Blocking resolver core; getaddrinfo decides the wait.
+	std::string resolveHostAddressBlocking(const std::string &host, std::string &errorText);
+}
+
+std::string Utility::resolveHostAddress(const std::string &host, std::string &errorText, long timeoutSeconds)
+{
+	// Literals skip the resolver and the bounded path below.
 	struct in_addr v4;
 	struct in6_addr v6;
 	if (host.find(':') != std::string::npos)
@@ -382,48 +389,91 @@ std::string Utility::resolveHostAddress(const std::string &host, std::string &er
 		return host;
 	}
 
-	struct addrinfo hints;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC; // resolve both families
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_ADDRCONFIG; // skip AAAA on v4-only hosts and vice versa
-	struct addrinfo *result = nullptr;
-	const int rc = ::getaddrinfo(host.c_str(), nullptr, &hints, &result);
-	if (rc != 0 || result == nullptr)
-	{
-		errorText = "cannot resolve " + host + ": " + gai_strerror(rc);
-		return std::string();
-	}
+	if (timeoutSeconds <= 0)
+		return resolveHostAddressBlocking(host, errorText);
 
-	// Prefer IPv4: a dual-stack target keeps its legacy reachability, a v6-only
-	// target still resolves through its AAAA record.
-	const addrinfo *chosen = result;
-	for (const addrinfo *ai = result; ai != nullptr; ai = ai->ai_next)
+	// getaddrinfo has no timeout; resolve on a helper thread bounded by the
+	// caller's budget. On timeout the thread is abandoned and exits on its own.
+	auto result = std::make_shared<std::promise<std::pair<std::string, std::string>>>();
+	auto future = result->get_future();
+	std::thread([host, result]()
+				{
+					std::string threadError;
+					std::string ip = resolveHostAddressBlocking(host, threadError);
+					result->set_value({std::move(ip), std::move(threadError)});
+				})
+		.detach();
+	if (future.wait_for(std::chrono::seconds(timeoutSeconds)) != std::future_status::ready)
 	{
-		if (ai->ai_family == AF_INET)
-		{
-			chosen = ai;
-			break;
-		}
-	}
-
-	char numeric[INET6_ADDRSTRLEN] = {0};
-	if (::getnameinfo(chosen->ai_addr, chosen->ai_addrlen, numeric, sizeof(numeric), nullptr, 0, NI_NUMERICHOST) != 0)
-	{
-		::freeaddrinfo(result);
-		errorText = "cannot convert resolved address of " + host;
+		errorText = "cannot resolve " + host + ": timed out after " + std::to_string(timeoutSeconds) + "s";
 		return std::string();
 	}
-	::freeaddrinfo(result);
-	// InetAddress parses with bare inet_pton, so a scope-qualified address
-	// would silently fall back to the wildcard address.
-	if (strchr(numeric, '%') != nullptr)
-	{
-		errorText = "scope-qualified address <" + std::string(numeric) + "> of " + host + " is not supported";
-		return std::string();
-	}
-	return numeric;
+	auto resolved = future.get();
+	errorText = std::move(resolved.second);
+	return resolved.first;
 }
+
+namespace
+{
+	// Blocking resolver core; getaddrinfo decides the wait.
+	std::string resolveHostAddressBlocking(const std::string &host, std::string &errorText)
+	{
+		// An address literal passes through; a host name resolves via getaddrinfo.
+		struct in_addr v4;
+		struct in6_addr v6;
+		if (host.find(':') != std::string::npos)
+		{
+			if (inet_pton(AF_INET6, host.c_str(), &v6) == 1)
+				return host;
+		}
+		else if (inet_pton(AF_INET, host.c_str(), &v4) == 1)
+		{
+			return host;
+		}
+
+		struct addrinfo hints;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = AF_UNSPEC; // resolve both families
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = AI_ADDRCONFIG; // skip AAAA on v4-only hosts and vice versa
+		struct addrinfo *result = nullptr;
+		const int rc = ::getaddrinfo(host.c_str(), nullptr, &hints, &result);
+		if (rc != 0 || result == nullptr)
+		{
+			errorText = "cannot resolve " + host + ": " + gai_strerror(rc);
+			return std::string();
+		}
+
+		// Prefer IPv4: a dual-stack target keeps its legacy reachability, a v6-only
+		// target still resolves through its AAAA record.
+		const addrinfo *chosen = result;
+		for (const addrinfo *ai = result; ai != nullptr; ai = ai->ai_next)
+		{
+			if (ai->ai_family == AF_INET)
+			{
+				chosen = ai;
+				break;
+			}
+		}
+
+		char numeric[INET6_ADDRSTRLEN] = {0};
+		if (::getnameinfo(chosen->ai_addr, chosen->ai_addrlen, numeric, sizeof(numeric), nullptr, 0, NI_NUMERICHOST) != 0)
+		{
+			::freeaddrinfo(result);
+			errorText = "cannot convert resolved address of " + host;
+			return std::string();
+		}
+		::freeaddrinfo(result);
+		// InetAddress parses with bare inet_pton, so a scope-qualified address
+		// would silently fall back to the wildcard address.
+		if (strchr(numeric, '%') != nullptr)
+		{
+			errorText = "scope-qualified address <" + std::string(numeric) + "> of " + host + " is not supported";
+			return std::string();
+		}
+		return numeric;
+	}
+} // namespace
 
 bool Utility::ensureSystemRoot()
 {

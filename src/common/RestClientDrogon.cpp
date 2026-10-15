@@ -269,7 +269,9 @@ std::shared_ptr<HttpResponse> RestClient::request(
 	state->requestWire = buildRequestWire(mtd, target.target, target.hostHeader, header, body);
 
 	std::string resolveError;
-	const std::string ip = Utility::resolveHostAddress(target.host, resolveError);
+	// Resolution shares the request's total budget.
+	const long totalTimeout = timeoutSeconds > 0 ? timeoutSeconds : REQUEST_TIMEOUT_SECONDS;
+	const std::string ip = Utility::resolveHostAddress(target.host, resolveError, totalTimeout);
 	if (ip.empty())
 	{
 		state->response->text = "DNS resolution failed for " + target.host + ": " + resolveError;
@@ -376,7 +378,6 @@ std::shared_ptr<HttpResponse> RestClient::request(
 			state->finish(std::string("failed to set up the connection: ") + ex.what());
 		} });
 
-	const long totalTimeout = timeoutSeconds > 0 ? timeoutSeconds : REQUEST_TIMEOUT_SECONDS;
 	auto waitStatus = future.wait_for(std::chrono::seconds(totalTimeout));
 	if (waitStatus == std::future_status::timeout)
 	{

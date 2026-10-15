@@ -272,8 +272,7 @@ std::string SecretProtector::unprotect(const std::string &ciphertext, const std:
 
 std::vector<unsigned char> SecretProtector::decodeBase64(const std::string &value)
 {
-	// Strict alphabet up front: the underlying decoder skips invalid
-	// characters, but a corrupt key file must fail here, not at GCM time.
+	// Strict alphabet: the decoder skips invalid chars; fail here, not at GCM time.
 	static const std::string base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 	if (value.empty() || value.size() % 4 != 0 ||
 		value.find_first_not_of(base64Chars) != std::string::npos)

@@ -18,13 +18,15 @@ public:
 	std::string protect(const std::string &plaintext, const std::string &context);
 	std::string unprotect(const std::string &ciphertext, const std::string &context);
 
+	/// Strict base64 decode: the underlying decoder silently skips invalid characters.
+	static std::vector<unsigned char> decodeBase64(const std::string &value);
+
 private:
 	SecretProtector() = default;
 	void ensureKey();
 	static std::string masterKeyFile();
 	static std::string readSecureKeyFile(const std::string &path);
 	static void publishKeyFile(const std::string &path, const std::string &encoded);
-	static std::vector<unsigned char> decodeBase64(const std::string &value);
 
 	std::vector<unsigned char> m_key;
 	std::mutex m_mutex;
