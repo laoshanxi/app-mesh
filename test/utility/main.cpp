@@ -91,6 +91,41 @@ TEST_CASE("Utility Test", "[Utility]")
 		REQUIRE(Utility::isNumber("-012"));
 	}
 
+	SECTION("base64 round trip keeps trailing NUL bytes")
+	{
+		// Binary payloads that legitimately end in NUL must survive the
+		// round trip: the decoder used to trim those bytes silently.
+		const std::vector<std::string> payloads = {
+			std::string("a\0", 2),
+			std::string("ab\0\0", 4),
+			std::string("\0", 1),
+			std::string("abc\x00\x01\x00", 6),
+			std::string("plain"),
+			std::string(),
+		};
+		for (const auto &payload : payloads)
+		{
+			const auto encoded = Utility::encode64(payload);
+			INFO("payload size=" << payload.size() << " encoded=" << encoded);
+			const auto decoded = Utility::decode64(encoded);
+			REQUIRE(decoded.size() == payload.size());
+			REQUIRE(decoded == payload);
+		}
+
+		// Known vectors pin the exact output of the decoder.
+		REQUIRE(Utility::decode64("YQ==") == std::string("a", 1));
+		REQUIRE(Utility::decode64("YWI=") == std::string("ab", 2));
+		REQUIRE(Utility::decode64("YWJj") == std::string("abc", 3));
+		REQUIRE(Utility::decode64("AP8=") == std::string("\x00\xff", 2));
+	}
+
+	SECTION("base64 malformed input is rejected")
+	{
+		REQUIRE_THROWS_AS(Utility::decode64("Y=Q="), std::invalid_argument); // '=' before the end
+		REQUIRE_THROWS_AS(Utility::decode64("Y"), std::invalid_argument);	 // length % 4 == 1
+		REQUIRE_THROWS_AS(Utility::decode64("YQ="), std::invalid_argument); // length % 4 == 3 with single pad
+	}
+
 	SECTION("string split function test")
 	{
 		std::string env = "APPMESH_Consul_Url=https://127.0.0.1";

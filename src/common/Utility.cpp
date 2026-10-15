@@ -410,8 +410,31 @@ std::string Utility::decode64(const std::string &val)
 {
 	using namespace boost::archive::iterators;
 	using It = transform_width<binary_from_base64<std::string::const_iterator>, 8, 6>;
-	return boost::algorithm::trim_right_copy_if(std::string(It(std::begin(val)), It(std::end(val))), [](char c)
-												{ return c == '\0'; });
+
+	// Only a trailing '=' run may pad the final quantum; '=' anywhere else, or a
+	// length that leaves a lone character, is malformed and must fail instead
+	// of decoding to shifted garbage.
+	size_t padding = 0;
+	while (padding < 2 && val.size() > padding && val[val.size() - 1 - padding] == '=')
+		++padding;
+	if (padding > 0 && val.size() % 4 != 0)
+		throw std::invalid_argument("decode64: padded base64 length must be a multiple of 4");
+	if (val.find('=') != std::string::npos && val.find('=') < val.size() - padding)
+		throw std::invalid_argument("decode64: padding is only valid at the end of the value");
+	if (val.size() % 4 == 1)
+		throw std::invalid_argument("decode64: invalid base64 length");
+
+	const std::string stripped = val.substr(0, val.size() - padding);
+	std::string decoded(It(std::begin(stripped)), It(std::end(stripped)));
+	// The iterators zero-fill the final partial quantum, so the exact decoded
+	// length is the pre-encoding length (4 chars -> 3 bytes, 2 -> 1, 3 -> 2).
+	// Resizing instead of trimming NUL bytes keeps payloads that legitimately
+	// end in NUL intact; trimming used to truncate them silently.
+	const size_t expected = stripped.size() * 6 / 8;
+	if (decoded.size() < expected)
+		throw std::invalid_argument("decode64: truncated base64 value");
+	decoded.resize(expected);
+	return decoded;
 }
 
 std::string Utility::encodeURIComponent(const std::string &str)

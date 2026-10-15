@@ -244,7 +244,12 @@ std::string SecretProtector::unprotect(const std::string &ciphertext, const std:
 
 std::vector<unsigned char> SecretProtector::decodeBase64(const std::string &value)
 {
-	if (value.empty() || value.size() % 4 != 0)
+	// Strict alphabet up front: EVP_DecodeBlock silently skips invalid
+	// characters, so a corrupt key or secret file must fail here, not later at
+	// the size or GCM tag check with shortened garbage.
+	static const std::string base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+	if (value.empty() || value.size() % 4 != 0 ||
+		value.find_first_not_of(base64Chars) != std::string::npos)
 		throw std::invalid_argument("invalid base64 SecretProtector value");
 	std::vector<unsigned char> decoded((value.size() / 4) * 3 + 1);
 	const int length = EVP_DecodeBlock(decoded.data(),
