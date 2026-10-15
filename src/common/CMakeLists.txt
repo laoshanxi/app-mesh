@@ -9,12 +9,13 @@ add_library(common STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::common ALIAS common)
 
 # --- Linking ---
-if(WIN32)
-  # TODO: Windows have link issue, so temprary use header only
-  target_link_libraries(common PRIVATE spdlog::spdlog_header_only)
-else()
-  target_link_libraries(common PUBLIC spdlog::spdlog)
-endif()
+# spdlog must be PUBLIC on every platform: without the usage requirements
+# (SPDLOG_COMPILED_LIB/SPDLOG_SHARED_LIB) reaching every translation unit,
+# spdlog 1.17 silently falls back to header-only mode and emits inline
+# definitions into each object; mixed with the shared library's import
+# symbols that is MSVC LNK2005, and it splits the logger registry (see
+# rest/CMakeLists.txt).
+target_link_libraries(common PUBLIC spdlog::spdlog)
 target_link_libraries(common
   PRIVATE
     yaml-cpp::yaml-cpp
