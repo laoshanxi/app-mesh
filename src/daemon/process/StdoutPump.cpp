@@ -81,6 +81,8 @@ int StdoutPump::handle_input(ACE_HANDLE)
 				while (written < total)
 				{
 					ssize_t w = ACE_OS::write(m_diskWrite, buf + written, total - written);
+					if (w < 0 && ACE_OS::last_error() == EINTR)
+						continue; // EINTR: retry
 					if (w <= 0)
 					{
 						LOG_WAR << fname << "disk write failed for app=" << m_appName << " errno=" << ACE_OS::last_error();
@@ -246,6 +248,8 @@ void StdoutPump::finalSyncDrain()
 	while (true)
 	{
 		ssize_t n = ACE_OS::read(m_pipeRead, buf, sizeof(buf));
+		if (n < 0 && ACE_OS::last_error() == EINTR)
+			continue; // EINTR: retry, the pipe may still carry data
 		if (n <= 0)
 			break; // EOF, EAGAIN, or unrecoverable error
 
@@ -256,6 +260,8 @@ void StdoutPump::finalSyncDrain()
 			while (written < total)
 			{
 				ssize_t w = ACE_OS::write(m_diskWrite, buf + written, total - written);
+				if (w < 0 && ACE_OS::last_error() == EINTR)
+					continue; // EINTR: retry
 				if (w <= 0)
 				{
 					LOG_WAR << fname << "disk write failed for app=" << m_appName << " errno=" << ACE_OS::last_error();
