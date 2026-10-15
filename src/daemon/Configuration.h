@@ -1,6 +1,7 @@
 // src/daemon/Configuration.h
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -175,7 +176,7 @@ private:
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
 	// Runtime exporter state is fixed at startup.
-	bool m_runtimePrometheusEnabled = false;
+	std::atomic<bool> m_runtimePrometheusEnabled = false; // read without m_hotupdateMutex
 
 	mutable std::recursive_mutex m_hotupdateMutex;
 

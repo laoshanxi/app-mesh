@@ -145,7 +145,7 @@ private:
 	const std::string m_uuid;
 	const std::string m_key;
 	std::atomic<pid_t> m_pid;
-	pid_t m_lastPid;
+	std::atomic<pid_t> m_lastPid; // startImpl() writes without m_processMutex
 	std::uint64_t m_processStartToken;
 	bool m_recovered;
 	std::atomic<int> m_returnValue;
