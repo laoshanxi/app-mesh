@@ -30,9 +30,9 @@ jobs:
       - name: Checkout Github code
         uses: actions/checkout@v6
 
-      # The build image dropped the curl CLI together with libcurl
-      - name: Install curl
-        run: apt-get update -qq && apt-get install -y -qq curl
+      # The minimal build image has neither curl nor `file`; cov-build needs both
+      - name: Install scan tooling
+        run: apt-get update -qq && apt-get install -y -qq curl file
 
       - name: Cmake init with Debug mode
         run: |
