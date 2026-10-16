@@ -433,18 +433,3 @@ export {
 }
 export default AppMeshWorker
 
-// ---------------------------------------------------------------------------
-// Deprecated snake_case aliases kept for backward compatibility (the API used
-// to mirror the Python SDK). They forward through `this` so subclass overrides
-// still apply. Will be removed in the next major version.
-// ---------------------------------------------------------------------------
-const _snakeAliases = {
-  fetch_task: 'fetchTask',
-  send_task_result: 'sendTaskResult',
-}
-for (const cls of [AppMeshWorker]) {
-  for (const [snake, camel] of Object.entries(_snakeAliases)) {
-    if (!cls.prototype[camel]) continue
-    cls.prototype[snake] = function (...args) { return this[camel](...args) }
-  }
-}

@@ -237,10 +237,10 @@ await assert('second 401 after refresh rejects with typed error, refresh still c
   if (authRequests.length !== 2) throw new Error(`expected original + one retry, got ${authRequests.length} requests`)
 })
 
-await assert('set_token/clear_bearer_token aliases still work through the provider', async () => {
+await assert('setToken/clearBearerToken attach and detach through the provider', async () => {
   const client = new AppMeshClient(baseURL)
   client.setToken('alias-token')
-  if ((await client._getAccessToken()) !== 'alias-token') throw new Error('set_token must attach the token')
+  if ((await client._getAccessToken()) !== 'alias-token') throw new Error('setToken must attach the token')
   client.clearBearerToken()
   if ((await client._getAccessToken()) !== null) throw new Error('clear_bearer_token must detach the token')
   client.setBearerToken(null)
