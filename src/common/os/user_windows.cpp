@@ -7,9 +7,10 @@
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include <lmcons.h>
 #include <sddl.h> // ConvertSidToStringSidA, must follow windows.h
-#include <windows.h>
 
 #pragma comment(lib, "advapi32.lib")
 

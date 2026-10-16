@@ -8,11 +8,12 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define UMDF_USING_NTSTATUS
+#include <windows.h>
+
 #include <ntstatus.h>
 #include <process.h>
 #include <psapi.h>
 #include <tlhelp32.h>
-#include <windows.h>
 #include <winternl.h>
 
 #pragma comment(lib, "advapi32.lib")
