@@ -80,13 +80,27 @@ if bash "$TEAM_RT/token-bot.sh" >/dev/null 2>&1; then
 	TOKEN_CMD="bash $TEAM_RT/token-bot.sh"
 	echo "==> 运行时凭据: 专用最小权限账号 ${DH_BOT_USER}（角色 digital-human）"
 else
-	# 回退管理员 token：管道命令必须包进脚本文件，不能直接进 sed 的替换值（| 是分隔符）
-	cat > "$TEAM_RT/admin-token.sh" <<'ADMINTOKEN'
+	# 回退管理员 token。优先用 DH_ADMIN_PASSWORD（密码流直铸，无需 sudo）；
+	# 未提供时生成标准管道流版本（root 安装需 sudo 执行 print-initial-password）。
+	if [ -n "${DH_ADMIN_PASSWORD:-}" ]; then
+		cat > "$TEAM_RT/admin-token.sh" <<ADMINTOKEN
+#!/bin/bash
+# 回退方案：用部署时提供的 DH_ADMIN_PASSWORD 做密码流直铸（文件 600，勿入库）
+exec curl -s -u 'appmesh-cli:' -X POST "\${DH_AUTH_TOKEN_URL:-http://127.0.0.1:6062}/auth/token" \\
+	-d 'grant_type=password' -d 'username=admin@appmesh.local' \\
+	-d "password=$DH_ADMIN_PASSWORD" \\
+	-d 'scope=openid audience:server:client_id:appmesh-api' \\
+	| python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])'
+ADMINTOKEN
+	else
+		cat > "$TEAM_RT/admin-token.sh" <<'ADMINTOKEN'
 #!/bin/bash
 # 回退方案：标准安装的管理员 token 流（root 安装需要 sudo 执行 print-initial-password）
 exec bash /opt/appmesh/script/appmesh-auth.sh print-initial-password 2>/dev/null |
 	bash /opt/appmesh/script/appmesh-auth.sh user-token 2>/dev/null
 ADMINTOKEN
+		echo "    提示: 未设置 DH_ADMIN_PASSWORD，回退脚本需要 sudo 才能铸出 token；建议 export DH_ADMIN_PASSWORD=<管理员密码> 后重跑"
+	fi
 	chmod 700 "$TEAM_RT/admin-token.sh"
 	TOKEN_CMD="bash $TEAM_RT/admin-token.sh"
 	echo "    警告: dh-bot token 铸造失败，回退管理员 token（仅限开发）。启用最小权限账号请 sudo 运行:"
