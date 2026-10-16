@@ -61,10 +61,12 @@ namespace
 	void drainDispatchThread()
 	{
 		std::atomic<int> sentinel{0};
-		TIMER_MANAGER::instance()->registerTimer(0, 0, "sentinel", [&sentinel]()
-												{
-			sentinel++;
-			return false; });
+		TIMER_MANAGER::instance()->registerTimer(0, 0, "sentinel",
+												 [&sentinel]()
+												 {
+													 sentinel++;
+													 return false;
+												 });
 		REQUIRE(waitUntil([&sentinel]() { return sentinel.load() == 1; }, 2000));
 	}
 
@@ -81,10 +83,12 @@ TEST_CASE("one_shot_fires_and_resets_slot", "[timer]")
 	// HttpRequestWithTimeout's reply-vs-timeout race relies on the slot being
 	// atomically reset once a one-shot timer fires.
 	auto probe = std::make_shared<Probe>();
-	const long token = probe->registerTimer(probe->m_slot, 30, 0, "test", [probe]() {
-		probe->m_fired++;
-		return false;
-	});
+	const long token = probe->registerTimer(probe->m_slot, 30, 0, "test",
+											[probe]()
+											{
+												probe->m_fired++;
+												return false;
+											});
 	REQUIRE(isValidTimerId(token));
 	REQUIRE(isValidTimerId(probe->m_slot));
 	REQUIRE(waitUntil([&]() { return probe->m_fired.load() == 1; }, 2000));
@@ -94,10 +98,12 @@ TEST_CASE("one_shot_fires_and_resets_slot", "[timer]")
 TEST_CASE("one_shot_cancel_prevents_fire", "[timer]")
 {
 	auto probe = std::make_shared<Probe>();
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10000, 0, "test", [probe]() {
-		probe->m_fired++;
-		return false;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10000, 0, "test",
+												[probe]()
+												{
+													probe->m_fired++;
+													return false;
+												})));
 	REQUIRE(probe->cancelTimer(probe->m_slot));
 	REQUIRE(!isValidTimerId(probe->m_slot));
 	std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -109,9 +115,7 @@ TEST_CASE("recurring_stops_when_callback_returns_false", "[timer]")
 	// AppProcess::onTimerCheckStdout stops its polling loop by returning false;
 	// the slot must be reset so the process does not keep a stale token.
 	auto probe = std::make_shared<Probe>();
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 20, 20, "test", [probe]() {
-		return ++probe->m_fired < 3;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 20, 20, "test", [probe]() { return ++probe->m_fired < 3; })));
 	REQUIRE(waitUntil([&]() { return probe->m_fired.load() >= 3; }, 2000));
 	REQUIRE(waitUntil([&]() { return !isValidTimerId(probe->m_slot); }, 2000));
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -126,14 +130,18 @@ TEST_CASE("slot_replacement_cancels_previous_timer", "[timer]")
 	auto oldFired = std::make_shared<std::atomic<int>>(0);
 	auto newFired = std::make_shared<std::atomic<int>>(0);
 	// The old timer would fire at 100ms if the replacement failed to cancel it.
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 100, 0, "test", [oldFired]() {
-		(*oldFired)++;
-		return false;
-	})));
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 30, 0, "test", [newFired]() {
-		(*newFired)++;
-		return false;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 100, 0, "test",
+												[oldFired]()
+												{
+													(*oldFired)++;
+													return false;
+												})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 30, 0, "test",
+												[newFired]()
+												{
+													(*newFired)++;
+													return false;
+												})));
 	REQUIRE(waitUntil([&]() { return newFired->load() == 1; }, 2000));
 	// Past the old timer's deadline: canceled, not just delayed.
 	std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -143,10 +151,12 @@ TEST_CASE("slot_replacement_cancels_previous_timer", "[timer]")
 TEST_CASE("lambda_only_registration_via_timer_manager", "[timer]")
 {
 	auto fired = std::make_shared<std::atomic<int>>(0);
-	const long token = TIMER_MANAGER::instance()->registerTimer(30, 0, "test", [fired]() {
-		(*fired)++;
-		return false;
-	});
+	const long token = TIMER_MANAGER::instance()->registerTimer(30, 0, "test",
+																[fired]()
+																{
+																	(*fired)++;
+																	return false;
+																});
 	REQUIRE(isValidTimerId(token));
 	REQUIRE(waitUntil([&]() { return fired->load() == 1; }, 2000));
 
@@ -159,11 +169,13 @@ TEST_CASE("cancel_from_own_callback_stops_recurring_timer", "[timer]")
 	// Callbacks run without any queue lock held, so self-cancellation is
 	// deterministic: the current invocation completes, the re-arm is canceled.
 	auto probe = std::make_shared<Probe>();
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 20, 20, "test", [probe]() {
-		probe->m_fired++;
-		probe->cancelTimer(probe->m_slot);
-		return true;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 20, 20, "test",
+												[probe]()
+												{
+													probe->m_fired++;
+													probe->cancelTimer(probe->m_slot);
+													return true;
+												})));
 	REQUIRE(waitUntil([&]() { return probe->m_fired.load() == 1; }, 2000));
 	std::this_thread::sleep_for(std::chrono::milliseconds(150));
 	REQUIRE(probe->m_fired.load() == 1);
@@ -177,17 +189,21 @@ TEST_CASE("concurrent_register_and_cancel_is_safe", "[timer]")
 	std::vector<std::thread> threads;
 	for (int t = 0; t < 4; ++t)
 	{
-		threads.emplace_back([fired]() {
-			for (int i = 0; i < 50; ++i)
+		threads.emplace_back(
+			[fired]()
 			{
-				const long token = TIMER_MANAGER::instance()->registerTimer(100000, 0, "test", [fired]() {
-					(*fired)++;
-					return false;
-				});
-				if (isValidTimerId(token))
-					TIMER_MANAGER::instance()->cancelTimer(token);
-			}
-		});
+				for (int i = 0; i < 50; ++i)
+				{
+					const long token = TIMER_MANAGER::instance()->registerTimer(100000, 0, "test",
+																				[fired]()
+																				{
+																					(*fired)++;
+																					return false;
+																				});
+					if (isValidTimerId(token))
+						TIMER_MANAGER::instance()->cancelTimer(token);
+				}
+			});
 	}
 	for (auto &thread : threads)
 		thread.join();
@@ -201,10 +217,12 @@ TEST_CASE("one_shot_ignores_callback_true_return", "[timer]")
 	// one-shot must never re-arm, or the exit finalizer and HTTP timeout would
 	// replay forever.
 	auto probe = std::make_shared<Probe>();
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 20, 0, "test", [probe]() {
-		probe->m_fired++;
-		return true;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 20, 0, "test",
+												[probe]()
+												{
+													probe->m_fired++;
+													return true;
+												})));
 	REQUIRE(waitUntil([&]() { return probe->m_fired.load() == 1; }, 2000));
 	std::this_thread::sleep_for(std::chrono::milliseconds(150));
 	REQUIRE(probe->m_fired.load() == 1);
@@ -216,10 +234,12 @@ TEST_CASE("zero_delay_one_shot_fires_without_interval", "[timer]")
 	// AppProcess::onTimerExit is registered with delay 0 from the process upcall:
 	// cleanup must run on the next dispatch, not one interval later.
 	auto fired = std::make_shared<std::atomic<int>>(0);
-	REQUIRE(isValidTimerId(TIMER_MANAGER::instance()->registerTimer(0, 0, "test", [fired]() {
-		(*fired)++;
-		return false;
-	})));
+	REQUIRE(isValidTimerId(TIMER_MANAGER::instance()->registerTimer(0, 0, "test",
+																	[fired]()
+																	{
+																		(*fired)++;
+																		return false;
+																	})));
 	REQUIRE(waitUntil([&]() { return fired->load() == 1; }, 2000));
 }
 
@@ -229,10 +249,12 @@ TEST_CASE("zero_delay_recurring_fires_before_first_interval", "[timer]")
 	// dispatch must not wait a whole interval, and cancellation must stop it
 	// even when the next fire is far away.
 	auto probe = std::make_shared<Probe>();
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 0, 1000, "test", [probe]() {
-		probe->m_fired++;
-		return true;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 0, 1000, "test",
+												[probe]()
+												{
+													probe->m_fired++;
+													return true;
+												})));
 	REQUIRE(waitUntil([&]() { return probe->m_fired.load() == 1; }, 500));
 	REQUIRE(probe->cancelTimer(probe->m_slot));
 	REQUIRE(!isValidTimerId(probe->m_slot));
@@ -246,11 +268,13 @@ TEST_CASE("recurring_callback_exception_stops_timer", "[timer]")
 	// A throwing callback must unwind to a stopped, released timer; a recurring
 	// timer that kept re-arming after an exception would throw on every tick.
 	auto probe = std::make_shared<Probe>();
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 10, "test", [probe]() -> bool {
-		if (++probe->m_fired >= 2)
-			throw std::runtime_error("callback failure");
-		return true;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 10, "test",
+												[probe]() -> bool
+												{
+													if (++probe->m_fired >= 2)
+														throw std::runtime_error("callback failure");
+													return true;
+												})));
 	REQUIRE(waitUntil([&]() { return probe->m_fired.load() >= 2; }, 2000));
 	REQUIRE(waitUntil([&]() { return !isValidTimerId(probe->m_slot); }, 2000));
 	std::this_thread::sleep_for(std::chrono::milliseconds(150));
@@ -262,10 +286,12 @@ TEST_CASE("recurring_callback_unknown_exception_stops_timer", "[timer]")
 	// A non-std exception must not escape the dispatch thread; it stops the timer
 	// like any other failure instead of terminating the daemon.
 	auto probe = std::make_shared<Probe>();
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 10, "test", [probe]() -> bool {
-		probe->m_fired++;
-		throw 42;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 10, "test",
+												[probe]() -> bool
+												{
+													probe->m_fired++;
+													throw 42;
+												})));
 	REQUIRE(waitUntil([&]() { return probe->m_fired.load() == 1; }, 2000));
 	REQUIRE(waitUntil([&]() { return !isValidTimerId(probe->m_slot); }, 2000));
 	std::this_thread::sleep_for(std::chrono::milliseconds(150));
@@ -280,17 +306,21 @@ TEST_CASE("finished_callback_does_not_clear_replacement_slot", "[timer]")
 	auto probe = std::make_shared<Probe>();
 	auto gate = std::make_shared<Gate>();
 	auto oldRunning = std::make_shared<std::atomic<bool>>(false);
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 10, "test", [gate, oldRunning]() {
-		oldRunning->store(true);
-		gate->wait();
-		return false;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 10, "test",
+												[gate, oldRunning]()
+												{
+													oldRunning->store(true);
+													gate->wait();
+													return false;
+												})));
 	REQUIRE(waitUntil([&]() { return oldRunning->load(); }, 2000));
 
-	const long replacement = probe->registerTimer(probe->m_slot, 30000, 0, "test", [probe]() {
-		probe->m_fired++;
-		return false;
-	});
+	const long replacement = probe->registerTimer(probe->m_slot, 30000, 0, "test",
+												  [probe]()
+												  {
+													  probe->m_fired++;
+													  return false;
+												  });
 	REQUIRE(isValidTimerId(replacement));
 	REQUIRE(probe->m_slot.load() == replacement);
 
@@ -310,12 +340,14 @@ TEST_CASE("cancel_while_callback_running_stops_recurring_timer", "[timer]")
 	auto probe = std::make_shared<Probe>();
 	auto gate = std::make_shared<Gate>();
 	auto running = std::make_shared<std::atomic<bool>>(false);
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 10, "test", [probe, gate, running]() {
-		probe->m_fired++;
-		running->store(true);
-		gate->wait();
-		return true;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 10, "test",
+												[probe, gate, running]()
+												{
+													probe->m_fired++;
+													running->store(true);
+													gate->wait();
+													return true;
+												})));
 	REQUIRE(waitUntil([&]() { return running->load(); }, 2000));
 	REQUIRE(probe->cancelTimer(probe->m_slot));
 	REQUIRE(!isValidTimerId(probe->m_slot));
@@ -332,14 +364,18 @@ TEST_CASE("register_from_timer_callback_is_allowed", "[timer]")
 	// would deadlock the dispatch thread here.
 	auto probe = std::make_shared<Probe>();
 	auto chained = std::make_shared<std::atomic<int>>(0);
-	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 0, "test", [probe, chained]() {
-		probe->m_fired++;
-		TIMER_MANAGER::instance()->registerTimer(10, 0, "test", [chained]() {
-			(*chained)++;
-			return false;
-		});
-		return false;
-	})));
+	REQUIRE(isValidTimerId(probe->registerTimer(probe->m_slot, 10, 0, "test",
+												[probe, chained]()
+												{
+													probe->m_fired++;
+													TIMER_MANAGER::instance()->registerTimer(10, 0, "test",
+																							 [chained]()
+																							 {
+																								 (*chained)++;
+																								 return false;
+																							 });
+													return false;
+												})));
 	REQUIRE(waitUntil([&]() { return chained->load() == 1; }, 2000));
 	REQUIRE(probe->m_fired.load() == 1);
 }
@@ -350,10 +386,12 @@ TEST_CASE("cancel_by_raw_token_releases_slot", "[timer]")
 	// the published slot from the dispatch thread, so the slot converges to
 	// invalid shortly after the call returns.
 	auto probe = std::make_shared<Probe>();
-	const long token = probe->registerTimer(probe->m_slot, 5000, 0, "test", [probe]() {
-		probe->m_fired++;
-		return false;
-	});
+	const long token = probe->registerTimer(probe->m_slot, 5000, 0, "test",
+											[probe]()
+											{
+												probe->m_fired++;
+												return false;
+											});
 	REQUIRE(isValidTimerId(token));
 	REQUIRE(TIMER_MANAGER::instance()->cancelTimer(token));
 	REQUIRE(waitUntil([&]() { return !isValidTimerId(probe->m_slot); }, 2000));
@@ -372,18 +410,22 @@ TEST_CASE("concurrent_slot_churn_leaves_no_live_timer", "[timer]")
 	std::vector<std::thread> threads;
 	for (int t = 0; t < 4; ++t)
 	{
-		threads.emplace_back([&probes, t]() {
-			auto probe = probes[t];
-			for (int i = 0; i < 50; ++i)
+		threads.emplace_back(
+			[&probes, t]()
 			{
-				const long token = probe->registerTimer(probe->m_slot, 5, 0, "test", [probe]() {
-					probe->m_fired++;
-					return false;
-				});
-				if (isValidTimerId(token) && i % 2 == 0)
-					probe->cancelTimer(probe->m_slot);
-			}
-		});
+				auto probe = probes[t];
+				for (int i = 0; i < 50; ++i)
+				{
+					const long token = probe->registerTimer(probe->m_slot, 5, 0, "test",
+															[probe]()
+															{
+																probe->m_fired++;
+																return false;
+															});
+					if (isValidTimerId(token) && i % 2 == 0)
+						probe->cancelTimer(probe->m_slot);
+				}
+			});
 	}
 	for (auto &thread : threads)
 		thread.join();

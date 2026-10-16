@@ -1,13 +1,5 @@
 #include "OidcTokenVerifier.h"
 
-#include "../../common/JwtHelper.h"
-#include "../../common/RestClient.h"
-#include "../../common/UriParser.hpp"
-#include "../../common/Utility.h"
-#include "../../common/json.h"
-#include "../Configuration.h"
-#include "Security.h"
-
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -25,6 +17,14 @@
 #include <openssl/param_build.h>
 #endif
 
+#include "../../common/JwtHelper.h"
+#include "../../common/RestClient.h"
+#include "../../common/UriParser.hpp"
+#include "../../common/Utility.h"
+#include "../../common/json.h"
+#include "../Configuration.h"
+#include "Security.h"
+
 namespace
 {
 	const std::chrono::minutes DISCOVERY_TTL(15);
@@ -38,8 +38,8 @@ namespace
 	{
 		try
 		{
-			const auto decoded = jwt::base::decode<jwt::alphabet::base64url>(
-				jwt::base::pad<jwt::alphabet::base64url>(value));
+			const auto decoded =
+				jwt::base::decode<jwt::alphabet::base64url>(jwt::base::pad<jwt::alphabet::base64url>(value));
 			return std::vector<unsigned char>(decoded.begin(), decoded.end());
 		}
 		catch (const std::exception &)
@@ -72,17 +72,14 @@ namespace
 	}
 }
 
-OidcTokenVerifier::OidcTokenVerifier()
-	: m_discoveryFetchedAt(), m_keysFetchedAt(), m_keyRefreshAttemptedAt()
-{
-}
+OidcTokenVerifier::OidcTokenVerifier() : m_discoveryFetchedAt(), m_keysFetchedAt(), m_keyRefreshAttemptedAt() {}
 
 void OidcTokenVerifier::init()
 {
 	const static char fname[] = "OidcTokenVerifier::init() ";
 	loadConfig();
-	LOG_INF << fname << "configured authentication issuer <" << m_config.issuer
-			<< "> and resource audience <" << m_config.resourceAudience << ">";
+	LOG_INF << fname << "configured authentication issuer <" << m_config.issuer << "> and resource audience <"
+			<< m_config.resourceAudience << ">";
 }
 
 void OidcTokenVerifier::prewarm()
@@ -123,7 +120,8 @@ void OidcTokenVerifier::loadConfig()
 	// refresh_token_max_lifetime is enforced by Dex alone (expiry.refreshTokens
 	// absoluteLifetime); the launchers render it, the Engine never reads it.
 	m_config.dexCaPath = Utility::stdStringTrim(GET_JSON_STR_VALUE(oidc, "ca_path"));
-	auto environment = [](const char *name) {
+	auto environment = [](const char *name)
+	{
 		const char *value = std::getenv(name);
 		return value != nullptr && value[0] != '\0' ? value : nullptr;
 	};
@@ -144,7 +142,8 @@ void OidcTokenVerifier::loadConfig()
 	if (tlsVerify != nullptr && tlsVerify[0] != '\0')
 	{
 		std::string value(tlsVerify);
-		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		std::transform(value.begin(), value.end(), value.begin(),
+					   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 		if (value == "1" || value == "true")
 			m_config.dexTlsVerify = true;
 		else if (value == "0" || value == "false")
@@ -156,7 +155,8 @@ void OidcTokenVerifier::loadConfig()
 	if (passwordFlow != nullptr && passwordFlow[0] != '\0')
 	{
 		std::string value(passwordFlow);
-		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		std::transform(value.begin(), value.end(), value.begin(),
+					   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 		// Keep this value set identical to the launchers (appmesh-auth.sh and
 		// appmesh-auth.ps1): they render the Dex grant types from the same
 		// setting, and a value one side rejects would leave the two out of step.
@@ -171,7 +171,8 @@ void OidcTokenVerifier::loadConfig()
 	if (refreshToken != nullptr && refreshToken[0] != '\0')
 	{
 		std::string value(refreshToken);
-		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		std::transform(value.begin(), value.end(), value.begin(),
+					   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 		// Keep this value set identical to the launchers (appmesh-auth.sh and
 		// appmesh-auth.ps1): they render the Dex grant types from the same
 		// setting, and a value one side rejects would leave the two out of step.
@@ -186,8 +187,7 @@ void OidcTokenVerifier::loadConfig()
 	m_config.resourceAudience = GET_JSON_STR_VALUE(oidc, "resource_audience");
 	m_config.publicClientId = GET_JSON_STR_VALUE(oidc, "public_client_id");
 	if (oidc.isMember("service_client_ids"))
-		throw std::invalid_argument(
-			"OIDC service_client_ids is unsupported; every bearer must use resource_audience");
+		throw std::invalid_argument("OIDC service_client_ids is unsupported; every bearer must use resource_audience");
 
 	if (oidc.isMember("scopes"))
 	{
@@ -225,26 +225,26 @@ void OidcTokenVerifier::loadConfig()
 	for (const auto &endpoint : {m_config.issuer, m_config.dexAccessUrl, m_config.resourceUrl})
 	{
 		const auto uri = Uri::parse(endpoint);
-		if ((uri.scheme != "http" && uri.scheme != "https") || uri.host.empty() ||
-			!uri.user.empty() || !uri.pass.empty() || !uri.query.empty() || !uri.fragment.empty())
+		if ((uri.scheme != "http" && uri.scheme != "https") || uri.host.empty() || !uri.user.empty() || !uri.pass.empty() ||
+			!uri.query.empty() || !uri.fragment.empty())
 		{
-			throw std::invalid_argument(
-				"OIDC issuer, access_url, and resource_url must be absolute HTTP(S) URLs without credentials, query, or fragment");
+			throw std::invalid_argument("OIDC issuer, access_url, and resource_url must be absolute HTTP(S) URLs "
+										"without credentials, query, or fragment");
 		}
 	}
 	if (m_config.allowedAlgorithms.empty())
 		m_config.allowedAlgorithms.insert("RS256");
 	for (const auto &algorithm : m_config.allowedAlgorithms)
 	{
-		if (algorithm != "RS256" && algorithm != "RS384" && algorithm != "RS512" &&
-			algorithm != "PS256" && algorithm != "PS384" && algorithm != "PS512")
+		if (algorithm != "RS256" && algorithm != "RS384" && algorithm != "RS512" && algorithm != "PS256" &&
+			algorithm != "PS384" && algorithm != "PS512")
 			throw std::invalid_argument("OIDC allowed_algorithms contains an unsupported algorithm");
 	}
 	m_config.scopes.insert("audience:server:client_id:" + m_config.resourceAudience);
 	m_dexSslConfig.m_verify_server = m_config.dexTlsVerify;
 	m_dexSslConfig.m_ca_location = m_config.dexCaPath;
-	if (!m_dexSslConfig.m_ca_location.empty() &&
-		!Utility::isFileExist(m_dexSslConfig.m_ca_location) && !Utility::isDirExist(m_dexSslConfig.m_ca_location))
+	if (!m_dexSslConfig.m_ca_location.empty() && !Utility::isFileExist(m_dexSslConfig.m_ca_location) &&
+		!Utility::isDirExist(m_dexSslConfig.m_ca_location))
 		throw std::invalid_argument("OIDC ca_path does not exist");
 }
 
@@ -338,8 +338,10 @@ Json::Value OidcTokenVerifier::publicConfig() const
 	}
 	// An unconfigured entry defaults to this daemon's own HTTPS REST listener, so
 	// bare deployments and dev servers need no manual redirect registration.
-	result["browser_entry"] = !m_config.browserEntry.empty() ? m_config.browserEntry
-		: "https://" + Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
+	result["browser_entry"] = !m_config.browserEntry.empty()
+								  ? m_config.browserEntry
+								  : "https://" + Configuration::instance()->getRestListenAddress() + ":" +
+										std::to_string(Configuration::instance()->getRestListenPort());
 	Json::Value flows(Json::arrayValue);
 	flows.append("authorization_code_pkce");
 	flows.append("device_code");
@@ -452,15 +454,15 @@ std::shared_ptr<const OidcTokenVerifier::Verifier> OidcTokenVerifier::resolveKey
 		else
 			++entry;
 	}
-	if (auto negative = m_negativeKeys.find(kid); negative != m_negativeKeys.end() && now - negative->second < NEGATIVE_KEY_TTL)
+	if (auto negative = m_negativeKeys.find(kid);
+		negative != m_negativeKeys.end() && now - negative->second < NEGATIVE_KEY_TTL)
 		throw std::domain_error("bearer token references an unknown signing key");
 
 	auto existing = m_keys.find(kid);
 	if (existing != m_keys.end() && now - m_keysFetchedAt < JWKS_TTL)
 		return existing->second.verifier;
 
-	if (m_keyRefreshAttemptedAt.time_since_epoch().count() != 0 &&
-		now - m_keyRefreshAttemptedAt < KEY_REFRESH_MIN_INTERVAL)
+	if (m_keyRefreshAttemptedAt.time_since_epoch().count() != 0 && now - m_keyRefreshAttemptedAt < KEY_REFRESH_MIN_INTERVAL)
 	{
 		// A stale matching key remains cryptographically safe and is verified below.
 		// Without any cached key, preserve the distinction between an unavailable
@@ -504,8 +506,8 @@ std::shared_ptr<const OidcTokenVerifier::Verifier> OidcTokenVerifier::resolveKey
 		{
 			typedef std::map<std::string, std::chrono::steady_clock::time_point>::value_type NegativeKeyEntry;
 			auto oldest = std::min_element(m_negativeKeys.begin(), m_negativeKeys.end(),
-				[](const NegativeKeyEntry &left, const NegativeKeyEntry &right)
-				{ return left.second < right.second; });
+										   [](const NegativeKeyEntry &left, const NegativeKeyEntry &right)
+										   { return left.second < right.second; });
 			if (oldest != m_negativeKeys.end())
 				m_negativeKeys.erase(oldest);
 		}
@@ -525,7 +527,7 @@ std::string OidcTokenVerifier::requestJson(const std::string &absoluteUrl) const
 		host += ":" + std::to_string(uri.port);
 	const std::string path = uri.path.empty() ? "/" : uri.path;
 	auto response = RestClient::request(host, web::http::methods::GET, path, "", {}, uri.queryParams(), 5, &m_dexSslConfig);
-	response->raise_for_status();
+	response->raiseForStatus();
 	return response->text;
 }
 
@@ -588,12 +590,9 @@ std::string OidcTokenVerifier::jwkToPem(const Json::Value &jwk)
 	OSSL_PARAM_BLD *bld = (n != nullptr && e != nullptr) ? OSSL_PARAM_BLD_new() : nullptr;
 	OSSL_PARAM *params = nullptr;
 	EVP_PKEY_CTX *ctx = (bld != nullptr) ? EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr) : nullptr;
-	if (ctx == nullptr ||
-		OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_N, n) != 1 ||
-		OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_E, e) != 1 ||
-		(params = OSSL_PARAM_BLD_to_param(bld)) == nullptr ||
-		EVP_PKEY_fromdata_init(ctx) != 1 ||
-		EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) != 1)
+	if (ctx == nullptr || OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_N, n) != 1 ||
+		OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_RSA_E, e) != 1 || (params = OSSL_PARAM_BLD_to_param(bld)) == nullptr ||
+		EVP_PKEY_fromdata_init(ctx) != 1 || EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) != 1)
 	{
 		EVP_PKEY_free(pkey);
 		OSSL_PARAM_free(params);

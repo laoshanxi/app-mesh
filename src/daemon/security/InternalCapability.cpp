@@ -23,8 +23,7 @@ namespace
 
 	std::int64_t nowSeconds()
 	{
-		return std::chrono::duration_cast<std::chrono::seconds>(
-			std::chrono::system_clock::now().time_since_epoch()).count();
+		return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	}
 
 	InternalCapability::Audience parseAudience(const std::string &value)
@@ -43,10 +42,7 @@ InternalCapability &InternalCapability::instance()
 	return singleton;
 }
 
-InternalCapability::InternalCapability()
-	: m_signingKey(generatePassword(64, true, true, true, true))
-{
-}
+InternalCapability::InternalCapability() : m_signingKey(generatePassword(64, true, true, true, true)) {}
 
 const char *InternalCapability::audienceName(Audience audience)
 {
@@ -60,10 +56,9 @@ const char *InternalCapability::audienceName(Audience audience)
 	throw std::invalid_argument("unknown internal capability audience");
 }
 
-std::string InternalCapability::issue(Audience audience, const std::string &workflowId,
-	const std::string &runId, const std::string &ownerPrincipalId,
-	const std::string &processUuid, const std::set<std::string> &operations,
-	std::int64_t ttlSeconds) const
+std::string InternalCapability::issue(Audience audience, const std::string &workflowId, const std::string &runId,
+									  const std::string &ownerPrincipalId, const std::string &processUuid,
+									  const std::set<std::string> &operations, std::int64_t ttlSeconds) const
 {
 	if (workflowId.empty() || runId.empty() || ownerPrincipalId.empty() || processUuid.empty())
 		throw std::invalid_argument("internal capability bindings must be non-empty");
@@ -92,17 +87,15 @@ std::string InternalCapability::issue(Audience audience, const std::string &work
 	return signingInput + "." + sign(signingInput);
 }
 
-InternalCapability::Claims InternalCapability::verify(
-	const std::string &capability, const std::string &requiredOperation) const
+InternalCapability::Claims InternalCapability::verify(const std::string &capability,
+													  const std::string &requiredOperation) const
 {
-	if (capability.size() <= std::char_traits<char>::length(CAPABILITY_PREFIX) ||
-		capability.size() > MAX_CAPABILITY_SIZE ||
+	if (capability.size() <= std::char_traits<char>::length(CAPABILITY_PREFIX) || capability.size() > MAX_CAPABILITY_SIZE ||
 		capability.compare(0, std::char_traits<char>::length(CAPABILITY_PREFIX), CAPABILITY_PREFIX) != 0)
 		throw std::domain_error("internal capability format is invalid");
 
 	const auto signatureSeparator = capability.rfind('.');
-	if (signatureSeparator == std::string::npos ||
-		signatureSeparator <= std::char_traits<char>::length(CAPABILITY_PREFIX) ||
+	if (signatureSeparator == std::string::npos || signatureSeparator <= std::char_traits<char>::length(CAPABILITY_PREFIX) ||
 		signatureSeparator + 1 >= capability.size())
 		throw std::domain_error("internal capability format is invalid");
 
@@ -118,15 +111,14 @@ InternalCapability::Claims InternalCapability::verify(
 		if (!payload.isObject() || payload["v"].asInt() != 1)
 			throw std::domain_error("internal capability version is invalid");
 
-		Claims claims{
-			parseAudience(payload["aud"].asString()),
-			payload["workflow_id"].asString(),
-			payload["run_id"].asString(),
-			payload["owner_principal_id"].asString(),
-			payload["process_uuid"].asString(),
-			{},
-			payload["iat"].asInt64(),
-			payload["exp"].asInt64()};
+		Claims claims{parseAudience(payload["aud"].asString()),
+					  payload["workflow_id"].asString(),
+					  payload["run_id"].asString(),
+					  payload["owner_principal_id"].asString(),
+					  payload["process_uuid"].asString(),
+					  {},
+					  payload["iat"].asInt64(),
+					  payload["exp"].asInt64()};
 
 		const auto &operations = payload["operations"];
 		if (!operations.isArray() || operations.empty() || operations.size() > MAX_OPERATIONS)
@@ -138,13 +130,12 @@ InternalCapability::Claims InternalCapability::verify(
 			claims.operations.insert(operation.asString());
 		}
 
-		if (claims.workflowId.empty() || claims.runId.empty() ||
-			claims.ownerPrincipalId.empty() || claims.processUuid.empty())
+		if (claims.workflowId.empty() || claims.runId.empty() || claims.ownerPrincipalId.empty() ||
+			claims.processUuid.empty())
 			throw std::domain_error("internal capability binding is invalid");
 		const auto now = nowSeconds();
 		if (claims.issuedAt > now + MAX_CLOCK_SKEW_SECONDS || claims.expiresAt <= now ||
-			claims.expiresAt <= claims.issuedAt ||
-			claims.expiresAt - claims.issuedAt > MAX_CAPABILITY_TTL_SECONDS)
+			claims.expiresAt <= claims.issuedAt || claims.expiresAt - claims.issuedAt > MAX_CAPABILITY_TTL_SECONDS)
 			throw std::domain_error("internal capability is expired or has an invalid lifetime");
 		if (!requiredOperation.empty() && claims.operations.count(requiredOperation) == 0)
 			throw std::domain_error("internal capability does not allow this operation");
@@ -165,8 +156,7 @@ std::string InternalCapability::sign(const std::string &message) const
 	unsigned char output[EVP_MAX_MD_SIZE] = {0};
 	unsigned int outputLength = 0;
 	if (HMAC(EVP_sha256(), m_signingKey.data(), static_cast<int>(m_signingKey.size()),
-		reinterpret_cast<const unsigned char *>(message.data()), message.size(),
-		output, &outputLength) == nullptr)
+			 reinterpret_cast<const unsigned char *>(message.data()), message.size(), output, &outputLength) == nullptr)
 		throw std::runtime_error("could not sign internal capability");
 	return Utility::toHex(output, outputLength);
 }
@@ -178,8 +168,8 @@ std::string InternalCapability::base64UrlEncode(const std::string &value)
 
 std::string InternalCapability::base64UrlDecode(const std::string &value)
 {
-	if (value.empty() || value.find_first_not_of(
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != std::string::npos)
+	if (value.empty() ||
+		value.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != std::string::npos)
 		throw std::domain_error("internal capability encoding is invalid");
 	auto encoded = value;
 	std::replace(encoded.begin(), encoded.end(), '-', '+');

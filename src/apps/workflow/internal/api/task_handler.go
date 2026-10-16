@@ -27,12 +27,12 @@ import (
 	"strings"
 	"time"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/dag"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/parser"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/trigger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 const workflowAppPrefix = trigger.WorkflowAppPrefix
@@ -80,7 +80,8 @@ type callerPrincipal struct {
 }
 
 // NewTaskHandler creates a Task RPC handler.
-func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh.AppMeshClient, opts appmesh.Option) (*TaskHandler, error) {
+func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh.AppMeshClient,
+	opts appmesh.Option) (*TaskHandler, error) {
 	server, err := appmesh.NewTCPContext(opts)
 	if err != nil {
 		return nil, fmt.Errorf("create task context: %w", err)
@@ -90,7 +91,8 @@ func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh
 		server.CloseConnection()
 		return nil, err
 	}
-	return &TaskHandler{svc: svc, wdir: wdir, client: client, server: server, principalHTTP: principalHTTP, engineURL: engineURL, engineOption: opts}, nil
+	return &TaskHandler{svc: svc, wdir: wdir, client: client, server: server, principalHTTP: principalHTTP,
+		engineURL: engineURL, engineOption: opts}, nil
 }
 
 func newPrincipalHTTPClient() (*http.Client, string, error) {
@@ -102,7 +104,8 @@ func newPrincipalHTTPClient() (*http.Client, string, error) {
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, "", fmt.Errorf("APPMESH_ENGINE_URL must be an absolute HTTP(S) URL")
 	}
-	verify := !strings.EqualFold(os.Getenv("APPMESH_ENGINE_TLS_VERIFY"), "false") && os.Getenv("APPMESH_ENGINE_TLS_VERIFY") != "0"
+	verify := !strings.EqualFold(os.Getenv("APPMESH_ENGINE_TLS_VERIFY"), "false") &&
+		os.Getenv("APPMESH_ENGINE_TLS_VERIFY") != "0"
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verify}
 	if caPath := os.Getenv("APPMESH_CA"); caPath != "" {
 		pem, err := os.ReadFile(caPath)
@@ -373,7 +376,8 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 		return Response{Status: "error", Message: "invalid workflow YAML: " + err.Error()}
 	}
 	if req.Workflow != wf.Name {
-		return Response{Status: "error", Message: fmt.Sprintf("request name %q does not match YAML name %q", req.Workflow, wf.Name)}
+		return Response{Status: "error", Message: fmt.Sprintf("request name %q does not match YAML name %q",
+			req.Workflow, wf.Name)}
 	}
 	// Reject cycles / unknown `needs` references at registration instead of
 	// letting the workflow fail only when it is first run.
@@ -579,7 +583,8 @@ func (h *TaskHandler) handleCancel(req Request) Response {
 	// If the client also names a workflow (CLI -w), verify it matches the run_id.
 	if req.Workflow != "" {
 		if actual := h.workflowOfRun(req.RunID); actual != "" && actual != req.Workflow {
-			return Response{Status: "error", Message: fmt.Sprintf("run '%s' belongs to workflow '%s', not '%s'", req.RunID, actual, req.Workflow)}
+			return Response{Status: "error", Message: fmt.Sprintf("run '%s' belongs to workflow '%s', not '%s'",
+				req.RunID, actual, req.Workflow)}
 		}
 	}
 	if err := h.svc.CancelByRunID(req.RunID); err != nil {
@@ -684,7 +689,7 @@ func (h *TaskHandler) newCallerClient(token string) (*appmesh.AppMeshClientTCP, 
 		return nil, fmt.Errorf("caller Dex bearer is required")
 	}
 	option := h.engineOption
-	option.JwtToken = token
+	option.JWTToken = token
 	return appmesh.NewTCPClient(option)
 }
 

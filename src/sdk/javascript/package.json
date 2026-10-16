@@ -1,6 +1,6 @@
 {
   "name": "appmesh",
-  "version": "3.1.6",
+  "version": "3.1.7",
   "description": "JavaScript SDK for App Mesh (https://github.com/laoshanxi/app-mesh)",
   "main": "./src/appmesh.js",
   "module": "./dist/appmesh.esm.js",
@@ -8,7 +8,7 @@
   "sideEffects": false,
   "scripts": {
     "lint": "prettier --write .",
-    "test": "node test/unit_test.js && node test/appmesh_test.js",
+    "test": "node test/unit_test.js && node test/subscribe_test.js && node test/appmesh_test.js",
     "test:subscribe": "node test/subscribe_test.js",
     "build": "webpack --config webpack.config.cjs --mode production",
     "prepare": "npm run build",

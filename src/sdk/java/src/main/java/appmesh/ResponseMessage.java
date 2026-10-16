@@ -1,13 +1,13 @@
 package appmesh;
 
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.msgpack.jackson.dataformat.MessagePackFactory;
-
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
 
 /** TCP response message. */
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -17,13 +17,13 @@ public class ResponseMessage {
     public String uuid = "";
 
     @JsonProperty("request_uri")
-    public String request_uri = "";
+    public String requestUri = "";
 
     @JsonProperty("http_status")
-    public int http_status = 0;
+    public int httpStatus = 0;
 
     @JsonProperty("body_msg_type")
-    public String body_msg_type = "";
+    public String bodyMsgType = "";
 
     @JsonProperty("body")
     public byte[] body = new byte[0];
@@ -45,8 +45,8 @@ public class ResponseMessage {
         ResponseMessage msg = MAPPER.readValue(buf, ResponseMessage.class);
         // Ensure non-null defaults (matching Python's _convert_type behavior)
         if (msg.uuid == null) msg.uuid = "";
-        if (msg.request_uri == null) msg.request_uri = "";
-        if (msg.body_msg_type == null) msg.body_msg_type = "";
+        if (msg.requestUri == null) msg.requestUri = "";
+        if (msg.bodyMsgType == null) msg.bodyMsgType = "";
         if (msg.body == null) msg.body = new byte[0];
         if (msg.headers == null) msg.headers = new HashMap<>();
         return msg;

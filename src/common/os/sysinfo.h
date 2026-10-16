@@ -15,9 +15,9 @@ namespace os
 		uint64_t total_bytes;
 		uint64_t free_bytes;
 		uint64_t available_bytes;
-		uint64_t totalSwap_bytes;
-		uint64_t freeSwap_bytes;
-		bool swapAvailable;
+		uint64_t total_swap_bytes;
+		uint64_t free_swap_bytes;
+		bool swap_available;
 	};
 
 	std::ostream &operator<<(std::ostream &stream, const Memory &mem);

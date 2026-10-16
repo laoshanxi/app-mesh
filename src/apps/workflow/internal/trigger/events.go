@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"sync"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 // EventListener subscribes to App Mesh events and dispatches to matching workflows.

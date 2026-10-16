@@ -188,7 +188,8 @@ class AppMeshClient:
               - None (default): Auto — use the App Mesh CA bundle if installed, otherwise system CAs.
               - True: Use system CAs.
               - False: Disable verification (insecure, must be requested explicitly).
-              - str: Path to custom CA or directory (must exist). To include system CAs, combine them into one file (e.g., cat custom_ca.pem /etc/ssl/certs/ca-certificates.crt > combined_ca.pem).
+              - str: Path to custom CA or directory (must exist). To include system CAs, combine them into one file (e.g.,
+                  cat custom_ca.pem /etc/ssl/certs/ca-certificates.crt > combined_ca.pem).
             ssl_client_cert: SSL client certificate file(s):
               - str: Single PEM file with cert+key
               - tuple: (cert_path, key_path)
@@ -409,7 +410,8 @@ class AppMeshClient:
         output_position = int(resp.headers["X-Output-Position"]) if "X-Output-Position" in resp.headers else None
         exit_code = int(resp.headers["X-Exit-Code"]) if "X-Exit-Code" in resp.headers else None
 
-        return AppOutput(status_code=resp.status_code, output=resp.text, output_position=output_position, exit_code=exit_code)
+        return AppOutput(status_code=resp.status_code, output=resp.text, output_position=output_position,
+            exit_code=exit_code)
 
     def check_app_health(self, app_name: str) -> bool:
         """Check the health status of an application."""
@@ -428,9 +430,11 @@ class AppMeshClient:
         ``subscription_id``.
         """
         if subscribe_events and not self.supports_events:
-            warnings.warn("subscribe_events has no effect over HTTP; use AppMeshClientTCP/AppMeshClientWSS to receive events", RuntimeWarning, stacklevel=2)
+            warnings.warn("subscribe_events has no effect over HTTP; use AppMeshClientTCP/AppMeshClientWSS to receive "
+                "events", RuntimeWarning, stacklevel=2)
         query = {"subscribe_events": ",".join(subscribe_events)} if subscribe_events else None
-        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", query=query, body=app.to_dict())
+        resp = self._request_http(AppMeshClient._Method.PUT, path=f"/appmesh/app/{app.name}", query=query,
+            body=app.to_dict())
         return App(resp.json())
 
     def delete_app(self, app_name: str) -> bool:
@@ -801,7 +805,8 @@ class AppMeshClient:
         response_data = resp.json()
         return AppRun(self, response_data["name"], response_data["process_uuid"])
 
-    def wait_for_async_run(self, run: AppRun, stdout_handler: Optional[OutputHandler] = None, timeout: int = 0) -> Optional[int]:
+    def wait_for_async_run(self, run: AppRun, stdout_handler: Optional[OutputHandler] = None,
+        timeout: int = 0) -> Optional[int]:
         """Wait for an asynchronous run to finish.
 
         Args:
@@ -846,7 +851,8 @@ class AppMeshClient:
                 return app_out.exit_code
 
             if app_out.status_code != HTTPStatus.OK:
-                raise AppMeshConnectionError(f"wait_for_async_run polling failed for '{run.app_name}' with status {app_out.status_code}: {app_out.output}")
+                raise AppMeshConnectionError(f"wait_for_async_run polling failed for '{run.app_name}' with status "
+                    "{app_out.status_code}: {app_out.output}")
 
             if timeout > 0 and (datetime.now() - start).total_seconds() > timeout:
                 # timeout

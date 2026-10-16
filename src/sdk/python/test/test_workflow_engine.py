@@ -774,7 +774,8 @@ jobs:
     needs: [shard1, shard2, shard3]
     steps:
       - name: merge
-        command: "echo merged ${{ jobs.shard1.steps.work.stdout }} ${{ jobs.shard2.steps.work.stdout }} ${{ jobs.shard3.steps.work.stdout }}"
+        command: "echo merged ${{ jobs.shard1.steps.work.stdout }} ${{ jobs.shard2.steps.work.stdout }} ${{ "
+            "jobs.shard3.steps.work.stdout }}"
 """
         try:
             run_id, status, detail = self.add_run_wait(name, yaml)

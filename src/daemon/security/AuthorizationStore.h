@@ -13,8 +13,7 @@
 class AuthorizationPrincipal
 {
 public:
-	AuthorizationPrincipal(std::string principalId, Principal::Kind kind,
-		std::string issuer, std::string subject);
+	AuthorizationPrincipal(std::string principalId, Principal::Kind kind, std::string issuer, std::string subject);
 
 	const std::string &id() const;
 	const std::string &issuer() const;

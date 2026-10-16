@@ -5,13 +5,9 @@
 #include "../Configuration.h"
 #include "../process/AppProcess.h"
 
-EventDispatcher::EventDispatcher()
-{
-}
+EventDispatcher::EventDispatcher() {}
 
-EventDispatcher::~EventDispatcher()
-{
-}
+EventDispatcher::~EventDispatcher() {}
 
 EventDispatcher *EventDispatcher::instance()
 {
@@ -19,8 +15,8 @@ EventDispatcher *EventDispatcher::instance()
 	return &inst;
 }
 
-std::string EventDispatcher::subscribe(const std::string &appName, uint32_t eventMask,
-									   const std::string &userName, DeliveryCallback cb, ConnectionKey connKey)
+std::string EventDispatcher::subscribe(const std::string &appName, uint32_t eventMask, const std::string &userName,
+									   DeliveryCallback cb, ConnectionKey connKey)
 {
 	const static char fname[] = "EventDispatcher::subscribe() ";
 
@@ -72,9 +68,7 @@ void EventDispatcher::dispatch(const std::string &appName, AppEventType type, co
 	// delivery, without holding the subscription-index mutex in a callback.
 	std::lock_guard deliveryGuard(m_deliveryMutex);
 	auto seq = m_sequence++;
-	auto now = std::chrono::duration_cast<std::chrono::seconds>(
-				   std::chrono::system_clock::now().time_since_epoch())
-				   .count();
+	auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
 	std::string eventTypeStr = eventTypeToString(type);
 	Json::Value eventPayload;
@@ -233,7 +227,8 @@ bool EventDispatcher::hasStdoutSubscriber(const std::string &appName) const
 		auto [first, last] = m_appIndex.equal_range(key);
 		for (auto it = first; it != last; ++it)
 		{
-			if (auto subIt = m_subscriptions.find(it->second); subIt != m_subscriptions.end() &&
+			if (auto subIt = m_subscriptions.find(it->second);
+				subIt != m_subscriptions.end() &&
 				(subIt->second.eventMask & static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT)))
 				return true;
 		}

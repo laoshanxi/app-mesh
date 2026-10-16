@@ -25,8 +25,7 @@ use crate::error::AppMeshError;
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
-pub const DEFAULT_OAUTH_SCOPES: &[&str] =
-    &["openid", "profile", "email", "groups", "offline_access"];
+pub const DEFAULT_OAUTH_SCOPES: &[&str] = &["openid", "profile", "email", "groups", "offline_access"];
 pub const DEFAULT_OAUTH_SCOPE: &str = "openid profile email groups offline_access";
 
 const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -38,10 +37,7 @@ const DEFAULT_REFRESH_LEEWAY: u64 = 60;
 const DEFAULT_CLIENT_ID: &str = "appmesh-cli";
 
 fn now_epoch_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
 fn default_device_expires_in() -> u64 {
@@ -87,11 +83,8 @@ pub struct OAuthConfig {
 }
 
 impl OAuthConfig {
-    pub fn new(
-        issuer: impl Into<String>,
-        access_url: impl Into<String>,
-        client_id: impl Into<String>,
-    ) -> Self {
+    /// Creates an OAuth configuration for an issuer.
+    pub fn new(issuer: impl Into<String>, access_url: impl Into<String>, client_id: impl Into<String>) -> Self {
         Self {
             issuer: issuer.into(),
             access_url: access_url.into(),
@@ -104,21 +97,25 @@ impl OAuthConfig {
         }
     }
 
+    /// Sets the expected `aud` claim of tokens.
     pub fn audience(mut self, audience: impl Into<String>) -> Self {
         self.audience = Some(audience.into());
         self
     }
 
+    /// Overrides the URL the browser opens first (front-channel entry).
     pub fn browser_entry(mut self, entry: impl Into<String>) -> Self {
         self.browser_entry = Some(entry.into());
         self
     }
 
+    /// Allows plain-HTTP endpoints (local development only).
     pub fn allow_plain_http(mut self, allow: bool) -> Self {
         self.allow_plain_http = allow;
         self
     }
 
+    /// Replaces the requested scopes.
     pub fn scopes(mut self, scopes: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.scopes = scopes.into_iter().map(Into::into).collect();
         self
@@ -226,13 +223,14 @@ fn proactive_refresh_at(expires_in: u64) -> Option<u64> {
 }
 
 impl TokenSet {
+    /// True once the access token is past its `exp` claim.
     pub fn is_expired(&self) -> bool {
         self.expires_at.is_some_and(|expires_at| expires_at <= now_epoch_seconds())
     }
 
+    /// True when the token expires within `leeway`, so a refresh should start now.
     pub fn needs_refresh(&self, leeway: Duration) -> bool {
-        self.expires_at
-            .is_some_and(|expires_at| expires_at <= now_epoch_seconds().saturating_add(leeway.as_secs()))
+        self.expires_at.is_some_and(|expires_at| expires_at <= now_epoch_seconds().saturating_add(leeway.as_secs()))
     }
 
     /// Whether the token is due for proactive refresh: at `refresh_at` when
@@ -250,17 +248,9 @@ impl TokenSet {
             .get("access_token")
             .and_then(Value::as_str)
             .filter(|token| !token.is_empty())
-            .ok_or_else(|| {
-                AppMeshError::AuthenticationFailed(
-                    "The token response did not include an access_token".into(),
-                )
-            })?
+            .ok_or_else(|| AppMeshError::AuthenticationFailed("The token response did not include an access_token".into()))?
             .to_string();
-        let token_type = value
-            .get("token_type")
-            .and_then(Value::as_str)
-            .unwrap_or("Bearer")
-            .to_string();
+        let token_type = value.get("token_type").and_then(Value::as_str).unwrap_or("Bearer").to_string();
         if !token_type.eq_ignore_ascii_case("bearer") {
             return Err(AppMeshError::AuthenticationFailed(format!(
                 "The authentication service returned unsupported token type '{}'",
@@ -347,6 +337,7 @@ pub struct StaticAccessTokenProvider {
 }
 
 impl StaticAccessTokenProvider {
+    /// Creates a provider that always returns the given static token; empty tokens are rejected.
     pub fn new(token: impl Into<String>) -> Result<Self> {
         let token = token.into();
         if token.trim().is_empty() {
@@ -363,9 +354,7 @@ impl TokenProvider for StaticAccessTokenProvider {
     }
 
     async fn force_refresh(&self) -> Result<TokenSet> {
-        Err(AppMeshError::AuthenticationFailed(
-            "static access tokens cannot be refreshed".into(),
-        ))
+        Err(AppMeshError::AuthenticationFailed("static access tokens cannot be refreshed".into()))
     }
 
     async fn revoke(&self) -> Result<bool> {
@@ -411,8 +400,7 @@ pub struct OAuthClient {
     token_update_pending: AtomicBool,
 }
 
-type TokenUpdateCallback =
-    dyn Fn(&TokenSet) -> std::result::Result<(), AppMeshError> + Send + Sync;
+type TokenUpdateCallback = dyn Fn(&TokenSet) -> std::result::Result<(), AppMeshError> + Send + Sync;
 
 impl std::fmt::Debug for OAuthClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -437,10 +425,7 @@ impl OAuthClient {
     /// for private CAs, proxies, and application-specific timeouts.
     pub async fn with_http_client(config: OAuthConfig, http: reqwest::Client) -> Result<Self> {
         let config = config.validate_and_normalize()?;
-        let discovery_url = format!(
-            "{}/.well-known/openid-configuration",
-            config.access_url.trim_end_matches('/')
-        );
+        let discovery_url = format!("{}/.well-known/openid-configuration", config.access_url.trim_end_matches('/'));
         let response = http.get(discovery_url).send().await?;
         let status = response.status();
         if !status.is_success() {
@@ -470,12 +455,7 @@ impl OAuthClient {
         Ok(Self::from_parts(config, metadata, http, None))
     }
 
-    fn from_parts(
-        config: OAuthConfig,
-        metadata: OidcMetadata,
-        http: reqwest::Client,
-        tokens: Option<TokenSet>,
-    ) -> Self {
+    fn from_parts(config: OAuthConfig, metadata: OidcMetadata, http: reqwest::Client, tokens: Option<TokenSet>) -> Self {
         Self {
             config,
             metadata,
@@ -515,12 +495,7 @@ impl OAuthClient {
             return Err(AppMeshError::ConfigurationError("refresh token is empty".into()));
         }
         let token_url = normalize_base_url(&token_url.into(), "token_url", options.allow_plain_http)?;
-        let client_id = options
-            .client_id
-            .as_deref()
-            .unwrap_or(DEFAULT_CLIENT_ID)
-            .trim()
-            .to_string();
+        let client_id = options.client_id.as_deref().unwrap_or(DEFAULT_CLIENT_ID).trim().to_string();
         if client_id.is_empty() {
             return Err(AppMeshError::ConfigurationError("OAuth client_id is required".into()));
         }
@@ -553,14 +528,17 @@ impl OAuthClient {
         Ok(Self::from_parts(config, metadata, http, Some(tokens)))
     }
 
+    /// Returns the OAuth configuration this client was built from.
     pub fn config(&self) -> &OAuthConfig {
         &self.config
     }
 
+    /// Returns the discovered OIDC provider metadata.
     pub fn metadata(&self) -> &OidcMetadata {
         &self.metadata
     }
 
+    /// Adopts a previously issued token set (persisted session) after validating it.
     pub fn restore(&self, tokens: TokenSet) -> Result<()> {
         if tokens.access_token.trim().is_empty() {
             return Err(AppMeshError::ConfigurationError("stored access token is empty".into()));
@@ -570,6 +548,7 @@ impl OAuthClient {
         Ok(())
     }
 
+    /// Drops the stored token set; the next request needs a fresh login.
     pub fn clear(&self) {
         *self.lock_tokens() = None;
     }
@@ -581,16 +560,13 @@ impl OAuthClient {
     where
         F: Fn(&TokenSet) -> std::result::Result<(), AppMeshError> + Send + Sync + 'static,
     {
-        *self
-            .token_update_callback
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some(Arc::new(callback));
+        *self.token_update_callback.lock().unwrap_or_else(|error| error.into_inner()) = Some(Arc::new(callback));
     }
 
+    /// Builds the authorization-code request the browser should be sent to.
     pub fn authorization_request(&self, redirect_uri: &str) -> Result<AuthorizationRequest> {
-        let redirect = Url::parse(redirect_uri).map_err(|error| {
-            AppMeshError::ConfigurationError(format!("invalid OAuth redirect URI: {}", error))
-        })?;
+        let redirect = Url::parse(redirect_uri)
+            .map_err(|error| AppMeshError::ConfigurationError(format!("invalid OAuth redirect URI: {}", error)))?;
         if redirect.scheme() != "http"
             || !redirect.host_str().is_some_and(is_loopback_host)
             || !redirect.username().is_empty()
@@ -630,11 +606,8 @@ impl OAuthClient {
         })
     }
 
-    pub async fn exchange_authorization_code(
-        &self,
-        code: &str,
-        request: &AuthorizationRequest,
-    ) -> Result<TokenSet> {
+    /// Exchanges an authorization code (with PKCE verifier) for tokens.
+    pub async fn exchange_authorization_code(&self, code: &str, request: &AuthorizationRequest) -> Result<TokenSet> {
         if code.trim().is_empty() {
             return Err(AppMeshError::AuthenticationFailed("authorization code is empty".into()));
         }
@@ -654,27 +627,19 @@ impl OAuthClient {
         self.install_response(response, None)
     }
 
+    /// Starts the device-authorization flow, returning user/verification URLs.
     pub async fn request_device_authorization(&self) -> Result<DeviceAuthorization> {
-        let endpoint = self.metadata.device_authorization_endpoint.as_deref().ok_or_else(|| {
-            AppMeshError::UnsupportedFeature {
+        let endpoint =
+            self.metadata.device_authorization_endpoint.as_deref().ok_or_else(|| AppMeshError::UnsupportedFeature {
                 feature: "OAuth device authorization".into(),
                 transport: "authentication service discovery metadata".into(),
-            }
-        })?;
-        let scope = self.user_scope();
-        let response = self
-            .post_form(endpoint, &[("client_id", &self.config.client_id), ("scope", &scope)])
-            .await?;
-        let mut device: DeviceAuthorization = serde_json::from_value(response)?;
-        let verification_uri = device
-            .verification_uri
-            .as_deref()
-            .filter(|uri| !uri.is_empty())
-            .ok_or_else(|| {
-                AppMeshError::AuthenticationFailed(
-                    "The device response did not include a verification_uri".into(),
-                )
             })?;
+        let scope = self.user_scope();
+        let response = self.post_form(endpoint, &[("client_id", &self.config.client_id), ("scope", &scope)]).await?;
+        let mut device: DeviceAuthorization = serde_json::from_value(response)?;
+        let verification_uri = device.verification_uri.as_deref().filter(|uri| !uri.is_empty()).ok_or_else(|| {
+            AppMeshError::AuthenticationFailed("The device response did not include a verification_uri".into())
+        })?;
         validate_published_endpoint(&self.config, verification_uri)?;
         // Front-channel URL: the browser must reach the entry from this machine.
         // The entry (when advertised) serves the login assets and the relay;
@@ -693,6 +658,7 @@ impl OAuthClient {
         Ok(device)
     }
 
+    /// Polls the token endpoint once during the device flow.
     pub async fn poll_device_token(&self, device: &DeviceAuthorization) -> Result<DevicePoll> {
         let endpoint = self.access_endpoint(&self.metadata.token_endpoint)?;
         let request = self.http.post(endpoint).form(&[
@@ -711,25 +677,18 @@ impl OAuthClient {
         match code.as_str() {
             "authorization_pending" => Ok(DevicePoll::Pending),
             "slow_down" => Ok(DevicePoll::SlowDown),
-            _ => Err(AppMeshError::AuthenticationFailed(oauth_error_message(
-                &code,
-                description.as_deref(),
-            ))),
+            _ => Err(AppMeshError::AuthenticationFailed(oauth_error_message(&code, description.as_deref()))),
         }
     }
 
-    pub async fn wait_for_device_authorization(
-        &self,
-        device: &DeviceAuthorization,
-    ) -> Result<TokenSet> {
+    /// Polls the device flow until the user approves or it times out.
+    pub async fn wait_for_device_authorization(&self, device: &DeviceAuthorization) -> Result<TokenSet> {
         let mut interval = device.interval.max(1);
         let deadline = tokio::time::Instant::now() + Duration::from_secs(device.expires_in);
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                return Err(AppMeshError::AuthenticationFailed(
-                    "device authorization expired before approval".into(),
-                ));
+                return Err(AppMeshError::AuthenticationFailed("device authorization expired before approval".into()));
             }
             tokio::time::sleep(Duration::from_secs(interval).min(remaining)).await;
             match self.poll_device_token(device).await? {
@@ -746,9 +705,7 @@ impl OAuthClient {
     /// password source. External identities use PKCE or device authorization.
     pub async fn password_login(&self, username: &str, password: &str) -> Result<TokenSet> {
         if username.trim().is_empty() || password.is_empty() {
-            return Err(AppMeshError::AuthenticationFailed(
-                "A username and password are required".into(),
-            ));
+            return Err(AppMeshError::AuthenticationFailed("A username and password are required".into()));
         }
         let scope = self.user_scope();
         let endpoint = self.access_endpoint(&self.metadata.token_endpoint)?;
@@ -774,18 +731,19 @@ impl OAuthClient {
         self.install_response(response, None)
     }
 
+    /// Refreshes the access token with the stored refresh token.
     pub async fn refresh(&self) -> Result<TokenSet> {
         let _guard = self.refresh_lock.lock().await;
         self.refresh_locked().await
     }
 
     async fn refresh_locked(&self) -> Result<TokenSet> {
-        let previous = self.snapshot_tokens().ok_or_else(|| {
-            AppMeshError::AuthenticationFailed("no token set is available".into())
-        })?;
-        let refresh_token = previous.refresh_token.clone().ok_or_else(|| {
-            AppMeshError::AuthenticationFailed("no refresh token is available".into())
-        })?;
+        let previous =
+            self.snapshot_tokens().ok_or_else(|| AppMeshError::AuthenticationFailed("no token set is available".into()))?;
+        let refresh_token = previous
+            .refresh_token
+            .clone()
+            .ok_or_else(|| AppMeshError::AuthenticationFailed("no refresh token is available".into()))?;
         let endpoint = self.access_endpoint(&self.metadata.token_endpoint)?;
         let response = self
             .http
@@ -825,10 +783,9 @@ impl OAuthClient {
             let Some(tokens) = self.snapshot_tokens() else {
                 return Ok(false);
             };
-            for (token, hint) in [
-                (tokens.refresh_token.as_deref(), "refresh_token"),
-                (Some(tokens.access_token.as_str()), "access_token"),
-            ] {
+            for (token, hint) in
+                [(tokens.refresh_token.as_deref(), "refresh_token"), (Some(tokens.access_token.as_str()), "access_token")]
+            {
                 let Some(token) = token else { continue };
                 let endpoint = self.access_endpoint(endpoint)?;
                 let request = self.http.post(endpoint).form(&[
@@ -849,12 +806,11 @@ impl OAuthClient {
         result
     }
 
+    /// Fetches the userinfo document for the current access token.
     pub async fn userinfo(&self) -> Result<Value> {
-        let endpoint = self.metadata.userinfo_endpoint.as_deref().ok_or_else(|| {
-            AppMeshError::UnsupportedFeature {
-                feature: "OIDC userinfo".into(),
-                transport: "authentication service discovery metadata".into(),
-            }
+        let endpoint = self.metadata.userinfo_endpoint.as_deref().ok_or_else(|| AppMeshError::UnsupportedFeature {
+            feature: "OIDC userinfo".into(),
+            transport: "authentication service discovery metadata".into(),
         })?;
         let token = <Self as TokenProvider>::access_token(self).await?;
         let response = self.http.get(self.access_endpoint(endpoint)?).bearer_auth(token).send().await?;
@@ -891,11 +847,7 @@ impl OAuthClient {
     /// fails, `Err` is returned even though login itself already succeeded: the new
     /// tokens are active in memory, and `token_update_pending` stays set so the next
     /// `access_token()` call retries the persistence.
-    fn install_response(
-        &self,
-        response: Value,
-        previous_refresh_token: Option<String>,
-    ) -> Result<TokenSet> {
+    fn install_response(&self, response: Value, previous_refresh_token: Option<String>) -> Result<TokenSet> {
         let tokens = TokenSet::from_response(&response, previous_refresh_token)?;
         *self.lock_tokens() = Some(tokens.clone());
         self.token_update_pending.store(true, Ordering::Release);
@@ -904,11 +856,7 @@ impl OAuthClient {
     }
 
     fn persist_token_update(&self, tokens: &TokenSet) -> Result<()> {
-        let callback = self
-            .token_update_callback
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .clone();
+        let callback = self.token_update_callback.lock().unwrap_or_else(|error| error.into_inner()).clone();
         if let Some(callback) = callback {
             callback(tokens)?;
         }
@@ -985,15 +933,11 @@ impl OAuthClient {
 
     async fn validate_id_token(&self, response: &Value, expected_nonce: &str) -> Result<()> {
         let id_token = response.get("id_token").and_then(Value::as_str).ok_or_else(|| {
-            AppMeshError::AuthenticationFailed(
-                "The authorization response did not include an ID token".into(),
-            )
+            AppMeshError::AuthenticationFailed("The authorization response did not include an ID token".into())
         })?;
         let (header, claims, signing_input, signature) = decode_jwt(id_token)?;
         if header.alg != "RS256" || header.kid.is_empty() {
-            return Err(AppMeshError::AuthenticationFailed(
-                "The ID token must use RS256 with a kid".into(),
-            ));
+            return Err(AppMeshError::AuthenticationFailed("The ID token must use RS256 with a kid".into()));
         }
 
         let mut jwk = self.find_signing_key(&header.kid);
@@ -1009,24 +953,18 @@ impl OAuthClient {
             || jwk.alg.as_deref().is_some_and(|alg| alg != "RS256")
             || jwk.key_use.as_deref().is_some_and(|key_use| key_use != "sig")
         {
-            return Err(AppMeshError::AuthenticationFailed(
-                "The selected key is not an RS256 signing key".into(),
-            ));
+            return Err(AppMeshError::AuthenticationFailed("The selected key is not an RS256 signing key".into()));
         }
         let modulus = URL_SAFE_NO_PAD.decode(
             jwk.n
                 .as_deref()
-                .ok_or_else(|| {
-                    AppMeshError::AuthenticationFailed("The RSA signing key has no modulus".into())
-                })?
+                .ok_or_else(|| AppMeshError::AuthenticationFailed("The RSA signing key has no modulus".into()))?
                 .as_bytes(),
         )?;
         let exponent = URL_SAFE_NO_PAD.decode(
             jwk.e
                 .as_deref()
-                .ok_or_else(|| {
-                    AppMeshError::AuthenticationFailed("The RSA signing key has no exponent".into())
-                })?
+                .ok_or_else(|| AppMeshError::AuthenticationFailed("The RSA signing key has no exponent".into()))?
                 .as_bytes(),
         )?;
         RsaPublicKeyComponents { n: &modulus, e: &exponent }
@@ -1055,9 +993,8 @@ impl OAuthClient {
 #[async_trait]
 impl TokenProvider for OAuthClient {
     async fn access_token(&self) -> Result<String> {
-        let tokens = self.snapshot_tokens().ok_or_else(|| {
-            AppMeshError::AuthenticationFailed("no token set is available".into())
-        })?;
+        let tokens =
+            self.snapshot_tokens().ok_or_else(|| AppMeshError::AuthenticationFailed("no token set is available".into()))?;
         if self.token_update_pending.load(Ordering::Acquire) {
             self.persist_token_update(&tokens)?;
         }
@@ -1082,9 +1019,7 @@ impl TokenProvider for OAuthClient {
         if self.snapshot_tokens().and_then(|tokens| tokens.refresh_token).is_some() {
             self.refresh().await
         } else {
-            Err(AppMeshError::AuthenticationFailed(
-                "the token provider has no refresh grant".into(),
-            ))
+            Err(AppMeshError::AuthenticationFailed("the token provider has no refresh grant".into()))
         }
     }
 
@@ -1116,19 +1051,14 @@ fn grant_scopes(scopes: &[String], refresh_token_supported: bool) -> Vec<String>
     if refresh_token_supported {
         scopes.to_vec()
     } else {
-        scopes
-            .iter()
-            .filter(|scope| scope.as_str() != OFFLINE_ACCESS_SCOPE)
-            .cloned()
-            .collect()
+        scopes.iter().filter(|scope| scope.as_str() != OFFLINE_ACCESS_SCOPE).cloned().collect()
     }
 }
 
 fn normalize_base_url(value: &str, field: &str, allow_plain_http: bool) -> Result<String> {
     let value = value.trim().trim_end_matches('/');
-    let parsed = Url::parse(value).map_err(|error| {
-        AppMeshError::ConfigurationError(format!("invalid {} URL: {}", field, error))
-    })?;
+    let parsed =
+        Url::parse(value).map_err(|error| AppMeshError::ConfigurationError(format!("invalid {} URL: {}", field, error)))?;
     if !matches!(parsed.scheme(), "http" | "https")
         || parsed.host_str().is_none()
         || !parsed.username().is_empty()
@@ -1143,7 +1073,8 @@ fn normalize_base_url(value: &str, field: &str, allow_plain_http: bool) -> Resul
     }
     if parsed.scheme() == "http" && !allow_plain_http && !parsed.host_str().is_some_and(is_loopback_host) {
         return Err(AppMeshError::ConfigurationError(format!(
-            "{} must use HTTPS unless it targets loopback; set --auth-allow-http (APPMESH_AUTH_ALLOW_HTTP=1) to allow plain HTTP on a trusted network",
+            "{} must use HTTPS unless it targets loopback; set --auth-allow-http (APPMESH_AUTH_ALLOW_HTTP=1) \
+                to allow plain HTTP on a trusted network",
             field
         )));
     }
@@ -1151,8 +1082,7 @@ fn normalize_base_url(value: &str, field: &str, allow_plain_http: bool) -> Resul
 }
 
 fn is_loopback_host(host: &str) -> bool {
-    host.eq_ignore_ascii_case("localhost")
-        || host.parse::<std::net::IpAddr>().is_ok_and(|address| address.is_loopback())
+    host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|address| address.is_loopback())
 }
 
 fn validate_published_endpoint(config: &OAuthConfig, endpoint: &str) -> Result<()> {
@@ -1208,24 +1138,14 @@ fn classify_token_endpoint_error(status: StatusCode, body: &[u8]) -> TokenEndpoi
 
 fn oauth_error(body: &[u8]) -> (String, Option<String>) {
     let value = serde_json::from_slice::<Value>(body).unwrap_or(Value::Null);
-    let code = value
-        .get("error")
-        .and_then(Value::as_str)
-        .unwrap_or("oauth_request_failed")
-        .to_string();
-    let description = value
-        .get("error_description")
-        .and_then(Value::as_str)
-        .map(|description| sanitize_oauth_text(description, 512));
+    let code = value.get("error").and_then(Value::as_str).unwrap_or("oauth_request_failed").to_string();
+    let description =
+        value.get("error_description").and_then(Value::as_str).map(|description| sanitize_oauth_text(description, 512));
     (code, description)
 }
 
 fn sanitize_oauth_text(value: &str, limit: usize) -> String {
-    value
-        .chars()
-        .filter(|character| !character.is_control() || *character == ' ')
-        .take(limit)
-        .collect()
+    value.chars().filter(|character| !character.is_control() || *character == ' ').take(limit).collect()
 }
 
 fn oauth_error_message(code: &str, description: Option<&str>) -> String {
@@ -1252,9 +1172,7 @@ struct JwtHeader {
 fn decode_jwt(token: &str) -> Result<(JwtHeader, Value, String, Vec<u8>)> {
     let parts: Vec<_> = token.split('.').collect();
     if parts.len() != 3 || parts.iter().any(|part| part.is_empty()) {
-        return Err(AppMeshError::AuthenticationFailed(
-            "The authentication service returned a malformed ID token".into(),
-        ));
+        return Err(AppMeshError::AuthenticationFailed("The authentication service returned a malformed ID token".into()));
     }
     let header: JwtHeader = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[0])?)?;
     let claims: Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1])?)?;
@@ -1265,11 +1183,7 @@ fn decode_jwt(token: &str) -> Result<(JwtHeader, Value, String, Vec<u8>)> {
 /// Validate the claims in an ID token whose RS256 signature was already verified
 /// against the issuer's discovered JWKS. The ID token is never retained or sent to
 /// App Mesh.
-fn validate_id_token_claims(
-    claims: &Value,
-    config: &OAuthConfig,
-    expected_nonce: &str,
-) -> Result<()> {
+fn validate_id_token_claims(claims: &Value, config: &OAuthConfig, expected_nonce: &str) -> Result<()> {
     if claims.get("nonce").and_then(Value::as_str) != Some(expected_nonce) {
         return Err(AppMeshError::AuthenticationFailed("ID token nonce mismatch".into()));
     }
@@ -1285,28 +1199,19 @@ fn validate_id_token_claims(
         return Err(AppMeshError::AuthenticationFailed("ID token audience mismatch".into()));
     }
     if let Some(Value::Array(audiences)) = claims.get("aud") {
-        if audiences.len() > 1
-            && claims.get("azp").and_then(Value::as_str) != Some(config.client_id.as_str())
-        {
-            return Err(AppMeshError::AuthenticationFailed(
-                "ID token authorized-party mismatch".into(),
-            ));
+        if audiences.len() > 1 && claims.get("azp").and_then(Value::as_str) != Some(config.client_id.as_str()) {
+            return Err(AppMeshError::AuthenticationFailed("ID token authorized-party mismatch".into()));
         }
     }
-    let expiry = claims.get("exp").and_then(Value::as_u64).ok_or_else(|| {
-        AppMeshError::AuthenticationFailed("ID token has no valid expiration".into())
-    })?;
+    let expiry = claims
+        .get("exp")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| AppMeshError::AuthenticationFailed("ID token has no valid expiration".into()))?;
     if expiry <= now_epoch_seconds() {
         return Err(AppMeshError::AuthenticationFailed("ID token is expired".into()));
     }
-    if claims
-        .get("nbf")
-        .and_then(Value::as_u64)
-        .is_some_and(|not_before| not_before > now_epoch_seconds())
-    {
-        return Err(AppMeshError::AuthenticationFailed(
-            "ID token is not valid yet".into(),
-        ));
+    if claims.get("nbf").and_then(Value::as_u64).is_some_and(|not_before| not_before > now_epoch_seconds()) {
+        return Err(AppMeshError::AuthenticationFailed("ID token is not valid yet".into()));
     }
     Ok(())
 }
@@ -1386,8 +1291,10 @@ mod tests {
         )
         .unwrap();
         assert!(config.refresh_token);
+
         let config: OAuthConfig = serde_json::from_str(
-            r#"{"issuer":"https://auth.example","access_url":"https://auth.example","client_id":"appmesh-cli","refresh_token":false}"#,
+            r#"{"issuer":"https://auth.example","access_url":"https://auth.example",
+                "client_id":"appmesh-cli","refresh_token":false}"#,
         )
         .unwrap();
         assert!(!config.refresh_token);
@@ -1399,9 +1306,7 @@ mod tests {
         // already refreshed): the current token comes back without a grant,
         // so no HTTP call is needed to prove it.
         let client = test_client(Some(token_set(Some("refresh"))));
-        let tokens = <OAuthClient as TokenProvider>::refresh_access_token(&client, "stale-token")
-            .await
-            .unwrap();
+        let tokens = <OAuthClient as TokenProvider>::refresh_access_token(&client, "stale-token").await.unwrap();
         assert_eq!(tokens.access_token, "access");
         assert_eq!(tokens.refresh_token.as_deref(), Some("refresh"));
     }
@@ -1557,20 +1462,17 @@ mod tests {
     fn refresh_margin_is_thirty_seconds_or_ten_percent() {
         // Contract: proactive refresh within max(30s, 10% of lifetime) of expiry.
         // 900s lifetime: 10% wins, refresh at T-90s, not the legacy 60s leeway.
-        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 900}), None)
-            .unwrap();
+        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 900}), None).unwrap();
         assert_eq!(tokens.refresh_at, Some(tokens.expires_at.unwrap() - 90));
         assert!(!tokens.refresh_due());
 
         // 60s lifetime: the 30s floor wins, refresh at T-30s, not immediately.
-        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 60}), None)
-            .unwrap();
+        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 60}), None).unwrap();
         assert_eq!(tokens.refresh_at, Some(tokens.expires_at.unwrap() - 30));
         assert!(!tokens.refresh_due());
 
         // expires_in 0: lifetime unknown, no proactive refresh is scheduled.
-        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 0}), None)
-            .unwrap();
+        let tokens = TokenSet::from_response(&serde_json::json!({"access_token": "a", "expires_in": 0}), None).unwrap();
         assert_eq!(tokens.refresh_at, None);
 
         // A token at or past its refresh instant is due.
@@ -1584,8 +1486,7 @@ mod tests {
         // Sessions persisted before refresh_at existed deserialize without it
         // and keep the 60s leeway off expires_at.
         let mut tokens: TokenSet =
-            serde_json::from_str(r#"{"access_token":"access","refresh_token":"refresh","token_type":"Bearer"}"#)
-                .unwrap();
+            serde_json::from_str(r#"{"access_token":"access","refresh_token":"refresh","token_type":"Bearer"}"#).unwrap();
         assert_eq!(tokens.refresh_at, None);
         assert!(!tokens.refresh_due());
         tokens.expires_at = Some(now_epoch_seconds() + 90);

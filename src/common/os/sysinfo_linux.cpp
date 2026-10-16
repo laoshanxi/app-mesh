@@ -32,15 +32,15 @@ namespace os
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 3, 23))
 		mem->total_bytes = static_cast<uint64_t>(info.totalram) * info.mem_unit;
 		mem->free_bytes = static_cast<uint64_t>(info.freeram) * info.mem_unit;
-		mem->totalSwap_bytes = static_cast<uint64_t>(info.totalswap) * info.mem_unit;
-		mem->freeSwap_bytes = static_cast<uint64_t>(info.freeswap) * info.mem_unit;
-		mem->swapAvailable = true;
+		mem->total_swap_bytes = static_cast<uint64_t>(info.totalswap) * info.mem_unit;
+		mem->free_swap_bytes = static_cast<uint64_t>(info.freeswap) * info.mem_unit;
+		mem->swap_available = true;
 #else
 		mem->total_bytes = (info.totalram);
 		mem->free_bytes = (info.freeram);
-		mem->totalSwap_bytes = (info.totalswap);
-		mem->freeSwap_bytes = (info.freeswap);
-		mem->swapAvailable = true;
+		mem->total_swap_bytes = (info.totalswap);
+		mem->free_swap_bytes = (info.freeswap);
+		mem->swap_available = true;
 #endif
 
 		// MemAvailable includes reclaimable memory.
@@ -135,17 +135,16 @@ namespace os
 				for (const auto &it : cpuInfo)
 				{
 					const int cpu = it.first;
-					auto topologyValue = [cpu](const char *name) -> int {
-						std::ifstream topologyFile("/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/" + name);
+					auto topologyValue = [cpu](const char *name) -> int
+					{
+						std::ifstream topologyFile("/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/" +
+												   name);
 						int value = -1;
 						return topologyFile >> value ? value : -1;
 					};
 					const int core = it.second.first >= 0 ? it.second.first : topologyValue("core_id");
 					const int socket = it.second.second >= 0 ? it.second.second : topologyValue("physical_package_id");
-					results.push_back(CPU(
-						it.first,
-						core >= 0 ? core : it.first,
-						socket >= 0 ? socket : 0));
+					results.push_back(CPU(it.first, core >= 0 ? core : it.first, socket >= 0 ? socket : 0));
 				}
 
 				initialized.store(true, std::memory_order_release);

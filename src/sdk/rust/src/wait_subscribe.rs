@@ -70,12 +70,14 @@ async fn finish(
     result: Option<WaitDone>,
 ) -> Result<Option<i32>, AppMeshError> {
     // On Disconnected the demuxer is stopped, so skip unsubscribe (it could never
-    // get a response — matches the Go SDK). Delete the run app only on a real exit:
-    // on timeout/disconnect it may still be running; on REMOVED it is already gone.
+    // get a response — matches the Go SDK). Delete the run app only on a real,
+    // parseable exit: on timeout/disconnect it may still be running; on REMOVED it
+    // is already gone; on a missing exit_code the failure must surface, and the
+    // Python SDK skips the delete there too.
     if result != Some(WaitDone::Disconnected) {
         let _ = client.unsubscribe(subscription_id).await;
     }
-    if matches!(result, Some(WaitDone::Exit(_)) | Some(WaitDone::MissingExitCode)) {
+    if matches!(result, Some(WaitDone::Exit(_))) {
         let _ = client.delete_app(app_name).await;
     }
 
@@ -105,8 +107,7 @@ pub(crate) async fn run_and_wait_subscribe(
     let (done_tx, done_rx) = watch::channel(None::<WaitDone>);
     let done_tx: DoneSender = Arc::new(Mutex::new(Some(done_tx)));
 
-    let on_event =
-        make_event_callback(Arc::clone(&delivered_until), Arc::clone(&done_tx), stdout_handler.clone());
+    let on_event = make_event_callback(Arc::clone(&delivered_until), Arc::clone(&done_tx), stdout_handler.clone());
 
     // Run the app, then subscribe with specific app_name
     let app_run = client.run_app_async(app, max_time, lifecycle).await?;
@@ -114,8 +115,7 @@ pub(crate) async fn run_and_wait_subscribe(
     // Subscribe with specific app_name (no wildcard permission needed)
     let sub = client.subscribe(&app_run.app_name, Some(&["STDOUT", "EXIT", "REMOVED"]), Some(on_event)).await?;
 
-    let result = backfill_and_wait(client, &app_run, &delivered_until, &done_tx, &stdout_handler, done_rx, timeout)
-        .await;
+    let result = backfill_and_wait(client, &app_run, &delivered_until, &done_tx, &stdout_handler, done_rx, timeout).await;
 
     let code = finish(client, &app_run.app_name, &sub.subscription_id, result).await?;
     Ok((app_run, code))
@@ -132,13 +132,11 @@ pub(crate) async fn wait_for_async_run_subscribe(
     let (done_tx, done_rx) = watch::channel(None::<WaitDone>);
     let done_tx: DoneSender = Arc::new(Mutex::new(Some(done_tx)));
 
-    let on_event =
-        make_event_callback(Arc::clone(&delivered_until), Arc::clone(&done_tx), stdout_handler.clone());
+    let on_event = make_event_callback(Arc::clone(&delivered_until), Arc::clone(&done_tx), stdout_handler.clone());
 
     let sub = client.subscribe(&run.app_name, Some(&["STDOUT", "EXIT", "REMOVED"]), Some(on_event)).await?;
 
-    let result =
-        backfill_and_wait(client, run, &delivered_until, &done_tx, &stdout_handler, done_rx, timeout).await;
+    let result = backfill_and_wait(client, run, &delivered_until, &done_tx, &stdout_handler, done_rx, timeout).await;
 
     finish(client, &run.app_name, &sub.subscription_id, result).await
 }
@@ -198,10 +196,7 @@ fn deliver(chunk: &[u8], pos: i64, delivered_until: &AtomicI64, stdout_handler: 
         if end <= current {
             return;
         }
-        if delivered_until
-            .compare_exchange(current, end, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-        {
+        if delivered_until.compare_exchange(current, end, Ordering::AcqRel, Ordering::Acquire).is_ok() {
             if let Some(ref handler) = stdout_handler {
                 let start = if pos < current { (current - pos) as usize } else { 0 };
                 let start_pos = if pos < current { current } else { pos };
@@ -236,12 +231,12 @@ mod tests {
         outcome
     }
 
-    // Conformance: S6 (partial) — a negative exit code (signal kill, e.g. -2 =
-    // SIGINT) classifies as a real exit, never as an error sentinel; see
+    // Conformance: S6 (partial) — a negative exit code (signal kill, e.g. -2 = SIGINT) classifies as a real exit, never as
+    // an error sentinel; see
     // docs/source/SDKContract.md.
     #[test]
     fn conformance_s6_negative_exit_code_is_exit() {
-        assert!(matches!(fire("EXIT", json!({"exit_code": -2})), Some(WaitDone::Exit(-2))));
+        assert!(matches!(fire("EXIT", json!({"exit_code" : -2})), Some(WaitDone::Exit(-2))));
         // A missing exit_code is a distinct outcome, not a fake exit code.
         assert!(matches!(fire("EXIT", json!({})), Some(WaitDone::MissingExitCode)));
     }

@@ -41,6 +41,7 @@ namespace os
 	Process makeProcess(const ProcessStatus &status, const std::string &cmdline);
 
 	/// BFS a parent->children map; returns every descendant of rootPid (rootPid excluded).
-	std::unordered_set<pid_t> collectDescendants(pid_t rootPid, const std::unordered_map<pid_t, std::vector<pid_t>> &children);
+	std::unordered_set<pid_t> collectDescendants(pid_t rootPid,
+												 const std::unordered_map<pid_t, std::vector<pid_t>> &children);
 
 } // namespace os

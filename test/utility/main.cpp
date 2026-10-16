@@ -1,10 +1,10 @@
 // test/utility/main.cpp
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
-#include "../../src/common/Utility.h"
 #include "../../src/common/UriParser.hpp"
-#include "../../src/common/os/proc.h"
+#include "../../src/common/Utility.h"
 #include "../../src/common/json.h"
+#include "../../src/common/os/proc.h"
 #include "../../src/daemon/rest/EventTypes.h"
 #include <boost/algorithm/string_regex.hpp>
 #include <catch.hpp>
@@ -234,9 +234,8 @@ TEST_CASE("resolveHostAddress", "[Utility]")
 			REQUIRE_FALSE(resolved.empty());
 			struct in_addr v4;
 			struct in6_addr v6;
-			const bool numeric = resolved.find(':') != std::string::npos
-				? inet_pton(AF_INET6, resolved.c_str(), &v6) == 1
-				: inet_pton(AF_INET, resolved.c_str(), &v4) == 1;
+			const bool numeric = resolved.find(':') != std::string::npos ? inet_pton(AF_INET6, resolved.c_str(), &v6) == 1
+																		 : inet_pton(AF_INET, resolved.c_str(), &v4) == 1;
 			REQUIRE(numeric);
 		}
 	}
@@ -256,9 +255,8 @@ TEST_CASE("resolveHostAddress", "[Utility]")
 		{
 			struct in_addr v4;
 			struct in6_addr v6;
-			const bool numeric = resolved.find(':') != std::string::npos
-				? inet_pton(AF_INET6, resolved.c_str(), &v6) == 1
-				: inet_pton(AF_INET, resolved.c_str(), &v4) == 1;
+			const bool numeric = resolved.find(':') != std::string::npos ? inet_pton(AF_INET6, resolved.c_str(), &v6) == 1
+																		 : inet_pton(AF_INET, resolved.c_str(), &v4) == 1;
 			REQUIRE(numeric);
 		}
 	}
@@ -296,12 +294,11 @@ TEST_CASE("yaml-json conversion", "[Utility]")
 	// Empty YAML collections must convert to empty JSON collections, not null:
 	// authorization.yaml ships `service_principal_roles: {}` and `roles: []`, and the
 	// AuthorizationStore rejects them with "must be an object/array" if they parse as null.
-	const auto root = Utility::yamlToJson(YAML::Load(
-		"Authorization:\n"
-		"  service_principal_roles: {}\n"
-		"  principals:\n"
-		"    system:appmesh:\n"
-		"      roles: []\n"));
+	const auto root = Utility::yamlToJson(YAML::Load("Authorization:\n"
+													 "  service_principal_roles: {}\n"
+													 "  principals:\n"
+													 "    system:appmesh:\n"
+													 "      roles: []\n"));
 	REQUIRE(root.isObject());
 	REQUIRE(root["Authorization"].isObject());
 	REQUIRE(root["Authorization"]["service_principal_roles"].isObject());
@@ -323,8 +320,7 @@ TEST_CASE("yaml-json conversion", "[Utility]")
 	// Quoted scalars stay strings even when the text looks like bool/number/null:
 	// app env values (e.g. auth-dex DEX_CLIENT_CREDENTIAL_GRANT_ENABLED_BY_DEFAULT)
 	// are read with get<std::string>() and a coerced boolean aborts daemon startup.
-	const auto quoted = Utility::yamlToJson(YAML::Load(
-		"a: \"true\"\nb: \"3\"\nc: \"null\"\nd: \"+08\"\n"));
+	const auto quoted = Utility::yamlToJson(YAML::Load("a: \"true\"\nb: \"3\"\nc: \"null\"\nd: \"+08\"\n"));
 	REQUIRE(quoted["a"].asString() == "true");
 	REQUIRE(quoted["b"].asString() == "3");
 	REQUIRE(quoted["c"].asString() == "null");
@@ -457,10 +453,7 @@ TEST_CASE("fileBytesToUtf8", "[Utility]")
 		REQUIRE(Utility::fileBytesToUtf8(chinese) == chinese);
 	}
 
-	SECTION("UTF-8 BOM is stripped")
-	{
-		REQUIRE(Utility::fileBytesToUtf8("\xEF\xBB\xBFhello") == "hello");
-	}
+	SECTION("UTF-8 BOM is stripped") { REQUIRE(Utility::fileBytesToUtf8("\xEF\xBB\xBFhello") == "hello"); }
 
 	SECTION("GBK converts to UTF-8")
 	{
@@ -526,9 +519,9 @@ TEST_CASE("fileBytesToUtf8", "[Utility]")
 	{
 		REQUIRE(Utility::utf8IncompleteTailBytes("abc") == 0);
 		REQUIRE(Utility::utf8IncompleteTailBytes("abc\xE4\xB8\xAD") == 0); // complete character
-		REQUIRE(Utility::utf8IncompleteTailBytes("abc\xE6\x96") == 2);	 // 3-byte char missing one byte
+		REQUIRE(Utility::utf8IncompleteTailBytes("abc\xE6\x96") == 2);     // 3-byte char missing one byte
 		REQUIRE(Utility::utf8IncompleteTailBytes("abc\xF0\x9F\x98") == 3); // 4-byte char missing one byte
-		REQUIRE(Utility::utf8IncompleteTailBytes("abc\x96") == 0);		  // continuation byte without a lead
+		REQUIRE(Utility::utf8IncompleteTailBytes("abc\x96") == 0);         // continuation byte without a lead
 		REQUIRE(Utility::utf8IncompleteTailBytes(std::string("\x80\x80", 2)) == 0);
 	}
 }
@@ -542,7 +535,8 @@ TEST_CASE("EventTypes - parseEventMask", "[EventTypes]")
 	REQUIRE(parseEventMask("STDOUT") == static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT));
 
 	// Multiple events
-	uint32_t expected = static_cast<uint32_t>(AppEventType::PROCESS_START) | static_cast<uint32_t>(AppEventType::PROCESS_EXIT);
+	uint32_t expected =
+		static_cast<uint32_t>(AppEventType::PROCESS_START) | static_cast<uint32_t>(AppEventType::PROCESS_EXIT);
 	REQUIRE(parseEventMask("START,EXIT") == expected);
 
 	// "ALL" keyword
@@ -576,19 +570,21 @@ TEST_CASE("JSON dump golden baseline", "[json golden]")
 	j["esc"] = std::string("a\"b\\c\nd\te\001f");
 
 	const std::string cn = "\xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7"; // 新加卷
-	REQUIRE(JSON::dump(j) == R"({"chinese":")" + cn + R"(","dbl1":0.10000000000000001,"dbl2":99.0,"dbl3":12.34,"esc":"a\"b\\c\nd\te\u0001f","int64":9223372036854775807,"uint":18446744073709551615})"); // hex-escape: MSVC reads non-BOM sources as ACP and mis-lexes non-ASCII raw strings
+	REQUIRE(
+		JSON::dump(j) ==
+		R"({"chinese":")" + cn +
+			R"(","dbl1":0.10000000000000001,"dbl2":99.0,"dbl3":12.34,"esc":"a\"b\\c\nd\te\u0001f","int64":9223372036854775807,"uint":18446744073709551615})"); // hex-escape: MSVC reads non-BOM sources as ACP and mis-lexes non-ASCII raw strings
 
 	// Pretty format is jsoncpp native (only used for debug logging)
-	REQUIRE(JSON::dump(j, 2) ==
-			"{\n"
-			"  \"chinese\" : \"\xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7\",\n"
-			"  \"dbl1\" : 0.10000000000000001,\n"
-			"  \"dbl2\" : 99.0,\n"
-			"  \"dbl3\" : 12.34,\n"
-			"  \"esc\" : \"a\\\"b\\\\c\\nd\\te\\u0001f\",\n"
-			"  \"int64\" : 9223372036854775807,\n"
-			"  \"uint\" : 18446744073709551615\n"
-			"}");
+	REQUIRE(JSON::dump(j, 2) == "{\n"
+								"  \"chinese\" : \"\xE6\x96\xB0\xE5\x8A\xA0\xE5\x8D\xB7\",\n"
+								"  \"dbl1\" : 0.10000000000000001,\n"
+								"  \"dbl2\" : 99.0,\n"
+								"  \"dbl3\" : 12.34,\n"
+								"  \"esc\" : \"a\\\"b\\\\c\\nd\\te\\u0001f\",\n"
+								"  \"int64\" : 9223372036854775807,\n"
+								"  \"uint\" : 18446744073709551615\n"
+								"}");
 
 	// EventDispatcher::dispatch splices ,"subscription_id":"..." before the
 	// final '}' by raw string concat: compact output must stay single-line,
@@ -608,12 +604,12 @@ TEST_CASE("JSON::dump invalid UTF-8 golden baseline", "[json golden]")
 	// A non-UTF-8 argv in pstree must not fail the whole reply. JSON::dump
 	// replaces each invalid run with U+FFFD and always produces valid UTF-8.
 	const std::string invalidInputs[] = {
-		"ab\xE6\x96\xFF",	  // truncated 3-byte sequence + bad byte
-		"\xC0\xAF",			  // overlong '/'
-		"\xED\xA0\x80",		  // surrogate D800
-		"\xF5\x80\x80\x80",	  // above U+10FFFF
-		"\x80",				  // lone continuation
-		"\xFF",				  // bad lead byte
+		"ab\xE6\x96\xFF",   // truncated 3-byte sequence + bad byte
+		"\xC0\xAF",         // overlong '/'
+		"\xED\xA0\x80",     // surrogate D800
+		"\xF5\x80\x80\x80", // above U+10FFFF
+		"\x80",             // lone continuation
+		"\xFF",             // bad lead byte
 	};
 	for (const auto &input : invalidInputs)
 	{
@@ -622,7 +618,7 @@ TEST_CASE("JSON::dump invalid UTF-8 golden baseline", "[json golden]")
 		std::string body;
 		REQUIRE_NOTHROW(body = JSON::dump(payload));
 		REQUIRE(body.find("\xEF\xBF\xBD") != std::string::npos); // U+FFFD present
-		REQUIRE(Utility::isValidUTF8(body));						  // output is valid UTF-8
+		REQUIRE(Utility::isValidUTF8(body));                     // output is valid UTF-8
 	}
 
 	// Byte-exact run folding: one U+FFFD per invalid run (lead + continuations
@@ -656,10 +652,10 @@ TEST_CASE("JSON parse golden baseline", "[json golden]")
 	const std::string rejected[] = {
 		"",
 		"{",
-		"{\"a\":1,}",						// trailing comma
-		"{\"a\":1} xx",						// trailing garbage
-		"// c\n{\"a\":1}",					// comment
-		"{\"a\":NaN}",						// not a JSON number
+		"{\"a\":1,}",      // trailing comma
+		"{\"a\":1} xx",    // trailing garbage
+		"// c\n{\"a\":1}", // comment
+		"{\"a\":NaN}",     // not a JSON number
 		"{\"a\":-Infinity}",
 		std::string("{\"a\":\"\xE6\x96\xFF\"}"), // invalid UTF-8 raw
 	};
@@ -724,12 +720,11 @@ TEST_CASE("yaml/json round-trip golden baseline", "[json golden]")
 	// The config/app persistence path: quoted scalars keep their string type,
 	// plain scalars infer bool/null/number, and jsonToYaml re-quotes strings
 	// that would otherwise change type on reload (app env "true").
-	const auto j = Utility::yamlToJson(YAML::Load(
-		"quoted: \"123\"\n"
-		"plain: 123\n"
-		"qtrue: \"true\"\n"
-		"plain_true: true\n"
-		"qnull: \"null\"\n"));
+	const auto j = Utility::yamlToJson(YAML::Load("quoted: \"123\"\n"
+												  "plain: 123\n"
+												  "qtrue: \"true\"\n"
+												  "plain_true: true\n"
+												  "qnull: \"null\"\n"));
 	REQUIRE(j["quoted"].isString());
 	REQUIRE(j["quoted"].asString() == "123");
 	REQUIRE(j["plain"].isIntegral());

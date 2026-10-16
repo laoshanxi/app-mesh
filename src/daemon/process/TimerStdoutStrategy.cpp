@@ -31,16 +31,12 @@ void TimerStdoutStrategy::activate(TimerHandler &owner, const std::string &proce
 	std::lock_guard registrationGuard(state->registrationMutex);
 	state->processUuid = processUuid;
 	state->stopped.store(false, std::memory_order_release);
-	owner.registerTimer(state->timerId, 0, 1000, fname, [state]()
-						{ return onTimerDispatch(state); });
+	owner.registerTimer(state->timerId, 0, 1000, fname, [state]() { return onTimerDispatch(state); });
 	if (!isValidTimerId(state->timerId))
 		state->stopped.store(true, std::memory_order_release);
 }
 
-long TimerStdoutStrategy::dispatchedBytes() const
-{
-	return m_state->dispatchedBytes.load(std::memory_order_acquire);
-}
+long TimerStdoutStrategy::dispatchedBytes() const { return m_state->dispatchedBytes.load(std::memory_order_acquire); }
 
 void TimerStdoutStrategy::teardown()
 {

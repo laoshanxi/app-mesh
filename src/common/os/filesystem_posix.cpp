@@ -126,13 +126,15 @@ namespace os
 			int fd = ::mkstemp(buf.data());
 			if (fd == -1)
 			{
-				LOG_WAR << fname << "Failed to create temp file from template <" << tmpl << "> with error: " << last_error_msg();
+				LOG_WAR << fname << "Failed to create temp file from template <" << tmpl
+						<< "> with error: " << last_error_msg();
 				return {};
 			}
 
 			if (::fchmod(fd, mode) == -1)
 			{
-				LOG_WAR << fname << "Failed to set permissions on file <" << buf.data() << "> with error: " << last_error_msg();
+				LOG_WAR << fname << "Failed to set permissions on file <" << buf.data()
+						<< "> with error: " << last_error_msg();
 				::close(fd);
 				::unlink(buf.data());
 				LOG_DBG << fname << "file <" << buf.data() << "> removed";
@@ -144,7 +146,8 @@ namespace os
 				ssize_t written = ::write(fd, content.data(), content.size());
 				if (written == -1 || static_cast<size_t>(written) != content.size())
 				{
-					LOG_WAR << fname << "Failed to write content to file <" << buf.data() << ">, wrote " << written << " of " << content.size() << " bytes";
+					LOG_WAR << fname << "Failed to write content to file <" << buf.data() << ">, wrote " << written << " of "
+							<< content.size() << " bytes";
 					::close(fd);
 					::unlink(buf.data());
 					LOG_DBG << fname << "file <" << buf.data() << "> removed";

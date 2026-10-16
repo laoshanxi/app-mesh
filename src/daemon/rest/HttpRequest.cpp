@@ -17,9 +17,9 @@
 #include "../application/Application.h"
 #include "../security/HMACVerifier.h"
 #include "Data.h"
+#include "ReplyContext.h"
 #include "RestHandler.h"
 #include "Worker.h"
-#include "ReplyContext.h"
 
 #include "HttpRequest.h"
 
@@ -48,20 +48,15 @@ struct HttpReplyMetricState
 };
 
 HttpRequest::HttpRequest(Request &&request)
-	: m_uuid(std::move(request.uuid)),
-	  m_method(std::move(request.http_method)),
-	  m_relative_uri(std::move(request.request_uri)),
-	  m_remote_address(std::move(request.client_addr)),
-	  m_body(std::make_shared<std::vector<std::uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
-	  m_query(std::move(request.query)),
-	  m_headers(std::move(request.headers)),
-	  m_lwsRef{}, m_wsReplyContext(nullptr)
+	: m_uuid(std::move(request.uuid)), m_method(std::move(request.http_method)),
+	  m_relative_uri(std::move(request.request_uri)), m_remote_address(std::move(request.client_addr)),
+	  m_body(std::make_shared<std::vector<std::uint8_t>>(
+		  std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
+	  m_query(std::move(request.query)), m_headers(std::move(request.headers)), m_lwsRef{}, m_wsReplyContext(nullptr)
 {
 }
 
-HttpRequest::~HttpRequest()
-{
-}
+HttpRequest::~HttpRequest() {}
 
 void HttpRequest::setReplyMetricCallback(std::function<void(int)> callback)
 {
@@ -81,10 +76,7 @@ Json::Value HttpRequest::extractJson() const
 	return JSON::parse(std::string(m_body->begin(), m_body->end()));
 }
 
-bool HttpRequest::reply(web::http::status_code status) const
-{
-	return reply(m_relative_uri, m_uuid, {}, {}, status, "");
-}
+bool HttpRequest::reply(web::http::status_code status) const { return reply(m_relative_uri, m_uuid, {}, {}, status, ""); }
 
 bool HttpRequest::reply(web::http::status_code status, const Json::Value &body_data) const
 {
@@ -96,7 +88,8 @@ bool HttpRequest::reply(web::http::status_code status, const std::vector<std::ui
 	return reply(m_relative_uri, m_uuid, body_data, {}, status, web::http::mime_types::application_octetstream);
 }
 
-bool HttpRequest::reply(web::http::status_code status, const Json::Value &body_data, const std::map<std::string, std::string> &headers) const
+bool HttpRequest::reply(web::http::status_code status, const Json::Value &body_data,
+						const std::map<std::string, std::string> &headers) const
 {
 	// JSON::dump sanitizes invalid UTF-8 to U+FFFD: a reply must never fail on
 	// non-UTF-8 argv or stdout (the pstree scenario).
@@ -110,13 +103,15 @@ bool HttpRequest::reply(web::http::status_code status, std::string &body_data, c
 	return reply(status, body_data, {}, content_type);
 }
 
-bool HttpRequest::reply(web::http::status_code status, const std::string &body_data, const std::map<std::string, std::string> &headers, const std::string &content_type) const
+bool HttpRequest::reply(web::http::status_code status, const std::string &body_data,
+						const std::map<std::string, std::string> &headers, const std::string &content_type) const
 {
 	const auto bodyBytes = std::vector<std::uint8_t>(body_data.begin(), body_data.end());
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, LwsSessionRef lwsRef,
+													  std::shared_ptr<WSS::ReplyContext> ctx)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
@@ -144,15 +139,11 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, 
 	return nullptr;
 }
 
-void HttpRequest::bindTransportPrincipal(std::string principalId)
-{
-	m_transportPrincipalId = std::move(principalId);
-}
+void HttpRequest::bindTransportPrincipal(std::string principalId) { m_transportPrincipalId = std::move(principalId); }
 
 bool HttpRequest::isPersistentClientTransport() const
 {
-	return m_wsReplyContext &&
-		m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed;
+	return m_wsReplyContext && m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed;
 }
 
 bool HttpRequest::isLoopbackPeer(const std::string &addr)
@@ -177,10 +168,7 @@ bool HttpRequest::isLoopbackPeer(const std::string &addr)
 	return (ntohl(v4.s_addr) & 0xff000000U) == 0x7f000000U;
 }
 
-bool HttpRequest::isManagedPrivateTransport() const
-{
-	return isLoopbackPeer(m_remote_address);
-}
+bool HttpRequest::isManagedPrivateTransport() const { return isLoopbackPeer(m_remote_address); }
 
 std::string HttpRequest::serialize() const
 {
@@ -213,14 +201,14 @@ void HttpRequest::dump() const
 	LOG_DBG << fname << "m_remote_address:" << m_remote_address;
 	// LOG_DBG << fname << "m_body:" << *m_body;
 	for (const auto &[key, value] : m_query)
-		LOG_DBG << fname << "m_query:" << key << "="
-			<< (key == "process_key" ? "<redacted>" : value);
+		LOG_DBG << fname << "m_query:" << key << "=" << (key == "process_key" ? "<redacted>" : value);
 	// for (const auto &h : m_headers)
 	//	LOG_DBG << fname << "m_headers:" << h.first << "=" << h.second;
 }
 
 bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
-						const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
+						const std::map<std::string, std::string> &headers, const web::http::status_code &status,
+						const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequest::reply() ";
 	LOG_DBG << fname << "Replying status <" << status << "> to request <" << uuid << "> for <" << requestUri << ">";
@@ -243,7 +231,8 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 			// HTTP protocol
 			response->applyCorsHeaders();
 			response->applySecurityHeaders();
-			m_wsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()), std::move(response->headers), std::string(bodyType));
+			m_wsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()),
+										std::move(response->headers), std::string(bodyType));
 			notifyReply(status);
 			return true;
 		}
@@ -269,8 +258,7 @@ void HttpRequest::verifyHMAC() const
 {
 	const auto agent = Configuration::instance()->getApp(SEPARATE_AGENT_APP_NAME, false);
 	const auto hmacHeader = this->m_headers.find(HMAC_HTTP_HEADER);
-	if (!agent || hmacHeader == this->m_headers.end() ||
-		!agent->verifyProcessProof(this->m_uuid, hmacHeader->second))
+	if (!agent || hmacHeader == this->m_headers.end() || !agent->verifyProcessProof(this->m_uuid, hmacHeader->second))
 	{
 		throw std::invalid_argument("Verify HMAC failed");
 	}
@@ -279,7 +267,8 @@ void HttpRequest::verifyHMAC() const
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequestAutoCleanup - automatically removes app from global map on cleanup
 ////////////////////////////////////////////////////////////////////////////////
-HttpRequestAutoCleanup::HttpRequestAutoCleanup(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj)
+HttpRequestAutoCleanup::HttpRequestAutoCleanup(const std::shared_ptr<HttpRequest> &message,
+											   const std::shared_ptr<Application> &appObj)
 	: HttpRequest(*message), m_app(appObj)
 {
 }
@@ -323,8 +312,10 @@ bool HttpRequestWithTimeout::initTimer(int timeoutSeconds)
 		return false;
 	}
 
-	this->registerTimer(m_timerResponseId, 1000L * timeoutSeconds, 0, fname, std::bind(&HttpRequestWithTimeout::onTimerResponse, this));
-	LOG_DBG << fname << "registered timer " << m_timerResponseId << " for request " << this->m_uuid << " with timeout " << timeoutSeconds << " seconds";
+	this->registerTimer(m_timerResponseId, 1000L * timeoutSeconds, 0, fname,
+						std::bind(&HttpRequestWithTimeout::onTimerResponse, this));
+	LOG_DBG << fname << "registered timer " << m_timerResponseId << " for request " << this->m_uuid << " with timeout "
+			<< timeoutSeconds << " seconds";
 	return true;
 }
 
@@ -339,28 +330,17 @@ bool HttpRequestWithTimeout::onTimerResponse()
 	return false;
 }
 
-bool HttpRequestWithTimeout::replied() const
-{
-	return m_httpRequestReplyFlag.load();
-}
+bool HttpRequestWithTimeout::replied() const { return m_httpRequestReplyFlag.load(); }
 
-bool HttpRequestWithTimeout::interrupt()
-{
-	return HttpRequest::reply(web::http::status_codes::ExpectationFailed);
-}
+bool HttpRequestWithTimeout::interrupt() { return HttpRequest::reply(web::http::status_codes::ExpectationFailed); }
 
-void HttpRequestWithTimeout::id(int id)
-{
-	m_id = id;
-}
+void HttpRequestWithTimeout::id(int id) { m_id = id; }
 
-int HttpRequestWithTimeout::id()
-{
-	return m_id.load();
-}
+int HttpRequestWithTimeout::id() { return m_id.load(); }
 
-bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
-								   const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
+bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid,
+								   const std::vector<std::uint8_t> &body, const std::map<std::string, std::string> &headers,
+								   const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequestWithTimeout::reply() ";
 	LOG_DBG << fname << "Replying to request <" << uuid << ">";
@@ -376,15 +356,13 @@ bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequestOutputView - handles viewing application output with async response
 ////////////////////////////////////////////////////////////////////////////////
-HttpRequestOutputView::HttpRequestOutputView(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj)
+HttpRequestOutputView::HttpRequestOutputView(const std::shared_ptr<HttpRequest> &message,
+											 const std::shared_ptr<Application> &appObj)
 	: HttpRequest(*message), m_timerResponseId(INVALID_TIMER_ID), m_app(appObj)
 {
 }
 
-HttpRequestOutputView::~HttpRequestOutputView()
-{
-	unsubscribeRunCompletion();
-}
+HttpRequestOutputView::~HttpRequestOutputView() { unsubscribeRunCompletion(); }
 
 void HttpRequestOutputView::init()
 {
@@ -401,18 +379,22 @@ void HttpRequestOutputView::init()
 	const auto requestedRun = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_process_uuid);
 	if (timeout > 0)
 	{
-		auto weakSelf = std::weak_ptr<HttpRequestOutputView>(std::static_pointer_cast<HttpRequestOutputView>(shared_from_this()));
-		const auto subscription = app->subscribeRunCompletion(requestedRun, [weakSelf]()
+		auto weakSelf =
+			std::weak_ptr<HttpRequestOutputView>(std::static_pointer_cast<HttpRequestOutputView>(shared_from_this()));
+		const auto subscription = app->subscribeRunCompletion(requestedRun,
+															  [weakSelf]()
 															  {
-			if (auto self = weakSelf.lock())
-				self->response(); });
+																  if (auto self = weakSelf.lock())
+																	  self->response();
+															  });
 		if (subscription == Application::INVALID_RUN_COMPLETION_SUBSCRIPTION)
 		{
 			response();
 			return;
 		}
 		m_completionSubscription.store(subscription, std::memory_order_release);
-		this->registerTimer(m_timerResponseId, 1000L * timeout, 0, fname, std::bind(&HttpRequestOutputView::onTimerResponse, this));
+		this->registerTimer(m_timerResponseId, 1000L * timeout, 0, fname,
+							std::bind(&HttpRequestOutputView::onTimerResponse, this));
 		if (!isValidTimerId(m_timerResponseId))
 		{
 			unsubscribeRunCompletion();
@@ -456,7 +438,8 @@ bool HttpRequestOutputView::onTimerResponse()
 
 			long pos = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
 			int index = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
-			long maxSize = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
+			long maxSize = RestHandler::getHttpQueryValue(
+				*this, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
 			size_t timeout = 0;
 			std::string processUuid = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_process_uuid);
 			bool outputHtml = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_html).length();
@@ -514,8 +497,8 @@ bool HttpRequestOutputView::onTimerResponse()
 
 void HttpRequestOutputView::unsubscribeRunCompletion()
 {
-	const auto subscription = m_completionSubscription.exchange(
-		Application::INVALID_RUN_COMPLETION_SUBSCRIPTION, std::memory_order_acq_rel);
+	const auto subscription =
+		m_completionSubscription.exchange(Application::INVALID_RUN_COMPLETION_SUBSCRIPTION, std::memory_order_acq_rel);
 	if (auto app = m_app.lock())
 		app->unsubscribeRunCompletion(subscription);
 }
@@ -600,7 +583,8 @@ void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 	else if (queueFull)
 	{
 		LOG_WAR << fname << "task queue full (512), rejecting";
-		taskRequest->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json("task queue full, try again later"));
+		taskRequest->reply(web::http::status_codes::ServiceUnavailable,
+						   Utility::text2json("task queue full, try again later"));
 	}
 }
 
@@ -679,7 +663,8 @@ void TaskRequest::replyTask(const std::string &processKey, std::shared_ptr<void>
 	if (!activeTask)
 	{
 		LOG_WAR << fname << "no client request waiting for response";
-		replyTask->reply(web::http::status_codes::ExpectationFailed, Utility::text2json("no message request from client waiting for response"));
+		replyTask->reply(web::http::status_codes::ExpectationFailed,
+						 Utility::text2json("no message request from client waiting for response"));
 		return;
 	}
 	LOG_DBG << fname << "respond to client: " << activeTask->m_method << " " << activeTask->m_relative_uri;
@@ -691,14 +676,15 @@ void TaskRequest::replyTask(const std::string &processKey, std::shared_ptr<void>
 	replyTask->reply(web::http::status_codes::OK);
 }
 
-std::shared_ptr<HttpRequestWithTimeout> TaskRequest::releaseRepliedRequestLocked(
-	std::shared_ptr<HttpRequestWithTimeout> &request)
+std::shared_ptr<HttpRequestWithTimeout>
+TaskRequest::releaseRepliedRequestLocked(std::shared_ptr<HttpRequestWithTimeout> &request)
 {
 	const static char fname[] = "TaskRequest::releaseRepliedRequestLocked() ";
 
 	if (request && request->replied())
 	{
-		LOG_WAR << fname << "clean replied request: " << request->m_uuid << " " << request->m_method << " " << request->m_relative_uri;
+		LOG_WAR << fname << "clean replied request: " << request->m_uuid << " " << request->m_method << " "
+				<< request->m_relative_uri;
 		return std::move(request);
 	}
 	return {};

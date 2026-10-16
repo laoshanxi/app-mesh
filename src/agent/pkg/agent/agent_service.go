@@ -18,32 +18,33 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
+
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/cloud"
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/grafana"
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
-	"github.com/pkg/errors"
 )
 
 // Constants for REST paths and headers
 const (
-	REST_PATH_UPLOAD            = "/appmesh/file/upload"
-	REST_PATH_DOWNLOAD          = "/appmesh/file/download"
-	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
-	USER_AGENT_APPMESH_SDK      = "appmesh/sdk"
-	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
+	RestPathUpload          = "/appmesh/file/upload"
+	RestPathDownload        = "/appmesh/file/download"
+	HTTPUserAgentHeaderName = "User-Agent"
+	UserAgentAppmeshSDK     = "appmesh/sdk"
+	UserAgentAppmeshTCP     = "appmesh/sdk/tcp"
 
-	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
-	HTTP_HEADER_KEY_AUTHORIZATION      = "Authorization"
-	HTTP_HEADER_KEY_APPMESH_FORWARDED  = "X-AppMesh-Forwarded"
-	HTTP_HEADER_KEY_APPMESH_ROUTE      = "X-AppMesh-Forward-Route"
-	HTTP_HEADER_KEY_APPMESH_PROCESS    = "X-AppMesh-Process-Key"
-	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
-	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
-	HTTP_HEADER_KEY_File_Path          = "X-File-Path"
+	HTTPHeaderKeyXTargetHost      = "X-Target-Host"
+	HTTPHeaderKeyAuthorization    = "Authorization"
+	HTTPHeaderKeyAppmeshForwarded = "X-AppMesh-Forwarded"
+	HTTPHeaderKeyAppmeshRoute     = "X-AppMesh-Forward-Route"
+	HTTPHeaderKeyAppmeshProcess   = "X-AppMesh-Process-Key"
+	HTTPHeaderKeyXSendFileSocket  = "X-Send-File-Socket"
+	HTTPHeaderKeyXRecvFileSocket  = "X-Recv-File-Socket"
+	HTTPHeaderKeyFilePath         = "X-File-Path"
 
-	TCP_CHUNK_BLOCK_SIZE = appmesh.TCPChunkBlockSize
+	TCPChunkBlockSize = appmesh.TCPChunkBlockSize
 )
 
 func isPublicForwardRequest(r *http.Request) bool {
@@ -57,10 +58,10 @@ func isSubscriptionRequest(r *http.Request) bool {
 }
 
 func stripInternalClientProof(r *http.Request) {
-	r.Header.Del(HTTP_HEADER_KEY_APPMESH_PROCESS)
-	r.Header.Del(cloud.HTTP_HEADER_HMAC)
-	r.Header.Del(HTTP_HEADER_KEY_APPMESH_FORWARDED)
-	r.Header.Del(HTTP_HEADER_KEY_APPMESH_ROUTE)
+	r.Header.Del(HTTPHeaderKeyAppmeshProcess)
+	r.Header.Del(cloud.HeaderHMAC)
+	r.Header.Del(HTTPHeaderKeyAppmeshForwarded)
+	r.Header.Del(HTTPHeaderKeyAppmeshRoute)
 	query := r.URL.Query()
 	if _, supplied := query["process_key"]; supplied {
 		query.Del("process_key")
@@ -70,11 +71,11 @@ func stripInternalClientProof(r *http.Request) {
 
 func validateForwardBearer(ctx context.Context, localConn *Connection, authorization string) (*Response, error) {
 	request := &Request{appmesh.NewRequest()}
-	request.HttpMethod = http.MethodGet
-	request.RequestUri = "/appmesh/principal/self"
+	request.HTTPMethod = http.MethodGet
+	request.RequestURI = "/appmesh/principal/self"
 	request.ClientAddress = "agent-forward-check"
-	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
-	request.Headers[HTTP_HEADER_KEY_AUTHORIZATION] = authorization
+	request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshSDK
+	request.Headers[HTTPHeaderKeyAuthorization] = authorization
 	return localConn.sendRequestDataWithContext(ctx, request)
 }
 
@@ -85,7 +86,7 @@ func writeForwardValidationResponse(w http.ResponseWriter, response *Response) {
 	if response.BodyMsgType != "" {
 		w.Header().Set("Content-Type", response.BodyMsgType)
 	}
-	w.WriteHeader(response.HttpStatus)
+	w.WriteHeader(response.HTTPStatus)
 	if len(response.Body) > 0 {
 		if _, err := w.Write(response.Body); err != nil {
 			logger.Warnf("Failed to write forwarding authentication response: %v", err)
@@ -133,8 +134,8 @@ func getDelegateClient() *http.Client {
 		var serverCA *x509.CertPool
 		if config.ConfigData.REST.SSL.VerifyServer {
 			var err error
-			if serverCA, err = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCaPath); err != nil {
-				logger.Warnf("Failed to load delegate CA from %q: %v", config.ConfigData.REST.SSL.SSLCaPath, err)
+			if serverCA, err = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCAPath); err != nil {
+				logger.Warnf("Failed to load delegate CA from %q: %v", config.ConfigData.REST.SSL.SSLCAPath, err)
 			}
 		}
 
@@ -174,9 +175,9 @@ func MonitorConnectionResponse(conn *Connection, allowError bool) {
 
 // ListenAndServeREST starts the REST API server
 func ListenAndServeREST(ctx context.Context) error {
-	var listenAddr = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
-	var hostPort = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.TcpApiPort)
-	var wssHostPort = config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.WebSocketPort)
+	var listenAddr = config.ConfigData.REST.RESTListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RESTListenPort)
+	var hostPort = config.ConfigData.REST.RESTListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.TCPAPIPort)
+	var wssHostPort = config.ConfigData.REST.RESTListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.WebSocketPort)
 
 	hostPort = strings.Replace(hostPort, "0.0.0.0", "127.0.0.1", 1)
 	wssHostPort = strings.Replace(wssHostPort, "0.0.0.0", "127.0.0.1", 1)
@@ -194,7 +195,7 @@ func ListenAndServeREST(ctx context.Context) error {
 	}
 	logger.Infof("Established REST connection to daemon via <%s>", localConn)
 
-	corsDisabled := config.ConfigData.REST.CorsDisabled
+	corsDisabled := config.ConfigData.REST.CORSDisabled
 	utils.EnableGlobalCORS(!corsDisabled)
 	logger.Infof("CORS enabled: %v", !corsDisabled)
 
@@ -207,7 +208,7 @@ func ListenAndServeREST(ctx context.Context) error {
 	}
 
 	// Grafana
-	grafana.RegGrafanaRestHandler(router)
+	grafana.RegisterGrafanaRESTHandler(router)
 
 	// docker.sock proxy
 	RegisterDockerRoutes(router)
@@ -227,7 +228,8 @@ func ListenAndServeREST(ctx context.Context) error {
 		router.Path(authPath).Handler(authProxy)
 		router.PathPrefix(authPath + "/").Handler(authProxy)
 	} else {
-		logger.Infof("The OIDC issuer has no path. The authentication service is reached directly at <%s>.", config.OIDCData.Issuer)
+		logger.Infof("The OIDC issuer has no path. The authentication service is reached directly at <%s>.",
+			config.OIDCData.Issuer)
 	}
 
 	// Forward all remaining requests, including static content, to the daemon.
@@ -238,11 +240,15 @@ func ListenAndServeREST(ctx context.Context) error {
 
 func newAuthReverseProxy() (http.Handler, string, error) {
 	issuer, err := url.Parse(config.OIDCData.Issuer)
-	if err != nil || (issuer.Scheme != "http" && issuer.Scheme != "https") || issuer.Host == "" || issuer.Hostname() == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" {
+	if err != nil || (issuer.Scheme != "http" && issuer.Scheme != "https") || issuer.Host == "" ||
+		issuer.Hostname() == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.ForceQuery ||
+		issuer.Fragment != "" {
 		return nil, "", fmt.Errorf("invalid OIDC issuer")
 	}
 	target, err := url.Parse(config.OIDCData.AccessURL)
-	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.Hostname() == "" || target.User != nil || target.RawQuery != "" || target.ForceQuery || target.Fragment != "" {
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" ||
+		target.Hostname() == "" || target.User != nil || target.RawQuery != "" || target.ForceQuery ||
+		target.Fragment != "" {
 		return nil, "", fmt.Errorf("invalid OIDC access URL")
 	}
 	issuerPath := strings.TrimSuffix(issuer.Path, "/")
@@ -270,7 +276,7 @@ func newAuthReverseProxy() (http.Handler, string, error) {
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, proxyErr error) {
 		logger.Warnf("Authentication-service reverse proxy failed: %v", proxyErr)
-		utils.HttpError(w, "Authentication service is unavailable", http.StatusBadGateway)
+		utils.HTTPError(w, "Authentication service is unavailable", http.StatusBadGateway)
 	}
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
@@ -293,8 +299,7 @@ func newAuthReverseProxy() (http.Handler, string, error) {
 // StartHTTPSServer starts the HTTPS server with the provided router
 func StartHTTPSServer(ctx context.Context, restAgentAddr string, router *mux.Router) error {
 	// Load server certificate and key
-	serverCA, err := appmesh.LoadCertificatePair(
-		config.ConfigData.REST.SSL.SSLCertificateFile,
+	serverCA, err := appmesh.LoadCertificatePair(config.ConfigData.REST.SSL.SSLCertificateFile,
 		config.ConfigData.REST.SSL.SSLCertificateKeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to load server certificate and key: %w", err)
@@ -305,7 +310,7 @@ func StartHTTPSServer(ctx context.Context, restAgentAddr string, router *mux.Rou
 	var clientCA *x509.CertPool
 	if config.ConfigData.REST.SSL.VerifyClient {
 		clientAuth = tls.RequireAndVerifyClientCert
-		clientCA, err = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
+		clientCA, err = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCAPath)
 		if err != nil {
 			return fmt.Errorf("failed to load client CA: %w", err)
 		}
@@ -385,35 +390,35 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	localConn, err := getLocalConnection()
 	if err != nil {
 		logger.Errorf("Failed to connect to local daemon: %v", err)
-		utils.HttpError(w, "failed to connect to local service", http.StatusBadGateway)
+		utils.HTTPError(w, "failed to connect to local service", http.StatusBadGateway)
 		return
 	}
 	targetConnection := localConn
 
 	// Handle forward request
-	forwardingHost := string(r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST))
+	forwardingHost := string(r.Header.Get(HTTPHeaderKeyXTargetHost))
 	if forwardingHost != "" {
-		r.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
+		r.Header.Del(HTTPHeaderKeyXTargetHost)
 		if !isPublicForwardRequest(r) {
-			authorization := strings.TrimSpace(r.Header.Get(HTTP_HEADER_KEY_AUTHORIZATION))
+			authorization := strings.TrimSpace(r.Header.Get(HTTPHeaderKeyAuthorization))
 			if authorization == "" {
 				w.Header().Set("WWW-Authenticate", `Bearer realm="appmesh"`)
-				utils.HttpError(w, "Forwarded requests require bearer authentication", http.StatusUnauthorized)
+				utils.HTTPError(w, "Forwarded requests require bearer authentication", http.StatusUnauthorized)
 				return
 			}
 			validation, validationErr := validateForwardBearer(r.Context(), localConn, authorization)
 			if validationErr != nil {
 				logger.Errorf("Failed to validate forwarding authentication: %v", validationErr)
-				utils.HttpError(w, "authentication service is unavailable", http.StatusServiceUnavailable)
+				utils.HTTPError(w, "authentication service is unavailable", http.StatusServiceUnavailable)
 				return
 			}
-			if validation.HttpStatus < http.StatusOK || validation.HttpStatus >= http.StatusMultipleChoices {
+			if validation.HTTPStatus < http.StatusOK || validation.HTTPStatus >= http.StatusMultipleChoices {
 				writeForwardValidationResponse(w, validation)
 				return
 			}
 		}
 		if isSubscriptionRequest(r) {
-			utils.HttpError(w, "Forwarded subscriptions require TCP or WebSocket", http.StatusMethodNotAllowed)
+			utils.HTTPError(w, "Forwarded subscriptions require TCP or WebSocket", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -425,28 +430,29 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			(forwardingURL.Path != "" && forwardingURL.Path != "/") || forwardingURL.RawQuery != "" ||
 			forwardingURL.Fragment != "" {
 			logger.Errorf("Failed to parse target host %q: %v", forwardingHost, err)
-			utils.HttpError(w, "invalid target host", http.StatusBadRequest)
+			utils.HTTPError(w, "invalid target host", http.StatusBadRequest)
 			return
 		}
-		r.Header.Set(HTTP_HEADER_KEY_APPMESH_FORWARDED, "1")
+		r.Header.Set(HTTPHeaderKeyAppmeshForwarded, "1")
 
 		// If no port is provided, use HTTP forwarding
-		if forwardingURL.Port() == "" || forwardingURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
+		if forwardingURL.Port() == "" || forwardingURL.Port() == strconv.Itoa(config.ConfigData.REST.RESTListenPort) {
 			// Forward with HTTP protocol
 			ForwardAppMeshRequest(w, r, forwardingURL)
 			return
 		} else {
 			// Forward with TCP protocol over a pooled connection
-			forwardingAddr, resolveErr := net.ResolveTCPAddr("tcp", net.JoinHostPort(forwardingURL.Hostname(), forwardingURL.Port()))
+			forwardingAddr, resolveErr := net.ResolveTCPAddr("tcp", net.JoinHostPort(forwardingURL.Hostname(),
+				forwardingURL.Port()))
 			if resolveErr != nil {
 				logger.Errorf("Failed to resolve target host %q: %v", forwardingHost, resolveErr)
-				utils.HttpError(w, "invalid target host", http.StatusBadRequest)
+				utils.HTTPError(w, "invalid target host", http.StatusBadRequest)
 				return
 			}
 			targetConnection, err = getOrCreateConnection(forwardingAddr, config.ConfigData.REST.SSL.VerifyServer, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
-				utils.HttpError(w, "failed to connect to target host", http.StatusBadGateway)
+				utils.HTTPError(w, "failed to connect to target host", http.StatusBadGateway)
 				return
 			}
 		}
@@ -460,7 +466,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	// drop subscribe_events on app registration.
 	if forwardingHost == "" {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/subscribe") {
-			utils.HttpError(w, "Subscribe requires a persistent connection (TCP or WebSocket)", http.StatusMethodNotAllowed)
+			utils.HTTPError(w, "Subscribe requires a persistent connection (TCP or WebSocket)", http.StatusMethodNotAllowed)
 			return
 		}
 		query := r.URL.Query()
@@ -472,18 +478,18 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 
 	request, err := newRequestFromHTTP(r)
 	if err != nil {
-		utils.HttpError(w, err.Error(), http.StatusInternalServerError)
+		utils.HTTPError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
+	request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshSDK
 	if targetConnection != localConn {
-		request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_TCP
+		request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshTCP
 		// File download & upload
-		switch request.RequestUri {
-		case REST_PATH_DOWNLOAD:
-			request.Headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = "true"
-		case REST_PATH_UPLOAD:
-			request.Headers[HTTP_HEADER_KEY_X_Send_File_Socket] = "true"
+		switch request.RequestURI {
+		case RestPathDownload:
+			request.Headers[HTTPHeaderKeyXRecvFileSocket] = "true"
+		case RestPathUpload:
+			request.Headers[HTTPHeaderKeyXSendFileSocket] = "true"
 		}
 	}
 
@@ -496,7 +502,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			deleteConnection(targetConnection)
 		}
 
-		utils.HttpError(w, "failed to process request", http.StatusBadGateway)
+		utils.HTTPError(w, "failed to process request", http.StatusBadGateway)
 		return
 	}
 
@@ -523,7 +529,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	// A bare host must not fall back to the scheme default port (443): use the configured REST listen port
 	targetHost := forwardingHost.Host
 	if forwardingHost.Port() == "" {
-		targetHost = net.JoinHostPort(forwardingHost.Hostname(), strconv.Itoa(config.ConfigData.REST.RestListenPort))
+		targetHost = net.JoinHostPort(forwardingHost.Hostname(), strconv.Itoa(config.ConfigData.REST.RESTListenPort))
 	}
 	// Create a new request to be sent to the target server
 	targetURL := fmt.Sprintf("%s://%s%s?%s", forwardingHost.Scheme, targetHost, r.URL.Path, r.URL.RawQuery)
@@ -531,7 +537,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
 	if err != nil {
 		logger.Errorf("Failed to create forward request: %v", err)
-		utils.HttpError(w, "failed to create forward request", http.StatusInternalServerError)
+		utils.HTTPError(w, "failed to create forward request", http.StatusInternalServerError)
 		return
 	}
 	req.Header = r.Header.Clone() // Copy headers from the original request
@@ -540,7 +546,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	resp, err := getDelegateClient().Do(req)
 	if err != nil {
 		logger.Errorf("Forward request failed with error: %v", err)
-		utils.HttpError(w, "failed to forward request", http.StatusBadGateway)
+		utils.HTTPError(w, "failed to forward request", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close() // Ensure the response body is closed after use
@@ -558,7 +564,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	// Copy the response body to the original response
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
-		utils.HttpError(w, "Failed to copy response body", http.StatusInternalServerError)
+		utils.HTTPError(w, "Failed to copy response body", http.StatusInternalServerError)
 	}
 }
 
@@ -583,12 +589,12 @@ func decodeFilePathHeader(value string) string {
 func HandleRESTFile(w http.ResponseWriter, r *http.Request, data *Response) error {
 	logger.Debugf("Requesting path: %s", r.URL.Path)
 
-	filePath := decodeFilePathHeader(r.Header.Get(HTTP_HEADER_KEY_File_Path))
+	filePath := decodeFilePathHeader(r.Header.Get(HTTPHeaderKeyFilePath))
 
 	switch {
-	case r.Method == http.MethodGet && r.URL.Path == REST_PATH_DOWNLOAD && data.HttpStatus == http.StatusOK:
+	case r.Method == http.MethodGet && r.URL.Path == RestPathDownload && data.HTTPStatus == http.StatusOK:
 		return HandleDownload(w, r, data, filePath)
-	case r.Method == http.MethodPost && r.URL.Path == REST_PATH_UPLOAD && data.HttpStatus == http.StatusOK:
+	case r.Method == http.MethodPost && r.URL.Path == RestPathUpload && data.HTTPStatus == http.StatusOK:
 		return HandleUpload(w, r, data, filePath)
 	default:
 		return errors.New(string(data.Body))

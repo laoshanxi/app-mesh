@@ -17,7 +17,8 @@ public:
 	void dump();
 
 	virtual Json::Value AsJson();
-	static std::shared_ptr<ResourceLimitation> FromJson(const Json::Value &jsonObj, const std::string &appName) noexcept(false);
+	static std::shared_ptr<ResourceLimitation> FromJson(const Json::Value &jsonObj,
+														const std::string &appName) noexcept(false);
 
 	int m_memoryMb;
 	int m_memoryVirtMb;

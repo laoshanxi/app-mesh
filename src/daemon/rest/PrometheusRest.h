@@ -33,9 +33,8 @@ namespace prometheus
 class CounterMetric
 {
 public:
-	explicit CounterMetric(std::shared_ptr<prometheus::Registry> registry,
-						   prometheus::Family<prometheus::Counter> &family, const std::string &name,
-						   std::map<std::string, std::string> label);
+	explicit CounterMetric(std::shared_ptr<prometheus::Registry> registry, prometheus::Family<prometheus::Counter> &family,
+						   const std::string &name, std::map<std::string, std::string> label);
 
 	~CounterMetric();
 
@@ -55,9 +54,8 @@ private:
 class GaugeMetric
 {
 public:
-	explicit GaugeMetric(std::shared_ptr<prometheus::Registry> registry,
-						 prometheus::Family<prometheus::Gauge> &family, const std::string &name,
-						 std::map<std::string, std::string> label);
+	explicit GaugeMetric(std::shared_ptr<prometheus::Registry> registry, prometheus::Family<prometheus::Gauge> &family,
+						 const std::string &name, std::map<std::string, std::string> label);
 
 	~GaugeMetric();
 
@@ -101,16 +99,19 @@ public:
 	/// <param name="metricName"></param>
 	/// <param name="metricHelp"></param>
 	/// <param name="labels"></param>
-	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
+	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp,
+													 const std::map<std::string, std::string> &labels);
 	/// <summary>
 	/// Create a Gauge Metric, the metric unregisters itself from the registry on destruction
 	/// </summary>
 	/// <param name="metricName"></param>
 	/// <param name="metricHelp"></param>
 	/// <param name="labels"></param>
-	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
+	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp,
+												 const std::map<std::string, std::string> &labels);
 	std::shared_ptr<HistogramMetric> createPromHistogram(const std::string &metricName, const std::string &metricHelp,
-		const std::map<std::string, std::string> &labels, const std::vector<double> &buckets);
+														 const std::map<std::string, std::string> &labels,
+														 const std::vector<double> &buckets);
 	/// <summary>
 	/// Collect all metrics
 	/// </summary>
@@ -159,7 +160,8 @@ constexpr auto METRIC_APP_PATH = "/appmesh/metrics";
 constexpr auto PROM_METRIC_NAME_appmesh_metrics_scrapes_total = "appmesh_metrics_scrapes_total";
 constexpr auto PROM_METRIC_HELP_appmesh_metrics_scrapes_total = "Total number of App Mesh metrics scrapes";
 constexpr auto PROM_METRIC_NAME_appmesh_metrics_collection_errors_total = "appmesh_metrics_collection_errors_total";
-constexpr auto PROM_METRIC_HELP_appmesh_metrics_collection_errors_total = "Total number of App Mesh metrics collection errors";
+constexpr auto PROM_METRIC_HELP_appmesh_metrics_collection_errors_total =
+	"Total number of App Mesh metrics collection errors";
 constexpr auto PROM_METRIC_NAME_appmesh_process_open_fds = "appmesh_process_open_fds";
 constexpr auto PROM_METRIC_HELP_appmesh_process_open_fds = "Open file descriptors in the App Mesh daemon process tree";
 constexpr auto PROM_METRIC_NAME_appmesh_process_id = "appmesh_process_id";
@@ -171,17 +173,24 @@ constexpr auto PROM_METRIC_HELP_appmesh_http_request_duration_seconds = "App Mes
 constexpr auto PROM_METRIC_NAME_appmesh_http_requests_in_flight = "appmesh_http_requests_in_flight";
 constexpr auto PROM_METRIC_HELP_appmesh_http_requests_in_flight = "Current App Mesh HTTP requests in flight";
 constexpr auto PROM_METRIC_NAME_appmesh_application_process_starts_total = "appmesh_application_process_starts_total";
-constexpr auto PROM_METRIC_HELP_appmesh_application_process_starts_total = "Total application process start attempts, including attach and recovery";
-constexpr auto PROM_METRIC_NAME_appmesh_application_metrics_collection_errors_total = "appmesh_application_metrics_collection_errors_total";
-constexpr auto PROM_METRIC_HELP_appmesh_application_metrics_collection_errors_total = "Total process metric collection errors for an application";
+constexpr auto PROM_METRIC_HELP_appmesh_application_process_starts_total =
+	"Total application process start attempts, including attach and recovery";
+constexpr auto PROM_METRIC_NAME_appmesh_application_metrics_collection_errors_total =
+	"appmesh_application_metrics_collection_errors_total";
+constexpr auto PROM_METRIC_HELP_appmesh_application_metrics_collection_errors_total =
+	"Total process metric collection errors for an application";
 constexpr auto PROM_METRIC_NAME_appmesh_application_process_id = "appmesh_application_process_id";
 constexpr auto PROM_METRIC_HELP_appmesh_application_process_id = "Application process ID, or zero while stopped";
-constexpr auto PROM_METRIC_NAME_appmesh_application_process_resident_memory_bytes = "appmesh_application_process_resident_memory_bytes";
-constexpr auto PROM_METRIC_HELP_appmesh_application_process_resident_memory_bytes = "Resident memory in the application process tree";
+constexpr auto PROM_METRIC_NAME_appmesh_application_process_resident_memory_bytes =
+	"appmesh_application_process_resident_memory_bytes";
+constexpr auto PROM_METRIC_HELP_appmesh_application_process_resident_memory_bytes =
+	"Resident memory in the application process tree";
 constexpr auto PROM_METRIC_NAME_appmesh_application_process_cpu_usage_cores = "appmesh_application_process_cpu_usage_cores";
-constexpr auto PROM_METRIC_HELP_appmesh_application_process_cpu_usage_cores = "CPU usage of the application process tree in CPU cores";
+constexpr auto PROM_METRIC_HELP_appmesh_application_process_cpu_usage_cores =
+	"CPU usage of the application process tree in CPU cores";
 constexpr auto PROM_METRIC_NAME_appmesh_application_process_open_fds = "appmesh_application_process_open_fds";
-constexpr auto PROM_METRIC_HELP_appmesh_application_process_open_fds = "Open file descriptors in the application process tree";
+constexpr auto PROM_METRIC_HELP_appmesh_application_process_open_fds =
+	"Open file descriptors in the application process tree";
 constexpr auto PROM_METRIC_NAME_appmesh_application_enabled = "appmesh_application_enabled";
 constexpr auto PROM_METRIC_HELP_appmesh_application_enabled = "Whether the application is enabled";
 constexpr auto PROM_METRIC_NAME_appmesh_application_running = "appmesh_application_running";

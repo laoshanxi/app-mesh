@@ -27,7 +27,7 @@ type AppMeshClientTCP struct {
 // NewTCPClient creates a TCP transport client that reuses the standard App Mesh client API.
 func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 	// Determine the connection URL, defaulting to DefaultTCPURI if not provided.
-	uri := options.AppMeshUri
+	uri := options.AppMeshURI
 	if uri == "" {
 		uri = DefaultTCPURI
 	}
@@ -45,6 +45,7 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 		TCPConnection: NewTCPConnection(),
 		baseURL:       *parsed,
 		psk:           options.PSK,
+		connectAddr:   connectAddr,
 	}
 
 	// Create the AppMeshClientTCP.
@@ -57,7 +58,14 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 		tcpReq:        tcpRequester,
 	}
 
-	if err := tcpRequester.Connect(connectAddr, tcpClient.sslClientCert, tcpClient.sslClientCertKey, tcpClient.sslCAFile); err != nil {
+	// Retain the TLS parameters so a request after a transport error can
+	// transparently re-establish the connection.
+	tcpRequester.sslClientCert = tcpClient.sslClientCert
+	tcpRequester.sslClientCertKey = tcpClient.sslClientCertKey
+	tcpRequester.sslCAFile = tcpClient.sslCAFile
+
+	if err := tcpRequester.Connect(connectAddr, tcpClient.sslClientCert, tcpClient.sslClientCertKey,
+		tcpClient.sslCAFile); err != nil {
 		return nil, err
 	}
 	return tcpClient, nil
@@ -76,9 +84,24 @@ func (c *AppMeshClientTCP) SendMessage(ctx context.Context, buffer []byte) error
 	return c.tcpReq.TCPConnection.SendMessage(ctx, buffer)
 }
 
+// ensureNoActiveDemuxer rejects TCP file transfers while the event demuxer owns
+// the read side: the demuxer read loop would steal the raw (non-msgpack) chunk
+// frames and corrupt the transfer (mirrors the Python SDK).
+func (c *AppMeshClientTCP) ensureNoActiveDemuxer() error {
+	if demux := c.tcpReq.getDemuxer(); demux != nil && demux.isRunning() {
+		return errors.New("file transfer is not supported while an event subscription is active over the same TCP " +
+			"connection; use a separate client instance")
+	}
+	return nil
+}
+
 // DownloadFileContext downloads a file through the TCP file-socket side channel.
 // When applyFileAttributes is true, returned POSIX metadata is applied locally best-effort.
-func (c *AppMeshClientTCP) DownloadFileContext(ctx context.Context, remoteFile, localFile string, applyFileAttributes bool) error {
+func (c *AppMeshClientTCP) DownloadFileContext(ctx context.Context, remoteFile, localFile string,
+	applyFileAttributes bool) error {
+	if err := c.ensureNoActiveDemuxer(); err != nil {
+		return err
+	}
 	if remoteFile == "" {
 		return errors.New("remote file path cannot be empty")
 	}
@@ -97,7 +120,8 @@ func (c *AppMeshClientTCP) DownloadFileContext(ctx context.Context, remoteFile, 
 		return fmt.Errorf("download request failed: %w", err)
 	}
 	if status != http.StatusOK {
-		return newAPIErrorText("download file", status, string(msg), fmt.Sprintf("failed to download %q: status=%d msg=%s", remoteFile, status, msg))
+		return newAPIErrorText("download file", status, string(msg),
+			fmt.Sprintf("failed to download %q: status=%d msg=%s", remoteFile, status, msg))
 	}
 	if err := requireHeader(responseHeaders, headerRecvFileSocket); err != nil {
 		return err
@@ -107,7 +131,8 @@ func (c *AppMeshClientTCP) DownloadFileContext(ctx context.Context, remoteFile, 
 }
 
 // receiveFile receives file data and writes it to the local file system.
-func (c *AppMeshClientTCP) receiveFile(ctx context.Context, localFile string, headers http.Header, applyFileAttributes bool) error {
+func (c *AppMeshClientTCP) receiveFile(ctx context.Context, localFile string, headers http.Header,
+	applyFileAttributes bool) error {
 	file, err := os.Create(localFile)
 	if err != nil {
 		return fmt.Errorf("create local file %q failed: %w", localFile, err)
@@ -144,7 +169,11 @@ func (c *AppMeshClientTCP) DownloadFile(remoteFile, localFile string, applyFileA
 
 // UploadFileContext uploads a file through the TCP file-socket side channel.
 // When applyFileAttributes is true, local POSIX metadata is sent so the server can recreate it.
-func (c *AppMeshClientTCP) UploadFileContext(ctx context.Context, localFile, remoteFile string, applyFileAttributes bool) error {
+func (c *AppMeshClientTCP) UploadFileContext(ctx context.Context, localFile, remoteFile string,
+	applyFileAttributes bool) error {
+	if err := c.ensureNoActiveDemuxer(); err != nil {
+		return err
+	}
 	if localFile == "" {
 		return errors.New("local file path cannot be empty")
 	}
@@ -180,7 +209,8 @@ func (c *AppMeshClientTCP) UploadFileContext(ctx context.Context, localFile, rem
 		return fmt.Errorf("upload request failed: %w", err)
 	}
 	if status != http.StatusOK {
-		return newAPIErrorText("upload file", status, string(msg), fmt.Sprintf("failed to upload %q: status=%d msg=%s", localFile, status, msg))
+		return newAPIErrorText("upload file", status, string(msg), fmt.Sprintf("failed to upload %q: status=%d msg=%s",
+			localFile, status, msg))
 	}
 	if err := requireHeader(responseHeaders, headerSendFileSocket); err != nil {
 		return err

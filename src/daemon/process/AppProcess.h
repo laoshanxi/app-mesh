@@ -60,22 +60,22 @@ public:
 	// Identity and result
 	virtual pid_t getpid() const;
 	virtual int returnValue() const;
-	const std::string &getuuid() const;
-	const std::string &getkey() const;
+	const std::string &getUuid() const;
+	const std::string &getKey() const;
 	const std::string startError() const;
 	virtual std::string containerId() const { return std::string(); }
 
 	// Output and process metrics
-	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
-	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> getProcessDetails(
-		void *ptree = nullptr, bool includeTreeString = true, bool metricsSample = false);
+	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE,
+										   bool readLine = false);
+	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t>
+	getProcessDetails(void *ptree = nullptr, bool includeTreeString = true, bool metricsSample = false);
 
 protected:
 	// Backend contract
 	virtual pid_t startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							const std::string &stdoutFile, const Json::Value &stdinFileContent,
-							int maxStdoutSize);
+							const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize);
 	virtual void terminateImpl();
 
 	// Backend state publication

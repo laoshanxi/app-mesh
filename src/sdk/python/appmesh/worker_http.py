@@ -76,10 +76,12 @@ class AppMeshWorker:
         if not process_key:
             raise AppMeshError("Missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service.")
         if not app_name:
-            raise AppMeshError("Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.")
+            raise AppMeshError("Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh "
+                "service.")
         return process_key, app_name
 
-    def fetch_task(self, *, stop_event: Optional[threading.Event] = None, max_retries: Optional[int] = None) -> Union[str, bytes]:
+    def fetch_task(self, *, stop_event: Optional[threading.Event] = None, max_retries: Optional[int] = None) -> Union[str,
+        bytes]:
         """Fetch task data in the currently running App Mesh application process.
 
         Used by an App Mesh application process to obtain the payload from the App Mesh
@@ -127,7 +129,8 @@ class AppMeshWorker:
 
                 if resp.status_code == HTTPStatus.PRECONDITION_FAILED:
                     self._logger.error("Process key mismatch (412): this process has been superseded")
-                    raise AppMeshProcessSupersededError("Process key mismatch (412): this process has been superseded by a newer instance")
+                    raise AppMeshProcessSupersededError("Process key mismatch (412): this process has been superseded by a "
+                        "newer instance")
 
                 if resp.status_code == HTTPStatus.BAD_REQUEST:
                     message = f"fetch_task permanently rejected with status 400: {resp.text}"

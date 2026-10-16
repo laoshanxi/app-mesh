@@ -63,9 +63,8 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     }
 
     let endpoint = get_current_endpoint(cli)?;
-    let session = config::load_session(&endpoint)?.ok_or_else(|| {
-        anyhow::anyhow!("No sign-in session is configured for {}. Run 'appm logon'.", endpoint)
-    })?;
+    let session = config::load_session(&endpoint)?
+        .ok_or_else(|| anyhow::anyhow!("No sign-in session is configured for {}. Run 'appm logon'.", endpoint))?;
     // Discovery must use the HTTPS side channel, never the WSS transport: the
     // daemon authenticates the WebSocket only at upgrade time, and a transport
     // connected here without a token would stay anonymous for every later call.
@@ -79,10 +78,7 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
             if !stored_token_usable(&session) {
                 return Err(error).context("Engine OAuth discovery failed");
             }
-            eprintln!(
-                "Warning: Engine OAuth discovery failed ({}). Using the stored access token until it expires.",
-                error
-            );
+            eprintln!("Warning: Engine OAuth discovery failed ({}). Using the stored access token until it expires.", error);
             client.client().set_token(&session.tokens.access_token);
             return Ok(client);
         }
@@ -96,7 +92,8 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     {
         config::delete_session(&session)?;
         anyhow::bail!(
-            "The stored sign-in session does not match the authentication configuration for {}. The incompatible session was removed. Run 'appm logon' again.",
+            "The stored sign-in session does not match the authentication configuration for {}. The incompatible \
+	 session was removed. Run 'appm logon' again.",
             endpoint
         );
     }
@@ -106,10 +103,7 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     // still-valid access token is used as-is, an expired one ends the session.
     if !refresh_grant_usable(&advertised, &session) {
         if session.tokens.is_expired() {
-            anyhow::bail!(
-                "The sign-in session for {} expired and cannot be renewed. Run 'appm logon' again.",
-                endpoint
-            );
+            anyhow::bail!("The sign-in session for {} expired and cannot be renewed. Run 'appm logon' again.", endpoint);
         }
         client.client().set_token(&session.tokens.access_token);
         return Ok(client);
@@ -118,49 +112,29 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     // The OAuth client owns expiry/401 refresh for the full client lifetime. The CLI
     // owns persistence and durably records every rotated token set. Refresh tokens
     // remain inside this OAuth/session callback and are never sent to the Engine.
-    let oauth = Arc::new(
-        OAuthClient::discover(session.oauth.clone())
-            .await
-            .context("Authentication service discovery failed")?,
-    );
+    let oauth =
+        Arc::new(OAuthClient::discover(session.oauth.clone()).await.context("Authentication service discovery failed")?);
     oauth.restore(session.tokens.clone())?;
     let engine_endpoint = session.engine_endpoint.clone();
     let oauth_config = session.oauth.clone();
     oauth.set_token_update_callback(move |tokens| {
-        config::save_session(&config::StoredSession::new(
-            engine_endpoint.clone(),
-            oauth_config.clone(),
-            tokens.clone(),
-        ))
-        .map_err(|error| appmesh::AppMeshError::IoError(error.to_string()))
+        config::save_session(&config::StoredSession::new(engine_endpoint.clone(), oauth_config.clone(), tokens.clone()))
+            .map_err(|error| appmesh::AppMeshError::IoError(error.to_string()))
     });
-    oauth
-        .install_on(client.client())
-        .await
-        .context("Access token preparation failed")?;
+    oauth.install_on(client.client()).await.context("Access token preparation failed")?;
     client.client().set_token_provider(Some(oauth));
 
     Ok(client)
 }
 
-fn build_wss(
-    host: String,
-    port: u16,
-    tls: &config::DaemonTlsConfig,
-) -> Result<Arc<AppMeshClientWSS>> {
+fn build_wss(host: String, port: u16, tls: &config::DaemonTlsConfig) -> Result<Arc<AppMeshClientWSS>> {
     // Only skip verification when the daemon config explicitly disables it. With
     // no CA configured, leave ssl_ca_cert unset so the SDK's auto default applies
     // (App Mesh CA bundle if installed, else system CAs) — never silently disable.
     let skip_verify = !tls.verify_server;
 
-    let transport_host = if host.contains(':') && !host.starts_with('[') {
-        format!("[{}]", host)
-    } else {
-        host
-    };
-    let mut builder = ClientBuilderWSS::new()
-        .address(&transport_host, port)
-        .danger_accept_invalid_certs(skip_verify);
+    let transport_host = if host.contains(':') && !host.starts_with('[') { format!("[{}]", host) } else { host };
+    let mut builder = ClientBuilderWSS::new().address(&transport_host, port).danger_accept_invalid_certs(skip_verify);
 
     if let Some(ref ca) = tls.ca_cert {
         builder = builder.ssl_ca_cert(ca.to_string_lossy().to_string());
@@ -172,9 +146,7 @@ fn build_wss(
     builder.build().context("Failed to build WSS client")
 }
 
-fn resolve_address_and_tls(
-    cli: &Cli,
-) -> Result<(String, u16, config::DaemonTlsConfig)> {
+fn resolve_address_and_tls(cli: &Cli) -> Result<(String, u16, config::DaemonTlsConfig)> {
     let (daemon_addr, daemon_tls) = config::load_daemon_config();
 
     if let Some(ref url) = cli.host_url {
@@ -227,14 +199,9 @@ fn validated_host_port(parsed: url::Url, default_port: u16) -> Result<(String, u
         || parsed.query().is_some()
         || parsed.fragment().is_some()
     {
-        anyhow::bail!(
-            "Engine URL must be a WSS/HTTPS origin without credentials, path, query, or fragment"
-        );
+        anyhow::bail!("Engine URL must be a WSS/HTTPS origin without credentials, path, query, or fragment");
     }
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| anyhow::anyhow!("Engine URL is missing a host"))?
-        .to_string();
+    let host = parsed.host_str().ok_or_else(|| anyhow::anyhow!("Engine URL is missing a host"))?.to_string();
     let port = parsed.port().unwrap_or(default_port);
     Ok((host, port))
 }
@@ -256,10 +223,7 @@ fn stored_token_usable(session: &config::StoredSession) -> bool {
 /// the Engine still advertises refresh-token support (older daemons omit the
 /// field, which means supported).
 fn refresh_grant_usable(advertised: &serde_json::Value, session: &config::StoredSession) -> bool {
-    advertised
-        .get("refresh_token")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(true)
+    advertised.get("refresh_token").and_then(serde_json::Value::as_bool).unwrap_or(true)
         && session.tokens.refresh_token.is_some()
 }
 
@@ -298,7 +262,7 @@ mod tests {
     #[test]
     fn refresh_grant_requires_stored_token_and_engine_support() {
         // Older daemons omit refresh_token entirely; a stored grant keeps working.
-        let advertised = serde_json::json!({"issuer": "https://auth.example"});
+        let advertised = serde_json::json!({"issuer" : "https://auth.example"});
         let session = session_with_expiry(Some(4_102_444_800));
         assert!(refresh_grant_usable(&advertised, &session));
 
@@ -308,7 +272,7 @@ mod tests {
         assert!(!refresh_grant_usable(&advertised, &without_grant));
 
         // An Engine that disabled refresh tokens must not be sent a refresh grant.
-        let disabled = serde_json::json!({"refresh_token": false});
+        let disabled = serde_json::json!({"refresh_token" : false});
         assert!(!refresh_grant_usable(&disabled, &session));
     }
 }

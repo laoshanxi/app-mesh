@@ -12,33 +12,31 @@ mod oauth;
 mod requester;
 mod response_ext;
 mod subscribe;
-mod wire_messages;
-mod wait_subscribe;
 mod tcp_transport;
 pub mod tls_config;
-mod wss_transport;
+mod wait_subscribe;
+mod wire_messages;
 mod worker_http;
 mod worker_tcp;
 mod worker_wss;
+mod wss_transport;
 
 pub use client_builder::*;
 pub use client_http::AppMeshClient;
 pub use client_tcp::AppMeshClientTCP;
 pub use client_wss::AppMeshClientWSS;
 pub use error::{AppMeshError, TransportError};
-pub use oauth::{
-    AuthorizationRequest, DEFAULT_OAUTH_SCOPE, DEFAULT_OAUTH_SCOPES, DeviceAuthorization,
-    DevicePoll, OAuthClient, OAuthConfig, OidcMetadata,
-    StaticAccessTokenProvider, TokenProvider, TokenSet, TokenSetProviderOptions,
-};
 pub use models::{
-    AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
+    print_output_handler, AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
     ExitAction, OutputFn, OutputHandler, Permission, ResourceLimitation, SubscriptionResult,
-    print_output_handler,
+};
+pub use oauth::{
+    AuthorizationRequest, DeviceAuthorization, DevicePoll, OAuthClient, OAuthConfig, OidcMetadata,
+    StaticAccessTokenProvider, TokenProvider, TokenSet, TokenSetProviderOptions, DEFAULT_OAUTH_SCOPE, DEFAULT_OAUTH_SCOPES,
 };
 // Canonical cross-SDK worker names (match the Python/Go SDKs).
+pub use constants::EVENT_TYPE_DISCONNECTED;
+pub use subscribe::EventCallback;
 pub use worker_http::AppMeshWorker;
 pub use worker_tcp::AppMeshWorkerTCP;
 pub use worker_wss::AppMeshWorkerWSS;
-pub use constants::EVENT_TYPE_DISCONNECTED;
-pub use subscribe::EventCallback;

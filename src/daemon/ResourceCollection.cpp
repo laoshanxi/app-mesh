@@ -1,25 +1,21 @@
 // src/daemon/ResourceCollection.cpp
+#include "../common/os/net.h"
 #include <algorithm>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-
 #include "../common/DateTime.h"
 #include "../common/Utility.h"
 #include "../common/json.h"
-#include "../common/os/net.h"
 #include "../common/os/pstree.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
 #include "process/LinuxCgroup.h"
 
-ResourceCollection::ResourceCollection()
-	: m_appmeshStartTime(std::chrono::system_clock::now())
-{
-}
+ResourceCollection::ResourceCollection() : m_appmeshStartTime(std::chrono::system_clock::now()) {}
 
 std::unique_ptr<ResourceCollection> &ResourceCollection::instance()
 {
@@ -27,10 +23,7 @@ std::unique_ptr<ResourceCollection> &ResourceCollection::instance()
 	return singleton;
 }
 
-std::string ResourceCollection::getHostName() const
-{
-	return net::hostname();
-}
+std::string ResourceCollection::getHostName() const { return net::hostname(); }
 
 HostResource ResourceCollection::getHostResource()
 {
@@ -73,13 +66,14 @@ HostResource ResourceCollection::getHostResource()
 	static auto cgroup = LinuxCgroup::create(0, 0, 100);
 	LinuxCgroup *hostCgroup = cgroup.get();
 	const auto cgroupVersion = LinuxCgroup::detectCgroupVersion();
-	resources.m_cgroupVersion = cgroupVersion == CgroupVersion::V2 ? "v2" : (cgroupVersion == CgroupVersion::V1 ? "v1" : "none");
+	resources.m_cgroupVersion =
+		cgroupVersion == CgroupVersion::V2 ? "v2" : (cgroupVersion == CgroupVersion::V1 ? "v1" : "none");
 	const auto effectiveProcessors = hostCgroup->readHostCpuCount();
 	if (effectiveProcessors && *effectiveProcessors > 0)
 	{
 		const auto constrained = static_cast<std::size_t>(*effectiveProcessors);
-		resources.m_effectiveProcessors = resources.m_processors > 0
-			? std::min(resources.m_processors, constrained) : constrained;
+		resources.m_effectiveProcessors =
+			resources.m_processors > 0 ? std::min(resources.m_processors, constrained) : constrained;
 		resources.m_cpuSource = "cgroup";
 	}
 	else if (!effectiveProcessors && cgroupVersion != CgroupVersion::None)
@@ -102,29 +96,30 @@ HostResource ResourceCollection::getHostResource()
 	{
 		// Cgroup v1 encodes unlimited memory near LONG_MAX.
 		constexpr long long CGROUP_V1_UNLIMITED_THRESHOLD = 9223372036854771712LL;
-		const auto isFiniteLimit = [](long long value) {
-			return value > 0 && value < CGROUP_V1_UNLIMITED_THRESHOLD;
-		};
+		const auto isFiniteLimit = [](long long value) { return value > 0 && value < CGROUP_V1_UNLIMITED_THRESHOLD; };
 		const auto memoryLimitValue = hostCgroup->readHostMemoryValue("memory.limit_in_bytes");
 		const auto memoryCurrentValue = hostCgroup->readHostMemoryValue("memory.usage_in_bytes");
-		const auto memoryAvailableValue = hostCgroup->readHostMemoryAvailableValue("memory.limit_in_bytes", "memory.usage_in_bytes");
+		const auto memoryAvailableValue =
+			hostCgroup->readHostMemoryAvailableValue("memory.limit_in_bytes", "memory.usage_in_bytes");
 		if (!memoryLimitValue)
 			resources.m_collectorErrors.push_back("cgroup_memory_limit_unavailable");
 		if (!memoryCurrentValue)
 			resources.m_collectorErrors.push_back("cgroup_memory_current_unavailable");
 		const auto memoryLimit = memoryLimitValue.value_or(0);
 		const auto memoryCurrent = memoryCurrentValue.value_or(0);
-		const bool useCgroupMemory = isFiniteLimit(memoryLimit) && memoryCurrentValue &&
+		const bool useCgroupMemory =
+			isFiniteLimit(memoryLimit) && memoryCurrentValue &&
 			(hostMemory == nullptr || static_cast<uint64_t>(memoryLimit) <= hostMemory->total_bytes);
 		if (useCgroupMemory)
 		{
 			resources.m_total_bytes = static_cast<uint64_t>(memoryLimit);
 			resources.m_current_bytes = static_cast<uint64_t>(std::max(0LL, memoryCurrent));
 			const auto capacityHeadroom = resources.m_current_bytes < resources.m_total_bytes
-				? resources.m_total_bytes - resources.m_current_bytes : 0;
+											  ? resources.m_total_bytes - resources.m_current_bytes
+											  : 0;
 			resources.m_available_bytes = memoryAvailableValue && *memoryAvailableValue < CGROUP_V1_UNLIMITED_THRESHOLD
-				? static_cast<uint64_t>(std::max(0LL, *memoryAvailableValue))
-				: capacityHeadroom;
+											  ? static_cast<uint64_t>(std::max(0LL, *memoryAvailableValue))
+											  : capacityHeadroom;
 			if (hostMemory != nullptr)
 				resources.m_available_bytes = std::min(resources.m_available_bytes, hostMemory->available_bytes);
 			resources.m_available_bytes = std::min(resources.m_available_bytes, capacityHeadroom);
@@ -138,19 +133,19 @@ HostResource ResourceCollection::getHostResource()
 			const auto swap = hostCgroup->readHostSwapStats();
 			if (swap && (swap->limitBytes || hostMemory != nullptr))
 			{
-				resources.m_totalSwap_bytes = swap->limitBytes
-					? static_cast<uint64_t>(std::max(0LL, *swap->limitBytes))
-					: hostMemory->totalSwap_bytes;
+				resources.m_total_swap_bytes = swap->limitBytes ? static_cast<uint64_t>(std::max(0LL, *swap->limitBytes))
+																: hostMemory->total_swap_bytes;
 				if (hostMemory != nullptr)
-					resources.m_totalSwap_bytes = std::min(resources.m_totalSwap_bytes, hostMemory->totalSwap_bytes);
-				resources.m_currentSwap_bytes = static_cast<uint64_t>(std::max(0LL, swap->currentBytes));
-				resources.m_freeSwap_bytes = resources.m_currentSwap_bytes < resources.m_totalSwap_bytes
-					? resources.m_totalSwap_bytes - resources.m_currentSwap_bytes : 0;
+					resources.m_total_swap_bytes = std::min(resources.m_total_swap_bytes, hostMemory->total_swap_bytes);
+				resources.m_current_swap_bytes = static_cast<uint64_t>(std::max(0LL, swap->currentBytes));
+				resources.m_free_swap_bytes = resources.m_current_swap_bytes < resources.m_total_swap_bytes
+												  ? resources.m_total_swap_bytes - resources.m_current_swap_bytes
+												  : 0;
 				if (swap->headroomBytes)
-					resources.m_freeSwap_bytes = std::min<uint64_t>(
-						resources.m_freeSwap_bytes, static_cast<uint64_t>(std::max(0LL, *swap->headroomBytes)));
+					resources.m_free_swap_bytes = std::min<uint64_t>(
+						resources.m_free_swap_bytes, static_cast<uint64_t>(std::max(0LL, *swap->headroomBytes)));
 				if (hostMemory != nullptr)
-					resources.m_freeSwap_bytes = std::min(resources.m_freeSwap_bytes, hostMemory->freeSwap_bytes);
+					resources.m_free_swap_bytes = std::min(resources.m_free_swap_bytes, hostMemory->free_swap_bytes);
 				resources.m_swapSource = "cgroup";
 				swapCollected = true;
 			}
@@ -165,21 +160,21 @@ HostResource ResourceCollection::getHostResource()
 		{
 			resources.m_total_bytes = hostMemory->total_bytes;
 			resources.m_available_bytes = hostMemory->available_bytes;
-			resources.m_current_bytes = resources.m_total_bytes > hostMemory->free_bytes
-										 ? resources.m_total_bytes - hostMemory->free_bytes
-										 : 0;
+			resources.m_current_bytes =
+				resources.m_total_bytes > hostMemory->free_bytes ? resources.m_total_bytes - hostMemory->free_bytes : 0;
 		}
 		else
 		{
 			resources.m_collectorErrors.push_back("host_memory_unavailable");
 		}
 	}
-	if (!swapCollected && hostMemory != nullptr && hostMemory->swapAvailable)
+	if (!swapCollected && hostMemory != nullptr && hostMemory->swap_available)
 	{
-		resources.m_totalSwap_bytes = hostMemory->totalSwap_bytes;
-		resources.m_freeSwap_bytes = hostMemory->freeSwap_bytes;
-		resources.m_currentSwap_bytes = resources.m_totalSwap_bytes > resources.m_freeSwap_bytes
-			? resources.m_totalSwap_bytes - resources.m_freeSwap_bytes : 0;
+		resources.m_total_swap_bytes = hostMemory->total_swap_bytes;
+		resources.m_free_swap_bytes = hostMemory->free_swap_bytes;
+		resources.m_current_swap_bytes = resources.m_total_swap_bytes > resources.m_free_swap_bytes
+											 ? resources.m_total_swap_bytes - resources.m_free_swap_bytes
+											 : 0;
 	}
 	else if (!swapCollected)
 	{
@@ -209,8 +204,8 @@ void ResourceCollection::dump(const HostResource &resources)
 	LOG_DBG << fname << "m_processors:" << resources.m_processors;
 	LOG_DBG << fname << "m_total_bytes:" << resources.m_total_bytes;
 	LOG_DBG << fname << "m_available_bytes:" << resources.m_available_bytes;
-	LOG_DBG << fname << "m_totalSwap_bytes:" << resources.m_totalSwap_bytes;
-	LOG_DBG << fname << "m_freeSwap_bytes:" << resources.m_freeSwap_bytes;
+	LOG_DBG << fname << "m_total_swap_bytes:" << resources.m_total_swap_bytes;
+	LOG_DBG << fname << "m_free_swap_bytes:" << resources.m_free_swap_bytes;
 }
 
 Json::Value ResourceCollection::AsJson()
@@ -222,9 +217,8 @@ Json::Value ResourceCollection::AsJson()
 
 	Json::Value result = Json::Value(Json::objectValue);
 	result["schema_version"] = 3;
-	result["collected_at_unix_seconds"] = std::chrono::duration_cast<std::chrono::seconds>(
-										  std::chrono::system_clock::now().time_since_epoch())
-										  .count();
+	result["collected_at_unix_seconds"] =
+		std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	result["in_container"] = res.m_inContainer;
 	result["appmesh_version"] = std::string(__MICRO_VAR__(BUILD_TAG));
 #if defined(__linux__)
@@ -270,9 +264,9 @@ Json::Value ResourceCollection::AsJson()
 	result[("mem_total_bytes")] = (res.m_total_bytes);
 	result["mem_available_bytes"] = res.m_available_bytes;
 	result["mem_current_bytes"] = res.m_current_bytes;
-	result["mem_swap_total_bytes"] = res.m_totalSwap_bytes;
-	result["mem_swap_free_bytes"] = res.m_freeSwap_bytes;
-	result["mem_swap_current_bytes"] = res.m_currentSwap_bytes;
+	result["mem_swap_total_bytes"] = res.m_total_swap_bytes;
+	result["mem_swap_free_bytes"] = res.m_free_swap_bytes;
+	result["mem_swap_current_bytes"] = res.m_current_swap_bytes;
 	auto collectorErrors = Json::Value(Json::arrayValue);
 	for (const auto &error : res.m_collectorErrors)
 		collectorErrors.append(error);
@@ -366,9 +360,8 @@ Json::Value ResourceCollection::AsJson()
 	result[("fs")] = std::move(fsArr);
 	result[("systime")] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));
 	result[("appmesh_start_time")] = std::string(DateTime::formatLocalTime(m_appmeshStartTime));
-	result["appmesh_start_time_unix_seconds"] = std::chrono::duration_cast<std::chrono::seconds>(
-											m_appmeshStartTime.time_since_epoch())
-											.count();
+	result["appmesh_start_time_unix_seconds"] =
+		std::chrono::duration_cast<std::chrono::seconds>(m_appmeshStartTime.time_since_epoch()).count();
 	result[("pid")] = (getPid());
 	result[("home")] = (Utility::getHomeDir());
 	result["collector_errors"] = std::move(collectorErrors);

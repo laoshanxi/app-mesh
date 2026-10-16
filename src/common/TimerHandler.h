@@ -20,10 +20,7 @@ using TimerCallback = std::function<bool(void)>;
 
 constexpr long INVALID_TIMER_ID = -1L;
 
-constexpr bool isValidTimerId(long timerId) noexcept
-{
-	return timerId != INVALID_TIMER_ID;
-}
+constexpr bool isValidTimerId(long timerId) noexcept { return timerId != INVALID_TIMER_ID; }
 
 inline bool isValidTimerId(const std::atomic_long &timerId) noexcept
 {
@@ -53,7 +50,8 @@ public:
 	 * @param handler Callback invoked on expiration.
 	 * @return Stable timer token (never reused), or INVALID_TIMER_ID on failure.
 	 */
-	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler);
+	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from,
+					   const TimerCallback &handler);
 
 	/**
 	 * @brief Registers a timer and publishes its token into the slot before the timer can fire.
@@ -109,14 +107,16 @@ public:
 	 * @param handler Callback invoked on expiration.
 	 * @return Stable timer token, or INVALID_TIMER_ID on failure (logged at CRITICAL here).
 	 */
-	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
+	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from,
+					   std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
 
 	/// @brief Atomic-slot overload: cancels any timer already published in the slot before registering the replacement.
 	long registerTimer(std::atomic_long &timerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
 					   const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
 
 	/// @brief Convenience overload for lambda-only timers.
-	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler);
+	long registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from,
+					   const TimerCallback &handler);
 
 	/// @brief Cancels a logical timer token. Cancellation takes effect on the io thread asynchronously.
 	bool cancelTimer(long timerToken);
@@ -136,12 +136,13 @@ private:
 	long allocateTimerToken() noexcept;
 	void releaseTimerToken(long timerToken) noexcept;
 
-	boost::asio::io_context m_ioContext;												  ///< Timer event loop. All steady_timer member calls happen on m_ioThread.
-	boost::asio::executor_work_guard<boost::asio::io_context::executor_type> m_workGuard; ///< Keeps the event loop alive until shutdown.
-	std::thread m_ioThread;																  ///< Dedicated timer-dispatch thread.
-	std::mutex m_timerIdMutex;															  ///< Serializes retained-token publication and cancellation.
-	std::mutex m_timerRegistryMutex;													  ///< Protects only token ownership; released before posting to the event loop.
-	std::map<long, std::shared_ptr<TimerState>> m_timerRegistry;						  ///< Stable token to exact timer identity.
+	boost::asio::io_context m_ioContext; ///< Timer event loop. All steady_timer member calls happen on m_ioThread.
+	boost::asio::executor_work_guard<boost::asio::io_context::executor_type>
+		m_workGuard;                 ///< Keeps the event loop alive until shutdown.
+	std::thread m_ioThread;          ///< Dedicated timer-dispatch thread.
+	std::mutex m_timerIdMutex;       ///< Serializes retained-token publication and cancellation.
+	std::mutex m_timerRegistryMutex; ///< Protects only token ownership; released before posting to the event loop.
+	std::map<long, std::shared_ptr<TimerState>> m_timerRegistry; ///< Stable token to exact timer identity.
 	long m_nextTimerToken{1};
 };
 

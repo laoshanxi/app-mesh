@@ -3,8 +3,8 @@
 #include <chrono>
 #include <exception>
 #include <set>
-#include <thread>
 #include <signal.h>
+#include <thread>
 #if !defined(_WIN32)
 #include <unistd.h> //environ
 #endif
@@ -63,8 +63,8 @@ namespace
 			const auto waitSeconds = std::chrono::duration<double>(m_acquired - m_waitStart).count();
 			const auto holdSeconds = std::chrono::duration<double>(now - m_acquired).count();
 			if (holdSeconds >= 0.5)
-				LOG_WAR << m_fn << " held m_appMutationMutex for <" << holdSeconds
-						<< "s> (waited <" << waitSeconds << "s>); concurrent app management was stalled";
+				LOG_WAR << m_fn << " held m_appMutationMutex for <" << holdSeconds << "s> (waited <" << waitSeconds
+						<< "s>); concurrent app management was stalled";
 		}
 
 	private:
@@ -82,14 +82,9 @@ Configuration::Configuration()
 	m_rest = std::make_shared<JsonRest>();
 }
 
-Configuration::~Configuration()
-{
-}
+Configuration::~Configuration() {}
 
-std::shared_ptr<Configuration> Configuration::instance()
-{
-	return m_instance;
-}
+std::shared_ptr<Configuration> Configuration::instance() { return m_instance; }
 
 void Configuration::instance(std::shared_ptr<Configuration> config)
 {
@@ -220,8 +215,7 @@ std::vector<std::shared_ptr<Application>> Configuration::getApps() const
 {
 	std::vector<std::shared_ptr<Application>> apps;
 	apps.reserve(m_apps.size());
-	m_apps.visit_all([&apps](auto &entry)
-					 { apps.push_back(entry.second); });
+	m_apps.visit_all([&apps](auto &entry) { apps.push_back(entry.second); });
 	return apps;
 }
 
@@ -271,16 +265,18 @@ int Configuration::getWebSocketPort()
 	return m_rest->m_webSocketPort;
 }
 
-Json::Value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
+Json::Value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user,
+												bool returnUnPersistApp) const
 {
 	auto allApp = getApps();
 	std::vector<std::shared_ptr<Application>> apps;
 	std::copy_if(allApp.begin(), allApp.end(), std::back_inserter(apps),
 				 [this, &user, returnUnPersistApp](std::shared_ptr<Application> app)
 				 {
-					 return (checkOwnerPermission(user, app->getOwnerPrincipalId(), app->getOwnerPermission(), false) && // access permission check
-							 ((returnUnPersistApp) || (!returnUnPersistApp && app->isPersistAble())) &&		  // status filter
-							 (app->getName() != SEPARATE_AGENT_APP_NAME));									  // not expose rest process
+					 return (checkOwnerPermission(user, app->getOwnerPrincipalId(), app->getOwnerPermission(),
+												  false) && // access permission check
+							 ((returnUnPersistApp) || (!returnUnPersistApp && app->isPersistAble())) && // status filter
+							 (app->getName() != SEPARATE_AGENT_APP_NAME)); // not expose rest process
 				 });
 
 	auto result = Json::Value(Json::arrayValue);
@@ -364,10 +360,10 @@ void Configuration::loadApps(const std::filesystem::path &appDir)
 		}
 		if (!failedDefinitions.empty())
 		{
-			throw std::runtime_error(Utility::stringFormat(
-				"refusing partial application recovery: %zu definition(s) failed validation; "
-				"correct or explicitly migrate the files reported above before restarting",
-				failedDefinitions.size()));
+			throw std::runtime_error(
+				Utility::stringFormat("refusing partial application recovery: %zu definition(s) failed validation; "
+									  "correct or explicitly migrate the files reported above before restarting",
+									  failedDefinitions.size()));
 		}
 	}
 	else
@@ -393,8 +389,8 @@ void Configuration::validateRecoveredDependencies() const
 		for (const auto &depName : dependsOn)
 		{
 			if (!getApp(depName, false))
-				LOG_WAR << fname << "Application <" << app->getName()
-						<< "> depends on unknown application <" << depName << ">";
+				LOG_WAR << fname << "Application <" << app->getName() << "> depends on unknown application <" << depName
+						<< ">";
 		}
 		if (dependencyCycleExists(dependsOn, app->getName()))
 		{
@@ -405,10 +401,10 @@ void Configuration::validateRecoveredDependencies() const
 	}
 	if (!failedDefinitions.empty())
 	{
-		throw std::runtime_error(Utility::stringFormat(
-			"refusing partial application recovery: %zu definition(s) failed validation; "
-			"correct or explicitly migrate the definitions reported above before restarting",
-			failedDefinitions.size()));
+		throw std::runtime_error(
+			Utility::stringFormat("refusing partial application recovery: %zu definition(s) failed validation; "
+								  "correct or explicitly migrate the definitions reported above before restarting",
+								  failedDefinitions.size()));
 	}
 }
 
@@ -474,7 +470,7 @@ bool Configuration::getDisableExecUser() const
 {
 	std::lock_guard guard(m_hotupdateMutex);
 #if !defined(_WIN32)
-	return m_baseConfig->m_disableExecUser || os::get_uid() != 0;
+	return m_baseConfig->m_disableExecUser || os::getUid() != 0;
 #else
 	return m_baseConfig->m_disableExecUser;
 #endif
@@ -563,8 +559,9 @@ std::size_t Configuration::getWorkerThreads() const
 	// Request handling is mostly light process-control work; a large host does
 	// not need one worker per CPU, so the derived default is capped. Explicit
 	// WorkerThreads values pass through unchanged above.
-	return std::max<std::size_t>(static_cast<std::size_t>(MIN_WORKER_THREADS),
-								 std::min<std::size_t>(static_cast<std::size_t>(MAX_DEFAULT_WORKER_THREADS), availableCpuCount()));
+	return std::max<std::size_t>(
+		static_cast<std::size_t>(MIN_WORKER_THREADS),
+		std::min<std::size_t>(static_cast<std::size_t>(MAX_DEFAULT_WORKER_THREADS), availableCpuCount()));
 }
 
 std::size_t Configuration::getTransportIoThreads() const
@@ -586,7 +583,7 @@ const std::string Configuration::getPosixTimezone() const
 }
 
 bool Configuration::checkOwnerPermission(const std::string &principalId, const std::string &ownerPrincipalId,
-	int appPermission, bool requestWrite) const
+										 int appPermission, bool requestWrite) const
 {
 	if (principalId.empty() || ownerPrincipalId.empty() || principalId == ownerPrincipalId || appPermission == 0)
 	{
@@ -613,8 +610,7 @@ bool Configuration::checkOwnerPermission(const std::string &principalId, const s
 	if (otherPerm <= static_cast<int>(PERMISSION::OTHER_DENY))
 		return false;
 	if (!requestWrite &&
-		(otherPerm == static_cast<int>(PERMISSION::OTHER_READ) ||
-		 otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)))
+		(otherPerm == static_cast<int>(PERMISSION::OTHER_READ) || otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)))
 	{
 		return true;
 	}
@@ -626,8 +622,7 @@ void Configuration::dump()
 	const static char fname[] = "Configuration::dump() ";
 
 	auto configJson = this->AsJson();
-	LOG_DBG << fname << '\n'
-			<< JSON::dump(configJson, 2);
+	LOG_DBG << fname << '\n' << JSON::dump(configJson, 2);
 
 	auto apps = getApps();
 	for (auto &app : apps)
@@ -679,7 +674,8 @@ bool Configuration::dependencyCycleExists(const std::vector<std::string> &seedDe
 }
 
 std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, bool persistable,
-	const std::shared_ptr<Application> &expectedRegistration, bool enforceRegistration)
+												   const std::shared_ptr<Application> &expectedRegistration,
+												   bool enforceRegistration)
 {
 	const static char fname[] = "Configuration::addApp() ";
 	std::shared_ptr<Application> oldApp;
@@ -738,7 +734,7 @@ std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, b
 	if (oldApp)
 	{
 		oldApp->destroy();
-		app->initMetrics(oldApp);
+		app->initMetrics(std::move(oldApp));
 	}
 	else
 	{
@@ -771,11 +767,12 @@ bool Configuration::removeApp(const std::string &appName, const Application *exp
 			throw AuthorizationException("system applications cannot be removed through the application API");
 
 		LOG_DBG << fname << "Removing application <" << appName << ">";
-		m_apps.erase_if(appName, [&app](auto &entry)
+		m_apps.erase_if(appName,
+						[&app](auto &entry)
 						{
-			app = entry.second;
-			return true;
-		});
+							app = entry.second;
+							return true;
+						});
 		m_appNameIndexMap.erase(appName);
 	}
 	// Side effects run outside the mutation lock: destroy() may block for a
@@ -815,9 +812,8 @@ void Configuration::saveConfigToDisk()
 	const auto tmpFile = os::createTmpFile(configFilePath, yamlContent, mode);
 	if (tmpFile.empty())
 	{
-		const auto error = Utility::stringFormat(
-			"Failed to create temporary configuration file beside <%s>",
-			configFilePath.c_str());
+		const auto error =
+			Utility::stringFormat("Failed to create temporary configuration file beside <%s>", configFilePath.c_str());
 		LOG_ERR << fname << error;
 		throw std::runtime_error(error);
 	}
@@ -826,9 +822,8 @@ void Configuration::saveConfigToDisk()
 	fs::rename(tmpFile, configFilePath, renameError);
 	if (renameError)
 	{
-		const auto error = Utility::stringFormat(
-			"Failed to replace configuration file <%s>: %s",
-			configFilePath.c_str(), renameError.message().c_str());
+		const auto error = Utility::stringFormat("Failed to replace configuration file <%s>: %s", configFilePath.c_str(),
+												 renameError.message().c_str());
 		Utility::removeFile(tmpFile);
 		LOG_ERR << fname << error;
 		throw std::runtime_error(error);
@@ -949,7 +944,6 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyClient))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyClient, newConfig->m_rest->m_ssl->m_sslVerifyClient);
 			}
-
 		}
 
 		// Labels
@@ -989,7 +983,8 @@ bool Configuration::overrideConfigWithEnv(Json::Value &jsonConfig)
 						if (applyEnvConfig((*json)[jsonKey], envVal))
 						{
 							applyConfig = true;
-							LOG_INF << fname << "Configuration <" << envKey << "> overridden with environment value <" << Utility::maskSecret(envVal) << ">";
+							LOG_INF << fname << "Configuration <" << envKey << "> overridden with environment value <"
+									<< Utility::maskSecret(envVal) << ">";
 						}
 						else
 						{
@@ -1057,10 +1052,7 @@ void Configuration::registerPrometheus()
 		app->initMetrics();
 }
 
-bool Configuration::prometheusEnabled() const
-{
-	return m_runtimePrometheusEnabled;
-}
+bool Configuration::prometheusEnabled() const { return m_runtimePrometheusEnabled; }
 
 std::shared_ptr<Application> Configuration::parseApp(const Json::Value &jsonApp)
 {
@@ -1073,8 +1065,7 @@ std::shared_ptr<Application> Configuration::getApp(const std::string &appName, b
 {
 	const static char fname[] = "Configuration::getApp() ";
 	std::shared_ptr<Application> app;
-	m_apps.visit(appName, [&app](auto &entry)
-				 { app = entry.second; });
+	m_apps.visit(appName, [&app](auto &entry) { app = entry.second; });
 	if (app)
 		return app;
 
@@ -1089,18 +1080,16 @@ std::shared_ptr<Application> Configuration::getApp(const std::string &appName, b
 std::shared_ptr<Application> Configuration::getApp(const void *app) const
 {
 	std::shared_ptr<Application> found;
-	m_apps.visit_all([&](auto &entry)
-					 {
-						 if (app == entry.second.get())
-							 found = entry.second;
-					 });
+	m_apps.visit_all(
+		[&](auto &entry)
+		{
+			if (app == entry.second.get())
+				found = entry.second;
+		});
 	return found;
 }
 
-bool Configuration::isAppExist(const std::string &appName)
-{
-	return m_apps.contains(appName);
-}
+bool Configuration::isAppExist(const std::string &appName) { return m_apps.contains(appName); }
 
 std::string Configuration::generateRunAppName(const std::string &provideAppName)
 {
@@ -1114,8 +1103,7 @@ std::string Configuration::generateRunAppName(const std::string &provideAppName)
 		// get distinct suffixes (the map itself only locks single operations).
 		std::lock_guard guard(m_appIndexGenMutex);
 		int appIndex = 1;
-		m_appNameIndexMap.visit(provideAppName, [&appIndex](auto &entry)
-								 { appIndex = entry.second + 1; });
+		m_appNameIndexMap.visit(provideAppName, [&appIndex](auto &entry) { appIndex = entry.second + 1; });
 		while (true)
 		{
 			auto newName = provideAppName + "_" + std::to_string(appIndex);
@@ -1194,8 +1182,8 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 		HAS_JSON_FIELD(jsonValue, JSON_KEY_LEGACY_IOThreadPoolSize))
 	{
 		LOG_WAR << fname << "REST." << JSON_KEY_LEGACY_WorkerThreadPoolSize << " and REST."
-				<< JSON_KEY_LEGACY_IOThreadPoolSize << " were renamed to REST." << JSON_KEY_WorkerThreads
-				<< " and REST." << JSON_KEY_TransportIoThreads << "; the old keys are ignored";
+				<< JSON_KEY_LEGACY_IOThreadPoolSize << " were renamed to REST." << JSON_KEY_WorkerThreads << " and REST."
+				<< JSON_KEY_TransportIoThreads << "; the old keys are ignored";
 	}
 	if (rest->m_restListenPort < 1000 || rest->m_restListenPort > 65534)
 	{
@@ -1214,10 +1202,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	return rest;
 }
 
-Configuration::BaseConfig::BaseConfig()
-	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL), m_disableExecUser(false)
-{
-}
+Configuration::BaseConfig::BaseConfig() : m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL), m_disableExecUser(false) {}
 
 std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(const Json::Value &jsonValue)
 {
@@ -1230,7 +1215,7 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	config->m_posixTimezone = GET_JSON_STR_INT_TEXT(jsonValue, JSON_KEY_PosixTimezone);
 
 #if !defined(_WIN32)
-	if (!config->m_disableExecUser && os::get_uid() == 0 && !config->m_defaultExecUser.empty())
+	if (!config->m_disableExecUser && os::getUid() == 0 && !config->m_defaultExecUser.empty())
 	{
 		if (!os::getUidByName(config->m_defaultExecUser))
 		{
@@ -1238,7 +1223,7 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 			throw std::invalid_argument("No such OS user for default execution");
 		}
 	}
-	if (!config->m_disableExecUser && os::get_uid() != 0)
+	if (!config->m_disableExecUser && os::getUid() != 0)
 	{
 		LOG_WAR << "Daemon is not running as root, user switching (exec_user/DefaultExecUser) is disabled at runtime";
 	}
@@ -1288,9 +1273,9 @@ Json::Value Configuration::JsonRest::AsJson() const
 
 Configuration::JsonRest::JsonRest()
 	: m_restEnabled(false), m_corsDisabled(false), m_workerThreads(DEFAULT_WORKER_THREADS),
-	  m_transportIoThreads(DEFAULT_TRANSPORT_IO_THREADS),
-	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
-	  m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(DEFAULT_WEB_SOCKET_PORT)
+	  m_transportIoThreads(DEFAULT_TRANSPORT_IO_THREADS), m_restListenPort(DEFAULT_REST_LISTEN_PORT),
+	  m_promListenPort(DEFAULT_PROM_LISTEN_PORT), m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT),
+	  m_webSocketPort(DEFAULT_WEB_SOCKET_PORT)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 }
@@ -1321,7 +1306,4 @@ Json::Value Configuration::JsonSsl::AsJson() const
 	return result;
 }
 
-Configuration::JsonSsl::JsonSsl()
-	: m_sslVerifyServer(false), m_sslVerifyClient(false)
-{
-}
+Configuration::JsonSsl::JsonSsl() : m_sslVerifyServer(false), m_sslVerifyClient(false) {}

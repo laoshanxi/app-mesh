@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 // The engine used to wait for three consecutive scan failures before refreshing, so an
@@ -145,7 +145,8 @@ func renewalService(t *testing.T, owner string, issuer CapabilityIssuer) *Servic
 // run-scoped capability instead.
 func TestResolveExecCredentialAlwaysUsesCapability(t *testing.T) {
 	var gotOperations []string
-	s := renewalService(t, "owner-1", func(_ context.Context, workflowID, runID string, operations []string) (appmesh.WorkflowCapability, error) {
+	s := renewalService(t, "owner-1", func(_ context.Context, workflowID, runID string,
+		operations []string) (appmesh.WorkflowCapability, error) {
 		if workflowID != "wf" || runID != "run-1" {
 			t.Errorf("issuer got workflow=%q run=%q", workflowID, runID)
 		}
@@ -178,7 +179,8 @@ func TestResolveExecCredentialRejectsOwnerMismatch(t *testing.T) {
 			OwnerPrincipalID: "owner-2", ProcessUUID: "proc-1",
 		}, nil
 	})
-	if _, _, err := s.resolveExecCredential(context.Background(), "wf", "run-1"); err == nil || !strings.Contains(err.Error(), "owner") {
+	if _, _, err := s.resolveExecCredential(context.Background(), "wf", "run-1"); err == nil ||
+		!strings.Contains(err.Error(), "owner") {
 		t.Fatalf("owner mismatch must be rejected, got err=%v", err)
 	}
 }
@@ -192,7 +194,8 @@ func TestResolveExecCredentialRejectsProcessMismatch(t *testing.T) {
 			OwnerPrincipalID: "owner-1", ProcessUUID: "proc-old",
 		}, nil
 	})
-	if _, _, err := s.resolveExecCredential(context.Background(), "wf", "run-1"); err == nil || !strings.Contains(err.Error(), "process") {
+	if _, _, err := s.resolveExecCredential(context.Background(), "wf", "run-1"); err == nil ||
+		!strings.Contains(err.Error(), "process") {
 		t.Fatalf("process mismatch must be rejected, got err=%v", err)
 	}
 }
@@ -210,7 +213,7 @@ func TestResolveExecCredentialFailsWithoutIssuer(t *testing.T) {
 func newRenewalClient(t *testing.T) *appmesh.AppMeshClient {
 	t.Helper()
 	// Never connects: renewal only swaps the in-memory token.
-	c, err := appmesh.NewHTTPClient(appmesh.Option{AppMeshUri: "https://127.0.0.1:1", JwtToken: "initial"})
+	c, err := appmesh.NewHTTPClient(appmesh.Option{AppMeshURI: "https://127.0.0.1:1", JWTToken: "initial"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,8 +4,8 @@
 #include <atomic>
 #include <mutex>
 
-#include "StdoutStrategy.h"
 #include "../../common/TimerHandler.h"
+#include "StdoutStrategy.h"
 
 class Application;
 
@@ -25,8 +25,7 @@ public:
 private:
 	struct State
 	{
-		State(std::string name, std::weak_ptr<Application> app)
-			: appName(std::move(name)), owner(std::move(app)) {}
+		State(std::string name, std::weak_ptr<Application> app) : appName(std::move(name)), owner(std::move(app)) {}
 
 		const std::string appName;
 		std::weak_ptr<Application> owner;

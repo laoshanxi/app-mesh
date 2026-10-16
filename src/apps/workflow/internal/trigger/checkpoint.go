@@ -73,7 +73,8 @@ func (c *Checkpoint) SaveRunning(wfName, runID, source, actor string, inputs map
 
 // SaveRunningWithCompleted atomically writes a checkpoint that includes both
 // pending jobs and already-completed jobs from a previous run (for crash recovery).
-func (c *Checkpoint) SaveRunningWithCompleted(wfName, runID, source, actor string, inputs map[string]string, allJobs map[string]*models.Job, completedJobs map[string]string, savedSteps map[string]map[string]StepState) {
+func (c *Checkpoint) SaveRunningWithCompleted(wfName, runID, source, actor string, inputs map[string]string,
+	allJobs map[string]*models.Job, completedJobs map[string]string, savedSteps map[string]map[string]StepState) {
 	jobs := make(map[string]JobState, len(allJobs))
 	for name := range allJobs {
 		if status, ok := completedJobs[name]; ok {

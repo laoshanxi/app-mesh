@@ -10,10 +10,8 @@ public:
 	void initialize() override;
 	void prewarmAuthentication() override;
 	Principal authenticate(const std::string &token) override;
-	std::shared_ptr<AuthorizationPrincipal> enrollFirstAdmin(
-		const std::string &bearerToken) override;
-	std::shared_ptr<AuthorizationPrincipal> enrollFirstAdminPinned(
-		const std::string &principalId) override;
+	std::shared_ptr<AuthorizationPrincipal> enrollFirstAdmin(const std::string &bearerToken) override;
+	std::shared_ptr<AuthorizationPrincipal> enrollFirstAdminPinned(const std::string &principalId) override;
 	std::shared_ptr<AuthorizationPrincipal> principal(const std::string &principalId) const override;
 	std::set<std::string> permissions(const std::string &principalId) const override;
 	std::set<std::string> allPermissions() const override;

@@ -7,28 +7,26 @@
 #include "UriParser.hpp"
 #include "Utility.h"
 
-void HttpResponse::raise_for_status()
+void HttpResponse::raiseForStatus()
 {
-	if (status_code < web::http::status_codes::OK || status_code >= web::http::status_codes::MultipleChoices)
-		throw std::runtime_error("HTTP request failed with status code: " + std::to_string(status_code) + " response: " + text);
+	if (statusCode < web::http::status_codes::OK || statusCode >= web::http::status_codes::MultipleChoices)
+		throw std::runtime_error("HTTP request failed with status code: " + std::to_string(statusCode) +
+								 " response: " + text);
 }
 
 ClientSSLConfig RestClient::m_sslConfig;
 std::mutex RestClient::m_sslMutex;
 
-ClientSSLConfig::ClientSSLConfig()
-	: m_verify_client(false), m_verify_server(false)
+ClientSSLConfig::ClientSSLConfig() : m_verify_client(false), m_verify_server(false) {}
+
+void ClientSSLConfig::resolveAbsolutePaths(std::string workingHome)
 {
+	m_certificate = resolveAbsolutePath(workingHome, m_certificate);
+	m_private_key = resolveAbsolutePath(workingHome, m_private_key);
+	m_ca_location = resolveAbsolutePath(workingHome, m_ca_location);
 }
 
-void ClientSSLConfig::ResolveAbsolutePaths(std::string workingHome)
-{
-	m_certificate = ResolveAbsolutePath(workingHome, m_certificate);
-	m_private_key = ResolveAbsolutePath(workingHome, m_private_key);
-	m_ca_location = ResolveAbsolutePath(workingHome, m_ca_location);
-}
-
-std::string ClientSSLConfig::ResolveAbsolutePath(const std::string &workingHome, std::string filePath)
+std::string ClientSSLConfig::resolveAbsolutePath(const std::string &workingHome, std::string filePath)
 {
 	if (!workingHome.empty() && !filePath.empty() && !Utility::startWith(filePath, workingHome))
 	{
@@ -48,7 +46,7 @@ std::string RestClient::joinUrl(const std::string &host, const std::string &path
 }
 
 bool RestClient::parseRequestTarget(const std::string &host, const std::string &path,
-	const std::map<std::string, std::string> &query, RequestTarget &out, std::string &error)
+									const std::map<std::string, std::string> &query, RequestTarget &out, std::string &error)
 {
 	const Uri uri = Uri::parse(host);
 	out.useSSL = uri.scheme == "https";

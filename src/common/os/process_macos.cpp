@@ -5,10 +5,10 @@
 
 #include <cstring>
 #include <libproc.h>
-#include <unordered_map>
 #include <sys/proc_info.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
+#include <unordered_map>
 #include <vector>
 
 #include <assert.h>
@@ -72,20 +72,10 @@ namespace os
 			break;
 		}
 
-		return std::make_shared<ProcessStatus>(
-			pid,
-			std::string(name),
-			state,
-			bsd_info.pbi_ppid,
-			bsd_info.pbi_pgid,
-			0,
-			task_info.pti_total_user,
-			task_info.pti_total_system,
-			0,
-			0,
-			bsd_info.pbi_start_tvsec,
-			task_info.pti_virtual_size,
-			task_info.pti_resident_size / getpagesize());
+		return std::make_shared<ProcessStatus>(pid, std::string(name), state, bsd_info.pbi_ppid, bsd_info.pbi_pgid, 0,
+											   task_info.pti_total_user, task_info.pti_total_system, 0, 0,
+											   bsd_info.pbi_start_tvsec, task_info.pti_virtual_size,
+											   task_info.pti_resident_size / getpagesize());
 	}
 
 	std::string cmdline(pid_t pid /* = 0 */)
@@ -225,9 +215,8 @@ namespace os
 				continue;
 
 			const Light &l = it->second;
-			ProcessStatus st(pid, l.comm, l.state, l.ppid, l.pgid, 0,
-							 task_info.pti_total_user, task_info.pti_total_system, 0, 0,
-							 0, 0, task_info.pti_resident_size / getpagesize());
+			ProcessStatus st(pid, l.comm, l.state, l.ppid, l.pgid, 0, task_info.pti_total_user, task_info.pti_total_system,
+							 0, 0, 0, 0, task_info.pti_resident_size / getpagesize());
 			result.push_back(makeProcess(st, allProcesses ? std::string() : os::cmdline(pid)));
 		}
 		return result;
@@ -238,9 +227,6 @@ namespace os
 		return processSnapshotImpl(rootPid == 0 ? std::vector<pid_t>{} : std::vector<pid_t>{rootPid}, rootPid == 0);
 	}
 
-	std::list<Process> processSnapshot(const std::vector<pid_t> &rootPids)
-	{
-		return processSnapshotImpl(rootPids, false);
-	}
+	std::list<Process> processSnapshot(const std::vector<pid_t> &rootPids) { return processSnapshotImpl(rootPids, false); }
 
 } // namespace os

@@ -30,8 +30,8 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 	}
 
 	r := &Request{appmesh.NewRequest()}
-	r.HttpMethod = req.Method
-	r.RequestUri = req.URL.Path
+	r.HTTPMethod = req.Method
+	r.RequestURI = req.URL.Path
 	r.ClientAddress = req.RemoteAddr
 
 	// Copy headers and query parameters
@@ -55,7 +55,7 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 	}
 
 	// Read body for non-file upload requests
-	if req.Body != nil && req.URL.Path != REST_PATH_UPLOAD {
+	if req.Body != nil && req.URL.Path != RestPathUpload {
 		if err := r.loadBodyFromHTTP(req); err != nil {
 			return nil, fmt.Errorf("read request body for %s: %w", req.URL.Path, err)
 		}

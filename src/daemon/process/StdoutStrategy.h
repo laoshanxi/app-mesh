@@ -22,10 +22,8 @@ public:
 	virtual bool isActive() const = 0;
 	virtual void teardown() = 0;
 
-	static std::unique_ptr<StdoutStrategy> create(
-		std::string appName, native_fd pipeRead, native_fd diskWrite,
-		std::shared_ptr<std::mutex> diskMutex,
-		std::weak_ptr<Application> owner);
+	static std::unique_ptr<StdoutStrategy> create(std::string appName, native_fd pipeRead, native_fd diskWrite,
+												  std::shared_ptr<std::mutex> diskMutex, std::weak_ptr<Application> owner);
 
 protected:
 	StdoutStrategy() = default;

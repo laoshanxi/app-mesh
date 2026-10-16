@@ -1,20 +1,17 @@
-use anyhow::Result;
-use clap::Parser;
-use std::process;
-
 mod app;
 mod client;
 mod commands;
 mod output;
 mod util;
 
+use anyhow::Result;
 use app::{Cli, Commands};
+use clap::Parser;
+use std::process;
 
 #[tokio::main]
 async fn main() {
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .ok();
+    rustls::crypto::ring::default_provider().install_default().ok();
     env_logger::init();
 
     let cli = Cli::parse();
@@ -129,11 +126,7 @@ mod tests {
             vec!["remove", "-a", "x", "-f"],
             vec!["unreg", "-a", "x", "-f"],
         ] {
-            assert!(
-                !is_error_tolerant_mode(&cli(&args)),
-                "{:?} must propagate errors",
-                args
-            );
+            assert!(!is_error_tolerant_mode(&cli(&args)), "{:?} must propagate errors", args);
         }
     }
 

@@ -43,8 +43,7 @@ namespace os
 		// container's passwd db). chown(2) accepts arbitrary numeric UIDs, so
 		// honoring the digit-form lets the upload succeed even when no user
 		// with that UID is registered locally.
-		if (std::all_of(userName.begin(), userName.end(),
-						[](char c) { return c >= '0' && c <= '9'; }))
+		if (std::all_of(userName.begin(), userName.end(), [](char c) { return c >= '0' && c <= '9'; }))
 		{
 			try
 			{
@@ -80,12 +79,9 @@ namespace os
 		return std::nullopt;
 	}
 
-	uid_t get_uid()
-	{
-		return ::getuid();
-	}
+	uid_t getUid() { return ::getuid(); }
 
-	std::string getUsernameByUid(uid_t uid /* = get_uid() */)
+	std::string getUsernameByUid(uid_t uid /* = getUid() */)
 	{
 		const static char fname[] = "os::getUsernameByUid() ";
 

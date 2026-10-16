@@ -14,7 +14,8 @@ std::string normalizeAppName(const std::string &name);
 /// </summary>
 struct ShellAppFileGen
 {
-	explicit ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin, const std::string &workingDir);
+	explicit ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin,
+							 const std::string &workingDir);
 	virtual ~ShellAppFileGen();
 	const std::string &getShellStartCmd() const { return m_shellCmd; };
 	const std::string &getShellFileName() const { return m_fileName; };
@@ -66,7 +67,7 @@ private:
 	// (AsJson/getOutput, REST threads). Guard the vector so the queue is self-thread-safe.
 	mutable std::mutex m_mutex;
 	std::vector<std::shared_ptr<AppLogFile>> m_fileQueue;
-	const std::string baseFileName;
+	const std::string m_baseFileName;
 	const int m_queueSize;
 };
 

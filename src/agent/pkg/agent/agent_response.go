@@ -43,14 +43,14 @@ func readResponseFromConn(conn *Connection) (*Response, error) {
 	}
 
 	// Handle TCP file download
-	if value, exists := r.Headers[HTTP_HEADER_KEY_X_Recv_File_Socket]; exists && r.HttpStatus == http.StatusOK {
+	if value, exists := r.Headers[HTTPHeaderKeyXRecvFileSocket]; exists && r.HTTPStatus == http.StatusOK {
 		if err := r.downloadFileFromConn(conn, value); err != nil {
 			return nil, fmt.Errorf("handle file download for UUID %s: %w", r.UUID, err)
 		}
 	}
 
 	// Handle TCP file upload
-	if value, exists := r.Headers[HTTP_HEADER_KEY_X_Send_File_Socket]; exists && r.HttpStatus == http.StatusOK {
+	if value, exists := r.Headers[HTTPHeaderKeyXSendFileSocket]; exists && r.HTTPStatus == http.StatusOK {
 		if err := r.prepareFileUpload(value); err != nil {
 			return nil, fmt.Errorf("prepare file upload for UUID %s: %w", r.UUID, err)
 		}
@@ -134,9 +134,9 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 	}
 
 	// Handle the response body based on the path
-	if r.RequestUri == REST_PATH_DOWNLOAD || r.RequestUri == REST_PATH_UPLOAD {
+	if r.RequestURI == RestPathDownload || r.RequestURI == RestPathUpload {
 		if err := HandleRESTFile(w, req, r); err != nil {
-			utils.HttpError(w, err.Error(), http.StatusInternalServerError)
+			utils.HTTPError(w, err.Error(), http.StatusInternalServerError)
 		}
 		logger.Debugf("File REST call finished %s", r.UUID)
 	} else {
@@ -146,7 +146,7 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 		}
 
 		// Set status code
-		w.WriteHeader(r.HttpStatus)
+		w.WriteHeader(r.HTTPStatus)
 
 		if len(r.Body) > 0 {
 			if _, err := w.Write(r.Body); err != nil {

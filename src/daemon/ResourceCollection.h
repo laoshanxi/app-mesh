@@ -20,6 +20,10 @@ struct HostNetInterface
 	bool ipv6;
 	std::string address;
 };
+
+// Host name of the machine this daemon runs on
+#define MY_HOST_NAME ResourceCollection::instance()->getHostName()
+
 //////////////////////////////////////////////////////////////////////////
 /// Host resource attribute
 //////////////////////////////////////////////////////////////////////////
@@ -35,9 +39,9 @@ struct HostResource
 	uint64_t m_total_bytes = 0;
 	uint64_t m_available_bytes = 0;
 	uint64_t m_current_bytes = 0;
-	uint64_t m_totalSwap_bytes = 0;
-	uint64_t m_freeSwap_bytes = 0;
-	uint64_t m_currentSwap_bytes = 0;
+	uint64_t m_total_swap_bytes = 0;
+	uint64_t m_free_swap_bytes = 0;
+	uint64_t m_current_swap_bytes = 0;
 	bool m_inContainer = false;
 	std::string m_cpuSource = "host";
 	std::string m_memorySource = "host";

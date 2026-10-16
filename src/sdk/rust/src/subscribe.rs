@@ -65,10 +65,7 @@ impl MessageDemuxer {
     pub fn new() -> Self {
         Self {
             pending: Arc::new(Mutex::new(HashMap::new())),
-            event_state: Arc::new(std::sync::Mutex::new(EventState {
-                senders: HashMap::new(),
-                buffers: HashMap::new(),
-            })),
+            event_state: Arc::new(std::sync::Mutex::new(EventState { senders: HashMap::new(), buffers: HashMap::new() })),
             stop_tx: std::sync::Mutex::new(None),
             running: Arc::new(AtomicBool::new(false)),
         }
@@ -110,8 +107,8 @@ impl MessageDemuxer {
         }
 
         // Drop all pending senders so waiters get a RecvError. stop() may run
-        // outside a tokio runtime (e.g. from Drop): spawn when possible, else
-        // clear inline — with no runtime nothing holds the async lock.
+        // outside a tokio runtime (e.g. from Drop): spawn when possible, else clear inline — with no runtime
+        // nothing holds the async lock.
         let pending = self.pending.clone();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
@@ -253,12 +250,19 @@ impl MessageDemuxer {
                             }
                         }
                         Err(e) => {
-                            warn!("MessageDemuxer: failed to deserialize message: {}", e);
+                            // A frame that fails msgpack decoding means the stream is
+                            // corrupted. Stop and wake every waiter (Python parity)
+                            // rather than leaving the matching waiter hung forever.
+                            error!("MessageDemuxer: failed to deserialize message: {}", e);
+                            break;
                         }
                     }
                 }
-                Ok(_) => {
-                    // Empty data or None means connection closed
+                Ok(Some(_)) => {
+                    // Empty frame: not a message, keep reading (Python parity).
+                    continue;
+                }
+                Ok(None) => {
                     debug!("MessageDemuxer: connection closed");
                     break;
                 }
@@ -390,6 +394,74 @@ mod tests {
         rmp_serde::to_vec_named(&resp).expect("serialize response")
     }
 
+    // A zero-length frame is not a message: the read loop skips it and keeps
+    // reading instead of treating it as EOF (Python parity).
+    #[tokio::test]
+    async fn read_loop_skips_zero_length_frames() {
+        let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let demuxer = MessageDemuxer::new();
+        demuxer.start(Arc::new(ScriptedReader { rx: Mutex::new(rx) }));
+
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        demuxer.register_event_callback(
+            "sub-zero",
+            Arc::new(move |event: AppEvent| {
+                if event.event_type != EVENT_TYPE_DISCONNECTED {
+                    let _ = event_tx.send(event);
+                }
+            }),
+        );
+
+        let event = AppEvent {
+            subscription_id: "sub-zero".to_string(),
+            event_type: "START".to_string(),
+            app_name: "a".to_string(),
+            timestamp: 0,
+            sequence: 1,
+            data: serde_json::Value::Null,
+        };
+        tx.send(Vec::new()).unwrap(); // zero-length frame: must not read as EOF
+        tx.send(response_bytes("evt-zero", EVENT_URI, &serde_json::to_vec(&event).unwrap())).unwrap();
+
+        let received = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("timed out: event after empty frame not delivered")
+            .expect("dispatch worker dropped");
+        assert_eq!(received.event_type, "START");
+        demuxer.stop();
+    }
+
+    // A frame that fails msgpack decoding means the stream is corrupted: the
+    // demuxer stops and broadcasts __disconnected__ instead of leaving the
+    // matching waiter hung forever (Python parity).
+    #[tokio::test]
+    async fn read_loop_stops_on_undecodable_frame() {
+        let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let demuxer = MessageDemuxer::new();
+        demuxer.start(Arc::new(ScriptedReader { rx: Mutex::new(rx) }));
+
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        demuxer.register_event_callback(
+            "sub-bad",
+            Arc::new(move |event: AppEvent| {
+                let _ = event_tx.send(event);
+            }),
+        );
+        let waiter = demuxer.register_request("req-bad").await;
+
+        tx.send(vec![0xC1, 0xFF, 0xEE]).unwrap(); // 0xC1 is reserved: never decodes
+
+        let event = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("timed out waiting for disconnect broadcast")
+            .expect("dispatch worker dropped");
+        assert_eq!(event.event_type, EVENT_TYPE_DISCONNECTED);
+
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), waiter).await.expect("pending waiter not woken on corrupt frame");
+        assert!(result.is_err());
+    }
+
     // Conformance: S7 (partial) — pending waiter registered before the response
     // arrives is routed by UUID; see docs/source/SDKContract.md.
     #[tokio::test]
@@ -439,9 +511,8 @@ mod tests {
         assert_eq!(event.subscription_id, "sub-s2");
 
         // Pending waiter is woken with an error (disconnect), never "slow request".
-        let result = tokio::time::timeout(Duration::from_secs(2), waiter)
-            .await
-            .expect("pending waiter not woken on disconnect");
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), waiter).await.expect("pending waiter not woken on disconnect");
         assert!(result.is_err());
     }
 

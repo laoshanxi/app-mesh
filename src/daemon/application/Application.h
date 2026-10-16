@@ -88,7 +88,8 @@ public:
 	// On-demand runs and output
 	std::string runAsync(int timeoutSeconds) noexcept(false);
 	std::string runSync(int timeoutSeconds, std::shared_ptr<HttpRequest> asyncHttpRequest) noexcept(false);
-	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "", int index = 0, size_t timeout = 0);
+	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "",
+												 int index = 0, size_t timeout = 0);
 
 	// Worker task channel
 	void sendTask(std::shared_ptr<HttpRequest> asyncHttpRequest);
@@ -149,7 +150,8 @@ private:
 	// Managed process proof (Agent, Workflow): a per-spawn pre-shared key handed
 	// over through shared memory on every start.
 	bool usesProcessProof() const;
-	std::shared_ptr<HMACVerifier> issueProcessProof(const std::string &execUser, std::map<std::string, std::string> &envMap) const;
+	std::shared_ptr<HMACVerifier> issueProcessProof(const std::string &execUser,
+													std::map<std::string, std::string> &envMap) const;
 	void activateProcessProof(const std::string &runId, const std::shared_ptr<HMACVerifier> &proof, bool startAccepted);
 
 	// Completion observers

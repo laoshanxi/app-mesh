@@ -53,21 +53,22 @@ public:
 	bool reply(web::http::status_code status, const std::vector<std::uint8_t> &body_data) const;
 
 	// Responds to this HTTP request with JSON body and custom headers
-	bool reply(web::http::status_code status, const Json::Value &body_data, const std::map<std::string, std::string> &headers) const;
+	bool reply(web::http::status_code status, const Json::Value &body_data,
+			   const std::map<std::string, std::string> &headers) const;
 
 	// Responds to this HTTP request with a string body
-	// Callers do NOT need to block waiting for the response to be sent before the body data is destroyed or goes out of scope
-	bool reply(web::http::status_code status,
-			   std::string &body_data,
+	// Callers do NOT need to block waiting for the response to be sent before the body data is destroyed or goes out of
+	// scope
+	bool reply(web::http::status_code status, std::string &body_data,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
 	// Responds to this HTTP request with string body and custom headers
-	bool reply(web::http::status_code status,
-			   const std::string &body_data,
+	bool reply(web::http::status_code status, const std::string &body_data,
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
-	static std::shared_ptr<HttpRequest> deserialize(const std::string &input, LwsSessionRef lwsRef, std::shared_ptr<WSS::ReplyContext> ctx);
+	static std::shared_ptr<HttpRequest> deserialize(const std::string &input, LwsSessionRef lwsRef,
+													std::shared_ptr<WSS::ReplyContext> ctx);
 	std::string serialize() const;
 	static const Json::Value emptyJsonMessage();
 	void dump() const;
@@ -203,8 +204,7 @@ public:
 	std::tuple<int, std::string> taskStatus();
 
 private:
-	std::shared_ptr<HttpRequestWithTimeout> releaseRepliedRequestLocked(
-		std::shared_ptr<HttpRequestWithTimeout> &request);
+	std::shared_ptr<HttpRequestWithTimeout> releaseRepliedRequestLocked(std::shared_ptr<HttpRequestWithTimeout> &request);
 
 private:
 	std::mutex m_mutex;

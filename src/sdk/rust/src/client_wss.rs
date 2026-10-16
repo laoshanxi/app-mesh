@@ -6,8 +6,8 @@ use crate::error::AppMeshError;
 use crate::models::*;
 use crate::requester::Requester;
 use crate::subscribe::{MessageDemuxer, MessageReader};
-use crate::wire_messages::{RequestMessage, ResponseMessage};
 use crate::tls_config::ClientCert;
+use crate::wire_messages::{RequestMessage, ResponseMessage};
 use crate::wss_transport::WSSTransport;
 
 use async_trait::async_trait;
@@ -105,9 +105,7 @@ impl Requester for WSSRequester {
         let send_result: Result<(), AppMeshError> = async {
             let mut transport = self.transport.lock().await;
 
-            transport.set_bearer_token(
-                self.token.read().unwrap_or_else(|e| e.into_inner()).clone(),
-            );
+            transport.set_bearer_token(self.token.read().unwrap_or_else(|e| e.into_inner()).clone());
 
             if !transport.connected() {
                 transport.connect().await?;
@@ -128,10 +126,8 @@ impl Requester for WSSRequester {
                 // independently. The gateway also checks that this bearer resolves
                 // to the principal pinned on the WebSocket session.
                 if let Some(token) = self.token.read().unwrap_or_else(|e| e.into_inner()).clone() {
-                    req.headers.insert(
-                        HTTP_HEADER_JWT_AUTHORIZATION.into(),
-                        format!("{}{}", HTTP_HEADER_AUTH_BEARER, token),
-                    );
+                    req.headers
+                        .insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), format!("{}{}", HTTP_HEADER_AUTH_BEARER, token));
                 }
             }
 
@@ -146,7 +142,12 @@ impl Requester for WSSRequester {
             }
 
             let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
-            transport.send_message(&data).await?;
+            if let Err(e) = transport.send_message(&data).await {
+                // A failed write leaves the websocket unusable; drop it so the
+                // next request re-dials instead of failing on the dead writer.
+                transport.close().await;
+                return Err(e);
+            }
 
             Ok(())
         }
@@ -168,9 +169,12 @@ impl Requester for WSSRequester {
             match rx.await {
                 Ok(resp) => resp,
                 Err(_) => {
-                    return Err(AppMeshError::ConnectionError(
-                        "Connection closed while waiting for response".into(),
-                    ));
+                    // Demuxer stopped (read error/EOF): drop the transport so the
+                    // next request reconnects instead of failing on the dead socket
+                    // forever (connected() is writer-presence only).
+                    let mut transport = self.transport.lock().await;
+                    transport.close().await;
+                    return Err(AppMeshError::ConnectionError("Connection closed while waiting for response".into()));
                 }
             }
         } else {
@@ -180,10 +184,7 @@ impl Requester for WSSRequester {
         let status = StatusCode::from_u16(resp.http_status as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
         if fail_on_error && status != StatusCode::PRECONDITION_REQUIRED && !status.is_success() {
-            return Err(AppMeshError::RequestFailed {
-                status,
-                message: String::from_utf8_lossy(&resp.body).to_string(),
-            });
+            return Err(AppMeshError::RequestFailed { status, message: String::from_utf8_lossy(&resp.body).to_string() });
         }
 
         resp.into_http_response()
@@ -224,9 +225,7 @@ impl Requester for WSSRequester {
     async fn enable_demuxer(&self) -> Result<(), AppMeshError> {
         {
             let mut transport = self.transport.lock().await;
-            transport.set_bearer_token(
-                self.token.read().unwrap_or_else(|e| e.into_inner()).clone(),
-            );
+            transport.set_bearer_token(self.token.read().unwrap_or_else(|e| e.into_inner()).clone());
             if !transport.connected() {
                 transport.connect().await?;
             }
@@ -257,16 +256,21 @@ impl WSSRequester {
     async fn read_response_direct(&self) -> Result<ResponseMessage, AppMeshError> {
         let mut transport = self.transport.lock().await;
 
-        let resp_data = match transport.receive_message().await? {
-            Some(data) if !data.is_empty() => data,
-            _ => {
+        let resp_data = match transport.receive_message().await {
+            Ok(Some(data)) if !data.is_empty() => data,
+            Ok(_) => {
                 transport.close().await;
                 return Err(AppMeshError::ConnectionError("WebSocket connection broken".into()));
             }
+            // connected() is writer-presence only: drop the dead writer so the
+            // next request reconnects instead of failing on it forever.
+            Err(e) => {
+                transport.close().await;
+                return Err(e);
+            }
         };
 
-        ResponseMessage::deserialize(&resp_data)
-            .map_err(|e| AppMeshError::SerializationError(e.to_string()))
+        ResponseMessage::deserialize(&resp_data).map_err(|e| AppMeshError::SerializationError(e.to_string()))
     }
 }
 
@@ -321,16 +325,10 @@ impl AppMeshClientWSS {
             }
             crate::tls_config::SslVerify::Path(ssl_verify_path) => {
                 let buf = std::fs::read(ssl_verify_path).map_err(|e| {
-                    AppMeshError::ConfigurationError(format!(
-                        "Failed to read CA certificate '{}': {}",
-                        ssl_verify_path, e
-                    ))
+                    AppMeshError::ConfigurationError(format!("Failed to read CA certificate '{}': {}", ssl_verify_path, e))
                 })?;
                 let cert = reqwest::Certificate::from_pem(&buf).map_err(|e| {
-                    AppMeshError::ConfigurationError(format!(
-                        "Invalid CA certificate '{}': {}",
-                        ssl_verify_path, e
-                    ))
+                    AppMeshError::ConfigurationError(format!("Invalid CA certificate '{}': {}", ssl_verify_path, e))
                 })?;
                 client_builder = client_builder.add_root_certificate(cert);
             }
@@ -339,18 +337,14 @@ impl AppMeshClientWSS {
 
         if let Some((cert_path, key_path)) = ssl_client_cert {
             let mut combined = std::fs::read(&cert_path).map_err(|e| {
-                AppMeshError::ConfigurationError(format!(
-                    "Failed to read client certificate '{}': {}",
-                    cert_path, e
-                ))
+                AppMeshError::ConfigurationError(format!("Failed to read client certificate '{}': {}", cert_path, e))
             })?;
             combined.extend_from_slice(b"\n");
             combined.extend_from_slice(&std::fs::read(&key_path).map_err(|e| {
                 AppMeshError::ConfigurationError(format!("Failed to read client key '{}': {}", key_path, e))
             })?);
-            let identity = reqwest::Identity::from_pem(&combined).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e))
-            })?;
+            let identity = reqwest::Identity::from_pem(&combined)
+                .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e)))?;
             client_builder = client_builder.identity(identity);
         }
 
@@ -383,24 +377,19 @@ impl AppMeshClientWSS {
         if let Some(target) = forward_to {
             request = request.header(HTTP_HEADER_KEY_FORWARDING_HOST, target);
         }
-        let response = request.send().await.map_err(|e| {
-            AppMeshError::ConnectionError(format!("Auth config discovery failed: {}", e))
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| AppMeshError::ConnectionError(format!("Auth config discovery failed: {}", e)))?;
         let status = response.status();
         if !status.is_success() {
             let message = response.text().await.unwrap_or_default();
             return Err(AppMeshError::RequestFailed {
                 status,
-                message: if message.is_empty() {
-                    "Auth config discovery failed".into()
-                } else {
-                    message
-                },
+                message: if message.is_empty() { "Auth config discovery failed".into() } else { message },
             });
         }
-        response.json().await.map_err(|e| {
-            AppMeshError::SerializationError(format!("Invalid auth config response: {}", e))
-        })
+        response.json().await.map_err(|e| AppMeshError::SerializationError(format!("Invalid auth config response: {}", e)))
     }
 
     /// Gracefully close the client, awaiting the WebSocket close handshake.
@@ -432,15 +421,12 @@ impl AppMeshClientWSS {
         let mut headers = HashMap::new();
         headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
 
-        let resp = self
-            .client
-            .raw_request(Method::GET, "/appmesh/file/download", None, Some(headers), None, true)
-            .await?;
+        let resp = self.client.raw_request(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
 
         let auth_token = self.client.get_access_token().ok_or_else(|| AppMeshError::RequestFailed {
-                status: StatusCode::UNAUTHORIZED,
-                message: "File transfer requires a bearer token".into(),
-            })?;
+            status: StatusCode::UNAUTHORIZED,
+            message: "File transfer requires a bearer token".into(),
+        })?;
         let auth_token = format!("Bearer {}", auth_token);
 
         let url = format!("{}/appmesh/file/download/ws", self.base_url);
@@ -465,11 +451,7 @@ impl AppMeshClientWSS {
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.starts_with("application/octet-stream"));
         if !response.status().is_success() || !is_file_content {
-            let status = if response.status().is_success() {
-                StatusCode::BAD_GATEWAY
-            } else {
-                response.status()
-            };
+            let status = if response.status().is_success() { StatusCode::BAD_GATEWAY } else { response.status() };
             let message = response.text().await.unwrap_or_default();
             return Err(AppMeshError::RequestFailed {
                 status,
@@ -484,9 +466,7 @@ impl AppMeshClientWSS {
 
         let write_result = async {
             let mut file = File::create(&temp_path)?;
-            while let Some(chunk) =
-                response.chunk().await.map_err(|e| AppMeshError::ConnectionError(e.to_string()))?
-            {
+            while let Some(chunk) = response.chunk().await.map_err(|e| AppMeshError::ConnectionError(e.to_string()))? {
                 file.write_all(&chunk)?;
             }
             file.flush()?;
@@ -534,29 +514,24 @@ impl AppMeshClientWSS {
         let mut headers = HashMap::new();
         headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
 
-        self
-            .client
-            .raw_request(Method::POST, "/appmesh/file/upload", None, Some(headers), None, true)
-            .await?;
+        self.client.raw_request(Method::POST, "/appmesh/file/upload", None, Some(headers), None, true).await?;
 
         let auth_token = self.client.get_access_token().ok_or_else(|| AppMeshError::RequestFailed {
-                status: StatusCode::UNAUTHORIZED,
-                message: "File transfer requires a bearer token".into(),
-            })?;
+            status: StatusCode::UNAUTHORIZED,
+            message: "File transfer requires a bearer token".into(),
+        })?;
         let auth_token = format!("Bearer {}", auth_token);
 
         let mut upload_headers = reqwest::header::HeaderMap::new();
         upload_headers.insert(
             reqwest::header::HeaderName::from_static("authorization"),
-            reqwest::header::HeaderValue::from_str(&auth_token).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Invalid authorization header value: {}", e))
-            })?,
+            reqwest::header::HeaderValue::from_str(&auth_token)
+                .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid authorization header value: {}", e)))?,
         );
         upload_headers.insert(
             reqwest::header::HeaderName::from_bytes(HTTP_HEADER_KEY_X_FILE_PATH.as_bytes()).unwrap(),
-            reqwest::header::HeaderValue::from_str(&encode_file_path(remote_file)).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Invalid remote file path header value: {}", e))
-            })?,
+            reqwest::header::HeaderValue::from_str(&encode_file_path(remote_file))
+                .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid remote file path header value: {}", e)))?,
         );
 
         if preserve_permissions {
@@ -574,17 +549,9 @@ impl AppMeshClientWSS {
         let file_content = std::fs::read(local_path)?;
         let url = format!("{}/appmesh/file/upload/ws", self.base_url);
 
-        let response = self
-            .http_client
-            .post(&url)
-            .headers(upload_headers)
-            .body(file_content)
-            .send()
-            .await
-            .map_err(|e| AppMeshError::RequestFailed {
-                status: StatusCode::INTERNAL_SERVER_ERROR,
-                message: e.to_string(),
-            })?;
+        let response = self.http_client.post(&url).headers(upload_headers).body(file_content).send().await.map_err(|e| {
+            AppMeshError::RequestFailed { status: StatusCode::INTERNAL_SERVER_ERROR, message: e.to_string() }
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -609,7 +576,8 @@ impl AppMeshClientWSS {
     }
 
     /// Run an application and wait for completion using subscribe.
-    /// Subscribe is established BEFORE the app is started, so no events are missed.
+    /// The app runs first, then subscribe + a one-shot output backfill covers
+    /// anything emitted before the subscription took effect (see wait_subscribe.rs).
     ///
     /// Returns:
     ///   `Ok((run, Some(code)))` -- process exited (code may be negative for signal kills)
@@ -624,10 +592,7 @@ impl AppMeshClientWSS {
         stdout_handler: OutputHandler,
         timeout: i32,
     ) -> Result<(AppRun, Option<i32>), AppMeshError> {
-        crate::wait_subscribe::run_and_wait_subscribe(
-            &self.client, app, max_time, lifecycle, stdout_handler, timeout,
-        )
-        .await
+        crate::wait_subscribe::run_and_wait_subscribe(&self.client, app, max_time, lifecycle, stdout_handler, timeout).await
     }
 
     /// Subscribe-based wait for an async run (WSS override).

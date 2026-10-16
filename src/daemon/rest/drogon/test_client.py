@@ -85,7 +85,8 @@ async def receive_ws_messages(websocket):
             elif msg_type == 'pong':
                 print(f"[RECV: Pong] Timestamp: {data['timestamp']}")
             elif data.get('action') == 'task':
-                print(f"[RECV: Task Update] ID: {data['taskId']}, Status: {data['status']}, Progress: {data['progress']}%")
+                print(f"[RECV: Task Update] ID: {data['taskId']}, "
+                      f"Status: {data['status']}, Progress: {data['progress']}%")
             elif msg_type == 'direct_message':
                  print(f"[RECV: Direct Message] {data['message']}")
             else:
@@ -125,7 +126,8 @@ def test_http_api():
         print(f"\n[HTTP POST] {task_url} (Async)")
         
         # Requests.post must handle the stream to receive all chunks of the async reply
-        response = requests.post(task_url, data=task_payload, headers={'Content-Type': 'application/json'}, verify=False, stream=True)
+        response = requests.post(task_url, data=task_payload,
+                                 headers={'Content-Type': 'application/json'}, verify=False, stream=True)
         response.raise_for_status()
         
         # Read the async chunks and print them
@@ -148,7 +150,8 @@ def test_http_api():
         notify_payload = json.dumps({"clientId": CLIENT_ID, "message": "Hello from the HTTP API!"})
         try:
             print(f"\n[HTTP POST] {notify_url} (Target: {CLIENT_ID})")
-            response = requests.post(notify_url, data=notify_payload, headers={'Content-Type': 'application/json'}, verify=False)
+            response = requests.post(notify_url, data=notify_payload,
+                                     headers={'Content-Type': 'application/json'}, verify=False)
             response.raise_for_status()
             print(f"  Status: {response.status_code} | Body: {response.json()}")
         except Exception as e:

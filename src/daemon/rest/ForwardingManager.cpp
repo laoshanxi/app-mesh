@@ -1,6 +1,4 @@
 // src/daemon/rest/ForwardingManager.cpp
-#include "../../common/Utility.h"
-#include "../../common/json.h"
 #include "ForwardingManager.h"
 
 #include <chrono>
@@ -10,11 +8,13 @@
 
 #include <openssl/evp.h>
 
-#include "Data.h"
-#include "HttpRequest.h"
-#include "ForwardingStream.h"
-#include "../Configuration.h"
 #include "../../common/RestClient.h"
+#include "../../common/Utility.h"
+#include "../../common/json.h"
+#include "../Configuration.h"
+#include "Data.h"
+#include "ForwardingStream.h"
+#include "HttpRequest.h"
 #include "drogon/TcpClientStream.h"
 
 namespace
@@ -33,17 +33,13 @@ namespace
 			return {};
 		std::string parseError;
 		const auto value = JSON::parse(std::string(response.body.begin(), response.body.end()), &parseError);
-		if (!value.isObject() || !value.isMember("subscription_id") ||
-			!value["subscription_id"].isString())
+		if (!value.isObject() || !value.isMember("subscription_id") || !value["subscription_id"].isString())
 			return {};
 		return value["subscription_id"].asString();
 	}
 
 	/// Transport of this build: the TCP API.
-	std::shared_ptr<ForwardingStream> createForwardingStream()
-	{
-		return std::make_shared<TcpClientStream>();
-	}
+	std::shared_ptr<ForwardingStream> createForwardingStream() { return std::make_shared<TcpClientStream>(); }
 
 	/// Fingerprint of the bearer a peer pins at the upgrade; the raw token never
 	/// becomes a pool key.
@@ -71,6 +67,12 @@ namespace
 		auto config = Configuration::instance();
 		return port <= 1024 ? config->getTcpApiPort() : port;
 	}
+
+	int64_t steadyNowMs()
+	{
+		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+			.count();
+	}
 }
 
 // Bounds the blocking connect + TLS handshake to a forwarding peer.
@@ -82,13 +84,6 @@ constexpr int64_t FORWARD_STALE_RESPONSE_MS = 30 * 1000;
 
 // A rotated-away bearer leaves its connection behind, so drop silent, unused ones.
 constexpr int64_t FORWARD_IDLE_REAP_MS = 600 * 1000;
-
-int64_t steadyNowMs()
-{
-	return std::chrono::duration_cast<std::chrono::milliseconds>(
-			   std::chrono::steady_clock::now().time_since_epoch())
-		.count();
-}
 
 bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<HttpRequest> request)
 {
@@ -126,15 +121,15 @@ bool ForwardingConnection::idleReapable()
 std::shared_ptr<HttpRequest> ForwardingConnection::findRequest(const std::string &uuid)
 {
 	std::shared_ptr<HttpRequest> request;
-	pending_requests.visit(uuid, [&request](auto &entry)
-							{ request = entry.second; });
+	pending_requests.visit(uuid, [&request](auto &entry) { request = entry.second; });
 	return request;
 }
 
 std::shared_ptr<HttpRequest> ForwardingConnection::takeRequest(const std::string &uuid)
 {
 	std::shared_ptr<HttpRequest> req;
-	pending_requests.erase_if(uuid, [&req](auto &entry)
+	pending_requests.erase_if(uuid,
+							  [&req](auto &entry)
 							  {
 								  req = entry.second;
 								  return true;
@@ -142,8 +137,7 @@ std::shared_ptr<HttpRequest> ForwardingConnection::takeRequest(const std::string
 	return req;
 }
 
-void ForwardingConnection::rememberSubscription(const std::string &subscriptionId,
-	std::shared_ptr<HttpRequest> request)
+void ForwardingConnection::rememberSubscription(const std::string &subscriptionId, std::shared_ptr<HttpRequest> request)
 {
 	if (subscriptionId.empty() || !isPersistentClient(request))
 		return;
@@ -153,8 +147,7 @@ void ForwardingConnection::rememberSubscription(const std::string &subscriptionI
 std::shared_ptr<HttpRequest> ForwardingConnection::findSubscription(const std::string &subscriptionId)
 {
 	std::shared_ptr<HttpRequest> request;
-	subscriptions.visit(subscriptionId, [&request](auto &entry)
-										{ request = entry.second; });
+	subscriptions.visit(subscriptionId, [&request](auto &entry) { request = entry.second; });
 	return request;
 }
 
@@ -183,8 +176,8 @@ void ForwardingConnection::handleResponse(Response &response)
 		auto request = routeId.empty() ? nullptr : findRequest(routeId);
 		if (!request && !subscriptionId.empty())
 			request = findSubscription(subscriptionId);
-		if (request && request->reply(response.request_uri, response.uuid, response.body,
-			response.headers, response.http_status, response.body_msg_type))
+		if (request && request->reply(response.request_uri, response.uuid, response.body, response.headers,
+									  response.http_status, response.body_msg_type))
 			return;
 		removeSubscription(subscriptionId);
 		LOG_WAR << "ForwardingManager: Received event without an active frontend route";
@@ -198,8 +191,8 @@ void ForwardingConnection::handleResponse(Response &response)
 		return;
 	}
 	rememberSubscription(responseSubscriptionId(response), request);
-	request->reply(response.request_uri, response.uuid, response.body,
-		response.headers, response.http_status, response.body_msg_type);
+	request->reply(response.request_uri, response.uuid, response.body, response.headers, response.http_status,
+				   response.body_msg_type);
 	if (request->m_method == web::http::methods::DEL)
 	{
 		if (auto subscription = request->m_query.find("subscription_id"); subscription != request->m_query.end())
@@ -213,12 +206,12 @@ void ForwardingConnection::failAll(const std::string &msg)
 	// either lands in the sweep or self-erases in addRequest().
 	closed.store(true, std::memory_order_release);
 	std::vector<std::string> keys;
-	pending_requests.visit_all([&keys](auto &entry)
-							   { keys.push_back(entry.first); });
+	pending_requests.visit_all([&keys](auto &entry) { keys.push_back(entry.first); });
 	for (auto &uuid : keys)
 	{
 		std::shared_ptr<HttpRequest> req;
-		pending_requests.erase_if(uuid, [&req](auto &entry)
+		pending_requests.erase_if(uuid,
+								  [&req](auto &entry)
 								  {
 									  req = entry.second;
 									  return true;
@@ -245,10 +238,9 @@ void ForwardingConnection::failAll(const std::string &msg)
 		event["sequence"] = 0;
 		event["data"] = eventData;
 		const auto text = JSON::dump(event);
-		entry.second->reply(EVENT_URI, Utility::shortID(),
-			std::vector<std::uint8_t>(text.begin(), text.end()),
-			{{SUBSCRIPTION_HEADER, entry.first}}, web::http::status_codes::OK,
-			web::http::mime_types::application_json);
+		entry.second->reply(EVENT_URI, Utility::shortID(), std::vector<std::uint8_t>(text.begin(), text.end()),
+							{{SUBSCRIPTION_HEADER, entry.first}}, web::http::status_codes::OK,
+							web::http::mime_types::application_json);
 	}
 }
 
@@ -258,8 +250,8 @@ ForwardingManager &ForwardingManager::instance()
 	return mgr;
 }
 
-std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
-	const std::string &host, int port, const std::string &bearer)
+std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(const std::string &host, int port,
+																			   const std::string &bearer)
 {
 	static const char fname[] = "ForwardingManager::getOrCreateConnection() ";
 
@@ -276,8 +268,7 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 	// Phase 1: check the pool, evict stale
 	std::shared_ptr<ForwardingConnection> deadConn;
 	std::vector<std::pair<std::string, std::shared_ptr<ForwardingConnection>>> idleConns;
-	m_connections.visit(key, [&conn](auto &entry)
-						{ conn = entry.second; });
+	m_connections.visit(key, [&conn](auto &entry) { conn = entry.second; });
 	if (conn)
 	{
 		// A pooled entry can outlive its socket: validate the stream's own
@@ -290,8 +281,7 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 			deadConn = conn;
 		}
 		// Erase only the visited entry; a racing thread may have published a new one.
-		m_connections.erase_if(key, [&conn](auto &entry)
-							   { return entry.second == conn; });
+		m_connections.erase_if(key, [&conn](auto &entry) { return entry.second == conn; });
 		conn.reset();
 	}
 
@@ -299,14 +289,14 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 	// connections.
 	if (pinsPrincipal)
 	{
-		m_connections.visit_all([&idleConns](auto &entry)
-								{
-									if (entry.second->idleReapable())
-										idleConns.emplace_back(entry.first, entry.second);
-								});
+		m_connections.visit_all(
+			[&idleConns](auto &entry)
+			{
+				if (entry.second->idleReapable())
+					idleConns.emplace_back(entry.first, entry.second);
+			});
 		for (const auto &entry : idleConns)
-			m_connections.erase_if(entry.first, [&entry](auto &e)
-								   { return e.second == entry.second; });
+			m_connections.erase_if(entry.first, [&entry](auto &e) { return e.second == entry.second; });
 	}
 	// Outside m_connections: failAll touches client replies — keep the lock
 	// order stream-internal locks → m_connections.
@@ -361,15 +351,16 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 				c->failAll("Forwarding host connection closed");
 			}
 			// Only unbind if the mapped connection is this one (not a race winner)
-			m_connections.erase_if(key, [&weakConn](auto &entry)
-								   { return entry.second == weakConn.lock(); });
+			m_connections.erase_if(key, [&weakConn](auto &entry) { return entry.second == weakConn.lock(); });
 		});
 
 	const bool verifyServer = Configuration::instance()->getSslVerifyServer();
 	ForwardingConnectOptions options;
 	options.host = host;
 	options.port = port;
-	options.ca = verifyServer ? ClientSSLConfig::ResolveAbsolutePath(Utility::getHomeDir(), Configuration::instance()->getSSLCaPath()) : std::string();
+	options.ca = verifyServer
+					 ? ClientSSLConfig::resolveAbsolutePath(Utility::getHomeDir(), Configuration::instance()->getSSLCaPath())
+					 : std::string();
 	options.verifyPeer = verifyServer;
 	options.bearer = bearer;
 	// A peer that requires client certificates cannot be reached without them.
@@ -377,8 +368,9 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 	const auto clientCert = config->getSSLClientCertificateFile();
 	if (!clientCert.empty())
 	{
-		options.clientCert = ClientSSLConfig::ResolveAbsolutePath(Utility::getHomeDir(), clientCert);
-		options.clientKey = ClientSSLConfig::ResolveAbsolutePath(Utility::getHomeDir(), config->getSSLClientCertificateKeyFile());
+		options.clientCert = ClientSSLConfig::resolveAbsolutePath(Utility::getHomeDir(), clientCert);
+		options.clientKey =
+			ClientSSLConfig::resolveAbsolutePath(Utility::getHomeDir(), config->getSSLClientCertificateKeyFile());
 	}
 	options.timeoutSeconds = FORWARD_CONNECT_TIMEOUT_SECONDS;
 	if (bearer.empty() && pinsPrincipal)
@@ -400,10 +392,8 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 	while (true)
 	{
 		std::shared_ptr<ForwardingConnection> existing;
-		const bool inserted = m_connections.insert_or_visit(
-			std::make_pair(key, conn),
-			[&existing](auto &entry)
-			{ existing = entry.second; });
+		const bool inserted =
+			m_connections.insert_or_visit(std::make_pair(key, conn), [&existing](auto &entry) { existing = entry.second; });
 		if (inserted)
 			return conn;
 		if (!existing->closed.load(std::memory_order_acquire))
@@ -413,8 +403,7 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(
 			return existing;
 		}
 		// Stale entry: remove only that exact entry and retry.
-		m_connections.erase_if(key, [&existing](auto &entry)
-							   { return entry.second == existing; });
+		m_connections.erase_if(key, [&existing](auto &entry) { return entry.second == existing; });
 	}
 
 	return conn;
@@ -429,7 +418,7 @@ bool ForwardingManager::forward(const std::string &host, int port, const std::sh
 	if (targetPort <= 0)
 	{
 		request->reply(web::http::status_codes::BadGateway,
-			"Forwarding to other hosts is not available: the target port is not configured");
+					   "Forwarding to other hosts is not available: the target port is not configured");
 		return true;
 	}
 

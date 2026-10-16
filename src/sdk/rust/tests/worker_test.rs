@@ -20,11 +20,7 @@ mod tests {
             .create_async()
             .await;
 
-        let client = ClientBuilder::new()
-            .url(server.url())
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
+        let client = ClientBuilder::new().url(server.url()).danger_accept_invalid_certs(true).build().unwrap();
         let srv = AppMeshWorker::with_client(client);
 
         let payload = srv.fetch_task().await.unwrap();
@@ -46,11 +42,7 @@ mod tests {
             .create_async()
             .await;
 
-        let client = ClientBuilder::new()
-            .url(server.url())
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
+        let client = ClientBuilder::new().url(server.url()).danger_accept_invalid_certs(true).build().unwrap();
         let srv = AppMeshWorker::with_client(client);
 
         let result = srv.send_task_result(b"ok").await;

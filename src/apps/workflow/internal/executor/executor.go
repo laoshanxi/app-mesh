@@ -11,12 +11,13 @@ import (
 	"sync"
 	"time"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"github.com/rs/xid"
+
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/expression"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
-	"github.com/rs/xid"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 const (
@@ -46,9 +47,12 @@ type StepExecutor struct {
 	ServerURI            string   // base server URI for creating forwarding clients
 	OnAppStart           func(appName string)
 	OnAppEnd             func(appName string)
-	StepLogPath          string                                                                                                 // path to write streaming step log (set per-step by engine)
-	CancelCtx            context.Context                                                                                        // workflow cancel context (nil = background)
-	RunSubWorkflow       func(ctx context.Context, wfName string, inputs map[string]string, depth int) (int, map[string]string) // in-process sub-workflow execution (set by engine)
+	// path to write streaming step log (set per-step by engine)
+	StepLogPath string
+	// workflow cancel context (nil = background)
+	CancelCtx      context.Context
+	RunSubWorkflow func(ctx context.Context, wfName string, inputs map[string]string, depth int) (int,
+		map[string]string) // in-process sub-workflow execution (set by engine)
 
 	remoteClient *appmesh.AppMeshClientTCP // per-job cached remote connection (nil = local)
 }
@@ -177,7 +181,8 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 			if r.err != nil {
 				logger.Info("cancelled message step to app '" + step.Message.App + "' finished with error: " + r.err.Error())
 			} else {
-				logger.Info("cancelled message step to app '" + step.Message.App + "' completed after cancellation; response discarded")
+				logger.Info("cancelled message step to app '" + step.Message.App +
+					"' completed after cancellation; response discarded")
 			}
 		}()
 		return fail(1, "cancelled", time.Since(start).Seconds())
@@ -275,7 +280,8 @@ func (e *StepExecutor) execWorkflow(step *models.Step, _, _ map[string]string) m
 // The daemon rejects an App whose metadata does not equal the capability claims
 // exactly, so a sub-workflow must stamp the top-level run identity here even
 // though its expression context carries the sub-workflow identity.
-func stepAppMetadata(capabilityWorkflowID, capabilityRunID string, ectx *expression.Context, processUUID string) json.RawMessage {
+func stepAppMetadata(capabilityWorkflowID, capabilityRunID string, ectx *expression.Context,
+	processUUID string) json.RawMessage {
 	workflowID, runID := capabilityWorkflowID, capabilityRunID
 	if workflowID == "" {
 		workflowID = ectx.WfName
@@ -325,7 +331,8 @@ func (e *StepExecutor) runAndWait(app appmesh.Application, timeout int) models.S
 		if f, err := os.OpenFile(e.StepLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err == nil {
 			logFile = f
 		} else {
-			logger.Error(fmt.Sprintf("cannot open step log %q: %v (stdout still captured in run record)", e.StepLogPath, err))
+			logger.Error(fmt.Sprintf("cannot open step log %q: %v (stdout still captured in run record)", e.StepLogPath,
+				err))
 		}
 	}
 
@@ -410,9 +417,9 @@ func (e *StepExecutor) clientForTarget() (*appmesh.AppMeshClient, error) {
 		return e.remoteClient.AppMeshClient, nil
 	}
 	option := appmesh.Option{
-		AppMeshUri: e.ServerURI,
+		AppMeshURI: e.ServerURI,
 		ForwardTo:  e.TargetHost,
-		JwtToken:   e.CallerToken,
+		JWTToken:   e.CallerToken,
 	}
 	tlsconf.Apply(&option)
 	c, err := appmesh.NewTCPClient(option)

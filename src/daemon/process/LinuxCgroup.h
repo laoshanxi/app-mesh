@@ -10,8 +10,8 @@
 enum class CgroupVersion
 {
 	None, // Cgroup not available or not needed
-	V1,	  // Cgroup v1 (legacy)
-	V2	  // Cgroup v2 (unified)
+	V1,   // Cgroup v1 (legacy)
+	V2    // Cgroup v2 (unified)
 };
 
 struct CgroupSwapStats
@@ -32,8 +32,8 @@ public:
 	/// @param memorySwapBytes Swap-only limit in bytes; explicit zero disables swap
 	/// @param cpuShares CPU shares for scheduling priority
 	/// @return Unique pointer to cgroup implementation (V1, V2, or null handler)
-	static std::unique_ptr<LinuxCgroup> create(long long memoryLimitBytes, long long memorySwapBytes,
-		long long cpuShares, bool swapLimitSpecified = false);
+	static std::unique_ptr<LinuxCgroup> create(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares,
+											   bool swapLimitSpecified = false);
 
 	/// Detect which cgroup version is available on the system
 	/// @return CgroupVersion enum indicating available version
@@ -66,7 +66,7 @@ public:
 	virtual std::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) = 0;
 	/// Effective headroom across the current cgroup and all of its ancestors.
 	virtual std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName,
-		const std::string &currentFileName) = 0;
+																  const std::string &currentFileName) = 0;
 	virtual std::optional<CgroupSwapStats> readHostSwapStats() = 0;
 
 	/// Get the number of CPUs available in the cpuset
@@ -112,14 +112,16 @@ protected:
 class LinuxCgroupV1 : public LinuxCgroup
 {
 public:
-	LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares, bool swapLimitSpecified = false);
+	LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares,
+				  bool swapLimitSpecified = false);
 	~LinuxCgroupV1() override;
 
 	void prepareGroup(const std::string &appName, int index) override;
 	std::vector<std::string> procsFilePaths() const override;
 	bool attachPid(int pid) override;
 	std::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
-	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
+	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName,
+														  const std::string &currentFileName) override;
 	std::optional<CgroupSwapStats> readHostSwapStats() override;
 	std::optional<int> readHostCpuCount() override;
 	std::optional<double> readHostCpuQuotaCores() override;
@@ -170,14 +172,16 @@ private:
 class LinuxCgroupV2 : public LinuxCgroup
 {
 public:
-	LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares, bool swapLimitSpecified = false);
+	LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares,
+				  bool swapLimitSpecified = false);
 	~LinuxCgroupV2() override;
 
 	void prepareGroup(const std::string &appName, int index) override;
 	std::vector<std::string> procsFilePaths() const override;
 	bool attachPid(int pid) override;
 	std::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
-	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
+	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName,
+														  const std::string &currentFileName) override;
 	std::optional<CgroupSwapStats> readHostSwapStats() override;
 	std::optional<int> readHostCpuCount() override;
 	std::optional<double> readHostCpuQuotaCores() override;
@@ -240,7 +244,8 @@ public:
 	std::vector<std::string> procsFilePaths() const override;
 	bool attachPid(int pid) override;
 	std::optional<long long> readHostMemoryValue(const std::string &cgroupFileName) override;
-	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName) override;
+	std::optional<long long> readHostMemoryAvailableValue(const std::string &limitFileName,
+														  const std::string &currentFileName) override;
 	std::optional<CgroupSwapStats> readHostSwapStats() override;
 	std::optional<int> readHostCpuCount() override;
 	std::optional<double> readHostCpuQuotaCores() override;

@@ -1,10 +1,10 @@
 #include "Security.h"
 
-#include "../../common/Utility.h"
-#include "SecurityOidc.h"
-
 #include <algorithm>
 #include <cctype>
+
+#include "../../common/Utility.h"
+#include "SecurityOidc.h"
 
 std::shared_ptr<Security> Security::m_instance = nullptr;
 std::recursive_mutex Security::m_mutex;
@@ -37,7 +37,7 @@ Principal Security::authenticateBearerAuthorization(const std::string &authoriza
 		throw std::domain_error("Authorization header must use the Bearer scheme");
 	auto scheme = value.substr(0, separator);
 	std::transform(scheme.begin(), scheme.end(), scheme.begin(),
-		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+				   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	if (scheme != "bearer")
 		throw std::domain_error("Authorization header must use the Bearer scheme");
 	const auto token = Utility::stdStringTrim(value.substr(separator + 1));
@@ -53,6 +53,5 @@ void Security::requirePermission(const std::string &principalId, const std::stri
 	const auto granted = instance()->permissions(principalId);
 	if (!permission.empty() && granted.count(permission) == 0)
 		throw AuthorizationException(Utility::stringFormat(
-			"Permission denied: principal '%s' lacks required permission '%s'",
-			principalId.c_str(), permission.c_str()));
+			"Permission denied: principal '%s' lacks required permission '%s'", principalId.c_str(), permission.c_str()));
 }

@@ -3,21 +3,16 @@
 #include <chrono>
 #include <tuple>
 
-#include <msgpack.hpp>
 #include <json/json.h>
+#include <msgpack.hpp>
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "Data.h"
 
-Response::Response()
-	: http_status(0)
-{
-}
+Response::Response() : http_status(0) {}
 
-Response::~Response()
-{
-}
+Response::~Response() {}
 
 namespace
 {

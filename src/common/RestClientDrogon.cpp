@@ -58,7 +58,7 @@ namespace
 		std::promise<void> donePromise;
 		std::shared_ptr<HttpResponse> response = std::make_shared<HttpResponse>();
 		std::string requestWire; // fully serialized request, sent on connect
-		std::string raw;		 // accumulated response bytes
+		std::string raw;         // accumulated response bytes
 		size_t bodyStart = 0;
 		long contentLength = -1; // -1: body delimited by connection close
 		bool headersParsed = false;
@@ -141,7 +141,7 @@ namespace
 			}
 			long statusCode = 0;
 			std::from_chars(state.raw.data() + space + 1, state.raw.data() + state.raw.size(), statusCode);
-			state.response->status_code = statusCode;
+			state.response->statusCode = statusCode;
 
 			size_t pos = lineEnd + 2;
 			while (pos < headerEnd)
@@ -201,12 +201,9 @@ namespace
 		return false; // body delimited by connection close
 	}
 
-	std::string buildRequestWire(
-		const web::http::method &mtd,
-		const std::string &pathWithQuery,
-		const std::string &hostHeader,
-		const std::map<std::string, std::string> &header,
-		const std::string &body)
+	std::string buildRequestWire(const web::http::method &mtd, const std::string &pathWithQuery,
+								 const std::string &hostHeader, const std::map<std::string, std::string> &header,
+								 const std::string &body)
 	{
 		// Preserve the legacy transport semantics: a body is sent for POST/PUT only.
 		const bool sendBody = !body.empty() && (mtd == web::http::methods::POST || mtd == web::http::methods::PUT);
@@ -243,15 +240,11 @@ namespace
 	}
 }
 
-std::shared_ptr<HttpResponse> RestClient::request(
-	const std::string &host,
-	const web::http::method &mtd,
-	const std::string &path,
-	const std::string &body,
-	std::map<std::string, std::string> header,
-	std::map<std::string, std::string> query,
-	long timeoutSeconds,
-	const ClientSSLConfig *sslConfig)
+std::shared_ptr<HttpResponse> RestClient::request(const std::string &host, const web::http::method &mtd,
+												  const std::string &path, const std::string &body,
+												  std::map<std::string, std::string> header,
+												  std::map<std::string, std::string> query, long timeoutSeconds,
+												  const ClientSSLConfig *sslConfig)
 {
 	const static char fname[] = "RestClient::request() ";
 
@@ -282,110 +275,120 @@ std::shared_ptr<HttpResponse> RestClient::request(
 	auto future = state->donePromise.get_future();
 	auto *loop = httpClientLoop();
 
-	loop->runInLoop([state, loop, ip, port = target.port, useSSL = target.useSSL, hostName = target.host, ssl = std::move(ssl)]() mutable
-					{
-		try
+	loop->runInLoop(
+		[state, loop, ip, port = target.port, useSSL = target.useSSL, hostName = target.host, ssl = std::move(ssl)]() mutable
 		{
-			auto client = std::make_shared<trantor::TcpClient>(loop, trantor::InetAddress(ip, static_cast<uint16_t>(port), ip.find(':') != std::string::npos), "appmesh-rest");
+			try
+			{
+				auto client = std::make_shared<trantor::TcpClient>(
+					loop, trantor::InetAddress(ip, static_cast<uint16_t>(port), ip.find(':') != std::string::npos),
+					"appmesh-rest");
 
-			client->setConnectionCallback([state](const trantor::TcpConnectionPtr &conn)
-										  {
-				if (state->finished)
-					return;
-				if (conn->connected())
-				{
-					state->conn = conn;
-					conn->send(state->requestWire);
-				}
-				else
-				{
-					// Connection closed: complete from whatever was received.
-					// A TLS close notification can race the final data records,
-					// leaving bytes in the input buffer with no message callback;
-					// drain them before declaring the body incomplete.
-					auto *input = conn->getRecvBuffer();
-					if (input && input->readableBytes() > 0)
+				client->setConnectionCallback(
+					[state](const trantor::TcpConnectionPtr &conn)
 					{
-						state->raw.append(input->peek(), input->readableBytes());
-						input->retrieveAll();
-					}
-					if (tryCompleteResponse(*state))
-						state->finish(std::string());
-					else if (!state->headersParsed)
-						state->finish("connection closed before response headers received");
-					else if (state->chunked)
-					{
-						std::string body;
-						if (decodeChunkedBody(state->raw.substr(state->bodyStart), body, /*atEof*/ true))
+						if (state->finished)
+							return;
+						if (conn->connected())
 						{
-							state->response->text.swap(body);
-							state->finish(std::string());
+							state->conn = conn;
+							conn->send(state->requestWire);
 						}
 						else
-							state->finish("connection closed before response body completed");
-					}
-					else if (state->contentLength < 0)
+						{
+							// Connection closed: complete from whatever was received.
+							// A TLS close notification can race the final data records,
+							// leaving bytes in the input buffer with no message callback;
+							// drain them before declaring the body incomplete.
+							auto *input = conn->getRecvBuffer();
+							if (input && input->readableBytes() > 0)
+							{
+								state->raw.append(input->peek(), input->readableBytes());
+								input->retrieveAll();
+							}
+							if (tryCompleteResponse(*state))
+								state->finish(std::string());
+							else if (!state->headersParsed)
+								state->finish("connection closed before response headers received");
+							else if (state->chunked)
+							{
+								std::string body;
+								if (decodeChunkedBody(state->raw.substr(state->bodyStart), body, /*atEof*/ true))
+								{
+									state->response->text.swap(body);
+									state->finish(std::string());
+								}
+								else
+									state->finish("connection closed before response body completed");
+							}
+							else if (state->contentLength < 0)
+							{
+								state->response->text = state->raw.substr(state->bodyStart);
+								state->finish(std::string());
+							}
+							else
+							{
+								LOG_WAR << "RestClient response body incomplete on close: raw <" << state->raw.size()
+										<< "> bytes, chunked <" << state->chunked << ">, content-length <"
+										<< state->contentLength << ">";
+								state->finish("connection closed before response body completed");
+							}
+						}
+					});
+				client->setConnectionErrorCallback([state]() { state->finish("connection to peer failed"); });
+				client->setMessageCallback(
+					[state](const trantor::TcpConnectionPtr &conn, trantor::MsgBuffer *buf)
 					{
-						state->response->text = state->raw.substr(state->bodyStart);
-						state->finish(std::string());
-					}
-					else
-					{
-						LOG_WAR << "RestClient response body incomplete on close: raw <" << state->raw.size()
-								<< "> bytes, chunked <" << state->chunked
-								<< ">, content-length <" << state->contentLength << ">";
-						state->finish("connection closed before response body completed");
-					}
-				} });
-			client->setConnectionErrorCallback([state]()
-											   { state->finish("connection to peer failed"); });
-			client->setMessageCallback([state](const trantor::TcpConnectionPtr &conn, trantor::MsgBuffer *buf)
-									   {
-				if (!state->finished)
-				{
-					state->raw.append(buf->peek(), buf->readableBytes());
-					if (tryCompleteResponse(*state))
-					{
-						state->finish(std::string());
-						conn->forceClose();
-					}
-				}
-				buf->retrieveAll(); });
+						if (!state->finished)
+						{
+							state->raw.append(buf->peek(), buf->readableBytes());
+							if (tryCompleteResponse(*state))
+							{
+								state->finish(std::string());
+								conn->forceClose();
+							}
+						}
+						buf->retrieveAll();
+					});
 
-			if (useSSL)
-			{
-				auto policy = std::make_shared<trantor::TLSPolicy>();
-				policy->setValidate(ssl.m_verify_server)
-					.setUseOldTLS(false)
-					.setUseSystemCertStore(ssl.m_verify_server && ssl.m_ca_location.empty())
-					.setHostname(hostName);
-				if (ssl.m_verify_server && !ssl.m_ca_location.empty())
-					policy->setCaPath(ssl.m_ca_location);
-				if (ssl.m_verify_client && !ssl.m_certificate.empty() && !ssl.m_private_key.empty())
+				if (useSSL)
 				{
-					policy->setCertPath(ssl.m_certificate).setKeyPath(ssl.m_private_key);
-					if (!ssl.m_private_key_passwd.empty())
-						LOG_WAR << fname << "trantor does not support password-protected client keys; the password is ignored";
+					auto policy = std::make_shared<trantor::TLSPolicy>();
+					policy->setValidate(ssl.m_verify_server)
+						.setUseOldTLS(false)
+						.setUseSystemCertStore(ssl.m_verify_server && ssl.m_ca_location.empty())
+						.setHostname(hostName);
+					if (ssl.m_verify_server && !ssl.m_ca_location.empty())
+						policy->setCaPath(ssl.m_ca_location);
+					if (ssl.m_verify_client && !ssl.m_certificate.empty() && !ssl.m_private_key.empty())
+					{
+						policy->setCertPath(ssl.m_certificate).setKeyPath(ssl.m_private_key);
+						if (!ssl.m_private_key_passwd.empty())
+							LOG_WAR << fname
+									<< "trantor does not support password-protected client keys; the password is ignored";
+					}
+					client->enableSSL(std::move(policy));
 				}
-				client->enableSSL(std::move(policy));
+
+				state->client = client;
+				client->connect();
 			}
-
-			state->client = client;
-			client->connect();
-		}
-		catch (const std::exception &ex)
-		{
-			state->finish(std::string("failed to set up the connection: ") + ex.what());
-		} });
+			catch (const std::exception &ex)
+			{
+				state->finish(std::string("failed to set up the connection: ") + ex.what());
+			}
+		});
 
 	auto waitStatus = future.wait_for(std::chrono::seconds(totalTimeout));
 	if (waitStatus == std::future_status::timeout)
 	{
-		loop->runInLoop([state]()
-						{
-			state->finish("request timeout");
-			if (state->conn)
-				state->conn->forceClose(); });
+		loop->runInLoop(
+			[state]()
+			{
+				state->finish("request timeout");
+				if (state->conn)
+					state->conn->forceClose();
+			});
 		// Let the event loop finalize the response object; only the loop thread touches it.
 		waitStatus = future.wait_for(std::chrono::seconds(2));
 	}
@@ -393,11 +396,10 @@ std::shared_ptr<HttpResponse> RestClient::request(
 	if (waitStatus == std::future_status::ready)
 	{
 		future.get();
-		if (state->response->status_code == 0)
+		if (state->response->statusCode == 0)
 			LOG_ERR << fname << "request to <" << host << "> failed: " << state->response->text;
 		// trantor objects must be released on their event loop thread.
-		loop->runInLoop([state]() mutable
-					{ state->client.reset(); });
+		loop->runInLoop([state]() mutable { state->client.reset(); });
 		return state->response;
 	}
 
@@ -405,9 +407,8 @@ std::shared_ptr<HttpResponse> RestClient::request(
 	// detached timeout answer instead of racing the loop thread for it.
 	LOG_ERR << fname << "request to <" << host << "> timed out without a loop response";
 	auto timeoutResponse = std::make_shared<HttpResponse>();
-	timeoutResponse->status_code = 0;
+	timeoutResponse->statusCode = 0;
 	timeoutResponse->text = "request timeout";
-	loop->runInLoop([state = std::move(state)]() mutable
-					{ state->client.reset(); });
+	loop->runInLoop([state = std::move(state)]() mutable { state->client.reset(); });
 	return timeoutResponse;
 }

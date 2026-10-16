@@ -8,8 +8,8 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <lmcons.h>
-#include <windows.h>
 #include <sddl.h> // ConvertSidToStringSidA, must follow windows.h
+#include <windows.h>
 
 #pragma comment(lib, "advapi32.lib")
 
@@ -70,7 +70,7 @@ namespace os
 		return std::make_pair(uid, groupid);
 	}
 
-	uid_t get_uid()
+	uid_t getUid()
 	{
 		HandleRAII hToken;
 		HANDLE tempToken = nullptr;
@@ -108,7 +108,7 @@ namespace os
 		return hashSidToUid(std::string(sidString));
 	}
 
-	std::string getUsernameByUid(uid_t uid /* = get_uid() */)
+	std::string getUsernameByUid(uid_t uid /* = getUid() */)
 	{
 		const static char fname[] = "os::getUsernameByUid() ";
 
@@ -118,7 +118,7 @@ namespace os
 			return "";
 		}
 
-		uid_t currentUid = get_uid();
+		uid_t currentUid = getUid();
 		if (uid == currentUid)
 		{
 			DWORD bufferSize = UNLEN + 1;

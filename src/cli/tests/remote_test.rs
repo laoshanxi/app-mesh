@@ -13,8 +13,7 @@ fn wss_port() -> u16 {
     std::env::var("APPMESH_WSS_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6058)
 }
 fn access_token() -> String {
-    std::env::var("APPMESH_TEST_ACCESS_TOKEN")
-        .expect("APPMESH_TEST_ACCESS_TOKEN must contain a Dex access token")
+    std::env::var("APPMESH_TEST_ACCESS_TOKEN").expect("APPMESH_TEST_ACCESS_TOKEN must contain a Dex access token")
 }
 
 async fn new_client() -> Arc<appmesh::AppMeshClientWSS> {
@@ -66,11 +65,7 @@ fn cli_auth() {
     // Interactive OAuth is intentionally not automated with a bearer import. Run
     // `appm logon` against the test Engine before starting these ignored tests.
     let out = appm().arg("loginfo").output().unwrap();
-    assert!(
-        out.status.success(),
-        "CLI session missing; run appm logon first: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    assert!(out.status.success(), "CLI session missing; run appm logon first: {}", String::from_utf8_lossy(&out.stderr));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -510,10 +505,7 @@ fn cli_83_log_invalid_level() {
 #[ignore]
 async fn sdk_12b_run_async_short_cmd() {
     let c = authed().await;
-    let app = Application::builder("_test_short_")
-        .command("echo fast_done")
-        .shell(true)
-        .build();
+    let app = Application::builder("_test_short_").command("echo fast_done").shell(true).build();
     let start = std::time::Instant::now();
     let (_run, code) = c.run_and_wait(&app, 5, 30, appmesh::print_output_handler(), 5).await.unwrap();
     let elapsed = start.elapsed();
@@ -525,10 +517,7 @@ async fn sdk_12b_run_async_short_cmd() {
 #[ignore]
 async fn sdk_12c_run_async_captures_output() {
     let c = authed().await;
-    let app = Application::builder("_test_output_")
-        .command("echo captured_text_xyz")
-        .shell(true)
-        .build();
+    let app = Application::builder("_test_output_").command("echo captured_text_xyz").shell(true).build();
     // Use run_app_async + wait_for_async_run to test subscribe output delivery
     let run = c.run_app_async(&app, 5, 30).await.unwrap();
     let code = c.wait_for_async_run(&run, appmesh::print_output_handler(), 5).await.unwrap();

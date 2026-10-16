@@ -77,8 +77,7 @@ namespace os
 		}
 		else
 		{
-			LOG_ERR << fname << "Failed to get disk space for path: " << path
-					<< " Error: " << GetLastError();
+			LOG_ERR << fname << "Failed to get disk space for path: " << path << " Error: " << GetLastError();
 			return nullptr;
 		}
 
@@ -125,7 +124,7 @@ namespace os
 	{
 		const static char fname[] = "fileStat() ";
 
-		struct _stat fileStat {};
+		struct _stat fileStat{};
 		if (::_stat(path.c_str(), &fileStat) == 0)
 		{
 			int permissionBits = fileStat.st_mode & 0777;
@@ -170,7 +169,8 @@ namespace os
 				char tmpFile[MAX_PATH];
 				if (GetTempFileNameA(tmpDir, "amsh", 0, tmpFile) == 0)
 				{
-					LOG_WAR << fname << "GetTempFileNameA failed in directory <" << tmpDir << "> with error " << ::GetLastError();
+					LOG_WAR << fname << "GetTempFileNameA failed in directory <" << tmpDir << "> with error "
+							<< ::GetLastError();
 					return {};
 				}
 				finalPath = tmpFile;
@@ -181,11 +181,13 @@ namespace os
 				// matching POSIX mkstemp behavior that appends a random suffix.
 				auto parentDir = fs::absolute(fileName).parent_path();
 				std::string prefix = fs::path(fileName).filename().string();
-				if (prefix.size() > 3) prefix = prefix.substr(0, 3);
+				if (prefix.size() > 3)
+					prefix = prefix.substr(0, 3);
 				char tmpFile[MAX_PATH];
 				if (GetTempFileNameA(parentDir.string().c_str(), prefix.c_str(), 0, tmpFile) == 0)
 				{
-					LOG_WAR << fname << "GetTempFileNameA failed in directory <" << parentDir.string() << "> with error " << ::GetLastError();
+					LOG_WAR << fname << "GetTempFileNameA failed in directory <" << parentDir.string() << "> with error "
+							<< ::GetLastError();
 					return {};
 				}
 				finalPath = tmpFile;
@@ -196,14 +198,8 @@ namespace os
 			sa.bInheritHandle = FALSE;
 			sa.lpSecurityDescriptor = NULL;
 
-			HANDLE hFile = ::CreateFileA(
-				finalPath.string().c_str(),
-				GENERIC_WRITE,
-				0,
-				&sa,
-				CREATE_ALWAYS,
-				FILE_ATTRIBUTE_TEMPORARY,
-				NULL);
+			HANDLE hFile = ::CreateFileA(finalPath.string().c_str(), GENERIC_WRITE, 0, &sa, CREATE_ALWAYS,
+										 FILE_ATTRIBUTE_TEMPORARY, NULL);
 
 			if (hFile == INVALID_HANDLE_VALUE)
 			{
@@ -217,7 +213,8 @@ namespace os
 				if (!::WriteFile(hFile, content.data(), static_cast<DWORD>(content.size()), &bytesWritten, NULL) ||
 					bytesWritten != content.size())
 				{
-					LOG_WAR << fname << "Failed to write to file <" << finalPath.string() << ">, wrote " << bytesWritten << " of " << content.size() << " bytes";
+					LOG_WAR << fname << "Failed to write to file <" << finalPath.string() << ">, wrote " << bytesWritten
+							<< " of " << content.size() << " bytes";
 					::CloseHandle(hFile);
 					return {};
 				}

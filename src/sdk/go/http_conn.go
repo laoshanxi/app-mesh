@@ -1,4 +1,4 @@
-// client_http_handler.go
+// http_conn.go
 package appmesh
 
 import (
@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// HTTPConnection is an HTTP client with App Mesh TLS defaults.
 type HTTPConnection struct {
 	*http.Client
 }
@@ -16,7 +17,7 @@ func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile s
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 
 	// Server verification: a configured but missing/unreadable CA is a hard error;
-	// an empty CA path (InsecureSkipVerify or legacy SslTrustedCA = "") disables it.
+	// an empty CA path (InsecureSkipVerify or legacy SSLTrustedCA = "") disables it.
 	switch caFile {
 	case caSystemTrust:
 		// Verify against the system trust store (RootCAs left nil); see caSystemTrust.

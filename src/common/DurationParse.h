@@ -12,23 +12,23 @@
 class DurationParse
 {
 public:
-    /// @brief Convert ISO8601 Duration string to seconds
-    /// @param duration : ISO8601 Duration, "PT8S","PT5M", "PT6M4S"
-    /// @return total seconds
-    static int parse(const std::string &duration);
+	/// @brief Convert ISO8601 Duration string to seconds
+	/// @param duration : ISO8601 Duration, "PT8S","PT5M", "PT6M4S"
+	/// @return total seconds
+	static int parse(const std::string &duration);
 
-    /// @brief Convert seconds to ISO8601 Duration string
-    /// @param time seconds
-    /// @param weekMode week mode or datetime mode
-    /// @return ISO8601 time string
-    static std::string compose(int time, bool weekMode = false);
+	/// @brief Convert seconds to ISO8601 Duration string
+	/// @param time seconds
+	/// @param weekMode week mode or datetime mode
+	/// @return ISO8601 time string
+	static std::string compose(int time, bool weekMode = false);
 
 private:
-    static int parsePart(const std::string &mode, const std::string &regexPart);
-    static void composePart(const std::string &mode, int &totalTime, std::string &composedDuration);
+	static int parsePart(const std::string &mode, const std::string &regexPart);
+	static void composePart(const std::string &mode, int &totalTime, std::string &composedDuration);
 
-    /// @brief ignore last char
-    /// @param str
-    /// @return
-    static int extractInt(const std::string &str);
+	/// @brief ignore last char
+	/// @param str
+	/// @return
+	static int extractInt(const std::string &str);
 };

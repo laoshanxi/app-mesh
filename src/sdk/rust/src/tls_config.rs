@@ -19,9 +19,7 @@ pub enum SslVerify {
 /// `Some(path)` pins a CA file/dir (missing path is a hard error in the transports);
 /// `None` (auto) uses the App Mesh CA bundle if installed, else the system/webpki
 /// store (matches the Python SDK); `Some("")` is the legacy explicit-disable form.
-pub(crate) fn resolve_ssl_verify(
-    ssl_verify: Option<String>,
-) -> Result<SslVerify, crate::error::AppMeshError> {
+pub(crate) fn resolve_ssl_verify(ssl_verify: Option<String>) -> Result<SslVerify, crate::error::AppMeshError> {
     match ssl_verify {
         Some(s) if s.is_empty() => Ok(SslVerify::False),
         Some(path) => Ok(SslVerify::Path(path)),
@@ -33,6 +31,165 @@ pub(crate) fn resolve_ssl_verify(
             }
         }
     }
+}
+
+/// Install the ring rustls crypto provider once per process (reqwest is built
+/// with `rustls-no-provider`; without a default, client construction panics).
+/// `Err` from `install_default` means the app already installed one — keep it.
+pub(crate) fn ensure_crypto_provider() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
+/// Client certificate for mutual TLS
+#[derive(Clone, Debug)]
+pub enum ClientCert {
+    /// Single PEM file containing both cert and key
+    Single(String),
+    /// Separate PEM files for cert and key
+    Pair(String, String),
+}
+
+/// Certificate verifier that accepts any server certificate.
+/// Only reachable via the explicit [`SslVerify::False`] flag; shared by the
+/// TCP and WSS transports.
+#[derive(Debug)]
+pub(crate) struct NoVerifier;
+
+impl rustls::client::danger::ServerCertVerifier for NoVerifier {
+    fn verify_server_cert(
+        &self,
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &[rustls::pki_types::CertificateDer<'_>],
+        _: &rustls::pki_types::ServerName<'_>,
+        _: &[u8],
+        _: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+    fn verify_tls12_signature(
+        &self,
+        _: &[u8],
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+    fn verify_tls13_signature(
+        &self,
+        _: &[u8],
+        _: &rustls::pki_types::CertificateDer<'_>,
+        _: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider().signature_verification_algorithms.supported_schemes()
+    }
+}
+
+/// Build a rustls `ClientConfig` from the shared verification and client-cert
+/// settings: `SslVerify::False` installs [`NoVerifier`], a CA path loads PEMs
+/// from a file or a directory of `.pem` files, anything else uses the webpki
+/// root set. Errors with a message the caller maps to its own error type.
+pub(crate) fn build_rustls_client_config(
+    ssl_verify: &SslVerify,
+    ssl_client_cert: Option<&ClientCert>,
+) -> Result<rustls::ClientConfig, String> {
+    let builder = if matches!(ssl_verify, SslVerify::False) {
+        // Insecure mode is only reachable via the explicit SslVerify::False flag
+        rustls::ClientConfig::builder().dangerous().with_custom_certificate_verifier(std::sync::Arc::new(NoVerifier))
+    } else if let SslVerify::Path(path) = ssl_verify {
+        let p = std::path::Path::new(path);
+        let mut root_store = rustls::RootCertStore::empty();
+        if p.is_file() {
+            let pem = std::fs::read(p).map_err(|e| format!("Failed to read CA certificate '{}': {}", path, e))?;
+            for cert in CertificateDer::pem_slice_iter(&pem) {
+                let cert = cert.map_err(|e| format!("Invalid CA certificate '{}': {}", path, e))?;
+                root_store.add(cert).map_err(|e| e.to_string())?;
+            }
+        } else if p.is_dir() {
+            // Directory of PEM files (see the SslVerify::Path doc).
+            for entry in std::fs::read_dir(p).map_err(|e| e.to_string())? {
+                let entry_path = entry.map_err(|e| e.to_string())?.path();
+                if entry_path.extension().and_then(|s| s.to_str()) == Some("pem") {
+                    let pem = std::fs::read(&entry_path)
+                        .map_err(|e| format!("Failed to read CA certificate '{}': {}", entry_path.display(), e))?;
+                    for cert in CertificateDer::pem_slice_iter(&pem).flatten() {
+                        let _ = root_store.add(cert);
+                    }
+                }
+            }
+        } else {
+            // A configured CA path that is missing/unreadable is a hard error,
+            // never a silent fallback to no-verification.
+            return Err(format!("CA certificate path '{}' not found", path));
+        }
+        if root_store.is_empty() {
+            return Err(format!("CA certificate path '{}' contains no valid certificates", path));
+        }
+        rustls::ClientConfig::builder().with_root_certificates(root_store)
+    } else {
+        let root_store = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        rustls::ClientConfig::builder().with_root_certificates(root_store)
+    };
+
+    match ssl_client_cert {
+        Some(client_cert) => {
+            let (chain, key) = load_client_auth(client_cert)?;
+            builder.with_client_auth_cert(chain, key).map_err(|e| format!("Invalid client certificate/key: {}", e))
+        }
+        None => Ok(builder.with_no_client_auth()),
+    }
+}
+
+/// Load a client certificate chain and private key for mutual TLS.
+/// Errors with a message on unreadable/invalid PEM (caller maps it to its own error type).
+pub(crate) fn load_client_auth(
+    client_cert: &ClientCert,
+) -> Result<(Vec<rustls::pki_types::CertificateDer<'static>>, rustls::pki_types::PrivateKeyDer<'static>), String> {
+    let (cert_pem, key_pem) = match client_cert {
+        ClientCert::Pair(cert_path, key_path) => (
+            std::fs::read(cert_path).map_err(|e| format!("Failed to read client certificate '{}': {}", cert_path, e))?,
+            std::fs::read(key_path).map_err(|e| format!("Failed to read client key '{}': {}", key_path, e))?,
+        ),
+        ClientCert::Single(path) => {
+            // Concatenated PEM: parse cert(s) and key from the same file
+            let buf = std::fs::read(path).map_err(|e| format!("Failed to read client certificate '{}': {}", path, e))?;
+            (buf.clone(), buf)
+        }
+    };
+
+    let chain: Vec<rustls::pki_types::CertificateDer<'static>> = CertificateDer::pem_slice_iter(&cert_pem)
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("Invalid client certificate PEM: {}", e))?;
+    if chain.is_empty() {
+        return Err("Client certificate PEM contains no certificates".into());
+    }
+
+    let key = load_private_key(&key_pem)?;
+
+    Ok((chain, key))
+}
+
+/// Extract the first unencrypted private key (PKCS#8, PKCS#1 RSA, or SEC1 EC) from PEM bytes.
+fn load_private_key(pem: &[u8]) -> Result<rustls::pki_types::PrivateKeyDer<'static>, String> {
+    use rustls::pki_types::pem::{PemObject, SectionKind};
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer};
+
+    for item in <(SectionKind, Vec<u8>)>::pem_slice_iter(pem) {
+        let (kind, der) = item.map_err(|e| format!("Invalid client key PEM: {}", e))?;
+        let key = match kind {
+            SectionKind::PrivateKey => PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(der)),
+            SectionKind::RsaPrivateKey => PrivateKeyDer::Pkcs1(PrivatePkcs1KeyDer::from(der)),
+            SectionKind::EcPrivateKey => PrivateKeyDer::Sec1(PrivateSec1KeyDer::from(der)),
+            _ => continue,
+        };
+        return Ok(key);
+    }
+    Err("Client key PEM contains no private key".into())
 }
 
 #[cfg(test)]
@@ -68,110 +225,4 @@ DE9P7P5rlVu89rAqBsSa4s1150Vyfyk8sg==
         // No CA expressed: default bundle if present, else system/webpki roots — verification stays on.
         assert!(matches!(resolve_ssl_verify(None), Ok(SslVerify::Path(_)) | Ok(SslVerify::True)));
     }
-}
-
-/// Install the ring rustls crypto provider once per process (reqwest is built
-/// with `rustls-no-provider`; without a default, client construction panics).
-/// `Err` from `install_default` means the app already installed one — keep it.
-pub(crate) fn ensure_crypto_provider() {
-    static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-    });
-}
-
-/// Client certificate for mutual TLS
-#[derive(Clone, Debug)]
-pub enum ClientCert {
-    /// Single PEM file containing both cert and key
-    Single(String),
-    /// Separate PEM files for cert and key
-    Pair(String, String),
-}
-
-/// Certificate verifier that accepts any server certificate.
-/// Only reachable via the explicit [`SslVerify::False`] flag; shared by the
-/// TCP and WSS transports.
-#[derive(Debug)]
-pub(crate) struct NoVerifier;
-
-impl rustls::client::danger::ServerCertVerifier for NoVerifier {
-    fn verify_server_cert(
-        &self, _: &rustls::pki_types::CertificateDer<'_>, _: &[rustls::pki_types::CertificateDer<'_>],
-        _: &rustls::pki_types::ServerName<'_>, _: &[u8], _: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-    fn verify_tls12_signature(
-        &self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-    fn verify_tls13_signature(
-        &self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        rustls::crypto::ring::default_provider()
-            .signature_verification_algorithms
-            .supported_schemes()
-    }
-}
-
-/// Load a client certificate chain and private key for mutual TLS.
-/// Errors with a message on unreadable/invalid PEM (caller maps it to its own error type).
-pub(crate) fn load_client_auth(
-    client_cert: &ClientCert,
-) -> Result<
-    (
-        Vec<rustls::pki_types::CertificateDer<'static>>,
-        rustls::pki_types::PrivateKeyDer<'static>,
-    ),
-    String,
-> {
-    let (cert_pem, key_pem) = match client_cert {
-        ClientCert::Pair(cert_path, key_path) => (
-            std::fs::read(cert_path)
-                .map_err(|e| format!("Failed to read client certificate '{}': {}", cert_path, e))?,
-            std::fs::read(key_path)
-                .map_err(|e| format!("Failed to read client key '{}': {}", key_path, e))?,
-        ),
-        ClientCert::Single(path) => {
-            // Concatenated PEM: parse cert(s) and key from the same file
-            let buf = std::fs::read(path)
-                .map_err(|e| format!("Failed to read client certificate '{}': {}", path, e))?;
-            (buf.clone(), buf)
-        }
-    };
-
-    let chain: Vec<rustls::pki_types::CertificateDer<'static>> =
-        CertificateDer::pem_slice_iter(&cert_pem)
-            .collect::<Result<_, _>>()
-            .map_err(|e| format!("Invalid client certificate PEM: {}", e))?;
-    if chain.is_empty() {
-        return Err("Client certificate PEM contains no certificates".into());
-    }
-
-    let key = load_private_key(&key_pem)?;
-
-    Ok((chain, key))
-}
-
-/// Extract the first unencrypted private key (PKCS#8, PKCS#1 RSA, or SEC1 EC) from PEM bytes.
-fn load_private_key(pem: &[u8]) -> Result<rustls::pki_types::PrivateKeyDer<'static>, String> {
-    use rustls::pki_types::pem::{PemObject, SectionKind};
-    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer};
-
-    for item in <(SectionKind, Vec<u8>)>::pem_slice_iter(pem) {
-        let (kind, der) = item.map_err(|e| format!("Invalid client key PEM: {}", e))?;
-        let key = match kind {
-            SectionKind::PrivateKey => PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(der)),
-            SectionKind::RsaPrivateKey => PrivateKeyDer::Pkcs1(PrivatePkcs1KeyDer::from(der)),
-            SectionKind::EcPrivateKey => PrivateKeyDer::Sec1(PrivateSec1KeyDer::from(der)),
-            _ => continue,
-        };
-        return Ok(key);
-    }
-    Err("Client key PEM contains no private key".into())
 }

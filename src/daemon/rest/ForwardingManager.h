@@ -72,7 +72,8 @@ public:
 	bool forward(const std::string &host, int port, const std::shared_ptr<HttpRequest> &request);
 
 private:
-	std::shared_ptr<ForwardingConnection> getOrCreateConnection(const std::string &host, int port, const std::string &bearer);
+	std::shared_ptr<ForwardingConnection> getOrCreateConnection(const std::string &host, int port,
+																const std::string &bearer);
 
 	using ForwardingClientMap = boost::concurrent_flat_map<std::string, std::shared_ptr<ForwardingConnection>>;
 	ForwardingClientMap m_connections;

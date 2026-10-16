@@ -28,48 +28,49 @@ std::string DateTime::s_localZoneOffset;
 
 MachineTimeZone::MachineTimeZone()
 	: boost::local_time::custom_time_zone(
-		  boost::local_time::time_zone_names("Local machine time zone", getStdZoneAbbrev(), "", ""),
-		  getUtcOffset(),
-		  boost::local_time::dst_adjustment_offsets(
-			  time_duration_type(0, 0, 0),
-			  time_duration_type(0, 0, 0),
-			  time_duration_type(0, 0, 0)),
+		  boost::local_time::time_zone_names("Local machine time zone", getStdZoneAbbrev(), "", ""), getUtcOffset(),
+		  boost::local_time::dst_adjustment_offsets(time_duration_type(0, 0, 0), time_duration_type(0, 0, 0),
+													time_duration_type(0, 0, 0)),
 		  boost::shared_ptr<boost::local_time::dst_calc_rule>())
 {
 }
 
 boost::posix_time::time_duration MachineTimeZone::getUtcOffset()
 {
-	std::call_once(s_offsetInitFlag, []()
+	std::call_once(s_offsetInitFlag,
+				   []()
 				   {
-        using boost::posix_time::second_clock;
-        s_utcOffset = second_clock::local_time() - second_clock::universal_time(); });
+					   using boost::posix_time::second_clock;
+					   s_utcOffset = second_clock::local_time() - second_clock::universal_time();
+				   });
 	return s_utcOffset;
 }
 
 std::string MachineTimeZone::getStdZoneAbbrev()
 {
-	std::call_once(s_abbrevInitFlag, []()
+	std::call_once(s_abbrevInitFlag,
+				   []()
 				   {
-        std::time_t now = 0;
-        std::tm local_tm{};
+					   std::time_t now = 0;
+					   std::tm local_tm{};
 
 #if defined(_WIN32) || defined(_WIN64)
-        localtime_s(&local_tm, &now);
+					   localtime_s(&local_tm, &now);
 #else
-        localtime_r(&now, &local_tm);
+		localtime_r(&now, &local_tm);
 #endif
-        
-        char buff[64] = {0};
-        std::strftime(buff, sizeof(buff), "%Z", &local_tm);
-        s_zoneAbbrev = buff; });
+
+					   char buff[64] = {0};
+					   std::strftime(buff, sizeof(buff), "%Z", &local_tm);
+					   s_zoneAbbrev = buff;
+				   });
 	return s_zoneAbbrev;
 }
 
 DateTime::TimeZonePtr DateTime::getLocalPosixZone()
 {
-	std::call_once(s_localZoneInitFlag, []()
-				   { s_localPosixZone = boost::local_time::time_zone_ptr(new MachineTimeZone()); });
+	std::call_once(s_localZoneInitFlag,
+				   []() { s_localPosixZone = boost::local_time::time_zone_ptr(new MachineTimeZone()); });
 	return s_localPosixZone;
 }
 
@@ -94,16 +95,19 @@ std::string DateTime::getLocalZoneUtcOffset()
 	static std::once_flag initFlag;
 	static std::string cachedOffset;
 
-	std::call_once(initFlag, []()
+	std::call_once(initFlag,
+				   []()
 				   {
-        const auto tz_offset = MachineTimeZone::getUtcOffset();
-        std::ostringstream ss;
-        if (!tz_offset.is_negative()) {
-            ss << '+';
-        }
-        ss << tz_offset;
-        cachedOffset = ss.str();
-        LOG_DBG << fname << "Local timezone UTC offset: " << cachedOffset; });
+					   const auto tz_offset = MachineTimeZone::getUtcOffset();
+					   std::ostringstream ss;
+					   if (!tz_offset.is_negative())
+					   {
+						   ss << '+';
+					   }
+					   ss << tz_offset;
+					   cachedOffset = ss.str();
+					   LOG_DBG << fname << "Local timezone UTC offset: " << cachedOffset;
+				   });
 
 	return cachedOffset;
 }
@@ -162,7 +166,8 @@ std::string DateTime::getISO8601TimeZone(const std::string &strTime) noexcept
 	return {};
 }
 
-std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone)
+std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::string &strTime,
+																	 const std::string &posixTimeZone)
 {
 	constexpr const char *fname = "DateTime::parseISO8601DateTime() ";
 
@@ -222,10 +227,7 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	}
 }
 
-std::string DateTime::formatISO8601Time(const TimePoint &time)
-{
-	return formatLocalTime(time, ISO8601FORMAT_OUT);
-}
+std::string DateTime::formatISO8601Time(const TimePoint &time) { return formatLocalTime(time, ISO8601FORMAT_OUT); }
 
 std::string DateTime::formatRFC3339Time(const TimePoint &time)
 {
@@ -274,22 +276,17 @@ std::string DateTime::formatLocalTime(const TimePoint &time, const char *fmt)
 		localtime_r(&timeT, &local_tm);
 #endif
 
-		const boost::gregorian::date target_date(
-			static_cast<unsigned short>(local_tm.tm_year + 1900),
-			static_cast<unsigned short>(local_tm.tm_mon + 1),
-			static_cast<unsigned short>(local_tm.tm_mday));
+		const boost::gregorian::date target_date(static_cast<unsigned short>(local_tm.tm_year + 1900),
+												 static_cast<unsigned short>(local_tm.tm_mon + 1),
+												 static_cast<unsigned short>(local_tm.tm_mday));
 
 		const boost::posix_time::time_duration target_duration(local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
 
-		boost::local_time::local_date_time localDateTime(
-			target_date,
-			target_duration,
-			localZone,
-			boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
+		boost::local_time::local_date_time localDateTime(target_date, target_duration, localZone,
+														 boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
 
 		// Convert to output timezone if different
-		if (outputZone && outputZone != localZone &&
-			outputZone->base_utc_offset() != localZone->base_utc_offset())
+		if (outputZone && outputZone != localZone && outputZone->base_utc_offset() != localZone->base_utc_offset())
 		{
 			localDateTime = localDateTime.local_time_in(outputZone);
 		}
@@ -305,15 +302,13 @@ std::string DateTime::formatLocalTime(const TimePoint &time, const char *fmt)
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "Failed to format time <"
-				<< std::chrono::system_clock::to_time_t(time)
-				<< "> with format <" << fmt << ">. Error: " << e.what();
+		LOG_ERR << fname << "Failed to format time <" << std::chrono::system_clock::to_time_t(time) << "> with format <"
+				<< fmt << ">. Error: " << e.what();
 		return {};
 	}
 }
 
-boost::posix_time::time_duration DateTime::pickDayTimeUtcDuration(
-	const TimePoint &time) noexcept
+boost::posix_time::time_duration DateTime::pickDayTimeUtcDuration(const TimePoint &time) noexcept
 {
 	try
 	{
@@ -326,8 +321,7 @@ boost::posix_time::time_duration DateTime::pickDayTimeUtcDuration(
 	}
 }
 
-boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(
-	const std::string &strTime)
+boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(const std::string &strTime)
 {
 	constexpr const char *fname = "DateTime::parseDayTimeUtcDuration() ";
 
@@ -352,16 +346,14 @@ boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(
 	const auto duration = boost::posix_time::duration_from_string(timeStr);
 
 	std::ostringstream fakeDateStream;
-	fakeDateStream << "2000-01-01T"
-				   << std::setfill('0') << std::setw(2) << duration.hours() << ":"
-				   << std::setfill('0') << std::setw(2) << duration.minutes() << ":"
-				   << std::setfill('0') << std::setw(2) << duration.seconds();
+	fakeDateStream << "2000-01-01T" << std::setfill('0') << std::setw(2) << duration.hours() << ":" << std::setfill('0')
+				   << std::setw(2) << duration.minutes() << ":" << std::setfill('0') << std::setw(2) << duration.seconds();
 
 	const auto timePoint = parseISO8601DateTime(fakeDateStream.str(), posixTimezone);
 	const auto result = pickDayTimeUtcDuration(timePoint);
 
-	LOG_DBG << fname << "Parsed <" << strTime << "> with zone <" << posixTimezone
-			<< "> to <" << formatISO8601Time(timePoint) << "> with duration: " << result;
+	LOG_DBG << fname << "Parsed <" << strTime << "> with zone <" << posixTimezone << "> to <" << formatISO8601Time(timePoint)
+			<< "> with duration: " << result;
 
 	return result;
 }
@@ -371,10 +363,8 @@ std::string DateTime::formatDayTimeUtcDuration(const BoostDuration &duration)
 	const auto posixTimezone = getLocalZoneUtcOffset();
 
 	std::ostringstream fakeDateStream;
-	fakeDateStream << "2000-01-01T"
-				   << std::setfill('0') << std::setw(2) << duration.hours() << ":"
-				   << std::setfill('0') << std::setw(2) << duration.minutes() << ":"
-				   << std::setfill('0') << std::setw(2) << duration.seconds();
+	fakeDateStream << "2000-01-01T" << std::setfill('0') << std::setw(2) << duration.hours() << ":" << std::setfill('0')
+				   << std::setw(2) << duration.minutes() << ":" << std::setfill('0') << std::setw(2) << duration.seconds();
 
 	const auto timePoint = parseISO8601DateTime(fakeDateStream.str(), posixTimezone);
 	const auto timeStr = formatISO8601Time(timePoint);

@@ -19,7 +19,9 @@ import msgpack from 'msgpack-lite'
 import fs, { writeFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { AppMeshClient, AppMeshError, StaticAccessTokenProvider, RefreshTokenProvider, _resolveUserName, _resolveGroupName } from '../src/appmesh.js'
+import {
+  AppMeshClient, AppMeshError, StaticAccessTokenProvider, RefreshTokenProvider, _resolveUserName, _resolveGroupName
+} from '../src/appmesh.js'
 import { AppMeshClientTCP } from '../src/appmesh_tcp.js'
 
 let passed = 0
@@ -154,17 +156,17 @@ await assert('HTTP text/plain scalar stays a string (health verdicts, stdout)', 
 
 await assert('check_app_health returns true on verdict 0', async () => {
   const client = new AppMeshClient(baseURL)
-  if ((await client.check_app_health('healthy')) !== true) throw new Error('expected true')
+  if ((await client.checkAppHealth('healthy')) !== true) throw new Error('expected true')
 })
 
 await assert('check_app_health returns false only on an unhealthy verdict', async () => {
   const client = new AppMeshClient(baseURL)
-  if ((await client.check_app_health('sick')) !== false) throw new Error('expected false')
+  if ((await client.checkAppHealth('sick')) !== false) throw new Error('expected false')
 })
 
 await assert('check_app_health throws on 401 instead of reporting unhealthy', async () => {
   const client = new AppMeshClient(baseURL)
-  await expectAppMeshError(client.check_app_health('denied'), { statusCode: 401 })
+  await expectAppMeshError(client.checkAppHealth('denied'), { statusCode: 401 })
 })
 
 // ---- Token provider contract and 401 refresh retry ----
@@ -185,7 +187,7 @@ await assert('StaticAccessTokenProvider validates the token and clear() nulls it
 await assert('set_token_provider rejects non-provider objects', async () => {
   const client = new AppMeshClient(baseURL)
   let threw = false
-  try { client.set_token_provider({}) } catch (error) { threw = error instanceof TypeError }
+  try { client.setTokenProvider({}) } catch (error) { threw = error instanceof TypeError }
   if (!threw) throw new Error('expected TypeError for a provider without getAccessToken')
 })
 
@@ -213,13 +215,14 @@ await assert('refreshable provider: 401 refreshes once and the retried request s
   if (calls.length !== 1) throw new Error(`expected refreshAccessToken exactly once, got ${calls.length}`)
   if (calls[0] !== 'old-token') throw new Error(`expected rejected token "old-token", got ${JSON.stringify(calls[0])}`)
   const expected = 'Bearer old-token,Bearer new-token'
-  if (authRequests.join(',') !== expected) throw new Error(`expected auth sequence ${expected}, got ${authRequests.join(',')}`)
+  if (authRequests.join(',') !== expected)
+    throw new Error(`expected auth sequence ${expected}, got ${authRequests.join(',')}`)
 })
 
 await assert('static provider: 401 raises typed error without a retry', async () => {
   authRequests = []
   const client = new AppMeshClient(baseURL)
-  client.set_bearer_token('old-token')
+  client.setBearerToken('old-token')
   await expectAppMeshError(client.request('get', '/appmesh/refreshable'), { statusCode: 401 })
   if (authRequests.length !== 1) throw new Error(`expected exactly one request (no retry), got ${authRequests.length}`)
 })
@@ -228,7 +231,7 @@ await assert('second 401 after refresh rejects with typed error, refresh still c
   const calls = []
   authRequests = []
   const client = new AppMeshClient(baseURL)
-  client.set_token_provider(makeRefreshableProvider(calls))
+  client.setTokenProvider(makeRefreshableProvider(calls))
   await expectAppMeshError(client.request('get', '/appmesh/always-401'), { statusCode: 401 })
   if (calls.length !== 1) throw new Error(`expected refreshAccessToken exactly once, got ${calls.length}`)
   if (authRequests.length !== 2) throw new Error(`expected original + one retry, got ${authRequests.length} requests`)
@@ -236,17 +239,17 @@ await assert('second 401 after refresh rejects with typed error, refresh still c
 
 await assert('set_token/clear_bearer_token aliases still work through the provider', async () => {
   const client = new AppMeshClient(baseURL)
-  client.set_token('alias-token')
+  client.setToken('alias-token')
   if ((await client._getAccessToken()) !== 'alias-token') throw new Error('set_token must attach the token')
-  client.clear_bearer_token()
+  client.clearBearerToken()
   if ((await client._getAccessToken()) !== null) throw new Error('clear_bearer_token must detach the token')
-  client.set_bearer_token(null)
-  if ((await client._getAccessToken()) !== null) throw new Error('set_bearer_token(null) must clear')
+  client.setBearerToken(null)
+  if ((await client._getAccessToken()) !== null) throw new Error('setBearerToken(null) must clear')
 })
 
 await assert('TCP transport reads the token from the provider', async () => {
   const { client, sent } = makeScriptedTcpClient()
-  client.set_token_provider(makeRefreshableProvider([]))
+  client.setTokenProvider(makeRefreshableProvider([]))
   await client._request('get', '/appmesh/app/t')
   const request = msgpack.decode(sent[0])
   if (request.headers.Authorization !== 'Bearer old-token') {
@@ -279,7 +282,7 @@ function makeUnauthorizedThenOkTcpClient () {
 await assert('TCP 401 refreshes once and retries with the new token', async () => {
   const calls = []
   const { client, sent } = makeUnauthorizedThenOkTcpClient()
-  client.set_token_provider(makeRefreshableProvider(calls))
+  client.setTokenProvider(makeRefreshableProvider(calls))
   const response = await client._request('get', '/appmesh/app/t')
   if (response.status !== 200) throw new Error(`expected retried request to succeed, got status ${response.status}`)
   if (calls.length !== 1) throw new Error(`expected refreshAccessToken exactly once, got ${calls.length}`)
@@ -293,7 +296,7 @@ await assert('TCP 401 refreshes once and retries with the new token', async () =
 
 await assert('TCP static provider: 401 raises typed error without a retry', async () => {
   const { client, sent } = makeScriptedTcpClient({ http_status: 401 })
-  client.set_bearer_token('old-token')
+  client.setBearerToken('old-token')
   await expectAppMeshError(client._request('get', '/appmesh/app/t'), { statusCode: 401 })
   if (sent.length !== 1) throw new Error(`expected exactly one request (no retry), got ${sent.length}`)
 })
@@ -314,7 +317,9 @@ function makeFakeTokenHttp (handler, calls) {
 await assert('RefreshTokenProvider rejects non-loopback http and accepts https without dialing', async () => {
   for (const bad of ['http://example.com/token', 'http://192.168.1.10/token', 'ftp://127.0.0.1/token', 'not-a-url']) {
     let threw = false
-    try { new RefreshTokenProvider({ tokenUrl: bad, accessToken: 'a', refreshToken: 'r' }) } catch (error) { threw = error instanceof TypeError }
+    try {
+      new RefreshTokenProvider({ tokenUrl: bad, accessToken: 'a', refreshToken: 'r' })
+    } catch (error) { threw = error instanceof TypeError }
     if (!threw) throw new Error(`expected TypeError for ${JSON.stringify(bad)}`)
   }
   // https and loopback http must construct without any network access
@@ -339,14 +344,16 @@ await assert('RefreshTokenProvider proactively refreshes near expiry and single-
     httpClient: http
   })
   const tokens = await Promise.all([provider.getAccessToken(), provider.getAccessToken(), provider.getAccessToken()])
-  if (tokens.some(token => token !== 'fresh-token')) throw new Error(`expected all callers to get fresh-token, got ${JSON.stringify(tokens)}`)
+  if (tokens.some(token => token !== 'fresh-token'))
+    throw new Error(`expected all callers to get fresh-token, got ${JSON.stringify(tokens)}`)
   if (calls.length !== 1) throw new Error(`expected exactly one token request, got ${calls.length}`)
 })
 
 await assert('RefreshTokenProvider with unknown expiry does not refresh proactively', async () => {
   const calls = []
   const http = makeFakeTokenHttp(() => ({ status: 200, data: { access_token: 'x' } }), calls)
-  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1',
+    refreshToken: 'rt-1', httpClient: http })
   if ((await provider.getAccessToken()) !== 'at-1') throw new Error('expected the current token without a refresh')
   if (calls.length !== 0) throw new Error(`expiresIn 0 must refresh only on 401, got ${calls.length} token requests`)
 })
@@ -354,20 +361,24 @@ await assert('RefreshTokenProvider with unknown expiry does not refresh proactiv
 await assert('refreshAccessToken with a stale rejected token returns the current token without HTTP', async () => {
   const calls = []
   const http = makeFakeTokenHttp(() => ({ status: 200, data: { access_token: 'x' } }), calls)
-  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'current-token', refreshToken: 'rt-1', httpClient: http })
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'current-token',
+    refreshToken: 'rt-1', httpClient: http })
   const token = await provider.refreshAccessToken('stale-token')
   if (token !== 'current-token') throw new Error(`expected current-token, got ${JSON.stringify(token)}`)
-  if (calls.length !== 0) throw new Error(`a racing caller already refreshed; expected no token request, got ${calls.length}`)
+  if (calls.length !== 0)
+    throw new Error(`a racing caller already refreshed; expected no token request, got ${calls.length}`)
 })
 
 await assert('grant sends form fields, stores a rotated refresh token, keeps the old one when omitted', async () => {
   const calls = []
   const http = makeFakeTokenHttp(({ body }) => {
     const refreshToken = new URLSearchParams(body).get('refresh_token')
-    if (refreshToken === 'rt-1') return { status: 200, data: { access_token: 'at-2', refresh_token: 'rt-2', expires_in: 3600 } }
+    if (refreshToken === 'rt-1')
+      return { status: 200, data: { access_token: 'at-2', refresh_token: 'rt-2', expires_in: 3600 } }
     return { status: 200, data: { access_token: 'at-3', expires_in: 3600 } } // no rotation
   }, calls)
-  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1',
+    refreshToken: 'rt-1', httpClient: http })
 
   await provider.refreshAccessToken('at-1')
   if (calls.length !== 1) throw new Error(`expected one token request, got ${calls.length}`)
@@ -375,25 +386,31 @@ await assert('grant sends form fields, stores a rotated refresh token, keeps the
   if (calls[0].config.headers['Content-Type'] !== 'application/x-www-form-urlencoded') {
     throw new Error(`expected form Content-Type, got ${JSON.stringify(calls[0].config.headers['Content-Type'])}`)
   }
-  if (params.get('grant_type') !== 'refresh_token') throw new Error(`expected grant_type=refresh_token, got ${JSON.stringify(params.get('grant_type'))}`)
-  if (params.get('client_id') !== 'appmesh-cli') throw new Error(`expected default client_id appmesh-cli, got ${JSON.stringify(params.get('client_id'))}`)
-  if (params.get('refresh_token') !== 'rt-1') throw new Error(`expected refresh_token rt-1, got ${JSON.stringify(params.get('refresh_token'))}`)
+  if (params.get('grant_type') !== 'refresh_token')
+    throw new Error(`expected grant_type=refresh_token, got ${JSON.stringify(params.get('grant_type'))}`)
+  if (params.get('client_id') !== 'appmesh-cli')
+    throw new Error(`expected default client_id appmesh-cli, got ${JSON.stringify(params.get('client_id'))}`)
+  if (params.get('refresh_token') !== 'rt-1')
+    throw new Error(`expected refresh_token rt-1, got ${JSON.stringify(params.get('refresh_token'))}`)
   if ((await provider.getAccessToken()) !== 'at-2') throw new Error('expected the refreshed access token at-2')
 
   // The rotated refresh token rt-2 must be used on the next grant
   await provider.refreshAccessToken('at-2')
-  if (new URLSearchParams(calls[1].body).get('refresh_token') !== 'rt-2') throw new Error('expected the rotated refresh token rt-2 on the second grant')
+  if (new URLSearchParams(calls[1].body).get('refresh_token') !== 'rt-2')
+    throw new Error('expected the rotated refresh token rt-2 on the second grant')
   if ((await provider.getAccessToken()) !== 'at-3') throw new Error('expected the refreshed access token at-3')
 
   // The response carried no refresh_token: the old rt-2 must be kept
   await provider.refreshAccessToken('at-3')
-  if (new URLSearchParams(calls[2].body).get('refresh_token') !== 'rt-2') throw new Error('a response without refresh_token must keep the old one')
+  if (new URLSearchParams(calls[2].body).get('refresh_token') !== 'rt-2')
+    throw new Error('a response without refresh_token must keep the old one')
 })
 
 await assert('invalid_grant clears both tokens, canRefresh() turns false, getAccessToken rejects', async () => {
   const calls = []
   const http = makeFakeTokenHttp(() => ({ status: 400, data: { error: 'invalid_grant' } }), calls)
-  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1',
+    refreshToken: 'rt-1', httpClient: http })
   let threw = false
   try { await provider.refreshAccessToken('at-1') } catch (_) { threw = true }
   if (!threw) throw new Error('expected invalid_grant to throw')
@@ -405,7 +422,8 @@ await assert('invalid_grant clears both tokens, canRefresh() turns false, getAcc
 
 await assert('a transient grant failure throws but keeps the stored tokens', async () => {
   const http = makeFakeTokenHttp(() => ({ status: 500, data: { error: 'server_error' } }), [])
-  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1',
+    refreshToken: 'rt-1', httpClient: http })
   let threw = false
   try { await provider.refreshAccessToken('at-1') } catch (_) { threw = true }
   if (!threw) throw new Error('expected a 500 grant response to throw')
@@ -415,7 +433,8 @@ await assert('a transient grant failure throws but keeps the stored tokens', asy
 
 await assert('a 400 without invalid_grant keeps the stored tokens', async () => {
   const http = makeFakeTokenHttp(() => ({ status: 400, data: { error: 'invalid_request' } }), [])
-  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1', refreshToken: 'rt-1', httpClient: http })
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', accessToken: 'at-1',
+    refreshToken: 'rt-1', httpClient: http })
   let threw = false
   try { await provider.refreshAccessToken('at-1') } catch (_) { threw = true }
   if (!threw) throw new Error('expected a 400 grant response to throw')
@@ -426,8 +445,10 @@ await assert('a 400 without invalid_grant keeps the stored tokens', async () => 
 await assert('RefreshTokenProvider without an access token fetches one on first getAccessToken', async () => {
   const calls = []
   const http = makeFakeTokenHttp(() => ({ status: 200, data: { access_token: 'minted-token', expires_in: 3600 } }), calls)
-  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token', refreshToken: 'rt-1', httpClient: http })
-  if ((await provider.getAccessToken()) !== 'minted-token') throw new Error('expected a grant to mint the first access token')
+  const provider = new RefreshTokenProvider({ tokenUrl: 'https://idp.example.com/token',
+    refreshToken: 'rt-1', httpClient: http })
+  if ((await provider.getAccessToken()) !== 'minted-token')
+    throw new Error('expected a grant to mint the first access token')
   if (calls.length !== 1) throw new Error(`expected exactly one token request, got ${calls.length}`)
 })
 
@@ -444,11 +465,13 @@ await assert('RefreshTokenProvider end-to-end: 401 drives the grant and the retr
   if (response.data.ok !== true) throw new Error(`expected retried request to succeed, got status ${response.status}`)
   if (tokenRequests.length !== 1) throw new Error(`expected exactly one token grant, got ${tokenRequests.length}`)
   const params = new URLSearchParams(tokenRequests[0].body)
-  if (params.get('grant_type') !== 'refresh_token' || params.get('client_id') !== 'appmesh-cli' || params.get('refresh_token') !== 'rt-1') {
+  if (params.get('grant_type') !== 'refresh_token' || params.get('client_id') !== 'appmesh-cli' ||
+      params.get('refresh_token') !== 'rt-1') {
     throw new Error(`unexpected grant body ${JSON.stringify(tokenRequests[0].body)}`)
   }
   const expected = 'Bearer old-token,Bearer new-token'
-  if (authRequests.join(',') !== expected) throw new Error(`expected auth sequence ${expected}, got ${authRequests.join(',')}`)
+  if (authRequests.join(',') !== expected)
+    throw new Error(`expected auth sequence ${expected}, got ${authRequests.join(',')}`)
 })
 
 // ---- TCP transport: _decodeBody strictness (A-7a) ----
@@ -480,12 +503,15 @@ await assert('TCP empty body stays empty string', () => {
 })
 
 await assert('TCP octet-stream task reply decodes as UTF-8 text', () => {
-  const text = tcpClient._decodeBody({ body: Buffer.from('task output'), bodyMsgType: 'application/octet-stream', headers: {}, httpStatus: 200 }, {})
+  const text = tcpClient._decodeBody(
+    { body: Buffer.from('task output'), bodyMsgType: 'application/octet-stream', headers: {}, httpStatus: 200 }, {})
   if (text !== 'task output') throw new Error(`expected text, got ${JSON.stringify(text)}`)
 })
 
 await assert('TCP binary responseType still returns a Buffer', () => {
-  const buf = tcpClient._decodeBody({ body: Buffer.from([0x00, 0x01]), bodyMsgType: 'application/octet-stream', headers: {}, httpStatus: 200 }, { config: { responseType: 'arraybuffer' } })
+  const buf = tcpClient._decodeBody(
+    { body: Buffer.from([0x00, 0x01]), bodyMsgType: 'application/octet-stream', headers: {}, httpStatus: 200 },
+    { config: { responseType: 'arraybuffer' } })
   if (!Buffer.isBuffer(buf)) throw new Error('expected Buffer passthrough')
 })
 
@@ -534,7 +560,8 @@ await assert('TCP JSON request body carries Content-Type: application/json', asy
 
 await assert('TCP caller-supplied Content-Type header wins over the JSON default', async () => {
   const { client, sent } = makeScriptedTcpClient()
-  await client._request('put', '/appmesh/app/t', { command: 'true' }, { headers: { 'Content-Type': 'application/merge-patch+json' } })
+  await client._request('put', '/appmesh/app/t', { command: 'true' },
+    { headers: { 'Content-Type': 'application/merge-patch+json' } })
   const request = msgpack.decode(sent[0])
   if (request.headers['Content-Type'] !== 'application/merge-patch+json') {
     throw new Error(`expected caller header to win, got ${request.headers['Content-Type']}`)
@@ -574,15 +601,17 @@ await assert('HTTP upload sends owner/group names, not numeric ids', async () =>
   writeFileSync(localFile, 'attrs', 'utf8')
   try {
     uploadHeaders = null
-    await client.upload_file(localFile, '/tmp/appmesh_unit_target.txt', true)
+    await client.uploadFile(localFile, '/tmp/appmesh_unit_target.txt', true)
     if (!uploadHeaders) throw new Error('the upload never reached the mock server')
     const userName = await _resolveUserName(process.getuid())
     const groupName = await _resolveGroupName(process.getgid())
     if (uploadHeaders['x-file-user'] !== userName) {
-      throw new Error(`expected X-File-User ${JSON.stringify(userName)}, got ${JSON.stringify(uploadHeaders['x-file-user'])}`)
+      throw new Error(`expected X-File-User ${JSON.stringify(userName)}, ` +
+        `got ${JSON.stringify(uploadHeaders['x-file-user'])}`)
     }
     if (uploadHeaders['x-file-group'] !== groupName) {
-      throw new Error(`expected X-File-Group ${JSON.stringify(groupName)}, got ${JSON.stringify(uploadHeaders['x-file-group'])}`)
+      throw new Error(`expected X-File-Group ${JSON.stringify(groupName)}, ` +
+        `got ${JSON.stringify(uploadHeaders['x-file-group'])}`)
     }
     if (!/^[0-7]+$/.test(uploadHeaders['x-file-mode'] || '')) {
       throw new Error(`expected numeric X-File-Mode, got ${JSON.stringify(uploadHeaders['x-file-mode'])}`)
@@ -603,14 +632,16 @@ await assert('TCP upload sends owner/group names, not numeric ids', async () => 
   }
   client.tcpTransport.sendMessage = () => {}
   try {
-    await client.upload_file(localFile, '/tmp/appmesh_unit_tcp_target.txt', true)
+    await client.uploadFile(localFile, '/tmp/appmesh_unit_tcp_target.txt', true)
     const userName = await _resolveUserName(process.getuid())
     const groupName = await _resolveGroupName(process.getgid())
     if (sentHeaders['X-File-User'] !== userName) {
-      throw new Error(`expected X-File-User ${JSON.stringify(userName)}, got ${JSON.stringify(sentHeaders['X-File-User'])}`)
+      throw new Error(`expected X-File-User ${JSON.stringify(userName)}, ` +
+        `got ${JSON.stringify(sentHeaders['X-File-User'])}`)
     }
     if (sentHeaders['X-File-Group'] !== groupName) {
-      throw new Error(`expected X-File-Group ${JSON.stringify(groupName)}, got ${JSON.stringify(sentHeaders['X-File-Group'])}`)
+      throw new Error(`expected X-File-Group ${JSON.stringify(groupName)}, ` +
+        `got ${JSON.stringify(sentHeaders['X-File-Group'])}`)
     }
     if (sentHeaders['X-File-User'] === String(process.getuid())) {
       throw new Error('a numeric uid must not be sent as the owner')
@@ -638,7 +669,7 @@ await assert('TCP download resolves names before chown and skips unknown ones', 
       httpStatus: 200
     })
     chunks.push(Buffer.from('download body'))
-    await client.download_file('/remote/file.txt', localFile, true)
+    await client.downloadFile('/remote/file.txt', localFile, true)
     if (chowns.length !== 1) {
       throw new Error(`expected exactly one chown, got ${JSON.stringify(chowns)}`)
     }
@@ -657,7 +688,7 @@ await assert('TCP download resolves names before chown and skips unknown ones', 
       httpStatus: 200
     })
     chunks.push(Buffer.from('download body'))
-    await client.download_file('/remote/file.txt', localFile, true)
+    await client.downloadFile('/remote/file.txt', localFile, true)
     if (chowns.length !== 0) {
       throw new Error(`unresolvable names must not reach chown, got ${JSON.stringify(chowns)}`)
     }

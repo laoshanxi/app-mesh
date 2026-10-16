@@ -1,14 +1,5 @@
 package appmesh;
 
-import org.java_websocket.client.WebSocketClient;
-import org.java_websocket.drafts.Draft_6455;
-import org.java_websocket.handshake.ServerHandshake;
-import org.java_websocket.protocols.IProtocol;
-import org.java_websocket.protocols.Protocol;
-import org.java_websocket.enums.ReadyState;
-import org.java_websocket.extensions.IExtension;
-
-import javax.net.ssl.SSLSocketFactory;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -18,6 +9,16 @@ import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+
+import javax.net.ssl.SSLSocketFactory;
+
+import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.drafts.Draft_6455;
+import org.java_websocket.enums.ReadyState;
+import org.java_websocket.extensions.IExtension;
+import org.java_websocket.handshake.ServerHandshake;
+import org.java_websocket.protocols.IProtocol;
+import org.java_websocket.protocols.Protocol;
 
 /**
  * WebSocket Secure (WSS) Transport layer with TLS support.

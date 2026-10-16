@@ -25,24 +25,25 @@ class DailyLimitation;
 class AppTimer
 {
 public:
-    AppTimer(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime,
-             std::shared_ptr<DailyLimitation> dailyLimit);
-    virtual ~AppTimer() {};
+	AppTimer(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime,
+			 std::shared_ptr<DailyLimitation> dailyLimit);
+	virtual ~AppTimer() {};
 
-    virtual std::chrono::system_clock::time_point nextTime(const std::chrono::system_clock::time_point &startFrom = std::chrono::system_clock::now());
-    bool isInDailyTimeRange(const std::chrono::system_clock::time_point &target);
-    std::chrono::system_clock::time_point adjustDailyTimeRange(std::chrono::system_clock::time_point target);
+	virtual std::chrono::system_clock::time_point
+	nextTime(const std::chrono::system_clock::time_point &startFrom = std::chrono::system_clock::now());
+	bool isInDailyTimeRange(const std::chrono::system_clock::time_point &target);
+	std::chrono::system_clock::time_point adjustDailyTimeRange(std::chrono::system_clock::time_point target);
 
 protected:
-    std::chrono::system_clock::time_point applyStartBoundary(const std::chrono::system_clock::time_point &target);
+	std::chrono::system_clock::time_point applyStartBoundary(const std::chrono::system_clock::time_point &target);
 
 public:
-    static std::chrono::system_clock::time_point TIME_UNSET;
+	static std::chrono::system_clock::time_point TIME_UNSET;
 
 protected:
-    const std::chrono::system_clock::time_point m_startTime;
-    const std::chrono::system_clock::time_point m_endTime;
-    std::shared_ptr<DailyLimitation> m_dailyLimit;
+	const std::chrono::system_clock::time_point m_startTime;
+	const std::chrono::system_clock::time_point m_endTime;
+	std::shared_ptr<DailyLimitation> m_dailyLimit;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -51,13 +52,15 @@ protected:
 class AppTimerPeriod : public AppTimer
 {
 public:
-    AppTimerPeriod(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime,
-                   std::shared_ptr<DailyLimitation> dailyLimit, int intervalSeconds);
+	AppTimerPeriod(const std::chrono::system_clock::time_point &startTime,
+				   const std::chrono::system_clock::time_point &endTime, std::shared_ptr<DailyLimitation> dailyLimit,
+				   int intervalSeconds);
 
-    std::chrono::system_clock::time_point nextTime(const std::chrono::system_clock::time_point &startFrom = std::chrono::system_clock::now()) override;
+	std::chrono::system_clock::time_point
+	nextTime(const std::chrono::system_clock::time_point &startFrom = std::chrono::system_clock::now()) override;
 
 protected:
-    const int m_intervalSeconds;
+	const int m_intervalSeconds;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -66,12 +69,14 @@ protected:
 class AppTimerCron : public AppTimerPeriod
 {
 public:
-    AppTimerCron(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime,
-                 std::shared_ptr<DailyLimitation> dailyLimit, const std::string &cronExpr, int intervalSeconds);
+	AppTimerCron(const std::chrono::system_clock::time_point &startTime,
+				 const std::chrono::system_clock::time_point &endTime, std::shared_ptr<DailyLimitation> dailyLimit,
+				 const std::string &cronExpr, int intervalSeconds);
 
-    std::chrono::system_clock::time_point nextTime(const std::chrono::system_clock::time_point &startFrom = std::chrono::system_clock::now()) override;
+	std::chrono::system_clock::time_point
+	nextTime(const std::chrono::system_clock::time_point &startFrom = std::chrono::system_clock::now()) override;
 
 protected:
-    const std::string m_cronExpr;
-    cron::cronexpr m_cron;
+	const std::string m_cronExpr;
+	cron::cronexpr m_cron;
 };

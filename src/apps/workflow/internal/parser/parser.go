@@ -6,8 +6,9 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 	"gopkg.in/yaml.v3"
+
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 )
 
 var safeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -122,7 +123,8 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 			for _, step := range steps {
 				for k := range step.With {
 					if !inputKeyPattern.MatchString(k) {
-						return nil, fmt.Errorf("job %q step %q with key %q must match [a-zA-Z_][a-zA-Z0-9_]*", job.Name, step.Name, k)
+						return nil, fmt.Errorf("job %q step %q with key %q must match [a-zA-Z_][a-zA-Z0-9_]*", job.Name,
+							step.Name, k)
 					}
 				}
 			}
@@ -131,13 +133,15 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 
 	// Warn about features that are parsed but not dispatched by the engine.
 	if wf.On != nil && len(wf.On.Schedule) > 0 {
-		fmt.Fprintf(os.Stderr, "WARNING: workflow %q has on.schedule triggers, but cron is not handled by the engine. Use an external App Mesh cron app to call 'appm workflow run %s' instead.\n", wf.Name, wf.Name)
+		fmt.Fprintf(os.Stderr, "WARNING: workflow %q has on.schedule triggers, but cron is not handled by the engine. "+
+			"Use an external App Mesh cron app to call 'appm workflow run %s' instead.\n", wf.Name, wf.Name)
 	}
 
 	return &wf, nil
 }
 
-func resolveStepTypes(steps []models.Step, defaultContinueOnError bool, jobName, section string, seenSteps map[string]string) error {
+func resolveStepTypes(steps []models.Step, defaultContinueOnError bool, jobName, section string,
+	seenSteps map[string]string) error {
 	for i := range steps {
 		s := &steps[i]
 		if s.Name == "" {

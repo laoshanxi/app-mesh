@@ -17,7 +17,7 @@ type AppMeshClientWSS struct {
 
 // NewWSSClient creates a WSS transport client that reuses the standard App Mesh client API.
 func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
-	uri := options.AppMeshUri
+	uri := options.AppMeshURI
 	if uri == "" {
 		uri = "https://127.0.0.1:6058"
 	}
@@ -77,7 +77,8 @@ func (c *AppMeshClientWSS) SendMessage(ctx context.Context, buffer []byte) error
 
 // DownloadFileContext downloads a file through the WSS control channel plus HTTP(S) streaming data path.
 // When applyFileAttributes is true, returned POSIX metadata is applied locally best-effort.
-func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, localFile string, applyFileAttributes bool) error {
+func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, localFile string,
+	applyFileAttributes bool) error {
 	if remoteFile == "" {
 		return fmt.Errorf("remote file path cannot be empty")
 	}
@@ -95,7 +96,8 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 		return fmt.Errorf("download request failed: %w", err)
 	}
 	if status != http.StatusOK {
-		return newAPIErrorText("download file", status, string(msg), fmt.Sprintf("failed to download %q: status=%d msg=%s", remoteFile, status, msg))
+		return newAPIErrorText("download file", status, string(msg),
+			fmt.Sprintf("failed to download %q: status=%d msg=%s", remoteFile, status, msg))
 	}
 
 	accessToken := c.wssReq.getAccessToken()
@@ -132,7 +134,8 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return newAPIErrorText("download file", resp.StatusCode, string(body), fmt.Sprintf("download failed: status=%d msg=%s", resp.StatusCode, string(body)))
+		return newAPIErrorText("download file", resp.StatusCode, string(body),
+			fmt.Sprintf("download failed: status=%d msg=%s", resp.StatusCode, string(body)))
 	}
 
 	f, err := os.Create(localFile)
@@ -159,7 +162,8 @@ func (c *AppMeshClientWSS) DownloadFile(remoteFile, localFile string, applyFileA
 
 // UploadFileContext uploads a file through the WSS control channel plus HTTP(S) streaming data path.
 // When applyFileAttributes is true, local POSIX metadata is sent so the server can recreate it.
-func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, remoteFile string, applyFileAttributes bool) error {
+func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, remoteFile string,
+	applyFileAttributes bool) error {
 	if localFile == "" {
 		return fmt.Errorf("local file path cannot be empty")
 	}
@@ -193,7 +197,8 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 		return fmt.Errorf("upload request failed: %w", err)
 	}
 	if status != http.StatusOK {
-		return newAPIErrorText("upload file", status, string(msg), fmt.Sprintf("failed to upload %q: status=%d msg=%s", localFile, status, msg))
+		return newAPIErrorText("upload file", status, string(msg), fmt.Sprintf("failed to upload %q: status=%d msg=%s",
+			localFile, status, msg))
 	}
 
 	accessToken := c.wssReq.getAccessToken()
@@ -230,7 +235,8 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return newAPIErrorText("upload file", resp.StatusCode, string(body), fmt.Sprintf("upload failed: status=%d msg=%s", resp.StatusCode, string(body)))
+		return newAPIErrorText("upload file", resp.StatusCode, string(body),
+			fmt.Sprintf("upload failed: status=%d msg=%s", resp.StatusCode, string(body)))
 	}
 	return nil
 }

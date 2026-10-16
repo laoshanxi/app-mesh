@@ -8,10 +8,7 @@
 // fail here, not later at GCM time.
 TEST_CASE("SecretProtector::decodeBase64 strict alphabet", "[security]")
 {
-	const auto asString = [](const std::vector<unsigned char> &bytes)
-	{
-		return std::string(bytes.begin(), bytes.end());
-	};
+	const auto asString = [](const std::vector<unsigned char> &bytes) { return std::string(bytes.begin(), bytes.end()); };
 
 	SECTION("valid base64 decodes")
 	{

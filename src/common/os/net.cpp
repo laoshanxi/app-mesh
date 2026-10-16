@@ -1,5 +1,6 @@
 // src/common/os/net.cpp
-#include <cerrno>  // errno
+#include "net.h"
+#include <cerrno> // errno
 #include <chrono>
 #include <condition_variable>
 #include <exception> // std::exception
@@ -47,7 +48,6 @@
 #include <boost/asio.hpp>
 
 #include "../Utility.h"
-#include "net.h"
 
 namespace net
 {
@@ -181,7 +181,8 @@ namespace net
 			std::unique_lock lock(cache->mutex);
 			if (!cache->settled.wait_for(lock, std::chrono::seconds(1), [] { return cache->finished; }))
 			{
-				LOG_WAR << fname << "FQDN resolution for host <" << shortHostname << "> did not complete within 1 second, using the short hostname until the lookup completes";
+				LOG_WAR << fname << "FQDN resolution for host <" << shortHostname
+						<< "> did not complete within 1 second, using the short hostname until the lookup completes";
 			}
 		}
 
