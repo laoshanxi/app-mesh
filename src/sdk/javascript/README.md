@@ -1,7 +1,7 @@
 # App Mesh JavaScript SDK
 
 > **Naming**: public methods use camelCase (`listApps`, `runAppSync`). The
-> deprecated snake_case aliases (`list_apps`, ...) were removed in 4.0.0 —
+> deprecated snake_case aliases (`list_apps`, ...) were removed in 3.1.7 —
 > migrate callers to the camelCase names.
 
 ## Client SDK

@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.0.0
+## 3.1.7
 
 **Breaking:** the deprecated snake_case method aliases (`list_apps`,
 `set_bearer_token`, `add_app`, `run_app_sync`, `fetch_task`, ...) were
