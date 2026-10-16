@@ -87,6 +87,13 @@ Restrict with `LLMAGENT_ALLOWED_TOOLS` (comma list) / `LLMAGENT_PERMISSION_MODE`
 > for anyone the daemon lets reach the App; `cwd` is only the *start* directory, not a
 > sandbox. Before exposing it: run the App as an unprivileged user, tighten the worker's
 > `permission`, and consider `LLMAGENT_ALLOWED_TOOLS=Read,Glob,Grep,WebSearch` (no Bash).
+>
+> **Root daemons:** the CLI refuses `--dangerously-skip-permissions` under root/sudo.
+> When this App runs as root with `bypassPermissions`, the engine sets `IS_SANDBOX=1`
+> (the CLI's documented container escape hatch) so unattended turns still run — logged
+> as a warning. That is a supervised-daemon accommodation, not hardening: prefer a
+> non-root exec user (`DefaultExecUser` / per-App OS user). An explicitly set
+> `IS_SANDBOX` is never overridden.
 
 ## Wire protocol (run_task payload)
 

@@ -1,0 +1,11 @@
+{
+	"issues": [
+		{"key": "OPS-101", "title": "生产环境磁盘告警处理", "assignee": "zhangsan", "status": "open", "priority": "P1", "updated": "2026-10-15"},
+		{"key": "OPS-102", "title": "备份策略季度评审", "assignee": "zhangsan", "status": "in-progress", "priority": "P3", "updated": "2026-10-14"},
+		{"key": "DEV-201", "title": "订单服务接口幂等改造", "assignee": "lisi", "status": "in-progress", "priority": "P2", "updated": "2026-10-15"},
+		{"key": "DEV-202", "title": "网关限流配置脚本化", "assignee": "lisi", "status": "open", "priority": "P3", "updated": "2026-10-12"},
+		{"key": "HR-301", "title": "Q4 新员工入职批次安排", "assignee": "wangwu", "status": "open", "priority": "P2", "updated": "2026-10-16"},
+		{"key": "HR-302", "title": "年度体检供应商比价", "assignee": "wangwu", "status": "done", "priority": "P3", "updated": "2026-10-09"},
+		{"key": "DEV-203", "title": "移动端崩溃率治理专项", "assignee": "zhangsan", "status": "done", "priority": "P1", "updated": "2026-10-08"}
+	]
+}

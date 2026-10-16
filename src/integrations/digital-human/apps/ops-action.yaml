@@ -1,0 +1,17 @@
+# App 定义模板 —— setup.sh 渲染 @PLACEHOLDER@ 后注册
+name: @TEAM@-ops-action
+description: 高危运维操作示例（@TEAM@ team 数字人技能，未审批只登记不执行）
+command: @VENV_PY@ @PKG@/skills/ops_action.py
+working_dir: @PKG@
+behavior:
+  exit: keepalive
+env:
+  APPMESH_URL: "@APPMESH_URL@"
+  APPMESH_CA: "@APPMESH_CA@"
+  APPMESH_TCP: "@TCP_API@"
+  APPROVAL_FILE: "@RUNTIME@/approvals.json"
+metadata:
+  tool:
+    name: ops-action
+    description: '运维操作：status-check 低危直接执行；restart-service 高危需先登记审批，通过后携带 approval_id 重试'
+enabled: true

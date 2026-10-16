@@ -1,0 +1,19 @@
+# Workflow 模板 —— setup.sh 渲染后注册（R6: 复用 Workflow 引擎做编排）
+# 演示两种步骤: shell 步骤 + message 步骤（问 <team>-agent 大脑）
+name: @TEAM@-daily-digest
+on:
+  manual:
+    inputs:
+      question:
+        type: string
+        default: 查一下知识库里报销相关的规定，并用两句话总结
+jobs:
+  report:
+    steps:
+      - name: kb-stats
+        command: |
+          echo "kb docs: $(find '@KB_DIR@' -name '*.md' | wc -l | tr -d ' ')"
+      - name: ask-agent
+        message:
+          app: @TEAM@-agent
+          payload: '{"action":"session_send","session_id":"${{ workflow.run_id }}","input":"${{ inputs.question }}"}'
