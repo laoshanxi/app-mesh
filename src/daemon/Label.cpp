@@ -11,13 +11,9 @@
 #include "Label.h"
 #include "ResourceCollection.h"
 
-Label::Label()
-{
-}
+Label::Label() {}
 
-Label::~Label()
-{
-}
+Label::~Label() {}
 
 Json::Value Label::AsJson() const
 {
@@ -105,7 +101,8 @@ bool Label::match(const std::shared_ptr<Label> &condition) const
 	{
 #if defined(__linux__)
 		// wildcard match in label values
-		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second))))
+		if (!(m_labels.count(key) &&
+			  (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second))))
 #else
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val)))
 #endif

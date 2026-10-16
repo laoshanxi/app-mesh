@@ -10,13 +10,13 @@
 /// Connection parameters of one outbound forwarding hop.
 struct ForwardingConnectOptions
 {
-	std::string host;	// peer host name, also the expected TLS host name
+	std::string host; // peer host name, also the expected TLS host name
 	int port = -1;
-	std::string ca;		// resolved CA file; empty means the default trust store
+	std::string ca; // resolved CA file; empty means the default trust store
 	bool verifyPeer = false;
-	std::string bearer;	// Authorization header value; empty when the request had none
-	std::string clientCert;	// resolved client certificate for mTLS peers; empty when unconfigured
-	std::string clientKey;	// resolved private key of the client certificate
+	std::string bearer;     // Authorization header value; empty when the request had none
+	std::string clientCert; // resolved client certificate for mTLS peers; empty when unconfigured
+	std::string clientKey;  // resolved private key of the client certificate
 	int timeoutSeconds = 10;
 };
 

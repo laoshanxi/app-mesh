@@ -6,8 +6,8 @@
 #include <charconv>
 #include <cstdio>
 #include <fstream>
-#include <unordered_map>
 #include <unistd.h>
+#include <unordered_map>
 
 #include <assert.h>
 
@@ -98,18 +98,20 @@ namespace os
 		comm = content.substr(firstParenPos + 1, lastParenPos - firstParenPos - 1);
 
 		const char *afterParen = content.c_str() + lastParenPos + 1;
-		if (sscanf(afterParen, " %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %llu %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu",
-				   &state, &ppid, &pgrp, &session, &tty_nr, &tpgid, &flags, &minflt, &cminflt, &majflt, &cmajflt,
-				   &utime, &stime, &cutime, &cstime, &priority, &nice, &num_threads, &itrealvalue, &starttime,
-				   &vsize, &rss, &rsslim, &startcode, &endcode, &startstack, &kstkeip, &signal_val, &blocked,
-				   &sigcatch, &wchan, &nswap, &cnswap) != 33)
+		if (sscanf(afterParen,
+				   " %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %llu %lu %ld %lu %lu %lu %lu %lu "
+				   "%lu %lu %lu %lu %lu %lu",
+				   &state, &ppid, &pgrp, &session, &tty_nr, &tpgid, &flags, &minflt, &cminflt, &majflt, &cmajflt, &utime,
+				   &stime, &cutime, &cstime, &priority, &nice, &num_threads, &itrealvalue, &starttime, &vsize, &rss, &rsslim,
+				   &startcode, &endcode, &startstack, &kstkeip, &signal_val, &blocked, &sigcatch, &wchan, &nswap,
+				   &cnswap) != 33)
 		{
 			LOG_WAR << fname << "Failed to parse all fields from stat file: " << path;
 			return nullptr;
 		}
 
-		return std::make_shared<ProcessStatus>(
-			pid, comm, state, ppid, pgrp, session, utime, stime, cutime, cstime, starttime, vsize, rss);
+		return std::make_shared<ProcessStatus>(pid, comm, state, ppid, pgrp, session, utime, stime, cutime, cstime,
+											   starttime, vsize, rss);
 	}
 
 	std::string cmdline(pid_t pid /* = 0 */)

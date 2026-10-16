@@ -16,7 +16,7 @@
 struct AppSnap
 {
 	explicit AppSnap(pid_t pid, int64_t starttime);
-	bool operator==(const AppSnap &snapshort) const;
+	bool operator==(const AppSnap &snapshot) const;
 	pid_t m_pid;
 	int64_t m_startTime;
 };
@@ -26,7 +26,7 @@ struct AppSnap
 /// </summary>
 struct Snapshot
 {
-	bool operator==(const Snapshot &snapshort) const;
+	bool operator==(const Snapshot &snapshot) const;
 	Json::Value AsJson() const;
 	static std::shared_ptr<Snapshot> FromJson(const Json::Value &obj);
 	/// Absolute snapshot path shared by the writer and the startup recovery

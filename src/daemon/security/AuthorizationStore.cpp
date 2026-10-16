@@ -7,7 +7,6 @@
 #include "../application/Application.h"
 #include "Security.h"
 
-
 #include <cstdlib>
 #include <stdexcept>
 
@@ -22,8 +21,7 @@ namespace
 	// Dex derives the static-password subject from the immutable packaged admin
 	// userID and the local connector. This value is public identity metadata, not
 	// a credential. It is used only to restrict the one-time local bootstrap claim.
-	const char *DEFAULT_FIRST_ADMIN_SUBJECT =
-		"CiQyZDFjOGMzOC0zODk4LTRjODktYTc4Yi0zY2FhNDJmMjAzYzESBWxvY2Fs";
+	const char *DEFAULT_FIRST_ADMIN_SUBJECT = "CiQyZDFjOGMzOC0zODk4LTRjODktYTc4Yi0zY2FhNDJmMjAzYzESBWxvY2Fs";
 
 	std::string resolveAuthRole()
 	{
@@ -42,15 +40,15 @@ namespace
 	}
 
 	// Serialize a role/permission set as a JSON string array
-Json::Value toJsonArray(const std::set<std::string> &values)
-{
-	Json::Value array(Json::arrayValue);
-	for (const auto &value : values)
-		array.append(value);
-	return array;
-}
+	Json::Value toJsonArray(const std::set<std::string> &values)
+	{
+		Json::Value array(Json::arrayValue);
+		for (const auto &value : values)
+			array.append(value);
+		return array;
+	}
 
-std::set<std::string> readStringSet(const Json::Value &value, const char *field)
+	std::set<std::string> readStringSet(const Json::Value &value, const char *field)
 	{
 		std::set<std::string> result;
 		if (!value.isArray())
@@ -66,10 +64,10 @@ std::set<std::string> readStringSet(const Json::Value &value, const char *field)
 
 }
 
-AuthorizationPrincipal::AuthorizationPrincipal(std::string principalId, Principal::Kind kind,
-	std::string issuer, std::string subject)
-	: m_id(std::move(principalId)), m_kind(kind), m_issuer(std::move(issuer)),
-	  m_subject(std::move(subject)), m_status("active")
+AuthorizationPrincipal::AuthorizationPrincipal(std::string principalId, Principal::Kind kind, std::string issuer,
+											   std::string subject)
+	: m_id(std::move(principalId)), m_kind(kind), m_issuer(std::move(issuer)), m_subject(std::move(subject)),
+	  m_status("active")
 {
 	if (m_id.empty() || m_issuer.empty() || m_subject.empty())
 		throw std::invalid_argument("authorization principal requires id, issuer, and subject");
@@ -141,9 +139,8 @@ Principal AuthorizationPrincipal::asPrincipal() const
 }
 
 AuthorizationStore::AuthorizationStore()
-	: m_provisioningMode("explicit-or-minimal"), m_firstAdminRole("appmesh-admin"),
-	  m_firstAdminEnrolled(false), m_firstAdminEnrollmentEnabled(false),
-	  m_builtinAuthentication(false)
+	: m_provisioningMode("explicit-or-minimal"), m_firstAdminRole("appmesh-admin"), m_firstAdminEnrolled(false),
+	  m_firstAdminEnrollmentEnabled(false), m_builtinAuthentication(false)
 {
 }
 
@@ -230,8 +227,8 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::resolve(const Princi
 	}
 	if (found == m_principals.end())
 	{
-		auto record = std::make_shared<AuthorizationPrincipal>(
-			principal.id(), principal.kind(), principal.issuer(), principal.subject());
+		auto record = std::make_shared<AuthorizationPrincipal>(principal.id(), principal.kind(), principal.issuer(),
+															   principal.subject());
 		record->updateClaims(principal);
 		Json::Value policy;
 		policy["roles"] = Json::Value(Json::arrayValue);
@@ -282,8 +279,9 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::enrollFirstAdmin(con
 	}
 
 	auto candidate = found == m_principals.end()
-		? std::make_shared<AuthorizationPrincipal>(principal.id(), principal.kind(), principal.issuer(), principal.subject())
-		: std::make_shared<AuthorizationPrincipal>(*found->second);
+						 ? std::make_shared<AuthorizationPrincipal>(principal.id(), principal.kind(), principal.issuer(),
+																	principal.subject())
+						 : std::make_shared<AuthorizationPrincipal>(*found->second);
 	candidate->updateClaims(principal);
 	auto roles = candidate->roles();
 	roles.insert(m_firstAdminRole);
@@ -311,8 +309,8 @@ std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::enrollFirstAdmin(con
 		throw;
 	}
 
-	LOG_INF << fname << "enrolled principal <" << principal.id()
-			<< "> into the first-administrator role <" << m_firstAdminRole << ">";
+	LOG_INF << fname << "enrolled principal <" << principal.id() << "> into the first-administrator role <"
+			<< m_firstAdminRole << ">";
 	return candidate;
 }
 
@@ -358,8 +356,7 @@ bool AuthorizationStore::builtinAuthentication() const
 Json::Value AuthorizationStore::firstAdminEnrollment() const
 {
 	std::lock_guard guard(m_mutex);
-	const bool available = m_firstAdminEnrollmentEnabled && !m_firstAdminEnrolled &&
-		!hasFirstAdminLocked();
+	const bool available = m_firstAdminEnrollmentEnabled && !m_firstAdminEnrolled && !hasFirstAdminLocked();
 	Json::Value result;
 	result["available"] = available;
 	if (available)
@@ -390,12 +387,9 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const J
 	const static char fname[] = "AuthorizationStore::updatePrincipal() ";
 	if (!definition.isObject())
 		throw std::invalid_argument("principal definition must be an object");
-	if (definition.isMember("status") &&
-		definition["status"].isString() &&
-		definition["status"].asString() == "tombstoned")
+	if (definition.isMember("status") && definition["status"].isString() && definition["status"].asString() == "tombstoned")
 	{
-		throw AuthorizationException(
-			"use the Principal DELETE operation to create a tombstone after ownership checks");
+		throw AuthorizationException("use the Principal DELETE operation to create a tombstone after ownership checks");
 	}
 	std::lock_guard guard(m_mutex);
 	if (principalId == SYSTEM_PRINCIPAL_ID)
@@ -419,14 +413,11 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const J
 	else
 	{
 		candidate = std::make_shared<AuthorizationPrincipal>(*found->second);
-		if (definition.isMember("kind") &&
-			parseKind(GET_JSON_STR_VALUE(definition, "kind")) != candidate->kind())
+		if (definition.isMember("kind") && parseKind(GET_JSON_STR_VALUE(definition, "kind")) != candidate->kind())
 			throw std::invalid_argument("principal kind is immutable");
-		if (definition.isMember("issuer") &&
-			GET_JSON_STR_VALUE(definition, "issuer") != candidate->issuer())
+		if (definition.isMember("issuer") && GET_JSON_STR_VALUE(definition, "issuer") != candidate->issuer())
 			throw std::invalid_argument("principal issuer is immutable");
-		if (definition.isMember("subject") &&
-			GET_JSON_STR_VALUE(definition, "subject") != candidate->subject())
+		if (definition.isMember("subject") && GET_JSON_STR_VALUE(definition, "subject") != candidate->subject())
 			throw std::invalid_argument("principal subject is immutable");
 	}
 	candidate->updatePolicy(definition);
@@ -450,8 +441,8 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const J
 		m_firstAdminEnrolled = previouslyEnrolled;
 		throw;
 	}
-	LOG_INF << fname << (previous ? "updated" : "created")
-			<< " principal <" << principalId << "> roles: " << JSON::dump(toJsonArray(candidate->roles()));
+	LOG_INF << fname << (previous ? "updated" : "created") << " principal <" << principalId
+			<< "> roles: " << JSON::dump(toJsonArray(candidate->roles()));
 }
 
 void AuthorizationStore::deletePrincipal(const std::string &principalId)
@@ -478,10 +469,11 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 		{
 			if (app && app->getOwnerPrincipalId() == principalId)
 			{
-				throw AuthorizationException(
-					"principal owns application <" + app->getName() +
-					">; transfer the application owner first (PUT /appmesh/app/<name> with owner_principal_id, requires the "
-					+ std::string(PERMISSION_KEY_app_manage_all) + " permission) or delete the application");
+				throw AuthorizationException("principal owns application <" + app->getName() +
+											 ">; transfer the application owner first (PUT /appmesh/app/<name> with "
+											 "owner_principal_id, requires the " +
+											 std::string(PERMISSION_KEY_app_manage_all) +
+											 " permission) or delete the application");
 			}
 		}
 	}
@@ -533,8 +525,8 @@ void AuthorizationStore::updateRole(const std::string &role, const Json::Value &
 			m_roles.erase(role);
 		throw;
 	}
-	LOG_INF << fname << (existed ? "updated" : "created") << " role <"
-			<< role << "> permissions: " << JSON::dump(toJsonArray(parsed));
+	LOG_INF << fname << (existed ? "updated" : "created") << " role <" << role
+			<< "> permissions: " << JSON::dump(toJsonArray(parsed));
 }
 
 void AuthorizationStore::deleteRole(const std::string &role)
@@ -662,14 +654,13 @@ void AuthorizationStore::initializeFirstAdminEnrollment()
 	// Versions before automatic subject-pinned enrollment generated a second
 	// owner-only proof. It is no longer accepted, so remove any stale copy during
 	// the upgrade instead of leaving obsolete credential material behind.
-	const auto legacyProofPath = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR /
-		"auth" / "secrets" / "first-admin-enrollment-token").string();
+	const auto legacyProofPath =
+		(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / "auth" / "secrets" / "first-admin-enrollment-token").string();
 	if (Utility::isFileExist(legacyProofPath))
 		Utility::removeFile(legacyProofPath);
 
 	const auto authRole = resolveAuthRole();
-	m_firstAdminEnrollmentEnabled = authMode == BUILTIN_AUTH_MODE &&
-		(authRole == "standalone" || authRole == "owner");
+	m_firstAdminEnrollmentEnabled = authMode == BUILTIN_AUTH_MODE && (authRole == "standalone" || authRole == "owner");
 
 	mergeDiskPolicyLocked();
 	const bool inferredEnrollment = hasFirstAdminLocked();
@@ -683,8 +674,7 @@ void AuthorizationStore::initializeFirstAdminEnrollment()
 	if (!m_firstAdminEnrollmentEnabled || m_firstAdminEnrolled)
 		return;
 
-	LOG_INF << fname
-			<< "first-admin enrollment is available only to the packaged administrator from loopback";
+	LOG_INF << fname << "first-admin enrollment is available only to the packaged administrator from loopback";
 }
 
 bool AuthorizationStore::hasFirstAdminLocked() const

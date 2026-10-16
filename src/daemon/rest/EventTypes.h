@@ -16,15 +16,11 @@ enum class AppEventType : uint32_t
 	ALL_EVENTS = 0x3F
 };
 
-static_assert(
-	static_cast<uint32_t>(AppEventType::ALL_EVENTS) ==
-		(static_cast<uint32_t>(AppEventType::PROCESS_START) |
-		 static_cast<uint32_t>(AppEventType::PROCESS_EXIT) |
-		 static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT) |
-		 static_cast<uint32_t>(AppEventType::HEALTH_CHANGE) |
-		 static_cast<uint32_t>(AppEventType::STATUS_CHANGE) |
-		 static_cast<uint32_t>(AppEventType::APP_REMOVED)),
-	"ALL_EVENTS must be the union of all individual event bits");
+static_assert(static_cast<uint32_t>(AppEventType::ALL_EVENTS) ==
+				  (static_cast<uint32_t>(AppEventType::PROCESS_START) | static_cast<uint32_t>(AppEventType::PROCESS_EXIT) |
+				   static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT) | static_cast<uint32_t>(AppEventType::HEALTH_CHANGE) |
+				   static_cast<uint32_t>(AppEventType::STATUS_CHANGE) | static_cast<uint32_t>(AppEventType::APP_REMOVED)),
+			  "ALL_EVENTS must be the union of all individual event bits");
 
 inline const char *eventTypeToString(AppEventType type)
 {

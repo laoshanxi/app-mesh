@@ -134,7 +134,8 @@ public class AppMeshWorker {
         String[] env = getRuntimeEnv();
         String pkey = env[0];
         String appName = env[1];
-        String path = "/appmesh/app/" + URLEncoder.encode(appName, StandardCharsets.UTF_8.name()).replace("+", "%20") + "/task";
+        String path = "/appmesh/app/" + URLEncoder.encode(appName, StandardCharsets.UTF_8.name()).replace("+", "%20")
+                + "/task";
 
         Map<String, String> headers = new HashMap<>();
         headers.put("X-AppMesh-Process-Key", pkey);

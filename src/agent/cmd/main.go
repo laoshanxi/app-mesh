@@ -67,8 +67,8 @@ func initializeServices(ctx context.Context) <-chan struct{} {
 	restDone := make(chan struct{})
 
 	// REST proxy
-	logger.Infof("RestEnabled: %t", config.ConfigData.REST.RestEnabled)
-	if config.ConfigData.REST.RestEnabled {
+	logger.Infof("RESTEnabled: %t", config.ConfigData.REST.RESTEnabled)
+	if config.ConfigData.REST.RESTEnabled {
 		go func() {
 			defer close(restDone)
 			if err := agent.ListenAndServeREST(ctx); err != nil {
@@ -152,7 +152,7 @@ func main() {
 	if err != nil || len(psk) == 0 {
 		logger.Fatal("failed to read PSK from shared memory")
 	}
-	cloud.HMAC_AgentToCPP = cloud.NewHMACVerify(string(psk))
+	cloud.AgentToCPPHMAC = cloud.NewHMACVerify(string(psk))
 
 	// Start all services
 	restDone := initializeServices(ctx)

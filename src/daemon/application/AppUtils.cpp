@@ -14,16 +14,19 @@ std::string normalizeAppName(const std::string &name)
 {
 	const auto normalized = Utility::stdStringTrim(name);
 	const bool valid = !normalized.empty() && normalized.size() <= 128 &&
-		std::all_of(normalized.begin(), normalized.end(), [](unsigned char value) {
-			return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
-				(value >= '0' && value <= '9') || value == '_' || value == '-';
-		});
+					   std::all_of(normalized.begin(), normalized.end(),
+								   [](unsigned char value)
+								   {
+									   return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
+											  (value >= '0' && value <= '9') || value == '_' || value == '-';
+								   });
 	if (!valid)
 		throw std::invalid_argument("application name must be 1-128 characters using only letters, digits, '_' or '-'");
 	return normalized;
 }
 
-ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin, const std::string &workingDir)
+ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser,
+								 bool sessionLogin, const std::string &workingDir)
 	: m_usingSudo(false)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
@@ -38,13 +41,15 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	// name made every new run fail to open the file for writing. Stale scripts left
 	// by an unclean shutdown block the name the same way.
 	// Create a batch file name: workdir/shell/appmesh.<app_name>.<instance>.bat
-	const auto fileName = Utility::stringFormat("%s\\appmesh.%s.%s.bat", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
+	const auto fileName =
+		Utility::stringFormat("%s\\appmesh.%s.%s.bat", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
 
 	// Open batch file for writing
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
 	if (!shellFile.is_open())
 	{
-		LOG_ERR << fname << "Failed to open batch file <" << fileName << "> for writing for app <" << name << ">: " << last_error_msg();
+		LOG_ERR << fname << "Failed to open batch file <" << fileName << "> for writing for app <" << name
+				<< ">: " << last_error_msg();
 		throw std::runtime_error("Failed to create shell script file.");
 	}
 
@@ -68,19 +73,23 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	m_fileName = fileName;
 	m_shellCmd = Utility::stringFormat("cmd.exe /C \"%s\"", m_fileName.c_str());
 
-	LOG_DBG << fname << "Generated batch file <" << fileName << "> for app <" << name << "> with command <" << m_shellCmd << ">";
+	LOG_DBG << fname << "Generated batch file <" << fileName << "> for app <" << name << "> with command <" << m_shellCmd
+			<< ">";
 
 #else
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
-	const static std::string defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const static std::string defaultWorkDir =
+		(fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	// Per-instance suffix: see the Windows branch for why same-name script reuse is unsafe.
-	const auto fileName = Utility::stringFormat("%s/appmesh.%s.%s.sh", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
+	const auto fileName =
+		Utility::stringFormat("%s/appmesh.%s.%s.sh", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
 
 	// Open shell file for writing
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
 	if (!shellFile.is_open())
 	{
-		LOG_ERR << fname << "Failed to open shell file <" << fileName << "> for writing for app <" << name << ">: " << last_error_msg();
+		LOG_ERR << fname << "Failed to open shell file <" << fileName << "> for writing for app <" << name
+				<< ">: " << last_error_msg();
 		throw std::runtime_error("Failed to create shell script file.");
 	}
 
@@ -108,13 +117,15 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	{
 		if (!os::chown(fileName, execUser))
 		{
-			LOG_ERR << fname << "Failed to change ownership of file <" << fileName << "> to user <" << execUser << ">: " << last_error_msg();
+			LOG_ERR << fname << "Failed to change ownership of file <" << fileName << "> to user <" << execUser
+					<< ">: " << last_error_msg();
 			throw std::runtime_error("Failed to change file ownership.");
 		}
 		// The script cds into the working directory after the user switch: hand the
 		// configured directory to the exec user or the cd fails with permission denied.
 		if (!workingDir.empty() && Utility::isDirExist(workingDir) && !os::chown(workingDir, execUser, "", true))
-			LOG_WAR << fname << "Failed to change ownership of working directory <" << workingDir << "> to user <" << execUser << ">: " << last_error_msg();
+			LOG_WAR << fname << "Failed to change ownership of working directory <" << workingDir << "> to user <"
+					<< execUser << ">: " << last_error_msg();
 	}
 #endif
 
@@ -130,24 +141,16 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		m_sudoUser = execUser;
 	}
 
-	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> and command <" << m_shellCmd << ">";
+	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser
+			<< "> and command <" << m_shellCmd << ">";
 #endif
 }
 
-ShellAppFileGen::~ShellAppFileGen()
-{
-	Utility::removeFile(m_fileName);
-}
+ShellAppFileGen::~ShellAppFileGen() { Utility::removeFile(m_fileName); }
 
-AppLogFile::AppLogFile(const std::string &appName, int index)
-	: m_fileName(appName), m_index(index)
-{
-}
+AppLogFile::AppLogFile(const std::string &appName, int index) : m_fileName(appName), m_index(index) {}
 
-AppLogFile::~AppLogFile()
-{
-	Utility::removeFile(getFileName());
-}
+AppLogFile::~AppLogFile() { Utility::removeFile(getFileName()); }
 
 void AppLogFile::increaseIndex()
 {
@@ -170,10 +173,7 @@ void AppLogFile::increaseIndex()
 	}
 }
 
-int AppLogFile::index()
-{
-	return m_index;
-}
+int AppLogFile::index() { return m_index; }
 
 const std::string AppLogFile::getFileName() const
 {
@@ -188,7 +188,7 @@ const std::string AppLogFile::getFileName() const
 }
 
 LogFileQueue::LogFileQueue(const std::string &baseFileName, int queueSize)
-	: baseFileName(baseFileName), m_queueSize(queueSize + 1)
+	: m_baseFileName(baseFileName), m_queueSize(queueSize + 1)
 {
 }
 
@@ -197,7 +197,7 @@ LogFileQueue::~LogFileQueue()
 	// double check and remove file
 	for (int i = 0; i < m_queueSize; i++)
 	{
-		AppLogFile autoDeleteFile(baseFileName, i);
+		AppLogFile autoDeleteFile(m_baseFileName, i);
 	}
 }
 
@@ -215,7 +215,7 @@ void LogFileQueue::enqueue()
 		(*it)->increaseIndex();
 	}
 	// insert top
-	auto file = std::make_shared<AppLogFile>(baseFileName);
+	auto file = std::make_shared<AppLogFile>(m_baseFileName);
 	m_fileQueue.insert(m_fileQueue.begin(), file);
 }
 
@@ -232,15 +232,16 @@ const std::string LogFileQueue::getFileName(int index)
 	{
 		return m_fileQueue[index]->getFileName();
 	}
-	throw NotFoundException(Utility::stringFormat("no such index <%d> of stdout log file for <%s>", index, baseFileName.c_str()));
+	throw NotFoundException(
+		Utility::stringFormat("no such index <%d> of stdout log file for <%s>", index, m_baseFileName.c_str()));
 }
 
 std::chrono::seconds RestartBackoff::onExit(std::chrono::seconds ranFor)
 {
-	constexpr long BASE_SECONDS = 1;	 // first backoff step
-	constexpr long MAX_SECONDS = 300;	 // cap (5 min), as in k8s CrashLoopBackOff
-	constexpr long STABLE_SECONDS = 60;	 // a run lasting this long is healthy -> reset
-	constexpr int MAX_SHIFT = 9;		 // 1<<9 already exceeds the cap; avoids overflow
+	constexpr long BASE_SECONDS = 1;    // first backoff step
+	constexpr long MAX_SECONDS = 300;   // cap (5 min), as in k8s CrashLoopBackOff
+	constexpr long STABLE_SECONDS = 60; // a run lasting this long is healthy -> reset
+	constexpr int MAX_SHIFT = 9;        // 1<<9 already exceeds the cap; avoids overflow
 
 	if (ranFor.count() >= STABLE_SECONDS)
 	{

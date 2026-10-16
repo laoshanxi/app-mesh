@@ -2,9 +2,7 @@ use appmesh::Application;
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::format::{
-    display_width, human_readable_duration, human_readable_size, principal_display, truncate_with_marker,
-};
+use super::format::{display_width, human_readable_duration, human_readable_size, principal_display, truncate_with_marker};
 
 const COLUMN_PADDING: usize = 2;
 
@@ -42,10 +40,7 @@ fn format_age(register_time: Option<u64>) -> String {
     let Some(reg) = register_time else {
         return "-".to_string();
     };
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     if now > reg {
         human_readable_duration(now - reg)
     } else {
@@ -61,12 +56,8 @@ fn format_duration(app: &Application) -> String {
     if app.pid.is_none() && app.last_exit_time.is_none() {
         return "-".to_string();
     }
-    let end = app.last_exit_time.unwrap_or_else(|| {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-    });
+    let end =
+        app.last_exit_time.unwrap_or_else(|| SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs());
     if end >= start {
         human_readable_duration(end - start)
     } else {
@@ -84,31 +75,21 @@ fn format_row(i: usize, app: &Application) -> Vec<String> {
             .unwrap_or_else(|| "-".to_string()),
         format_enabled(app),
         format_health(app),
-        app.pid
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "-".to_string()),
+        app.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string()),
         app.user.clone().unwrap_or_else(|| "-".to_string()),
-        app.memory
-            .map(human_readable_size)
-            .unwrap_or_else(|| "-".to_string()),
-        app.cpu
-            .map(|c| format!("{:.0}", c))
-            .unwrap_or_else(|| "-".to_string()),
-        app.return_code
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "-".to_string()),
+        app.memory.map(human_readable_size).unwrap_or_else(|| "-".to_string()),
+        app.cpu.map(|c| format!("{:.0}", c)).unwrap_or_else(|| "-".to_string()),
+        app.return_code.map(|c| c.to_string()).unwrap_or_else(|| "-".to_string()),
         format_age(app.register_time),
         format_duration(app),
-        app.starts
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "-".to_string()),
+        app.starts.map(|s| s.to_string()).unwrap_or_else(|| "-".to_string()),
         app.command.clone().unwrap_or_default(),
     ]
 }
 
 const TITLES: [&str; 14] = [
-    "ID", "NAME", "OWNER", "ENABLED", "HEALTH", "PID", "USER", "MEMORY", "%CPU", "RETURN", "AGE",
-    "DURATION", "STARTS", "COMMAND",
+    "ID", "NAME", "OWNER", "ENABLED", "HEALTH", "PID", "USER", "MEMORY", "%CPU", "RETURN", "AGE", "DURATION", "STARTS",
+    "COMMAND",
 ];
 
 /// Terminal width budget for the table. One column stays free: conhost (the
@@ -127,21 +108,11 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     }
 
     // Build row data
-    let rows: Vec<Vec<String>> = apps
-        .iter()
-        .enumerate()
-        .map(|(i, app)| format_row(i, app))
-        .collect();
+    let rows: Vec<Vec<String>> = apps.iter().enumerate().map(|(i, app)| format_row(i, app)).collect();
 
     // Calculate column widths (excluding COMMAND which is last)
     let col_count = TITLES.len();
-    let mut columns: Vec<Column> = TITLES
-        .iter()
-        .map(|t| Column {
-            title: t,
-            width: t.len() + COLUMN_PADDING,
-        })
-        .collect();
+    let mut columns: Vec<Column> = TITLES.iter().map(|t| Column { title: t, width: t.len() + COLUMN_PADDING }).collect();
     // COMMAND column: no initial padding
     columns[col_count - 1].width = TITLES[col_count - 1].len();
 
@@ -156,11 +127,7 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     }
 
     // Determine terminal width
-    let term_width = if long_mode {
-        usize::MAX
-    } else {
-        table_width(terminal_size::terminal_size().map(|(w, _)| w.0))
-    };
+    let term_width = if long_mode { usize::MAX } else { table_width(terminal_size::terminal_size().map(|(w, _)| w.0)) };
 
     // Determine how many columns (excluding COMMAND) fit
     let mut total_width = 0usize;
@@ -175,11 +142,8 @@ pub fn print_apps(apps: &[Application], long_mode: bool) {
     }
 
     // COMMAND column gets remaining space
-    let cmd_width = if total_width + columns[col_count - 1].width < term_width {
-        term_width.saturating_sub(total_width)
-    } else {
-        0
-    };
+    let cmd_width =
+        if total_width + columns[col_count - 1].width < term_width { term_width.saturating_sub(total_width) } else { 0 };
 
     let stdout = std::io::stdout();
     let mut out = stdout.lock();

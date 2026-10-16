@@ -57,7 +57,7 @@ TEST_CASE("StdoutPump stop drains through an EINTR interruption", "[process]")
 	g_signalWriteFd = pipeFds[1];
 	struct itimerval timer{};
 	timer.it_interval.tv_usec = 300 * 1000; // keep interrupting retries too
-	timer.it_value.tv_usec = 300 * 1000;	// fires while blocked in read()
+	timer.it_value.tv_usec = 300 * 1000;    // fires while blocked in read()
 	REQUIRE(::setitimer(ITIMER_REAL, &timer, nullptr) == 0);
 
 	auto diskMutex = std::make_shared<std::mutex>();
@@ -71,5 +71,5 @@ TEST_CASE("StdoutPump stop drains through an EINTR interruption", "[process]")
 	::close(diskFd);
 
 	REQUIRE(g_alarmDeliveries.load() >= 1); // an interrupt was delivered
-	REQUIRE(pump->acceptedBytes() == 1);	 // and the drain retried through it
+	REQUIRE(pump->acceptedBytes() == 1);    // and the drain retried through it
 }

@@ -115,7 +115,8 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         """Reject TCP file transfers while the event demuxer owns the read side: the demuxer
         read loop would steal the raw (non-msgpack) chunk frames and corrupt the transfer."""
         if self._demuxer and self._demuxer._running:
-            raise AppMeshError("file transfer is not supported while an event subscription is active on this client; use a separate client instance")
+            raise AppMeshError("file transfer is not supported while an event subscription is active on this client; use a "
+                "separate client instance")
 
     def download_file(self, remote_file: str, local_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
         """Copy a remote file to local through the TCP file-socket side channel.

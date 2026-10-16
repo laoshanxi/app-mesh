@@ -27,7 +27,7 @@ var (
 )
 
 const (
-	EVENT_URI = "/appmesh/event"
+	EventURI = "/appmesh/event"
 
 	// EventTypeDisconnected is a synthetic event_type pushed to every registered
 	// callback when the demuxer stops or the underlying transport disconnects.
@@ -194,7 +194,8 @@ func (d *MessageDemuxer) stop() {
 	// drains everything before exiting. Callbacks stay serialized on the worker
 	// goroutine — never invoked on the stopping goroutine.
 	for _, e := range snapshot {
-		d.enqueueTask(dispatchTask{cb: e.cb, event: AppEvent{SubscriptionID: e.subID, EventType: EventTypeDisconnected}})
+		d.enqueueTask(dispatchTask{cb: e.cb, event: AppEvent{SubscriptionID: e.subID,
+			EventType: EventTypeDisconnected}})
 	}
 	d.enqueueTask(dispatchTask{stop: true})
 }
@@ -253,6 +254,11 @@ func (d *MessageDemuxer) readLoop() {
 			d.stop()
 			return
 		}
+		if len(data) == 0 {
+			// Zero-length frame: not a message, keep reading (the Python SDK
+			// treats falsy reads the same way).
+			continue
+		}
 
 		resp := &Response{}
 		if err := resp.Deserialize(data); err != nil {
@@ -260,7 +266,7 @@ func (d *MessageDemuxer) readLoop() {
 			continue
 		}
 
-		if resp.RequestUri == EVENT_URI {
+		if resp.RequestURI == EventURI {
 			d.dispatchEvent(resp)
 		} else {
 			d.dispatchResponse(resp)
@@ -348,14 +354,15 @@ type SubscriptionResult struct {
 // Callbacks are dispatched serially, preserving per-subscription event order.
 // Requires a subscription-capable transport (TCP/WSS); over plain HTTP it fails
 // with ErrSubscriptionNotSupported.
-func (c *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
-	return c.SubscribeContext(context.Background(), opt, callback)
+func (r *AppMeshClient) Subscribe(opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
+	return r.SubscribeContext(context.Background(), opt, callback)
 }
 
 // SubscribeContext is Subscribe bounded by ctx. ctx bounds only the subscribe call,
 // not the lifetime of the subscription.
-func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOption, callback EventCallback) (*SubscriptionResult, error) {
-	subscriber, ok := c.req.(subscribableRequester)
+func (r *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOption,
+	callback EventCallback) (*SubscriptionResult, error) {
+	subscriber, ok := r.req.(subscribableRequester)
 	if !ok {
 		return nil, fmt.Errorf("subscribe: %w", ErrSubscriptionNotSupported)
 	}
@@ -373,7 +380,7 @@ func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOptio
 		queries.Set("events", strings.Join(opt.Events, ","))
 	}
 
-	status, raw, _, err := c.req.SendContext(ctx, http.MethodPost, apiPath, queries, nil, nil)
+	status, raw, _, err := r.req.SendContext(ctx, http.MethodPost, apiPath, queries, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -402,13 +409,13 @@ func (c *AppMeshClient) SubscribeContext(ctx context.Context, opt SubscribeOptio
 
 // Unsubscribe removes a subscription by ID. Requires a subscription-capable
 // transport (TCP/WSS); over plain HTTP it fails with ErrSubscriptionNotSupported.
-func (c *AppMeshClient) Unsubscribe(subscriptionID string) error {
-	return c.UnsubscribeContext(context.Background(), subscriptionID)
+func (r *AppMeshClient) Unsubscribe(subscriptionID string) error {
+	return r.UnsubscribeContext(context.Background(), subscriptionID)
 }
 
 // UnsubscribeContext is Unsubscribe bounded by ctx.
-func (c *AppMeshClient) UnsubscribeContext(ctx context.Context, subscriptionID string) error {
-	subscriber, ok := c.req.(subscribableRequester)
+func (r *AppMeshClient) UnsubscribeContext(ctx context.Context, subscriptionID string) error {
+	subscriber, ok := r.req.(subscribableRequester)
 	if !ok {
 		return fmt.Errorf("unsubscribe: %w", ErrSubscriptionNotSupported)
 	}
@@ -416,7 +423,7 @@ func (c *AppMeshClient) UnsubscribeContext(ctx context.Context, subscriptionID s
 	queries := url.Values{}
 	queries.Set("subscription_id", subscriptionID)
 
-	status, raw, _, err := c.req.SendContext(ctx, http.MethodDelete, "/appmesh/subscribe", queries, nil, nil)
+	status, raw, _, err := r.req.SendContext(ctx, http.MethodDelete, "/appmesh/subscribe", queries, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -439,14 +446,14 @@ func (c *AppMeshClient) UnsubscribeContext(ctx context.Context, subscriptionID s
 // pre-registration buffer and flushed to the callback in arrival order, ahead of
 // any later live event, so none are lost. Requires a subscription-capable
 // transport (TCP/WSS); over plain HTTP it fails with ErrSubscriptionNotSupported.
-func (c *AppMeshClient) RegisterEventCallback(subscriptionID string, callback EventCallback) error {
+func (r *AppMeshClient) RegisterEventCallback(subscriptionID string, callback EventCallback) error {
 	if subscriptionID == "" {
 		return fmt.Errorf("subscription ID is required")
 	}
 	if callback == nil {
 		return fmt.Errorf("event callback is required")
 	}
-	subscriber, ok := c.req.(subscribableRequester)
+	subscriber, ok := r.req.(subscribableRequester)
 	if !ok {
 		return fmt.Errorf("register event callback: %w", ErrSubscriptionNotSupported)
 	}
@@ -475,7 +482,8 @@ func (c *AppMeshClient) RegisterEventCallback(subscriptionID string, callback Ev
 //
 // WaitForAsyncRun requires a subscription-capable transport (TCP/WSS); Wait and
 // WaitContext are the HTTP-polling equivalents usable on any transport.
-func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdoutHandler OutputHandler, timeout time.Duration) (*int, error) {
+func (r *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdoutHandler OutputHandler,
+	timeout time.Duration) (*int, error) {
 	if run == nil || run.AppName == "" {
 		return nil, fmt.Errorf("invalid async run")
 	}
@@ -583,7 +591,7 @@ func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 		}
 	}
 
-	sub, err := c.Subscribe(SubscribeOption{
+	sub, err := r.Subscribe(SubscribeOption{
 		AppName: run.AppName,
 		Events:  []string{"STDOUT", "EXIT", "REMOVED"},
 	}, onEvent)
@@ -603,20 +611,23 @@ func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 			return
 		}
 		if sub.SubscriptionID != "" {
-			_ = c.Unsubscribe(sub.SubscriptionID)
+			_ = r.Unsubscribe(sub.SubscriptionID)
 		}
 		// Best-effort delete of the temporary run app on a real exit (as in
 		// WaitContext); skipped on REMOVED/timeout (app gone or possibly still running).
 		if exited {
-			_, _ = c.DeleteApp(run.AppName)
+			_, _ = r.DeleteApp(run.AppName)
 		}
 	}()
 
 	// Backfill: fetch output emitted before the subscribe took effect, and
 	// detect a process that already exited.
-	backfill := c.GetAppOutput(run.AppName, 0, 0, 0, run.ProcUid, 0)
-	if backfill.HttpBody != "" {
-		deliver(backfill.HttpBody, 0)
+	backfill := r.GetAppOutput(run.AppName, 0, 0, 0, run.ProcUid, 0)
+	if backfill.Error != nil {
+		logf("WaitForAsyncRun: backfill failed for %s: %v", run.AppName, backfill.Error)
+	}
+	if backfill.HTTPBody != "" {
+		deliver(backfill.HTTPBody, 0)
 	}
 	if backfill.ExitCode != nil {
 		setExit(*backfill.ExitCode)
@@ -647,8 +658,8 @@ func (c *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 // send-then-read that can cross-wire responses (e.g. one call's reply consumed by an
 // unrelated call, so both callers get the wrong response). No-op on transports without
 // multiplexing (HTTP) and idempotent (Subscribe also enables it on demand).
-func (c *AppMeshClient) EnableConcurrency() {
-	if sub, ok := c.req.(subscribableRequester); ok {
+func (r *AppMeshClient) EnableConcurrency() {
+	if sub, ok := r.req.(subscribableRequester); ok {
 		sub.enableDemuxer()
 	}
 }

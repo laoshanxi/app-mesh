@@ -6,6 +6,9 @@
 
 #include "AppProcess.h"
 
+// Exit code marker for docker CLI/API failures that never produced a container exit code
+constexpr int DOCKER_COMMAND_ERROR = -200;
+
 // Docker command line process object
 class DockerProcess : public AppProcess
 {
@@ -23,13 +26,13 @@ public:
 	int returnValue() const override;
 
 	// Get stdout content from docker logs
-	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) override;
+	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE,
+								   bool readLine = false) override;
 
 protected:
-	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir,
-					std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-					const std::string &stdoutFile, const Json::Value &stdinFileContent,
-					int maxStdoutSize) override;
+	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap,
+					std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile,
+					const Json::Value &stdinFileContent, int maxStdoutSize) override;
 	void terminateImpl() override;
 
 	// A pull is its own managed run, with this AppProcess owning its PID and exit callback.
@@ -43,8 +46,8 @@ protected:
 
 private:
 	pid_t startContainer(const std::string &cmd, const std::string &workDir,
-						 const std::map<std::string, std::string> &envMap,
-						 const std::shared_ptr<ResourceLimitation> &limit, const std::string &stdoutFile);
+						 const std::map<std::string, std::string> &envMap, const std::shared_ptr<ResourceLimitation> &limit,
+						 const std::string &stdoutFile);
 	std::string m_containerId;
 	std::string m_containerEngine; // docker or podman
 

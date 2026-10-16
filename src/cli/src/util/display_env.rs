@@ -27,10 +27,8 @@ mod tests {
     use std::ffi::OsString;
 
     fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
-        let map: HashMap<String, OsString> = pairs
-            .iter()
-            .map(|(key, value)| (key.to_string(), OsString::from(value)))
-            .collect();
+        let map: HashMap<String, OsString> =
+            pairs.iter().map(|(key, value)| (key.to_string(), OsString::from(value))).collect();
         move |name| map.get(name).cloned()
     }
 
@@ -46,18 +44,9 @@ mod tests {
 
     #[test]
     fn ssh_session_is_headless_even_with_x11_forwarding() {
-        assert!(!has_display_from(env(&[
-            ("SSH_TTY", "/dev/pts/0"),
-            ("DISPLAY", "localhost:10.0"),
-        ])));
-        assert!(!has_display_from(env(&[
-            ("SSH_CONNECTION", "10.0.0.1 22 10.0.0.2 22"),
-            ("WAYLAND_DISPLAY", "wayland-0"),
-        ])));
-        assert!(!has_display_from(env(&[
-            ("SSH_CLIENT", "10.0.0.1 22 22"),
-            ("DISPLAY", ":0"),
-        ])));
+        assert!(!has_display_from(env(&[("SSH_TTY", "/dev/pts/0"), ("DISPLAY", "localhost:10.0"),])));
+        assert!(!has_display_from(env(&[("SSH_CONNECTION", "10.0.0.1 22 10.0.0.2 22"), ("WAYLAND_DISPLAY", "wayland-0"),])));
+        assert!(!has_display_from(env(&[("SSH_CLIENT", "10.0.0.1 22 22"), ("DISPLAY", ":0"),])));
     }
 
     #[test]

@@ -28,9 +28,7 @@ namespace
 		while (offset + 8 <= raw.size())
 		{
 			const auto byte = [&](size_t index)
-			{
-				return static_cast<uint32_t>(static_cast<unsigned char>(raw[offset + index]));
-			};
+			{ return static_cast<uint32_t>(static_cast<unsigned char>(raw[offset + index])); };
 			if ((byte(0) != 1 && byte(0) != 2) || byte(1) != 0 || byte(2) != 0 || byte(3) != 0)
 				return raw; // TTY containers return an unframed byte stream.
 
@@ -45,7 +43,8 @@ namespace
 	}
 }
 
-DockerApiProcess::DockerApiProcess(std::weak_ptr<Application> owner, const std::string &appName, const std::string &dockerImage)
+DockerApiProcess::DockerApiProcess(std::weak_ptr<Application> owner, const std::string &appName,
+								   const std::string &dockerImage)
 	: DockerProcess(std::move(owner), appName, dockerImage)
 {
 	const static char fname[] = "DockerApiProcess::DockerApiProcess() ";
@@ -70,7 +69,7 @@ DockerApiProcess::~DockerApiProcess()
 
 void DockerApiProcess::terminateImpl()
 {
-	const static char fname[] = "DockerApiProcess::terminate() ";
+	const static char fname[] = "DockerApiProcess::terminateImpl() ";
 
 	auto containerId = takeContainerId();
 	if (containerId.empty())
@@ -81,12 +80,11 @@ void DockerApiProcess::terminateImpl()
 	}
 
 	// POST /containers/{id}/kill
-	auto resp = this->requestDocker(web::http::methods::POST,
-									Utility::stringFormat("/containers/%s/kill", containerId.c_str()),
-									{{"signal", "SIGKILL"}}, {}, nullptr);
+	auto resp =
+		this->requestDocker(web::http::methods::POST, Utility::stringFormat("/containers/%s/kill", containerId.c_str()),
+							{{"signal", "SIGKILL"}}, {}, nullptr);
 
-	if (resp->status_code >= web::http::status_codes::BadRequest &&
-		resp->status_code != web::http::status_codes::NotFound)
+	if (resp->statusCode >= web::http::status_codes::BadRequest && resp->statusCode != web::http::status_codes::NotFound)
 	{
 		LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
 		// Do not fall back to the host PID: exit handling may already have invalidated
@@ -94,12 +92,10 @@ void DockerApiProcess::terminateImpl()
 	}
 
 	// DELETE /containers/{id}?force=true
-	resp = this->requestDocker(web::http::methods::DEL,
-							   Utility::stringFormat("/containers/%s", containerId.c_str()),
+	resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()),
 							   {{"force", "1"}}, {}, nullptr);
 
-	if (resp->status_code >= web::http::status_codes::BadRequest &&
-		resp->status_code != web::http::status_codes::NotFound)
+	if (resp->statusCode >= web::http::status_codes::BadRequest && resp->statusCode != web::http::status_codes::NotFound)
 	{
 		LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp->text << ">";
 	}
@@ -116,25 +112,23 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	LOG_DBG << fname << "Entered";
 
 	// GET /images/{name}/json - Check if image exists
-	auto resp = this->requestDocker(web::http::methods::GET,
-									Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr);
+	auto resp = this->requestDocker(web::http::methods::GET, Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()),
+									{}, {}, nullptr);
 
-	if (resp->status_code == web::http::status_codes::NotFound)
+	if (resp->statusCode == web::http::status_codes::NotFound)
 		return startImagePull(envMap, m_dockerImage, std::move(workDir), stdoutFile);
-	if (resp->status_code != web::http::status_codes::OK)
+	if (resp->statusCode != web::http::status_codes::OK)
 	{
-		LOG_WAR << fname << "Docker REST request failed with status <" << resp->status_code << ">: " << resp->text;
+		LOG_WAR << fname << "Docker REST request failed with status <" << resp->statusCode << ">: " << resp->text;
 		setStartError(resp->text.empty() ? "Docker REST service is unavailable" : resp->text);
 		return INVALID_PID;
 	}
 
 	// DELETE /containers/{id}?force=true - Clean existing container
-	resp = this->requestDocker(web::http::methods::DEL,
-							   Utility::stringFormat("/containers/%s", m_containerName.c_str()),
+	resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()),
 							   {{"force", "true"}, {"v", "true"}}, {}, nullptr);
 
-	if (resp->status_code >= web::http::status_codes::BadRequest &&
-		resp->status_code != web::http::status_codes::NotFound)
+	if (resp->statusCode >= web::http::status_codes::BadRequest && resp->statusCode != web::http::status_codes::NotFound)
 	{
 		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp->text << ">";
 	}
@@ -142,7 +136,8 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	// Validate input metadata format
 	if (!stdinFileContent.isNull() && !stdinFileContent.isObject())
 	{
-		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + JSON::dump(stdinFileContent);
+		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") +
+				   JSON::dump(stdinFileContent);
 		LOG_WAR << fname << msg;
 		setStartError(msg);
 		return INVALID_PID;
@@ -192,9 +187,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 		setStartError("Docker HostConfig must be a JSON object");
 		return INVALID_PID;
 	}
-	auto hostConfig = HAS_JSON_FIELD(createBody, "HostConfig")
-						  ? createBody["HostConfig"]
-						  : Json::Value(Json::objectValue);
+	auto hostConfig = HAS_JSON_FIELD(createBody, "HostConfig") ? createBody["HostConfig"] : Json::Value(Json::objectValue);
 
 	if (limit)
 	{
@@ -216,10 +209,9 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	createBody["HostConfig"] = hostConfig;
 
 	// POST /containers/create
-	resp = this->requestDocker(web::http::methods::POST, "/containers/create",
-							   {{"name", m_containerName}}, {}, &createBody);
+	resp = this->requestDocker(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
 
-	if (resp->status_code == web::http::status_codes::Created)
+	if (resp->statusCode == web::http::status_codes::Created)
 	{
 		const auto createResponse = JSON::parse(resp->text, nullptr);
 		const auto containerId = HAS_JSON_FIELD(createResponse, "Id") && createResponse["Id"].isString()
@@ -237,21 +229,19 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 		{
 			setContainerId(containerId);
 		}
-		const auto containerRef = containerId.empty() ? m_containerName : containerId;
+		const auto &containerRef = containerId.empty() ? m_containerName : containerId;
 
 		// POST /containers/{id}/start
 		resp = this->requestDocker(web::http::methods::POST,
-								   Utility::stringFormat("/containers/%s/start", containerRef.c_str()),
-								   {}, {}, nullptr);
+								   Utility::stringFormat("/containers/%s/start", containerRef.c_str()), {}, {}, nullptr);
 
-		if (resp->status_code < web::http::status_codes::BadRequest)
+		if (resp->statusCode < web::http::status_codes::BadRequest)
 		{
 			// GET /containers/{id}/json
 			resp = this->requestDocker(web::http::methods::GET,
-									   Utility::stringFormat("/containers/%s/json", containerRef.c_str()),
-									   {}, {}, nullptr);
+									   Utility::stringFormat("/containers/%s/json", containerRef.c_str()), {}, {}, nullptr);
 
-			if (resp->status_code == web::http::status_codes::OK)
+			if (resp->statusCode == web::http::status_codes::OK)
 			{
 				const auto inspectResponse = JSON::parse(resp->text, nullptr);
 				if (!HAS_JSON_FIELD(inspectResponse, "State") || !inspectResponse["State"].isObject())
@@ -262,8 +252,8 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 				else
 				{
 					const auto &state = inspectResponse["State"];
-					if (!HAS_JSON_FIELD(state, "Pid") || !state["Pid"].isIntegral() ||
-						!HAS_JSON_FIELD(state, "Running") || !state["Running"].isBool())
+					if (!HAS_JSON_FIELD(state, "Pid") || !state["Pid"].isIntegral() || !HAS_JSON_FIELD(state, "Running") ||
+						!state["Running"].isBool())
 					{
 						setStartError("Docker inspect response does not contain a valid process state");
 						LOG_WAR << fname << startError() << ": " << resp->text;
@@ -274,7 +264,7 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 						{
 							const int exitCode = HAS_JSON_FIELD(state, "ExitCode") && state["ExitCode"].isIntegral()
 													 ? GET_JSON_INT_VALUE(state, "ExitCode")
-													 : -200;
+													 : DOCKER_COMMAND_ERROR;
 							LOG_INF << fname << "container <" << m_containerName
 									<< "> completed before host PID inspection, exit code <" << exitCode << ">";
 							reportEarlyExit(exitCode);
@@ -330,15 +320,18 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 			secondsUTC = *position;
 		}
 
-		auto resp = this->requestDocker(
-			web::http::methods::GET,
-			Utility::stringFormat("/containers/%s/logs", containerId.c_str()),
-			{{"stdout", "true"}, {"stderr", "true"}, {"since", std::to_string(secondsUTC)}, {"tail", readLine ? "1" : "all"}},
-			{}, nullptr);
+		auto resp =
+			this->requestDocker(web::http::methods::GET, Utility::stringFormat("/containers/%s/logs", containerId.c_str()),
+								{{"stdout", "true"},
+								 {"stderr", "true"},
+								 {"since", std::to_string(secondsUTC)},
+								 {"tail", readLine ? "1" : "all"}},
+								{}, nullptr);
 
 		if (position)
 		{
-			*position = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+			*position = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+							.count();
 		}
 
 		auto output = decodeDockerLogs(resp->text);
@@ -366,12 +359,10 @@ int DockerApiProcess::returnValue() const
 	if (!containerId.empty())
 	{
 		// GET /containers/{id}/json
-		auto resp = requestDocker(
-			web::http::methods::GET,
-			Utility::stringFormat("/containers/%s/json", containerId.c_str()),
-			{}, {}, nullptr);
+		auto resp = requestDocker(web::http::methods::GET, Utility::stringFormat("/containers/%s/json", containerId.c_str()),
+								  {}, {}, nullptr);
 
-		if (resp->status_code == web::http::status_codes::OK)
+		if (resp->statusCode == web::http::status_codes::OK)
 		{
 			const auto inspectResponse = JSON::parse(resp->text, nullptr);
 			if (HAS_JSON_FIELD(inspectResponse, "State") && inspectResponse["State"].isObject())
@@ -384,7 +375,7 @@ int DockerApiProcess::returnValue() const
 		}
 
 		LOG_WAR << fname << "Failed to get exit code for container <" << containerId << ">: " << resp->text;
-		return -200;
+		return DOCKER_COMMAND_ERROR;
 	}
 	else
 	{
@@ -393,11 +384,14 @@ int DockerApiProcess::returnValue() const
 }
 
 const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path,
-																	std::map<std::string, std::string> query, std::map<std::string, std::string> header, Json::Value *body) const
+																	std::map<std::string, std::string> query,
+																	std::map<std::string, std::string> header,
+																	Json::Value *body) const
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
-	auto restURL = std::string("https://") + Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
+	auto restURL = std::string("https://") + Configuration::instance()->getRestListenAddress() + ":" +
+				   std::to_string(Configuration::instance()->getRestListenPort());
 	auto wrapperPath = std::string("/appmesh/docker") + path;
 	auto uuid = Utility::shortID();
 	header[DOCKER_REQUEST_ID_HEADER] = uuid;
@@ -413,8 +407,7 @@ const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::h
 		auto logBody = *body;
 		if (logBody.isMember("Env"))
 			logBody["Env"] = "***";
-		LOG_DBG << fname << path << "\n"
-				<< JSON::dump(logBody, 2);
+		LOG_DBG << fname << path << "\n" << JSON::dump(logBody, 2);
 	}
 
 	auto response = std::make_shared<HttpResponse>();
@@ -423,24 +416,25 @@ const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::h
 	const auto requestStart = std::chrono::steady_clock::now();
 	try
 	{
-		response = RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, DOCKER_REQUEST_TIMEOUT_SECONDS);
+		response =
+			RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, DOCKER_REQUEST_TIMEOUT_SECONDS);
 	}
 	catch (const std::exception &ex)
 	{
 		errorMsg = ex.what();
 		LOG_ERR << fname << path << " got exception: " << ex.what();
-		response->status_code = web::http::status_codes::ServiceUnavailable;
+		response->statusCode = web::http::status_codes::ServiceUnavailable;
 		response->text = errorMsg;
 	}
 	catch (...)
 	{
 		LOG_ERR << fname << "Unknown exception on request <" << path << ">";
-		response->status_code = web::http::status_codes::ServiceUnavailable;
+		response->statusCode = web::http::status_codes::ServiceUnavailable;
 		response->text = errorMsg;
 	}
 	// A blocking docker call stalls the calling thread up to the full timeout;
 	// make the stall visible with its duration and where it ran from.
-	LOG_INF << fname << path << " status <" << response->status_code << "> took <"
+	LOG_INF << fname << path << " status <" << response->statusCode << "> took <"
 			<< std::chrono::duration<double>(std::chrono::steady_clock::now() - requestStart).count() << "s>";
 	return response;
 }

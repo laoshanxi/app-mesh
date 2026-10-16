@@ -18,11 +18,7 @@ pub fn human_readable_size(bytes: u64) -> String {
     let mut size = bytes as f64;
     for unit in UNITS {
         if size < 1024.0 {
-            return if *unit == "B" {
-                format!("{}{}", size as u64, unit)
-            } else {
-                format!("{:.1}{}", size, unit)
-            };
+            return if *unit == "B" { format!("{}{}", size as u64, unit) } else { format!("{:.1}{}", size, unit) };
         }
         size /= 1024.0;
     }
@@ -208,8 +204,7 @@ pub fn human_readable_duration(seconds: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        display_width, display_width_in, principal_display, short_principal, truncate_with_marker,
-        truncate_with_marker_in,
+        display_width, display_width_in, principal_display, short_principal, truncate_with_marker, truncate_with_marker_in,
     };
 
     #[test]

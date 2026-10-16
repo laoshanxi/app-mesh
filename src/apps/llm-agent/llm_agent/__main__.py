@@ -14,11 +14,13 @@ daemon-injected APP_MESH_PROCESS_KEY and authorized by the daemon's RBAC.
 Env (defaults in parens):
   LLMAGENT_MODEL  LLMAGENT_SYSTEM_PROMPT  LLMAGENT_ALLOWED_TOOLS  LLMAGENT_PERMISSION_MODE(bypassPermissions)
   LLMAGENT_WORKSPACE_DIR(./llm-agent-workspace)  LLMAGENT_MAX_ITERATIONS(0=no ceiling)
-  LLMAGENT_SESSION_TTL_HOURS(168, shared)  LLMAGENT_SESSION_IDLE_MINUTES(30, worker)  LLMAGENT_SESSION_MAX_HOURS(8, worker)
+  LLMAGENT_SESSION_TTL_HOURS(168, shared)  LLMAGENT_SESSION_IDLE_MINUTES(30, worker)
+  LLMAGENT_SESSION_MAX_HOURS(8, worker)
 """
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -90,8 +92,7 @@ def _run_worker(args, common):
     idle = _env_int("LLMAGENT_SESSION_IDLE_MINUTES", 30) * 60
     max_life = _env_int("LLMAGENT_SESSION_MAX_HOURS", 8) * 3600
     if idle > 0 or max_life > 0:
-        threading.Thread(target=_worker_reaper,
-                         args=(handler, args.session_id, common["workspace"], idle, max_life),
+        threading.Thread(target=_worker_reaper, args=(handler, args.session_id, common["workspace"], idle, max_life),
                          daemon=True).start()
     log.info("llm-agent session worker started (Claude Agent SDK) — serving session %s", args.session_id)
     _serve(handler)
@@ -101,7 +102,6 @@ def _run_worker(args, common):
 def _serve(handler: Handler):
     """fetch_task → dispatch → send_task_result loop (serial). The request is bracketed
     in-flight so a worker reaper never exits mid-request."""
-    import json
     from appmesh import AppMeshProcessSupersededError, AppMeshWorkerRejectedError, AppMeshWorkerTCP
     ctx = AppMeshWorkerTCP()
     backoff = 1.0

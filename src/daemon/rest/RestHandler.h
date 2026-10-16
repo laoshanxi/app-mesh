@@ -30,17 +30,21 @@ public:
 	static const std::string &getFaviconContent();
 
 	// Prometheus metrics, forwarded to the owned exporter so that callers keep using RESTHANDLER
-	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
-	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels);
+	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp,
+													 const std::map<std::string, std::string> &labels);
+	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp,
+												 const std::map<std::string, std::string> &labels);
 	uint64_t prometheusScrapeGeneration() const;
 	void refreshPrometheusProcessMetrics(void *processSnapshot);
 	void observeHttpRequest(const std::shared_ptr<HttpRequest> &message);
 
 protected:
 	std::string normalizedHttpRoute(const std::string &path,
-		const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions = nullptr) const;
+									const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>>
+										*preferredFunctions = nullptr) const;
 
-	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app, bool requestWrite);
+	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app,
+								  bool requestWrite);
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 
@@ -62,10 +66,11 @@ protected:
 	void apiRunAsync(const std::shared_ptr<HttpRequest> &message);
 	void apiRunSync(const std::shared_ptr<HttpRequest> &message);
 
-	void apiSendMessage(const std::shared_ptr<HttpRequest> &message);		  // client send message and wait for response with async REST call
-	void apiRemoveMessage(const std::shared_ptr<HttpRequest> &message);		  // client remove message
-	void apiGetMessage(const std::shared_ptr<HttpRequest> &message);		  // server get message with block and iterator REST call
-	void apiSendMessageResponse(const std::shared_ptr<HttpRequest> &message); // server send response (then server response to client apiSendMessage)
+	void
+	apiSendTask(const std::shared_ptr<HttpRequest> &message); // client send task and wait for response with async REST call
+	void apiDeleteTask(const std::shared_ptr<HttpRequest> &message); // client delete task
+	void apiFetchTask(const std::shared_ptr<HttpRequest> &message);  // server fetch task with block and iterator REST call
+	void apiReplyTask(const std::shared_ptr<HttpRequest> &message); // server reply task (responds to the client apiSendTask)
 
 	void apiCloudResourceView(const std::shared_ptr<HttpRequest> &message);
 
@@ -81,7 +86,7 @@ protected:
 
 	void apiLabelsView(const std::shared_ptr<HttpRequest> &message);
 	void apiLabelAdd(const std::shared_ptr<HttpRequest> &message);
-	void apiLabelDel(const std::shared_ptr<HttpRequest> &message);
+	void apiLabelDelete(const std::shared_ptr<HttpRequest> &message);
 
 	void apiBasicConfigView(const std::shared_ptr<HttpRequest> &message);
 	void apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message);
@@ -103,7 +108,8 @@ protected:
 	void apiAppSubscribe(const std::shared_ptr<HttpRequest> &message);
 	void apiAppUnsubscribe(const std::shared_ptr<HttpRequest> &message);
 
-	static bool buildDeliveryCallback(const std::shared_ptr<HttpRequest> &message, ConnectionKey &connKey, DeliveryCallback &deliveryCb);
+	static bool buildDeliveryCallback(const std::shared_ptr<HttpRequest> &message, ConnectionKey &connKey,
+									  DeliveryCallback &deliveryCb);
 
 	// Static content handlers
 	void apiOpenApi(const std::shared_ptr<HttpRequest> &message);

@@ -1,7 +1,9 @@
 // src/common/Password.h
+#pragma once
 #include <string>
 
 //////////////////////////////////////////////////////////////////////////
 // Generate random password with different options
 //////////////////////////////////////////////////////////////////////////
-std::string generatePassword(int length, bool lowerLettersEnabled, bool upperLettersEnabled, bool numbersEnabled, bool specialsEnabled);
+std::string generatePassword(int length, bool lowerLettersEnabled, bool upperLettersEnabled, bool numbersEnabled,
+							 bool specialsEnabled);

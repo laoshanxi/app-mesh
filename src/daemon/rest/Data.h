@@ -17,7 +17,7 @@ struct LwsSessionRef
 	LwsSessionRef(const void *w, uint64_t r, uint64_t s) : wsi(w), reqId(r), sessionId(s) {}
 
 	const void *wsi = nullptr;
-	uint64_t reqId = 0;		// ABA protection for HTTP responses
+	uint64_t reqId = 0;     // ABA protection for HTTP responses
 	uint64_t sessionId = 0; // ABA protection for WS sessions
 	// Server-side transport identity, captured from the accepted socket. Empty
 	// when the transport cannot vouch for it; never client-supplied.
@@ -59,6 +59,7 @@ public:
 	bool deserialize(const std::string &data);
 
 	bool contain_body() const;
+
 public:
 	std::string uuid;
 	std::string request_uri;

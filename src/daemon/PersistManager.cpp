@@ -2,8 +2,8 @@
 #include <chrono>
 #include <fstream>
 
-#include "../common/os/linux.h"
 #include "../common/json.h"
+#include "../common/os/linux.h"
 #include "Configuration.h"
 #include "PersistManager.h"
 #include "application/Application.h"
@@ -15,86 +15,11 @@
 //////////////////////////////////////////////////////////////////////////
 /// HA for app process recover
 //////////////////////////////////////////////////////////////////////////
-PersistManager::PersistManager()
-	: m_persistedSnapshot(std::make_shared<Snapshot>())
+AppSnap::AppSnap(pid_t pid, int64_t starttime) : m_pid(pid), m_startTime(starttime) {}
+
+bool AppSnap::operator==(const AppSnap &snapshot) const
 {
-}
-
-PersistManager::~PersistManager()
-{
-}
-
-std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
-{
-	auto snap = std::make_shared<Snapshot>();
-	auto apps = Configuration::instance()->getApps();
-	for (auto &app : apps)
-	{
-		if (!app->isEnabled() || !app->isPersistAble())
-			continue;
-
-		auto pid = app->getpid();
-		if (auto snapAppIter = m_persistedSnapshot->m_apps.find(app->getName());
-			snapAppIter != m_persistedSnapshot->m_apps.end() && snapAppIter->second.m_pid == pid)
-		{
-			// if application does not changed pid, do not need call stat
-			snap->m_apps.insert(std::pair<std::string, AppSnap>(
-				app->getName(),
-				AppSnap(snapAppIter->second.m_pid, snapAppIter->second.m_startTime)));
-		}
-		else
-		{
-			// application pid changed
-			auto stat = os::status(pid);
-			if (stat)
-			{
-				snap->m_apps.insert(std::pair<std::string, AppSnap>(
-					app->getName(),
-					AppSnap(pid, std::chrono::system_clock::to_time_t(stat->get_starttime()))));
-			}
-		}
-	}
-	return snap;
-}
-
-void PersistManager::persistSnapshot()
-{
-	const static char fname[] = "PersistManager::persistSnapshot() ";
-
-	// only do this every minute.
-	static std::chrono::system_clock::time_point lastExecuteTime = std::chrono::system_clock::now();
-	auto now = std::chrono::system_clock::now();
-	if (std::chrono::duration_cast<std::chrono::seconds>(now - lastExecuteTime).count() < 60)
-		return;
-	lastExecuteTime = now;
-
-	try
-	{
-		auto snapshot = this->captureSnapshot();
-		if (snapshot->operator==(*m_persistedSnapshot))
-		{
-			return;
-		}
-		else
-		{
-			m_persistedSnapshot = std::move(snapshot);
-			m_persistedSnapshot->persist();
-		}
-	}
-	catch (const std::exception &ex)
-	{
-		LOG_WAR << fname << "Failed to persist snapshot: " << ex.what();
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << "Failed to persist snapshot with unknown exception";
-	}
-}
-
-std::unique_ptr<PersistManager> &PersistManager::instance()
-{
-	static auto singleton = std::make_unique<PersistManager>();
-	return singleton;
+	return (m_startTime == snapshot.m_startTime && m_pid == snapshot.m_pid);
 }
 
 bool Snapshot::operator==(const Snapshot &snap) const
@@ -147,10 +72,8 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const Json::Value &obj)
 			if (HAS_JSON_FIELD(app, SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app, SNAPSHOT_JSON_KEY_starttime))
 			{
 				snap->m_apps.insert(std::pair<std::string, AppSnap>(
-					appName,
-					AppSnap(
-						GET_JSON_INT_VALUE(app, SNAPSHOT_JSON_KEY_pid),
-						GET_JSON_INT64_VALUE(app, SNAPSHOT_JSON_KEY_starttime))));
+					appName, AppSnap(GET_JSON_INT_VALUE(app, SNAPSHOT_JSON_KEY_pid),
+									 GET_JSON_INT64_VALUE(app, SNAPSHOT_JSON_KEY_starttime))));
 			}
 		}
 	}
@@ -159,7 +82,9 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const Json::Value &obj)
 
 const std::string &Snapshot::filePath()
 {
-	static const std::string path = (std::filesystem::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR / SNAPSHOT_FILE_NAME).string();
+	static const std::string path =
+		(std::filesystem::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR / SNAPSHOT_FILE_NAME)
+			.string();
 	return path;
 }
 
@@ -182,7 +107,8 @@ void Snapshot::persist()
 		}
 		else
 		{
-			LOG_ERR << fname << "Failed to rename temporary snapshot file <" << tmpFile << "> to <" << target << ">, error: " << renameError.message();
+			LOG_ERR << fname << "Failed to rename temporary snapshot file <" << tmpFile << "> to <" << target
+					<< ">, error: " << renameError.message();
 		}
 	}
 	else
@@ -191,12 +117,77 @@ void Snapshot::persist()
 	}
 }
 
-AppSnap::AppSnap(pid_t pid, int64_t starttime)
-	: m_pid(pid), m_startTime(starttime)
+PersistManager::PersistManager() : m_persistedSnapshot(std::make_shared<Snapshot>()) {}
+
+PersistManager::~PersistManager() {}
+
+std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 {
+	auto snap = std::make_shared<Snapshot>();
+	auto apps = Configuration::instance()->getApps();
+	for (auto &app : apps)
+	{
+		if (!app->isEnabled() || !app->isPersistAble())
+			continue;
+
+		auto pid = app->getpid();
+		if (auto snapAppIter = m_persistedSnapshot->m_apps.find(app->getName());
+			snapAppIter != m_persistedSnapshot->m_apps.end() && snapAppIter->second.m_pid == pid)
+		{
+			// if application does not changed pid, do not need call stat
+			snap->m_apps.insert(std::pair<std::string, AppSnap>(
+				app->getName(), AppSnap(snapAppIter->second.m_pid, snapAppIter->second.m_startTime)));
+		}
+		else
+		{
+			// application pid changed
+			auto stat = os::status(pid);
+			if (stat)
+			{
+				snap->m_apps.insert(std::pair<std::string, AppSnap>(
+					app->getName(), AppSnap(pid, std::chrono::system_clock::to_time_t(stat->getStartTime()))));
+			}
+		}
+	}
+	return snap;
 }
 
-bool AppSnap::operator==(const AppSnap &snapshort) const
+void PersistManager::persistSnapshot()
 {
-	return (m_startTime == snapshort.m_startTime && m_pid == snapshort.m_pid);
+	const static char fname[] = "PersistManager::persistSnapshot() ";
+
+	// only do this every minute.
+	static std::chrono::system_clock::time_point lastExecuteTime = std::chrono::system_clock::now();
+	auto now = std::chrono::system_clock::now();
+	if (std::chrono::duration_cast<std::chrono::seconds>(now - lastExecuteTime).count() < 60)
+		return;
+	lastExecuteTime = now;
+
+	try
+	{
+		auto snapshot = this->captureSnapshot();
+		if (snapshot->operator==(*m_persistedSnapshot))
+		{
+			return;
+		}
+		else
+		{
+			m_persistedSnapshot = std::move(snapshot);
+			m_persistedSnapshot->persist();
+		}
+	}
+	catch (const std::exception &ex)
+	{
+		LOG_WAR << fname << "Failed to persist snapshot: " << ex.what();
+	}
+	catch (...)
+	{
+		LOG_WAR << fname << "Failed to persist snapshot with unknown exception";
+	}
+}
+
+std::unique_ptr<PersistManager> &PersistManager::instance()
+{
+	static auto singleton = std::make_unique<PersistManager>();
+	return singleton;
 }

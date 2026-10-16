@@ -1,19 +1,19 @@
 #include "SecretProtector.h"
 
-#include "../../common/Utility.h"
-#include "../../common/os/filesystem.h"
-#include "../Configuration.h"
-
 #include <algorithm>
 #include <cerrno>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <stdexcept>
 
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+
+#include "../../common/Utility.h"
+#include "../../common/os/filesystem.h"
+#include "../Configuration.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -40,10 +40,7 @@ SecretProtector &SecretProtector::instance()
 	return protector;
 }
 
-void SecretProtector::initialize()
-{
-	ensureKey();
-}
+void SecretProtector::initialize() { ensureKey(); }
 
 void SecretProtector::ensureKey()
 {
@@ -94,8 +91,7 @@ std::string SecretProtector::masterKeyFile()
 	}
 	if (!Configuration::instance())
 		throw std::logic_error("SecretProtector requires initialized daemon configuration");
-	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR /
-		"auth" / "secrets" / MASTER_KEY_FILE_NAME).string();
+	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / "auth" / "secrets" / MASTER_KEY_FILE_NAME).string();
 }
 
 std::string SecretProtector::readSecureKeyFile(const std::string &path)
@@ -185,7 +181,8 @@ void SecretProtector::publishKeyFile(const std::string &path, const std::string 
 	{
 		const auto error = errno;
 		Utility::removeFile(temporary);
-		throw std::runtime_error(std::string("failed to atomically publish SecretProtector master key: ") + std::strerror(error));
+		throw std::runtime_error(std::string("failed to atomically publish SecretProtector master key: ") +
+								 std::strerror(error));
 	}
 	Utility::removeFile(temporary);
 	const int directoryFd = ::open(directory.string().c_str(), O_RDONLY | O_CLOEXEC | O_DIRECTORY);
@@ -210,19 +207,18 @@ std::string SecretProtector::protect(const std::string &plaintext, const std::st
 	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
 	if (!ctx)
 		throw std::runtime_error("failed to create SecretProtector cipher context");
-	const bool ok =
-		EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
-		EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(nonce.size()), nullptr) == 1 &&
-		EVP_EncryptInit_ex(ctx, nullptr, nullptr, m_key.data(), nonce.data()) == 1 &&
-		EVP_EncryptUpdate(ctx, nullptr, &length,
-			reinterpret_cast<const unsigned char *>(context.data()), static_cast<int>(context.size())) == 1 &&
-		EVP_EncryptUpdate(ctx, cipher.data(), &length,
-			reinterpret_cast<const unsigned char *>(plaintext.data()), static_cast<int>(plaintext.size())) == 1;
+	const bool ok = EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
+					EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(nonce.size()), nullptr) == 1 &&
+					EVP_EncryptInit_ex(ctx, nullptr, nullptr, m_key.data(), nonce.data()) == 1 &&
+					EVP_EncryptUpdate(ctx, nullptr, &length, reinterpret_cast<const unsigned char *>(context.data()),
+									  static_cast<int>(context.size())) == 1 &&
+					EVP_EncryptUpdate(ctx, cipher.data(), &length, reinterpret_cast<const unsigned char *>(plaintext.data()),
+									  static_cast<int>(plaintext.size())) == 1;
 	total = length;
 	const bool finalized = ok && EVP_EncryptFinal_ex(ctx, cipher.data() + total, &length) == 1;
 	total += length;
-	const bool tagged = finalized && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG,
-		static_cast<int>(tag.size()), tag.data()) == 1;
+	const bool tagged =
+		finalized && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, static_cast<int>(tag.size()), tag.data()) == 1;
 	EVP_CIPHER_CTX_free(ctx);
 	if (!tagged)
 		throw std::runtime_error("failed to encrypt application secret");
@@ -252,16 +248,15 @@ std::string SecretProtector::unprotect(const std::string &ciphertext, const std:
 	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
 	if (!ctx)
 		throw std::runtime_error("failed to create SecretProtector cipher context");
-	const bool ok =
-		EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
-		EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, NONCE_SIZE, nullptr) == 1 &&
-		EVP_DecryptInit_ex(ctx, nullptr, nullptr, m_key.data(), nonce) == 1 &&
-		EVP_DecryptUpdate(ctx, nullptr, &length,
-			reinterpret_cast<const unsigned char *>(context.data()), static_cast<int>(context.size())) == 1 &&
-		EVP_DecryptUpdate(ctx, plain.data(), &length, encrypted, static_cast<int>(encryptedSize)) == 1;
+	const bool ok = EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
+					EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, NONCE_SIZE, nullptr) == 1 &&
+					EVP_DecryptInit_ex(ctx, nullptr, nullptr, m_key.data(), nonce) == 1 &&
+					EVP_DecryptUpdate(ctx, nullptr, &length, reinterpret_cast<const unsigned char *>(context.data()),
+									  static_cast<int>(context.size())) == 1 &&
+					EVP_DecryptUpdate(ctx, plain.data(), &length, encrypted, static_cast<int>(encryptedSize)) == 1;
 	total = length;
-	const bool tagged = ok && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TAG_SIZE,
-		const_cast<unsigned char *>(tag)) == 1;
+	const bool tagged =
+		ok && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TAG_SIZE, const_cast<unsigned char *>(tag)) == 1;
 	const bool finalized = tagged && EVP_DecryptFinal_ex(ctx, plain.data() + total, &length) == 1;
 	total += length;
 	EVP_CIPHER_CTX_free(ctx);
@@ -274,8 +269,7 @@ std::vector<unsigned char> SecretProtector::decodeBase64(const std::string &valu
 {
 	// Strict alphabet: the decoder skips invalid chars; fail here, not at GCM time.
 	static const std::string base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-	if (value.empty() || value.size() % 4 != 0 ||
-		value.find_first_not_of(base64Chars) != std::string::npos)
+	if (value.empty() || value.size() % 4 != 0 || value.find_first_not_of(base64Chars) != std::string::npos)
 		throw std::invalid_argument("invalid base64 SecretProtector value");
 	const auto decoded = Utility::decode64(value);
 	if (decoded.empty())

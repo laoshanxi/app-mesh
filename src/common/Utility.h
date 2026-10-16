@@ -28,67 +28,69 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	return result;
 }
 
-#define SAFE_DELETE(ptr) \
-	do                   \
-	{                    \
-		delete (ptr);    \
-		(ptr) = nullptr; \
+#define SAFE_DELETE(ptr)                                                                                                    \
+	do                                                                                                                      \
+	{                                                                                                                       \
+		delete (ptr);                                                                                                       \
+		(ptr) = nullptr;                                                                                                    \
 	} while (0)
 
 // Expand micro variable (microkey=microvalue)
-#define __MICRO_KEY__(str) #str				  // No expand micro
+#define __MICRO_KEY__(str) #str               // No expand micro
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
 
-#define PRINT_VERSION()                                                                  \
-	if (argc >= 2 && (std::string("-V") == argv[1] || std::string("--version") == argv[1])) \
-	{                                                                                    \
-		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                 \
-		return 0;                                                                        \
+#define PRINT_VERSION()                                                                                                     \
+	if (argc >= 2 && (std::string("-V") == argv[1] || std::string("--version") == argv[1]))                                 \
+	{                                                                                                                       \
+		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                                                    \
+		return 0;                                                                                                           \
 	}
 
-#define SET_COMPARE(x, y)                                           \
-	if ((x) != (y))                                                 \
-	{                                                               \
-		(x) = (y);                                                  \
-		LOG_INF << fname << "Configuration value updated: " << #x; \
+#define SET_COMPARE(x, y)                                                                                                   \
+	if ((x) != (y))                                                                                                         \
+	{                                                                                                                       \
+		(x) = (y);                                                                                                          \
+		LOG_INF << fname << "Configuration value updated: " << #x;                                                          \
 	}
 
-template <typename T>
-std::shared_ptr<T> make_shared_array(size_t size)
+template <typename T> std::shared_ptr<T> make_shared_array(size_t size)
 {
 	return std::shared_ptr<T>(new T[size], std::default_delete<T[]>());
 }
 
-#define MY_HOST_NAME ResourceCollection::instance()->getHostName()
-
 // Get attribute from json Object
-#define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? Utility::jsonStringField(jsonObj, key) : std::string(""))
+#define GET_JSON_STR_VALUE(jsonObj, key)                                                                                    \
+	Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? Utility::jsonStringField(jsonObj, key) : std::string(""))
 #define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? (jsonObj)[key].asInt() : 0)
 #define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? (jsonObj)[key].asInt64() : 0L)
-#define SET_JSON_INT_VALUE(jsonObj, key, value)       \
-	do                                                \
-	{                                                 \
-		if (HAS_JSON_FIELD(jsonObj, key))             \
-			value = GET_JSON_INT_VALUE(jsonObj, key); \
+#define SET_JSON_INT_VALUE(jsonObj, key, value)                                                                             \
+	do                                                                                                                      \
+	{                                                                                                                       \
+		if (HAS_JSON_FIELD(jsonObj, key))                                                                                   \
+			value = GET_JSON_INT_VALUE(jsonObj, key);                                                                       \
 	} while (0)
 #define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? Utility::jsonBoolField(jsonObj, key) : false)
-#define SET_JSON_BOOL_VALUE(jsonObj, key, value)       \
-	do                                                 \
-	{                                                  \
-		if (HAS_JSON_FIELD(jsonObj, key))              \
-			value = GET_JSON_BOOL_VALUE(jsonObj, key); \
+#define SET_JSON_BOOL_VALUE(jsonObj, key, value)                                                                            \
+	do                                                                                                                      \
+	{                                                                                                                       \
+		if (HAS_JSON_FIELD(jsonObj, key))                                                                                   \
+			value = GET_JSON_BOOL_VALUE(jsonObj, key);                                                                      \
 	} while (0)
 #define HAS_JSON_FIELD(jsonObj, key) ((jsonObj).isMember(key) && !(jsonObj)[key].isNull())
-#define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? ((jsonObj)[key].isString() ? (jsonObj)[key].asString() : std::to_string((jsonObj)[key].asInt64())) : std::string(""))
+#define GET_JSON_STR_INT_TEXT(jsonObj, key)                                                                                 \
+	Utility::stdStringTrim(                                                                                                 \
+		HAS_JSON_FIELD(jsonObj, key)                                                                                        \
+			? ((jsonObj)[key].isString() ? (jsonObj)[key].asString() : std::to_string((jsonObj)[key].asInt64()))            \
+			: std::string(""))
 
-#define CLOSE_STREAM(streamPtr)                           \
-	do                                                    \
-	{                                                     \
-		if (streamPtr != nullptr && streamPtr->is_open()) \
-		{                                                 \
-			streamPtr->close();                           \
-			streamPtr = nullptr;                          \
-		}                                                 \
+#define CLOSE_STREAM(streamPtr)                                                                                             \
+	do                                                                                                                      \
+	{                                                                                                                       \
+		if (streamPtr != nullptr && streamPtr->is_open())                                                                   \
+		{                                                                                                                   \
+			streamPtr->close();                                                                                             \
+			streamPtr = nullptr;                                                                                            \
+		}                                                                                                                   \
 	} while (false)
 
 #if defined(_WIN32)
@@ -97,7 +99,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEV_NULL "/dev/null"
 #endif
 
-#define GET_HTTP_HEADER(message, headerName) \
+#define GET_HTTP_HEADER(message, headerName)                                                                                \
 	message->m_headers.count(headerName) > 0 ? message->m_headers.find(headerName)->second : std::string()
 #define APPMESH_CONFIG_YAML_FILE "config.yaml"
 #define APPMESH_CONSUL_API_CONFIG_FILE "consul.yaml"
@@ -112,10 +114,10 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
 #define DEFAULT_WEB_SOCKET_PORT 6058
 #define DEFAULT_SCHEDULE_INTERVAL 2
-#define DEFAULT_WORKER_THREADS 0		 // 0 = derive from the CPUs the daemon may use
-#define DEFAULT_TRANSPORT_IO_THREADS 0	 // 0 = derive from the CPUs the daemon may use
+#define DEFAULT_WORKER_THREADS 0       // 0 = derive from the CPUs the daemon may use
+#define DEFAULT_TRANSPORT_IO_THREADS 0 // 0 = derive from the CPUs the daemon may use
 #define MIN_WORKER_THREADS 2
-#define MAX_DEFAULT_WORKER_THREADS 8	 // cap for the CPU-derived default; an explicit WorkerThreads value is honored as-is
+#define MAX_DEFAULT_WORKER_THREADS 8 // cap for the CPU-derived default; an explicit WorkerThreads value is honored as-is
 #define MIN_TRANSPORT_IO_THREADS 2
 #define MAX_TRANSPORT_IO_THREADS 4
 #define REST_REQUEST_TIMEOUT_SECONDS 60
@@ -124,13 +126,15 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 
-constexpr size_t TCP_MESSAGE_HEADER_LENGTH = 8;			        // TCP header protocol: 4 bytes magic number + 4 bytes body length
-constexpr uint32_t TCP_MESSAGE_MAGIC = 0x07C707F8;		        // Magic number for message validation (host byte order)
-constexpr size_t TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256;        // Chunk block size 16KB (target with 256 bytes reserved for overhead)
+constexpr size_t TCP_MESSAGE_HEADER_LENGTH = 8;    // TCP header protocol: 4 bytes magic number + 4 bytes body length
+constexpr uint32_t TCP_MESSAGE_MAGIC = 0x07C707F8; // Magic number for message validation (host byte order)
+constexpr size_t TCP_CHUNK_BLOCK_SIZE =
+	16 * 1024 - 256; // Chunk block size 16KB (target with 256 bytes reserved for overhead)
 constexpr size_t TCP_MAX_BLOCK_SIZE = 2UL * 1024 * 1024 * 1024; // Maximum allowed block size: 2 GB (file transfer)
-constexpr size_t TCP_MAX_RECV_MSG_SIZE = 200 * 1024 * 1024;     // Maximum single non-file TCP message: 200 MB (DoS protection)
-constexpr size_t MAX_HTTP_BODY_SIZE = 128 * 1024 * 1024;        // Maximum HTTP body size: 128 MB
-constexpr size_t MAX_UPLOAD_SIZE = 2ULL * 1024 * 1024 * 1024;   // Largest file transfer (HTTPS streaming and TCP socket upload)
+constexpr size_t TCP_MAX_RECV_MSG_SIZE = 200 * 1024 * 1024; // Maximum single non-file TCP message: 200 MB (DoS protection)
+constexpr size_t MAX_HTTP_BODY_SIZE = 128 * 1024 * 1024;    // Maximum HTTP body size: 128 MB
+constexpr size_t MAX_UPLOAD_SIZE =
+	2ULL * 1024 * 1024 * 1024; // Largest file transfer (HTTPS streaming and TCP socket upload)
 constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
@@ -159,8 +163,11 @@ public:
 	static bool isFileExist(const std::string &path);
 	static bool isPathTraversalSafe(const std::string &baseDir, const std::string &filePath);
 	static bool validateFilePath(const std::string &filePath, const std::string &allowedBaseDir);
-	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exec);
-	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exec);
+	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all |
+																		   fs::perms::others_read | fs::perms::others_exec);
+	static bool createRecursiveDirectory(const std::string &path,
+										 fs::perms perms = fs::perms::owner_all | fs::perms::group_all |
+														   fs::perms::others_read | fs::perms::others_exec);
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
 	static bool runningInContainer();
@@ -176,12 +183,14 @@ public:
 	static bool isDouble(const std::string &str);
 	static std::string stdStringTrim(const std::string &str);
 	static std::string stdStringTrim(const std::string &str, char trimChar, bool leftTrim = true, bool rightTrim = true);
-	static std::string stdStringTrim(const std::string &str, const std::string &trimChars, bool leftTrim = true, bool rightTrim = true);
+	static std::string stdStringTrim(const std::string &str, const std::string &trimChars, bool leftTrim = true,
+									 bool rightTrim = true);
 	static std::vector<std::string> splitString(const std::string &s, const std::string &c);
 	static bool startWith(const std::string &str, const std::string &head);
 	static bool endWith(const std::string &str, const std::string &end);
 	static size_t charCount(const std::string &str, char c);
-	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos = 0);
+	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst,
+									 int startPos = 0);
 	static std::string shortID();
 	static std::string uuid();
 
@@ -254,25 +263,25 @@ public:
 #define ENV_APPMESH_APPLICATION_NAME "APP_MESH_APPLICATION_NAME"
 #define ENV_APPMESH_LAUNCH_TIME "APP_MESH_LAUNCH_TIME"
 #define ENV_APPMESH_PROCESS_KEY "APP_MESH_PROCESS_KEY"
-#define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
+#define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS" // used to pass docker extra parameters to docker startup cmd
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 #define ENV_APPMESH_PREFIX "APPMESH_"
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
-#define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24))		// default 7 days
-#define MAX_TOKEN_EXPIRE_SECONDS int(30 * (60 * 60 * 24))			// hard cap: reject/clamp requests for tokens living longer than 30 days
+#define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24)) // default 7 days
+#define MAX_TOKEN_EXPIRE_SECONDS                                                                                            \
+	int(30 * (60 * 60 * 24)) // hard cap: reject/clamp requests for tokens living longer than 30 days
 // Refresh tokens are derived from the access TTL rather than pinned to a constant: a
 // fixed 7-day floor made them expire alongside a default 7-day access token, so the
 // "renew after the access token expired" path could never actually be reached.
-#define REFRESH_TOKEN_EXPIRE_MULTIPLE 2                     // refresh TTL = N x access TTL ...
+#define REFRESH_TOKEN_EXPIRE_MULTIPLE 2                      // refresh TTL = N x access TTL ...
 #define REFRESH_TOKEN_EXPIRE_MIN_MARGIN_SECONDS int(60 * 60) // ... but at least this much longer
-#define JWT_CLOCK_LEEWAY_SECONDS 60									// tolerate up to 60s of clock skew on exp/nbf/iat verification
-#define DEFAULT_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 2)		// run app default timeout 2 days
+#define JWT_CLOCK_LEEWAY_SECONDS 60                          // tolerate up to 60s of clock skew on exp/nbf/iat verification
+#define DEFAULT_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 2)     // run app default timeout 2 days
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
-#define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)			// run app max timeout 3 days
-#define DEFAULT_RUN_TASK_TIMEOUT_SECONDS int(300)					// run_task (sync message) default 5 min
-#define SECURIRE_USER_KEY "******"
+#define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)         // run app max timeout 3 days
+#define DEFAULT_RUN_TASK_TIMEOUT_SECONDS int(300)                   // run_task (sync message) default 5 min
 #define CONSUL_SESSION_DEFAULT_TTL 30
-#define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M
+#define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100   // 100M
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
 #define SEPARATE_AGENT_APP_NAME "agent"
 #define WORKFLOW_APP_NAME "workflow"
@@ -373,7 +382,7 @@ public:
 #define JSON_KEY_APP_task_id "task_id"
 
 #define JSON_KEY_APP_stop_grace_period "stop_grace_period" // grace before terminating the previous run
-#define JSON_KEY_APP_interval "interval" // periodic schedule: int seconds or duration string
+#define JSON_KEY_APP_interval "interval"                   // periodic schedule: int seconds or duration string
 #define JSON_KEY_APP_start_time "start_time"
 #define JSON_KEY_APP_end_time "end_time"
 #define JSON_KEY_APP_cron_schedule "cron_schedule" // presence selects the cron schedule kind
@@ -387,7 +396,7 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb "memory_virt_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
 
-#define JSON_KEY_TIME_POSTTIX_STR "_TEXT"
+#define JSON_KEY_TIME_POSTFIX_STR "_TEXT"
 #define EMPTY_PLACEHOLDER "-"
 
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization

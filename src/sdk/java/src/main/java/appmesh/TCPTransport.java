@@ -1,17 +1,20 @@
 package appmesh;
 
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 
 public class TCPTransport implements AutoCloseable {
-    private static final java.util.logging.Logger LOGGER = java.util.logging.Logger.getLogger(TCPTransport.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(TCPTransport.class.getName());
 
     private final String host;
     private final int port;
@@ -37,8 +40,9 @@ public class TCPTransport implements AutoCloseable {
     }
 
     public synchronized void connect() throws IOException {
-        if (connected())
+        if (connected()) {
             return;
+        }
 
         Socket rawSocket = null;
         try {
@@ -104,7 +108,7 @@ public class TCPTransport implements AutoCloseable {
             try {
                 this.socket.close();
             } catch (Exception e) {
-                LOGGER.log(java.util.logging.Level.WARNING, "Error closing socket", e);
+                LOGGER.log(Level.WARNING, "Error closing socket", e);
             }
             this.socket = null;
         }
@@ -177,7 +181,10 @@ public class TCPTransport implements AutoCloseable {
                 }
 
                 if (length == 0) {
-                    return null;
+                    // Zero-length frame: the file-transfer EOF signal. Return an
+                    // empty array so demuxer readers can skip it as a non-message
+                    // (Python parity) instead of mistaking it for a closed socket.
+                    return new byte[0];
                 }
 
                 byte[] buf = new byte[length];

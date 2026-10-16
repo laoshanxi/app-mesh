@@ -41,13 +41,12 @@
 #include "rest/EventDispatcher.h"
 #include "rest/RestHandler.h"
 #include "rest/Worker.h"
+#include "rest/drogon/Adaptor.h"
+#include "rest/drogon/TcpAdaptor.h"
 #include "security/Security.h"
 #if !defined(NDEBUG) && !defined(_WIN32)
 #include "../common/Valgrind.h"
 #endif
-
-#include "rest/drogon/Adaptor.h"
-#include "rest/drogon/TcpAdaptor.h"
 
 // Global state management
 class AppMeshDaemon
@@ -145,9 +144,8 @@ int main(int argc, char *argv[])
 void AppMeshDaemon::logStartupEnvironment()
 {
 	const static char fname[] = "AppMeshDaemon::logStartupEnvironment() ";
-	LOG_INF << fname << "LANG=<" << (Utility::getenv("LANG")) << "> LC_ALL=<"
-			<< (Utility::getenv("LC_ALL")) << "> APPMESH_AUTH_MODE=<"
-			<< (Utility::getenv("APPMESH_AUTH_MODE")) << ">";
+	LOG_INF << fname << "LANG=<" << (Utility::getenv("LANG")) << "> LC_ALL=<" << (Utility::getenv("LC_ALL"))
+			<< "> APPMESH_AUTH_MODE=<" << (Utility::getenv("APPMESH_AUTH_MODE")) << ">";
 }
 
 int AppMeshDaemon::run(int argc, char *argv[])
@@ -212,7 +210,7 @@ void AppMeshDaemon::initializeServices()
 	// Construct singletons on the main thread before workers can race their
 	// first use. TimerManager and ProcessService start their own io threads.
 	TIMER_MANAGER::instance();
-	PROCESS_SERVICE::instance();
+	ProcessService::instance();
 	EventDispatcher::instance();
 	QuitHandler::instance();
 	WORKER::instance();
@@ -377,9 +375,12 @@ void AppMeshDaemon::initializeRestService()
 	}
 	const std::string homeDir = Utility::getHomeDir();
 	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
-	const auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());					 // Server certificate (PEM, include intermediates)
-	const auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile());					 // Private key
-	const auto ca = verifyClient ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath()) : std::string(); // CA file or directory
+	const auto cert = ClientSSLConfig::resolveAbsolutePath(
+		homeDir, Configuration::instance()->getSSLCertificateFile()); // Server certificate (PEM, include intermediates)
+	const auto key =
+		ClientSSLConfig::resolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile()); // Private key
+	const auto ca = verifyClient ? ClientSSLConfig::resolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath())
+								 : std::string(); // CA file or directory
 
 	// Start REST thread pool
 	startWorkerThreadPool();
@@ -400,7 +401,8 @@ void AppMeshDaemon::initializeRestService()
 	{
 		const trantor::InetAddress tcpAddr(listenIp, static_cast<uint16_t>(config->getTcpApiPort()), listenV6);
 		verifyListenerAddress(tcpAddr, "TCP");
-		TcpAdaptor::instance()->initialize(listenIp, config->getTcpApiPort(), cert, key, ca, static_cast<int>(Configuration::instance()->getTransportIoThreads()));
+		TcpAdaptor::instance()->initialize(listenIp, config->getTcpApiPort(), cert, key, ca,
+										   static_cast<int>(Configuration::instance()->getTransportIoThreads()));
 		TcpAdaptor::instance()->start();
 		LOG_INF << fname << "TCP service initialized on <" << tcpAddr.toIp() << ":" << tcpAddr.toPort() << ">";
 	}
@@ -497,9 +499,10 @@ void AppMeshDaemon::performHighAvailabilityRecovery()
 			const auto &appSnapshot = snap->m_apps.find(app->getName())->second;
 			auto stat = os::status(appSnapshot.m_pid);
 
-			if (stat && appSnapshot.m_startTime == std::chrono::system_clock::to_time_t(stat->get_starttime()))
+			if (stat && appSnapshot.m_startTime == std::chrono::system_clock::to_time_t(stat->getStartTime()))
 			{
-				LOG_INF << fname << "Attaching application <" << app->getName() << "> to existing process PID <" << appSnapshot.m_pid << ">";
+				LOG_INF << fname << "Attaching application <" << app->getName() << "> to existing process PID <"
+						<< appSnapshot.m_pid << ">";
 				app->attach(appSnapshot.m_pid);
 			}
 		}
@@ -553,8 +556,8 @@ void AppMeshDaemon::runMainLoop()
 					m_ptree = os::processes(roots);
 					m_ptreeReady = !m_ptree.empty();
 					m_ptreeRefreshPending = true;
-					RESTHANDLER::instance()->refreshPrometheusProcessMetrics(
-						m_ptreeReady ? static_cast<void *>(&m_ptree) : nullptr);
+					RESTHANDLER::instance()->refreshPrometheusProcessMetrics(m_ptreeReady ? static_cast<void *>(&m_ptree)
+																						  : nullptr);
 					m_lastPrometheusScrape = scrapeGeneration;
 				}
 				else
@@ -593,19 +596,18 @@ void AppMeshDaemon::startStartupApplications()
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
 	auto apps = config->getApps();
-	std::stable_sort(apps.begin(), apps.end(), [](const std::shared_ptr<Application> &left,
-		const std::shared_ptr<Application> &right)
-		{
-			if (left->startupPhase() != right->startupPhase())
-				return left->startupPhase() < right->startupPhase();
-			return left->getName() < right->getName();
-		});
+	std::stable_sort(apps.begin(), apps.end(),
+					 [](const std::shared_ptr<Application> &left, const std::shared_ptr<Application> &right)
+					 {
+						 if (left->startupPhase() != right->startupPhase())
+							 return left->startupPhase() < right->startupPhase();
+						 return left->getName() < right->getName();
+					 });
 
 	std::vector<int> startupPhases;
 	for (const auto &app : apps)
 	{
-		if (!app || !app->isManaged() || !app->isEnabled() ||
-			app->startupPhase() >= Application::DEFAULT_STARTUP_PHASE)
+		if (!app || !app->isManaged() || !app->isEnabled() || app->startupPhase() >= Application::DEFAULT_STARTUP_PHASE)
 			continue;
 		if (startupPhases.empty() || startupPhases.back() != app->startupPhase())
 			startupPhases.push_back(app->startupPhase());
@@ -627,8 +629,7 @@ void AppMeshDaemon::startStartupApplications()
 				}
 				catch (const std::exception &ex)
 				{
-					LOG_ERR << fname << "Startup application <" << app->getName()
-							<< "> execute failed: " << ex.what();
+					LOG_ERR << fname << "Startup application <" << app->getName() << "> execute failed: " << ex.what();
 				}
 			}
 
@@ -692,13 +693,13 @@ void AppMeshDaemon::executeApplications()
 
 	auto config = Configuration::instance();
 	auto allApps = config->getApps();
-	std::stable_sort(allApps.begin(), allApps.end(), [](const std::shared_ptr<Application> &left,
-		const std::shared_ptr<Application> &right)
-		{
-			if (left->startupPhase() != right->startupPhase())
-				return left->startupPhase() < right->startupPhase();
-			return left->getName() < right->getName();
-		});
+	std::stable_sort(allApps.begin(), allApps.end(),
+					 [](const std::shared_ptr<Application> &left, const std::shared_ptr<Application> &right)
+					 {
+						 if (left->startupPhase() != right->startupPhase())
+							 return left->startupPhase() < right->startupPhase();
+						 return left->getName() < right->getName();
+					 });
 	void *const processSnapshot = m_ptreeReady ? static_cast<void *>(&m_ptree) : nullptr;
 	m_ptreeReady = false;
 	const bool refreshMetrics = m_ptreeRefreshPending;
@@ -739,7 +740,7 @@ void AppMeshDaemon::performShutdown()
 		LOG_WAR << fname << "Configuration is not initialized, skipping application shutdown";
 	// Exit finalization ran on the ProcessService thread while the apps
 	// stopped; it can be shut down before the workers drain.
-	PROCESS_SERVICE::instance()->shutdown();
+	ProcessService::instance()->shutdown();
 
 	// Drain the workers before the transports: a queued reply still holds a
 	// connection whose event loop must stay alive until the reply is sent.
@@ -762,13 +763,13 @@ void AppMeshDaemon::stopManagedApplications()
 	const static char fname[] = "AppMeshDaemon::stopManagedApplications() ";
 
 	auto apps = Configuration::instance()->getApps();
-	std::stable_sort(apps.begin(), apps.end(), [](const std::shared_ptr<Application> &left,
-		const std::shared_ptr<Application> &right)
-		{
-			if (left->startupPhase() != right->startupPhase())
-				return left->startupPhase() > right->startupPhase();
-			return left->getName() > right->getName();
-		});
+	std::stable_sort(apps.begin(), apps.end(),
+					 [](const std::shared_ptr<Application> &left, const std::shared_ptr<Application> &right)
+					 {
+						 if (left->startupPhase() != right->startupPhase())
+							 return left->startupPhase() > right->startupPhase();
+						 return left->getName() > right->getName();
+					 });
 	for (const auto &app : apps)
 	{
 		if (!app || !app->isManaged())

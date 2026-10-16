@@ -18,10 +18,10 @@
 #include "../security/InternalCapability.h"
 #include "../security/SecretProtector.h"
 #include "../security/Security.h"
-#include "ReplyContext.h"
 #include "EventDispatcher.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
+#include "ReplyContext.h"
 #include "RestHandler.h"
 
 // Content-type constants
@@ -147,78 +147,125 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 {
 	// Static content handlers
 	bindRestMethod(web::http::methods::GET, "/swagger/", std::bind(&RestHandler::apiSwagger, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/openapi.yaml", std::bind(&RestHandler::apiOpenApi, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/openapi.yaml",
+				   std::bind(&RestHandler::apiOpenApi, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/index.html", std::bind(&RestHandler::apiIndex, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/", std::bind(&RestHandler::apiIndex, this, std::placeholders::_1));
 
 	// 1. Authentication
-	bindRestMethod(web::http::methods::GET, REST_PATH_AUTH_CONFIG, std::bind(&RestHandler::apiAuthConfig, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_AUTH_CONFIG,
+				   std::bind(&RestHandler::apiAuthConfig, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_LOGO, std::bind(&RestHandler::apiLogo, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_FAVICON, std::bind(&RestHandler::apiFavicon, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_OAUTH_CALLBACK, std::bind(&RestHandler::apiOauthCallback, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_PROTECTED_RESOURCE_METADATA, std::bind(&RestHandler::apiProtectedResourceMetadata, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CAPABILITY, std::bind(&RestHandler::apiWorkflowCapability, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS, std::bind(&RestHandler::apiWorkflowCleanupOrphans, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_INTERNAL_WORKFLOW_REGISTRY, std::bind(&RestHandler::apiWorkflowRegistry, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_ENROLL_FIRST_ADMIN, std::bind(&RestHandler::apiEnrollFirstAdmin, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_FAVICON,
+				   std::bind(&RestHandler::apiFavicon, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_OAUTH_CALLBACK,
+				   std::bind(&RestHandler::apiOauthCallback, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PROTECTED_RESOURCE_METADATA,
+				   std::bind(&RestHandler::apiProtectedResourceMetadata, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CAPABILITY,
+				   std::bind(&RestHandler::apiWorkflowCapability, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS,
+				   std::bind(&RestHandler::apiWorkflowCleanupOrphans, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_INTERNAL_WORKFLOW_REGISTRY,
+				   std::bind(&RestHandler::apiWorkflowRegistry, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_ENROLL_FIRST_ADMIN,
+				   std::bind(&RestHandler::apiEnrollFirstAdmin, this, std::placeholders::_1));
 
 	// 2. View Application
-	bindRestMethod(web::http::methods::GET, REST_PATH_APP_VIEW, std::bind(&RestHandler::apiAppView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_APP_OUT_VIEW, std::bind(&RestHandler::apiAppOutputView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_APP_ALL_VIEW, std::bind(&RestHandler::apiAppsView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_APP_HEALTH, std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_APP_VIEW,
+				   std::bind(&RestHandler::apiAppView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_APP_OUT_VIEW,
+				   std::bind(&RestHandler::apiAppOutputView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_APP_ALL_VIEW,
+				   std::bind(&RestHandler::apiAppsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_APP_HEALTH,
+				   std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
 	// 3. Cloud Application
-	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_RESOURCES_VIEW, std::bind(&RestHandler::apiCloudResourceView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_RESOURCES_VIEW,
+				   std::bind(&RestHandler::apiCloudResourceView, this, std::placeholders::_1));
 
 	// 4. Manage Application
-	bindRestMethod(web::http::methods::PUT, REST_PATH_APP_ADD, std::bind(&RestHandler::apiAppAdd, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_APP_ENABLE, std::bind(&RestHandler::apiAppEnable, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_APP_DISABLE, std::bind(&RestHandler::apiAppDisable, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_DELETE, std::bind(&RestHandler::apiAppDelete, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, REST_PATH_APP_ADD,
+				   std::bind(&RestHandler::apiAppAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_ENABLE,
+				   std::bind(&RestHandler::apiAppEnable, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_DISABLE,
+				   std::bind(&RestHandler::apiAppDisable, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_DELETE,
+				   std::bind(&RestHandler::apiAppDelete, this, std::placeholders::_1));
 
 	// 5. Operate Application
-	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_ASYNC, std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_SYNC, std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessage, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_TASK, std::bind(&RestHandler::apiRemoveMessage, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_APP_TASK, std::bind(&RestHandler::apiGetMessage, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::PUT, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessageResponse, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_ASYNC,
+				   std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_SYNC,
+				   std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK,
+				   std::bind(&RestHandler::apiSendTask, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_TASK,
+				   std::bind(&RestHandler::apiDeleteTask, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_APP_TASK,
+				   std::bind(&RestHandler::apiFetchTask, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, REST_PATH_APP_TASK,
+				   std::bind(&RestHandler::apiReplyTask, this, std::placeholders::_1));
 
 	// 6. File Management
-	bindRestMethod(web::http::methods::GET, REST_PATH_FILE_DOWNLOAD, std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_FILE_UPLOAD, std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_FILE_DOWNLOAD,
+				   std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_FILE_UPLOAD,
+				   std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
 
 	// 7. Label Management
-	bindRestMethod(web::http::methods::GET, REST_PATH_LABEL_VIEW_ALL, std::bind(&RestHandler::apiLabelsView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::PUT, REST_PATH_LABEL_ADD, std::bind(&RestHandler::apiLabelAdd, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_LABEL_DELETE, std::bind(&RestHandler::apiLabelDel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_LABEL_VIEW_ALL,
+				   std::bind(&RestHandler::apiLabelsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, REST_PATH_LABEL_ADD,
+				   std::bind(&RestHandler::apiLabelAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_LABEL_DELETE,
+				   std::bind(&RestHandler::apiLabelDelete, this, std::placeholders::_1));
 
 	// 8. Config
-	bindRestMethod(web::http::methods::GET, REST_PATH_CONFIG_VIEW, std::bind(&RestHandler::apiBasicConfigView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_CONFIG_SET, std::bind(&RestHandler::apiBasicConfigSet, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_CONFIG_VIEW,
+				   std::bind(&RestHandler::apiBasicConfigView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_CONFIG_SET,
+				   std::bind(&RestHandler::apiBasicConfigSet, this, std::placeholders::_1));
 
 	// 9. Security
-	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPAL_SELF, std::bind(&RestHandler::apiPrincipalSelf, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPALS, std::bind(&RestHandler::apiPrincipalsView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_PRINCIPAL, std::bind(&RestHandler::apiPrincipalUpdate, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_PRINCIPAL, std::bind(&RestHandler::apiPrincipalDelete, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_ROLE_VIEW_ALL, std::bind(&RestHandler::apiRolesView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_ROLE_UPDATE, std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_ROLE_DELETE, std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPAL_PERMISSIONS, std::bind(&RestHandler::apiPrincipalPermissionsView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_PERM_VIEW_ALL, std::bind(&RestHandler::apiPermissionsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPAL_SELF,
+				   std::bind(&RestHandler::apiPrincipalSelf, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPALS,
+				   std::bind(&RestHandler::apiPrincipalsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_PRINCIPAL,
+				   std::bind(&RestHandler::apiPrincipalUpdate, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_PRINCIPAL,
+				   std::bind(&RestHandler::apiPrincipalDelete, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_ROLE_VIEW_ALL,
+				   std::bind(&RestHandler::apiRolesView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_ROLE_UPDATE,
+				   std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_ROLE_DELETE,
+				   std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPAL_PERMISSIONS,
+				   std::bind(&RestHandler::apiPrincipalPermissionsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_PERM_VIEW_ALL,
+				   std::bind(&RestHandler::apiPermissionsView, this, std::placeholders::_1));
 
 	// 10. metrics
-	bindRestMethod(web::http::methods::GET, METRIC_PATH, std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_PROMETHEUS_METRICS, std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_RESOURCE_VIEW, std::bind(&RestHandler::apiResourceView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, METRIC_PATH,
+				   std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_PROMETHEUS_METRICS,
+				   std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_RESOURCE_VIEW,
+				   std::bind(&RestHandler::apiResourceView, this, std::placeholders::_1));
 
 	// 11. Subscribe
-	bindRestMethod(web::http::methods::POST, REST_PATH_APP_SUBSCRIBE, std::bind(&RestHandler::apiAppSubscribe, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_APP_SUBSCRIBE_ALL, std::bind(&RestHandler::apiAppSubscribe, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_SUBSCRIBE, std::bind(&RestHandler::apiAppUnsubscribe, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_SUBSCRIBE_ALL, std::bind(&RestHandler::apiAppUnsubscribe, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_SUBSCRIBE,
+				   std::bind(&RestHandler::apiAppSubscribe, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_SUBSCRIBE_ALL,
+				   std::bind(&RestHandler::apiAppSubscribe, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_SUBSCRIBE,
+				   std::bind(&RestHandler::apiAppUnsubscribe, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_SUBSCRIBE_ALL,
+				   std::bind(&RestHandler::apiAppUnsubscribe, this, std::placeholders::_1));
 }
 
 RestHandler::~RestHandler()
@@ -233,8 +280,9 @@ RestHandler *RestHandler::instance()
 	return &inst;
 }
 
-std::string RestHandler::normalizedHttpRoute(const std::string &path,
-											 const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions) const
+std::string RestHandler::normalizedHttpRoute(
+	const std::string &path,
+	const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions) const
 {
 	typedef std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> RestFunctions;
 	auto findPattern = [&](const RestFunctions &functions) -> std::string
@@ -319,26 +367,27 @@ void RestHandler::observeHttpRequest(const std::shared_ptr<HttpRequest> &message
 	const auto started = std::chrono::steady_clock::now();
 	const auto metrics = m_metrics;
 	m_metrics->httpRequestStarted(method, route);
-	message->setReplyMetricCallback([metrics, method, route = std::move(route), started](int status)
-									{
-		const auto duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-		metrics->httpRequestFinished(method, route, status, duration); });
+	message->setReplyMetricCallback(
+		[metrics, method, route = std::move(route), started](int status)
+		{
+			const auto duration = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+			metrics->httpRequestFinished(method, route, status, duration);
+		});
 }
 
-std::shared_ptr<CounterMetric> RestHandler::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
+std::shared_ptr<CounterMetric> RestHandler::createPromCounter(const std::string &metricName, const std::string &metricHelp,
+															  const std::map<std::string, std::string> &labels)
 {
 	return m_metrics->createPromCounter(metricName, metricHelp, labels);
 }
 
-std::shared_ptr<GaugeMetric> RestHandler::createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
+std::shared_ptr<GaugeMetric> RestHandler::createPromGauge(const std::string &metricName, const std::string &metricHelp,
+														  const std::map<std::string, std::string> &labels)
 {
 	return m_metrics->createPromGauge(metricName, metricHelp, labels);
 }
 
-uint64_t RestHandler::prometheusScrapeGeneration() const
-{
-	return m_metrics->scrapeGeneration();
-}
+uint64_t RestHandler::prometheusScrapeGeneration() const { return m_metrics->scrapeGeneration(); }
 
 void RestHandler::refreshPrometheusProcessMetrics(void *processSnapshot)
 {
@@ -348,25 +397,29 @@ void RestHandler::refreshPrometheusProcessMetrics(void *processSnapshot)
 // Static content serving utilities
 const std::string &RestHandler::getOpenApiContent()
 {
-	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "openapi.yaml").string());
+	static const std::string content =
+		Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "openapi.yaml").string());
 	return content;
 }
 
 const std::string &RestHandler::getLogoContent()
 {
-	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "logo.svg").string());
+	static const std::string content =
+		Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "logo.svg").string());
 	return content;
 }
 
 const std::string &RestHandler::getFaviconContent()
 {
-	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "favicon.png").string());
+	static const std::string content =
+		Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "favicon.png").string());
 	return content;
 }
 
 const std::string &RestHandler::getIndexHtmlContent()
 {
-	static const std::string content = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "index.html").string());
+	static const std::string content =
+		Utility::readFileCpp((fs::path(Utility::getHomeDir()) / "script" / "index.html").string());
 	return content;
 }
 
@@ -474,8 +527,6 @@ void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
 	LOG_DBG << fname << "Redirecting to Swagger UI";
 
 	auto host = message->m_headers.get(web::http::header_names::host);
-	if (host.empty())
-		host = message->m_headers.get(web::http::header_names::host);
 
 	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
 	std::map<std::string, std::string> headers;
@@ -494,13 +545,17 @@ void RestHandler::apiIndex(const std::shared_ptr<HttpRequest> &message)
 	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
 }
 
-void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app, bool requestWrite)
+void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message,
+										   const std::shared_ptr<Application> &app, bool requestWrite)
 {
 	const auto tokenUser = permissionCheck(message, "");
 	const auto &appName = app->getName();
-	if (!Configuration::instance()->checkOwnerPermission(tokenUser, app->getOwnerPrincipalId(), app->getOwnerPermission(), requestWrite))
+	if (!Configuration::instance()->checkOwnerPermission(tokenUser, app->getOwnerPrincipalId(), app->getOwnerPermission(),
+														 requestWrite))
 	{
-		throw AuthorizationException(Utility::stringFormat("Principal <%s> is not allowed to <%s> app <%s>", tokenUser.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
+		throw AuthorizationException(Utility::stringFormat("Principal <%s> is not allowed to <%s> app <%s>",
+														   tokenUser.c_str(), (requestWrite ? "EDIT" : "VIEW"),
+														   appName.c_str()));
 	}
 	if (requestWrite && appName == SEPARATE_AGENT_APP_NAME)
 	{
@@ -508,10 +563,9 @@ void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &m
 	}
 }
 
-long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max)
+long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min,
+									long max)
 {
-	// const static char fname[] = "RestHandler::getHttpQueryValue() ";
-
 	long rt = defaultValue;
 	if (auto it = message.m_query.find(key); it != message.m_query.end())
 	{
@@ -523,7 +577,6 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 		else if (min < max && (rt < min || rt > max))
 			rt = defaultValue;
 	}
-	// LOG_DBG << fname << key << "=" << rt;
 	return rt;
 }
 
@@ -671,7 +724,8 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 			message->reply(web::http::status_codes::Conflict);
 			return;
 		}
-		message->reply(web::http::status_codes::OK, Utility::text2json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
+		message->reply(web::http::status_codes::OK,
+					   Utility::text2json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 	}
 }
 
@@ -706,7 +760,8 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	headers[HTTP_HEADER_KEY_file_user] = std::move(fileUser);
 	headers[HTTP_HEADER_KEY_file_group] = std::move(fileGroup);
 	auto body = HttpRequest::emptyJsonMessage();
-	if (message->m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) && message->m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
+	if (message->m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) &&
+		message->m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
 	{
 		LOG_DBG << fname << "Download file from socket";
 		headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = Utility::encode64(file);
@@ -741,7 +796,8 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 
 	std::map<std::string, std::string> headers;
 	auto body = HttpRequest::emptyJsonMessage();
-	if (message->m_headers.count(HTTP_HEADER_KEY_X_Send_File_Socket) && message->m_headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second == "true")
+	if (message->m_headers.count(HTTP_HEADER_KEY_X_Send_File_Socket) &&
+		message->m_headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second == "true")
 	{
 		LOG_DBG << fname << "Upload file from socket";
 		headers[HTTP_HEADER_KEY_X_Send_File_Socket] = Utility::encode64(file);
@@ -783,9 +839,9 @@ void RestHandler::apiLabelAdd(const std::shared_ptr<HttpRequest> &message)
 	}
 }
 
-void RestHandler::apiLabelDel(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiLabelDelete(const std::shared_ptr<HttpRequest> &message)
 {
-	const static char fname[] = "RestHandler::apiLabelDel() ";
+	const static char fname[] = "RestHandler::apiLabelDelete() ";
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_label_delete);
 
 	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
@@ -854,8 +910,8 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		throw AuthorizationException("managed Workflow system application is unavailable");
 	// A bad or superseded proof is an authentication failure (401), not an
 	// authorization denial (403).
-	const auto processUuid = workflowProcess->currentProcessUuidForProof(
-		message->m_uuid, message->m_headers.get(HMAC_HTTP_HEADER));
+	const auto processUuid =
+		workflowProcess->currentProcessUuidForProof(message->m_uuid, message->m_headers.get(HMAC_HTTP_HEADER));
 	if (processUuid.empty())
 		throw std::domain_error("workflow process proof is invalid or superseded");
 
@@ -900,8 +956,8 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		auto validIdentifier = [](const std::string &value)
 		{
 			return !value.empty() && value.size() <= 128 &&
-				std::all_of(value.begin(), value.end(), [](unsigned char c)
-							{ return std::isalnum(c) || c == '-' || c == '_'; });
+				   std::all_of(value.begin(), value.end(),
+							   [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_'; });
 		};
 		if (!validIdentifier(workflowId) || !validIdentifier(runId))
 			throw std::invalid_argument("workflow_id and run_id must be safe identifiers");
@@ -910,20 +966,15 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		if (!workflow)
 			throw NotFoundException("registered workflow was not found");
 		const auto definition = workflow->AsJson(false);
-		if (!definition.isMember(JSON_KEY_APP_metadata) ||
-			!definition[JSON_KEY_APP_metadata].isObject() ||
+		if (!definition.isMember(JSON_KEY_APP_metadata) || !definition[JSON_KEY_APP_metadata].isObject() ||
 			GET_JSON_STR_VALUE(definition[JSON_KEY_APP_metadata], "type") != "workflow")
 			throw AuthorizationException("capability target is not an Engine-managed workflow definition");
 		ownerPrincipalId = workflow->getOwnerPrincipalId();
 		if (ownerPrincipalId.empty())
 			throw AuthorizationException("registered workflow has no owner Principal");
 		allowedOperations = {
-			PERMISSION_KEY_run_app_async,
-			PERMISSION_KEY_view_app,
-			PERMISSION_KEY_view_app_output,
-			PERMISSION_KEY_app_delete,
-			PERMISSION_KEY_run_task,
-			PERMISSION_KEY_app_subscribe,
+			PERMISSION_KEY_run_app_async, PERMISSION_KEY_view_app, PERMISSION_KEY_view_app_output,
+			PERMISSION_KEY_app_delete,    PERMISSION_KEY_run_task, PERMISSION_KEY_app_subscribe,
 			PERMISSION_KEY_label_view,
 		};
 		const auto currentPermissions = Security::instance()->permissions(ownerPrincipalId);
@@ -940,10 +991,11 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		if (allowedOperations.count(operation) == 0)
 			throw AuthorizationException("operation is outside the workflow capability allow-list: " + operation);
 
-	const auto capability = InternalCapability::instance().issue(
-		capabilityAudience, workflowId, runId, ownerPrincipalId, processUuid, operations, ttlSeconds);
-	const auto expiresAt = std::chrono::duration_cast<std::chrono::seconds>(
-		std::chrono::system_clock::now().time_since_epoch()).count() + ttlSeconds;
+	const auto capability = InternalCapability::instance().issue(capabilityAudience, workflowId, runId, ownerPrincipalId,
+																 processUuid, operations, ttlSeconds);
+	const auto expiresAt =
+		std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() +
+		ttlSeconds;
 	Json::Value response;
 	response["capability"] = capability;
 	response["expires_at"] = expiresAt;
@@ -962,8 +1014,8 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 	const auto workflowProcess = Configuration::instance()->getApp(WORKFLOW_APP_NAME, false);
 	if (!workflowProcess || !workflowProcess->isSystemProtected())
 		throw AuthorizationException("managed Workflow system application is unavailable");
-	const auto processUuid = workflowProcess->currentProcessUuidForProof(
-		message->m_uuid, message->m_headers.get(HMAC_HTTP_HEADER));
+	const auto processUuid =
+		workflowProcess->currentProcessUuidForProof(message->m_uuid, message->m_headers.get(HMAC_HTTP_HEADER));
 	if (processUuid.empty())
 		throw std::domain_error("workflow process proof is invalid or superseded");
 
@@ -972,8 +1024,8 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 	auto validIdentifier = [](const std::string &value)
 	{
 		return !value.empty() && value.size() <= 128 &&
-			std::all_of(value.begin(), value.end(), [](unsigned char c)
-						{ return std::isalnum(c) || c == '-' || c == '_'; });
+			   std::all_of(value.begin(), value.end(),
+						   [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_'; });
 	};
 
 	std::size_t removed = 0;
@@ -987,21 +1039,18 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 			continue;
 
 		const auto definition = app->AsJson(false);
-		if (!definition.isMember(JSON_KEY_APP_metadata) ||
-			!definition[JSON_KEY_APP_metadata].isObject())
+		if (!definition.isMember(JSON_KEY_APP_metadata) || !definition[JSON_KEY_APP_metadata].isObject())
 			continue;
 		const auto &metadata = definition[JSON_KEY_APP_metadata];
-		if (!metadata.isMember("type") || !metadata["type"].isString() ||
-			metadata["type"].asString() != "workflow-step" ||
-			!metadata.isMember("workflow_id") || !metadata["workflow_id"].isString() ||
-			!metadata.isMember("run_id") || !metadata["run_id"].isString() ||
-			!metadata.isMember("process_uuid") || !metadata["process_uuid"].isString())
+		if (!metadata.isMember("type") || !metadata["type"].isString() || metadata["type"].asString() != "workflow-step" ||
+			!metadata.isMember("workflow_id") || !metadata["workflow_id"].isString() || !metadata.isMember("run_id") ||
+			!metadata["run_id"].isString() || !metadata.isMember("process_uuid") || !metadata["process_uuid"].isString())
 			continue;
 		const auto workflowId = metadata["workflow_id"].asString();
 		const auto runId = metadata["run_id"].asString();
 		const auto creatorProcessUuid = metadata["process_uuid"].asString();
-		if (!validIdentifier(workflowId) || !validIdentifier(runId) ||
-			creatorProcessUuid.empty() || creatorProcessUuid == processUuid)
+		if (!validIdentifier(workflowId) || !validIdentifier(runId) || creatorProcessUuid.empty() ||
+			creatorProcessUuid == processUuid)
 			continue;
 
 		// removeApp's expected pointer makes the snapshot race-safe. A replacement
@@ -1024,7 +1073,7 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 	// permissions through the synthetic Workflow controller principal.
 	const auto principalId = permissionCheck(message, PERMISSION_KEY_view_all_app);
 	if (principalId.compare(0, std::char_traits<char>::length("internal:workflow-controller:"),
-			"internal:workflow-controller:") != 0)
+							"internal:workflow-controller:") != 0)
 	{
 		throw AuthorizationException("workflow registry is available only to the managed Workflow controller");
 	}
@@ -1033,15 +1082,13 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 	for (const auto &app : Configuration::instance()->getApps())
 	{
 		if (!app || app->getName().compare(0, std::char_traits<char>::length(WORKFLOW_DEFINITION_PREFIX),
-				WORKFLOW_DEFINITION_PREFIX) != 0)
+										   WORKFLOW_DEFINITION_PREFIX) != 0)
 			continue;
 		auto definition = app->AsJson(true);
-		if (!definition.isMember(JSON_KEY_APP_metadata) ||
-			!definition[JSON_KEY_APP_metadata].isObject())
+		if (!definition.isMember(JSON_KEY_APP_metadata) || !definition[JSON_KEY_APP_metadata].isObject())
 			continue;
 		const auto &metadata = definition[JSON_KEY_APP_metadata];
-		if (!metadata.isMember("type") || !metadata["type"].isString() ||
-			metadata["type"].asString() != "workflow")
+		if (!metadata.isMember("type") || !metadata["type"].isString() || metadata["type"].asString() != "workflow")
 			continue;
 		addOwnerDisplayName(definition);
 		result.append(definition);
@@ -1063,11 +1110,9 @@ void RestHandler::apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &messag
 	// HTTP/TCP callers still prove identity with the per-request Authorization header.
 	std::shared_ptr<AuthorizationPrincipal> enrolled;
 	if (!message->transportPrincipalId().empty())
-		enrolled = Security::instance()->enrollFirstAdminPinned(
-			message->transportPrincipalId());
+		enrolled = Security::instance()->enrollFirstAdminPinned(message->transportPrincipalId());
 	else
-		enrolled = Security::instance()->enrollFirstAdmin(
-			getBearerToken(message));
+		enrolled = Security::instance()->enrollFirstAdmin(getBearerToken(message));
 	auto response = enrolled->asJson();
 	response["permissions"] = toJsonArray(Security::instance()->permissions(enrolled->id()));
 	message->reply(web::http::status_codes::OK, response);
@@ -1217,7 +1262,8 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 			// CASE: copy existing application and run
 			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
 			{
-				throw std::invalid_argument(Utility::stringFormat("Should not specify command for an existing application <%s>", clientProvideAppName.c_str()));
+				throw std::invalid_argument(Utility::stringFormat(
+					"Should not specify command for an existing application <%s>", clientProvideAppName.c_str()));
 			}
 			// for run an existing app, only support re-define metadata and env
 			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_metadata))
@@ -1241,8 +1287,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 				for (const auto &envName : secretEnvs.getMemberNames())
 				{
 					const std::string context = fromApp->getName() + '\0' + envName;
-					decrypted[envName] = SecretProtector::instance().unprotect(
-						secretEnvs[envName].asString(), context);
+					decrypted[envName] = SecretProtector::instance().unprotect(secretEnvs[envName].asString(), context);
 				}
 				existApp[JSON_KEY_APP_secret_env] = std::move(decrypted);
 			}
@@ -1272,8 +1317,10 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 		}
 	}
 
-	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
-	int lifecycle = getHttpQueryValue(*message, HTTP_QUERY_KEY_lifecycle, DEFAULT_RUN_APP_LIFECYCLE_SECONDS, timeout, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int timeout =
+		getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int lifecycle = getHttpQueryValue(*message, HTTP_QUERY_KEY_lifecycle, DEFAULT_RUN_APP_LIFECYCLE_SECONDS, timeout,
+									  MAX_RUN_APP_TIMEOUT_SECONDS);
 	if (lifecycle == 0)
 		throw std::invalid_argument("Zero timeout and lifecycle speficied");
 
@@ -1300,7 +1347,8 @@ void RestHandler::apiRunAsync(const std::shared_ptr<HttpRequest> &message)
 
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 
-	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int timeout =
+		getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
 	std::string processUuid;
@@ -1325,7 +1373,8 @@ void RestHandler::apiRunSync(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
 
-	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int timeout =
+		getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
 	// Use async reply here
@@ -1333,12 +1382,13 @@ void RestHandler::apiRunSync(const std::shared_ptr<HttpRequest> &message)
 	appObj->runSync(timeout, asyncRequest);
 }
 
-void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiSendTask(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_task);
 
 	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
-	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0,
+									MAX_RUN_APP_TIMEOUT_SECONDS);
 	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
@@ -1349,7 +1399,7 @@ void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)
 	app->sendTask(asyncRequest);
 }
 
-void RestHandler::apiRemoveMessage(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiDeleteTask(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_task);
 
@@ -1362,14 +1412,13 @@ void RestHandler::apiRemoveMessage(const std::shared_ptr<HttpRequest> &message)
 	message->reply(removed ? web::http::status_codes::OK : web::http::status_codes::AlreadyReported);
 }
 
-void RestHandler::apiGetMessage(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiFetchTask(const std::shared_ptr<HttpRequest> &message)
 {
 	if (!message->isManagedPrivateTransport() || !message->transportPrincipalId().empty())
 		throw AuthorizationException("worker task RPC is available only to a managed local process");
 	if (message->m_query.count("process_key") != 0)
 		throw std::invalid_argument("process_key query authentication is not supported");
-	const std::string processKey = Utility::stdStringTrim(
-		message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
+	const std::string processKey = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
 	if (processKey.empty())
 		throw AuthorizationException("managed process proof is required");
 	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
@@ -1381,14 +1430,13 @@ void RestHandler::apiGetMessage(const std::shared_ptr<HttpRequest> &message)
 	app->fetchTask(processKey, asyncRequest);
 }
 
-void RestHandler::apiSendMessageResponse(const std::shared_ptr<HttpRequest> &message)
+void RestHandler::apiReplyTask(const std::shared_ptr<HttpRequest> &message)
 {
 	if (!message->isManagedPrivateTransport() || !message->transportPrincipalId().empty())
 		throw AuthorizationException("worker task RPC is available only to a managed local process");
 	if (message->m_query.count("process_key") != 0)
 		throw std::invalid_argument("process_key query authentication is not supported");
-	const std::string processKey = Utility::stdStringTrim(
-		message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
+	const std::string processKey = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
 	if (processKey.empty())
 		throw AuthorizationException("managed process proof is required");
 	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
@@ -1472,16 +1520,15 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	// any other caller is always forced to itself.
 	auto ownerPrincipalId = tokenUser;
 	const auto requestedOwner = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_owner_principal_id);
-	if (!requestedOwner.empty() &&
-		Security::instance()->permissions(tokenUser).count(PERMISSION_KEY_app_manage_all) != 0)
+	if (!requestedOwner.empty() && Security::instance()->permissions(tokenUser).count(PERMISSION_KEY_app_manage_all) != 0)
 	{
 		// NotFoundException maps to 404 when the target principal does not exist.
 		const auto target = Security::instance()->principal(requestedOwner);
 		if (!target->active())
 			throw std::invalid_argument("owner_principal_id must reference an active principal: " + requestedOwner);
 		ownerPrincipalId = target->id();
-		LOG_INF << fname << "Application <" << appName << "> owner set to <" << ownerPrincipalId
-				<< "> by <" << tokenUser << ">";
+		LOG_INF << fname << "Application <" << appName << "> owner set to <" << ownerPrincipalId << "> by <" << tokenUser
+				<< ">";
 	}
 	jsonApp[JSON_KEY_APP_owner_principal_id] = ownerPrincipalId;
 	jsonApp.removeMember(JSON_KEY_APP_execution_user);
@@ -1505,7 +1552,8 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 				ConnectionKey connKey;
 				DeliveryCallback deliveryCb;
 				if (buildDeliveryCallback(message, connKey, deliveryCb))
-					subId = EventDispatcher::instance()->subscribe(appName, eventMask, tokenUser, std::move(deliveryCb), connKey);
+					subId = EventDispatcher::instance()->subscribe(appName, eventMask, tokenUser, std::move(deliveryCb),
+																   connKey);
 			}
 		}
 		if (stale)
@@ -1544,12 +1592,13 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	}
 }
 
-bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &message, ConnectionKey &connKey, DeliveryCallback &deliveryCb)
+bool RestHandler::buildDeliveryCallback(const std::shared_ptr<HttpRequest> &message, ConnectionKey &connKey,
+										DeliveryCallback &deliveryCb)
 {
 	auto forwardRoute = message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARDED) &&
-		message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
-		? message->m_headers.get(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
-		: std::string();
+								message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
+							? message->m_headers.get(HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE)
+							: std::string();
 	if (message->wsReplyContext() && message->wsReplyContext()->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed)
 	{
 		auto wsCtx = message->wsReplyContext();
@@ -1611,8 +1660,7 @@ void RestHandler::apiAppSubscribe(const std::shared_ptr<HttpRequest> &message)
 	uint32_t eventMask = parseEventMask(events);
 	if (eventMask == 0)
 	{
-		message->reply(web::http::status_codes::BadRequest,
-					   Utility::text2json("No valid event types in: " + events));
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("No valid event types in: " + events));
 		return;
 	}
 
@@ -1661,8 +1709,7 @@ void RestHandler::apiAppUnsubscribe(const std::shared_ptr<HttpRequest> &message)
 	auto subId = getHttpQueryString(*message, "subscription_id");
 	if (subId.empty())
 	{
-		message->reply(web::http::status_codes::BadRequest,
-					   Utility::text2json("Missing query parameter: subscription_id"));
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("Missing query parameter: subscription_id"));
 		return;
 	}
 

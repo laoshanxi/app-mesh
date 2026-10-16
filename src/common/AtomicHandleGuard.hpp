@@ -16,43 +16,33 @@ constexpr native_fd INVALID_FD = -1;
 class AtomicHandleGuard final
 {
 public:
-    explicit AtomicHandleGuard(native_fd handle = INVALID_FD) noexcept
-        : m_handle(handle) {}
+	explicit AtomicHandleGuard(native_fd handle = INVALID_FD) noexcept : m_handle(handle) {}
 
-    ~AtomicHandleGuard() noexcept
-    {
-        reset();
-    }
+	~AtomicHandleGuard() noexcept { reset(); }
 
-    // Non-copyable, non-movable
-    AtomicHandleGuard(const AtomicHandleGuard &) = delete;
-    AtomicHandleGuard &operator=(const AtomicHandleGuard &) = delete;
-    AtomicHandleGuard(AtomicHandleGuard &&) = delete;
-    AtomicHandleGuard &operator=(AtomicHandleGuard &&) = delete;
+	// Non-copyable, non-movable
+	AtomicHandleGuard(const AtomicHandleGuard &) = delete;
+	AtomicHandleGuard &operator=(const AtomicHandleGuard &) = delete;
+	AtomicHandleGuard(AtomicHandleGuard &&) = delete;
+	AtomicHandleGuard &operator=(AtomicHandleGuard &&) = delete;
 
-    void reset(native_fd newHandle = INVALID_FD) noexcept
-    {
-        native_fd old = m_handle.exchange(newHandle, std::memory_order_acq_rel);
-        if (old != INVALID_FD)
-        {
+	void reset(native_fd newHandle = INVALID_FD) noexcept
+	{
+		native_fd old = m_handle.exchange(newHandle, std::memory_order_acq_rel);
+		if (old != INVALID_FD)
+		{
 #if defined(_WIN32)
-            ::CloseHandle(reinterpret_cast<HANDLE>(old));
+			::CloseHandle(reinterpret_cast<HANDLE>(old));
 #else
-            ::close(old);
+			::close(old);
 #endif
-        }
-    }
+		}
+	}
 
-    native_fd get() const noexcept
-    {
-        return m_handle.load(std::memory_order_relaxed);
-    }
+	native_fd get() const noexcept { return m_handle.load(std::memory_order_relaxed); }
 
-    bool valid() const noexcept
-    {
-        return get() != INVALID_FD;
-    }
+	bool valid() const noexcept { return get() != INVALID_FD; }
 
 private:
-    std::atomic<native_fd> m_handle;
+	std::atomic<native_fd> m_handle;
 };

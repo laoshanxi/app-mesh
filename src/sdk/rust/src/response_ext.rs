@@ -48,10 +48,7 @@ impl ResponseExt for http::Response<Bytes> {
         serde_json::from_slice::<T>(body).map_err(|e| {
             let preview_len = body.len().min(100);
             let preview = String::from_utf8_lossy(&body[..preview_len]);
-            AppMeshError::SerializationError(format!(
-                "Failed to deserialize JSON: {}. Body preview: {}",
-                e, preview
-            ))
+            AppMeshError::SerializationError(format!("Failed to deserialize JSON: {}. Body preview: {}", e, preview))
         })
     }
 }
@@ -128,11 +125,8 @@ mod tests {
         let json_str = serde_json::to_string(&test_data).unwrap();
         let body = Bytes::from(json_str);
 
-        let response = http::Response::builder()
-            .status(200)
-            .header(http::header::CONTENT_TYPE, "application/json")
-            .body(body)
-            .unwrap();
+        let response =
+            http::Response::builder().status(200).header(http::header::CONTENT_TYPE, "application/json").body(body).unwrap();
 
         let parsed: Result<TestData, _> = response.json();
         assert!(parsed.is_ok());

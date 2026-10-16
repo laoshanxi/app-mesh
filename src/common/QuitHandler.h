@@ -17,25 +17,25 @@
 class QuitHandler
 {
 public:
-    static QuitHandler *instance();
+	static QuitHandler *instance();
 
-    /// Check if an exit has been requested (lock-free).
-    bool shouldExit() const;
-    /// Request an exit from thread context: sets the flag, wakes waiters, logs.
-    void requestExit();
-    /// Async-signal-safe: sets the flag and wakes waiters, nothing else.
-    void markExit();
-    /// Blocks until an exit is requested or the timeout elapses; true if exiting.
-    bool waitForExit(std::chrono::milliseconds timeout);
+	/// Check if an exit has been requested (lock-free).
+	bool shouldExit() const;
+	/// Request an exit from thread context: sets the flag, wakes waiters, logs.
+	void requestExit();
+	/// Async-signal-safe: sets the flag and wakes waiters, nothing else.
+	void markExit();
+	/// Blocks until an exit is requested or the timeout elapses; true if exiting.
+	bool waitForExit(std::chrono::milliseconds timeout);
 
 private:
-    QuitHandler() = default;
-    ~QuitHandler() = default;
+	QuitHandler() = default;
+	~QuitHandler() = default;
 
-    QuitHandler(const QuitHandler &) = delete;
-    QuitHandler &operator=(const QuitHandler &) = delete;
+	QuitHandler(const QuitHandler &) = delete;
+	QuitHandler &operator=(const QuitHandler &) = delete;
 
-    std::atomic<bool> m_exit_flag{false};
+	std::atomic<bool> m_exitFlag{false};
 };
 
 /**

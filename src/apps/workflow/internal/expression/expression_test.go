@@ -242,10 +242,12 @@ func TestEvalConditionForJob_IsolatesParallelJobs(t *testing.T) {
 
 func TestEvalConditionForJobWithStatus_UsesJobStatusFunctions(t *testing.T) {
 	ctx := NewContext()
-	if EvalConditionForJobWithStatus("success()", ctx, "deploy", func() bool { return false }, func() bool { return true }) {
+	if EvalConditionForJobWithStatus("success()", ctx, "deploy", func() bool { return false },
+		func() bool { return true }) {
 		t.Error("success() should use supplied job status function")
 	}
-	if !EvalConditionForJobWithStatus("failure()", ctx, "deploy", func() bool { return false }, func() bool { return true }) {
+	if !EvalConditionForJobWithStatus("failure()", ctx, "deploy", func() bool { return false },
+		func() bool { return true }) {
 		t.Error("failure() should use supplied job status function")
 	}
 }

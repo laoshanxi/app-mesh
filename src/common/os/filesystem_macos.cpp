@@ -55,11 +55,18 @@ namespace os
 			return mountPointsMap;
 		}
 
-		static const std::set<std::string> ignoredFileSystems = {
-			"autofs", "devfs", "volfs", "tmpfs", "vmware_fusion",
-			"com.apple.TimeMachine", "synthetics", "com.apple.filesystems.apfs.serviceroot",
-			"com.apple.os.update-", "com.apple.system.clock",
-			"com.apple.system.background-task", "com.apple.system.ql-cache"};
+		static const std::set<std::string> ignoredFileSystems = {"autofs",
+																 "devfs",
+																 "volfs",
+																 "tmpfs",
+																 "vmware_fusion",
+																 "com.apple.TimeMachine",
+																 "synthetics",
+																 "com.apple.filesystems.apfs.serviceroot",
+																 "com.apple.os.update-",
+																 "com.apple.system.clock",
+																 "com.apple.system.background-task",
+																 "com.apple.system.ql-cache"};
 		std::set<std::string> seenDevices;
 
 		for (int i = 0; i < totalMounts; ++i)

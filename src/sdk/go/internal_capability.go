@@ -36,7 +36,8 @@ type WorkflowCapability struct {
 // only. The request is marked with HeaderProcessProof and the transport signs
 // it with the pre-shared key from Option.PSK; the Engine accepts this endpoint
 // only on a loopback TCP socket and derives all authority server-side.
-func (r *AppMeshClient) RequestWorkflowCapabilityContext(ctx context.Context, request WorkflowCapabilityRequest) (WorkflowCapability, error) {
+func (r *AppMeshClient) RequestWorkflowCapabilityContext(ctx context.Context,
+	request WorkflowCapabilityRequest) (WorkflowCapability, error) {
 	body, err := json.Marshal(request)
 	if err != nil {
 		return WorkflowCapability{}, fmt.Errorf("marshal workflow capability request: %w", err)
@@ -57,7 +58,8 @@ func (r *AppMeshClient) RequestWorkflowCapabilityContext(ctx context.Context, re
 	if err := json.Unmarshal(raw, &capability); err != nil {
 		return WorkflowCapability{}, fmt.Errorf("decode workflow capability: %w", err)
 	}
-	if capability.Capability == "" || capability.ExpiresAt <= 0 || capability.OwnerPrincipalID == "" || capability.ProcessUUID == "" {
+	if capability.Capability == "" || capability.ExpiresAt <= 0 || capability.OwnerPrincipalID == "" ||
+		capability.ProcessUUID == "" {
 		return WorkflowCapability{}, fmt.Errorf("Engine returned an incomplete workflow capability")
 	}
 	return capability, nil

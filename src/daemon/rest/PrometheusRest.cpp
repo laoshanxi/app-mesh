@@ -27,26 +27,19 @@ PrometheusRest::~PrometheusRest()
 void PrometheusRest::initMetrics()
 {
 	// Prometheus
-	m_scrapeCounter = createPromCounter(
-		PROM_METRIC_NAME_appmesh_metrics_scrapes_total,
-		PROM_METRIC_HELP_appmesh_metrics_scrapes_total,
-		{});
-	m_collectionErrorCounter = createPromCounter(
-		PROM_METRIC_NAME_appmesh_metrics_collection_errors_total,
-		PROM_METRIC_HELP_appmesh_metrics_collection_errors_total,
-		{});
-	m_appmeshFileDesc = createPromGauge(
-		PROM_METRIC_NAME_appmesh_process_open_fds,
-		PROM_METRIC_HELP_appmesh_process_open_fds,
-		{});
-	m_appmeshPid = createPromGauge(
-		PROM_METRIC_NAME_appmesh_process_id,
-		PROM_METRIC_HELP_appmesh_process_id,
-		{});
+	m_scrapeCounter = createPromCounter(PROM_METRIC_NAME_appmesh_metrics_scrapes_total,
+										PROM_METRIC_HELP_appmesh_metrics_scrapes_total, {});
+	m_collectionErrorCounter = createPromCounter(PROM_METRIC_NAME_appmesh_metrics_collection_errors_total,
+												 PROM_METRIC_HELP_appmesh_metrics_collection_errors_total, {});
+	m_appmeshFileDesc =
+		createPromGauge(PROM_METRIC_NAME_appmesh_process_open_fds, PROM_METRIC_HELP_appmesh_process_open_fds, {});
+	m_appmeshPid = createPromGauge(PROM_METRIC_NAME_appmesh_process_id, PROM_METRIC_HELP_appmesh_process_id, {});
 	m_appmeshPid->metric().Set(ResourceCollection::instance()->getPid());
 }
 
-std::shared_ptr<CounterMetric> PrometheusRest::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
+std::shared_ptr<CounterMetric> PrometheusRest::createPromCounter(const std::string &metricName,
+																 const std::string &metricHelp,
+																 const std::map<std::string, std::string> &labels)
 {
 	std::lock_guard guard(m_familyMutex);
 	auto familyIt = m_counterFamilies.find(metricName);
@@ -58,7 +51,8 @@ std::shared_ptr<CounterMetric> PrometheusRest::createPromCounter(const std::stri
 	return std::make_shared<CounterMetric>(m_promRegistry, *familyIt->second, metricName, labels);
 }
 
-std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
+std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &metricName, const std::string &metricHelp,
+															 const std::map<std::string, std::string> &labels)
 {
 	std::lock_guard guard(m_familyMutex);
 	auto familyIt = m_gaugeFamilies.find(metricName);
@@ -70,8 +64,10 @@ std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &
 	return std::make_shared<GaugeMetric>(m_promRegistry, *familyIt->second, metricName, labels);
 }
 
-std::shared_ptr<HistogramMetric> PrometheusRest::createPromHistogram(const std::string &metricName, const std::string &metricHelp,
-	const std::map<std::string, std::string> &labels, const std::vector<double> &buckets)
+std::shared_ptr<HistogramMetric> PrometheusRest::createPromHistogram(const std::string &metricName,
+																	 const std::string &metricHelp,
+																	 const std::map<std::string, std::string> &labels,
+																	 const std::vector<double> &buckets)
 {
 	std::lock_guard guard(m_familyMutex);
 	auto familyIt = m_histogramFamilies.find(metricName);
@@ -85,8 +81,7 @@ std::shared_ptr<HistogramMetric> PrometheusRest::createPromHistogram(const std::
 
 namespace
 {
-	const std::vector<double> HTTP_DURATION_BUCKETS = {
-		0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0, 30.0};
+	const std::vector<double> HTTP_DURATION_BUCKETS = {0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0, 30.0};
 
 	std::string httpMetricKey(const std::string &method, const std::string &route, const std::string &suffix = {})
 	{
@@ -109,17 +104,17 @@ void PrometheusRest::httpRequestStarted(const std::string &method, const std::st
 		auto &slot = m_httpInflightGauges[httpMetricKey(method, route)];
 		if (!slot)
 			slot = createPromGauge(PROM_METRIC_NAME_appmesh_http_requests_in_flight,
-				PROM_METRIC_HELP_appmesh_http_requests_in_flight, {{"method", method}, {"route", route}});
+								   PROM_METRIC_HELP_appmesh_http_requests_in_flight, {{"method", method}, {"route", route}});
 		inFlight = slot;
 	}
 	inFlight->metric().Increment();
 }
 
-void PrometheusRest::httpRequestFinished(const std::string &method, const std::string &route, int statusCode, double durationSeconds)
+void PrometheusRest::httpRequestFinished(const std::string &method, const std::string &route, int statusCode,
+										 double durationSeconds)
 {
 	const auto statusClass = httpStatusClass(statusCode);
-	const auto status = statusCode >= 100 && statusCode <= 599
-		? std::to_string(statusCode) : std::string("unreplied");
+	const auto status = statusCode >= 100 && statusCode <= 599 ? std::to_string(statusCode) : std::string("unreplied");
 	std::shared_ptr<CounterMetric> counter;
 	std::shared_ptr<GaugeMetric> inFlight;
 	std::shared_ptr<HistogramMetric> duration;
@@ -127,22 +122,23 @@ void PrometheusRest::httpRequestFinished(const std::string &method, const std::s
 		std::lock_guard guard(m_httpMetricMutex);
 		auto &counterSlot = m_httpRequestCounters[httpMetricKey(method, route, status)];
 		if (!counterSlot)
-			counterSlot = createPromCounter(PROM_METRIC_NAME_appmesh_http_requests_total,
-				PROM_METRIC_HELP_appmesh_http_requests_total,
+			counterSlot = createPromCounter(
+				PROM_METRIC_NAME_appmesh_http_requests_total, PROM_METRIC_HELP_appmesh_http_requests_total,
 				{{"method", method}, {"route", route}, {"status_code", status}, {"status_class", statusClass}});
 		counter = counterSlot;
 
 		auto &durationSlot = m_httpDurationHistograms[httpMetricKey(method, route)];
 		if (!durationSlot)
 			durationSlot = createPromHistogram(PROM_METRIC_NAME_appmesh_http_request_duration_seconds,
-				PROM_METRIC_HELP_appmesh_http_request_duration_seconds,
-				{{"method", method}, {"route", route}}, HTTP_DURATION_BUCKETS);
+											   PROM_METRIC_HELP_appmesh_http_request_duration_seconds,
+											   {{"method", method}, {"route", route}}, HTTP_DURATION_BUCKETS);
 		duration = durationSlot;
 
 		auto &inFlightSlot = m_httpInflightGauges[httpMetricKey(method, route)];
 		if (!inFlightSlot)
-			inFlightSlot = createPromGauge(PROM_METRIC_NAME_appmesh_http_requests_in_flight,
-				PROM_METRIC_HELP_appmesh_http_requests_in_flight, {{"method", method}, {"route", route}});
+			inFlightSlot =
+				createPromGauge(PROM_METRIC_NAME_appmesh_http_requests_in_flight,
+								PROM_METRIC_HELP_appmesh_http_requests_in_flight, {{"method", method}, {"route", route}});
 		inFlight = inFlightSlot;
 	}
 	counter->metric().Increment();
@@ -192,12 +188,10 @@ void PrometheusRest::refreshProcessMetrics(void *processSnapshot)
 	m_collectionErrorCounter->metric().Increment();
 }
 
-uint64_t PrometheusRest::scrapeGeneration() const
-{
-	return m_scrapeGeneration.load(std::memory_order_relaxed);
-}
+uint64_t PrometheusRest::scrapeGeneration() const { return m_scrapeGeneration.load(std::memory_order_relaxed); }
 
-CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, prometheus::Family<prometheus::Counter> &family, const std::string &name, std::map<std::string, std::string> label)
+CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, prometheus::Family<prometheus::Counter> &family,
+							 const std::string &name, std::map<std::string, std::string> label)
 	: m_metric(nullptr), m_family(&family), m_promRegistry(std::move(registry)), m_name(name)
 {
 	const static char fname[] = "CounterMetric::CounterMetric() ";
@@ -216,12 +210,10 @@ CounterMetric::~CounterMetric()
 	LOG_DBG << fname << "metric " << m_name << " removed";
 }
 
-prometheus::Counter &CounterMetric::metric()
-{
-	return *m_metric;
-}
+prometheus::Counter &CounterMetric::metric() { return *m_metric; }
 
-GaugeMetric::GaugeMetric(std::shared_ptr<prometheus::Registry> registry, prometheus::Family<prometheus::Gauge> &family, const std::string &name, std::map<std::string, std::string> label)
+GaugeMetric::GaugeMetric(std::shared_ptr<prometheus::Registry> registry, prometheus::Family<prometheus::Gauge> &family,
+						 const std::string &name, std::map<std::string, std::string> label)
 	: m_metric(nullptr), m_family(&family), m_promRegistry(registry), m_name(name)
 {
 	const static char fname[] = "GaugeMetric::GaugeMetric() ";
@@ -241,14 +233,11 @@ GaugeMetric::~GaugeMetric()
 	LOG_DBG << fname << "metric " << m_name << " removed";
 }
 
-prometheus::Gauge &GaugeMetric::metric()
-{
-	return *m_metric;
-}
+prometheus::Gauge &GaugeMetric::metric() { return *m_metric; }
 
 HistogramMetric::HistogramMetric(std::shared_ptr<prometheus::Registry> registry,
-	prometheus::Family<prometheus::Histogram> &family, const std::string &name,
-	std::map<std::string, std::string> label, const std::vector<double> &buckets)
+								 prometheus::Family<prometheus::Histogram> &family, const std::string &name,
+								 std::map<std::string, std::string> label, const std::vector<double> &buckets)
 	: m_metric(nullptr), m_family(&family), m_promRegistry(registry), m_name(name)
 {
 	prometheus::Labels commonLabels = {{"host", MY_HOST_NAME}};
@@ -262,7 +251,4 @@ HistogramMetric::~HistogramMetric()
 		m_family->Remove(m_metric);
 }
 
-prometheus::Histogram &HistogramMetric::metric()
-{
-	return *m_metric;
-}
+prometheus::Histogram &HistogramMetric::metric() { return *m_metric; }

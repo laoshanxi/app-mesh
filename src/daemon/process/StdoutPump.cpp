@@ -24,16 +24,12 @@ namespace
 {
 	constexpr size_t PUMP_READ_BUF = 64 * 1024;
 	constexpr size_t COALESCE_BYTE_THRESHOLD = 256 * 1024; // emit immediately when batch fills 256 KB
-	constexpr int COALESCE_WINDOW_MS = 200;				   // otherwise flush every 200 ms
+	constexpr int COALESCE_WINDOW_MS = 200;                // otherwise flush every 200 ms
 }
 
 StdoutPump::StdoutPump(std::string appName, int pipeReadFd, int diskWriteFd, std::shared_ptr<std::mutex> diskMutex)
-	: m_appName(std::move(appName)),
-	  m_pipeReadFd(pipeReadFd),
-	  m_pipeRead(PROCESS_SERVICE::instance()->io()),
-	  m_diskWrite(diskWriteFd),
-	  m_diskMutex(std::move(diskMutex)),
-	  m_coalesceTimer(PROCESS_SERVICE::instance()->io())
+	: m_appName(std::move(appName)), m_pipeReadFd(pipeReadFd), m_pipeRead(ProcessService::instance()->io()),
+	  m_diskWrite(diskWriteFd), m_diskMutex(std::move(diskMutex)), m_coalesceTimer(ProcessService::instance()->io())
 {
 	m_readBuf.resize(PUMP_READ_BUF);
 	// The pump owns the read fd from construction; activate() hands it to
@@ -194,8 +190,7 @@ void StdoutPump::armCoalesceTimer()
 	m_timerArmed = true;
 	auto self = shared_from_this();
 	m_coalesceTimer.expires_after(std::chrono::milliseconds(COALESCE_WINDOW_MS));
-	m_coalesceTimer.async_wait([self = std::move(self)](const boost::system::error_code &ec)
-							   { self->onCoalesceTimer(ec); });
+	m_coalesceTimer.async_wait([self = std::move(self)](const boost::system::error_code &ec) { self->onCoalesceTimer(ec); });
 }
 
 void StdoutPump::onCoalesceTimer(const boost::system::error_code &ec)

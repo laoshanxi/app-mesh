@@ -45,7 +45,7 @@ class TransportHttpURLConnection extends HttpURLConnection {
 
     @Override
     public int getResponseCode() throws IOException {
-        return resp.http_status;
+        return resp.httpStatus;
     }
 
     @Override

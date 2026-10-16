@@ -17,7 +17,8 @@ import (
 )
 
 func TestAppEventDeserialization(t *testing.T) {
-	raw := `{"subscription_id":"sub123","event_type":"EXIT","app_name":"myapp","timestamp":1714000000,"sequence":42,"data":{"exit_code":1,"pid":12345}}`
+	raw := `{"subscription_id":"sub123","event_type":"EXIT","app_name":"myapp","timestamp":1714000000,` +
+		`"sequence":42,"data":{"exit_code":1,"pid":12345}}`
 	var event AppEvent
 	err := json.Unmarshal([]byte(raw), &event)
 	require.NoError(t, err)
@@ -57,11 +58,12 @@ func TestMessageDemuxerRouting(t *testing.T) {
 	})
 
 	// Simulate a server-push event message
-	eventBody := `{"subscription_id":"sub-test","event_type":"START","app_name":"test-app","timestamp":1714000000,"sequence":1,"data":{"pid":9999}}`
+	eventBody := `{"subscription_id":"sub-test","event_type":"START","app_name":"test-app","timestamp":1714000000,` +
+		`"sequence":1,"data":{"pid":9999}}`
 	resp := &Response{
 		UUID:        "evt-uuid-1",
-		RequestUri:  EVENT_URI,
-		HttpStatus:  200,
+		RequestURI:  EventURI,
+		HTTPStatus:  200,
 		BodyMsgType: "application/json",
 		Body:        []byte(eventBody),
 		Headers:     map[string]string{"X-Subscription-Id": "sub-test"},
@@ -110,8 +112,8 @@ func TestMessageDemuxerRequestResponse(t *testing.T) {
 	// Simulate server response for this request
 	resp := &Response{
 		UUID:       reqUUID,
-		RequestUri: "/appmesh/app/test",
-		HttpStatus: 200,
+		RequestURI: "/appmesh/app/test",
+		HTTPStatus: 200,
 		Body:       []byte(`{"name":"test"}`),
 		Headers:    map[string]string{},
 	}
@@ -124,7 +126,7 @@ func TestMessageDemuxerRequestResponse(t *testing.T) {
 	case result := <-ch:
 		require.NotNil(t, result)
 		assert.Equal(t, reqUUID, result.UUID)
-		assert.Equal(t, 200, result.HttpStatus)
+		assert.Equal(t, 200, result.HTTPStatus)
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for response")
 	}
@@ -205,7 +207,7 @@ func TestMessageDemuxerLogsDroppedMalformedMessages(t *testing.T) {
 	expectLog("readLoop:")
 
 	// Event frame whose JSON body cannot be parsed into an AppEvent.
-	resp := &Response{RequestUri: EVENT_URI, HttpStatus: 200, Body: []byte("{not-json")}
+	resp := &Response{RequestURI: EventURI, HTTPStatus: 200, Body: []byte("{not-json")}
 	buf, err := resp.Serialize()
 	require.NoError(t, err)
 	msgCh <- buf
@@ -219,17 +221,20 @@ type fakeWaitRequester struct {
 	actions []string
 }
 
-func (f *fakeWaitRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+func (f *fakeWaitRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string,
+	body io.Reader) (int, []byte, http.Header, error) {
 	return f.SendContext(context.Background(), method, apiPath, queries, headers, body)
 }
 
-func (f *fakeWaitRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+func (f *fakeWaitRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values,
+	headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
 	f.actions = append(f.actions, "request")
 	switch {
 	case method == http.MethodPut && strings.HasPrefix(apiPath, "/appmesh/app/"):
 		return http.StatusOK, []byte(`{"name":"atomic-app","subscription_id":"sub-add"}`), http.Header{}, nil
 	case method == http.MethodPost && strings.HasSuffix(apiPath, "/subscribe"):
-		return http.StatusOK, []byte(`{"subscription_id":"sub-wait","app_name":"waitapp","events":["STDOUT","EXIT","REMOVED"]}`), http.Header{}, nil
+		return http.StatusOK, []byte(`{"subscription_id":"sub-wait","app_name":"waitapp",` +
+			`"events":["STDOUT","EXIT","REMOVED"]}`), http.Header{}, nil
 	default:
 		// Backfill output (no data, process still running), unsubscribe, delete.
 		return http.StatusOK, []byte(""), http.Header{}, nil
@@ -266,11 +271,12 @@ func newWaitHarness() (*AppMeshClient, chan []byte) {
 // pushEvent frames an event push for subID onto the mock transport.
 func pushEvent(t *testing.T, msgCh chan []byte, subID string, eventType string, data string) {
 	t.Helper()
-	body := fmt.Sprintf(`{"subscription_id":"%s","event_type":"%s","app_name":"waitapp","timestamp":0,"sequence":1,"data":%s}`, subID, eventType, data)
+	body := fmt.Sprintf(`{"subscription_id":"%s","event_type":"%s","app_name":"waitapp","timestamp":0,`+
+		`"sequence":1,"data":%s}`, subID, eventType, data)
 	resp := &Response{
 		UUID:        "evt-" + eventType,
-		RequestUri:  EVENT_URI,
-		HttpStatus:  200,
+		RequestURI:  EventURI,
+		HTTPStatus:  200,
 		BodyMsgType: "application/json",
 		Body:        []byte(body),
 	}
@@ -289,7 +295,8 @@ func TestWaitForAsyncRunNegativeExitCode(t *testing.T) {
 	// before WaitForAsyncRun registers its callback.
 	pushEvent(t, msgCh, "sub-wait", "EXIT", `{"exit_code":-2}`)
 
-	code, err := client.WaitForAsyncRun(context.Background(), &AppRun{AppName: "waitapp", ProcUid: "proc-1"}, nil, 5*time.Second)
+	code, err := client.WaitForAsyncRun(context.Background(), &AppRun{AppName: "waitapp", ProcUid: "proc-1"}, nil,
+		5*time.Second)
 	require.NoError(t, err)
 	require.NotNil(t, code)
 	assert.Equal(t, -2, *code)
@@ -308,7 +315,8 @@ func TestWaitForAsyncRunDisconnectUnblocks(t *testing.T) {
 	}()
 
 	start := time.Now()
-	code, err := client.WaitForAsyncRun(context.Background(), &AppRun{AppName: "waitapp", ProcUid: "proc-1"}, nil, 30*time.Second)
+	code, err := client.WaitForAsyncRun(context.Background(), &AppRun{AppName: "waitapp", ProcUid: "proc-1"}, nil,
+		30*time.Second)
 	require.ErrorIs(t, err, ErrTransportDisconnected)
 	assert.Nil(t, code)
 	assert.Less(t, time.Since(start), 10*time.Second, "disconnect must unblock the wait, not run into the timeout")
@@ -389,10 +397,11 @@ func TestAddAppCallbackFlushesBufferedEvents(t *testing.T) {
 	// before any callback exists.
 	resp := &Response{
 		UUID:        "evt-buffered",
-		RequestUri:  EVENT_URI,
-		HttpStatus:  200,
+		RequestURI:  EventURI,
+		HTTPStatus:  200,
 		BodyMsgType: "application/json",
-		Body:        []byte(`{"subscription_id":"sub-add","event_type":"START","app_name":"atomic-app","timestamp":0,"sequence":1,"data":{"pid":4242}}`),
+		Body: []byte(`{"subscription_id":"sub-add","event_type":"START","app_name":"atomic-app",` +
+			`"timestamp":0,"sequence":1,"data":{"pid":4242}}`),
 	}
 	demux.dispatchEvent(resp)
 
@@ -425,8 +434,8 @@ func TestAddAppCallbackFlushesBufferedEvents(t *testing.T) {
 func TestResponseDeserialize(t *testing.T) {
 	resp := &Response{
 		UUID:        "test-uuid",
-		RequestUri:  "/appmesh/event",
-		HttpStatus:  200,
+		RequestURI:  "/appmesh/event",
+		HTTPStatus:  200,
 		BodyMsgType: "application/json",
 		Body:        []byte(`{"key":"value"}`),
 		Headers:     map[string]string{"X-Test": "yes"},
@@ -439,7 +448,7 @@ func TestResponseDeserialize(t *testing.T) {
 	err = decoded.Deserialize(buf)
 	require.NoError(t, err)
 	assert.Equal(t, "test-uuid", decoded.UUID)
-	assert.Equal(t, "/appmesh/event", decoded.RequestUri)
-	assert.Equal(t, 200, decoded.HttpStatus)
+	assert.Equal(t, "/appmesh/event", decoded.RequestURI)
+	assert.Equal(t, 200, decoded.HTTPStatus)
 	assert.Equal(t, "yes", decoded.Headers["X-Test"])
 }

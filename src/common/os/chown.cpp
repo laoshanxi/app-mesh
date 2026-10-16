@@ -60,14 +60,15 @@ namespace os
 
 			switch (node->fts_info)
 			{
-			case FTS_D:		 // Preorder directory
-			case FTS_F:		 // Regular file
-			case FTS_SL:	 // Symbolic link
+			case FTS_D:      // Preorder directory
+			case FTS_F:      // Regular file
+			case FTS_SL:     // Symbolic link
 			case FTS_SLNONE: // Symbolic link without target
 			{
 				if (::lchown(node->fts_path, uid, gid) < 0)
 				{
-					LOG_ERR << fname << "Failed to change ownership of " << node->fts_path << ", error: " << last_error_msg();
+					LOG_ERR << fname << "Failed to change ownership of " << node->fts_path
+							<< ", error: " << last_error_msg();
 					return false;
 				}
 				LOG_DBG << fname << "Changed ownership of " << node->fts_path << " to uid=" << uid << " gid=" << gid;
@@ -79,7 +80,8 @@ namespace os
 			case FTS_DC:  // Directory that causes cycles
 			case FTS_NS:  // stat(2) failed
 			{
-				LOG_ERR << fname << "Failed to process " << node->fts_path << ", error type: " << node->fts_info << ", error: " << std::strerror(node->fts_errno);
+				LOG_ERR << fname << "Failed to process " << node->fts_path << ", error type: " << node->fts_info
+						<< ", error: " << std::strerror(node->fts_errno);
 				return false;
 			}
 
@@ -172,8 +174,7 @@ namespace os
 				// Mirror getUidByName: if the group name is purely numeric, accept it
 				// as a literal GID. Containers commonly lack a passwd/group entry for
 				// the host UID/GID, but chown(2) still accepts the raw numeric value.
-				if (!group.empty() && std::all_of(group.begin(), group.end(),
-												  [](char c) { return c >= '0' && c <= '9'; }))
+				if (!group.empty() && std::all_of(group.begin(), group.end(), [](char c) { return c >= '0' && c <= '9'; }))
 				{
 					try
 					{
@@ -204,11 +205,9 @@ namespace os
 			}
 		}
 
-		LOG_DBG << fname << "Attempting to change ownership of " << path
-				<< " to " << (user.empty() ? "current user" : user)
+		LOG_DBG << fname << "Attempting to change ownership of " << path << " to " << (user.empty() ? "current user" : user)
 				<< " (uid=" << uid << ")"
-				<< ", group=" << (group.empty() ? "current group" : group)
-				<< " (gid=" << gid << ")"
+				<< ", group=" << (group.empty() ? "current group" : group) << " (gid=" << gid << ")"
 				<< (recursive ? " recursively" : "");
 
 		// Attempt to change ownership

@@ -1,0 +1,5 @@
+# Project-wide Rust line width, aligned with the 125-column C++ standard (.clang-format)
+# Nested width heuristics (chains, call args, struct literals) follow max_width so lines
+# that fit in 125 columns stay joined.
+max_width = 125
+use_small_heuristics = "Max"

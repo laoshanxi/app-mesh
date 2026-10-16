@@ -73,14 +73,7 @@ mod tests {
 
     #[test]
     fn test_event_types() {
-        let valid_types = vec![
-            "START",
-            "EXIT",
-            "STDOUT",
-            "HEALTH",
-            "STATUS",
-            "REMOVED",
-        ];
+        let valid_types = vec!["START", "EXIT", "STDOUT", "HEALTH", "STATUS", "REMOVED"];
 
         for event_type in &valid_types {
             let event = AppEvent {

@@ -153,10 +153,10 @@ type ResourceLimitation struct {
 
 // AppOutput represents the result of an AppMeshClient.GetAppOutput call.
 type AppOutput struct {
-	// HttpSuccess is true only when the server responded with HTTP 200 OK.
-	HttpSuccess bool
-	// HttpBody is the raw response body: output text on success, the server error text otherwise.
-	HttpBody string
+	// HTTPSuccess is true only when the server responded with HTTP 200 OK.
+	HTTPSuccess bool
+	// HTTPBody is the raw response body: output text on success, the server error text otherwise.
+	HTTPBody string
 	// OutputPosition is the next read cursor (X-Output-Position header), when present.
 	OutputPosition *int64
 	// ExitCode is the process exit code (X-Exit-Code header), populated once the process has finished.
@@ -187,7 +187,7 @@ func PrintOutputHandler(data string, position int64) {
 type SSLConfig struct {
 	VerifyClient                bool   `yaml:"VerifyClient"`
 	VerifyServer                bool   `yaml:"VerifyServer"`
-	SSLCaPath                   string `yaml:"SSLCaPath"`
+	SSLCAPath                   string `yaml:"SSLCaPath"`
 	SSLCertificateFile          string `yaml:"SSLCertificateFile"`
 	SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`
 	SSLClientCertificateFile    string `yaml:"SSLClientCertificateFile"`
@@ -198,8 +198,8 @@ type SSLConfig struct {
 // Wire-protocol internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 type Request struct {
 	UUID          string            `msgpack:"uuid"`
-	RequestUri    string            `msgpack:"request_uri"`
-	HttpMethod    string            `msgpack:"http_method"`
+	RequestURI    string            `msgpack:"request_uri"`
+	HTTPMethod    string            `msgpack:"http_method"`
 	ClientAddress string            `msgpack:"client_addr"`
 	Body          []byte            `msgpack:"body"`
 	Headers       map[string]string `msgpack:"headers"`
@@ -211,8 +211,8 @@ type Request struct {
 func NewRequest() *Request {
 	return &Request{
 		UUID:          xid.New().String(),
-		RequestUri:    "",
-		HttpMethod:    "",
+		RequestURI:    "",
+		HTTPMethod:    "",
 		ClientAddress: "",
 		Body:          []byte{},
 		Headers:       map[string]string{},
@@ -229,8 +229,8 @@ func (r *Request) Serialize() ([]byte, error) {
 // Wire-protocol internal shared with the App Mesh agent; not covered by SDK compatibility guarantees.
 type Response struct {
 	UUID        string            `msgpack:"uuid"`
-	RequestUri  string            `msgpack:"request_uri"`
-	HttpStatus  int               `msgpack:"http_status"`
+	RequestURI  string            `msgpack:"request_uri"`
+	HTTPStatus  int               `msgpack:"http_status"`
 	BodyMsgType string            `msgpack:"body_msg_type"`
 	Body        []byte            `msgpack:"body"`
 	Headers     map[string]string `msgpack:"headers"`

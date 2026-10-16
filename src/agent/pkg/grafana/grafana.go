@@ -8,18 +8,20 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 // https://grafana.com/grafana/plugins/grafana-simple-json-datasource/
-type AppmeshGrafanaJson struct{}
+type AppmeshGrafanaJSON struct{}
 
 // GrafanaQuery handles timeserie type queries.
-func (AppmeshGrafanaJson) GrafanaQuery(ctx context.Context, target string, args QueryArguments) ([]DataPoint, error) {
+func (AppmeshGrafanaJSON) GrafanaQuery(ctx context.Context, target string, args QueryArguments) ([]DataPoint, error) {
 	return []DataPoint{}, nil
 }
 
-func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, args TableQueryArguments) ([]TableColumn, error) {
+func (AppmeshGrafanaJSON) GrafanaQueryTable(ctx context.Context, target string,
+	args TableQueryArguments) ([]TableColumn, error) {
 	var authKey string
 	// Access headers from context
 	if header, ok := ctx.Value(requestHeadersKey).(http.Header); ok {
@@ -115,7 +117,8 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 	}, err
 }
 
-func (AppmeshGrafanaJson) GrafanaAnnotations(ctx context.Context, query string, args AnnotationsArguments) ([]Annotation, error) {
+func (AppmeshGrafanaJSON) GrafanaAnnotations(ctx context.Context, query string,
+	args AnnotationsArguments) ([]Annotation, error) {
 	return []Annotation{
 		// A single point in time annotation
 		{
@@ -134,25 +137,25 @@ func (AppmeshGrafanaJson) GrafanaAnnotations(ctx context.Context, query string, 
 	}, nil
 }
 
-func (AppmeshGrafanaJson) GrafanaSearch(ctx context.Context, target string) ([]string, error) {
+func (AppmeshGrafanaJSON) GrafanaSearch(ctx context.Context, target string) ([]string, error) {
 	return []string{"example1", "example2", "example3"}, nil
 }
 
-func (AppmeshGrafanaJson) GrafanaAdhocFilterTags(ctx context.Context) ([]TagInfoer, error) {
+func (AppmeshGrafanaJSON) GrafanaAdhocFilterTags(ctx context.Context) ([]TagInfoer, error) {
 	return []TagInfoer{
 		TagStringKey("mykey"),
 	}, nil
 }
 
-func (AppmeshGrafanaJson) GrafanaAdhocFilterTagValues(ctx context.Context, key string) ([]TagValuer, error) {
+func (AppmeshGrafanaJSON) GrafanaAdhocFilterTagValues(ctx context.Context, key string) ([]TagValuer, error) {
 	return []TagValuer{
 		TagStringValue("value1"),
 		TagStringValue("value2"),
 	}, nil
 }
 
-func RegGrafanaRestHandler(router *mux.Router) {
-	// TODO: WithQuerier(AppmeshGrafanaJson{}) WithSearcher(AppmeshGrafanaJson{}) WithAnnotator(AppmeshGrafanaJson{})
-	simJson := New(WithTableQuerier(AppmeshGrafanaJson{}))
-	simJson.handleRestRouter(router)
+func RegisterGrafanaRESTHandler(router *mux.Router) {
+	// TODO: WithQuerier(AppmeshGrafanaJSON{}) WithSearcher(AppmeshGrafanaJSON{}) WithAnnotator(AppmeshGrafanaJSON{})
+	simJSON := New(WithTableQuerier(AppmeshGrafanaJSON{}))
+	simJSON.handleRestRouter(router)
 }

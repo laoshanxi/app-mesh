@@ -1,0 +1,45 @@
+---
+# App Mesh C++ style: tab indentation (width 4), Allman braces, right-bound
+# pointers/references, 125-column limit. Verified against the daemon and
+# common sources; run `clang-format -i <file>` on touched files only.
+Language: Cpp
+Standard: c++17
+
+# Indentation: tabs (matches the original 2019 codebase convention)
+TabWidth: 4
+IndentWidth: 4
+UseTab: ForContinuationAndIndentation
+
+# Line length: 125 — moderately long, industry middle ground
+ColumnLimit: 125
+
+# Braces: Allman (opening brace on its own line)
+BreakBeforeBraces: Allman
+
+# Pointers and references bind right: `const char *path`, `const std::string &host`
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+# `public:` / `private:` outdented one tab from members
+AccessModifierOffset: -4
+
+# Indent inside `namespace { ... }` bodies (see src/common/os/*)
+NamespaceIndentation: All
+FixNamespaceComments: false
+
+# Continuation/alignment
+AlignAfterOpenBracket: Align
+AlignTrailingComments: true
+
+# Includes: keep the blank-line grouping, sort within each group
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+# Preprocessor: `#if` blocks stay flush with the left margin inside functions
+IndentPPDirectives: None
+
+# Function/lambda bodies that fit within 125 columns stay on one line
+# (e.g. `getLabel() { return m_label; }`), matching the codebase's accessor style
+AllowShortFunctionsOnASingleLine: All
+AllowShortLambdasOnASingleLine: All
+KeepEmptyLinesAtTheStartOfBlocks: false

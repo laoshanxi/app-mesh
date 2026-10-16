@@ -25,20 +25,19 @@ pub struct DaemonTlsConfig {
 
 impl Default for DaemonTlsConfig {
     fn default() -> Self {
-        Self {
-            ca_cert: None,
-            client_cert: None,
-            client_key: None,
-            verify_server: true,
-        }
+        Self { ca_cert: None, client_cert: None, client_key: None, verify_server: true }
     }
 }
 
 fn app_dir_name() -> &'static str {
     #[cfg(any(windows, target_os = "macos"))]
-    { "AppMesh" }
+    {
+        "AppMesh"
+    }
     #[cfg(not(any(windows, target_os = "macos")))]
-    { "appmesh" }
+    {
+        "appmesh"
+    }
 }
 
 pub fn config_dir() -> PathBuf {
@@ -107,9 +106,7 @@ pub fn save_session(session: &StoredSession) -> Result<()> {
     temp.persist(&path).map_err(|error| error.error).context("install OAuth session")?;
     set_mode_result(&path, 0o600)?;
     #[cfg(unix)]
-    std::fs::File::open(&dir)
-        .and_then(|directory| directory.sync_all())
-        .context("sync OAuth session directory")?;
+    std::fs::File::open(&dir).and_then(|directory| directory.sync_all()).context("sync OAuth session directory")?;
 
     // Exactly one active OAuth identity is selected per Engine endpoint. Remove stale
     // profiles only after the new session is durable.
@@ -178,8 +175,8 @@ pub fn delete_session(session: &StoredSession) -> Result<()> {
 fn read_session_file(path: &Path) -> Result<StoredSession> {
     ensure_private_file(path)?;
     let bytes = std::fs::read(path).with_context(|| format!("read OAuth session {}", path.display()))?;
-    let session: StoredSession = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parse OAuth session {}", path.display()))?;
+    let session: StoredSession =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse OAuth session {}", path.display()))?;
     if session.version != 1 || session.tokens.access_token.trim().is_empty() {
         anyhow::bail!("unsupported or incomplete OAuth session")
     }
@@ -211,10 +208,7 @@ fn ensure_private_file(path: &Path) -> Result<()> {
 }
 
 pub fn save_last_host(host: &str, port: u16) {
-    let cfg = CliConfig {
-        last_host: Some(host.to_string()),
-        last_port: Some(port),
-    };
+    let cfg = CliConfig { last_host: Some(host.to_string()), last_port: Some(port) };
     if let Ok(content) = serde_json::to_string_pretty(&cfg) {
         let path = config_path();
         let _ = std::fs::write(&path, content + "\n");
@@ -231,9 +225,7 @@ pub fn load_last_host() -> Option<(String, u16)> {
 /// Read daemon config.yaml for TLS config and WSS port.
 pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
     let appmesh_home = detect_appmesh_home();
-    let config_path = appmesh_home
-        .as_ref()
-        .and_then(|home| detect_daemon_config_file(home));
+    let config_path = appmesh_home.as_ref().and_then(|home| detect_daemon_config_file(home));
 
     let Some(config_path) = config_path else {
         return (None, DaemonTlsConfig::default());
@@ -260,7 +252,9 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
 
         let indent = line.chars().take_while(|ch| *ch == ' ').count();
         let trimmed = line.trim();
-        let Some((key, value)) = trimmed.split_once(':') else { continue };
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
         let key = key.trim();
         let value = value.trim().trim_matches('"').trim_matches('\'');
 
@@ -299,9 +293,13 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
 
     let home = appmesh_home.unwrap_or_else(|| {
         #[cfg(unix)]
-        { PathBuf::from("/opt/appmesh") }
+        {
+            PathBuf::from("/opt/appmesh")
+        }
         #[cfg(windows)]
-        { PathBuf::from(r"C:\local\appmesh") }
+        {
+            PathBuf::from(r"C:\local\appmesh")
+        }
     });
     let tls = DaemonTlsConfig {
         ca_cert: ca_cert.map(|p| resolve_path(&home, &p)),
@@ -339,17 +337,17 @@ fn detect_appmesh_home() -> Option<PathBuf> {
 }
 
 fn detect_daemon_config_file(home: &Path) -> Option<PathBuf> {
-    [
-        home.join("work").join("config").join("config.yaml"),
-        home.join("config").join("config.yaml"),
-        home.join("config.yaml"),
-    ]
-    .into_iter()
-    .find(|p| p.exists())
+    [home.join("work").join("config").join("config.yaml"), home.join("config").join("config.yaml"), home.join("config.yaml")]
+        .into_iter()
+        .find(|p| p.exists())
 }
 
 fn resolve_path(home: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() { path.to_path_buf() } else { home.join(path) }
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        home.join(path)
+    }
 }
 
 fn set_mode(path: &Path, mode: u32) {
@@ -365,7 +363,9 @@ fn set_mode(path: &Path, mode: u32) {
         }
     }
     #[cfg(not(any(unix, windows)))]
-    { let _ = (path, mode); }
+    {
+        let _ = (path, mode);
+    }
 }
 
 fn set_mode_result(path: &Path, mode: u32) -> Result<()> {
@@ -413,8 +413,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                .expect("restrict test session");
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).expect("restrict test session");
         }
     }
 
@@ -431,12 +430,10 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600))
-                .expect("restrict broken session");
+            std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600)).expect("restrict broken session");
         }
 
-        let loaded = load_session_from(dir.path(), "wss://engine:6058")
-            .expect("broken candidate must not fail the load");
+        let loaded = load_session_from(dir.path(), "wss://engine:6058").expect("broken candidate must not fail the load");
         assert_eq!(loaded.as_ref().map(|session| session.engine_endpoint.as_str()), Some("wss://engine:6058"));
         assert!(load_session_from(dir.path(), "wss://missing:6058").expect("scan succeeds").is_none());
     }
@@ -453,13 +450,11 @@ mod tests {
         std::fs::write(&leaky, bytes).expect("write leaky session");
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&leaky, std::fs::Permissions::from_mode(0o644))
-                .expect("loosen leaky session");
+            std::fs::set_permissions(&leaky, std::fs::Permissions::from_mode(0o644)).expect("loosen leaky session");
         }
 
         // The loose file is skipped, not fatal, and never returned.
-        let loaded = load_session_from(dir.path(), "wss://engine:6058")
-            .expect("one safe candidate keeps the load usable");
+        let loaded = load_session_from(dir.path(), "wss://engine:6058").expect("one safe candidate keeps the load usable");
         assert!(loaded.is_some(), "safe candidate must still be found");
 
         std::fs::remove_file(dir.path().join("wanted.json")).expect("drop safe candidate");
@@ -470,17 +465,14 @@ mod tests {
     #[test]
     fn load_session_errors_only_when_every_candidate_fails() {
         let dir = tempfile::tempdir().expect("create session directory");
-        assert!(
-            load_session_from(dir.path(), "wss://engine:6058").expect("empty directory is not an error").is_none()
-        );
+        assert!(load_session_from(dir.path(), "wss://engine:6058").expect("empty directory is not an error").is_none());
 
         let broken = dir.path().join("broken.json");
         std::fs::write(&broken, "not json at all").expect("write broken session");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600))
-                .expect("restrict broken session");
+            std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600)).expect("restrict broken session");
         }
         assert!(load_session_from(dir.path(), "wss://engine:6058").is_err());
     }

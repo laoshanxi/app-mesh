@@ -32,7 +32,8 @@ WORKSPACE = os.environ.get("APPMESH_WORKSPACE", "")
 SSL_VERIFY_ENV = os.environ.get("APPMESH_SSL_VERIFY", "false")
 SSL_VERIFY = {"true": True, "false": False}.get(SSL_VERIFY_ENV.lower(), SSL_VERIFY_ENV)
 
-DEFAULT_EXCLUDES = [".git", "build", "node_modules", "__pycache__", ".agents", ".claude", ".codex", "*.o", "*.pyc", ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx"]
+DEFAULT_EXCLUDES = [".git", "build", "node_modules", "__pycache__", ".agents", ".claude", ".codex", "*.o", "*.pyc", ".env",
+    ".env.*", "*.pem", "*.key", "*.p12", "*.pfx"]
 EXTRA = os.environ.get("APPMESH_SYNC_EXCLUDE", "")
 if EXTRA:
     DEFAULT_EXCLUDES.extend(e.strip() for e in EXTRA.split(",") if e.strip())

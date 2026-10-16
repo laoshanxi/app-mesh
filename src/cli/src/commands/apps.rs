@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use appmesh::{AppEvent, Application, AppMeshClient, ExitAction};
+use appmesh::{AppEvent, AppMeshClient, Application, ExitAction};
 use serde_json::{json, Value};
 use std::io::{self, IsTerminal, Read, Write};
 use std::sync::Arc;
@@ -15,10 +15,7 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
     let (app, raw_app) = if let Some(ref stdin_src) = args.stdin {
         read_app_from_stdin(stdin_src)?
     } else {
-        if args.app.is_none()
-            && args.docker_image.is_none()
-            && args.cmd.is_none()
-        {
+        if args.app.is_none() && args.docker_image.is_none() && args.cmd.is_none() {
             bail!("Application name (-a) and command (-c) or docker image (-I) are required.");
         }
         (build_app_from_args(args)?, serde_json::Value::Null)
@@ -43,8 +40,8 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<i32> {
 
     // Validate interval > stop_grace_period
     if args.interval.is_some() && args.stop_grace_period.is_some() {
-        let interval = AppMeshClient::parse_duration(args.interval.as_deref().unwrap())
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let interval =
+            AppMeshClient::parse_duration(args.interval.as_deref().unwrap()).map_err(|e| anyhow::anyhow!("{}", e))?;
         let stop_grace_period = AppMeshClient::parse_duration(args.stop_grace_period.as_deref().unwrap())
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         if interval <= stop_grace_period {
@@ -83,8 +80,7 @@ fn read_app_from_stdin(source: &str) -> Result<(Application, serde_json::Value)>
     };
 
     let yaml: serde_json::Value = serde_yaml::from_str(&content).context("Invalid YAML input")?;
-    let app: Application =
-        serde_json::from_value(yaml.clone()).context("Invalid application definition")?;
+    let app: Application = serde_json::from_value(yaml.clone()).context("Invalid application definition")?;
     Ok((app, yaml))
 }
 
@@ -94,17 +90,12 @@ fn overlay_env_args(mut doc: Value, args: &AddArgs) -> Result<Value> {
         if pairs.is_empty() {
             return Ok(());
         }
-        let object = doc
-            .as_object_mut()
-            .ok_or_else(|| anyhow::anyhow!("the document is not a JSON object"))?;
+        let object = doc.as_object_mut().ok_or_else(|| anyhow::anyhow!("the document is not a JSON object"))?;
         let slot = object.entry(field).or_insert_with(|| json!({}));
-        let map = slot
-            .as_object_mut()
-            .ok_or_else(|| anyhow::anyhow!("document field `{}` is not a map", field))?;
+        let map = slot.as_object_mut().ok_or_else(|| anyhow::anyhow!("document field `{}` is not a map", field))?;
         for pair in pairs {
-            let (key, value) = pair
-                .split_once('=')
-                .ok_or_else(|| anyhow::anyhow!("Invalid environment variable format: {}", pair))?;
+            let (key, value) =
+                pair.split_once('=').ok_or_else(|| anyhow::anyhow!("Invalid environment variable format: {}", pair))?;
             map.insert(key.to_string(), json!(value));
         }
         Ok(())
@@ -112,19 +103,14 @@ fn overlay_env_args(mut doc: Value, args: &AddArgs) -> Result<Value> {
     overlay(&mut doc, "env", &args.env)?;
     overlay(&mut doc, "secret_env", &args.secret_env)?;
     if !args.depends_on.is_empty() {
-        let object = doc
-            .as_object_mut()
-            .ok_or_else(|| anyhow::anyhow!("the document is not a JSON object"))?;
+        let object = doc.as_object_mut().ok_or_else(|| anyhow::anyhow!("the document is not a JSON object"))?;
         object.insert("depends_on".to_string(), json!(args.depends_on));
     }
     Ok(doc)
 }
 
 fn build_app_from_args(args: &AddArgs) -> Result<Application> {
-    let name = args
-        .app
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("Application name is required"))?;
+    let name = args.app.as_deref().ok_or_else(|| anyhow::anyhow!("Application name is required"))?;
     let mut builder = Application::builder(name);
 
     if let Some(ref cmd) = args.cmd {
@@ -154,8 +140,7 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
 
     // Schedule: interval (period) or cron expression
     if let Some(ref interval) = args.interval {
-        AppMeshClient::parse_duration(interval)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        AppMeshClient::parse_duration(interval).map_err(|e| anyhow::anyhow!("{}", e))?;
         builder = builder.interval(interval);
     }
     if let Some(ref expr) = args.cron_schedule {
@@ -240,10 +225,7 @@ fn parse_exit_action(s: &str) -> Result<ExitAction> {
         "standby" => Ok(ExitAction::Standby),
         "keepalive" => Ok(ExitAction::Keepalive),
         "remove" => Ok(ExitAction::Remove),
-        _ => bail!(
-            "Invalid behavior '{}' for exit event. Use: restart|standby|keepalive|remove",
-            s
-        ),
+        _ => bail!("Invalid behavior '{}' for exit event. Use: restart|standby|keepalive|remove", s),
     }
 }
 
@@ -278,11 +260,8 @@ fn parse_datetime_to_epoch(s: &str) -> Result<i64> {
         return Ok(ts.as_second());
     }
     // Otherwise it is zoneless: interpret it in the system local timezone.
-    let dt = jiff::civil::DateTime::from_str(s)
-        .map_err(|e| anyhow::anyhow!("invalid datetime '{}': {}", s, e))?;
-    let zoned = dt
-        .to_zoned(jiff::tz::TimeZone::system())
-        .map_err(|e| anyhow::anyhow!("invalid datetime '{}': {}", s, e))?;
+    let dt = jiff::civil::DateTime::from_str(s).map_err(|e| anyhow::anyhow!("invalid datetime '{}': {}", s, e))?;
+    let zoned = dt.to_zoned(jiff::tz::TimeZone::system()).map_err(|e| anyhow::anyhow!("invalid datetime '{}': {}", s, e))?;
     Ok(zoned.timestamp().as_second())
 }
 
@@ -310,11 +289,7 @@ pub async fn rm(cli: &Cli, args: &RmArgs) -> Result<i32> {
     for name in &args.app {
         // delete_app maps 404 to Ok(false); surface it instead of exiting 0
         // while nothing was actually removed.
-        if !client
-            .delete_app(name)
-            .await
-            .context(format!("Failed to remove '{}'", name))?
-        {
+        if !client.delete_app(name).await.context(format!("Failed to remove '{}'", name))? {
             eprintln!("Warning: application '{}' does not exist", name);
         }
     }
@@ -329,10 +304,7 @@ pub async fn view(cli: &Cli, args: &ViewArgs) -> Result<i32> {
             return view_output(&client, app_name, args).await;
         }
 
-        let app = client
-            .get_app(app_name)
-            .await
-            .context("Failed to get application")?;
+        let app = client.get_app(app_name).await.context("Failed to get application")?;
 
         if args.pstree {
             if let Some(ref tree) = app.pstree {
@@ -355,10 +327,7 @@ pub async fn view(cli: &Cli, args: &ViewArgs) -> Result<i32> {
         return watch_apps(&client, args).await;
     }
 
-    let apps = client
-        .list_apps()
-        .await
-        .context("Failed to list applications")?;
+    let apps = client.list_apps().await.context("Failed to list applications")?;
 
     print_app_list(&apps, args)?;
     Ok(0)
@@ -398,8 +367,7 @@ async fn watch_apps(client: &Arc<appmesh::AppMeshClientWSS>, args: &ViewArgs) ->
             Err(e) => {
                 errors += 1;
                 if errors >= WATCH_MAX_ERRORS {
-                    return Err(anyhow::anyhow!("{}", e))
-                        .context("Lost connection while watching applications");
+                    return Err(anyhow::anyhow!("{}", e)).context("Lost connection while watching applications");
                 }
             }
         }
@@ -407,19 +375,12 @@ async fn watch_apps(client: &Arc<appmesh::AppMeshClientWSS>, args: &ViewArgs) ->
     }
 }
 
-async fn view_output(
-    client: &Arc<appmesh::AppMeshClientWSS>,
-    app_name: &str,
-    args: &ViewArgs,
-) -> Result<i32> {
+async fn view_output(client: &Arc<appmesh::AppMeshClientWSS>, app_name: &str, args: &ViewArgs) -> Result<i32> {
     let log_index = args.log_index.unwrap_or(0);
 
     if !args.follow {
         // One-shot: fetch current output via get_app_output
-        let output = client
-            .get_app_output(app_name, 0, log_index, 0, None, None)
-            .await
-            .context("Failed to get output")?;
+        let output = client.get_app_output(app_name, 0, log_index, 0, None, None).await.context("Failed to get output")?;
         // Fetched with fail_on_error=false so the exit-code header survives a non-2xx
         // reply, so check the status here — else a 404 body prints as app output, exit 0.
         if !(200..300).contains(&output.status_code) {
@@ -437,26 +398,20 @@ async fn view_output(
     let done_tx = Arc::new(std::sync::Mutex::new(Some(done_tx)));
     let done_tx_cb = Arc::clone(&done_tx);
 
-    let on_event: appmesh::EventCallback = Arc::new(move |event: AppEvent| {
-        match event.event_type.as_str() {
-            "STDOUT" => {
-                let output = event
-                    .data
-                    .get("output")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if !output.is_empty() {
-                    print!("{}", output);
-                    io::stdout().flush().ok();
-                }
+    let on_event: appmesh::EventCallback = Arc::new(move |event: AppEvent| match event.event_type.as_str() {
+        "STDOUT" => {
+            let output = event.data.get("output").and_then(|v| v.as_str()).unwrap_or("");
+            if !output.is_empty() {
+                print!("{}", output);
+                io::stdout().flush().ok();
             }
-            "EXIT" | "REMOVED" | "__disconnected__" => {
-                if let Some(tx) = done_tx_cb.lock().ok().and_then(|mut g| g.take()) {
-                    let _ = tx.send(true);
-                }
-            }
-            _ => {}
         }
+        "EXIT" | "REMOVED" | appmesh::EVENT_TYPE_DISCONNECTED => {
+            if let Some(tx) = done_tx_cb.lock().ok().and_then(|mut g| g.take()) {
+                let _ = tx.send(true);
+            }
+        }
+        _ => {}
     });
 
     let sub = client
@@ -465,9 +420,7 @@ async fn view_output(
         .context("Failed to subscribe")?;
 
     // Backfill output emitted before subscribe
-    let backfill = client
-        .get_app_output(app_name, 0, log_index, 0, None, Some(0))
-        .await;
+    let backfill = client.get_app_output(app_name, 0, log_index, 0, None, Some(0)).await;
     if let Ok(bf) = backfill {
         if !bf.output.is_empty() {
             print!("{}", bf.output);
@@ -491,10 +444,7 @@ pub async fn enable(cli: &Cli, args: &EnableArgs) -> Result<i32> {
         return Ok(0);
     }
     for name in &names {
-        client
-            .enable_app(name)
-            .await
-            .context(format!("Failed to enable '{}'", name))?;
+        client.enable_app(name).await.context(format!("Failed to enable '{}'", name))?;
     }
     Ok(0)
 }
@@ -508,10 +458,7 @@ pub async fn disable(cli: &Cli, args: &DisableArgs) -> Result<i32> {
         return Ok(0);
     }
     for name in &names {
-        client
-            .disable_app(name)
-            .await
-            .context(format!("Failed to disable '{}'", name))?;
+        client.disable_app(name).await.context(format!("Failed to disable '{}'", name))?;
     }
     Ok(0)
 }
@@ -525,33 +472,19 @@ pub async fn restart(cli: &Cli, args: &RestartArgs) -> Result<i32> {
         return Ok(0);
     }
     for name in &names {
-        client
-            .disable_app(name)
-            .await
-            .context(format!("Failed to disable '{}'", name))?;
-        client
-            .enable_app(name)
-            .await
-            .context(format!("Failed to enable '{}'", name))?;
+        client.disable_app(name).await.context(format!("Failed to disable '{}'", name))?;
+        client.enable_app(name).await.context(format!("Failed to enable '{}'", name))?;
     }
     Ok(0)
 }
 
-async fn get_app_names(
-    client: &appmesh::AppMeshClientWSS,
-    explicit: &[String],
-    all: bool,
-) -> Result<Vec<String>> {
+async fn get_app_names(client: &appmesh::AppMeshClientWSS, explicit: &[String], all: bool) -> Result<Vec<String>> {
     if all {
         let apps = client.list_apps().await.context("Failed to list apps")?;
         // System Apps (including the bundled authentication service) are lifecycle-managed
         // by the daemon and its service manager. The application API rejects
         // attempts to disable them, so --all means every non-system App.
-        Ok(apps
-            .iter()
-            .filter(|app| app.system != Some(true))
-            .filter_map(|app| app.name.clone())
-            .collect())
+        Ok(apps.iter().filter(|app| app.system != Some(true)).filter_map(|app| app.name.clone()).collect())
     } else if explicit.is_empty() {
         bail!("No application name specified. Use -a <name> or -A for all.");
     } else {

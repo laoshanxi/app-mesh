@@ -60,8 +60,8 @@ public:
 		bool m_corsDisabled;
 		std::set<std::string> m_csrfAllowedOrigins; // CSRF: Origins allowed for cookie-auth state-changing requests
 		std::string m_fileAllowedBaseDir;
-		int m_workerThreads;	   // 0 = derive from the CPUs the daemon may use
-		int m_transportIoThreads;  // 0 = derive from the CPUs the daemon may use
+		int m_workerThreads;      // 0 = derive from the CPUs the daemon may use
+		int m_transportIoThreads; // 0 = derive from the CPUs the daemon may use
 		int m_restListenPort;
 		int m_promListenPort;
 		std::string m_restListenAddress;
@@ -94,7 +94,8 @@ public:
 	/// nullptr on a stale add (registered app != expectedRegistration); slow
 	/// replacement and start-up run outside the mutation lock.
 	std::shared_ptr<Application> addApp(const Json::Value &jsonApp, bool persistable = true,
-		const std::shared_ptr<Application> &expectedRegistration = {}, bool enforceRegistration = false);
+										const std::shared_ptr<Application> &expectedRegistration = {},
+										bool enforceRegistration = false);
 	/// Removes an application. Returns false when `expected` no longer matches
 	/// the registered application (stale remove). The map update is atomic;
 	/// process destruction and persistence run outside the mutation lock.
@@ -151,8 +152,8 @@ public:
 	std::size_t getTransportIoThreads() const;
 	const std::string getPosixTimezone() const;
 
-	bool checkOwnerPermission(const std::string &principalId, const std::string &ownerPrincipalId,
-		int appPermission, bool requestWrite) const;
+	bool checkOwnerPermission(const std::string &principalId, const std::string &ownerPrincipalId, int appPermission,
+							  bool requestWrite) const;
 
 	void dump();
 

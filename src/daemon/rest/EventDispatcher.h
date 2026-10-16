@@ -24,10 +24,7 @@ struct ConnectionKey
 		return k;
 	}
 
-	bool operator<(const ConnectionKey &rhs) const
-	{
-		return wssSessionId < rhs.wssSessionId;
-	}
+	bool operator<(const ConnectionKey &rhs) const { return wssSessionId < rhs.wssSessionId; }
 };
 
 struct EventEnvelope
@@ -79,8 +76,8 @@ public:
 	EventDispatcher();
 	~EventDispatcher();
 
-	std::string subscribe(const std::string &appName, uint32_t eventMask,
-						  const std::string &userName, DeliveryCallback cb, ConnectionKey connKey);
+	std::string subscribe(const std::string &appName, uint32_t eventMask, const std::string &userName, DeliveryCallback cb,
+						  ConnectionKey connKey);
 
 	// Unsubscribe by ID; userName must match the subscription owner.
 	bool unsubscribe(const std::string &subId, const std::string &userName = "");

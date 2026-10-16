@@ -8,11 +8,11 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define UMDF_USING_NTSTATUS
-#include <windows.h>
 #include <ntstatus.h>
 #include <process.h>
 #include <psapi.h>
 #include <tlhelp32.h>
+#include <windows.h>
 #include <winternl.h>
 
 #pragma comment(lib, "advapi32.lib")
@@ -114,20 +114,10 @@ namespace os
 			return static_cast<uint64_t>(uli.QuadPart / 10000);
 		};
 
-		return std::make_shared<ProcessStatus>(
-			pid,
-			comm,
-			'R',
-			ppid,
-			0,
-			0,
-			fileTimeToTicks(userTime),
-			fileTimeToTicks(kernelTime),
-			0,
-			0,
-			fileTimeToTimeT(createTime),
-			static_cast<uint64_t>(memInfo.PagefileUsage),
-			static_cast<int64_t>(memInfo.WorkingSetSize / os::pagesize()));
+		return std::make_shared<ProcessStatus>(pid, comm, 'R', ppid, 0, 0, fileTimeToTicks(userTime),
+											   fileTimeToTicks(kernelTime), 0, 0, fileTimeToTimeT(createTime),
+											   static_cast<uint64_t>(memInfo.PagefileUsage),
+											   static_cast<int64_t>(memInfo.WorkingSetSize / os::pagesize()));
 	}
 
 	std::string cmdline(pid_t pid /* = 0 */)
@@ -149,7 +139,8 @@ namespace os
 
 		HMODULE hNtdll = GetNtdll();
 		using _NtQueryInformationProcess = NTSTATUS(NTAPI *)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
-		static auto NtQueryInformationProcess = reinterpret_cast<_NtQueryInformationProcess>(GetProcAddress(hNtdll, "NtQueryInformationProcess"));
+		static auto NtQueryInformationProcess =
+			reinterpret_cast<_NtQueryInformationProcess>(GetProcAddress(hNtdll, "NtQueryInformationProcess"));
 		if (!NtQueryInformationProcess)
 		{
 			LOG_WAR << fname << "GetProcAddress(NtQueryInformationProcess) failed: " << last_error_msg();
@@ -167,16 +158,19 @@ namespace os
 
 		PEB remotePeb = {};
 		SIZE_T bytesRead = 0;
-		if (!ReadProcessMemory(hProc, pbi.PebBaseAddress, &remotePeb, sizeof(remotePeb), &bytesRead) || bytesRead != sizeof(remotePeb))
+		if (!ReadProcessMemory(hProc, pbi.PebBaseAddress, &remotePeb, sizeof(remotePeb), &bytesRead) ||
+			bytesRead != sizeof(remotePeb))
 		{
 			LOG_WAR << fname << "ReadProcessMemory(PEB, pid=" << pid << ") failed: " << last_error_msg();
 			return {};
 		}
 
 		RTL_USER_PROCESS_PARAMETERS remoteUpp = {};
-		if (!ReadProcessMemory(hProc, remotePeb.ProcessParameters, &remoteUpp, sizeof(remoteUpp), &bytesRead) || bytesRead != sizeof(remoteUpp))
+		if (!ReadProcessMemory(hProc, remotePeb.ProcessParameters, &remoteUpp, sizeof(remoteUpp), &bytesRead) ||
+			bytesRead != sizeof(remoteUpp))
 		{
-			LOG_WAR << fname << "ReadProcessMemory(RTL_USER_PROCESS_PARAMETERS, pid=" << pid << ") failed: " << last_error_msg();
+			LOG_WAR << fname << "ReadProcessMemory(RTL_USER_PROCESS_PARAMETERS, pid=" << pid
+					<< ") failed: " << last_error_msg();
 			return {};
 		}
 
@@ -187,7 +181,8 @@ namespace os
 		std::wstring wbuf;
 		wbuf.resize(wcharCount);
 
-		if (!ReadProcessMemory(hProc, remoteUpp.CommandLine.Buffer, &wbuf[0], remoteUpp.CommandLine.Length, &bytesRead) || bytesRead != remoteUpp.CommandLine.Length)
+		if (!ReadProcessMemory(hProc, remoteUpp.CommandLine.Buffer, &wbuf[0], remoteUpp.CommandLine.Length, &bytesRead) ||
+			bytesRead != remoteUpp.CommandLine.Length)
 		{
 			LOG_WAR << fname << "ReadProcessMemory(command line, pid=" << pid << ") failed: " << last_error_msg();
 			return {};
@@ -257,7 +252,8 @@ namespace os
 
 		HMODULE hNtdll = GetNtdll();
 		using _NtQuerySystemInformation = NTSTATUS(NTAPI *)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
-		static auto NtQuerySystemInformation = reinterpret_cast<_NtQuerySystemInformation>(GetProcAddress(hNtdll, "NtQuerySystemInformation"));
+		static auto NtQuerySystemInformation =
+			reinterpret_cast<_NtQuerySystemInformation>(GetProcAddress(hNtdll, "NtQuerySystemInformation"));
 		if (!NtQuerySystemInformation)
 		{
 			LOG_ERR << fname << "GetProcAddress(NtQuerySystemInformation) failed: " << last_error_msg();
@@ -268,7 +264,8 @@ namespace os
 		std::vector<BYTE> buffer(bufferSize);
 		NTSTATUS ntStatus;
 		ULONG needed = 0;
-		while ((ntStatus = NtQuerySystemInformation(SystemProcessInformation, buffer.data(), bufferSize, &needed)) == STATUS_INFO_LENGTH_MISMATCH)
+		while ((ntStatus = NtQuerySystemInformation(SystemProcessInformation, buffer.data(), bufferSize, &needed)) ==
+			   STATUS_INFO_LENGTH_MISMATCH)
 		{
 			bufferSize = needed + 16 * 1024;
 			buffer.resize(bufferSize);
@@ -307,7 +304,8 @@ namespace os
 				if (spi->ImageName.Buffer != nullptr && spi->ImageName.Length > 0)
 				{
 					const int wlen = static_cast<int>(spi->ImageName.Length / sizeof(wchar_t));
-					const int need8 = WideCharToMultiByte(CP_UTF8, 0, spi->ImageName.Buffer, wlen, nullptr, 0, nullptr, nullptr);
+					const int need8 =
+						WideCharToMultiByte(CP_UTF8, 0, spi->ImageName.Buffer, wlen, nullptr, 0, nullptr, nullptr);
 					if (need8 > 0)
 					{
 						comm.resize(need8);

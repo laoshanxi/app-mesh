@@ -1,15 +1,15 @@
 // src/daemon/rest/RestBase.cpp
-#include <functional>
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <set>
 
 #include <boost/algorithm/string_regex.hpp>
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"
-#include "../application/Application.h"
 #include "../application/AppUtils.h"
+#include "../application/Application.h"
 #include "../security/InternalCapability.h"
 #include "../security/Security.h"
 #include "HttpRequest.h"
@@ -21,29 +21,20 @@ namespace
 
 	bool hasWorkflowStepPrefix(const std::string &appName)
 	{
-		return appName.compare(0, std::char_traits<char>::length(WORKFLOW_STEP_PREFIX),
-			WORKFLOW_STEP_PREFIX) == 0;
+		return appName.compare(0, std::char_traits<char>::length(WORKFLOW_STEP_PREFIX), WORKFLOW_STEP_PREFIX) == 0;
 	}
 
-	void requireMatchingWorkflowStepMetadata(const Json::Value &definition,
-		const InternalCapability::Claims &claims)
+	void requireMatchingWorkflowStepMetadata(const Json::Value &definition, const InternalCapability::Claims &claims)
 	{
-		if (!definition.isMember(JSON_KEY_APP_metadata) ||
-			!definition[JSON_KEY_APP_metadata].isObject())
+		if (!definition.isMember(JSON_KEY_APP_metadata) || !definition[JSON_KEY_APP_metadata].isObject())
 			throw AuthorizationException("workflow temporary application metadata is missing");
 		const auto &metadata = definition[JSON_KEY_APP_metadata];
 		auto matches = [&metadata](const char *field, const std::string &expected)
+		{ return metadata.isMember(field) && metadata[field].isString() && metadata[field].asString() == expected; };
+		if (!matches("type", "workflow-step") || !matches("workflow_id", claims.workflowId) ||
+			!matches("run_id", claims.runId) || !matches("process_uuid", claims.processUuid))
 		{
-			return metadata.isMember(field) && metadata[field].isString() &&
-				metadata[field].asString() == expected;
-		};
-		if (!matches("type", "workflow-step") ||
-			!matches("workflow_id", claims.workflowId) ||
-			!matches("run_id", claims.runId) ||
-			!matches("process_uuid", claims.processUuid))
-		{
-			throw AuthorizationException(
-				"workflow temporary application is not bound to this run capability");
+			throw AuthorizationException("workflow temporary application is not bound to this run capability");
 		}
 	}
 
@@ -51,8 +42,7 @@ namespace
 	{
 		constexpr const char *appPrefix = "/appmesh/app/";
 		const auto prefixLength = std::char_traits<char>::length(appPrefix);
-		if (message.m_relative_uri.size() <= prefixLength ||
-			message.m_relative_uri.compare(0, prefixLength, appPrefix) != 0)
+		if (message.m_relative_uri.size() <= prefixLength || message.m_relative_uri.compare(0, prefixLength, appPrefix) != 0)
 			return {};
 
 		auto resource = message.m_relative_uri.substr(prefixLength);
@@ -66,26 +56,22 @@ namespace
 				break;
 			}
 		}
-				if (resource.find('/') != std::string::npos)
+		if (resource.find('/') != std::string::npos)
 			return std::string();
 		return resource;
 	}
 
-	void validateRunCapabilityTarget(const std::shared_ptr<HttpRequest> &message,
-		const InternalCapability::Claims &claims)
+	void validateRunCapabilityTarget(const std::shared_ptr<HttpRequest> &message, const InternalCapability::Claims &claims)
 	{
 		auto config = Configuration::instance();
-		if (message->m_method == web::http::methods::POST &&
-			message->m_relative_uri == "/appmesh/app/run")
+		if (message->m_method == web::http::methods::POST && message->m_relative_uri == "/appmesh/app/run")
 		{
 			const auto definition = message->extractJson();
 			if (!definition.isObject())
 				throw std::invalid_argument("workflow application run request must be an object");
-			const auto suppliedName = Utility::stdStringTrim(
-				GET_JSON_STR_VALUE(definition, JSON_KEY_APP_name));
+			const auto suppliedName = Utility::stdStringTrim(GET_JSON_STR_VALUE(definition, JSON_KEY_APP_name));
 			if (suppliedName.empty())
-				throw AuthorizationException(
-					"workflow capability may create only explicitly named temporary applications");
+				throw AuthorizationException("workflow capability may create only explicitly named temporary applications");
 			const auto appName = normalizeAppName(suppliedName);
 			const auto existing = config->getApp(appName, false);
 			if (existing)
@@ -97,8 +83,7 @@ namespace
 				return;
 			}
 			if (!hasWorkflowStepPrefix(appName))
-				throw AuthorizationException(
-					"workflow capability may create applications only in the wf-cmd namespace");
+				throw AuthorizationException("workflow capability may create applications only in the wf-cmd namespace");
 			requireMatchingWorkflowStepMetadata(definition, claims);
 			return;
 		}
@@ -115,8 +100,7 @@ namespace
 	std::set<std::string> capabilityOperationsForRequest(const HttpRequest &message)
 	{
 		const auto &path = message.m_relative_uri;
-		if (message.m_method == web::http::methods::GET &&
-			path == "/appmesh/internal/workflow/registry")
+		if (message.m_method == web::http::methods::GET && path == "/appmesh/internal/workflow/registry")
 			return {PERMISSION_KEY_view_all_app};
 		if (message.m_method == web::http::methods::POST && path == "/appmesh/app/run")
 			return {PERMISSION_KEY_run_app_async};
@@ -137,11 +121,10 @@ namespace
 			{
 				const auto suffixLength = std::char_traits<char>::length(suffix);
 				return resource.size() > suffixLength &&
-					resource.compare(resource.size() - suffixLength, suffixLength, suffix) == 0 &&
-					resource.substr(0, resource.size() - suffixLength).find('/') == std::string::npos;
+					   resource.compare(resource.size() - suffixLength, suffixLength, suffix) == 0 &&
+					   resource.substr(0, resource.size() - suffixLength).find('/') == std::string::npos;
 			};
-			if (message.m_method == web::http::methods::GET &&
-				isSingleResourceRoute("/output"))
+			if (message.m_method == web::http::methods::GET && isSingleResourceRoute("/output"))
 				return {PERMISSION_KEY_view_app_output};
 			if ((message.m_method == web::http::methods::POST || message.m_method == web::http::methods::DEL) &&
 				isSingleResourceRoute("/subscribe"))
@@ -159,8 +142,8 @@ namespace
 		return {};
 	}
 
-	std::string validateInternalCapability(const std::shared_ptr<HttpRequest> &message,
-		const std::string &token, const std::string &permission)
+	std::string validateInternalCapability(const std::shared_ptr<HttpRequest> &message, const std::string &token,
+										   const std::string &permission)
 	{
 		// The peer address is captured from the accepted socket, never from
 		// request headers/body, so only a local loopback transport qualifies.
@@ -168,8 +151,7 @@ namespace
 			throw std::domain_error("internal capabilities are accepted only over local loopback transports");
 
 		const auto routeOperations = capabilityOperationsForRequest(*message);
-		if (routeOperations.empty() ||
-			(!permission.empty() && routeOperations.count(permission) == 0))
+		if (routeOperations.empty() || (!permission.empty() && routeOperations.count(permission) == 0))
 			throw std::domain_error("internal capability is not accepted for this route");
 		// Empty permission checks are owner/access checks performed after the route's
 		// primary RBAC check. Requiring one route operation again keeps such checks
@@ -192,8 +174,8 @@ namespace
 
 		// Re-check the Engine-owned workflow registration on every operation so
 		// ownership changes invalidate an already-issued run capability.
-		auto workflow = Configuration::instance()->getApp(
-			std::string(WORKFLOW_DEFINITION_PREFIX) + claims.workflowId, false);
+		auto workflow =
+			Configuration::instance()->getApp(std::string(WORKFLOW_DEFINITION_PREFIX) + claims.workflowId, false);
 		if (!workflow || workflow->getOwnerPrincipalId() != claims.ownerPrincipalId)
 			throw AuthorizationException("workflow capability owner binding is no longer current");
 
@@ -207,176 +189,155 @@ namespace
 	}
 }
 
-RestBase::RestBase()
+RestBase::RestBase() {}
+
+RestBase::~RestBase() {}
+
+void RestBase::handle_get(const std::shared_ptr<HttpRequest> &message) { handleRest(message, m_restGetFunctions); }
+
+void RestBase::handle_put(const std::shared_ptr<HttpRequest> &message) { handleRest(message, m_restPutFunctions); }
+
+void RestBase::handle_post(const std::shared_ptr<HttpRequest> &message) { handleRest(message, m_restPostFunctions); }
+
+void RestBase::handle_delete(const std::shared_ptr<HttpRequest> &message) { handleRest(message, m_restDelFunctions); }
+
+void RestBase::handle_options(const std::shared_ptr<HttpRequest> &message) { message->reply(web::http::status_codes::OK); }
+
+void RestBase::handle_head(const std::shared_ptr<HttpRequest> &message) { message->reply(web::http::status_codes::OK); }
+
+void RestBase::handleRest(
+	const std::shared_ptr<HttpRequest> &message,
+	const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &restFunctions)
 {
+	const static char fname[] = "RestBase::handleRest() ";
+	REST_INFO_PRINT;
+
+	const auto path = Utility::stringReplace(message->m_relative_uri, "//", "/");
+
+	// Find matching REST function
+	auto it =
+		std::find_if(restFunctions.begin(), restFunctions.end(),
+					 [&](const std::pair<const std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &kvp)
+					 { return path == kvp.first || boost::regex_match(path, m_restRegexCache.at(kvp.first)); });
+
+	if (it == restFunctions.end())
+	{
+		if (message->m_method == web::http::methods::OPTIONS)
+		{
+			LOG_DBG << fname << "204 NoContent " << message->m_method << ":" << path;
+			message->reply(web::http::status_codes::NoContent);
+			return;
+		}
+		LOG_WAR << fname << "404 NotFound " << message->m_method << ":" << path;
+		message->reply(web::http::status_codes::NotFound,
+					   Utility::text2json("Path not found " + message->m_method + ":" + path));
+		return;
+	}
+
+	// TODO: those exception are well designed for different usage that reflect Client result
+	try
+	{
+		it->second(message);
+	}
+	catch (const NotFoundException &e)
+	{
+		LOG_WAR << fname << "404 NotFound " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::NotFound, Utility::text2json(e.what()));
+	}
+	catch (const AuthenticationUnavailableException &e)
+	{
+		LOG_WAR << fname << "503 ServiceUnavailable " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+	}
+	catch (const AuthorizationException &e)
+	{
+		LOG_WAR << fname << "403 Forbidden " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json(e.what()));
+	}
+	catch (const std::domain_error &e)
+	{
+		LOG_WAR << fname << "401 Unauthorized " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
+					   {{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+	}
+	catch (const Json::Exception &e)
+	{
+		// Client JSON fault: unparseable body or wrong-typed/missing fields
+		LOG_WAR << fname << "400 JsonError " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json(e.what()));
+	}
+	catch (const std::invalid_argument &e)
+	{
+		// Input issue: invalid_argument -> 400
+		LOG_WAR << fname << "400 BadRequest " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json(e.what()));
+	}
+	catch (const std::runtime_error &e)
+	{
+		// Logic issue: runtime_error -> 412
+		LOG_WAR << fname << "412 RuntimeError " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::PreconditionFailed, Utility::text2json(e.what()));
+	}
+	catch (const std::exception &e)
+	{
+		// Others: Server issue
+		LOG_ERR << fname << "500 InternalServerError " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::InternalError, Utility::text2json("Internal server error"));
+	}
+	catch (...)
+	{
+		// Others: Server issue
+		LOG_ERR << fname << "500 InternalServerError " << message->m_method << ":" << path << " - Unknown exception";
+		message->reply(web::http::status_codes::InternalError, Utility::text2json("Unknown exception"));
+	}
 }
 
-RestBase::~RestBase()
+void RestBase::bindRestMethod(const web::http::method &method, const std::string &path,
+							  std::function<void(const std::shared_ptr<HttpRequest> &)> func)
 {
-}
+	const static char fname[] = "RestBase::bindRest() ";
 
-void RestBase::handle_get(const std::shared_ptr<HttpRequest> &message)
-{
-    handleRest(message, m_restGetFunctions);
-}
+	LOG_DBG << fname << "bind " << method << " for " << path;
 
-void RestBase::handle_put(const std::shared_ptr<HttpRequest> &message)
-{
-    handleRest(message, m_restPutFunctions);
-}
+	// compile the route pattern once; request paths only match against it
+	m_restRegexCache[path] = boost::regex(path);
 
-void RestBase::handle_post(const std::shared_ptr<HttpRequest> &message)
-{
-    handleRest(message, m_restPostFunctions);
-}
-
-void RestBase::handle_delete(const std::shared_ptr<HttpRequest> &message)
-{
-    handleRest(message, m_restDelFunctions);
-}
-
-void RestBase::handle_options(const std::shared_ptr<HttpRequest> &message)
-{
-    message->reply(web::http::status_codes::OK);
-}
-
-void RestBase::handle_head(const std::shared_ptr<HttpRequest> &message)
-{
-    message->reply(web::http::status_codes::OK);
-}
-
-void RestBase::handleRest(const std::shared_ptr<HttpRequest> &message, const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &restFunctions)
-{
-    const static char fname[] = "RestBase::handleRest() ";
-    REST_INFO_PRINT;
-
-    const auto path = Utility::stringReplace(message->m_relative_uri, "//", "/");
-
-    // Find matching REST function
-    auto it = std::find_if(
-        restFunctions.begin(), restFunctions.end(),
-        [&](const std::pair<const std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> &kvp)
-        {
-            return path == kvp.first || boost::regex_match(path, m_restRegexCache.at(kvp.first));
-        });
-
-    if (it == restFunctions.end())
-    {
-        if (message->m_method == web::http::methods::OPTIONS)
-        {
-            LOG_DBG << fname << "204 NoContent " << message->m_method << ":" << path;
-            message->reply(web::http::status_codes::NoContent);
-            return;
-        }
-        LOG_WAR << fname << "404 NotFound " << message->m_method << ":" << path;
-        message->reply(web::http::status_codes::NotFound, Utility::text2json("Path not found " + message->m_method + ":" + path));
-        return;
-    }
-
-    // TODO: those exception are well designed for different usage that reflect Client result
-    try
-    {
-        it->second(message);
-    }
-    catch (const NotFoundException &e)
-    {
-        LOG_WAR << fname << "404 NotFound " << message->m_method << ":" << path << " - " << e.what();
-        message->reply(web::http::status_codes::NotFound, Utility::text2json(e.what()));
-    }
-    catch (const AuthenticationUnavailableException &e)
-    {
-        LOG_WAR << fname << "503 ServiceUnavailable " << message->m_method << ":" << path << " - " << e.what();
-        message->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
-    }
-    catch (const AuthorizationException &e)
-    {
-        LOG_WAR << fname << "403 Forbidden " << message->m_method << ":" << path << " - " << e.what();
-        message->reply(web::http::status_codes::Forbidden, Utility::text2json(e.what()));
-    }
-    catch (const std::domain_error &e)
-    {
-        LOG_WAR << fname << "401 Unauthorized " << message->m_method << ":" << path << " - " << e.what();
-        message->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
-            {{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
-    }
-    catch (const Json::Exception &e)
-    {
-        // Client JSON fault: unparseable body or wrong-typed/missing fields
-        LOG_WAR << fname << "400 JsonError " << message->m_method << ":" << path << " - " << e.what();
-        message->reply(web::http::status_codes::BadRequest, Utility::text2json(e.what()));
-    }
-    catch (const std::invalid_argument &e)
-    {
-        // Input issue: invalid_argument -> 400
-        LOG_WAR << fname << "400 BadRequest " << message->m_method << ":" << path << " - " << e.what();
-        message->reply(web::http::status_codes::BadRequest, Utility::text2json(e.what()));
-    }
-    catch (const std::runtime_error &e)
-    {
-        // Logic issue: runtime_error -> 412
-        LOG_WAR << fname << "412 RuntimeError " << message->m_method << ":" << path << " - " << e.what();
-        message->reply(web::http::status_codes::PreconditionFailed, Utility::text2json(e.what()));
-    }
-    catch (const std::exception &e)
-    {
-        // Others: Server issue
-        LOG_ERR << fname << "500 InternalServerError " << message->m_method << ":" << path << " - " << e.what();
-        message->reply(web::http::status_codes::InternalError, Utility::text2json("Internal server error"));
-    }
-    catch (...)
-    {
-        // Others: Server issue
-        LOG_ERR << fname << "500 InternalServerError " << message->m_method << ":" << path << " - Unknown exception";
-        message->reply(web::http::status_codes::InternalError, Utility::text2json("Unknown exception"));
-    }
-}
-
-void RestBase::bindRestMethod(const web::http::method &method, const std::string &path, std::function<void(const std::shared_ptr<HttpRequest> &)> func)
-{
-    const static char fname[] = "RestBase::bindRest() ";
-
-    LOG_DBG << fname << "bind " << method << " for " << path;
-
-    // compile the route pattern once; request paths only match against it
-    m_restRegexCache[path] = boost::regex(path);
-
-    // bind to map
-    if (method == web::http::methods::GET)
-        m_restGetFunctions[path] = std::move(func);
-    else if (method == web::http::methods::PUT)
-        m_restPutFunctions[path] = std::move(func);
-    else if (method == web::http::methods::POST)
-        m_restPostFunctions[path] = std::move(func);
-    else if (method == web::http::methods::DEL)
-        m_restDelFunctions[path] = std::move(func);
-    else
-        LOG_ERR << fname << "Method <" << method << "> not supported for path <" << path << ">";
+	// bind to map
+	if (method == web::http::methods::GET)
+		m_restGetFunctions[path] = std::move(func);
+	else if (method == web::http::methods::PUT)
+		m_restPutFunctions[path] = std::move(func);
+	else if (method == web::http::methods::POST)
+		m_restPostFunctions[path] = std::move(func);
+	else if (method == web::http::methods::DEL)
+		m_restDelFunctions[path] = std::move(func);
+	else
+		LOG_ERR << fname << "Method <" << method << "> not supported for path <" << path << ">";
 }
 
 std::string RestBase::getBearerToken(const std::shared_ptr<HttpRequest> &message)
 {
-    if (!message->m_headers.count(HTTP_HEADER_JWT_Authorization))
-        throw std::domain_error("No authentication token provided");
+	if (!message->m_headers.count(HTTP_HEADER_JWT_Authorization))
+		throw std::domain_error("No authentication token provided");
 
-    const auto value = Utility::stdStringTrim(
-        message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
-    const auto separator = value.find(' ');
-    if (separator == std::string::npos)
-        throw std::domain_error("Authorization header must use the Bearer scheme");
-    auto scheme = value.substr(0, separator);
-    std::transform(scheme.begin(), scheme.end(), scheme.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (scheme != "bearer")
-        throw std::domain_error("Authorization header must use the Bearer scheme");
-    const auto token = Utility::stdStringTrim(value.substr(separator + 1));
-    if (token.empty() || token.find_first_of(" \t\r\n") != std::string::npos)
-        throw std::domain_error("Bearer token is empty or malformed");
-    return token;
+	const auto value = Utility::stdStringTrim(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
+	const auto separator = value.find(' ');
+	if (separator == std::string::npos)
+		throw std::domain_error("Authorization header must use the Bearer scheme");
+	auto scheme = value.substr(0, separator);
+	std::transform(scheme.begin(), scheme.end(), scheme.begin(),
+				   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	if (scheme != "bearer")
+		throw std::domain_error("Authorization header must use the Bearer scheme");
+	const auto token = Utility::stdStringTrim(value.substr(separator + 1));
+	if (token.empty() || token.find_first_of(" \t\r\n") != std::string::npos)
+		throw std::domain_error("Bearer token is empty or malformed");
+	return token;
 }
 
 std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission)
 {
-    const static char fname[] = "RestBase::permissionCheck() ";
+	const static char fname[] = "RestBase::permissionCheck() ";
 
 	// A user WebSocket is authenticated once during upgrade. Worker::process has
 	// already rejected any frame that tried to change that identity. Re-check
@@ -387,23 +348,22 @@ std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &messag
 		return message->transportPrincipalId();
 	}
 
-    const auto token = getBearerToken(message);
-	if (token.compare(0, std::char_traits<char>::length(INTERNAL_CAPABILITY_PREFIX),
-			INTERNAL_CAPABILITY_PREFIX) == 0)
+	const auto token = getBearerToken(message);
+	if (token.compare(0, std::char_traits<char>::length(INTERNAL_CAPABILITY_PREFIX), INTERNAL_CAPABILITY_PREFIX) == 0)
 	{
 		return validateInternalCapability(message, token, permission);
 	}
 
-    // REST and WebSocket side channels share the exact same Bearer parser and
-    // OIDC authentication boundary.
-    const auto tokenValidationResult = Security::authenticateBearerAuthorization(
-        message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
+	// REST and WebSocket side channels share the exact same Bearer parser and
+	// OIDC authentication boundary.
+	const auto tokenValidationResult =
+		Security::authenticateBearerAuthorization(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
 
-    const auto &principalId = tokenValidationResult.id();
+	const auto &principalId = tokenValidationResult.id();
 
 	Security::requirePermission(principalId, permission);
 
-    LOG_DBG << fname << "Authentication successful for client: " << message->m_remote_address
-            << ", principal: " << principalId << ", permission: " << (permission.empty() ? "none" : permission);
-    return principalId;
+	LOG_DBG << fname << "Authentication successful for client: " << message->m_remote_address
+			<< ", principal: " << principalId << ", permission: " << (permission.empty() ? "none" : permission);
+	return principalId;
 }

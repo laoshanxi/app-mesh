@@ -1,11 +1,11 @@
 #include "Principal.h"
 
-#include "../../common/Utility.h"
-
 #include <stdexcept>
 #include <utility>
 
 #include <openssl/evp.h>
+
+#include "../../common/Utility.h"
 
 Principal::Principal(std::string issuer, std::string subject, Kind kind)
 	: m_id(stableId(issuer, subject)), m_issuer(std::move(issuer)), m_subject(std::move(subject)), m_kind(kind)

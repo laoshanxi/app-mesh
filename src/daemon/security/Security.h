@@ -1,8 +1,8 @@
 #pragma once
 
+#include <json/json.h>
 #include <memory>
 #include <mutex>
-#include <json/json.h>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -32,13 +32,11 @@ public:
 	virtual void initialize() = 0;
 	virtual void prewarmAuthentication() = 0;
 	virtual Principal authenticate(const std::string &token) = 0;
-	virtual std::shared_ptr<AuthorizationPrincipal> enrollFirstAdmin(
-		const std::string &bearerToken) = 0;
+	virtual std::shared_ptr<AuthorizationPrincipal> enrollFirstAdmin(const std::string &bearerToken) = 0;
 	/// Enroll the principal pinned by the transport (verified at the WebSocket
 	/// upgrade, when the bearer was presented and the store record resolved).
 	/// Frames on that transport never re-present the Authorization header.
-	virtual std::shared_ptr<AuthorizationPrincipal> enrollFirstAdminPinned(
-		const std::string &principalId) = 0;
+	virtual std::shared_ptr<AuthorizationPrincipal> enrollFirstAdminPinned(const std::string &principalId) = 0;
 	virtual std::shared_ptr<AuthorizationPrincipal> principal(const std::string &principalId) const = 0;
 	virtual std::set<std::string> permissions(const std::string &principalId) const = 0;
 	virtual std::set<std::string> allPermissions() const = 0;

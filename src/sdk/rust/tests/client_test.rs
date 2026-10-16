@@ -3,19 +3,14 @@
 #[cfg(test)]
 mod tests {
     use appmesh::{
-        AppMeshClient, Application, ClientBuilder, OAuthClient, StaticAccessTokenProvider,
-        TokenSetProviderOptions,
+        AppMeshClient, Application, ClientBuilder, OAuthClient, StaticAccessTokenProvider, TokenSetProviderOptions,
     };
     use mockito::{Matcher, Server, ServerGuard};
     use serde_json::json;
     use std::sync::Arc;
 
     fn create_test_client(server: &ServerGuard) -> Arc<AppMeshClient> {
-        ClientBuilder::new()
-            .url(server.url())
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap()
+        ClientBuilder::new().url(server.url()).danger_accept_invalid_certs(true).build().unwrap()
     }
 
     #[tokio::test]
@@ -105,13 +100,8 @@ mod tests {
         // StaticAccessTokenProvider keeps can_refresh=false: the 401 surfaces
         // unchanged and the request is not replayed.
         let mut server = Server::new_async().await;
-        let rejected = server
-            .mock("POST", "/appmesh/config")
-            .with_status(401)
-            .with_body("unauthorized")
-            .expect(1)
-            .create_async()
-            .await;
+        let rejected =
+            server.mock("POST", "/appmesh/config").with_status(401).with_body("unauthorized").expect(1).create_async().await;
 
         let client = create_test_client(&server);
         client.set_token_provider(Some(Arc::new(StaticAccessTokenProvider::new("static-token").unwrap())));
@@ -193,13 +183,8 @@ mod tests {
             .create_async()
             .await;
 
-        let provider = OAuthClient::from_token_set(
-            token_url,
-            "old-token",
-            "refresh-1",
-            TokenSetProviderOptions::default(),
-        )
-        .unwrap();
+        let provider =
+            OAuthClient::from_token_set(token_url, "old-token", "refresh-1", TokenSetProviderOptions::default()).unwrap();
         let client = create_test_client(&server);
         client.set_token_provider(Some(Arc::new(provider)));
 
@@ -259,12 +244,7 @@ mod tests {
             "command": "echo 'test'"
         });
 
-        server
-            .mock("PUT", "/appmesh/app/test-app")
-            .with_status(200)
-            .with_body(app_json.to_string())
-            .create_async()
-            .await;
+        server.mock("PUT", "/appmesh/app/test-app").with_status(200).with_body(app_json.to_string()).create_async().await;
 
         let client = create_test_client(&server);
 
@@ -285,10 +265,7 @@ mod tests {
 
         let client = create_test_client(&server);
 
-        let app = Application::builder("test-app")
-            .command("echo 'test'")
-            .shell(true)
-            .build();
+        let app = Application::builder("test-app").command("echo 'test'").shell(true).build();
         let result = client.add_app(&app, None).await.unwrap();
         assert_eq!(result.name, Some("test-app".to_string()));
     }
@@ -479,10 +456,8 @@ mod tests {
         server.mock("DELETE", "/appmesh/app/waitapp").with_status(200).create_async().await;
 
         let client = create_test_client(&server);
-        let run = client
-            .run_app_async(&Application::builder("waitapp").command("echo hello").build(), 30, 60)
-            .await
-            .unwrap();
+        let run =
+            client.run_app_async(&Application::builder("waitapp").command("echo hello").build(), 30, 60).await.unwrap();
 
         let code = client.wait_for_async_run(&run, None, 30).await.unwrap();
         // A cursor reset would send poll 3 without stdout_position, miss the
@@ -500,12 +475,7 @@ mod tests {
             .with_status(200)
             .create_async()
             .await;
-        server
-            .mock("GET", "/appmesh/labels")
-            .with_status(200)
-            .with_body(r#"{"env": "prod"}"#)
-            .create_async()
-            .await;
+        server.mock("GET", "/appmesh/labels").with_status(200).with_body(r#"{"env": "prod"}"#).create_async().await;
         server.mock("DELETE", "/appmesh/label/env").with_status(200).create_async().await;
 
         let client = create_test_client(&server);
@@ -578,10 +548,7 @@ mod tests {
         let client = create_test_client(&server);
 
         let err = client.subscribe("some-app", None, None).await.expect_err("HTTP subscribe must fail");
-        assert!(
-            matches!(err, appmesh::AppMeshError::UnsupportedFeature { .. }),
-            "expected UnsupportedFeature, got: {err}"
-        );
+        assert!(matches!(err, appmesh::AppMeshError::UnsupportedFeature { .. }), "expected UnsupportedFeature, got: {err}");
     }
 
     #[tokio::test]
@@ -641,18 +608,14 @@ mod integration {
     //   cargo test -- --ignored
     use appmesh::{AppMeshClient, Application, ClientBuilder};
     use std::env;
+    use std::io::Write;
     use std::sync::Arc;
     use tempfile::NamedTempFile;
-    use std::io::Write;
 
     const SERVER_URL: &str = "https://127.0.0.1:6060";
     /// Build a client pointed at the real server with a caller-obtained Dex bearer.
     async fn setup_client() -> Arc<AppMeshClient> {
-        let client = ClientBuilder::new()
-            .url(SERVER_URL)
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
+        let client = ClientBuilder::new().url(SERVER_URL).danger_accept_invalid_certs(true).build().unwrap();
         client.set_token(&env::var("APPMESH_BEARER_TOKEN").expect("APPMESH_BEARER_TOKEN is required"));
         client
     }
@@ -668,10 +631,7 @@ mod integration {
         let app_name = "rust-integ-app-mgmt";
 
         // Create a long-lived test app (keep-alive so it stays registered).
-        let app = Application::builder(app_name)
-            .command("sleep 300")
-            .shell(true)
-            .build();
+        let app = Application::builder(app_name).command("sleep 300").shell(true).build();
         let created = client.add_app(&app, None).await.expect("add_app failed");
         assert_eq!(created.name.as_deref(), Some(app_name));
 
@@ -770,24 +730,15 @@ mod integration {
         let client = setup_client().await;
 
         // Fire an async run for a quick command.
-        let app = Application::builder("_integ_async_run_")
-            .command("echo async-hello")
-            .shell(true)
-            .build();
+        let app = Application::builder("_integ_async_run_").command("echo async-hello").shell(true).build();
 
-        let run_handle = client
-            .run_app_async(&app, 30, 60)
-            .await
-            .expect("run_app_async failed");
+        let run_handle = client.run_app_async(&app, 30, 60).await.expect("run_app_async failed");
 
         assert!(!run_handle.app_name.is_empty(), "app_name must not be empty");
         assert!(!run_handle.proc_uid.is_empty(), "proc_uid must not be empty");
 
         // Wait for the command to finish (30 s budget, no stdout handler).
-        let exit_code = run_handle
-            .wait(None, 30)
-            .await
-            .expect("AppRun::wait failed");
+        let exit_code = run_handle.wait(None, 30).await.expect("AppRun::wait failed");
 
         // echo exits 0.
         assert_eq!(exit_code, Some(0), "async run of 'echo' should exit 0");
@@ -811,31 +762,19 @@ mod integration {
         // Choose a unique remote path to avoid "file already exist" errors.
         let remote_path = format!(
             "/tmp/appmesh_rust_integ_{}.txt",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
         );
         let remote_path = remote_path.as_str();
 
         // Upload.
-        client
-            .upload_file(upload_src.path().to_str().unwrap(), remote_path, false)
-            .await
-            .expect("upload_file failed");
+        client.upload_file(upload_src.path().to_str().unwrap(), remote_path, false).await.expect("upload_file failed");
 
         // Download to a fresh temp file.
         let download_dst = NamedTempFile::new().expect("failed to create temp download file");
-        client
-            .download_file(remote_path, download_dst.path().to_str().unwrap(), false)
-            .await
-            .expect("download_file failed");
+        client.download_file(remote_path, download_dst.path().to_str().unwrap(), false).await.expect("download_file failed");
 
         // Verify the downloaded content matches what we uploaded.
         let downloaded = std::fs::read(download_dst.path()).expect("failed to read downloaded file");
-        assert_eq!(
-            downloaded, content,
-            "downloaded content does not match uploaded content"
-        );
+        assert_eq!(downloaded, content, "downloaded content does not match uploaded content");
     }
 }

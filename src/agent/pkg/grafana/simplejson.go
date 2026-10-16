@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/utils"
 )
 
@@ -52,7 +53,8 @@ func (h *GrafanaHandler) handleRestRouter(router *mux.Router) {
 	router.HandleFunc("/appmesh_grafana/tag-values", (h.HandleTagValues)).Methods(http.MethodPost)
 
 	// You can also add CORS for OPTIONS requests if needed:
-	//router.HandleFunc("/appmesh_grafana", utils.Cors(utils.DefaultCORSConfig)(h.HandleOptions)).Methods(http.MethodOptions)
+	// router.HandleFunc("/appmesh_grafana",
+	// utils.Cors(utils.DefaultCORSConfig)(h.HandleOptions)).Methods(http.MethodOptions)
 }
 
 // WithSource will attempt to use the datasource provided as
@@ -468,7 +470,8 @@ type simpleJSONTableData struct {
 	Rows    []simpleJSONTableRow    `json:"rows"`
 }
 
-func (h *GrafanaHandler) jsonTableQuery(ctx context.Context, req simpleJSONQuery, target simpleJSONTarget) (interface{}, error) {
+func (h *GrafanaHandler) jsonTableQuery(ctx context.Context, req simpleJSONQuery, target simpleJSONTarget) (interface{},
+	error) {
 	resp, err := h.tableQuery.GrafanaQueryTable(
 		ctx,
 		target.Target,

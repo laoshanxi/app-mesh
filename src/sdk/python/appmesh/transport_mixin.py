@@ -225,7 +225,8 @@ class TransportClientMixin:
             self._demuxer.register_event_callback(result_app.subscription_id, callback)
         return result_app
 
-    def subscribe(self, app_name: str, events: Optional[list] = None, callback: Optional[EventCallback] = None) -> SubscriptionResult:
+    def subscribe(self, app_name: str, events: Optional[list] = None,
+        callback: Optional[EventCallback] = None) -> SubscriptionResult:
         """Subscribe to app events over the transport connection.
 
         Args:
@@ -350,7 +351,8 @@ class TransportClientMixin:
                 try:
                     exit_code = int(event.data.get("exit_code"))
                 except (TypeError, ValueError):
-                    failure = AppMeshConnectionError(f"EXIT event for '{run.app_name}' carried an unparseable exit_code: {event.data.get('exit_code')!r}")
+                    failure = AppMeshConnectionError(f"EXIT event for '{run.app_name}' carried an unparseable exit_code: "
+                        "{event.data.get('exit_code')!r}")
                 done.set()
             elif event.event_type == "REMOVED":
                 if exit_code is None and failure is None:

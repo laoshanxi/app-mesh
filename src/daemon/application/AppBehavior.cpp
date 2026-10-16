@@ -2,105 +2,102 @@
 #include "AppBehavior.h"
 #include "../../common/Utility.h"
 
-AppBehavior::AppBehavior()
-    : m_exitEvent(AppBehavior::Action::STANDBY)
-{
-}
+AppBehavior::AppBehavior() : m_exitEvent(AppBehavior::Action::STANDBY) {}
 
 void AppBehavior::behaviorInit(Json::Value config)
 {
-    const static char fname[] = "AppBehavior::behaviorInit() ";
+	const static char fname[] = "AppBehavior::behaviorInit() ";
 
-    m_exitEvent = AppBehavior::Action::STANDBY;
-    m_exitCodeEvent.clear();
-    if (!config.isNull())
-    {
-        auto exit = GET_JSON_STR_VALUE(config, JSON_KEY_APP_behavior_exit);
-        if (exit.length())
-        {
-            m_exitEvent = str2action(exit);
-        }
-        if (HAS_JSON_FIELD(config, JSON_KEY_APP_behavior_exit_code_actions))
-        {
-            auto jsonObj = config[JSON_KEY_APP_behavior_exit_code_actions];
-            for (const auto &exitCode : jsonObj.getMemberNames())
-            {
-                if (Utility::isNumber(exitCode))
-                {
-                    m_exitCodeEvent[std::atoi(exitCode.c_str())] = str2action(jsonObj[exitCode].asString());
-                }
-                else
-                {
-                    LOG_WAR << fname << "Invalid behavior exit code <" << exitCode << ">, expected a numeric exit code";
-                    throw std::invalid_argument("invalid exit_code_actions code");
-                }
-            }
-        }
-    }
+	m_exitEvent = AppBehavior::Action::STANDBY;
+	m_exitCodeEvent.clear();
+	if (!config.isNull())
+	{
+		auto exit = GET_JSON_STR_VALUE(config, JSON_KEY_APP_behavior_exit);
+		if (exit.length())
+		{
+			m_exitEvent = str2action(exit);
+		}
+		if (HAS_JSON_FIELD(config, JSON_KEY_APP_behavior_exit_code_actions))
+		{
+			auto jsonObj = config[JSON_KEY_APP_behavior_exit_code_actions];
+			for (const auto &exitCode : jsonObj.getMemberNames())
+			{
+				if (Utility::isNumber(exitCode))
+				{
+					m_exitCodeEvent[std::atoi(exitCode.c_str())] = str2action(jsonObj[exitCode].asString());
+				}
+				else
+				{
+					LOG_WAR << fname << "Invalid behavior exit code <" << exitCode << ">, expected a numeric exit code";
+					throw std::invalid_argument("invalid exit_code_actions code");
+				}
+			}
+		}
+	}
 }
 
 Json::Value AppBehavior::behaviorAsJson()
 {
-    Json::Value result;
-    result[JSON_KEY_APP_behavior_exit] = std::string(action2str(m_exitEvent));
-    if (m_exitCodeEvent.size())
-    {
-        Json::Value controls;
-        for (const auto &[code, action] : m_exitCodeEvent)
-        {
-            controls[std::to_string(code)] = std::string(action2str(action));
-        }
-        result[JSON_KEY_APP_behavior_exit_code_actions] = std::move(controls);
-    }
-    return result;
+	Json::Value result;
+	result[JSON_KEY_APP_behavior_exit] = std::string(action2str(m_exitEvent));
+	if (m_exitCodeEvent.size())
+	{
+		Json::Value controls;
+		for (const auto &[code, action] : m_exitCodeEvent)
+		{
+			controls[std::to_string(code)] = std::string(action2str(action));
+		}
+		result[JSON_KEY_APP_behavior_exit_code_actions] = std::move(controls);
+	}
+	return result;
 }
 
-AppBehavior::Action AppBehavior::str2action(const std::string &action2str)
+AppBehavior::Action AppBehavior::str2action(const std::string &actionStr)
 {
-    const static char fname[] = "AppBehavior::str2action() ";
+	const static char fname[] = "AppBehavior::str2action() ";
 
-    if (Utility::strTolower(action2str) == JSON_KEY_APP_behavior_standby)
-    {
-        return AppBehavior::Action::STANDBY;
-    }
-    else if (Utility::strTolower(action2str) == JSON_KEY_APP_behavior_restart)
-    {
-        return AppBehavior::Action::RESTART;
-    }
-    else if (Utility::strTolower(action2str) == JSON_KEY_APP_behavior_keepalive)
-    {
-        return AppBehavior::Action::KEEPALIVE;
-    }
-    else if (Utility::strTolower(action2str) == JSON_KEY_APP_behavior_remove)
-    {
-        return AppBehavior::Action::REMOVE;
-    }
-    LOG_WAR << fname << "Invalid behavior action <" << action2str << ">";
-    throw std::invalid_argument("invalid action input");
+	if (Utility::strTolower(actionStr) == JSON_KEY_APP_behavior_standby)
+	{
+		return AppBehavior::Action::STANDBY;
+	}
+	else if (Utility::strTolower(actionStr) == JSON_KEY_APP_behavior_restart)
+	{
+		return AppBehavior::Action::RESTART;
+	}
+	else if (Utility::strTolower(actionStr) == JSON_KEY_APP_behavior_keepalive)
+	{
+		return AppBehavior::Action::KEEPALIVE;
+	}
+	else if (Utility::strTolower(actionStr) == JSON_KEY_APP_behavior_remove)
+	{
+		return AppBehavior::Action::REMOVE;
+	}
+	LOG_WAR << fname << "Invalid behavior action <" << actionStr << ">";
+	throw std::invalid_argument("invalid action input");
 }
 
 std::string AppBehavior::action2str(AppBehavior::Action action)
 {
-    switch (action)
-    {
-    case Action::STANDBY:
-        return JSON_KEY_APP_behavior_standby;
-    case Action::RESTART:
-        return JSON_KEY_APP_behavior_restart;
-    case Action::KEEPALIVE:
-        return JSON_KEY_APP_behavior_keepalive;
-    case Action::REMOVE:
-        return JSON_KEY_APP_behavior_remove;
-    default:
-        return JSON_KEY_APP_behavior_standby;
-    }
+	switch (action)
+	{
+	case Action::STANDBY:
+		return JSON_KEY_APP_behavior_standby;
+	case Action::RESTART:
+		return JSON_KEY_APP_behavior_restart;
+	case Action::KEEPALIVE:
+		return JSON_KEY_APP_behavior_keepalive;
+	case Action::REMOVE:
+		return JSON_KEY_APP_behavior_remove;
+	default:
+		return JSON_KEY_APP_behavior_standby;
+	}
 }
 
 AppBehavior::Action AppBehavior::exitAction(int code)
 {
-    if (m_exitCodeEvent.count(code))
-    {
-        return m_exitCodeEvent[code];
-    }
-    return m_exitEvent;
+	if (m_exitCodeEvent.count(code))
+	{
+		return m_exitCodeEvent[code];
+	}
+	return m_exitEvent;
 }

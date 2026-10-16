@@ -303,14 +303,18 @@ public class MessageDemuxer {
         while (started.get() && !Thread.currentThread().isInterrupted()) {
             try {
                 byte[] data = reader.readMessage();
-                if (data == null || data.length == 0) {
+                if (data == null) {
                     LOGGER.fine("Demuxer received EOF from transport");
                     break;
+                }
+                if (data.length == 0) {
+                    // Zero-length frame: not a message, keep reading (Python parity).
+                    continue;
                 }
 
                 ResponseMessage resp = ResponseMessage.deserialize(data);
 
-                if (EVENT_URI.equals(resp.request_uri)) {
+                if (EVENT_URI.equals(resp.requestUri)) {
                     dispatchEvent(resp);
                 } else {
                     dispatchResponse(resp);

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/cloud"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
@@ -22,8 +23,8 @@ var (
 )
 
 const (
-	DockerPathPrefix         = "/appmesh/docker"
-	DOCKER_REQUEST_ID_HEADER = "X-Request-ID"
+	DockerPathPrefix      = "/appmesh/docker"
+	dockerRequestIDHeader = "X-Request-ID"
 
 	// Bounds time-to-first-byte from dockerd, not the (possibly streaming) body.
 	responseHeaderTimeout = 30 * time.Second
@@ -61,14 +62,14 @@ func (dp *DockerProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// PSK verify
-	pskMsg := r.Header.Get(DOCKER_REQUEST_ID_HEADER)
-	pskMsgHmac := r.Header.Get(cloud.HTTP_HEADER_HMAC)
-	if cloud.HMAC_AgentToCPP == nil || !cloud.HMAC_AgentToCPP.VerifyHMAC(pskMsg, pskMsgHmac) {
+	pskMsg := r.Header.Get(dockerRequestIDHeader)
+	pskMsgHmac := r.Header.Get(cloud.HeaderHMAC)
+	if cloud.AgentToCPPHMAC == nil || !cloud.AgentToCPPHMAC.VerifyHMAC(pskMsg, pskMsgHmac) {
 		http.Error(w, "PSK authentication failed", http.StatusProxyAuthRequired)
 		return
 	}
-	r.Header.Del(DOCKER_REQUEST_ID_HEADER)
-	r.Header.Del(cloud.HTTP_HEADER_HMAC)
+	r.Header.Del(dockerRequestIDHeader)
+	r.Header.Del(cloud.HeaderHMAC)
 	logger.Debug("PSK authentication success")
 
 	// Do proxy
@@ -94,7 +95,8 @@ func (dp *DockerProxy) CreateReverseProxy() *httputil.ReverseProxy {
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del("Connection")
-			logger.Debugf("Response: %s %s %s %d", resp.Request.Method, resp.Request.RemoteAddr, resp.Request.RequestURI, resp.StatusCode)
+			logger.Debugf("Response: %s %s %s %d", resp.Request.Method, resp.Request.RemoteAddr,
+				resp.Request.RequestURI, resp.StatusCode)
 			// Control-plane endpoints reply with one small JSON document. Buffered
 			// and length-framed, the daemon never has to recover a chunked body
 			// from a connection the peer closed right after the last flush.

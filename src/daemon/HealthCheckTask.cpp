@@ -6,13 +6,9 @@
 #include "application/Application.h"
 #include "process/AppProcess.h"
 
-HealthCheckTask::HealthCheckTask()
-{
-}
+HealthCheckTask::HealthCheckTask() {}
 
-HealthCheckTask::~HealthCheckTask()
-{
-}
+HealthCheckTask::~HealthCheckTask() {}
 
 void HealthCheckTask::doHealthCheck()
 {
@@ -34,11 +30,13 @@ void HealthCheckTask::doHealthCheck()
 				{
 					// Wait in slices so a shutdown request cannot ride out the
 					// full DEFAULT_HEALTH_CHECK_INTERVAL.
-					const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(DEFAULT_HEALTH_CHECK_INTERVAL);
+					const auto deadline =
+						std::chrono::steady_clock::now() + std::chrono::seconds(DEFAULT_HEALTH_CHECK_INTERVAL);
 					do
 					{
 						waited = proc->wait(std::chrono::milliseconds(200), &exitCode);
-					} while (waited == 0 && !QuitHandler::instance()->shouldExit() && std::chrono::steady_clock::now() < deadline);
+					} while (waited == 0 && !QuitHandler::instance()->shouldExit() &&
+							 std::chrono::steady_clock::now() < deadline);
 				}
 				if (pid > 1 && waited <= 0)
 				{
@@ -46,7 +44,8 @@ void HealthCheckTask::doHealthCheck()
 					exitCode = proc->returnValue();
 				}
 				app->health(0 == exitCode);
-				LOG_DBG << fname << "Health check for <" << app->getName() << "> command <" << app->healthCheckCmd() << "> returned <" << exitCode << ">, last error: " << proc->startError();
+				LOG_DBG << fname << "Health check for <" << app->getName() << "> command <" << app->healthCheckCmd()
+						<< "> returned <" << exitCode << ">, last error: " << proc->startError();
 			}
 			else
 			{

@@ -184,7 +184,7 @@ client.unsubscribe(result.subscription_id)
 import { AppMeshClientTCP } from 'appmesh/tcp'
 
 const client = new AppMeshClientTCP()
-client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN)
+client.setBearerToken(process.env.APPMESH_BEARER_TOKEN)
 
 // Subscribe
 const result = await client.subscribe('myapp', ['START', 'EXIT'], (event) => {

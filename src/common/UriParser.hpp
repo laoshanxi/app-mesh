@@ -12,219 +12,218 @@
 class Uri
 {
 public:
-    std::string scheme, user, pass, host, path, query, fragment;
-    int port = -1;
+	std::string scheme, user, pass, host, path, query, fragment;
+	int port = -1;
 
-    static Uri parse(const std::string &uriStr)
-    {
-        Uri result;
+	static Uri parse(const std::string &uriStr)
+	{
+		Uri result;
 
-        bool originalStartsWithSlash = (!uriStr.empty() && uriStr[0] == '/');
+		bool originalStartsWithSlash = (!uriStr.empty() && uriStr[0] == '/');
 
-        // 1. Schemeless / protocol-relative detection
-        size_t colonPos = uriStr.find(':');
-        size_t slashPos = uriStr.find('/');
-        bool isProtocolRelative = (uriStr.size() >= 2 && uriStr[0] == '/' && uriStr[1] == '/');
+		// 1. Schemeless / protocol-relative detection
+		size_t colonPos = uriStr.find(':');
+		size_t slashPos = uriStr.find('/');
+		bool isProtocolRelative = (uriStr.size() >= 2 && uriStr[0] == '/' && uriStr[1] == '/');
 
-        // A scheme must:
-        // - Have a colon before any slash
-        // - The part before the colon must be alphabetic (schemes can't start with digits)
-        // - Be followed by "//" for authority-based URIs, or at least not be purely numeric
-        bool hasScheme = false;
-        if (colonPos != std::string::npos && (slashPos == std::string::npos || colonPos < slashPos))
-        {
-            std::string potentialScheme = uriStr.substr(0, colonPos);
-            // Valid schemes start with a letter and contain only [a-zA-Z0-9+.-]
-            // If it looks like a host:port (e.g., starts with digit or is an IP), it's not a scheme
-            if (!potentialScheme.empty() && std::isalpha(static_cast<unsigned char>(potentialScheme[0])))
-            {
-                // Port candidate is only the segment up to the next '/'; the whole remainder would misclassify "host:port/path" as a scheme
-                size_t nextSlash = uriStr.find('/', colonPos + 1);
-                std::string afterColon = uriStr.substr(colonPos + 1, nextSlash == std::string::npos ? std::string::npos : nextSlash - colonPos - 1);
-                // If the port candidate is purely numeric, this is host:port, not scheme:rest
-                bool isPort = !afterColon.empty() && afterColon.find_first_not_of("0123456789") == std::string::npos;
-                if (!isPort)
-                {
-                    hasScheme = true;
-                }
-            }
-        }
+		// A scheme must:
+		// - Have a colon before any slash
+		// - The part before the colon must be alphabetic (schemes can't start with digits)
+		// - Be followed by "//" for authority-based URIs, or at least not be purely numeric
+		bool hasScheme = false;
+		if (colonPos != std::string::npos && (slashPos == std::string::npos || colonPos < slashPos))
+		{
+			std::string potentialScheme = uriStr.substr(0, colonPos);
+			// Valid schemes start with a letter and contain only [a-zA-Z0-9+.-]
+			// If it looks like a host:port (e.g., starts with digit or is an IP), it's not a scheme
+			if (!potentialScheme.empty() && std::isalpha(static_cast<unsigned char>(potentialScheme[0])))
+			{
+				// Port candidate is only the segment up to the next '/'; the whole remainder would misclassify
+				// "host:port/path" as a scheme
+				size_t nextSlash = uriStr.find('/', colonPos + 1);
+				std::string afterColon = uriStr.substr(
+					colonPos + 1, nextSlash == std::string::npos ? std::string::npos : nextSlash - colonPos - 1);
+				// If the port candidate is purely numeric, this is host:port, not scheme:rest
+				bool isPort = !afterColon.empty() && afterColon.find_first_not_of("0123456789") == std::string::npos;
+				if (!isPort)
+				{
+					hasScheme = true;
+				}
+			}
+		}
 
-        bool autoScheme = !hasScheme && !isProtocolRelative;
+		bool autoScheme = !hasScheme && !isProtocolRelative;
 
-        // If autoScheme, prepend http:// so uriparser can parse the host
-        std::string temp = autoScheme ? ("http://" + uriStr) : uriStr;
+		// If autoScheme, prepend http:// so uriparser can parse the host
+		std::string temp = autoScheme ? ("http://" + uriStr) : uriStr;
 
-        // 2. Parse using RAII wrapper
-        UriWrapper wrapper(temp);
-        if (!wrapper.isValid())
-            return result;
+		// 2. Parse using RAII wrapper
+		UriWrapper wrapper(temp);
+		if (!wrapper.isValid())
+			return result;
 
-        const UriUriA *uri = wrapper.get();
+		const UriUriA *uri = wrapper.get();
 
-        // 3. Extract fields
-        // Only extract scheme if we didn't fake it
-        if (!autoScheme)
-            result.scheme = rangeToString(uri->scheme);
+		// 3. Extract fields
+		// Only extract scheme if we didn't fake it
+		if (!autoScheme)
+			result.scheme = rangeToString(uri->scheme);
 
-        result.host = rangeToString(uri->hostText);
-        result.query = rangeToString(uri->query);
-        result.fragment = rangeToString(uri->fragment);
+		result.host = rangeToString(uri->hostText);
+		result.query = rangeToString(uri->query);
+		result.fragment = rangeToString(uri->fragment);
 
-        // UserInfo split (user:pass)
-        std::string ui = rangeToString(uri->userInfo);
-        size_t colon = ui.find(':');
-        if (colon != std::string::npos)
-        {
-            result.user = ui.substr(0, colon);
-            result.pass = ui.substr(colon + 1);
-        }
-        else
-        {
-            result.user = std::move(ui);
-        }
+		// UserInfo split (user:pass)
+		std::string ui = rangeToString(uri->userInfo);
+		size_t colon = ui.find(':');
+		if (colon != std::string::npos)
+		{
+			result.user = ui.substr(0, colon);
+			result.pass = ui.substr(colon + 1);
+		}
+		else
+		{
+			result.user = std::move(ui);
+		}
 
-        // Port
-        std::string portStr = rangeToString(uri->portText);
-        if (!portStr.empty())
-            result.port = std::atoi(portStr.c_str());
+		// Port
+		std::string portStr = rangeToString(uri->portText);
+		if (!portStr.empty())
+			result.port = std::atoi(portStr.c_str());
 
-        // 4. Path Construction (preserve leading slash when appropriate)
-        // Decide whether the resulting path should start with '/'
-        // - If the original input started with '/', preserve that.
-        // - If we forced a scheme (autoScheme == true) but the parser actually produced a host,
-        //   then this is an absolute URL (example.com/path) and we must include a leading '/' for the path
-        //   so that toString() concatenation yields host + "/" + path (not host+path).
-        bool addLeadingSlash = originalStartsWithSlash || (autoScheme && !result.host.empty());
+		// 4. Path Construction (preserve leading slash when appropriate)
+		// Decide whether the resulting path should start with '/'
+		// - If the original input started with '/', preserve that.
+		// - If we forced a scheme (autoScheme == true) but the parser actually produced a host,
+		//   then this is an absolute URL (example.com/path) and we must include a leading '/' for the path
+		//   so that toString() concatenation yields host + "/" + path (not host+path).
+		bool addLeadingSlash = originalStartsWithSlash || (autoScheme && !result.host.empty());
 
-        if (uri->pathHead)
-        {
-            const UriPathSegmentA *seg = uri->pathHead;
-            result.path.clear();
+		if (uri->pathHead)
+		{
+			const UriPathSegmentA *seg = uri->pathHead;
+			result.path.clear();
 
-            if (addLeadingSlash)
-                result.path.push_back('/');
+			if (addLeadingSlash)
+				result.path.push_back('/');
 
-            bool first = true;
-            while (seg)
-            {
-                if (!first)
-                    result.path.push_back('/');
-                result.path += rangeToString(seg->text);
-                first = false;
-                seg = seg->next;
-            }
-        }
-        else
-        {
-            // No path segments present
-            result.path = addLeadingSlash ? std::string("/") : std::string();
-        }
+			bool first = true;
+			while (seg)
+			{
+				if (!first)
+					result.path.push_back('/');
+				result.path += rangeToString(seg->text);
+				first = false;
+				seg = seg->next;
+			}
+		}
+		else
+		{
+			// No path segments present
+			result.path = addLeadingSlash ? std::string("/") : std::string();
+		}
 
-        return result;
-    }
+		return result;
+	}
 
-    std::map<std::string, std::string> queryParams() const
-    {
-        std::map<std::string, std::string> params;
-        if (query.empty())
-            return params;
+	std::map<std::string, std::string> queryParams() const
+	{
+		std::map<std::string, std::string> params;
+		if (query.empty())
+			return params;
 
-        size_t start = 0;
-        while (start < query.length())
-        {
-            size_t end = query.find('&', start);
-            if (end == std::string::npos)
-                end = query.length();
+		size_t start = 0;
+		while (start < query.length())
+		{
+			size_t end = query.find('&', start);
+			if (end == std::string::npos)
+				end = query.length();
 
-            size_t eq = query.find('=', start);
-            if (eq != std::string::npos && eq < end)
-            {
-                params[decode(query.substr(start, eq - start))] = decode(query.substr(eq + 1, end - eq - 1));
-            }
-            else
-            {
-                params[decode(query.substr(start, end - start))] = "";
-            }
-            start = end + 1;
-        }
-        return params;
-    }
+			size_t eq = query.find('=', start);
+			if (eq != std::string::npos && eq < end)
+			{
+				params[decode(query.substr(start, eq - start))] = decode(query.substr(eq + 1, end - eq - 1));
+			}
+			else
+			{
+				params[decode(query.substr(start, end - start))] = "";
+			}
+			start = end + 1;
+		}
+		return params;
+	}
 
-    std::string toString() const
-    {
-        std::string out;
-        if (!scheme.empty())
-            out += scheme + "://";
+	std::string toString() const
+	{
+		std::string out;
+		if (!scheme.empty())
+			out += scheme + "://";
 
-        if (!host.empty())
-        {
-            if (!user.empty())
-            {
-                out += user;
-                if (!pass.empty())
-                    out += ":" + pass;
-                out += "@";
-            }
-            out += host;
-        }
+		if (!host.empty())
+		{
+			if (!user.empty())
+			{
+				out += user;
+				if (!pass.empty())
+					out += ":" + pass;
+				out += "@";
+			}
+			out += host;
+		}
 
-        if (port != -1)
-            out += ":" + std::to_string(port);
+		if (port != -1)
+			out += ":" + std::to_string(port);
 
-        out += path;
+		out += path;
 
-        if (!query.empty())
-            out += "?" + query;
-        if (!fragment.empty())
-            out += "#" + fragment;
-        return out;
-    }
+		if (!query.empty())
+			out += "?" + query;
+		if (!fragment.empty())
+			out += "#" + fragment;
+		return out;
+	}
 
 private:
-    // Inner RAII Class for uriparser resource management
-    class UriWrapper
-    {
-        UriUriA m_uri;
-        bool m_valid;
+	// Inner RAII Class for uriparser resource management
+	class UriWrapper
+	{
+		UriUriA m_uri;
+		bool m_valid;
 
-    public:
-        explicit UriWrapper(const std::string &s)
-        {
-            std::memset(&m_uri, 0, sizeof(m_uri));
-            UriParserStateA state;
-            state.uri = &m_uri;
-            int code = uriParseUriA(&state, s.c_str());
-            // Consider non-negative codes as success (success or non-fatal warnings).
-            m_valid = (code >= 0);
-        }
+	public:
+		explicit UriWrapper(const std::string &s)
+		{
+			std::memset(&m_uri, 0, sizeof(m_uri));
+			UriParserStateA state;
+			state.uri = &m_uri;
+			int code = uriParseUriA(&state, s.c_str());
+			// Consider non-negative codes as success (success or non-fatal warnings).
+			m_valid = (code >= 0);
+		}
 
-        ~UriWrapper()
-        {
-            uriFreeUriMembersA(&m_uri);
-        }
+		~UriWrapper() { uriFreeUriMembersA(&m_uri); }
 
-        bool isValid() const { return m_valid; }
-        const UriUriA *get() const { return &m_uri; }
-    };
+		bool isValid() const { return m_valid; }
+		const UriUriA *get() const { return &m_uri; }
+	};
 
-    static std::string rangeToString(UriTextRangeA r)
-    {
-        if (!r.first || r.first >= r.afterLast)
-            return "";
-        // length = afterLast - first
-        return std::string(r.first, static_cast<size_t>(r.afterLast - r.first));
-    }
+	static std::string rangeToString(UriTextRangeA r)
+	{
+		if (!r.first || r.first >= r.afterLast)
+			return "";
+		// length = afterLast - first
+		return std::string(r.first, static_cast<size_t>(r.afterLast - r.first));
+	}
 
-    static std::string decode(const std::string &s)
-    {
-        if (s.find('%') == std::string::npos && s.find('+') == std::string::npos)
-            return s;
-        // uriparser keeps malformed escapes (e.g. "%zz") literal, like the
-        // hand-rolled decoder this replaces did.
-        std::string out(s);
-        const char *end = uriUnescapeInPlaceExA(&out[0], URI_TRUE, URI_BR_DONT_TOUCH);
-        out.resize(static_cast<size_t>(end - out.data()));
-        return out;
-    }
+	static std::string decode(const std::string &s)
+	{
+		if (s.find('%') == std::string::npos && s.find('+') == std::string::npos)
+			return s;
+		// uriparser keeps malformed escapes (e.g. "%zz") literal, like the
+		// hand-rolled decoder this replaces did.
+		std::string out(s);
+		const char *end = uriUnescapeInPlaceExA(&out[0], URI_TRUE, URI_BR_DONT_TOUCH);
+		out.resize(static_cast<size_t>(end - out.data()));
+		return out;
+	}
 };

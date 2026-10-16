@@ -16,9 +16,9 @@ use crate::error::AppMeshError;
 use crate::models::*;
 use crate::requester::Requester;
 use crate::subscribe::{MessageDemuxer, MessageReader};
-use crate::wire_messages::{RequestMessage, ResponseMessage};
 use crate::tcp_transport::{ReceivePoll, TCPTransport};
 use crate::tls_config::ClientCert;
+use crate::wire_messages::{RequestMessage, ResponseMessage};
 
 pub type Result<T> = std::result::Result<T, AppMeshError>;
 
@@ -40,8 +40,7 @@ impl MessageReader for TCPMessageReader {
             let transport = Arc::clone(&self.transport);
             let polled = tokio::task::spawn_blocking(move || {
                 let mut t = transport.lock().unwrap_or_else(|e| e.into_inner());
-                t.poll_message(std::time::Duration::from_millis(50))
-                    .map_err(AppMeshError::from)
+                t.poll_message(std::time::Duration::from_millis(50)).map_err(AppMeshError::from)
             })
             .await
             .map_err(|e| AppMeshError::ConnectionError(format!("reader task panicked: {}", e)))??;
@@ -86,16 +85,22 @@ impl TCPRequester {
     fn read_response_direct(&self) -> Result<ResponseMessage> {
         let mut transport = self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner());
 
-        let resp_data = match transport.receive_message()? {
-            Some(data) if !data.is_empty() => data,
-            _ => {
+        let resp_data = match transport.receive_message() {
+            Ok(Some(data)) if !data.is_empty() => data,
+            Ok(_) => {
                 transport.close();
                 return Err(AppMeshError::ConnectionError("Socket connection broken".into()));
             }
+            // A receive error (framing/IO) leaves the stream desynchronized; close
+            // so the next request reconnects instead of writing into a garbage
+            // stream (the Python SDK closes on any receive error too).
+            Err(e) => {
+                transport.close();
+                return Err(e.into());
+            }
         };
 
-        ResponseMessage::deserialize(&resp_data)
-            .map_err(|e| AppMeshError::SerializationError(e.to_string()))
+        ResponseMessage::deserialize(&resp_data).map_err(|e| AppMeshError::SerializationError(e.to_string()))
     }
 }
 
@@ -134,15 +139,11 @@ impl Requester for TCPRequester {
             req.http_method = method.to_string();
             req.request_uri = path.to_string();
             // Informational; hostname on TCP vs "wss-client" on WSS, per the Python reference SDK.
-            req.client_addr =
-                hostname::get().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "unknown".into());
+            req.client_addr = hostname::get().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "unknown".into());
             req.headers.insert(HTTP_HEADER_KEY_USER_AGENT.into(), HTTP_USER_AGENT_TCP.into());
 
             if let Some(token) = self.get_access_token() {
-                req.headers.insert(
-                    HTTP_HEADER_JWT_AUTHORIZATION.into(),
-                    format!("{}{}", HTTP_HEADER_AUTH_BEARER, token),
-                );
+                req.headers.insert(HTTP_HEADER_JWT_AUTHORIZATION.into(), format!("{}{}", HTTP_HEADER_AUTH_BEARER, token));
             }
             if let Some(target) = self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                 req.headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.into(), target);
@@ -158,7 +159,12 @@ impl Requester for TCPRequester {
             }
 
             let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
-            transport.send_message(&data)?;
+            if let Err(e) = transport.send_message(&data) {
+                // A failed write leaves the stream unusable; drop it so the
+                // next request reconnects instead of writing into a dead socket.
+                transport.close();
+                return Err(e.into());
+            }
 
             Ok(())
         })();
@@ -179,9 +185,10 @@ impl Requester for TCPRequester {
             match rx.await {
                 Ok(resp) => resp,
                 Err(_) => {
-                    return Err(AppMeshError::ConnectionError(
-                        "Connection closed while waiting for response".into(),
-                    ));
+                    // Demuxer stopped (read error/EOF): drop the transport so the
+                    // next request reconnects instead of sending into a dead socket.
+                    self.tcp_transport.lock().unwrap_or_else(|e| e.into_inner()).close();
+                    return Err(AppMeshError::ConnectionError("Connection closed while waiting for response".into()));
                 }
             }
         } else {
@@ -191,10 +198,7 @@ impl Requester for TCPRequester {
         let status = StatusCode::from_u16(resp.http_status as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
         if fail_on_error && status != StatusCode::PRECONDITION_REQUIRED && !status.is_success() {
-            return Err(AppMeshError::RequestFailed {
-                status,
-                message: String::from_utf8_lossy(&resp.body).to_string(),
-            });
+            return Err(AppMeshError::RequestFailed { status, message: String::from_utf8_lossy(&resp.body).to_string() });
         }
 
         resp.into_http_response()
@@ -236,9 +240,7 @@ impl Requester for TCPRequester {
             return Ok(()); // already enabled
         }
         let demuxer = Arc::new(MessageDemuxer::new());
-        let reader = Arc::new(TCPMessageReader {
-            transport: Arc::clone(&self.tcp_transport),
-        });
+        let reader = Arc::new(TCPMessageReader { transport: Arc::clone(&self.tcp_transport) });
         demuxer.start(reader);
         *guard = Some(demuxer);
         Ok(())
@@ -282,8 +284,7 @@ impl AppMeshClientTCP {
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>> {
-        let tcp_address =
-            tcp_address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_TCP_PORT));
+        let tcp_address = tcp_address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_TCP_PORT));
         let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
 
         let tcp_transport = Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify, client_cert)));
@@ -299,17 +300,27 @@ impl AppMeshClientTCP {
         &self.client
     }
 
+    /// Reject TCP file transfers while the event demuxer owns the read side: the
+    /// demuxer read loop would steal the raw (non-msgpack) chunk frames and
+    /// corrupt the transfer (mirrors the Python SDK).
+    fn ensure_no_active_demuxer(&self) -> Result<()> {
+        if self.client.demuxer_running() {
+            return Err(AppMeshError::Other(
+                "file transfer is not supported while an event subscription is active over the same TCP \
+						 connection; use a separate client instance"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Download a file using the TCP file-socket side channel.
     ///
     /// When `preserve_permissions` is true, returned POSIX metadata is applied locally best-effort.
     ///
     /// An empty `local_file` defaults to the basename of `remote_file`.
-    pub async fn download_file(
-        &self,
-        remote_file: &str,
-        local_file: &str,
-        preserve_permissions: bool,
-    ) -> Result<()> {
+    pub async fn download_file(&self, remote_file: &str, local_file: &str, preserve_permissions: bool) -> Result<()> {
+        self.ensure_no_active_demuxer()?;
         // Empty local_file: derive the local path from the remote file's basename.
         let local_file = if local_file.is_empty() {
             Path::new(remote_file).file_name().and_then(|n| n.to_str()).unwrap_or(remote_file)
@@ -320,15 +331,15 @@ impl AppMeshClientTCP {
         headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
         headers.insert(HTTP_HEADER_KEY_X_RECV_FILE_SOCKET.into(), "true".into());
 
-        let resp = self
-            .client
-            .raw_request(Method::GET, "/appmesh/file/download", None, Some(headers), None, true)
-            .await?;
+        let resp = self.client.raw_request(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
 
         if !resp.headers().contains_key(HTTP_HEADER_KEY_X_RECV_FILE_SOCKET) {
             return Err(AppMeshError::RequestFailed {
                 status: resp.status(),
-                message: format!("Server did not respond with socket transfer option: {}", HTTP_HEADER_KEY_X_RECV_FILE_SOCKET),
+                message: format!(
+                    "Server did not respond with socket transfer option: {}",
+                    HTTP_HEADER_KEY_X_RECV_FILE_SOCKET
+                ),
             });
         }
 
@@ -358,12 +369,8 @@ impl AppMeshClientTCP {
     /// recreate permissions/ownership when supported.
     ///
     /// An empty `remote_file` defaults to the local file's basename.
-    pub async fn upload_file(
-        &self,
-        local_file: &str,
-        remote_file: &str,
-        preserve_permissions: bool,
-    ) -> Result<()> {
+    pub async fn upload_file(&self, local_file: &str, remote_file: &str, preserve_permissions: bool) -> Result<()> {
+        self.ensure_no_active_demuxer()?;
         let remote_file = if remote_file.is_empty() {
             Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file)
         } else {
@@ -382,15 +389,15 @@ impl AppMeshClientTCP {
             AppMeshClient::get_file_attributes(local_path, &mut headers);
         }
 
-        let resp = self
-            .client
-            .raw_request(Method::POST, "/appmesh/file/upload", None, Some(headers), None, true)
-            .await?;
+        let resp = self.client.raw_request(Method::POST, "/appmesh/file/upload", None, Some(headers), None, true).await?;
 
         if !resp.headers().contains_key(HTTP_HEADER_KEY_X_SEND_FILE_SOCKET) {
             return Err(AppMeshError::RequestFailed {
                 status: resp.status(),
-                message: format!("Server did not respond with socket transfer option: {}", HTTP_HEADER_KEY_X_SEND_FILE_SOCKET),
+                message: format!(
+                    "Server did not respond with socket transfer option: {}",
+                    HTTP_HEADER_KEY_X_SEND_FILE_SOCKET
+                ),
             });
         }
 
@@ -414,12 +421,7 @@ impl AppMeshClientTCP {
     }
 
     /// Run an application asynchronously and return the standard [`AppRun`] handle.
-    pub async fn run_app_async(
-        self: &Arc<Self>,
-        app: &Application,
-        max_time: i32,
-        lifecycle: i32,
-    ) -> Result<AppRun> {
+    pub async fn run_app_async(self: &Arc<Self>, app: &Application, max_time: i32, lifecycle: i32) -> Result<AppRun> {
         self.client.run_app_async(app, max_time, lifecycle).await
     }
 

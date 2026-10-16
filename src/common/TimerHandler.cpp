@@ -23,19 +23,17 @@
 class TimerState : public std::enable_shared_from_this<TimerState>
 {
 public:
-	TimerState(TimerManager &manager, long timerToken, std::size_t intervalMilliseconds,
-			   std::atomic_long *ownerTimerId, std::shared_ptr<TimerHandler> timerObj, TimerCallback handler)
+	TimerState(TimerManager &manager, long timerToken, std::size_t intervalMilliseconds, std::atomic_long *ownerTimerId,
+			   std::shared_ptr<TimerHandler> timerObj, TimerCallback handler)
 		: m_manager(manager), m_timer(manager.m_ioContext), m_timerObj(std::move(timerObj)), m_handler(std::move(handler)),
 		  m_ownerTimerId(ownerTimerId), m_timerToken(timerToken), m_intervalMilliseconds(intervalMilliseconds)
 	{
 		const static char fname[] = "TimerState::TimerState() ";
-		LOG_DBG << fname << "timer <" << this << "> oneShot <" << isOneShot() << "> hasObject <" << (m_timerObj != nullptr) << ">";
+		LOG_DBG << fname << "timer <" << this << "> oneShot <" << isOneShot() << "> hasObject <" << (m_timerObj != nullptr)
+				<< ">";
 	}
 
-	~TimerState()
-	{
-		releaseTimerToken();
-	}
+	~TimerState() { releaseTimerToken(); }
 
 	bool isOneShot() const { return m_intervalMilliseconds == 0; }
 
@@ -72,7 +70,8 @@ public:
 			// A replaced timer may finish after a new token was published in the same slot.
 			// Clear only our own token so the old callback cannot erase the replacement.
 			long expected = timerToken;
-			m_ownerTimerId->compare_exchange_strong(expected, INVALID_TIMER_ID, std::memory_order_acq_rel, std::memory_order_acquire);
+			m_ownerTimerId->compare_exchange_strong(expected, INVALID_TIMER_ID, std::memory_order_acq_rel,
+													std::memory_order_acquire);
 		}
 		m_manager.releaseTimerToken(timerToken);
 	}
@@ -124,27 +123,32 @@ private:
 		arm(m_intervalMilliseconds);
 	}
 
-	TimerManager &m_manager;						///< Owns the token registry and event loop for this timer.
-	boost::asio::steady_timer m_timer;				///< Monotonic timer; member calls happen only on the io thread.
-	const std::shared_ptr<TimerHandler> m_timerObj; ///< Holds the target TimerHandler instance to prevent premature deallocation (can be nullptr).
-	const TimerCallback m_handler;					///< The callback function to be invoked on timer expiration.
-	std::atomic_long *const m_ownerTimerId;			///< Optional retained ID slot; kept alive by m_timerObj or m_handler.
-	long m_timerToken;								///< Stable TimerManager token; mutated only on the io thread or before publication.
-	const std::size_t m_intervalMilliseconds;		///< Recurring interval in milliseconds; 0 for one-shot.
+	TimerManager &m_manager;           ///< Owns the token registry and event loop for this timer.
+	boost::asio::steady_timer m_timer; ///< Monotonic timer; member calls happen only on the io thread.
+	const std::shared_ptr<TimerHandler>
+		m_timerObj; ///< Holds the target TimerHandler instance to prevent premature deallocation (can be nullptr).
+	const TimerCallback m_handler;          ///< The callback function to be invoked on timer expiration.
+	std::atomic_long *const m_ownerTimerId; ///< Optional retained ID slot; kept alive by m_timerObj or m_handler.
+	long m_timerToken; ///< Stable TimerManager token; mutated only on the io thread or before publication.
+	const std::size_t m_intervalMilliseconds; ///< Recurring interval in milliseconds; 0 for one-shot.
 };
 
 ////////////////////////////////////////////////////////////////
 /// TimerManager
 ////////////////////////////////////////////////////////////////
-TimerManager::TimerManager()
-	: m_workGuard(boost::asio::make_work_guard(m_ioContext))
+TimerManager::TimerManager() : m_workGuard(boost::asio::make_work_guard(m_ioContext))
 {
 	const static char fname[] = "TimerManager::TimerManager() ";
 	LOG_DBG << fname;
 	// Dedicated timer-dispatch thread, independent of the daemon reactors.
 	try
 	{
-		m_ioThread = std::thread([this]() { Utility::setThreadName("appmesh-timer"); m_ioContext.run(); });
+		m_ioThread = std::thread(
+			[this]()
+			{
+				Utility::setThreadName("appmesh-timer");
+				m_ioContext.run();
+			});
 	}
 	catch (const std::exception &ex)
 	{
@@ -177,9 +181,7 @@ long TimerManager::allocateTimerToken() noexcept
 
 	const long timerToken = m_nextTimerToken;
 	// Public tokens are never reused.
-	m_nextTimerToken = (m_nextTimerToken == std::numeric_limits<long>::max())
-						   ? INVALID_TIMER_ID
-						   : m_nextTimerToken + 1;
+	m_nextTimerToken = (m_nextTimerToken == std::numeric_limits<long>::max()) ? INVALID_TIMER_ID : m_nextTimerToken + 1;
 	return timerToken;
 }
 
@@ -193,13 +195,15 @@ void TimerManager::releaseTimerToken(long timerToken) noexcept
 	m_timerRegistry.erase(timerToken);
 }
 
-long TimerManager::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
+long TimerManager::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from,
+								 std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
 {
 	return registerTimerImpl(nullptr, delayMilliseconds, intervalMilliseconds, from, std::move(timerObj), handler);
 }
 
 long TimerManager::registerTimer(std::atomic_long &timerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
-								 const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
+								 const std::string &from, std::shared_ptr<TimerHandler> timerObj,
+								 const TimerCallback &handler)
 {
 	std::lock_guard idGuard(m_timerIdMutex);
 	const long previousId = timerId.exchange(INVALID_TIMER_ID, std::memory_order_acq_rel);
@@ -208,10 +212,11 @@ long TimerManager::registerTimer(std::atomic_long &timerId, std::size_t delayMil
 	return registerTimerImpl(&timerId, delayMilliseconds, intervalMilliseconds, from, std::move(timerObj), handler);
 }
 
-long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
-									 const std::string &from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
+long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, std::size_t delayMilliseconds,
+									 std::size_t intervalMilliseconds, const std::string &from,
+									 std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
 {
-	const static char fname[] = "TimerManager::registerTimer() ";
+	const static char fname[] = "TimerManager::registerTimerImpl() ";
 
 	if (!handler)
 	{
@@ -234,7 +239,8 @@ long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, std::size_t
 	std::shared_ptr<TimerState> timer;
 	try
 	{
-		timer = std::make_shared<TimerState>(*this, timerToken, intervalMilliseconds, ownerTimerId, std::move(timerObj), handler);
+		timer = std::make_shared<TimerState>(*this, timerToken, intervalMilliseconds, ownerTimerId, std::move(timerObj),
+											 handler);
 		{
 			std::lock_guard registryGuard(m_timerRegistryMutex);
 			m_timerRegistry[timerToken] = timer;
@@ -261,7 +267,8 @@ long TimerManager::registerTimerImpl(std::atomic_long *ownerTimerId, std::size_t
 	return INVALID_TIMER_ID;
 }
 
-long TimerManager::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler)
+long TimerManager::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from,
+								 const TimerCallback &handler)
 {
 	return this->registerTimer(delayMilliseconds, intervalMilliseconds, from, nullptr, handler);
 }
@@ -305,18 +312,18 @@ bool TimerManager::cancelTimer(std::atomic_long &timerId)
 /// TimerHandler
 ////////////////////////////////////////////////////////////////
 
-long TimerHandler::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from, const TimerCallback &handler)
+long TimerHandler::registerTimer(std::size_t delayMilliseconds, std::size_t intervalMilliseconds, const std::string &from,
+								 const TimerCallback &handler)
 {
-	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalMilliseconds, from, shared_from_this(), handler);
+	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalMilliseconds, from, shared_from_this(),
+													handler);
 }
 
 long TimerHandler::registerTimer(std::atomic_long &timerId, std::size_t delayMilliseconds, std::size_t intervalMilliseconds,
 								 const std::string &from, const TimerCallback &handler)
 {
-	return TIMER_MANAGER::instance()->registerTimer(timerId, delayMilliseconds, intervalMilliseconds, from, shared_from_this(), handler);
+	return TIMER_MANAGER::instance()->registerTimer(timerId, delayMilliseconds, intervalMilliseconds, from,
+													shared_from_this(), handler);
 }
 
-bool TimerHandler::cancelTimer(std::atomic_long &timerId)
-{
-	return TIMER_MANAGER::instance()->cancelTimer(timerId);
-}
+bool TimerHandler::cancelTimer(std::atomic_long &timerId) { return TIMER_MANAGER::instance()->cancelTimer(timerId); }

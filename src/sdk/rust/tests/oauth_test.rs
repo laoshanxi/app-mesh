@@ -3,18 +3,14 @@
 //! These tests are skipped unless DEX_ISSUER and DEX_ACCESS_URL are set. They never
 //! use a username/password grant and never send refresh tokens to App Mesh.
 
-use appmesh::{OAuthClient, OAuthConfig, DevicePoll};
+use appmesh::{DevicePoll, OAuthClient, OAuthConfig};
 
 fn live_config() -> Option<OAuthConfig> {
     let issuer = std::env::var("DEX_ISSUER").ok()?;
     let access_url = std::env::var("DEX_ACCESS_URL").ok()?;
     Some(
-        OAuthConfig::new(
-            issuer,
-            access_url,
-            std::env::var("DEX_CLIENT_ID").unwrap_or_else(|_| "appmesh-cli".into()),
-        )
-        .audience(std::env::var("DEX_AUDIENCE").unwrap_or_else(|_| "appmesh-api".into())),
+        OAuthConfig::new(issuer, access_url, std::env::var("DEX_CLIENT_ID").unwrap_or_else(|_| "appmesh-cli".into()))
+            .audience(std::env::var("DEX_AUDIENCE").unwrap_or_else(|_| "appmesh-api".into())),
     )
 }
 
@@ -41,18 +37,13 @@ async fn live_device_flow_authorization_pending() {
 async fn plain_http_issuer_requires_opt_in() {
     const UNROUTABLE_HTTP_ISSUER: &str = "http://issuer.invalid:6062/auth";
 
-    let error = OAuthClient::discover(OAuthConfig::new(
-        UNROUTABLE_HTTP_ISSUER,
-        UNROUTABLE_HTTP_ISSUER,
-        "appmesh-cli",
-    ))
-    .await
-    .expect_err("plain-HTTP issuer must be rejected by default");
+    let error = OAuthClient::discover(OAuthConfig::new(UNROUTABLE_HTTP_ISSUER, UNROUTABLE_HTTP_ISSUER, "appmesh-cli"))
+        .await
+        .expect_err("plain-HTTP issuer must be rejected by default");
     assert!(error.to_string().contains("must use HTTPS"), "got: {error}");
 
     let relaxed = OAuthClient::discover(
-        OAuthConfig::new(UNROUTABLE_HTTP_ISSUER, UNROUTABLE_HTTP_ISSUER, "appmesh-cli")
-            .allow_plain_http(true),
+        OAuthConfig::new(UNROUTABLE_HTTP_ISSUER, UNROUTABLE_HTTP_ISSUER, "appmesh-cli").allow_plain_http(true),
     )
     .await
     .expect_err("the .invalid host never resolves");

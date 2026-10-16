@@ -1,6 +1,5 @@
+#!/usr/bin/env python3
 """Python remote code string execution for application py-task"""
-
-#!/usr/bin/env python
 
 import traceback
 from io import StringIO

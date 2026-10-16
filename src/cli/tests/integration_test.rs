@@ -23,9 +23,8 @@ fn test_help_lists_core_commands() {
     assert!(out.status.success());
     let s = String::from_utf8_lossy(&out.stdout);
     for cmd in [
-        "logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable", "restart",
-        "run", "exec", "shell", "get", "put", "label", "log", "config", "resource", "metric",
-        "workflow",
+        "logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable", "restart", "run", "exec", "shell", "get",
+        "put", "label", "log", "config", "resource", "metric", "workflow",
     ] {
         assert!(s.contains(cmd), "missing command: {}", cmd);
     }
@@ -60,10 +59,7 @@ fn test_global_flags_in_help() {
 #[test]
 fn test_global_short_flags_accepted() {
     // All short global flags before subcommand + --help
-    let out = appm()
-        .args(["-H", "localhost:6058", "-F", "worker-1", "-v", "logon", "--help"])
-        .output()
-        .unwrap();
+    let out = appm().args(["-H", "localhost:6058", "-F", "worker-1", "-v", "logon", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
@@ -78,21 +74,33 @@ fn test_unknown_global_flag_rejected() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_alias_ls()     { assert!(appm().args(["ls",     "--help"]).output().unwrap().status.success()); }
+fn test_alias_ls() {
+    assert!(appm().args(["ls", "--help"]).output().unwrap().status.success());
+}
 #[test]
-fn test_alias_list()   { assert!(appm().args(["list",   "--help"]).output().unwrap().status.success()); }
+fn test_alias_list() {
+    assert!(appm().args(["list", "--help"]).output().unwrap().status.success());
+}
 #[test]
-fn test_alias_reg()    { assert!(appm().args(["reg",    "--help"]).output().unwrap().status.success()); }
+fn test_alias_reg() {
+    assert!(appm().args(["reg", "--help"]).output().unwrap().status.success());
+}
 #[test]
-fn test_alias_remove() { assert!(appm().args(["remove", "--help"]).output().unwrap().status.success()); }
+fn test_alias_remove() {
+    assert!(appm().args(["remove", "--help"]).output().unwrap().status.success());
+}
 #[test]
-fn test_alias_unreg()  { assert!(appm().args(["unreg",  "--help"]).output().unwrap().status.success()); }
+fn test_alias_unreg() {
+    assert!(appm().args(["unreg", "--help"]).output().unwrap().status.success());
+}
 #[test]
-fn test_alias_logout() { assert!(appm().args(["logout", "--help"]).output().unwrap().status.success()); }
+fn test_alias_logout() {
+    assert!(appm().args(["logout", "--help"]).output().unwrap().status.success());
+}
 
 #[test]
 fn test_alias_content_matches_primary() {
-    let rm_help  = String::from_utf8_lossy(&appm().args(["rm",     "--help"]).output().unwrap().stdout).to_string();
+    let rm_help = String::from_utf8_lossy(&appm().args(["rm", "--help"]).output().unwrap().stdout).to_string();
     let rem_help = String::from_utf8_lossy(&appm().args(["remove", "--help"]).output().unwrap().stdout).to_string();
     // Both should list the same flags
     assert!(rm_help.contains("--app") && rem_help.contains("--app"));
@@ -106,16 +114,10 @@ fn test_alias_content_matches_primary() {
 #[test]
 fn test_help_logon_all_flags() {
     let s = stdout_of(&["logon", "--help"]);
-    for flag in [
-        "--device", "--browser", "--auth-access-url", "--login-timeout", "--password", "--password-stdin",
-    ] {
+    for flag in ["--device", "--browser", "--auth-access-url", "--login-timeout", "--password", "--password-stdin"] {
         // Match the option name itself: a plain `contains` lets "--password"
         // pass on the "--password-stdin" line.
-        assert!(
-            s.lines().any(|line| line.trim().split_whitespace().next() == Some(flag)),
-            "logon missing {}",
-            flag
-        );
+        assert!(s.lines().any(|line| line.trim().split_whitespace().next() == Some(flag)), "logon missing {}", flag);
     }
 }
 
@@ -124,11 +126,8 @@ fn test_logon_password_stdin_conflicts_with_other_flows() {
     // --password-stdin shares the built-in password flow with --username, so it
     // must be rejected next to --device/--browser rather than silently ignored.
     for conflict in [["--password-stdin", "--device"], ["--password-stdin", "--browser"]] {
-        let out = appm()
-            .args(["-H", "localhost:6058", "logon", "-u", "nobody@example.com"])
-            .args(conflict)
-            .output()
-            .unwrap();
+        let out =
+            appm().args(["-H", "localhost:6058", "logon", "-u", "nobody@example.com"]).args(conflict).output().unwrap();
         assert!(!out.status.success(), "logon accepted {:?}", conflict);
     }
 }
@@ -137,22 +136,13 @@ fn test_logon_password_stdin_conflicts_with_other_flows() {
 fn test_logon_password_conflicts_with_other_flows() {
     // --password is the explicit built-in password selector; it must not
     // combine with the other flows or with --password-stdin.
-    for conflict in [
-        ["--password", "--device"],
-        ["--password", "--browser"],
-        ["--password", "--password-stdin"],
-    ] {
+    for conflict in [["--password", "--device"], ["--password", "--browser"], ["--password", "--password-stdin"]] {
         let out = appm().args(["-H", "localhost:6058", "logon"]).args(conflict).output().unwrap();
         // Assert the usage error, not just a failed command: an unreachable
         // Engine also exits non-zero, which would pass without the conflict.
         assert_eq!(out.status.code(), Some(2), "logon accepted {:?}", conflict);
         let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(
-            stderr.contains("cannot be used with"),
-            "logon reported no conflict for {:?}: {}",
-            conflict,
-            stderr
-        );
+        assert!(stderr.contains("cannot be used with"), "logon reported no conflict for {:?}: {}", conflict, stderr);
     }
 }
 
@@ -160,12 +150,36 @@ fn test_logon_password_conflicts_with_other_flows() {
 fn test_help_add_all_flags() {
     let s = stdout_of(&["add", "--help"]);
     for f in [
-        "--app", "--cmd", "--description", "--working-dir", "--enabled",
-        "--shell", "--session-login", "--health-check", "--depends-on", "--docker-image", "--pid",
-        "--begin-time", "--end-time", "--daily-begin", "--daily-end", "--interval", "--cron-schedule",
-        "--memory-limit", "--virtual-memory", "--cpu-shares", "--stdout-backup-count",
-        "--permission", "--metadata", "--env", "--secret-env",
-        "--stop-grace-period", "--exit", "--exit-code-actions", "--stdin", "--force",
+        "--app",
+        "--cmd",
+        "--description",
+        "--working-dir",
+        "--enabled",
+        "--shell",
+        "--session-login",
+        "--health-check",
+        "--depends-on",
+        "--docker-image",
+        "--pid",
+        "--begin-time",
+        "--end-time",
+        "--daily-begin",
+        "--daily-end",
+        "--interval",
+        "--cron-schedule",
+        "--memory-limit",
+        "--virtual-memory",
+        "--cpu-shares",
+        "--stdout-backup-count",
+        "--permission",
+        "--metadata",
+        "--env",
+        "--secret-env",
+        "--stop-grace-period",
+        "--exit",
+        "--exit-code-actions",
+        "--stdin",
+        "--force",
     ] {
         assert!(s.contains(f), "add missing {}", f);
     }
@@ -174,7 +188,9 @@ fn test_help_add_all_flags() {
 #[test]
 fn test_help_rm_all_flags() {
     let s = stdout_of(&["rm", "--help"]);
-    for f in ["--app", "--force"] { assert!(s.contains(f), "rm missing {}", f); }
+    for f in ["--app", "--force"] {
+        assert!(s.contains(f), "rm missing {}", f);
+    }
 }
 
 #[test]
@@ -188,26 +204,42 @@ fn test_help_view_all_flags() {
 #[test]
 fn test_help_enable_all_flags() {
     let s = stdout_of(&["enable", "--help"]);
-    for f in ["--app", "--all"] { assert!(s.contains(f), "enable missing {}", f); }
+    for f in ["--app", "--all"] {
+        assert!(s.contains(f), "enable missing {}", f);
+    }
 }
 
 #[test]
 fn test_help_disable_all_flags() {
     let s = stdout_of(&["disable", "--help"]);
-    for f in ["--app", "--all"] { assert!(s.contains(f), "disable missing {}", f); }
+    for f in ["--app", "--all"] {
+        assert!(s.contains(f), "disable missing {}", f);
+    }
 }
 
 #[test]
 fn test_help_restart_all_flags() {
     let s = stdout_of(&["restart", "--help"]);
-    for f in ["--app", "--all"] { assert!(s.contains(f), "restart missing {}", f); }
+    for f in ["--app", "--all"] {
+        assert!(s.contains(f), "restart missing {}", f);
+    }
 }
 
 #[test]
 fn test_help_run_all_flags() {
     let s = stdout_of(&["run", "--help"]);
-    for f in ["--app", "--cmd", "--description", "--working-dir", "--metadata", "--env",
-              "--shell", "--session-login", "--lifetime", "--timeout"] {
+    for f in [
+        "--app",
+        "--cmd",
+        "--description",
+        "--working-dir",
+        "--metadata",
+        "--env",
+        "--shell",
+        "--session-login",
+        "--lifetime",
+        "--timeout",
+    ] {
         assert!(s.contains(f), "run missing {}", f);
     }
     assert!(s.contains("216000")); // default lifetime
@@ -233,19 +265,25 @@ fn test_help_shell_all_flags() {
 #[test]
 fn test_help_get_all_flags() {
     let s = stdout_of(&["get", "--help"]);
-    for f in ["--remote", "--local", "--apply-permissions"] { assert!(s.contains(f), "get missing {}", f); }
+    for f in ["--remote", "--local", "--apply-permissions"] {
+        assert!(s.contains(f), "get missing {}", f);
+    }
 }
 
 #[test]
 fn test_help_put_all_flags() {
     let s = stdout_of(&["put", "--help"]);
-    for f in ["--remote", "--local", "--apply-permissions"] { assert!(s.contains(f), "put missing {}", f); }
+    for f in ["--remote", "--local", "--apply-permissions"] {
+        assert!(s.contains(f), "put missing {}", f);
+    }
 }
 
 #[test]
 fn test_help_label_all_flags() {
     let s = stdout_of(&["label", "--help"]);
-    for f in ["--view", "--add", "--delete", "--label"] { assert!(s.contains(f), "label missing {}", f); }
+    for f in ["--view", "--add", "--delete", "--label"] {
+        assert!(s.contains(f), "label missing {}", f);
+    }
 }
 
 #[test]
@@ -259,23 +297,41 @@ fn test_help_log_all_flags() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_missing_subcommand()        { assert!(!appm().output().unwrap().status.success()); }
+fn test_missing_subcommand() {
+    assert!(!appm().output().unwrap().status.success());
+}
 #[test]
-fn test_invalid_subcommand()        { assert!(!appm().arg("xyz").output().unwrap().status.success()); }
+fn test_invalid_subcommand() {
+    assert!(!appm().arg("xyz").output().unwrap().status.success());
+}
 #[test]
-fn test_rm_requires_app()           { assert_err_contains(&["rm", "-f"], "--app"); }
+fn test_rm_requires_app() {
+    assert_err_contains(&["rm", "-f"], "--app");
+}
 #[test]
-fn test_get_requires_remote()       { assert_err_contains(&["get", "--local", "/tmp/x"], "--remote"); }
+fn test_get_requires_remote() {
+    assert_err_contains(&["get", "--local", "/tmp/x"], "--remote");
+}
 #[test]
-fn test_get_requires_local()        { assert_err_contains(&["get", "--remote", "/tmp/x"], "--local"); }
+fn test_get_requires_local() {
+    assert_err_contains(&["get", "--remote", "/tmp/x"], "--local");
+}
 #[test]
-fn test_put_requires_remote()       { assert_err_contains(&["put", "--local", "/tmp/x"], "--remote"); }
+fn test_put_requires_remote() {
+    assert_err_contains(&["put", "--local", "/tmp/x"], "--remote");
+}
 #[test]
-fn test_put_requires_local()        { assert_err_contains(&["put", "--remote", "/tmp/x"], "--local"); }
+fn test_put_requires_local() {
+    assert_err_contains(&["put", "--remote", "/tmp/x"], "--local");
+}
 #[test]
-fn test_log_requires_level()        { assert_err_contains(&["log"], "--level"); }
+fn test_log_requires_level() {
+    assert_err_contains(&["log"], "--level");
+}
 #[test]
-fn test_exec_requires_command()     { assert!(!appm().args(["exec"]).output().unwrap().status.success()); }
+fn test_exec_requires_command() {
+    assert!(!appm().args(["exec"]).output().unwrap().status.success());
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Clap type validation
@@ -333,9 +389,7 @@ fn test_rm_force_error_exits_nonzero() {
     // `rm --force` only skips the interactive confirmation; a failed request
     // (here: unreachable server — same Err propagation as a 401/403/5xx from
     // the daemon) must still exit 1, so `appm rm -a x --force || die` works.
-    let out = appm()
-        .args(["-H", "127.0.0.1:1", "rm", "-a", "nonexist", "--force"])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "rm", "-a", "nonexist", "--force"]).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
 }
 
@@ -343,21 +397,14 @@ fn test_rm_force_error_exits_nonzero() {
 fn test_add_force_error_exits_nonzero() {
     // `add --force` must not mask a failed registration (e.g. server 400)
     // as success — the exit code is the only signal a script gets.
-    let out = appm()
-        .args([
-            "-H", "127.0.0.1:1",
-            "add", "-a", "nonexist", "-c", "echo", "--force",
-        ])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "add", "-a", "nonexist", "-c", "echo", "--force"]).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
 }
 
 #[cfg(unix)]
 #[test]
 fn test_error_with_follow_flag_exits_zero() {
-    let out = appm()
-        .args(["-H", "127.0.0.1:1", "view", "-a", "nonexist", "--follow"])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "view", "-a", "nonexist", "--follow"]).output().unwrap();
     assert_eq!(out.status.code(), Some(0));
 }
 
@@ -366,9 +413,7 @@ fn test_error_with_follow_flag_exits_zero() {
 fn test_watch_mode_failure_exits_nonzero() {
     // `ls -f` (no -a) is watch mode, not output-follow: a connection failure is
     // a real failure and must not be masked as success.
-    let out = appm()
-        .args(["-H", "127.0.0.1:1", "ls", "--follow"])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "ls", "--follow"]).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
 }
 
@@ -376,17 +421,16 @@ fn test_watch_mode_failure_exits_nonzero() {
 #[test]
 fn test_rm_short_f_error_exits_nonzero() {
     // -f on rm is --force: skip confirmation only, never skip the error exit.
-    let out = appm()
-        .args(["-H", "127.0.0.1:1", "rm", "-a", "nonexist", "-f"])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "rm", "-a", "nonexist", "-f"]).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
 fn test_help_always_exits_zero() {
-    for cmd in ["logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable",
-                "restart", "run", "exec", "shell", "get", "put", "label", "log",
-                "config", "resource", "metric", "workflow"] {
+    for cmd in [
+        "logon", "logoff", "loginfo", "add", "rm", "view", "enable", "disable", "restart", "run", "exec", "shell", "get",
+        "put", "label", "log", "config", "resource", "metric", "workflow",
+    ] {
         let out = appm().args([cmd, "--help"]).output().unwrap();
         assert!(out.status.success(), "{} --help should exit 0", cmd);
     }
@@ -418,9 +462,8 @@ fn test_default_shell_lifetime() {
 #[cfg(unix)]
 #[test]
 fn test_put_nonexistent_local_file() {
-    let out = appm()
-        .args(["-H", "127.0.0.1:1", "put", "--remote", "/tmp/r", "--local", "/no/such/file.txt"])
-        .output().unwrap();
+    let out =
+        appm().args(["-H", "127.0.0.1:1", "put", "--remote", "/tmp/r", "--local", "/no/such/file.txt"]).output().unwrap();
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     // `put` authenticates before touching the local file, so without a stored
@@ -442,9 +485,7 @@ fn test_put_nonexistent_local_file() {
 #[test]
 fn test_add_multiple_env_flags_accepted() {
     // Should parse successfully (daemon-dependent for actual operation)
-    let out = appm()
-        .args(["add", "-a", "test", "-c", "echo", "-e", "K1=V1", "-e", "K2=V2", "--help"])
-        .output().unwrap();
+    let out = appm().args(["add", "-a", "test", "-c", "echo", "-e", "K1=V1", "-e", "K2=V2", "--help"]).output().unwrap();
     // --help always exits 0; this verifies -e can appear multiple times
     assert!(out.status.success());
 }
@@ -452,8 +493,20 @@ fn test_add_multiple_env_flags_accepted() {
 #[test]
 fn test_add_multiple_exit_code_actions_flags_accepted() {
     let out = appm()
-        .args(["add", "-a", "x", "-c", "y", "--exit-code-actions", "0:standby", "--exit-code-actions", "1:restart", "--help"])
-        .output().unwrap();
+        .args([
+            "add",
+            "-a",
+            "x",
+            "-c",
+            "y",
+            "--exit-code-actions",
+            "0:standby",
+            "--exit-code-actions",
+            "1:restart",
+            "--help",
+        ])
+        .output()
+        .unwrap();
     assert!(out.status.success());
 }
 
@@ -464,17 +517,13 @@ fn test_add_multiple_exit_code_actions_flags_accepted() {
 #[test]
 fn test_add_stdin_nonexistent_file() {
     // No --force: raw argv won't contain --force, so exit code is -1 (255)
-    let out = appm()
-        .args(["-H", "127.0.0.1:1", "add", "--stdin", "/no/such/app.yaml"])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "add", "--stdin", "/no/such/app.yaml"]).output().unwrap();
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     // `add` authenticates before reading the file, so without a stored Dex
     // session the auth gate fires first; either way the command must fail.
     assert!(
-        err.contains("Failed to read")
-            || err.contains("No such file")
-            || err.contains("No sign-in session is configured")
+        err.contains("Failed to read") || err.contains("No such file") || err.contains("No sign-in session is configured")
     );
 }
 
@@ -485,12 +534,7 @@ fn test_add_stdin_valid_yaml_file() {
     std::fs::write(&yaml_path, "name: testapp\ncommand: echo hello\n").unwrap();
 
     // Will fail at network level but should parse YAML successfully
-    let out = appm()
-        .args([
-            "-H", "127.0.0.1:1",
-            "add", "--stdin", yaml_path.to_str().unwrap(), "--force",
-        ])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "add", "--stdin", yaml_path.to_str().unwrap(), "--force"]).output().unwrap();
     // Expect network error, not parse error
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -509,12 +553,7 @@ fn test_add_stdin_legacy_owner_yaml_is_accepted_locally() {
     let yaml_path = dir.path().join("legacy.yaml");
     std::fs::write(&yaml_path, "name: legacyapp\ncommand: echo hi\nowner: admin\n").unwrap();
 
-    let out = appm()
-        .args([
-            "-H", "127.0.0.1:1",
-            "add", "--stdin", yaml_path.to_str().unwrap(), "--force",
-        ])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "add", "--stdin", yaml_path.to_str().unwrap(), "--force"]).output().unwrap();
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
         !err.contains("Invalid YAML") && !err.contains("Invalid application"),
@@ -530,16 +569,11 @@ fn test_add_stdin_legacy_owner_yaml_is_accepted_locally() {
 #[test]
 fn test_add_metadata_file_not_found() {
     // No --force so error exit code is not suppressed
-    let out = appm()
-        .args(["-H", "127.0.0.1:1", "add", "-a", "x", "-c", "y", "-m", "@/nonexistent.json"])
-        .output().unwrap();
+    let out = appm().args(["-H", "127.0.0.1:1", "add", "-a", "x", "-c", "y", "-m", "@/nonexistent.json"]).output().unwrap();
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     // Without a stored sign-in session, the authentication gate fires before metadata parsing.
-    assert!(
-        err.contains("does not exist")
-            || err.contains("No sign-in session is configured")
-    );
+    assert!(err.contains("does not exist") || err.contains("No sign-in session is configured"));
 }
 
 #[test]
@@ -549,13 +583,9 @@ fn test_add_metadata_valid_json_file() {
     std::fs::write(&meta_path, r#"{"key":"value"}"#).unwrap();
 
     let out = appm()
-        .args([
-            "-H", "127.0.0.1:1",
-            "add", "-a", "x", "-c", "y",
-            "-m", &format!("@{}", meta_path.display()),
-            "--force",
-        ])
-        .output().unwrap();
+        .args(["-H", "127.0.0.1:1", "add", "-a", "x", "-c", "y", "-m", &format!("@{}", meta_path.display()), "--force"])
+        .output()
+        .unwrap();
     // Parse succeeds; network error expected
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(!err.contains("does not exist"), "metadata file should be found");
@@ -568,9 +598,7 @@ fn test_add_metadata_valid_json_file() {
 #[test]
 fn test_rm_multiple_apps_flag() {
     // Verify multiple -a flags are accepted by clap
-    let out = appm()
-        .args(["rm", "-a", "app1", "-a", "app2", "-a", "app3", "--help"])
-        .output().unwrap();
+    let out = appm().args(["rm", "-a", "app1", "-a", "app2", "-a", "app3", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
@@ -602,9 +630,7 @@ fn test_restart_all_flag_accepted() {
 
 #[test]
 fn test_label_multiple_label_flags_accepted() {
-    let out = appm()
-        .args(["label", "--add", "-l", "os=linux", "-l", "arch=x86", "--help"])
-        .output().unwrap();
+    let out = appm().args(["label", "--add", "-l", "os=linux", "-l", "arch=x86", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
@@ -615,9 +641,7 @@ fn test_label_multiple_label_flags_accepted() {
 #[test]
 fn test_exec_trailing_args_accepted() {
     // exec uses trailing_var_arg; verify clap accepts it
-    let out = appm()
-        .args(["exec", "--help"])
-        .output().unwrap();
+    let out = appm().args(["exec", "--help"]).output().unwrap();
     assert!(out.status.success());
     assert!(stdout_of(&["exec", "--help"]).contains("command"));
 }
@@ -654,10 +678,7 @@ fn assert_err_contains(args: &[&str], needle: &str) {
 #[test]
 fn test_workflow_help_lists_all_12_subcommands() {
     let s = stdout_of(&["workflow", "--help"]);
-    for sub in [
-        "add", "get", "list", "rm", "run", "runs", "logs", "output", "cancel", "rerun",
-        "detail", "inputs",
-    ] {
+    for sub in ["add", "get", "list", "rm", "run", "runs", "logs", "output", "cancel", "rerun", "detail", "inputs"] {
         assert!(s.contains(sub), "missing workflow subcommand: {}", sub);
     }
 }
@@ -669,10 +690,7 @@ fn test_workflow_add_requires_file() {
 
 #[test]
 fn test_workflow_add_missing_file_errors() {
-    assert_err_contains(
-        &["workflow", "add", "-f", "/nonexistent/wf.yaml"],
-        "File not found",
-    );
+    assert_err_contains(&["workflow", "add", "-f", "/nonexistent/wf.yaml"], "File not found");
 }
 
 #[test]
@@ -683,18 +701,12 @@ fn test_workflow_get_requires_name() {
 #[test]
 fn test_workflow_run_rejects_input_without_equals() {
     // -e without key=value must fail loudly, not be silently dropped.
-    assert_err_contains(
-        &["workflow", "run", "wf-x", "-e", "noequals"],
-        "expected key=value",
-    );
+    assert_err_contains(&["workflow", "run", "wf-x", "-e", "noequals"], "expected key=value");
 }
 
 #[test]
 fn test_workflow_run_rejects_invalid_input_key() {
-    assert_err_contains(
-        &["workflow", "run", "wf-x", "-e", "1bad=v"],
-        "[A-Za-z_][A-Za-z0-9_]*",
-    );
+    assert_err_contains(&["workflow", "run", "wf-x", "-e", "1bad=v"], "[A-Za-z_][A-Za-z0-9_]*");
 }
 
 #[test]
@@ -726,11 +738,8 @@ fn test_workflow_list_alias_ls() {
 /// the platform data directory, which differs per operating system.
 #[cfg(unix)]
 fn session_dir(home: &Path) -> PathBuf {
-    let (base, app) = if cfg!(target_os = "macos") {
-        ("Library/Application Support", "AppMesh")
-    } else {
-        (".local/share", "appmesh")
-    };
+    let (base, app) =
+        if cfg!(target_os = "macos") { ("Library/Application Support", "AppMesh") } else { (".local/share", "appmesh") };
     home.join(base).join(app).join("oauth")
 }
 
@@ -774,15 +783,9 @@ fn test_stored_session_rides_out_a_discovery_outage() {
     // 4102444800 is 2100-01-01, so the token outlives the outage.
     write_stored_session(home.path(), "wss://127.0.0.1:1", 4_102_444_800);
 
-    let out = appm_with_home(home.path())
-        .args(["-H", "127.0.0.1:1", "loginfo"])
-        .output()
-        .unwrap();
+    let out = appm_with_home(home.path()).args(["-H", "127.0.0.1:1", "loginfo"]).output().unwrap();
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("Using the stored access token"),
-        "expected the degraded-mode warning, got: {stderr}"
-    );
+    assert!(stderr.contains("Using the stored access token"), "expected the degraded-mode warning, got: {stderr}");
 }
 
 #[test]
@@ -791,16 +794,10 @@ fn test_expired_stored_session_reports_the_discovery_failure() {
     let home = TempDir::new().expect("create isolated HOME");
     write_stored_session(home.path(), "wss://127.0.0.1:1", 1_000_000_000);
 
-    let out = appm_with_home(home.path())
-        .args(["-H", "127.0.0.1:1", "loginfo"])
-        .output()
-        .unwrap();
+    let out = appm_with_home(home.path()).args(["-H", "127.0.0.1:1", "loginfo"]).output().unwrap();
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success(), "an expired token must not be reused");
-    assert!(
-        stderr.contains("Engine OAuth discovery failed"),
-        "expected the discovery error, got: {stderr}"
-    );
+    assert!(stderr.contains("Engine OAuth discovery failed"), "expected the discovery error, got: {stderr}");
     assert!(
         !stderr.contains("Using the stored access token"),
         "an expired token must not enter degraded mode, got: {stderr}"

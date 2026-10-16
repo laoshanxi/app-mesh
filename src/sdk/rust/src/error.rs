@@ -157,9 +157,9 @@ impl From<std::io::Error> for AppMeshError {
         match err.kind() {
             std::io::ErrorKind::NotFound => Self::FileNotFound(err.to_string()),
             std::io::ErrorKind::PermissionDenied => Self::PermissionDenied(err.to_string()),
-            std::io::ErrorKind::ConnectionRefused
-            | std::io::ErrorKind::ConnectionReset
-            | std::io::ErrorKind::TimedOut => Self::ConnectionError(err.to_string()),
+            std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::TimedOut => {
+                Self::ConnectionError(err.to_string())
+            }
             _ => Self::IoError(err.to_string()),
         }
     }

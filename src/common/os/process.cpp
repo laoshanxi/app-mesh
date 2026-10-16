@@ -13,17 +13,15 @@ namespace os
 	Process makeProcess(const ProcessStatus &status, const std::string &cmdline)
 	{
 		static const size_t pageSize = os::pagesize();
-		return Process(
-			status.pid, status.ppid, status.pgrp, status.session,
-			static_cast<uint64_t>(std::max<int64_t>(0, status.rss)) * pageSize,
-			status.utime, status.stime,
-			static_cast<uint64_t>(std::max<int64_t>(0, status.cutime)),
-			static_cast<uint64_t>(std::max<int64_t>(0, status.cstime)),
-			cmdline.length() ? cmdline : status.comm,
-			status.state == 'Z');
+		return Process(status.pid, status.ppid, status.pgrp, status.session,
+					   static_cast<uint64_t>(std::max<int64_t>(0, status.rss)) * pageSize, status.utime, status.stime,
+					   static_cast<uint64_t>(std::max<int64_t>(0, status.cutime)),
+					   static_cast<uint64_t>(std::max<int64_t>(0, status.cstime)), cmdline.length() ? cmdline : status.comm,
+					   status.state == 'Z');
 	}
 
-	std::unordered_set<pid_t> collectDescendants(pid_t rootPid, const std::unordered_map<pid_t, std::vector<pid_t>> &children)
+	std::unordered_set<pid_t> collectDescendants(pid_t rootPid,
+												 const std::unordered_map<pid_t, std::vector<pid_t>> &children)
 	{
 		std::unordered_set<pid_t> result;
 		std::queue<pid_t> q;

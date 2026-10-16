@@ -3,9 +3,7 @@
 
 // Environment check - only works in Node.js
 if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
-  throw new Error(
-    'AppMeshWorker is only available in Node.js environment. Use AppMeshClient for browser applications.'
-  )
+  throw new Error('AppMeshWorker is only available in Node.js environment. Use AppMeshClient for browser applications.')
 }
 
 import AppMeshClient, { AppMeshError } from './appmesh.js'
@@ -69,9 +67,9 @@ const _DEFER_CLIENT = Symbol('appmesh.deferClient')
  * import { AppMeshWorker } from 'appmesh/worker';
  *
  * const worker = new AppMeshWorker();
- * const payload = await worker.fetch_task();
+ * const payload = await worker.fetchTask();
  * const result = processPayload(payload);
- * await worker.send_task_result(result);
+ * await worker.sendTaskResult(result);
  *
  * @example
  * // TCP Worker Example
@@ -79,9 +77,9 @@ const _DEFER_CLIENT = Symbol('appmesh.deferClient')
  *
  * const worker = new AppMeshWorkerTCP();
  * try {
- *   const payload = await worker.fetch_task();
+ *   const payload = await worker.fetchTask();
  *   const result = processPayload(payload);
- *   await worker.send_task_result(result);
+ *   await worker.sendTaskResult(result);
  * } finally {
  *   worker.close();
  * }
@@ -101,7 +99,7 @@ class AppMeshWorker {
    * @param {AppMeshClient} [options.client] - Optional pre-built `AppMeshClient` instance to reuse.
    *   When supplied, `baseURL` and `sslConfig` are ignored and the worker shares the caller's
    *   client (and therefore its caller-owned bearer). Use this when a single process needs both
-   *   client (outbound calls like `AddApp`) and worker (`fetch_task`/`send_task_result`) roles.
+   *   client (outbound calls like `AddApp`) and worker (`fetchTask`/`sendTaskResult`) roles.
    *
    * @example
    * import fs from 'fs';
@@ -116,7 +114,7 @@ class AppMeshWorker {
    * @example
    * // Share a single client between client-role and worker-role usage:
    * const client = new AppMeshClient('https://127.0.0.1:6060', sslConfig);
-   * client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
+   * client.setBearerToken(process.env.APPMESH_BEARER_TOKEN);
    * const worker = new AppMeshWorker('https://127.0.0.1:6060', sslConfig, { client });
    */
   constructor (
@@ -138,8 +136,8 @@ class AppMeshWorker {
   }
 
   /**
-   * Request cancellation of the fetch_task retry loop (safe to call at any time);
-   * a pending fetch_task resolves `null` at its next retry iteration.
+   * Request cancellation of the fetchTask retry loop (safe to call at any time);
+   * a pending fetchTask resolves `null` at its next retry iteration.
    */
   stop () {
     this._stopped = true
@@ -156,14 +154,10 @@ class AppMeshWorker {
     const appName = process.env.APP_MESH_APPLICATION_NAME
 
     if (!processKey) {
-      throw new Error(
-        'Missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service.'
-      )
+      throw new Error('Missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service.')
     }
     if (!appName) {
-      throw new Error(
-        'Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.'
-      )
+      throw new Error('Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.')
     }
 
     return { processKey, appName }
@@ -185,11 +179,11 @@ class AppMeshWorker {
    * @throws {WorkerRejectedError} The daemon reported a permanent HTTP 400; an app entry
    *   point should stop serving and exit.
    */
-  async fetch_task () {
+  async fetchTask() {
     const { processKey, appName } = this._getRuntimeEnv()
     const path = `/appmesh/app/${appName}/task`
 
-    const RETRY_DELAY = 100
+    const retryDelay = 100
 
     while (!this._stopped) {
       const attemptStart = Date.now()
@@ -211,15 +205,10 @@ class AppMeshWorker {
           )
         }
         if (response.status === 400) {
-          throw new WorkerRejectedError(
-            'fetch_task permanently rejected with status 400',
-            response.data
-          )
+          throw new WorkerRejectedError('fetchTask permanently rejected with status 400', response.data)
         }
 
-        this._logger.warn(
-          `fetch_task failed with status ${response.status}: ${response.data}, retrying...`
-        )
+        this._logger.warn(`fetchTask failed with status ${response.status}: ${response.data}, retrying...`)
       } catch (error) {
         // ProcessSupersededError fixes statusCode to 412, so this covers both the
         // branch above and 412 AppMeshErrors thrown by request().
@@ -227,21 +216,20 @@ class AppMeshWorker {
           this._logger.error('Process key mismatch (412): this process has been superseded')
           throw error instanceof ProcessSupersededError
             ? error
-            : new ProcessSupersededError(
-              'Process key mismatch (412): this process has been superseded by a newer instance',
+            : new ProcessSupersededError('Process key mismatch (412): this process has been superseded by a newer instance',
               error.responseData
             )
         }
         if (error.statusCode === 400) {
-          this._logger.error(`fetch_task permanently rejected: ${error.message}`)
+          this._logger.error(`fetchTask permanently rejected: ${error.message}`)
           throw error instanceof WorkerRejectedError
             ? error
             : new WorkerRejectedError(error.message, error.responseData)
         }
-        this._logger.warn(`fetch_task error: ${error.message}, retrying...`)
+        this._logger.warn(`fetchTask error: ${error.message}, retrying...`)
       }
 
-      const remainingDelay = RETRY_DELAY - (Date.now() - attemptStart)
+      const remainingDelay = retryDelay - (Date.now() - attemptStart)
       if (remainingDelay > 0) {
         await this._sleep(remainingDelay)
       }
@@ -260,7 +248,7 @@ class AppMeshWorker {
    * @returns {Promise<void>}
    * @throws {Error} If the task return fails
    */
-  async send_task_result (result) {
+  async sendTaskResult(result) {
     const { processKey, appName } = this._getRuntimeEnv()
     const path = `/appmesh/app/${appName}/task`
 
@@ -271,12 +259,12 @@ class AppMeshWorker {
       })
     } catch (error) {
       // request() throws AppMeshError on non-200
-      this._logger.error(`send_task_result failed with status ${error.statusCode}: ${error.message}`)
+      this._logger.error(`sendTaskResult failed with status ${error.statusCode}: ${error.message}`)
       throw error
     }
 
     if (response.status !== 200) {
-      const msg = `send_task_result failed with status ${response.status}: ${response.data}`
+      const msg = `sendTaskResult failed with status ${response.status}: ${response.data}`
       this._logger.error(msg)
       throw new Error(msg)
     }
@@ -306,9 +294,9 @@ class AppMeshWorker {
  *
  * const worker = new AppMeshWorkerTCP();
  * try {
- *   const payload = await worker.fetch_task();
+ *   const payload = await worker.fetchTask();
  *   const result = await processPayload(payload);
- *   await worker.send_task_result(result);
+ *   await worker.sendTaskResult(result);
  * } finally {
  *   worker.close();
  * }
@@ -329,7 +317,8 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
-   * @param {AppMeshClientTCP} [options.client] - Pre-built client to reuse (shares its caller-owned bearer); when set, sslConfig/tcpAddress are ignored.
+   * @param {AppMeshClientTCP} [options.client] - Pre-built client to reuse (shares its caller-owned bearer);
+   * when set, sslConfig/tcpAddress are ignored.
    *
    * @example
    * import fs from 'fs';
@@ -344,7 +333,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    * // Share a single TCP client between client-role and worker-role usage:
    * import { AppMeshClientTCP } from 'appmesh/tcp';
    * const client = new AppMeshClientTCP(sslConfig, ['127.0.0.1', 6059]);
-   * client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
+   * client.setBearerToken(process.env.APPMESH_BEARER_TOKEN);
    * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6059], { client });
    */
   constructor (
@@ -380,17 +369,17 @@ class AppMeshWorkerTCP extends AppMeshWorker {
   /**
    * Fetch task data (overrides parent to ensure TCP client is initialized)
    */
-  async fetch_task () {
+  async fetchTask() {
     await this._ensureClient()
-    return super.fetch_task()
+    return super.fetchTask()
   }
 
   /**
    * Return task result (overrides parent to ensure TCP client is initialized)
    */
-  async send_task_result (result) {
+  async sendTaskResult(result) {
     await this._ensureClient()
-    return super.send_task_result(result)
+    return super.sendTaskResult(result)
   }
 
   /**
@@ -418,9 +407,9 @@ class AppMeshWorkerTCP extends AppMeshWorker {
  * await withServer(
  *   () => new AppMeshWorkerTCP(),
  *   async (worker) => {
- *     const payload = await worker.fetch_task();
+ *     const payload = await worker.fetchTask();
  *     const result = process(payload);
- *     await worker.send_task_result(result);
+ *     await worker.sendTaskResult(result);
  *   }
  * );
  */
@@ -443,3 +432,4 @@ export {
   withServer
 }
 export default AppMeshWorker
+

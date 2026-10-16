@@ -41,11 +41,11 @@ pub enum Commands {
     Add(Box<AddArgs>),
 
     /// Remove an application
-    #[command(aliases = ["remove", "unreg"])]
+    #[command(aliases =["remove", "unreg"])]
     Rm(RmArgs),
 
     /// List applications
-    #[command(aliases = ["list", "ls"])]
+    #[command(aliases =["list", "ls"])]
     View(ViewArgs),
 
     /// Enable applications
@@ -97,15 +97,15 @@ pub enum Commands {
 #[derive(Parser)]
 pub struct LogonArgs {
     /// Built-in username; password is read from the TTY prompt, or from standard input with --password-stdin
-    #[arg(short = 'u', long = "username", conflicts_with_all = ["device", "browser"])]
+    #[arg(short = 'u', long = "username", conflicts_with_all =["device", "browser"])]
     pub username: Option<String>,
 
     /// Use built-in password login and read the password from the TTY prompt
-    #[arg(long = "password", conflicts_with_all = ["device", "browser", "password_stdin"])]
+    #[arg(long = "password", conflicts_with_all =["device", "browser", "password_stdin"])]
     pub password: bool,
 
     /// Read the password from standard input instead of the TTY prompt (implies built-in password login)
-    #[arg(long = "password-stdin", conflicts_with_all = ["device", "browser"])]
+    #[arg(long = "password-stdin", conflicts_with_all =["device", "browser"])]
     pub password_stdin: bool,
 
     /// Use RFC 8628 Device Authorization

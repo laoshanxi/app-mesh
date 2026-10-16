@@ -1,11 +1,11 @@
 # iot_mqtt_publisher.py
-import time
 import json
-import uuid
 import random
+import time
+import uuid
+
 import paho.mqtt.client as mqtt
 
-import config
 from config import BROKER, PORT, TOPIC
 
 

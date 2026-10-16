@@ -4,9 +4,9 @@ use anyhow::{bail, Context, Result};
 use serde_json::json;
 
 use crate::app::{
-    Cli, WorkflowAddArgs, WorkflowArgs, WorkflowCancelArgs, WorkflowCommand, WorkflowDetailArgs,
-    WorkflowGetArgs, WorkflowInputsArgs, WorkflowLogsArgs, WorkflowOutputArgs, WorkflowRerunArgs,
-    WorkflowRmArgs, WorkflowRunArgs, WorkflowRunsArgs,
+    Cli, WorkflowAddArgs, WorkflowArgs, WorkflowCancelArgs, WorkflowCommand, WorkflowDetailArgs, WorkflowGetArgs,
+    WorkflowInputsArgs, WorkflowLogsArgs, WorkflowOutputArgs, WorkflowRerunArgs, WorkflowRmArgs, WorkflowRunArgs,
+    WorkflowRunsArgs,
 };
 use crate::client::build_client_with_auth;
 use crate::output::format::{pad_display, principal_display, truncate_with_marker};
@@ -56,14 +56,15 @@ fn with_token(client: &appmesh::AppMeshClientWSS, mut payload: serde_json::Value
 async fn add(cli: &Cli, args: &WorkflowAddArgs) -> Result<i32> {
     // Validate the local file before any network call.
     let path = std::path::Path::new(&args.file);
-    if !path.exists() { bail!("File not found: {}", args.file); }
+    if !path.exists() {
+        bail!("File not found: {}", args.file);
+    }
     let content = std::fs::read_to_string(path)?;
     let yaml: serde_yaml::Value = serde_yaml::from_str(&content)?;
-    let name = yaml.get("name").and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("YAML must have 'name'"))?;
+    let name = yaml.get("name").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("YAML must have 'name'"))?;
 
     let client = build_client_with_auth(cli).await?;
-    let payload = with_token(&client, json!({"action": "workflow_add", "workflow": name, "content": content}));
+    let payload = with_token(&client, json!({"action" : "workflow_add", "workflow" : name, "content" : content}));
     let resp = client.run_task(WORKFLOW_TRIGGER_APP, payload, 30).await.context(task_err("add"))?;
     let v = parse_resp(&resp)?;
     eprintln!("{}", v["message"].as_str().unwrap_or("ok"));
@@ -72,40 +73,58 @@ async fn add(cli: &Cli, args: &WorkflowAddArgs) -> Result<i32> {
 
 async fn get(cli: &Cli, args: &WorkflowGetArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "workflow_get", "workflow": args.name})), 10).await.context(task_err("get"))?;
+    let resp = client
+        .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action" : "workflow_get", "workflow" : args.name})), 10)
+        .await
+        .context(task_err("get"))?;
     let v = parse_resp(&resp)?;
-    if let Some(d) = v["data"].as_str() { println!("{}", d); }
+    if let Some(d) = v["data"].as_str() {
+        println!("{}", d);
+    }
     Ok(0)
 }
 
 async fn list(cli: &Cli) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "workflow_list"})), 10).await.context(task_err("list"))?;
+    let resp = client
+        .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action" : "workflow_list"})), 10)
+        .await
+        .context(task_err("list"))?;
     let v = parse_resp(&resp)?;
     let wfs = v["data"].as_array().cloned().unwrap_or_default();
-    if wfs.is_empty() { eprintln!("No workflows registered."); return Ok(0); }
+    if wfs.is_empty() {
+        eprintln!("No workflows registered.");
+        return Ok(0);
+    }
     // OWNER prefers a response-only display label and falls back to the stable
     // Principal ID when the issuer supplied no human-readable name.
-    println!("{} {} {} {}",
-        pad_display("WORKFLOW", 25), pad_display("OWNER", 18), pad_display("LAST STATUS", 12), pad_display("LAST RUN", 25));
+    println!(
+        "{} {} {} {}",
+        pad_display("WORKFLOW", 25),
+        pad_display("OWNER", 18),
+        pad_display("LAST STATUS", 12),
+        pad_display("LAST RUN", 25)
+    );
     println!("{}", "-".repeat(83));
     for w in &wfs {
-        let owner = principal_display(
-            w["owner"].as_str().unwrap_or("-"),
-            w["owner_display_name"].as_str(),
-        );
-        println!("{} {} {} {}",
+        let owner = principal_display(w["owner"].as_str().unwrap_or("-"), w["owner_display_name"].as_str());
+        println!(
+            "{} {} {} {}",
             pad_display(w["name"].as_str().unwrap_or("-"), 25),
             pad_display(&truncate_with_marker(&owner, 18), 18),
             pad_display(w["last_run_status"].as_str().unwrap_or("-"), 12),
-            pad_display(w["last_run_at"].as_str().unwrap_or("-"), 25));
+            pad_display(w["last_run_at"].as_str().unwrap_or("-"), 25)
+        );
     }
     Ok(0)
 }
 
 async fn rm(cli: &Cli, args: &WorkflowRmArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "workflow_rm", "workflow": args.name})), 10).await.context(task_err("rm"))?;
+    let resp = client
+        .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action" : "workflow_rm", "workflow" : args.name})), 10)
+        .await
+        .context(task_err("rm"))?;
     let v = parse_resp(&resp)?;
     eprintln!("{}", v["message"].as_str().unwrap_or("ok"));
     Ok(0)
@@ -128,7 +147,14 @@ async fn run(cli: &Cli, args: &WorkflowRunArgs) -> Result<i32> {
         inputs.insert(k.to_string(), json!(v));
     }
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "run", "workflow": args.name, "inputs": inputs})), 30).await.context(task_err("run"))?;
+    let resp = client
+        .run_task(
+            WORKFLOW_TRIGGER_APP,
+            with_token(&client, json!({"action" : "run", "workflow" : args.name, "inputs" : inputs})),
+            30,
+        )
+        .await
+        .context(task_err("run"))?;
     let v = parse_resp(&resp)?;
     let run_id = v["data"]["run_id"].as_str().unwrap_or("").to_string();
     let status = v["message"].as_str().unwrap_or("ok");
@@ -152,7 +178,14 @@ async fn follow_run(client: &Arc<appmesh::AppMeshClientWSS>, workflow: &str, run
 
         let mut iter_ok = false;
 
-        match client.run_task(WORKFLOW_TRIGGER_APP, with_token(client, json!({"action": "log", "workflow": workflow, "run_id": run_id})), 10).await {
+        match client
+            .run_task(
+                WORKFLOW_TRIGGER_APP,
+                with_token(client, json!({"action" : "log", "workflow" : workflow, "run_id" : run_id})),
+                10,
+            )
+            .await
+        {
             Ok(resp) => {
                 iter_ok = true;
                 if let Ok(v) = parse_resp(&resp) {
@@ -175,7 +208,14 @@ async fn follow_run(client: &Arc<appmesh::AppMeshClientWSS>, workflow: &str, run
             Err(_) => {}
         }
 
-        match client.run_task(WORKFLOW_TRIGGER_APP, with_token(client, json!({"action": "run_detail", "workflow": workflow, "run_id": run_id})), 10).await {
+        match client
+            .run_task(
+                WORKFLOW_TRIGGER_APP,
+                with_token(client, json!({"action" : "run_detail", "workflow" : workflow, "run_id" : run_id})),
+                10,
+            )
+            .await
+        {
             Ok(resp) => {
                 iter_ok = true;
                 if let Ok(v) = parse_resp(&resp) {
@@ -192,7 +232,9 @@ async fn follow_run(client: &Arc<appmesh::AppMeshClientWSS>, workflow: &str, run
             errors = 0;
         } else {
             errors += 1;
-            if errors >= 5 { bail!("Lost connection while following run"); }
+            if errors >= 5 {
+                bail!("Lost connection while following run");
+            }
         }
     }
     Ok(())
@@ -200,44 +242,91 @@ async fn follow_run(client: &Arc<appmesh::AppMeshClientWSS>, workflow: &str, run
 
 async fn runs(cli: &Cli, args: &WorkflowRunsArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "runs", "workflow": args.name})), 10).await.context(task_err("runs"))?;
+    let resp = client
+        .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action" : "runs", "workflow" : args.name})), 10)
+        .await
+        .context(task_err("runs"))?;
     let v = parse_resp(&resp)?;
     let entries = v["data"].as_array().cloned().unwrap_or_default();
-    if entries.is_empty() { eprintln!("No runs."); return Ok(0); }
-    println!("{} {} {} {}",
-        pad_display("RUN ID", 15), pad_display("STATUS", 10), pad_display("STARTED", 25), pad_display("DURATION", 10));
+    if entries.is_empty() {
+        eprintln!("No runs.");
+        return Ok(0);
+    }
+    println!(
+        "{} {} {} {}",
+        pad_display("RUN ID", 15),
+        pad_display("STATUS", 10),
+        pad_display("STARTED", 25),
+        pad_display("DURATION", 10)
+    );
     println!("{}", "-".repeat(65));
     for e in entries.iter().rev() {
         let dur = e["duration"].as_f64().unwrap_or(0.0);
         let dur_text = if dur > 0.0 { format!("{:.1}s", dur) } else { "-".into() };
-        println!("{} {} {} {}",
+        println!(
+            "{} {} {} {}",
             pad_display(e["run_id"].as_str().unwrap_or("-"), 15),
             pad_display(e["status"].as_str().unwrap_or("-"), 10),
             pad_display(e["started_at"].as_str().unwrap_or("-"), 25),
-            pad_display(&dur_text, 10));
+            pad_display(&dur_text, 10)
+        );
     }
     Ok(0)
 }
 
 async fn logs(cli: &Cli, args: &WorkflowLogsArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "log", "workflow": args.workflow, "run_id": args.run_id})), 10).await.context(task_err("logs"))?;
+    let resp = client
+        .run_task(
+            WORKFLOW_TRIGGER_APP,
+            with_token(&client, json!({"action" : "log", "workflow" : args.workflow, "run_id" : args.run_id})),
+            10,
+        )
+        .await
+        .context(task_err("logs"))?;
     let v = parse_resp(&resp)?;
-    if let Some(d) = v["data"].as_str() { print!("{}", d); }
+    if let Some(d) = v["data"].as_str() {
+        print!("{}", d);
+    }
     Ok(0)
 }
 
 async fn output(cli: &Cli, args: &WorkflowOutputArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "step_log", "workflow": args.workflow, "run_id": args.run_id, "job": args.job, "step": args.step})), 10).await.context(task_err("output"))?;
+    let resp = client
+        .run_task(
+            WORKFLOW_TRIGGER_APP,
+            with_token(
+                &client,
+                json!({
+                    "action" : "step_log",
+                    "workflow" : args.workflow,
+                    "run_id" : args.run_id,
+                    "job" : args.job,
+                    "step" : args.step
+                }),
+            ),
+            10,
+        )
+        .await
+        .context(task_err("output"))?;
     let v = parse_resp(&resp)?;
-    if let Some(d) = v["data"].as_str() { print!("{}", d); }
+    if let Some(d) = v["data"].as_str() {
+        print!("{}", d);
+    }
     Ok(0)
 }
 
 async fn cancel(cli: &Cli, args: &WorkflowCancelArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "cancel", "workflow": args.workflow, "run_id": args.run_id})), 10).await.context(task_err("cancel"))?;
+    let resp = client
+        .run_task(
+            WORKFLOW_TRIGGER_APP,
+            with_token(&client, json!({"action" : "cancel", "workflow" : args.workflow, "run_id" : args.run_id})),
+            10,
+        )
+        .await
+        .context(task_err("cancel"))?;
     let v = parse_resp(&resp)?;
     eprintln!("{}", v["message"].as_str().unwrap_or("ok"));
     Ok(0)
@@ -245,7 +334,14 @@ async fn cancel(cli: &Cli, args: &WorkflowCancelArgs) -> Result<i32> {
 
 async fn rerun(cli: &Cli, args: &WorkflowRerunArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "rerun", "workflow": args.workflow, "run_id": args.run_id})), 30).await.context(task_err("rerun"))?;
+    let resp = client
+        .run_task(
+            WORKFLOW_TRIGGER_APP,
+            with_token(&client, json!({"action" : "rerun", "workflow" : args.workflow, "run_id" : args.run_id})),
+            30,
+        )
+        .await
+        .context(task_err("rerun"))?;
     let v = parse_resp(&resp)?;
     let run_id = v["data"]["run_id"].as_str().unwrap_or("");
     let status = v["message"].as_str().unwrap_or("ok");
@@ -259,7 +355,14 @@ async fn rerun(cli: &Cli, args: &WorkflowRerunArgs) -> Result<i32> {
 
 async fn detail(cli: &Cli, args: &WorkflowDetailArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "run_detail", "workflow": args.workflow, "run_id": args.run_id})), 10).await.context(task_err("detail"))?;
+    let resp = client
+        .run_task(
+            WORKFLOW_TRIGGER_APP,
+            with_token(&client, json!({"action" : "run_detail", "workflow" : args.workflow, "run_id" : args.run_id})),
+            10,
+        )
+        .await
+        .context(task_err("detail"))?;
     let v = parse_resp(&resp)?;
     println!("{}", serde_json::to_string_pretty(&v["data"])?);
     Ok(0)
@@ -267,23 +370,41 @@ async fn detail(cli: &Cli, args: &WorkflowDetailArgs) -> Result<i32> {
 
 async fn inputs(cli: &Cli, args: &WorkflowInputsArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action": "workflow_inputs", "workflow": args.name})), 10).await.context(task_err("inputs"))?;
+    let resp = client
+        .run_task(
+            WORKFLOW_TRIGGER_APP,
+            with_token(&client, json!({"action" : "workflow_inputs", "workflow" : args.name})),
+            10,
+        )
+        .await
+        .context(task_err("inputs"))?;
     let v = parse_resp(&resp)?;
     let data = &v["data"];
     if let Some(obj) = data.as_object() {
-        if obj.is_empty() { eprintln!("No inputs defined."); return Ok(0); }
-        println!("{} {} {} {} {}",
-            pad_display("NAME", 20), pad_display("TYPE", 10), pad_display("REQUIRED", 10), pad_display("DEFAULT", 15), "DESCRIPTION");
+        if obj.is_empty() {
+            eprintln!("No inputs defined.");
+            return Ok(0);
+        }
+        println!(
+            "{} {} {} {} {}",
+            pad_display("NAME", 20),
+            pad_display("TYPE", 10),
+            pad_display("REQUIRED", 10),
+            pad_display("DEFAULT", 15),
+            "DESCRIPTION"
+        );
         println!("{}", "-".repeat(75));
         for (name, def) in obj {
             let required = if def["required"].as_bool().unwrap_or(false) { "true" } else { "false" };
             let default_text = def.get("default").map(|d| d.to_string()).unwrap_or_else(|| "-".into());
-            println!("{} {} {} {} {}",
+            println!(
+                "{} {} {} {} {}",
                 pad_display(name, 20),
                 pad_display(def["type"].as_str().unwrap_or("-"), 10),
                 pad_display(required, 10),
                 pad_display(&default_text, 15),
-                def["description"].as_str().unwrap_or(""));
+                def["description"].as_str().unwrap_or("")
+            );
         }
     } else {
         eprintln!("No inputs defined.");

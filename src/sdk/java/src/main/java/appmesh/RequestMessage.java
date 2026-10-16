@@ -1,13 +1,13 @@
 package appmesh;
 
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.msgpack.jackson.dataformat.MessagePackFactory;
-
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
 
 /** TCP request message. */
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -17,13 +17,13 @@ public class RequestMessage {
     public String uuid = "";
     
     @JsonProperty("request_uri")
-    public String request_uri = "";
+    public String requestUri = "";
     
     @JsonProperty("http_method")
-    public String http_method = "";
+    public String httpMethod = "";
     
     @JsonProperty("client_addr")
-    public String client_addr = "";
+    public String clientAddr = "";
     
     @JsonProperty("body")
     public byte[] body = new byte[0];

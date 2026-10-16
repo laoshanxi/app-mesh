@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"go.uber.org/atomic"
 )
 
 // AppMeshClient interacts with App Mesh REST APIs.
@@ -29,26 +27,30 @@ type AppMeshClient struct {
 
 // Option for NewHttpClient
 type Option struct {
-	AppMeshUri string // URI of the App Mesh server; use "https://127.0.0.1:6060" for HTTP or "127.0.0.1:6059" for TCP.
-	ForwardTo  string // The target host to which all requests will be forwarded; with this set, AppMeshUri will act as a proxy to forward requests.
+	AppMeshURI string // URI of the App Mesh server; use "https://127.0.0.1:6060" for HTTP or "127.0.0.1:6059" for TCP.
+	// The target host to which all requests will be forwarded; with this set, AppMeshURI will act as a proxy to
+	// forward requests.
+	ForwardTo string
 
-	SslClientCertificateFile    string // Path to the client certificate file (PEM format), leave empty to disable client authentication.
-	SslClientCertificateKeyFile string // Path to the client certificate private key (PEM format), leave empty to disable client authentication.
+	// Path to the client certificate file (PEM format), leave empty to disable client authentication.
+	SSLClientCertificateFile string
+	// Path to the client certificate private key (PEM format), leave empty to disable client authentication.
+	SSLClientCertificateKeyFile string
 
-	// SslTrustedCA controls server certificate verification:
+	// SSLTrustedCA controls server certificate verification:
 	//   - nil: default App Mesh CA (/opt/appmesh/ssl/ca.pem) if present, else the system trust store
 	//   - File path: custom CA file or directory; a missing/unreadable path is a hard error
 	//   - Empty string (""): disables verification (legacy form of InsecureSkipVerify)
 	// When a CA file/dir is used, system CAs are not included; combine bundles if needed.
-	SslTrustedCA *string
+	SSLTrustedCA *string
 
-	// InsecureSkipVerify disables server certificate verification (testing only; same as SslTrustedCA = "").
+	// InsecureSkipVerify disables server certificate verification (testing only; same as SSLTrustedCA = "").
 	InsecureSkipVerify bool
 
-	JwtToken string // Access token set directly without a network call.
+	JWTToken string // Access token set directly without a network call.
 
 	// TokenProvider supplies and refreshes access tokens (see token_provider.go).
-	// An explicitly set provider wins over JwtToken; refresh credentials stay
+	// An explicitly set provider wins over JWTToken; refresh credentials stay
 	// private to the provider and only access tokens cross into the client.
 	TokenProvider TokenProvider
 
@@ -70,22 +72,22 @@ func NewHTTPClient(options Option) (*AppMeshClient, error) {
 	return newHTTPClientWithRequester(options, nil)
 }
 func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, error) {
-	clientCertFile := options.SslClientCertificateFile
-	clientCertKeyFile := options.SslClientCertificateKeyFile
+	clientCertFile := options.SSLClientCertificateFile
+	clientCertKeyFile := options.SSLClientCertificateKeyFile
 	caFile := DefaultCAFile
 	if options.InsecureSkipVerify {
 		// Explicit insecure mode: an empty CA path signals skip-verify to the transports.
 		caFile = ""
-	} else if options.SslTrustedCA != nil {
+	} else if options.SSLTrustedCA != nil {
 		// Legacy form: an explicit empty CA path ("") also disables verification.
-		caFile = *options.SslTrustedCA
+		caFile = *options.SSLTrustedCA
 	} else if !IsFileExist(DefaultCAFile) {
 		// No local App Mesh install: fall back to the system trust store.
 		// An explicitly configured CA path that is missing remains a hard error.
 		caFile = caSystemTrust
 	}
 
-	baseURL := options.AppMeshUri
+	baseURL := options.AppMeshURI
 	if baseURL == "" {
 		baseURL = DefaultHTTPURI
 	}
@@ -107,10 +109,10 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 		}
 
 		req = &HTTPRequester{
-			baseURL:        *parsed,
-			httpClient:     httpClient,
-			forwardingHost: atomic.NewString(options.ForwardTo),
+			baseURL:    *parsed,
+			httpClient: httpClient,
 		}
+		req.setForwardTo(options.ForwardTo)
 	}
 
 	c := &AppMeshClient{
@@ -121,10 +123,10 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	}
 
 	if options.TokenProvider != nil {
-		// An explicitly configured provider wins over a static JwtToken.
+		// An explicitly configured provider wins over a static JWTToken.
 		c.SetTokenProvider(options.TokenProvider)
-	} else if options.JwtToken != "" {
-		c.SetToken(options.JwtToken)
+	} else if options.JWTToken != "" {
+		c.SetToken(options.JWTToken)
 	}
 
 	return c, nil
@@ -286,22 +288,26 @@ func (r *AppMeshClient) CheckAppHealth(appName string) (bool, error) {
 // OutputPosition is the next cursor to read from, and ExitCode is populated once the process
 // has finished. timeout controls how long the server may long-poll for new output.
 // AppOutput.Error is non-nil on transport failure or any non-200 HTTP status.
-func (r *AppMeshClient) GetAppOutput(appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string, timeout int) AppOutput {
-	return r.GetAppOutputContext(context.Background(), appName, stdoutPosition, stdoutIndex, stdoutMaxsize, processUuid, timeout)
+func (r *AppMeshClient) GetAppOutput(appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int,
+	processUuid string, timeout int) AppOutput {
+	return r.GetAppOutputContext(context.Background(), appName, stdoutPosition, stdoutIndex, stdoutMaxsize, processUuid,
+		timeout)
 }
 
 // GetAppOutputContext is GetAppOutput with a caller-supplied context controlling cancellation.
-func (r *AppMeshClient) GetAppOutputContext(ctx context.Context, appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string, timeout int) AppOutput {
+func (r *AppMeshClient) GetAppOutputContext(ctx context.Context, appName string, stdoutPosition int64, stdoutIndex int,
+	stdoutMaxsize int, processUuid string, timeout int) AppOutput {
 	return r.getAppOutput(ctx, appName, stdoutPosition, stdoutIndex, stdoutMaxsize, processUuid, timeout, nil)
 }
 
 // getAppOutput implements the output fetch; extraHeaders allows per-request
 // X-Target-Host overrides without mutating shared client state.
-func (r *AppMeshClient) getAppOutput(ctx context.Context, appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string, timeout int, extraHeaders Headers) AppOutput {
+func (r *AppMeshClient) getAppOutput(ctx context.Context, appName string, stdoutPosition int64, stdoutIndex int,
+	stdoutMaxsize int, processUuid string, timeout int, extraHeaders Headers) AppOutput {
 	if appName == "" {
 		return AppOutput{
 			Error:       fmt.Errorf("application name is required"),
-			HttpSuccess: false,
+			HTTPSuccess: false,
 		}
 	}
 
@@ -312,14 +318,15 @@ func (r *AppMeshClient) getAppOutput(ctx context.Context, appName string, stdout
 	q.Set("process_uuid", processUuid)
 	q.Set("timeout", strconv.Itoa(timeout))
 
-	code, body, hdr, err := r.req.SendContext(ctx, http.MethodGet, fmt.Sprintf("/appmesh/app/%s/output", appName), q, extraHeaders, nil)
+	code, body, hdr, err := r.req.SendContext(ctx, http.MethodGet, fmt.Sprintf("/appmesh/app/%s/output", appName), q,
+		extraHeaders, nil)
 	if err == nil && code != http.StatusOK {
 		err = newAPIError("get app output", code, string(body))
 	}
 	resp := AppOutput{
 		Error:       err,
-		HttpSuccess: code == http.StatusOK,
-		HttpBody:    string(body),
+		HTTPSuccess: code == http.StatusOK,
+		HTTPBody:    string(body),
 	}
 
 	if exitStr := hdr.Get("X-Exit-Code"); exitStr != "" {
@@ -386,7 +393,8 @@ func (r *AppMeshClient) deleteApp(ctx context.Context, appName string, extraHead
 		return false, fmt.Errorf("application name is required")
 	}
 
-	code, _, _, err := r.req.SendContext(ctx, http.MethodDelete, fmt.Sprintf("/appmesh/app/%s", appName), nil, extraHeaders, nil)
+	code, _, _, err := r.req.SendContext(ctx, http.MethodDelete, fmt.Sprintf("/appmesh/app/%s", appName), nil,
+		extraHeaders, nil)
 	if err != nil {
 		return false, fmt.Errorf("remove app request failed: %w", err)
 	}
@@ -397,7 +405,8 @@ func (r *AppMeshClient) deleteApp(ctx context.Context, appName string, extraHead
 	case http.StatusNotFound:
 		return false, nil
 	default:
-		return false, newAPIErrorText("delete app", code, "", fmt.Sprintf("unexpected status %d when deleting app %q", code, appName))
+		return false, newAPIErrorText("delete app", code, "", fmt.Sprintf("unexpected status %d when deleting app %q",
+			code, appName))
 	}
 }
 
@@ -463,7 +472,8 @@ func (r *AppMeshClient) RunTaskContext(ctx context.Context, appName string, payl
 	}
 	q := url.Values{}
 	q.Set("timeout", strconv.Itoa(timeout))
-	code, raw, _, err := r.req.SendContext(ctx, http.MethodPost, fmt.Sprintf("/appmesh/app/%s/task", appName), q, nil, bytes.NewBufferString(payload))
+	code, raw, _, err := r.req.SendContext(ctx, http.MethodPost, fmt.Sprintf("/appmesh/app/%s/task", appName), q, nil,
+		bytes.NewBufferString(payload))
 	if err != nil {
 		return "", fmt.Errorf("run task request failed: %w", err)
 	}
@@ -568,9 +578,10 @@ func (r *AppMeshClient) WaitContext(ctx context.Context, asyncRun *AppRun, stdou
 		case <-ctx.Done():
 			return 0, fmt.Errorf("%w: %v", ErrWaitTimeout, ctx.Err())
 		case <-ticker.C:
-			out := r.getAppOutput(ctx, asyncRun.AppName, lastPos, 0, 10240, asyncRun.ProcUid, int(interval.Seconds()), forwardHeaders)
-			if out.HttpBody != "" && stdoutHandler != nil {
-				stdoutHandler(out.HttpBody, lastPos)
+			out := r.getAppOutput(ctx, asyncRun.AppName, lastPos, 0, 10240, asyncRun.ProcUid, int(interval.Seconds()),
+				forwardHeaders)
+			if out.HTTPBody != "" && stdoutHandler != nil {
+				stdoutHandler(out.HTTPBody, lastPos)
 			}
 			if out.OutputPosition != nil {
 				lastPos = *out.OutputPosition
@@ -580,7 +591,7 @@ func (r *AppMeshClient) WaitContext(ctx context.Context, asyncRun *AppRun, stdou
 				_, _ = r.deleteApp(context.Background(), asyncRun.AppName, forwardHeaders)
 				return *out.ExitCode, nil
 			}
-			if !out.HttpSuccess {
+			if !out.HTTPSuccess {
 				return 0, fmt.Errorf("failed to get app output: %v", out.Error)
 			}
 		}
@@ -599,7 +610,8 @@ func (r *AppMeshClient) RunAppSync(app Application, maxTime int, lifecycle int) 
 // RunAppSyncChecked runs an application synchronously like RunAppSync, but reports
 // whether the exit code is authoritative: ok is true when the server returned an
 // X-Exit-Code header (matching the Python SDK, where a missing header yields None).
-func (r *AppMeshClient) RunAppSyncChecked(app Application, maxTime int, lifecycle int) (exitCode int, stdout string, ok bool, err error) {
+func (r *AppMeshClient) RunAppSyncChecked(app Application, maxTime int, lifecycle int) (exitCode int, stdout string,
+	ok bool, err error) {
 	appJson, err := json.Marshal(app)
 	if err != nil {
 		return 0, "", false, fmt.Errorf("failed to marshal application: %w", err)
@@ -1027,7 +1039,8 @@ type streamingRequester interface {
 // getStream performs a GET request returning the response body as a stream when the
 // transport supports it (HTTP); other transports fall back to the buffered response.
 // The caller must close the returned body.
-func (r *AppMeshClient) getStream(path string, params url.Values, headers map[string]string) (int, io.ReadCloser, http.Header, error) {
+func (r *AppMeshClient) getStream(path string, params url.Values, headers map[string]string) (int, io.ReadCloser,
+	http.Header, error) {
 	if s, ok := r.req.(streamingRequester); ok {
 		return s.getStream(path, params, headers)
 	}
@@ -1058,7 +1071,8 @@ func (r *AppMeshClient) put(path string, params url.Values, headers map[string]s
 	return code, raw, err
 }
 
-func (r *AppMeshClient) post(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, http.Header, error) {
+func (r *AppMeshClient) post(path string, params url.Values, headers map[string]string, body []byte) (int, []byte,
+	http.Header, error) {
 	return r.req.Send(http.MethodPost, path, params, withJSONContentType(headers, body), bytes.NewBuffer(body))
 }
 

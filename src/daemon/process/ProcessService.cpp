@@ -17,10 +17,16 @@ struct ProcessService::SyncWaiter
 {
 	std::mutex mutex;
 	std::condition_variable cv;
-	bool done = false;		  ///< The task ran.
+	bool done = false;        ///< The task ran.
 	bool interrupted = false; ///< Shutdown released the wait.
 	std::exception_ptr error;
 };
+
+ProcessService *ProcessService::instance()
+{
+	static ProcessService service;
+	return &service;
+}
 
 ProcessService::ProcessService()
 	: m_workGuard(boost::asio::make_work_guard(m_ioContext)),
@@ -30,7 +36,12 @@ ProcessService::ProcessService()
 	LOG_DBG << fname;
 	try
 	{
-		m_ioThread = std::thread([this]() { Utility::setThreadName("appmesh-proc"); m_ioContext.run(); });
+		m_ioThread = std::thread(
+			[this]()
+			{
+				Utility::setThreadName("appmesh-proc");
+				m_ioContext.run();
+			});
 		m_ioThreadId = m_ioThread.get_id();
 	}
 	catch (const std::exception &ex)
@@ -43,20 +54,11 @@ ProcessService::ProcessService()
 	}
 }
 
-ProcessService::~ProcessService()
-{
-	shutdown();
-}
+ProcessService::~ProcessService() { shutdown(); }
 
-boost::asio::io_context &ProcessService::io()
-{
-	return m_ioContext;
-}
+boost::asio::io_context &ProcessService::io() { return m_ioContext; }
 
-void ProcessService::post(std::function<void()> task)
-{
-	boost::asio::post(m_ioContext, std::move(task));
-}
+void ProcessService::post(std::function<void()> task) { boost::asio::post(m_ioContext, std::move(task)); }
 
 void ProcessService::ensureCallbackThread()
 {
@@ -65,7 +67,12 @@ void ProcessService::ensureCallbackThread()
 	// context after shutdown() joined — it would never be joined.
 	if (m_stopped.load(std::memory_order_acquire) || m_callbackThread.get_id() != std::thread::id())
 		return;
-	m_callbackThread = std::thread([this]() { Utility::setThreadName("appmesh-exit"); m_callbackContext.run(); });
+	m_callbackThread = std::thread(
+		[this]()
+		{
+			Utility::setThreadName("appmesh-exit");
+			m_callbackContext.run();
+		});
 	m_callbackThreadId = m_callbackThread.get_id();
 }
 
@@ -89,10 +96,7 @@ void ProcessService::postCallback(std::function<void()> task)
 	boost::asio::post(m_callbackContext, std::move(task));
 }
 
-bool ProcessService::onIoThread() const
-{
-	return std::this_thread::get_id() == m_ioThreadId;
-}
+bool ProcessService::onIoThread() const { return std::this_thread::get_id() == m_ioThreadId; }
 
 bool ProcessService::onCallbackThread() const
 {
@@ -114,27 +118,28 @@ bool ProcessService::dispatchSync(const std::function<void()> &task)
 			return false;
 		m_syncWaiters.push_back(waiter);
 	}
-	post([waiter, task]()
-		 {
-		std::exception_ptr error;
-		try
+	post(
+		[waiter, task]()
 		{
-			task();
-		}
-		catch (...)
-		{
-			error = std::current_exception();
-		}
-		std::lock_guard lock(waiter->mutex);
-		waiter->error = error;
-		waiter->done = true;
-		waiter->cv.notify_all(); });
+			std::exception_ptr error;
+			try
+			{
+				task();
+			}
+			catch (...)
+			{
+				error = std::current_exception();
+			}
+			std::lock_guard lock(waiter->mutex);
+			waiter->error = error;
+			waiter->done = true;
+			waiter->cv.notify_all();
+		});
 	bool ran = false;
 	std::exception_ptr error;
 	{
 		std::unique_lock lock(waiter->mutex);
-		waiter->cv.wait(lock, [waiter]()
-						{ return waiter->done || waiter->interrupted; });
+		waiter->cv.wait(lock, [waiter]() { return waiter->done || waiter->interrupted; });
 		error = waiter->error;
 		ran = waiter->done;
 	}

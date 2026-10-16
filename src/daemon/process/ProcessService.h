@@ -19,6 +19,9 @@
 class ProcessService
 {
 public:
+	/// Process-wide singleton (thread-safe function-local static).
+	static ProcessService *instance();
+
 	ProcessService();
 	~ProcessService();
 
@@ -72,16 +75,6 @@ private:
 	mutable std::mutex m_callbackMutex; ///< Guards lazy start/join of m_callbackThread and its id.
 
 	std::atomic<bool> m_stopped{false};
-	std::mutex m_syncMutex;								   ///< Guards m_syncWaiters.
+	std::mutex m_syncMutex;                                 ///< Guards m_syncWaiters.
 	std::vector<std::shared_ptr<SyncWaiter>> m_syncWaiters; ///< dispatchSync waits shutdown must release.
-};
-
-/// Process-wide ProcessService singleton (thread-safe function-local static).
-struct PROCESS_SERVICE
-{
-	static ProcessService *instance()
-	{
-		static ProcessService service;
-		return &service;
-	}
 };

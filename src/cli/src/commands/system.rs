@@ -42,10 +42,7 @@ pub async fn log_level(cli: &Cli, args: &LogArgs) -> Result<i32> {
         bail!("Invalid log level '{}'. Valid: {:?}", args.level, valid_levels);
     }
 
-    let result = client
-        .set_log_level(&level)
-        .await
-        .context("Failed to set log level")?;
+    let result = client.set_log_level(&level).await.context("Failed to set log level")?;
     eprintln!("Log level set to: {}", result);
     Ok(0)
 }
@@ -59,10 +56,7 @@ pub async fn config(cli: &Cli) -> Result<i32> {
 
 pub async fn resource(cli: &Cli) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let res = client
-        .get_host_resources()
-        .await
-        .context("Failed to get resources")?;
+    let res = client.get_host_resources().await.context("Failed to get resources")?;
     format::print_json(&res)?;
     Ok(0)
 }

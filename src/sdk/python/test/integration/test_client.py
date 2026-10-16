@@ -63,7 +63,8 @@ class TestHTTP(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, Task
     def _create_client(self):
         return AppMeshClient()
 
-    @unittest.skip("Go agent IsValidFileName blocks /etc/* on download (fixed in source, awaiting release); TCP/WSS still cover it.")
+    @unittest.skip("Go agent IsValidFileName blocks /etc/* on download (fixed in source, awaiting release); TCP/WSS still "
+        "cover it.")
     def test_22_download_readonly_file(self):
         pass
 
@@ -228,7 +229,8 @@ class TestWSS(
             self.client.forward_to = None
 
 
-class TestWSSRest(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin, StressTestMixin, TestCase):
+class TestWSSRest(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin, StressTestMixin,
+    TestCase):
     """Tests using plain HTTPS REST client against the WSS (lws) port."""
 
     def setUp(self):

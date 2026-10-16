@@ -32,8 +32,7 @@ namespace os
 		if (host_page_size(hostPort, &page_size) != KERN_SUCCESS)
 			return nullptr;
 
-		if (host_statistics64(hostPort, HOST_VM_INFO64,
-							  (host_info64_t)&vm_stats, &count) != KERN_SUCCESS)
+		if (host_statistics64(hostPort, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) != KERN_SUCCESS)
 		{
 			return nullptr;
 		}
@@ -46,16 +45,16 @@ namespace os
 		mem->total_bytes = total_memory;
 		mem->free_bytes = (uint64_t)vm_stats.free_count * (uint64_t)page_size;
 		mem->available_bytes = std::min<uint64_t>(
-			mem->total_bytes,
-			(static_cast<uint64_t>(vm_stats.free_count) + static_cast<uint64_t>(vm_stats.inactive_count)) * static_cast<uint64_t>(page_size));
+			mem->total_bytes, (static_cast<uint64_t>(vm_stats.free_count) + static_cast<uint64_t>(vm_stats.inactive_count)) *
+								  static_cast<uint64_t>(page_size));
 
 		xsw_usage swap_usage;
 		size_t swap_size = sizeof(swap_usage);
 		if (sysctlbyname("vm.swapusage", &swap_usage, &swap_size, NULL, 0) == 0)
 		{
-			mem->totalSwap_bytes = swap_usage.xsu_total;
-			mem->freeSwap_bytes = swap_usage.xsu_avail;
-			mem->swapAvailable = true;
+			mem->total_swap_bytes = swap_usage.xsu_total;
+			mem->free_swap_bytes = swap_usage.xsu_avail;
+			mem->swap_available = true;
 		}
 
 		return mem;

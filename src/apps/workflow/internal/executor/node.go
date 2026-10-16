@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 // ResolveTargetNode finds a cluster node matching the given label selector.
 //
 // The local node is checked first. Remote probes carry only the caller's Dex
 // bearer, which the destination independently verifies against the shared Dex.
-func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nodeLabel map[string]string, clusterNodes []string, forwardToken string) (string, error) {
+func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nodeLabel map[string]string,
+	clusterNodes []string, forwardToken string) (string, error) {
 	if len(nodeLabel) == 0 {
 		return "", nil
 	}
@@ -31,13 +32,15 @@ func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nod
 	}
 
 	if forwardToken == "" {
-		return "", fmt.Errorf("no local node matches label selector %s and remote probing requires a transient caller Dex bearer", formatLabels(nodeLabel))
+		return "", fmt.Errorf(
+			"no local node matches label selector %s and remote probing requires a transient caller Dex bearer",
+			formatLabels(nodeLabel))
 	}
 	for _, node := range clusterNodes {
 		probeOption := appmesh.Option{
-			AppMeshUri: serverURI,
+			AppMeshURI: serverURI,
 			ForwardTo:  node,
-			JwtToken:   forwardToken,
+			JWTToken:   forwardToken,
 		}
 		tlsconf.Apply(&probeOption)
 		probe, err := appmesh.NewTCPClient(probeOption)

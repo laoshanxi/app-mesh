@@ -9,14 +9,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"github.com/rs/xid"
+
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/engine"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/expression"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
-	"github.com/rs/xid"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 const scanInterval = 30 * time.Second
@@ -50,7 +51,8 @@ var runCapabilityOperations = []string{
 	"label-view",
 }
 
-type CapabilityIssuer func(ctx context.Context, workflowID, runID string, operations []string) (appmesh.WorkflowCapability, error)
+type CapabilityIssuer func(ctx context.Context, workflowID, runID string,
+	operations []string) (appmesh.WorkflowCapability, error)
 
 type Service struct {
 	client       *appmesh.AppMeshClient
@@ -168,7 +170,8 @@ func (s *Service) SetProcessUUID(processUUID string) {
 // the access-token TTL would die mid-run with 401s. The capability instead is
 // bound to this workflow/run/owner and current managed process and is renewed
 // for the whole run lifetime (see startCapabilityRenewal).
-func (s *Service) resolveExecCredential(ctx context.Context, workflowID, runID string) (string, appmesh.WorkflowCapability, error) {
+func (s *Service) resolveExecCredential(ctx context.Context, workflowID, runID string) (string,
+	appmesh.WorkflowCapability, error) {
 	if s.issueCapability == nil {
 		return "", appmesh.WorkflowCapability{}, fmt.Errorf("workflow capability issuer is unavailable")
 	}
@@ -180,7 +183,8 @@ func (s *Service) resolveExecCredential(ctx context.Context, workflowID, runID s
 	}
 	owner := s.registry.Owner(workflowID)
 	if owner == "" || capability.OwnerPrincipalID != owner {
-		return "", appmesh.WorkflowCapability{}, fmt.Errorf("Engine capability owner does not match the registered workflow owner")
+		return "", appmesh.WorkflowCapability{},
+			fmt.Errorf("Engine capability owner does not match the registered workflow owner")
 	}
 	if s.processUUID == "" || capability.ProcessUUID != s.processUUID {
 		return "", appmesh.WorkflowCapability{}, fmt.Errorf("Engine capability is not bound to the current Workflow process")
@@ -203,7 +207,8 @@ func stepStateToAny(ss StepState) map[string]any {
 // loadRecoveredSteps reads per-job step state from the checkpoint for the
 // given completed jobs and returns both the typed map (for caller's bookkeeping)
 // and the engine's generic shape.
-func (s *Service) loadRecoveredSteps(wfName, runID string, completedJobs map[string]string) (map[string]map[string]StepState, map[string]map[string]map[string]any) {
+func (s *Service) loadRecoveredSteps(wfName, runID string,
+	completedJobs map[string]string) (map[string]map[string]StepState, map[string]map[string]map[string]any) {
 	saved := make(map[string]map[string]StepState)
 	recovered := make(map[string]map[string]map[string]any)
 	for jobName := range completedJobs {
@@ -240,7 +245,8 @@ func (s *Service) reconcileIndex() {
 			}
 			if rec.Status != "running" {
 				s.wdir.UpdateRunInIndex(name, r.RunID, rec.Status, 0)
-				logger.Info(fmt.Sprintf("RECONCILE synced %s/%s index to %s (checkpoint terminal)", name, r.RunID, rec.Status))
+				logger.Info(fmt.Sprintf("RECONCILE synced %s/%s index to %s (checkpoint terminal)", name, r.RunID,
+					rec.Status))
 			}
 		}
 	}
@@ -295,7 +301,8 @@ func (s *Service) refreshControlCapability(reason string) {
 			backoff = controlRefreshMaxBackoff
 		}
 		s.controlRefreshCooldown = time.Now().Add(backoff)
-		logger.Error(fmt.Sprintf("workflow control capability refresh failed (attempt %d, next try in %s): %s", s.controlRefreshFails, backoff, err.Error()))
+		logger.Error(fmt.Sprintf("workflow control capability refresh failed (attempt %d, next try in %s): %s",
+			s.controlRefreshFails, backoff, err.Error()))
 		return
 	}
 	s.controlRefreshFails = 0
@@ -316,7 +323,8 @@ func (s *Service) triggerRun(wf *models.Workflow, source string, inputs map[stri
 // never as the local execution credential, which every run obtains from the Engine as a
 // run-scoped capability (see resolveExecCredential). actor is the immutable Principal ID recorded for audit
 // (`internal:workflow-trigger` for automatic triggers).
-func (s *Service) triggerRunToken(wf *models.Workflow, source string, inputs map[string]string, token, actor string) (string, string) {
+func (s *Service) triggerRunToken(wf *models.Workflow, source string, inputs map[string]string, token,
+	actor string) (string, string) {
 	runID := xid.New().String()
 	group := ""
 	cancelInProgress := false
@@ -367,8 +375,10 @@ func (s *Service) startRun(wf *models.Workflow, runID, group, source string, inp
 	s.launchRun(wf, runID, group, source, inputs, nil, nil, token)
 }
 
-func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, inputs map[string]string, completedJobs map[string]string) {
-	logger.Info(fmt.Sprintf("TRIGGER resuming workflow '%s' run=%s (skipping %d completed jobs)", wf.Name, runID, len(completedJobs)))
+func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, inputs map[string]string,
+	completedJobs map[string]string) {
+	logger.Info(fmt.Sprintf("TRIGGER resuming workflow '%s' run=%s (skipping %d completed jobs)", wf.Name, runID,
+		len(completedJobs)))
 
 	// Load step results from checkpoint for cross-job expression recovery.
 	savedSteps, recoveredSteps := s.loadRecoveredSteps(wf.Name, runID, completedJobs)
@@ -412,7 +422,8 @@ func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, in
 	s.launchRun(wf, runID, group, source, inputs, completedJobs, recoveredSteps, "")
 }
 
-func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, inputs map[string]string, completedJobs map[string]string, recoveredSteps map[string]map[string]map[string]any, token string) {
+func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, inputs map[string]string,
+	completedJobs map[string]string, recoveredSteps map[string]map[string]map[string]any, token string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	active := engine.NewActiveSteps(s.client, s.serverURI)
 
@@ -472,7 +483,8 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 					// and release its slot, promoting the following queued run.
 					s.checkpoint.MarkComplete(next.wfName, next.runID, "cancelled")
 					s.wdir.UpdateRunInIndex(next.wfName, next.runID, "cancelled", 0)
-					logger.Error(fmt.Sprintf("TRIGGER dequeued run=%s but workflow '%s' no longer exists", next.runID, next.wfName))
+					logger.Error(fmt.Sprintf("TRIGGER dequeued run=%s but workflow '%s' no longer exists", next.runID,
+						next.wfName))
 					next = s.runMgr.Complete(group, next.runID)
 					continue
 				}
@@ -522,8 +534,8 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 		// certificate (fail closed) like every credential-bearing client.
 		execClient := s.client
 		execOption := appmesh.Option{
-			AppMeshUri: s.serverURI,
-			JwtToken:   execToken,
+			AppMeshURI: s.serverURI,
+			JWTToken:   execToken,
 		}
 		tlsconf.Apply(&execOption)
 		if c, err := appmesh.NewTCPClient(execOption); err == nil {

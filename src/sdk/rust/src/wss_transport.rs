@@ -6,8 +6,6 @@ use crate::error::AppMeshError;
 pub use crate::tls_config::{ClientCert, SslVerify};
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use rustls::pki_types::pem::PemObject;
-use rustls::pki_types::CertificateDer;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, protocol::Message};
@@ -30,14 +28,7 @@ pub struct WSSTransport {
 impl WSSTransport {
     pub fn new(address: (String, u16), ssl_verify: SslVerify, ssl_client_cert: Option<ClientCert>) -> Self {
         crate::tls_config::ensure_crypto_provider();
-        Self {
-            address,
-            ssl_verify,
-            ssl_client_cert,
-            writer: None,
-            reader: Arc::new(Mutex::new(None)),
-            bearer_token: None,
-        }
+        Self { address, ssl_verify, ssl_client_cert, writer: None, reader: Arc::new(Mutex::new(None)), bearer_token: None }
     }
 
     pub fn set_bearer_token(&mut self, token: Option<String>) {
@@ -48,13 +39,12 @@ impl WSSTransport {
         let url_str = format!("wss://{}:{}/", self.address.0, self.address.1);
         let url = Url::parse(&url_str).map_err(|e| AppMeshError::ConfigurationError(e.to_string()))?;
 
-        let mut request =
-            url.to_string().into_client_request().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
+        let mut request = url.to_string().into_client_request().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
         request.headers_mut().insert("Sec-WebSocket-Protocol", "appmesh-ws".parse().unwrap());
         if let Some(token) = &self.bearer_token {
-            let value = format!("Bearer {}", token).parse::<http::HeaderValue>().map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Invalid WebSocket authorization header: {}", e))
-            })?;
+            let value = format!("Bearer {}", token)
+                .parse::<http::HeaderValue>()
+                .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid WebSocket authorization header: {}", e)))?;
             request.headers_mut().insert("Authorization", value);
         }
 
@@ -101,89 +91,51 @@ impl WSSTransport {
 }
 
 /// Read one message from the stream (used by both direct read and demuxer).
-pub(crate) async fn read_one(reader: &mut SplitStream) -> Result<Option<Vec<u8>>, AppMeshError> {
-    match reader.next().await {
-        Some(Ok(Message::Binary(data))) => Ok(Some(data.to_vec())),
-        Some(Ok(Message::Text(text))) => Ok(Some(text.bytes().collect())),
-        Some(Ok(Message::Close(_))) => Ok(None),
-        Some(Err(e)) => Err(AppMeshError::ConnectionError(e.to_string())),
-        None => Ok(None),
-        _ => Ok(Some(vec![])),
+/// WebSocket control frames (Ping/Pong) are skipped: an intermediary's
+/// keepalive ping must not be mistaken for EOF — that would broadcast a
+/// synthetic disconnect to every subscription.
+pub(crate) async fn read_one<St>(reader: &mut St) -> Result<Option<Vec<u8>>, AppMeshError>
+where
+    St: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
+    loop {
+        match reader.next().await {
+            Some(Ok(Message::Binary(data))) => return Ok(Some(data.to_vec())),
+            Some(Ok(Message::Text(text))) => return Ok(Some(text.bytes().collect())),
+            Some(Ok(Message::Close(_))) | None => return Ok(None),
+            Some(Err(e)) => return Err(AppMeshError::ConnectionError(e.to_string())),
+            // Ping/Pong: tungstenite queues the pong reply automatically;
+            // keep reading for the next data frame.
+            Some(Ok(_)) => continue,
+        }
     }
 }
 
-fn build_rustls_connector(
-    ssl_verify: &SslVerify,
-    ssl_client_cert: Option<&ClientCert>,
-) -> Result<Connector, AppMeshError> {
-    let builder = if matches!(ssl_verify, SslVerify::False) {
-        // Insecure mode is only reachable via the explicit SslVerify::False flag
-        rustls::ClientConfig::builder()
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(crate::tls_config::NoVerifier))
-    } else if let SslVerify::Path(path) = ssl_verify {
-        let p = std::path::Path::new(path);
-        let mut root_store = rustls::RootCertStore::empty();
-        if p.is_file() {
-            let pem_data = std::fs::read(p)
-                .map_err(|e| AppMeshError::ConfigurationError(format!("Failed to read CA cert: {}", e)))?;
-            for cert in CertificateDer::pem_slice_iter(&pem_data) {
-                let cert = cert.map_err(|e| {
-                    AppMeshError::ConfigurationError(format!("Invalid CA cert '{}': {}", path, e))
-                })?;
-                root_store.add(cert).map_err(|e| {
-                    AppMeshError::ConfigurationError(format!("Invalid CA cert: {}", e))
-                })?;
-            }
-        } else if p.is_dir() {
-            for entry in std::fs::read_dir(p)
-                .map_err(|e| AppMeshError::ConfigurationError(e.to_string()))?
-            {
-                let path = entry.map_err(|e| AppMeshError::ConfigurationError(e.to_string()))?.path();
-                if path.extension().and_then(|s| s.to_str()) == Some("pem") {
-                    let pem_data = std::fs::read(&path).map_err(|e| {
-                        AppMeshError::ConfigurationError(format!(
-                            "Failed to read CA cert '{}': {}",
-                            path.display(),
-                            e
-                        ))
-                    })?;
-                    for cert in CertificateDer::pem_slice_iter(&pem_data).flatten() {
-                        let _ = root_store.add(cert);
-                    }
-                }
-            }
-        } else {
-            // A configured CA path that is missing/unreadable is a hard error,
-            // never a silent fallback to no-verification.
-            return Err(AppMeshError::ConfigurationError(format!(
-                "CA certificate path '{}' not found",
-                path
-            )));
-        }
-        if root_store.is_empty() {
-            return Err(AppMeshError::ConfigurationError(format!(
-                "CA certificate path '{}' contains no valid certificates",
-                path
-            )));
-        }
-        rustls::ClientConfig::builder().with_root_certificates(root_store)
-    } else {
-        let root_store = rustls::RootCertStore::from_iter(
-            webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
-        );
-        rustls::ClientConfig::builder().with_root_certificates(root_store)
-    };
+fn build_rustls_connector(ssl_verify: &SslVerify, ssl_client_cert: Option<&ClientCert>) -> Result<Connector, AppMeshError> {
+    let config = crate::tls_config::build_rustls_client_config(ssl_verify, ssl_client_cert)
+        .map_err(AppMeshError::ConfigurationError)?;
+    Ok(Connector::Rustls(Arc::new(config)))
+}
 
-    let crypto = match ssl_client_cert {
-        Some(client_cert) => {
-            let (chain, key) = crate::tls_config::load_client_auth(client_cert)
-                .map_err(AppMeshError::ConfigurationError)?;
-            builder.with_client_auth_cert(chain, key).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e))
-            })?
-        }
-        None => builder.with_no_client_auth(),
-    };
-    Ok(Connector::Rustls(Arc::new(crypto)))
+#[cfg(test)]
+mod tests {
+    use super::read_one;
+    use tokio::io::AsyncWriteExt;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+
+    // An intermediary's keepalive Ping must be skipped, not mistaken for EOF —
+    // treating it as a close would broadcast a synthetic disconnect to every
+    // subscription.
+    #[tokio::test]
+    async fn read_one_skips_ping_frames() {
+        let (client_side, mut server_side) = tokio::io::duplex(64);
+        let mut ws = tokio_tungstenite::WebSocketStream::from_raw_socket(client_side, Role::Client, None).await;
+
+        // Server -> client: empty Ping, then a Binary [1, 2] (server frames are unmasked).
+        server_side.write_all(&[0x89, 0x00]).await.unwrap();
+        server_side.write_all(&[0x82, 0x02, 0x01, 0x02]).await.unwrap();
+
+        let data = read_one(&mut ws).await.expect("read failed");
+        assert_eq!(data, Some(vec![1, 2]), "ping frame must be skipped, not read as EOF");
+    }
 }

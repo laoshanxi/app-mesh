@@ -358,13 +358,13 @@ public class Utils {
 
     /** Write a file as multipart/form-data to the output stream. */
     static void writeMultipartFormData(OutputStream output, String boundary, File file) throws IOException {
-        String LINE_FEED = "\r\n";
+        String lineFeed = "\r\n";
         String fileName = file.getName();
 
-        output.write(("--" + boundary + LINE_FEED).getBytes());
-        output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"" + LINE_FEED)
+        output.write(("--" + boundary + lineFeed).getBytes());
+        output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"" + lineFeed)
                 .getBytes());
-        output.write(("Content-Type: application/octet-stream" + LINE_FEED + LINE_FEED).getBytes());
+        output.write(("Content-Type: application/octet-stream" + lineFeed + lineFeed).getBytes());
 
         try (FileInputStream inputStream = new FileInputStream(file)) {
             byte[] buffer = new byte[4096];
@@ -374,8 +374,8 @@ public class Utils {
             }
         }
 
-        output.write(LINE_FEED.getBytes());
-        output.write(("--" + boundary + "--" + LINE_FEED).getBytes());
+        output.write(lineFeed.getBytes());
+        output.write(("--" + boundary + "--" + lineFeed).getBytes());
     }
 
     /**

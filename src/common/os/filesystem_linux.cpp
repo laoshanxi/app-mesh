@@ -48,12 +48,20 @@ namespace os
 		const static char fname[] = "os::getMountPoints() ";
 		std::map<std::string, std::string> mountPointsMap;
 
-		std::unique_ptr<FILE, void (*)(FILE *)> mountsFile(setmntent("/proc/mounts", "r"), [](FILE *fp)
-														   { if (fp) endmntent(fp); });
+		std::unique_ptr<FILE, void (*)(FILE *)> mountsFile(setmntent("/proc/mounts", "r"),
+														   [](FILE *fp)
+														   {
+															   if (fp)
+																   endmntent(fp);
+														   });
 		if (!mountsFile.get())
 		{
-			std::unique_ptr<FILE, void (*)(FILE *)> fallbackFile(setmntent("/etc/mtab", "r"), [](FILE *fp)
-																 { if (fp) endmntent(fp); });
+			std::unique_ptr<FILE, void (*)(FILE *)> fallbackFile(setmntent("/etc/mtab", "r"),
+																 [](FILE *fp)
+																 {
+																	 if (fp)
+																		 endmntent(fp);
+																 });
 			if (!fallbackFile.get())
 			{
 				LOG_ERR << fname << "Failed to open both /proc/mounts and /etc/mtab: " << last_error_msg();
@@ -68,21 +76,19 @@ namespace os
 		char entryBuffer[4096];
 
 		static const std::set<std::string> ignoredFileSystems = {
-			"tmpfs", "romfs", "ramfs", "devtmpfs", "overlay", "squashfs", "autofs",
-			"sysfs", "proc", "devpts", "securityfs", "cgroup", "cgroup2",
-			"pstore", "debugfs", "tracefs", "hugetlbfs", "mqueue", "fusectl",
-			"configfs", "fuse", "binfmt_misc", "bpf", "nsfs", "rpc_pipefs",
-			"efivarfs", "selinuxfs"};
+			"tmpfs",   "romfs",      "ramfs",  "devtmpfs",    "overlay", "squashfs", "autofs",     "sysfs",     "proc",
+			"devpts",  "securityfs", "cgroup", "cgroup2",     "pstore",  "debugfs",  "tracefs",    "hugetlbfs", "mqueue",
+			"fusectl", "configfs",   "fuse",   "binfmt_misc", "bpf",     "nsfs",     "rpc_pipefs", "efivarfs",  "selinuxfs"};
 		// Avoid blocking the local collector on unreachable remote mounts.
-		static const std::set<std::string> remoteFileSystems = {
-			"nfs", "nfs4", "cifs", "smb3", "sshfs", "fuse.sshfs", "9p",
-			"ceph", "glusterfs", "gcsfuse", "s3fs", "afs"};
+		static const std::set<std::string> remoteFileSystems = {"nfs", "nfs4", "cifs",      "smb3",    "sshfs", "fuse.sshfs",
+																"9p",  "ceph", "glusterfs", "gcsfuse", "s3fs",  "afs"};
 		// ZFS datasets are logical disks but do not expose a /dev block-device path.
 		static const std::set<std::string> logicalFileSystemsWithoutBlockDevice = {"zfs"};
 		std::set<dev_t> seenBlockDevices;
 		std::set<std::string> seenLogicalDevices;
 
-		while ((currentMountEntry = getmntent_r(mountsFile.get(), &tempMountEntry, entryBuffer, sizeof(entryBuffer))) != nullptr)
+		while ((currentMountEntry = getmntent_r(mountsFile.get(), &tempMountEntry, entryBuffer, sizeof(entryBuffer))) !=
+			   nullptr)
 		{
 			const char *devicePath = currentMountEntry->mnt_fsname;
 			const char *mountDir = currentMountEntry->mnt_dir;
@@ -112,13 +118,13 @@ namespace os
 				continue;
 			}
 
-			struct stat deviceStats {};
+			struct stat deviceStats{};
 			const bool blockBacked = ::stat(devicePath, &deviceStats) == 0 && S_ISBLK(deviceStats.st_mode);
 			const bool logicalWithoutBlockDevice = logicalFileSystemsWithoutBlockDevice.count(fileSystemType) > 0;
 			if (!blockBacked && !logicalWithoutBlockDevice)
 			{
-				LOG_DBG << fname << "Skipping non-logical-disk filesystem: " << fileSystemType
-						<< " device: " << devicePath << " at " << mountDir;
+				LOG_DBG << fname << "Skipping non-logical-disk filesystem: " << fileSystemType << " device: " << devicePath
+						<< " at " << mountDir;
 				continue;
 			}
 			if (blockBacked && !seenBlockDevices.insert(deviceStats.st_rdev).second)
@@ -137,7 +143,8 @@ namespace os
 				continue;
 			}
 
-			LOG_DBG << fname << "device: " << devicePath << " mountDir: " << mountDir << " fileSystemType: " << fileSystemType;
+			LOG_DBG << fname << "device: " << devicePath << " mountDir: " << mountDir
+					<< " fileSystemType: " << fileSystemType;
 			mountPointsMap[mountDir] = devicePath;
 		}
 

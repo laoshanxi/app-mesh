@@ -14,20 +14,20 @@
 
 namespace os
 {
-    /// Process id of the current process.
-    inline pid_t getpid()
-    {
+	/// Process id of the current process.
+	inline pid_t getpid()
+	{
 #if defined(_WIN32)
-        return _getpid();
+		return _getpid();
 #else
-        return ::getpid();
+		return ::getpid();
 #endif
-    }
+	}
 
-    // Returns the number of open file descriptors for the specified process.
-    size_t getOpenFileDescriptorCount(pid_t pid = getpid());
+	// Returns the number of open file descriptors for the specified process.
+	size_t getOpenFileDescriptorCount(pid_t pid = getpid());
 
-    // Returns the UID of the specified process; no value on failure.
-    std::optional<uid_t> getProcessUid(pid_t pid);
+	// Returns the UID of the specified process; no value on failure.
+	std::optional<uid_t> getProcessUid(pid_t pid);
 
 } // namespace os

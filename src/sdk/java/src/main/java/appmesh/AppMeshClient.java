@@ -83,7 +83,7 @@ public class AppMeshClient implements Closeable {
 
         // Explicit non-empty CA path must be readable; auto-detected defaults fall back to system trust
         if (builder.caCertExplicitlySet && !builder.disableSSLVerification && builder.caCertFilePath != null
-                && !builder.caCertFilePath.isEmpty() && !new java.io.File(builder.caCertFilePath).canRead()) {
+                && !builder.caCertFilePath.isEmpty() && !new File(builder.caCertFilePath).canRead()) {
             throw new IllegalArgumentException("CA certificate file not found or unreadable: " + builder.caCertFilePath);
         }
         // Build per-instance SSLContext
@@ -103,6 +103,21 @@ public class AppMeshClient implements Closeable {
         this.sslSocketFactory = factory;
     }
 
+    /** Applies the shared SSL options (CA, client certificate pair, verify switch) to a builder. */
+    protected static Builder configureSSL(Builder base, boolean disableSSLVerification,
+            String caCertPath, String clientCertPath, String clientKeyPath) {
+        if (caCertPath != null) {
+            base.caCert(caCertPath);
+        }
+        if (clientCertPath != null || clientKeyPath != null) {
+            base.clientCert(clientCertPath, clientKeyPath);
+        }
+        if (disableSSLVerification) {
+            base.disableSSLVerify();
+        }
+        return base;
+    }
+
     /** Builder for {@link AppMeshClient}. */
     public static class Builder {
         private String baseURL = "https://127.0.0.1:6060";
@@ -120,7 +135,7 @@ public class AppMeshClient implements Closeable {
 
         public Builder() {
             // Auto-detect only the trust anchor. Client identities are always opt-in.
-            if (new java.io.File(DEFAULT_SSL_DIR).isDirectory()) {
+            if (new File(DEFAULT_SSL_DIR).isDirectory()) {
                 this.caCertFilePath = DEFAULT_SSL_CA_CERT;
             }
         }
@@ -515,16 +530,17 @@ public class AppMeshClient implements Closeable {
 
     /** Internal variant with per-request header overrides (e.g. {@code X-Target-Host} forwarding). */
     boolean unsubscribe(String subscriptionId, Map<String, String> extraHeaders) throws IOException {
-        // Unregister from demuxer first
+        Map<String, String> query = new HashMap<>();
+        query.put("subscription_id", subscriptionId);
+        HttpURLConnection conn = request("DELETE", "/appmesh/subscribe", null, extraHeaders, query);
+        ensureOk("unsubscribe", conn);
+        // Unregister from the demuxer only after the server confirmed, so a
+        // failed DELETE keeps the callback able to receive events (Python SDK order).
         MessageDemuxer demuxer = demuxerOrNull();
         if (demuxer != null) {
             demuxer.unregisterEventCallback(subscriptionId);
         }
-
-        Map<String, String> query = new HashMap<>();
-        query.put("subscription_id", subscriptionId);
-        HttpURLConnection conn = request("DELETE", "/appmesh/subscribe", null, extraHeaders, query);
-        return ensureOk("unsubscribe", conn);
+        return true;
     }
 
     // -------- Application Output & Execution --------
@@ -657,8 +673,9 @@ public class AppMeshClient implements Closeable {
      * the shared {@link #setForwardTo} state.
      */
     public Integer waitForAsyncRun(AppRun run, OutputHandler stdoutHandler, int timeoutSeconds) throws Exception {
-        if (run == null)
+        if (run == null) {
             return null;
+        }
         Map<String, String> forwardHeaders = forwardHeaders(run.getForwardingHost());
         long lastOutputPosition = 0;
         LocalDateTime start = LocalDateTime.now();
@@ -865,13 +882,15 @@ public class AppMeshClient implements Closeable {
 
     /** Update an Engine authorization overlay; this never changes IdP account data. */
     public boolean updatePrincipal(String principalId, JSONObject policy) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/principal/" + encodeURIComponent(principalId), policy, null, null);
+        HttpURLConnection conn =
+                request("POST", "/appmesh/principal/" + encodeURIComponent(principalId), policy, null, null);
         return ensureOk("updatePrincipal", conn);
     }
 
     /** Delete only the Engine authorization overlay for a principal. */
     public boolean deletePrincipal(String principalId) throws IOException {
-        HttpURLConnection conn = request("DELETE", "/appmesh/principal/" + encodeURIComponent(principalId), null, null, null);
+        HttpURLConnection conn =
+                request("DELETE", "/appmesh/principal/" + encodeURIComponent(principalId), null, null, null);
         int status = conn.getResponseCode();
         if (status == HttpURLConnection.HTTP_NO_CONTENT || status == HttpURLConnection.HTTP_OK) return true;
         if (status == HttpURLConnection.HTTP_NOT_FOUND) return false;
@@ -1048,8 +1067,9 @@ public class AppMeshClient implements Closeable {
     }
 
     protected String encodeURIComponent(String value) {
-        if (value == null)
+        if (value == null) {
             return null;
+        }
         try {
             String encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.name());
             return encoded.replace("+", "%20")
@@ -1099,7 +1119,7 @@ public class AppMeshClient implements Closeable {
     }
 
     /** Whether the caller supplied its own Authorization header, disabling provider-managed auth. */
-    private static boolean callerManagesAuth(Map<String, String> headers) {
+    protected static boolean callerManagesAuth(Map<String, String> headers) {
         if (headers == null) {
             return false;
         }

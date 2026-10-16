@@ -16,8 +16,8 @@ namespace os
 	std::optional<std::pair<unsigned int, unsigned int>> getUidByName(const std::string &userName);
 
 	/// Get uid for current process.
-	uid_t get_uid();
+	uid_t getUid();
 
-	std::string getUsernameByUid(uid_t uid = get_uid());
+	std::string getUsernameByUid(uid_t uid = getUid());
 
 } // namespace os

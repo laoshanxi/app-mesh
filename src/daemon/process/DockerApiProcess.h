@@ -19,20 +19,21 @@ public:
 	~DockerApiProcess() override;
 
 	// Get stdout content from docker logs API
-	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) override;
+	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE,
+								   bool readLine = false) override;
 
 	// Get process exit code from container inspect API
 	int returnValue() const override;
 
 protected:
-	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir,
-						std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-						const std::string &stdoutFile, const Json::Value &stdinFileContent,
-						int maxStdoutSize) override;
+	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap,
+					std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile,
+					const Json::Value &stdinFileContent, int maxStdoutSize) override;
 	void terminateImpl() override;
 
 private:
 	// Request Docker HTTP REST API
 	const std::shared_ptr<HttpResponse> requestDocker(const web::http::method &mtd, const std::string &path,
-													  std::map<std::string, std::string> query, std::map<std::string, std::string> header, Json::Value *body) const;
+													  std::map<std::string, std::string> query,
+													  std::map<std::string, std::string> header, Json::Value *body) const;
 };

@@ -1,11 +1,8 @@
 // src/common/PerfLog.cpp
 #include "PerfLog.h"
-#include "../common/Utility.h"
+#include "Utility.h"
 
-PerfLog::PerfLog(const std::string &logger)
-	: m_start(std::chrono::system_clock::now()), m_logger(logger)
-{
-}
+PerfLog::PerfLog(const std::string &logger) : m_start(std::chrono::system_clock::now()), m_logger(logger) {}
 
 PerfLog::~PerfLog()
 {

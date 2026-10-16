@@ -36,6 +36,7 @@ Environment:
 import logging
 import os
 from typing import Optional
+from urllib.parse import quote
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentAccessToken
@@ -81,12 +82,14 @@ def list_apps(token: AccessToken = CurrentAccessToken()) -> list:
     return [a.to_dict() for a in _client(token).list_apps()]
 
 
-@mcp.tool(description="Get detailed configuration and runtime status of one application by name. Empty values are omitted from the returned application data.")
+@mcp.tool(description="Get detailed configuration and runtime status of one application by name. "
+                      "Empty values are omitted from the returned application data.")
 def get_app(app_name: str, token: AccessToken = CurrentAccessToken()) -> dict:
     return _client(token).get_app(app_name).to_dict()
 
 
-@mcp.tool(description="Register a new application. 'app' is the application definition (e.g. {\"name\":\"x\",\"command\":\"...\"}).")
+@mcp.tool(description="Register a new application. 'app' is the application definition "
+                      "(e.g. {\"name\":\"x\",\"command\":\"...\"}).")
 def add_app(app: dict, token: AccessToken = CurrentAccessToken()) -> dict:
     return _client(token).add_app(App(app)).to_dict()
 
@@ -113,7 +116,8 @@ def check_app_health(app_name: str, token: AccessToken = CurrentAccessToken()) -
     return {"healthy": _client(token).check_app_health(app_name)}
 
 
-@mcp.tool(description="Read incremental stdout/stderr output of an application. Returns output text, next cursor, and exit_code when finished.")
+@mcp.tool(description="Read incremental stdout/stderr output of an application. "
+                      "Returns output text, next cursor, and exit_code when finished.")
 def get_app_output(
     app_name: str,
     stdout_position: int = 0,
@@ -124,10 +128,12 @@ def get_app_output(
     token: AccessToken = CurrentAccessToken(),
 ) -> dict:
     out = _client(token).get_app_output(app_name, stdout_position, stdout_index, stdout_maxsize, process_uuid, timeout)
-    return {"status_code": out.status_code, "output": out.output, "output_position": out.output_position, "exit_code": out.exit_code}
+    return {"status_code": out.status_code, "output": out.output,
+            "output_position": out.output_position, "exit_code": out.exit_code}
 
 
-@mcp.tool(description="Run a command or application synchronously, blocking until completion. Provide either 'command' (shell command) or 'app' (definition dict). Returns exit_code and stdout.")
+@mcp.tool(description="Run a command or application synchronously, blocking until completion. "
+                      "Provide either 'command' (shell command) or 'app' (definition dict). ""Returns exit_code and stdout.")
 def run_app_sync(
     command: Optional[str] = None,
     app: Optional[dict] = None,
@@ -142,7 +148,8 @@ def run_app_sync(
     return {"exit_code": exit_code, "output": output}
 
 
-@mcp.tool(description="Run a command or application asynchronously. Returns app_name and process_uuid to poll with get_app_output. Provide 'command' or 'app'.")
+@mcp.tool(description="Run a command or application asynchronously. Returns app_name and process_uuid "
+                      "to poll with get_app_output. Provide 'command' or 'app'.")
 def run_app_async(
     command: Optional[str] = None,
     app: Optional[dict] = None,
@@ -191,15 +198,14 @@ def _daemon_public_url() -> str:
     return os.environ.get("APPMESH_DAEMON_PUBLIC_URL", appmesh_url()).rstrip("/")
 
 
-_CURL_TOKEN_NOTE = (
-    "Set APPMESH_TOKEN to an access token for the App Mesh API before running. "
-    "Add -k if the daemon uses a self-signed certificate."
-)
+_CURL_TOKEN_NOTE = ("Set APPMESH_TOKEN to an access token for the App Mesh API before running. "
+                    "Add -k if the daemon uses a self-signed certificate.")
 
 
-@mcp.tool(description="Return a ready-to-run curl command that downloads a file DIRECTLY from the App Mesh daemon to the client machine. The MCP server never reads the file — bytes stream daemon->client, never entering MCP memory or the LLM context. Works for any size.")
+@mcp.tool(description="Return a ready-to-run curl command that downloads a file DIRECTLY from the App Mesh daemon "
+                      "to the client machine. The MCP server never reads the file — bytes stream daemon->client, "
+                      "never entering MCP memory or the LLM context. Works for any size.")
 def file_download_command(remote_file: str, local_file: str = "", token: AccessToken = CurrentAccessToken()) -> dict:
-    from urllib.parse import quote
 
     dst = local_file or os.path.basename(remote_file.rstrip("/")) or "download.bin"
     url = _daemon_public_url() + "/appmesh/file/download"
@@ -210,9 +216,10 @@ def file_download_command(remote_file: str, local_file: str = "", token: AccessT
     return {"command": command, "remote_file": remote_file, "local_file": dst, "note": _CURL_TOKEN_NOTE}
 
 
-@mcp.tool(description="Return a ready-to-run curl command that uploads a local file DIRECTLY to the App Mesh daemon. The MCP server never reads the file — bytes stream client->daemon, never entering MCP memory. Works for any size.")
+@mcp.tool(description="Return a ready-to-run curl command that uploads a local file DIRECTLY to the App Mesh daemon. "
+                      "The MCP server never reads the file — bytes stream client->daemon, never entering MCP memory. "
+                      "Works for any size.")
 def file_upload_command(local_file: str, remote_file: str, token: AccessToken = CurrentAccessToken()) -> dict:
-    from urllib.parse import quote
 
     url = _daemon_public_url() + "/appmesh/file/upload"
     command = (
@@ -230,7 +237,8 @@ def get_config(token: AccessToken = CurrentAccessToken()) -> dict:
     return _client(token).get_config()
 
 
-@mcp.tool(description="Update the App Mesh daemon configuration with the provided partial config dict. Returns the effective config.")
+@mcp.tool(description="Update the App Mesh daemon configuration with the provided partial config dict. "
+                      "Returns the effective config.")
 def set_config(config: dict, token: AccessToken = CurrentAccessToken()) -> dict:
     return _client(token).set_config(config)
 

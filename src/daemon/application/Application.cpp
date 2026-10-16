@@ -4,11 +4,10 @@
 #include <algorithm>
 #include <limits>
 #include <list>
-#include <utility>
-
 #include <optional>
 #include <prometheus/counter.h>
 #include <prometheus/gauge.h>
+#include <utility>
 
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
@@ -28,8 +27,8 @@
 #include "../rest/EventDispatcher.h"
 #include "../rest/RestHandler.h"
 #include "../security/HMACVerifier.h"
-#include "../security/Security.h"
 #include "../security/SecretProtector.h"
+#include "../security/Security.h"
 #include "AppTimer.h"
 
 namespace
@@ -82,8 +81,7 @@ struct Application::Runtime
 		ScheduleIntent scheduleIntent = ScheduleIntent::NeedsPlan;
 	};
 
-	template <typename Fn>
-	void update(Fn &&fn)
+	template <typename Fn> void update(Fn &&fn)
 	{
 		std::lock_guard guard(runMutex);
 		std::forward<Fn>(fn)(run);
@@ -97,36 +95,39 @@ struct Application::Runtime
 
 	void requireSchedulePlan()
 	{
-		update([](Run &state)
-			   {
-			state.nextLaunch.reset();
-			state.scheduleIntent = Run::ScheduleIntent::NeedsPlan; });
+		update(
+			[](Run &state)
+			{
+				state.nextLaunch.reset();
+				state.scheduleIntent = Run::ScheduleIntent::NeedsPlan;
+			});
 	}
 
 	void suspendSchedule()
 	{
-		update([](Run &state)
-			   {
-			state.nextLaunch.reset();
-			state.restartEvaluationPending = false;
-			state.scheduleIntent = Run::ScheduleIntent::Dormant; });
+		update(
+			[](Run &state)
+			{
+				state.nextLaunch.reset();
+				state.restartEvaluationPending = false;
+				state.scheduleIntent = Run::ScheduleIntent::Dormant;
+			});
 	}
 
-	bool needsSchedulePlan() const
-	{
-		return load().scheduleIntent == Run::ScheduleIntent::NeedsPlan;
-	}
+	bool needsSchedulePlan() const { return load().scheduleIntent == Run::ScheduleIntent::NeedsPlan; }
 
 	bool consumeRestartEvaluation()
 	{
 		bool consumed = false;
-		update([&](Run &state)
-			   {
-			if (state.restartEvaluationPending)
+		update(
+			[&](Run &state)
 			{
-				state.restartEvaluationPending = false;
-				consumed = true;
-			} });
+				if (state.restartEvaluationPending)
+				{
+					state.restartEvaluationPending = false;
+					consumed = true;
+				}
+			});
 		return consumed;
 	}
 
@@ -143,13 +144,10 @@ struct Application::Runtime
 
 Application::Application()
 	: m_kind(Kind::Managed), m_startupPhase(DEFAULT_STARTUP_PHASE), m_ownerPermission(0), m_metadata(EMPTY_STR_JSON),
-	  m_shellApp(false), m_sessionLogin(false), m_stdoutCacheNum(0),
-	  m_startTime(AppTimer::TIME_UNSET), m_endTime(std::chrono::system_clock::time_point::max()),
-	  m_startInterval(0), m_bufferTime(0), m_scheduleKind(ScheduleKind::Continuous),
-	  m_regTime(std::chrono::system_clock::now()),
-	  m_appId(Utility::shortID()), m_timerRemoveId(INVALID_TIMER_ID),
-	  m_health(true),
-	  m_status(STATUS::ENABLED), m_runtime(std::make_unique<Runtime>()),
+	  m_shellApp(false), m_sessionLogin(false), m_stdoutCacheNum(0), m_startTime(AppTimer::TIME_UNSET),
+	  m_endTime(std::chrono::system_clock::time_point::max()), m_startInterval(0), m_bufferTime(0),
+	  m_scheduleKind(ScheduleKind::Continuous), m_regTime(std::chrono::system_clock::now()), m_appId(Utility::shortID()),
+	  m_timerRemoveId(INVALID_TIMER_ID), m_health(true), m_status(STATUS::ENABLED), m_runtime(std::make_unique<Runtime>()),
 	  m_metrics(std::make_shared<MetricsState>())
 {
 	const static char fname[] = "Application::Application() ";
@@ -161,15 +159,10 @@ Application::~Application()
 {
 	const static char fname[] = "Application::~Application() ";
 	LOG_DBG << fname << "Entered. Application: " << m_name;
-	// #include <boost/stacktrace.hpp>
-	// std::cout << boost::stacktrace::stacktrace();
 	Utility::removeFile(m_stdoutFile);
 }
 
-const std::string &Application::getName() const
-{
-	return m_name;
-}
+const std::string &Application::getName() const { return m_name; }
 
 void Application::health(bool newHealth)
 {
@@ -183,69 +176,33 @@ void Application::health(bool newHealth)
 	}
 }
 
-pid_t Application::getpid() const
-{
-	return m_runtime->load().pid;
-}
+pid_t Application::getpid() const { return m_runtime->load().pid; }
 
-int Application::health() const
-{
-	return 1 - m_health.load();
-}
+int Application::health() const { return 1 - m_health.load(); }
 
-bool Application::isEnabled() const
-{
-	return (m_status.load() == STATUS::ENABLED);
-}
+bool Application::isEnabled() const { return (m_status.load() == STATUS::ENABLED); }
 
-bool Application::isSystemProtected() const
-{
-	return m_kind == Kind::System || m_kind == Kind::SystemAgent;
-}
+bool Application::isSystemProtected() const { return m_kind == Kind::System || m_kind == Kind::SystemAgent; }
 
 int Application::startupPhase() const { return m_startupPhase; }
 
 const std::vector<std::string> &Application::dependsOn() const { return m_dependsOn; }
 
-const std::vector<std::string> Application::waitingFor() const
-{
-	return *m_waitingFor.synchronize();
-}
+const std::vector<std::string> Application::waitingFor() const { return *m_waitingFor.synchronize(); }
 
-const std::string &Application::healthCheckCmd() const
-{
-	return m_healthCheckCmd;
-}
+const std::string &Application::healthCheckCmd() const { return m_healthCheckCmd; }
 
-const std::string &Application::getOwnerPrincipalId() const
-{
-	return m_ownerPrincipalId;
-}
+const std::string &Application::getOwnerPrincipalId() const { return m_ownerPrincipalId; }
 
-int Application::getOwnerPermission() const
-{
-	return m_ownerPermission;
-}
+int Application::getOwnerPermission() const { return m_ownerPermission; }
 
-STATUS Application::getStatus() const
-{
-	return m_status.load();
-}
+STATUS Application::getStatus() const { return m_status.load(); }
 
-bool Application::isPersistAble() const
-{
-	return m_kind == Kind::Managed;
-}
+bool Application::isPersistAble() const { return m_kind == Kind::Managed; }
 
-bool Application::isManaged() const
-{
-	return m_kind != Kind::OneShot;
-}
+bool Application::isManaged() const { return m_kind != Kind::OneShot; }
 
-bool Application::isOneShot() const
-{
-	return m_kind == Kind::OneShot;
-}
+bool Application::isOneShot() const { return m_kind == Kind::OneShot; }
 
 void Application::setUnPersistable()
 {
@@ -254,17 +211,12 @@ void Application::setUnPersistable()
 		m_runtime->suspendSchedule();
 }
 
-bool Application::isRecurring() const
-{
-	return m_scheduleKind != ScheduleKind::Continuous;
-}
+bool Application::isRecurring() const { return m_scheduleKind != ScheduleKind::Continuous; }
 
 bool Application::available(const std::chrono::system_clock::time_point &now)
 {
 	// Check if expired
-	if (m_endTime != AppTimer::TIME_UNSET &&
-		m_endTime != std::chrono::system_clock::time_point::max() &&
-		now >= m_endTime)
+	if (m_endTime != AppTimer::TIME_UNSET && m_endTime != std::chrono::system_clock::time_point::max() && now >= m_endTime)
 	{
 		return false;
 	}
@@ -277,9 +229,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	app->m_name = normalizeAppName(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_owner))
-		throw std::invalid_argument(
-			"legacy application owner cannot be mapped safely to an immutable OIDC Principal; "
-			"provision the corresponding principal and replace owner with owner_principal_id");
+		throw std::invalid_argument("legacy application owner cannot be mapped safely to an immutable OIDC Principal; "
+									"provision the corresponding principal and replace owner with owner_principal_id");
 	app->m_ownerPrincipalId = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner_principal_id));
 	if (app->m_ownerPrincipalId.empty())
 		throw std::invalid_argument("application owner_principal_id is required");
@@ -294,8 +245,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	if (!startupPhase.empty())
 	{
 		static const std::map<std::string, int> phases = {
-			{"auth-issuer", 20},
-			{"ingress", 30}, {"normal", DEFAULT_STARTUP_PHASE}};
+			{"auth-issuer", 20}, {"ingress", 30}, {"normal", DEFAULT_STARTUP_PHASE}};
 		auto phase = phases.find(startupPhase);
 		if (phase == phases.end())
 			throw std::invalid_argument("invalid application startup_phase");
@@ -312,8 +262,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		{
 			try
 			{
-				auto medataStr = jsonObj[JSON_KEY_APP_metadata].asString();
-				app->m_metadata = JSON::parse(medataStr);
+				auto metadataStr = jsonObj[JSON_KEY_APP_metadata].asString();
+				app->m_metadata = JSON::parse(metadataStr);
 			}
 			catch (...)
 			{
@@ -384,7 +334,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		for (const auto &envName : envs.getMemberNames())
 		{
 			if (!envs[envName].isString())
-				throw std::invalid_argument(Utility::stringFormat("env %s must be a string (quote bool/number-like values in YAML)", envName.c_str()));
+				throw std::invalid_argument(Utility::stringFormat(
+					"env %s must be a string (quote bool/number-like values in YAML)", envName.c_str()));
 			app->m_envMap[envName] = envs[envName].asString();
 		}
 	}
@@ -402,8 +353,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 			const auto &envValue = (*secretEnvs)[envName];
 			if (fromRecover)
 			{
-				if (!envValue.isString() ||
-					!Utility::startWith(envValue.asString(), "sp1:"))
+				if (!envValue.isString() || !Utility::startWith(envValue.asString(), "sp1:"))
 				{
 					throw std::invalid_argument(
 						"persisted secret_env uses legacy per-user encryption and cannot be migrated safely "
@@ -413,14 +363,12 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 				const std::string context = app->m_name + '\0' + envName;
 				try
 				{
-					app->m_secEnvMap[envName] = SecretProtector::instance().unprotect(
-						envValue.asString(), context);
+					app->m_secEnvMap[envName] = SecretProtector::instance().unprotect(envValue.asString(), context);
 				}
 				catch (const std::exception &)
 				{
-					throw std::invalid_argument(
-						"persisted secret_env could not be authenticated; restore the original "
-						"SecretProtector master key before starting App Mesh");
+					throw std::invalid_argument("persisted secret_env could not be authenticated; restore the original "
+												"SecretProtector master key before starting App Mesh");
 				}
 			}
 			else
@@ -496,7 +444,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	const bool hasInterval = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_interval);
 	const bool hasCronSchedule = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cron_schedule);
 	std::string intervalValue = hasInterval ? GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_interval) : std::string();
-	std::string cronScheduleValue = hasCronSchedule ? GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_cron_schedule) : std::string();
+	std::string cronScheduleValue =
+		hasCronSchedule ? GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_cron_schedule) : std::string();
 	if (hasInterval && hasCronSchedule)
 	{
 		throw std::invalid_argument("interval and cron_schedule are mutually exclusive");
@@ -507,7 +456,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		// Short running on a cron expression
 		app->m_scheduleKind = ScheduleKind::Cron;
 		app->m_startIntervalValue = std::move(cronScheduleValue);
-		app->m_timer = std::make_shared<AppTimerCron>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startIntervalValue, app->m_startInterval);
+		app->m_timer = std::make_shared<AppTimerCron>(app->m_startTime, app->m_endTime, app->m_dailyLimit,
+													  app->m_startIntervalValue, app->m_startInterval);
 		app->m_timer->nextTime(); // Validate cron expression
 	}
 	else if (!intervalValue.empty())
@@ -518,10 +468,12 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		app->m_startInterval = duration.parse(app->m_startIntervalValue);
 		if (app->m_startInterval <= 0)
 		{
-			LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <" << app->m_name << ">, falling back to default";
+			LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <"
+					<< app->m_name << ">, falling back to default";
 			app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
 		}
-		app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
+		app->m_timer =
+			std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
 	}
 	else
 	{
@@ -529,6 +481,328 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		app->m_scheduleKind = ScheduleKind::Continuous;
 		app->m_timer = std::make_shared<AppTimer>(app->m_startTime, app->m_endTime, app->m_dailyLimit);
 	}
+}
+
+Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
+{
+	const static char fname[] = "Application::AsJson() ";
+
+	Json::Value result = Json::Value(Json::objectValue);
+
+	LOG_DBG << fname << "Application: " << m_name;
+	result[JSON_KEY_APP_name] = std::string(m_name);
+	if (!m_ownerPrincipalId.empty())
+	{
+		result[JSON_KEY_APP_owner_principal_id] = m_ownerPrincipalId;
+	}
+	if (!m_executionUser.empty())
+	{
+		result[JSON_KEY_APP_execution_user] = m_executionUser;
+	}
+	if (m_kind == Kind::System)
+		result[JSON_KEY_APP_system] = true;
+	static const std::map<int, std::string> phaseNames = {
+		{20, "auth-issuer"}, {30, "ingress"}, {DEFAULT_STARTUP_PHASE, "normal"}};
+	if (auto phaseName = phaseNames.find(m_startupPhase);
+		phaseName != phaseNames.end() && m_startupPhase != DEFAULT_STARTUP_PHASE)
+		result[JSON_KEY_APP_startup_phase] = phaseName->second;
+	if (m_ownerPermission)
+	{
+		result[JSON_KEY_APP_permission] = (m_ownerPermission);
+	}
+	if (m_shellApp)
+	{
+		result[JSON_KEY_APP_shell] = (m_shellApp);
+	}
+	if (m_sessionLogin)
+	{
+		result[JSON_KEY_APP_session_login] = (m_sessionLogin);
+	}
+	if (m_metadata != EMPTY_STR_JSON)
+	{
+		result[JSON_KEY_APP_metadata] = m_metadata;
+	}
+	if (!m_commandLine.empty())
+	{
+		result[(JSON_KEY_APP_command)] = std::string(m_commandLine);
+	}
+	if (!m_description.empty())
+	{
+		result[(JSON_KEY_APP_description)] = std::string(m_description);
+	}
+	if (m_stdoutCacheNum)
+	{
+		result[JSON_KEY_APP_stdout_backup_count] = (m_stdoutCacheNum);
+	}
+	if (!m_healthCheckCmd.empty())
+	{
+		result[(JSON_KEY_APP_health_check_cmd)] = std::string(m_healthCheckCmd);
+	}
+	if (!m_workdir.empty())
+	{
+		result[JSON_KEY_APP_working_dir] = std::string(m_workdir);
+	}
+	if (!m_dependsOn.empty())
+	{
+		Json::Value dependencies(Json::arrayValue);
+		for (const auto &dependency : m_dependsOn)
+			dependencies.append(dependency);
+		result[JSON_KEY_APP_depends_on] = dependencies;
+	}
+	result[JSON_KEY_APP_enabled] = isEnabled();
+	if (m_resourceLimit)
+	{
+		result[JSON_KEY_APP_resource_limit] = m_resourceLimit->AsJson();
+	}
+	if (m_envMap.size())
+	{
+		Json::Value envs = Json::Value(Json::objectValue);
+		for (const auto &[name, value] : m_envMap)
+		{
+			envs[name] = std::string(value);
+		}
+		result[JSON_KEY_APP_env] = std::move(envs);
+	}
+	if (m_secEnvMap.size() && !returnRuntimeInfo)
+	{
+		// Only include secret_env when saving to disk (not in API responses).
+		Json::Value envs = Json::Value(Json::objectValue);
+		for (const auto &[name, value] : m_secEnvMap)
+		{
+			const std::string context = m_name + '\0' + name;
+			envs[name] = SecretProtector::instance().protect(value, context);
+		}
+		result[JSON_KEY_APP_secret_env] = std::move(envs);
+	}
+	if (!m_dockerImage.empty())
+	{
+		result[JSON_KEY_APP_docker_image] = std::string(m_dockerImage);
+	}
+	if (m_startTime.time_since_epoch().count() && m_startTime != std::chrono::system_clock::time_point::min())
+	{
+		result[JSON_KEY_APP_start_time] =
+			(std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
+	}
+	if (m_endTime.time_since_epoch().count() && m_endTime != std::chrono::system_clock::time_point::max())
+	{
+		result[JSON_KEY_APP_end_time] =
+			(std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
+	}
+	if (m_dailyLimit)
+	{
+		result[JSON_KEY_APP_daily_limitation] = m_dailyLimit->AsJson();
+	}
+	result[JSON_KEY_APP_register_time] =
+		(std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
+	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
+	if (m_bufferTime)
+	{
+		result[JSON_KEY_APP_stop_grace_period] = std::string(m_bufferTimeValue);
+	}
+	if (!m_startIntervalValue.empty())
+	{
+		if (m_scheduleKind == ScheduleKind::Cron)
+		{
+			result[JSON_KEY_APP_cron_schedule] = std::string(m_startIntervalValue);
+		}
+		else
+		{
+			result[JSON_KEY_APP_interval] = std::string(m_startIntervalValue);
+		}
+	}
+
+	if (returnRuntimeInfo)
+	{
+		// Starts are published after the corresponding run state. Sample them first
+		// so a response cannot combine a new count with the previous run's PID.
+		unsigned long long starts = 0;
+		{
+			const auto metrics = m_metrics;
+			std::lock_guard guard(metrics->mutex);
+			starts = metrics->starts;
+		}
+		auto run = m_runtime->load();
+		auto process = m_process.get();
+		if (run.returnCode != INVALID_RETURN_CODE)
+		{
+			result[JSON_KEY_APP_return_code] = run.returnCode;
+		}
+		if (process && process->running())
+		{
+			auto status = m_task.taskStatus();
+			result[JSON_KEY_APP_task_id] = std::get<0>(status);
+			result[JSON_KEY_APP_task_status] = std::get<1>(status);
+			// Spawn races the run-state store: the process can be running before r.pid is
+			// published (still INVALID_PID from the previous exit). Omit pid until valid.
+			if (run.pid != INVALID_PID)
+			{
+				result[JSON_KEY_APP_pid] = run.pid;
+				// lookup failure keeps the empty-user field, as before
+				result[JSON_KEY_APP_pid_user] =
+					os::getUsernameByUid(os::getProcessUid(run.pid).value_or(static_cast<uid_t>(-1)));
+			}
+
+			auto usage = process->getProcessDetails(ptree);
+			if (std::get<0>(usage))
+			{
+				result[JSON_KEY_APP_memory] = (std::get<1>(usage));
+				result[JSON_KEY_APP_cpu] = (std::get<2>(usage));
+				result[JSON_KEY_APP_fd] = (std::get<3>(usage));
+				result[JSON_KEY_APP_pstree] = std::string(std::get<4>(usage));
+				if (m_shellAppFile)
+				{
+					auto leafProcessUser =
+						os::getUsernameByUid(os::getProcessUid(std::get<5>(usage)).value_or(static_cast<uid_t>(-1)));
+					if (!leafProcessUser.empty())
+					{
+						result[JSON_KEY_APP_pid_user] = leafProcessUser;
+					}
+				}
+			}
+		}
+		auto startTime = run.startTime;
+		if (startTime && std::chrono::time_point_cast<std::chrono::hours>(*startTime).time_since_epoch().count() > 24)
+		{
+			result[JSON_KEY_APP_last_start] =
+				std::chrono::duration_cast<std::chrono::seconds>((*startTime).time_since_epoch()).count();
+		}
+		auto exitTime = run.exitTime;
+		if (exitTime && std::chrono::time_point_cast<std::chrono::hours>(*exitTime).time_since_epoch().count() > 24)
+		{
+			result[JSON_KEY_APP_last_exit] =
+				std::chrono::duration_cast<std::chrono::seconds>((*exitTime).time_since_epoch()).count();
+		}
+		const auto containerId = process ? process->containerId() : std::string();
+		if (!containerId.empty())
+		{
+			result[JSON_KEY_APP_container_id] = containerId;
+		}
+		result[JSON_KEY_APP_health] = (this->health());
+		if (m_stdoutFileQueue->size())
+		{
+			result[JSON_KEY_APP_stdout_file_count] = (m_stdoutFileQueue->size());
+		}
+		auto err = getLastError();
+		if (!err.empty())
+		{
+			result[JSON_KEY_APP_last_error] = std::move(err);
+		}
+		const auto waitingFor = this->waitingFor();
+		if (!waitingFor.empty())
+		{
+			Json::Value waiting(Json::arrayValue);
+			for (const auto &dependency : waitingFor)
+				waiting.append(dependency);
+			result[JSON_KEY_APP_waiting_for] = waiting;
+		}
+		result[JSON_KEY_APP_starts] = static_cast<Json::Int64>(starts);
+		auto nextLaunch = run.nextLaunch;
+		if (nextLaunch)
+		{
+			result[JSON_KEY_APP_next_start_time] =
+				std::chrono::duration_cast<std::chrono::seconds>((*nextLaunch).time_since_epoch()).count();
+		}
+	}
+
+	Utility::addExtraAppTimeReferStr(result);
+	return result;
+}
+
+void Application::save()
+{
+	const static char fname[] = "Application::save() ";
+
+	if (!this->isPersistAble())
+		return;
+
+	std::lock_guard guard(m_saveMutex);
+	const auto appPath = getYamlPath();
+	uint16_t mode = 0644;
+#if !defined(_WIN32)
+	if (Utility::isFileExist(appPath))
+	{
+		if (auto fileInfo = os::fileStat(appPath); fileInfo && std::get<0>(*fileInfo) >= 0)
+			mode = static_cast<uint16_t>(std::get<0>(*fileInfo));
+	}
+#endif
+	const auto content = Utility::jsonToYaml(AsJson(false)) + "\n";
+	const auto tempPath = os::createTmpFile(appPath, content, mode);
+	if (tempPath.empty())
+	{
+		LOG_ERR << fname << "Failed to create a temporary file for application <" << m_name << ">";
+		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
+	}
+	std::error_code renameError;
+	fs::rename(tempPath, appPath, renameError);
+	if (renameError)
+	{
+		const auto error = renameError.message();
+		Utility::removeFile(tempPath);
+		LOG_ERR << fname << "Failed to save application <" << m_name << "> to file <" << appPath << ">, error: " << error;
+		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
+	}
+	LOG_INF << fname << "Saved application <" << m_name << "> to file <" << appPath << ">";
+}
+
+void Application::remove()
+{
+	Utility::removeFile(getYamlPath());
+	Utility::removeFile((fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string());
+}
+
+void Application::dump()
+{
+	const static char fname[] = "Application::dump() ";
+
+	LOG_DBG << fname << "m_name:" << m_name;
+	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
+	LOG_DBG << fname << "m_description:" << m_description;
+	LOG_DBG << fname << "m_metadata:" << m_metadata;
+	LOG_DBG << fname << "m_shellApp:" << m_shellApp;
+	LOG_DBG << fname << "m_sessionLogin:" << m_sessionLogin;
+	LOG_DBG << fname << "behavior:" << behaviorAsJson();
+	LOG_DBG << fname << "m_workdir:" << m_workdir;
+	LOG_DBG << fname << "m_ownerPrincipalId:" << m_ownerPrincipalId;
+	LOG_DBG << fname << "m_executionUser:" << m_executionUser;
+	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
+	LOG_DBG << fname << "m_status:" << (int)m_status.load();
+	const auto dumpPid = m_runtime->load().pid;
+	if (dumpPid != INVALID_PID)
+	{
+		LOG_DBG << fname << "m_pid:" << dumpPid;
+	}
+	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatLocalTime(m_startTime);
+	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatLocalTime(m_endTime);
+	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
+	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
+	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
+	{
+		const auto metrics = m_metrics;
+		std::lock_guard guard(metrics->mutex);
+		LOG_DBG << fname << "m_starts:" << metrics->starts;
+	}
+	LOG_DBG << fname << "m_lastError:" << getLastError();
+	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
+	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
+
+	auto nextLaunchTime = m_runtime->load().nextLaunch;
+	if (nextLaunchTime)
+	{
+		LOG_DBG << fname << "nextLaunch:" << DateTime::formatLocalTime(*nextLaunchTime);
+	}
+	if (m_dailyLimit)
+	{
+		m_dailyLimit->dump();
+	}
+	if (m_resourceLimit)
+	{
+		m_resourceLimit->dump();
+	}
+}
+
+std::string Application::getYamlPath()
+{
+	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string();
 }
 
 void Application::collectMetrics(void *ptree, bool refreshMetrics)
@@ -633,7 +907,7 @@ bool Application::attach(int pid)
 	{
 		live = attached->running();
 		if (live)
-			procStartTime = stat->get_starttime();
+			procStartTime = stat->getStartTime();
 	}
 #endif
 	if (live)
@@ -641,8 +915,8 @@ bool Application::attach(int pid)
 		TaskRequest::SupersededRequests supersededRequests;
 		{
 			auto processLock = m_process.synchronize();
-			if (*processLock && (*processLock)->getuuid() == attached->getuuid())
-				supersededRequests = m_task.activate(attached->getkey());
+			if (*processLock && (*processLock)->getUuid() == attached->getUuid())
+				supersededRequests = m_task.activate(attached->getKey());
 		}
 		for (const auto &request : supersededRequests)
 			if (request)
@@ -661,18 +935,20 @@ bool Application::attach(int pid)
 	// and the task endpoint are ready, then finalizes against the correct run.
 	{
 		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
-		m_runtime->update([&](Runtime::Run &r)
-						  {
-			r.id = attached->getuuid();
-			r.phase = live ? Runtime::Run::Phase::Running : Runtime::Run::Phase::Completed;
-			r.pid = live ? attachedPid : INVALID_PID;
-			r.startTime = procStartTime;
-			r.returnCode = INVALID_RETURN_CODE;
-			r.exitTime.reset();
-			r.nextLaunch.reset();
-			r.restartEvaluationPending = false;
-			r.lifecycleGeneration = m_runtime->lifecycleGeneration;
-			r.scheduleIntent = live ? Runtime::Run::ScheduleIntent::Dormant : Runtime::Run::ScheduleIntent::NeedsPlan; });
+		m_runtime->update(
+			[&](Runtime::Run &r)
+			{
+				r.id = attached->getUuid();
+				r.phase = live ? Runtime::Run::Phase::Running : Runtime::Run::Phase::Completed;
+				r.pid = live ? attachedPid : INVALID_PID;
+				r.startTime = procStartTime;
+				r.returnCode = INVALID_RETURN_CODE;
+				r.exitTime.reset();
+				r.nextLaunch.reset();
+				r.restartEvaluationPending = false;
+				r.lifecycleGeneration = m_runtime->lifecycleGeneration;
+				r.scheduleIntent = live ? Runtime::Run::ScheduleIntent::Dormant : Runtime::Run::ScheduleIntent::NeedsPlan;
+			});
 	}
 
 	// A dead/reused recovery pid must not leave a pending process that blocks the
@@ -681,8 +957,8 @@ bool Application::attach(int pid)
 	if (!live)
 		attached->detach();
 
-	LOG_INF << fname << "Attached pid <" << pid << "> to application <" << m_name
-			<< ">, last start on <" << DateTime::formatLocalTime(procStartTime) << ">";
+	LOG_INF << fname << "Attached pid <" << pid << "> to application <" << m_name << ">, last start on <"
+			<< DateTime::formatLocalTime(procStartTime) << ">";
 
 	// 4. Stdout follow-up, outside the m_process lock
 	if (live && attached->running())
@@ -697,17 +973,15 @@ void Application::stopUnavailableRun(const std::chrono::system_clock::time_point
 	const static char fname[] = "Application::stopUnavailableRun() ";
 
 	const auto status = getStatus();
-	if (status == STATUS::NOTAVAILABLE ||
-		(status == STATUS::ENABLED && m_timer->isInDailyTimeRange(now)))
+	if (status == STATUS::NOTAVAILABLE || (status == STATUS::ENABLED && m_timer->isInDailyTimeRange(now)))
 		return;
 	if (!stopCurrentRun())
 		return;
 
-	LOG_INF << fname << "Application <" << m_name << "> stopped: "
-			<< (status == STATUS::ENABLED ? "outside its valid time range" : "disabled")
-			<< ", startTime <" << DateTime::formatLocalTime(m_startTime)
-			<< ">, endTime <" << DateTime::formatLocalTime(m_endTime)
-			<< ">, now <" << DateTime::formatLocalTime(now) << ">";
+	LOG_INF << fname << "Application <" << m_name
+			<< "> stopped: " << (status == STATUS::ENABLED ? "outside its valid time range" : "disabled") << ", startTime <"
+			<< DateTime::formatLocalTime(m_startTime) << ">, endTime <" << DateTime::formatLocalTime(m_endTime) << ">, now <"
+			<< DateTime::formatLocalTime(now) << ">";
 }
 
 bool Application::stopCurrentRun()
@@ -864,6 +1138,22 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 		startRun(false, 0, nullptr, lifecycleGeneration);
 }
 
+void Application::enable()
+{
+	{
+		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
+		auto disabled = STATUS::DISABLED;
+		if (!m_status.compare_exchange_strong(disabled, STATUS::ENABLED))
+			return;
+		++m_runtime->lifecycleGeneration;
+		m_runtime->requireSchedulePlan();
+	}
+	Json::Value statusPayload;
+	statusPayload["enabled"] = true;
+	statusPayload["previous_enabled"] = false;
+	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, statusPayload);
+}
+
 void Application::disable()
 {
 	const static char fname[] = "Application::disable() ";
@@ -887,22 +1177,6 @@ void Application::disable()
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, statusPayload);
 
 	// Callers stop the runs: disableApp stops outside the mutation lock, destroy() stops itself.
-}
-
-void Application::enable()
-{
-	{
-		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
-		auto disabled = STATUS::DISABLED;
-		if (!m_status.compare_exchange_strong(disabled, STATUS::ENABLED))
-			return;
-		++m_runtime->lifecycleGeneration;
-		m_runtime->requireSchedulePlan();
-	}
-	Json::Value statusPayload;
-	statusPayload["enabled"] = true;
-	statusPayload["previous_enabled"] = false;
-	EventDispatcher::instance()->dispatch(m_name, AppEventType::STATUS_CHANGE, statusPayload);
 }
 
 std::string Application::runAsync(int timeoutSeconds)
@@ -950,8 +1224,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	{
 		auto processLock = m_process.synchronize();
 		const auto currentRun = m_runtime->load();
-		if (*processLock && currentRun.id == (*processLock)->getuuid() &&
-			currentRun.phase == Runtime::Run::Phase::Starting)
+		if (*processLock && currentRun.id == (*processLock)->getUuid() && currentRun.phase == Runtime::Run::Phase::Starting)
 		{
 			if (onDemand)
 				throw std::invalid_argument("application start is already in progress");
@@ -968,17 +1241,19 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 		}
 		*processLock = process;
 		m_processProof.reset(); // a new run proves itself with a fresh key
-		runId = process->getuuid();
-		m_runtime->update([&](Runtime::Run &run)
-						  {
-			run.id = runId;
-			run.phase = Runtime::Run::Phase::Starting;
-			run.pid = INVALID_PID;
-			run.startTime = std::chrono::system_clock::now();
-			run.returnCode = INVALID_RETURN_CODE;
-			run.exitTime.reset();
-			run.restartEvaluationPending = false;
-			run.lifecycleGeneration = onDemand ? 0 : lifecycleGeneration; });
+		runId = process->getUuid();
+		m_runtime->update(
+			[&](Runtime::Run &run)
+			{
+				run.id = runId;
+				run.phase = Runtime::Run::Phase::Starting;
+				run.pid = INVALID_PID;
+				run.startTime = std::chrono::system_clock::now();
+				run.returnCode = INVALID_RETURN_CODE;
+				run.exitTime.reset();
+				run.restartEvaluationPending = false;
+				run.lifecycleGeneration = onDemand ? 0 : lifecycleGeneration;
+			});
 	}
 	if (lifecycleGuard.owns_lock())
 		lifecycleGuard.unlock();
@@ -998,17 +1273,20 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	if (completionRequest)
 	{
 		auto weakProcess = std::weak_ptr<AppProcess>(process);
-		completionSubscription = subscribeRunCompletion(runId, [weakProcess, completionRequest]()
-														{
-			if (auto completed = weakProcess.lock())
-			{
-				long position = 0;
-				std::map<std::string, std::string> headers;
-				headers[HTTP_HEADER_KEY_exit_code] = std::to_string(completed->returnValue());
-				const auto body = completed->getOutputMsg(&position);
-				headers[HTTP_HEADER_KEY_output_pos] = std::to_string(position);
-				completionRequest->reply(web::http::status_codes::OK, body, headers);
-			} });
+		completionSubscription =
+			subscribeRunCompletion(runId,
+								   [weakProcess, completionRequest]()
+								   {
+									   if (auto completed = weakProcess.lock())
+									   {
+										   long position = 0;
+										   std::map<std::string, std::string> headers;
+										   headers[HTTP_HEADER_KEY_exit_code] = std::to_string(completed->returnValue());
+										   const auto body = completed->getOutputMsg(&position);
+										   headers[HTTP_HEADER_KEY_output_pos] = std::to_string(position);
+										   completionRequest->reply(web::http::status_codes::OK, body, headers);
+									   }
+								   });
 	}
 
 	const auto execUser = getExecUser();
@@ -1070,7 +1348,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 			scheduleNext(std::chrono::system_clock::now() + PERIODIC_RESPAWN_GAP);
 	}
 	process->startStdoutMonitoring();
-	return process->getuuid();
+	return process->getUuid();
 }
 
 void Application::onStartAccepted(const std::string &runId, pid_t pid)
@@ -1079,21 +1357,23 @@ void Application::onStartAccepted(const std::string &runId, pid_t pid)
 	TaskRequest::SupersededRequests supersededRequests;
 	{
 		auto processLock = m_process.synchronize();
-		if (!(*processLock) || (*processLock)->getuuid() != runId)
+		if (!(*processLock) || (*processLock)->getUuid() != runId)
 			return;
 
-		m_runtime->update([&](Runtime::Run &state)
-						  {
-			if (state.id != runId ||
-				(state.phase != Runtime::Run::Phase::Starting && state.phase != Runtime::Run::Phase::StopRequested))
-				return;
-			// Bind the worker task endpoint before publishing Running, so SDK callers
-			// cannot observe a runnable process whose key is not active yet.
-			supersededRequests = m_task.activate((*processLock)->getkey());
-			state.pid = pid;
-			if (state.phase == Runtime::Run::Phase::Starting)
-				state.phase = Runtime::Run::Phase::Running;
-			currentRun = true; });
+		m_runtime->update(
+			[&](Runtime::Run &state)
+			{
+				if (state.id != runId ||
+					(state.phase != Runtime::Run::Phase::Starting && state.phase != Runtime::Run::Phase::StopRequested))
+					return;
+				// Bind the worker task endpoint before publishing Running, so SDK callers
+				// cannot observe a runnable process whose key is not active yet.
+				supersededRequests = m_task.activate((*processLock)->getKey());
+				state.pid = pid;
+				if (state.phase == Runtime::Run::Phase::Starting)
+					state.phase = Runtime::Run::Phase::Running;
+				currentRun = true;
+			});
 	}
 	if (!currentRun)
 		return;
@@ -1122,24 +1402,26 @@ void Application::recordStartFailure(const std::string &runId, const std::string
 {
 	const auto now = std::chrono::system_clock::now();
 	bool currentRun = false;
-	m_runtime->update([&](Runtime::Run &run)
-					  {
-		if (run.id != runId ||
-			(run.phase != Runtime::Run::Phase::Starting && run.phase != Runtime::Run::Phase::StopRequested))
-			return;
-		run.pid = INVALID_PID;
-		run.phase = Runtime::Run::Phase::Completed;
-		run.exitTime = now;
-		run.restartEvaluationPending = false;
-		currentRun = true; });
+	m_runtime->update(
+		[&](Runtime::Run &run)
+		{
+			if (run.id != runId ||
+				(run.phase != Runtime::Run::Phase::Starting && run.phase != Runtime::Run::Phase::StopRequested))
+				return;
+			run.pid = INVALID_PID;
+			run.phase = Runtime::Run::Phase::Completed;
+			run.exitTime = now;
+			run.restartEvaluationPending = false;
+			currentRun = true;
+		});
 	if (!currentRun)
 		return;
 
 	m_task.terminate();
 	setLastError(error);
 	health(false);
-	LOG_WAR << "Application::recordStartFailure() application <" << m_name
-			<< "> run <" << runId << "> failed to start: " << error;
+	LOG_WAR << "Application::recordStartFailure() application <" << m_name << "> run <" << runId
+			<< "> failed to start: " << error;
 	// Start rejection has no process-exit callback, so complete observers here.
 	completeRun(runId);
 	if (onDemand)
@@ -1162,10 +1444,7 @@ void Application::sendTask(std::shared_ptr<HttpRequest> asyncHttpRequest)
 	m_task.sendTask(taskRequest);
 }
 
-bool Application::deleteTask()
-{
-	return m_task.deleteTask();
-}
+bool Application::deleteTask() { return m_task.deleteTask(); }
 
 void Application::fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest)
 {
@@ -1179,17 +1458,15 @@ void Application::replyTask(const std::string &processKey, std::shared_ptr<HttpR
 	m_task.replyTask(processKey, req);
 }
 
-std::tuple<int, std::string> Application::taskStatus()
-{
-	return m_task.taskStatus();
-}
+std::tuple<int, std::string> Application::taskStatus() { return m_task.taskStatus(); }
 
 bool Application::usesProcessProof() const
 {
 	return m_kind == Kind::SystemAgent || (m_kind == Kind::System && m_name == WORKFLOW_APP_NAME);
 }
 
-std::shared_ptr<HMACVerifier> Application::issueProcessProof(const std::string &execUser, std::map<std::string, std::string> &envMap) const
+std::shared_ptr<HMACVerifier> Application::issueProcessProof(const std::string &execUser,
+															 std::map<std::string, std::string> &envMap) const
 {
 	auto proof = std::make_shared<HMACVerifier>();
 	const auto shmPath = proof->writePSKToSHM(execUser);
@@ -1199,12 +1476,13 @@ std::shared_ptr<HMACVerifier> Application::issueProcessProof(const std::string &
 	return proof;
 }
 
-void Application::activateProcessProof(const std::string &runId, const std::shared_ptr<HMACVerifier> &proof, bool startAccepted)
+void Application::activateProcessProof(const std::string &runId, const std::shared_ptr<HMACVerifier> &proof,
+									   bool startAccepted)
 {
 	if (startAccepted)
 	{
 		auto processLock = m_process.synchronize();
-		if (*processLock && (*processLock)->getuuid() == runId)
+		if (*processLock && (*processLock)->getUuid() == runId)
 			m_processProof = proof;
 	}
 	// Polled on the timer thread: the child reads the key and sets the flag,
@@ -1217,11 +1495,11 @@ bool Application::isCurrentProcessUuid(const std::string &processUuid)
 	if (processUuid.empty())
 		return false;
 	auto processLock = m_process.synchronize();
-	if (!(*processLock) || !Utility::secureCompare((*processLock)->getuuid(), processUuid))
+	if (!(*processLock) || !Utility::secureCompare((*processLock)->getUuid(), processUuid))
 		return false;
 	const auto run = m_runtime->load();
 	return run.id == processUuid &&
-		(run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running);
+		   (run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running);
 }
 
 std::string Application::currentProcessUuidForProof(const std::string &message, const std::string &hmacSignature)
@@ -1229,7 +1507,7 @@ std::string Application::currentProcessUuidForProof(const std::string &message, 
 	if (!verifyProcessProof(message, hmacSignature))
 		return {};
 	auto processLock = m_process.synchronize();
-	return (*processLock) ? (*processLock)->getuuid() : std::string();
+	return (*processLock) ? (*processLock)->getUuid() : std::string();
 }
 
 bool Application::verifyProcessProof(const std::string &message, const std::string &hmacSignature)
@@ -1240,8 +1518,8 @@ bool Application::verifyProcessProof(const std::string &message, const std::stri
 	if (!(*processLock) || !m_processProof || !m_processProof->verifyHMAC(message, hmacSignature))
 		return false;
 	const auto run = m_runtime->load();
-	return run.id == (*processLock)->getuuid() &&
-		(run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running);
+	return run.id == (*processLock)->getUuid() &&
+		   (run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running);
 }
 
 std::string Application::signProcessProof(const std::string &message)
@@ -1313,12 +1591,13 @@ void Application::healthCheck()
 	}
 }
 
-std::tuple<std::string, bool, int> Application::getOutput(long &position, long maxSize, const std::string &processUuid, int index, size_t timeout)
+std::tuple<std::string, bool, int> Application::getOutput(long &position, long maxSize, const std::string &processUuid,
+														  int index, size_t timeout)
 {
 	const static char fname[] = "Application::getOutput() ";
 
 	auto process = m_process.get();
-	const bool matchesRun = process && (processUuid.empty() || process->getuuid() == processUuid);
+	const bool matchesRun = process && (processUuid.empty() || process->getUuid() == processUuid);
 	if (matchesRun && index == 0 && !process->isFinalized() && timeout > 0)
 	{
 		process->wait(std::chrono::seconds(timeout));
@@ -1337,7 +1616,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 		{
 			exitCode = process->returnValue();
 			finished = true;
-			LOG_DBG << fname << "Process <" << process->getuuid() << "> finished with exit code <" << exitCode << ">";
+			LOG_DBG << fname << "Process <" << process->getUuid() << "> finished with exit code <" << exitCode << ">";
 		}
 		auto output = process->getOutputMsg(&position, maxSize);
 		return std::make_tuple(output, finished, exitCode);
@@ -1356,16 +1635,15 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 	return std::make_tuple(Utility::readFileCpp(file, &position, maxSize), finished, exitCode);
 }
 
-Application::RunCompletionSubscription Application::subscribeRunCompletion(
-	const std::string &processUuid, RunCompletionCallback callback)
+Application::RunCompletionSubscription Application::subscribeRunCompletion(const std::string &processUuid,
+																		   RunCompletionCallback callback)
 {
 	if (!callback)
 		return INVALID_RUN_COMPLETION_SUBSCRIPTION;
 
 	std::lock_guard guard(m_runtime->runMutex);
 	const auto &run = m_runtime->run;
-	if (run.id.empty() || (!processUuid.empty() && processUuid != run.id) ||
-		run.phase == Runtime::Run::Phase::Completed)
+	if (run.id.empty() || (!processUuid.empty() && processUuid != run.id) || run.phase == Runtime::Run::Phase::Completed)
 	{
 		return INVALID_RUN_COMPLETION_SUBSCRIPTION;
 	}
@@ -1410,27 +1688,31 @@ void Application::initMetrics()
 		if (!isManaged())
 			return;
 		const std::map<std::string, std::string> labels = {{"application", getName()}};
-		metrics->startCount = RESTHANDLER::instance()->createPromCounter(
-			PROM_METRIC_NAME_appmesh_application_process_starts_total, PROM_METRIC_HELP_appmesh_application_process_starts_total, labels);
+		metrics->startCount =
+			RESTHANDLER::instance()->createPromCounter(PROM_METRIC_NAME_appmesh_application_process_starts_total,
+													   PROM_METRIC_HELP_appmesh_application_process_starts_total, labels);
 		metrics->startCount->metric().Increment(static_cast<double>(metrics->starts));
 		// TODO: Add exit outcomes only when the lifecycle exposes one simple completion point.
 		metrics->collectionError = RESTHANDLER::instance()->createPromCounter(
 			PROM_METRIC_NAME_appmesh_application_metrics_collection_errors_total,
 			PROM_METRIC_HELP_appmesh_application_metrics_collection_errors_total, labels);
-		metrics->appPid = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_application_process_id, PROM_METRIC_HELP_appmesh_application_process_id, labels);
+		metrics->appPid = RESTHANDLER::instance()->createPromGauge(PROM_METRIC_NAME_appmesh_application_process_id,
+																   PROM_METRIC_HELP_appmesh_application_process_id, labels);
 		metrics->memory = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_application_process_resident_memory_bytes, PROM_METRIC_HELP_appmesh_application_process_resident_memory_bytes, labels);
-		metrics->cpu = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_application_process_cpu_usage_cores, PROM_METRIC_HELP_appmesh_application_process_cpu_usage_cores, labels);
-		metrics->fileDesc = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_application_process_open_fds, PROM_METRIC_HELP_appmesh_application_process_open_fds, labels);
-		metrics->enabled = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_application_enabled, PROM_METRIC_HELP_appmesh_application_enabled, labels);
-		metrics->running = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_application_running, PROM_METRIC_HELP_appmesh_application_running, labels);
-		metrics->healthy = RESTHANDLER::instance()->createPromGauge(
-			PROM_METRIC_NAME_appmesh_application_healthy, PROM_METRIC_HELP_appmesh_application_healthy, labels);
+			PROM_METRIC_NAME_appmesh_application_process_resident_memory_bytes,
+			PROM_METRIC_HELP_appmesh_application_process_resident_memory_bytes, labels);
+		metrics->cpu =
+			RESTHANDLER::instance()->createPromGauge(PROM_METRIC_NAME_appmesh_application_process_cpu_usage_cores,
+													 PROM_METRIC_HELP_appmesh_application_process_cpu_usage_cores, labels);
+		metrics->fileDesc =
+			RESTHANDLER::instance()->createPromGauge(PROM_METRIC_NAME_appmesh_application_process_open_fds,
+													 PROM_METRIC_HELP_appmesh_application_process_open_fds, labels);
+		metrics->enabled = RESTHANDLER::instance()->createPromGauge(PROM_METRIC_NAME_appmesh_application_enabled,
+																	PROM_METRIC_HELP_appmesh_application_enabled, labels);
+		metrics->running = RESTHANDLER::instance()->createPromGauge(PROM_METRIC_NAME_appmesh_application_running,
+																	PROM_METRIC_HELP_appmesh_application_running, labels);
+		metrics->healthy = RESTHANDLER::instance()->createPromGauge(PROM_METRIC_NAME_appmesh_application_healthy,
+																	PROM_METRIC_HELP_appmesh_application_healthy, labels);
 	}
 }
 
@@ -1441,8 +1723,7 @@ void Application::initMetrics(std::shared_ptr<Application> fromApp)
 		clearMetrics();
 		return;
 	}
-	const auto registersApplicationMetrics = [](const Application &app)
-	{ return app.isManaged(); };
+	const auto registersApplicationMetrics = [](const Application &app) { return app.isManaged(); };
 	if (registersApplicationMetrics(*this) != registersApplicationMetrics(*fromApp))
 	{
 		fromApp->clearMetrics();
@@ -1479,327 +1760,14 @@ void Application::resetMetricHandles(MetricsState &metrics)
 	metrics.healthy.reset();
 }
 
-Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
-{
-	const static char fname[] = "Application::AsJson() ";
-
-	Json::Value result = Json::Value(Json::objectValue);
-
-	LOG_DBG << fname << "Application: " << m_name;
-	result[JSON_KEY_APP_name] = std::string(m_name);
-	if (!m_ownerPrincipalId.empty())
-	{
-		result[JSON_KEY_APP_owner_principal_id] = m_ownerPrincipalId;
-	}
-	if (!m_executionUser.empty())
-	{
-		result[JSON_KEY_APP_execution_user] = m_executionUser;
-	}
-	if (m_kind == Kind::System)
-		result[JSON_KEY_APP_system] = true;
-	static const std::map<int, std::string> phaseNames = {
-		{20, "auth-issuer"},
-		{30, "ingress"}, {DEFAULT_STARTUP_PHASE, "normal"}};
-	if (auto phaseName = phaseNames.find(m_startupPhase); phaseName != phaseNames.end() && m_startupPhase != DEFAULT_STARTUP_PHASE)
-		result[JSON_KEY_APP_startup_phase] = phaseName->second;
-	if (m_ownerPermission)
-	{
-		result[JSON_KEY_APP_permission] = (m_ownerPermission);
-	}
-	if (m_shellApp)
-	{
-		result[JSON_KEY_APP_shell] = (m_shellApp);
-	}
-	if (m_sessionLogin)
-	{
-		result[JSON_KEY_APP_session_login] = (m_sessionLogin);
-	}
-	if (m_metadata != EMPTY_STR_JSON)
-	{
-		result[JSON_KEY_APP_metadata] = m_metadata;
-	}
-	if (!m_commandLine.empty())
-	{
-		result[(JSON_KEY_APP_command)] = std::string(m_commandLine);
-	}
-	if (!m_description.empty())
-	{
-		result[(JSON_KEY_APP_description)] = std::string(m_description);
-	}
-	if (m_stdoutCacheNum)
-	{
-		result[JSON_KEY_APP_stdout_backup_count] = (m_stdoutCacheNum);
-	}
-	if (!m_healthCheckCmd.empty())
-	{
-		result[(JSON_KEY_APP_health_check_cmd)] = std::string(m_healthCheckCmd);
-	}
-	if (!m_workdir.empty())
-	{
-		result[JSON_KEY_APP_working_dir] = std::string(m_workdir);
-	}
-	if (!m_dependsOn.empty())
-	{
-		Json::Value dependencies(Json::arrayValue);
-		for (const auto &dependency : m_dependsOn)
-			dependencies.append(dependency);
-		result[JSON_KEY_APP_depends_on] = dependencies;
-	}
-	result[JSON_KEY_APP_enabled] = isEnabled();
-	if (m_resourceLimit)
-	{
-		result[JSON_KEY_APP_resource_limit] = m_resourceLimit->AsJson();
-	}
-	if (m_envMap.size())
-	{
-		Json::Value envs = Json::Value(Json::objectValue);
-		for (const auto &[name, value] : m_envMap)
-		{
-			envs[name] = std::string(value);
-		}
-		result[JSON_KEY_APP_env] = std::move(envs);
-	}
-	if (m_secEnvMap.size() && !returnRuntimeInfo)
-	{
-		// Only include secret_env when saving to disk (not in API responses).
-		Json::Value envs = Json::Value(Json::objectValue);
-		for (const auto &[name, value] : m_secEnvMap)
-		{
-			const std::string context = m_name + '\0' + name;
-			envs[name] = SecretProtector::instance().protect(value, context);
-		}
-		result[JSON_KEY_APP_secret_env] = std::move(envs);
-	}
-	if (!m_dockerImage.empty())
-	{
-		result[JSON_KEY_APP_docker_image] = std::string(m_dockerImage);
-	}
-	if (m_startTime.time_since_epoch().count() && m_startTime != std::chrono::system_clock::time_point::min())
-	{
-		result[JSON_KEY_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
-	}
-	if (m_endTime.time_since_epoch().count() && m_endTime != std::chrono::system_clock::time_point::max())
-	{
-		result[JSON_KEY_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
-	}
-	if (m_dailyLimit)
-	{
-		result[JSON_KEY_APP_daily_limitation] = m_dailyLimit->AsJson();
-	}
-	result[JSON_KEY_APP_register_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
-	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
-	if (m_bufferTime)
-	{
-		result[JSON_KEY_APP_stop_grace_period] = std::string(m_bufferTimeValue);
-	}
-	if (!m_startIntervalValue.empty())
-	{
-		if (m_scheduleKind == ScheduleKind::Cron)
-		{
-			result[JSON_KEY_APP_cron_schedule] = std::string(m_startIntervalValue);
-		}
-		else
-		{
-			result[JSON_KEY_APP_interval] = std::string(m_startIntervalValue);
-		}
-	}
-
-	if (returnRuntimeInfo)
-	{
-		// Starts are published after the corresponding run state. Sample them first
-		// so a response cannot combine a new count with the previous run's PID.
-		unsigned long long starts = 0;
-		{
-			const auto metrics = m_metrics;
-			std::lock_guard guard(metrics->mutex);
-			starts = metrics->starts;
-		}
-		auto run = m_runtime->load();
-		auto process = m_process.get();
-		if (run.returnCode != INVALID_RETURN_CODE)
-		{
-			result[JSON_KEY_APP_return_code] = run.returnCode;
-		}
-		if (process && process->running())
-		{
-			auto status = m_task.taskStatus();
-			result[JSON_KEY_APP_task_id] = std::get<0>(status);
-			result[JSON_KEY_APP_task_status] = std::get<1>(status);
-			// Spawn races the run-state store: the process can be running before r.pid is
-			// published (still INVALID_PID from the previous exit). Omit pid until valid.
-			if (run.pid != INVALID_PID)
-			{
-				result[JSON_KEY_APP_pid] = run.pid;
-				// lookup failure keeps the empty-user field, as before
-				result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(run.pid).value_or(static_cast<uid_t>(-1)));
-			}
-
-			auto usage = process->getProcessDetails(ptree);
-			if (std::get<0>(usage))
-			{
-				result[JSON_KEY_APP_memory] = (std::get<1>(usage));
-				result[JSON_KEY_APP_cpu] = (std::get<2>(usage));
-				result[JSON_KEY_APP_fd] = (std::get<3>(usage));
-				result[JSON_KEY_APP_pstree] = std::string(std::get<4>(usage));
-				if (m_shellAppFile)
-				{
-					auto leafProcessUser = os::getUsernameByUid(os::getProcessUid(std::get<5>(usage)).value_or(static_cast<uid_t>(-1)));
-					if (!leafProcessUser.empty())
-					{
-						result[JSON_KEY_APP_pid_user] = leafProcessUser;
-					}
-				}
-			}
-		}
-		auto startTime = run.startTime;
-		if (startTime && std::chrono::time_point_cast<std::chrono::hours>(*startTime).time_since_epoch().count() > 24)
-		{
-			result[JSON_KEY_APP_last_start] = std::chrono::duration_cast<std::chrono::seconds>((*startTime).time_since_epoch()).count();
-		}
-		auto exitTime = run.exitTime;
-		if (exitTime && std::chrono::time_point_cast<std::chrono::hours>(*exitTime).time_since_epoch().count() > 24)
-		{
-			result[JSON_KEY_APP_last_exit] = std::chrono::duration_cast<std::chrono::seconds>((*exitTime).time_since_epoch()).count();
-		}
-		const auto containerId = process ? process->containerId() : std::string();
-		if (!containerId.empty())
-		{
-			result[JSON_KEY_APP_container_id] = containerId;
-		}
-		result[JSON_KEY_APP_health] = (this->health());
-		if (m_stdoutFileQueue->size())
-		{
-			result[JSON_KEY_APP_stdout_file_count] = (m_stdoutFileQueue->size());
-		}
-		auto err = getLastError();
-		if (!err.empty())
-		{
-			result[JSON_KEY_APP_last_error] = std::move(err);
-		}
-		const auto waitingFor = this->waitingFor();
-		if (!waitingFor.empty())
-		{
-			Json::Value waiting(Json::arrayValue);
-			for (const auto &dependency : waitingFor)
-				waiting.append(dependency);
-			result[JSON_KEY_APP_waiting_for] = waiting;
-		}
-		result[JSON_KEY_APP_starts] = static_cast<Json::Int64>(starts);
-		auto nextLaunch = run.nextLaunch;
-		if (nextLaunch)
-		{
-			result[JSON_KEY_APP_next_start_time] = std::chrono::duration_cast<std::chrono::seconds>((*nextLaunch).time_since_epoch()).count();
-		}
-	}
-
-	Utility::addExtraAppTimeReferStr(result);
-	return result;
-}
-
-void Application::save()
-{
-	const static char fname[] = "Application::save() ";
-
-	if (!this->isPersistAble())
-		return;
-
-	std::lock_guard guard(m_saveMutex);
-	const auto appPath = getYamlPath();
-	uint16_t mode = 0644;
-#if !defined(_WIN32)
-	if (Utility::isFileExist(appPath))
-	{
-		if (auto fileInfo = os::fileStat(appPath); fileInfo && std::get<0>(*fileInfo) >= 0)
-			mode = static_cast<uint16_t>(std::get<0>(*fileInfo));
-	}
-#endif
-	const auto content = Utility::jsonToYaml(AsJson(false)) + "\n";
-	const auto tempPath = os::createTmpFile(appPath, content, mode);
-	if (tempPath.empty())
-	{
-		LOG_ERR << fname << "Failed to create a temporary file for application <" << m_name << ">";
-		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
-	}
-	std::error_code renameError;
-	fs::rename(tempPath, appPath, renameError);
-	if (renameError)
-	{
-		const auto error = renameError.message();
-		Utility::removeFile(tempPath);
-		LOG_ERR << fname << "Failed to save application <" << m_name << "> to file <" << appPath << ">, error: " << error;
-		throw std::invalid_argument("failed to save application, please check your app name or folder permission");
-	}
-	LOG_INF << fname << "Saved application <" << m_name << "> to file <" << appPath << ">";
-}
-
-std::string Application::getYamlPath()
-{
-	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string();
-}
-
-void Application::remove()
-{
-	Utility::removeFile(getYamlPath());
-	Utility::removeFile((fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string());
-}
-
-void Application::dump()
-{
-	const static char fname[] = "Application::dump() ";
-
-	LOG_DBG << fname << "m_name:" << m_name;
-	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
-	LOG_DBG << fname << "m_description:" << m_description;
-	LOG_DBG << fname << "m_metadata:" << m_metadata;
-	LOG_DBG << fname << "m_shellApp:" << m_shellApp;
-	LOG_DBG << fname << "m_sessionLogin:" << m_sessionLogin;
-	LOG_DBG << fname << "behavior:" << behaviorAsJson();
-	LOG_DBG << fname << "m_workdir:" << m_workdir;
-	LOG_DBG << fname << "m_ownerPrincipalId:" << m_ownerPrincipalId;
-	LOG_DBG << fname << "m_executionUser:" << m_executionUser;
-	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
-	LOG_DBG << fname << "m_status:" << (int)m_status.load();
-	const auto dumpPid = m_runtime->load().pid;
-	if (dumpPid != INVALID_PID)
-	{
-		LOG_DBG << fname << "m_pid:" << dumpPid;
-	}
-	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatLocalTime(m_startTime);
-	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatLocalTime(m_endTime);
-	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
-	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
-	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
-	{
-		const auto metrics = m_metrics;
-		std::lock_guard guard(metrics->mutex);
-		LOG_DBG << fname << "m_starts:" << metrics->starts;
-	}
-	LOG_DBG << fname << "m_lastError:" << getLastError();
-	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
-	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
-
-	auto nextLaunchTime = m_runtime->load().nextLaunch;
-	if (nextLaunchTime)
-	{
-		LOG_DBG << fname << "nextLaunch:" << DateTime::formatLocalTime(*nextLaunchTime);
-	}
-	if (m_dailyLimit)
-	{
-		m_dailyLimit->dump();
-	}
-	if (m_resourceLimit)
-	{
-		m_resourceLimit->dump();
-	}
-}
-
 std::shared_ptr<AppProcess> Application::createProcess(const std::string &dockerImage, const std::string &appName)
 {
 	std::shared_ptr<AppProcess> process;
 	const auto weakSelf = std::weak_ptr<Application>(std::dynamic_pointer_cast<Application>(shared_from_this()));
 	m_stdoutFileQueue->enqueue();
 
-	if ((m_shellApp || m_sessionLogin) && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
+	if ((m_shellApp || m_sessionLogin) &&
+		(m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 	{
 		m_shellAppFile.reset();
 		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, getExecUser(), m_sessionLogin, m_workdir);
@@ -1861,15 +1829,14 @@ bool Application::onTimerRemoval()
 
 void Application::recordProcessExit(int code, bool naturalExit, AppProcess *reporter, long stdoutDispatchedBytes)
 {
-	const auto &runId = reporter->getuuid();
+	const auto &runId = reporter->getUuid();
 	const pid_t prevPid = reporter->lastPid();
 	std::string exitError;
 	if (code != 0 && naturalExit)
 	{
 		const auto error = reporter->startError();
-		exitError = error.empty()
-						? Utility::stringFormat("exited with return code: %d", code)
-						: Utility::stringFormat("exited with return code: %d, msg: %s", code, error.c_str());
+		exitError = error.empty() ? Utility::stringFormat("exited with return code: %d", code)
+								  : Utility::stringFormat("exited with return code: %d, msg: %s", code, error.c_str());
 	}
 
 	// Commit lifecycle state before best-effort output/event side effects.
@@ -1879,25 +1846,27 @@ void Application::recordProcessExit(int code, bool naturalExit, AppProcess *repo
 	{
 		std::lock_guard lifecycleGuard(m_runtime->lifecycleMutex);
 		const bool enabled = isEnabled();
-		m_runtime->update([&](Runtime::Run &state)
-						  {
-			if (state.id != runId)
-				return;
-			const bool currentGeneration = state.lifecycleGeneration == m_runtime->lifecycleGeneration;
-			// A successful Docker pull is an intermediate run: accepted containers always
-			// publish their container ID before exit, while the pull process has none.
-			const bool imagePullCompleted = naturalExit && enabled && currentGeneration && code == 0 && dockerImagePull;
-			state.pid = INVALID_PID;
-			state.phase = Runtime::Run::Phase::Finalizing;
-			state.exitTime = now;
-			state.returnCode = code;
-			state.restartEvaluationPending = naturalExit && enabled && currentGeneration && !imagePullCompleted;
-			if (imagePullCompleted)
+		m_runtime->update(
+			[&](Runtime::Run &state)
 			{
-				state.nextLaunch = now;
-				state.scheduleIntent = Runtime::Run::ScheduleIntent::Armed;
-			}
-			currentRun = true; });
+				if (state.id != runId)
+					return;
+				const bool currentGeneration = state.lifecycleGeneration == m_runtime->lifecycleGeneration;
+				// A successful Docker pull is an intermediate run: accepted containers always
+				// publish their container ID before exit, while the pull process has none.
+				const bool imagePullCompleted = naturalExit && enabled && currentGeneration && code == 0 && dockerImagePull;
+				state.pid = INVALID_PID;
+				state.phase = Runtime::Run::Phase::Finalizing;
+				state.exitTime = now;
+				state.returnCode = code;
+				state.restartEvaluationPending = naturalExit && enabled && currentGeneration && !imagePullCompleted;
+				if (imagePullCompleted)
+				{
+					state.nextLaunch = now;
+					state.scheduleIntent = Runtime::Run::ScheduleIntent::Armed;
+				}
+				currentRun = true;
+			});
 	}
 	if (currentRun)
 	{
@@ -1955,11 +1924,14 @@ void Application::terminate(std::shared_ptr<AppProcess> p)
 {
 	if (p)
 	{
-		const auto &runId = p->getuuid();
-		m_runtime->update([&](Runtime::Run &run)
-						  {
-			if (run.id == runId && (run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running))
-				run.phase = Runtime::Run::Phase::StopRequested; });
+		const auto &runId = p->getUuid();
+		m_runtime->update(
+			[&](Runtime::Run &run)
+			{
+				if (run.id == runId &&
+					(run.phase == Runtime::Run::Phase::Starting || run.phase == Runtime::Run::Phase::Running))
+					run.phase = Runtime::Run::Phase::StopRequested;
+			});
 		p->terminate();
 	}
 
@@ -2020,10 +1992,12 @@ void Application::scheduleStartAt(const std::chrono::system_clock::time_point &w
 
 	// Record-only: no timer. The scheduler tick claims and starts it when `when`
 	// is reached, keeping fork/exec off the shared timer thread.
-	m_runtime->update([&](Runtime::Run &run)
-					  {
-		run.nextLaunch = when;
-		run.scheduleIntent = Runtime::Run::ScheduleIntent::Armed; });
+	m_runtime->update(
+		[&](Runtime::Run &run)
+		{
+			run.nextLaunch = when;
+			run.scheduleIntent = Runtime::Run::ScheduleIntent::Armed;
+		});
 	LOG_DBG << fname << "Next start for <" << m_name << "> scheduled at " << DateTime::formatLocalTime(when);
 }
 
@@ -2087,8 +2061,8 @@ void Application::setLastError(const std::string &error)
 	{
 		if (!error.empty())
 		{
-			*lockedStr = Utility::stringFormat("%s %s",
-											   DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(), error.c_str());
+			*lockedStr = Utility::stringFormat("%s %s", DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(),
+											   error.c_str());
 			LOG_DBG << fname << "Last error for <" << getName() << ">: " << error;
 		}
 		else

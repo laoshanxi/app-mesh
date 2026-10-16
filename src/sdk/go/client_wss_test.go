@@ -9,7 +9,7 @@ import (
 
 func TestAppmeshWSSLogin(t *testing.T) {
 	client, err := NewWSSClient(Option{
-		AppMeshUri:         "https://127.0.0.1:6058",
+		AppMeshURI:         "https://127.0.0.1:6058",
 		InsecureSkipVerify: true,
 	})
 	require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestAppmeshWSSLogin(t *testing.T) {
 
 func TestAppmeshWSSOperations(t *testing.T) {
 	client, err := NewWSSClient(Option{
-		AppMeshUri:         "https://127.0.0.1:6058",
+		AppMeshURI:         "https://127.0.0.1:6058",
 		InsecureSkipVerify: true,
 	})
 	require.NoError(t, err)

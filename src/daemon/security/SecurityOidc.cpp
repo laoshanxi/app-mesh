@@ -10,10 +10,7 @@ void SecurityOidc::initialize()
 	m_verifier.init();
 }
 
-void SecurityOidc::prewarmAuthentication()
-{
-	m_verifier.prewarm();
-}
+void SecurityOidc::prewarmAuthentication() { m_verifier.prewarm(); }
 
 Principal SecurityOidc::authenticate(const std::string &token)
 {
@@ -22,19 +19,16 @@ Principal SecurityOidc::authenticate(const std::string &token)
 	return verified;
 }
 
-std::shared_ptr<AuthorizationPrincipal> SecurityOidc::enrollFirstAdmin(
-	const std::string &bearerToken)
+std::shared_ptr<AuthorizationPrincipal> SecurityOidc::enrollFirstAdmin(const std::string &bearerToken)
 {
 	return m_authorization.enrollFirstAdmin(m_verifier.verify(bearerToken));
 }
 
-std::shared_ptr<AuthorizationPrincipal> SecurityOidc::enrollFirstAdminPinned(
-	const std::string &principalId)
+std::shared_ptr<AuthorizationPrincipal> SecurityOidc::enrollFirstAdminPinned(const std::string &principalId)
 {
 	// The WebSocket upgrade already verified the Dex bearer and resolved this
 	// principal into the store, so the pinned record matches what the HTTP path re-verifies.
-	return m_authorization.enrollFirstAdmin(
-		m_authorization.get(principalId)->asPrincipal());
+	return m_authorization.enrollFirstAdmin(m_authorization.get(principalId)->asPrincipal());
 }
 
 std::shared_ptr<AuthorizationPrincipal> SecurityOidc::principal(const std::string &principalId) const
@@ -47,10 +41,7 @@ std::set<std::string> SecurityOidc::permissions(const std::string &principalId) 
 	return m_authorization.permissions(principalId);
 }
 
-std::set<std::string> SecurityOidc::allPermissions() const
-{
-	return m_authorization.allPermissions();
-}
+std::set<std::string> SecurityOidc::allPermissions() const { return m_authorization.allPermissions(); }
 
 Json::Value SecurityOidc::authConfig() const
 {
@@ -69,17 +60,11 @@ void SecurityOidc::updatePrincipal(const std::string &principalId, const Json::V
 	m_authorization.updatePrincipal(principalId, definition);
 }
 
-void SecurityOidc::deletePrincipal(const std::string &principalId)
-{
-	m_authorization.deletePrincipal(principalId);
-}
+void SecurityOidc::deletePrincipal(const std::string &principalId) { m_authorization.deletePrincipal(principalId); }
 
 void SecurityOidc::updateRole(const std::string &role, const Json::Value &permissions)
 {
 	m_authorization.updateRole(role, permissions);
 }
 
-void SecurityOidc::deleteRole(const std::string &role)
-{
-	m_authorization.deleteRole(role);
-}
+void SecurityOidc::deleteRole(const std::string &role) { m_authorization.deleteRole(role); }

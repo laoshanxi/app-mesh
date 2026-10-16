@@ -14,11 +14,11 @@
 #include <unistd.h>
 #endif
 
-#include <filesystem>
 #include <boost/process/v2/environment.hpp>
 #include <boost/process/v2/process.hpp>
 #include <boost/process/v2/start_dir.hpp>
 #include <boost/process/v2/stdio.hpp>
+#include <filesystem>
 #if !defined(_WIN32)
 #include <boost/process/v2/posix/bind_fd.hpp>
 #include <boost/process/v2/posix/vfork_launcher.hpp>
@@ -85,7 +85,8 @@ namespace
 			return command;
 
 		const char *pathEnv = ::getenv("PATH");
-		std::string search = (pathEnv && *pathEnv) ? pathEnv : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+		std::string search =
+			(pathEnv && *pathEnv) ? pathEnv : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 		search +=
 #if defined(_WIN32)
 			';';
@@ -140,43 +141,41 @@ namespace
 #endif
 	}
 
-// The handle guards store HANDLEs on Windows: open must return one there,
-// not a CRT descriptor that CloseHandle would corrupt.
-native_fd openStdioFile(const char *path, bool readOnly) {
+	// The handle guards store HANDLEs on Windows: open must return one there,
+	// not a CRT descriptor that CloseHandle would corrupt.
+	native_fd openStdioFile(const char *path, bool readOnly)
+	{
 #if defined(_WIN32)
-    const DWORD access = readOnly ? GENERIC_READ : GENERIC_WRITE;
-    const DWORD disposition = readOnly ? OPEN_EXISTING : CREATE_ALWAYS;
-    const HANDLE handle = ::CreateFileW(fs::path(path).wstring().c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, disposition, FILE_ATTRIBUTE_NORMAL, nullptr);
-    return (handle == INVALID_HANDLE_VALUE) ? INVALID_FD : handle;
+		const DWORD access = readOnly ? GENERIC_READ : GENERIC_WRITE;
+		const DWORD disposition = readOnly ? OPEN_EXISTING : CREATE_ALWAYS;
+		const HANDLE handle = ::CreateFileW(fs::path(path).wstring().c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE,
+											nullptr, disposition, FILE_ATTRIBUTE_NORMAL, nullptr);
+		return (handle == INVALID_HANDLE_VALUE) ? INVALID_FD : handle;
 #else
-    return readOnly ? ::open(path, O_RDONLY) : ::open(path, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+		return readOnly ? ::open(path, O_RDONLY) : ::open(path, O_CREAT | O_WRONLY | O_TRUNC, 0666);
 #endif
-}
+	}
 
 #if !defined(_WIN32)
 	// Wrap one command-line token so its value stays a single argv element.
 	// The daemon spawns without a shell: str2argv strips quotes wherever they
 	// appear and only quote-protected text survives tokenization, so the quotes
 	// must enclose the whole token.
-	std::string quoteArgvToken(const std::string &value)
-	{
-		return "'" + value + "'";
-	}
+	std::string quoteArgvToken(const std::string &value) { return "'" + value + "'"; }
 
 	bool isValidEnvName(const std::string &name)
 	{
 		if (name.empty() || !(std::isalpha(static_cast<unsigned char>(name[0])) || name[0] == '_'))
 			return false;
-		return std::all_of(name.begin(), name.end(), [](unsigned char c) {
-			return std::isalnum(c) || c == '_';
-		});
+		return std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; });
 	}
 
 	// sudo --login runs the command through a login shell and sudo's env_reset
 	// drops the daemon-provided environment; re-inject it via the env command so
 	// the protocol keys (APPMESH_PROCESS_KEY, PSK_SHM_NAME, ...) and the app
 	// environment survive the switch.
-	std::string wrapSudoLoginCommand(const std::string &sudoUser, const std::map<std::string, std::string> &envMap, const std::string &cmd)
+	std::string wrapSudoLoginCommand(const std::string &sudoUser, const std::map<std::string, std::string> &envMap,
+									 const std::string &cmd)
 	{
 		const static char fname[] = "wrapSudoLoginCommand() ";
 		std::string envArgs;
@@ -189,7 +188,8 @@ native_fd openStdioFile(const char *path, bool readOnly) {
 			}
 			envArgs += quoteArgvToken(name + "=" + value) + " ";
 		}
-		return Utility::stringFormat("/usr/bin/sudo --login %s env %s%s", quoteArgvToken("--user=" + sudoUser).c_str(), envArgs.c_str(), cmd.c_str());
+		return Utility::stringFormat("/usr/bin/sudo --login %s env %s%s", quoteArgvToken("--user=" + sudoUser).c_str(),
+									 envArgs.c_str(), cmd.c_str());
 	}
 #endif
 }
@@ -226,25 +226,14 @@ struct AppProcess::Lifecycle
 // ---------------------------------------------------------------------------
 
 AppProcess::AppProcess(std::weak_ptr<Application> owner)
-	: m_owner(owner),
-	  m_timerTerminateId(INVALID_TIMER_ID),
-	  m_timerCheckStdoutId(INVALID_TIMER_ID),
-	  m_stdOutMaxSize(0),
+	: m_owner(owner), m_timerTerminateId(INVALID_TIMER_ID), m_timerCheckStdoutId(INVALID_TIMER_ID), m_stdOutMaxSize(0),
 	  m_outFileMutex(std::make_shared<std::mutex>()),
 #if defined(_WIN32)
 	  m_job(nullptr, ::CloseHandle),
 #endif
-	  m_lastProcCpuTime(0),
-	  m_lastCpuSampleTime(),
-	  m_lastMetricProcCpuTime(0),
-	  m_lastMetricCpuSampleTime(),
-	  m_uuid(Utility::shortID()),
-	  m_key(generatePassword(10, true, true, true, false)),
-	  m_pid(INVALID_PID),
-	  m_lastPid(INVALID_PID),
-	  m_processStartToken(0),
-	  m_recovered(false),
-	  m_returnValue(-1),
+	  m_lastProcCpuTime(0), m_lastCpuSampleTime(), m_lastMetricProcCpuTime(0), m_lastMetricCpuSampleTime(),
+	  m_uuid(Utility::shortID()), m_key(generatePassword(10, true, true, true, false)), m_pid(INVALID_PID),
+	  m_lastPid(INVALID_PID), m_processStartToken(0), m_recovered(false), m_returnValue(-1),
 	  m_lifecycle(std::make_unique<Lifecycle>())
 {
 	const static char fname[] = "AppProcess::AppProcess() ";
@@ -313,25 +302,13 @@ void AppProcess::detach()
 	m_stdOutMaxSize = 0;
 }
 
-pid_t AppProcess::getpid() const
-{
-	return m_pid.load();
-}
+pid_t AppProcess::getpid() const { return m_pid.load(); }
 
-int AppProcess::returnValue() const
-{
-	return m_returnValue.load();
-}
+int AppProcess::returnValue() const { return m_returnValue.load(); }
 
-void AppProcess::markRecovered()
-{
-	m_recovered = true;
-}
+void AppProcess::markRecovered() { m_recovered = true; }
 
-bool AppProcess::isRecovered() const
-{
-	return m_recovered;
-}
+bool AppProcess::isRecovered() const { return m_recovered; }
 
 pid_t AppProcess::lastPid() const
 {
@@ -377,8 +354,7 @@ void AppProcess::onExit(int exitCode)
 	// source (terminate, maintainRuntime), and may cancel this process's
 	// timers and block in application callbacks safely.
 	auto self = std::dynamic_pointer_cast<AppProcess>(shared_from_this());
-	PROCESS_SERVICE::instance()->post([self = std::move(self)]()
-									   { self->finalizeExit(); });
+	ProcessService::instance()->post([self = std::move(self)]() { self->finalizeExit(); });
 }
 
 void AppProcess::resolveStart(bool accepted, pid_t pid)
@@ -485,7 +461,7 @@ void AppProcess::finalizeExit() noexcept
 		}
 		catch (...)
 		{
-			LOG_CRT << "AppProcess::finalizeExit() FATAL: exit update failed for <" << self->getuuid() << ">";
+			LOG_CRT << "AppProcess::finalizeExit() FATAL: exit update failed for <" << self->getUuid() << ">";
 		}
 		{
 			const std::lock_guard guard(self->m_lifecycle->mutex);
@@ -496,17 +472,18 @@ void AppProcess::finalizeExit() noexcept
 		{
 			try
 			{
-				owner->completeRun(self->getuuid());
+				owner->completeRun(self->getUuid());
 			}
 			catch (...)
 			{
-				LOG_CRT << "AppProcess::finalizeExit() FATAL: completion notification failed for <" << self->getuuid() << ">";
+				LOG_CRT << "AppProcess::finalizeExit() FATAL: completion notification failed for <" << self->getUuid()
+						<< ">";
 			}
 		}
 	};
 	try
 	{
-		PROCESS_SERVICE::instance()->postCallback(finalizeAppSide);
+		ProcessService::instance()->postCallback(finalizeAppSide);
 	}
 	catch (...)
 	{
@@ -633,7 +610,7 @@ void AppProcess::terminate()
 
 void AppProcess::terminateImpl()
 {
-	const static char fname[] = "AppProcess::terminate() ";
+	const static char fname[] = "AppProcess::terminateImpl() ";
 
 	pid_t pid = INVALID_PID;
 	{
@@ -663,15 +640,9 @@ void AppProcess::terminateImpl()
 	}
 }
 
-const std::string &AppProcess::getuuid() const
-{
-	return m_uuid;
-}
+const std::string &AppProcess::getUuid() const { return m_uuid; }
 
-const std::string &AppProcess::getkey() const
-{
-	return m_key;
-}
+const std::string &AppProcess::getKey() const { return m_key; }
 
 void AppProcess::scheduleTermination(std::size_t timeout, const std::string &from)
 {
@@ -711,11 +682,13 @@ void AppProcess::startStdoutMonitoring()
 	if (!isValidTimerId(m_timerCheckStdoutId))
 	{
 		static const int TIMEOUT_SEC = STDOUT_FILE_SIZE_CHECK_INTERVAL;
-		this->registerTimer(m_timerCheckStdoutId, 1000L * TIMEOUT_SEC, 1000L * TIMEOUT_SEC, fname, std::bind(&AppProcess::onTimerCheckStdout, this));
+		this->registerTimer(m_timerCheckStdoutId, 1000L * TIMEOUT_SEC, 1000L * TIMEOUT_SEC, fname,
+							std::bind(&AppProcess::onTimerCheckStdout, this));
 	}
 	else
 	{
-		LOG_WAR << fname << "stdout check timer already registered with ID <" << m_timerCheckStdoutId << ">, ignoring duplicate request";
+		LOG_WAR << fname << "stdout check timer already registered with ID <" << m_timerCheckStdoutId
+				<< ">, ignoring duplicate request";
 	}
 }
 
@@ -739,7 +712,8 @@ bool AppProcess::onTimerCheckStdout()
 			{
 				OVERLAPPED overlapped{};
 				if (!::LockFileEx(handle, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &overlapped))
-					LOG_WAR << fname << "Failed to acquire exclusive lock on stdout file <" << m_stdoutFileName << ">: " << last_error_msg();
+					LOG_WAR << fname << "Failed to acquire exclusive lock on stdout file <" << m_stdoutFileName
+							<< ">: " << last_error_msg();
 
 				const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 				fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_options::overwrite_existing);
@@ -748,7 +722,8 @@ bool AppProcess::onTimerCheckStdout()
 				::SetEndOfFile(handle);
 				::UnlockFileEx(handle, 0, MAXDWORD, MAXDWORD, &overlapped);
 
-				LOG_INF << fname << "stdout file <" << m_stdoutFileName << "> size <" << size.QuadPart << "> reached limit <" << m_stdOutMaxSize << ">, backed up and truncated";
+				LOG_INF << fname << "stdout file <" << m_stdoutFileName << "> size <" << size.QuadPart << "> reached limit <"
+						<< m_stdOutMaxSize << ">, backed up and truncated";
 			}
 		}
 		else
@@ -764,7 +739,8 @@ bool AppProcess::onTimerCheckStdout()
 				// Lock a duplicate so the shared handle stays open.
 				const int lockFd = ::dup(m_stdoutHandler.get());
 				if (lockFd >= 0 && ::flock(lockFd, LOCK_EX) != 0)
-					LOG_WAR << fname << "Failed to acquire exclusive lock on stdout file <" << m_stdoutFileName << ">: " << last_error_msg();
+					LOG_WAR << fname << "Failed to acquire exclusive lock on stdout file <" << m_stdoutFileName
+							<< ">: " << last_error_msg();
 
 				const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 				fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_options::overwrite_existing);
@@ -772,12 +748,14 @@ bool AppProcess::onTimerCheckStdout()
 				if (lockFd >= 0)
 					::close(lockFd);
 
-				LOG_INF << fname << "stdout file <" << m_stdoutFileName << "> size <" << st.st_size << "> reached limit <" << m_stdOutMaxSize << ">, backed up and truncated";
+				LOG_INF << fname << "stdout file <" << m_stdoutFileName << "> size <" << st.st_size << "> reached limit <"
+						<< m_stdOutMaxSize << ">, backed up and truncated";
 			}
 		}
 		else
 		{
-			LOG_WAR << fname << "fstat on stdout file <" << m_stdoutFileName << "> failed, reopening handle: " << last_error_msg();
+			LOG_WAR << fname << "fstat on stdout file <" << m_stdoutFileName
+					<< "> failed, reopening handle: " << last_error_msg();
 			const auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
 			m_stdoutHandler.reset(::open(stdOut.c_str(), O_RDWR));
 		}
@@ -791,8 +769,8 @@ ProcessStartResult AppProcess::start(std::string cmd, std::string user, std::str
 									 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 									 const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
 {
-	const pid_t pid = startImpl(std::move(cmd), std::move(user), std::move(workDir), std::move(envMap),
-								std::move(limit), stdoutFile, stdinFileContent, maxStdoutSize);
+	const pid_t pid = startImpl(std::move(cmd), std::move(user), std::move(workDir), std::move(envMap), std::move(limit),
+								stdoutFile, stdinFileContent, maxStdoutSize);
 	resolveStart(pid > 1, pid);
 	const bool accepted = isStartAccepted();
 	if (!accepted)
@@ -855,7 +833,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		}
 		if (uid == 0)
 		{
-			setStartError(Utility::stringFormat("exec_user <%s> resolved to root (uid=0), which is not permitted", user.c_str()));
+			setStartError(
+				Utility::stringFormat("exec_user <%s> resolved to root (uid=0), which is not permitted", user.c_str()));
 			return INVALID_PID;
 		}
 	}
@@ -912,9 +891,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		if (stdinFileContent != EMPTY_STR_JSON)
 		{
 			// JSON::dump never throws: a throw here would leave the app never started.
-			const std::string content = stdinFileContent.isString()
-											? stdinFileContent.asString()
-											: JSON::dump(stdinFileContent);
+			const std::string content =
+				stdinFileContent.isString() ? stdinFileContent.asString() : JSON::dump(stdinFileContent);
 			m_stdinFileName = os::createTmpFile(m_stdinFileName, content, 0600);
 			m_stdinHandler.reset(openStdioFile(m_stdinFileName.c_str(), true));
 
@@ -939,13 +917,13 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 #if defined(__linux__)
 	if (limit && (limit->m_memoryMb > 0 || limit->m_memoryVirtSpecified || limit->m_cpuShares > 0))
 	{
-		auto mbToBytes = [](long long mb) -> long long
-		{ return mb > 0 ? mb * 1024LL * 1024LL : 0; };
-		const long long swapMb = (limit->m_memoryVirtMb > limit->m_memoryMb) ? (limit->m_memoryVirtMb - limit->m_memoryMb) : 0;
+		auto mbToBytes = [](long long mb) -> long long { return mb > 0 ? mb * 1024LL * 1024LL : 0; };
+		const long long swapMb =
+			(limit->m_memoryVirtMb > limit->m_memoryMb) ? (limit->m_memoryVirtMb - limit->m_memoryMb) : 0;
 		try
 		{
-			m_cgroup = LinuxCgroup::create(
-				mbToBytes(limit->m_memoryMb), mbToBytes(swapMb), limit->m_cpuShares, limit->m_memoryVirtSpecified);
+			m_cgroup = LinuxCgroup::create(mbToBytes(limit->m_memoryMb), mbToBytes(swapMb), limit->m_cpuShares,
+										   limit->m_memoryVirtSpecified);
 			m_cgroup->prepareGroup(limit->m_name, ++(limit->m_index));
 			cgroupProcsPaths = m_cgroup->procsFilePaths();
 		}
@@ -976,8 +954,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		argsWide.push_back(fs::path(argv[i]).wstring());
 
 	bp2::windows::default_launcher launcher;
-	launched = launcher(PROCESS_SERVICE::instance()->io(), ec, exe, argsWide,
-						bp2::process_start_dir(workDir), bp2::process_environment(childEnv));
+	launched = launcher(ProcessService::instance()->io(), ec, exe, argsWide, bp2::process_start_dir(workDir),
+						bp2::process_environment(childEnv));
 #else
 	std::vector<std::string> args(argv.begin() + 1, argv.end());
 
@@ -989,13 +967,13 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	const auto launch = [&](auto &&...inits)
 	{
 		ec.clear();
-		if (!PROCESS_SERVICE::instance()->dispatchSync(
+		if (!ProcessService::instance()->dispatchSync(
 				[&]
 				{
 					// On error the launcher itself returns an empty process; the
 					// forked child exited on the failed exec and must be reaped here.
-					launched = launcher(PROCESS_SERVICE::instance()->io(), ec, exe, args,
-										std::forward<decltype(inits)>(inits)...);
+					launched =
+						launcher(ProcessService::instance()->io(), ec, exe, args, std::forward<decltype(inits)>(inits)...);
 					if (ec && launcher.pid > 0)
 					{
 						int childStatus = 0;
@@ -1006,15 +984,11 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	};
 
 	if (redirectStdio)
-		launch(bp2::process_start_dir(workDir),
-			   bp2::posix::bind_fd(STDIN_FILENO, static_cast<int>(m_stdinHandler.get())),
-			   bp2::posix::bind_fd(STDOUT_FILENO, childOutFd),
-			   bp2::posix::bind_fd(STDERR_FILENO, childOutFd),
-			   bp2::process_environment(childEnv),
-			   PosixProcessIdentity(uid, gid, cgroupProcsPaths));
+		launch(bp2::process_start_dir(workDir), bp2::posix::bind_fd(STDIN_FILENO, static_cast<int>(m_stdinHandler.get())),
+			   bp2::posix::bind_fd(STDOUT_FILENO, childOutFd), bp2::posix::bind_fd(STDERR_FILENO, childOutFd),
+			   bp2::process_environment(childEnv), PosixProcessIdentity(uid, gid, cgroupProcsPaths));
 	else
-		launch(bp2::process_start_dir(workDir),
-			   bp2::process_environment(childEnv),
+		launch(bp2::process_start_dir(workDir), bp2::process_environment(childEnv),
 			   PosixProcessIdentity(uid, gid, cgroupProcsPaths));
 #endif
 
@@ -1027,7 +1001,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	if (ec || !launched)
 	{
 		if (startError().empty())
-			setStartError(Utility::stringFormat("start failed with error <%s>", ec ? ec.message().c_str() : "process service stopped"));
+			setStartError(Utility::stringFormat("start failed with error <%s>",
+												ec ? ec.message().c_str() : "process service stopped"));
 		LOG_ERR << fname << "Process <" << cmd << "> " << startError();
 		if (pipeReadForDaemon >= 0)
 			::close(pipeReadForDaemon);
@@ -1063,7 +1038,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 #else
 	const native_fd pipeReadForStrategy = pipeReadForDaemon;
 #endif
-	m_stdoutStrategy = StdoutStrategy::create(std::move(appName), pipeReadForStrategy, m_stdoutHandler.get(), m_outFileMutex, m_owner);
+	m_stdoutStrategy =
+		StdoutStrategy::create(std::move(appName), pipeReadForStrategy, m_stdoutHandler.get(), m_outFileMutex, m_owner);
 	// A pipe strategy exists exactly when both fds were valid; its pump owns
 	// the read fd from construction, so closing it here too would
 	// double-close a recycled fd.
@@ -1076,18 +1052,23 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	// already-reaped child makes the late destructor a no-op.
 	auto self = std::dynamic_pointer_cast<AppProcess>(shared_from_this());
 	const auto held = std::make_shared<bp2::process>(std::move(*launched));
-	PROCESS_SERVICE::instance()->post([self, held]
-									  {
-		held->async_wait([self, held](const boost::system::error_code &waitEc, int exitCode)
-						 {
-			if (waitEc)
-			{
-				LOG_WAR << "AppProcess::startImpl() exit wait failed for <" << self->getuuid() << ">: " << waitEc.message();
-				exitCode = FORCED_TERMINATION_EXIT_CODE;
-			}
-			LOG_INF << "AppProcess::startImpl() Process <" << self->lastPid() << "> exited with code <" << exitCode << ">";
-			self->onExit(exitCode); });
-	});
+	ProcessService::instance()->post(
+		[self, held]
+		{
+			held->async_wait(
+				[self, held](const boost::system::error_code &waitEc, int exitCode)
+				{
+					if (waitEc)
+					{
+						LOG_WAR << "AppProcess::startImpl() exit wait failed for <" << self->getUuid()
+								<< ">: " << waitEc.message();
+						exitCode = FORCED_TERMINATION_EXIT_CODE;
+					}
+					LOG_INF << "AppProcess::startImpl() Process <" << self->lastPid() << "> exited with code <" << exitCode
+							<< ">";
+					self->onExit(exitCode);
+				});
+		});
 
 	if (pipeReadForDaemon >= 0)
 		::close(pipeReadForDaemon);
@@ -1153,14 +1134,15 @@ int AppProcess::validateCommand(const std::vector<std::string> &argv)
 void AppProcess::prepareEnvironment(std::map<std::string, std::string> &envMap)
 {
 	envMap[ENV_APPMESH_PROCESS_KEY] = m_key;
-	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(
+		std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 
 	if (auto owner = m_owner.lock())
 		envMap[ENV_APPMESH_APPLICATION_NAME] = owner->getName();
 }
 
-std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(
-	void *ptree, bool includeTreeString, bool metricsSample)
+std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t>
+AppProcess::getProcessDetails(void *ptree, bool includeTreeString, bool metricsSample)
 {
 	const static char fname[] = "AppProcess::getProcessDetails() ";
 	// Serialize CPU baseline updates.
@@ -1186,8 +1168,8 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 		}
 		else
 		{
-			return std::make_tuple(false, static_cast<uint64_t>(0), 0.0f,
-								   static_cast<uint64_t>(0), std::string(), static_cast<pid_t>(INVALID_PID));
+			return std::make_tuple(false, static_cast<uint64_t>(0), 0.0f, static_cast<uint64_t>(0), std::string(),
+								   static_cast<pid_t>(INVALID_PID));
 		}
 
 		const auto curSampleTime = std::chrono::steady_clock::now();
@@ -1204,14 +1186,14 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 		auto &lastProcCpuTime = metricsSample ? m_lastMetricProcCpuTime : m_lastProcCpuTime;
 		auto &lastCpuSampleTime = metricsSample ? m_lastMetricCpuSampleTime : m_lastCpuSampleTime;
 		float cpuUsage = 0.0f;
-		if (lastCpuSampleTime.time_since_epoch().count() > 0 &&
-			curProcCpuTime >= lastProcCpuTime && cpuTimeUnitsPerSecond > 0)
+		if (lastCpuSampleTime.time_since_epoch().count() > 0 && curProcCpuTime >= lastProcCpuTime &&
+			cpuTimeUnitsPerSecond > 0)
 		{
 			const auto elapsedSeconds = std::chrono::duration<double>(curSampleTime - lastCpuSampleTime).count();
 			if (elapsedSeconds > 0)
-				cpuUsage = static_cast<float>(100.0 *
-											  (static_cast<double>(curProcCpuTime - lastProcCpuTime) / cpuTimeUnitsPerSecond) /
-											  elapsedSeconds);
+				cpuUsage = static_cast<float>(
+					100.0 * (static_cast<double>(curProcCpuTime - lastProcCpuTime) / cpuTimeUnitsPerSecond) /
+					elapsedSeconds);
 		}
 
 		lastProcCpuTime = curProcCpuTime;
@@ -1226,6 +1208,7 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 		// the null-tree case: report failure so get_app/enable/metrics skip runtime details
 		// instead of surfacing a 412 to the client.
 		LOG_WAR << fname << "proc-read race, skipping runtime details: " << e.what();
-		return std::make_tuple(false, static_cast<uint64_t>(0), 0.0f, static_cast<uint64_t>(0), std::string(), static_cast<pid_t>(INVALID_PID));
+		return std::make_tuple(false, static_cast<uint64_t>(0), 0.0f, static_cast<uint64_t>(0), std::string(),
+							   static_cast<pid_t>(INVALID_PID));
 	}
 }

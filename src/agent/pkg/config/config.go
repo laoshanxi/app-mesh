@@ -10,20 +10,21 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
-	"gopkg.in/yaml.v3"
 )
 
 type (
 	RESTConfig struct {
-		RestEnabled                  bool   `yaml:"RestEnabled"`
-		RestListenAddress            string `yaml:"RestListenAddress"`
-		RestListenPort               int    `yaml:"RestListenPort"`
-		TcpApiPort                   int    `yaml:"TcpApiPort"`
+		RESTEnabled                  bool   `yaml:"RestEnabled"`
+		RESTListenAddress            string `yaml:"RestListenAddress"`
+		RESTListenPort               int    `yaml:"RestListenPort"`
+		TCPAPIPort                   int    `yaml:"TcpApiPort"`
 		WebSocketPort                int    `yaml:"WebSocketPort"`
 		PrometheusExporterListenPort int    `yaml:"PrometheusExporterListenPort"`
-		CorsDisabled                 bool   `yaml:"CorsDisabled"`
+		CORSDisabled                 bool   `yaml:"CorsDisabled"`
 
 		SSL appmesh.SSLConfig `yaml:"SSL"`
 	}
@@ -44,16 +45,16 @@ var logger *utils.Logger = utils.GetLogger()
 // default configuration
 var ConfigData = Configuration{
 	REST: RESTConfig{
-		RestEnabled:                  true,
-		RestListenAddress:            "127.0.0.1",
-		RestListenPort:               6060,
-		TcpApiPort:                   6059,
+		RESTEnabled:                  true,
+		RESTListenAddress:            "127.0.0.1",
+		RESTListenPort:               6060,
+		TCPAPIPort:                   6059,
 		WebSocketPort:                6058,
 		PrometheusExporterListenPort: 0,
-		CorsDisabled:                 false,
+		CORSDisabled:                 false,
 
 		SSL: appmesh.SSLConfig{
-			SSLCaPath:                   "ssl/ca.pem",
+			SSLCAPath:                   "ssl/ca.pem",
 			SSLCertificateFile:          "ssl/server.pem",
 			SSLCertificateKeyFile:       "ssl/server-key.pem",
 			SSLClientCertificateFile:    "ssl/client.pem",
@@ -81,7 +82,7 @@ func init() {
 
 // Convert all relative paths to absolute paths
 func ResolveAbsolutePaths() {
-	ConfigData.REST.SSL.SSLCaPath = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCaPath)
+	ConfigData.REST.SSL.SSLCAPath = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCAPath)
 	ConfigData.REST.SSL.SSLCertificateFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCertificateFile)
 	ConfigData.REST.SSL.SSLCertificateKeyFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCertificateKeyFile)
 	ConfigData.REST.SSL.SSLClientCertificateFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLClientCertificateFile)
@@ -288,7 +289,8 @@ func overrideConfigWithEnv(fileConfig map[string]interface{}) error {
 			if err := setConfigValue(&ConfigData, path, value); err != nil {
 				return fmt.Errorf("failed to override config %q: %w", configKey, err)
 			}
-			logger.Infof("Overriding config: %s (previous: %s, new: %s)", configKey, utils.MaskSecret(previous, 2, "***"), utils.MaskSecret(value, 2, "***"))
+			logger.Infof("Overriding config: %s (previous: %s, new: %s)", configKey, utils.MaskSecret(previous, 2,
+				"***"), utils.MaskSecret(value, 2, "***"))
 		} else {
 			logger.Infof("Ignoring environment variable: '%s' (not found in config)", key)
 		}

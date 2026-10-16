@@ -32,10 +32,9 @@ public:
 
 	static InternalCapability &instance();
 
-	std::string issue(Audience audience, const std::string &workflowId,
-		const std::string &runId, const std::string &ownerPrincipalId,
-		const std::string &processUuid, const std::set<std::string> &operations,
-		std::int64_t ttlSeconds) const;
+	std::string issue(Audience audience, const std::string &workflowId, const std::string &runId,
+					  const std::string &ownerPrincipalId, const std::string &processUuid,
+					  const std::set<std::string> &operations, std::int64_t ttlSeconds) const;
 
 	Claims verify(const std::string &capability, const std::string &requiredOperation) const;
 

@@ -45,7 +45,8 @@ func (c *Context) MarkFinallyStep(jobName, stepName string) {
 // SetStepResult stores a step result scoped by job name.
 // Within YAML expressions, `steps.<name>` resolves against the caller-supplied jobName.
 // Cross-job references use `jobs.<job>.steps.<step>`.
-func (c *Context) SetStepResult(jobName, stepName, stdout string, exitCode int, status, response string, outputs map[string]string) {
+func (c *Context) SetStepResult(jobName, stepName, stdout string, exitCode int, status, response string,
+	outputs map[string]string) {
 	key := jobName + "." + stepName
 	c.mu.Lock()
 	defer c.mu.Unlock()

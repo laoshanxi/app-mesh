@@ -33,6 +33,7 @@ pub enum ExitAction {
 }
 
 impl ExitAction {
+    /// Returns the wire string for this exit action.
     pub fn as_str(&self) -> &str {
         match self {
             Self::Restart => "restart",
@@ -68,6 +69,7 @@ impl<'de> Deserialize<'de> for ExitAction {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Result of a completed run: exit code and captured stdout tail.
 pub struct AppOutput {
     pub status_code: u16,
     pub output: String,
@@ -99,6 +101,7 @@ impl AppRun {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Action taken when a process exits (standby, keepalive, restart, remove).
 pub struct Behavior {
     pub exit: Option<ExitAction>,
     pub exit_code_actions: Option<HashMap<String, String>>,
@@ -112,13 +115,12 @@ impl Behavior {
 
     /// Map a specific exit code to a behavior action
     pub fn set_exit_code_action(&mut self, exit_code: i32, action: ExitAction) {
-        self.exit_code_actions
-            .get_or_insert_with(HashMap::new)
-            .insert(exit_code.to_string(), action.as_str().to_string());
+        self.exit_code_actions.get_or_insert_with(HashMap::new).insert(exit_code.to_string(), action.as_str().to_string());
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Window of day during which the application may run.
 pub struct DailyLimitation {
     pub daily_start: Option<u64>,
     pub daily_end: Option<u64>,
@@ -133,6 +135,7 @@ impl DailyLimitation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// CPU shares and memory limits applied to the process or container.
 pub struct ResourceLimitation {
     pub cpu_shares: Option<i32>,
     pub memory_mb: Option<u64>,
@@ -268,6 +271,7 @@ pub struct Application {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// One subscribed application event (status change, output, exit).
 pub struct AppEvent {
     pub subscription_id: String,
     pub event_type: String,
@@ -278,6 +282,7 @@ pub struct AppEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Handle of a subscription started with the event stream.
 pub struct SubscriptionResult {
     pub subscription_id: String,
     pub app_name: String,
@@ -321,41 +326,49 @@ pub struct ApplicationBuilder {
 }
 
 impl ApplicationBuilder {
+    /// Sets the command line to execute.
     pub fn command(mut self, cmd: &str) -> Self {
         self.app.command = Some(cmd.to_string());
         self
     }
 
+    /// Runs the command through a shell when `true`.
     pub fn shell(mut self, shell: bool) -> Self {
         self.app.shell = Some(shell);
         self
     }
 
+    /// Marks the app as an interactive login session.
     pub fn session_login(mut self, enabled: bool) -> Self {
         self.app.session_login = Some(enabled);
         self
     }
 
+    /// Sets the free-form description shown in listings.
     pub fn description(mut self, desc: &str) -> Self {
         self.app.description = Some(desc.to_string());
         self
     }
 
+    /// Attaches a JSON document as application metadata.
     pub fn metadata(mut self, meta: serde_json::Value) -> Self {
         self.app.metadata = Some(meta);
         self
     }
 
+    /// Sets the working directory for the process.
     pub fn working_dir(mut self, dir: &str) -> Self {
         self.app.working_dir = Some(dir.to_string());
         self
     }
 
+    /// Runs the app as a container from this image instead of a host process.
     pub fn docker_image(mut self, image: &str) -> Self {
         self.app.docker_image = Some(image.to_string());
         self
     }
 
+    /// Number of rotated stdout files kept on disk.
     pub fn stdout_backup_count(mut self, num: u32) -> Self {
         self.app.stdout_backup_count = Some(num);
         self
@@ -373,11 +386,13 @@ impl ApplicationBuilder {
         self
     }
 
+    /// Delay between SIGTERM and SIGKILL when stopping.
     pub fn stop_grace_period(mut self, period: &str) -> Self {
         self.app.stop_grace_period = Some(period.to_string());
         self
     }
 
+    /// Command used to probe application health.
     pub fn health_check_cmd(mut self, cmd: &str) -> Self {
         self.app.health_check_cmd = Some(cmd.to_string());
         self
@@ -417,10 +432,7 @@ impl ApplicationBuilder {
 
     /// Set the default exit behavior.
     pub fn exit_behavior(mut self, action: ExitAction) -> Self {
-        self.app
-            .behavior
-            .get_or_insert(Behavior { exit: None, exit_code_actions: None })
-            .set_exit_behavior(action);
+        self.app.behavior.get_or_insert(Behavior { exit: None, exit_code_actions: None }).set_exit_behavior(action);
         self
     }
 
@@ -444,8 +456,7 @@ impl ApplicationBuilder {
 
     /// Set resource limits.
     pub fn resource_limit(mut self, cpu_shares: Option<i32>, memory_mb: Option<u64>, memory_virt_mb: Option<u64>) -> Self {
-        self.app.resource_limit =
-            Some(ResourceLimitation { cpu_shares, memory_mb, memory_virt_mb });
+        self.app.resource_limit = Some(ResourceLimitation { cpu_shares, memory_mb, memory_virt_mb });
         self
     }
 

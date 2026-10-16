@@ -49,9 +49,9 @@ private:
 	void dispatchPayload(long start, std::string &&payload);
 
 	const std::string m_appName;
-	int m_pipeReadFd; // owned until activate() assigns it
+	int m_pipeReadFd;                                 // owned until activate() assigns it
 	boost::asio::posix::stream_descriptor m_pipeRead; // owns the fd, closes in dtor
-	const int m_diskWrite; // AppProcess owns this handle
+	const int m_diskWrite;                            // AppProcess owns this handle
 	// shared_ptr so the mutex outlives whichever (pump or AppProcess) destructs first.
 	const std::shared_ptr<std::mutex> m_diskMutex;
 	boost::asio::steady_timer m_coalesceTimer;

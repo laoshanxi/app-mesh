@@ -1,4 +1,6 @@
 // src/daemon/process/LinuxCgroup.cpp
+#include "LinuxCgroup.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -17,7 +19,6 @@
 
 #include "../../common/Utility.h"
 #include "../../common/os/proc.h"
-#include "LinuxCgroup.h"
 
 namespace
 {
@@ -113,13 +114,11 @@ namespace
 		std::string decoded;
 		for (std::size_t i = 0; i < value.size(); ++i)
 		{
-			if (value[i] == '\\' && i + 3 < value.size() &&
-				value[i + 1] >= '0' && value[i + 1] <= '7' &&
-				value[i + 2] >= '0' && value[i + 2] <= '7' &&
-				value[i + 3] >= '0' && value[i + 3] <= '7')
+			if (value[i] == '\\' && i + 3 < value.size() && value[i + 1] >= '0' && value[i + 1] <= '7' &&
+				value[i + 2] >= '0' && value[i + 2] <= '7' && value[i + 3] >= '0' && value[i + 3] <= '7')
 			{
-				decoded.push_back(static_cast<char>((value[i + 1] - '0') * 64 +
-					(value[i + 2] - '0') * 8 + value[i + 3] - '0'));
+				decoded.push_back(
+					static_cast<char>((value[i + 1] - '0') * 64 + (value[i + 2] - '0') * 8 + value[i + 3] - '0'));
 				i += 3;
 			}
 			else
@@ -153,14 +152,13 @@ namespace
 	}
 
 	std::string cgroupCandidatePath(const std::string &mountPoint, const std::string &mountRoot,
-		const std::string &cgroupPath)
+									const std::string &cgroupPath)
 	{
 		if (mountPoint.empty() || cgroupPath.empty() || cgroupPath == "/")
 			return mountPoint;
 
 		std::string relative = cgroupPath;
-		if (!mountRoot.empty() && mountRoot != "/" &&
-			(cgroupPath == mountRoot || cgroupPath.find(mountRoot + "/") == 0))
+		if (!mountRoot.empty() && mountRoot != "/" && (cgroupPath == mountRoot || cgroupPath.find(mountRoot + "/") == 0))
 		{
 			relative = cgroupPath.substr(mountRoot.size());
 		}
@@ -195,10 +193,7 @@ namespace
 		return result;
 	}
 
-	bool isFiniteV1Limit(long long value)
-	{
-		return value > 0 && value < CGROUP_V1_UNLIMITED_THRESHOLD;
-	}
+	bool isFiniteV1Limit(long long value) { return value > 0 && value < CGROUP_V1_UNLIMITED_THRESHOLD; }
 
 	bool hasWhitespaceToken(const std::string &value, const std::string &token)
 	{
@@ -212,10 +207,12 @@ namespace
 
 	bool isSafeCgroupComponent(const std::string &value)
 	{
-		return !value.empty() && std::all_of(value.begin(), value.end(), [](unsigned char ch) {
-			return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-				(ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
-		});
+		return !value.empty() && std::all_of(value.begin(), value.end(),
+											 [](unsigned char ch)
+											 {
+												 return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+														(ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
+											 });
 	}
 } // anonymous namespace
 
@@ -248,8 +245,12 @@ CgroupVersion LinuxCgroup::detectCgroupVersion()
 	}
 
 	// Fallback: parse /proc/mounts to detect cgroup type
-	std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen("/proc/mounts", "r"), [](FILE *f)
-											   { if (f) fclose(f); });
+	std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen("/proc/mounts", "r"),
+											   [](FILE *f)
+											   {
+												   if (f)
+													   fclose(f);
+											   });
 	if (!fp)
 	{
 		return CgroupVersion::None;
@@ -292,8 +293,8 @@ void LinuxCgroup::initializeApplicationCgroups()
 #endif
 }
 
-std::unique_ptr<LinuxCgroup> LinuxCgroup::create(long long memoryLimitBytes, long long memorySwapBytes,
-	long long cpuShares, bool swapLimitSpecified)
+std::unique_ptr<LinuxCgroup> LinuxCgroup::create(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares,
+												 bool swapLimitSpecified)
 {
 	const static char fname[] = "LinuxCgroup::create() ";
 
@@ -414,13 +415,10 @@ std::string LinuxCgroupV1::s_memoryMountRootDir;
 std::string LinuxCgroupV1::s_cpuMountRootDir;
 std::string LinuxCgroupV1::s_cpusetMountRootDir;
 
-LinuxCgroupV1::LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares, bool swapLimitSpecified)
-	: m_memoryLimitBytes(memoryLimitBytes),
-	  m_memorySwapBytes(memorySwapBytes),
-	  m_swapLimitSpecified(swapLimitSpecified),
-	  m_cpuShares(cpuShares),
-	  m_enabled(false),
-	  m_swapLimitSupported(true)
+LinuxCgroupV1::LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares,
+							 bool swapLimitSpecified)
+	: m_memoryLimitBytes(memoryLimitBytes), m_memorySwapBytes(memorySwapBytes), m_swapLimitSpecified(swapLimitSpecified),
+	  m_cpuShares(cpuShares), m_enabled(false), m_swapLimitSupported(true)
 {
 #if defined(__linux__)
 	const static char fname[] = "LinuxCgroupV1::LinuxCgroupV1() ";
@@ -428,7 +426,8 @@ LinuxCgroupV1::LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapByt
 	// Validate and adjust memory limit
 	if (m_memoryLimitBytes > 0 && m_memoryLimitBytes < MIN_MEMORY_LIMIT_BYTES)
 	{
-		LOG_WAR << fname << "Memory limit <" << m_memoryLimitBytes << "> below minimum, increased to <" << MIN_MEMORY_LIMIT_BYTES << "> bytes";
+		LOG_WAR << fname << "Memory limit <" << m_memoryLimitBytes << "> below minimum, increased to <"
+				<< MIN_MEMORY_LIMIT_BYTES << "> bytes";
 		m_memoryLimitBytes = MIN_MEMORY_LIMIT_BYTES;
 	}
 
@@ -461,16 +460,12 @@ LinuxCgroupV1::LinuxCgroupV1(long long memoryLimitBytes, long long memorySwapByt
 				}
 			}
 		}
-
 	}
 
 #endif
 }
 
-LinuxCgroupV1::~LinuxCgroupV1()
-{
-	cleanup();
-}
+LinuxCgroupV1::~LinuxCgroupV1() { cleanup(); }
 
 void LinuxCgroupV1::cleanup()
 {
@@ -502,8 +497,12 @@ void LinuxCgroupV1::discoverMountPoints()
 #if defined(__linux__)
 	const static char fname[] = "LinuxCgroupV1::discoverMountPoints() ";
 
-	std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen("/proc/mounts", "r"), [](FILE *f)
-											   { if (f) fclose(f); });
+	std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen("/proc/mounts", "r"),
+											   [](FILE *f)
+											   {
+												   if (f)
+													   fclose(f);
+											   });
 	if (!fp)
 	{
 		LOG_ERR << fname << "Failed to open /proc/mounts: " << std::strerror(errno);
@@ -544,16 +543,16 @@ void LinuxCgroupV1::discoverMountPoints()
 		}
 	}
 
-	const auto memoryCandidate = cgroupCandidatePath(s_memoryRootDir,
-		cgroupMountRoot(s_memoryRootDir, "cgroup"), currentCgroupPath("memory"));
+	const auto memoryCandidate =
+		cgroupCandidatePath(s_memoryRootDir, cgroupMountRoot(s_memoryRootDir, "cgroup"), currentCgroupPath("memory"));
 	if (Utility::isFileExist(memoryCandidate + "/memory.limit_in_bytes"))
 		s_memoryRootDir = memoryCandidate;
-	const auto cpuCandidate = cgroupCandidatePath(s_cpuRootDir,
-		cgroupMountRoot(s_cpuRootDir, "cgroup"), currentCgroupPath("cpu"));
+	const auto cpuCandidate =
+		cgroupCandidatePath(s_cpuRootDir, cgroupMountRoot(s_cpuRootDir, "cgroup"), currentCgroupPath("cpu"));
 	if (Utility::isFileExist(cpuCandidate + "/cpu.shares"))
 		s_cpuRootDir = cpuCandidate;
-	const auto cpusetCandidate = cgroupCandidatePath(s_cpusetRootDir,
-		cgroupMountRoot(s_cpusetRootDir, "cgroup"), currentCgroupPath("cpuset"));
+	const auto cpusetCandidate =
+		cgroupCandidatePath(s_cpusetRootDir, cgroupMountRoot(s_cpusetRootDir, "cgroup"), currentCgroupPath("cpuset"));
 	if (Utility::isFileExist(cpusetCandidate + "/cpuset.cpus"))
 		s_cpusetRootDir = cpusetCandidate;
 #endif
@@ -572,10 +571,10 @@ void LinuxCgroupV1::prepareGroup(const std::string &appName, int index)
 
 	// Build cgroup paths
 	const auto leafName = appName + "-" + std::to_string(index);
-	m_cgroupMemoryPath = s_memoryRootDir.empty() ? std::string() :
-		(fs::path(s_memoryRootDir) / CGROUP_APPMESH_DIR / leafName).string();
-	m_cgroupCpuPath = s_cpuRootDir.empty() ? std::string() :
-		(fs::path(s_cpuRootDir) / CGROUP_APPMESH_DIR / leafName).string();
+	m_cgroupMemoryPath =
+		s_memoryRootDir.empty() ? std::string() : (fs::path(s_memoryRootDir) / CGROUP_APPMESH_DIR / leafName).string();
+	m_cgroupCpuPath =
+		s_cpuRootDir.empty() ? std::string() : (fs::path(s_cpuRootDir) / CGROUP_APPMESH_DIR / leafName).string();
 
 	const auto perm = fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec;
 
@@ -622,10 +621,7 @@ void LinuxCgroupV1::prepareGroup(const std::string &appName, int index)
 	LOG_DBG << fname << "Prepared cgroup v1 group for app <" << appName << "> index <" << index << ">";
 }
 
-std::vector<std::string> LinuxCgroupV1::procsFilePaths() const
-{
-	return m_procsPaths;
-}
+std::vector<std::string> LinuxCgroupV1::procsFilePaths() const { return m_procsPaths; }
 
 bool LinuxCgroupV1::attachPid(int pid)
 {
@@ -675,7 +671,8 @@ std::optional<long long> LinuxCgroupV1::readHostMemoryValue(const std::string &c
 	return effective;
 }
 
-std::optional<long long> LinuxCgroupV1::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
+std::optional<long long> LinuxCgroupV1::readHostMemoryAvailableValue(const std::string &limitFileName,
+																	 const std::string &currentFileName)
 {
 	std::optional<long long> available;
 	for (const auto &path : cgroupHierarchy(s_memoryRootDir, s_memoryMountRootDir))
@@ -779,15 +776,9 @@ std::optional<double> LinuxCgroupV1::readHostCpuQuotaCores()
 	return effective ? effective : std::optional<double>(0.0);
 }
 
-bool LinuxCgroupV1::isSwapLimitSupported() const
-{
-	return m_swapLimitSupported;
-}
+bool LinuxCgroupV1::isSwapLimitSupported() const { return m_swapLimitSupported; }
 
-bool LinuxCgroupV1::isEnabled() const
-{
-	return m_enabled;
-}
+bool LinuxCgroupV1::isEnabled() const { return m_enabled; }
 
 //=============================================================================
 // LinuxCgroupV2 - Cgroup v2 (unified) implementation
@@ -797,13 +788,10 @@ std::string LinuxCgroupV2::s_cgroupRootDir;
 std::string LinuxCgroupV2::s_cgroupMountRootDir;
 std::string LinuxCgroupV2::s_cgroupManagementRootDir;
 
-LinuxCgroupV2::LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares, bool swapLimitSpecified)
-	: m_memoryLimitBytes(memoryLimitBytes),
-	  m_memorySwapBytes(memorySwapBytes),
-	  m_swapLimitSpecified(swapLimitSpecified),
-	  m_cpuShares(cpuShares),
-	  m_enabled(false),
-	  m_swapLimitSupported(true)
+LinuxCgroupV2::LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapBytes, long long cpuShares,
+							 bool swapLimitSpecified)
+	: m_memoryLimitBytes(memoryLimitBytes), m_memorySwapBytes(memorySwapBytes), m_swapLimitSpecified(swapLimitSpecified),
+	  m_cpuShares(cpuShares), m_enabled(false), m_swapLimitSupported(true)
 {
 #if defined(__linux__)
 	const static char fname[] = "LinuxCgroupV2::LinuxCgroupV2() ";
@@ -811,7 +799,8 @@ LinuxCgroupV2::LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapByt
 	// Validate and adjust memory limit
 	if (m_memoryLimitBytes > 0 && m_memoryLimitBytes < MIN_MEMORY_LIMIT_BYTES)
 	{
-		LOG_WAR << fname << "Memory limit <" << m_memoryLimitBytes << "> below minimum, increased to <" << MIN_MEMORY_LIMIT_BYTES << "> bytes";
+		LOG_WAR << fname << "Memory limit <" << m_memoryLimitBytes << "> below minimum, increased to <"
+				<< MIN_MEMORY_LIMIT_BYTES << "> bytes";
 		m_memoryLimitBytes = MIN_MEMORY_LIMIT_BYTES;
 	}
 
@@ -842,10 +831,7 @@ LinuxCgroupV2::LinuxCgroupV2(long long memoryLimitBytes, long long memorySwapByt
 #endif
 }
 
-LinuxCgroupV2::~LinuxCgroupV2()
-{
-	cleanup();
-}
+LinuxCgroupV2::~LinuxCgroupV2() { cleanup(); }
 
 void LinuxCgroupV2::cleanup()
 {
@@ -877,8 +863,12 @@ void LinuxCgroupV2::discoverMountPoint()
 	else
 	{
 		// Parse /proc/mounts as fallback
-		std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen("/proc/mounts", "r"), [](FILE *f)
-												   { if (f) fclose(f); });
+		std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen("/proc/mounts", "r"),
+												   [](FILE *f)
+												   {
+													   if (f)
+														   fclose(f);
+												   });
 		if (!fp)
 		{
 			LOG_ERR << fname << "Failed to open /proc/mounts: " << std::strerror(errno);
@@ -905,8 +895,8 @@ void LinuxCgroupV2::discoverMountPoint()
 		return;
 	}
 
-	const auto candidate = cgroupCandidatePath(s_cgroupRootDir,
-		cgroupMountRoot(s_cgroupRootDir, "cgroup2"), currentCgroupPath(""));
+	const auto candidate =
+		cgroupCandidatePath(s_cgroupRootDir, cgroupMountRoot(s_cgroupRootDir, "cgroup2"), currentCgroupPath(""));
 	if (Utility::isFileExist(candidate + "/cgroup.procs"))
 		s_cgroupRootDir = candidate;
 	LOG_DBG << fname << "Cgroup v2 path: " << s_cgroupRootDir;
@@ -994,10 +984,8 @@ void LinuxCgroupV2::initializeManagement(int additionalPid)
 	const auto daemonPid = static_cast<int>(os::getpid());
 	const auto daemonLeaf = (fs::path(s_cgroupRootDir) / "appmesh-daemon").string();
 	const auto applicationsRoot = (fs::path(s_cgroupRootDir) / CGROUP_APPMESH_DIR).string();
-	if (!Utility::createRecursiveDirectory(daemonLeaf, perm) ||
-		!addProcessToCgroup(daemonLeaf, daemonPid, "cgroup.procs") ||
-		(additionalPid > 1 && additionalPid != daemonPid &&
-			!addProcessToCgroup(daemonLeaf, additionalPid, "cgroup.procs")))
+	if (!Utility::createRecursiveDirectory(daemonLeaf, perm) || !addProcessToCgroup(daemonLeaf, daemonPid, "cgroup.procs") ||
+		(additionalPid > 1 && additionalPid != daemonPid && !addProcessToCgroup(daemonLeaf, additionalPid, "cgroup.procs")))
 		throw std::runtime_error("failed to move App Mesh processes into a cgroup v2 leaf");
 	if (!Utility::stdStringTrim(Utility::readFile(s_cgroupRootDir + "/cgroup.procs")).empty())
 		throw std::runtime_error("cgroup v2 resource root contains unmanaged processes");
@@ -1021,8 +1009,7 @@ void LinuxCgroupV2::prepareGroup(const std::string &appName, int index)
 	std::lock_guard managementGuard(cgroupV2ManagementMutex);
 	const auto perm = fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec;
 
-	m_cgroupPath = (fs::path(s_cgroupManagementRootDir) /
-		(appName + "-" + std::to_string(index))).string();
+	m_cgroupPath = (fs::path(s_cgroupManagementRootDir) / (appName + "-" + std::to_string(index))).string();
 
 	if (!Utility::createRecursiveDirectory(m_cgroupPath, perm))
 	{
@@ -1044,10 +1031,7 @@ void LinuxCgroupV2::prepareGroup(const std::string &appName, int index)
 	LOG_DBG << fname << "Prepared cgroup v2 group for app <" << appName << "> index <" << index << ">";
 }
 
-std::vector<std::string> LinuxCgroupV2::procsFilePaths() const
-{
-	return m_procsPaths;
-}
+std::vector<std::string> LinuxCgroupV2::procsFilePaths() const { return m_procsPaths; }
 
 bool LinuxCgroupV2::attachPid(int pid)
 {
@@ -1097,30 +1081,26 @@ bool LinuxCgroupV2::applyCpuWeight(const std::string &cgroupPath)
 	return writeValueToFile(weightFile, weight);
 }
 
+// Map a cgroup v1 memory file name to its v2 equivalent; unknown names pass through.
+static std::string mapV1MemoryNameToV2(const std::string &name)
+{
+	if (name == "memory.limit_in_bytes")
+		return "memory.max";
+	if (name == "memory.memsw.limit_in_bytes")
+		return "memory.swap.max";
+	if (name == "memory.usage_in_bytes")
+		return "memory.current";
+	if (name == "memory.memsw.usage_in_bytes")
+		return "memory.swap.current";
+	return name;
+}
+
 std::optional<long long> LinuxCgroupV2::readHostMemoryValue(const std::string &cgroupFileName)
 {
 	if (s_cgroupRootDir.empty())
 		return std::nullopt;
 
-	// Map v1 file names to v2 equivalents
-	std::string v2FileName = cgroupFileName;
-	if (cgroupFileName == "memory.limit_in_bytes")
-	{
-		v2FileName = "memory.max";
-	}
-	else if (cgroupFileName == "memory.memsw.limit_in_bytes")
-	{
-		v2FileName = "memory.swap.max";
-	}
-	else if (cgroupFileName == "memory.usage_in_bytes")
-	{
-		v2FileName = "memory.current";
-	}
-	else if (cgroupFileName == "memory.memsw.usage_in_bytes")
-	{
-		v2FileName = "memory.swap.current";
-	}
-
+	const std::string v2FileName = mapV1MemoryNameToV2(cgroupFileName);
 	const bool isLimit = v2FileName == "memory.max" || v2FileName == "memory.swap.max";
 	if (!isLimit)
 		return readValueFromFile(s_cgroupRootDir + "/" + v2FileName);
@@ -1137,17 +1117,11 @@ std::optional<long long> LinuxCgroupV2::readHostMemoryValue(const std::string &c
 	return effective;
 }
 
-std::optional<long long> LinuxCgroupV2::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
+std::optional<long long> LinuxCgroupV2::readHostMemoryAvailableValue(const std::string &limitFileName,
+																	 const std::string &currentFileName)
 {
-	const auto mapName = [](const std::string &name) {
-		if (name == "memory.limit_in_bytes") return std::string("memory.max");
-		if (name == "memory.usage_in_bytes") return std::string("memory.current");
-		if (name == "memory.memsw.limit_in_bytes") return std::string("memory.swap.max");
-		if (name == "memory.memsw.usage_in_bytes") return std::string("memory.swap.current");
-		return name;
-	};
-	const auto limitName = mapName(limitFileName);
-	const auto currentName = mapName(currentFileName);
+	const std::string limitName = mapV1MemoryNameToV2(limitFileName);
+	const std::string currentName = mapV1MemoryNameToV2(currentFileName);
 	std::optional<long long> available;
 	for (const auto &path : cgroupHierarchy(s_cgroupRootDir, s_cgroupMountRootDir))
 	{
@@ -1256,15 +1230,9 @@ std::optional<double> LinuxCgroupV2::readHostCpuQuotaCores()
 	return effective ? effective : std::optional<double>(0.0);
 }
 
-bool LinuxCgroupV2::isSwapLimitSupported() const
-{
-	return m_swapLimitSupported;
-}
+bool LinuxCgroupV2::isSwapLimitSupported() const { return m_swapLimitSupported; }
 
-bool LinuxCgroupV2::isEnabled() const
-{
-	return m_enabled;
-}
+bool LinuxCgroupV2::isEnabled() const { return m_enabled; }
 
 //=============================================================================
 // LinuxCgroupNull - Null implementation
@@ -1278,10 +1246,7 @@ void LinuxCgroupNull::prepareGroup(const std::string &appName, int index)
 		throw std::runtime_error("resource limits requested but cgroup is unavailable");
 }
 
-std::vector<std::string> LinuxCgroupNull::procsFilePaths() const
-{
-	return {};
-}
+std::vector<std::string> LinuxCgroupNull::procsFilePaths() const { return {}; }
 
 bool LinuxCgroupNull::attachPid(int pid)
 {
@@ -1295,34 +1260,20 @@ std::optional<long long> LinuxCgroupNull::readHostMemoryValue(const std::string 
 	return std::nullopt;
 }
 
-std::optional<long long> LinuxCgroupNull::readHostMemoryAvailableValue(const std::string &limitFileName, const std::string &currentFileName)
+std::optional<long long> LinuxCgroupNull::readHostMemoryAvailableValue(const std::string &limitFileName,
+																	   const std::string &currentFileName)
 {
 	(void)limitFileName;
 	(void)currentFileName;
 	return std::nullopt;
 }
 
-std::optional<CgroupSwapStats> LinuxCgroupNull::readHostSwapStats()
-{
-	return std::nullopt;
-}
+std::optional<CgroupSwapStats> LinuxCgroupNull::readHostSwapStats() { return std::nullopt; }
 
-std::optional<int> LinuxCgroupNull::readHostCpuCount()
-{
-	return std::nullopt;
-}
+std::optional<int> LinuxCgroupNull::readHostCpuCount() { return std::nullopt; }
 
-std::optional<double> LinuxCgroupNull::readHostCpuQuotaCores()
-{
-	return std::nullopt;
-}
+std::optional<double> LinuxCgroupNull::readHostCpuQuotaCores() { return std::nullopt; }
 
-bool LinuxCgroupNull::isSwapLimitSupported() const
-{
-	return false;
-}
+bool LinuxCgroupNull::isSwapLimitSupported() const { return false; }
 
-bool LinuxCgroupNull::isEnabled() const
-{
-	return false;
-}
+bool LinuxCgroupNull::isEnabled() const { return false; }

@@ -140,7 +140,8 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         }
         path = "/appmesh/file/download/ws"
         rest_url = parse.urljoin(self.base_url, path)
-        r = self.session.get(url=rest_url, stream=True, timeout=self.request_timeout, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify)
+        r = self.session.get(url=rest_url, stream=True, timeout=self.request_timeout, headers=header,
+            cert=self.ssl_client_cert, verify=self.ssl_verify)
         if r.status_code == HTTPStatus.OK:
             # Write file in chunks
             with local_path.open("wb") as fp:
@@ -189,7 +190,8 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         rest_url = parse.urljoin(self.base_url, path)
 
         with local_path.open("rb") as fp:
-            r = self.session.post(url=rest_url, stream=True, data=fp, timeout=self.request_timeout, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify)
+            r = self.session.post(url=rest_url, stream=True, data=fp, timeout=self.request_timeout, headers=header,
+                cert=self.ssl_client_cert, verify=self.ssl_verify)
             try:
                 r.raise_for_status()
             except requests.exceptions.HTTPError as e:

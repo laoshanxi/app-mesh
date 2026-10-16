@@ -33,18 +33,13 @@ namespace os
 
 	uint64_t ProcessTree::totalRssMemBytes() const
 	{
-		uint64_t result = std::accumulate(
-			children.begin(), children.end(),
-			process.rss_bytes,
-			[](const uint64_t &bytes, const ProcessTree &process)
-			{ return bytes + process.totalRssMemBytes(); });
+		uint64_t result = std::accumulate(children.begin(), children.end(), process.rss_bytes,
+										  [](const uint64_t &bytes, const ProcessTree &process)
+										  { return bytes + process.totalRssMemBytes(); });
 		return result;
 	}
 
-	uint64_t ProcessTree::totalFileDescriptors() const
-	{
-		return totalFileDescriptors(os::cmdline(process.pid));
-	}
+	uint64_t ProcessTree::totalFileDescriptors() const { return totalFileDescriptors(os::cmdline(process.pid)); }
 
 	uint64_t ProcessTree::totalFileDescriptors(const std::string &rootCommand) const
 	{
@@ -71,10 +66,8 @@ namespace os
 #else
 		const auto ownCpuTime = static_cast<uint64_t>(process.utime + process.stime + process.cutime + process.cstime);
 #endif
-		return std::accumulate(
-			children.begin(), children.end(), ownCpuTime,
-			[](const uint64_t &time, const ProcessTree &child)
-			{ return time + child.totalCpuTime(); });
+		return std::accumulate(children.begin(), children.end(), ownCpuTime,
+							   [](const uint64_t &time, const ProcessTree &child) { return time + child.totalCpuTime(); });
 	}
 
 	std::list<os::Process> ProcessTree::getProcesses() const
@@ -97,20 +90,11 @@ namespace os
 		return this->process.pid;
 	}
 
-	bool ProcessTree::contains(pid_t pid) const
-	{
-		return find(pid) != nullptr;
-	}
+	bool ProcessTree::contains(pid_t pid) const { return find(pid) != nullptr; }
 
-	ProcessTree::operator Process() const
-	{
-		return process;
-	}
+	ProcessTree::operator Process() const { return process; }
 
-	ProcessTree::operator pid_t() const
-	{
-		return process.pid;
-	}
+	ProcessTree::operator pid_t() const { return process.pid; }
 
 	ProcessTree::ProcessTree(const Process &_process, const std::list<ProcessTree> &_children)
 		: process(_process), children(_children)
@@ -170,12 +154,10 @@ namespace os
 			stream << *iterator;
 			if (++iterator != list.end())
 			{
-				stream << std::endl
-					   << std::endl;
+				stream << std::endl << std::endl;
 			}
 		}
-		stream << std::endl
-			   << "]";
+		stream << std::endl << "]";
 		return stream;
 	}
 
@@ -191,7 +173,8 @@ namespace os
 		}
 
 		std::unordered_set<pid_t> visiting;
-		std::function<std::shared_ptr<ProcessTree>(pid_t)> build = [&](pid_t currentPid) {
+		std::function<std::shared_ptr<ProcessTree>(pid_t)> build = [&](pid_t currentPid)
+		{
 			const auto process = byPid.find(currentPid);
 			if (process == byPid.end() || !visiting.insert(currentPid).second)
 				return std::shared_ptr<ProcessTree>();

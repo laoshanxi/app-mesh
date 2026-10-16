@@ -9,8 +9,8 @@
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include <psapi.h>
+#include <windows.h>
 
 #pragma comment(lib, "Psapi.lib")
 
@@ -52,9 +52,9 @@ namespace os
 			PageFileTotals totals{systemInfo.dwPageSize, 0, 0};
 			if (EnumPageFilesW(collectPageFile, &totals))
 			{
-				mem->totalSwap_bytes = totals.total;
-				mem->freeSwap_bytes = totals.used < totals.total ? totals.total - totals.used : 0;
-				mem->swapAvailable = true;
+				mem->total_swap_bytes = totals.total;
+				mem->free_swap_bytes = totals.used < totals.total ? totals.total - totals.used : 0;
+				mem->swap_available = true;
 			}
 		}
 		else
@@ -81,8 +81,9 @@ namespace os
 				if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
 				{
 					std::vector<unsigned char> buffer(bufferSize);
-					if (GetLogicalProcessorInformationEx(RelationAll,
-						reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data()), &bufferSize))
+					if (GetLogicalProcessorInformationEx(
+							RelationAll, reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data()),
+							&bufferSize))
 					{
 						constexpr unsigned int bitsPerGroup = sizeof(KAFFINITY) * 8;
 						std::map<unsigned int, unsigned int> sockets;

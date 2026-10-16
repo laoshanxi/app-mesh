@@ -10,8 +10,8 @@
 #include <utility>
 #include <vector>
 
-#include <boost/system/error_code.hpp>
 #include <boost/process/v2/default_launcher.hpp>
+#include <boost/system/error_code.hpp>
 
 /// Child-side identity initializer for the Boost.Process V2 posix launcher.
 /// Runs between fork and execve: joins a fresh process group, attaches to the
@@ -29,8 +29,7 @@ public:
 	}
 
 	boost::system::error_code on_exec_setup(boost::process::v2::posix::default_launcher &,
-											const boost::process::v2::filesystem::path &,
-											const char *const *)
+											const boost::process::v2::filesystem::path &, const char *const *)
 	{
 		// New process group so a terminate kills the whole tree.
 		if (::setpgid(0, 0) != 0)

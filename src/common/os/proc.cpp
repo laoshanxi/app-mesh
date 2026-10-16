@@ -88,8 +88,8 @@ namespace os
 		else
 		{
 			std::vector<proc_fdinfo> fdinfo(static_cast<size_t>(needed) / sizeof(proc_fdinfo));
-			const int got = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fdinfo.data(),
-										 static_cast<int>(fdinfo.size() * sizeof(proc_fdinfo)));
+			const int got =
+				proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fdinfo.data(), static_cast<int>(fdinfo.size() * sizeof(proc_fdinfo)));
 			if (got <= 0)
 			{
 				LOG_WAR << fname << "Failed to read fd list for pid " << pid << ", error: " << last_error_msg();
@@ -114,9 +114,7 @@ namespace os
 		{
 			if (fs::exists(procFdPath) && ::access(procFdPath.c_str(), R_OK) == 0)
 			{
-				result = static_cast<size_t>(std::distance(
-					fs::directory_iterator(procFdPath),
-					fs::directory_iterator()));
+				result = static_cast<size_t>(std::distance(fs::directory_iterator(procFdPath), fs::directory_iterator()));
 				LOG_DBG << fname << "Found " << result << " file descriptors for process " << pid;
 			}
 			else

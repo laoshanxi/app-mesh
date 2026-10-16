@@ -480,7 +480,7 @@ refresh token, so automation callers keep re-minting.
 | CLI `appm logon` | ✅ `--password` / `--password-stdin` / `--username` (only when advertised) | — | ✅ automatic, or `--device` / `--browser` | ✅ (session file) |
 | Rust SDK `OAuthClient` | ✅ `password_login()` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
 | Python SDK `OAuthClient` | ✅ `PasswordGrantProvider` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
-| Go / Java / JS SDK | — | — | — | ✅ built-in `RefreshTokenProvider` or custom `TokenProvider`; static bearer setters still available (Go `SetToken`, Java `setBearerToken`, JS `set_bearer_token`) |
+| Go / Java / JS SDK | — | — | — | ✅ built-in `RefreshTokenProvider` or custom `TokenProvider`; static bearer setters still available (Go `SetToken`, Java `setBearerToken`, JS `setBearerToken`) |
 
 Without flags, the CLI selects the method from the advertised flows and the
 local display: browser authorization on a desktop computer, and device
@@ -529,9 +529,9 @@ change.
 
 Other SDKs take the token directly — Go `client.SetToken(...)`, Rust
 `client.set_token(...)`, Java `setBearerToken(...)`, JavaScript
-`client.set_bearer_token(...)`, C++ `setBearerToken(...)` — or accept a
+`client.setBearerToken(...)`, C++ `setBearerToken(...)` — or accept a
 caller-implemented `TokenProvider` (Go `Option.TokenProvider`, Java
-`Builder.tokenProvider(...)`, JavaScript `set_token_provider(...)`, C++
+`Builder.tokenProvider(...)`, JavaScript `setTokenProvider(...)`, C++
 `ClientConfig.tokenProvider`) following the same contract as the Python
 example above.
 

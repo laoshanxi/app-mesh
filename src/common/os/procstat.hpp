@@ -1,8 +1,8 @@
 // src/common/os/procstat.hpp
 #pragma once
 
-#include <atomic>  // std::atomic
-#include <chrono>  // std::chrono::system_clock
+#include <atomic> // std::atomic
+#include <chrono> // std::chrono::system_clock
 #include <cstdint>
 #include <ctime>   // time_t, time()
 #include <fstream> // std::ifstream
@@ -19,91 +19,69 @@
 namespace os
 {
 
-    // Snapshot of a process (cross-platform process status).
-    struct ProcessStatus
-    {
-        ProcessStatus(
-            pid_t _pid,
-            const std::string &_comm,
-            char _state,
-            pid_t _ppid,
-            pid_t _pgrp,
-            pid_t _session,
-            uint64_t _utime,
-            uint64_t _stime,
-            int64_t _cutime,
-            int64_t _cstime,
-            uint64_t _starttime,
-            uint64_t _vsize,
-            int64_t _rss)
-            : pid(_pid),
-              comm(_comm),
-              state(_state),
-              ppid(_ppid),
-              pgrp(_pgrp),
-              session(_session),
-              utime(_utime),
-              stime(_stime),
-              cutime(_cutime),
-              cstime(_cstime),
-              starttime(_starttime),
-              vsize(_vsize),
-              rss(_rss)
-        {
-        }
+	// Snapshot of a process (cross-platform process status).
+	struct ProcessStatus
+	{
+		ProcessStatus(pid_t _pid, const std::string &_comm, char _state, pid_t _ppid, pid_t _pgrp, pid_t _session,
+					  uint64_t _utime, uint64_t _stime, int64_t _cutime, int64_t _cstime, uint64_t _starttime,
+					  uint64_t _vsize, int64_t _rss)
+			: pid(_pid), comm(_comm), state(_state), ppid(_ppid), pgrp(_pgrp), session(_session), utime(_utime),
+			  stime(_stime), cutime(_cutime), cstime(_cstime), starttime(_starttime), vsize(_vsize), rss(_rss)
+		{
+		}
 
-        // Get process start time (platform-specific)
-        std::chrono::system_clock::time_point get_starttime() const
-        {
+		// Get process start time (platform-specific)
+		std::chrono::system_clock::time_point getStartTime() const
+		{
 #if defined(_WIN32)
-            // Windows: starttime already represents time_t
-            return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
+			// Windows: starttime already represents time_t
+			return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
 
 #elif defined(__linux__)
-            static const long ticks_per_second = []
-            {
-                long tps = sysconf(_SC_CLK_TCK);
-                return (tps > 0) ? tps : 100; // Fallback if sysconf fails
-            }();
+			static const long ticks_per_second = []
+			{
+				long tps = sysconf(_SC_CLK_TCK);
+				return (tps > 0) ? tps : 100; // Fallback if sysconf fails
+			}();
 
-            // Read system uptime fresh each call for accuracy
-            double uptime_seconds = 0.0;
-            std::ifstream uptime_file("/proc/uptime");
-            if (uptime_file)
-            {
-                uptime_file >> uptime_seconds;
-            }
+			// Read system uptime fresh each call for accuracy
+			double uptime_seconds = 0.0;
+			std::ifstream uptime_file("/proc/uptime");
+			if (uptime_file)
+			{
+				uptime_file >> uptime_seconds;
+			}
 
-            // System boot time in seconds since epoch
-            const time_t system_boot_time = time(nullptr) - static_cast<time_t>(uptime_seconds);
+			// System boot time in seconds since epoch
+			const time_t system_boot_time = time(nullptr) - static_cast<time_t>(uptime_seconds);
 
-            // Process start time = boot_time + (jiffies / ticks_per_second)
-            const double start_time_seconds = static_cast<double>(system_boot_time) +
-                                              (static_cast<double>(starttime) / ticks_per_second);
+			// Process start time = boot_time + (jiffies / ticks_per_second)
+			const double start_time_seconds =
+				static_cast<double>(system_boot_time) + (static_cast<double>(starttime) / ticks_per_second);
 
-            return std::chrono::system_clock::from_time_t(static_cast<time_t>(start_time_seconds));
+			return std::chrono::system_clock::from_time_t(static_cast<time_t>(start_time_seconds));
 
 #elif defined(__APPLE__)
-            // macOS: interpret starttime as epoch time (approximation)
-            return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
+			// macOS: interpret starttime as epoch time (approximation)
+			return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
 #endif
-        }
+		}
 
-        // Process information fields
-        const pid_t pid;
-        const std::string comm;
-        const char state;
-        const pid_t ppid;
-        const pid_t pgrp;
-        const pid_t session;
+		// Process information fields
+		const pid_t pid;
+		const std::string comm;
+		const char state;
+		const pid_t ppid;
+		const pid_t pgrp;
+		const pid_t session;
 
-        const uint64_t utime;
-        const uint64_t stime;
-        const int64_t cutime;
-        const int64_t cstime;
-        const uint64_t starttime;
-        const uint64_t vsize;
-        const int64_t rss;
-    };
+		const uint64_t utime;
+		const uint64_t stime;
+		const int64_t cutime;
+		const int64_t cstime;
+		const uint64_t starttime;
+		const uint64_t vsize;
+		const int64_t rss;
+	};
 
 } // namespace os

@@ -73,13 +73,14 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 
 	clientCert := config.ConfigData.REST.SSL.SSLClientCertificateFile
 	clientCertKey := config.ConfigData.REST.SSL.SSLClientCertificateKeyFile
-	caPath := config.ConfigData.REST.SSL.SSLCaPath
+	caPath := config.ConfigData.REST.SSL.SSLCAPath
 	if !verifyServer {
 		caPath = ""
 	}
 
 	logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", tcpAddress, caPath, clientCert, clientCertKey)
-	if err := sConn.messageConnection.(*appmesh.TCPConnection).Connect(tcpAddress, clientCert, clientCertKey, caPath); err != nil {
+	if err := sConn.messageConnection.(*appmesh.TCPConnection).Connect(tcpAddress, clientCert, clientCertKey,
+		caPath); err != nil {
 		logger.Errorf("Failed to connect to %s: %v", tcpAddress, err)
 		return nil, fmt.Errorf("connect to %s: %w", tcpAddress, err)
 	}
@@ -184,14 +185,15 @@ func getOrCreateWSSConnection(wssHostPort string, verifyServer bool) (*Connectio
 
 	clientCert := config.ConfigData.REST.SSL.SSLClientCertificateFile
 	clientCertKey := config.ConfigData.REST.SSL.SSLClientCertificateKeyFile
-	caPath := config.ConfigData.REST.SSL.SSLCaPath
+	caPath := config.ConfigData.REST.SSL.SSLCAPath
 	if !verifyServer {
 		caPath = ""
 	}
 
 	wssURL := &url.URL{Scheme: "wss", Host: wssHostPort, Path: "/"}
 	logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", wssURL, caPath, clientCert, clientCertKey)
-	if err := sConn.messageConnection.(*appmesh.WSSConnection).Connect(wssURL, clientCert, clientCertKey, caPath, ""); err != nil {
+	if err := sConn.messageConnection.(*appmesh.WSSConnection).Connect(wssURL, clientCert, clientCertKey, caPath,
+		""); err != nil {
 		logger.Errorf("Failed to connect to %s: %v", wssURL, err)
 		return nil, fmt.Errorf("connect to %s: %w", wssURL, err)
 	}
@@ -231,7 +233,8 @@ func (c *Connection) sendRequestDataWithContext(ctx context.Context, request *Re
 		return nil, fmt.Errorf("serialize request %s: %w", request.UUID, err)
 	}
 
-	logger.Debugf("Sending request: %s %s %s %s", request.ClientAddress, request.HttpMethod, request.RequestUri, request.UUID)
+	logger.Debugf("Sending request: %s %s %s %s", request.ClientAddress, request.HTTPMethod, request.RequestURI,
+		request.UUID)
 
 	respCh := c.registerPendingResp(request.UUID)
 	defer c.unregisterPendingResp(request.UUID)
@@ -330,8 +333,8 @@ func (c *Connection) sendFileDataWithContext(ctx context.Context, localFile stri
 
 	defer file.Close()
 
-	reader := bufio.NewReaderSize(file, TCP_CHUNK_BLOCK_SIZE)
-	buf := make([]byte, TCP_CHUNK_BLOCK_SIZE)
+	reader := bufio.NewReaderSize(file, TCPChunkBlockSize)
+	buf := make([]byte, TCPChunkBlockSize)
 
 	c.atomicSendMu.Lock()
 	defer c.atomicSendMu.Unlock()

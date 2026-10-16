@@ -103,6 +103,10 @@ func (w *WSSConnection) ReadMessage() ([]byte, error) {
 	// ReadMessage returns messageType and payload
 	mt, data, err := conn.ReadMessage()
 	if err != nil {
+		// The websocket is dead after any read error (Close frame, IO failure).
+		// Drop it so Connected() reports false and the next request reconnects
+		// instead of failing on the stale connection forever.
+		w.Close()
 		return nil, err
 	}
 	// Treat text frames as UTF-8 bytes, binary frames as-is
@@ -140,6 +144,10 @@ func (w *WSSConnection) SendMessage(ctx context.Context, buffer []byte) error {
 	}
 
 	if err := conn.WriteMessage(websocket.BinaryMessage, dataToSend); err != nil {
+		// The websocket is unusable after a write failure; drop it so
+		// Connected() reports false and the next request re-dials instead of
+		// failing on the stale connection forever.
+		w.Close()
 		return err
 	}
 	return nil

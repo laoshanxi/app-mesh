@@ -1,8 +1,8 @@
 // src/daemon/rest/Worker.h
 #pragma once
 
-#include "Data.h"
 #include "../../common/Utility.h"
+#include "Data.h"
 
 #include <concurrentqueue/blockingconcurrentqueue.h>
 
@@ -58,7 +58,7 @@ private:
 
 	RequestQueue m_messages;
 	std::atomic<size_t> m_pendingCount{0}; // in-flight requests queued but not yet processed
-	size_t m_threadCount{0};				 // matched by shutdown() sentinels and joined by wait()
+	size_t m_threadCount{0};               // matched by shutdown() sentinels and joined by wait()
 	std::vector<std::thread> m_threads;
 };
 

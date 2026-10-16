@@ -1,26 +1,21 @@
 // src/daemon/ResourceLimitation.cpp
 #include "ResourceLimitation.h"
-#include <stdexcept>
 #include "../common/Utility.h"
+#include <stdexcept>
 
 ResourceLimitation::ResourceLimitation()
 	: m_memoryMb(0), m_memoryVirtMb(0), m_memoryVirtSpecified(false), m_cpuShares(0), m_index(0)
 {
 }
 
-ResourceLimitation::~ResourceLimitation()
-{
-}
+ResourceLimitation::~ResourceLimitation() {}
 
 bool ResourceLimitation::operator==(const std::shared_ptr<ResourceLimitation> &obj) const
 {
 	if (obj == nullptr)
 		return false;
-	return (m_cpuShares == obj->m_cpuShares &&
-			m_memoryMb == obj->m_memoryMb &&
-			m_memoryVirtMb == obj->m_memoryVirtMb &&
-			m_memoryVirtSpecified == obj->m_memoryVirtSpecified &&
-			m_name == obj->m_name);
+	return (m_cpuShares == obj->m_cpuShares && m_memoryMb == obj->m_memoryMb && m_memoryVirtMb == obj->m_memoryVirtMb &&
+			m_memoryVirtSpecified == obj->m_memoryVirtSpecified && m_name == obj->m_name);
 }
 
 void ResourceLimitation::dump()
@@ -59,12 +54,10 @@ std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const Json::Val
 			throw std::invalid_argument("resource limits cannot be negative");
 		if (result->m_cpuShares > 0 && (result->m_cpuShares < 2 || result->m_cpuShares > 262144))
 			throw std::invalid_argument("cpu_shares must be between 2 and 262144");
-		if (result->m_memoryVirtSpecified &&
-			(result->m_memoryMb <= 0 || result->m_memoryVirtMb < result->m_memoryMb))
-			throw std::invalid_argument("memory_virt_mb requires positive memory_mb and must be greater than or equal to it");
-		if (0 == result->m_memoryMb &&
-			!result->m_memoryVirtSpecified &&
-			0 == result->m_cpuShares)
+		if (result->m_memoryVirtSpecified && (result->m_memoryMb <= 0 || result->m_memoryVirtMb < result->m_memoryMb))
+			throw std::invalid_argument(
+				"memory_virt_mb requires positive memory_mb and must be greater than or equal to it");
+		if (0 == result->m_memoryMb && !result->m_memoryVirtSpecified && 0 == result->m_cpuShares)
 		{
 			return nullptr;
 		}

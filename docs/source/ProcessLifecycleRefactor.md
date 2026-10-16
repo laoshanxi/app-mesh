@@ -770,7 +770,7 @@ SDK 没有名为 `run()` 的公共方法；相关公共运行面 `run_app_sync`�
 
 `refresh` 没有窄化为 `pollUnreportedExit`。历史上 stop、schedule、refresh 与 start trigger 由 `execute` 周边分段驱动；现在统一收敛到 `maintainRuntime(now)`：先维护 buffer/退出状态，再 stop 不合法的 run、更新 health，随后完成下一时间规划、exit policy 和到期 start。原来的 `driveLifecycle` 与窄 `maintainRuntime()` 两层已合并，减少一个只做转发的 orchestration helper。
 
-以下历史名字虽然不完全符合现代 camel-case，暂不改动：`Application::getpid`、`AppProcess::getpid/getuuid/getkey`、`isPersistAble`。它们使用面广，且已有 C++ 调用和测试契约；在本次生命周期修复中全局改名只会增加 review 噪音，不改善并发或退出安全。
+以下历史名字虽然不完全符合现代 camel-case，暂不改动：`Application::getpid`、`AppProcess::getpid/getUuid/getKey`、`isPersistAble`(getUuid/getKey 已于 2026-10 统一命名)。它们使用面广，且已有 C++ 调用和测试契约；在本次生命周期修复中全局改名只会增加 review 噪音，不改善并发或退出安全。
 
 ## 十八、静态验证记录
 

@@ -36,15 +36,15 @@
 #include <windows.h>
 #endif
 
-#include <openssl/crypto.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/program_options/parsers.hpp>
 #include <drogon/utils/Utilities.h>
 #include <filesystem>
-#include <boost/program_options/parsers.hpp>
 #include <hashidsxx/hashids.cpp>
 #include <hashidsxx/hashids.h>
 #include <json/json.h>
+#include <openssl/crypto.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -61,13 +61,9 @@ const char *GET_STATUS_STR(unsigned int status)
 	return STATUS_STR[status];
 };
 
-Utility::Utility()
-{
-}
+Utility::Utility() {}
 
-Utility::~Utility()
-{
-}
+Utility::~Utility() {}
 
 bool Utility::isNumber(const std::string &str)
 {
@@ -82,10 +78,7 @@ bool Utility::isNumber(const std::string &str)
 	return std::all_of(s.begin() + start, s.end(), ::isdigit);
 }
 
-std::string Utility::stdStringTrim(const std::string &str)
-{
-	return boost::trim_copy(str, std::locale::classic());
-}
+std::string Utility::stdStringTrim(const std::string &str) { return boost::trim_copy(str, std::locale::classic()); }
 
 // jsoncpp coerces wrong-typed scalars (int -> "5"); these keep the reads strict
 std::string Utility::jsonStringField(const Json::Value &value, const std::string &key)
@@ -106,8 +99,7 @@ bool Utility::jsonBoolField(const Json::Value &value, const std::string &key)
 
 std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool leftTrim, bool rightTrim)
 {
-	const auto isTrim = [trimChar](char c)
-	{ return c == trimChar; };
+	const auto isTrim = [trimChar](char c) { return c == trimChar; };
 	if (leftTrim && rightTrim)
 		return boost::trim_copy_if(str, isTrim);
 	if (leftTrim)
@@ -120,11 +112,13 @@ std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool l
 std::string Utility::stdStringTrim(const std::string &str, const std::string &trimChars, bool leftTrim, bool rightTrim)
 {
 	std::string result = str;
-	while (trimChars.length() && leftTrim && result.length() >= trimChars.length() && result.compare(0, trimChars.length(), trimChars) == 0)
+	while (trimChars.length() && leftTrim && result.length() >= trimChars.length() &&
+		   result.compare(0, trimChars.length(), trimChars) == 0)
 	{
 		result.erase(0, trimChars.length());
 	}
-	while (trimChars.length() && rightTrim && result.length() >= trimChars.length() && result.compare(result.length() - trimChars.length(), trimChars.length(), trimChars) == 0)
+	while (trimChars.length() && rightTrim && result.length() >= trimChars.length() &&
+		   result.compare(result.length() - trimChars.length(), trimChars.length(), trimChars) == 0)
 	{
 		result.erase(result.length() - trimChars.length(), trimChars.length());
 	}
@@ -194,7 +188,8 @@ const std::string &Utility::getHomeDir()
 
 const std::string Utility::getConfigFilePath(const std::string &configFile, bool write)
 {
-	const std::string workingConfigFile = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
+	const std::string workingConfigFile =
+		(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
 	if (write || Utility::isFileExist(workingConfigFile))
 	{
 		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string());
@@ -339,10 +334,10 @@ void Utility::removeFile(const std::string &path)
 
 bool Utility::runningInContainer()
 {
-	static const bool isInContainer = []() {
+	static const bool isInContainer = []()
+	{
 		// Support standard and legacy container markers.
-		if (std::ifstream("/.dockerenv").good() ||
-			std::ifstream("/run/.dockerenv").good() ||
+		if (std::ifstream("/.dockerenv").good() || std::ifstream("/run/.dockerenv").good() ||
 			std::ifstream("/run/.containerenv").good())
 		{
 			return true;
@@ -356,10 +351,10 @@ bool Utility::runningInContainer()
 #if defined(__linux__)
 		// Detect runtimes without marker files.
 		const auto cgroup = Utility::readFileCpp("/proc/self/cgroup");
-		static const std::vector<std::string> containerCgroupMarkers = {
-			"docker", "kubepods", "containerd", "libpod", "podman", "lxc"};
+		static const std::vector<std::string> containerCgroupMarkers = {"docker", "kubepods", "containerd",
+																		"libpod", "podman",   "lxc"};
 		return std::any_of(containerCgroupMarkers.begin(), containerCgroupMarkers.end(),
-			[&cgroup](const std::string &marker) { return cgroup.find(marker) != std::string::npos; });
+						   [&cgroup](const std::string &marker) { return cgroup.find(marker) != std::string::npos; });
 #else
 		return false;
 #endif
@@ -396,12 +391,13 @@ std::string Utility::resolveHostAddress(const std::string &host, std::string &er
 	// caller's budget. On timeout the thread is abandoned and exits on its own.
 	auto result = std::make_shared<std::promise<std::pair<std::string, std::string>>>();
 	auto future = result->get_future();
-	std::thread([host, result]()
-				{
-					std::string threadError;
-					std::string ip = resolveHostAddressBlocking(host, threadError);
-					result->set_value({std::move(ip), std::move(threadError)});
-				})
+	std::thread(
+		[host, result = std::move(result)]()
+		{
+			std::string threadError;
+			std::string ip = resolveHostAddressBlocking(host, threadError);
+			result->set_value({std::move(ip), std::move(threadError)});
+		})
 		.detach();
 	if (future.wait_for(std::chrono::seconds(timeoutSeconds)) != std::future_status::ready)
 	{
@@ -497,7 +493,8 @@ bool Utility::ensureSystemRoot()
 
 		if (_putenv_s("SYSTEMROOT", systemRoot.c_str()) != 0)
 		{
-			std::cerr << "[Error] Failed to set SYSTEMROOT to: " << systemRoot << " (Error " << last_error_msg() << ")" << std::endl;
+			std::cerr << "[Error] Failed to set SYSTEMROOT to: " << systemRoot << " (Error " << last_error_msg() << ")"
+					  << std::endl;
 			return false;
 		}
 		std::cout << "[Info] SYSTEMROOT set to: " << systemRoot << std::endl;
@@ -551,17 +548,10 @@ void Utility::initLogging(const std::string &name)
 
 bool Utility::setLogLevel(const std::string &level)
 {
-	static std::map<std::string, spdlog::level::level_enum> levelMap =
-		{
-			{"NOTSET", spdlog::level::off},
-			{"DEBUG", spdlog::level::debug},
-			{"INFO", spdlog::level::info},
-			{"WARN", spdlog::level::warn},
-			{"ERROR", spdlog::level::err},
-			{"CRIT", spdlog::level::critical},
-			{"ALERT", spdlog::level::critical},
-			{"FATAL", spdlog::level::critical},
-			{"EMERG", spdlog::level::critical}};
+	static std::map<std::string, spdlog::level::level_enum> levelMap = {
+		{"NOTSET", spdlog::level::off},     {"DEBUG", spdlog::level::debug},    {"INFO", spdlog::level::info},
+		{"WARN", spdlog::level::warn},      {"ERROR", spdlog::level::err},      {"CRIT", spdlog::level::critical},
+		{"ALERT", spdlog::level::critical}, {"FATAL", spdlog::level::critical}, {"EMERG", spdlog::level::critical}};
 
 	if (auto it = levelMap.find(level); it != levelMap.end())
 	{
@@ -599,15 +589,9 @@ void Utility::setThreadName(const std::string &name)
 #endif
 }
 
-std::string Utility::encode64(const std::string &val)
-{
-	return drogon::utils::base64Encode(val);
-}
+std::string Utility::encode64(const std::string &val) { return drogon::utils::base64Encode(val); }
 
-std::string Utility::decode64(const std::string &val)
-{
-	return drogon::utils::base64Decode(val);
-}
+std::string Utility::decode64(const std::string &val) { return drogon::utils::base64Decode(val); }
 
 std::string Utility::encodeURIComponent(const std::string &str)
 {
@@ -619,8 +603,8 @@ std::string Utility::encodeURIComponent(const std::string &str)
 	{
 		// JavaScript's encodeURIComponent escapes all characters except:
 		// A-Z a-z 0-9 - _ . ! ~ * ' ( )
-		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '!' ||
-			c == '~' || c == '*' || c == '\'' || c == '(' || c == ')')
+		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
+			c == ')')
 		{
 			escaped << c;
 		}
@@ -644,7 +628,8 @@ std::string Utility::decodeURIComponent(const std::string &encoded)
 	{
 		if (encoded[i] == '%')
 		{
-			if (i + 2 < encoded.size() && std::isxdigit(static_cast<unsigned char>(encoded[i + 1])) && std::isxdigit(static_cast<unsigned char>(encoded[i + 2])))
+			if (i + 2 < encoded.size() && std::isxdigit(static_cast<unsigned char>(encoded[i + 1])) &&
+				std::isxdigit(static_cast<unsigned char>(encoded[i + 2])))
 			{
 				int value = std::stoi(encoded.substr(i + 1, 2), nullptr, 16);
 				result += static_cast<char>(value);
@@ -734,7 +719,7 @@ std::string Utility::readFile(const std::string &path)
 
 std::string Utility::readFileCpp(const std::string &path)
 {
-	const static char fname[] = "Utility::readFileCPP() ";
+	const static char fname[] = "Utility::readFileCpp() ";
 
 	std::ifstream file(path.c_str(), std::ios::in | std::ios::binary);
 	if (!file)
@@ -814,13 +799,11 @@ std::string Utility::utf8ToLocalEncoding(const std::string &input)
 		const wchar_t *from_next;
 		char *to_next;
 
-		std::codecvt_base::result conv_result = codecvt_facet.out(
-			state,
-			wide_str.data(), wide_str.data() + wide_str.length(), from_next,
-			&result[0], &result[0] + result.length(), to_next);
+		std::codecvt_base::result conv_result =
+			codecvt_facet.out(state, wide_str.data(), wide_str.data() + wide_str.length(), from_next, &result[0],
+							  &result[0] + result.length(), to_next);
 
-		if (conv_result == std::codecvt_base::ok ||
-			conv_result == std::codecvt_base::noconv)
+		if (conv_result == std::codecvt_base::ok || conv_result == std::codecvt_base::noconv)
 		{
 			result.resize(to_next - &result[0]);
 			return result;
@@ -869,7 +852,7 @@ std::string detectAndConvertToUTF8(const std::string& input) {
 // Helper function to convert from specific codepage to UTF-8
 std::string Utility::readFileCpp(const std::string &path, long *position, long maxSize, bool readLine)
 {
-	const static char fname[] = "Utility::readFileCPP() ";
+	const static char fname[] = "Utility::readFileCpp() ";
 
 	if (!Utility::isFileExist(path))
 	{
@@ -896,7 +879,8 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 	// Validate position
 	if (position && *position > fileSize)
 	{
-		throw std::invalid_argument(Utility::stringFormat("Invalid position <%ld>, file size: <%ld>", *position, static_cast<long>(fileSize)));
+		throw std::invalid_argument(
+			Utility::stringFormat("Invalid position <%ld>, file size: <%ld>", *position, static_cast<long>(fileSize)));
 	}
 
 	fileStream.clear();
@@ -917,7 +901,8 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 	if (maxSize >= 0)
 	{
 		// Forward reading
-		size_t readSize = (maxSize == 0) ? static_cast<size_t>(fileSize) : std::min(static_cast<size_t>(maxSize), static_cast<size_t>(fileSize));
+		size_t readSize = (maxSize == 0) ? static_cast<size_t>(fileSize)
+										 : std::min(static_cast<size_t>(maxSize), static_cast<size_t>(fileSize));
 
 		if (readLine)
 		{
@@ -1112,9 +1097,8 @@ bool Utility::createPidFile()
 	// Read and write stay unshared, which is the single-instance lock itself;
 	// sharing only the delete lets the shutdown path remove the file while this
 	// handle is still open.
-	HANDLE hFile = CreateFileA(pidFile.c_str(), GENERIC_READ | GENERIC_WRITE,
-							   FILE_SHARE_DELETE,
-							   NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE hFile = CreateFileA(pidFile.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_DELETE, NULL, CREATE_ALWAYS,
+							   FILE_ATTRIBUTE_NORMAL, NULL);
 
 	if (hFile == INVALID_HANDLE_VALUE)
 	{
@@ -1187,22 +1171,17 @@ std::vector<std::string> Utility::splitString(const std::string &source, const s
 	return result;
 }
 
-bool Utility::startWith(const std::string &str, const std::string &prefix)
-{
-	return boost::starts_with(str, prefix);
-}
+bool Utility::startWith(const std::string &str, const std::string &prefix) { return boost::starts_with(str, prefix); }
 
-bool Utility::endWith(const std::string &str, const std::string &postfix)
-{
-	return boost::ends_with(str, postfix);
-}
+bool Utility::endWith(const std::string &str, const std::string &postfix) { return boost::ends_with(str, postfix); }
 
 size_t Utility::charCount(const std::string &str, char c)
 {
 	return static_cast<size_t>(std::count(str.begin(), str.end(), c));
 }
 
-std::string Utility::stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos)
+std::string Utility::stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst,
+								   int startPos)
 {
 	std::string str = strBase;
 	std::string::size_type position = startPos;
@@ -1217,7 +1196,6 @@ std::string Utility::stringReplace(const std::string &strBase, const std::string
 	return str;
 }
 
-
 void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers)
 {
 	const static char fname[] = "Utility::applyFilePermission() ";
@@ -1230,8 +1208,7 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 #if !defined(_WIN32)
 	auto userIt = headers.find(HTTP_HEADER_KEY_file_user);
 	auto groupIt = headers.find(HTTP_HEADER_KEY_file_group);
-	if (userIt != headers.end() && groupIt != headers.end() &&
-		!userIt->second.empty() && !groupIt->second.empty())
+	if (userIt != headers.end() && groupIt != headers.end() && !userIt->second.empty() && !groupIt->second.empty())
 	{
 		if (Utility::runningInContainer())
 		{
@@ -1357,10 +1334,7 @@ std::string Utility::stringFormat(const char *fmt_str, ...)
 	return formatted;
 }
 
-std::string Utility::strTolower(std::string s)
-{
-	return boost::to_lower_copy(s, std::locale::classic());
-}
+std::string Utility::strTolower(std::string s) { return boost::to_lower_copy(s, std::locale::classic()); }
 
 std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 {
@@ -1634,13 +1608,9 @@ namespace web
 	}
 }
 
-NotFoundException::NotFoundException(const char *what) noexcept : std::logic_error(what)
-{
-}
+NotFoundException::NotFoundException(const char *what) noexcept : std::logic_error(what) {}
 
-NotFoundException::NotFoundException(const std::string &what) noexcept : std::logic_error(what)
-{
-}
+NotFoundException::NotFoundException(const std::string &what) noexcept : std::logic_error(what) {}
 
 static thread_local std::string g_errorMessage;
 
@@ -1669,9 +1639,9 @@ const char *last_error_msg()
 	}
 	else
 	{
-		const DWORD len = ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-											nullptr, static_cast<DWORD>(err_code), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-											buf, sizeof(buf), nullptr);
+		const DWORD len = ::FormatMessageA(
+			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK, nullptr,
+			static_cast<DWORD>(err_code), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), nullptr);
 		if (len > 0 && buf[0] != '\0')
 			g_errorMessage.assign(buf, len);
 		else
@@ -1719,7 +1689,6 @@ bool Utility::isDouble(const std::string &str)
 	}
 	return true;
 }
-
 
 bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string &filePath)
 {
@@ -1782,7 +1751,6 @@ bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string 
 	return true;
 }
 
-
 namespace
 {
 	// Encoding detection candidates in priority order, shared by all platforms:
@@ -1797,22 +1765,22 @@ namespace
 	};
 
 	const EncodingCandidate ENCODING_CANDIDATES[] = {
-		{936, "GBK"},		 // GBK/GB2312 (Simplified Chinese)
-		{950, "BIG5"},		 // Big5 (Traditional Chinese)
-		{932, "SHIFT_JIS"},	 // Shift-JIS (Japanese)
-		{54936, "GB18030"},	 // GB18030 (4-byte extensions GBK rejects)
-		{949, "EUC-KR"},	 // EUC-KR (Korean)
-		{1252, "CP1252"},	 // Windows-1252 (Western European)
-		{1251, "CP1251"},	 // Windows-1251 (Cyrillic)
-		{0, nullptr}		 // CP_ACP: system default ANSI code page (Windows only)
+		{936, "GBK"},       // GBK/GB2312 (Simplified Chinese)
+		{950, "BIG5"},      // Big5 (Traditional Chinese)
+		{932, "SHIFT_JIS"}, // Shift-JIS (Japanese)
+		{54936, "GB18030"}, // GB18030 (4-byte extensions GBK rejects)
+		{949, "EUC-KR"},    // EUC-KR (Korean)
+		{1252, "CP1252"},   // Windows-1252 (Western European)
+		{1251, "CP1251"},   // Windows-1251 (Cyrillic)
+		{0, nullptr}        // CP_ACP: system default ANSI code page (Windows only)
 	};
 
 #if !defined(_WIN32)
 	// Outcome of one strict iconv conversion attempt.
 	enum IconvOutcome
 	{
-		ICONV_REJECTED,	 // invalid byte sequence: candidate does not match
-		ICONV_ACCEPTED,	 // whole buffer converted
+		ICONV_REJECTED,  // invalid byte sequence: candidate does not match
+		ICONV_ACCEPTED,  // whole buffer converted
 		ICONV_SPLIT_TAIL // valid except an incomplete multi-byte tail (EINVAL)
 	};
 
@@ -1888,18 +1856,14 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 		return input;
 
 	// Check for UTF-8 BOM
-	if (input.size() >= 3 &&
-		static_cast<unsigned char>(input[0]) == 0xEF &&
-		static_cast<unsigned char>(input[1]) == 0xBB &&
+	if (input.size() >= 3 && static_cast<unsigned char>(input[0]) == 0xEF && static_cast<unsigned char>(input[1]) == 0xBB &&
 		static_cast<unsigned char>(input[2]) == 0xBF)
 	{
 		return input.substr(3);
 	}
 
 	// Check for UTF-16 LE BOM
-	if (input.size() >= 2 &&
-		static_cast<unsigned char>(input[0]) == 0xFF &&
-		static_cast<unsigned char>(input[1]) == 0xFE)
+	if (input.size() >= 2 && static_cast<unsigned char>(input[0]) == 0xFF && static_cast<unsigned char>(input[1]) == 0xFE)
 	{
 		const wchar_t *wstr = reinterpret_cast<const wchar_t *>(input.data() + 2);
 		int len = (input.size() - 2) / 2;
@@ -1914,17 +1878,14 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 	}
 
 	// Check for UTF-16 BE BOM
-	if (input.size() >= 2 &&
-		static_cast<unsigned char>(input[0]) == 0xFE &&
-		static_cast<unsigned char>(input[1]) == 0xFF)
+	if (input.size() >= 2 && static_cast<unsigned char>(input[0]) == 0xFE && static_cast<unsigned char>(input[1]) == 0xFF)
 	{
 		std::wstring wstr;
 		wstr.resize((input.size() - 2) / 2);
 		for (size_t i = 0; i < wstr.size(); ++i)
 		{
-			wstr[i] = static_cast<wchar_t>(
-				(static_cast<unsigned char>(input[2 + i * 2]) << 8) |
-				static_cast<unsigned char>(input[2 + i * 2 + 1]));
+			wstr[i] = static_cast<wchar_t>((static_cast<unsigned char>(input[2 + i * 2]) << 8) |
+										   static_cast<unsigned char>(input[2 + i * 2 + 1]));
 		}
 
 		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), nullptr, 0, nullptr, nullptr);
@@ -1960,9 +1921,7 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 		return input;
 
 	// Check for UTF-8 BOM
-	if (input.size() >= 3 &&
-		static_cast<unsigned char>(input[0]) == 0xEF &&
-		static_cast<unsigned char>(input[1]) == 0xBB &&
+	if (input.size() >= 3 && static_cast<unsigned char>(input[0]) == 0xEF && static_cast<unsigned char>(input[1]) == 0xBB &&
 		static_cast<unsigned char>(input[2]) == 0xBF)
 	{
 		return input.substr(3);
@@ -1980,7 +1939,9 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 			const size_t units = (input.size() - 2) / 2;
 			std::string converted;
 			size_t tailBytes = 0;
-			if (iconvToUtf8(input.substr(2, units * 2), utf16Le ? "UTF-16LE" : "UTF-16BE", converted, tailBytes) == ICONV_ACCEPTED && !converted.empty())
+			if (iconvToUtf8(input.substr(2, units * 2), utf16Le ? "UTF-16LE" : "UTF-16BE", converted, tailBytes) ==
+					ICONV_ACCEPTED &&
+				!converted.empty())
 			{
 				return converted;
 			}
@@ -2032,24 +1993,25 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 #endif
 }
 
-
 void Utility::appendStrTimeAttr(Json::Value &jsonObj, const std::string &key)
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
 	{
-		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
+		jsonObj[key + JSON_KEY_TIME_POSTFIX_STR] = std::string(
+			DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
 	}
 }
-
 
 void Utility::appendStrDayTimeAttr(Json::Value &jsonObj, const std::string &key)
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
 	{
-		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = std::string(splitString(DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T").back());
+		jsonObj[key + JSON_KEY_TIME_POSTFIX_STR] = std::string(
+			splitString(
+				DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T")
+				.back());
 	}
 }
-
 
 bool Utility::containsSpecialCharacters(const std::string &str)
 {
@@ -2070,12 +2032,7 @@ bool Utility::containsSpecialCharacters(const std::string &str)
 	return false;
 }
 
-
-std::string Utility::strToupper(std::string s)
-{
-	return boost::to_upper_copy(s, std::locale::classic());
-}
-
+std::string Utility::strToupper(std::string s) { return boost::to_upper_copy(s, std::locale::classic()); }
 
 bool Utility::isValidUTF8(const std::string &str)
 {
@@ -2102,7 +2059,8 @@ bool Utility::isValidUTF8(const std::string &str)
 		}
 		else if ((bytes[i] & 0xF8) == 0xF0)
 		{
-			if (i + 3 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80 || (bytes[i + 3] & 0xC0) != 0x80)
+			if (i + 3 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80 ||
+				(bytes[i + 3] & 0xC0) != 0x80)
 				return false;
 			i += 4;
 		}
@@ -2146,7 +2104,6 @@ size_t Utility::utf8IncompleteTailBytes(const std::string &str)
 	const size_t leadLength = utf8LeadByteLength(lead);
 	return leadLength > 0 && run < leadLength - 1 ? run + 1 : 0;
 }
-
 
 std::string Utility::convertToUTF8(const std::string &input, unsigned int codepage)
 {
