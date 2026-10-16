@@ -38,7 +38,26 @@ jobs:
           python -m build --wheel --outdir dist
         working-directory: src/sdk/python
 
+      - name: Check PyPI for existing version
+        id: pypi_check
+        working-directory: src/sdk/python
+        run: |
+          VERSION=$(python - <<'EOF'
+          import re
+          match = re.search(r'return "([^"]+)"', open("setup.py").read())
+          print(match.group(1))
+          EOF
+          )
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if curl -fsS "https://pypi.org/pypi/appmesh/$VERSION/json" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::appmesh $VERSION is already on PyPI; skipping upload"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish package
+        if: steps.pypi_check.outputs.exists != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
