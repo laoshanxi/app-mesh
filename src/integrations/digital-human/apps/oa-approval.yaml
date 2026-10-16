@@ -1,0 +1,17 @@
+# App 定义模板 —— setup.sh 渲染 @PLACEHOLDER@ 后注册
+name: @TEAM@-oa-approval
+description: 审批登记与确认（@TEAM@ team 数字人技能，P1 mock 确认）
+command: @VENV_PY@ @PKG@/skills/oa_approval.py
+working_dir: @PKG@
+behavior:
+  exit: keepalive
+env:
+  APPMESH_URL: "@APPMESH_URL@"
+  APPMESH_CA: "@APPMESH_CA@"
+  APPMESH_TCP: "@TCP_API@"
+  APPROVAL_FILE: "@RUNTIME@/approvals.json"
+metadata:
+  tool:
+    name: oa-approval
+    description: '审批流：登记/确认/查询，入参 {"action":"create|approve|reject|status|list", ...}'
+enabled: true
