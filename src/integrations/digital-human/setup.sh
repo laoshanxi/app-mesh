@@ -39,6 +39,9 @@ APPMESH_WSS="${APPMESH_WSS:-wss://127.0.0.1:6058}"
 APPMESH_CA="${APPMESH_CA:-/opt/appmesh/ssl/ca.pem}"
 TOKEN_CMD="${DH_TOKEN_CMD:-bash /opt/appmesh/script/appmesh-auth.sh print-initial-password | bash /opt/appmesh/script/appmesh-auth.sh user-token}"
 IM_PORT="${DH_IM_PORT:-7070}"
+# IM 适配器默认只听本机回环；对外暴露必须同时配 DH_IM_TOKEN（适配器端点鉴权）
+IM_BIND="${DH_IM_BIND:-127.0.0.1}"
+IM_TOKEN="${DH_IM_TOKEN:-}"
 TCP_API="${DH_TCP_API:-127.0.0.1:6059}"
 if [ -z "${APPMESH_BEARER_TOKEN:-}" ]; then
 	export APPMESH_BEARER_TOKEN="$(eval "$TOKEN_CMD" 2>/dev/null || true)"
@@ -55,7 +58,8 @@ mkdir -p "$TEAM_RT"
 BOT_ENV="$TEAM_RT/dh-bot.env"
 if [ ! -f "$BOT_ENV" ]; then
 	BOT_PW="dhbot-$(openssl rand -hex 8 2>/dev/null || date +%s)"
-	printf 'DH_BOT_USER=%s\nDH_BOT_PASSWORD=%s\n' "${DH_BOT_USER:-dh-bot@$TEAM.local}" "$BOT_PW" > "$BOT_ENV"
+	_sq() { printf "%s" "$1" | sed "s/'/'\\\\''/g"; } # 值统一单引号包裹，防特殊字符破坏 source
+	printf "DH_BOT_USER='%s'\nDH_BOT_PASSWORD='%s'\n" "$(_sq "${DH_BOT_USER:-dh-bot@$TEAM.local}")" "$(_sq "$BOT_PW")" > "$BOT_ENV"
 	chmod 600 "$BOT_ENV"
 fi
 # shellcheck disable=SC1090
@@ -83,12 +87,14 @@ else
 	# 回退管理员 token。优先用 DH_ADMIN_PASSWORD（密码流直铸，无需 sudo）；
 	# 未提供时生成标准管道流版本（root 安装需 sudo 执行 print-initial-password）。
 	if [ -n "${DH_ADMIN_PASSWORD:-}" ]; then
+		# 密码按双引号内安全形态转义（\ " $ `），含特殊字符也不破坏生成的脚本
+		_pw_esc=$(printf '%s' "$DH_ADMIN_PASSWORD" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g' -e 's/`/\\`/g')
 		cat > "$TEAM_RT/admin-token.sh" <<ADMINTOKEN
 #!/bin/bash
 # 回退方案：用部署时提供的 DH_ADMIN_PASSWORD 做密码流直铸（文件 600，勿入库）
 exec curl -s -u 'appmesh-cli:' -X POST "\${DH_AUTH_TOKEN_URL:-http://127.0.0.1:6062}/auth/token" \\
 	-d 'grant_type=password' -d 'username=admin@appmesh.local' \\
-	-d "password=$DH_ADMIN_PASSWORD" \\
+	-d "password=$_pw_esc" \\
 	-d 'scope=openid audience:server:client_id:appmesh-api' \\
 	| python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])'
 ADMINTOKEN
@@ -134,6 +140,8 @@ render() { # render <模板> <输出>
 		-e "s|@APPMESH_URL@|$APPMESH_URL|g" \
 		-e "s|@APPMESH_CA@|$APPMESH_CA|g" \
 		-e "s|@IM_PORT@|$IM_PORT|g" \
+	-e "s|@IM_BIND@|$IM_BIND|g" \
+	-e "s|@IM_TOKEN@|$IM_TOKEN|g" \
 		"$1" > "$2"
 }
 

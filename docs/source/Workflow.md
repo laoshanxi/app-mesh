@@ -328,6 +328,16 @@ Expressions use `${{ }}` syntax for variable substitution:
 | `env.<key>` | `${{ env.VERSION }}` | Workflow-level environment variable. Job-level and step-level `env` are not in the expression context, so they resolve to an empty string. |
 | `workflow.name` | `${{ workflow.name }}` | Workflow name |
 | `workflow.run_id` | `${{ workflow.run_id }}` | Current run ID |
+| `toJSON(<path>)` | `${{ toJSON(inputs.question) }}` | Render the value as a JSON literal (quoted and escaped). Use it whenever a value is embedded in a JSON document such as a `message` payload. |
+
+Substitution is plain text replacement. A value that contains `"` or `\` breaks a surrounding JSON string, and a crafted value can add fields to the document. Wrap the value in `toJSON()` and drop the surrounding quotes:
+
+```yaml
+# Unsafe: a quote in inputs.question breaks or extends the JSON payload.
+payload: '{"action":"session_send","input":"${{ inputs.question }}"}'
+# Safe: toJSON() emits the quoted, escaped literal.
+payload: '{"action":"session_send","input":${{ toJSON(inputs.question) }}}'
+```
 
 ## Error Handling
 
