@@ -110,7 +110,11 @@ claude-agent-sdk 要求 Python ≥ 3.10。系统默认 Python 为 3.9。setup.sh
 | 认证 | OIDC bearer（daemon）。管理员用于部署；dh-bot 用于运行时 |
 | 授权 | 角色 `digital-human` 仅三项权限。实测：run_task 放行；注册 App 返回 403；管理 principal 返回 403 |
 | 密钥 | 模型密钥经 `-z` 加密存储。daemon API 不回显。本机文件（`dh-bot.env`、渲染后的 agent.yaml）权限 600 |
-| 高危操作 | 审批闸门（D5）。伪造审批号被拒绝（实测） |
+| 高危操作 | 审批闸门（D5）。审批人不得为申请人（`approval.decide` 拒绝自审批）；审批单与操作的绑定 payload 只能由执行方（ops-action）写入，oa-approval 不接受外部 payload；校验与消费在文件锁内原子完成（`approval.consume`），同一审批只执行一次。实测：自审批、伪造 payload、服务不匹配、重复执行均被拒 |
+| 审批存储 | `approvals.json` 跨进程（oa-approval 与 ops-action 两个 App）经 flock 排它锁 + 独立临时文件写入，不丢更新；数据与锁文件权限 600 |
+| IM 入口 | 适配器默认只监听 127.0.0.1（`DH_IM_BIND` 覆盖）。对外暴露必须设置 `DH_IM_TOKEN`：除 `/healthz` 外所有端点要求 `Authorization: Bearer` 或 `X-IM-Token`。请求体上限 1MB（`DH_IM_MAX_BODY`）；Content-Length 非法为负返回 400；非 JSON 对象返回 400；飞书 event_id 去重表有界（`DH_IM_MAX_EVENTS`，默认 1 万）；任务队列有界（`DH_IM_MAX_QUEUE`，默认 200），满时返回 429 |
+| 运行时凭据 | IM 适配器 token 只缓存在内存。收到 401 时经 `DH_TOKEN_CMD` 重铸并重试一次（Dex token 有 TTL，禁止永久缓存） |
+| Workflow 注入 | 用户输入注入 JSON 文档必须用 `toJSON()` 表达式（引擎已支持）。示例见 `workflows/daily-digest.yaml`。直接内插会被引号破坏或注入字段 |
 | 审计 | 审批记录、执行日志、daemon 日志、会话 transcript |
 
 已知不足：root daemon 下应用进程以 root 运行。缓解：生产环境配置 `DefaultExecUser`。见第 11 节第 9 项。
@@ -144,6 +148,26 @@ claude-agent-sdk 要求 Python ≥ 3.10。系统默认 Python 为 3.9。setup.sh
 ### 8.4 全新安装复验（2026-10-16 16:13 重装）
 
 全部项目再次通过：技能冒烟、审批闸门（含伪造审批号拒绝的反向用例）、IM 异步问答（10 秒）、workflow 流水线（24.6 秒）。
+
+### 8.5 对抗审计修复（2026-10-23）
+
+审计发现并全部修复（详见第 7 节安全模型与 `tests/` 回归用例）：
+
+| 攻击面 | 修复前实测 | 修复后实测 |
+|---|---|---|
+| 审批自审批 | 申请人自批自执，重启执行 | `decide` 拒绝，状态保持 pending |
+| 伪造审批 payload | 经 oa-approval 伪造绑定后执行 | oa-approval 不收 payload，consume 校验不匹配 |
+| 审批并发写 | 14 次成功创建落盘 11 条 | flock + 独立临时文件，80/80 无丢失 |
+| 同一审批并发消费 | check-then-act 竞态 | 锁内原子消费，8 并发仅 1 次成功 |
+| IM token 过期 | 401 永久失败（实机 7 天） | 401 重铸重试一次 |
+| IM 无鉴权暴露 | 0.0.0.0 任意读写收件箱 | 默认 127.0.0.1；可选 `DH_IM_TOKEN` 鉴权 |
+| 恶意请求体 | `Content-Length:-1` 挂线程；非 dict JSON 断连 | 400/413 立即应答 |
+| 飞书去重内存 | 无界线性增长（2 万事件 +5.3MB） | 有界淘汰（默认 1 万） |
+| workflow JSON 注入 | 一个引号打断 payload | `toJSON()` 表达式（引擎新增） |
+| `skill` CA 默认路径 | 指向退役沙箱，调用即 ValueError | 默认 `/opt/appmesh/ssl/ca.pem` |
+| `DH_ADMIN_PASSWORD` 特殊字符 | 生成脚本语法错误 | 转义后写入 |
+
+回归：`tests/` 19 用例通过；workflow 引擎 `go test ./...` 全绿；llm-agent 15 用例通过。
 
 ## 9. 环境记录
 
@@ -181,6 +205,9 @@ printf '%s' '<密码>' | sudo /opt/appmesh/script/appmesh-auth.sh add-user dh-bo
 8. **macOS bash 3.2 的变量名解析。** `$变量` 后紧跟全角字符时，多字节字符并入变量名，触发 unbound variable。正确写法：`${变量}`。
 9. **GLM 网关回合延迟波动大（30 秒至 10 分钟）。** 客户端 `run_task` 超时设为 ≥ 300 秒。IM 适配器按异步模式设计（webhook 立即应答，答案推送收件箱）。
 10. **automation-token 不适用于数字人运行时。** `appmesh-maintenance` 角色不含 `app-run-task`。因此自建角色 `digital-human`。
+11. **`skill` 脚本的 CA 默认路径。** 曾默认指向退役的 E2E 沙箱 `/private/tmp/appmesh-e2e/ssl/ca.pem`，文件不存在导致 SSL 校验抛 `ValueError`。已改为 `/opt/appmesh/ssl/ca.pem`。
+12. **`DH_ADMIN_PASSWORD` 含特殊字符会破坏生成的 admin-token.sh。** `"` 使脚本语法错误，`$` 运行时二次展开。setup.sh 已按双引号内安全形态转义（`\ " $ \`）后再写入。
+13. **dh-bot.env 的值必须单引号包裹。** 密码或用户名含特殊字符（如 `<>'`）会破坏 `source` 语法。setup.sh 写入时统一单引号并转义内嵌单引号。
 
 ## 11. 未完成工作
 

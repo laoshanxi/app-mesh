@@ -16,4 +16,6 @@ jobs:
       - name: ask-agent
         message:
           app: @TEAM@-agent
-          payload: '{"action":"session_send","session_id":"${{ workflow.run_id }}","input":"${{ inputs.question }}"}'
+          # 用户输入必须经 toJSON() 注入（整体替换为带引号转义的 JSON 字面量），
+          # 直接内插会因引号/反斜杠破坏 JSON 或注入额外字段
+          payload: '{"action":"session_send","session_id":"${{ workflow.run_id }}","input":${{ toJSON(inputs.question) }}}'

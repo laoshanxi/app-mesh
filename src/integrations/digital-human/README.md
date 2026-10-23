@@ -42,6 +42,15 @@ bash setup.sh --team sre --kb-dir /data/sre-kb  # 指定团队知识库目录
 
 脚本幂等。重复执行安全。执行内容见 DESIGN.md 第 6 节。
 
+IM 适配器默认只监听 `127.0.0.1`。对外暴露时同时设置两项再部署：
+
+```bash
+export DH_IM_BIND=0.0.0.0 DH_IM_TOKEN='<随机长串>'
+bash setup.sh --team demo
+```
+
+设置 `DH_IM_TOKEN` 后，除 `/healthz` 外所有端点要求 `Authorization: Bearer <token>` 或 `X-IM-Token: <token>`。安全边界见 DESIGN.md 第 7 节。
+
 ## 4. 部署产物
 
 | App | 作用 |
@@ -137,3 +146,4 @@ Phase 1（2026-10-16，mock 模式）：
 | `env.sh` | 本机连接变量示例 |
 | `apps/*.yaml` | App 定义模板（setup.sh 渲染） |
 | `workflows/daily-digest.yaml` | workflow 示例模板 |
+| `tests/` | 审批闸门与 IM 适配器回归测试。运行：`runtime/venv/bin/python -m pytest tests/` |

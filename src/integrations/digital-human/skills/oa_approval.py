@@ -8,6 +8,9 @@ Phase 1 确认动作 = 调用本技能 approve（模拟 IM 点同意/拒绝）�
   {"action": "approve", "id": "AP-xxxx", "by": "wangwu"}     # 或 reject
   {"action": "status",  "id": "AP-xxxx"}
   {"action": "list", "pending_only": true}
+
+安全: create 不接受外部 payload——审批单与具体操作的绑定只能由执行方
+（ops-action）在登记时写入；审批人不能是申请人本人（见 approval.decide）。
 """
 
 import approval
@@ -20,7 +23,7 @@ def handler(request):
 		title = str(request.get("title", "")).strip()
 		if not title:
 			return {"status": "error", "message": "'title' is required"}
-		record = approval.create(title, str(request.get("requester", "unknown")), str(request.get("risk", "low")), dict(request.get("payload") or {}))
+		record = approval.create(title, str(request.get("requester", "unknown")), str(request.get("risk", "low")))
 		return {"status": "ok", "approval": record}
 	if action in ("approve", "reject"):
 		result = approval.decide(str(request.get("id", "")), "approved" if action == "approve" else "rejected", str(request.get("by", "unknown")))
