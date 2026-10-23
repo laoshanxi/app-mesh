@@ -29,7 +29,7 @@ def handler(request):
 	if action == "get":
 		key = str(request.get("key", ""))
 		for issue in issues:
-			if issue["key"] == key:
+			if issue.get("key") == key:  # mock 数据缺字段时不整个报错
 				return {"status": "ok", "issue": issue}
 		return {"status": "error", "message": f"no such issue: {key}"}
 	if action == "search":
@@ -38,7 +38,7 @@ def handler(request):
 		matched = [
 			i
 			for i in issues
-			if (not assignee or i["assignee"] == assignee) and (not status or i["status"] == status)
+			if (not assignee or i.get("assignee") == assignee) and (not status or i.get("status") == status)
 		]
 		return {"status": "ok", "count": len(matched), "issues": matched}
 	return {"status": "error", "message": f"unknown action: {action}"}

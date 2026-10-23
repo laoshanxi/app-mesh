@@ -103,7 +103,11 @@ def handler(request):
 	query = str(request.get("query", "")).strip()
 	if not query:
 		return {"status": "error", "message": "'query' is required"}
-	top_k = int(request.get("top_k", 3))
+	try:
+		top_k = int(request.get("top_k", 3))
+	except (TypeError, ValueError):
+		return {"status": "error", "message": "'top_k' must be an integer"}
+	top_k = max(0, min(top_k, 50))
 	if os.getenv("KB_EMBEDDING"):
 		# 预留：真实 embedding 接入点（HTTP），当前未配置时使用本地 mock
 		pass
