@@ -164,3 +164,62 @@ def test_token_required_when_configured(server, monkeypatch):
 	conn.request("GET", "/mock/inbox/u1", headers={"X-IM-Token": "s3"})
 	assert conn.getresponse().status == 200
 	conn.close()
+
+
+def test_answer_mentioning_401_is_not_retried(monkeypatch):
+	"""答案正文含 "401" 不是认证失败，不能重发（否则同一轮被大脑处理两次）。"""
+	calls = {"mint": 0, "send": 0}
+
+	def mint():
+		calls["mint"] += 1
+		return "tok"
+
+	def fake_send(client, sid, text, timeout):
+		calls["send"] += 1
+		return {"status": "ok", "data": {"answer": "HTTP 401 Unauthorized 表示未认证"}}
+
+	monkeypatch.setattr(adapter, "_mint_token", mint)
+	monkeypatch.setattr(adapter, "_token", "t")
+	monkeypatch.setattr(adapter, "make_client", lambda: object())
+	monkeypatch.setattr(adapter, "send_turn", fake_send)
+	resp = adapter._send_turn("sid", "401 是什么")
+	assert resp["data"]["answer"].startswith("HTTP 401")
+	assert calls == {"mint": 0, "send": 1}
+
+
+def test_error_envelope_401_is_retried(monkeypatch):
+	calls = {"mint": 0, "send": 0}
+
+	def mint():
+		calls["mint"] += 1
+		return "tok"
+
+	def fake_send(client, sid, text, timeout):
+		calls["send"] += 1
+		if calls["send"] == 1:
+			return {"status": "error", "message": "HTTP 401: Unauthorized"}
+		return {"status": "ok", "data": {"answer": "ok"}}
+
+	monkeypatch.setattr(adapter, "_mint_token", mint)
+	monkeypatch.setattr(adapter, "_token", "t")
+	monkeypatch.setattr(adapter, "make_client", lambda: object())
+	monkeypatch.setattr(adapter, "send_turn", fake_send)
+	assert adapter._send_turn("sid", "hi")["status"] == "ok"
+	assert calls == {"mint": 1, "send": 2}
+
+
+def test_inbox_is_bounded(monkeypatch):
+	monkeypatch.setattr(adapter, "MAX_INBOX", 5)
+	adapter._inbox.clear()
+	for i in range(30):
+		adapter._reply("u1", f"m{i}")
+	assert len(adapter._inbox["u1"]) == 20  # 单户上限 20
+	assert adapter._inbox["u1"][0] == "m10"  # 丢最旧
+	adapter._inbox.clear()
+	for u in ("a", "b", "c"):
+		for i in range(3):
+			adapter._reply(u, f"{u}{i}")
+	total = sum(len(v) for v in adapter._inbox.values())
+	assert total <= 5
+	assert "a" not in adapter._inbox  # 最旧用户被整体淘汰
+	assert "c" in adapter._inbox

@@ -22,6 +22,7 @@ Mock 模式（当前）:
 - token 缓存在内存，收到 401 时经 DH_TOKEN_CMD 重铸后重试一次（Dex token 有 TTL）。
 """
 
+import hmac
 import json
 import os
 import queue
@@ -45,6 +46,7 @@ IM_TOKEN = os.getenv("DH_IM_TOKEN", "")
 MAX_BODY = int(os.getenv("DH_IM_MAX_BODY", str(1024 * 1024)))
 MAX_QUEUE = int(os.getenv("DH_IM_MAX_QUEUE", "200"))
 MAX_EVENTS = int(os.getenv("DH_IM_MAX_EVENTS", "10000"))
+MAX_INBOX = int(os.getenv("DH_IM_MAX_INBOX", "1000"))  # 未读回复总缓存条数，超出丢最旧用户
 # 每个用户一个稳定 session_id（uuid5），跨消息延续同一对话与个人工作目录
 _SESSION_NS = uuid.uuid5(uuid.NAMESPACE_DNS, "digital-human:" + TEAM)
 
@@ -95,7 +97,11 @@ def _client():
 
 
 def _send_turn(session_id, text):
-	"""发一轮对话；认证失败时重铸 token 重试一次。"""
+	"""发一轮对话；认证失败时重铸 token 重试一次。
+
+	只把"错误信封的 message 是认证类"当作 401：答案正文里出现 "401"
+	（如用户问 HTTP 状态码）不能触发重发，否则同一轮会被大脑处理两次。
+	"""
 	for attempt in (0, 1):
 		try:
 			resp = send_turn(_client(), session_id, text, timeout=AGENT_TIMEOUT)
@@ -104,16 +110,30 @@ def _send_turn(session_id, text):
 				_get_token(force=True)
 				continue
 			raise
-		if attempt == 0 and isinstance(resp, dict) and _is_auth_error(json.dumps(resp, ensure_ascii=False)):
+		if (
+			attempt == 0
+			and isinstance(resp, dict)
+			and resp.get("status") == "error"
+			and _is_auth_error(resp.get("message", ""))
+		):
 			_get_token(force=True)
 			continue
 		return resp
 
 
 def _reply(user, text):
-	"""把答案投回 IM。mock: 收件箱；接真实 IM 时这里换成 IM 的回复 API。"""
+	"""把答案投回 IM。mock: 收件箱；接真实 IM 时这里换成 IM 的回复 API。
+
+	用户收件箱单户至多 20 条、全局至多 MAX_INBOX 条，超出丢最旧——
+	没人来读的回复不能无限堆积吃内存。
+	"""
 	with _inbox_lock:
-		_inbox.setdefault(user, []).append(text)
+		msgs = _inbox.setdefault(user, [])
+		msgs.append(text)
+		if len(msgs) > 20:
+			del msgs[: len(msgs) - 20]
+		while len(_inbox) > 1 and sum(len(v) for v in _inbox.values()) > MAX_INBOX:
+			_inbox.pop(next(iter(_inbox)))
 
 
 def _dedup_event(event_id):
@@ -157,7 +177,9 @@ class Handler(BaseHTTPRequestHandler):
 		if not IM_TOKEN:
 			return True
 		auth = self.headers.get("Authorization", "")
-		return auth == f"Bearer {IM_TOKEN}" or self.headers.get("X-IM-Token") == IM_TOKEN
+		if auth.startswith("Bearer ") and hmac.compare_digest(auth[len("Bearer "):], IM_TOKEN):
+			return True
+		return hmac.compare_digest(self.headers.get("X-IM-Token", ""), IM_TOKEN)
 
 	def _enqueue(self, user, text, code=202):
 		try:

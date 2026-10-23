@@ -167,7 +167,20 @@ claude-agent-sdk 要求 Python ≥ 3.10。系统默认 Python 为 3.9。setup.sh
 | `skill` CA 默认路径 | 指向退役沙箱，调用即 ValueError | 默认 `/opt/appmesh/ssl/ca.pem` |
 | `DH_ADMIN_PASSWORD` 特殊字符 | 生成脚本语法错误 | 转义后写入 |
 
-回归：`tests/` 19 用例通过；workflow 引擎 `go test ./...` 全绿；llm-agent 15 用例通过。
+第二轮（同日）补充修复：
+
+| 问题 | 修复前 | 修复后 |
+|---|---|---|
+| im-adapter 健康检查恒失败 | `>/dev/null` 被 daemon 当字面参数，curl exit 3，`/health` 返回 1 | `-o /dev/null`，live `/health` 返回 0 |
+| 401 重试误判 | 答案正文含 "401" 会重发整轮 | 只认错误信封的 message |
+| 未读回复堆积 | `_inbox` 无界 | 单户 20 条、全局 1000 条，丢最旧 |
+| 令牌比较 | `==` | `hmac.compare_digest` |
+| kb-search `top_k` | 非整数抛原始 ValueError；负数切片异常结果 | 友好报错；收敛到 0..50 |
+| jira-query 缺字段 | mock 数据缺 assignee/status 整个请求 KeyError | `.get` 容错 |
+| sys-info sysconf | 容器中可能抛 OSError | 不可用记 0 |
+| chat.py | daemon 错误抛 traceback 中断会话；非对象 payload 直接发出 | 友好报错；提前拦截 |
+
+回归：`tests/` 27 用例通过；workflow 引擎 `go test ./...` 全绿；llm-agent 15 用例通过。
 
 ## 9. 环境记录
 
@@ -208,6 +221,8 @@ printf '%s' '<密码>' | sudo /opt/appmesh/script/appmesh-auth.sh add-user dh-bo
 11. **`skill` 脚本的 CA 默认路径。** 曾默认指向退役的 E2E 沙箱 `/private/tmp/appmesh-e2e/ssl/ca.pem`，文件不存在导致 SSL 校验抛 `ValueError`。已改为 `/opt/appmesh/ssl/ca.pem`。
 12. **`DH_ADMIN_PASSWORD` 含特殊字符会破坏生成的 admin-token.sh。** `"` 使脚本语法错误，`$` 运行时二次展开。setup.sh 已按双引号内安全形态转义（`\ " $ \`）后再写入。
 13. **dh-bot.env 的值必须单引号包裹。** 密码或用户名含特殊字符（如 `<>'`）会破坏 `source` 语法。setup.sh 写入时统一单引号并转义内嵌单引号。
+14. **health_check_cmd 不经 shell 执行。** daemon 直接 exec（AppProcess 无 shell），重定向语法（`>/dev/null`）被当作字面参数传给 curl，恒 exit 3，应用被永久判为不健康。静默输出用参数形式（`curl -sf ... -o /dev/null`）。同因，health_check_cmd 不能使用 `&&`、管道、变量展开。
+15. **IM 回复不能因正文含"401"触发重发。** token 重试只认"错误信封 + message 为认证类"；答案正文（data.answer）出现 401 字样时重发会导致同一轮被大脑处理两次。
 
 ## 11. 未完成工作
 

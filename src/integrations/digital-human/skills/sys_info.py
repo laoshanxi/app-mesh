@@ -8,9 +8,16 @@ import socket
 from common import serve
 
 
+def _sysconf(name):
+	try:
+		return os.sysconf(name)
+	except (ValueError, OSError):  # 部分容器/平台不暴露该参数
+		return 0
+
+
 def handler(_request):
 	usage = shutil.disk_usage("/")
-	mem_bytes = getattr(os, "sysconf", lambda *_: 0)("SC_PAGE_SIZE") * getattr(os, "sysconf", lambda *_: 0)("SC_PHYS_PAGES")
+	mem_bytes = _sysconf("SC_PAGE_SIZE") * _sysconf("SC_PHYS_PAGES")
 	cpu = os.cpu_count() or 0
 	load1 = os.getloadavg()[0] if hasattr(os, "getloadavg") else 0.0
 	return {

@@ -43,6 +43,8 @@ def main():
 			payload = json.loads(args.payload)
 		except ValueError as exc:
 			sys.exit(f"payload 不是合法 JSON: {exc}")
+		if not isinstance(payload, dict):
+			sys.exit("payload 必须是 JSON 对象")
 		print(json.dumps(call_skill(client, args.skill, payload), ensure_ascii=False, indent=2))
 		return
 
@@ -69,7 +71,10 @@ def main():
 				continue
 			print(json.dumps(result, ensure_ascii=False, indent=2))
 			continue
-		print_turn(send_turn(client, session, text))
+		try:
+			print_turn(send_turn(client, session, text))
+		except Exception as exc:  # 网关/daemon 错误不打断会话
+			print(f"[错误] {exc}")
 
 
 if __name__ == "__main__":
