@@ -298,3 +298,28 @@ func TestHasStatusFunction(t *testing.T) {
 		t.Error("no status function present")
 	}
 }
+
+func TestSubstitute_ToJSON(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs["question"] = `He said "hi" \ and ${{ inputs.other }}`
+	if got := Substitute(`{"input":${{ toJSON(inputs.question) }}}`, ctx); got != `{"input":"He said \"hi\" \\ and ${{ inputs.other }}"}` {
+		t.Errorf("got %q", got)
+	}
+	// CJK and control characters stay valid JSON
+	ctx.Inputs["q2"] = "报销\n流程"
+	if got := Substitute(`{"input":${{ toJSON(inputs.q2) }}}`, ctx); got != "{\"input\":\"报销\\n流程\"}" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSubstitute_ToJSONUnresolved(t *testing.T) {
+	ctx := NewContext()
+	// Missing inputs resolve to "" by existing convention; toJSON must still emit valid JSON.
+	if got := Substitute(`{"input":${{ toJSON(inputs.missing) }}}`, ctx); got != `{"input":""}` {
+		t.Errorf("got %q", got)
+	}
+	// An unresolvable root keeps the literal text, matching plain substitution.
+	if got := Substitute(`{"input":${{ toJSON(nosuchroot.x) }}}`, ctx); got != `{"input":${{ toJSON(nosuchroot.x) }}}` {
+		t.Errorf("got %q", got)
+	}
+}

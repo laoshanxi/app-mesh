@@ -1,6 +1,7 @@
 package expression
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 )
 
 var exprPattern = regexp.MustCompile(`\$\{\{\s*(.+?)\s*\}\}`)
+var toJSONPattern = regexp.MustCompile(`(?i)^toJSON\((.+)\)$`)
 
 // Context holds runtime state for expression evaluation. Thread-safe.
 type Context struct {
@@ -201,13 +203,31 @@ func SubstituteForJob(template string, ctx *Context, jobName string) string {
 		if len(inner) < 2 {
 			return match
 		}
-		expr := strings.TrimSpace(inner[1])
-		val, ok := ctx.resolveForJob(expr, jobName)
-		if !ok {
-			return match
-		}
-		return fmt.Sprintf("%v", val)
+		return substituteExpr(strings.TrimSpace(inner[1]), ctx, jobName, match)
 	})
+}
+
+// substituteExpr renders one resolved expression; orig is the literal ${{ }} text,
+// returned unchanged when the path cannot be resolved. toJSON(path) renders the
+// value as a JSON literal (quoted and escaped), so a template can embed untrusted
+// input inside a JSON document without breaking it or injecting fields.
+func substituteExpr(expr string, ctx *Context, jobName, orig string) string {
+	if m := toJSONPattern.FindStringSubmatch(expr); m != nil {
+		val, ok := ctx.resolveForJob(strings.TrimSpace(m[1]), jobName)
+		if !ok {
+			return orig
+		}
+		enc, err := json.Marshal(val)
+		if err != nil {
+			return orig
+		}
+		return string(enc)
+	}
+	val, ok := ctx.resolveForJob(expr, jobName)
+	if !ok {
+		return orig
+	}
+	return fmt.Sprintf("%v", val)
 }
 
 func EvalConditionForJob(expr string, ctx *Context, jobName string) bool {
@@ -276,11 +296,7 @@ func substituteInline(expr string, ctx *Context, jobName string) string {
 		if len(inner) < 2 {
 			return match
 		}
-		val, ok := ctx.resolveForJob(strings.TrimSpace(inner[1]), jobName)
-		if !ok {
-			return match
-		}
-		return fmt.Sprintf("%v", val)
+		return substituteExpr(strings.TrimSpace(inner[1]), ctx, jobName, match)
 	})
 }
 

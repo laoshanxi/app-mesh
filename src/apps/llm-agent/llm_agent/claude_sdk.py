@@ -37,7 +37,9 @@ def _options(cwd: str, continue_conversation: bool, max_iterations: int):
     """ClaudeAgentOptions for one turn. Imported lazily so the module loads (and tests
     inject a fake engine) without the SDK / Node CLI present."""
     from claude_agent_sdk import ClaudeAgentOptions
-    kw = {"permission_mode": os.environ.get("LLMAGENT_PERMISSION_MODE") or "bypassPermissions"}
+    mode = os.environ.get("LLMAGENT_PERMISSION_MODE") or "bypassPermissions"
+    _allow_root_skip_permissions(mode)
+    kw = {"permission_mode": mode}
     if cwd:
         kw["cwd"] = cwd
     if continue_conversation:
@@ -51,6 +53,24 @@ def _options(cwd: str, continue_conversation: bool, max_iterations: int):
     if max_iterations > 0:
         kw["max_turns"] = max_iterations
     return ClaudeAgentOptions(**kw)
+
+
+def _allow_root_skip_permissions(mode: str) -> None:
+    """Let the CLI run ``--dangerously-skip-permissions`` under a root daemon.
+
+    The Claude Code CLI refuses ``--dangerously-skip-permissions`` when it sees
+    root/sudo privileges unless ``IS_SANDBOX=1`` is set — its documented escape
+    hatch for containerized/supervised runs. A root App Mesh daemon hosts this App
+    as root, which is exactly that case, and an unattended worker must never block
+    on a permission prompt. Set the flag (never clobbering an explicit value) and
+    say so in the log; the real hardening is still running Apps as a non-root user
+    (daemon ``DefaultExecUser`` / per-App OS user).
+    """
+    if mode != "bypassPermissions" or "IS_SANDBOX" in os.environ:
+        return
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        os.environ["IS_SANDBOX"] = "1"
+        log.warning("running as root with bypassPermissions: set IS_SANDBOX=1 so the CLI accepts --dangerously-skip-permissions (prefer a non-root exec user)")
 
 
 async def _run(prompt: str, options, stream: StreamFn) -> Result:

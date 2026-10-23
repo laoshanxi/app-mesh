@@ -1,0 +1,21 @@
+# App 定义模板 —— setup.sh 渲染 @PLACEHOLDER@ 后注册
+name: @TEAM@-im-adapter
+description: "@TEAM@ team 数字人 IM 适配器（mock 收件箱 + 飞书事件格式）"
+command: @VENV_PY@ @PKG@/im/adapter.py
+working_dir: @PKG@
+behavior:
+  exit: restart
+env:
+  DH_TEAM: "@TEAM@"
+  DH_IM_PORT: "@IM_PORT@"
+  DH_IM_BIND: "@IM_BIND@"
+  DH_IM_TOKEN: "@IM_TOKEN@"
+  DH_AGENT_TIMEOUT: "580"
+  APPMESH_URL: "@APPMESH_URL@"
+  APPMESH_CA: "@APPMESH_CA@"
+  DH_TOKEN_CMD: "@TOKEN_CMD@"
+# daemon 不经 shell 执行本命令：重定向语法会被当字面参数传给 curl（恒 exit 3）。静默用 curl 的 -o 参数
+health_check_cmd: "curl -sf http://127.0.0.1:@IM_PORT@/healthz -o /dev/null"
+metadata:
+  type: digital-human-im-adapter
+enabled: true

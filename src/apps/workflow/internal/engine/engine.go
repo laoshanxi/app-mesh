@@ -128,18 +128,26 @@ func (a *ActiveSteps) KillAll() {
 
 // Options configures workflow execution.
 type Options struct {
-	ClusterNodes      []string                              // known cluster node addresses
-	ServerURI         string                                // TCP server address for forwarding clients
-	DefaultTargetHost string                                // inherited target from parent job (sub-workflows)
-	CompletedJobs     map[string]string                     // jobs to skip on recovery
-	RecoveredSteps    map[string]map[string]map[string]any  // job → step → {stdout, exit_code, status, response}
-	OnJobDone         JobCallback                           // checkpoint update
-	OnStepDone        StepCallback                          // stdout archival (called after step, with full stdout)
-	StepLogPathFn     func(jobName, stepName string) string // returns file path for streaming step log
-	Log               logger.Log                            // per-run logger (nil = global stdout)
-	ActiveSteps       *ActiveSteps                          // cancel tracking (nil = no tracking)
-	CancelCtx         context.Context                       // workflow cancel context (passed to executors)
-	WorkflowBaseDir   string                                // base directory for workflow YAML files
+	ClusterNodes      []string          // known cluster node addresses
+	ServerURI         string            // TCP server address for forwarding clients
+	DefaultTargetHost string            // inherited target from parent job (sub-workflows)
+	CompletedJobs     map[string]string // jobs to skip on recovery
+	// steps already completed inside not-yet-finished jobs (job → step set). On
+	// recovery those steps are not re-executed — an LLM message step that already
+	// ran must not be charged (or side-effected) twice. Steps that never finished
+	// stay at-least-once.
+	CompletedSteps map[string]map[string]bool
+	RecoveredSteps map[string]map[string]map[string]any // job → step → {stdout, exit_code, status, response}
+	OnJobDone      JobCallback                          // checkpoint update
+	OnStepDone     StepCallback                         // stdout archival (called after step, with full stdout)
+	// OnStepPersist records one step's terminal result (success/skipped) as it
+	// happens, for step-granular crash recovery (see CompletedSteps).
+	OnStepPersist   func(jobName, stepName string, data map[string]any)
+	StepLogPathFn   func(jobName, stepName string) string // returns file path for streaming step log
+	Log             logger.Log                            // per-run logger (nil = global stdout)
+	ActiveSteps     *ActiveSteps                          // cancel tracking (nil = no tracking)
+	CancelCtx       context.Context                       // workflow cancel context (passed to executors)
+	WorkflowBaseDir string                                // base directory for workflow YAML files
 	// human caller Dex bearer only; internal capabilities never enter message payloads
 	CallerToken string
 	// managed Workflow process that owns temporary command-step Apps
@@ -381,6 +389,27 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		return skipJob(job, ectx, statusMu, opts, log, depReason)
 	}
 
+	// Steps that already completed in a previous (crashed) attempt are restored from
+	// the checkpoint and skipped, so an expensive step (e.g. an LLM message step) is
+	// not charged twice. Their results feed downstream expressions as usual.
+	completedSteps := opts.CompletedSteps[job.Name]
+	if len(completedSteps) > 0 && opts.RecoveredSteps != nil {
+		if jobSteps, ok := opts.RecoveredSteps[job.Name]; ok {
+			for stepName, data := range jobSteps {
+				if !completedSteps[stepName] {
+					continue
+				}
+				exitCode := toIntFromAny(data["exit_code"])
+				stdout, _ := data["stdout"].(string)
+				status, _ := data["status"].(string)
+				response, _ := data["response"].(string)
+				outputs, _ := data["outputs"].(map[string]string)
+				ectx.SetStepResult(job.Name, stepName, stdout, exitCode, status, response, outputs)
+				log.StepSkipped(stepName, "recovered from checkpoint: "+status)
+			}
+		}
+	}
+
 	statusMu.Lock()
 	job.Status = models.StatusRunning
 	statusMu.Unlock()
@@ -397,6 +426,10 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 			jobFailed = true
 			markStepsSkipped(job.Steps[i:], ectx, job.Name, "cancelled", log)
 			break
+		}
+		if completedSteps[job.Steps[i].Name] {
+			job.Steps[i].Result.Status = models.StatusSkipped
+			continue // already restored above; do not re-run (crash recovery)
 		}
 		if !runStep(&job.Steps[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log) {
 			jobFailed = true
@@ -422,6 +455,13 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		log.JobFinallyStarted(job.Name)
 		for i := range job.Finally {
 			ectx.MarkFinallyStep(job.Name, job.Finally[i].Name)
+			// A finally step that already completed before the crash is skipped like
+			// a main step — its result was restored above; re-running it would repeat
+			// its side effects (an LLM message step in finally charges twice).
+			if completedSteps[job.Finally[i].Name] {
+				job.Finally[i].Result.Status = models.StatusSkipped
+				continue
+			}
 			runStep(&job.Finally[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log)
 		}
 		log.JobFinallyCompleted(job.Name)
@@ -468,6 +508,7 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 			exitCode := 0
 			step.Result.ExitCode = &exitCode
 			ectx.SetStepResult(jobName, step.Name, "", exitCode, models.StatusSkipped, "", nil)
+			persistStep(opts, jobName, step.Name, "", exitCode, models.StatusSkipped, "", nil)
 			log.StepSkipped(step.Name, "condition: "+step.Condition)
 			return true
 		}
@@ -548,6 +589,7 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 
 		if result.Status == models.StatusSuccess {
 			log.StepCompleted(step.Name, exitCode, result.Duration)
+			persistStep(opts, jobName, step.Name, result.Stdout, exitCode, result.Status, result.Response, result.Outputs)
 			if opts.OnStepDone != nil {
 				opts.OnStepDone(jobName, step.Name, result.Stdout)
 			}
@@ -566,6 +608,22 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 		opts.OnStepDone(jobName, step.Name, step.Result.Stdout)
 	}
 	return false
+}
+
+// persistStep forwards one terminal step result to the OnStepPersist callback in the
+// engine's generic step-data shape (same fields OnJobDone delivers).
+func persistStep(opts *Options, jobName, stepName, stdout string, exitCode int, status, response string,
+	outputs map[string]string) {
+	if opts.OnStepPersist == nil {
+		return
+	}
+	opts.OnStepPersist(jobName, stepName, map[string]any{
+		"stdout":    stdout,
+		"exit_code": exitCode,
+		"status":    status,
+		"response":  response,
+		"outputs":   outputs,
+	})
 }
 
 func mergeEnv(base, overlay map[string]string) map[string]string {

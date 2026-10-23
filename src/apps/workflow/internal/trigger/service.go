@@ -64,6 +64,7 @@ type Service struct {
 	checkpoint   *Checkpoint
 	wdir         *workdir.Manager
 	processUUID  string
+	sched        *ScheduleDispatcher
 
 	mu          sync.Mutex
 	cancelFns   map[string]context.CancelFunc
@@ -92,6 +93,7 @@ func NewService(client *appmesh.AppMeshClient, serverURI string, clusterNodes []
 		wdir:         wdir,
 	}
 	s.events = NewEventListener(client, s.registry, s.triggerRun)
+	s.sched = NewScheduleDispatcher()
 	return s
 }
 
@@ -108,8 +110,7 @@ func (s *Service) Run(ctx context.Context) {
 				logger.Error("TRIGGER cannot resume workflow '" + rec.Workflow + "': not found")
 				continue
 			}
-			completedJobs := s.checkpoint.CompletedJobs(rec.Workflow, rec.RunID)
-			s.resumeRun(wf, rec.RunID, rec.Source, rec.Actor, rec.Inputs, completedJobs)
+			s.resumeRun(wf, rec.RunID, rec.Source, rec.Actor, rec.Inputs)
 		}
 	}
 
@@ -122,6 +123,7 @@ func (s *Service) Run(ctx context.Context) {
 
 	s.scan()
 	s.events.SyncSubscriptions()
+	s.dispatchSchedules()
 
 	for {
 		select {
@@ -132,7 +134,24 @@ func (s *Service) Run(ctx context.Context) {
 		case <-scanTicker.C:
 			s.scan()
 			s.events.SyncSubscriptions()
+			s.dispatchSchedules()
 		}
+	}
+}
+
+// dispatchSchedules reconciles schedule state with the registry and fires due
+// schedules. Runs execute under the Engine-issued run capability (automatic trigger),
+// so no caller bearer exists or is needed. Tick cadence equals scanInterval — a
+// schedule may fire up to one scan late, never early, and missed periods are skipped.
+func (s *Service) dispatchSchedules() {
+	s.sched.reset(s.registry.All(), time.Now())
+	tracked := s.sched.tracked()
+	n := s.sched.tick(time.Now(), func(wf *models.Workflow, source string) {
+		logger.Info(fmt.Sprintf("TRIGGER schedule fired: workflow '%s' (%s)", wf.Name, source))
+		s.triggerRun(wf, source, nil)
+	})
+	if tracked > 0 || n > 0 {
+		logger.Info(fmt.Sprintf("TRIGGER schedule: %d tracked, dispatched %d run(s)", tracked, n))
 	}
 }
 
@@ -192,6 +211,23 @@ func (s *Service) resolveExecCredential(ctx context.Context, workflowID, runID s
 	return capability.Capability, capability, nil
 }
 
+// stepDataToState converts the engine's generic step-data shape into the typed
+// StepState for checkpoints (shared by the per-job and per-step write paths).
+func stepDataToState(data map[string]any) StepState {
+	exitCode, _ := data["exit_code"].(int)
+	var outputs map[string]string
+	if o, ok := data["outputs"].(map[string]string); ok {
+		outputs = o
+	}
+	return StepState{
+		Stdout:   fmt.Sprintf("%v", data["stdout"]),
+		ExitCode: exitCode,
+		Status:   fmt.Sprintf("%v", data["status"]),
+		Response: fmt.Sprintf("%v", data["response"]),
+		Outputs:  outputs,
+	}
+}
+
 // stepStateToAny serializes a checkpointed StepState into the engine's
 // generic step-data shape used by RecoveredSteps and the OnJobDone callback.
 func stepStateToAny(ss StepState) map[string]any {
@@ -204,14 +240,14 @@ func stepStateToAny(ss StepState) map[string]any {
 	}
 }
 
-// loadRecoveredSteps reads per-job step state from the checkpoint for the
-// given completed jobs and returns both the typed map (for caller's bookkeeping)
-// and the engine's generic shape.
+// loadRecoveredSteps reads per-job step state from the checkpoint for the given
+// jobs and returns both the typed map (for caller's bookkeeping) and the engine's
+// generic shape.
 func (s *Service) loadRecoveredSteps(wfName, runID string,
-	completedJobs map[string]string) (map[string]map[string]StepState, map[string]map[string]map[string]any) {
+	jobs []string) (map[string]map[string]StepState, map[string]map[string]map[string]any) {
 	saved := make(map[string]map[string]StepState)
 	recovered := make(map[string]map[string]map[string]any)
-	for jobName := range completedJobs {
+	for _, jobName := range jobs {
 		cpSteps := s.checkpoint.GetJobSteps(wfName, runID, jobName)
 		if len(cpSteps) == 0 {
 			continue
@@ -224,6 +260,29 @@ func (s *Service) loadRecoveredSteps(wfName, runID string,
 		recovered[jobName] = jobSteps
 	}
 	return saved, recovered
+}
+
+// recoverState assembles what a resumed run needs from the checkpoint: terminal
+// jobs, per-step completions inside unfinished jobs, and the saved step data for
+// both (the engine restores those results and skips re-executing them).
+func (s *Service) recoverState(wfName, runID string) (completedJobs map[string]string,
+	completedSteps map[string]map[string]bool, savedSteps map[string]map[string]StepState,
+	recovered map[string]map[string]map[string]any) {
+	completedJobs = s.checkpoint.CompletedJobs(wfName, runID)
+	completedSteps = s.checkpoint.CompletedSteps(wfName, runID)
+	names := make(map[string]bool, len(completedJobs)+len(completedSteps))
+	var jobs []string
+	for name := range completedJobs {
+		names[name] = true
+		jobs = append(jobs, name)
+	}
+	for name := range completedSteps {
+		if !names[name] {
+			jobs = append(jobs, name)
+		}
+	}
+	savedSteps, recovered = s.loadRecoveredSteps(wfName, runID, jobs)
+	return completedJobs, completedSteps, savedSteps, recovered
 }
 
 // reconcileIndex syncs runs.json with checkpoint state for crash recovery.
@@ -372,16 +431,17 @@ func (s *Service) startRun(wf *models.Workflow, runID, group, source string, inp
 	})
 	s.wdir.CleanOldRuns(wf.Name)
 
-	s.launchRun(wf, runID, group, source, inputs, nil, nil, token)
+	s.launchRun(wf, runID, group, source, inputs, nil, nil, nil, token)
 }
 
-func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, inputs map[string]string,
-	completedJobs map[string]string) {
-	logger.Info(fmt.Sprintf("TRIGGER resuming workflow '%s' run=%s (skipping %d completed jobs)", wf.Name, runID,
-		len(completedJobs)))
+func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, inputs map[string]string) {
+	logger.Info(fmt.Sprintf("TRIGGER resuming workflow '%s' run=%s", wf.Name, runID))
 
-	// Load step results from checkpoint for cross-job expression recovery.
-	savedSteps, recoveredSteps := s.loadRecoveredSteps(wf.Name, runID, completedJobs)
+	// Terminal jobs plus per-step completions inside unfinished jobs (an LLM message
+	// step that already ran must not be charged twice on recovery).
+	completedJobs, completedSteps, savedSteps, recoveredSteps := s.recoverState(wf.Name, runID)
+	logger.Info(fmt.Sprintf("TRIGGER resume: %d completed job(s), %d job(s) with completed steps",
+		len(completedJobs), len(completedSteps)))
 
 	// Build a single atomic checkpoint with both pending and completed jobs,
 	// so a crash between write and update cannot lose completed state.
@@ -419,11 +479,12 @@ func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, in
 	}
 	// Caller tokens are never persisted. Recovered runs request a fresh capability
 	// bound to this same workflow/run and its current Engine-owned owner metadata.
-	s.launchRun(wf, runID, group, source, inputs, completedJobs, recoveredSteps, "")
+	s.launchRun(wf, runID, group, source, inputs, completedJobs, completedSteps, recoveredSteps, "")
 }
 
 func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, inputs map[string]string,
-	completedJobs map[string]string, recoveredSteps map[string]map[string]map[string]any, token string) {
+	completedJobs map[string]string, completedSteps map[string]map[string]bool,
+	recoveredSteps map[string]map[string]map[string]any, token string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	active := engine.NewActiveSteps(s.client, s.serverURI)
 
@@ -492,12 +553,10 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 				// jobs), don't overwrite it — preserve progress through the dequeue.
 				existing := s.checkpoint.GetRunRecord(next.wfName, next.runID)
 				var nextCompleted map[string]string
+				var nextSteps map[string]map[string]bool
 				var nextRecovered map[string]map[string]map[string]any
 				if existing != nil && len(existing.Jobs) > 0 {
-					nextCompleted = s.checkpoint.CompletedJobs(next.wfName, next.runID)
-					if len(nextCompleted) > 0 {
-						_, nextRecovered = s.loadRecoveredSteps(next.wfName, next.runID, nextCompleted)
-					}
+					nextCompleted, nextSteps, _, nextRecovered = s.recoverState(next.wfName, next.runID)
 				} else {
 					jobNames := make([]string, 0, len(nextWf.Jobs))
 					for name := range nextWf.Jobs {
@@ -506,7 +565,8 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 					s.checkpoint.SaveRunning(nextWf.Name, next.runID, next.source, next.actor, next.inputs, jobNames)
 				}
 				s.wdir.UpdateRunInIndex(nextWf.Name, next.runID, "running", 0)
-				s.launchRun(nextWf, next.runID, group, next.source, next.inputs, nextCompleted, nextRecovered, next.token)
+				s.launchRun(nextWf, next.runID, group, next.source, next.inputs, nextCompleted, nextSteps,
+					nextRecovered, next.token)
 				break
 			}
 		}()
@@ -581,6 +641,7 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			// explicit message payload. Internal capabilities stay on the local Engine.
 			CallerToken:         token,
 			CompletedJobs:       completedJobs,
+			CompletedSteps:      completedSteps,
 			RecoveredSteps:      recoveredSteps,
 			Log:                 log,
 			ActiveSteps:         active,
@@ -593,23 +654,15 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			OnJobDone: func(jobName, status, targetHost string, steps map[string]map[string]any) {
 				cpSteps := make(map[string]StepState, len(steps))
 				for name, data := range steps {
-					exitCode, _ := data["exit_code"].(int)
-					var outputs map[string]string
-					if o, ok := data["outputs"].(map[string]string); ok {
-						outputs = o
-					}
-					cpSteps[name] = StepState{
-						Stdout:   fmt.Sprintf("%v", data["stdout"]),
-						ExitCode: exitCode,
-						Status:   fmt.Sprintf("%v", data["status"]),
-						Response: fmt.Sprintf("%v", data["response"]),
-						Outputs:  outputs,
-					}
+					cpSteps[name] = stepDataToState(data)
 				}
 				s.checkpoint.UpdateJob(wf.Name, runID, jobName, status, targetHost, cpSteps)
 			},
 			OnStepDone: func(jobName, stepName, stdout string) {
 				s.wdir.WriteStepLog(wf.Name, runID, jobName, stepName, stdout)
+			},
+			OnStepPersist: func(jobName, stepName string, data map[string]any) {
+				s.checkpoint.UpdateStep(wf.Name, runID, jobName, stepName, stepDataToState(data))
 			},
 			StepLogPathFn: func(jobName, stepName string) string {
 				return s.wdir.StepLogPath(wf.Name, runID, jobName, stepName)

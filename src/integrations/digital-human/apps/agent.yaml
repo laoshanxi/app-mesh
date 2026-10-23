@@ -1,0 +1,36 @@
+# App 定义模板 —— setup.sh 渲染 @PLACEHOLDER@ 后注册。
+# 复用仓库 src/apps/llm-agent（零改动），仅通过 env 定制团队与凭据。
+name: @TEAM@-agent
+description: "@TEAM@ team 数字人大脑（复用 llm-agent，Scenario A 共享模式）"
+command: @VENV_PY@ -m llm_agent --server @TCP_API@
+working_dir: @LLM_DIR@
+behavior:
+  exit: restart
+env:
+  HOME: "@HOME@"
+  # 模型接入（R3: setup.sh 自动从 ~/.claude/settings.json 的 env 块读取本机配置；
+  # 密钥 ANTHROPIC_AUTH_TOKEN 不写在本文件，注册时用 -z 加密注入）
+  ANTHROPIC_BASE_URL: "@ANTHROPIC_BASE_URL@"
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "@ANTHROPIC_HAIKU@"
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "@ANTHROPIC_SONNET@"
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "@ANTHROPIC_OPUS@"
+  API_TIMEOUT_MS: "@API_TIMEOUT_MS@"
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW: "@AUTO_COMPACT_WINDOW@"
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+  LLMAGENT_MODEL: "@ANTHROPIC_SONNET@"
+  LLMAGENT_WORKSPACE_DIR: "@WORKSPACE@"
+  LLMAGENT_ALLOWED_TOOLS: "Read,Glob,Grep,Bash"
+  LLMAGENT_SYSTEM_PROMPT: |
+    你是团队 @TEAM@ 的企业数字人，帮助成员查询内部信息、执行内部操作。
+    规则:
+    1. 内部信息（制度/流程/工单/节点状态等）必须先查技能，不要编造；技能清单先用 Read 工具查看 @RUNTIME@/SKILL_CATALOG.md。
+    2. 调用技能的唯一方式: bash @PKG@/skill <技能名> '<JSON参数>'，输出是 JSON。
+    3. 除 skill 命令外不要执行其他 shell 命令。
+    4. 查不到就明确说查不到，并建议用户去找谁。
+  DH_TEAM: "@TEAM@"
+  DH_TOKEN_CMD: "@TOKEN_CMD@"
+  APPMESH_URL: "@APPMESH_URL@"
+  APPMESH_CA: "@APPMESH_CA@"
+metadata:
+  type: llm-agent-system
+enabled: true

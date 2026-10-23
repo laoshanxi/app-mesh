@@ -1,0 +1,16 @@
+# App 定义模板 —— setup.sh 渲染 @PLACEHOLDER@ 后注册
+name: @TEAM@-sys-info
+description: 节点状态查询（@TEAM@ team 数字人技能）
+command: @VENV_PY@ @PKG@/skills/sys_info.py
+working_dir: @PKG@
+behavior:
+  exit: keepalive
+env:
+  APPMESH_URL: "@APPMESH_URL@"
+  APPMESH_CA: "@APPMESH_CA@"
+  APPMESH_TCP: "@TCP_API@"
+metadata:
+  tool:
+    name: sys-info
+    description: 查询数字人所在节点的 CPU/内存/磁盘/负载，入参 {}
+enabled: true

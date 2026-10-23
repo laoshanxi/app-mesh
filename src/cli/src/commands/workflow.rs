@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use serde_json::json;
 
 use crate::app::{
@@ -34,6 +34,22 @@ fn task_err(action: &str) -> String {
     format!("Failed to {}. Is workflow engine running?", action)
 }
 
+/// A run_task failure on the workflow engine App with a usable cause: don't blame the
+/// engine when the caller's token was the problem (a rejected token shows up as
+/// HTTP 401/403 during connect — the engine is fine and running).
+fn task_hint<E: std::error::Error + Send + Sync + 'static>(action: &str, err: E) -> anyhow::Error {
+    let err = anyhow::Error::from(err);
+    let text = err.to_string();
+    let hint = if text.contains("401") || text.to_lowercase().contains("unauthorized") {
+        "the access token was rejected (expired or invalid) — re-run 'appm logon' or refresh APPMESH_BEARER_TOKEN"
+    } else if text.contains("403") || text.to_lowercase().contains("forbidden") {
+        "the access token lacks the required permission for this workflow action"
+    } else {
+        return err.context(task_err(action));
+    };
+    err.context(format!("Failed to {}: {}", action, hint))
+}
+
 fn parse_resp(resp: &str) -> Result<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_str(resp)?;
     if v.get("status").and_then(|s| s.as_str()) == Some("error") {
@@ -65,7 +81,7 @@ async fn add(cli: &Cli, args: &WorkflowAddArgs) -> Result<i32> {
 
     let client = build_client_with_auth(cli).await?;
     let payload = with_token(&client, json!({"action" : "workflow_add", "workflow" : name, "content" : content}));
-    let resp = client.run_task(WORKFLOW_TRIGGER_APP, payload, 30).await.context(task_err("add"))?;
+    let resp = client.run_task(WORKFLOW_TRIGGER_APP, payload, 30).await.map_err(|e| task_hint("add", e))?;
     let v = parse_resp(&resp)?;
     eprintln!("{}", v["message"].as_str().unwrap_or("ok"));
     Ok(0)
@@ -76,7 +92,7 @@ async fn get(cli: &Cli, args: &WorkflowGetArgs) -> Result<i32> {
     let resp = client
         .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action" : "workflow_get", "workflow" : args.name})), 10)
         .await
-        .context(task_err("get"))?;
+        .map_err(|e| task_hint("get", e))?;
     let v = parse_resp(&resp)?;
     if let Some(d) = v["data"].as_str() {
         println!("{}", d);
@@ -89,7 +105,7 @@ async fn list(cli: &Cli) -> Result<i32> {
     let resp = client
         .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action" : "workflow_list"})), 10)
         .await
-        .context(task_err("list"))?;
+        .map_err(|e| task_hint("list", e))?;
     let v = parse_resp(&resp)?;
     let wfs = v["data"].as_array().cloned().unwrap_or_default();
     if wfs.is_empty() {
@@ -124,7 +140,7 @@ async fn rm(cli: &Cli, args: &WorkflowRmArgs) -> Result<i32> {
     let resp = client
         .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action" : "workflow_rm", "workflow" : args.name})), 10)
         .await
-        .context(task_err("rm"))?;
+        .map_err(|e| task_hint("rm", e))?;
     let v = parse_resp(&resp)?;
     eprintln!("{}", v["message"].as_str().unwrap_or("ok"));
     Ok(0)
@@ -154,7 +170,7 @@ async fn run(cli: &Cli, args: &WorkflowRunArgs) -> Result<i32> {
             30,
         )
         .await
-        .context(task_err("run"))?;
+        .map_err(|e| task_hint("run", e))?;
     let v = parse_resp(&resp)?;
     let run_id = v["data"]["run_id"].as_str().unwrap_or("").to_string();
     let status = v["message"].as_str().unwrap_or("ok");
@@ -245,7 +261,7 @@ async fn runs(cli: &Cli, args: &WorkflowRunsArgs) -> Result<i32> {
     let resp = client
         .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, json!({"action" : "runs", "workflow" : args.name})), 10)
         .await
-        .context(task_err("runs"))?;
+        .map_err(|e| task_hint("runs", e))?;
     let v = parse_resp(&resp)?;
     let entries = v["data"].as_array().cloned().unwrap_or_default();
     if entries.is_empty() {
@@ -283,7 +299,7 @@ async fn logs(cli: &Cli, args: &WorkflowLogsArgs) -> Result<i32> {
             10,
         )
         .await
-        .context(task_err("logs"))?;
+        .map_err(|e| task_hint("logs", e))?;
     let v = parse_resp(&resp)?;
     if let Some(d) = v["data"].as_str() {
         print!("{}", d);
@@ -309,7 +325,7 @@ async fn output(cli: &Cli, args: &WorkflowOutputArgs) -> Result<i32> {
             10,
         )
         .await
-        .context(task_err("output"))?;
+        .map_err(|e| task_hint("output", e))?;
     let v = parse_resp(&resp)?;
     if let Some(d) = v["data"].as_str() {
         print!("{}", d);
@@ -326,7 +342,7 @@ async fn cancel(cli: &Cli, args: &WorkflowCancelArgs) -> Result<i32> {
             10,
         )
         .await
-        .context(task_err("cancel"))?;
+        .map_err(|e| task_hint("cancel", e))?;
     let v = parse_resp(&resp)?;
     eprintln!("{}", v["message"].as_str().unwrap_or("ok"));
     Ok(0)
@@ -341,7 +357,7 @@ async fn rerun(cli: &Cli, args: &WorkflowRerunArgs) -> Result<i32> {
             30,
         )
         .await
-        .context(task_err("rerun"))?;
+        .map_err(|e| task_hint("rerun", e))?;
     let v = parse_resp(&resp)?;
     let run_id = v["data"]["run_id"].as_str().unwrap_or("");
     let status = v["message"].as_str().unwrap_or("ok");
@@ -362,7 +378,7 @@ async fn detail(cli: &Cli, args: &WorkflowDetailArgs) -> Result<i32> {
             10,
         )
         .await
-        .context(task_err("detail"))?;
+        .map_err(|e| task_hint("detail", e))?;
     let v = parse_resp(&resp)?;
     println!("{}", serde_json::to_string_pretty(&v["data"])?);
     Ok(0)
@@ -377,7 +393,7 @@ async fn inputs(cli: &Cli, args: &WorkflowInputsArgs) -> Result<i32> {
             10,
         )
         .await
-        .context(task_err("inputs"))?;
+        .map_err(|e| task_hint("inputs", e))?;
     let v = parse_resp(&resp)?;
     let data = &v["data"];
     if let Some(obj) = data.as_object() {

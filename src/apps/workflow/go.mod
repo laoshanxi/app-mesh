@@ -4,6 +4,7 @@ go 1.25.10
 
 require (
 	github.com/laoshanxi/app-mesh v0.0.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/xid v1.6.0
 	gopkg.in/yaml.v3 v3.0.1
 )

@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/schedule"
 )
 
 var safeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -131,10 +132,14 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 		}
 	}
 
-	// Warn about features that are parsed but not dispatched by the engine.
-	if wf.On != nil && len(wf.On.Schedule) > 0 {
-		fmt.Fprintf(os.Stderr, "WARNING: workflow %q has on.schedule triggers, but cron is not handled by the engine. "+
-			"Use an external App Mesh cron app to call 'appm workflow run %s' instead.\n", wf.Name, wf.Name)
+	// Validate cron syntax here too: a schedule typo must fail the load, not
+	// silently never fire (the trigger service also revalidates on scan).
+	if wf.On != nil {
+		for _, sched := range wf.On.Schedule {
+			if _, err := schedule.Parse(sched.Cron); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return &wf, nil
