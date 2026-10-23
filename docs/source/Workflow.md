@@ -609,20 +609,43 @@ appm workflow rm trigger-on-event
 > workflow, run, and current Workflow process. They never retain or impersonate the
 > registrant's identity credentials.
 
-### Schedule (External)
+### Schedule (Engine-native)
 
-Cron scheduling is **not** built into the workflow engine. Use App Mesh's native cron support to drive runs:
+A `schedule` trigger fires inside the workflow engine — no cron App, no shell, and no
+credential at rest. Schedule-triggered runs execute exactly like `app_event` runs:
+under a short-lived Engine-local capability, recorded as `source: schedule:<cron>`.
 
-```bash
-# Run hello-world every day at 02:00
-appm add -a cron-hello -c "appm workflow run hello-world" -Y "0 2 * * *"
-
-# Or, drive on an interval (ISO 8601 duration)
-appm add -a tick-hello -c "appm workflow run hello-world" -i PT5M
-
-appm rm -a cron-hello
-appm rm -a tick-hello
+```yaml
+name: nightly-digest
+on:
+  schedule:
+    - cron: "0 2 * * *"     # 6-field (seconds first) or 5-field standard; @every/@hourly work too
+jobs:
+  report:
+    steps:
+      - name: ask
+        message:
+          app: llm-agent
+          payload: '{"action":"session_send","session_id":"${{ workflow.run_id }}","input":"summarize today"}'
 ```
+
+Semantics:
+
+- Schedules are checked on the engine's scan tick (30s) — a run may start up to one
+  tick late, never early.
+- Overlapping runs are allowed unless the workflow sets a `concurrency` group (a
+  group queues or cancels them like any other trigger).
+- Periods missed while the engine (or node) was down are skipped, not back-filled.
+- Registration requires `workflow-admin` (same as `app_event`); an invalid cron is
+  rejected at `workflow add`.
+
+**Alternative — external cron App.** App Mesh's native cron/interval App can still
+drive runs with `appm add -a cron-hello -c "appm workflow run hello-world" -Y "0 2 * * *"`,
+but note its constraints on a standard install: the command resolves in the daemon's
+environment (use the absolute `appm` path if `/usr/local/bin` is not on the daemon's
+PATH), and the spawned CLI needs a valid session — either an interactive logon under
+that environment or `APPMESH_BEARER_TOKEN`, which expires with the access token
+(30 min by default). The engine-native trigger above has none of these constraints.
 
 ### Workflow Call
 

@@ -40,10 +40,12 @@ def _as_int(v) -> int:
 
 
 class Handler:
-    def __init__(self, *, workspace: str, max_iterations: int = 0, worker_session_id: str = "", engine=None):
+    def __init__(self, *, workspace: str, max_iterations: int = 0, worker_session_id: str = "", engine=None,
+                 history_root: str = ""):
         self.workspace = workspace
         self.max_iterations = max_iterations  # 0 = no ceiling (SDK default)
         self.worker_session_id = worker_session_id
+        self.history_root = history_root  # CLI projects dir; session_close also drops the transcript
         self._engine = engine or claude_sdk.run_turn  # seam: tests inject a fake
         # worker lifecycle
         self._mu = threading.Lock()
@@ -102,7 +104,7 @@ class Handler:
             return _err("session_id required")
         if self.worker_session_id and sid != self.worker_session_id:
             return _err("this worker serves a different session")
-        session.remove(self.workspace, sid)
+        session.remove(self.workspace, sid, history_root=self.history_root)
         if self.worker_session_id:
             self.cleanup_and_exit_after_ack()
         return _ok()

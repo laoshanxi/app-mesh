@@ -325,14 +325,20 @@ bool HttpRequestWithTimeout::onTimerResponse()
 	LOG_DBG << fname << "Request <" << this->m_uuid << "> timed out";
 
 	// Flag-gated via the virtual reply() override; no-op if a worker already replied.
-	HttpRequest::reply(web::http::status_codes::RequestTimeout);
+	// Say why, so a caller sees more than a bare 408 (the workflow engine surfaces this text).
+	HttpRequest::reply(web::http::status_codes::RequestTimeout,
+					   Utility::text2json("task timed out: the application did not reply within the requested timeout"));
 
 	return false;
 }
 
 bool HttpRequestWithTimeout::replied() const { return m_httpRequestReplyFlag.load(); }
 
-bool HttpRequestWithTimeout::interrupt() { return HttpRequest::reply(web::http::status_codes::ExpectationFailed); }
+bool HttpRequestWithTimeout::interrupt()
+{
+	return HttpRequest::reply(web::http::status_codes::ExpectationFailed,
+							  Utility::text2json("task interrupted: the application stopped or the task was cancelled"));
+}
 
 void HttpRequestWithTimeout::id(int id) { m_id = id; }
 
@@ -611,6 +617,7 @@ void TaskRequest::fetchTask(const std::string &processKey, std::shared_ptr<void>
 	std::shared_ptr<HttpRequestWithTimeout> previousFetch;
 	std::shared_ptr<HttpRequestWithTimeout> previousReply;
 	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
+	std::vector<std::shared_ptr<HttpRequestWithTimeout>> abandoned; // released outside the lock
 	{
 		std::lock_guard guard(m_mutex);
 		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
@@ -622,6 +629,15 @@ void TaskRequest::fetchTask(const std::string &processKey, std::shared_ptr<void>
 		// A restarted worker must receive the existing in-flight task before the
 		// queued tail; only advance FIFO after that task has replied.
 		repliedActive = releaseRepliedRequestLocked(m_activeTask);
+		// A queued client that already timed out (408) is gone: never hand its task to
+		// the worker — it would do work (and an LLM worker would pay for it) that nobody
+		// receives, while real requests wait behind it.
+		while (!m_taskQueue.empty() && m_taskQueue.front()->replied())
+		{
+			LOG_WAR << fname << "dropping queued task whose client already timed out: " << m_taskQueue.front()->m_uuid;
+			abandoned.push_back(std::move(m_taskQueue.front()));
+			m_taskQueue.pop();
+		}
 		if (!m_activeTask && !m_taskQueue.empty())
 		{
 			m_activeTask = m_taskQueue.front();

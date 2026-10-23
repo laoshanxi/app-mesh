@@ -43,4 +43,8 @@ def serve(handler):
 		except Exception as exc:  # 单次坏请求不能弄挂常驻服务
 			log.exception("task failed")
 			response = {"status": "error", "message": str(exc)}
-		worker.send_task_result(json.dumps(response, ensure_ascii=False))
+		try:
+			worker.send_task_result(json.dumps(response, ensure_ascii=False))
+		except Exception:
+			# 调用方已超时退出（daemon 回 417）时送结果会失败；只记日志，服务必须继续
+			log.exception("send_task_result failed (caller gone?)")

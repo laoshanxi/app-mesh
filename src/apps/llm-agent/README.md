@@ -53,9 +53,14 @@ Two things to know about that model:
 - **`session_id` is an unauthenticated global namespace** on the shared App (no owner
   check inside the agent). Two callers using the same id share one conversation — use
   unguessable ids (e.g. `${{ workflow.run_id }}`), and rely on the daemon's RBAC / the
-  worker App's `permission` for access control.
-- **`session_close` is destructive**, not a pause: it deletes the workdir, dropping that
-  conversation. There is no resume after close.
+  worker App's `permission` for access control. Ids outside `[A-Za-z0-9_-]` are
+  sanitized with a digest suffix, so two different ids never fold onto one directory.
+- **`session_close` deletes the session workdir and its resume marker**, and makes a
+  best effort to delete the on-disk conversation transcript under
+  `<CLAUDE_CONFIG_DIR>/projects/` (the CLI names that directory by an encoding of the
+  cwd; if the encoding differs across CLI versions the transcript may remain — treat
+  close as "not resumable", and audit/clear `projects/` yourself if transcript
+  retention matters).
 
 ## Request flow
 
@@ -120,9 +125,10 @@ Errors come back as `{ "status":"error", "message":"..." }`.
 | `LLMAGENT_PERMISSION_MODE` | `bypassPermissions` | SDK permission mode |
 | `LLMAGENT_WORKSPACE_DIR` | `./llm-agent-workspace` | parent of per-session workdirs (the SDK's cwd) |
 | `LLMAGENT_MAX_ITERATIONS` | `0` (no ceiling) | per-turn SDK `max_turns` ceiling; a request may only tighten it |
-| `LLMAGENT_SESSION_TTL_HOURS` | `168` | shared App: idle session-workdir reap |
+| `LLMAGENT_SESSION_TTL_HOURS` | `168` | shared App: idle session-workdir reap (the runtime dirs `.claude` / `.llmagent` inside the workspace are never reaped) |
 | `LLMAGENT_SESSION_IDLE_MINUTES` | `30` | worker: idle reap |
 | `LLMAGENT_SESSION_MAX_HOURS` | `8` | worker: max lifetime |
+| `LLMAGENT_LOG_FILE` | worker: `<workspace>/.llmagent/worker-<app>.log`, shared: stderr | where the agent's own logs go. A session worker must not log onto its STDOUT — that stream IS the answer a client subscribes to |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key — set as a **secured** env var, never in the App definition. Other backends use different env (see [Models & providers](#models--providers)) |
 
 ## Install & run
@@ -304,7 +310,8 @@ encrypted). It writes exactly the env / secured-env described here.
 
 | Symptom | Likely cause / fix |
 |---|---|
-| Every turn errors right after enabling | No `ANTHROPIC_API_KEY` on the App — the pre-loaded definition has none; register with `-z ANTHROPIC_API_KEY=…`. |
+| Every turn errors right after enabling | No `ANTHROPIC_API_KEY` on the App — the pre-loaded definition has none; register with `-z ANTHROPIC_API_KEY=…`. The agent also warns at startup when no credential env (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_BEDROCK` / `CLAUDE_CODE_USE_VERTEX`) is set. |
+| Turns fail with `Not logged in · Please run /login` | Same root cause: no model credential env reached the CLI — for a gateway setup check `ANTHROPIC_BASE_URL` **and** the secured `ANTHROPIC_AUTH_TOKEN`. |
 | Turn errors mentioning the CLI / spawn / config dir | The workspace (and thus `<workspace>/.claude`) isn't writable by the App's user — the App logs a warning about `CLAUDE_CONFIG_DIR` at startup. |
 | `turn_tokens: 0` (with a logged warning) | The SDK returned no usage for the turn — informational; the turn still ran. |
 | `streaming is only available on a session worker App` | `stream:true` was sent to the shared App — stream only on a Scenario B worker. |

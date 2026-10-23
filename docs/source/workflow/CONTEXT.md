@@ -28,7 +28,7 @@ Terms used in the App Mesh Workflow Engine feature. Each term has one meaning ac
 - **Workflow Engine** — A single Go binary (`workflow`) using TCP transport. Runs as a pre-installed daemon App (named `workflow`). All operations (CRUD, run, cancel, observability) go through the Task RPC interface (`run_task`). No separate run mode or temp Apps.
 - **Checkpoint** — A JSON file (`checkpoint.json`) in the run directory. Records per-job completion status for crash recovery. On restart, completed jobs are skipped.
 - **runs.json** — Per-workflow run history index (separate from checkpoint).
-- **Trigger (v1)** — Built into the workflow engine: event listener subscribes to App events, fires workflow runs as goroutines. Cron is NOT built in — `on.schedule` in YAML is parsed but a warning is emitted; use external App Mesh cron apps instead.
+- **Trigger (v1)** — Built into the workflow engine: event listener subscribes to App events, and `on.schedule` cron entries fire on the scan tick (revised Oct 2026, see ADR 0004); both create runs as goroutines under Engine-local capabilities.
 - **Cancel** — `cancelRun` cancels the goroutine context AND calls `KillAll()` on tracked active step Apps via `DeleteApp`.
 - **Identity** — manual runs use the caller's Engine-validated bearer; automatic and recovered execution uses a short-lived local Engine capability bound to the current owner and managed Workflow process. Owners and human actors are immutable Principal IDs; a new automatic Run uses the explicit `internal:workflow-trigger` audit marker, while recovery preserves the original actor/source. Registering an automatic trigger requires `workflow-admin` (ADR 0006 and ADR 0009).
 
