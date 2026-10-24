@@ -34,39 +34,44 @@ func TestParseScheduleAcceptsPlatformAndStandardForms(t *testing.T) {
 }
 
 func TestNextFirePicksEarliestEntryAndSkipsInvalid(t *testing.T) {
-	now := time.Date(2026, 1, 1, 12, 0, 30, 0, time.UTC)
+	after := time.Date(2026, 1, 1, 12, 0, 30, 0, time.UTC)
 	wf := schedWF("w", "0 0 * * *", "bogus", "* * * * *")
-	next, expr := nextFire(wf, now)
+	next, expr := nextFire(wf, after)
 	if expr != "* * * * *" {
 		t.Fatalf("earliest entry = %q, want the every-minute one", expr)
 	}
 	if want := time.Date(2026, 1, 1, 12, 1, 0, 0, time.UTC); !next.Equal(want) {
 		t.Fatalf("next = %v, want %v", next, want)
 	}
-	if n, _ := nextFire(&models.Workflow{Name: "none"}, now); !n.IsZero() {
+	if n, _ := nextFire(&models.Workflow{Name: "none"}, after); !n.IsZero() {
 		t.Fatalf("workflow without schedules must have no next fire, got %v", n)
 	}
 }
 
-func TestTickFiresDueOnceAndAdvances(t *testing.T) {
+// The full dispatch cadence: reset+tick every 30s. A due fire must survive the
+// resets (this is the regression for the first implementation, whose reset
+// recomputed `next` from now every tick and never fired), a late tick fires once
+// (missed periods are forgone, not caught up), and the cadence then resumes.
+func TestTickFiresDueOnceAndResumesCadence(t *testing.T) {
 	d := NewScheduleDispatcher()
 	wf := schedWF("w", "* * * * *")
-	d.reset(map[string]*models.Workflow{"w": wf}, time.Now())
-	st := d.byWF["w"]
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	d.reset(map[string]*models.Workflow{"w": wf}, base)
 
 	var fired []string
 	fire := func(w *models.Workflow, source string) { fired = append(fired, w.Name+"|"+source) }
 
-	// Before the due instant nothing fires — and repeated reset+tick cycles (what the
-	// dispatch loop does every 30s) must not push a due fire into the future.
-	if n := d.tick(st.next.Add(-time.Second), fire); n != 0 || len(fired) != 0 {
-		t.Fatalf("early tick fired %d (%v), want 0", n, fired)
+	// 12:00:30 — the 12:01 boundary is not due yet.
+	if n := d.tick(base.Add(30*time.Second), fire); n != 0 {
+		t.Fatalf("early tick fired %d, want 0", n)
 	}
-	late := st.next.Add(5 * time.Minute)
-	for i := 0; i < 3; i++ { // reset between ticks, like dispatchSchedules
+	// 12:06 — five minutes of periods were missed while the engine was down; the
+	// fire happens once and the missed periods are forgone.
+	late := base.Add(6 * time.Minute)
+	for i := 0; i < 2; i++ { // reset between ticks, like dispatchSchedules
 		d.reset(map[string]*models.Workflow{"w": wf}, late)
-		if n := d.tick(late, fire); i == 0 && (n != 1 || len(fired) != 1) {
-			t.Fatalf("tick %d: fired %d (%v), want the first to fire exactly once", i, n, fired)
+		if n := d.tick(late, fire); i == 0 && n != 1 {
+			t.Fatalf("tick %d: fired %d, want exactly 1", i, n)
 		} else if i > 0 && n != 0 {
 			t.Fatalf("tick %d: fired %d again, want 0", i, n)
 		}
@@ -74,29 +79,42 @@ func TestTickFiresDueOnceAndAdvances(t *testing.T) {
 	if fired[0] != "w|schedule:* * * * *" {
 		t.Fatalf("source = %q", fired[0])
 	}
-	if !d.byWF["w"].next.After(late) {
-		t.Fatalf("next fire %v not advanced past %v", d.byWF["w"].next, late)
+	// The cadence resumes: the next boundary after `late` fires, earlier ones don't.
+	next, _ := nextFire(wf, late)
+	if n := d.tick(next.Add(-time.Second), fire); n != 0 {
+		t.Fatalf("fired %d before the resumed boundary, want 0", n)
+	}
+	if n := d.tick(next.Add(time.Second), fire); n != 1 {
+		t.Fatalf("fired %d at the resumed boundary, want 1", n)
 	}
 }
 
-// Editing a workflow's cron re-bases its schedule from now (no back-fill of periods
-// that were due under the old definition).
+// Editing a workflow's cron naturally re-bases through `last`: the next fire comes
+// from the NEW definition after the last accounted instant — at most one fire for
+// the elapsed window, never a stale catch-up burst.
 func TestResetRebasesOnDefinitionChange(t *testing.T) {
 	d := NewScheduleDispatcher()
 	old := schedWF("w", "* * * * *")
-	base := time.Date(2026, 1, 1, 12, 0, 30, 0, time.Local)
+	base := time.Date(2026, 1, 1, 12, 0, 30, 0, time.UTC)
 	d.reset(map[string]*models.Workflow{"w": old}, base)
-	due := d.byWF["w"].next
-	now := due.Add(2 * time.Minute) // the old schedule is due by now
+	now := base.Add(2 * time.Minute) // periods were missed under the old definition
 
 	edited := schedWF("w", "0 0 1 1 *") // yearly — definition changed
 	d.reset(map[string]*models.Workflow{"w": edited}, now)
 	var fired int
-	if n := d.tick(now, func(*models.Workflow, string) { fired++ }); n != 0 || fired != 0 {
-		t.Fatalf("edited definition fired %d time(s) for an old due period, want 0", fired)
+	if n := d.tick(now.Add(time.Hour), func(*models.Workflow, string) { fired++ }); n != 0 || fired != 0 {
+		t.Fatalf("edited definition fired %d time(s), want 0 before its first boundary", fired)
 	}
-	if !d.byWF["w"].next.After(now) {
-		t.Fatalf("rebased next %v must be in the future", d.byWF["w"].next)
+
+	// Edit the other way — to an every-minute schedule: the elapsed window yields
+	// exactly one fire, then the cadence resumes.
+	frequent := schedWF("w", "* * * * *")
+	d.reset(map[string]*models.Workflow{"w": frequent}, now)
+	if n := d.tick(now.Add(90*time.Second), func(*models.Workflow, string) { fired++ }); n != 1 || fired != 1 {
+		t.Fatalf("frequent definition fired %d, want exactly 1 for the elapsed window", fired)
+	}
+	if n := d.tick(now.Add(91*time.Second), func(*models.Workflow, string) { fired++ }); n != 0 {
+		t.Fatalf("fired %d again before the next boundary, want 0", n)
 	}
 }
 

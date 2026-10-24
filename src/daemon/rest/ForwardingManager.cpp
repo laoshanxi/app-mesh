@@ -60,12 +60,16 @@ namespace
 		return encoded.str();
 	}
 
-	/// Resolves the port a forwarding target is reached on; the API port is
-	/// transport specific.
+	/// A target without a port uses this node's TCP API port; an explicit port is
+	/// honored as given. Out-of-range returns -1 so the caller rejects the request.
 	int normalizeForwardPort(int port)
 	{
 		auto config = Configuration::instance();
-		return port <= 1024 ? config->getTcpApiPort() : port;
+		if (port < 0)
+			return config->getTcpApiPort();
+		if (port == 0 || port > 65535)
+			return -1;
+		return port;
 	}
 
 	int64_t steadyNowMs()
@@ -417,8 +421,7 @@ bool ForwardingManager::forward(const std::string &host, int port, const std::sh
 	const int targetPort = normalizeForwardPort(port);
 	if (targetPort <= 0)
 	{
-		request->reply(web::http::status_codes::BadGateway,
-					   "Forwarding to other hosts is not available: the target port is not configured");
+		request->reply(web::http::status_codes::BadGateway, "Forwarding target port is invalid or not configured");
 		return true;
 	}
 

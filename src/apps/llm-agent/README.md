@@ -128,7 +128,7 @@ Errors come back as `{ "status":"error", "message":"..." }`.
 | `LLMAGENT_SESSION_TTL_HOURS` | `168` | shared App: idle session-workdir reap (the runtime dirs `.claude` / `.llmagent` inside the workspace are never reaped) |
 | `LLMAGENT_SESSION_IDLE_MINUTES` | `30` | worker: idle reap |
 | `LLMAGENT_SESSION_MAX_HOURS` | `8` | worker: max lifetime |
-| `LLMAGENT_LOG_FILE` | worker: `<workspace>/.llmagent/worker-<app>.log`, shared: stderr | where the agent's own logs go. A session worker must not log onto its STDOUT — that stream IS the answer a client subscribes to |
+| `LLMAGENT_LOG_FILE` | worker: `<workspace>/.llmagent/worker-<app>.log`, shared: stderr | where the agent's own logs go. A session worker must not log onto its STDOUT — that stream IS the answer a client subscribes to (the daemon binds an App's stderr and stdout to one merged stream, so a STDERR subscription is not an alternative) |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key — set as a **secured** env var, never in the App definition. Other backends use different env (see [Models & providers](#models--providers)) |
 
 ## Install & run

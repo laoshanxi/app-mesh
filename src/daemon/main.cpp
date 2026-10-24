@@ -90,7 +90,8 @@ public:
 	void executeApplications();
 
 	// Shutdown
-	void performShutdown();
+	/// Terminal shutdown (skips atexit); `exitCode` must reach the watchdog.
+	void performShutdown(int exitCode = 0);
 	void stopManagedApplications();
 	void cleanWorkerThreads();
 	void cleanupResources();
@@ -183,7 +184,7 @@ int AppMeshDaemon::run(int argc, char *argv[])
 		result = 1;
 	}
 
-	performShutdown();
+	performShutdown(result);
 	return result;
 }
 
@@ -199,7 +200,11 @@ void AppMeshDaemon::initializeEnvironment()
 	}
 #endif
 	fs::current_path(Utility::getHomeDir());
-	Utility::createPidFile();
+	// The pid lock is the single-instance guarantee; a second instance must not run on.
+	if (!Utility::createPidFile())
+	{
+		throw std::runtime_error("another appmesh daemon instance is already running for this installation");
+	}
 	Utility::ensureSystemRoot();
 }
 
@@ -726,7 +731,7 @@ void AppMeshDaemon::executeApplications()
 	}
 }
 
-void AppMeshDaemon::performShutdown()
+void AppMeshDaemon::performShutdown(int exitCode)
 {
 	const static char fname[] = "AppMeshDaemon::performShutdown() ";
 
@@ -755,7 +760,7 @@ void AppMeshDaemon::performShutdown()
 
 	spdlog::shutdown();
 	// Terminal exit: skip atexit and static destructors on purpose.
-	_exit(0);
+	_exit(exitCode);
 }
 
 void AppMeshDaemon::stopManagedApplications()
@@ -807,7 +812,9 @@ void AppMeshDaemon::cleanupResources()
 
 	try
 	{
-		Utility::removeFile((fs::path(Utility::getHomeDir()) / PID_FILE).string());
+		// Only the lock owner may remove the PID file; a failed second instance shares the path.
+		if (Utility::ownsPidFileLock())
+			Utility::removeFile((fs::path(Utility::getHomeDir()) / PID_FILE).string());
 		LOG_INF << fname << "Resources cleaned up";
 	}
 	catch (const std::exception &ex)

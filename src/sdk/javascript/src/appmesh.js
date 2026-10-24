@@ -770,7 +770,10 @@ class AppMeshClient {
   }
 
   /**
-   * Download a remote file. Behavior differs by environment:
+   * Download a remote file.
+   *
+   * Plain-HTTP transport: GET answers the file bytes; the agent proxy serves
+   * the same route from local disk.
    *
    * - **Node.js**: `localFile` is a filesystem path — the response body is written to it,
    *   and when `applyAttrs` is true the returned mode and best-effort owner/group metadata
@@ -794,6 +797,13 @@ class AppMeshClient {
         responseType: "arraybuffer"
       }
     });
+
+    // A JSON reply without Content-Disposition is a legacy placeholder, not content.
+    if (response.status === 200 && !response.headers?.["content-disposition"] &&
+        String(response.headers?.["content-type"] ?? "").toLowerCase().includes("json")) {
+      throw new AppMeshError(
+        `File download is not supported by this server surface: ${filePath}`, response.status, response.data);
+    }
 
     if (response.status !== 200) {
       throw new AppMeshError(`Failed to download file: ${filePath}`, response.status, response.data);
@@ -846,6 +856,10 @@ class AppMeshClient {
 
   /**
    * Upload a file to the remote server.
+   *
+   * Plain-HTTP transport: POST streams the raw file bytes as the body; the
+   * agent proxy accepts the same route.
+   *
    * @param {string|File} localFile - Local file path/object
    * @param {string} [filePath=null] - Remote target path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs=false] - In Node.js, send local permission bits plus
@@ -861,66 +875,48 @@ class AppMeshClient {
       filePath = sourceName.split(/[\\/]/).pop();
     }
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
-    let formData;
+    let body;
 
     if (ENV.isNode) {
-      // Node.js environment
-      const FormData = (await import('form-data')).default;
       const fs = await import('fs');
-      formData = new FormData();
-
-      const filename = filePath.split('/').pop();
-      formData.append("filename", filename);
-
       const stat = fs.statSync(localFile);
-      if (stat.size < 10 * 1024 * 1024) {
-        // For files < 10MB, use buffer
-        const fileBuffer = fs.readFileSync(localFile);
-        formData.append("file", fileBuffer, { filename: localFile.split('/').pop() });
-      } else {
-        // Stream for larger files
-        formData.append("file", fs.createReadStream(localFile));
-      }
 
-      // Add file attributes
       if (applyAttrs) {
         headers["X-File-Mode"] = (stat.mode & 0o777).toString(); // Only permission bits
-        // Send user/group names when resolvable; the daemon also accepts
-        // all-digit values (os::chown -> getUidByName numeric fallback, and
-        // the Go agent's ApplyFileAttributes), so fall back to numeric ids.
         const username = await _resolveUserName(stat.uid);
         const groupName = await _resolveGroupName(stat.gid);
         headers["X-File-User"] = username || String(stat.uid);
         headers["X-File-Group"] = groupName || String(stat.gid);
       }
 
-      // Add form-data headers
-      Object.assign(headers, formData.getHeaders());
+      // Stream larger files; buffer small ones.
+      body = stat.size < 10 * 1024 * 1024 ? fs.readFileSync(localFile) : fs.createReadStream(localFile);
     } else {
       // Browser environment
-      formData = new FormData();
-
-      // Get filename
-      let filename;
-      if (localFile instanceof File) {
-        filename = localFile.name;
-      } else if (localFile instanceof Blob) {
-        filename = filePath.split('/').pop();
+      if (localFile instanceof File || localFile instanceof Blob) {
+        body = localFile;
       } else {
         throw new AppMeshError('In browser, localFile must be File or Blob');
       }
-
-      formData.append("filename", filename);
-      formData.append("file", localFile);
     }
 
-    await this._request("post", "/appmesh/file/upload", formData, {
+    const response = await this._request("post", "/appmesh/file/upload", body, {
       headers,
       config: {
         maxBodyLength: Infinity,
         maxContentLength: Infinity
       }
     });
+    if (response.status !== 200 && response.status !== 201) {
+      throw new AppMeshError(`Failed to upload file: ${filePath}`, response.status, response.data);
+    }
+    // A 200 JSON status reply means a legacy daemon stored nothing.
+    const contentType = String(response.headers?.["content-type"] ?? "").toLowerCase();
+    if (response.status === 200 && contentType.includes("json") &&
+        response.data && typeof response.data === "object" && "message" in response.data) {
+      throw new AppMeshError(
+        `File upload is not supported by this server surface: ${filePath}`, response.status, response.data);
+    }
   }
 
   /**

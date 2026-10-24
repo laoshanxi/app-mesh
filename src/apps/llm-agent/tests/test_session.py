@@ -1,6 +1,5 @@
 """Session utils — a session is just a workdir under the workspace. No network."""
 import os
-import re
 import tempfile
 import time
 import unittest
@@ -35,10 +34,9 @@ class SessionUtilsTest(unittest.TestCase):
         cwd = session.workdir(self.ws, "s1")
         os.makedirs(cwd)
         hist = os.path.join(self.ws, "projects")
-        # The CLI folds EVERY character outside [A-Za-z0-9] — including "_" and "." —
-        # to "-" (verified in the CLI bundle: replace(/[^a-zA-Z0-9]/g,"-")). The fixture
-        # must use the same fold, or a tmpdir containing "_" makes this test flaky.
-        encoded = re.sub(r"[^A-Za-z0-9]", "-", cwd)
+        # the fixture uses the CLI's own encoding (project_dir_name): one definition,
+        # so a tmpdir containing "_" can never desynchronize test and implementation
+        encoded = session.project_dir_name(cwd)
         os.makedirs(os.path.join(hist, encoded))
         session.remove(self.ws, "s1", history_root=hist)
         self.assertFalse(os.path.exists(cwd))
@@ -52,9 +50,9 @@ class SessionUtilsTest(unittest.TestCase):
         cwd = session.workdir(self.ws, "team_a")
         os.makedirs(cwd)
         hist = os.path.join(self.ws, "projects")
-        os.makedirs(os.path.join(hist, re.sub(r"[^A-Za-z0-9]", "-", cwd)))
+        os.makedirs(os.path.join(hist, session.project_dir_name(cwd)))
         session.remove(self.ws, "team_a", history_root=hist)
-        self.assertFalse(os.path.exists(os.path.join(hist, re.sub(r"[^A-Za-z0-9]", "-", cwd))))
+        self.assertFalse(os.path.exists(os.path.join(hist, session.project_dir_name(cwd))))
 
     def test_reap_drops_only_idle_workdirs(self):
         fresh = session.workdir(self.ws, "fresh")

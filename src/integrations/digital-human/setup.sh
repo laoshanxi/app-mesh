@@ -7,8 +7,9 @@
 #   bash setup.sh --team demo --no-agent                    # 只部署技能，不部署大脑
 #
 # 可用环境变量覆盖默认值:
-#   APPMESH_URL / APPMESH_WSS / APPMESH_CA / APPMESH_BEARER_TOKEN  连接与认证
-#   DH_TOKEN_CMD   技能调用时的 token 铸造命令（默认沙箱 token.sh）
+#   APPMESH_URL / APPMESH_WSS / APPMESH_CA / APPMESH_BEARER_TOKEN  连接与部署引导
+#   DH_TOKEN_URL / DH_BOT_USER     运行时 provider 的认证端点与账号
+#   DH_ADMIN_PASSWORD              dh-bot 不可用时的管理员回退（写入 600 密码文件）
 #   DH_PYTHON      建 venv 用的 Python（需 >=3.10，默认 python3.14）
 set -euo pipefail
 
@@ -37,14 +38,17 @@ KB_DIR="${KB_DIR:-$PKG/data/kb}"
 APPMESH_URL="${APPMESH_URL:-https://127.0.0.1:6060}"
 APPMESH_WSS="${APPMESH_WSS:-wss://127.0.0.1:6058}"
 APPMESH_CA="${APPMESH_CA:-/opt/appmesh/ssl/ca.pem}"
-TOKEN_CMD="${DH_TOKEN_CMD:-bash /opt/appmesh/script/appmesh-auth.sh print-initial-password | bash /opt/appmesh/script/appmesh-auth.sh user-token}"
+TOKEN_URL="${DH_TOKEN_URL:-http://127.0.0.1:6062}"
 IM_PORT="${DH_IM_PORT:-7070}"
 # IM 适配器默认只听本机回环；对外暴露必须同时配 DH_IM_TOKEN（适配器端点鉴权）
 IM_BIND="${DH_IM_BIND:-127.0.0.1}"
 IM_TOKEN="${DH_IM_TOKEN:-}"
 TCP_API="${DH_TCP_API:-127.0.0.1:6059}"
 if [ -z "${APPMESH_BEARER_TOKEN:-}" ]; then
-	export APPMESH_BEARER_TOKEN="$(eval "$TOKEN_CMD" 2>/dev/null || true)"
+	# 部署引导 token：仅本脚本内的 API 调用使用（root 安装需 sudo 才能铸出）；
+	# 运行时凭据见下方 provider 密码文件，不走这里
+	APPMESH_BEARER_TOKEN="$(bash /opt/appmesh/script/appmesh-auth.sh print-initial-password 2>/dev/null | bash /opt/appmesh/script/appmesh-auth.sh user-token 2>/dev/null || true)"
+	export APPMESH_BEARER_TOKEN
 fi
 if [ -z "${APPMESH_BEARER_TOKEN:-}" ]; then
 	echo "error: 无法取得管理员 token — root 安装时标准流程需要 sudo（见 /opt/appmesh/NEXT_STEPS.txt）。" >&2
@@ -52,7 +56,9 @@ if [ -z "${APPMESH_BEARER_TOKEN:-}" ]; then
 	exit 1
 fi
 
-# ---- P1-3: 专用最小权限 principal（幂等；失败回退管理员 token）----
+# ---- P1-3: 专用最小权限 principal（幂等；失败回退管理员密码文件）----
+# 运行时凭据 = SDK PasswordGrantProvider + 600 权限密码文件（每次授予时重读，
+# 密码轮换免重启；铸造/过期前刷新/401 重认证全部由 SDK 处理）。
 AUTH_SCRIPT="${DH_AUTH_SCRIPT:-/opt/appmesh/script/appmesh-auth.sh}"
 mkdir -p "$TEAM_RT"
 BOT_ENV="$TEAM_RT/dh-bot.env"
@@ -64,53 +70,33 @@ if [ ! -f "$BOT_ENV" ]; then
 fi
 # shellcheck disable=SC1090
 . "$BOT_ENV"
+BOT_PW_FILE="$TEAM_RT/dh-bot.password"
+printf '%s' "$DH_BOT_PASSWORD" > "$BOT_PW_FILE"
+chmod 600 "$BOT_PW_FILE"
 curl -s --cacert "$APPMESH_CA" -X POST -H "Authorization: Bearer $APPMESH_BEARER_TOKEN" -H "Content-Type: application/json" \
 	-d '["app-run-task","app-view","app-output-view"]' "${APPMESH_URL}/appmesh/role/digital-human" >/dev/null || true
-printf '%s' "$DH_BOT_PASSWORD" | bash "$AUTH_SCRIPT" add-user "$DH_BOT_USER" digital-human >/dev/null 2>&1 || \
-	echo "    提示: add-user 未成功（root 安装需 sudo 运行；或用户已存在）。dh-bot 铸造失败时回退管理员 token。"
-cat > "$TEAM_RT/token-bot.sh" <<'TOKENSH'
-#!/bin/bash
-# 数字人运行时专用账号铸 token（最小权限: app-run-task/app-view/app-output-view）
-DIR="$(cd "$(dirname "$0")" && pwd)"
-. "$DIR/dh-bot.env"
-exec curl -s -u 'appmesh-cli:' -X POST "${DH_AUTH_TOKEN_URL:-http://127.0.0.1:6062}/auth/token" \
-	-d 'grant_type=password' -d "username=$DH_BOT_USER" \
-	-d "password=$DH_BOT_PASSWORD" \
-	-d 'scope=openid audience:server:client_id:appmesh-api' \
-	| python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])'
-TOKENSH
-chmod 700 "$TEAM_RT/token-bot.sh"
-if bash "$TEAM_RT/token-bot.sh" >/dev/null 2>&1; then
-	TOKEN_CMD="bash $TEAM_RT/token-bot.sh"
-	echo "==> 运行时凭据: 专用最小权限账号 ${DH_BOT_USER}（角色 digital-human）"
+printf '%s' "$DH_BOT_PASSWORD" | bash "$AUTH_SCRIPT" add-user "$DH_BOT_USER" digital-human >/dev/null 2>&1 || true
+# 探测 dh-bot 密码流是否可用（--data-urlencode 防特殊字符）
+if curl -s -u 'appmesh-cli:' -X POST "$TOKEN_URL/auth/token" \
+	-d 'grant_type=password' --data-urlencode "username=$DH_BOT_USER" \
+	--data-urlencode "password=$DH_BOT_PASSWORD" \
+	-d 'scope=openid audience:server:client_id:appmesh-api' | grep -q access_token; then
+	echo "==> 运行时凭据: 专用最小权限账号 $DH_BOT_USER（角色 digital-human）"
 else
-	# 回退管理员 token。优先用 DH_ADMIN_PASSWORD（密码流直铸，无需 sudo）；
-	# 未提供时生成标准管道流版本（root 安装需 sudo 执行 print-initial-password）。
+	# 回退管理员密码文件（DH_ADMIN_PASSWORD 原样写入 600 文件，不进任何脚本正文）
 	if [ -n "${DH_ADMIN_PASSWORD:-}" ]; then
-		# 密码按双引号内安全形态转义（\ " $ `），含特殊字符也不破坏生成的脚本
-		_pw_esc=$(printf '%s' "$DH_ADMIN_PASSWORD" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g' -e 's/`/\\`/g')
-		cat > "$TEAM_RT/admin-token.sh" <<ADMINTOKEN
-#!/bin/bash
-# 回退方案：用部署时提供的 DH_ADMIN_PASSWORD 做密码流直铸（文件 600，勿入库）
-exec curl -s -u 'appmesh-cli:' -X POST "\${DH_AUTH_TOKEN_URL:-http://127.0.0.1:6062}/auth/token" \\
-	-d 'grant_type=password' -d 'username=admin@appmesh.local' \\
-	-d "password=$_pw_esc" \\
-	-d 'scope=openid audience:server:client_id:appmesh-api' \\
-	| python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])'
-ADMINTOKEN
+		BOT_USER_FOR_HINT="$DH_BOT_USER"
+		BOT_PW_FILE="$TEAM_RT/admin.password"
+		printf '%s' "$DH_ADMIN_PASSWORD" > "$BOT_PW_FILE"
+		chmod 600 "$BOT_PW_FILE"
+		DH_BOT_USER="admin@appmesh.local"
+		echo "    警告: dh-bot 密码流不可用，回退管理员账号（仅限开发）。启用最小权限账号请 sudo 运行:"
+		echo "    printf '%s' '$DH_BOT_PASSWORD' | sudo $AUTH_SCRIPT add-user $BOT_USER_FOR_HINT digital-human"
 	else
-		cat > "$TEAM_RT/admin-token.sh" <<'ADMINTOKEN'
-#!/bin/bash
-# 回退方案：标准安装的管理员 token 流（root 安装需要 sudo 执行 print-initial-password）
-exec bash /opt/appmesh/script/appmesh-auth.sh print-initial-password 2>/dev/null |
-	bash /opt/appmesh/script/appmesh-auth.sh user-token 2>/dev/null
-ADMINTOKEN
-		echo "    提示: 未设置 DH_ADMIN_PASSWORD，回退脚本需要 sudo 才能铸出 token；建议 export DH_ADMIN_PASSWORD=<管理员密码> 后重跑"
+		BOT_PW_FILE=""
+		echo "    警告: dh-bot 密码流不可用且未设置 DH_ADMIN_PASSWORD — 运行时无凭据，"
+		echo "    IM 适配器与技能将无法认证。请 sudo 启用 dh-bot，或 export DH_ADMIN_PASSWORD 后重跑。"
 	fi
-	chmod 700 "$TEAM_RT/admin-token.sh"
-	TOKEN_CMD="bash $TEAM_RT/admin-token.sh"
-	echo "    警告: dh-bot token 铸造失败，回退管理员 token（仅限开发）。启用最小权限账号请 sudo 运行:"
-	echo "    printf '%s' '$DH_BOT_PASSWORD' | sudo $AUTH_SCRIPT add-user $DH_BOT_USER digital-human"
 fi
 
 # ---- venv（claude-agent-sdk 需要 Python >= 3.10）----
@@ -121,7 +107,7 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 echo "==> 安装依赖（appmesh + claude-agent-sdk）"
 "$VENV/bin/pip" install -q --disable-pip-version-check --upgrade pip
-"$VENV/bin/pip" install -q --disable-pip-version-check -r "$LLM_DIR/requirements.txt" appmesh
+"$VENV/bin/pip" install -q --disable-pip-version-check -r "$LLM_DIR/requirements.txt" "appmesh>=3.0.10" # 3.0.10 起提供 PasswordGrantProvider
 
 mkdir -p "$TEAM_RT/workspace" "$TEAM_RT/apps"
 
@@ -135,8 +121,10 @@ render() { # render <模板> <输出>
 		-e "s|@VENV_PY@|$VENV/bin/python|g" \
 		-e "s|@LLM_DIR@|$LLM_DIR|g" \
 		-e "s|@TCP_API@|$TCP_API|g" \
-		-e "s|@HOME@|$HOME|g" \
-		-e "s|@TOKEN_CMD@|$TOKEN_CMD|g" \
+	-e "s|@HOME@|$HOME|g" \
+	-e "s|@TOKEN_URL@|$TOKEN_URL|g" \
+	-e "s|@BOT_USER@|$DH_BOT_USER|g" \
+	-e "s|@BOT_PW_FILE@|$BOT_PW_FILE|g" \
 		-e "s|@APPMESH_URL@|$APPMESH_URL|g" \
 		-e "s|@APPMESH_CA@|$APPMESH_CA|g" \
 		-e "s|@IM_PORT@|$IM_PORT|g" \

@@ -327,8 +327,17 @@ void DrogonAdaptor::setupRoutes()
 	app.addListener(m_host, static_cast<uint16_t>(m_port), true, m_certFile, m_keyFile, false,
 					dgn::tlsHardeningConf(m_caFile));
 
-	// Streaming file endpoints. Exact routes take precedence over the regex
-	// catch-all below.
+	// Streaming file endpoints (exact routes take precedence over the regex
+	// catch-all below). The canonical routes are HTTP-native for plain-HTTP
+	// clients; the /ws routes are the WSS client's data side channel. TCP and
+	// WSS-control transports never reach this HTTP layer.
+	app.registerHandler("/appmesh/file/download",
+						[this](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
+						{ handleDownload(req, std::move(callback)); }, {drogon::Get});
+	app.registerHandler(
+		"/appmesh/file/upload",
+		[this](const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream, drogon::AdviceCallback &&callback)
+		{ handleUpload(req, std::move(stream), std::move(callback)); }, {drogon::Post});
 	app.registerHandler("/appmesh/file/download/ws",
 						[this](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
 						{ handleDownload(req, std::move(callback)); }, {drogon::Get});
@@ -336,17 +345,18 @@ void DrogonAdaptor::setupRoutes()
 		"/appmesh/file/upload/ws",
 		[this](const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream, drogon::AdviceCallback &&callback)
 		{ handleUpload(req, std::move(stream), std::move(callback)); }, {drogon::Post});
-	// A route without an OPTIONS binder is answered with 403 by drogon. These
-	// two exist so browser preflight works either way: drogon answers it when
-	// CORS is enabled, this one when the daemon answers CORS itself.
+	// Browser preflight: answer OPTIONS here when the daemon answers CORS itself.
 	const auto corsPreflight = [](const drogon::HttpRequestPtr &, drogon::AdviceCallback &&callback)
 	{
 		auto resp = drogon::HttpResponse::newHttpResponse();
 		resp->setStatusCode(drogon::k204NoContent);
 		callback(resp);
 	};
-	app.registerHandler("/appmesh/file/download/ws", corsPreflight, {drogon::Options});
-	app.registerHandler("/appmesh/file/upload/ws", corsPreflight, {drogon::Options});
+	for (const char *path :
+		 {"/appmesh/file/download", "/appmesh/file/upload", "/appmesh/file/download/ws", "/appmesh/file/upload/ws"})
+	{
+		app.registerHandler(path, corsPreflight, {drogon::Options});
+	}
 	// drogon answers a method mismatch on these routes with an empty 405; answer 404 JSON instead.
 	const auto routeNotFound = [](const drogon::HttpRequestPtr &, drogon::AdviceCallback &&callback)
 	{
@@ -357,6 +367,8 @@ void DrogonAdaptor::setupRoutes()
 		addCors(resp);
 		callback(resp);
 	};
+	app.registerHandler("/appmesh/file/download", routeNotFound, {drogon::Post, drogon::Put, drogon::Delete, drogon::Patch});
+	app.registerHandler("/appmesh/file/upload", routeNotFound, {drogon::Get, drogon::Put, drogon::Delete, drogon::Patch});
 	app.registerHandler("/appmesh/file/download/ws", routeNotFound,
 						{drogon::Post, drogon::Put, drogon::Delete, drogon::Patch});
 	app.registerHandler("/appmesh/file/upload/ws", routeNotFound, {drogon::Get, drogon::Put, drogon::Delete, drogon::Patch});
@@ -368,8 +380,9 @@ void DrogonAdaptor::setupRoutes()
 			const auto &declaredLength = req->getHeader(web::http::header_names::content_length);
 			std::uint64_t declaredBytes = 0;
 			std::from_chars(declaredLength.data(), declaredLength.data() + declaredLength.size(), declaredBytes);
-			// Only the upload POST streams to disk; every other route is capped.
-			const bool isUpload = req->method() == drogon::Post && req->path() == "/appmesh/file/upload/ws";
+			// Only the upload POSTs stream to disk; every other route is capped.
+			const bool isUpload = req->method() == drogon::Post &&
+								  (req->path() == "/appmesh/file/upload" || req->path() == "/appmesh/file/upload/ws");
 			if (isUpload || declaredBytes <= MAX_HTTP_BODY_SIZE)
 			{
 				std::move(chainCallback)();
@@ -689,6 +702,19 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 		if (std::filesystem::exists(filePath, ec))
 		{
 			callback(plainResponse(drogon::k409Conflict, "File already exists"));
+			return;
+		}
+	}
+
+	// Raw body only; multipart belongs to the agent proxy surface.
+	{
+		auto contentType = req->getHeader(web::http::header_names::content_type);
+		std::transform(contentType.begin(), contentType.end(), contentType.begin(),
+					   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+		if (contentType.rfind("MULTIPART/FORM-DATA", 0) == 0)
+		{
+			callback(plainResponse(drogon::k400BadRequest,
+								   "multipart/form-data is not supported on this endpoint; send the raw file body"));
 			return;
 		}
 	}

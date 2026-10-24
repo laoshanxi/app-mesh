@@ -146,4 +146,4 @@ Phase 1（2026-10-16，mock 模式）：
 | `env.sh` | 本机连接变量示例 |
 | `apps/*.yaml` | App 定义模板（setup.sh 渲染） |
 | `workflows/daily-digest.yaml` | workflow 示例模板 |
-| `tests/` | 审批闸门与 IM 适配器回归测试。运行：`runtime/venv/bin/python -m pytest tests/` |
+| `tests/` | 审批闸门（SQLite 台账）、IM 适配器、凭据构造回归测试。运行：`runtime/venv/bin/python -m pytest tests/` |

@@ -23,7 +23,11 @@ def main():
 		sys.exit(f"payload 不是合法 JSON: {exc}")
 	if not isinstance(payload, dict):
 		sys.exit("payload 必须是 JSON 对象")
-	result = call_skill(make_client(), name, payload)
+	try:
+		client = make_client()
+	except RuntimeError as exc:
+		sys.exit(str(exc))
+	result = call_skill(client, name, payload)
 	print(json.dumps(result, ensure_ascii=False, indent=2))
 	sys.exit(0 if result.get("status") == "ok" else 1)
 

@@ -1287,12 +1287,8 @@ impl AppMeshClient {
 // -- File Management --------------------------------------------------------
 
 impl AppMeshClient {
-    /// Download a file from the remote server.
-    ///
-    /// When `preserve_permissions` is true, POSIX mode/owner/group metadata from response headers
-    /// is applied locally on a best-effort basis.
-    ///
-    /// An empty `local_file` defaults to the basename of `remote_file`.
+    /// Download a remote file (`preserve_permissions` applies returned POSIX
+    /// metadata best-effort; empty `local_file` defaults to the remote basename).
     pub async fn download_file(&self, remote_file: &str, local_file: &str, preserve_permissions: bool) -> Result<()> {
         // Empty local_file: derive the local path from the remote file's basename.
         let local_file = if local_file.is_empty() {
@@ -1304,12 +1300,36 @@ impl AppMeshClient {
         let headers = hmap! {HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str()};
         let local_path = Path::new(local_file);
 
-        // Stream response chunks to disk (bounded memory) when the transport supports it.
+        // Plain-HTTP transport: GET answers the file bytes.
         self.prepare_bearer().await?;
-        if let Some(mut resp) =
-            self.req.send_streaming(Method::GET, "/appmesh/file/download", None, Some(headers.clone()), None, true).await?
+        if let Some(resp) =
+            self.req.send_streaming(Method::GET, "/appmesh/file/download", None, Some(headers), None, false).await?
         {
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                return Err(AppMeshError::RequestFailed { status, message: text });
+            }
+            // A JSON reply without Content-Disposition is a legacy placeholder, not content.
+            let is_placeholder = resp
+                .headers()
+                .get("content-disposition")
+                .is_none()
+                && resp
+                    .headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|v| v.to_ascii_lowercase().contains("json"))
+                    .unwrap_or(false);
+            if is_placeholder {
+                return Err(AppMeshError::RequestFailed {
+                    status: StatusCode::NOT_FOUND,
+                    message: "File download is not supported by this server surface (legacy reply without content)"
+                        .to_string(),
+                });
+            }
             let mut file = fs::File::create(local_path)?;
+            let mut resp = resp;
             while let Some(chunk) = resp.chunk().await? {
                 file.write_all(&chunk)?;
             }
@@ -1322,21 +1342,17 @@ impl AppMeshClient {
         }
 
         // Buffered fallback for transports without HTTP streaming.
-        let resp = self.send(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/file/download", None, None, None, true).await?;
         fs::write(local_path, resp.bytes())?;
-
         if preserve_permissions {
             let _ = Self::apply_file_attributes(local_path, resp.headers());
         }
         Ok(())
     }
 
-    /// Upload a file to the remote server.
-    ///
-    /// When `preserve_permissions` is true, local POSIX metadata is sent in headers so the server
-    /// can recreate permissions/ownership when supported.
-    ///
-    /// An empty `remote_file` defaults to the local file's basename.
+    /// Upload a local file (`preserve_permissions` sends local POSIX metadata;
+    /// empty `remote_file` defaults to the local basename). Plain-HTTP transport:
+    /// POST streams the raw file bytes as the body.
     pub async fn upload_file(&self, local_file: &str, remote_file: &str, preserve_permissions: bool) -> Result<()> {
         let remote_file = if remote_file.is_empty() {
             Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file)
@@ -1348,11 +1364,6 @@ impl AppMeshClient {
             return Err(AppMeshError::NotFound(format!("Local file not found: {}", local_file)));
         }
 
-        // Wire format matches the Python/Go/JS SDKs: multipart/form-data with a text field
-        // "filename" (remote basename) and the content in a part named "file"; the remote
-        // path travels in the X-File-Path header.
-        let remote_name = Path::new(remote_file).file_name().and_then(|n| n.to_str()).unwrap_or(remote_file);
-        let local_name = Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file);
         let remote_path = encode_file_path(remote_file);
         let mut headers = hmap! {
             HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str(),
@@ -1361,47 +1372,47 @@ impl AppMeshClient {
             Self::get_file_attributes(local_path, &mut headers);
         }
 
-        // Stream the multipart body (bounded memory) when the transport supports it.
         self.prepare_bearer().await?;
         let file = tokio::fs::File::open(local_path).await?;
-        let file_len = file.metadata().await?.len();
-        let file_part = reqwest::multipart::Part::stream_with_length(reqwest::Body::from(file), file_len)
-            .file_name(local_name.to_string())
-            .mime_str("application/octet-stream")?;
-        let form = reqwest::multipart::Form::new().text("filename", remote_name.to_string()).part("file", file_part);
-        let mut streaming_headers = headers.clone();
-        streaming_headers
-            .insert(HTTP_HEADER_CONTENT_TYPE.to_string(), format!("multipart/form-data; boundary={}", form.boundary()));
-        if self
+        if let Some(resp) = self
             .req
             .send_streaming(
                 Method::POST,
                 "/appmesh/file/upload",
-                Some(reqwest::Body::wrap_stream(form.into_stream())),
-                Some(streaming_headers),
+                Some(reqwest::Body::from(file)),
+                Some(headers),
                 None,
-                true,
+                false,
             )
             .await?
-            .is_some()
         {
+            let status = resp.status();
+            if !status.is_success() {
+                let text = resp.text().await.unwrap_or_default();
+                return Err(AppMeshError::RequestFailed { status, message: text });
+            }
             return Ok(());
         }
 
-        // Buffered fallback for transports without HTTP streaming: same multipart body,
-        // serialized in memory.
-        let file_content = fs::read(local_file)?;
-        let file_part = reqwest::multipart::Part::bytes(file_content)
-            .file_name(local_name.to_string())
-            .mime_str("application/octet-stream")?;
-        let form = reqwest::multipart::Form::new().text("filename", remote_name.to_string()).part("file", file_part);
-        headers.insert(HTTP_HEADER_CONTENT_TYPE.to_string(), format!("multipart/form-data; boundary={}", form.boundary()));
-        let mut body_bytes = Vec::new();
-        let mut stream = std::pin::pin!(form.into_stream());
-        while let Some(chunk) = futures_util::TryStreamExt::try_next(&mut stream).await? {
-            body_bytes.extend_from_slice(&chunk);
+        // Buffered fallback for transports without HTTP streaming.
+        let body_bytes = fs::read(local_file)?;
+        let resp = self.send(Method::POST, "/appmesh/file/upload", Some(&body_bytes), None, None, true).await?;
+        // A 200 JSON status reply means a legacy daemon stored nothing.
+        if resp.status() == StatusCode::OK {
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if content_type.contains("json") && resp.body().starts_with(b"{\"message\"") {
+                return Err(AppMeshError::RequestFailed {
+                    status: StatusCode::NOT_FOUND,
+                    message: "File upload is not supported by this server surface (legacy reply without storage)"
+                        .to_string(),
+                });
+            }
         }
-        self.send(Method::POST, "/appmesh/file/upload", Some(&body_bytes), Some(headers), None, true).await?;
         Ok(())
     }
 

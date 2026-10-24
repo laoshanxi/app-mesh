@@ -54,6 +54,14 @@ def mark_started(cwd: str) -> None:
             pass
 
 
+def project_dir_name(cwd: str) -> str:
+    """The CLI's directory name for a project under projects/: the cwd with every
+    character outside [A-Za-z0-9] folded to "-" (verified against the CLI bundle and
+    the live projects dir). Tests use this same function to build fixtures, so the
+    encoding lives in exactly one place."""
+    return re.sub(r"[^A-Za-z0-9]", "-", cwd)
+
+
 def workdir(workspace: str, sid: str) -> str:
     """Absolute, stable cwd for a session — the key the SDK uses to separate each
     conversation's history. Empty workspace → "" (the SDK uses its own default cwd)."""
@@ -75,11 +83,10 @@ def remove(workspace: str, sid: str, history_root: str = "") -> None:
 
 def _remove_history(history_root: str, cwd: str) -> None:
     """The Claude Code CLI stores a session's transcript under
-    <CLAUDE_CONFIG_DIR>/projects/<encoded-cwd>/ where <encoded-cwd> replaces every
-    character outside [A-Za-z0-9] with '-' (verified against the live projects dir).
+    <CLAUDE_CONFIG_DIR>/projects/<encoded-cwd>/ (see project_dir_name).
     Best effort: if the encoding ever differs, the transcript stays and the operator
     clears projects/ manually."""
-    p = os.path.join(history_root, re.sub(r"[^A-Za-z0-9]", "-", cwd))
+    p = os.path.join(history_root, project_dir_name(cwd))
     try:
         if os.path.isdir(p):
             shutil.rmtree(p, ignore_errors=True)

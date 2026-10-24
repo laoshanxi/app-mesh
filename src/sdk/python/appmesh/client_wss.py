@@ -98,14 +98,19 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
 
     def close(self) -> None:
         """Close the connection and release resources."""
+        had_demuxer = self._demuxer is not None
         if self._demuxer:
             self._demuxer.stop()
-        if hasattr(self, "wss_transport") and self.wss_transport:
-            self.wss_transport.close()
-            self.wss_transport = None
-        if self._demuxer:
+            # The demuxer reader owns the socket read side; join it first.
             self._demuxer.join()
             self._demuxer = None
+        if hasattr(self, "wss_transport") and self.wss_transport:
+            if had_demuxer:
+                # Without exclusive read ownership the closing handshake can hang.
+                self.wss_transport.abort()
+            else:
+                self.wss_transport.close()
+            self.wss_transport = None
         return super().close()
 
     def __del__(self):

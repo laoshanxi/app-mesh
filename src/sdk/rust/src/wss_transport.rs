@@ -52,7 +52,7 @@ impl WSSTransport {
 
         let (ws_stream, _) = connect_async_tls_with_config(request, None, false, Some(connector))
             .await
-            .map_err(|e| AppMeshError::ConnectionError(format!("WebSocket connect failed: {}", e)))?;
+            .map_err(map_connect_error)?;
 
         let (write, read) = ws_stream.split();
         self.writer = Some(write);
@@ -117,9 +117,24 @@ fn build_rustls_connector(ssl_verify: &SslVerify, ssl_client_cert: Option<&Clien
     Ok(Connector::Rustls(Arc::new(config)))
 }
 
+// A rejected WebSocket handshake keeps its HTTP status code typed (callers react to
+// the status, not to formatted text); every other connect failure stays a
+// ConnectionError.
+fn map_connect_error(err: tokio_tungstenite::tungstenite::Error) -> AppMeshError {
+    match err {
+        tokio_tungstenite::tungstenite::Error::Http(resp) => AppMeshError::RequestFailed {
+            status:  resp.status(),
+            message: format!("WebSocket connect failed: {}", resp.status()),
+        },
+        other => AppMeshError::ConnectionError(format!("WebSocket connect failed: {}", other)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::read_one;
+    use super::{map_connect_error, read_one};
+    use crate::error::AppMeshError;
+    use http::StatusCode;
     use tokio::io::AsyncWriteExt;
     use tokio_tungstenite::tungstenite::protocol::Role;
 
@@ -137,5 +152,22 @@ mod tests {
 
         let data = read_one(&mut ws).await.expect("read failed");
         assert_eq!(data, Some(vec![1, 2]), "ping frame must be skipped, not read as EOF");
+    }
+
+    #[test]
+    fn connect_rejection_keeps_the_http_status_typed() {
+        let rejected = http::Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(None)
+            .expect("static response");
+        match map_connect_error(tokio_tungstenite::tungstenite::Error::Http(Box::new(rejected))) {
+            AppMeshError::RequestFailed { status, .. } => assert_eq!(status, StatusCode::UNAUTHORIZED),
+            other => panic!("handshake rejection must stay typed, got {:?}", other),
+        }
+        // Non-HTTP connect failures remain transport errors with the cause in the text.
+        match map_connect_error(tokio_tungstenite::tungstenite::Error::ConnectionClosed) {
+            AppMeshError::ConnectionError(text) => assert!(text.contains("WebSocket connect failed")),
+            other => panic!("transport failure must stay a ConnectionError, got {:?}", other),
+        }
     }
 }

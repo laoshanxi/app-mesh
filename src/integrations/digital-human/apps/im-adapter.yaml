@@ -13,7 +13,9 @@ env:
   DH_AGENT_TIMEOUT: "580"
   APPMESH_URL: "@APPMESH_URL@"
   APPMESH_CA: "@APPMESH_CA@"
-  DH_TOKEN_CMD: "@TOKEN_CMD@"
+  DH_TOKEN_URL: "@TOKEN_URL@"
+  DH_BOT_USER: "@BOT_USER@"
+  DH_BOT_PASSWORD_FILE: "@BOT_PW_FILE@"
 # daemon 不经 shell 执行本命令：重定向语法会被当字面参数传给 curl（恒 exit 3）。静默用 curl 的 -o 参数
 health_check_cmd: "curl -sf http://127.0.0.1:@IM_PORT@/healthz -o /dev/null"
 metadata:

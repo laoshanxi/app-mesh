@@ -23,9 +23,10 @@ _EXEC_LOG = Path(__file__).resolve().parent.parent / "runtime" / "ops-exec.log"
 
 def _log(line):
 	_EXEC_LOG.parent.mkdir(parents=True, exist_ok=True)
+	if not _EXEC_LOG.exists():
+		os.close(os.open(_EXEC_LOG, os.O_CREAT | os.O_EXCL, 0o600))  # 创建即 0600，无暴露窗口
 	with _EXEC_LOG.open("a", encoding="utf-8") as fh:
 		fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
-	os.chmod(_EXEC_LOG, 0o600)
 
 
 def handler(request):

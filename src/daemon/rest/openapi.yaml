@@ -300,6 +300,21 @@ paths:
     put:
       tags: [Applications]
       summary: Register or update a non-system application
+      parameters:
+        - name: subscribe_events
+          in: query
+          required: false
+          description: >-
+            Comma-separated event names; registers a subscription together with
+            the application on persistent transports (TCP or WebSocket).
+            Matching is case-insensitive.
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [START, EXIT, STDOUT, HEALTH, STATUS, REMOVED, ALL]
+            style: form
+            explode: false
       requestBody:
         required: true
         content:
@@ -311,6 +326,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Name conflicts with an application that differs only by letter case. }
     delete:
       tags: [Applications]
       summary: Delete a non-system application
@@ -538,6 +554,11 @@ paths:
     get:
       tags: [Files]
       summary: Download a file
+      description: >-
+        Plain-HTTP transports receive the file bytes as the response body
+        (application/octet-stream with Content-Disposition). The TCP and
+        WebSocket control transports use the socket-transfer exchange on this
+        same route instead; their SDKs handle it internally.
       parameters:
         - name: X-File-Path
           in: header
@@ -545,24 +566,58 @@ paths:
           schema: { type: string }
           description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
       responses:
-        "200": { description: File stream negotiation response. }
+        "200":
+          description: The file bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: File not found. }
 
   /appmesh/file/upload:
     post:
       tags: [Files]
       summary: Upload a file
+      description: >-
+        Plain-HTTP transports send the raw file bytes as the request body
+        (multipart/form-data is refused with 400). The co-located agent proxy
+        additionally accepts multipart for older clients. The TCP and WebSocket
+        control transports use the socket-transfer exchange on this same route
+        instead; their SDKs handle it internally.
       parameters:
         - name: X-File-Path
           in: header
           required: true
           schema: { type: string }
           description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
+        - name: X-File-Mode
+          in: header
+          required: false
+          schema: { type: string }
+          description: POSIX mode (octal) applied to the uploaded file.
+        - name: X-File-User
+          in: header
+          required: false
+          schema: { type: string }
+          description: Owner user name or uid applied to the uploaded file.
+        - name: X-File-Group
+          in: header
+          required: false
+          schema: { type: string }
+          description: Owner group name or gid applied to the uploaded file.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
       responses:
-        "200": { description: File stream negotiation response. }
+        "201": { description: File stored. }
+        "200": { description: File stored (agent proxy surface). }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: File already exists. }
 
   /appmesh/labels:
     get:
@@ -659,8 +714,16 @@ components:
       name: events
       in: query
       required: false
-      description: Comma-separated application event names. The server default selects all supported events.
-      schema: { type: string }
+      description: >-
+        Comma-separated application event names. The server default selects all
+        supported events. Matching is case-insensitive.
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [START, EXIT, STDOUT, HEALTH, STATUS, REMOVED, ALL]
+        style: form
+        explode: false
     SubscriptionId:
       name: subscription_id
       in: query
@@ -781,6 +844,7 @@ components:
             digits <other><group>. Only the tens (other) digit is enforced:
             1 = deny, 2 = read, 3 = read and write (write implies read).
             0 (default) makes the application accessible to every principal.
+            Accepted values: 0, or 10-39 with the first digit 1, 2 or 3.
             Holders of app-view-all bypass these bits for read access and holders
             of app-manage-all for every operation.
         execution_user:

@@ -1050,16 +1050,24 @@ std::string Utility::uuid()
 	return result.empty() ? shortID() : result;
 }
 
+bool &Utility::pidFileLockOwned()
+{
+	static bool owned = false;
+	return owned;
+}
+
+bool Utility::ownsPidFileLock() { return pidFileLockOwned(); }
+
 bool Utility::createPidFile()
 {
 	const static char fname[] = "Utility::createPidFile() ";
-
 	// https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
 	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
 	const auto pidFile = (fs::path(Utility::getHomeDir()) / PID_FILE).string();
 
 #if !defined(_WIN32)
-	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+	// No O_TRUNC: the running daemon's PID must survive a failed lock attempt.
+	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR, 0666);
 	if (fd < 0)
 	{
 		std::cerr << fname << "Failed to create PID file [" << pidFile << "]: " << last_error_msg() << std::endl;
@@ -1070,12 +1078,13 @@ bool Utility::createPidFile()
 	{
 		std::cout << fname << "New process running. PID file locked: " << pidFile << std::endl;
 		std::string pid = std::to_string(getpid());
-		if (write(fd, pid.c_str(), pid.length()) <= 0)
+		if (ftruncate(fd, 0) != 0 || lseek(fd, 0, SEEK_SET) != 0 || write(fd, pid.c_str(), pid.length()) <= 0)
 		{
 			std::cerr << fname << "Failed to write PID to file [" << pidFile << "]: " << last_error_msg() << std::endl;
 			close(fd);
 			return false;
 		}
+		pidFileLockOwned() = true;
 		return true;
 	}
 	else
@@ -1125,6 +1134,7 @@ bool Utility::createPidFile()
 
 	std::cout << fname << "New process running. PID file locked: " << pidFile << std::endl;
 	// Keep handle open to maintain lock
+	pidFileLockOwned() = true;
 	return true;
 #endif
 }
@@ -1343,7 +1353,15 @@ std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 #if defined(_WIN32)
 	return boost::program_options::split_winmain(commandLine);
 #else
-	return boost::program_options::split_unix(commandLine);
+	try
+	{
+		return boost::program_options::split_unix(commandLine);
+	}
+	catch (const boost::escaped_list_error &e)
+	{
+		// Client input, not a server fault: map to the 400 status.
+		throw std::invalid_argument(e.what());
+	}
 #endif
 }
 

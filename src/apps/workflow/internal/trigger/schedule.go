@@ -20,10 +20,12 @@ import (
 var ParseSchedule = schedule.Parse
 
 type schedState struct {
-	wf   *models.Workflow
-	next time.Time
-	expr string
-	key  string // the workflow's schedule definition (cron set), to detect edits
+	wf *models.Workflow
+	// last is the instant up to which the schedule has been accounted for (the
+	// Kubernetes CronJob lastScheduleTime model): the next fire is always
+	// schedule.Next(last), so a definition change naturally re-bases from the last
+	// completed period without any extra bookkeeping.
+	last time.Time
 }
 
 // ScheduleDispatcher fires due schedule triggers. Every method runs on the
@@ -36,83 +38,66 @@ func NewScheduleDispatcher() *ScheduleDispatcher {
 	return &ScheduleDispatcher{byWF: make(map[string]schedState)}
 }
 
-// cronKey identifies a workflow's schedule definition so reset can tell an edit from
-// an unchanged reload.
-func cronKey(wf *models.Workflow) string {
-	if wf.On == nil {
-		return ""
-	}
-	key := ""
-	for _, s := range wf.On.Schedule {
-		key += s.Cron + "\n"
-	}
-	return key
+func hasSchedule(wf *models.Workflow) bool {
+	return wf.On != nil && len(wf.On.Schedule) > 0
 }
 
-// reset reconciles cached state with the current registry. A workflow that is new, or
-// whose schedule definition changed, is based from now. An unchanged workflow KEEPS
-// its pending fire time even if it is already due — recomputing from now on every
-// tick would push a due fire perpetually into the future and it would never happen.
-// Removed workflows drop out; a definition change or engine restart never back-fills
-// missed periods (a new base is always now or later).
+// reset reconciles tracked workflows with the registry: vanished workflows and
+// definitions that lost their schedules drop out; newly scheduled workflows start
+// from now. A fresh start therefore never back-fills missed periods.
 func (d *ScheduleDispatcher) reset(all map[string]*models.Workflow, now time.Time) {
-	for name := range d.byWF {
-		if _, ok := all[name]; !ok {
+	for name, st := range d.byWF {
+		wf, ok := all[name]
+		if !ok || !hasSchedule(wf) {
 			delete(d.byWF, name)
+			continue
 		}
+		st.wf = wf
+		d.byWF[name] = st
 	}
 	for name, wf := range all {
-		next, expr := nextFire(wf, now)
-		if next.IsZero() {
-			delete(d.byWF, name)
+		if _, ok := d.byWF[name]; ok || !hasSchedule(wf) {
 			continue
 		}
-		key := cronKey(wf)
-		if st, ok := d.byWF[name]; ok && st.key == key {
-			st.wf = wf
-			if next.Before(st.next) {
-				st.next, st.expr = next, expr
-			}
-			d.byWF[name] = st
-			continue
-		}
-		d.byWF[name] = schedState{wf: wf, next: next, expr: expr, key: key}
+		d.byWF[name] = schedState{wf: wf, last: now}
 	}
 }
 
-// tick fires every workflow whose next fire time has passed. The state advances past
-// now BEFORE firing, so a late tick fires once, not once per missed period.
+// tick fires every workflow whose next period (after its last accounted instant)
+// has passed. Firing advances `last` to now, so a late tick fires once and forgoes
+// the intermediate missed periods instead of catching up.
 func (d *ScheduleDispatcher) tick(now time.Time, fire func(wf *models.Workflow, source string)) int {
-	var due []schedState
+	type dueFire struct {
+		st   schedState
+		expr string
+	}
+	var due []dueFire
 	for name, st := range d.byWF {
-		if st.next.After(now) {
+		next, expr := nextFire(st.wf, st.last)
+		if next.IsZero() || next.After(now) {
 			continue
 		}
-		next, expr := nextFire(st.wf, now)
-		if next.IsZero() {
-			delete(d.byWF, name)
-		} else {
-			d.byWF[name] = schedState{wf: st.wf, next: next, expr: expr}
-		}
-		due = append(due, st)
+		st.last = now
+		d.byWF[name] = st
+		due = append(due, dueFire{st: st, expr: expr})
 	}
-	for _, st := range due {
-		fire(st.wf, "schedule:"+st.expr)
+	for _, f := range due {
+		fire(f.st.wf, "schedule:"+f.expr)
 	}
 	return len(due)
 }
 
-// tracked reports how many workflows currently have a pending next fire time
-// (observability for the dispatch tick).
+// tracked reports how many workflows currently carry a schedule (observability for
+// the dispatch tick).
 func (d *ScheduleDispatcher) tracked() int {
 	return len(d.byWF)
 }
 
-// nextFire returns the earliest next fire time (and its cron text) for a workflow's
-// schedule entries, or the zero time when it has none or none parse. Invalid
+// nextFire returns the next fire time (and its cron text) strictly after `after`,
+// or the zero time when the workflow has no (parseable) schedule. Invalid
 // expressions are logged and skipped — registration already rejects them, so this
 // only guards definitions written to disk behind the engine's back.
-func nextFire(wf *models.Workflow, now time.Time) (time.Time, string) {
+func nextFire(wf *models.Workflow, after time.Time) (time.Time, string) {
 	var best time.Time
 	var bestExpr string
 	if wf.On == nil {
@@ -124,7 +109,7 @@ func nextFire(wf *models.Workflow, now time.Time) (time.Time, string) {
 			logger.Error("workflow '" + wf.Name + "' schedule skipped: " + err.Error())
 			continue
 		}
-		next := sched.Next(now)
+		next := sched.Next(after)
 		if next.IsZero() {
 			continue
 		}

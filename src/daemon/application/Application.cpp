@@ -252,6 +252,12 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		app->m_startupPhase = phase->second;
 	}
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_permission);
+	// Share bits <other><group>: 0 grants all, else the tens digit must be 1-3.
+	if (app->m_ownerPermission < 0 || app->m_ownerPermission > 39 ||
+		(app->m_ownerPermission != 0 && app->m_ownerPermission / 10 < 1))
+	{
+		throw std::invalid_argument("permission must be 0 or a two-digit value whose first digit is 1, 2 or 3");
+	}
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell);
 	app->m_sessionLogin = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_session_login);
 
@@ -746,8 +752,33 @@ void Application::save()
 
 void Application::remove()
 {
-	Utility::removeFile(getYamlPath());
-	Utility::removeFile((fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string());
+	removeOwnedYamlFile(getYamlPath());
+	removeOwnedYamlFile((fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string());
+}
+
+void Application::removeOwnedYamlFile(const std::string &path)
+{
+	const static char fname[] = "Application::removeOwnedYamlFile() ";
+	if (!Utility::isFileExist(path))
+		return;
+	// Case-insensitive filesystems can resolve this name-based path to another
+	// application's file; only a file carrying this exact name may be deleted.
+	try
+	{
+		const auto root = YAML::LoadFile(path);
+		if (!root[JSON_KEY_APP_name] || !root[JSON_KEY_APP_name].IsScalar() ||
+			root[JSON_KEY_APP_name].as<std::string>() != m_name)
+		{
+			LOG_WAR << fname << "Keeping file <" << path << ">: it belongs to another application";
+			return;
+		}
+	}
+	catch (const std::exception &e)
+	{
+		LOG_WAR << fname << "Keeping file <" << path << ">: unreadable (" << e.what() << ")";
+		return;
+	}
+	Utility::removeFile(path);
 }
 
 void Application::dump()

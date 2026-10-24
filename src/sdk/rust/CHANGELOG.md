@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.10
+
+File-transfer correctness over the HTTP transport:
+
+- `upload_file`/`uploadFile` and `download_file`/`downloadFile` now use the
+  plain-HTTP file routes with HTTP-native body semantics: GET download answers
+  the file bytes, POST upload streams the raw file body. The previous multipart
+  request silently lost data against a bare daemon (the daemon answered the
+  socket-transfer dance and never read the HTTP body while the client reported
+  success).
+- A legacy daemon's placeholder replies are detected on both directions and
+  reported as explicit errors instead of being written as file content.
+
 ## 3.0.9
 
 Subscription and transport reliability fixes (semantics aligned with the

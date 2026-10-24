@@ -10,7 +10,7 @@ import (
 )
 
 var exprPattern = regexp.MustCompile(`\$\{\{\s*(.+?)\s*\}\}`)
-var toJSONPattern = regexp.MustCompile(`(?i)^toJSON\((.+)\)$`)
+var toJSONPattern = regexp.MustCompile(`^toJSON\((.+)\)$`)
 
 // Context holds runtime state for expression evaluation. Thread-safe.
 type Context struct {

@@ -634,40 +634,8 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			log = runLog
 		}
 
-		code, _ := engine.RunWithContext(ctx, wf, execClient, inputs, runID, 0, engine.Options{
-			ClusterNodes: s.clusterNodes,
-			ServerURI:    s.serverURI,
-			// Only a human caller's Dex bearer may cross a node boundary or enter an
-			// explicit message payload. Internal capabilities stay on the local Engine.
-			CallerToken:         token,
-			CompletedJobs:       completedJobs,
-			CompletedSteps:      completedSteps,
-			RecoveredSteps:      recoveredSteps,
-			Log:                 log,
-			ActiveSteps:         active,
-			WorkflowBaseDir:     s.wdir.BaseDir(),
-			WorkflowProcessUUID: s.processUUID,
-			// Explicit capability identity: the daemon validates temporary App
-			// metadata against exactly these values (issued in resolveExecCredential).
-			CapabilityWorkflowID: wf.Name,
-			CapabilityRunID:      runID,
-			OnJobDone: func(jobName, status, targetHost string, steps map[string]map[string]any) {
-				cpSteps := make(map[string]StepState, len(steps))
-				for name, data := range steps {
-					cpSteps[name] = stepDataToState(data)
-				}
-				s.checkpoint.UpdateJob(wf.Name, runID, jobName, status, targetHost, cpSteps)
-			},
-			OnStepDone: func(jobName, stepName, stdout string) {
-				s.wdir.WriteStepLog(wf.Name, runID, jobName, stepName, stdout)
-			},
-			OnStepPersist: func(jobName, stepName string, data map[string]any) {
-				s.checkpoint.UpdateStep(wf.Name, runID, jobName, stepName, stepDataToState(data))
-			},
-			StepLogPathFn: func(jobName, stepName string) string {
-				return s.wdir.StepLogPath(wf.Name, runID, jobName, stepName)
-			},
-		})
+		code, _ := engine.RunWithContext(ctx, wf, execClient, inputs, runID, 0,
+			s.engineOptions(wf, runID, token, log, active, completedJobs, completedSteps, recoveredSteps))
 
 		dur = time.Since(start).Seconds()
 		// Trust the engine's exit code first. Only label as cancelled when
@@ -687,6 +655,50 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			logger.Info(fmt.Sprintf("TRIGGER workflow '%s' run=%s failed (exit %d)", wf.Name, runID, code))
 		}
 	}()
+}
+
+// engineOptions assembles the engine.Options every run — fresh, resumed, or promoted
+// from a concurrency queue — executes with. The checkpoint callbacks are the recovery
+// contract: OnJobDone records terminal job state, OnStepPersist records each step's
+// terminal result for step-granular resume. Extracted from launchRun so tests exercise
+// the one production wiring instead of copying it.
+func (s *Service) engineOptions(wf *models.Workflow, runID, token string, log logger.Log,
+	active *engine.ActiveSteps, completedJobs map[string]string, completedSteps map[string]map[string]bool,
+	recoveredSteps map[string]map[string]map[string]any) engine.Options {
+	return engine.Options{
+		ClusterNodes: s.clusterNodes,
+		ServerURI:    s.serverURI,
+		// Only a human caller's Dex bearer may cross a node boundary or enter an
+		// explicit message payload. Internal capabilities stay on the local Engine.
+		CallerToken:     token,
+		CompletedJobs:   completedJobs,
+		CompletedSteps:  completedSteps,
+		RecoveredSteps:  recoveredSteps,
+		Log:             log,
+		ActiveSteps:     active,
+		WorkflowBaseDir: s.wdir.BaseDir(),
+		// Explicit capability identity: the daemon validates temporary App
+		// metadata against exactly these values (issued in resolveExecCredential).
+		WorkflowProcessUUID:  s.processUUID,
+		CapabilityWorkflowID: wf.Name,
+		CapabilityRunID:      runID,
+		OnJobDone: func(jobName, status, targetHost string, steps map[string]map[string]any) {
+			cpSteps := make(map[string]StepState, len(steps))
+			for name, data := range steps {
+				cpSteps[name] = stepDataToState(data)
+			}
+			s.checkpoint.UpdateJob(wf.Name, runID, jobName, status, targetHost, cpSteps)
+		},
+		OnStepDone: func(jobName, stepName, stdout string) {
+			s.wdir.WriteStepLog(wf.Name, runID, jobName, stepName, stdout)
+		},
+		OnStepPersist: func(jobName, stepName string, data map[string]any) {
+			s.checkpoint.UpdateStep(wf.Name, runID, jobName, stepName, stepDataToState(data))
+		},
+		StepLogPathFn: func(jobName, stepName string) string {
+			return s.wdir.StepLogPath(wf.Name, runID, jobName, stepName)
+		},
+	}
 }
 
 // startCapabilityRenewal keeps long runs alive without a long-lived
