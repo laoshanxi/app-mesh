@@ -28,7 +28,9 @@ env:
     3. 除 skill 命令外不要执行其他 shell 命令。
     4. 查不到就明确说查不到，并建议用户去找谁。
   DH_TEAM: "@TEAM@"
-  DH_TOKEN_CMD: "@TOKEN_CMD@"
+  DH_TOKEN_URL: "@TOKEN_URL@"
+  DH_BOT_USER: "@BOT_USER@"
+  DH_BOT_PASSWORD_FILE: "@BOT_PW_FILE@"
   APPMESH_URL: "@APPMESH_URL@"
   APPMESH_CA: "@APPMESH_CA@"
 metadata:

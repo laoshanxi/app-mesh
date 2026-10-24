@@ -41,6 +41,7 @@ from _support.client_mixins import (
 )
 
 _WSS_REST_PORT = config.WSS_REST_PORT
+_TCP_PORT = config.TCP_PORT
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +93,7 @@ class TestTCP(
     """Tests using TCP client (AppMeshClientTCP)."""
 
     def setUp(self):
-        self.client = AppMeshClientTCP()
+        self.client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
 
     def tearDown(self):
         try:
@@ -101,7 +102,7 @@ class TestTCP(
             pass
 
     def _create_client(self):
-        return AppMeshClientTCP()
+        return AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
 
 
 class TestWSS(
@@ -112,7 +113,7 @@ class TestWSS(
     """Tests using WebSocket Secure client (AppMeshClientWSS)."""
 
     def setUp(self):
-        self.client = AppMeshClientWSS()
+        self.client = AppMeshClientWSS(wss_address=("127.0.0.1", _WSS_REST_PORT))
 
     def tearDown(self):
         try:
@@ -121,7 +122,7 @@ class TestWSS(
             pass
 
     def _create_client(self):
-        return AppMeshClientWSS()
+        return AppMeshClientWSS(wss_address=("127.0.0.1", _WSS_REST_PORT))
 
     def test_17_forward_to(self):
         """A forwarded request reaches the peer over the daemon's own transport.
@@ -146,7 +147,7 @@ class TestWSS(
         """
         config.attach_test_bearer(self.client)
         try:
-            self.client.forward_to = "127.0.0.1:6059"
+            self.client.forward_to = f"127.0.0.1:{_TCP_PORT}"
             apps = self.client.list_apps()
             self.assertGreater(len(apps), 0)
         finally:
@@ -254,7 +255,7 @@ class TestProtocolFixes(TestCase):
 
     def test_path_traversal_rejected(self):
         """File paths with '..' must be rejected."""
-        client = AppMeshClientTCP()
+        client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
         config.attach_test_bearer(client)
         with self.assertRaises(Exception):
             client.download_file("/opt/appmesh/../../etc/shadow", "shadow.local")
@@ -263,7 +264,7 @@ class TestProtocolFixes(TestCase):
 
     def test_path_traversal_upload_rejected(self):
         """Upload with '..' in remote path must be rejected."""
-        client = AppMeshClientTCP()
+        client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
         config.attach_test_bearer(client)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             tmp.write(b"test")
@@ -276,7 +277,7 @@ class TestProtocolFixes(TestCase):
 
     def test_tcp_large_app_output(self):
         """TCP transport handles non-trivial payload (message framing)."""
-        client = AppMeshClientTCP()
+        client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
         config.attach_test_bearer(client)
         exit_code, output = client.run_app_sync(App({"command": "seq 1 100", "shell": True}), max_time=5)
         self.assertEqual(0, exit_code)
@@ -300,7 +301,7 @@ class TestProtocolFixes(TestCase):
 
     def test_tcp_concurrent_requests(self):
         """TCP handles multiple rapid sequential requests."""
-        client = AppMeshClientTCP()
+        client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
         config.attach_test_bearer(client)
         for _ in range(10):
             apps = client.list_apps()

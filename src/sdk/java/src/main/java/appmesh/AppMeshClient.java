@@ -2,6 +2,7 @@ package appmesh;
 
 import java.io.Closeable;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -735,14 +736,22 @@ public class AppMeshClient implements Closeable {
     /**
      * Download a remote file to local disk.
      *
-     * <p>When {@code applyFileAttributes} is true, POSIX metadata from response headers is applied
-     * locally on a best-effort basis.
+     * <p>Plain-HTTP transport: GET answers the file bytes; the agent proxy serves the same
+     * route from local disk. {@code applyFileAttributes} applies returned POSIX metadata
+     * best-effort.
      */
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put("X-File-Path", encodeURIComponent(filePath));
 
         HttpURLConnection conn = request("GET", "/appmesh/file/download", null, headers, null);
+        // A JSON reply without Content-Disposition is a legacy placeholder, not content.
+        String contentType = conn.getContentType() == null ? "" : conn.getContentType().toLowerCase();
+        if (conn.getResponseCode() == HttpURLConnection.HTTP_OK && contentType.contains("json")
+                && conn.getHeaderField("Content-Disposition") == null) {
+            conn.disconnect();
+            throw new IOException("File download is not supported by this server surface (legacy reply without content)");
+        }
         if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
             throw new IOException(Utils.readResponseSafe(conn));
         }
@@ -788,6 +797,9 @@ public class AppMeshClient implements Closeable {
     /**
      * Upload a local file to the remote server.
      *
+     * <p>Plain-HTTP transport: POST streams the raw file bytes as the body; the agent
+     * proxy accepts the same route.
+     *
      * <p>When {@code preservePermissions} is true, local file metadata is sent in headers so the
      * server can recreate permissions and ownership when supported.
      */
@@ -803,9 +815,7 @@ public class AppMeshClient implements Closeable {
         if (preservePermissions) {
             headers.putAll(Utils.getFileAttributes(file));
         }
-
-        String boundary = Utils.generateBoundary();
-        headers.put(CONTENT_TYPE_HEADER, "multipart/form-data; boundary=" + boundary);
+        headers.put(CONTENT_TYPE_HEADER, "application/octet-stream");
 
         URL url = Utils.toUrl(this.baseURL + "/appmesh/file/upload");
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -813,23 +823,38 @@ public class AppMeshClient implements Closeable {
         connection.setDoOutput(true);
         connection.setRequestMethod("POST");
         // Stream the request body instead of buffering the whole file in memory
-        connection.setChunkedStreamingMode(4096);
+        connection.setFixedLengthStreamingMode(file.length());
         connection.setConnectTimeout(connectTimeoutMs);
         connection.setReadTimeout(readTimeoutMs);
         commonHeaders().forEach(connection::setRequestProperty);
         headers.forEach(connection::setRequestProperty);
 
-        try (OutputStream output = connection.getOutputStream()) {
-            Utils.writeMultipartFormData(output, boundary, file);
+        try (InputStream fis = new FileInputStream(file);
+                OutputStream os = connection.getOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                os.write(buffer, 0, bytesRead);
+            }
+            os.flush();
         }
 
         int responseCode = connection.getResponseCode();
-        if (responseCode != HttpURLConnection.HTTP_OK) {
-            String responseBody = Utils.readErrorResponse(connection);
-            LOGGER.severe("HTTP error code: " + responseCode);
-            throw new IOException("HTTP error code: " + responseCode + ", Response: " + responseBody);
+        // A 200 JSON status reply means a legacy daemon stored nothing.
+        String replyType = connection.getContentType() == null ? "" : connection.getContentType().toLowerCase();
+        if (responseCode >= HttpURLConnection.HTTP_OK && responseCode < HttpURLConnection.HTTP_MULT_CHOICE) {
+            if (responseCode == HttpURLConnection.HTTP_OK && replyType.contains("json")
+                    && Utils.readResponseSafe(connection).contains("\"message\"")) {
+                connection.disconnect();
+                throw new IOException("File upload is not supported by this server surface (legacy reply without storage)");
+            }
+            connection.disconnect();
+            return true;
         }
-        return true;
+        String responseBody = Utils.readErrorResponse(connection);
+        connection.disconnect();
+        LOGGER.severe("HTTP error code: " + responseCode);
+        throw new IOException("HTTP error code: " + responseCode + ", Response: " + responseBody);
     }
 
     /**

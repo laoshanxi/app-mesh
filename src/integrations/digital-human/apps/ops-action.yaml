@@ -9,7 +9,7 @@ env:
   APPMESH_URL: "@APPMESH_URL@"
   APPMESH_CA: "@APPMESH_CA@"
   APPMESH_TCP: "@TCP_API@"
-  APPROVAL_FILE: "@RUNTIME@/approvals.json"
+  APPROVAL_FILE: "@RUNTIME@/approvals.db"
 metadata:
   tool:
     name: ops-action

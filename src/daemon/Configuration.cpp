@@ -685,6 +685,11 @@ std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, b
 		std::lock_guard mutationGuard(m_appMutationMutex);
 		lockSentinel.acquired();
 		app = parseApp(jsonApp);
+		// Case-variant names collide on case-insensitive filesystems.
+		const auto caseConflict = caseInsensitiveNameConflict(app->getName());
+		if (!caseConflict.empty())
+			throw std::invalid_argument("application name conflicts with existing application <" + caseConflict +
+										">: names must differ by more than letter case");
 		if (enforceRegistration)
 		{
 			// Atomic with registration: a racing same-name add/remove is stale, not a silent winner.
@@ -1059,6 +1064,22 @@ std::shared_ptr<Application> Configuration::parseApp(const Json::Value &jsonApp)
 	auto app = std::make_shared<Application>();
 	Application::FromJson(app, jsonApp);
 	return app;
+}
+
+std::string Configuration::caseInsensitiveNameConflict(const std::string &appName) const
+{
+	const static char fname[] = "Configuration::caseInsensitiveNameConflict() ";
+	const auto normalized = Utility::strTolower(appName);
+	std::string conflict;
+	m_apps.visit_all(
+		[&](auto &entry)
+		{
+			if (conflict.empty() && entry.first != appName && Utility::strTolower(entry.first) == normalized)
+				conflict = entry.first;
+		});
+	if (!conflict.empty())
+		LOG_WAR << fname << "Application <" << appName << "> conflicts with <" << conflict << ">";
+	return conflict;
 }
 
 std::shared_ptr<Application> Configuration::getApp(const std::string &appName, bool throwOnNotFound) const

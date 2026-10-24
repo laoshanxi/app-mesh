@@ -103,14 +103,18 @@ class MessageDemuxer:
         # Stop the dispatch worker last so the disconnect event has been delivered.
         self._dispatch_queue.put(self._DISPATCH_STOP)
 
-    def join(self, timeout: float = 5.0):
-        """Wait for the reader and dispatch threads to finish."""
+    def join(self, timeout: float = 5.0) -> bool:
+        """Wait for both threads; False when one is still alive after `timeout`."""
+        stopped = True
         if self._reader_thread:
             self._reader_thread.join(timeout=timeout)
+            stopped = stopped and not self._reader_thread.is_alive()
             self._reader_thread = None
         if self._dispatch_thread:
             self._dispatch_thread.join(timeout=timeout)
+            stopped = stopped and not self._dispatch_thread.is_alive()
             self._dispatch_thread = None
+        return stopped
 
     def _broadcast_disconnect(self):
         """Push a synthetic disconnect event to every registered callback."""

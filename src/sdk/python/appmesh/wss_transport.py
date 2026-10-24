@@ -143,11 +143,24 @@ class WSSTransport:
         """Close WebSocket connection."""
         if self._websocket:
             try:
+                # Bound the closing handshake against a silent or stolen close frame.
+                self._websocket.settimeout(3)
                 self._websocket.close()
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
             finally:
                 self._websocket = None
+
+    def abort(self) -> None:
+        """Abort without the closing handshake (a concurrent reader owns the socket)."""
+        websocket = self._websocket
+        self._websocket = None
+        if websocket is None:
+            return
+        try:
+            websocket.abort()
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
     @property
     def is_connected(self) -> bool:

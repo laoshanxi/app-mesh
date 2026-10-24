@@ -243,6 +243,13 @@ public:
 	static size_t utf8IncompleteTailBytes(const std::string &str);
 	static std::string convertToUTF8(const std::string &input, unsigned int codepage);
 	static bool createPidFile();
+	/// True only for the process that owns the PID-file lock.
+	static bool ownsPidFileLock();
+
+private:
+	static bool &pidFileLockOwned();
+
+public:
 	static void appendStrTimeAttr(Json::Value &jsonObj, const std::string &key);
 	static void appendStrDayTimeAttr(Json::Value &jsonObj, const std::string &key);
 	static void addExtraAppTimeReferStr(Json::Value &jsonObj);

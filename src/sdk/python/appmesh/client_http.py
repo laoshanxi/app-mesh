@@ -653,58 +653,95 @@ class AppMeshClient:
             return {}
 
     def download_file(self, remote_file: str, local_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
-        """Download a remote file to the local filesystem (``local_file`` defaults to the remote basename).
+        """Download a remote file (``local_file`` defaults to the remote basename).
 
-        When ``preserve_permissions`` is ``True``, POSIX mode/owner/group metadata from App Mesh
-        response headers is applied best-effort on non-Windows platforms.
+        Plain-HTTP transport: GET answers the file bytes; the agent proxy serves
+        the same route from local disk. ``preserve_permissions`` applies returned
+        POSIX metadata best-effort on non-Windows platforms.
         """
         if not local_file:
             local_file = os.path.basename(remote_file)
-        resp = self._request_http(
-            AppMeshClient._Method.GET,
-            path="/appmesh/file/download",
-            header={self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)},
+        token = self._get_bearer_token()
+        if not token:
+            raise ValueError("File transfer requires a bearer token")
+
+        r = self.session.get(
+            url=parse.urljoin(self.base_url, "/appmesh/file/download"),
+            stream=True,
+            timeout=self.request_timeout,
+            headers={
+                self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
+                self._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
+            },
+            cert=self.ssl_client_cert,
+            verify=self.ssl_verify,
         )
-
-        # Write the file content locally
-        local_path = Path(local_file)
-        with local_path.open("wb") as fp:
-            for chunk in resp.iter_content(chunk_size=8 * 1024):
-                if chunk:
-                    fp.write(chunk)
-
-        if preserve_permissions:
-            self._apply_file_attributes(local_path, resp.headers)
+        # A JSON reply without Content-Disposition is a legacy placeholder, not content.
+        content_type = r.headers.get("Content-Type", "")
+        if (r.status_code == HTTPStatus.OK and "Content-Disposition" not in r.headers
+                and "json" in content_type.lower()):
+            r.close()
+            raise AppMeshRequestError(
+                "File download is not supported by this server surface (legacy reply without content)")
+        try:
+            if r.status_code != HTTPStatus.OK:
+                raise AppMeshRequestError(f"File download failed: HTTP {r.status_code}: {r.text[:200]}")
+            local_path = Path(local_file)
+            with local_path.open("wb") as fp:
+                for chunk in r.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        fp.write(chunk)
+            if preserve_permissions:
+                self._apply_file_attributes(local_path, r.headers)
+        finally:
+            r.close()
 
     def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
-        """Upload a local file to the remote server (``remote_file`` defaults to the local file's basename).
+        """Upload a local file (``remote_file`` defaults to the local file's basename).
 
-        When ``preserve_permissions`` is ``True``, the client also sends local POSIX metadata
-        in request headers so the server can recreate permissions/ownership when supported.
+        Plain-HTTP transport: POST streams the raw file bytes as the body; the
+        agent proxy accepts the same route. ``preserve_permissions`` sends local
+        POSIX metadata so the server can recreate it.
         """
         if not remote_file:
             remote_file = os.path.basename(local_file)
         local_path = Path(local_file)
         if not local_path.exists():
             raise FileNotFoundError(f"Local file not found: {local_file}")
+        token = self._get_bearer_token()
+        if not token:
+            raise ValueError("File transfer requires a bearer token")
 
-        from requests_toolbelt import MultipartEncoder
+        header = {
+            self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
+            self._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
+        }
+        if preserve_permissions:
+            header.update(self._get_file_attributes(local_path))
 
         with local_path.open("rb") as fp:
-            encoder = MultipartEncoder(
-                fields={"filename": os.path.basename(remote_file), "file": ("filename", fp, "application/octet-stream")}
+            r = self.session.post(
+                url=parse.urljoin(self.base_url, "/appmesh/file/upload"),
+                data=fp,
+                timeout=self.request_timeout,
+                headers=dict(header),
+                cert=self.ssl_client_cert,
+                verify=self.ssl_verify,
             )
-
-            header = {self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file), "Content-Type": encoder.content_type}
-
-            if preserve_permissions:
-                header.update(self._get_file_attributes(local_path))
-
-            # Upload file with or without attributes
-            # https://stackoverflow.com/questions/22567306/python-requests-file-upload
-            self._request_http(
-                AppMeshClient._Method.POST_STREAM, path="/appmesh/file/upload", header=header, body=encoder
-            )
+        try:
+            if r.status_code not in (HTTPStatus.OK, HTTPStatus.CREATED):
+                raise AppMeshRequestError(f"File upload failed: HTTP {r.status_code}: {r.text[:200]}")
+            # A 200 JSON status reply means a legacy daemon stored nothing.
+            content_type = r.headers.get("Content-Type", "")
+            if r.status_code == HTTPStatus.OK and "json" in content_type.lower():
+                try:
+                    if isinstance(r.json(), dict) and "message" in r.json():
+                        raise AppMeshRequestError(
+                            "File upload is not supported by this server surface (legacy reply without storage)")
+                except ValueError:
+                    pass
+        finally:
+            r.close()
 
     ########################################
     # Application run

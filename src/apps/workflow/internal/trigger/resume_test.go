@@ -9,19 +9,20 @@ import (
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
 )
 
-// resumeHarness wires the checkpoint, the recoverState assembly and the engine exactly
-// the way Service.launchRun does (minus the run capability, which needs a daemon), so a
-// test can prove the whole crash→resume data path — not just one layer of it.
+// resumeHarness wires a real Checkpoint and workdir into a real Service, so the
+// resume tests run the production recovery path — recoverState plus the engine
+// options from engineOptions — rather than a copy of it. Only the daemon-dependent
+// parts (capability issuance, TCP client) are absent.
 type resumeHarness struct {
-	cp   *Checkpoint
-	wdir *workdir.Manager
+	svc *Service
+	cp  *Checkpoint
 }
 
-func newResumeHarness(t *testing.T) (*resumeHarness, string) {
+func newResumeHarness(t *testing.T) *resumeHarness {
 	t.Helper()
-	base := t.TempDir()
-	w := workdir.NewManager(base, 10)
-	return &resumeHarness{cp: NewCheckpoint(w), wdir: w}, base
+	w := workdir.NewManager(t.TempDir(), 10)
+	s := &Service{checkpoint: NewCheckpoint(w), wdir: w}
+	return &resumeHarness{svc: s, cp: s.checkpoint}
 }
 
 // crashedRun persists the state a SIGKILL leaves behind: a run whose first main step
@@ -60,46 +61,38 @@ func resumeWorkflow() *models.Workflow {
 	}
 }
 
+// resumeOptions rebuilds the run after a crash exactly as resumeRun does: one atomic
+// checkpoint with completed and pending jobs, then the production engine options.
+func (h *resumeHarness) resumeOptions(wf *models.Workflow, runID string) engine.Options {
+	completedJobs, completedSteps, savedSteps, recovered := h.svc.recoverState(wf.Name, runID)
+	h.cp.SaveRunningWithCompleted(wf.Name, runID, "manual", "actor", nil, wf.Jobs, completedJobs, savedSteps)
+	return h.svc.engineOptions(wf, runID, "", nil, nil, completedJobs, completedSteps, recovered)
+}
+
 // The full resume path a crash exercises: CompletedSteps come back out of the
 // checkpoint, the engine skips both the completed main step AND the completed finally
 // step (nil client: any execution panics → failure), and the final checkpoint carries
 // every step's saved data — including the finally step's.
 func TestResumePathSkipsCompletedMainAndFinallySteps(t *testing.T) {
-	h, _ := newResumeHarness(t)
+	h := newResumeHarness(t)
 	wf := resumeWorkflow()
 	runID := "run-resume-1"
 	h.crashedRun(wf, runID)
 
-	// resumeRun's assembly: completed jobs/steps + saved data in one atomic checkpoint.
-	completedJobs, completedSteps, savedSteps, recovered := h.recoverAssembly(wf, runID)
-	h.cp.SaveRunningWithCompleted(wf.Name, runID, "manual", "actor", nil, wf.Jobs, completedJobs, savedSteps)
+	opts := h.resumeOptions(wf, runID)
+	inner := opts.OnStepPersist // observe persists through the production callback
+	var persisted []string
+	opts.OnStepPersist = func(jobName, stepName string, data map[string]any) {
+		persisted = append(persisted, stepName)
+		inner(jobName, stepName, data)
+	}
 
-	executed := map[string]string{}
-	code, _ := engine.RunWithContext(context.Background(), wf, nil, nil, runID, 0, engine.Options{
-		CompletedJobs:  completedJobs,
-		CompletedSteps: completedSteps,
-		RecoveredSteps: recovered,
-		OnJobDone: func(jobName, status, _ string, steps map[string]map[string]any) {
-			cpSteps := make(map[string]StepState, len(steps))
-			for name, data := range steps {
-				cpSteps[name] = stepDataToState(data)
-			}
-			h.cp.UpdateJob(wf.Name, runID, jobName, status, "", cpSteps)
-		},
-		OnStepPersist: func(_, stepName string, data map[string]any) {
-			executed[stepName], _ = data["status"].(string)
-		},
-	})
+	code, _ := engine.RunWithContext(context.Background(), wf, nil, nil, runID, 0, opts)
 	if code != 0 {
 		t.Fatalf("exit %d, want 0 (no recovered step may re-execute against the nil client)", code)
 	}
-	for _, name := range []string{"work", "cleanup"} {
-		if _, ran := executed[name]; ran {
-			t.Fatalf("recovered step %q re-executed and re-persisted on resume", name)
-		}
-	}
-	if executed["tail"] != models.StatusSkipped {
-		t.Fatalf("the not-yet-completed step 'tail' must still reach a terminal outcome, got %q", executed["tail"])
+	if len(persisted) != 1 || persisted[0] != "tail" {
+		t.Fatalf("persisted steps = %v, want exactly the not-yet-completed 'tail'", persisted)
 	}
 
 	// The final checkpoint keeps every step's result, including the recovered ones.
@@ -122,37 +115,25 @@ func TestResumePathSkipsCompletedMainAndFinallySteps(t *testing.T) {
 // A job that was already terminal (success) in the crashed run resumes whole: its
 // steps are restored for downstream expressions and OnJobDone is not re-invoked.
 func TestResumePathSkipsTerminalJobAndKeepsItsSteps(t *testing.T) {
-	h, _ := newResumeHarness(t)
+	h := newResumeHarness(t)
 	wf := resumeWorkflow()
 	runID := "run-resume-2"
-	jobNames := []string{"j"}
-	h.cp.SaveRunning(wf.Name, runID, "manual", "actor", nil, jobNames)
-	h.cp.UpdateStep(wf.Name, runID, "j", "work", StepState{Stdout: "did-work", ExitCode: 0, Status: "success"})
-	h.cp.UpdateStep(wf.Name, runID, "j", "tail", StepState{Stdout: "did-tail", ExitCode: 0, Status: "success"})
-	h.cp.UpdateStep(wf.Name, runID, "j", "cleanup", StepState{Stdout: "did-cleanup", ExitCode: 0, Status: "success"})
+	h.cp.SaveRunning(wf.Name, runID, "manual", "actor", nil, []string{"j"})
 	h.cp.UpdateJob(wf.Name, runID, "j", "success", "", map[string]StepState{
 		"work":    {Stdout: "did-work", ExitCode: 0, Status: "success"},
 		"tail":    {Stdout: "did-tail", ExitCode: 0, Status: "success"},
 		"cleanup": {Stdout: "did-cleanup", ExitCode: 0, Status: "success"},
 	})
 
-	completedJobs, completedSteps, savedSteps, recovered := h.recoverAssembly(wf, runID)
-	h.cp.SaveRunningWithCompleted(wf.Name, runID, "manual", "actor", nil, wf.Jobs, completedJobs, savedSteps)
-
-	if len(completedJobs) != 1 || completedJobs["j"] != "success" {
-		t.Fatalf("terminal job not recovered as completed: %v", completedJobs)
-	}
-	if len(completedSteps) != 0 {
-		t.Fatalf("a terminal job must not surface per-step completions: %v", completedSteps)
+	opts := h.resumeOptions(wf, runID)
+	jobDone := false // observe through the production callback
+	inner := opts.OnJobDone
+	opts.OnJobDone = func(jobName, status, host string, steps map[string]map[string]any) {
+		jobDone = true
+		inner(jobName, status, host, steps)
 	}
 
-	jobDone := false
-	code, ectx := engine.RunWithContext(context.Background(), wf, nil, nil, runID, 0, engine.Options{
-		CompletedJobs:  completedJobs,
-		CompletedSteps: completedSteps,
-		RecoveredSteps: recovered,
-		OnJobDone:      func(_, _, _ string, _ map[string]map[string]any) { jobDone = true },
-	})
+	code, ectx := engine.RunWithContext(context.Background(), wf, nil, nil, runID, 0, opts)
 	if code != 0 {
 		t.Fatalf("exit %d, want 0 (a terminal job must not execute anything)", code)
 	}
@@ -162,12 +143,4 @@ func TestResumePathSkipsTerminalJobAndKeepsItsSteps(t *testing.T) {
 	if got := ectx.Steps["j.work"]; got["stdout"] != "did-work" {
 		t.Fatalf("terminal job step data not restored into expressions: %v", got)
 	}
-}
-
-// recoverAssembly mirrors Service.recoverState for tests (same code path, exposed via
-// the harness so the assertions exercise the production assembly).
-func (h *resumeHarness) recoverAssembly(wf *models.Workflow, runID string) (map[string]string,
-	map[string]map[string]bool, map[string]map[string]StepState, map[string]map[string]map[string]any) {
-	s := &Service{checkpoint: h.cp}
-	return s.recoverState(wf.Name, runID)
 }

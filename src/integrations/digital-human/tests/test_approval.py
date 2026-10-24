@@ -4,8 +4,8 @@
 - 自审批被拒、审批人未知被拒；
 - oa-approval create 忽略外部 payload（伪造绑定无效）；
 - 闸门端到端：未审批不执行 / 服务不匹配不执行 / 只能执行一次；
-- 并发：创建不丢失、同一审批并发消费只成功一次；
-- 文件权限 0600。
+- 并发：创建不丢失、同一审批并发消费只成功一次（SQLite 事务）；
+- 旧 JSON 台账一次性迁移；数据库文件 0600。
 """
 
 import stat
@@ -17,7 +17,7 @@ import ops_action
 
 
 def _isolated(tmp_path, monkeypatch):
-	monkeypatch.setattr(approval, "_FILE", tmp_path / "approvals.json")
+	monkeypatch.setattr(approval, "_FILE", tmp_path / "approvals.db")
 	monkeypatch.setattr(ops_action, "_EXEC_LOG", tmp_path / "ops-exec.log")
 
 
@@ -128,8 +128,23 @@ def test_concurrent_consume_wins_once(tmp_path, monkeypatch):
 	assert set(results) == {"ok", "error"}
 
 
-def test_store_files_are_0600(tmp_path, monkeypatch):
+def test_db_file_is_0600(tmp_path, monkeypatch):
 	_isolated(tmp_path, monkeypatch)
 	rec = approval.create("t", "zs", "high")
-	assert stat.S_IMODE((tmp_path / "approvals.json").stat().st_mode) == 0o600
-	assert stat.S_IMODE((tmp_path / "approvals.lock").stat().st_mode) == 0o600
+	assert stat.S_IMODE((tmp_path / "approvals.db").stat().st_mode) == 0o600
+
+
+def test_legacy_json_migrated_once(tmp_path, monkeypatch):
+	"""2026-10 之前的 JSON 台账自动迁入 SQLite，原文件保留为 .legacy。"""
+	import json as _json
+	db = tmp_path / "approvals.db"
+	db.write_text(_json.dumps({"AP-old0001": {"id": "AP-old0001", "title": "旧单", "requester": "zs",
+		"risk": "high", "status": "approved", "created": "2026-10-01 00:00:00",
+		"payload": {"action": "restart-service", "service": "nginx"}, "decided_by": "boss", "consumed": False}}),
+		encoding="utf-8")
+	monkeypatch.setattr(approval, "_FILE", db)
+	approval.create("新单", "ls", "low")  # 触发迁移 + 新建
+	rec = approval.get("AP-old0001")
+	assert rec is not None and rec["title"] == "旧单" and rec["status"] == "approved"
+	assert (tmp_path / "approvals.db.legacy").exists()
+	assert approval.get("AP-old0001") is not None  # 二次打开不再迁移，数据仍在

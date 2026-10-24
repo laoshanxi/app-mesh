@@ -101,6 +101,8 @@ public:
 	/// process destruction and persistence run outside the mutation lock.
 	bool removeApp(const std::string &appName, const Application *expected = nullptr);
 	std::shared_ptr<Application> parseApp(const Json::Value &jsonApp);
+	/// Existing name matching `appName` case-insensitively but not exactly, or empty.
+	std::string caseInsensitiveNameConflict(const std::string &appName) const;
 	/// Registers a parsed application from app recovery without REST-path
 	/// validation (see validateRecoveredDependencies). Takes the app mutation lock.
 	void registerRecoveredApp(const std::shared_ptr<Application> &app);

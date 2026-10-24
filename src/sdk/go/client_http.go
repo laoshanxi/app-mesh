@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -653,35 +652,9 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 	}
 	defer f.Close()
 
-	// Stream the multipart body through a pipe so the file is never buffered in memory.
-	// The small "filename" form field is written before the streamed file part (matching
-	// the Python SDK); the server locates the "file" part by name, so order is tolerated.
-	pr, pw := io.Pipe()
-	defer pr.Close() // unblocks the writer goroutine if the request fails early
-	writer := multipart.NewWriter(pw)
-	go func() {
-		if err := writer.WriteField("filename", filepath.Base(remoteFile)); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to write filename field: %w", err))
-			return
-		}
-		part, err := writer.CreateFormFile("file", filepath.Base(localFile))
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to create form file: %w", err))
-			return
-		}
-		if _, err := io.Copy(part, f); err != nil {
-			pw.CloseWithError(fmt.Errorf("failed to copy file data: %w", err))
-			return
-		}
-		pw.CloseWithError(writer.Close())
-	}()
-
-	headers := map[string]string{
-		"Content-Type": writer.FormDataContentType(),
-		"X-File-Path":  escapeRemoteFilePath(remoteFile),
-	}
-	// Include POSIX metadata headers (X-File-Mode/X-File-User/X-File-Group) so the
-	// server recreates the file's permissions and ownership (see openapi.yaml).
+	// Plain-HTTP transport: POST streams the raw file bytes as the body.
+	headers := map[string]string{"X-File-Path": escapeRemoteFilePath(remoteFile)}
+	// POSIX metadata headers; the server recreates permissions and ownership.
 	if applyFileAttributes {
 		attrs, err := fileAttributes(localFile)
 		if err != nil {
@@ -692,12 +665,17 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 		}
 	}
 
-	code, raw, _, err := r.req.Send(http.MethodPost, "/appmesh/file/upload", nil, headers, pr)
+	code, raw, respHdr, err := r.req.Send(http.MethodPost, "/appmesh/file/upload", nil, headers, f)
 	if err != nil {
 		return fmt.Errorf("upload file request failed: %w", err)
 	}
-	if code != http.StatusOK {
+	if code != http.StatusOK && code != http.StatusCreated {
 		return newAPIError("upload", code, string(raw))
+	}
+	// A 200 JSON status reply means a legacy daemon stored nothing.
+	if code == http.StatusOK && strings.Contains(strings.ToLower(respHdr.Get("Content-Type")), "json") &&
+		strings.Contains(string(raw), "\"message\"") {
+		return fmt.Errorf("file upload is not supported by this server surface (legacy reply without storage)")
 	}
 	return nil
 }
@@ -714,12 +692,18 @@ func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttr
 		return fmt.Errorf("remote file path is required")
 	}
 
+	// Plain-HTTP transport: GET answers the file bytes.
 	headers := map[string]string{"X-File-Path": escapeRemoteFilePath(remoteFile)}
 	code, body, respHdr, err := r.getStream("/appmesh/file/download", nil, headers)
 	if err != nil {
 		return fmt.Errorf("download request failed: %w", err)
 	}
 	defer body.Close()
+	// A JSON reply without Content-Disposition is a legacy placeholder, not content.
+	if code == http.StatusOK && respHdr.Get("Content-Disposition") == "" &&
+		strings.Contains(strings.ToLower(respHdr.Get("Content-Type")), "json") {
+		return fmt.Errorf("file download is not supported by this server surface (legacy reply without content)")
+	}
 	if code != http.StatusOK {
 		raw, _ := io.ReadAll(body) // error responses are small
 		return newAPIError("download", code, string(raw))

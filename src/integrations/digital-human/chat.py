@@ -36,7 +36,10 @@ def main():
 	args = parser.parse_args()
 
 	os.environ["DH_TEAM"] = args.team
-	client = make_client()
+	try:
+		client = make_client()
+	except RuntimeError as exc:
+		sys.exit(str(exc))
 
 	if args.skill:
 		try:

@@ -70,6 +70,7 @@ public:
 	virtual Json::Value AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
 	virtual void save();
 	virtual void remove();
+
 	virtual void dump();
 	virtual std::string getYamlPath();
 
@@ -118,6 +119,9 @@ public:
 private:
 	friend class AppProcess;
 	friend class HttpRequestOutputView;
+
+	/// Delete this application's YAML only when the file still carries its exact name.
+	void removeOwnedYamlFile(const std::string &path);
 
 	using RunCompletionCallback = std::function<void()>;
 	using RunCompletionSubscription = std::uint64_t;

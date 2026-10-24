@@ -35,19 +35,22 @@ fn task_err(action: &str) -> String {
 }
 
 /// A run_task failure on the workflow engine App with a usable cause: don't blame the
-/// engine when the caller's token was the problem (a rejected token shows up as
-/// HTTP 401/403 during connect — the engine is fine and running).
-fn task_hint<E: std::error::Error + Send + Sync + 'static>(action: &str, err: E) -> anyhow::Error {
-    let err = anyhow::Error::from(err);
-    let text = err.to_string();
-    let hint = if text.contains("401") || text.to_lowercase().contains("unauthorized") {
-        "the access token was rejected (expired or invalid) — re-run 'appm logon' or refresh APPMESH_BEARER_TOKEN"
-    } else if text.contains("403") || text.to_lowercase().contains("forbidden") {
-        "the access token lacks the required permission for this workflow action"
-    } else {
-        return err.context(task_err(action));
-    };
-    err.context(format!("Failed to {}: {}", action, hint))
+/// engine when the caller's token was the problem (a rejected bearer shows up as a
+/// typed 401/403 — at connect for the WebSocket handshake, or on the task request —
+/// while the engine itself is fine and running).
+fn task_hint(action: &str, err: appmesh::AppMeshError) -> anyhow::Error {
+	let hint = match &err {
+		appmesh::AppMeshError::RequestFailed { status, .. } if status.as_u16() == 401 =>
+			"the access token was rejected (expired or invalid) — re-run 'appm logon' or refresh APPMESH_BEARER_TOKEN",
+		appmesh::AppMeshError::RequestFailed { status, .. } if status.as_u16() == 403 =>
+			"the access token lacks the required permission for this workflow action",
+		appmesh::AppMeshError::AuthenticationFailed(_) =>
+			"authentication failed — re-run 'appm logon' or refresh APPMESH_BEARER_TOKEN",
+		appmesh::AppMeshError::PermissionDenied(_) =>
+			"the access token lacks the required permission for this workflow action",
+		_ => return anyhow::Error::from(err).context(task_err(action)),
+	};
+	anyhow::Error::from(err).context(format!("Failed to {}: {}", action, hint))
 }
 
 fn parse_resp(resp: &str) -> Result<serde_json::Value> {
@@ -426,4 +429,40 @@ async fn inputs(cli: &Cli, args: &WorkflowInputsArgs) -> Result<i32> {
         eprintln!("No inputs defined.");
     }
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::task_hint;
+	use appmesh::AppMeshError;
+	use http::StatusCode;
+
+	fn message(err: AppMeshError) -> String {
+		task_hint("run", err).to_string()
+	}
+
+	// The hint must follow the typed cause: a rejected token is not "engine down".
+	#[test]
+	fn token_rejections_get_token_hints() {
+		let msg = message(AppMeshError::RequestFailed {
+			status:  StatusCode::UNAUTHORIZED,
+			message: "WebSocket connect failed: 401".into(),
+		});
+		assert!(msg.contains("access token was rejected"), "{msg}");
+		assert!(!msg.contains("Is workflow engine running"), "{msg}");
+
+		let msg = message(AppMeshError::RequestFailed {
+			status:  StatusCode::FORBIDDEN,
+			message: String::new(),
+		});
+		assert!(msg.contains("lacks the required permission"), "{msg}");
+
+		assert!(message(AppMeshError::AuthenticationFailed("oauth".into())).contains("appm logon"));
+	}
+
+	#[test]
+	fn transport_failures_keep_the_engine_hint() {
+		let msg = message(AppMeshError::ConnectionError("refused".into()));
+		assert!(msg.contains("Is workflow engine running"), "{msg}");
+	}
 }

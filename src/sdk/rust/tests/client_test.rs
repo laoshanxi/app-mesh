@@ -509,12 +509,14 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
-    async fn test_upload_file_multipart_wire_format() {
+    async fn test_upload_file_raw_body_wire_format() {
         use std::io::Write;
 
         let mut server = Server::new_async().await;
 
-        let content = b"AppMesh multipart upload unit test\n";
+        // The plain-HTTP file route takes the raw file bytes as the body; a
+        // multipart request would be stored verbatim and corrupt the file.
+        let content = b"AppMesh raw upload unit test\n";
         let mut upload_src = tempfile::NamedTempFile::new().expect("failed to create temp upload file");
         upload_src.write_all(content).expect("write to temp file failed");
         upload_src.flush().unwrap();
@@ -522,14 +524,8 @@ mod tests {
         let mock = server
             .mock("POST", "/appmesh/file/upload")
             .match_header("x-file-path", "/tmp/upload_wire.txt")
-            .match_header("content-type", Matcher::Regex(r"^multipart/form-data; boundary=.+".to_string()))
-            .match_body(Matcher::AllOf(vec![
-                Matcher::Regex(r#"name="filename""#.to_string()),
-                Matcher::Regex(r#"name="file"; filename="#.to_string()),
-                Matcher::Regex("application/octet-stream".to_string()),
-                Matcher::Regex("AppMesh multipart upload unit test".to_string()),
-            ]))
-            .with_status(200)
+            .match_body(Matcher::Exact("AppMesh raw upload unit test\n".to_string()))
+            .with_status(201)
             .create_async()
             .await;
 

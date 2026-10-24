@@ -1,6 +1,8 @@
 // src/daemon/rest/EventTypes.h
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -43,22 +45,29 @@ inline const char *eventTypeToString(AppEventType type)
 	}
 }
 
-// Returns 0 for unknown event type strings (not ALL_EVENTS).
+// Returns 0 for unknown event type strings (not ALL_EVENTS). Matching is
+// case-insensitive; the wire contract is the upper-case name.
 inline uint32_t stringToEventBit(const std::string &str)
 {
-	if (str == "START")
+	const auto normalized = [](std::string value)
+	{
+		std::transform(value.begin(), value.end(), value.begin(),
+					   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+		return value;
+	}(str);
+	if (normalized == "START")
 		return static_cast<uint32_t>(AppEventType::PROCESS_START);
-	if (str == "EXIT")
+	if (normalized == "EXIT")
 		return static_cast<uint32_t>(AppEventType::PROCESS_EXIT);
-	if (str == "STDOUT")
+	if (normalized == "STDOUT")
 		return static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT);
-	if (str == "HEALTH")
+	if (normalized == "HEALTH")
 		return static_cast<uint32_t>(AppEventType::HEALTH_CHANGE);
-	if (str == "STATUS")
+	if (normalized == "STATUS")
 		return static_cast<uint32_t>(AppEventType::STATUS_CHANGE);
-	if (str == "REMOVED")
+	if (normalized == "REMOVED")
 		return static_cast<uint32_t>(AppEventType::APP_REMOVED);
-	if (str == "ALL")
+	if (normalized == "ALL")
 		return static_cast<uint32_t>(AppEventType::ALL_EVENTS);
 	return 0;
 }

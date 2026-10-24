@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 数字人技能调用 CLI —— agent 会话内（Bash 工具）与人工调试共用。
 # 用法: skill <技能名，不带 team 前缀> '<JSON 参数>'
-# 依赖: DH_TEAM（默认 demo）、APPMESH_URL / APPMESH_CA / APPMESH_BEARER_TOKEN，
-#       或 DH_TOKEN_CMD（无 token 时现场执行该命令铸造，Phase 0 沙箱方案）。
+# 依赖: DH_TEAM（默认 demo）、APPMESH_URL / APPMESH_CA 与凭据二选一：
+#       APPMESH_BEARER_TOKEN（静态 token），或 DH_BOT_PASSWORD_FILE + DH_BOT_USER
+#       + DH_TOKEN_URL（SDK PasswordGrantProvider，重跑 setup.sh 自动生成）。
 set -euo pipefail
 
 NAME=${1:?usage: skill <name> '<json>'}
@@ -14,16 +15,6 @@ PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export DH_TEAM="${DH_TEAM:-demo}"
 export APPMESH_URL="${APPMESH_URL:-https://127.0.0.1:6060}"
 export APPMESH_CA="${APPMESH_CA:-/opt/appmesh/ssl/ca.pem}"
-
-if [ -z "${APPMESH_BEARER_TOKEN:-}" ]; then
-	if [ -n "${DH_TOKEN_CMD:-}" ]; then
-		APPMESH_BEARER_TOKEN="$(eval "$DH_TOKEN_CMD")"
-		export APPMESH_BEARER_TOKEN
-	else
-		echo "error: 需要 APPMESH_BEARER_TOKEN 或 DH_TOKEN_CMD" >&2
-		exit 2
-	fi
-fi
 
 # 统一用 venv 的 Python（appmesh SDK >= 3.0.10）：系统自带的旧版 SDK
 # 对短中文响应会按 chardet 猜编码导致乱码

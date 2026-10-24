@@ -111,9 +111,9 @@ claude-agent-sdk 要求 Python ≥ 3.10。系统默认 Python 为 3.9。setup.sh
 | 授权 | 角色 `digital-human` 仅三项权限。实测：run_task 放行；注册 App 返回 403；管理 principal 返回 403 |
 | 密钥 | 模型密钥经 `-z` 加密存储。daemon API 不回显。本机文件（`dh-bot.env`、渲染后的 agent.yaml）权限 600 |
 | 高危操作 | 审批闸门（D5）。审批人不得为申请人（`approval.decide` 拒绝自审批）；审批单与操作的绑定 payload 只能由执行方（ops-action）写入，oa-approval 不接受外部 payload；校验与消费在文件锁内原子完成（`approval.consume`），同一审批只执行一次。实测：自审批、伪造 payload、服务不匹配、重复执行均被拒 |
-| 审批存储 | `approvals.json` 跨进程（oa-approval 与 ops-action 两个 App）经 flock 排它锁 + 独立临时文件写入，不丢更新；数据与锁文件权限 600 |
+| 审批存储 | `approvals.db`（SQLite）。跨进程（oa-approval 与 ops-action 两个 App）原子性由事务提供：decide/consume 为条件 UPDATE，先到者得；旧 JSON 台账自动一次性迁移（原文件保留 `*.legacy`）；库文件权限 600 |
 | IM 入口 | 适配器默认只监听 127.0.0.1（`DH_IM_BIND` 覆盖）。对外暴露必须设置 `DH_IM_TOKEN`：除 `/healthz` 外所有端点要求 `Authorization: Bearer` 或 `X-IM-Token`。请求体上限 1MB（`DH_IM_MAX_BODY`）；Content-Length 非法为负返回 400；非 JSON 对象返回 400；飞书 event_id 去重表有界（`DH_IM_MAX_EVENTS`，默认 1 万）；任务队列有界（`DH_IM_MAX_QUEUE`，默认 200），满时返回 429 |
-| 运行时凭据 | IM 适配器 token 只缓存在内存。收到 401 时经 `DH_TOKEN_CMD` 重铸并重试一次（Dex token 有 TTL，禁止永久缓存） |
+| 运行时凭据 | SDK `PasswordGrantProvider` + 600 权限密码文件（`dh-bot.password`，回退 `admin.password`）：铸造、过期前刷新、401 后重认证由 SDK 处理；密码文件每次授予时重读，轮换免重启。App 内经 `DH_TOKEN_URL/DH_BOT_USER/DH_BOT_PASSWORD_FILE` 显式注入；chat.py/skill 手工调用按 `runtime/<team>/` 约定路径自动发现。不生成任何铸 token 脚本，密码不进脚本正文 |
 | Workflow 注入 | 用户输入注入 JSON 文档必须用 `toJSON()` 表达式（引擎已支持）。示例见 `workflows/daily-digest.yaml`。直接内插会被引号破坏或注入字段 |
 | 审计 | 审批记录、执行日志、daemon 日志、会话 transcript |
 
@@ -182,6 +182,18 @@ claude-agent-sdk 要求 Python ≥ 3.10。系统默认 Python 为 3.9。setup.sh
 
 回归：`tests/` 27 用例通过；workflow 引擎 `go test ./...` 全绿；llm-agent 15 用例通过。
 
+第三轮（2026-10-24，标准化重构，容器复验）：
+
+| 项 | 变更 |
+|---|---|
+| token 生命周期 | 手搓缓存/401 重试/`DH_TOKEN_CMD` 全部移除，改 SDK `PasswordGrantProvider`（铸造/过期前刷新/401 重认证内建）；token-bot.sh / admin-token.sh 不再生成 |
+| 审批台账 | JSON+flock 改 SQLite：事务原子、条件 UPDATE 先到者得、旧 JSON 一次性迁移、0600 |
+| setup.sh | 密码文件（600）取代铸 token 脚本；`DH_ADMIN_PASSWORD` 转义块删除；探测用 `--data-urlencode` |
+| 兼容 | PyPI 3.0.10 `token_url` 须完整端点，`_token_url()` 归一化兼容 |
+| toJSON | 收紧为大小写敏感（对齐 GitHub Actions） |
+
+容器复验（appmesh:latest + 内置 Dex，全新安装）：setup.sh 一次通过且 dh-bot 主路径生效；无静态 token 的 `skill` 调用经 provider 铸 token 成功；自审批/伪造 payload/重复消费全部被拦；`approvals.db`/`ops-exec.log` 0600；适配器 CL:-1 → 400、健康检查 0。`tests/` 23 用例、多进程 90/90、workflow `go test` 全绿。
+
 ## 9. 环境记录
 
 | 环境 | 状态 | 说明 |
@@ -219,10 +231,12 @@ printf '%s' '<密码>' | sudo /opt/appmesh/script/appmesh-auth.sh add-user dh-bo
 9. **GLM 网关回合延迟波动大（30 秒至 10 分钟）。** 客户端 `run_task` 超时设为 ≥ 300 秒。IM 适配器按异步模式设计（webhook 立即应答，答案推送收件箱）。
 10. **automation-token 不适用于数字人运行时。** `appmesh-maintenance` 角色不含 `app-run-task`。因此自建角色 `digital-human`。
 11. **`skill` 脚本的 CA 默认路径。** 曾默认指向退役的 E2E 沙箱 `/private/tmp/appmesh-e2e/ssl/ca.pem`，文件不存在导致 SSL 校验抛 `ValueError`。已改为 `/opt/appmesh/ssl/ca.pem`。
-12. **`DH_ADMIN_PASSWORD` 含特殊字符会破坏生成的 admin-token.sh。** `"` 使脚本语法错误，`$` 运行时二次展开。setup.sh 已按双引号内安全形态转义（`\ " $ \`）后再写入。
+12. **`DH_ADMIN_PASSWORD` 含特殊字符曾破坏生成的 admin-token.sh。** `"` 使脚本语法错误，`$` 运行时二次展开。2026-10-24 起不再生成铸 token 脚本：密码原样写入 600 权限的 `admin.password`，由 SDK provider 直接使用，转义问题连根消除。
 13. **dh-bot.env 的值必须单引号包裹。** 密码或用户名含特殊字符（如 `<>'`）会破坏 `source` 语法。setup.sh 写入时统一单引号并转义内嵌单引号。
 14. **health_check_cmd 不经 shell 执行。** daemon 直接 exec（AppProcess 无 shell），重定向语法（`>/dev/null`）被当作字面参数传给 curl，恒 exit 3，应用被永久判为不健康。静默输出用参数形式（`curl -sf ... -o /dev/null`）。同因，health_check_cmd 不能使用 `&&`、管道、变量展开。
-15. **IM 回复不能因正文含"401"触发重发。** token 重试只认"错误信封 + message 为认证类"；答案正文（data.answer）出现 401 字样时重发会导致同一轮被大脑处理两次。
+15. **token 重试语义由 SDK provider 负责。** 2026-10-24 起适配器不再手工缓存 token / 匹配 401 文本（答案正文含 "401" 曾误触发重发导致大脑重复处理）。
+16. **`PasswordGrantProvider.token_url` 是完整端点语义（PyPI 3.0.10 与仓库 HEAD 一致）。** 传 base URL 会打到 Dex 根路径（404，报 `oauth_request_failed`）。`dh_client._token_url()` 统一补全 `/auth/token`，env 可写 base（与 appmesh-auth.sh 约定一致）或完整端点。
+17. **`DH_TOKEN_CMD` 已退役。** 运行时凭据统一走 provider（密码文件）；`skill`/chat.py 凭据二选一：`APPMESH_BEARER_TOKEN`（静态）或 provider 约定路径/env。
 
 ## 11. 未完成工作
 

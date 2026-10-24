@@ -79,6 +79,82 @@ namespace
 		for (auto &application : applications)
 			addOwnerDisplayName(application);
 	}
+
+	// Accepted application JSON keys; anything else is rejected instead of silently
+	// dropped. Read-only view keys are ignored so get-modify-put round trips work.
+	const std::set<std::string> &applicationInputKeys()
+	{
+		static const std::set<std::string> keys = {
+			// writable definition
+			JSON_KEY_APP_name,
+			JSON_KEY_APP_command,
+			JSON_KEY_APP_docker_image,
+			JSON_KEY_APP_description,
+			JSON_KEY_APP_working_dir,
+			JSON_KEY_APP_health_check_cmd,
+			JSON_KEY_APP_env,
+			JSON_KEY_APP_secret_env,
+			JSON_KEY_APP_metadata,
+			JSON_KEY_APP_behavior,
+			JSON_KEY_APP_permission,
+			JSON_KEY_APP_enabled,
+			JSON_KEY_APP_system,
+			JSON_KEY_APP_startup_phase,
+			JSON_KEY_APP_depends_on,
+			JSON_KEY_APP_shell,
+			JSON_KEY_APP_session_login,
+			JSON_KEY_APP_owner_principal_id,
+			JSON_KEY_APP_owner, // legacy: rejected with its own message in FromJson
+			JSON_KEY_APP_from_recover,
+			JSON_KEY_APP_execution_user,
+			JSON_KEY_APP_daily_limitation,
+			JSON_KEY_APP_resource_limit,
+			JSON_KEY_APP_stdout_backup_count,
+			JSON_KEY_APP_stop_grace_period,
+			JSON_KEY_APP_cron_schedule,
+			JSON_KEY_APP_interval,
+			JSON_KEY_APP_start_time,
+			JSON_KEY_APP_end_time,
+			// read-only echoes from the application view
+			JSON_KEY_APP_owner_display_name,
+			JSON_KEY_APP_pid,
+			JSON_KEY_APP_pid_user,
+			JSON_KEY_APP_return_code,
+			JSON_KEY_APP_memory,
+			JSON_KEY_APP_cpu,
+			JSON_KEY_APP_fd,
+			JSON_KEY_APP_pstree,
+			JSON_KEY_APP_container_id,
+			JSON_KEY_APP_health,
+			JSON_KEY_APP_starts,
+			JSON_KEY_APP_register_time,
+			JSON_KEY_APP_last_start,
+			JSON_KEY_APP_last_exit,
+			JSON_KEY_APP_next_start_time,
+			JSON_KEY_APP_last_error,
+			JSON_KEY_APP_waiting_for,
+			JSON_KEY_APP_task_id,
+			JSON_KEY_APP_task_status,
+			JSON_KEY_APP_stdout_file_count,
+			"subscription_id",
+		};
+		return keys;
+	}
+
+	// Unknown keys of jsonApp, comma-joined; empty when all are known.
+	std::string unknownApplicationFields(const Json::Value &jsonApp)
+	{
+		std::string unknown;
+		for (const auto &key : jsonApp.getMemberNames())
+		{
+			if (applicationInputKeys().count(key) != 0)
+				continue;
+			if (!unknown.empty())
+				unknown += ", ";
+			unknown += key;
+		}
+		return unknown;
+	}
 }
 
 // 1. Authentication
@@ -882,6 +958,30 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_config_set);
 
 	auto json = message->extractJson();
+	// Reject keys the configuration view does not carry; typos were silently dropped.
+	// Labels stay free-form; read-only keys (Version) are accepted and ignored.
+	{
+		const auto current = Configuration::instance()->AsJson();
+		std::string unknown;
+		for (const auto &section : json.getMemberNames())
+		{
+			if (!current.isMember(section) || section == JSON_KEY_Labels || !json[section].isObject())
+			{
+				if (!current.isMember(section))
+					unknown += std::string(section) + " ";
+				continue;
+			}
+			if (!current[section].isObject())
+				continue;
+			for (const auto &key : json[section].getMemberNames())
+			{
+				if (!current[section].isMember(key))
+					unknown += section + "." + key + " ";
+			}
+		}
+		if (!unknown.empty())
+			throw std::invalid_argument("unknown configuration field(s): " + unknown);
+	}
 	Configuration::instance()->hotUpdateAndSave(json);
 
 	LOG_INF << fname << "User <" << tokenUser << "> updated configuration";
@@ -1240,6 +1340,11 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 
 	const auto callerPrincipalId = permissionCheck(message, "");
 	auto jsonApp = message->extractJson();
+	if (const auto unknown = unknownApplicationFields(jsonApp); !unknown.empty())
+	{
+		throw std::invalid_argument("unknown application field(s): " + unknown +
+									"; see the Application schema in the REST API documentation");
+	}
 	// from_recover is a server-internal flag; never trust it from REST input.
 	jsonApp.removeMember(JSON_KEY_APP_from_recover);
 	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_system))
@@ -1490,6 +1595,11 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	{
 		throw std::invalid_argument("Empty json input");
 	}
+	if (const auto unknown = unknownApplicationFields(jsonApp); !unknown.empty())
+	{
+		throw std::invalid_argument("unknown application field(s): " + unknown +
+									"; see the Application schema in the REST API documentation");
+	}
 	// from_recover is a server-internal flag; never trust it from REST input.
 	jsonApp.removeMember(JSON_KEY_APP_from_recover);
 
@@ -1500,6 +1610,16 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	const auto observed = config->getApp(appName, false);
 	if (observed)
 		checkAppAccessPermission(message, observed, true);
+
+	// Case-variant names collide on case-insensitive filesystems.
+	const auto caseConflict = config->caseInsensitiveNameConflict(appName);
+	if (!caseConflict.empty())
+	{
+		message->reply(web::http::status_codes::Conflict,
+					   Utility::text2json("application name conflicts with existing application <" + caseConflict +
+										  ">: names must differ by more than letter case"));
+		return;
+	}
 
 	auto subscribeEvents = getHttpQueryString(*message, "subscribe_events");
 	uint32_t eventMask = 0;

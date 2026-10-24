@@ -96,12 +96,12 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         """Close the connection and release resources."""
         if self._demuxer:
             self._demuxer.stop()
+            # The demuxer reader owns the socket read side; join it first.
+            self._demuxer.join()
+            self._demuxer = None
         if hasattr(self, "tcp_transport") and self.tcp_transport:
             self.tcp_transport.close()
             self.tcp_transport = None
-        if self._demuxer:
-            self._demuxer.join()
-            self._demuxer = None
         return super().close()
 
     def __del__(self):
