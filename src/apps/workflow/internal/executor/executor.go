@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +26,9 @@ const (
 	maxStdoutCapture = 65536
 	maxWorkflowDepth = 4
 	defaultMaxTime   = 172800
+	// maxStepLogFileSize caps the archived step log (the streamed file keeps the
+	// full output; the in-memory Stdout stays capped by maxStdoutCapture).
+	maxStepLogFileSize = 50 << 20
 )
 
 // StepAppPrefix tags daemon Apps spawned for command steps. Workflow startup
@@ -120,9 +125,26 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secretEnv map[string]
 		shell = *step.Shell
 	}
 	appName := StepAppPrefix + xid.New().String()
-	command, err := expression.SubstituteForJobChecked(step.Command, e.Ctx, e.JobName)
+	var command string
+	var exprEnv map[string]string
+	var err error
+	if shell {
+		// Shell commands receive expression values through $WF_E<N> environment
+		// variables: a value like "a; rm -rf /" must never become command text.
+		command, exprEnv, err = expression.SubstituteForCommand(step.Command, e.Ctx, e.JobName)
+	} else {
+		// No shell expands the variable, so keep direct substitution.
+		command, err = expression.SubstituteForJobChecked(step.Command, e.Ctx, e.JobName)
+	}
 	if err != nil {
 		return fail(1, err.Error(), 0)
+	}
+	if len(exprEnv) > 0 {
+		// Fresh map: the caller's env is the job's and must not be mutated.
+		merged := make(map[string]string, len(env)+len(exprEnv))
+		maps.Copy(merged, env)
+		maps.Copy(merged, exprEnv)
+		env = merged
 	}
 	metadata := stepAppMetadata(e.CapabilityWorkflowID, e.CapabilityRunID, e.Ctx, e.ProcessUUID)
 	app := appmesh.Application{
@@ -213,6 +235,7 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 			ExitCode: &code,
 			Stdout:   truncate(r.resp, maxStdoutCapture),
 			Response: r.resp,
+			Outputs:  appLevelAnswer(r.resp),
 			Duration: dur,
 		}
 	case <-ctx.Done():
@@ -247,6 +270,22 @@ func appLevelError(resp string) (string, bool) {
 		return "app returned status=error", true
 	}
 	return env.Message, true
+}
+
+// appLevelAnswer extracts the platform task-response convention's answer field
+// ({"status":"ok","data":{"answer":...}}, used by llm-agent) so pipelines can use
+// ${{ steps.<name>.outputs.answer }} instead of parsing the JSON envelope in shell.
+// nil when the response does not carry one.
+func appLevelAnswer(resp string) map[string]string {
+	var env struct {
+		Data struct {
+			Answer string `json:"answer"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(resp), &env); err != nil || env.Data.Answer == "" {
+		return nil
+	}
+	return map[string]string{"answer": env.Data.Answer}
 }
 
 // injectToken adds the run's Dex bearer as the "token" field of a JSON-object payload, for
@@ -381,6 +420,8 @@ func (e *StepExecutor) runAndWait(app appmesh.Application, timeout int) models.S
 		stdout  strings.Builder
 		logFile *os.File
 		fenced  bool // set true after we read stdout/closed logFile; blocks late writes
+		// logBytes caps the archived step log so a runaway step cannot fill the disk.
+		logBytes int64
 	)
 	if e.StepLogPath != "" {
 		os.MkdirAll(filepath.Dir(e.StepLogPath), 0700)
@@ -401,8 +442,17 @@ func (e *StepExecutor) runAndWait(app appmesh.Application, timeout int) models.S
 		if stdout.Len() < maxStdoutCapture {
 			stdout.WriteString(data)
 		}
-		if logFile != nil {
-			logFile.WriteString(data)
+		if logFile != nil && logBytes < maxStepLogFileSize {
+			if logBytes+int64(len(data)) > maxStepLogFileSize {
+				n := maxStepLogFileSize - logBytes
+				logFile.WriteString(data[:n])
+				logFile.WriteString("\n[step log truncated at " +
+					strconv.FormatInt(maxStepLogFileSize, 10) + " bytes]\n")
+				logBytes = maxStepLogFileSize
+			} else {
+				logFile.WriteString(data)
+				logBytes += int64(len(data))
+			}
 		}
 	}
 
@@ -448,6 +498,9 @@ func (e *StepExecutor) runAndWait(app appmesh.Application, timeout int) models.S
 		ExitCode: &ec,
 		Stdout:   truncate(strings.TrimSpace(out), maxStdoutCapture),
 		Duration: dur,
+		// The streamed file (if any) holds the uncapped archive; flag it so the
+		// engine does not overwrite it with this capped Stdout.
+		StreamedLog: f != nil,
 	}
 }
 

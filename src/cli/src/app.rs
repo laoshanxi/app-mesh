@@ -634,6 +634,18 @@ pub struct WorkflowOutputArgs {
     /// Step name
     #[arg(short = 's', long = "step", required = true)]
     pub step: String,
+
+    /// Byte offset to start reading from (0 by default)
+    #[arg(long = "position")]
+    pub position: Option<i64>,
+
+    /// Maximum number of bytes to read (to the end by default)
+    #[arg(long = "limit")]
+    pub limit: Option<i64>,
+
+    /// Read only the last N bytes of the log
+    #[arg(long = "tail")]
+    pub tail: Option<i64>,
 }
 
 /// Shared args for commands that operate on a specific workflow run.

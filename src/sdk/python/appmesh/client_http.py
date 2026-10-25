@@ -875,7 +875,7 @@ class AppMeshClient:
 
             if app_out.status_code != HTTPStatus.OK:
                 raise AppMeshConnectionError(f"wait_for_async_run polling failed for '{run.app_name}' with status "
-                    "{app_out.status_code}: {app_out.output}")
+                    f"{app_out.status_code}: {app_out.output}")
 
             if timeout > 0 and (datetime.now() - start).total_seconds() > timeout:
                 # timeout

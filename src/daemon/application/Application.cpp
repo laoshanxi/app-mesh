@@ -695,6 +695,13 @@ Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		{
 			result[JSON_KEY_APP_stdout_file_count] = (m_stdoutFileQueue->size());
 		}
+		// Diagnoses silently-empty output: 0 pumped bytes means the child's stdout
+		// never reached the daemon; >0 with an empty output file means disk loss.
+		const auto dispatched = m_lastStdoutDispatchedBytes.load(std::memory_order_acquire);
+		if (dispatched >= 0)
+		{
+			result[JSON_KEY_APP_stdout_dispatched_bytes] = static_cast<Json::Int64>(dispatched);
+		}
 		auto err = getLastError();
 		if (!err.empty())
 		{
@@ -1868,6 +1875,7 @@ void Application::recordProcessExit(int code, bool naturalExit, AppProcess *repo
 {
 	const auto &runId = reporter->getUuid();
 	const pid_t prevPid = reporter->lastPid();
+	m_lastStdoutDispatchedBytes.store(stdoutDispatchedBytes, std::memory_order_release);
 	std::string exitError;
 	if (code != 0 && naturalExit)
 	{

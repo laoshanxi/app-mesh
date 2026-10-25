@@ -312,21 +312,24 @@ async fn logs(cli: &Cli, args: &WorkflowLogsArgs) -> Result<i32> {
 
 async fn output(cli: &Cli, args: &WorkflowOutputArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
+    let mut request = json!({
+        "action" : "step_log",
+        "workflow" : args.workflow,
+        "run_id" : args.run_id,
+        "job" : args.job,
+        "step" : args.step
+    });
+    if let Some(p) = args.position {
+        request["position"] = json!(p);
+    }
+    if let Some(l) = args.limit {
+        request["limit"] = json!(l);
+    }
+    if let Some(t) = args.tail {
+        request["tail"] = json!(t);
+    }
     let resp = client
-        .run_task(
-            WORKFLOW_TRIGGER_APP,
-            with_token(
-                &client,
-                json!({
-                    "action" : "step_log",
-                    "workflow" : args.workflow,
-                    "run_id" : args.run_id,
-                    "job" : args.job,
-                    "step" : args.step
-                }),
-            ),
-            10,
-        )
+        .run_task(WORKFLOW_TRIGGER_APP, with_token(&client, request), 10)
         .await
         .map_err(|e| task_hint("output", e))?;
     let v = parse_resp(&resp)?;

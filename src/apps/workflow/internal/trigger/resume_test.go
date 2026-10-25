@@ -21,7 +21,7 @@ type resumeHarness struct {
 func newResumeHarness(t *testing.T) *resumeHarness {
 	t.Helper()
 	w := workdir.NewManager(t.TempDir(), 10)
-	s := &Service{checkpoint: NewCheckpoint(w), wdir: w}
+	s := &Service{checkpoint: NewCheckpoint(w), wdir: w, registry: NewRegistry()}
 	return &resumeHarness{svc: s, cp: s.checkpoint}
 }
 

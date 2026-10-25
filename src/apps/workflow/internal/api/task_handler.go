@@ -54,6 +54,11 @@ type Request struct {
 	// a renewed Engine capability). It is stripped immediately after authentication
 	// and is never persisted or logged.
 	Token string `json:"token,omitempty"`
+	// step_log pagination: position starts at 0; tail > 0 reads the last tail
+	// bytes; limit <= 0 reads to the end.
+	Position int64 `json:"position,omitempty"`
+	Limit    int64 `json:"limit,omitempty"`
+	Tail     int64 `json:"tail,omitempty"`
 }
 
 // Response is the JSON returned via send_task_result.
@@ -61,6 +66,9 @@ type Response struct {
 	Status  string      `json:"status"` // "ok" or "error"
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
+	// step_log pagination: next unread byte offset and the total log size.
+	Position int64 `json:"position,omitempty"`
+	Total    int64 `json:"total,omitempty"`
 }
 
 // TaskHandler runs the fetch_task/send_task_result loop.
@@ -428,11 +436,12 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 
 	// Roll back the App registration if YAML write fails so we don't leave an orphan.
 	writeYaml := func() error {
-		if err := os.MkdirAll(filepath.Dir(yamlPath), 0755); err != nil {
+		// secret_env is stored verbatim in this file, so it must not be world-readable.
+		if err := os.MkdirAll(filepath.Dir(yamlPath), 0700); err != nil {
 			return fmt.Errorf("failed to create workflow dir: %w", err)
 		}
 		tmp := yamlPath + ".tmp"
-		if err := os.WriteFile(tmp, []byte(req.Content), 0644); err != nil {
+		if err := os.WriteFile(tmp, []byte(req.Content), 0600); err != nil {
 			return fmt.Errorf("failed to save YAML: %w", err)
 		}
 		if err := os.Rename(tmp, yamlPath); err != nil {
@@ -674,11 +683,11 @@ func (h *TaskHandler) handleStepLog(req Request) Response {
 	if req.Workflow == "" || req.RunID == "" || req.Job == "" || req.Step == "" {
 		return Response{Status: "error", Message: "workflow, run_id, job, step required"}
 	}
-	content := h.wdir.ReadStepLog(req.Workflow, req.RunID, req.Job, req.Step)
-	if content == "" {
+	content, next, total, err := h.wdir.ReadStepLogRange(req.Workflow, req.RunID, req.Job, req.Step, req.Position, req.Limit, req.Tail)
+	if err != nil {
 		return Response{Status: "error", Message: "step log not found"}
 	}
-	return Response{Status: "ok", Data: content}
+	return Response{Status: "ok", Data: content, Position: next, Total: total}
 }
 
 // newCallerClient keeps workflow-definition mutations under the authenticated

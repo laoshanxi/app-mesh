@@ -162,6 +162,11 @@ type Options struct {
 	CapabilityWorkflowID string
 	// run identity bound to the run capability; sub-workflows inherit the top-level value
 	CapabilityRunID string
+	// OwnerPrincipal the run capability is bound to (the workflow's registered
+	// owner). Together with WorkflowOwner it confines sub-workflow calls to
+	// same-owner targets; nil WorkflowOwner disables the check (tests).
+	OwnerPrincipal string
+	WorkflowOwner  func(workflowName string) string
 }
 
 func (o *Options) log() logger.Log {
@@ -599,7 +604,9 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 		if result.Status == models.StatusSuccess {
 			log.StepCompleted(step.Name, exitCode, result.Duration)
 			persistStep(opts, jobName, step.Name, result.Stdout, exitCode, result.Status, result.Response, result.Outputs)
-			if opts.OnStepDone != nil {
+			// Streamed steps archived their uncapped log already; writing the
+			// capped Stdout over it would truncate the archive.
+			if opts.OnStepDone != nil && !result.StreamedLog {
 				opts.OnStepDone(jobName, step.Name, result.Stdout)
 			}
 			return true
@@ -615,8 +622,8 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 		}
 	}
 
-	// Archive stdout even on final failure.
-	if opts.OnStepDone != nil {
+	// Archive stdout even on final failure (streamed archives are already complete).
+	if opts.OnStepDone != nil && !step.Result.StreamedLog {
 		opts.OnStepDone(jobName, step.Name, step.Result.Stdout)
 	}
 	return false
@@ -693,6 +700,18 @@ func evaluateNeeds(job *models.Job, wf *models.Workflow, statusMu *sync.RWMutex)
 // the sub run id, and the failure reason (empty when none was recorded).
 func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName string, inputs map[string]string,
 	depth int, opts Options) (int, map[string]string, string, string) {
+	// A parent must not feed its inputs into another owner's workflow: the
+	// child's step commands run under the child owner's execution identity, so
+	// a cross-owner call would execute commands as that owner.
+	if opts.WorkflowOwner != nil {
+		childOwner := opts.WorkflowOwner(wfName)
+		if childOwner == "" || opts.OwnerPrincipal == "" || childOwner != opts.OwnerPrincipal {
+			logger.Error(fmt.Sprintf("sub-workflow %q is not callable by this run: owned by %q, run owner %q",
+				wfName, childOwner, opts.OwnerPrincipal))
+			return 1, nil, "",
+				fmt.Sprintf("sub-workflow %q is not owned by the calling workflow's owner", wfName)
+		}
+	}
 	baseDir := opts.WorkflowBaseDir
 	if baseDir == "" {
 		baseDir, _ = os.Getwd()
@@ -733,6 +752,9 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 		WorkflowProcessUUID:  opts.WorkflowProcessUUID,
 		CapabilityWorkflowID: opts.CapabilityWorkflowID,
 		CapabilityRunID:      opts.CapabilityRunID,
+		// Sub-workflow calls keep the owner confinement of the top-level run.
+		OwnerPrincipal: opts.OwnerPrincipal,
+		WorkflowOwner:  opts.WorkflowOwner,
 	}
 
 	exitCode, subCtx := RunWithContext(ctx, wf, client, inputs, runID, depth, subOpts)

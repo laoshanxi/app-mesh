@@ -60,6 +60,8 @@ class Handler:
             req = json.loads(payload)
         except Exception as e:
             return _err(f"invalid request JSON: {e}")
+        if not isinstance(req, dict):
+            return _err("request must be a JSON object")
         action = req.get("action")
         if action == "session_send":
             return self._send(req)

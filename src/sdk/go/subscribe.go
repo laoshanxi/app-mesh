@@ -647,6 +647,28 @@ func (r *AppMeshClient) WaitForAsyncRun(ctx context.Context, run *AppRun, stdout
 		}
 	}
 
+	// Exit backfill: the daemon-side output file is final before the exit is
+	// published, so one positional read guarantees the handler saw every byte
+	// even if some STDOUT event was missed between subscribe and exit. Must run
+	// before the deferred delete removes the temporary run app.
+	mu.Lock()
+	pos := deliveredUntil
+	exited := exitCode != nil
+	mu.Unlock()
+	if exited {
+		for i := 0; i < 16; i++ {
+			ao := r.GetAppOutputContext(ctx, run.AppName, pos, 0, 1<<20, run.ProcUid, 0)
+			if ao.Error != nil || len(ao.HTTPBody) == 0 {
+				break
+			}
+			deliver(ao.HTTPBody, pos)
+			if ao.OutputPosition == nil || *ao.OutputPosition <= pos || int64(len(ao.HTTPBody)) < 1<<20 {
+				break
+			}
+			pos = *ao.OutputPosition
+		}
+	}
+
 	mu.Lock()
 	defer mu.Unlock()
 	return exitCode, waitErr

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -167,7 +168,193 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 		}
 	}
 
+	if err := validateExpressionRefs(&wf); err != nil {
+		return nil, err
+	}
+
 	return &wf, nil
+}
+
+// exprRefPattern and toJSONRefPattern mirror the expression engine's syntax.
+var (
+	exprRefPattern    = regexp.MustCompile(`\$\{\{\s*(.+?)\s*\}\}`)
+	toJSONRefPattern  = regexp.MustCompile(`^toJSON\((.+)\)$`)
+	stepFieldPattern  = regexp.MustCompile(`^(stdout|exit_code|status|response|outputs)$`)
+	workflowRefFields = map[string]bool{"name": true, "run_id": true}
+)
+
+// validateExpressionRefs fails a workflow whose ${{ }} paths reference names
+// that do not exist: a step from the wrong job, an unknown job, an undeclared
+// input or env key. The runtime resolver would substitute empty for such
+// references, silently corrupting commands (e.g. deploying an empty tag).
+func validateExpressionRefs(wf *models.Workflow) error {
+	declaredInputs := make(map[string]bool)
+	if wf.On != nil {
+		if wf.On.Manual != nil {
+			for k := range wf.On.Manual.Inputs {
+				declaredInputs[k] = true
+			}
+		}
+		if wf.On.WorkflowCall != nil {
+			for k := range wf.On.WorkflowCall.Inputs {
+				declaredInputs[k] = true
+			}
+		}
+	}
+	wfEnvKeys := make(map[string]bool)
+	for _, m := range []map[string]string{wf.Env, wf.SecretEnv} {
+		for k := range m {
+			wfEnvKeys[k] = true
+		}
+	}
+
+	jobStepNames := func(job *models.Job) map[string]bool {
+		names := make(map[string]bool)
+		for _, steps := range [][]models.Step{job.Steps, job.Finally} {
+			for _, s := range steps {
+				names[s.Name] = true
+			}
+		}
+		return names
+	}
+
+	// check validates one ${{ ... }} inner path. jobName scopes `steps.` refs
+	// ("" = cross-job only, used for workflow_call output values).
+	check := func(where, path, jobName string) error {
+		inner := strings.TrimSpace(path)
+		if m := toJSONRefPattern.FindStringSubmatch(inner); m != nil {
+			inner = strings.TrimSpace(m[1])
+		}
+		parts := strings.Split(inner, ".")
+		fail := func(reason string) error {
+			return fmt.Errorf("%s: unresolved expression reference ${{ %s }}: %s", where, inner, reason)
+		}
+		switch parts[0] {
+		case "success", "failure", "job":
+			return nil // condition helpers / own-job status; runtime keeps them lenient
+		case "workflow":
+			if len(parts) == 2 && workflowRefFields[parts[1]] {
+				return nil
+			}
+			return fail("workflow supports name and run_id")
+		case "inputs":
+			if len(parts) == 2 && declaredInputs[parts[1]] {
+				return nil
+			}
+			return fail("input is not declared under on.manual/on.workflow_call")
+		case "env":
+			if len(parts) == 2 && wfEnvKeys[parts[1]] {
+				return nil
+			}
+			return fail("key is not declared in workflow env/secret_env")
+		case "steps":
+			if jobName == "" {
+				return fail("steps.<name> is job-local; reference jobs.<job>.steps.<name> instead")
+			}
+			if len(parts) >= 3 {
+				if !jobStepNames(wf.Jobs[jobName])[parts[1]] {
+					return fail(fmt.Sprintf("step %q is not defined in job %q", parts[1], jobName))
+				}
+				if !stepFieldPattern.MatchString(parts[2]) {
+					return fail("step fields are stdout, exit_code, status, response, outputs")
+				}
+				return nil
+			}
+			return fail("expected steps.<name>.<field>")
+		case "jobs":
+			if len(parts) >= 3 {
+				job, ok := wf.Jobs[parts[1]]
+				if !ok {
+					return fail(fmt.Sprintf("job %q is not defined", parts[1]))
+				}
+				if parts[2] == "status" {
+					return nil
+				}
+				if parts[2] == "steps" && len(parts) >= 5 {
+					if !jobStepNames(job)[parts[3]] {
+						return fail(fmt.Sprintf("step %q is not defined in job %q", parts[3], parts[1]))
+					}
+					if !stepFieldPattern.MatchString(parts[4]) {
+						return fail("step fields are stdout, exit_code, status, response, outputs")
+					}
+					return nil
+				}
+				return fail("expected jobs.<job>.status or jobs.<job>.steps.<name>.<field>")
+			}
+			return fail("expected jobs.<job>.<...>")
+		default:
+			return fail("unknown context root (steps, jobs, inputs, env, workflow, job)")
+		}
+	}
+
+	checkString := func(where, s, jobName string) error {
+		for _, m := range exprRefPattern.FindAllStringSubmatch(s, -1) {
+			if err := check(where, m[1], jobName); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	checkStringMap := func(where string, m map[string]string, jobName string) error {
+		for _, v := range m {
+			if err := checkString(where, v, jobName); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, job := range wf.Jobs {
+		jobWhere := fmt.Sprintf("job %q", job.Name)
+		if err := checkString(jobWhere+" if", job.Condition, job.Name); err != nil {
+			return err
+		}
+		if err := checkStringMap(jobWhere+" env", job.Env, job.Name); err != nil {
+			return err
+		}
+		if err := checkStringMap(jobWhere+" secret_env", job.SecretEnv, job.Name); err != nil {
+			return err
+		}
+		for _, steps := range []struct {
+			label string
+			list  []models.Step
+		}{{"steps", job.Steps}, {"finally", job.Finally}} {
+			for _, step := range steps.list {
+				stepWhere := fmt.Sprintf("%s %s step %q", jobWhere, steps.label, step.Name)
+				for _, field := range []struct {
+					label string
+					value string
+				}{{"command", step.Command}, {"if", step.Condition}, {"workdir", step.Workdir}, {"docker_image", step.DockerImage}} {
+					if err := checkString(fmt.Sprintf("%s %s", stepWhere, field.label), field.value, job.Name); err != nil {
+						return err
+					}
+				}
+				if step.Message != nil {
+					if err := checkString(stepWhere+" message.payload", step.Message.Payload, job.Name); err != nil {
+						return err
+					}
+				}
+				for _, m := range []struct {
+					label string
+					keys  map[string]string
+				}{{"with", step.With}, {"env", step.Env}, {"secret_env", step.SecretEnv}} {
+					if err := checkStringMap(fmt.Sprintf("%s %s", stepWhere, m.label), m.keys, job.Name); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	if wf.On != nil && wf.On.WorkflowCall != nil {
+		for name, out := range wf.On.WorkflowCall.Outputs {
+			// Output values evaluate in this workflow's own context; `steps.` is
+			// job-local and ambiguous here, so require cross-job references.
+			if err := checkString(fmt.Sprintf("workflow_call output %q", name), out.Value, ""); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func resolveStepTypes(steps []models.Step, defaultContinueOnError bool, jobName, section string,

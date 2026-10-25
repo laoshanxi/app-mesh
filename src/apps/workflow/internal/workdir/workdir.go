@@ -18,6 +18,7 @@ package workdir
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -203,6 +204,41 @@ func (m *Manager) ReadStepLog(wfName, runID, jobName, stepName string) string {
 		return ""
 	}
 	return string(data)
+}
+
+// ReadStepLogRange reads a window of an archived step log for pagination.
+// tail > 0 reads the last tail bytes; limit <= 0 reads to the end. Returns the
+// content, the next position, and the total log size.
+func (m *Manager) ReadStepLogRange(wfName, runID, jobName, stepName string, position, limit, tail int64) (string, int64, int64, error) {
+	f, err := os.Open(m.StepLogPath(wfName, runID, jobName, stepName))
+	if err != nil {
+		return "", 0, 0, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", 0, 0, err
+	}
+	total := info.Size()
+	if tail > 0 {
+		position = total - tail
+		limit = tail
+	}
+	if position < 0 {
+		position = 0
+	}
+	if position > total {
+		position = total
+	}
+	if limit <= 0 || position+limit > total {
+		limit = total - position
+	}
+	buf := make([]byte, limit)
+	n, err := f.ReadAt(buf, position)
+	if err != nil && err != io.EOF {
+		return "", 0, 0, err
+	}
+	return string(buf[:n]), position + int64(n), total, nil
 }
 
 // scheduleStatePath returns the per-workflow persisted schedule accounting file.

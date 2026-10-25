@@ -211,6 +211,9 @@ private:
 	int m_stdoutCacheNum;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
 	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
+	// stdout bytes the daemon pumped for the last exited run (-1 before any exit):
+	// distinguishes "output never reached the daemon" from "lost after the pump".
+	std::atomic<long> m_lastStdoutDispatchedBytes{-1};
 
 	// Availability window and scheduling
 	std::chrono::system_clock::time_point m_startTime;

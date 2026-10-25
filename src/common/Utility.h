@@ -351,6 +351,7 @@ public:
 #define JSON_KEY_APP_description "description"
 #define JSON_KEY_APP_stdout_file_count "stdout_file_count"
 #define JSON_KEY_APP_stdout_backup_count "stdout_backup_count"
+#define JSON_KEY_APP_stdout_dispatched_bytes "stdout_dispatched_bytes"
 #define JSON_KEY_APP_health_check_cmd "health_check_cmd"
 #define JSON_KEY_APP_working_dir "working_dir"
 #define JSON_KEY_APP_register_time "register_time"

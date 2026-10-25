@@ -21,7 +21,7 @@
 #include <filesystem>
 #if !defined(_WIN32)
 #include <boost/process/v2/posix/bind_fd.hpp>
-#include <boost/process/v2/posix/vfork_launcher.hpp>
+#include <boost/process/v2/posix/default_launcher.hpp>
 #endif
 
 #include "../../common/Password.h"
@@ -902,18 +902,29 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 
 	if (!m_stdoutFileName.empty() || stdinFileContent != EMPTY_STR_JSON)
 	{
-		if (!m_stdoutFileName.empty())
-		{
-			m_stdoutHandler.reset(openStdioFile(m_stdoutFileName.c_str(), false));
-			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
-
-			if (!m_stdoutHandler.valid())
-				LOG_ERR << fname << "Failed to open stdout file <" << m_stdoutFileName << ">: " << last_error_msg();
+			if (!m_stdoutFileName.empty())
+			{
+				m_stdoutHandler.reset(openStdioFile(m_stdoutFileName.c_str(), false));
+				LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
 
 #if !defined(_WIN32)
-			std::tie(pipeReadForDaemon, pipeWriteForChild) = createStdoutPipe();
+				std::tie(pipeReadForDaemon, pipeWriteForChild) = createStdoutPipe();
 #endif
-		}
+				if (!m_stdoutHandler.valid())
+				{
+					// Continuing would redirect the child's stdout nowhere: the run
+					// would finish successfully with its output silently lost.
+#if !defined(_WIN32)
+					::close(pipeReadForDaemon);
+					::close(pipeWriteForChild);
+#endif
+					const std::string error =
+						Utility::stringFormat("Failed to open stdout file <%s>: %s", m_stdoutFileName.c_str(), last_error_msg());
+					LOG_ERR << fname << error;
+					setStartError(error);
+					return INVALID_PID;
+				}
+			}
 		else
 		{
 			m_stdoutHandler.reset(openStdioFile(DEV_NULL, false));
@@ -990,11 +1001,13 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 #else
 	std::vector<std::string> args(argv.begin() + 1, argv.end());
 
-	// vfork_launcher notifies the io_context in the parent, and concurrent forks
-	// from the workers race the context's own thread on the asio reactor locks.
-	// Run the launcher on the ProcessService thread, the only thread the daemon
-	// forks from.
-	bp2::posix::vfork_launcher launcher;
+	// The launcher runs on the ProcessService thread (concurrent forks from the
+	// workers race the context's own thread on the asio reactor locks), and plain
+	// fork is mandatory: vfork shares the parent's address space, so with other
+	// daemon threads mutating state during the pre-exec window the child's fd
+	// setup is undefined — observed as intermittent zero-byte stdout capture
+	// under concurrent runs. fork's copy-on-write isolates the child.
+	bp2::posix::default_launcher launcher;
 	const auto launch = [&](auto &&...inits)
 	{
 		ec.clear();

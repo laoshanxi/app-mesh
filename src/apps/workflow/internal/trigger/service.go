@@ -737,6 +737,10 @@ func (s *Service) engineOptions(wf *models.Workflow, runID, token string, log lo
 		WorkflowProcessUUID:  s.processUUID,
 		CapabilityWorkflowID: wf.Name,
 		CapabilityRunID:      runID,
+		// Sub-workflow calls are confined to workflows the run owner registered
+		// (the capability issuer already verified owner == registry owner).
+		OwnerPrincipal: s.registry.Owner(wf.Name),
+		WorkflowOwner:  s.registry.Owner,
 		OnJobDone: func(jobName, status, targetHost string, steps map[string]map[string]any) {
 			cpSteps := make(map[string]StepState, len(steps))
 			for name, data := range steps {

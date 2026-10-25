@@ -56,8 +56,14 @@ func TestSubstitute_Env(t *testing.T) {
 
 func TestSubstitute_Missing(t *testing.T) {
 	ctx := NewContext()
-	if got := SubstituteForJob("${{ steps.nope.stdout }}", ctx, "test"); got != "" {
-		t.Errorf("missing step: got %q, want empty", got)
+	// Unknown references stay literal (with a warning) so the corruption is
+	// visible instead of silently substituting empty; strict mode errors.
+	if got := SubstituteForJob("${{ steps.nope.stdout }}", ctx, "test"); got != "${{ steps.nope.stdout }}" {
+		t.Errorf("missing step: got %q, want the literal reference kept", got)
+	}
+	ctx.Strict = true
+	if _, err := SubstituteForJobChecked("${{ steps.nope.stdout }}", ctx, "test"); err == nil {
+		t.Errorf("missing step in strict mode: want unresolved-expression error")
 	}
 }
 

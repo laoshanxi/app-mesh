@@ -42,6 +42,10 @@ type StepResult struct {
 	Response string
 	Outputs  map[string]string
 	Duration float64
+	// StreamedLog marks a step whose full stdout was already streamed to the
+	// step log file; the Stdout field is capped for expression contexts and
+	// must not overwrite that archive.
+	StreamedLog bool
 }
 
 type Step struct {
@@ -89,10 +93,10 @@ type ScheduleTrigger struct {
 }
 
 type InputParam struct {
-	Type        string      `yaml:"type"`
-	Required    bool        `yaml:"required,omitempty"`
-	Default     interface{} `yaml:"default,omitempty"`
-	Description string      `yaml:"description,omitempty"`
+	Type        string      `yaml:"type" json:"type"`
+	Required    bool        `yaml:"required,omitempty" json:"required"`
+	Default     interface{} `yaml:"default,omitempty" json:"default"`
+	Description string      `yaml:"description,omitempty" json:"description"`
 }
 
 type OutputParam struct {

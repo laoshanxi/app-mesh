@@ -155,6 +155,12 @@ def _serve(handler: Handler):
             ctx.send_task_result(json.dumps(resp))
         except Exception as e:
             log.error("unhandled error in request cycle: %s", e, exc_info=True)
+            # Always answer: an unhandled exception must not leave the caller
+            # waiting out the task timeout.
+            try:
+                ctx.send_task_result(json.dumps({"status": "error", "message": f"internal error: {e}"}))
+            except Exception:
+                log.error("failed to deliver internal-error task result")
         finally:
             handler.end_request()
         if handler.exit_requested:

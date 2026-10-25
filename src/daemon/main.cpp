@@ -19,6 +19,7 @@
 #include <process.h> // for _exit()
 #include <winsock2.h>
 #else
+#include <sys/resource.h>
 #include <unistd.h> // for _exit()
 #endif
 
@@ -66,6 +67,7 @@ public:
 public:
 	// Initialization methods
 	void initializeEnvironment();
+	void initializeResourceLimits();
 	void initializeServices();
 	void initializeLogging();
 	void logStartupEnvironment();
@@ -158,6 +160,7 @@ int AppMeshDaemon::run(int argc, char *argv[])
 	try
 	{
 		initializeEnvironment();
+		initializeResourceLimits();
 		initializeLogging();
 		logStartupEnvironment();
 		initializeConfiguration();
@@ -208,6 +211,23 @@ void AppMeshDaemon::initializeEnvironment()
 								 "this installation, or the PID file is not writable (see the message above)");
 	}
 	Utility::ensureSystemRoot();
+}
+
+void AppMeshDaemon::initializeResourceLimits()
+{
+#if !defined(_WIN32)
+	// Launch services start daemons with a low soft fd limit (macOS: 256), while
+	// every concurrent run opens an output file, a stdin handle and a stdout
+	// pipe. Raise the soft limit to the hard cap before any listener or app runs.
+	struct rlimit limits;
+	if (::getrlimit(RLIMIT_NOFILE, &limits) == 0 && limits.rlim_cur < limits.rlim_max)
+	{
+		const rlim_t previous = limits.rlim_cur;
+		limits.rlim_cur = limits.rlim_max;
+		if (::setrlimit(RLIMIT_NOFILE, &limits) == 0)
+			std::cerr << "AppMeshDaemon: RLIMIT_NOFILE raised from " << previous << " to " << limits.rlim_max << std::endl;
+	}
+#endif
 }
 
 void AppMeshDaemon::initializeServices()

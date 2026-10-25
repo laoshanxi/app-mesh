@@ -96,17 +96,21 @@ func (c *Context) resolveUnsafe(path, jobName string) (any, bool) {
 			key := jobName + "." + parts[1]
 			s, ok := c.Steps[key]
 			if !ok {
-				return "", true
+				// An unknown step name must surface (literal kept / strict error),
+				// never silently substitute empty.
+				return nil, false
 			}
 			if parts[2] == "outputs" && len(parts) >= 4 {
 				if outs, ok := s["outputs"].(map[string]string); ok {
-					return outs[parts[3]], true
+					if v, ok := outs[parts[3]]; ok {
+						return v, true
+					}
 				}
-				return "", true
+				return nil, false
 			}
 			v, ok := s[parts[2]]
 			if !ok {
-				return "", true
+				return nil, false
 			}
 			return v, true
 		}
@@ -114,7 +118,7 @@ func (c *Context) resolveUnsafe(path, jobName string) (any, bool) {
 		if len(parts) >= 3 {
 			j, ok := c.Jobs[parts[1]]
 			if !ok {
-				return "", true
+				return nil, false
 			}
 			if parts[2] == "status" {
 				return j["status"], true
@@ -122,21 +126,28 @@ func (c *Context) resolveUnsafe(path, jobName string) (any, bool) {
 			if parts[2] == "steps" && len(parts) >= 5 {
 				stepsMap, ok := j["steps"].(map[string]map[string]any)
 				if !ok {
-					return "", true
+					return nil, false
 				}
 				step, ok := stepsMap[parts[3]]
 				if !ok {
-					return "", true
+					return nil, false
 				}
 				// Handle jobs.X.steps.Y.outputs.Z — drill into outputs map.
 				if parts[4] == "outputs" && len(parts) >= 6 {
 					if outs, ok := step["outputs"].(map[string]string); ok {
-						return outs[parts[5]], true
+						if v, ok := outs[parts[5]]; ok {
+							return v, true
+						}
 					}
-					return "", true
+					return nil, false
 				}
-				return step[parts[4]], true
+				v, ok := step[parts[4]]
+				if !ok {
+					return nil, false
+				}
+				return v, true
 			}
+			return nil, false
 		}
 	case "job":
 		if len(parts) == 2 && parts[1] == "status" {
@@ -234,6 +245,56 @@ func SubstituteForJobChecked(template string, ctx *Context, jobName string) (str
 		return "", strictErr
 	}
 	return out, nil
+}
+
+// SubstituteForCommand rewrites every ${{ expr }} in a shell command into a
+// $WF_E<N> environment reference and returns the bindings for those variables.
+// Values then reach the shell only through the environment, so input like
+// "a; rm -rf /" can never inject shell syntax into the command text.
+// Unresolved expressions follow SubstituteForJobChecked semantics (literal in
+// lenient mode, error in strict mode).
+func SubstituteForCommand(template string, ctx *Context, jobName string) (string, map[string]string, error) {
+	// $WF_E<N> is a reserved reference; if the command already uses one, a
+	// generated binding would shadow it. Fall back to direct substitution.
+	if strings.Contains(template, "$WF_E") {
+		s, err := SubstituteForJobChecked(template, ctx, jobName)
+		return s, nil, err
+	}
+	bindings := make(map[string]string)
+	byExpr := make(map[string]string)
+	var buildErr error
+	out := exprPattern.ReplaceAllStringFunc(template, func(match string) string {
+		inner := exprPattern.FindStringSubmatch(match)
+		if len(inner) < 2 {
+			return match
+		}
+		exprText := strings.TrimSpace(inner[1])
+		if ref, ok := byExpr[exprText]; ok {
+			return ref
+		}
+		resolved, ok := resolveExpr(exprText, match, ctx, jobName)
+		if !ok {
+			if ctx.Strict {
+				if buildErr == nil {
+					buildErr = fmt.Errorf("unresolved expression %s", match)
+				}
+			} else {
+				logger.Warn("expression: unresolved " + match + " embedded literally")
+			}
+			return match
+		}
+		ref := fmt.Sprintf("$WF_E%d", len(byExpr))
+		byExpr[exprText] = ref
+		bindings[ref[1:]] = resolved
+		return ref
+	})
+	if buildErr != nil {
+		return "", nil, buildErr
+	}
+	if len(bindings) == 0 {
+		return out, nil, nil
+	}
+	return out, bindings, nil
 }
 
 // resolveExpr renders one expression; ok is false when its path is unresolved.
