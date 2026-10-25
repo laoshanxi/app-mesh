@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Python remote code string execution for application py-task"""
 
+import sys
 import traceback
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Optional, Union
 
-from appmesh import AppMeshWorkerTCP
+try:
+    from appmesh import AppMeshWorkerTCP
+except ImportError:
+    sys.exit("py-task needs the appmesh Python SDK: pip3 install appmesh")
 
 
 def exec_with_output(code: Union[str, bytes], exec_globals: Optional[dict] = None) -> str:

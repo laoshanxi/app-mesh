@@ -133,8 +133,8 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 		w.Header().Set(k, v)
 	}
 
-	// Handle the response body based on the path
-	if r.RequestURI == RestPathDownload || r.RequestURI == RestPathUpload {
+	// Only an OK answer carries a file; error replies proxy like any REST reply.
+	if r.HTTPStatus == http.StatusOK && (r.RequestURI == RestPathDownload || r.RequestURI == RestPathUpload) {
 		if err := HandleRESTFile(w, req, r); err != nil {
 			utils.HTTPError(w, err.Error(), http.StatusInternalServerError)
 		}
