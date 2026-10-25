@@ -211,6 +211,9 @@ struct AppProcess::Lifecycle
 
 	std::atomic<ExitPhase> exitPhase{ExitPhase::Active};
 	std::atomic<bool> terminating{false};
+	// Set while a polled-exit inspect is pending on the callback thread; keeps
+	// scheduler ticks from stacking blocking backend requests for one run.
+	std::atomic<bool> exitPollInFlight{false};
 
 	mutable std::mutex mutex;
 	std::condition_variable completionCv;
@@ -409,6 +412,34 @@ void AppProcess::reportEarlyExit(int exitCode)
 {
 	resolveStart(true, INVALID_PID);
 	onExit(exitCode);
+}
+
+void AppProcess::reportPolledExitAsync()
+{
+	// A recovered run has no backend to query for an exit code; report 0.
+	if (m_recovered)
+	{
+		onExit(0);
+		return;
+	}
+	// docker inspect can stall for the full request timeout, so the exit-callback
+	// thread fetches it (guarded against stacking per tick); only an exception defers.
+	if (m_lifecycle->exitPollInFlight.exchange(true))
+		return;
+	auto self = std::dynamic_pointer_cast<AppProcess>(shared_from_this());
+	ProcessService::instance()->postCallback(
+		[self]
+		{
+			try
+			{
+				self->onExit(self->returnValue());
+			}
+			catch (...)
+			{
+				LOG_CRT << "AppProcess::reportPolledExitAsync() FATAL: exit code fetch failed for <" << self->getUuid() << ">";
+			}
+			self->m_lifecycle->exitPollInFlight.store(false, std::memory_order_release);
+		});
 }
 
 void AppProcess::finalizeExit() noexcept

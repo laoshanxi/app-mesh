@@ -81,6 +81,7 @@ public:
 	void startAgentApplication();
 	void startStartupApplications();
 	void prewarmAuthentication();
+	void refreshAuthenticationCache();
 
 	// High availability
 	void performHighAvailabilityRecovery();
@@ -200,10 +201,11 @@ void AppMeshDaemon::initializeEnvironment()
 	}
 #endif
 	fs::current_path(Utility::getHomeDir());
-	// The pid lock is the single-instance guarantee; a second instance must not run on.
+	// The pid lock is the single-instance guarantee; createPidFile() printed the specific cause.
 	if (!Utility::createPidFile())
 	{
-		throw std::runtime_error("another appmesh daemon instance is already running for this installation");
+		throw std::runtime_error("cannot acquire the PID file lock: another appmesh daemon instance is running for "
+								 "this installation, or the PID file is not writable (see the message above)");
 	}
 	Utility::ensureSystemRoot();
 }
@@ -528,6 +530,8 @@ void AppMeshDaemon::runMainLoop()
 
 	// Health checks every 30 schedule ticks: each check spawns a process.
 	int healthCheckTick = 0;
+	// JWKS refresh every 1800 ticks (~30 min): half the cache TTL, off the request threads.
+	int authRefreshTick = 0;
 	LOG_INF << fname << "Entering main application monitoring loop";
 
 	while (!QuitHandler::instance()->shouldExit())
@@ -544,6 +548,8 @@ void AppMeshDaemon::runMainLoop()
 			PersistManager::instance()->persistSnapshot();
 			if (healthCheckTick++ % 30 == 0)
 				HealthCheckTask::instance()->doHealthCheck();
+			if (authRefreshTick++ % 1800 == 0)
+				refreshAuthenticationCache();
 
 			// Refresh all process metrics once per completed scrape.
 			if (config->prometheusEnabled())
@@ -690,6 +696,20 @@ void AppMeshDaemon::prewarmAuthentication()
 		}
 	}
 	throw std::runtime_error("OIDC discovery/JWKS readiness failed: " + lastError);
+}
+
+void AppMeshDaemon::refreshAuthenticationCache()
+{
+	const static char fname[] = "AppMeshDaemon::refreshAuthenticationCache() ";
+
+	try
+	{
+		Security::instance()->prewarmAuthentication();
+	}
+	catch (const std::exception &ex)
+	{
+		LOG_WAR << fname << "JWKS refresh failed: " << ex.what();
+	}
 }
 
 void AppMeshDaemon::executeApplications()

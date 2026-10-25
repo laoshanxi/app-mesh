@@ -97,6 +97,9 @@ private:
 	bool isFinalized() const noexcept;
 	bool canReportExit() const noexcept;
 	pid_t lastPid() const;
+	// Polled-exit report for runs without a child exit callback; container exit
+	// codes need a blocking backend inspect and are fetched off the caller's thread.
+	void reportPolledExitAsync();
 
 	// Start/exit coordination
 	void resolveStart(bool accepted, pid_t pid);

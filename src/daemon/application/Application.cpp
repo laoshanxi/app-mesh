@@ -227,6 +227,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 {
 	const static char fname[] = "Application::FromJson() ";
 	app->m_name = normalizeAppName(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
+	const bool fromRecover = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover);
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_owner))
 		throw std::invalid_argument("legacy application owner cannot be mapped safely to an immutable OIDC Principal; "
@@ -256,7 +257,14 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	if (app->m_ownerPermission < 0 || app->m_ownerPermission > 39 ||
 		(app->m_ownerPermission != 0 && app->m_ownerPermission / 10 < 1))
 	{
-		throw std::invalid_argument("permission must be 0 or a two-digit value whose first digit is 1, 2 or 3");
+		// Older releases never range-checked persisted values; refusing them would block
+		// recovery, and checkOwnerPermission() already denies non-owners for such values.
+		if (!fromRecover)
+		{
+			throw std::invalid_argument("permission must be 0 or a two-digit value whose first digit is 1, 2 or 3");
+		}
+		LOG_WAR << fname << "Application <" << app->m_name << "> keeps legacy out-of-range permission <"
+				<< app->m_ownerPermission << ">; non-owner access is denied until it is updated";
 	}
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell);
 	app->m_sessionLogin = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_session_login);
@@ -353,7 +361,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	}
 	if (secretEnvs)
 	{
-		bool fromRecover = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover);
 		for (const auto &envName : secretEnvs->getMemberNames())
 		{
 			const auto &envValue = (*secretEnvs)[envName];
@@ -1124,17 +1131,16 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 		process = *lock;
 	}
 
+	// A container run's exit code needs a docker inspect that can block for its
+	// full request timeout; reportPolledExitAsync fetches it off the scheduler thread.
 	if (needsPolledExitReport(bufferProcess))
 	{
-		const int exitCode = bufferProcess->isRecovered() ? 0 : bufferProcess->returnValue();
-		bufferProcess->onExit(exitCode);
+		bufferProcess->reportPolledExitAsync();
 	}
 
 	if (needsPolledExitReport(process))
 	{
-		// Docker inspection may block briefly, so obtain the exit code outside m_process.
-		const int exitCode = process->isRecovered() ? 0 : process->returnValue();
-		process->onExit(exitCode);
+		process->reportPolledExitAsync();
 	}
 
 	// Process inspection and termination may call Docker/OS backends. They own their

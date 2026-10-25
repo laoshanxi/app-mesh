@@ -648,6 +648,8 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 		return;
 	}
 	resp->addHeader(web::http::header_names::content_disposition, disposition);
+	for (const auto &[name, value] : Utility::fileAttributeHeaders(filePathStr))
+		resp->addHeader(name, value);
 	addCors(resp);
 	callback(resp);
 }
@@ -730,22 +732,8 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 	captureAttr("x-file-user", HTTP_HEADER_KEY_file_user);
 	captureAttr("x-file-group", HTTP_HEADER_KEY_file_group);
 
-	auto parentPath = filePath.parent_path();
-	std::error_code ec;
-	if (!parentPath.empty() && !std::filesystem::exists(parentPath, ec))
-	{
-		if (!std::filesystem::create_directories(parentPath, ec))
-		{
-			LOG_ERR << fname << "Failed to create directory: " << ec.message();
-			callback(plainResponse(drogon::k500InternalServerError, "Cannot create directory"));
-			return;
-		}
-	}
-
-	// Stream the body into a temp file beside the destination and rename it on
-	// success, so a large upload never sits in memory and the destination only
-	// ever exists complete. The body cap is enforced by the parser, so a
-	// chunk counter is not needed here.
+	// Stream into a temp file beside the destination and publish it on success
+	// without replacing an existing destination; the parser enforces the body cap.
 	const std::string tempPath = fullPath + ".appmesh-upload-" + Utility::uuid();
 	auto upload = std::make_shared<FileUploadInfo>(fullPath, tempPath, attrHeaders);
 	if (!upload->m_file.is_open())
@@ -782,17 +770,21 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 				return;
 			}
 
-			upload->m_file.close();
-			std::error_code ec;
-			std::filesystem::rename(upload->m_tempPath, upload->m_filePath, ec);
-			if (ec)
+			const auto commit = upload->commit();
+			if (commit == FileUploadInfo::CommitResult::AlreadyExists)
 			{
-				LOG_ERR << fname << "Cannot move upload into place: " << ec.message();
+				LOG_WAR << fname << "Concurrent upload already created: " << upload->m_filePath;
+				callback(plainResponse(drogon::k409Conflict, "File already exists"));
+				return;
+			}
+			if (commit == FileUploadInfo::CommitResult::Failed)
+			{
+				LOG_ERR << fname << "Cannot move upload into place: " << upload->m_filePath;
 				callback(plainResponse(drogon::k500InternalServerError, "File write error"));
 				return;
 			}
-			upload->m_committed = true;
 
+			std::error_code ec;
 			const auto size = std::filesystem::file_size(upload->m_filePath, ec);
 			LOG_INF << fname << "File uploaded successfully: " << upload->m_filePath << " (" << size << " bytes)";
 

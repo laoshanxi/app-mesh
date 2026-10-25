@@ -3,10 +3,12 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include <trantor/net/TcpConnection.h>
@@ -17,24 +19,60 @@ class Response;
 
 struct FileUploadInfo
 {
-	// Stream bytes into a temp file in the SAME directory as the destination, then
-	// atomically rename it into place on success (same directory => same filesystem,
-	// so rename is atomic). The destination only ever appears as a complete file.
-	FileUploadInfo(const std::string &uploadFilePath, const std::string &tempFilePath, const HttpHeaderMap &requestHeaders)
-		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders),
-		  m_file(tempFilePath, std::ios::binary | std::ios::out | std::ios::trunc)
+	enum class CommitResult
 	{
+		Committed,
+		AlreadyExists, // a concurrent upload won the destination
+		Failed
+	};
+
+	// Stream bytes into a temp file in the SAME directory as the destination, then
+	// publish it in one step. The destination only ever appears as a complete file.
+	FileUploadInfo(const std::string &uploadFilePath, const std::string &tempFilePath, const HttpHeaderMap &requestHeaders)
+		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders)
+	{
+		// Missing parent directories are created for every transport surface.
+		std::error_code ec;
+		std::filesystem::create_directories(std::filesystem::path(uploadFilePath).parent_path(), ec);
+		m_file.open(tempFilePath, std::ios::binary | std::ios::out | std::ios::trunc);
 	}
 
-	// Unless the upload committed (was renamed into place), drop the partial temp file.
-	// Covers write errors, client disconnects, and aborted transfers, so the destination
-	// never holds a partial/corrupt file and a retry is never blocked by a leftover.
+	// Unless the upload committed (was published), drop the partial temp file:
+	// the destination never holds a partial file and a retry is never blocked.
 	~FileUploadInfo()
 	{
 		if (m_file.is_open())
 			m_file.close();
 		if (!m_committed && !m_tempPath.empty())
 			std::remove(m_tempPath.c_str());
+	}
+
+	// Publish the temp file without replacing an existing destination: rename() would
+	// silently overwrite a concurrent winner of the precheck, link() cannot.
+	CommitResult commit()
+	{
+		m_file.flush();
+		m_file.close();
+		std::error_code ec;
+		std::filesystem::create_hard_link(m_tempPath, m_filePath, ec);
+		if (ec == std::errc::file_exists)
+			return CommitResult::AlreadyExists;
+		if (ec)
+		{
+			// Filesystems without hard links (FAT, some CIFS/FUSE mounts): a checked rename keeps
+			// uploads working there, at the cost of a tiny window where a concurrent winner is replaced.
+			if (std::filesystem::exists(m_filePath, ec))
+				return CommitResult::AlreadyExists;
+			std::filesystem::rename(m_tempPath, m_filePath, ec);
+			if (ec)
+				return CommitResult::Failed;
+		}
+		else
+		{
+			std::filesystem::remove(m_tempPath, ec);
+		}
+		m_committed = true;
+		return CommitResult::Committed;
 	}
 
 	std::string m_filePath;
