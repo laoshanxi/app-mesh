@@ -653,7 +653,7 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 	defer f.Close()
 
 	// Plain-HTTP transport: POST streams the raw file bytes as the body.
-	headers := map[string]string{"X-File-Path": escapeRemoteFilePath(remoteFile)}
+	headers := map[string]string{headerFilePath: escapeRemoteFilePath(remoteFile)}
 	// POSIX metadata headers; the server recreates permissions and ownership.
 	if applyFileAttributes {
 		attrs, err := fileAttributes(localFile)
@@ -693,7 +693,7 @@ func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttr
 	}
 
 	// Plain-HTTP transport: GET answers the file bytes.
-	headers := map[string]string{"X-File-Path": escapeRemoteFilePath(remoteFile)}
+	headers := map[string]string{headerFilePath: escapeRemoteFilePath(remoteFile)}
 	code, body, respHdr, err := r.getStream("/appmesh/file/download", nil, headers)
 	if err != nil {
 		return fmt.Errorf("download request failed: %w", err)

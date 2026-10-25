@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.9
+
+File-attribute hardening on both transports:
+
+- The `X-File-Mode` value from the server is validated before `chmod`. Only a
+  decimal value in the range 0..0o777 is applied. Any other value is skipped
+  with a warning. This matches the Python, Java and Rust SDKs.
+- A malformed `X-File-Mode` header no longer fails a finished TCP download.
+  The file stays on disk and the attribute step is skipped.
+- `downloadFile` in Node streams the response body to disk instead of
+  buffering the whole file in memory; the browser path is unchanged.
+
 ## 3.1.8
 
 File-transfer correctness over the HTTP transport:

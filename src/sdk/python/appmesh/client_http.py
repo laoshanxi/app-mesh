@@ -143,12 +143,16 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_USER_AGENT = "User-Agent"
     _HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
     _HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
+    _HTTP_HEADER_KEY_X_FILE_MODE = "X-File-Mode"
+    _HTTP_HEADER_KEY_X_FILE_USER = "X-File-User"
+    _HTTP_HEADER_KEY_X_FILE_GROUP = "X-File-Group"
 
     @unique
     class _Method(Enum):
         """REST methods"""
 
         GET = "GET"
+        GET_STREAM = "GET_STREAM"
         PUT = "PUT"
         POST = "POST"
         DELETE = "DELETE"
@@ -570,8 +574,8 @@ class AppMeshClient:
         headers = CaseInsensitiveDict(headers or {})
 
         # Ownership by name - apply FIRST, as chown clears setuid/setgid bits
-        user_header = headers.get("X-File-User")
-        group_header = headers.get("X-File-Group")
+        user_header = headers.get(AppMeshClient._HTTP_HEADER_KEY_X_FILE_USER)
+        group_header = headers.get(AppMeshClient._HTTP_HEADER_KEY_X_FILE_GROUP)
 
         if user_header is not None and group_header is not None:
             chown = getattr(os, "chown", None)
@@ -608,9 +612,9 @@ class AppMeshClient:
                     logger.warning("Invalid X-File-User/Group values: %s/%s - %s", user_header, group_header, e)
 
         # Mode - apply AFTER chown to preserve permission bits
-        if "X-File-Mode" in headers:
+        if AppMeshClient._HTTP_HEADER_KEY_X_FILE_MODE in headers:
             try:
-                file_mode = int(headers["X-File-Mode"])
+                file_mode = int(headers[AppMeshClient._HTTP_HEADER_KEY_X_FILE_MODE])
                 # Validate mode is within valid range (0-511 for 0o777)
                 if 0 <= file_mode <= 0o777:
                     with suppress(OSError):
@@ -618,7 +622,7 @@ class AppMeshClient:
                 else:
                     logger.warning("X-File-Mode value out of range: %s", file_mode)
             except ValueError:
-                logger.warning("Invalid X-File-Mode value: %s", headers.get("X-File-Mode"))
+                logger.warning("Invalid X-File-Mode value: %s", headers.get(AppMeshClient._HTTP_HEADER_KEY_X_FILE_MODE))
 
     @staticmethod
     def _get_file_attributes(local_path: Path) -> dict:
@@ -631,21 +635,21 @@ class AppMeshClient:
             import grp
             st = local_path.stat()
             result = {
-                "X-File-Mode": str(st.st_mode & 0o777),  # Mask to keep only permission bits
+                AppMeshClient._HTTP_HEADER_KEY_X_FILE_MODE: str(st.st_mode & 0o777),  # Mask to keep only permission bits
             }
 
             # Get username/groupname for portability
             try:
-                result["X-File-User"] = pwd.getpwuid(st.st_uid).pw_name
+                result[AppMeshClient._HTTP_HEADER_KEY_X_FILE_USER] = pwd.getpwuid(st.st_uid).pw_name
             except KeyError:
                 # User not found, fall back to UID
-                result["X-File-User"] = str(st.st_uid)
+                result[AppMeshClient._HTTP_HEADER_KEY_X_FILE_USER] = str(st.st_uid)
 
             try:
-                result["X-File-Group"] = grp.getgrgid(st.st_gid).gr_name
+                result[AppMeshClient._HTTP_HEADER_KEY_X_FILE_GROUP] = grp.getgrgid(st.st_gid).gr_name
             except KeyError:
                 # Group not found, fall back to GID
-                result["X-File-Group"] = str(st.st_gid)
+                result[AppMeshClient._HTTP_HEADER_KEY_X_FILE_GROUP] = str(st.st_gid)
 
             return result
 
@@ -661,20 +665,11 @@ class AppMeshClient:
         """
         if not local_file:
             local_file = os.path.basename(remote_file)
-        token = self._get_bearer_token()
-        if not token:
-            raise ValueError("File transfer requires a bearer token")
 
-        r = self.session.get(
-            url=parse.urljoin(self.base_url, "/appmesh/file/download"),
-            stream=True,
-            timeout=self.request_timeout,
-            headers={
-                self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
-                self._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
-            },
-            cert=self.ssl_client_cert,
-            verify=self.ssl_verify,
+        r = self._request_http(
+            AppMeshClient._Method.GET_STREAM,
+            path="/appmesh/file/download",
+            header={self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)},
         )
         # A JSON reply without Content-Disposition is a legacy placeholder, not content.
         content_type = r.headers.get("Content-Type", "")
@@ -708,26 +703,17 @@ class AppMeshClient:
         local_path = Path(local_file)
         if not local_path.exists():
             raise FileNotFoundError(f"Local file not found: {local_file}")
-        token = self._get_bearer_token()
-        if not token:
-            raise ValueError("File transfer requires a bearer token")
 
-        header = {
-            self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
-            self._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
-        }
+        header = {self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)}
         if preserve_permissions:
             header.update(self._get_file_attributes(local_path))
 
-        with local_path.open("rb") as fp:
-            r = self.session.post(
-                url=parse.urljoin(self.base_url, "/appmesh/file/upload"),
-                data=fp,
-                timeout=self.request_timeout,
-                headers=dict(header),
-                cert=self.ssl_client_cert,
-                verify=self.ssl_verify,
-            )
+        r = self._request_http(
+            AppMeshClient._Method.POST,
+            path="/appmesh/file/upload",
+            header=header,
+            body=lambda: local_path.open("rb"),
+        )
         try:
             if r.status_code not in (HTTPStatus.OK, HTTPStatus.CREATED):
                 raise AppMeshRequestError(f"File upload failed: HTTP {r.status_code}: {r.text[:200]}")
@@ -953,7 +939,8 @@ class AppMeshClient:
         body=None,
         raise_on_fail: bool = True,
     ) -> requests.Response:
-        """Make an HTTP request."""
+        """Make an HTTP request. A callable ``body`` is invoked per attempt and must
+        return a closeable stream (a file opened for reading)."""
         url = parse.urljoin(self.base_url, path)
 
         base_headers = header.copy() if header else {}
@@ -979,7 +966,7 @@ class AppMeshClient:
             base_headers.setdefault("Content-Type", "application/json")
 
         # Streaming/multipart bodies cannot be assumed replayable after a 401 response.
-        replayable = body is None or isinstance(body, (str, bytes, bytearray))
+        replayable = body is None or isinstance(body, (str, bytes, bytearray)) or callable(body)
         rejected_token = None
 
         try:
@@ -1002,18 +989,25 @@ class AppMeshClient:
                     "timeout": self.request_timeout,
                 }
 
-                if method == AppMeshClient._Method.GET:
-                    resp = self.session.get(params=query, **request_kwargs)
-                elif method == AppMeshClient._Method.POST:
-                    resp = self.session.post(params=query, data=body, **request_kwargs)
-                elif method == AppMeshClient._Method.POST_STREAM:
-                    resp = self.session.post(params=query, data=body, stream=True, **request_kwargs)
-                elif method == AppMeshClient._Method.DELETE:
-                    resp = self.session.delete(**request_kwargs)
-                elif method == AppMeshClient._Method.PUT:
-                    resp = self.session.put(params=query, data=body, **request_kwargs)
-                else:
-                    raise AppMeshRequestError(f"Invalid http method: {method}")
+                payload = body() if callable(body) else body
+                try:
+                    if method == AppMeshClient._Method.GET:
+                        resp = self.session.get(params=query, **request_kwargs)
+                    elif method == AppMeshClient._Method.GET_STREAM:
+                        resp = self.session.get(params=query, stream=True, **request_kwargs)
+                    elif method == AppMeshClient._Method.POST:
+                        resp = self.session.post(params=query, data=payload, **request_kwargs)
+                    elif method == AppMeshClient._Method.POST_STREAM:
+                        resp = self.session.post(params=query, data=payload, stream=True, **request_kwargs)
+                    elif method == AppMeshClient._Method.DELETE:
+                        resp = self.session.delete(**request_kwargs)
+                    elif method == AppMeshClient._Method.PUT:
+                        resp = self.session.put(params=query, data=payload, **request_kwargs)
+                    else:
+                        raise AppMeshRequestError(f"Invalid http method: {method}")
+                finally:
+                    if payload is not body:
+                        payload.close()
 
                 if (
                     resp.status_code == HTTPStatus.UNAUTHORIZED

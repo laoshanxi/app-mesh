@@ -791,36 +791,49 @@ class AppMeshClient {
   async downloadFile(filePath, localFile = null, applyAttrs = false) {
     if (!localFile) localFile = filePath.split(/[\\/]/).pop();
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
+    // Node streams the body to disk; the browser needs the whole buffer for Blob.
     const response = await this._request("get", "/appmesh/file/download", null, {
       headers,
       config: {
-        responseType: "arraybuffer"
+        responseType: ENV.isNode ? "stream" : "arraybuffer"
       }
     });
+    // A streamed body cannot be read twice, so error details stay header-level in Node.
+    const errDetail = ENV.isNode ? "" : response.data;
 
     // A JSON reply without Content-Disposition is a legacy placeholder, not content.
     if (response.status === 200 && !response.headers?.["content-disposition"] &&
         String(response.headers?.["content-type"] ?? "").toLowerCase().includes("json")) {
+      if (ENV.isNode) response.data.destroy(); // release the unread stream's socket
       throw new AppMeshError(
-        `File download is not supported by this server surface: ${filePath}`, response.status, response.data);
+        `File download is not supported by this server surface: ${filePath}`, response.status, errDetail);
     }
 
     if (response.status !== 200) {
-      throw new AppMeshError(`Failed to download file: ${filePath}`, response.status, response.data);
+      throw new AppMeshError(`Failed to download file: ${filePath}`, response.status, errDetail);
     }
 
     if (ENV.isNode) {
-      const fs = await import('fs/promises');
+      const fsMod = await import('fs');
+      // stream/promises needs Node 15; engines declares 14, so promisify the callback form.
+      const { promisify } = await import('util');
+      const pipeline = promisify((await import('stream')).pipeline);
+      const fs = fsMod.promises;
 
       try {
-        await fs.writeFile(localFile, Buffer.from(response.data));
+        await pipeline(response.data, fsMod.createWriteStream(localFile));
 
         if (applyAttrs && process.platform !== 'win32') {
           const respHeaders = response.headers; // avoid shadowing outer `headers`
           try {
             const mode = respHeaders["x-file-mode"];
             if (mode) {
-              await fs.chmod(localFile, parseInt(mode, 10));
+              const modeVal = parseInt(mode, 10);
+              if (Number.isInteger(modeVal) && modeVal >= 0 && modeVal <= 0o777) {
+                await fs.chmod(localFile, modeVal);
+              } else {
+                console.warn("Warning: Invalid x-file-mode value:", mode);
+              }
             }
             // chown: resolve user/group names to uid/gid via id(1) command
             const username = respHeaders["x-file-user"];

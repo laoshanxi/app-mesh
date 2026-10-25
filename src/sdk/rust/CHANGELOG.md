@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.11
+
+- `upload_file`: the legacy-placeholder check now runs on the streaming HTTP
+  path. In 3.0.10 it only existed in the buffered fallback, which the HTTP
+  transport never takes, so an upload to a legacy daemon still reported success
+  while storing nothing.
+- The buffered fallbacks of `download_file`/`upload_file` send `X-File-Path`
+  again (they lost the header when the streaming path took ownership of it).
+
 ## 3.0.10
 
 File-transfer correctness over the HTTP transport:

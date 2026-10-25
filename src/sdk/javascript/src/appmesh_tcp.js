@@ -810,7 +810,13 @@ class AppMeshClientTCP extends AppMeshClient {
     if (applyAttrs && process.platform !== 'win32') {
       // Mode is sent as a decimal string (matches the HTTP transport and Python SDK)
       if (response.headers['X-File-Mode']) {
-        fs.chmodSync(localFile, parseInt(response.headers['X-File-Mode'], 10))
+        const mode = parseInt(response.headers['X-File-Mode'], 10)
+        // A malformed or out-of-range remote value must not fail the finished download
+        if (Number.isInteger(mode) && mode >= 0 && mode <= 0o777) {
+          fs.chmodSync(localFile, mode)
+        } else {
+          console.warn(`Warning: Invalid X-File-Mode value: ${response.headers['X-File-Mode']}`)
+        }
       }
       if (response.headers['X-File-User'] && response.headers['X-File-Group']) {
         // The daemon sends user/group *names* (os::fileStat); resolve them to

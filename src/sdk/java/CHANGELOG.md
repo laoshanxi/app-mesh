@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.8
+
+File-transfer correctness over the HTTP transport (same change as Python 3.0.12,
+JavaScript 3.1.9 and Rust 3.0.11):
+
+- `uploadFile` sends the raw file bytes as the POST body on the canonical
+  `/appmesh/file/upload` route and `downloadFile` reads the GET body as the file
+  content. The previous multipart request silently lost data against a bare
+  daemon, which answered a socket-transfer placeholder and never read the body.
+- A legacy daemon's placeholder replies (200 JSON without `Content-Disposition`
+  on download, 200 JSON `{"message":...}` on upload) are reported as errors
+  instead of being treated as success.
+
 ## 3.0.7
 
 Subscription and transport fixes ported from the Python SDK.
