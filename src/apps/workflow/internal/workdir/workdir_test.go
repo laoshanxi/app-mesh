@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestRunDir_Creates(t *testing.T) {
@@ -120,5 +121,35 @@ func TestEnsureWorkflowDir(t *testing.T) {
 	dir := filepath.Join(m.BaseDir(), "new-wf", "runs")
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		t.Error("should create runs subdir")
+	}
+}
+
+// The persisted schedule instant must survive write+read and overwrite in place;
+// workflows without state (or with corrupt state) are simply absent.
+func TestScheduleStateRoundTrip(t *testing.T) {
+	m := NewManager(t.TempDir(), 10)
+	first := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	if err := m.WriteScheduleState("wf", first); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	second := first.Add(90 * time.Second)
+	if err := m.WriteScheduleState("wf", second); err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	states := m.ReadScheduleStates()
+	if got, ok := states["wf"]; !ok || !got.Equal(second) {
+		t.Fatalf("read: got %v (%v), want %v", got, ok, second)
+	}
+
+	// Corrupt and empty-value files must be skipped, not fail the whole scan.
+	if err := os.WriteFile(filepath.Join(m.BaseDir(), "wf", "schedule-state.json"),
+		[]byte("{truncated"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.WriteScheduleState("zero", time.UnixMilli(0)); err != nil {
+		t.Fatal(err)
+	}
+	if states = m.ReadScheduleStates(); len(states) != 0 {
+		t.Fatalf("corrupt/zero states must be dropped, got %v", states)
 	}
 }

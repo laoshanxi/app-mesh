@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
@@ -47,6 +48,25 @@ jobs:
 	}
 	if job.Steps[0].Type != models.StepCommand {
 		t.Errorf("type: %v", job.Steps[0].Type)
+	}
+}
+
+func TestStrictExpressions(t *testing.T) {
+	path := writeTmp(t, `
+name: strict
+strict_expressions: true
+jobs:
+  hello:
+    steps:
+      - name: greet
+        command: "echo hi"
+`)
+	wf, err := LoadWorkflow(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !wf.StrictExpressions {
+		t.Error("strict_expressions: not parsed")
 	}
 }
 
@@ -254,6 +274,21 @@ jobs:
 	}
 }
 
+func TestNegativeTimeoutRejected(t *testing.T) {
+	path := writeTmp(t, `
+name: neg-timeout
+jobs:
+  a:
+    steps:
+      - name: s
+        command: "true"
+        timeout: -5
+`)
+	if _, err := LoadWorkflow(path); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestRetryDefaults(t *testing.T) {
 	path := writeTmp(t, `
 name: retry-defaults
@@ -432,5 +467,65 @@ jobs:
 `)
 	if _, err := LoadWorkflow(path); err == nil {
 		t.Fatal("app_event without app/events must be rejected")
+	}
+}
+
+func TestStepEnvKeysRejected(t *testing.T) {
+	path := writeTmp(t, `
+name: env-keys
+jobs:
+  a:
+    steps:
+      - name: s
+        command: "true"
+        env:
+          "FOO BAR": x
+`)
+	if _, err := LoadWorkflow(path); err == nil || !strings.Contains(err.Error(), "env key") {
+		t.Fatalf("expected env key error, got %v", err)
+	}
+	path = writeTmp(t, `
+name: secret-env-keys
+jobs:
+  a:
+    steps:
+      - name: s
+        command: "true"
+        secret_env:
+          "A=B": y
+`)
+	if _, err := LoadWorkflow(path); err == nil || !strings.Contains(err.Error(), "secret_env key") {
+		t.Fatalf("expected secret_env key error, got %v", err)
+	}
+}
+
+// Job- and workflow-level env flow into the same process environment as step env,
+// so their keys must pass the same identifier check.
+func TestJobAndWorkflowEnvKeysRejected(t *testing.T) {
+	path := writeTmp(t, `
+name: job-env-keys
+jobs:
+  a:
+    env:
+      "JOB KEY": x
+    steps:
+      - name: s
+        command: "true"
+`)
+	if _, err := LoadWorkflow(path); err == nil || !strings.Contains(err.Error(), `job "a" env key`) {
+		t.Fatalf("expected job env key error, got %v", err)
+	}
+	path = writeTmp(t, `
+name: wf-env-keys
+env:
+  "WF=KEY": x
+jobs:
+  a:
+    steps:
+      - name: s
+        command: "true"
+`)
+	if _, err := LoadWorkflow(path); err == nil || !strings.Contains(err.Error(), "workflow env key") {
+		t.Fatalf("expected workflow env key error, got %v", err)
 	}
 }

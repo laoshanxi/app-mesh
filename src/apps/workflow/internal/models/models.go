@@ -128,5 +128,7 @@ type Workflow struct {
 	Concurrency *ConcurrencyConfig `yaml:"concurrency,omitempty"`
 	Env         map[string]string  `yaml:"env,omitempty"`
 	SecretEnv   map[string]string  `yaml:"secret_env,omitempty"`
-	Jobs        map[string]*Job    `yaml:"jobs"`
+	// Unresolved ${{ }} fail the step instead of embedding literally.
+	StrictExpressions bool            `yaml:"strict_expressions,omitempty"`
+	Jobs              map[string]*Job `yaml:"jobs"`
 }

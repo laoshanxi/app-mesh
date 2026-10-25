@@ -37,6 +37,7 @@ type RunRecord struct {
 	Source    string              `json:"source"`
 	Actor     string              `json:"actor,omitempty"` // caller Principal or internal:workflow-trigger audit marker
 	Status    string              `json:"status"`
+	Error     string              `json:"error,omitempty"` // why a run died before any step ran (e.g. capability issuance)
 	StartedAt string              `json:"started_at"`
 	Inputs    map[string]string   `json:"inputs,omitempty"`
 	Jobs      map[string]JobState `json:"jobs"`
@@ -200,6 +201,18 @@ func (c *Checkpoint) MarkComplete(wfName, runID, finalStatus string) {
 		return
 	}
 	rec.Status = finalStatus
+	c.writeUnsafe(wfName, runID, rec)
+}
+
+// MarkCompleteError records why a run died before any step ran.
+func (c *Checkpoint) MarkCompleteError(wfName, runID, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	rec := c.read(wfName, runID)
+	if rec == nil {
+		return
+	}
+	rec.Error = reason
 	c.writeUnsafe(wfName, runID, rec)
 }
 

@@ -113,6 +113,11 @@ func main() {
 		return nil
 	}
 	svc.SetControlRefresh(controlRefresh)
+	// A superseded Engine cannot heal by refreshing; exit so the daemon restarts it.
+	svc.SetFatalHandler(func(reason string) {
+		logger.Error("Engine exiting for restart: " + reason)
+		os.Exit(1)
+	})
 
 	taskHandler, taskErr := api.NewTaskHandler(svc, svc.Wdir(), tcpClient.AppMeshClient, engineOption)
 	if taskErr != nil {

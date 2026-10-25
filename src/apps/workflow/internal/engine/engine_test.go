@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
@@ -144,5 +145,50 @@ func TestConditionSkippedStepIsPersisted(t *testing.T) {
 	}
 	if got == nil || got["status"] != models.StatusSkipped {
 		t.Fatalf("skipped step not persisted as skipped: %v", got)
+	}
+}
+
+func TestKillAllSparesFinallySteps(t *testing.T) {
+	a := NewActiveSteps(nil, "")
+	a.Set("j", "main", "app-main", "", false)
+	a.Set("j", "cleanup", "app-finally", "", true)
+	a.KillAll() // nil client: kill calls are skipped, partitioning still applies
+	a.mu.Lock()
+	_, mainKilled := a.apps["j.main"]
+	_, finallyKept := a.apps["j.cleanup"]
+	a.mu.Unlock()
+	if mainKilled {
+		t.Fatal("main step entry must be dropped by KillAll")
+	}
+	if !finallyKept {
+		t.Fatal("finally step entry must survive KillAll")
+	}
+}
+
+// A strict workflow fails a step whose expression cannot resolve, before any
+// client call; the lenient default embeds the expression literally.
+func TestStrictExpressionsFailStep(t *testing.T) {
+	wf := &models.Workflow{
+		Name:              "strict-demo",
+		StrictExpressions: true,
+		Jobs: map[string]*models.Job{
+			"build": {Name: "build", Steps: []models.Step{
+				{Name: "greet", Type: models.StepCommand, Command: "echo ${{ inputz.name }}"},
+			}},
+		},
+	}
+	var snap map[string]map[string]any
+	code, _ := RunWithContext(context.Background(), wf, nil, nil, "run1", 0, Options{
+		OnJobDone: func(_, _, _ string, steps map[string]map[string]any) { snap = steps },
+	})
+	if code == 0 {
+		t.Fatalf("exit 0, want 1 (unresolved expression must fail the step)")
+	}
+	s := snap["greet"]
+	if s == nil || s["status"] != models.StatusFailure {
+		t.Fatalf("step result = %v, want failure", s)
+	}
+	if stdout, _ := s["stdout"].(string); !strings.Contains(stdout, "unresolved expression") {
+		t.Fatalf("step stdout = %q, want unresolved-expression message", stdout)
 	}
 }

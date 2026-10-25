@@ -21,10 +21,8 @@ var ParseSchedule = schedule.Parse
 
 type schedState struct {
 	wf *models.Workflow
-	// last is the instant up to which the schedule has been accounted for (the
-	// Kubernetes CronJob lastScheduleTime model): the next fire is always
-	// schedule.Next(last), so a definition change naturally re-bases from the last
-	// completed period without any extra bookkeeping.
+	// last is the last accounted instant (Kubernetes CronJob lastScheduleTime
+	// model): next fire is schedule.Next(last); persisted on fire, re-seeded at startup.
 	last time.Time
 }
 
@@ -42,10 +40,9 @@ func hasSchedule(wf *models.Workflow) bool {
 	return wf.On != nil && len(wf.On.Schedule) > 0
 }
 
-// reset reconciles tracked workflows with the registry: vanished workflows and
-// definitions that lost their schedules drop out; newly scheduled workflows start
-// from now. A fresh start therefore never back-fills missed periods.
-func (d *ScheduleDispatcher) reset(all map[string]*models.Workflow, now time.Time) {
+// reset reconciles tracked workflows with the registry: vanished/unscheduled ones
+// drop out; new ones start from now or their persisted last instant (consumed once).
+func (d *ScheduleDispatcher) reset(all map[string]*models.Workflow, now time.Time, persisted map[string]time.Time) {
 	for name, st := range d.byWF {
 		wf, ok := all[name]
 		if !ok || !hasSchedule(wf) {
@@ -59,14 +56,19 @@ func (d *ScheduleDispatcher) reset(all map[string]*models.Workflow, now time.Tim
 		if _, ok := d.byWF[name]; ok || !hasSchedule(wf) {
 			continue
 		}
-		d.byWF[name] = schedState{wf: wf, last: now}
+		last, fromPersistence := persisted[name]
+		if fromPersistence {
+			delete(persisted, name)
+		} else {
+			last = now
+		}
+		d.byWF[name] = schedState{wf: wf, last: last}
 	}
 }
 
-// tick fires every workflow whose next period (after its last accounted instant)
-// has passed. Firing advances `last` to now, so a late tick fires once and forgoes
-// the intermediate missed periods instead of catching up.
-func (d *ScheduleDispatcher) tick(now time.Time, fire func(wf *models.Workflow, source string)) int {
+// tick fires every workflow whose next period has passed; `last` advances to the
+// fired boundary (no drift), or to now when several periods passed (one fire, no catch-up).
+func (d *ScheduleDispatcher) tick(now time.Time, fire func(wf *models.Workflow, source string, last time.Time)) int {
 	type dueFire struct {
 		st   schedState
 		expr string
@@ -77,12 +79,15 @@ func (d *ScheduleDispatcher) tick(now time.Time, fire func(wf *models.Workflow, 
 		if next.IsZero() || next.After(now) {
 			continue
 		}
-		st.last = now
+		st.last = next
+		if following, _ := nextFire(st.wf, next); !following.IsZero() && !following.After(now) {
+			st.last = now
+		}
 		d.byWF[name] = st
 		due = append(due, dueFire{st: st, expr: expr})
 	}
 	for _, f := range due {
-		fire(f.st.wf, "schedule:"+f.expr)
+		fire(f.st.wf, "schedule:"+f.expr, f.st.last)
 	}
 	return len(due)
 }
