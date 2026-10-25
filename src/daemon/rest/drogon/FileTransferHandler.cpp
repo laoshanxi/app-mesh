@@ -51,8 +51,8 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 			return;
 		}
 
-		// Temp file lives in the destination's own directory (append a unique suffix to the
-		// full path) so the final rename stays on the same filesystem and is atomic.
+		// Temp file lives in the destination's directory (unique suffix) so the
+		// committing hard link stays on the same filesystem and never replaces a file.
 		const auto tempName = fileName + "." + Utility::shortID() + ".part";
 		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp.file_upload_request_headers);
 		if (!uploadInfo->m_file.is_open())
@@ -160,23 +160,23 @@ void FileTransferHandler::recvNextUploadChunk(const std::string &data, int clien
 	}
 	else
 	{
-		// EOF: commit atomically. Temp and destination share a directory (same filesystem),
-		// so a successful rename publishes the complete file in one step; on failure the
-		// dtor removes the temp and the destination is left untouched.
+		// EOF: commit without replacing. A concurrent upload that won the destination
+		// keeps its file; the client's precheck already answered OK, so this side only logs.
 		const auto dst = m_pendingUpload->m_filePath;
-		const auto tmp = m_pendingUpload->m_tempPath;
-		m_pendingUpload->m_file.flush();
-		m_pendingUpload->m_file.close();
-		if (std::rename(tmp.c_str(), dst.c_str()) == 0)
+		const auto result = m_pendingUpload->commit();
+		if (result == FileUploadInfo::CommitResult::Committed)
 		{
-			m_pendingUpload->m_committed = true; // already in place; dtor must not remove it
 			Utility::applyFilePermission(dst, m_pendingUpload->m_requestHeaders);
 			LOG_INF << fname << "File upload completed successfully | ClientID=" << clientId << " | Destination=" << dst;
 		}
+		else if (result == FileUploadInfo::CommitResult::AlreadyExists)
+		{
+			LOG_WAR << fname << "Concurrent upload already created the destination | ClientID=" << clientId
+					<< " | Destination=" << dst;
+		}
 		else
 		{
-			LOG_ERR << fname << "Failed to commit uploaded file via rename | ClientID=" << clientId
-					<< " | Destination=" << dst;
+			LOG_ERR << fname << "Failed to commit uploaded file | ClientID=" << clientId << " | Destination=" << dst;
 		}
 		m_pendingUpload.reset();
 	}

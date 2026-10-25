@@ -1206,6 +1206,19 @@ std::string Utility::stringReplace(const std::string &strBase, const std::string
 	return str;
 }
 
+std::map<std::string, std::string> Utility::fileAttributeHeaders(const std::string &file)
+{
+	std::map<std::string, std::string> headers;
+	if (const auto stat = os::fileStat(file))
+	{
+		const auto &[fileMode, fileUser, fileGroup] = *stat;
+		headers[HTTP_HEADER_KEY_file_mode] = std::to_string(fileMode);
+		headers[HTTP_HEADER_KEY_file_user] = fileUser;
+		headers[HTTP_HEADER_KEY_file_group] = fileGroup;
+	}
+	return headers;
+}
+
 void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers)
 {
 	const static char fname[] = "Utility::applyFilePermission() ";

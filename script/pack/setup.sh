@@ -329,6 +329,31 @@ migrate_renamed_bundled_apps() {
     done
 }
 
+# Prints template roles that the persisted authorization lacks, space separated.
+missing_template_roles() {
+    local template="${PROG_HOME}/config/authorization.yaml"
+    local runtime="${PROG_HOME}/work/config/authorization.yaml"
+    [ -f "$template" ] && [ -f "$runtime" ] || return 0
+    comm -23         <(awk '/^  roles:/{r=1;next} /^  [A-Za-z]/{r=0} r&&/^    [A-Za-z0-9_-]+:/{print $1}' "$template" | sort)         <(awk '/^  roles:/{r=1;next} /^  [A-Za-z]/{r=0} r&&/^    [A-Za-z0-9_-]+:/{print $1}' "$runtime" | sort) |
+        tr -d ':' | tr '\n' ' '
+}
+
+# A persisted copy in work/apps shadows the bundled definition at daemon
+# startup; refresh system apps so an upgraded definition is not ignored.
+refresh_bundled_system_apps() {
+    local bundled
+    local persisted
+    for bundled in "${PROG_HOME}"/apps/*.yaml; do
+        [ -f "$bundled" ] || continue
+        grep -qE '^system:[[:space:]]*true[[:space:]]*$' "$bundled" || continue
+        persisted="${PROG_HOME}/work/apps/$(basename "$bundled")"
+        if [ -f "$persisted" ] && ! cmp -s "$bundled" "$persisted"; then
+            cp -- "$bundled" "$persisted"
+            info "Refreshed the bundled system application definition: $(basename "$bundled")"
+        fi
+    done
+}
+
 write_env_entry() {
     local target="$1"
     local name="$2"
@@ -987,6 +1012,24 @@ print_startup_instructions() {
         else
             echo "  appm logon --browser"
         fi
+        # py-task is enabled by default.
+        if ! python3 -c 'import appmesh' >/dev/null 2>&1; then
+            echo "3. Install python3 and the appmesh SDK for the bundled py-task app"
+            echo "  pip3 install appmesh"
+        fi
+        # llm-agent (optional) needs python >= 3.10 and the Claude Agent SDK.
+        if [ -f "${PROG_HOME}/lib/llm-agent/requirements.txt" ] &&
+            ! python3 -c 'import claude_agent_sdk' >/dev/null 2>&1; then
+            echo "4. llm-agent needs python3 >= 3.10, then: pip3 install -r ${PROG_HOME}/lib/llm-agent/requirements.txt"
+            echo "   and ANTHROPIC_API_KEY in the app's secured env before enabling it"
+        fi
+        # An upgraded install keeps its persisted authorization; name roles only the new template ships.
+        local new_roles
+        new_roles="$(missing_template_roles)"
+        if [ -n "$new_roles" ]; then
+            echo "New role(s) in this version (absent from the persisted authorization): $new_roles"
+            echo "  adopt via the role API; definitions: ${PROG_HOME}/config/authorization.yaml"
+        fi
         echo
         echo "Logs: ${PROG_HOME}/work/server.log"
         echo "Docs: https://app-mesh.readthedocs.io"
@@ -1024,6 +1067,7 @@ main() {
     clean_environment
     remove_obsolete_auth_app_definition
     migrate_renamed_bundled_apps
+    refresh_bundled_system_apps
 
     # Setup
     setup_env_file

@@ -52,3 +52,18 @@ func TestUpdateStepOnUnknownRunIsNoop(t *testing.T) {
 		t.Fatalf("UpdateStep created a checkpoint for an unknown run")
 	}
 }
+
+// MarkCompleteError must surface why a run died before any step ran, and the
+// reason survives the later MarkComplete that finalizes the status.
+func TestMarkCompleteErrorSurvivesMarkComplete(t *testing.T) {
+	c, _, _ := newTestCheckpoint(t)
+	c.SaveRunning("wf", "run1", "manual", "me", nil, []string{"a"})
+
+	c.MarkCompleteError("wf", "run1", "issue workflow run capability: 403")
+	c.MarkComplete("wf", "run1", "failure")
+
+	rec := c.GetRunRecord("wf", "run1")
+	if rec == nil || rec.Error != "issue workflow run capability: 403" {
+		t.Fatalf("expected capability reason preserved, got %+v", rec)
+	}
+}

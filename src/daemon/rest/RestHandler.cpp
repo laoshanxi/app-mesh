@@ -155,6 +155,28 @@ namespace
 		}
 		return unknown;
 	}
+
+	// Config unknown-key walk: every incoming object key must exist in the current
+	// configuration view at the same depth; Labels are free-form.
+	void collectUnknownConfigKeys(const Json::Value &incoming, const Json::Value &schema, const std::string &prefix,
+								  std::string &unknown)
+	{
+		if (!incoming.isObject())
+			return;
+		for (const auto &key : incoming.getMemberNames())
+		{
+			if (!schema.isObject() || !schema.isMember(key))
+			{
+				if (!unknown.empty())
+					unknown += " ";
+				unknown += prefix + key;
+				continue;
+			}
+			if (key == JSON_KEY_Labels)
+				continue;
+			collectUnknownConfigKeys(incoming[key], schema[key], prefix + key + ".", unknown);
+		}
+	}
 }
 
 // 1. Authentication
@@ -824,17 +846,13 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 
 	if (!Utility::isFileExist(file))
 	{
-		message->reply(web::http::status_codes::NotAcceptable, Utility::text2json("file not found"));
+		message->reply(web::http::status_codes::NotFound, Utility::text2json("file not found"));
 		return;
 	}
 
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
-	std::map<std::string, std::string> headers;
-	const auto [fileMode, fileUser, fileGroup] = os::fileStat(file).value_or(std::make_tuple(-1, "", ""));
-	headers[HTTP_HEADER_KEY_file_mode] = std::to_string(fileMode);
-	headers[HTTP_HEADER_KEY_file_user] = std::move(fileUser);
-	headers[HTTP_HEADER_KEY_file_group] = std::move(fileGroup);
+	auto headers = Utility::fileAttributeHeaders(file);
 	auto body = HttpRequest::emptyJsonMessage();
 	if (message->m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) &&
 		message->m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
@@ -864,7 +882,7 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 
 	if (Utility::isFileExist(file))
 	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("file already exist"));
+		message->reply(web::http::status_codes::Conflict, Utility::text2json("file already exist"));
 		return;
 	}
 
@@ -958,27 +976,14 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_config_set);
 
 	auto json = message->extractJson();
-	// Reject keys the configuration view does not carry; typos were silently dropped.
-	// Labels stay free-form; read-only keys (Version) are accepted and ignored.
+	// Reject keys the configuration view does not carry, at any depth; typos were
+	// silently dropped. Labels stay free-form; read-only keys (Version) are accepted.
+	if (!json.isObject())
+		throw std::invalid_argument("configuration body must be a JSON object");
 	{
 		const auto current = Configuration::instance()->AsJson();
 		std::string unknown;
-		for (const auto &section : json.getMemberNames())
-		{
-			if (!current.isMember(section) || section == JSON_KEY_Labels || !json[section].isObject())
-			{
-				if (!current.isMember(section))
-					unknown += std::string(section) + " ";
-				continue;
-			}
-			if (!current[section].isObject())
-				continue;
-			for (const auto &key : json[section].getMemberNames())
-			{
-				if (!current[section].isMember(key))
-					unknown += section + "." + key + " ";
-			}
-		}
+		collectUnknownConfigKeys(json, current, "", unknown);
 		if (!unknown.empty())
 			throw std::invalid_argument("unknown configuration field(s): " + unknown);
 	}
@@ -1078,9 +1083,13 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 			PERMISSION_KEY_label_view,
 		};
 		const auto currentPermissions = Security::instance()->permissions(ownerPrincipalId);
+		// Name every missing operation so the caller can grant them all at once.
+		std::string missing;
 		for (const auto &operation : operations)
 			if (currentPermissions.count(operation) == 0)
-				throw AuthorizationException("workflow owner does not currently allow operation: " + operation);
+				missing += (missing.empty() ? "" : ", ") + operation;
+		if (!missing.empty())
+			throw AuthorizationException("workflow owner is missing permission(s): " + missing);
 	}
 	else
 	{
@@ -1611,13 +1620,13 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	if (observed)
 		checkAppAccessPermission(message, observed, true);
 
-	// Case-variant names collide on case-insensitive filesystems.
-	const auto caseConflict = config->caseInsensitiveNameConflict(appName);
-	if (!caseConflict.empty())
+	// Case-variant names collide on case-insensitive filesystems. The conflicting
+	// name is logged server-side; the reply stays generic (no name enumeration).
+	if (!config->caseInsensitiveNameConflict(appName).empty())
 	{
-		message->reply(web::http::status_codes::Conflict,
-					   Utility::text2json("application name conflicts with existing application <" + caseConflict +
-										  ">: names must differ by more than letter case"));
+		message->reply(
+			web::http::status_codes::Conflict,
+			Utility::text2json("application name conflicts with an existing application that differs only by letter case"));
 		return;
 	}
 

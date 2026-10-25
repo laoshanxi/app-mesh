@@ -148,3 +148,32 @@ def test_legacy_json_migrated_once(tmp_path, monkeypatch):
 	assert rec is not None and rec["title"] == "旧单" and rec["status"] == "approved"
 	assert (tmp_path / "approvals.db.legacy").exists()
 	assert approval.get("AP-old0001") is not None  # 二次打开不再迁移，数据仍在
+
+
+def test_legacy_migration_survives_interrupted_run(tmp_path, monkeypatch):
+	"""迁移半途被杀（残留 .migrating）不丢记录：原件仍在，重跑即成功。"""
+	import json as _json
+	db = tmp_path / "approvals.db"
+	db.write_text(_json.dumps({"AP-old0002": {"id": "AP-old0002", "title": "待批", "requester": "zs",
+		"risk": "high", "status": "pending", "created": "2026-10-01 00:00:00",
+		"payload": {}, "decided_by": None, "consumed": False}}), encoding="utf-8")
+	(tmp_path / "approvals.db.migrating").write_bytes(b"half-written database from a killed process")
+	monkeypatch.setattr(approval, "_FILE", db)
+	assert approval.get("AP-old0002")["status"] == "pending"
+	assert (tmp_path / "approvals.db.legacy").exists()
+	assert not (tmp_path / "approvals.db.migrating").exists()
+	assert db.read_bytes().startswith(b"SQLite format 3")
+
+
+def test_corrupt_db_is_quarantined_and_service_recovers(tmp_path, monkeypatch):
+	"""损坏账本被隔离取证，服务以空账本继续。"""
+	_isolated(tmp_path, monkeypatch)
+	(tmp_path / "approvals.db").write_bytes(b"\x00garbage that is neither sqlite nor json")
+	(tmp_path / "approvals.db-journal").write_bytes(b"stale hot journal from the old ledger")
+	rec = approval.create("t", "zs", "low")
+	assert approval.get(rec["id"])["status"] == "pending"
+	quarantined = list(tmp_path.glob("approvals.db.corrupt-*"))
+	assert len(quarantined) == 1
+	assert quarantined[0].read_bytes().startswith(b"\x00garbage")
+	assert not (tmp_path / "approvals.db-journal").exists()  # 旧库的旁车不回放进新空库
+	assert stat.S_IMODE((tmp_path / "approvals.db").stat().st_mode) == 0o600

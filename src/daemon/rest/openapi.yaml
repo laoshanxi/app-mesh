@@ -568,9 +568,23 @@ paths:
       responses:
         "200":
           description: The file bytes.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: attachment; filename= (RFC 5987 filename* for non-ASCII names).
+            X-File-Mode:
+              schema: { type: string }
+              description: POSIX permission bits of the file as a decimal integer (493 for 0755).
+            X-File-User:
+              schema: { type: string }
+              description: Owner user name, or the uid when the name cannot be resolved.
+            X-File-Group:
+              schema: { type: string }
+              description: Owner group name, or the gid when the name cannot be resolved.
           content:
             application/octet-stream:
               schema: { type: string, format: binary }
+        "400": { description: The path is not a regular file. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { description: File not found. }
@@ -595,7 +609,9 @@ paths:
           in: header
           required: false
           schema: { type: string }
-          description: POSIX mode (octal) applied to the uploaded file.
+          description: >-
+            POSIX permission bits to apply, as a decimal integer in the range 0-511
+            (493 for 0755). Octal text such as "755" is rejected and logged.
         - name: X-File-User
           in: header
           required: false

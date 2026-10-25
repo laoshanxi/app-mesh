@@ -339,6 +339,27 @@ payload: '{"action":"session_send","input":"${{ inputs.question }}"}'
 payload: '{"action":"session_send","input":${{ toJSON(inputs.question) }}}'
 ```
 
+### Strict Expressions
+
+By default, an expression that cannot be resolved is embedded literally. The engine logs a warning. The command then runs with the raw text.
+
+Set `strict_expressions: true` to fail instead. An unresolved expression fails the step. The step result shows the unresolved expression.
+
+```yaml
+# strict-demo.yaml
+name: strict-demo
+strict_expressions: true
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: "echo ${{ inputz.name }}"   # typo: `inputz` does not exist
+```
+
+With the flag set, the step fails with `unresolved expression ${{ inputz.name }}`. Without the flag, the command runs `echo ${{ inputz.name }}` literally.
+
+Strict mode applies to value substitution: `command`, `workdir`, `docker_image`, `message` payload, `env`/`secret_env` values, sub-workflow `with` inputs, and `workflow_call` outputs. Condition (`if`) operands and the concurrency `group` label stay lenient. A known path with a missing value (for example `inputs.some_unset_key`) resolves to an empty string; it does not fail.
+
 ## Error Handling
 
 ### Default: Stop on Failure

@@ -26,6 +26,10 @@ const scanInterval = 30 * time.Second
 // bypass this entirely (see scan).
 const scanFailsBeforeControlRefresh = 3
 
+// Scan 401s that each followed a successful control refresh: a fresh capability
+// cannot be stale, so this many rejections mean the process was superseded.
+const authRejectionEscalation = 3
+
 // Ceiling on the backoff between failed control-capability requests.
 const controlRefreshMaxBackoff = 5 * time.Minute
 
@@ -65,6 +69,9 @@ type Service struct {
 	wdir         *workdir.Manager
 	processUUID  string
 	sched        *ScheduleDispatcher
+	// persistedSchedule holds the last accounted schedule instants loaded at
+	// startup; consumed once by reset, then only written through WriteScheduleState.
+	persistedSchedule map[string]time.Time
 
 	mu          sync.Mutex
 	cancelFns   map[string]context.CancelFunc
@@ -72,7 +79,9 @@ type Service struct {
 
 	issueCapability CapabilityIssuer
 	refreshControl  func(context.Context) error
+	fatal           func(reason string)
 	scanFails       int // consecutive scan failures
+	authRejections  int // scan 401s that survived a successful control refresh
 
 	// Backoff for repeated Engine capability issuance failures.
 	controlRefreshFails    int
@@ -118,6 +127,10 @@ func (s *Service) Run(ctx context.Context) {
 	// if no checkpoint or checkpoint marked complete, mark the index entry accordingly.
 	s.reconcileIndex()
 
+	// Load persisted lastScheduleTime once: schedules re-base from their last
+	// completed period across restarts instead of silently skipping it.
+	s.persistedSchedule = s.wdir.ReadScheduleStates()
+
 	scanTicker := time.NewTicker(scanInterval)
 	defer scanTicker.Stop()
 
@@ -144,10 +157,14 @@ func (s *Service) Run(ctx context.Context) {
 // so no caller bearer exists or is needed. Tick cadence equals scanInterval — a
 // schedule may fire up to one scan late, never early, and missed periods are skipped.
 func (s *Service) dispatchSchedules() {
-	s.sched.reset(s.registry.All(), time.Now())
+	s.sched.reset(s.registry.All(), time.Now(), s.persistedSchedule)
 	tracked := s.sched.tracked()
-	n := s.sched.tick(time.Now(), func(wf *models.Workflow, source string) {
+	n := s.sched.tick(time.Now(), func(wf *models.Workflow, source string, last time.Time) {
 		logger.Info(fmt.Sprintf("TRIGGER schedule fired: workflow '%s' (%s)", wf.Name, source))
+		// Account the fire before starting the run, so a crash mid-run cannot re-fire it.
+		if err := s.wdir.WriteScheduleState(wf.Name, last); err != nil {
+			logger.Warn(fmt.Sprintf("TRIGGER schedule: cannot persist state for '%s': %v", wf.Name, err))
+		}
 		s.triggerRun(wf, source, nil)
 	})
 	if tracked > 0 || n > 0 {
@@ -172,6 +189,11 @@ func (s *Service) SetCapabilityIssuer(fn CapabilityIssuer) {
 // SetControlRefresh renews the process-bound registry/event capability.
 func (s *Service) SetControlRefresh(fn func(context.Context) error) {
 	s.refreshControl = fn
+}
+
+// SetFatalHandler installs the terminal handler for unrecoverable engine states.
+func (s *Service) SetFatalHandler(fn func(reason string)) {
+	s.fatal = fn
 }
 
 // SetProcessUUID binds temporary step metadata and renewed capabilities to the
@@ -323,6 +345,7 @@ func (s *Service) scan() {
 	err := ScanWorkflows(s.client, s.registry)
 	if err == nil {
 		s.scanFails = 0
+		s.authRejections = 0
 		return
 	}
 
@@ -330,7 +353,9 @@ func (s *Service) scan() {
 	// Other failures (daemon restarting, connection reset) usually do heal, so they
 	// keep the consecutive-failure grace period.
 	if isAuthError(err) && s.refreshControl != nil {
-		s.refreshControlCapability("capability rejected")
+		if s.refreshControlCapability("capability rejected") {
+			s.noteAuthRejectionAfterRefresh()
+		}
 		return
 	}
 
@@ -340,13 +365,14 @@ func (s *Service) scan() {
 	}
 }
 
-// refreshControlCapability reacquires the narrow registry/event capability.
-func (s *Service) refreshControlCapability(reason string) {
+// refreshControlCapability reacquires the narrow registry/event capability and
+// reports whether a fresh capability was installed.
+func (s *Service) refreshControlCapability(reason string) bool {
 	// Check the cooldown before touching scanFails: resetting it on a suppressed attempt
 	// would restart the three-strike count, so the non-auth path could never fire again
 	// while a cooldown is active.
 	if time.Now().Before(s.controlRefreshCooldown) {
-		return
+		return false
 	}
 	s.scanFails = 0
 
@@ -362,28 +388,50 @@ func (s *Service) refreshControlCapability(reason string) {
 		s.controlRefreshCooldown = time.Now().Add(backoff)
 		logger.Error(fmt.Sprintf("workflow control capability refresh failed (attempt %d, next try in %s): %s",
 			s.controlRefreshFails, backoff, err.Error()))
-		return
+		return false
 	}
 	s.controlRefreshFails = 0
 	s.controlRefreshCooldown = time.Time{}
 	logger.Info("workflow control capability refresh succeeded")
+	return true
+}
+
+// noteAuthRejectionAfterRefresh counts scan 401s on a just-refreshed capability;
+// sustained rejection means this process was superseded and must restart.
+func (s *Service) noteAuthRejectionAfterRefresh() {
+	s.authRejections++
+	if s.authRejections < authRejectionEscalation {
+		return
+	}
+	s.authRejections = 0
+	const msg = "workflow control capability rejected after successful renewal (process superseded)"
+	if s.fatal != nil {
+		s.fatal(msg)
+		return
+	}
+	logger.Error(msg)
 }
 
 // triggerRun creates an automatic event run. Cron remains an external trigger
 // (ADR 0004). The run executes under a short-lived, run-scoped Engine capability
 // rather than an OAuth service identity.
 func (s *Service) triggerRun(wf *models.Workflow, source string, inputs map[string]string) (string, string) {
-	return s.triggerRunToken(wf, source, inputs, "", "internal:workflow-trigger")
+	runID, status, err := s.triggerRunToken(wf, source, inputs, "", "internal:workflow-trigger")
+	if err != nil {
+		return runID, "failure" // the run goroutine already logged why it cannot start
+	}
+	return runID, status
 }
 
-// triggerRunToken creates a run and returns its ID and status ("running" or "pending").
+// triggerRunToken creates a run and returns its ID, status ("running"/"pending"),
+// and why an immediately started run could not start (capability issuance).
 // token is the caller's Dex access token (empty for automatic triggers). It is held in
 // memory only for shared-Dex cross-node forwarding and forward_token message identity —
 // never as the local execution credential, which every run obtains from the Engine as a
 // run-scoped capability (see resolveExecCredential). actor is the immutable Principal ID recorded for audit
 // (`internal:workflow-trigger` for automatic triggers).
 func (s *Service) triggerRunToken(wf *models.Workflow, source string, inputs map[string]string, token,
-	actor string) (string, string) {
+	actor string) (string, string, error) {
 	runID := xid.New().String()
 	group := ""
 	cancelInProgress := false
@@ -405,7 +453,7 @@ func (s *Service) triggerRunToken(wf *models.Workflow, source string, inputs map
 				Source: source, Actor: actor, StartedAt: workdir.NowTimestamp(), Inputs: inputs,
 			})
 			logger.Info(fmt.Sprintf("TRIGGER workflow '%s' run=%s queued (group=%s)", wf.Name, runID, group))
-			return runID, "pending"
+			return runID, "pending", nil
 		}
 		for _, id := range toCancel {
 			s.cancelRun(id)
@@ -414,11 +462,13 @@ func (s *Service) triggerRunToken(wf *models.Workflow, source string, inputs map
 		s.runMgr.MarkRunning("", runID)
 	}
 
-	s.startRun(wf, runID, group, source, inputs, token, actor)
-	return runID, "running"
+	if err := s.startRun(wf, runID, group, source, inputs, token, actor); err != nil {
+		return runID, "failure", err
+	}
+	return runID, "running", nil
 }
 
-func (s *Service) startRun(wf *models.Workflow, runID, group, source string, inputs map[string]string, token, actor string) {
+func (s *Service) startRun(wf *models.Workflow, runID, group, source string, inputs map[string]string, token, actor string) error {
 	jobNames := make([]string, 0, len(wf.Jobs))
 	for name := range wf.Jobs {
 		jobNames = append(jobNames, name)
@@ -431,7 +481,7 @@ func (s *Service) startRun(wf *models.Workflow, runID, group, source string, inp
 	})
 	s.wdir.CleanOldRuns(wf.Name)
 
-	s.launchRun(wf, runID, group, source, inputs, nil, nil, nil, token)
+	return s.launchRun(wf, runID, group, source, inputs, nil, nil, nil, token)
 }
 
 func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, inputs map[string]string) {
@@ -484,7 +534,7 @@ func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, in
 
 func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, inputs map[string]string,
 	completedJobs map[string]string, completedSteps map[string]map[string]bool,
-	recoveredSteps map[string]map[string]map[string]any, token string) {
+	recoveredSteps map[string]map[string]map[string]any, token string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	active := engine.NewActiveSteps(s.client, s.serverURI)
 
@@ -502,6 +552,10 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 	}
 
 	logger.Info(fmt.Sprintf("TRIGGER starting workflow '%s' run=%s source=%s", wf.Name, runID, source))
+
+	// Issued before the goroutine so a caller that cannot run — typically the
+	// owner missing a capability operation — fails the trigger at once.
+	execToken, capability, credErr := s.resolveExecCredential(ctx, wf.Name, runID)
 
 	go func() {
 		var (
@@ -575,17 +629,13 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			inputs = make(map[string]string)
 		}
 
-		// Every run — manual included — executes under a renewed run-scoped
-		// capability that is never persisted or forwarded as caller identity.
-		// The caller bearer (token) is used only for shared-Dex cross-node
-		// forwarding and explicit forward_token message payloads.
-		execToken, capability, ierr := s.resolveExecCredential(ctx, wf.Name, runID)
-		if ierr != nil {
-			msg := fmt.Sprintf("run=%s cannot start: %v", runID, ierr)
+		if credErr != nil {
+			msg := fmt.Sprintf("run=%s cannot start: %v", runID, credErr)
 			logger.Error("TRIGGER " + msg)
 			if runLog != nil {
 				runLog.Error(msg)
 			}
+			s.checkpoint.MarkCompleteError(wf.Name, runID, credErr.Error())
 			return // defer marks the run failed and promotes the queue
 		}
 
@@ -611,6 +661,7 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			if runLog != nil {
 				runLog.Error(msg)
 			}
+			s.checkpoint.MarkCompleteError(wf.Name, runID, err.Error())
 			return
 		}
 		// Renewal failure after the last good capability has expired aborts the
@@ -625,6 +676,8 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 				if runLog != nil {
 					runLog.Error(msg)
 				}
+				s.checkpoint.MarkCompleteError(wf.Name, runID, "run credential expired and cannot be renewed: "+
+					reason.Error())
 				cancel()
 			})
 
@@ -655,6 +708,8 @@ func (s *Service) launchRun(wf *models.Workflow, runID, group, source string, in
 			logger.Info(fmt.Sprintf("TRIGGER workflow '%s' run=%s failed (exit %d)", wf.Name, runID, code))
 		}
 	}()
+
+	return credErr
 }
 
 // engineOptions assembles the engine.Options every run — fresh, resumed, or promoted
@@ -804,8 +859,7 @@ func (s *Service) TriggerManual(wfName string, inputs map[string]string, token, 
 	if wf == nil {
 		return "", "", fmt.Errorf("workflow '%s' not found", wfName)
 	}
-	runID, status := s.triggerRunToken(wf, "manual", inputs, token, actor)
-	return runID, status, nil
+	return s.triggerRunToken(wf, "manual", inputs, token, actor)
 }
 
 // CancelByWorkflow cancels all active runs for a workflow

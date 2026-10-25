@@ -136,6 +136,11 @@ class TCPTransport:
         """Close socket"""
         if self._socket:
             try:
+                # close() alone does not wake a thread blocked in recv on Linux.
+                try:
+                    self._socket.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
                 self._socket.close()
             except Exception as e:
                 logger.warning("Error closing socket: %s", e)

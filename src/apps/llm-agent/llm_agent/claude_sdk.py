@@ -33,13 +33,20 @@ class Result:
     iterations: int = 0    # assistant turns the SDK took
 
 
+def _cli_stderr_line(line: str) -> None:
+    """Sink the CLI's own stderr into the log: inherited fd 2 would surface in
+    the session worker's output view, which IS the live-chat stream the UI polls."""
+    if line.strip():
+        log.info("claude-code cli stderr: %s", line.rstrip())
+
+
 def _options(cwd: str, continue_conversation: bool, max_iterations: int):
     """ClaudeAgentOptions for one turn. Imported lazily so the module loads (and tests
     inject a fake engine) without the SDK / Node CLI present."""
     from claude_agent_sdk import ClaudeAgentOptions
     mode = os.environ.get("LLMAGENT_PERMISSION_MODE") or "bypassPermissions"
     _allow_root_skip_permissions(mode)
-    kw = {"permission_mode": mode}
+    kw = {"permission_mode": mode, "stderr": _cli_stderr_line}
     if cwd:
         kw["cwd"] = cwd
     if continue_conversation:

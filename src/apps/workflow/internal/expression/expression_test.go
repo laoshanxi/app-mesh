@@ -1,6 +1,7 @@
 package expression
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -57,6 +58,41 @@ func TestSubstitute_Missing(t *testing.T) {
 	ctx := NewContext()
 	if got := SubstituteForJob("${{ steps.nope.stdout }}", ctx, "test"); got != "" {
 		t.Errorf("missing step: got %q, want empty", got)
+	}
+}
+
+func TestSubstituteChecked_StrictFails(t *testing.T) {
+	ctx := NewContext()
+	ctx.Strict = true
+	got, err := SubstituteForJobChecked("echo ${{ inputz.name }}", ctx, "build")
+	if err == nil || !strings.Contains(err.Error(), "${{ inputz.name }}") {
+		t.Fatalf("err = %v, want unresolved-expression error", err)
+	}
+	if got != "" {
+		t.Errorf("got %q, want empty on error", got)
+	}
+}
+
+func TestSubstituteChecked_StrictResolvesNormally(t *testing.T) {
+	ctx := NewContext()
+	ctx.Strict = true
+	ctx.Inputs["env"] = "staging"
+	got, err := SubstituteForJobChecked("deploy ${{ inputs.env }}", ctx, "build")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != "deploy staging" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSubstituteChecked_LenientKeepsLiteral(t *testing.T) {
+	ctx := NewContext()
+	if got := SubstituteForJob("echo ${{ inputz.name }}", ctx, "build"); got != "echo ${{ inputz.name }}" {
+		t.Errorf("got %q, want the literal expression embedded", got)
+	}
+	if _, err := SubstituteForJobChecked("echo ${{ inputz.name }}", ctx, "build"); err != nil {
+		t.Errorf("lenient checked form must not error: %v", err)
 	}
 }
 

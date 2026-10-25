@@ -223,6 +223,13 @@ void Configuration::registerRecoveredApp(const std::shared_ptr<Application> &app
 {
 	const static char fname[] = "Configuration::registerRecoveredApp() ";
 	std::lock_guard mutationGuard(m_appMutationMutex);
+	// Warn only: case-variant files coexist solely on case-sensitive filesystems, so saves do not collide.
+	const auto caseConflict = caseInsensitiveNameConflict(app->getName());
+	if (!caseConflict.empty())
+	{
+		LOG_WAR << fname << "Application <" << app->getName() << "> differs from <" << caseConflict
+				<< "> only by letter case; rename one before moving this installation to a case-insensitive filesystem";
+	}
 	if (!m_apps.emplace(app->getName(), app))
 	{
 		LOG_WAR << fname << "Application <" << app->getName() << "> already exists, keep the loaded definition";
@@ -688,8 +695,10 @@ std::shared_ptr<Application> Configuration::addApp(const Json::Value &jsonApp, b
 		// Case-variant names collide on case-insensitive filesystems.
 		const auto caseConflict = caseInsensitiveNameConflict(app->getName());
 		if (!caseConflict.empty())
-			throw std::invalid_argument("application name conflicts with existing application <" + caseConflict +
-										">: names must differ by more than letter case");
+			// The conflicting name is logged by caseInsensitiveNameConflict(); the
+			// reply stays generic so an app-reg-only caller cannot enumerate names.
+			throw ConflictException(
+				"application name conflicts with an existing application that differs only by letter case");
 		if (enforceRegistration)
 		{
 			// Atomic with registration: a racing same-name add/remove is stale, not a silent winner.
@@ -779,16 +788,18 @@ bool Configuration::removeApp(const std::string &appName, const Application *exp
 							return true;
 						});
 		m_appNameIndexMap.erase(appName);
+		// Delete the YAML under the lock: addApp() persists a same-name re-registration
+		// under it too, so an unlocked delete could remove the new file.
+		if (app)
+			app->remove();
 	}
 	// Side effects run outside the mutation lock: destroy() may block for a
 	// slow Docker backend, and no other application management may depend on it.
 	EventDispatcher::instance()->dispatch(appName, AppEventType::APP_REMOVED, {});
 	if (app)
 	{
-		// Write to disk
 		app->destroy();
 		app->clearMetrics();
-		app->remove();
 		LOG_DBG << fname << "Removed application <" << appName << ">";
 	}
 	EventDispatcher::instance()->removeByApp(appName);

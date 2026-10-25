@@ -29,6 +29,9 @@ const (
 	headerSendFileSocket = "X-Send-File-Socket"
 	headerRecvFileSocket = "X-Recv-File-Socket"
 	headerFilePath       = "X-File-Path"
+	headerFileMode       = "X-File-Mode"
+	headerFileUser       = "X-File-User"
+	headerFileGroup      = "X-File-Group"
 	headerTargetHost     = "X-Target-Host"
 )
 
@@ -103,7 +106,7 @@ type Application struct {
 	CPU    *float64 `json:"cpu"`
 	Memory *int     `json:"memory"`
 	// UUID identifies a run-application process.
-	UUID *string `json:"process_uuid"` // For run application
+	UUID *string `json:"process_uuid,omitempty"` // For run application
 	// StdoutFileCount is the read-only count of rotated output files.
 	StdoutFileCount *int `json:"stdout_file_count"`
 

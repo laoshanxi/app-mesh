@@ -3,7 +3,7 @@
 - 低危动作（status-check）直接执行（mock）；
 - 高危动作（restart-service）第一次调用只登记审批并返回 approval_id，
   审批通过后携带 approval_id 重试才真正执行（mock 执行：写执行日志）。
-- 校验与"标记已消费"在 approval.consume() 的文件锁内原子完成：同一审批
+- 校验与"标记已消费"由 approval.consume() 的一条条件 UPDATE 原子完成：同一审批
   只能执行一次，且 payload 必须与登记时完全一致（防挪用）。
 
 入参:
@@ -18,13 +18,16 @@ from pathlib import Path
 import approval
 from common import serve
 
-_EXEC_LOG = Path(__file__).resolve().parent.parent / "runtime" / "ops-exec.log"
+# 与审批账本同目录（runtime/<team>/），各 team 不混写。
+_EXEC_LOG = Path(os.getenv("OPS_EXEC_LOG", str(approval._FILE.parent / "ops-exec.log")))
 
 
 def _log(line):
 	_EXEC_LOG.parent.mkdir(parents=True, exist_ok=True)
-	if not _EXEC_LOG.exists():
+	try:
 		os.close(os.open(_EXEC_LOG, os.O_CREAT | os.O_EXCL, 0o600))  # 创建即 0600，无暴露窗口
+	except FileExistsError:
+		pass  # 另一进程刚建好，直接追加
 	with _EXEC_LOG.open("a", encoding="utf-8") as fh:
 		fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
 

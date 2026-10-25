@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 )
 
 var exprPattern = regexp.MustCompile(`\$\{\{\s*(.+?)\s*\}\}`)
@@ -23,6 +25,8 @@ type Context struct {
 	WfRunID      string
 	Inputs       map[string]string
 	Env          map[string]string
+	// Strict fails unresolved value substitution instead of embedding it; set before the run starts.
+	Strict bool
 }
 
 func NewContext() *Context {
@@ -192,42 +196,74 @@ func (c *Context) SnapshotJobSteps(jobName string) map[string]map[string]any {
 	return out
 }
 
-// Substitute replaces all ${{ expr }} in a string with resolved values.
+// Substitute replaces each ${{ expr }} with its value; unresolved ones warn
+// and stay literal (see SubstituteForJobChecked).
 func Substitute(template string, ctx *Context) string {
-	return SubstituteForJob(template, ctx, "")
+	s, _ := SubstituteForJobChecked(template, ctx, "")
+	return s
 }
 
 func SubstituteForJob(template string, ctx *Context, jobName string) string {
-	return exprPattern.ReplaceAllStringFunc(template, func(match string) string {
+	s, _ := SubstituteForJobChecked(template, ctx, jobName)
+	return s
+}
+
+// SubstituteForJobChecked returns an error on the first unresolved expression
+// when ctx.Strict; condition (if:) operands always stay lenient.
+func SubstituteForJobChecked(template string, ctx *Context, jobName string) (string, error) {
+	var strictErr error
+	out := exprPattern.ReplaceAllStringFunc(template, func(match string) string {
 		inner := exprPattern.FindStringSubmatch(match)
 		if len(inner) < 2 {
 			return match
 		}
-		return substituteExpr(strings.TrimSpace(inner[1]), ctx, jobName, match)
+		resolved, ok := resolveExpr(strings.TrimSpace(inner[1]), match, ctx, jobName)
+		if !ok {
+			if ctx.Strict {
+				if strictErr == nil {
+					strictErr = fmt.Errorf("unresolved expression %s", match)
+				}
+			} else {
+				logger.Warn("expression: unresolved " + match + " embedded literally")
+			}
+			return match
+		}
+		return resolved
 	})
+	if strictErr != nil {
+		return "", strictErr
+	}
+	return out, nil
 }
 
-// substituteExpr renders one resolved expression; orig is the literal ${{ }} text,
-// returned unchanged when the path cannot be resolved. toJSON(path) renders the
-// value as a JSON literal (quoted and escaped), so a template can embed untrusted
-// input inside a JSON document without breaking it or injecting fields.
-func substituteExpr(expr string, ctx *Context, jobName, orig string) string {
+// resolveExpr renders one expression; ok is false when its path is unresolved.
+// toJSON(path) emits a quoted JSON literal so values cannot break the document.
+func resolveExpr(expr, orig string, ctx *Context, jobName string) (string, bool) {
 	if m := toJSONPattern.FindStringSubmatch(expr); m != nil {
 		val, ok := ctx.resolveForJob(strings.TrimSpace(m[1]), jobName)
 		if !ok {
-			return orig
+			return "", false
 		}
-		enc, err := json.Marshal(val)
-		if err != nil {
-			return orig
+		if enc, err := json.Marshal(val); err == nil {
+			return string(enc), true
 		}
-		return string(enc)
+		return orig, true
 	}
 	val, ok := ctx.resolveForJob(expr, jobName)
 	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%v", val), true
+}
+
+// substituteExpr renders one condition operand; unresolved ones warn and stay literal.
+func substituteExpr(expr string, ctx *Context, jobName, orig string) string {
+	resolved, ok := resolveExpr(expr, orig, ctx, jobName)
+	if !ok {
+		logger.Warn("expression: unresolved " + orig + " embedded literally")
 		return orig
 	}
-	return fmt.Sprintf("%v", val)
+	return resolved
 }
 
 func EvalConditionForJob(expr string, ctx *Context, jobName string) bool {

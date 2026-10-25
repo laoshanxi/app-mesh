@@ -323,3 +323,29 @@ func TestEvalEventCondition_ReturnCodeAlias(t *testing.T) {
 		t.Error("exit_code should read return_code fallback value")
 	}
 }
+
+// --- Capability rejection escalation ---
+
+// A zero-value Service suffices: the escalation logic touches only its own fields.
+func TestAuthRejectionEscalationFiresFatal(t *testing.T) {
+	s := &Service{}
+	var reasons []string
+	s.SetFatalHandler(func(reason string) { reasons = append(reasons, reason) })
+
+	s.noteAuthRejectionAfterRefresh()
+	s.noteAuthRejectionAfterRefresh()
+	if len(reasons) != 0 {
+		t.Fatalf("escalated after %d rejections, want %d", len(reasons), authRejectionEscalation)
+	}
+	s.noteAuthRejectionAfterRefresh()
+	if len(reasons) != 1 || reasons[0] == "" {
+		t.Fatalf("fatal handler calls = %v, want exactly one with a reason", reasons)
+	}
+	// The counter re-arms instead of firing on every later rejection.
+	s.noteAuthRejectionAfterRefresh()
+	s.noteAuthRejectionAfterRefresh()
+	s.noteAuthRejectionAfterRefresh()
+	if len(reasons) != 2 {
+		t.Fatalf("fatal handler calls = %d, want 2 after a full second cycle", len(reasons))
+	}
+}

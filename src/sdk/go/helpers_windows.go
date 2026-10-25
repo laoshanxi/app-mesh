@@ -19,14 +19,14 @@ func fileAttributes(filePath string) (map[string]string, error) {
 
 	// Capture only the permission bits
 	return map[string]string{
-		"X-File-Mode": strconv.FormatUint(uint64(info.Mode().Perm()), 10),
+		headerFileMode: strconv.FormatUint(uint64(info.Mode().Perm()), 10),
 	}, nil
 }
 
 // ApplyFileAttributes applies file mode on Windows.
 // Ownership changes are not supported on Windows.
 func ApplyFileAttributes(filePath string, headers http.Header) error {
-	modeStr := headers.Get("X-File-Mode")
+	modeStr := headers.Get(headerFileMode)
 	if modeStr == "" {
 		return nil
 	}
@@ -37,5 +37,5 @@ func ApplyFileAttributes(filePath string, headers http.Header) error {
 	}
 
 	// os.Chmod on Windows primarily toggles the read-only attribute
-	return os.Chmod(filePath, os.FileMode(modeVal))
+	return os.Chmod(filePath, os.FileMode(modeVal&0o777))
 }

@@ -1286,6 +1286,36 @@ impl AppMeshClient {
 
 // -- File Management --------------------------------------------------------
 
+fn is_json_reply(headers: &reqwest::header::HeaderMap) -> bool {
+    headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.to_ascii_lowercase().contains("json"))
+        .unwrap_or(false)
+}
+
+/// A JSON reply without Content-Disposition is a legacy placeholder, not content.
+fn check_download_reply(headers: &reqwest::header::HeaderMap) -> Result<()> {
+    if headers.get("content-disposition").is_none() && is_json_reply(headers) {
+        return Err(AppMeshError::RequestFailed {
+            status: StatusCode::NOT_FOUND,
+            message: "File download is not supported by this server surface (legacy reply without content)".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// A 200 JSON `{"message":...}` body is a legacy daemon's status reply: nothing was stored.
+fn check_upload_reply(status: StatusCode, headers: &reqwest::header::HeaderMap, body: &str) -> Result<()> {
+    if status == StatusCode::OK && is_json_reply(headers) && body.starts_with("{\"message\"") {
+        return Err(AppMeshError::RequestFailed {
+            status: StatusCode::NOT_FOUND,
+            message: "File upload is not supported by this server surface (legacy reply without storage)".to_string(),
+        });
+    }
+    Ok(())
+}
+
 impl AppMeshClient {
     /// Download a remote file (`preserve_permissions` applies returned POSIX
     /// metadata best-effort; empty `local_file` defaults to the remote basename).
@@ -1298,6 +1328,7 @@ impl AppMeshClient {
         };
         let remote_path = encode_file_path(remote_file);
         let headers = hmap! {HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str()};
+        let fallback_headers = headers.clone();
         let local_path = Path::new(local_file);
 
         // Plain-HTTP transport: GET answers the file bytes.
@@ -1310,24 +1341,7 @@ impl AppMeshClient {
                 let text = resp.text().await.unwrap_or_default();
                 return Err(AppMeshError::RequestFailed { status, message: text });
             }
-            // A JSON reply without Content-Disposition is a legacy placeholder, not content.
-            let is_placeholder = resp
-                .headers()
-                .get("content-disposition")
-                .is_none()
-                && resp
-                    .headers()
-                    .get("content-type")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|v| v.to_ascii_lowercase().contains("json"))
-                    .unwrap_or(false);
-            if is_placeholder {
-                return Err(AppMeshError::RequestFailed {
-                    status: StatusCode::NOT_FOUND,
-                    message: "File download is not supported by this server surface (legacy reply without content)"
-                        .to_string(),
-                });
-            }
+            check_download_reply(resp.headers())?;
             let mut file = fs::File::create(local_path)?;
             let mut resp = resp;
             while let Some(chunk) = resp.chunk().await? {
@@ -1342,7 +1356,8 @@ impl AppMeshClient {
         }
 
         // Buffered fallback for transports without HTTP streaming.
-        let resp = self.send(Method::GET, "/appmesh/file/download", None, None, None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/file/download", None, Some(fallback_headers), None, true).await?;
+        check_download_reply(resp.headers())?;
         fs::write(local_path, resp.bytes())?;
         if preserve_permissions {
             let _ = Self::apply_file_attributes(local_path, resp.headers());
@@ -1371,6 +1386,7 @@ impl AppMeshClient {
         if preserve_permissions {
             Self::get_file_attributes(local_path, &mut headers);
         }
+        let fallback_headers = headers.clone();
 
         self.prepare_bearer().await?;
         let file = tokio::fs::File::open(local_path).await?;
@@ -1391,28 +1407,17 @@ impl AppMeshClient {
                 let text = resp.text().await.unwrap_or_default();
                 return Err(AppMeshError::RequestFailed { status, message: text });
             }
+            let headers = resp.headers().clone();
+            let body = resp.text().await.unwrap_or_default();
+            check_upload_reply(status, &headers, &body)?;
             return Ok(());
         }
 
         // Buffered fallback for transports without HTTP streaming.
         let body_bytes = fs::read(local_file)?;
-        let resp = self.send(Method::POST, "/appmesh/file/upload", Some(&body_bytes), None, None, true).await?;
-        // A 200 JSON status reply means a legacy daemon stored nothing.
-        if resp.status() == StatusCode::OK {
-            let content_type = resp
-                .headers()
-                .get("content-type")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if content_type.contains("json") && resp.body().starts_with(b"{\"message\"") {
-                return Err(AppMeshError::RequestFailed {
-                    status: StatusCode::NOT_FOUND,
-                    message: "File upload is not supported by this server surface (legacy reply without storage)"
-                        .to_string(),
-                });
-            }
-        }
+        let resp =
+            self.send(Method::POST, "/appmesh/file/upload", Some(&body_bytes), Some(fallback_headers), None, true).await?;
+        check_upload_reply(resp.status(), resp.headers(), std::str::from_utf8(resp.body()).unwrap_or(""))?;
         Ok(())
     }
 

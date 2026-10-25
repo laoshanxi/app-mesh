@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <typeinfo>
 #include <utility>
@@ -211,6 +212,7 @@ public:
 	// OS related
 	static unsigned long long getThreadId();
 	static void setThreadName(const std::string &name);
+	static std::map<std::string, std::string> fileAttributeHeaders(const std::string &file);
 	static void applyFilePermission(const std::string &file, HttpHeaderMap headers);
 	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
 	static std::map<std::string, std::string> getenvs();
@@ -541,6 +543,15 @@ class NotFoundException : public std::logic_error
 public:
 	explicit NotFoundException(const char *) noexcept;
 	explicit NotFoundException(const std::string &) noexcept;
+};
+
+// A request conflicts with current resource state (HTTP 409), e.g. a name
+// or file that already exists.
+class ConflictException : public std::runtime_error
+{
+public:
+	explicit ConflictException(const char *msg) noexcept : std::runtime_error(msg) {}
+	explicit ConflictException(const std::string &msg) noexcept : std::runtime_error(msg) {}
 };
 
 // cross-platform and safe last error

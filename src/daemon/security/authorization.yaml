@@ -49,6 +49,17 @@ Authorization:
       - app-manage-all
       - app-view-all
       - host-resource-view
+    # Register and run own workflows; runs execute as their owner and step
+    # processes are temporary Apps removed after each step (hence app-delete).
+    appmesh-workflow-runner:
+      - app-reg
+      - app-run-async
+      - app-run-task
+      - app-subscribe
+      - app-view
+      - app-output-view
+      - app-delete
+      - label-view
     appmesh-admin:
       - app-control
       - app-delete

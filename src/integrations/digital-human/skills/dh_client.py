@@ -66,14 +66,18 @@ def make_client() -> AppMeshClient:
 		)
 	password_file, username = _discover_password_file()
 	if password_file:
-		return AppMeshClient(
-			base_url=os.getenv("APPMESH_URL", "https://127.0.0.1:6060"),
-			ssl_verify=os.getenv("APPMESH_CA") or None,
-			token_provider=PasswordGrantProvider(
+		try:
+			provider = PasswordGrantProvider(
 				token_url=_token_url(),
 				username=os.getenv("DH_BOT_USER", username),
 				password_file=password_file,
-			),
+			)
+		except ValueError as exc:  # SDK 拒绝空密码文件 / 非 HTTPS 的远端 token URL
+			raise RuntimeError(f"凭据不可用: {exc}") from exc
+		return AppMeshClient(
+			base_url=os.getenv("APPMESH_URL", "https://127.0.0.1:6060"),
+			ssl_verify=os.getenv("APPMESH_CA") or None,
+			token_provider=provider,
 		)
 	raise RuntimeError("缺少凭据 — 设置 APPMESH_BEARER_TOKEN，或 DH_BOT_PASSWORD_FILE(+DH_BOT_USER/DH_TOKEN_URL)；重跑 setup.sh 可重新生成")
 

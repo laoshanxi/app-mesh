@@ -118,14 +118,39 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 			}
 		}
 	}
-	// Validate step `with` keys (both steps and finally).
+	// Validate env keys wherever declared (workflow, job, step): env keys become
+	// process environment variables; `with` keys follow the same rule.
+	checkKeys := func(owner, label string, keys map[string]string) error {
+		for k := range keys {
+			if !inputKeyPattern.MatchString(k) {
+				return fmt.Errorf("%s %s key %q must match [a-zA-Z_][a-zA-Z0-9_]*", owner, label, k)
+			}
+		}
+		return nil
+	}
+	if err := checkKeys("workflow", "env", wf.Env); err != nil {
+		return nil, err
+	}
+	if err := checkKeys("workflow", "secret_env", wf.SecretEnv); err != nil {
+		return nil, err
+	}
 	for _, job := range wf.Jobs {
+		jobOwner := fmt.Sprintf("job %q", job.Name)
+		if err := checkKeys(jobOwner, "env", job.Env); err != nil {
+			return nil, err
+		}
+		if err := checkKeys(jobOwner, "secret_env", job.SecretEnv); err != nil {
+			return nil, err
+		}
 		for _, steps := range [][]models.Step{job.Steps, job.Finally} {
 			for _, step := range steps {
-				for k := range step.With {
-					if !inputKeyPattern.MatchString(k) {
-						return nil, fmt.Errorf("job %q step %q with key %q must match [a-zA-Z_][a-zA-Z0-9_]*", job.Name,
-							step.Name, k)
+				stepOwner := fmt.Sprintf("%s step %q", jobOwner, step.Name)
+				for _, m := range []struct {
+					label string
+					keys  map[string]string
+				}{{"with", step.With}, {"env", step.Env}, {"secret_env", step.SecretEnv}} {
+					if err := checkKeys(stepOwner, m.label, m.keys); err != nil {
+						return nil, err
 					}
 				}
 			}
@@ -188,6 +213,9 @@ func resolveStepTypes(steps []models.Step, defaultContinueOnError bool, jobName,
 
 		if s.Message != nil && (s.Message.App == "" || s.Message.Payload == "") {
 			return fmt.Errorf("job %q step %q message step requires app and payload", jobName, s.Name)
+		}
+		if s.Timeout < 0 {
+			return fmt.Errorf("job %q step %q timeout must be >= 0", jobName, s.Name)
 		}
 		if s.Retry != nil {
 			if s.Retry.Max < 1 {

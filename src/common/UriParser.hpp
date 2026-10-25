@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <charconv>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -86,10 +87,14 @@ public:
 			result.user = std::move(ui);
 		}
 
-		// Port
+		// Port: atoi overflow can wrap negative, which downstream reads as "no port".
 		std::string portStr = rangeToString(uri->portText);
 		if (!portStr.empty())
-			result.port = std::atoi(portStr.c_str());
+		{
+			int port = 0;
+			const auto [end, ec] = std::from_chars(portStr.data(), portStr.data() + portStr.size(), port);
+			result.port = (ec == std::errc{} && end == portStr.data() + portStr.size() && port <= 65535) ? port : 65536;
+		}
 
 		// 4. Path Construction (preserve leading slash when appropriate)
 		// Decide whether the resulting path should start with '/'

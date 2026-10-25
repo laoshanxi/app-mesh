@@ -31,6 +31,7 @@ type StepCallback func(jobName, stepName, stdout string)
 type activeApp struct {
 	appName    string
 	targetHost string // empty = local node
+	finally    bool   // cleanup steps survive cancel (KillAll)
 }
 
 // ActiveSteps tracks currently running step app names for cancel propagation.
@@ -50,9 +51,9 @@ func NewActiveSteps(client *appmesh.AppMeshClient, serverURI string) *ActiveStep
 	}
 }
 
-func (a *ActiveSteps) Set(jobName, stepName, appName, targetHost string) {
+func (a *ActiveSteps) Set(jobName, stepName, appName, targetHost string, finally bool) {
 	a.mu.Lock()
-	a.apps[jobName+"."+stepName] = activeApp{appName: appName, targetHost: targetHost}
+	a.apps[jobName+"."+stepName] = activeApp{appName: appName, targetHost: targetHost, finally: finally}
 	a.mu.Unlock()
 }
 
@@ -78,16 +79,21 @@ func (a *ActiveSteps) SetForwardToken(token string) {
 	a.mu.Unlock()
 }
 
-// KillAll deletes all tracked local and remote step apps. Remote calls carry
-// only the caller's shared-Dex bearer; the node-local run capability never
-// crosses the forwarding boundary.
+// KillAll deletes all tracked step apps except finally steps (cleanup must run
+// to completion). Remote calls carry only the caller's shared-Dex bearer; the
+// node-local run capability never crosses the forwarding boundary.
 func (a *ActiveSteps) KillAll() {
 	a.mu.Lock()
-	apps := make(map[string]activeApp, len(a.apps))
+	retained := make(map[string]activeApp, len(a.apps))
+	killed := make(map[string]activeApp, len(a.apps))
 	for k, v := range a.apps {
-		apps[k] = v
+		if v.finally {
+			retained[k] = v
+		} else {
+			killed[k] = v
+		}
 	}
-	a.apps = make(map[string]activeApp)
+	a.apps = retained
 	client := a.client
 	serverURI := a.serverURI
 	forwardToken := a.forwardToken
@@ -97,7 +103,7 @@ func (a *ActiveSteps) KillAll() {
 	}
 
 	var wg sync.WaitGroup
-	for _, app := range apps {
+	for _, app := range killed {
 		if app.appName == "" {
 			continue
 		}
@@ -218,6 +224,7 @@ func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appm
 	ectx.WfName = wf.Name
 	ectx.WfRunID = runID
 	ectx.Inputs = inputs
+	ectx.Strict = wf.StrictExpressions
 	if wf.Env != nil {
 		ectx.Env = wf.Env
 	}
@@ -313,7 +320,7 @@ func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int,
 		CapabilityRunID:      opts.CapabilityRunID,
 	}
 	exec.RunSubWorkflow = func(ctx context.Context, wfName string, inputs map[string]string, subDepth int) (int,
-		map[string]string) {
+		map[string]string, string, string) {
 		subOpts := opts
 		subOpts.DefaultTargetHost = exec.TargetHost
 		subOpts.CancelCtx = ctx
@@ -452,6 +459,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		// was cancelled. Detach this (per-job) executor from the cancel context;
 		// each finally step is still bounded by its own timeout.
 		exec.CancelCtx = context.Background()
+		exec.Finally = true
 		log.JobFinallyStarted(job.Name)
 		for i := range job.Finally {
 			ectx.MarkFinallyStep(job.Name, job.Finally[i].Name)
@@ -567,7 +575,8 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 		if opts.ActiveSteps != nil {
 			targetHost := exec.TargetHost
 			stepName := step.Name
-			exec.OnAppStart = func(appName string) { opts.ActiveSteps.Set(jobName, stepName, appName, targetHost) }
+			finally := exec.Finally
+			exec.OnAppStart = func(appName string) { opts.ActiveSteps.Set(jobName, stepName, appName, targetHost, finally) }
 			exec.OnAppEnd = func(appName string) { opts.ActiveSteps.Remove(jobName, stepName) }
 		}
 
@@ -596,6 +605,9 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 			return true
 		}
 		log.StepFailed(step.Name, exitCode, result.Duration)
+		if result.Response != "" {
+			log.Error(fmt.Sprintf("STEP %s FAILED: %s", step.Name, result.Response))
+		}
 		// Don't burn through remaining retry attempts after cancel (finally
 		// steps use a detached executor context, so their retries proceed).
 		if exec.CancelCtx != nil && exec.CancelCtx.Err() != nil {
@@ -677,9 +689,10 @@ func evaluateNeeds(job *models.Job, wf *models.Workflow, statusMu *sync.RWMutex)
 	return succeeded, failed, reason
 }
 
-// runSubWorkflow executes a sub-workflow in-process and returns exit code + outputs.
+// runSubWorkflow executes a sub-workflow in-place, returning exit code, outputs,
+// the sub run id, and the failure reason (empty when none was recorded).
 func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName string, inputs map[string]string,
-	depth int, opts Options) (int, map[string]string) {
+	depth int, opts Options) (int, map[string]string, string, string) {
 	baseDir := opts.WorkflowBaseDir
 	if baseDir == "" {
 		baseDir, _ = os.Getwd()
@@ -688,11 +701,11 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 	wf, err := parser.LoadWorkflow(yamlPath)
 	if err != nil {
 		logger.Error(fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err))
-		return 1, nil
+		return 1, nil, "", fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err)
 	}
 	if wf.On == nil || wf.On.WorkflowCall == nil {
 		logger.Error(fmt.Sprintf("sub-workflow %q: not callable (missing on.workflow_call)", wfName))
-		return 1, nil
+		return 1, nil, "", fmt.Sprintf("sub-workflow %q: not callable (missing on.workflow_call)", wfName)
 	}
 
 	runID := fmt.Sprintf("sub-%s-%s", wfName, xid.New().String())
@@ -726,14 +739,53 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 
 	// Evaluate workflow_call outputs from the sub-workflow's expression context.
 	var outputs map[string]string
+	var outputErr error
 	if subCtx != nil && wf.On.WorkflowCall != nil && len(wf.On.WorkflowCall.Outputs) > 0 {
 		outputs = make(map[string]string)
 		for name, out := range wf.On.WorkflowCall.Outputs {
-			outputs[name] = expression.SubstituteForJob(out.Value, subCtx, "")
+			val, err := expression.SubstituteForJobChecked(out.Value, subCtx, "")
+			if err != nil {
+				// One unresolved output fails the sub-workflow call.
+				outputErr = err
+				break
+			}
+			outputs[name] = val
 		}
 	}
 
-	return exitCode, outputs
+	reason := ""
+	if outputErr != nil {
+		exitCode = 1
+		reason = outputErr.Error()
+	} else if exitCode != 0 {
+		reason = subFailureReason(subCtx)
+	}
+	return exitCode, outputs, runID, reason
+}
+
+// subFailureReason returns the deepest recorded failure text from a finished sub-workflow.
+func subFailureReason(ectx *expression.Context) string {
+	if ectx == nil {
+		return ""
+	}
+	for _, job := range ectx.Jobs {
+		if job["status"] != models.StatusFailure {
+			continue
+		}
+		steps, _ := job["steps"].(map[string]map[string]any)
+		for _, s := range steps {
+			if s["status"] != models.StatusFailure {
+				continue
+			}
+			if r, _ := s["response"].(string); r != "" {
+				return r
+			}
+			if o, _ := s["stdout"].(string); o != "" {
+				return o
+			}
+		}
+	}
+	return ""
 }
 
 func toIntFromAny(v any) int {

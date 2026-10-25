@@ -36,5 +36,6 @@ func StepRetry(name string, attempt, max int) {
 	emit(fmt.Sprintf("STEP %s RETRY %d/%d", name, attempt, max))
 }
 func StepSkipped(name, reason string) { emit(fmt.Sprintf("STEP %s SKIPPED reason=%q", name, reason)) }
+func Warn(msg string)                 { emit(fmt.Sprintf("WARN %s", msg)) }
 func Error(msg string)                { emit(fmt.Sprintf("ERROR %s", msg)) }
 func Info(msg string)                 { emit(msg) }

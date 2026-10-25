@@ -49,10 +49,12 @@ type StepExecutor struct {
 	OnAppEnd             func(appName string)
 	// path to write streaming step log (set per-step by engine)
 	StepLogPath string
+	// Finally marks a finally section; KillAll spares these cleanup steps.
+	Finally bool
 	// workflow cancel context (nil = background)
 	CancelCtx      context.Context
 	RunSubWorkflow func(ctx context.Context, wfName string, inputs map[string]string, depth int) (int,
-		map[string]string) // in-process sub-workflow execution (set by engine)
+		map[string]string, string, string) // exit code, outputs, sub run id, pre-run failure reason
 
 	remoteClient *appmesh.AppMeshClientTCP // per-job cached remote connection (nil = local)
 }
@@ -66,20 +68,49 @@ func (e *StepExecutor) Close() {
 }
 
 func (e *StepExecutor) Execute(step *models.Step, env, secretEnv map[string]string) models.StepResult {
-	resolved := resolveEnv(env, e.Ctx, e.JobName)
-	resolvedSecretEnv := resolveEnv(secretEnv, e.Ctx, e.JobName)
+	resolved, err := resolveEnv(env, e.Ctx, e.JobName)
+	if err != nil {
+		return fail(1, err.Error(), 0)
+	}
+	resolvedSecretEnv, err := resolveEnv(secretEnv, e.Ctx, e.JobName)
+	if err != nil {
+		return fail(1, err.Error(), 0)
+	}
 
 	switch step.Type {
 	case models.StepCommand:
 		return e.execCommand(step, resolved, resolvedSecretEnv)
 	case models.StepApp:
 		return e.execApp(step, resolved, resolvedSecretEnv)
+	default:
+		result := e.execLocal(step, resolved, resolvedSecretEnv)
+		// Workflow/message steps have no streaming app output; archive it to the step log.
+		e.archiveStepLog(result.Stdout)
+		return result
+	}
+}
+
+// execLocal runs the step types that produce no on-demand App.
+func (e *StepExecutor) execLocal(step *models.Step, env, secretEnv map[string]string) models.StepResult {
+	switch step.Type {
 	case models.StepMessage:
 		return e.execMessage(step)
 	case models.StepWorkflow:
-		return e.execWorkflow(step, resolved, resolvedSecretEnv)
+		return e.execWorkflow(step, env, secretEnv)
 	default:
 		return fail(1, "unknown step type", 0)
+	}
+}
+
+// archiveStepLog appends non-streamed step stdout to the step log file.
+func (e *StepExecutor) archiveStepLog(content string) {
+	if e.StepLogPath == "" || content == "" {
+		return
+	}
+	os.MkdirAll(filepath.Dir(e.StepLogPath), 0700)
+	if f, err := os.OpenFile(e.StepLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err == nil {
+		f.WriteString(content)
+		f.Close()
 	}
 }
 
@@ -89,7 +120,10 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secretEnv map[string]
 		shell = *step.Shell
 	}
 	appName := StepAppPrefix + xid.New().String()
-	command := expression.SubstituteForJob(step.Command, e.Ctx, e.JobName)
+	command, err := expression.SubstituteForJobChecked(step.Command, e.Ctx, e.JobName)
+	if err != nil {
+		return fail(1, err.Error(), 0)
+	}
 	metadata := stepAppMetadata(e.CapabilityWorkflowID, e.CapabilityRunID, e.Ctx, e.ProcessUUID)
 	app := appmesh.Application{
 		Name:      appName,
@@ -100,11 +134,17 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secretEnv map[string]
 		Metadata:  &metadata,
 	}
 	if step.Workdir != "" {
-		workdir := expression.SubstituteForJob(step.Workdir, e.Ctx, e.JobName)
+		workdir, err := expression.SubstituteForJobChecked(step.Workdir, e.Ctx, e.JobName)
+		if err != nil {
+			return fail(1, err.Error(), 0)
+		}
 		app.WorkingDir = &workdir
 	}
 	if step.DockerImage != "" {
-		image := expression.SubstituteForJob(step.DockerImage, e.Ctx, e.JobName)
+		image, err := expression.SubstituteForJobChecked(step.DockerImage, e.Ctx, e.JobName)
+		if err != nil {
+			return fail(1, err.Error(), 0)
+		}
 		app.DockerImage = &image
 	}
 	return e.runAndWait(app, step.Timeout)
@@ -123,7 +163,10 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 	if step.Message == nil {
 		return fail(1, "no message config", 0)
 	}
-	payload := expression.SubstituteForJob(step.Message.Payload, e.Ctx, e.JobName)
+	payload, err := expression.SubstituteForJobChecked(step.Message.Payload, e.Ctx, e.JobName)
+	if err != nil {
+		return fail(1, err.Error(), 0)
+	}
 	if step.Message.ForwardToken && e.CallerToken != "" {
 		payload = injectToken(payload, e.CallerToken) // identity for llm-agent-style targets; never logged
 	}
@@ -240,7 +283,11 @@ func (e *StepExecutor) execWorkflow(step *models.Step, _, _ map[string]string) m
 
 	resolvedInputs := make(map[string]string)
 	for k, v := range step.With {
-		resolvedInputs[k] = expression.SubstituteForJob(v, e.Ctx, e.JobName)
+		val, err := expression.SubstituteForJobChecked(v, e.Ctx, e.JobName)
+		if err != nil {
+			return fail(1, err.Error(), 0)
+		}
+		resolvedInputs[k] = val
 	}
 
 	maxTime := step.Timeout
@@ -251,25 +298,34 @@ func (e *StepExecutor) execWorkflow(step *models.Step, _, _ map[string]string) m
 	defer subCancel()
 
 	start := time.Now()
-	exitCode, outputs := e.RunSubWorkflow(subCtx, step.WorkflowRef, resolvedInputs, e.Depth+1)
+	exitCode, outputs, subRunID, subErr := e.RunSubWorkflow(subCtx, step.WorkflowRef, resolvedInputs, e.Depth+1)
 	dur := time.Since(start).Seconds()
+	// The sub run id makes the sub run findable from the parent step.
+	failed := func(msg string) models.StepResult {
+		return fail(1, fmt.Sprintf("%s (sub run: %s)", msg, subRunID), dur)
+	}
+	if subErr != "" {
+		if subRunID == "" {
+			return fail(1, subErr, dur) // the sub run never started
+		}
+		return failed(subErr)
+	}
 
 	// Only report a cancel/timeout error if the sub-workflow was actually disrupted
 	// (exit != 0). A cancel that arrives after the sub finishes its last layer is
 	// too late to affect the result — match engine.go's between-layer cancel semantics.
 	if subCtx.Err() != nil && exitCode != 0 {
 		if subCtx.Err() == context.DeadlineExceeded {
-			return fail(1, "sub-workflow timeout", dur)
+			return failed("sub-workflow timeout")
 		}
-		return fail(1, "cancelled", dur)
+		return failed("cancelled")
 	}
 
-	status := models.StatusSuccess
 	if exitCode != 0 {
-		status = models.StatusFailure
+		return failed(fmt.Sprintf("sub-workflow failed with exit %d", exitCode))
 	}
 	return models.StepResult{
-		Status:   status,
+		Status:   models.StatusSuccess,
 		ExitCode: &exitCode,
 		Outputs:  outputs,
 		Duration: dur,
@@ -430,19 +486,25 @@ func (e *StepExecutor) clientForTarget() (*appmesh.AppMeshClient, error) {
 	return c.AppMeshClient, nil
 }
 
-func resolveEnv(env map[string]string, ctx *expression.Context, jobName string) map[string]string {
+func resolveEnv(env map[string]string, ctx *expression.Context, jobName string) (map[string]string, error) {
 	out := make(map[string]string, len(env))
 	for k, v := range env {
-		out[k] = expression.SubstituteForJob(v, ctx, jobName)
+		val, err := expression.SubstituteForJobChecked(v, ctx, jobName)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = val
 	}
-	return out
+	return out, nil
 }
 
 func fail(code int, msg string, dur float64) models.StepResult {
+	msg = truncate(msg, maxStdoutCapture)
 	return models.StepResult{
 		Status:   models.StatusFailure,
 		ExitCode: &code,
-		Stdout:   truncate(msg, maxStdoutCapture),
+		Stdout:   msg,
+		Response: msg,
 		Duration: dur,
 	}
 }
@@ -450,7 +512,7 @@ func fail(code int, msg string, dur float64) models.StepResult {
 func truncate(s string, max int) string {
 	s = strings.TrimSpace(s)
 	if len(s) > max {
-		return s[:max]
+		return s[:max] + fmt.Sprintf("\n[stdout truncated at %d bytes]", max)
 	}
 	return s
 }

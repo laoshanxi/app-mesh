@@ -205,6 +205,65 @@ func (m *Manager) ReadStepLog(wfName, runID, jobName, stepName string) string {
 	return string(data)
 }
 
+// scheduleStatePath returns the per-workflow persisted schedule accounting file.
+func scheduleStatePath(baseDir, wfName string) string {
+	return filepath.Join(baseDir, wfName, "schedule-state.json")
+}
+
+// WriteScheduleState persists a workflow's last accounted schedule instant so a
+// restart re-bases instead of skipping it. Atomic (tmp+fsync+rename): no truncated file.
+func (m *Manager) WriteScheduleState(wfName string, last time.Time) error {
+	m.EnsureWorkflowDir(wfName)
+	data, err := json.Marshal(map[string]int64{"last_unix_ms": last.UnixMilli()})
+	if err != nil {
+		return err
+	}
+	path := scheduleStatePath(m.baseDir, wfName)
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// ReadScheduleStates loads every workflow's persisted schedule state at once;
+// workflows that never fired under this engine are absent.
+func (m *Manager) ReadScheduleStates() map[string]time.Time {
+	states := make(map[string]time.Time)
+	entries, err := os.ReadDir(m.baseDir)
+	if err != nil {
+		return states
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(scheduleStatePath(m.baseDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var state struct {
+			LastUnixMs int64 `json:"last_unix_ms"`
+		}
+		if json.Unmarshal(data, &state) == nil && state.LastUnixMs > 0 {
+			states[entry.Name()] = time.UnixMilli(state.LastUnixMs)
+		}
+	}
+	return states
+}
+
 // NowTimestamp returns the current UTC time formatted for indexes.
 func NowTimestamp() string {
 	return time.Now().UTC().Format(time.RFC3339)

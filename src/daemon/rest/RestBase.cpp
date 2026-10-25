@@ -254,6 +254,11 @@ void RestBase::handleRest(
 		LOG_WAR << fname << "403 Forbidden " << message->m_method << ":" << path << " - " << e.what();
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json(e.what()));
 	}
+	catch (const ConflictException &e)
+	{
+		LOG_WAR << fname << "409 Conflict " << message->m_method << ":" << path << " - " << e.what();
+		message->reply(web::http::status_codes::Conflict, Utility::text2json(e.what()));
+	}
 	catch (const std::domain_error &e)
 	{
 		LOG_WAR << fname << "401 Unauthorized " << message->m_method << ":" << path << " - " << e.what();

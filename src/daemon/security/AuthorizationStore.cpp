@@ -198,7 +198,10 @@ void AuthorizationStore::load(const Json::Value &root)
 			const auto issuer = GET_JSON_STR_VALUE(definition, "issuer");
 			const auto subject = GET_JSON_STR_VALUE(definition, "subject");
 			if (kind != Principal::Kind::System && principalId != Principal::stableId(issuer, subject))
-				throw std::invalid_argument("OIDC principal key must equal the stable (issuer, subject) identifier");
+				throw std::invalid_argument("OIDC principal key '" + principalId +
+											"' must equal the stable (issuer, subject) identifier '" +
+											Principal::stableId(issuer, subject) +
+											"'; re-key principals in Authorization.principals after an issuer URL change");
 			auto principal = std::make_shared<AuthorizationPrincipal>(principalId, kind, issuer, subject);
 			principal->updatePolicy(definition);
 			validateRoles(principal->roles());
@@ -407,7 +410,9 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const J
 		if (kind == Principal::Kind::System)
 			throw AuthorizationException("system principals cannot be created through the authorization API");
 		if (principalId != Principal::stableId(issuer, subject))
-			throw std::invalid_argument("OIDC principal key must equal the stable (issuer, subject) identifier");
+			throw std::invalid_argument("OIDC principal key '" + principalId +
+										"' must equal the stable (issuer, subject) identifier '" +
+										Principal::stableId(issuer, subject) + "'");
 		candidate = std::make_shared<AuthorizationPrincipal>(principalId, kind, issuer, subject);
 	}
 	else
