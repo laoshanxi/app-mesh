@@ -82,7 +82,9 @@ if curl -s -u 'appmesh-cli:' -X POST "$TOKEN_URL/auth/token" \
 	--data-urlencode "password=$DH_BOT_PASSWORD" \
 	-d 'scope=openid audience:server:client_id:appmesh-api' | grep -q access_token; then
 	echo "==> 运行时凭据: 专用最小权限账号 $DH_BOT_USER（角色 digital-human）"
+	rm -f "$TEAM_RT/admin.password" # 上次回退遗留，不再需要
 else
+	rm -f "$BOT_PW_FILE" # 死凭据；路径发现 dh-bot 优先，留着必然认证失败
 	# 回退管理员密码文件（DH_ADMIN_PASSWORD 原样写入 600 文件，不进任何脚本正文）
 	if [ -n "${DH_ADMIN_PASSWORD:-}" ]; then
 		BOT_USER_FOR_HINT="$DH_BOT_USER"
@@ -94,8 +96,9 @@ else
 		echo "    printf '%s' '$DH_BOT_PASSWORD' | sudo $AUTH_SCRIPT add-user $BOT_USER_FOR_HINT digital-human"
 	else
 		BOT_PW_FILE=""
+		rm -f "$TEAM_RT/admin.password"
 		echo "    警告: dh-bot 密码流不可用且未设置 DH_ADMIN_PASSWORD — 运行时无凭据，"
-		echo "    IM 适配器与技能将无法认证。请 sudo 启用 dh-bot，或 export DH_ADMIN_PASSWORD 后重跑。"
+		echo "    IM 适配器与技能将无法认证（启动即失败）。请 sudo 启用 dh-bot，或 export DH_ADMIN_PASSWORD 后重跑。"
 	fi
 fi
 

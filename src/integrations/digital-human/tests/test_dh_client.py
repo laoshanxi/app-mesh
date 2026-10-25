@@ -38,6 +38,17 @@ def test_missing_or_bad_credentials_raise(monkeypatch, tmp_path):
 	monkeypatch.setenv("DH_BOT_PASSWORD_FILE", str(tmp_path / "nope"))  # 文件不存在
 	with pytest.raises(RuntimeError):
 		dh_client.make_client()
+	empty = tmp_path / "empty"
+	empty.write_text("", encoding="utf-8")
+	monkeypatch.setenv("DH_BOT_PASSWORD_FILE", str(empty))  # SDK 的 ValueError 统一转为 RuntimeError
+	with pytest.raises(RuntimeError, match="凭据不可用"):
+		dh_client.make_client()
+	(tmp_path / "pw").write_text("secret", encoding="utf-8")
+	monkeypatch.setenv("DH_BOT_PASSWORD_FILE", str(tmp_path / "pw"))
+	monkeypatch.setenv("DH_TOKEN_URL", "http://10.0.0.5:6062")  # 非回环明文 URL 被 SDK 拒绝
+	with pytest.raises(RuntimeError, match="凭据不可用"):
+		dh_client.make_client()
+	monkeypatch.delenv("DH_TOKEN_URL", raising=False)
 	monkeypatch.delenv("DH_BOT_PASSWORD_FILE", raising=False)
 	monkeypatch.setenv("DH_TEAM", "no-such-team")  # 隔离：不依赖本机 runtime 目录状态
 	with pytest.raises(RuntimeError):  # 无任何凭据且约定路径为空

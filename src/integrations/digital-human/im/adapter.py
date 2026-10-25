@@ -207,7 +207,12 @@ def main():
 	_client()  # 缺凭据时启动即失败（daemon 可见），不带着隐患常驻
 	for _ in range(2):
 		threading.Thread(target=_worker, daemon=True).start()
-	server = ThreadingHTTPServer((BIND, PORT), Handler)
+	try:
+		server = ThreadingHTTPServer((BIND, PORT), Handler)
+	except OSError as exc:
+		# 端口占用最常见于同节点第二个 team 未改 DH_IM_PORT：给出原因而不是空转 restart
+		print(f"[im] 无法监听 {BIND}:{PORT}: {exc} — 端口被占用时请为本 team 设置不同的 DH_IM_PORT", file=sys.stderr, flush=True)
+		raise
 	print(f"[im] adapter ready: team={TEAM} bind={BIND}:{PORT} auth={'on' if IM_TOKEN else 'off'} (mock inbox: GET /mock/inbox/<user>)", flush=True)
 	server.serve_forever()
 

@@ -66,3 +66,92 @@ def test_inbox_is_bounded(monkeypatch):
 	assert total <= 5
 	assert "a" not in adapter._inbox  # 最旧用户被整体淘汰
 	assert "c" in adapter._inbox
+
+
+def test_authorization_header(monkeypatch):
+	h = adapter.Handler.__new__(adapter.Handler)
+	monkeypatch.setattr(adapter, "IM_TOKEN", "secret")
+	h.headers = {"Authorization": "Bearer secret"}
+	assert h._authorized()
+	h.headers = {"X-IM-Token": "secret"}
+	assert h._authorized()
+	h.headers = {"Authorization": "Bearer wrong"}
+	assert not h._authorized()
+	h.headers = {}
+	assert not h._authorized()
+	monkeypatch.setattr(adapter, "IM_TOKEN", "")
+	assert h._authorized()
+
+
+# ---- 真实 HTTP 层 ----
+
+
+@pytest.fixture
+def server(monkeypatch):
+	monkeypatch.setattr(adapter, "_jobs", queue.Queue(maxsize=1))
+	monkeypatch.setattr(adapter, "MAX_BODY", 64)
+	monkeypatch.setattr(adapter, "IM_TOKEN", "")
+	srv = ThreadingHTTPServer(("127.0.0.1", 0), adapter.Handler)
+	threading.Thread(target=srv.serve_forever, daemon=True).start()
+	yield srv.server_address[1]
+	srv.shutdown()
+	srv.server_close()
+
+
+def _raw_post(port, path, body, content_length, timeout=3):
+	conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+	conn.putrequest("POST", path)
+	conn.putheader("Content-Type", "application/json")
+	conn.putheader("Content-Length", str(content_length))
+	conn.endheaders()
+	if body:
+		conn.send(body)
+	resp = conn.getresponse()
+	data = resp.read()
+	conn.close()
+	return resp.status, json.loads(data or b"{}")
+
+
+def test_negative_content_length_is_400_not_hang(server):
+	status, body = _raw_post(server, "/webhook/mock", b"", -1)
+	assert status == 400
+	assert body["error"] == "bad content-length"
+
+
+def test_oversized_content_length_is_413(server):
+	status, body = _raw_post(server, "/webhook/mock", b"", 10_000_000_000)
+	assert status == 413
+
+
+def test_non_object_json_is_400(server):
+	payload = b"[1,2,3]"
+	status, body = _raw_post(server, "/webhook/mock", payload, len(payload))
+	assert status == 400
+	assert body["error"] == "json object required"
+
+
+def test_queue_full_is_429_and_inbox_roundtrip(server):
+	payload = json.dumps({"user": "u1", "text": "hi"}).encode()
+	assert _raw_post(server, "/webhook/mock", payload, len(payload))[0] == 202
+	assert _raw_post(server, "/webhook/mock", payload, len(payload))[0] == 429  # maxsize=1
+	adapter._reply("u1", "answer")
+	conn = http.client.HTTPConnection("127.0.0.1", server, timeout=3)
+	conn.request("GET", "/mock/inbox/u1?x=1")
+	first = json.loads(conn.getresponse().read())
+	conn.request("GET", "/mock/inbox/u1")
+	second = json.loads(conn.getresponse().read())
+	conn.close()
+	assert first == {"user": "u1", "messages": ["answer"]}
+	assert second["messages"] == []
+
+
+def test_token_required_when_configured(server, monkeypatch):
+	monkeypatch.setattr(adapter, "IM_TOKEN", "s3")
+	conn = http.client.HTTPConnection("127.0.0.1", server, timeout=3)
+	conn.request("GET", "/mock/inbox/u1")
+	assert conn.getresponse().status == 401
+	conn.request("GET", "/healthz")
+	assert conn.getresponse().status == 200  # 健康检查不鉴权
+	conn.request("GET", "/mock/inbox/u1", headers={"X-IM-Token": "s3"})
+	assert conn.getresponse().status == 200
+	conn.close()

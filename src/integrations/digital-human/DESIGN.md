@@ -98,7 +98,7 @@ claude-agent-sdk 要求 Python ≥ 3.10。系统默认 Python 为 3.9。setup.sh
 2. 渲染 App 定义模板（`@占位符@` 替换为实际路径）；
 3. 注册技能 App、IM 适配器、大脑 App、示例 workflow；
 4. 创建角色 `digital-human`（仅 `app-run-task` / `app-view` / `app-output-view`）；
-5. 创建运行时账号 `dh-bot@<team>.local` 并生成铸 token 脚本；
+5. 创建运行时账号 `dh-bot@<team>.local` 并写入 600 权限密码文件（`runtime/<team>/dh-bot.password`；密码流不可用时改写 `admin.password` 并删除失效的 dh-bot 文件）；
 6. 生成 `runtime/<team>/SKILL_CATALOG.md`（技能清单）。
 
 多个 team 部署在同一节点时，依靠 App 名前缀隔离。每个 team 有独立的知识库目录和会话目录。
@@ -110,7 +110,7 @@ claude-agent-sdk 要求 Python ≥ 3.10。系统默认 Python 为 3.9。setup.sh
 | 认证 | OIDC bearer（daemon）。管理员用于部署；dh-bot 用于运行时 |
 | 授权 | 角色 `digital-human` 仅三项权限。实测：run_task 放行；注册 App 返回 403；管理 principal 返回 403 |
 | 密钥 | 模型密钥经 `-z` 加密存储。daemon API 不回显。本机文件（`dh-bot.env`、渲染后的 agent.yaml）权限 600 |
-| 高危操作 | 审批闸门（D5）。审批人不得为申请人（`approval.decide` 拒绝自审批）；审批单与操作的绑定 payload 只能由执行方（ops-action）写入，oa-approval 不接受外部 payload；校验与消费在文件锁内原子完成（`approval.consume`），同一审批只执行一次。实测：自审批、伪造 payload、服务不匹配、重复执行均被拒 |
+| 高危操作 | 审批闸门（D5）。审批人不得为申请人（`approval.decide` 拒绝自审批）；审批单与操作的绑定 payload 只能由执行方（ops-action）写入，oa-approval 不接受外部 payload；校验与消费由一条条件 UPDATE 原子完成（`approval.consume`），同一审批只执行一次。实测：自审批、伪造 payload、服务不匹配、重复执行均被拒 |
 | 审批存储 | `approvals.db`（SQLite）。跨进程（oa-approval 与 ops-action 两个 App）原子性由事务提供：decide/consume 为条件 UPDATE，先到者得；旧 JSON 台账自动一次性迁移（原文件保留 `*.legacy`）；库文件权限 600 |
 | IM 入口 | 适配器默认只监听 127.0.0.1（`DH_IM_BIND` 覆盖）。对外暴露必须设置 `DH_IM_TOKEN`：除 `/healthz` 外所有端点要求 `Authorization: Bearer` 或 `X-IM-Token`。请求体上限 1MB（`DH_IM_MAX_BODY`）；Content-Length 非法为负返回 400；非 JSON 对象返回 400；飞书 event_id 去重表有界（`DH_IM_MAX_EVENTS`，默认 1 万）；任务队列有界（`DH_IM_MAX_QUEUE`，默认 200），满时返回 429 |
 | 运行时凭据 | SDK `PasswordGrantProvider` + 600 权限密码文件（`dh-bot.password`，回退 `admin.password`）：铸造、过期前刷新、401 后重认证由 SDK 处理；密码文件每次授予时重读，轮换免重启。App 内经 `DH_TOKEN_URL/DH_BOT_USER/DH_BOT_PASSWORD_FILE` 显式注入；chat.py/skill 手工调用按 `runtime/<team>/` 约定路径自动发现。不生成任何铸 token 脚本，密码不进脚本正文 |

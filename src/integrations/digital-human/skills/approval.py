@@ -4,7 +4,7 @@ Phase 1 的确认动作是 mock（CLI/chat 调 oa-approval approve 即视为"IM 
 Phase 1+ 接真实 IM 回调时替换 decide() 的入口即可，存储不变。
 
 为什么是 SQLite 而不是手锁 JSON 文件：两个技能 App 是独立进程共写一份数据，
-事务（BEGIN IMMEDIATE + busy_timeout）天然提供跨进程原子性，"校验 + 更新"
+SQLite 的单语句原子性 + busy_timeout 天然提供跨进程互斥，"校验 + 更新"
 合并为一条条件 UPDATE 即无竞态。此前 JSON+flock 方案的锁文件、临时文件与
 重命名约定全部不再需要。
 
@@ -19,7 +19,9 @@ Phase 1+ 接真实 IM 回调时替换 decide() 的入口即可，存储不变。
 
 import json
 import os
+import shutil
 import sqlite3
+import sys
 import threading
 import time
 import uuid
@@ -86,9 +88,11 @@ def _migrate_legacy_json():
 		with _FILE.open("rb") as fh:  # 拿到锁后复核：别的进程可能已迁完
 			if fh.read(16).startswith(b"SQLite format 3"):
 				return
-		os.replace(_FILE, _FILE.with_name(_FILE.name + ".legacy"))
-		conn = sqlite3.connect(_FILE, timeout=10)
-		os.chmod(_FILE, 0o600)
+		# 先建好库、最后换入：换入前崩溃，JSON 原件仍在原位，下次重迁。
+		tmp = _FILE.with_name(_FILE.name + ".migrating")
+		tmp.unlink(missing_ok=True)
+		conn = sqlite3.connect(tmp, timeout=10)
+		os.chmod(tmp, 0o600)
 		try:
 			with conn:
 				conn.execute(_CREATE_SQL)
@@ -101,9 +105,20 @@ def _migrate_legacy_json():
 					)
 		finally:
 			conn.close()
+		shutil.copy2(_FILE, _FILE.with_name(_FILE.name + ".legacy"))
+		os.replace(tmp, _FILE)
 	finally:
 		os.close(mfd)
 		mlock.unlink(missing_ok=True)
+
+
+def _quarantine_corrupt(exc):
+	"""损坏的库文件挪到 *.corrupt-<ts> 留作取证，服务以空账本继续。"""
+	target = _FILE.with_name(f"{_FILE.name}.corrupt-{int(time.time())}")
+	os.replace(_FILE, target)
+	for suffix in ("-journal", "-wal", "-shm"):  # 旁车属于旧库，残留会被 SQLite 当热日志回放进新空库
+		_FILE.with_name(_FILE.name + suffix).unlink(missing_ok=True)
+	print(f"[approval] 账本不是合法的 SQLite 文件（{exc}），已隔离到 {target} 并重建空账本", file=sys.stderr, flush=True)
 
 
 def _connect():
@@ -111,9 +126,21 @@ def _connect():
 	with _ensure_lock:
 		_ensure_file()
 		_migrate_legacy_json()
-	conn = sqlite3.connect(_FILE, timeout=10)
-	conn.execute("PRAGMA busy_timeout=10000")
-	conn.execute(_CREATE_SQL)
+		conn = sqlite3.connect(_FILE, timeout=10)
+		try:
+			conn.execute("PRAGMA busy_timeout=10000")
+			conn.execute(_CREATE_SQL)
+		except sqlite3.DatabaseError as exc:
+			conn.close()
+			# 只处理"不是数据库/已损坏"；加锁超时等 OperationalError 原样抛出。
+			msg = str(exc)
+			if isinstance(exc, sqlite3.OperationalError) or not ("not a database" in msg or "malformed" in msg):
+				raise
+			_quarantine_corrupt(exc)
+			_ensure_file()
+			conn = sqlite3.connect(_FILE, timeout=10)
+			conn.execute("PRAGMA busy_timeout=10000")
+			conn.execute(_CREATE_SQL)
 	return conn
 
 
