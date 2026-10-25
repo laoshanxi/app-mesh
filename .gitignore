@@ -305,3 +305,5 @@ script/consul/data
 
 # Local ctest state
 Testing/
+.claude/
+llm-agent-workspace/

@@ -46,5 +46,7 @@ rpm:
 overrides:
   deb:
     depends: [openssl, procps, curl]
+    # py-task (enabled by default) needs it; rpm skips weak deps for EL7 compatibility.
+    recommends: [python3]
   rpm:
     depends: [openssl, procps-ng, curl]
