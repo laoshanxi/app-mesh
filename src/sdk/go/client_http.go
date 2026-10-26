@@ -111,8 +111,9 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 			baseURL:    *parsed,
 			httpClient: httpClient,
 		}
-		req.setForwardTo(options.ForwardTo)
 	}
+	// Applies to every transport: a TCP/WSS requester arrives here without the option.
+	req.setForwardTo(options.ForwardTo)
 
 	c := &AppMeshClient{
 		req:              req,

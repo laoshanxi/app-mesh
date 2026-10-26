@@ -143,6 +143,9 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
             AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
         }
+        # The data side channel is a separate hop: it carries the forwarding header too.
+        if self.forward_to:
+            header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         path = "/appmesh/file/download/ws"
         rest_url = parse.urljoin(self.base_url, path)
         r = self.session.get(url=rest_url, stream=True, timeout=self.request_timeout, headers=header,
@@ -190,6 +193,9 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
         }
+        # The data side channel is a separate hop: it carries the forwarding header too.
+        if self.forward_to:
+            header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         if preserve_permissions:
             header.update(AppMeshClient._get_file_attributes(local_path))
         rest_url = parse.urljoin(self.base_url, path)

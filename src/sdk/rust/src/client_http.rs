@@ -68,42 +68,20 @@ impl HTTPRequester {
         danger_accept_invalid_certs: bool,
     ) -> Result<Self> {
         let timeout = timeout.unwrap_or(Duration::from_secs(60));
-        // reqwest uses `rustls-no-provider`; install a process-default provider to avoid panics.
-        crate::tls_config::ensure_crypto_provider();
         // Engine SDK sessions deliberately have no cookie store. Browser application
         // state is a separate concern; SDK authentication is RFC 6750 Bearer-only.
-        let mut client_builder = ReqwestClient::builder().timeout(timeout);
-
-        // SSL setup. Verification is disabled only on explicit intent (danger
-        // flag or the legacy empty CA path). A configured-but-missing CA is a hard
-        // error; auto uses the App Mesh CA bundle if installed, else system CAs.
-        if danger_accept_invalid_certs || ssl_verify.as_deref() == Some("") {
-            client_builder = client_builder.danger_accept_invalid_certs(true);
+        let verify = if danger_accept_invalid_certs || ssl_verify.as_deref() == Some("") {
+            crate::tls_config::SslVerify::False
         } else {
-            let ca_path = ssl_verify.or_else(|| {
-                std::path::Path::new(DEFAULT_SSL_CA_CERT_PATH).exists().then(|| DEFAULT_SSL_CA_CERT_PATH.to_string())
-            });
-            if let Some(ca_path) = ca_path {
-                let cert_bytes = std::fs::read(&ca_path).map_err(|e| {
-                    AppMeshError::ConfigurationError(format!("Failed to read CA certificate '{}': {}", ca_path, e))
-                })?;
-                let cert = reqwest::Certificate::from_pem(&cert_bytes)
-                    .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid CA certificate '{}': {}", ca_path, e)))?;
-                client_builder = client_builder.add_root_certificate(cert);
-            }
-        }
-
-        if let Some((cert, key)) = &ssl_client_cert {
-            let cert_content = std::fs::read_to_string(cert).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Failed to read client certificate '{}': {}", cert, e))
-            })?;
-            let key_content = std::fs::read_to_string(key)
-                .map_err(|e| AppMeshError::ConfigurationError(format!("Failed to read client key '{}': {}", key, e)))?;
-            let pem = format!("{}\n{}", cert_content, key_content);
-            let identity = reqwest::Identity::from_pem(pem.as_bytes())
-                .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e)))?;
-            client_builder = client_builder.identity(identity);
-        }
+            crate::tls_config::resolve_ssl_verify(ssl_verify)?
+        };
+        let client_cert = ssl_client_cert.map(|(cert, key)| crate::tls_config::ClientCert::Pair(cert, key));
+        let client_builder = crate::tls_config::configure_reqwest_tls(
+            ReqwestClient::builder().timeout(timeout),
+            &verify,
+            client_cert.as_ref(),
+        )
+        .map_err(AppMeshError::ConfigurationError)?;
 
         Ok(Self {
             url,
@@ -339,6 +317,11 @@ impl AppMeshClient {
     /// Set the cluster forwarding host.
     pub fn set_forward_to(&self, url: Option<String>) {
         self.req.set_forward_to(url);
+    }
+
+    /// Get the cluster forwarding host.
+    pub fn get_forward_to(&self) -> Option<String> {
+        self.req.get_forward_to()
     }
 
     /// Execute a raw request (useful for advanced use cases).
@@ -1174,7 +1157,12 @@ impl AppMeshClient {
     pub async fn run_task(&self, name: &str, data: Value, timeout: i32) -> Result<String> {
         let timeout = if timeout <= 0 { 300 } else { timeout };
         let query = hmap! {HTTP_QUERY_KEY_TIMEOUT => timeout};
-        let body_bytes = serde_json::to_vec(&data)?;
+        // A bare string is the payload itself — the daemon delivers the body as-is
+        // (Python/JS SDKs send strings raw); any other JSON value is sent as JSON.
+        let body_bytes = match data {
+            Value::String(text) => text.into_bytes(),
+            other => serde_json::to_vec(&other)?,
+        };
 
         let resp = self
             .send(

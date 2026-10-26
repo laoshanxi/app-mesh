@@ -259,9 +259,11 @@ go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssljson@latest
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
-# Dex OIDC server: follow master via the project fork, which carries the
-# refresh-token rotation SQLite deadlock fix until upstream merges it.
-git clone --quiet --depth 1 https://github.com/laoshanxi/dex.git
+# Dex OIDC server: follow the project fork's appmesh branch, which carries the
+# refresh-token rotation SQLite deadlock fix, the upstream sync, and the
+# pure-Go SQLite driver for CGO-free builds. Keep off the fork's master: it
+# is the head of the upstream deadlock-fix PR and must stay clean.
+git clone --quiet --depth 1 -b appmesh https://github.com/laoshanxi/dex.git
 (cd dex && CGO_ENABLED=1 go build -trimpath -buildvcs=false -ldflags "-s -w" -o /usr/local/bin/dex ./cmd/dex)
 # Dex administration web UI (the fork's examples/example-app, a separate Go
 # module): packaged as dexuser and run as the dexuser System App.

@@ -13,6 +13,9 @@ pub struct CliConfig {
     pub last_host: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_port: Option<u16>,
+    /// CA bundle trusted for last_host, remembered from `--ca-cert` at logon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_ca_cert: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -207,8 +210,11 @@ fn ensure_private_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn save_last_host(host: &str, port: u16) {
-    let cfg = CliConfig { last_host: Some(host.to_string()), last_port: Some(port) };
+/// Remember the endpoint. A `ca_cert` given here (logon with `--ca-cert`) replaces
+/// the remembered CA; without one, the CA already remembered for this endpoint stays.
+pub fn save_last_host(host: &str, port: u16, ca_cert: Option<&Path>) {
+    let ca_cert = ca_cert.map(Path::to_path_buf).or_else(|| load_last_ca_cert(host, port));
+    let cfg = CliConfig { last_host: Some(host.to_string()), last_port: Some(port), last_ca_cert: ca_cert };
     if let Ok(content) = serde_json::to_string_pretty(&cfg) {
         let path = config_path();
         let _ = std::fs::write(&path, content + "\n");
@@ -220,6 +226,15 @@ pub fn load_last_host() -> Option<(String, u16)> {
     let content = std::fs::read_to_string(config_path()).ok()?;
     let cfg: CliConfig = serde_json::from_str(&content).ok()?;
     Some((cfg.last_host?, cfg.last_port.unwrap_or(DEFAULT_WSS_PORT)))
+}
+
+/// The CA bundle remembered for this endpoint at logon, if it is that endpoint.
+pub fn load_last_ca_cert(host: &str, port: u16) -> Option<PathBuf> {
+    let content = std::fs::read_to_string(config_path()).ok()?;
+    let cfg: CliConfig = serde_json::from_str(&content).ok()?;
+    (cfg.last_host.as_deref() == Some(host) && cfg.last_port.unwrap_or(DEFAULT_WSS_PORT) == port)
+        .then_some(cfg.last_ca_cert)
+        .flatten()
 }
 
 /// Read daemon config.yaml for TLS config and WSS port.

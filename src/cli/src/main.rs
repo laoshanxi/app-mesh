@@ -59,6 +59,7 @@ async fn run(cli: &Cli) -> Result<i32> {
         Commands::Disable(args) => commands::apps::disable(cli, args).await,
         Commands::Restart(args) => commands::apps::restart(cli, args).await,
         Commands::Run(args) => commands::run::run(cli, args).await,
+        Commands::Task(args) => commands::task::task(cli, args).await,
         Commands::Exec(args) => commands::run::exec(cli, args).await,
         Commands::Shell(args) => commands::run::shell(cli, args).await,
         Commands::Get(args) => commands::file::get(cli, args).await,

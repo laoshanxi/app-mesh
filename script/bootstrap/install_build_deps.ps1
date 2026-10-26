@@ -376,8 +376,9 @@ function Install-Dex {
     Write-Host "Installing Dex OIDC server..." -ForegroundColor Cyan
 
     $env:GOBIN = "C:\local\bin"
-    # Windows dex uses memory storage, so no SQLite driver and no CGO: the
-    # binary has no mingw runtime dependency.
+    # CGO stays off so the binary has no mingw/C runtime dependency. The fork's
+    # no-cgo build backs the SQLite storage with the pure-Go modernc.org/sqlite
+    # driver, so identities and refresh tokens persist on disk like on Linux.
     $env:CGO_ENABLED = "0"
 
     New-Item -ItemType Directory -Force -Path $env:GOBIN | Out-Null
@@ -385,10 +386,13 @@ function Install-Dex {
     $ldflags = "-s -w"
     $buildFlags = @("-trimpath", "-buildvcs=false")
 
-    Write-Host "Cloning Dex upstream master..." -ForegroundColor Yellow
+    Write-Host "Cloning the project fork's appmesh branch..." -ForegroundColor Yellow
     Remove-Item -Recurse -Force dex -ErrorAction SilentlyContinue
-    # Fork carries the refresh-token rotation SQLite deadlock fix until upstream merges it.
-    git clone --quiet --depth 1 https://github.com/laoshanxi/dex.git dex
+    # The appmesh branch carries the refresh-token rotation SQLite deadlock
+    # fix, the upstream sync, and the pure-Go SQLite driver for CGO-free
+    # builds. Keep off the fork's master: it is the head of the upstream
+    # deadlock-fix PR and must stay clean.
+    git clone --quiet --depth 1 -b appmesh https://github.com/laoshanxi/dex.git dex
     if ($LASTEXITCODE -ne 0) {
         throw "git clone failed for Dex"
     }

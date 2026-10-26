@@ -207,24 +207,40 @@ example watch-and-push or mutation forwarding to a configured writer node.
 
 ## docker-compose cluster
 
-`script/docker/docker-compose.yaml` changes:
+`script/docker/docker-compose.yaml` builds one owner, two followers, and one
+LLM node (`laoshanxi/appmesh:llm`, follower role, llm-agent preinstalled) with
+the bundled authentication service.
 
-- `appmesh_master`: `APPMESH_AUTH_ROLE=owner`,
-  `APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth`, and
-  `APPMESH_AUTH_LISTEN=0.0.0.0:6062`. The compose network only reaches
-  this listener. Do not publish the port publicly. A container healthcheck
-  calls `appmesh-auth.sh service-health`.
-- `appmesh_slave*`: `depends_on: appmesh_master: service_healthy`,
-  `APPMESH_AUTH_ROLE=follower`, the identical issuer, and an explicit
-  `APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth`. The packaged
-  `oidc.yaml` default points at loopback. That default is wrong on a
-  follower.
-- Clients reach the issuer in-network at
-  `http://appmesh_master:6062/auth`. Host-side CLI usage publishes the
-  master REST port. For password and device flows only, bind the Dex port
-  to host loopback. The CLI then passes `--auth-access-url`. This argument
-  is routing-only. The published endpoints still must sit on the issuer
-  origin.
+Listeners of `appmesh_master`. Host ports are remapped (+10000) so a local
+daemon keeps the defaults:
+
+| Port (container → host) | Service | Used by |
+| --- | --- | --- |
+| 6058 → 16058 | Engine WSS listener | the CLI (`appm -H wss://…:6058` in-network, `:16058` from the host) |
+| 6060 → 16060 | Go agent REST front | REST clients and SDKs; it applies its own `X-Target-Host` forwarding |
+| 6062 → 127.0.0.1:16062 | Dex authentication listener | followers in-network; host loopback only, for password and device flows |
+| 443 → 443 | web UI | browsers; the UI shares the master network namespace |
+
+Environment variables:
+
+| Variable | Master | Follower |
+| --- | --- | --- |
+| `APPMESH_AUTH_ROLE` | `owner` — runs Dex and owns the SQLite identity state | `follower` — no local Dex |
+| `APPMESH_AUTH_ISSUER` | `http://appmesh_master:6062/auth` — one identical string on every node and client | same |
+| `APPMESH_AUTH_ACCESS_URL` | unset — discovery defaults to the issuer | the issuer string; the packaged default points at loopback and is wrong on a follower |
+| `APPMESH_AUTH_BROWSER_ENTRY` | `https://127.0.0.1/auth` — the published UI that fronts the issuer path | the owner value; a follower cannot derive the entry itself |
+| `APPMESH_AUTH_LISTEN` | `0.0.0.0:6062` — reachable on the compose network only, never publish it publicly | unset — a follower starts no listener |
+| `APPMESH_REST_PrometheusExporterListenPort` | `6061` | `6061` |
+
+A container healthcheck calls `appmesh-auth.sh service-health`. Followers gate
+on `depends_on: appmesh_master: service_healthy`.
+
+Clients reach the issuer in-network at `http://appmesh_master:6062/auth`.
+Host-side CLI usage publishes the master WSS port 6058. The CLI speaks the WSS
+transport; the REST port 6060 serves REST clients and SDKs through the Go
+agent. For password and device flows only, bind the Dex port to host loopback.
+The CLI then passes `--auth-access-url`. This argument is routing-only. The
+published endpoints still must sit on the issuer origin.
 
 ### First sign-in in the compose cluster
 
@@ -242,9 +258,45 @@ docker exec appmesh_master sh -c 'printf "%s\n" "$(grep "^password=" /opt/appmes
 - The server certificate of the master covers `127.0.0.1`, the container
   address, `appmesh_master`, and `localhost`.
 - Then copy the owner's `work/config/authorization.yaml` to every
-  follower and restart the follower daemons. See "Authorization data
-  consistency" above. A fresh follower has no `work/config` directory.
-  Create the directory before the first copy.
+  follower. A copied file needs no restart: a follower adopts an entry
+  from disk when it first resolves that principal. See "Authorization
+  data consistency" above. A fresh follower has no `work/config`
+  directory. Create the directory before the first copy.
+
+### Cluster TLS trust
+
+Every node generates its own CA at first start. An SDK on one node
+verifies a peer certificate against the local CA by default. That CA did
+not sign the peer certificate. The check fails with `BadSignature`. Use
+one of these patterns.
+
+Pattern 1. Trust the target CA on the client only:
+
+1. Copy the target CA out: `docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem`.
+2. Name it on the CLI: `appm -H wss://appmesh_master:6058 --ca-cert ./master-ca.pem logon --auth-allow-http`.
+3. The CLI remembers the CA with the endpoint at logon. Later commands need no `--ca-cert`.
+
+Pattern 2. Share one CA across the cluster:
+
+1. On the owner, run `script/ssl/generate_ssl_cert.sh` once. Set
+   `APPMESH_SSL_EXTRA_SAN` to the comma-separated names of every peer,
+   for example `APPMESH_SSL_EXTRA_SAN=appmesh_slave1,appmesh_slave2`. The
+   server certificate then covers every node name.
+2. Copy the whole `ssl` directory from the owner to every follower. All
+   nodes then serve certificates that the same CA signed.
+3. To add a node later, keep the existing CA and sign fresh leaf
+   certificates. Set `APPMESH_SSL_CA_CERT` and `APPMESH_SSL_CA_KEY` to the
+   existing CA files and set `APPMESH_SSL_EXTRA_SAN` to the new node name.
+   Copy the new leaf files and `ca.pem` to the new node. Never distribute
+   `ca-key.pem`.
+
+Do not copy only `ca.pem` onto a follower. The follower then trusts the
+shared CA, but it still serves its old self-signed certificate. Clients
+that verify against the shared CA reject it.
+
+A macOS client rejects leaf certificates with a validity above 825 days.
+The packaged script sets 825 days for leaf certificates and 3650 days for
+the CA.
 
 ### Web UI entry
 

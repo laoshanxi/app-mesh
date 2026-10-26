@@ -19,8 +19,17 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly CERT_OUTPUT_DIR="${APPMESH_SSL_OUTPUT_DIR:-${SCRIPT_DIR}}"
-readonly CERT_VALIDITY_DAYS=3650
-readonly CERT_VALIDITY_HOURS="87600h"
+# Leaf validity: Apple rejects TLS server certificates over 825 days (-67901);
+# the CA is exempt and outlives the leaves.
+readonly CERT_VALIDITY_DAYS=825
+readonly CERT_VALIDITY_HOURS="19800h"
+readonly CA_VALIDITY_DAYS=3650
+readonly CA_VALIDITY_HOURS="87600h"
+# Cluster sharing: APPMESH_SSL_EXTRA_SAN adds peer names to the SAN list; the
+# APPMESH_SSL_CA_* pair signs with an existing CA (see ClusterAuthDesign.md).
+readonly EXTRA_SAN_HOSTS="${APPMESH_SSL_EXTRA_SAN:-}"
+readonly SHARED_CA_CERT="${APPMESH_SSL_CA_CERT:-}"
+readonly SHARED_CA_KEY="${APPMESH_SSL_CA_KEY:-}"
 readonly KEY_ALGO="ecdsa"
 readonly KEY_SIZE=256
 readonly EC_CURVE="prime256v1"
@@ -62,6 +71,19 @@ die() {
 
 cleanup_file() {
     [[ -f "$1" ]] && rm -f "$1" || true
+}
+
+# A shared CA replaces the freshly generated one; the leaf certificates are
+# then signed by it, so every node that trusts it trusts them all.
+shared_ca_ready() {
+    [[ -n "$SHARED_CA_CERT" && -n "$SHARED_CA_KEY" ]]
+}
+
+install_shared_ca() {
+    log "Using shared CA certificate ${SHARED_CA_CERT}..."
+    cp -f "$SHARED_CA_CERT" ca.pem
+    cp -f "$SHARED_CA_KEY" ca-key.pem
+    chmod 600 ca-key.pem 2>/dev/null || true
 }
 
 #===============================================================================
@@ -125,6 +147,11 @@ get_host_addresses() {
         fi
     fi
 
+    # Extra SAN entries requested for the cluster (names/IPs of peer nodes).
+    if [[ -n "$EXTRA_SAN_HOSTS" ]]; then
+        hosts="${hosts},${EXTRA_SAN_HOSTS}"
+    fi
+
     # Deduplicate and format
     printf "%s\n" "${hosts[@]}" | sort -u | paste -sd, -
 }
@@ -157,6 +184,7 @@ generate_cfssl_ca_csr() {
     cat <<EOF
 {
   "CN": "${CERT_CA_CN}",
+  "ca": {"expiry": "${CA_VALIDITY_HOURS}"},
   "key": {"algo": "${KEY_ALGO}", "size": ${KEY_SIZE}},
   "names": [{
     "C": "${CERT_COUNTRY}",
@@ -185,10 +213,14 @@ create_certs_cfssl() {
     local ca_config="ca-config.json"
     local ca_csr="ca-csr.json"
 
-    log "Generating CA certificate..."
     generate_cfssl_ca_config > "$ca_config"
-    generate_cfssl_ca_csr > "$ca_csr"
-    cfssl gencert -initca "$ca_csr" | cfssljson -bare ca -
+    if shared_ca_ready; then
+        install_shared_ca
+    else
+        log "Generating CA certificate..."
+        generate_cfssl_ca_csr > "$ca_csr"
+        cfssl gencert -initca "$ca_csr" | cfssljson -bare ca -
+    fi
 
     log "Generating server certificate..."
     generate_cfssl_cert_csr "$server_cn" | \
@@ -352,14 +384,18 @@ create_certs_openssl() {
     local server_conf="openssl-server.cnf"
     local client_conf="openssl-client.cnf"
 
-    # Generate CA
-    log "Generating CA private key..."
-    openssl_gen_key ca-key.pem
+    if shared_ca_ready; then
+        install_shared_ca
+    else
+        # Generate CA
+        log "Generating CA private key..."
+        openssl_gen_key ca-key.pem
 
-    log "Generating CA certificate..."
-    generate_openssl_ca_conf > "$ca_conf"
-    openssl req -new -x509 -days "$CERT_VALIDITY_DAYS" \
-        -key ca-key.pem -out ca.pem -config "$ca_conf"
+        log "Generating CA certificate..."
+        generate_openssl_ca_conf > "$ca_conf"
+        openssl req -new -x509 -days "$CA_VALIDITY_DAYS" \
+            -key ca-key.pem -out ca.pem -config "$ca_conf"
+    fi
 
     # Generate server certificate
     log "Generating server private key..."
@@ -469,6 +505,10 @@ main() {
     cd "$CERT_OUTPUT_DIR"
 
     check_dependencies
+
+    if [[ -n "$SHARED_CA_CERT" || -n "$SHARED_CA_KEY" ]] && ! shared_ca_ready; then
+        die "APPMESH_SSL_CA_CERT and APPMESH_SSL_CA_KEY must be set together"
+    fi
 
     local hosts
     hosts=$(get_host_addresses)

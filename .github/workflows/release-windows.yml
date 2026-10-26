@@ -97,8 +97,9 @@ jobs:
           if (-not (Select-String -Path "C:\local\appmesh\apps\py-exec.yaml" -Pattern "python\.exe" -Quiet)) { throw "apps were not patched from python3 to python.exe" }
           if (-not (Select-String -Path "C:\local\appmesh\apps\identity.yaml" -Pattern "appmesh-auth\.ps1" -Quiet)) { throw "authentication service was not patched to the Windows launcher" }
 
-          # dex is a CGO-free (memory storage) build; it must run without any
-          # runtime DLL beside it, exactly like an installed machine.
+          # dex is a CGO-free build (SQLite storage through the fork's pure-Go
+          # modernc.org/sqlite backend); it must run without any runtime DLL
+          # beside it, exactly like an installed machine.
           & "C:\local\appmesh\bin\dex.exe" version
           if ($LASTEXITCODE -ne 0) { throw "dex.exe failed to run (exit $LASTEXITCODE)" }
 
@@ -188,6 +189,9 @@ jobs:
             Start-Sleep -Seconds 2
           }
           if (-not $token) { throw "bundled authentication service did not issue an automation token" }
+          # Issuing that token persisted dex's signing keys: the SQLite
+          # database must now exist on disk (persistence across restarts).
+          if (-not (Test-Path "C:\local\appmesh\work\auth\dex\dex.db")) { throw "dex did not create its SQLite storage; authentication persistence is broken" }
           $env:APPMESH_BEARER_TOKEN = $token
           & "C:\local\appmesh\bin\appm.exe" ls
           if ($LASTEXITCODE -ne 0) { throw "Engine rejected the bundled authentication token" }

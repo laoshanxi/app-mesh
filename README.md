@@ -137,11 +137,30 @@ appm workflow runs pipeline               # view history
 
 ## 🤖 AI & LLM Integration
 
-The Computing pillar makes App Mesh a natural runtime for AI workloads:
+Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks, and cluster forwarding as any other process — no sidecar, no privileged pod.
+
+**Agent runtime — not Claude-only**
+
+- **[LLM agent runtime](src/apps/llm-agent)** — a thin wrapper over the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/python) hosted as a managed App. Runs Claude (Anthropic API, Amazon Bedrock, Google Vertex), or any other model — DeepSeek, Qwen, GLM, MiniMax, or anything OpenAI-compatible behind a gateway. Model credentials stay in secured (`-z`) env vars, never in files.
+- **Sessions are stable working directories** — send again with the same `session_id` to continue a conversation, `session_close` to wipe it; the agent itself stores no history.
+
+**Two consumption models, one substrate** ([design](docs/source/workflow/LLMAgentWorkflowDesign.md), [SOP](src/apps/llm-agent/SOP.md))
+
+- **Batch / DAG** — a shared long-lived App answers each call with a final structured result; ideal for pipelines and batch scoring.
+- **Interactive chat** — a per-session worker App streams tokens live to the web UI's Chat page; direct Task API + subscribe, no workflow engine in the path.
+
+**LLM as a workflow step**
+
+- The engine's [`message` step](docs/source/workflow/WorkflowSchema.md#step-type-message) puts the model into the DAG: `session_send` / `session_close` payloads, per-run session ids (`${{ workflow.run_id }}`), timeouts, failure propagation, and step-level resume — schedule it with cron, fan it out across nodes, or gate later steps on its answer.
+
+**Cluster-native LLM nodes**
+
+- The `laoshanxi/appmesh:llm` image ships the agent preinstalled and enabled. Run it as a dedicated node (see `appmesh_llm` in the [compose cluster](script/docker/docker-compose.yaml)); every peer reaches it with ordinary forwarding — `appm -F appmesh_llm …` routes exec, files, and tasks to the LLM node, and the web UI registers providers from a guided form (Agents → Register).
+
+**AI tooling around the mesh**
 
 - **[Remote sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)** — give agents an isolated build-and-run environment instead of your local shell.
 - **[MCP server](src/integrations/mcp-server)** — manage App Mesh from AI clients over Model Context Protocol (Streamable HTTP with OAuth 2.1, RBAC enforced by the daemon).
-- **[LLM agent runtime](src/apps/llm-agent)** — host Claude-Agent-SDK-based agents as managed App Mesh applications; see the [architecture design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/apps/llm-agent/SOP.md)).
 - **[Remote execution skill](.agents/skills/appmesh-remote)** for Codex and Claude Code, **[MCP bridge](src/integrations/mcp-bridge)** for relaying stdio MCP servers over WebSocket, and **[MQTT bridge](src/integrations/mqtt)** for IoT scenarios.
 
 ## 🧰 Interfaces & SDKs

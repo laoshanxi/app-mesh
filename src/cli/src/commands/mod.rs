@@ -3,4 +3,5 @@ pub mod auth;
 pub mod file;
 pub mod run;
 pub mod system;
+pub mod task;
 pub mod workflow;

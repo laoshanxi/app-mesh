@@ -314,7 +314,8 @@ public class AppMeshClientWSS extends AppMeshClient {
             throw new IOException("Download init failed: " + initResp.getResponseCode());
         }
 
-        String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
+        Map<String, String> commonHeaders = super.getCommonHeaders();
+        String authToken = commonHeaders.get(HEADER_AUTHORIZATION);
         if (authToken == null || authToken.isEmpty()) {
             throw new IOException("File transfer requires a bearer token");
         }
@@ -325,6 +326,11 @@ public class AppMeshClientWSS extends AppMeshClient {
         conn.setRequestMethod("GET");
         conn.setRequestProperty(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
         conn.setRequestProperty(HEADER_AUTHORIZATION, authToken);
+        // The data side channel is a separate hop: it carries the forwarding header too.
+        String targetHost = commonHeaders.get("X-Target-Host");
+        if (targetHost != null) {
+            conn.setRequestProperty("X-Target-Host", targetHost);
+        }
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);
         conn.setReadTimeout(FILE_TRANSFER_TIMEOUT);
 
@@ -380,7 +386,8 @@ public class AppMeshClientWSS extends AppMeshClient {
             throw new IOException("Upload init failed: " + initResp.getResponseCode());
         }
 
-        String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
+        Map<String, String> commonHeaders = super.getCommonHeaders();
+        String authToken = commonHeaders.get(HEADER_AUTHORIZATION);
         if (authToken == null || authToken.isEmpty()) {
             throw new IOException("File transfer requires a bearer token");
         }
@@ -393,6 +400,11 @@ public class AppMeshClientWSS extends AppMeshClient {
         conn.setRequestProperty(HEADER_AUTHORIZATION, authToken);
         conn.setRequestProperty(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
         conn.setRequestProperty("Content-Type", "application/octet-stream");
+        // The data side channel is a separate hop: it carries the forwarding header too.
+        String targetHost = commonHeaders.get("X-Target-Host");
+        if (targetHost != null) {
+            conn.setRequestProperty("X-Target-Host", targetHost);
+        }
         conn.setRequestProperty("Content-Length", String.valueOf(file.length()));
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);
         conn.setReadTimeout(FILE_TRANSFER_TIMEOUT);

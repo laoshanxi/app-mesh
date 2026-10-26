@@ -328,9 +328,12 @@ function Seed-BuiltinPrincipals {
     $text = $lines -join "`n"
     if ($text -notmatch ('(?m)^\s{4}' + [regex]::Escape($guestId) + ':\s*$')) {
         $index = $lines.IndexOf("  principals:")
+        $guestNameYaml = ConvertTo-YamlSingleQuotedScalar $GuestUsername
+        $guestEmailYaml = ConvertTo-YamlSingleQuotedScalar $GuestEmail
         $block = [string[]]@(
             "    ${guestId}:", "      kind: user", "      issuer: $issuerYaml",
-            "      subject: $GuestSubject", "      status: active", "      execution_user: `"`"",
+            "      subject: $GuestSubject", "      display_name: $guestNameYaml", "      email: $guestEmailYaml",
+            "      status: active", "      execution_user: `"`"",
             "      roles: [appmesh-viewer]", ""
         )
         $lines.InsertRange($index + 1, $block)
@@ -390,9 +393,6 @@ function Render-DexConfig {
     $webRedirectUri = Get-WebRedirectUri
 
     $content = [System.IO.File]::ReadAllText($DexConfigTemplate)
-    # Windows runs the CGO-free dex build: memory storage, no SQLite database.
-    # A template change leaves the marker unresolved and fails the check below.
-    $content = $content -replace "(?m)^  type: sqlite3\r?\n  config:\r?\n    file: __APPMESH_AUTH_STORAGE_PATH__\r?$", "  type: memory"
     # Pure PKCE deployments drop the resource-owner password grant from the Dex
     # grant types; the Engine reads the same setting to advertise the flows.
     # The password database stays enabled, so browser sign-in keeps working.
@@ -462,6 +462,10 @@ function Render-DexConfig {
         "__APPMESH_AUTH_ISSUER__" = $issuer
         "__APPMESH_AUTH_LISTEN__" = $listen
         "__APPMESH_AUTH_TELEMETRY_LISTEN__" = $telemetry
+        # Same location as appmesh-auth.sh (work/auth/dex/dex.db): the dex
+        # build stores SQLite here through the pure-Go modernc.org/sqlite
+        # driver, so identities and refresh tokens survive restarts.
+        "__APPMESH_AUTH_STORAGE_PATH__" = (Join-Path $DexRuntimeDir "dex.db")
         "__APPMESH_AUTH_WEB_CALLBACK__" = $webRedirectUri
         "__APPMESH_AUTH_INITIAL_ADMIN_EMAIL__" = $AdminEmail
         "__APPMESH_AUTH_INITIAL_ADMIN_PASSWORD_HASH__" = $admin.password_hash
@@ -874,7 +878,7 @@ function Add-User {
     [Console]::Error.WriteLine("  Principal ID: $principalId")
     [Console]::Error.WriteLine("  role:         $RoleName")
 
-    [Console]::Error.WriteLine("Note: the authentication service on Windows uses memory storage; this user does not survive a restart. For durable user management, use an external identity provider.")
+    [Console]::Error.WriteLine("Note: this user persists in the authentication service's SQLite database (work\auth\dex\dex.db) and survives restarts.")
     $engineRunning = $null -ne (Get-Process -Name "appmesh" -ErrorAction SilentlyContinue)
     if ($engineRunning) {
         [Console]::Error.WriteLine("Note: a running Engine adopts this binding on the user's first request. If the user already authenticated before, the Engine holds a role-less record; apply the role through the REST API instead:")

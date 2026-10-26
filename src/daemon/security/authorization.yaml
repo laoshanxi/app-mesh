@@ -29,10 +29,14 @@ Authorization:
     # subject is base64url(protobuf{field1: userID, field2: "local"}).
     # With a custom built-in issuer this entry stays inert; bootstrap adds the
     # equivalent binding for the configured issuer without rewriting this file.
+    # display_name and email are pre-filled so the principal list names this
+    # identity before its first sign-in; a sign-in refreshes them from the token.
     oidc:eaa48d4270588186389c55543f43ff103c67a26f13b21a447d0da5e16dd8083f:
       kind: user
       issuer: http://127.0.0.1:6062/auth
       subject: CiQ5M2FkMzliNC1lYjZmLTQ5NDUtOTdhMS0zMzY2NDUxODY3ZmISBWxvY2Fs
+      display_name: guest
+      email: guest@appmesh.local
       status: active
       execution_user: ""
       roles: [appmesh-viewer]

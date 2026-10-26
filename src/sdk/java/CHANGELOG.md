@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.9
+
+- WSS `uploadFile`/`downloadFile`: the HTTPS data side channel carries the same
+  `X-Target-Host` as the WSS control request, so forwarding no longer lands
+  files on the gateway node (same fix as Go, Python 3.0.14 and Rust 3.0.12).
+
 ## 3.0.8
 
 File-transfer correctness over the HTTP transport (same change as Python 3.0.12,

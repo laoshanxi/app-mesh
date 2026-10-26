@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // AppMeshClientWSS interacts with the server over WSS transport.
@@ -75,6 +76,16 @@ func (c *AppMeshClientWSS) SendMessage(ctx context.Context, buffer []byte) error
 	return c.wssReq.WSSConnection.SendMessage(ctx, buffer)
 }
 
+// forwardTarget is the X-Target-Host value for the HTTP(S) data side channel,
+// normalized like the WSS control request.
+func (c *AppMeshClientWSS) forwardTarget() string {
+	host := c.wssReq.getForwardTo()
+	if host == "" || strings.Contains(host, ":") {
+		return host
+	}
+	return host + ":" + c.wssReq.baseURL.Port()
+}
+
 // DownloadFileContext downloads a file through the WSS control channel plus HTTP(S) streaming data path.
 // When applyFileAttributes is true, returned POSIX metadata is applied locally best-effort.
 func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, localFile string,
@@ -125,6 +136,9 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 	req = req.WithContext(ctx)
 	req.Header.Set("Authorization", auth)
 	req.Header.Set(headerFilePath, remoteFile)
+	if target := c.forwardTarget(); target != "" {
+		req.Header.Set(headerTargetHost, target)
+	}
 
 	resp, err := httpConn.Do(req)
 	if err != nil {
@@ -226,6 +240,9 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	req.Header.Set("Authorization", auth)
 	req.Header.Set(headerFilePath, remoteFile)
 	req.Header.Set("Content-Type", "application/octet-stream")
+	if target := c.forwardTarget(); target != "" {
+		req.Header.Set(headerTargetHost, target)
+	}
 
 	resp, err := httpConn.Do(req)
 	if err != nil {

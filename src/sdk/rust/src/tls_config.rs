@@ -43,6 +43,45 @@ pub(crate) fn ensure_crypto_provider() {
     });
 }
 
+/// Apply verification and client identity to a reqwest builder. reqwest's
+/// rustls backend uses the platform verifier by default and ignores
+/// `add_root_certificate`, so a pinned CA or the explicit no-verify mode must
+/// be preconfigured; `SslVerify::True` keeps the platform (keychain) roots.
+pub(crate) fn configure_reqwest_tls(
+    mut builder: reqwest::ClientBuilder,
+    ssl_verify: &SslVerify,
+    ssl_client_cert: Option<&ClientCert>,
+) -> Result<reqwest::ClientBuilder, String> {
+    if matches!(ssl_verify, SslVerify::True) {
+        if let Some(cert) = ssl_client_cert {
+            let pem = read_client_identity_pem(cert)?;
+            let identity =
+                reqwest::Identity::from_pem(pem.as_bytes()).map_err(|e| format!("Invalid client certificate/key: {}", e))?;
+            builder = builder.identity(identity);
+        }
+        return Ok(builder);
+    }
+    ensure_crypto_provider();
+    let config = build_rustls_client_config(ssl_verify, ssl_client_cert)?;
+    Ok(builder.use_preconfigured_tls(config))
+}
+
+/// Concatenate the certificate and key PEM for `reqwest::Identity::from_pem`.
+fn read_client_identity_pem(client_cert: &ClientCert) -> Result<String, String> {
+    match client_cert {
+        ClientCert::Pair(cert_path, key_path) => {
+            let cert = std::fs::read_to_string(cert_path)
+                .map_err(|e| format!("Failed to read client certificate '{}': {}", cert_path, e))?;
+            let key =
+                std::fs::read_to_string(key_path).map_err(|e| format!("Failed to read client key '{}': {}", key_path, e))?;
+            Ok(format!("{}\n{}", cert, key))
+        }
+        ClientCert::Single(path) => {
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read client certificate '{}': {}", path, e))
+        }
+    }
+}
+
 /// Client certificate for mutual TLS
 #[derive(Clone, Debug)]
 pub enum ClientCert {

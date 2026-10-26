@@ -263,10 +263,12 @@ seed_builtin_principals() {
         return 1
     }
 
-    local issuer issuer_yaml automation_id guest_id source temporary
+    local issuer issuer_yaml automation_id guest_id guest_name_yaml guest_email_yaml source temporary
     local add_automation=1 add_guest=1 add_role=1
     issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
     issuer_yaml=$(yaml_quote "${issuer}") || return 1
+    guest_name_yaml=$(yaml_quote "${DEX_INITIAL_GUEST_USERNAME}") || return 1
+    guest_email_yaml=$(yaml_quote "${DEX_INITIAL_GUEST_EMAIL}") || return 1
     automation_id=$(stable_principal_id "${issuer}" "${DEX_AUTOMATION_SUBJECT}") || {
         echo "failed to derive the automation Principal ID" >&2
         return 1
@@ -304,6 +306,8 @@ seed_builtin_principals() {
         -v issuer="${issuer_yaml}" \
         -v automation_subject="${DEX_AUTOMATION_SUBJECT}" \
         -v guest_subject="${DEX_INITIAL_GUEST_SUBJECT}" \
+        -v guest_name="${guest_name_yaml}" \
+        -v guest_email="${guest_email_yaml}" \
         -v role="${DEX_AUTOMATION_ROLE}" '
             $0 == "  principals:" && (add_automation == 1 || add_guest == 1) {
                 print
@@ -322,6 +326,8 @@ seed_builtin_principals() {
                     print "      kind: user"
                     print "      issuer: " issuer
                     print "      subject: " guest_subject
+                    print "      display_name: " guest_name
+                    print "      email: " guest_email
                     print "      status: active"
                     print "      execution_user: \"\""
                     print "      roles: [appmesh-viewer]"

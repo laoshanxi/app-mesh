@@ -73,6 +73,10 @@ private:
 	bool waitForLoopState(bool running, int timeoutMs);
 	void handleHttpRequest(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
 						   drogon::AdviceCallback &&callback);
+	// Generic pipeline into the shared worker (auth, X-Target-Host forwarding,
+	// REST dispatch); `requestPath` lets a caller normalize the path first.
+	void handleWorkerRequest(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
+							 drogon::AdviceCallback &&callback, std::string requestPath);
 	void handleDownload(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback);
 	void handleUpload(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
 					  drogon::AdviceCallback &&callback);

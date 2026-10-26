@@ -3,6 +3,8 @@
 #include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <set>
 
 #include <boost/algorithm/string_regex.hpp>
@@ -23,6 +25,7 @@
 #include "PrometheusRest.h"
 #include "ReplyContext.h"
 #include "RestHandler.h"
+#include "drogon/FileTransferHandler.h"
 
 // Content-type constants
 constexpr auto CONTENT_TYPE_HTML = "text/html; charset=utf-8";
@@ -860,8 +863,36 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		LOG_DBG << fname << "Download file from socket";
 		headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = Utility::encode64(file);
 		body = Utility::text2json("Please recieve file from socket");
+		message->reply(web::http::status_codes::OK, body, headers);
+		return;
 	}
-	message->reply(web::http::status_codes::OK, body, headers);
+
+	// A forwarded request has no socket to stream on: the file content is the
+	// response body (bounded; larger files need a streaming surface).
+	if (0 == message->m_headers.count(HTTP_HEADER_KEY_APPMESH_FORWARDED))
+	{
+		message->reply(web::http::status_codes::OK, body, headers);
+		return;
+	}
+	std::error_code ec;
+	const auto fileSize = std::filesystem::file_size(file, ec);
+	if (ec || fileSize > MAX_HTTP_BODY_SIZE)
+	{
+		message->reply(web::http::status_codes::RequestEntityTooLarge,
+					   Utility::text2json("file is too large for the buffered download surface"));
+		return;
+	}
+	std::vector<std::uint8_t> content(fileSize);
+	{
+		std::ifstream input(file, std::ios::binary);
+		if (!input.is_open() || !input.read(reinterpret_cast<char *>(content.data()), static_cast<std::streamsize>(fileSize)))
+		{
+			message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to read file"));
+			return;
+		}
+	}
+	message->reply(message->m_relative_uri, message->m_uuid, content, headers, web::http::status_codes::OK,
+				   web::http::mime_types::application_octetstream);
 }
 
 void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
@@ -896,8 +927,34 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		LOG_DBG << fname << "Upload file from socket";
 		headers[HTTP_HEADER_KEY_X_Send_File_Socket] = Utility::encode64(file);
 		body = Utility::text2json("Please send file from socket");
+		message->reply(web::http::status_codes::OK, body, headers);
 	}
-	message->reply(web::http::status_codes::OK, body, headers);
+	else if (message->m_body && !message->m_body->empty())
+	{
+		// The payload rides in the request body (a forwarded or envelope upload);
+		// the socket arm above is the agent/TCP-SDK streaming path.
+		if (message->m_body->size() > MAX_UPLOAD_SIZE)
+			throw std::invalid_argument("upload exceeds the size limit");
+		FileUploadInfo upload(file, file + "." + Utility::shortID() + ".part", message->m_headers);
+		if (!upload.m_file.is_open())
+			throw std::runtime_error("failed to create the upload file");
+		upload.m_file.write(reinterpret_cast<const char *>(message->m_body->data()),
+							static_cast<std::streamsize>(message->m_body->size()));
+		if (!upload.m_file.good() || upload.commit() == FileUploadInfo::CommitResult::Failed)
+			throw std::runtime_error("failed to write the upload file");
+		Utility::applyFilePermission(file, message->m_headers);
+		LOG_INF << fname << "File uploaded successfully: " << file << " (" << message->m_body->size() << " bytes)";
+		Json::Value respJson;
+		respJson["status"] = "success";
+		respJson["file"] = std::filesystem::path(file).filename().string();
+		respJson["size"] = static_cast<Json::UInt64>(message->m_body->size());
+		message->reply(web::http::status_codes::OK, respJson);
+		return;
+	}
+	else
+	{
+		message->reply(web::http::status_codes::OK, body, headers);
+	}
 	// set permission
 	Utility::applyFilePermission(file, message->m_headers);
 }

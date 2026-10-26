@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.12
+
+- WSS `upload_file`/`download_file`: the HTTPS data side channel carries the
+  same `X-Target-Host` as the WSS control request, so `forward_to` no longer
+  lands files on the gateway node (same fix as Go, Java 3.0.9 and Python 3.0.14).
+- A pinned CA verifies through a preconfigured rustls config: reqwest's
+  platform-verifier default ignored `add_root_certificate`, so `ssl_ca_cert`
+  never applied on macOS.
+- `run_task` sends a bare string payload as-is instead of JSON-quoting it.
+
 ## 3.0.11
 
 - `upload_file`: the legacy-placeholder check now runs on the streaming HTTP

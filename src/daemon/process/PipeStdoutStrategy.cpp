@@ -32,6 +32,8 @@ void PipeStdoutStrategy::activate(TimerHandler &, const std::string &)
 	const std::shared_ptr<StdoutPump> pump = m_pump;
 	if (!pump || m_tornDown.load(std::memory_order_acquire))
 		return;
+	// The hop onto the process io thread keeps all pump state confined to one
+	// thread: stop() runs there too, so activate/stop cannot interleave.
 	ProcessService::instance()->post([pump]() { pump->activate(); });
 }
 
@@ -47,8 +49,8 @@ void PipeStdoutStrategy::teardown()
 	if (!pump)
 		return;
 
-	// stop() runs on the io thread: cancel the chain, drain, final-flush. The
-	// sync wait makes the snapshot race-free; shutdown abandons the drain.
+	// stop() runs on the io thread: detach from the poller, drain, final-flush.
+	// The sync wait makes the reported byte count final; shutdown abandons it.
 	if (ProcessService::instance()->dispatchSync([pump]() { pump->stop(); }))
 		m_snapshotBytes.store(pump->acceptedBytes(), std::memory_order_release);
 	LOG_DBG << fname << "bytes=" << m_snapshotBytes.load();

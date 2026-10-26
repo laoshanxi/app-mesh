@@ -183,9 +183,6 @@ Key facts:
   [`add-user`](#adding-a-user) to create and bind in one step, or set the role
   through the REST API: `POST /appmesh/principal/<principal-id>` with
   `{"roles": ["appmesh-viewer"]}`.
-- On Windows the authentication service runs with memory storage: identities
-  created here do not survive a restart. See
-  [Windows user management](#windows-user-management).
 - The UI's demonstration pages (Flows, Token tools) use an unregistered
   `example-app` OAuth client; only the administration pages are supported.
 - `APPMESH_AUTH_ADMIN_LISTEN` changes the UI listener; the underlying gRPC API
@@ -235,10 +232,6 @@ the Engine holds a role-less record for that Principal; apply the role through
 the REST API in that case — the command prints the exact
 `POST /appmesh/principal/<principal-id>` request when the Engine is running.
 
-On Windows the authentication service runs with memory storage: identities
-created by `add-user` do not survive a restart (see
-[Windows user management](#windows-user-management)).
-
 ## Deleting a user
 
 ```shell
@@ -258,19 +251,11 @@ on-disk policy — the right tool for a full cleanup.
 
 ## Windows user management
 
-On Windows only the packaged static identities (`admin@appmesh.local` and
-`guest@appmesh.local`) are durable. The Windows authentication-service build is
-CGO-free, so Dex runs with memory storage instead of SQLite.
-
-`add-user` and `delete-user` are available and work, but an identity created
-this way lives only in memory: it is lost when the authentication service
-restarts. Its App Mesh role binding in `authorization.yaml` persists and then
-refers to a subject that no longer exists, and a re-created user receives a new
-`user_id` — so after a restart, remove the stale binding
-(`DELETE /appmesh/principal/<principal-id>`) and run `add-user` again.
-
-For durable dynamic user management on Windows, use `APPMESH_AUTH_MODE=external`
-with an external identity provider.
+The Windows authentication-service build is CGO-free; its SQLite storage runs
+through the pure-Go `modernc.org/sqlite` driver. Identities created with
+`add-user`, refresh tokens, and consent survive restarts exactly as on Linux —
+the database lives in `work\auth\dex\dex.db` under the App Mesh root, and the
+`add-user` / `delete-user` commands work as documented above.
 
 ## Disabling the password grant
 

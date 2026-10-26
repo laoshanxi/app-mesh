@@ -313,40 +313,15 @@ impl AppMeshClientWSS {
         let base_url = format!("https://{}:{}", address_val.0, address_val.1);
         let client = AppMeshClient::with_requester(Box::new(wss_requester), base_url.clone());
 
-        // Build HTTP client with matching SSL settings for the file-transfer side-channel
-        let mut client_builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(120));
-
-        // SslVerify::False only carries explicit intent; a configured CA that is
-        // missing/invalid is a hard error, never a silent no-verify fallback.
-        // SslVerify::True means auto resolution already chose the system store.
-        match &verify {
-            crate::tls_config::SslVerify::False => {
-                client_builder = client_builder.danger_accept_invalid_certs(true);
-            }
-            crate::tls_config::SslVerify::Path(ssl_verify_path) => {
-                let buf = std::fs::read(ssl_verify_path).map_err(|e| {
-                    AppMeshError::ConfigurationError(format!("Failed to read CA certificate '{}': {}", ssl_verify_path, e))
-                })?;
-                let cert = reqwest::Certificate::from_pem(&buf).map_err(|e| {
-                    AppMeshError::ConfigurationError(format!("Invalid CA certificate '{}': {}", ssl_verify_path, e))
-                })?;
-                client_builder = client_builder.add_root_certificate(cert);
-            }
-            crate::tls_config::SslVerify::True => {}
-        }
-
-        if let Some((cert_path, key_path)) = ssl_client_cert {
-            let mut combined = std::fs::read(&cert_path).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Failed to read client certificate '{}': {}", cert_path, e))
-            })?;
-            combined.extend_from_slice(b"\n");
-            combined.extend_from_slice(&std::fs::read(&key_path).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Failed to read client key '{}': {}", key_path, e))
-            })?);
-            let identity = reqwest::Identity::from_pem(&combined)
-                .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e)))?;
-            client_builder = client_builder.identity(identity);
-        }
+        // A pinned CA or no-verify mode must be preconfigured (see
+        // configure_reqwest_tls); SslVerify::True keeps the platform roots.
+        let side_cert = ssl_client_cert.clone().map(|(cert, key)| ClientCert::Pair(cert, key));
+        let client_builder = crate::tls_config::configure_reqwest_tls(
+            reqwest::Client::builder().timeout(std::time::Duration::from_secs(120)),
+            &verify,
+            side_cert.as_ref(),
+        )
+        .map_err(AppMeshError::ConfigurationError)?;
 
         let http_client = client_builder
             .build()
@@ -430,17 +405,20 @@ impl AppMeshClientWSS {
         let auth_token = format!("Bearer {}", auth_token);
 
         let url = format!("{}/appmesh/file/download/ws", self.base_url);
-        let mut response = self
+        let mut request = self
             .http_client
             .get(&url)
             .header(HTTP_HEADER_KEY_X_FILE_PATH, encode_file_path(remote_file))
-            .header(HTTP_HEADER_JWT_AUTHORIZATION, &auth_token)
-            .send()
-            .await
-            .map_err(|e| AppMeshError::RequestFailed {
-                status: StatusCode::INTERNAL_SERVER_ERROR,
-                message: e.to_string(),
-            })?;
+            .header(HTTP_HEADER_JWT_AUTHORIZATION, &auth_token);
+        // The data channel is a separate HTTPS hop: without the forwarding header
+        // of the WSS control request the bytes land on the gateway.
+        if let Some(target) = self.client.get_forward_to() {
+            request = request.header(HTTP_HEADER_KEY_FORWARDING_HOST, target);
+        }
+        let mut response = request.send().await.map_err(|e| AppMeshError::RequestFailed {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: e.to_string(),
+        })?;
 
         // Failures answer plain text, file content answers octet-stream. Older daemons send
         // that text with a "200 OK" status line, so the content type has to decide success —
@@ -533,6 +511,15 @@ impl AppMeshClientWSS {
             reqwest::header::HeaderValue::from_str(&encode_file_path(remote_file))
                 .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid remote file path header value: {}", e)))?,
         );
+        // The data channel is a separate HTTPS hop: without the forwarding header
+        // of the WSS control request the bytes land on the gateway.
+        if let Some(target) = self.client.get_forward_to() {
+            upload_headers.insert(
+                reqwest::header::HeaderName::from_bytes(HTTP_HEADER_KEY_FORWARDING_HOST.as_bytes()).unwrap(),
+                reqwest::header::HeaderValue::from_str(&target)
+                    .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid forward host header value: {}", e)))?,
+            );
+        }
 
         if preserve_permissions {
             let mut attr_headers = HashMap::new();

@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 const BUILD_TAG: &str = match option_env!("BUILD_TAG") {
     Some(tag) => tag,
@@ -18,6 +19,11 @@ pub struct Cli {
     /// Forward request to target host
     #[arg(short = 'F', long = "forward-to", global = true)]
     pub forward_to: Option<String>,
+
+    /// CA bundle (PEM) trusted for the Engine's TLS certificate; applies to any
+    /// endpoint, including an explicit remote -H, and is remembered at logon
+    #[arg(long = "ca-cert", global = true, value_name = "PATH")]
+    pub ca_cert: Option<PathBuf>,
 
     /// Enable debug logging
     #[arg(short = 'v', long = "verbose", global = true)]
@@ -59,6 +65,9 @@ pub enum Commands {
 
     /// Run a command or application
     Run(RunArgs),
+
+    /// Send a task payload to a running application and print its response
+    Task(TaskArgs),
 
     /// Execute a single remote command
     Exec(ExecArgs),
@@ -383,6 +392,19 @@ pub struct RunArgs {
     /// Max wait time (seconds or ISO 8601; >0: poll, <0: wait until exit)
     #[arg(short = 't', long = "timeout", default_value = "172800", allow_hyphen_values = true)]
     pub timeout: String,
+}
+
+#[derive(Parser)]
+pub struct TaskArgs {
+    /// Application name
+    pub app: String,
+
+    /// Task payload (text or JSON; '@' reads from a file)
+    pub payload: Option<String>,
+
+    /// Seconds to wait for the application's response
+    #[arg(short = 't', long = "timeout", default_value_t = 300)]
+    pub timeout: i32,
 }
 
 #[derive(Parser)]

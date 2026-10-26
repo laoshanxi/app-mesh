@@ -19,10 +19,6 @@
 #include <boost/process/v2/start_dir.hpp>
 #include <boost/process/v2/stdio.hpp>
 #include <filesystem>
-#if !defined(_WIN32)
-#include <boost/process/v2/posix/bind_fd.hpp>
-#include <boost/process/v2/posix/default_launcher.hpp>
-#endif
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
@@ -37,9 +33,9 @@
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../application/Application.h"
+#include "ForkExec.h"
 #include "LinuxCgroup.h"
 #include "ProcessService.h"
-#include "SpawnInitializers.h"
 #include "StdoutStrategy.h"
 
 namespace bp2 = boost::process::v2;
@@ -999,41 +995,45 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	launched = launcher(ProcessService::instance()->io(), ec, exe, argsWide, bp2::process_start_dir(workDir),
 						bp2::process_environment(childEnv));
 #else
-	std::vector<std::string> args(argv.begin() + 1, argv.end());
-
-	// The launcher runs on the ProcessService thread (concurrent forks from the
-	// workers race the context's own thread on the asio reactor locks), and plain
-	// fork is mandatory: vfork shares the parent's address space, so with other
-	// daemon threads mutating state during the pre-exec window the child's fd
-	// setup is undefined — observed as intermittent zero-byte stdout capture
-	// under concurrent runs. fork's copy-on-write isolates the child.
-	bp2::posix::default_launcher launcher;
-	const auto launch = [&](auto &&...inits)
-	{
-		ec.clear();
-		if (!ProcessService::instance()->dispatchSync(
-				[&]
-				{
-					// On error the launcher itself returns an empty process; the
-					// forked child exited on the failed exec and must be reaped here.
-					launched =
-						launcher(ProcessService::instance()->io(), ec, exe, args, std::forward<decltype(inits)>(inits)...);
-					if (ec && launcher.pid > 0)
-					{
-						int childStatus = 0;
-						::waitpid(launcher.pid, &childStatus, 0);
-					}
-				}))
-			ec = boost::asio::error::operation_aborted;
-	};
-
+	// The daemon forks itself, so the child runs only raw system calls until
+	// execve (see ForkExec.cpp): the former launcher's library calls in the
+	// child — asio notify_fork and opendir — are what deadlocked under launch
+	// storms. The child joins the cgroup leaves and drops privileges before
+	// exec, as the legacy launcher did, and closes every other descriptor. An
+	// exec failure comes back synchronously over the report pipe; a child that
+	// reports nothing within the timeout is killed, so a launch cannot wedge the
+	// daemon. The wait handle is adopted on the real io context from the pid.
+	ForkExecRequest request;
+	request.executable = exe;
+	request.argv = argv;
+	request.argv[0] = exe;
+	request.environment = childEnv;
+	request.workingDirectory = workDir;
 	if (redirectStdio)
-		launch(bp2::process_start_dir(workDir), bp2::posix::bind_fd(STDIN_FILENO, static_cast<int>(m_stdinHandler.get())),
-			   bp2::posix::bind_fd(STDOUT_FILENO, childOutFd), bp2::posix::bind_fd(STDERR_FILENO, childOutFd),
-			   bp2::process_environment(childEnv), PosixProcessIdentity(uid, gid, cgroupProcsPaths));
+	{
+		request.stdinFd = static_cast<int>(m_stdinHandler.get());
+		request.stdoutFd = childOutFd;
+		request.stderrFd = childOutFd;
+	}
+	request.uid = uid;
+	request.gid = gid;
+	request.cgroupProcsFiles = cgroupProcsPaths;
+
+	// A stopped process service would drop the exit watch below and leave the
+	// run unfinalized: reject the start before forking.
+	if (!ProcessService::instance()->dispatchSync([] {}))
+		ec = boost::asio::error::operation_aborted;
 	else
-		launch(bp2::process_start_dir(workDir), bp2::process_environment(childEnv),
-			   PosixProcessIdentity(uid, gid, cgroupProcsPaths));
+	{
+		const auto spawned = forkExec(request);
+		if (spawned.pid > 0)
+			launched.emplace(ProcessService::instance()->io().get_executor(), static_cast<bp2::pid_type>(spawned.pid));
+		else
+		{
+			ec.assign(spawned.error, boost::system::system_category());
+			setStartError(Utility::stringFormat("%s failed: %s", spawned.stage, ec.message().c_str()));
+		}
+	}
 #endif
 
 	if (pipeWriteForChild >= 0)

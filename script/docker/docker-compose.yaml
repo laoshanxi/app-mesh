@@ -7,15 +7,19 @@
 # identical string on every node and client.
 #
 # In-network usage (the issuer hostname resolves only inside the network):
-#   appm -H wss://appmesh_master:6058 -F appmesh_slave1 logon
+#   appm -H wss://appmesh_master:6058 -F appmesh_slave1 logon --auth-allow-http
 #   appm -H wss://appmesh_master:6058 -F appmesh_slave1 view
-# From the host, a CLI uses the published master ports and routes the issuer
-# traffic through the loopback-published Dex port. The cluster issuer is plain
-# HTTP on the protected compose network, so the login opts in explicitly:
-#   appm -H https://127.0.0.1:6060 --auth-access-url http://127.0.0.1:6062/auth --auth-allow-http logon
-# Point --auth-access-url at a proxy entry (agent, or the published web UI at
-# https://127.0.0.1/auth) instead to get the same login page the browser sees,
-# logo included; the raw Dex port serves no login assets.
+# The CLI speaks WSS on 6058, not the REST port 6060 (the Go agent). Each
+# container generates its own CA; copy the target CA out and name it, or share
+# one CA across the cluster (docs/source/cluster/ClusterAuthDesign.md).
+# Host ports are remapped (+10000) so a local daemon can keep 6060/6058/6062:
+#   docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem
+#   appm -H wss://127.0.0.1:16058 --ca-cert ./master-ca.pem logon \
+#     --auth-access-url http://127.0.0.1:16062/auth --auth-allow-http
+# The CA is remembered with the endpoint at logon; later commands need neither
+# -H nor --ca-cert. Point --auth-access-url at a proxy entry (agent, or the
+# published web UI at https://127.0.0.1/auth) instead to get the same login
+# page the browser sees; the raw Dex port serves no login assets.
 name: appmesh_cluster
 services:
   appmesh_master:
@@ -46,12 +50,15 @@ services:
       retries: 12
       start_period: 30s
     ports:
+      # Host ports remapped (+10000) so a local daemon keeps the defaults.
       - "443:443" # for appmesh_ui
-      - "6060:6060" # master REST API for host CLI/SDK
+      - "16060:6060" # Go agent REST API for host REST clients and SDKs
+      # WSS listener the host CLI uses (the CLI speaks WSS, never plain REST).
+      - "16058:6058"
       # Issuer route for host-side password/device flows only. The port is
       # plaintext and binds to host loopback; use --auth-access-url on the CLI.
       # Remove it if unneeded.
-      - "127.0.0.1:6062:6062"
+      - "127.0.0.1:16062:6062"
     cap_drop:
       - ALL
     security_opt:
@@ -104,12 +111,17 @@ services:
         max-size: "10m"
         max-file: "1"
 
-  appmesh_slave2:
-    hostname: appmesh_slave2
-    container_name: appmesh_slave2
+
+  # LLM node: same daemon with the llm-agent app preinstalled and enabled
+  # (laoshanxi/appmesh:llm). Register an API key before first use, e.g. a
+  # gateway token: appm -F appmesh_llm add -f llm-agent.yaml \
+  #   -z ANTHROPIC_AUTH_TOKEN=<key> -e ANTHROPIC_BASE_URL=<gateway-url> --force
+  appmesh_llm:
+    hostname: appmesh_llm
+    container_name: appmesh_llm
     restart: always
-    image: laoshanxi/appmesh
-    mem_limit: 3G
+    image: laoshanxi/appmesh:llm
+    mem_limit: 4G
     depends_on:
       appmesh_master:
         condition: service_healthy
@@ -118,7 +130,6 @@ services:
       - APPMESH_AUTH_ROLE=follower
       - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
       - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
-      # Same browser entry as the master; it fronts the issuer path.
       - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
     cap_drop:
       - ALL
@@ -130,9 +141,9 @@ services:
         max-size: "10m"
         max-file: "1"
 
-  appmesh_slave3:
-    hostname: appmesh_slave3
-    container_name: appmesh_slave3
+  appmesh_slave2:
+    hostname: appmesh_slave2
+    container_name: appmesh_slave2
     restart: always
     image: laoshanxi/appmesh
     mem_limit: 3G

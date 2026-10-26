@@ -72,6 +72,25 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     let timeout = AppMeshClient::parse_duration(&args.timeout).map_err(|e| anyhow::anyhow!("{}", e))?;
     let lifecycle = AppMeshClient::parse_duration(&args.lifetime).map_err(|e| anyhow::anyhow!("{}", e))?;
 
+    if let Some(ref name) = args.app {
+        // `run` copies an existing app and starts it on demand; a keepalive task
+        // app would silently do nothing — point at the task command instead.
+        if let Ok(existing) = client.get_app(name).await {
+            let is_keepalive = existing
+                .behavior
+                .as_ref()
+                .and_then(|behavior| behavior.exit.as_ref())
+                .is_some_and(|exit| *exit == ExitAction::Keepalive);
+            if is_keepalive {
+                bail!(
+                    "'{}' is a keepalive task application; nothing was run. Send it a task instead: appm task {} '<payload>'",
+                    name,
+                    name
+                );
+            }
+        }
+    }
+
     // When the user named the run, clean up the transient app on Ctrl+C (matches C++).
     if let Some(ref name) = args.app {
         signal::register_cleanup(client.clone(), name.clone());

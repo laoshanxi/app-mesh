@@ -8,8 +8,9 @@
 
 class StdoutPump;
 
-// POSIX pipe pump strategy: owns an asio StdoutPump running on the
-// ProcessService io thread.
+// POSIX pipe pump strategy: owns a StdoutPump read by the shared pump
+// poller; activation and teardown hop through the ProcessService io thread
+// so pump state stays single-threaded.
 class PipeStdoutStrategy : public StdoutStrategy
 {
 public:

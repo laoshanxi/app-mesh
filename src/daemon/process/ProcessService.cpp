@@ -1,6 +1,10 @@
 // src/daemon/process/ProcessService.cpp
 #include "ProcessService.h"
 
+#if !defined(_WIN32)
+#include "StdoutPump.h"
+#endif
+
 #include <algorithm>
 #include <condition_variable>
 #include <exception>
@@ -181,6 +185,11 @@ void ProcessService::shutdown()
 		waiter->interrupted = true;
 		waiter->cv.notify_all();
 	}
+#if !defined(_WIN32)
+	// The io thread is down, so no pump teardown can race the poller anymore;
+	// late pump destructors drain their pipes without it.
+	StopStdoutPumpPoller();
+#endif
 	// Stop the callback thread after the engine: no callback can be posted anymore.
 	{
 		std::lock_guard lock(m_callbackMutex);

@@ -12,8 +12,9 @@
 #include <boost/asio/io_context.hpp>
 
 /// Single-threaded asio service owning the process engine I/O: BPv2 exit
-/// waits, stdout pipe read chains, and exit cleanup. Everything posted here
-/// runs on one thread, so the pump and wait state need no locks. A second
+/// waits, pump activation/teardown, and exit cleanup. Everything posted here
+/// runs on one thread, so pump state stays confined to it (the pipes
+/// themselves are polled by the shared pump poller). A second
 /// single-threaded context runs application exit callbacks, which may block
 /// on docker backends and must not stall the engine.
 class ProcessService

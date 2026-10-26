@@ -43,6 +43,8 @@ Every token must contain the `appmesh-api` audience. A display name, email addre
 
 Refresh tokens stay between the client and the authentication service. The Engine never sees one. The built-in service issues refresh tokens only for flows that request `offline_access`, and only while `refresh_token` is enabled in `oidc.yaml` (`APPMESH_AUTH_REFRESH_TOKEN`). `refresh_token_max_lifetime` (`APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME`, default 168h) caps the whole refresh chain, not one rotation. `/appmesh/auth/config` advertises `"refresh_token": false` when the feature is disabled; an older daemon omits the key, which means enabled.
 
+The built-in service keeps one refresh-token chain for each account, connector, and client ID. A new sign-in with the same account and the same client ID replaces the earlier chain. The earlier session then fails its next refresh with `invalid_grant`; the CLI removes that session and asks for `appm logon` again. Each surface uses its own client ID so that one sign-in does not end another: the CLI uses `appmesh-cli`, the web UI uses `appmesh-web` for both the browser flow and the password form, and MCP clients use `appmesh-mcp-user`. Two CLI sign-ins with the same account on two hosts do replace each other. A script must not request `offline_access` with the CLI client ID. Use the `appmesh-automation` client, or an SDK password provider, which re-authenticates without a refresh token.
+
 The Engine caches discovery data and signing keys for a limited time. An unknown key ID can cause one controlled refresh. A bounded negative cache limits repeated refresh attempts. The Engine does not fall back to local token signing or a second issuer.
 
 ## Transport behavior
@@ -126,7 +128,7 @@ A follower does not create built-in credentials. It does not run a second authen
 
 Set up the owner and join followers with the `setup.sh --auth-role owner|follower` actions described in [Deployment](Install.md#cluster-authentication-service); the role also applies at package installation time through `APPMESH_AUTH_ROLE`. The packaged `identity` App stays enabled on a follower. It runs inert: it stays healthy, it starts no Dex process, and it writes no authentication state.
 
-Authorization data is node-local. The principal and role APIs write the node that serves the request. A forwarded change therefore affects only the target node. Keep nodes consistent in one of two ways: apply the same changes on every node, or copy the owner's `work/config/authorization.yaml` to the followers. A copied file needs no restart: a follower adopts an entry from disk when it first resolves that principal, and a later save keeps the entry. A follower without a principal entry authenticates a user. It grants nothing beyond the configured provisioning policy.
+Authorization data is node-local. The principal and role APIs write the node that serves the request. A forwarded change therefore affects only the target node. Keep nodes consistent in one of two ways: apply the same changes on every node, or copy the owner's `work/config/authorization.yaml` to the followers. A copied file needs no restart: a follower adopts an entry from disk when it first resolves that principal, and a later save keeps the entry. A fresh follower has no `work/config` directory; create it before the first copy. A follower without a principal entry authenticates a user. It grants nothing beyond the configured provisioning policy.
 
 The built-in database supports one active authentication owner. Use this failover sequence:
 

@@ -495,6 +495,12 @@ std::shared_ptr<WSS::ReplyContext> DrogonAdaptor::createWebSocketReplyContext(co
 void DrogonAdaptor::handleHttpRequest(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
 									  drogon::AdviceCallback &&callback)
 {
+	handleWorkerRequest(req, std::move(stream), std::move(callback), req->getOriginalPath());
+}
+
+void DrogonAdaptor::handleWorkerRequest(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
+										drogon::AdviceCallback &&callback, std::string requestPath)
+{
 	const auto method = upperMethod(req);
 	if (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE" && method != "OPTIONS")
 	{
@@ -513,9 +519,9 @@ void DrogonAdaptor::handleHttpRequest(const drogon::HttpRequestPtr &req, drogon:
 	const auto &requestState = state->request = std::make_shared<Request>();
 	requestState->uuid = Utility::uuid();
 	requestState->http_method = method;
-	// originalPath() is the raw, still-encoded path; the daemon unescapes it
-	// once, so %-escapes are not decoded twice.
-	requestState->request_uri = req->getOriginalPath();
+	// The path must stay raw, still-encoded; the daemon unescapes it once, so
+	// %-escapes are not decoded twice.
+	requestState->request_uri = std::move(requestPath);
 
 	for (const auto &[k, v] : req->getHeaders())
 		requestState->headers.emplace(k, v);
@@ -576,6 +582,15 @@ void DrogonAdaptor::handleHttpRequest(const drogon::HttpRequestPtr &req, drogon:
 void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
 {
 	const static char fname[] = "DrogonAdaptor::handleDownload() ";
+
+	// A forwarded transfer belongs to the target node: hand it to the shared
+	// worker pipeline under the canonical path (the target REST layer knows no
+	// /ws route), so this node never serves the file itself.
+	if (!req->getHeader(HTTP_HEADER_KEY_Forwarding_Host).empty())
+	{
+		handleWorkerRequest(req, nullptr, std::move(callback), "/appmesh/file/download");
+		return;
+	}
 
 	try
 	{
@@ -658,6 +673,15 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 								 drogon::AdviceCallback &&callback)
 {
 	const static char fname[] = "DrogonAdaptor::handleUpload() ";
+
+	// A forwarded transfer belongs to the target node: hand it to the shared
+	// worker pipeline under the canonical path (the target REST layer knows no
+	// /ws route), so this node never buffers the body to disk.
+	if (!req->getHeader(HTTP_HEADER_KEY_Forwarding_Host).empty())
+	{
+		handleWorkerRequest(req, std::move(stream), std::move(callback), "/appmesh/file/upload");
+		return;
+	}
 
 	try
 	{

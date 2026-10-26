@@ -17,6 +17,12 @@ $ErrorActionPreference = "Stop"
 $CA_CONFIG = "ca-config.json"
 $CA_CSR = "ca-csr.json"
 $script:UsePureOpenSSL = $false
+# Leaf validity: Apple rejects TLS server certificates over 825 days (-67901);
+# the CA is exempt and outlives the leaves.
+$CERT_VALIDITY_DAYS = 825
+$CERT_VALIDITY_HOURS = "19800h"
+$CA_VALIDITY_DAYS = 3650
+$CA_VALIDITY_HOURS = "87600h"
 
 function Set-WorkingDir {
     # Use script-level variables to modify the global variables
@@ -76,11 +82,11 @@ function New-CAConfig {
     $config = @{
         signing = @{
             default  = @{
-                expiry = "87600h"
+                expiry = $CERT_VALIDITY_HOURS
             }
             profiles = @{
                 client = @{
-                    expiry = "87600h"
+                    expiry = $CERT_VALIDITY_HOURS
                     usages = @(
                         "signing",
                         "key encipherment", 
@@ -88,7 +94,7 @@ function New-CAConfig {
                     )
                 }
                 server = @{
-                    expiry = "87600h"
+                    expiry = $CERT_VALIDITY_HOURS
                     usages = @(
                         "signing",
                         "key encipherment",
@@ -108,6 +114,9 @@ function New-CACSR {
 
     $csr = @{
         CN    = "AppMesh"
+        ca    = @{
+            expiry = $CA_VALIDITY_HOURS
+        }
         key   = @{
             algo = "ecdsa"
             size = 256
@@ -285,7 +294,7 @@ subjectKeyIdentifier = hash
     & openssl ecparam -name prime256v1 -genkey -noout -out $caKeyPath
 
     # Generate Root Cert using the config to apply extensions
-    & openssl req -new -x509 -nodes -days 3650 -key $caKeyPath -out $caCertPath -config $caCnfPath
+    & openssl req -new -x509 -nodes -days $CA_VALIDITY_DAYS -key $caKeyPath -out $caCertPath -config $caCnfPath
 
     # 2. Generate Server Certificate
     Write-Log "Generating server certificate (OpenSSL)..."
@@ -296,7 +305,7 @@ subjectKeyIdentifier = hash
     [System.IO.File]::WriteAllText($serverCnfPath, $serverCnf, [System.Text.Encoding]::ASCII)
     
     & openssl req -new -key $serverKeyPath -out $serverCsrPath -config $serverCnfPath
-    & openssl x509 -req -in $serverCsrPath -CA $caCertPath -CAkey $caKeyPath -CAcreateserial -out $serverCertPath -days 3650 -extensions v3_req -extfile $serverCnfPath
+    & openssl x509 -req -in $serverCsrPath -CA $caCertPath -CAkey $caKeyPath -CAcreateserial -out $serverCertPath -days $CERT_VALIDITY_DAYS -extensions v3_req -extfile $serverCnfPath
 
     # 3. Generate Client Certificate
     Write-Log "Generating client certificate (OpenSSL)..."
@@ -306,7 +315,7 @@ subjectKeyIdentifier = hash
     [System.IO.File]::WriteAllText($clientCnfPath, $clientCnf, [System.Text.Encoding]::ASCII)
 
     & openssl req -new -key $clientKeyPath -out $clientCsrPath -config $clientCnfPath
-    & openssl x509 -req -in $clientCsrPath -CA $caCertPath -CAkey $caKeyPath -CAcreateserial -out $clientCertPath -days 3650 -extensions v3_req -extfile $clientCnfPath
+    & openssl x509 -req -in $clientCsrPath -CA $caCertPath -CAkey $caKeyPath -CAcreateserial -out $clientCertPath -days $CERT_VALIDITY_DAYS -extensions v3_req -extfile $clientCnfPath
 
     # Cleanup temp OpenSSL files
     $srlPath = Join-Path $script:WorkingDir "ca.srl"
