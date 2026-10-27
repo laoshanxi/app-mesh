@@ -9,6 +9,7 @@ on:
       - Dockerfile
       - .dockerignore
       - script/pack/docker-entrypoint.sh
+      - src/integrations/mcp-server/**
       - .github/workflows/release-image.yml
   workflow_run:
     workflows: ["release-linux"]
@@ -101,6 +102,20 @@ jobs:
           tags: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-llm-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Build and Push MCP Platform Image
+        id: build-platform-mcp
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          target: mcp_server
+          no-cache: true
+          platforms: ${{ matrix.platform }}
+          push: true
+          provenance: false
+          tags: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-mcp-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          labels: ${{ steps.meta.outputs.labels }}
+
   merge-and-push:
     name: Merge and Release Multi-arch Image
     needs: build
@@ -128,6 +143,11 @@ jobs:
               ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-llm-amd64 \
               ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-llm-arm64
           done
+          for tag in ${{ env.APPMESH_VERSION }}-mcp mcp; do
+            docker buildx imagetools create -t ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${tag} \
+              ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-mcp-amd64 \
+              ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-mcp-arm64
+          done
 
       - name: Cleanup Platform Tags
         run: |
@@ -140,7 +160,9 @@ jobs:
             ${{ env.APPMESH_VERSION }}-amd64 \
             ${{ env.APPMESH_VERSION }}-arm64 \
             ${{ env.APPMESH_VERSION }}-llm-amd64 \
-            ${{ env.APPMESH_VERSION }}-llm-arm64; do
+            ${{ env.APPMESH_VERSION }}-llm-arm64 \
+            ${{ env.APPMESH_VERSION }}-mcp-amd64 \
+            ${{ env.APPMESH_VERSION }}-mcp-arm64; do
             IMAGE_URL="https://hub.docker.com/v2/repositories/${{ env.DOCKER_IMAGE }}/tags/${tag}/"
             curl -X DELETE -H "Authorization: Bearer ${TOKEN}" ${IMAGE_URL} || echo "Failed to delete ${tag}"
           done
@@ -189,3 +211,35 @@ jobs:
           shell: bash
           run: |
             python3 -c "import appmesh, claude_agent_sdk"
+
+      - name: Verify MCP Image
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.APPMESH_VERSION }}-mcp
+          shell: bash
+          run: |
+            # The image still contains the daemon: bring up the standalone
+            # engine with its bundled Dex, then run the MCP server against it.
+            timeout 90s /opt/appmesh/script/docker-entrypoint.sh &
+            ISSUER=""
+            for _ in $(seq 1 30); do
+              ISSUER=$(curl -sk https://127.0.0.1:6060/appmesh/auth/config |
+                sed -n 's/.*"issuer"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+              [ -n "$ISSUER" ] && break
+              sleep 2
+            done
+            [ -n "$ISSUER" ] || { echo "daemon auth config unavailable"; exit 1; }
+            APPMESH_URL=https://127.0.0.1:6060 \
+            APPMESH_CA=/opt/appmesh/ssl/ca.pem \
+            APPMESH_AUTH_ISSUER="$ISSUER" \
+            APPMESH_AUTH_ACCESS_URL="$ISSUER" \
+            APPMESH_AUTH_CA_PATH=/opt/appmesh/ssl/ca.pem \
+            APPMESH_MCP_PUBLIC_URL=http://127.0.0.1:6071 \
+              python3 /opt/appmesh/integrations/mcp-server/appmesh_server.py &
+            METADATA=""
+            for _ in $(seq 1 10); do
+              curl -sf http://127.0.0.1:6071/.well-known/oauth-protected-resource/mcp -o /dev/null && { METADATA=1; break; }
+              sleep 2
+            done
+            [ -n "$METADATA" ] || { echo "MCP metadata unavailable"; exit 1; }
+            python3 -c "import fastmcp, appmesh"

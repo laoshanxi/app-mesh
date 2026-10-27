@@ -9,17 +9,17 @@
 # In-network usage (the issuer hostname resolves only inside the network):
 #   appm -H wss://appmesh_master:6058 -F appmesh_slave1 logon --auth-allow-http
 #   appm -H wss://appmesh_master:6058 -F appmesh_slave1 view
-# The CLI speaks WSS on 6058, not the REST port 6060 (the Go agent). Each
-# container generates its own CA; copy the target CA out and name it, or share
-# one CA across the cluster (docs/source/cluster/ClusterAuthDesign.md).
-# Host ports are remapped (+10000) so a local daemon can keep 6060/6058/6062:
-#   docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem
-#   appm -H wss://127.0.0.1:16058 --ca-cert ./master-ca.pem logon \
-#     --auth-access-url http://127.0.0.1:16062/auth --auth-allow-http
-# The CA is remembered with the endpoint at logon; later commands need neither
-# -H nor --ca-cert. Point --auth-access-url at a proxy entry (agent, or the
-# published web UI at https://127.0.0.1/auth) instead to get the same login
-# page the browser sees; the raw Dex port serves no login assets.
+# The CLI speaks WSS on 6058, not the REST port 6060 (the Go agent). The WSS
+# listener stays unpublished: run host-side CLI work inside the network with
+# docker exec (see "First sign-in in the compose cluster" in
+# docs/source/cluster/ClusterAuthDesign.md). The master's TLS material lives in
+# the appmesh_tls volume: the CA survives container re-creation, and the MCP
+# service mounts it read-only to verify the engine.
+# Host ports are remapped (+10000) so a local daemon can keep 6060/6062:
+#   REST/SDK clients: https://127.0.0.1:16060
+#     (trust the CA: docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem)
+#   host password/device flows: http://127.0.0.1:16062/auth
+#   host MCP clients: http://127.0.0.1:16071/mcp with a password-flow token
 name: appmesh_cluster
 services:
   appmesh_master:
@@ -41,6 +41,12 @@ services:
       # Bind the Dex listener to the protected compose network for followers.
       # Never publish this plaintext listener beyond a protected network.
       - APPMESH_AUTH_LISTEN=0.0.0.0:6062
+    volumes:
+      # Keep the generated TLS material in a named volume: the CA survives
+      # container re-creation, and the MCP service mounts the same volume
+      # read-only to verify the engine certificate. Followers keep their own
+      # CAs; only the master and the MCP service share this one.
+      - appmesh_tls:/opt/appmesh/ssl
     healthcheck:
       # Gates follower startup on authentication readiness. The daemon's
       # prewarm tolerates a short residual gap, and restart: always recovers.
@@ -53,11 +59,8 @@ services:
       # Host ports remapped (+10000) so a local daemon keeps the defaults.
       - "443:443" # for appmesh_ui
       - "16060:6060" # Go agent REST API for host REST clients and SDKs
-      # WSS listener the host CLI uses (the CLI speaks WSS, never plain REST).
-      - "16058:6058"
       # Issuer route for host-side password/device flows only. The port is
-      # plaintext and binds to host loopback; use --auth-access-url on the CLI.
-      # Remove it if unneeded.
+      # plaintext and binds to host loopback. Remove it if unneeded.
       - "127.0.0.1:16062:6062"
     cap_drop:
       - ALL
@@ -166,3 +169,57 @@ services:
       options:
         max-size: "10m"
         max-file: "1"
+
+  # MCP server as its own process: the laoshanxi/appmesh:mcp image ships
+  # src/integrations/mcp-server with its Python dependencies baked in. It is
+  # an OAuth resource server: it validates caller tokens against the master's
+  # Dex and forwards the same token to the engine, which enforces RBAC.
+  # The OAuth metadata advertises the in-network issuer, which a host client
+  # cannot resolve; pass a password-flow token instead
+  # (http://127.0.0.1:16062/auth, scope audience:server:client_id:appmesh-api).
+  appmesh_mcp:
+    hostname: appmesh_mcp
+    container_name: appmesh_mcp
+    restart: always
+    image: laoshanxi/appmesh:mcp
+    depends_on:
+      appmesh_master:
+        condition: service_healthy
+    environment:
+      # The engine through the Go agent front, verified with the shared CA.
+      - APPMESH_URL=https://appmesh_master:6060
+      - APPMESH_CA=/mnt/appmesh-tls/ca.pem
+      # Same issuer as every node and client; plaintext inside the network.
+      - APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
+      - APPMESH_AUTH_AUDIENCE=appmesh-api
+      # Advertise the published loopback entry to host AI clients.
+      - APPMESH_MCP_PUBLIC_URL=http://127.0.0.1:16071
+    volumes:
+      # The master's TLS material, read-only (the shared appmesh_tls volume);
+      # the server uses ca.pem to verify the engine.
+      - appmesh_tls:/mnt/appmesh-tls:ro
+    ports:
+      # MCP endpoint for host AI clients. Plaintext on host loopback only,
+      # the same posture as the Dex port; the bearer token carries the auth.
+      - "127.0.0.1:16071:6071"
+    healthcheck:
+      # RFC 9728 protected-resource metadata is always public.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6071/.well-known/oauth-protected-resource/mcp', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "1"
+
+volumes:
+  # The master's TLS material; shared read-only with the MCP service.
+  appmesh_tls:

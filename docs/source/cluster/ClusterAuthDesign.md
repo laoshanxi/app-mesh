@@ -207,19 +207,23 @@ example watch-and-push or mutation forwarding to a configured writer node.
 
 ## docker-compose cluster
 
-`script/docker/docker-compose.yaml` builds one owner, two followers, and one
-LLM node (`laoshanxi/appmesh:llm`, follower role, llm-agent preinstalled) with
-the bundled authentication service.
+`script/docker/docker-compose.yaml` runs one owner, two followers, one LLM
+node (`laoshanxi/appmesh:llm`, follower role, llm-agent preinstalled), and one
+MCP server, with the bundled authentication service.
 
 Listeners of `appmesh_master`. Host ports are remapped (+10000) so a local
 daemon keeps the defaults:
 
 | Port (container → host) | Service | Used by |
 | --- | --- | --- |
-| 6058 → 16058 | Engine WSS listener | the CLI (`appm -H wss://…:6058` in-network, `:16058` from the host) |
 | 6060 → 16060 | Go agent REST front | REST clients and SDKs; it applies its own `X-Target-Host` forwarding |
 | 6062 → 127.0.0.1:16062 | Dex authentication listener | followers in-network; host loopback only, for password and device flows |
 | 443 → 443 | web UI | browsers; the UI shares the master network namespace |
+
+The engine WSS listener (6058) stays unpublished. The CLI speaks the WSS
+transport; run host-side CLI work inside the network with `docker exec`
+(see below). The `appmesh_mcp` service publishes its own Streamable HTTP
+endpoint at `127.0.0.1:16071` for host AI clients.
 
 Environment variables:
 
@@ -235,12 +239,35 @@ Environment variables:
 A container healthcheck calls `appmesh-auth.sh service-health`. Followers gate
 on `depends_on: appmesh_master: service_healthy`.
 
-Clients reach the issuer in-network at `http://appmesh_master:6062/auth`.
-Host-side CLI usage publishes the master WSS port 6058. The CLI speaks the WSS
-transport; the REST port 6060 serves REST clients and SDKs through the Go
-agent. For password and device flows only, bind the Dex port to host loopback.
-The CLI then passes `--auth-access-url`. This argument is routing-only. The
-published endpoints still must sit on the issuer origin.
+Clients reach the issuer in-network at `http://appmesh_master:6062/auth`. The
+REST port 6060 serves host REST clients and SDKs through the Go agent. For
+password and device flows only, the Dex port is bound to host loopback.
+
+### MCP service
+
+The `appmesh_mcp` service runs the MCP server from the published
+`laoshanxi/appmesh:mcp` image: an OAuth resource server that validates caller
+tokens against the master's Dex and forwards the same token to the engine,
+which enforces RBAC. The compose file needs no source checkout. The master's
+TLS material lives in the `appmesh_tls` named volume; the service mounts the
+volume read-only and verifies the engine with the master CA. Followers keep
+their own CAs.
+
+The OAuth metadata advertises the in-network issuer, which a host client
+cannot resolve. A host client therefore passes a token from the password flow
+instead of running the browser flow:
+
+```shell
+curl -s -u "appmesh-mcp-user:" -X POST http://127.0.0.1:16062/auth/token \
+    --data-urlencode grant_type=password \
+    --data-urlencode "username=admin@appmesh.local" \
+    --data-urlencode "password=<password>" \
+    --data-urlencode "scope=openid audience:server:client_id:appmesh-api"
+```
+
+Point the MCP client at `http://127.0.0.1:16071/mcp` with the returned access
+token as the bearer. The endpoint is plaintext on host loopback only, the same
+posture as the Dex port.
 
 ### First sign-in in the compose cluster
 

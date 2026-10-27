@@ -10,6 +10,7 @@
 #  Build targets:
 #     appmesh    - default runtime without llm-agent
 #     llm_agent  - optional runtime with llm-agent app and requirements
+#     mcp_server - optional runtime with the MCP server (src/integrations/mcp-server)
 ##################################################################################
 FROM laoshanxi/appmesh:build_ubuntu22 AS build_stage
 WORKDIR /workspace/app-mesh
@@ -72,5 +73,18 @@ RUN pip3 install --break-system-packages --no-cache-dir -r /opt/appmesh/lib/llm-
     sed -i 's/^enabled: false$/enabled: true/' /opt/appmesh/apps/llm-agent.yaml && \
     grep -q '^enabled: true$' /opt/appmesh/apps/llm-agent.yaml
 USER ${APPMESH_ID}:${APPMESH_ID}
+
+# MCP server runtime (src/integrations/mcp-server): Streamable HTTP on 6071,
+# an OAuth resource server fronting the engine. Configuration is
+# environment-driven (see src/integrations/mcp-server/README.md).
+FROM runtime_base AS mcp_server
+USER root
+COPY --from=build_stage --chown=appmesh:appmesh /workspace/app-mesh/src/integrations/mcp-server/ /opt/appmesh/integrations/mcp-server/
+RUN pip3 install --break-system-packages --no-cache-dir -r /opt/appmesh/integrations/mcp-server/requirements.txt && \
+    python3 -c "import fastmcp, appmesh"
+USER ${APPMESH_ID}:${APPMESH_ID}
+WORKDIR /opt/appmesh/integrations/mcp-server
+EXPOSE 6071
+ENTRYPOINT ["tini", "--", "python3", "appmesh_server.py"]
 
 FROM runtime_base AS appmesh

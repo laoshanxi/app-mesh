@@ -12,6 +12,10 @@ The MCP server does not receive a password. It does not issue or exchange a toke
 python3 -m pip install -r requirements.txt
 ```
 
+Or use the published image `laoshanxi/appmesh:mcp`. It contains the server
+and its Python dependencies. The compose cluster uses this image
+(see `script/docker/docker-compose.yaml`).
+
 ## Configure
 
 Set these values:
